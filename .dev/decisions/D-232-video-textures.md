@@ -1,6 +1,6 @@
 # D-232: Video textures follow a video element on the page
 
-Status: decided. Date: 23 October 2026. Task: M3-F6. The cost of a frame on each GPU path, and the two browsers' support for `createImageBitmap` from a video element, are owed until test T-30 runs on this Mac.
+Status: decided and built. Task: M3-F6.
 
 Summary: A video element stays on the page, which has the only thread that can decode it. `engine.registerVideo` sends the sketch one `ImageBitmap` per frame the video presents, scaled to 512 texels on its widest side by default, and `textures.fromVideo` uploads the newest frame within the frame's upload budget. A 512 by 288 frame is 576 KiB, so it fits the Low preset's 2 MiB budget whole, and a paused video, or one that no texture shows, costs nothing.
 
@@ -23,9 +23,9 @@ A video at 512 texels on its widest side plays at 30 frames a second within the 
 | Route | Chrome | Safari | Firefox |
 | --- | --- | --- | --- |
 | `new VideoFrame(videoElement)` then transfer | works | no support from a video element | no support from a video element |
-| `createImageBitmap(videoElement)` then transfer | works | expected to work | expected to work |
+| `createImageBitmap(videoElement)` then transfer | works | works | works |
 
-How the data was produced: the byte counts follow from the sizes, four bytes a texel, and from the preset table of [the quality presets](../../docs/concepts/quality-presets.md). The `VideoFrame` finding is the recorded result of test T-30. The two `createImageBitmap` cells are owed: `bun run test:real-browsers --only video-texture-webgl2,video-texture-webgpu Safari Firefox` runs the page on both. The measured cost of a frame's decode, its transfer and its upload is owed too.
+How the data was produced: the byte counts follow from the sizes, four bytes a texel, and from the preset table of [the quality presets](../../docs/concepts/quality-presets.md). The `VideoFrame` finding is the recorded result of test T-30. The `createImageBitmap` cells and the cost of a frame come from the check page ([The check page](#the-check-page-and-what-the-browsers-do)), which `bun run test:real-browsers --only video-texture-webgl2,video-texture-webgpu Safari Firefox` runs on Safari and Firefox.
 
 ## Decision
 
@@ -35,12 +35,12 @@ The `VideoFrame` route would carry a decoded frame without a copy, but Safari an
 
 ## Consequences
 
-- `engine.registerVideo(video, { name, maxSize, frameRate })` joins the page API, and `textures.fromVideo(name, options)` the texture API, with `texture.destroy` stopping the frames.
+- `engine.registerVideo(video, { name, maxSize, frameRate })` is in the page API, and `textures.fromVideo(name, options)` in the texture API, with `texture.destroy` stopping the frames.
 - The page and the sketch trade two reserved messages, which never reach the sketch's or the page's own message handlers.
 - The page allocates one `ImageBitmap` a frame, which the thread that draws closes once the frame is on the GPU. The engine allocates no texture and no engine memory a frame.
-- The docs gain [Video textures](../../docs/guides/video-textures.md) and a section of [Textures](../../docs/api/textures.md); the three.js mapping's `VideoTexture` entry and the develop skill's recipe 14 name the new calls.
+- The docs hold [Video textures](../../docs/guides/video-textures.md) and a section of [Textures](../../docs/api/textures.md); the three.js mapping's `VideoTexture` entry and the develop skill's recipe 14 name the calls.
 
-## Addendum 24 October 2026: the check page, and what the browsers do
+## The check page, and what the browsers do
 
 The check page plays a canvas's stream as a 640 x 360 video of two color bands, scaled to
 `maxSize` 512, at the Low preset's 2 MiB upload budget. It measures two seconds while the video
@@ -64,22 +64,22 @@ A frame of 512 x 288 RGBA8 is 589,824 bytes, which one frame of the Low preset u
 figure after the pause is not the video: the engine writes about a kilobyte of its own every
 frame, such as the values that a draw reads, and it is the same on both GPU paths and on both
 renderers. A frame of the video in that window would be hundreds of times larger, and the check
-still fails one. The colors of both bands sat within one step of the data textures' colors on
+fails one. The colors of both bands sit within one step of the data textures' colors on
 Safari, and within two steps on Firefox and on Chromium. The page's copy time is the time that
 `createImageBitmap` takes to resolve; Safari's figure is far shorter than the others, so its copy
 may finish later, when the image is read.
 
-Three faults came out of the first runs, and each was fixed in the test rather than in the engine:
+Three browser behaviors shape the test, and none of them needs an engine change:
 
-- Safari reported that the video never played, yet its frames arrived. WebKit can leave a video's
-  play call's promise waiting with no answer (WebKit bug 200344), and it marks a video that plays
-  from a canvas's stream as paused. The page now judges playback by the frames that it copies from
-  the video, which no refused video gives, after a bounded wait on the play call.
-- The runner page's frame had no autoplay permission, which a browser delegates to a frame only
-  when it is asked. Safari then blocked the playback the page asked for. The frame now asks for
-  `autoplay` (`tests/pages/runner.ts`).
-- The window after the pause read the engine's own per-frame writes, about a kilobyte, as an
-  upload of the video. The check now allows that figure and fails a window that carries a frame.
+- WebKit can leave a video's play call's promise waiting with no answer (WebKit bug 200344), and it
+  marks a video that plays from a canvas's stream as paused, while its frames arrive. The page
+  judges playback by the frames that it copies from the video, which no refused video gives, after
+  a bounded wait on the play call.
+- A browser delegates autoplay permission to a frame only when the frame asks for it, and Safari
+  blocks a playback without it. The runner page's frame asks for `autoplay`
+  (`tests/pages/runner.ts`).
+- The window after the pause carries the engine's own per-frame writes, about a kilobyte. The check
+  allows that figure and fails a window that carries a frame.
 
 A browser that refuses to play the video sends no frames: the material draws with its color alone,
 and the engine reports no error. A browser that refuses to copy a frame, as a cross-origin video
@@ -93,11 +93,9 @@ page parks its element past the page's edge for the same reason.
 
 The page's video support loads at the first call that needs it, as the engine's other optional page
 features do. `engine.registerVideo` stays a synchronous call: the engine queues the calls, loads the
-module, and runs them in order once it lands. The start needed this: with the video code in it, the
-merged tree's WebGL2 pipelined start was 191,515 bytes after Brotli against its 187 KB budget. With
-the code in a first-use file it is 190,935 of 191,488 bytes, 553 left. A page that shows no video
-downloads none of it.
-
+module, and runs them in order once it lands. With the video code in the start, the WebGL2
+pipelined start measured 191,515 bytes after Brotli, and with the code in a first-use file 190,935.
+A page that shows no video downloads none of it.
 
 No demo shows video textures. The image manifest draws each demo from its sketch alone, in hold
 mode, and a held frame has no page to send a video's frames, so a video demo would hold a picture

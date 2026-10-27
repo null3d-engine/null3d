@@ -1,8 +1,8 @@
 # D-250: A timed script that hold mode performs
 
-Status: decided by the helper of M3-R14 on 23 October 2026, for the owner's review. Date:
-2026-10-23. Task: M3-R14. Built: the engine performs a script in hold mode, the `shot` command
-draws each of its shot steps, and a `test` entry takes a script.
+Status: decided by the helper of M3-R14, for the owner's review. Built: the engine performs a
+script in hold mode, the `shot` command draws each of its shot steps, and a `test` entry takes a
+script. A script drives the night town showcase's image tests. Task: M3-R14.
 
 Summary: A text script lists steps at sketch times: key presses, pointer events, property writes,
 dumps and shots. Hold mode performs the input and property steps on the sketch thread, and the
@@ -56,8 +56,11 @@ that frame.
 A step names an object by the name that the scene gave it, or by a component that the scene holds:
 `#camera` is the active camera, and an object that is a light or a camera answers to that
 component's own properties, such as `intensity` or `fov`. A name that finds no object fails the
-step with the names that are close, so a wrong name is easy to fix. The last dot separates the
-object from its property, so an object's own name may hold dots.
+step with the names that are close, so a wrong name is easy to fix.
+
+A `set` step splits its name from its property at the last dot, so an object's own name may hold
+dots. A `dump` step splits at the last dot only when the part after it is a property name. An
+object whose own name ends in one therefore cannot be dumped whole.
 
 `shot` holds once at each time that draws a shot or reads a dump. `test` does the same for a
 `null3d.json` entry that gives `script` instead of `hold`, and each shot step becomes an image test
@@ -68,10 +71,23 @@ object, is recorded with the names that are close and fails the command.
 
 A held frame's state comes from sketch time, not the wall clock. The engine sets each of hold
 mode's frames from its step number at a fixed rate, and the sketch reads that time and the frame's
-step, so a state that a script names is the same state on any machine and at any speed. A repeat run
-of the whole script, minutes after the references were made, wrote byte-identical image files for
-all three states. The references therefore show the state that their steps name, not whatever the
-machine happened to be doing when the picture was taken.
+step, so a state that a script names is the same state on any machine and at any speed. The
+references therefore show the state that their steps name, not whatever the machine happened to be
+doing when the picture was taken.
+
+For commit `33122b8eb`, whose run logs are not kept, the Mac's Chrome 155 drew the night town
+script twice on the real GPU, two and a half minutes apart. It ran the command below at the High preset:
+
+```text
+bun packages/cli/bin/null3d.js shot --script tests/image/showcase-night-town.script --page
+'/tests/pages/image.html?sketch=/examples/showcase/night-town/sketch.ts&size=320x180&preset=high'
+--size 320x180 --gpu webgl2 --out target/night-town.png
+```
+
+The two runs wrote byte-identical images for all three states. The SHA-256 values were
+`7c93e8ec835abfa52130509ad012be466d170b3923f442e8b031daf7b49b3967` for `opening`,
+`7c904be490549d802918d7ba81855523cac251d8dc86cf60a3a7a8881eefcb53` for `wide`, and
+`3f534a0f3e875995f9fa6b436b45e440e11a48a5ab9b76696cb71be0f2bd93f0` for `square`.
 
 ## Consequences
 
@@ -79,7 +95,46 @@ machine happened to be doing when the picture was taken.
   a hold, and `page.js` holds the program's types.
 - The engine's `page/hold.ts` holds the program's types, and `sketch/runner.ts` performs it.
   `scene/scene.ts` gives the property reads and writes, and the closest names for a message.
-- The docs page for the command describes the steps. The fixture project carries a script that
-  drives three states, and an image test compares each state with its reference.
+- The docs page for the command describes the steps. [The showcase and the image
+  tests](#the-showcase-and-the-image-tests) says which showcase the image tests drive and what
+  those tests compare.
 - M3-R15's input and frame-time recorder can feed this format later, so a recording from a phone
   becomes a script.
+
+## The showcase and the image tests
+
+The task's Done-when names a showcase. `tests/image/showcase-night-town.script` drives the night
+town showcase through three states on WebGL2. They are `opening` at 0.5 s, `wide` at 2 s and
+`square` at 30 s. The scene's camera follows a route of the sketch time, and hold mode sets that
+time exactly, so each state is a fixed pose. A `set` step widens the active camera's lens to 60
+degrees for the second state, and a `dump` step reads the value back. A second `set` step returns
+the scene's own lens before the third state. The states therefore show both the route and the
+script's writes.
+
+`tests/image/cli-script.spec.ts` runs a script in two places. In the fixture project the script
+drives a key, the pointer, a property write and a dump. That test checks that each of the three
+images differs from the other two, and those images have no references. In the repository the
+spec draws the showcase script at 320 by 180 pixels and compares each of the three images with its
+reference. For the same commit, the spec passed four of four on the Mac's Chrome in 38.5 seconds, and all three images
+matched their references. The runs are `script-demo-night-town-opening`, `-wide` and `-square` in
+`tests/image/script-runs.ts`. The opening run borrows the reference of the manifest's
+`demo-night-town`, which holds the same frame and keeps the only picture of it. The other two runs
+keep their own references. The real GPU draws at the High preset, and the software GPU at Low, as
+the image manifest's showcase tests do.
+
+The real GPU's references are in the repository. The software GPU's two references come from CI:
+run 40223500231 drew them on `33122b8eb` and saved them as candidates, and accepting those made
+them references. Up to the merge of this work (`adea85ab8`), every later commit of
+the work changed only documentation, the remake command or the pictures, so the scene drawn for
+those references stayed the same. A passing CI run that compares the committed software references is still
+owed. No local-reference note covers them, because neither software picture comes from a local
+drawing.
+
+The rejected option drove `examples/input`, a basic demo, for its input steps. A showcase needs no
+input steps for its states, because its camera moves with the sketch time. So the night town script
+replaces the input demo, whose script and references are gone, and the fixture project drives the
+key and pointer steps.
+
+The engine's unit tests run in CI's `docs-and-tools` job, which runs `bun run test`. A run of the
+suite on the loaded Mac, whose log is not kept, reported 4,279 tests across 357 files, with 41 tests skipped. The
+command-line tool's script tests pass, 11 of 11.

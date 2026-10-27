@@ -101,6 +101,7 @@ function fakeCore(
 					: field === TEXTURE_STAT_UPLOADING
 						? Number(uploading)
 						: 0,
+		textureLayer: (texture: number) => (texture === 7 ? 3 : 0),
 		destroyTexture: (texture: number) => {
 			destroyed.push(texture);
 			return 0;
@@ -207,6 +208,8 @@ describe('textures.fromImageBitmap', () => {
 		expect(sent).toEqual([[1, picture]]);
 		expect([texture.width, texture.height, texture.depth, texture.bytes]).toEqual([32, 16, 1, 700]);
 		expect([texture.format, texture.colorSpace, texture.uvSet]).toEqual(['rgba8unorm', 'srgb', 0]);
+		// The layer that a map samples now, which a pass texture moves with its newest state.
+		expect(texture.layer).toBe(3);
 		const options: TextureOptions = {
 			colorSpace: 'linear',
 			wrap: ['repeat', 'mirror'],

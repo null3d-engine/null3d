@@ -292,6 +292,9 @@ export default defineSketch(({ materials, geometry, scene, textures, render }) =
 | `description` | The feature description that places the pass. Its one output names the texture that the pass writes. | Required |
 | `wgsl` | WGSL that the null3D Vite plugin compiled, with a `@compute` entry point. | Required |
 | `format` | The texture's format: `'rgba16float'` for high dynamic range color, `'r32float'` for one number per pixel, or `'rgba8unorm'` for 8-bit color. | `'rgba16float'` |
+| `history` | The pass keeps two states, and each run reads the state of the run before. See [State between runs](#state-between-runs). | `false` |
+| `layers` | The array layers of each state, from 1 to 256, or 128 at most with `history`. A `'writes'` dispatch runs one workgroup along z for each layer. A WebGL2 page draws each layer, up to 32. | 1 |
+| `steps` | The runs that a frame records, swapping the two states between them. `render.setPassSteps` changes it. A pass without `history` runs once. | 1 |
 | `workgroupSize` | The invocations along each axis of a workgroup. | The shader's `@workgroup_size` |
 | `dispatch` | `'writes'` covers the texture: the size divided by the workgroup size, rounding up. Three whole numbers give the workgroup counts along each axis. | `'writes'` |
 | `size` | The texture's size in pixels, as `[width, height]`. | Give `size` or `scale` |
@@ -339,9 +342,100 @@ Each row is four `vec4f`: the three rows of an instance's world matrix, with its
 - A pass runs only while something shows or reads its texture. A pass that nothing reads costs nothing. Switch it with `render.setPassEnabled(pass, false)` while your feature's `ready` says it draws nothing, and set its values from the feature's settings.
 - The texture holds zeros until the pass runs, so a reader sees the output's `'black'` or `'transparent'` default. Give the output `'white'` and the call throws E1223.
 
+### State between runs
+
+A solver reads the state that its step before wrote. Give the pass `history: true` and it keeps two
+states in its texture, as two ranges of array layers: the first state's layers, then the second's.
+Each run writes one state and reads the other, and the frame swaps them between runs.
+
+The shader declares the state of the run before at binding 2 and reads it with `textureLoad`:
+
+```wgsl
+@group(0) @binding(2) var history: texture_2d_array<f32>;
+
+// `id.z` is the layer within the state, from 0 to the pass's layers less one.
+let before = textureLoad(history, vec2i(id.xy), id.z, 0);
+```
+
+Binding 1 holds the state that this run writes, so the shader writes layer `id.z` as it does without
+history. A run of 40 Jacobi steps is one pass of `steps: 40`; the frame records 40 dispatches and
+swaps the views between them.
+
+```ts
+const pressure = render.addPass({
+  kind: 'compute',
+  description: defineFeature({
+    name: 'pressure',
+    frame: 'background',
+    kind: 'compute',
+    outputs: { pressure: { default: 'black' } },
+  }),
+  wgsl: jacobi,
+  format: 'r32float',
+  size: [128, 128],
+  history: true,
+  steps: 40,
+});
+render.setPassSteps(pressure, 24);  // from the next frame on
+```
+
+A material or an effect that declares the texture as `texture_2d<f32>` samples the state that the
+last run wrote. A reader that wants both states declares it as `texture_2d_array<f32>` and names the
+layers: the first state holds the first `layers` layers, and the second the layers after them.
+`texture.layer` gives the first layer of the state that the last run wrote. A reader of the array
+names the newest state without counting runs. A run writes the state that the run before read, so
+after an odd number of runs the last run wrote the state that the frame started from.
+
+`render.resetPass(pass)` starts the states again from empty. The next frame clears every layer
+before the pass's first run, and after each run the state counts from zero again. A lost device also
+starts the states empty, as it starts every texture, so a pass begins again from its seed.
+
+A pass that does not run keeps the state that its last run wrote, as it keeps its image.
+
+A pass with history costs more than one state. On the WebGPU paths the target holds both states as
+`layers * 2` layers, and the pass keeps two state textures of `layers` layers each: four times the
+texels of one state. On WebGL2 the fragment form keeps both states in the target's layers and adds
+one scratch texture of one state: three times. At `rgba16float` that is 32 bytes for each texel of
+one state on the WebGPU paths and 24 on WebGL2; at `r32float`, 16 and 12. Size a history pass for
+its grid, not the canvas: 128 by 128 takes 512 KiB on the WebGPU paths and 384 KiB on WebGL2, and
+256 by 256 takes 2 MiB and 1.5 MiB. The 8192 by 8192 side that the device allows would take 2 GiB
+on the WebGPU paths, which no page should choose by accident. `render.dumpGraph()` does not list the
+state textures, so budget them beside its figures.
+
+### Reading a region back
+
+`render.readPass(pass, region)` reads a small region of a compute pass's texture, through a promise:
+
+```ts
+const { data, width, height, frames } = await render.readPass(field, {
+  x: 0, y: 0, width: 8, height: 8,  // texels with the top left of the texture at the corner
+});
+// Four numbers for each texel, row by row from the top left.
+const red = data[(3 * width + 2) * 4];
+```
+
+- A frame copies the region after the pass's runs, and the GPU puts its bytes in engine memory. The
+  sketch's frame loop answers the promise, so no thread waits. The answer comes one or more frames
+  after the call, and `frames` gives how many.
+- A region is at most 64 texels each way. `data` holds red, green, blue and alpha for each texel:
+  8-bit color reads as a share of 255, and a float format gives the values the pass wrote.
+- On WebGL2 the fragment form writes the scene color's format. A read there gives that format's
+  values: 8-bit color clamps above 1, and 16-bit floats keep the values that the pass wrote.
+- `layer` names a layer, and it defaults to the state that the pass wrote last. Read one layer of a
+  pass of several layers by naming it.
+- A stopped pass gives back the last texels that it wrote, because its texture keeps them.
+- Throws E1220 for a pass of another kind, a region that is not whole texels, or one larger than 64
+  each way. A region that reaches past the pass's texture throws E1220 at once, before a frame
+  records it. A canvas that shrinks between the call and the frame that copies the region skips the
+  copy, so the call fails after 240 frames rather than reading past the edge; a page sees the same
+  E1220 as a slow read that never lands, and cannot tell the two apart. A pass with no texture gives
+  no answer either.
+
 ### WebGL2
 
-WebGL2 has no compute shaders. A WebGL2 page runs the `fallback` WGSL as a full-screen pass, with the same values, textures, size, scale and pace. The values keep their positions: the fields of the fragment form's `struct Uniforms` start at the same floats as the compute block's `u0`. Give no fallback when the work needs atomics, shared memory or a write to a place that the shader chooses, because a fragment shader cannot do those. The call then throws E1220 on WebGL2. The engine draws a compute pass on WebGPU only.
+WebGL2 has no compute shaders. A WebGL2 page runs the `fallback` WGSL as a full-screen pass. It gets the same values, textures, size, scale and pace. A pass with `history` runs its fragment form once for each step. The fragment form reads the state of the run before as `input.color`. That holds the state's texels at the pixel.
+
+A pass of several layers draws each layer in a pass of its own. `input.layer` gives the layer that the draw writes, from 0. Up to 32 layers work on WebGL2, and a pass of more throws E1220. The WebGPU paths draw up to 128 with history and 256 without. The values keep their positions: the fields of the fragment form's `struct Uniforms` start at the same floats as the compute block's `u0`. Give no fallback when the work needs atomics or shared memory. A fragment shader cannot do those, and neither can it write to a place that the shader chooses. The call then throws E1220 on WebGL2. The engine draws a compute pass on WebGPU only.
 
 ### Switching and removing passes
 
@@ -369,7 +463,7 @@ console.log(render.dumpGraph());
 
 | Code | Cause |
 | --- | --- |
-| E1220 | Options that `render.addPass` does not take, a `writes` or `name` that another pass has, or a 32nd pass. Both a `size` and a `scale`, or a scene pass with neither. A reflection's plane without a point, a normal of no length, or a `scale` or `every` that it does not take. An `input` other than `'sceneColor'` or `'outlineMask'`. A compute pass on WebGL2 with no fallback, a workgroup size that a device cannot run, or a format that a compute pass does not write. Or something that is not a render pass, given to `render.setPassEnabled`, `render.removePass`, `render.setPassUniform`, `render.setPassUniforms` or `textures.fromPass`, or a pass of another kind given to them. |
+| E1220 | Options that `render.addPass` does not take, a `writes` or `name` that another pass has, or a 32nd pass. Both a `size` and a `scale`, or a scene pass with neither. A reflection's plane without a point, a normal of no length, or a `scale` or `every` that it does not take. An `input` other than `'sceneColor'` or `'outlineMask'`. A compute pass on WebGL2 with no fallback, a workgroup size that a device cannot run, or a format that a compute pass does not write. A compute pass with `history` and an instance draw's buffers, `steps` above one without `history`, more than 128 layers with history, or more than 32 layers on WebGL2. A call to `render.setPassSteps` or `render.resetPass` on a pass of another kind, or more than one step of a pass without history. A `render.readPass` region that is not whole texels from 0, larger than 64 each way, past the pass's texture, or on a pass of another kind. Or something that is not a render pass, given to `render.setPassEnabled`, `render.removePass`, `render.setPassUniform`, `render.setPassUniforms`, `render.setPassSteps`, `render.resetPass`, `render.readPass` or `textures.fromPass`, or a pass of another kind given to them. |
 | E1215 | A full-screen pass's WGSL that the null3D Vite plugin did not compile as an effect, or a compute pass's WGSL without a `@compute` entry point. |
 | E1216 | A uniform or a texture that the full-screen pass's WGSL does not declare, or a value of the wrong kind. |
 | E1223 | A compute pass whose feature description is not a compute feature, has no frame point, records in another view, reads a scene resource, or publishes anything but one output whose default is `'black'` or `'transparent'`. |

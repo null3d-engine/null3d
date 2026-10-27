@@ -1,7 +1,7 @@
 // The Manual camera's bounds keep it inside a showcase scene: never past the mountains, never under
-// the ground ([D-170](../../.dev/decisions/D-170-showcase-camera.md), owner, 20 October 2026). The
-// ground stops the camera along its orbit, so pushing against it never draws the camera in, and a
-// pan stops at the edge of the area the camera turns around.
+// the ground ([D-170](../../.dev/decisions/D-170-showcase-camera.md), owner's ruling). The ground
+// stops the camera along its orbit, so pushing against it never draws the camera in, and a pan
+// stops at the edge of the area the camera turns around.
 import { describe, expect, it } from 'bun:test';
 import { StandInCamera } from '../../tests/pages/lib/stand-in-cameras';
 import { BOUNDS, SHOTS } from '../showcase/night-town/sketch';

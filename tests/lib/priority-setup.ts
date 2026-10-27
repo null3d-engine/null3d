@@ -9,7 +9,7 @@ import { refuseBackgroundPriority } from './app-window.ts';
 /**
  * The name of a variable that turns on a spec that times an effect's cost on the computer's own GPU:
  * NULL3D_<EFFECT>_COST. A new cost spec names its switch so, and the guard knows it with no list to
- * keep; three cost specs landed without a list entry on 24 October 2026.
+ * keep: a list misses the switch of a new spec.
  */
 export const COST_VARIABLE = /^NULL3D_\w+_COST$/;
 

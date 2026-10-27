@@ -736,6 +736,20 @@ export interface UvTransformData {
 	rotation: number;
 }
 
+/** The maps of a material that a file places with a transform of their own, by the map's key. */
+export type MapUvTransformsData = Partial<Record<keyof MaterialData['maps'], UvTransformData>>;
+
+/** Where a texture info's `KHR_texture_transform` places its map on the texture coordinates. */
+function textureTransform(transform: Entry, what: string): UvTransformData {
+	const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);
+	const scale = numbers(transform.scale, 2, [1, 1], `${what}'s texture transform scale`);
+	return {
+		offset: [offset[0] as number, offset[1] as number],
+		repeat: [scale[0] as number, scale[1] as number],
+		rotation: finite(transform.rotation ?? 0, `${what}'s texture transform rotation`),
+	};
+}
+
 /** A material as the engine's options, with its maps as indices into the texture uses. */
 export interface MaterialData {
 	name: string;
@@ -794,7 +808,11 @@ export interface MaterialData {
 		iridescenceThicknessMap?: number;
 		anisotropyMap?: number;
 	};
-	uvTransform?: UvTransformData;
+	/**
+	 * The maps that the file places with a transform of their own, by the map's key. A map without
+	 * one reads the texture coordinates as the mesh gives them.
+	 */
+	uvTransforms?: MapUvTransformsData;
 }
 
 /** A light of KHR_lights_punctual, in the units that glTF and three.js share. */
@@ -1543,12 +1561,13 @@ export function parseGltf(
 					),
 		};
 		const maps: MaterialData['maps'] = {};
-		let transform: Entry | undefined;
+		const uvTransforms: MapUvTransformsData = {};
 		for (const key of Object.keys(slots) as (keyof typeof slots)[]) {
 			const slot = slots[key];
 			if (!slot) continue;
 			maps[key] = slot.use;
-			transform ??= slot.transform;
+			// A file places each map with its own transform, as three.js gives each texture its own.
+			if (slot.transform) uvTransforms[key] = textureTransform(slot.transform, what);
 		}
 		const diffuseTransmission = diffuseTransmissionOf(
 			extensions,
@@ -1567,6 +1586,8 @@ export function parseGltf(
 			}
 		for (const key of ['diffuseTransmissionMap', 'diffuseTransmissionColorMap'] as const)
 			if (!translucent) delete maps[key];
+		for (const key of Object.keys(uvTransforms) as (keyof typeof uvTransforms)[])
+			if (maps[key] === undefined) delete uvTransforms[key];
 		const data: MaterialData = {
 			name: text(material.name),
 			unlit,
@@ -1611,15 +1632,7 @@ export function parseGltf(
 			}
 			data.layers = values;
 		}
-		if (transform) {
-			const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);
-			const scale = numbers(transform.scale, 2, [1, 1], `${what}'s texture transform scale`);
-			data.uvTransform = {
-				offset: [offset[0] as number, offset[1] as number],
-				repeat: [scale[0] as number, scale[1] as number],
-				rotation: finite(transform.rotation ?? 0, `${what}'s texture transform rotation`),
-			};
-		}
+		if (Object.keys(uvTransforms).length > 0) data.uvTransforms = uvTransforms;
 		return data;
 	});
 	for (const mesh of meshes)

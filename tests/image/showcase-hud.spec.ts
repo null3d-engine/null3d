@@ -1,8 +1,8 @@
 // The showcase controls HUD names every change in a toast at the top centre of the view. Playwright
 // opens the night town's HUD, picks a button in each group, and checks the toast's text
-// ([D-171](../../.dev/decisions/D-171-showcase-controls-hud.md), owner, 14 October 2026). A toast
-// alone cannot show that a change took: the stage writes the sky, the fog and the environment light
-// every frame, and once undid each switch a frame after the toast named it. So the tests also read
+// ([D-171](../../.dev/decisions/D-171-showcase-controls-hud.md), owner's ruling). A toast alone
+// cannot show that a change took: the stage writes the sky, the fog and the environment light every
+// frame, and can undo a switch a frame after the toast names it. So the tests also read
 // the canvas, and check that each part stays off while it is off and comes back when it turns on.
 //
 // The checks fall into three tests, and each one opens the page afresh, so CI can run them in jobs
@@ -117,7 +117,7 @@ const CHANGED = 1.2;
 const RETURNED = 0.5;
 /** A mean difference below which the canvas counts as still, over a settled look. */
 const STILL = 0.5;
-/** Frames read after a switch: the old bug rewrote the part a frame later, so several are read. */
+/** Frames read after a switch, since a stage that rewrites the part does so a frame later. */
 const FRAMES = 4;
 /**
  * How long the engine's first frame may take to arrive. A page shows its controls while its sketch

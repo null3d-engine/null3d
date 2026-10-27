@@ -51,7 +51,10 @@ use super::ids;
 use super::layout::Layout;
 use super::pyramid::Levels;
 use crate::cells::{CellCulling, CellMask};
-use crate::frame::{CellOffsets, RecordError, UploadArena, grown_size, words_as_bytes};
+use crate::frame::{
+    CellOffsets, RecordError, UploadArena, grown_size, grown_size_within, unbound_buffer_bytes,
+    words_as_bytes,
+};
 use crate::view::{MAX_VIEW_IDS, ViewFrame, ViewId};
 use null3d_core::levels::LevelRule;
 
@@ -439,7 +442,9 @@ impl Culling {
         ];
         for (id, made, size, flags) in needed {
             if *made < size {
-                *made = grown_size(size, binding_bytes);
+                *made = grown_size(size, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
                 list.push(Op::CreateBuffer, &[id, *made, flags])?;
                 recreated = true;
             }
@@ -449,7 +454,8 @@ impl Culling {
 
     /// Sizes a view's compacted instance buffer for the layout on the direct-draw path, which
     /// fills it from the CPU. The buffer also takes uploads, and binds no group: no culling
-    /// dispatches read or write it.
+    /// dispatches read or write it, so only the device's largest buffer bounds it, not the
+    /// largest storage binding.
     pub(super) fn apply_direct(
         &mut self,
         list: &mut DrawList,
@@ -462,7 +468,8 @@ impl Culling {
             .expect("a view's buffers exist before it culls");
         let size = layout.compacted_bytes();
         if buffers.visible < size {
-            buffers.visible = grown_size(size, binding_bytes);
+            let limit = unbound_buffer_bytes(Some(binding_bytes));
+            buffers.visible = grown_size_within(size, limit)?;
             list.push(
                 Op::CreateBuffer,
                 &[
@@ -615,5 +622,53 @@ impl Culling {
         self.views.clear();
         self.placeholder = false;
         self.offsets_made = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use null3d_gpu::drawlist::decode;
+
+    /// The sizes that a frame's list made the view's instance buffer with.
+    fn made(list: &DrawList, view: ViewId) -> Vec<u32> {
+        decode(list.words())
+            .filter_map(|command| {
+                let command = command.expect("the buffer commands decode");
+                (command.op == Op::CreateBuffer && command.operands[0] == ids::visible(view))
+                    .then_some(command.operands[1])
+            })
+            .collect()
+    }
+
+    /// The direct path's instance buffer holds a layout that fills the largest buffer of its path,
+    /// and a layout one copy past that buffer fails the frame instead of asking for one.
+    #[test]
+    fn a_direct_layout_past_the_largest_buffer_is_refused() {
+        let binding = sizes::PORTABLE_STORAGE_BINDING_BYTES;
+        let limit = unbound_buffer_bytes(Some(binding));
+        // The buffer holds one copy past the last, so this many copies take the limit's bytes.
+        let copies = limit / sizes::INSTANCE_STRIDE;
+        let record = |copied: u32| {
+            let mut culling = Culling::default();
+            let mut list = DrawList::with_capacity(64);
+            culling
+                .add_view(&mut list, ViewId::CAMERA)
+                .expect("the view's buffers");
+            let layout = Layout::with_copies(copied);
+            let outcome = culling.apply_direct(&mut list, ViewId::CAMERA, &layout, binding);
+            (outcome, made(&list, ViewId::CAMERA))
+        };
+        // A layout whose copies take the largest buffer exactly fits it.
+        let (outcome, sizes_made) = record(copies - 1);
+        outcome.expect("the layout fits the largest buffer");
+        assert_eq!(sizes_made, [limit]);
+        // One copy more passes the largest buffer, so the frame fails and names the limit.
+        let (outcome, sizes_made) = record(copies);
+        assert_eq!(outcome, Err(RecordError::BufferFull { bytes: limit }));
+        assert!(
+            sizes_made.is_empty(),
+            "a buffer was made past the limit: {sizes_made:?}"
+        );
     }
 }

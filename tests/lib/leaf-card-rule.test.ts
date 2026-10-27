@@ -1,6 +1,6 @@
 // The leaf-card level rule is written twice: once in the generator, which makes its levels from a
-// skeleton, and once in the asset tool, which thins cards of a mesh from a file. D-241's addendum
-// chose that split, so this test holds both to one rule: a level keeps every second card of the
+// skeleton, and once in the asset tool, which thins cards of a mesh from a file. D-241 chose that
+// split, so this test holds both to one rule: a level keeps every second card of the
 // one above in a space-filling order, and each kept card grows about its middle by the square root
 // of that step. A change to either side that breaks the rule fails here.
 import { describe, expect, test } from 'bun:test';

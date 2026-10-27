@@ -106,7 +106,14 @@ export interface RigTrack {
  * lights, or the visibility of one of its nodes. The indices are the file's own lists.
  */
 export type RigPropertyTarget =
-	| { kind: 'material'; index: number; value: string; key?: string }
+	| {
+			kind: 'material';
+			index: number;
+			value: string;
+			key?: string;
+			/** The map whose own transform the value moves, for a texture transform's values. */
+			map?: 'map' | 'emissiveMap';
+	  }
 	| { kind: 'light'; index: number; value: string }
 	| { kind: 'node'; index: number; value: 'visible' };
 
@@ -266,21 +273,27 @@ function pointerTarget(
 		if (value !== undefined)
 			return { kind: 'property', target: { kind: 'material', index, value }, colorSplit: false };
 		// The offset and scale of a base color or emissive map's transform, which three.js's
-		// animation-pointer plugin also moves. Every map of a material shares its transform.
+		// animation-pointer plugin also moves. Each map keeps a transform of its own.
 		const part = tail.endsWith('KHR_texture_transform/offset')
 			? 'Offset'
 			: tail.endsWith('KHR_texture_transform/scale')
 				? 'Scale'
 				: '';
-		const slot = tail.includes('baseColorTexture/')
+		const moved = tail.includes('baseColorTexture/')
 			? 'baseColor'
 			: tail.includes('emissiveTexture/')
 				? 'emissive'
 				: '';
-		if (part && slot)
+		if (part && moved)
 			return {
 				kind: 'property',
-				target: { kind: 'material', index, value: `uv${part}`, key: `${slot}${part}` },
+				target: {
+					kind: 'material',
+					index,
+					value: `uv${part}`,
+					key: `${moved}${part}`,
+					map: moved === 'baseColor' ? 'map' : 'emissiveMap',
+				},
 				colorSplit: false,
 			};
 		notes.push(`${what} moves a material's ${tail}, which the engine does not animate`);

@@ -14,6 +14,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import {
 	acquireLock,
 	BACKGROUND_PRIORITY,
@@ -27,6 +28,7 @@ import {
 	type HolderWatch,
 	hashFiles,
 	hashOf,
+	holderText,
 	holderVerdict,
 	liveLockHolder,
 	pageBuildPriorityProblem,
@@ -336,32 +338,36 @@ describe("a waiter's watch on a lock's holder", () => {
 		expect(time.add(new Map([[1, 2]]))).toBe(12);
 	});
 
-	it('waits for a holder that works through short children one after another', async () => {
-		const folder = mkdtempSync(join(tmpdir(), 'null3d-lock-'));
-		const lock = join(folder, 'build.lock');
-		// The holder is a shell that uses no processor time of its own. Each child burns half a second
-		// of processor time, however slowly the machine gives it, and exits. With the old count, which
-		// fell when a child exited, the holder showed no progress after its first child, and the
-		// waiter stopped while the rest still ran.
-		const burn =
-			'for (;;) { const used = process.cpuUsage(); if (used.user + used.system > 500_000) break; }';
-		const script = `mkdir '${lock}' && echo $$ > '${join(lock, 'pid')}' &&
+	it(
+		'waits for a holder that works through short children one after another',
+		async () => {
+			const folder = mkdtempSync(join(tmpdir(), 'null3d-lock-'));
+			const lock = join(folder, 'build.lock');
+			// The holder is a shell that uses no processor time of its own. Each child burns half a second
+			// of processor time, however slowly the machine gives it, and exits. With the old count, which
+			// fell when a child exited, the holder showed no progress after its first child, and the
+			// waiter stopped while the rest still ran.
+			const burn =
+				'for (;;) { const used = process.cpuUsage(); if (used.user + used.system > 500_000) break; }';
+			const script = `mkdir '${lock}' && echo $$ > '${join(lock, 'pid')}' &&
 for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do '${process.execPath}' -e '${burn}'; done
 rm -rf '${lock}'`;
-		const holder = spawn('sh', ['-c', script], { stdio: 'ignore' });
-		try {
-			for (let i = 0; i < 100 && !existsSync(join(lock, 'pid')); i++)
-				await new Promise((resolve) => setTimeout(resolve, 50));
-			const release = acquireLock(lock, {
-				watch: { sampleMs: 100, reportMs: 60_000, progressSeconds: 0.1, stallMs: 3_000 },
-			});
-			expect(readFileSync(join(lock, 'pid'), 'utf8')).toBe(String(process.pid));
-			release();
-		} finally {
-			holder.kill();
-			rmSync(folder, { recursive: true, force: true });
-		}
-	}, 120_000);
+			const holder = spawn('sh', ['-c', script], { stdio: 'ignore' });
+			try {
+				for (let i = 0; i < 100 && !existsSync(join(lock, 'pid')); i++)
+					await new Promise((resolve) => setTimeout(resolve, 50));
+				const release = acquireLock(lock, {
+					watch: { sampleMs: 100, reportMs: 60_000, progressSeconds: 0.1, stallMs: 3_000 },
+				});
+				expect(readFileSync(join(lock, 'pid'), 'utf8')).toBe(String(process.pid));
+				release();
+			} finally {
+				holder.kill();
+				rmSync(folder, { recursive: true, force: true });
+			}
+		},
+		scaledBudget(120_000),
+	);
 
 	it('stops waiting for a holder at normal priority that makes no progress, and leaves it running', async () => {
 		const folder = mkdtempSync(join(tmpdir(), 'null3d-lock-'));
@@ -436,8 +442,8 @@ describe('acquireLock', () => {
 		const folder = mkdtempSync(join(tmpdir(), 'null3d-lock-'));
 		const lock = join(folder, 'build.lock');
 		// A lock taken a moment ago by a process that has not written its id yet is live: breaking it
-		// would let this process and that one work at the same time, which is what the old lock did
-		// when it read an empty file as "nobody holds this".
+		// would let this process and that one work at the same time, as a lock that reads an empty
+		// file as "nobody holds this" does.
 		mkdirSync(lock);
 		const module = join(import.meta.dir, 'build-cache.ts');
 		const child = spawn(
@@ -482,7 +488,7 @@ describe('acquireLock', () => {
 		try {
 			await Bun.sleep(700);
 			// It says which process holds the lock while it waits, rather than sitting silent: a
-			// build that waits can look hung, and one did for 13 minutes on 14 October.
+			// build that waits can look hung, as one did for 13 minutes.
 			expect(out).toContain(`held by pid ${process.pid}`);
 			release();
 			await Bun.sleep(700);
@@ -654,5 +660,22 @@ describe('runByLine', () => {
 		});
 		expect(run.status).toBeNull();
 		expect(run.error).toBeInstanceOf(Error);
+	});
+});
+
+describe('holderText', () => {
+	it("names the holder, what it runs and since when, for a waiter's first line", () => {
+		const taken = Date.UTC(2026, 9, 26, 4, 51, 20);
+		const since = new Date(taken).toTimeString().slice(0, 8);
+		expect(holderText(1234, taken, 'bun tools/typecheck.ts', taken + 35_000)).toBe(
+			`held by pid 1234 (bun tools/typecheck.ts) since ${since}, 35 s ago`,
+		);
+		expect(holderText(1234, taken, '', taken + 1_000)).toBe(
+			`held by pid 1234 since ${since}, 1 s ago`,
+		);
+	});
+
+	it('says when the lock names no process', () => {
+		expect(holderText(0, Date.now())).toBe('taken by a process that named no id');
 	});
 });

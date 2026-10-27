@@ -480,6 +480,8 @@ fn settle_with_layer(world: &mut World, mock: &mut MockBackend) {
 /// them, as `SkyMaps` counts them.
 const LAYER_RETRIES: u8 = 3;
 const LAYER_GRACE: u8 = 4;
+/// The frames that a copy waits for a capture that its own fill made, as `SkyMaps` counts them.
+const LIGHT_WAIT: u8 = LAYER_GRACE;
 
 /// The words of a stage's command that name the layer's build of the map's shader, the first of its
 /// values, and the buffer that a light capture lands in, as `SkyMaps` lays them out.
@@ -572,7 +574,7 @@ fn a_sky_layer_fills_the_map_with_itself_and_captures_its_light() {
     // The fill runs a stage a frame. The stage that the page named captures the map's own light: it
     // names a buffer of the ring, and the read of that buffer into engine memory follows it. The
     // capture comes before the copy, so the light is ready by the frame the levels publish.
-    for stage in 1..STAGES {
+    for stage in 1..(STAGES - 1) {
         let commands = step(&mut world, &mut mock);
         let stages = stage_words(&commands);
         assert_eq!(stages.len(), 1, "stage {stage}");
@@ -597,6 +599,20 @@ fn a_sky_layer_fills_the_map_with_itself_and_captures_its_light() {
         assert_ne!(read[3], 0, "the coefficients land in engine memory");
         assert_eq!(read[4], 7, "at the slot that the page gave");
     }
+
+    // The copy waits for the capture's read, which this stand-in never lands, up to its bound, and
+    // then publishes the levels without the light.
+    for waited in 0..LIGHT_WAIT {
+        assert!(
+            stage_number(&step(&mut world, &mut mock)).is_empty(),
+            "the copy waited {waited} frames"
+        );
+    }
+    assert_eq!(
+        stage_number(&step(&mut world, &mut mock)),
+        vec![STAGES - 1],
+        "the copy publishes without a light that never landed"
+    );
 
     // Without a GPU the map's light never lands, so the map fills again for it, a grace of frames
     // apart, up to three times, and then holds the levels that it has.
@@ -641,6 +657,48 @@ fn a_sky_layer_fills_the_map_with_itself_and_captures_its_light() {
 }
 
 #[test]
+fn the_copy_waits_for_the_capture_that_explains_its_light() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    filled_map(&mut world, &mut mock, sky(sun_at(45.0)), STAGES);
+    world.renderer.settings_mut().set_sky_layer(
+        Some(layer(
+            template::CUSTOM_FIRST,
+            template::CUSTOM_FIRST + 1,
+            0.0,
+        )),
+        7,
+    );
+    // The install fills the map, a stage a frame, up to the stage that captures its light.
+    for stage in 0..=CAPTURE {
+        let commands = step(&mut world, &mut mock);
+        assert_eq!(stage_number(&commands), vec![stage], "stage {stage}");
+        if stage == CAPTURE {
+            assert_ne!(
+                stage_words(&commands)[0][LIGHT_BUFFER_WORD],
+                0,
+                "the capture stage takes a buffer of the ring"
+            );
+        }
+    }
+    // The stage between the capture and the copy draws as usual.
+    assert_eq!(stage_number(&step(&mut world, &mut mock)), vec![STAGES - 2]);
+    // The read has not landed, so the copy waits for it a frame at a time. This stand-in lands no
+    // read, so the wait ends at its bound and the levels publish without the light.
+    for waited in 0..LIGHT_WAIT {
+        assert!(
+            stage_number(&step(&mut world, &mut mock)).is_empty(),
+            "the copy waited {waited} frames"
+        );
+    }
+    assert_eq!(
+        stage_number(&step(&mut world, &mut mock)),
+        vec![STAGES - 1],
+        "the copy publishes after the wait"
+    );
+}
+
+#[test]
 fn a_moving_sky_layer_fills_the_map_at_its_refresh() {
     let mut world = World::new();
     let mut mock = MockBackend::default();
@@ -653,11 +711,12 @@ fn a_moving_sky_layer_fills_the_map_at_its_refresh() {
         )),
         7,
     );
-    // The install fills the map, a stage a frame, and then the fills that a layer's light which
-    // never lands makes, which a GPU would stop.
+    // The install fills the map, a stage a frame, up to the copy that waits for the light that
+    // never lands here; then the fills that the layer's missing light makes, which a GPU would
+    // stop.
     assert_eq!(
         stages_in(&mut world, &mut mock, STAGES as usize),
-        STAGES as usize
+        STAGES as usize - 1
     );
     settle_with_layer(&mut world, &mut mock);
 

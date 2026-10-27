@@ -104,7 +104,8 @@ Put the catcher a little above the surface it lies on, so its shadows show over 
 | `iridescenceThicknessRange` | Two thicknesses in nanometers | `[100, 400]` | The film's thinnest and thickest parts, which its map mixes between |
 | `anisotropy` | 0 to 1 | 0 | How far the specular reflection stretches along one direction, as on brushed metal. See "Iridescence and anisotropy" |
 | `anisotropyRotation` | Radians | 0 | The direction along which the reflection stretches |
-| `uvTransform` | An offset, a repeat and a rotation | None | Where the maps sit on the texture coordinates |
+| `uvTransform` | An offset, a repeat and a rotation | None | Where every map sits on the texture coordinates |
+| `mapUvTransforms` | A transform for a map, by the map's option name | None | Where one map sits, where it differs from the others |
 
 The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. `ior`, `specularIntensity`, `specularColor`, the four transmission values and the ten layer values have those of three.js's `MeshPhysicalMaterial`, as the next sections explain. three.js has no diffuse transmission, so its two values take the names and defaults of glTF's `KHR_materials_diffuse_transmission`. A metal takes its color from what it reflects. Without an environment, a smooth metal shows little more than its highlights, so give the scene one with [`scene.setEnvironment`](scene.md#the-environment). three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment. The engine multiplies the two.
 
@@ -502,7 +503,7 @@ A page without relief pays nothing for it. The first material with a bump map lo
 
 ## Texture coordinate transform
 
-`uvTransform` places every map of a material on the texture coordinates: `offset`, `repeat` and `rotation` in radians. They act as three.js's texture `offset`, `repeat` and `rotation` with the default `center`. A transform that leaves a value out takes its default. `set` changes the transform at any time.
+`uvTransform` places every map of a material on the texture coordinates: `offset`, `repeat` and `rotation` in radians. They act as three.js's texture `offset`, `repeat` and `rotation` with the default `center`. A transform that leaves a value out takes its default. `set` changes the transform at any time. `mapUvTransforms` places one map by its option name, such as `emissiveMap`, where it differs from the others. A map without one keeps the transform that `uvTransform` gives it. Two maps that share a slot, as a sheen map and an anisotropy map do, share one transform too. A glTF file keeps a transform for each of its textures, so the loader places each map with its own.
 
 ## Color
 
@@ -510,7 +511,7 @@ A page without relief pays nothing for it. The first material with a bump map lo
 
 ## Changing a material
 
-`set(options)` changes a material's values at any time, and every object that uses the material changes with it. It changes only the options that you pass. The others keep their values, so `set({ roughness: 0.5 })` keeps the color. A standard material's `set` takes every value in the table above, and an unlit material's `set` takes `color`, `opacity`, `alphaCutoff` and `uvTransform`.
+`set(options)` changes a material's values at any time, and every object that uses the material changes with it. It changes only the options that you pass. The others keep their values, so `set({ roughness: 0.5 })` keeps the color. A standard material's `set` takes every value in the table above, and an unlit material's `set` takes `color`, `opacity`, `alphaCutoff`, `uvTransform` and `mapUvTransforms`.
 
 `set` is for setup, and for several values at once. It reads each number from the options object that you pass. The browser boxes a read where it cannot keep a field's number unboxed. That happens in an object whose fields hold other kinds of value too, and in one of more than a few shapes. Change the values that a frame changes with `setUniform(name, value)`, which takes the value itself. `material.setUniform('roughness', 0.5 + 0.1 * Math.sin(t))` allocates nothing from a small step of your own, as the other setters do. It takes a number, as `roughness` and `emissiveIntensity` do, or a color, as `color` and `sheenColor` do. Give a color in an array that you change in place. A value that takes more than one number, as `uvTransform`, `normalScale`, `clearcoatNormalScale`, `angleFade`, `ior` and `attenuationDistance` do, goes through `set`. A custom material's `setUniform` changes one of its WGSL uniforms too, by the name in its `struct Uniforms`. `bun run bench:allocation --setters` checks `setUniform` in every frame and `set` at setup.
 
@@ -805,7 +806,7 @@ With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls 
 
 ## Ranges
 
-`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity`, `transmission`, `diffuseTransmission`, `clearcoat`, `clearcoatRoughness`, `sheenRoughness` and `edgeFade` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity`, `thickness` and `subsurfaceRadius` take 0 or more. `attenuationDistance` takes more than 0. The two angles of `angleFade` go from 0 to π, the first no larger than the second. The numbers of `normalScale`, `clearcoatNormalScale`, `uvTransform`, `bumpScale`, `displacementScale` and `displacementBias` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217. So does the `weighted` blending on a custom material or a material with `transmission`. A depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
+`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity`, `transmission`, `diffuseTransmission`, `clearcoat`, `clearcoatRoughness`, `sheenRoughness` and `edgeFade` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity`, `thickness` and `subsurfaceRadius` take 0 or more. `attenuationDistance` takes more than 0. The two angles of `angleFade` go from 0 to π, the first no larger than the second. The numbers of `normalScale`, `clearcoatNormalScale`, `uvTransform`, `mapUvTransforms`, `bumpScale`, `displacementScale` and `displacementBias` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217. So does the `weighted` blending on a custom material or a material with `transmission`. A depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
 
 ## Limits
 

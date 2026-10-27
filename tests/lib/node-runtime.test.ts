@@ -1,13 +1,14 @@
 // Playwright and Vite load their configs, the specs and every module that these import under Node,
 // which has no `Bun` global and no `bun:` modules. A tool that a spec reaches and that calls Bun's
-// own API throws "Bun is not defined" only there: on 25 October 2026 the package build's process
-// runner did, inside the CDN picture test, and a full run failed all seven of its tests, while the
-// unit tests, which Bun runs, passed. This test follows those imports and refuses a module they
+// own API throws "Bun is not defined" only there, so a full run fails while the unit tests, which
+// Bun runs, pass. This test follows those imports and refuses a module they
 // reach that uses Bun's API, so the fault shows in every run, not only in a full one.
+
 import { describe, expect, it } from 'bun:test';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { withImports } from '../../tools/lib/script-imports.ts';
+import { scaledBudget } from './run-budget.ts';
 
 const ROOT = join(import.meta.dirname, '../..');
 
@@ -18,7 +19,7 @@ const GENERATED = 'packages/engine/src/generated/';
  * The walk lists every file under the test folders, picture references among them, and reads each
  * module that they reach. That takes about a second, and ten times as long at background priority.
  */
-const WALK_MS = 30_000;
+const WALK_MS = scaledBudget(30_000);
 
 /** Every file that Node loads first: the Playwright and Vite configs, the files they name, and the Playwright specs. */
 function nodeEntries(): string[] {

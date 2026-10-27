@@ -507,8 +507,8 @@ const partsOf = (set: ShaderSet) => Math.ceil(glslProgramCountOf(set) / SHADER_P
  * with the coat bit in theirs. `sampled` compiles the same builds without the coat, a sample of
  * those with it, and a sample of the first-use builds, which keeps Safari's shards on CI's few Macs
  * short (D-147, D-189). Its samples share the parts of the other builds, since a part downloads its
- * share of every module: a sample with a part of its own downloaded every module, about 2.5 GB on
- * 20 October 2026, and Safari had not compiled one program of it after 205 s.
+ * share of every module: a sample with a part of its own downloads every module, about 2.5 GB, and
+ * Safari compiles no program of it within 205 s.
  */
 export const SHADER_PLANS = ['all', 'sampled'] as const;
 export type ShaderPlan = (typeof SHADER_PLANS)[number];
@@ -1482,6 +1482,34 @@ export function clusterCostPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * The GPU paths of the history cost plan, with the tier that each draws on.
+ */
+const HISTORY_PATHS = [
+	['webgpu', 'webgpu'],
+	['compat', 'webgpu'],
+	['webgl2', 'webgl2'],
+] as const;
+
+/**
+ * What a compute pass's history costs: the compute-state page's cost case, which runs a 256 by 256
+ * pass of 40 steps in a frame and measures three seconds, then measures three seconds again with
+ * the pass switched off. A history pass keeps two states and copies the newest one, and the WebGL2
+ * fragment form draws each step into its own target, so each path's own figure shows. The page
+ * reports the frame interval and the CPU time, the GPU time where the device times it, and the
+ * bytes that the pass's texel memory takes. M3-V13 records the figures.
+ */
+export function historyCostPlan(): PlanItem<Check>[] {
+	return HISTORY_PATHS.map(([path, tier]) =>
+		pageItem(
+			`history-cost-${path}`,
+			'compute-state',
+			{ kind: 'probe', tier },
+			{ switches: [`gpu=${path}`, 'case=cost'], timeoutSeconds: 180 },
+		),
+	);
+}
+
+/**
  * The two-step probe: the sharpening's sketch with `?two-step=report`, a development page that logs
  * the two-step pass's answers once its frame is on screen, with the browser and the WebGL2 path's
  * compile state. One page holds the frame the image test draws, as the manifest runs it, and one
@@ -2281,6 +2309,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	grass: grassPlan,
 	'alpha-mask-cost': alphaMaskPlan,
 	'cluster-cost': clusterCostPlan,
+	'history-cost': historyCostPlan,
 	'lod-cost': lodCostPlan,
 	'two-step': twoStepPlan,
 	sky: skyPlan,
@@ -2521,10 +2550,10 @@ function skyRefreshReport(result: SkyRefreshResult): { line: string; problems: s
 }
 
 /**
- * The items that must share an item's shard: the items whose results the check compares with. The
- * parts of the shaders page once stayed in one shard too, where Safari compiles each part faster
- * than the one before. The page has since grown past the 10 minutes that one shard may take, so its
- * parts spread over the shards like the rest, and each shard pays for its own first part.
+ * The items that must share an item's shard: the items whose results the check compares with. In
+ * one shard, Safari compiles each part of the shaders page faster than the one before, but the page
+ * takes longer than the 10 minutes that one shard may take, so its parts spread over the shards
+ * like the rest, and each shard pays for its own first part.
  */
 export function itemsTogether(item: PlanItem<Check>): string[] {
 	return itemsNeeded(item.check);
@@ -2532,9 +2561,9 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
 
 /**
  * About how long the slow pages of the checks plan take in Safari on CI's Mac, for pages that the
- * measured table (`page-times.ts`) does not hold yet. The shaders page's parts grew with the shader
- * set. In run 39291513923 (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled
- * first in its shard. The WebGPU pages of the same names skip there.
+ * measured table (`page-times.ts`) does not hold yet. The shaders page's parts grow with the shader
+ * set: a shard's parts take 122 and 143 seconds, each compiled first in its shard (run
+ * 39291513923). The WebGPU pages of the same names skip there.
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
 	[/^shaders-/, 120],

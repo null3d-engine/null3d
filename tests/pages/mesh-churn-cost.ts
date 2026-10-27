@@ -3,7 +3,7 @@
 // the page measures an idle window, a window that removes one model a frame, and a window that
 // adds one a frame, in turns, three times each. A removal that closes a hole in its mesh page moves
 // every mesh after it in that page, which the GPU uploads again, so the render worker's CPU time
-// and the frame's upload bytes show the cost. It prints its figures for D-244.
+// and the frame's upload bytes show the cost. It prints its figures for D-247.
 // Open it with ?gpu= for each path, and read it with mesh-churn-cost.spec.ts.
 import { createEngine, type FrameMetrics } from '@null3d/engine';
 import { run } from './lib/result';

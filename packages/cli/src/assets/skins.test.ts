@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { shippedDecoder } from '../../../../tests/lib/meshopt-checks.ts';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { samplePath } from '../../../../tools/lib/samples.ts';
 import {
 	type GltfData,
@@ -12,7 +13,7 @@ import { encodeOnce, encoderPool } from './encoder-pool.js';
 import { DEFAULT_OPTIONS, optimizeModel } from './pipeline.js';
 
 // Texture encodes take seconds each on a busy machine or a CI runner of four cores.
-setDefaultTimeout(60_000);
+setDefaultTimeout(scaledBudget(60_000));
 
 const pool = encoderPool(2);
 const encode = encodeOnce((job) => pool.encode(job));

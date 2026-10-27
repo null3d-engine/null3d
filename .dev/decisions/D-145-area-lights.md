@@ -1,8 +1,8 @@
 # D-145: Area lights
 
-Status: decided by the helper of M2-EX28 on 13 October 2026, for the owner's review. The owner approved the demo's look. The coordinator ruled that the cap keeps the lights with the most light at the camera and fades them across it, in the same pull request. Built: area lights are on main (`efb65024b`). The owner's review of the design is pending. Date: 2026-10-12. Task: M2-EX28.
+Status: decided by the helper of M2-EX28, for the owner's review. The owner approved the demo's look. The coordinator ruled that the cap keeps the lights with the most light at the camera and fades them across it. Built: area lights are on main (`efb65024b`). The owner's review of the design is pending. Task: M2-EX28.
 
-Summary: Rectangle and tube lights light the standard material with linearly transformed cosines (LTC). A rectangle light matches three.js's `RectAreaLight`: it uses the same formulas and fitted tables. A tube shades as the rectangle through its axis that faces the surface, at the same cost. Area lights share the 64-byte records and the clusters of point and spot lights, and each quality preset caps how many shade in a frame. The tables load on first use from a 19.3 KB gzip file. They share the split-sum table's binding, so WebGPU gains no binding and WebGL2 one texture unit.
+Summary: Rectangle and tube lights light the standard material with linearly transformed cosines, a rectangle as three.js's `RectAreaLight` and a tube as its facing rectangle. Area lights share the point and spot lights' records and clusters, and each preset caps how many shade, keeping the brightest at the camera. The tables load on first use from a 19.3 KB gzip file into the array at binding 3: no new WebGPU binding, and one WebGL2 unit.
 
 ## Question
 
@@ -32,7 +32,7 @@ three.js has no tube light. Heitz and Hill fit LTC to line lights too, with a cl
 
 ### The fitted tables
 
-LTC needs two tables of 64 x 64 entries. One holds the four values of the inverse matrix that fits GGX, and the other the two terms of its Fresnel weight. Fitting them takes minutes of optimization, so the engine cannot make them at run time. [D-53](D-53-technique-defaults.md) ruling 20 records them as an exception to the rule that built-in assets are made at run time. They are three.js 0.186.1's copy of Heitz's fit: `RectAreaLightTexturesLib`, from `selfshadow/ltc_code`, under the BSD two-clause licence.
+LTC needs two tables of 64 x 64 entries. One holds the four values of the inverse matrix that fits GGX, and the other the two terms of its Fresnel weight. Fitting them takes minutes of optimization, so the engine cannot make them at run time. [D-53](D-53-technique-defaults.md) ruling 20 records them as an exception to the rule that built-in assets are made at run time. They are three.js 0.186.1's copy of Heitz's fit: `RectAreaLightTexturesLib`, from `selfshadow/ltc_code`, under the BSD two-clause license.
 
 How they ship (sizes in bytes; the tables' six used channels as half floats):
 
@@ -52,19 +52,19 @@ The third channel of the second table is zero. Its fourth holds the form factor 
 | Option | WebGPU textures in the lit fragment stage | WebGL2 units of the largest lit stage | Verdict |
 | --- | --- | --- | --- |
 | A: a texture of its own at a new binding | 16 of 16: the last one | +1 | Rejected. The light probe grid and reflection probes need sampled textures too, and the stage would have none left |
-| B: layers of the split-sum table's texture, at binding 3 | 15 of 16, as before | +1, at binding 3, which WebGL2 does not use | Chosen |
+| B: layers of the texture at binding 3 | 15 of 16 | +1, at binding 3, which WebGL2 does not use | Chosen |
 | C: columns of the material table's texture on WebGL2, as the split-sum table sits there | 15 of 16 | +0 | Rejected. The material texture would need 64 rows and 128 more columns in every scene. The change also clashes with the clearcoat work on the same columns |
 
-So binding 3 of the frame group becomes the light tables: a 2D array of half floats, 64 x 64 texels. Layer 0 holds the split-sum table in its corner. WebGPU reads it there, and WebGL2 still reads its copy beside the material table. Layers 1 and 2 hold the area lights' tables. The shaders read them through the environment's filtering sampler, which the frame group already binds at binding 13. So the GPU filters between the four nearest entries in one read per table. A hand-made filter with `textureLoad` would take eight reads. On WebGL2 it would also pair the texture with no sampler as well as with the images' sampler, which takes a second unit.
+So binding 3 of the frame group holds the light tables: a 2D array of half floats, 64 x 64 texels. The reflection probes' maps share it ([D-149](D-149-reflection-probes.md)). Layer 0 is spare: WebGPU reads the split-sum table in the materials' custom values, and WebGL2 beside the material table. Layers 1 and 2 hold the area lights' tables. The shaders read them through the environment's filtering sampler, which the frame group already binds at binding 13. So the GPU filters between the four nearest entries in one read per table. A hand-made filter with `textureLoad` would take eight reads. On WebGL2 it would also pair the texture with no sampler as well as with the images' sampler, which takes a second unit.
 
 ### The lit fragment stage's texture budget
 
-The area lights took the last sampled texture of the stage, so this table holds every one of them. A per-pixel input added after this one needs a layout change, not another binding.
+The area lights take the last sampled texture of the stage, so this table holds every one of them. A per-pixel input added after this one needs a layout change, not another binding.
 
 | Group | Binding | Sampled texture |
 | --- | --- | --- |
 | The frame | 2 | The materials' custom values |
-| The frame | 3 | The light tables: the split-sum table and the area lights' tables |
+| The frame | 3 | The light tables: the area lights' tables, the reflection probes' maps and the lights' images |
 | The frame | 4 | The shadow map |
 | The frame | 9 | The shadow atlas |
 | The frame | 10 | The light probe grid |
@@ -95,7 +95,7 @@ Which lights the cap keeps:
 
 | Option | Verdict |
 | --- | --- |
-| A: the lights whose range spheres come nearest the camera (distance less range), as the frame's cap of all lights does | Rejected. Brightness and size count for nothing, so a big dim light with a long range pushes out a small bright one beside it. A light also switched on or off at once when it crossed the cap, so lights popped while the camera orbited |
+| A: the lights whose range spheres come nearest the camera (distance less range), as the frame's cap of all lights does | Rejected. Brightness and size count for nothing, so a big dim light with a long range pushes out a small bright one beside it. A light also switches on or off at once when it crosses the cap, so lights pop while the camera orbits |
 | B: an estimate of each light's light at the camera: its luminance (color times intensity) times its area, over the squared distance to its nearest point, with the light's own window as a cut-off at its range | Chosen. It takes a few dozen operations per area light, on the CPU, and only in frames with more area lights than the cap |
 | C: each light's light over the visible surfaces, per cluster or per screen tile | Rejected. It costs work per cluster and light, and the clusters are listed after the choice |
 
@@ -109,7 +109,7 @@ How a light crosses the cap:
 | B: keep a kept light until another beats it by a margin | Rejected. It makes a swap rarer, but each swap still pops |
 | C: fade each light's color over 8 frames, in when it joins the kept lights and out when it leaves them | Chosen. A light that leaves keeps shading while it fades, so for those frames more lights than the cap shade. A light that comes into view, and every light of the first frame, starts at its end weight, so held frames show no fade |
 
-The fade counts frames, not seconds, so a held frame and its test images do not depend on the frame rate. At 60 frames a second it lasts 133 ms. Each view's light grid keeps its own fades, by the lights' rows, in a list that grows only when the scene makes more lights. The coordinator asked for this change in the same pull request on 12 October 2026. Then no scene with more area lights than the cap pops.
+The fade counts frames, not seconds, so a held frame and its test images do not depend on the frame rate. At 60 frames a second it lasts 133 ms. Each view's light grid keeps its own fades, by the lights' rows, in a list that grows only when the scene makes more lights. The coordinator asked for the fade, so that no scene with more area lights than the cap pops.
 
 ## Data
 
@@ -122,11 +122,11 @@ The `lights-rect` image test lights the floor of the light scenes with three rec
 | Rectangle lights | 0.000% | 0.005% | 0.000% | under 0.1% | 0.008% |
 | Spot lights (control) | 0.000% | 0.019% | 0.000% | under 0.1% | 0.011% |
 
-How the data was produced: Chrome on the Mac's GPU, 12 October 2026, through `heavy.sh`. The figures are the shares of pixels that differ.
+How the data was produced: Chrome on the Mac's GPU, through `heavy.sh`. The figures are the shares of pixels that differ.
 
 ### Cost
 
-The light grid ranks the area lights and fades them on the CPU, in each view's grid, before it slices the lights. Its whole step, the choice and the slicing, took this long per frame in a release build on the Mac (Apple M5 Max), at a load below 8, on 13 October 2026:
+The light grid ranks the area lights and fades them on the CPU, in each view's grid, before it slices the lights. Its whole step, the choice and the slicing, took this long per frame in a release build on the Mac (Apple M5 Max), at a load below 8:
 
 | Area lights in view | No cap reached | Cap of 4 |
 | --- | --- | --- |
@@ -135,7 +135,7 @@ The light grid ranks the area lights and fades them on the CPU, in each view's g
 
 The ranking adds 0.06 µs for 64 lights and 0.23 µs for 256. It allocates only when the light table or the visible list grows past what an earlier frame met.
 
-The area lights' code first sat in the light loop of every lit build. S4 has no area light, and still drew 5.3% slower at Medium and 5.4% slower at High. [D-156](D-156-template-scoped-permutation-bits.md) gives the figures. That code now loads only in the lit templates' `AREA_LIGHTS` builds, on first use. UNUSED
+The area lights' code loads only in the lit templates' `AREA_LIGHTS` builds, on first use. In the light loop of every lit build, it makes S4 draw 5.3% slower at Medium and 5.4% slower at High, though S4 has no area light. [D-156](D-156-template-scoped-permutation-bits.md) gives the figures.
 
 ## Decision
 
@@ -145,18 +145,20 @@ Decided: option A for shading, the facing rectangle for tubes, and the gzip file
 
 - The core's light table gains the kinds `RECT` and `TUBE`, and the numbers `WIDTH`, `HEIGHT`, `RADIUS` and `IMAGE`. The engine sets the last. A rectangle's light leaves along its -Z axis, as a spot light's does, and a tube runs along it.
 - `scene.createRectAreaLight` and `scene.createTubeLight` make them, and `RectAreaLight.setImage` gives a rectangle light its picture. The first area light starts the tables' download, and a held frame waits for it. Until the tables arrive, the frame shades no area light. A failed download reports E1431.
-- The lights page, the lighting concept page, the performance guide, the quality presets and the develop and porting skills describe the feature. The three.js mapping's `RectAreaLight` moves from post-1.0 to a changed mapping, which needs a range.
+- The lights page, the lighting concept page, the performance guide, the quality presets and the develop and porting skills describe the feature. The three.js mapping lists `RectAreaLight` as a changed mapping, which needs a range.
 - Scene passes and reflection passes list the area lights that their cameras see, in their own light grids ([D-104](D-104-scene-passes.md)). Each grid applies the cap on its own. So a wet street in a reflection shows the shop windows too.
-- The WebGL2 test of texture units keeps three spare units, not four.
-- The engine's third-party notices gain the LTC fit's licence.
+- The WebGL2 test of texture units keeps three spare units.
+- The engine's third-party notices gain the LTC fit's license.
 - `bench:allocation --area-lights` samples area lights in S1, and the effect cost page measures them (`?effect=area`).
 
-## Addendum, 2026-10-16: the builds that never shade an area light
+## The builds that never shade an area light
 
-The light grid lists area lights while the lit templates draw with their `AREA_LIGHTS` builds. Decals, particles and sprites draw with templates outside `shades_area_lights`. Their builds never take the bit, so they read the same grid without the tables. Their light loop tested no kind, so it read a rectangle's record as a point light. It took the record's two half sides as the decay and the cone angle, and its image layer as a shadow tile. A decal in a room with a window light drew that light at the wrong distance and with a wrong falloff. The light also looked up a shadow that it never casts. The fog's light step read the same records for the sun's scattering.
+The light grid lists area lights while the lit templates draw with their `AREA_LIGHTS` builds. Decals, particles and sprites draw with templates outside `shades_area_lights`. Their builds never take the bit, so they read the same grid without the tables.
 
-Two fixes were open. Giving those templates the area lights' builds doubles the pipelines that a page with a decal, a particle or a sprite builds. Each of those builds carries the tables' code, so it costs start time and first-use bytes for light that a decal rarely needs. Skipping the kinds costs one comparison per light.
+The light loop of the builds without `AREA_LIGHTS`, and the fog's light step, skip every kind from `KIND_RECT` on. The kinds `KIND_RECT` and `KIND_TUBE` stand outside the `AREA_LIGHTS` define, since both arms test the kind. A decal, a particle, a sprite and the fog's light step take no light from a rectangle or a tube. The surfaces around them do.
 
-The chosen fix skips every kind from `KIND_RECT` on in the light loop of the builds without `AREA_LIGHTS`, and in the fog's light step. `KIND_RECT` and `KIND_TUBE` are no longer behind the `AREA_LIGHTS` define, since both arms test the kind. A decal, a particle, a sprite and the fog's light step take no light from a rectangle or a tube. The surfaces around them do.
+A loop that tests no kind reads a rectangle's record as a point light. It takes the record's two half sides as the decay and the cone angle, and its image layer as a shadow tile. A decal in a room with a window light then draws that light at the wrong distance and with a wrong falloff. The light also looks up a shadow that it never casts.
+
+Rejected: giving those templates the area lights' builds. That doubles the pipelines that a page with a decal, a particle or a sprite builds. Each of those builds carries the tables' code, so it costs start time and first-use bytes for light that a decal rarely needs. Skipping the kinds costs one comparison per light.
 
 The guard is a unit test in the render crate, `the_light_loops_leave_out_the_area_lights_that_they_cannot_shade`, which reads the two shader files and refuses a loop with one arm. It is a shape check over the source, not a build. The build of one variant costs more than the whole crate's tests.

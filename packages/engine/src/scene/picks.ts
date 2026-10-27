@@ -13,7 +13,7 @@
 
 import { EngineError } from '../errors/engine-error';
 import type { Vec2Like } from '../math/types';
-import { PickRead0 } from '../shared/slot';
+import { GpuEpoch, PickRead0 } from '../shared/slot';
 import type { CoreMemory, ViewHolder } from './memory';
 import type { QueryTarget, QueryTargets } from './queries';
 
@@ -62,9 +62,10 @@ interface Job {
 	reject(error: unknown): void;
 }
 
-/** A pick that the core took, at the ring entry that answers it. */
+/** A pick that the core took, at the ring entry that answers it, on the device it recorded for. */
 interface InFlight extends Job {
 	ring: number;
+	epoch: number;
 }
 
 /** The picks that a scene waits for, and the answers that the GPU copied back. */
@@ -130,7 +131,14 @@ export class ScenePicks implements ViewHolder {
 	poll(slots: Int32Array): void {
 		this.slots = slots;
 		const job = this.inFlight;
-		if (job && Atomics.load(slots, PickRead0 + job.ring) !== 0) {
+		if (job && Atomics.load(slots, GpuEpoch) !== job.epoch) {
+			// The new device cannot finish a read that the lost one recorded, so the pick settles
+			// rather than waits. It is not asked again on the new device.
+			this.inFlight = undefined;
+			job.reject(
+				new EngineError('E1436', 'pick() was waiting for its read when the GPU was lost.'),
+			);
+		} else if (job && Atomics.load(slots, PickRead0 + job.ring) !== 0) {
 			this.inFlight = undefined;
 			let hit: PickHit | null = null;
 			try {
@@ -180,7 +188,7 @@ export class ScenePicks implements ViewHolder {
 			this.queue.unshift(job);
 			return;
 		}
-		this.inFlight = { ...job, ring };
+		this.inFlight = { ...job, ring, epoch: Atomics.load(slots, GpuEpoch) };
 	}
 
 	/** Reads the ids that the job's read landed, and names the object or row that they name. */

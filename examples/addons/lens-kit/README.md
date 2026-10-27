@@ -53,20 +53,22 @@ lens.set({ vignette: false });
 - The effect costs one full-screen pass with about 18 taps where all four of its values are above
   0; a look that leaves one at 0 skips its taps.
 - The whole look's cost, as GPU time per frame in milliseconds, measured on a MacBook Pro with an
-  Apple M5 Max in Chrome at 1920 x 1080, with the governor off and a render scale of 1. The scene
+  Apple M3 Max in Chrome 156 at 1920 x 1080, with the governor off and a render scale of 1. The scene
   holds a wall of lit boxes under bloom, and the same scene runs with the look and without it in
   turns, three times each; each figure is the median with the look less the median without it.
 
   | Path | Low | Medium | High | Ultra |
   | --- | --- | --- | --- | --- |
-  | WebGPU | owed | owed | owed | owed |
-  | Compatibility mode | owed | owed | owed | owed |
-  | WebGL2 | owed | owed | owed | owed |
+  | WebGPU | 0.45 | -0.03 | 0.05 | 0.76 |
+  | Compatibility mode | 0.61 | 0.18 | 1.40 | 1.35 |
+  | WebGL2 | 0.91 | -0.37 | -0.59 | 1.05 |
 
   Compatibility mode draws no custom effect, so its figure is the core's grade, vignette and
-  sharpening alone. Bloom stays on for both sides, so it is no part of any figure. The figures are
-  owed: the timing run needs a quiet computer, and the machine that drew the picture tests was too
-  busy to measure.
+  sharpening alone. Bloom stays on for both sides, so it is no part of any figure. The quality
+  chooser caps compatibility mode and WebGL2 at Medium, so their High and Ultra cells repeat
+  Medium's settings. The scene does not change with the preset either, so those cells should agree,
+  and their spread, with differences below zero, bounds how finely the run resolves the look: about
+  half a millisecond, which is the figure's own accuracy.
 - The lens draws no depth of field. The scene keeps the engine's own `dof` setting, which turns on
   from the Post tab.
 - The effect needs HDR color, as bloom does. On a device without a float target it stays off, and

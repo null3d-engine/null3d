@@ -112,8 +112,11 @@ on a computer with a GPU of its own:
 NULL3D_FACADE_COST=1 bun run test:browser -- facades-cost.spec.ts
 ```
 
-Its per-preset figures are owed. The run needs the load under 8, and the fleet held the Mac above
-that mark through the night this add-on was built.
+Its figures are about 1.0 ms of GPU time a frame against a plain wall at 1920 by 1080, on both
+WebGPU paths at every preset, and 0.85 ms at Low down to 0.05 ms at Ultra on WebGL2, where the
+plain wall grows with the preset. They were measured on a MacBook Pro with an Apple M3 Max in
+Chrome 156, at a load of 2.0 to 2.9, and every row held the display's 16.665 ms interval. The run
+needs the load under 8.
 
 ## Limits
 

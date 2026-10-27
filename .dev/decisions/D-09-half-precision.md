@@ -1,8 +1,8 @@
 # D-09: Half precision on phones
 
-Status: decided by the rule on both paths: half precision stays off. The iPad's image check with half precision on is pending. Date: 2026-10-03. Task: M1-H5. Test: T-22.
+Status: decided by the rule: half precision stays off on both paths. Built: the HALF builds and `?half=on`, which keeps half precision for measurement. The iPad's image check with half precision on has too few pages to judge, and cannot change the decision. Task: M1-H5. Test: T-22.
 
-Summary: Color math at half precision behind `?half=on`, off on both paths. No GPU saved 5%: the iPad's WebGPU saved 1.5% in S4 and lost 1% in S3, and the S24+ showed no gain and failed one image test.
+Summary: Color math at half precision sits behind `?half=on`, and stays off on both paths. No GPU saved 5%. The iPad's WebGPU saved 1.5% in S4 and lost 1% in S3, and the S24+ showed no gain and failed one image test.
 
 ## Question
 
@@ -25,26 +25,26 @@ The HALF permutation bit is a bit that the device fixes, like the draw index and
 - The standard material (`lit`), its texture maps (`standard_maps`) and the final pass have HALF builds. Their positions, light distances, shadow lookups and fog depth stay at full precision. The unlit materials do no lighting, so they have no HALF builds, and custom materials build without HALF, so their builds stay half as many.
 - WGSL builds of HALF get the module as written. Every other build gets it with 32-bit floats, and in GLSL each of its functions and constants sits between `precision mediump float;` and `precision highp float;`.
 - The 16-bit GGX distribution takes 1 minus the squared cosine from a cross product, as Filament does. The usual form loses its digits near the highlight's peak. Values that could pass the largest 16-bit float, 65504, are clamped first, because an infinite light turns into NaN in the tone mapping.
-- The direct light's GGX terms take a roughness of at least 0.089, as Filament's half precision path does (M2-R12). They use roughness to the fourth power, which must stay above the smallest normal 16-bit float, about 6.1e-5. At the full precision floor of 0.045 that M2-E7 plans, roughness to the fourth is 4.1e-6, which 16-bit floats cannot hold. A smoother surface draws the highlight of the floor's roughness.
+- The direct light's GGX terms take a roughness of at least 0.089, as Filament's half precision path does (M2-R12). They use roughness to the fourth power, which must stay above the smallest normal 16-bit float, about 6.1e-5. At the full precision floor of 0.045, roughness to the fourth is 4.1e-6, which 16-bit floats cannot hold. A smoother surface draws the highlight of the floor's roughness.
 - The tone mapping curves take a color whose brightest channel is at most 16,384. A brighter color scales down until it fits, which keeps its hue. ACES then limits each value after its input matrix at 200, because its fit squares that value. At 200 the fit is within 0.3% of its limit. AgX runs its contrast curve at full precision, because the curve's large terms cancel, and 16-bit floats lose too many digits there.
-- Until M2-R12, each channel was clipped at 64 before every curve. The tone mapping scene at 16 times its exposure shows the cost. On CI's software GPU, the clip drew colored tiles 4.7 steps of 255 from full precision under AgX, and 6.8 under Neutral. The tiles moved toward white or another hue. The code review of 4 October 2026 proposed a scale at 64. It keeps the hue, but it draws worse. A model of the three curves on the same tiles put it up to 11 steps away, against up to 8 for the clip. The new limits drew 0 steps away in that model. AgX's contrast curve at 16-bit floats drew up to 10 steps away on the Mac's GPU, at any brightness. The tone mapping spec now compares half and full precision on those bright tiles, on every path.
+- Two simpler limits were rejected. A clip of each channel at 64 before every curve costs color. Take the tone mapping scene at 16 times its exposure, on CI's software GPU. Under AgX, the clip draws colored tiles 4.7 steps of 255 from full precision, and under Neutral 6.8 steps. The tiles move toward white or another hue. A scale at 64 keeps the hue, but it draws worse. A model of the three curves on the same tiles puts it up to 11 steps away, against up to 8 for the clip. The limits above draw 0 steps away in that model. AgX's contrast curve at 16-bit floats draws up to 10 steps away on the Mac's GPU, at any brightness. The tone mapping spec compares half and full precision on those bright tiles, on every path.
 - `?half=on` asks for half precision and `?half=off` keeps full precision. WebGPU takes it only where the adapter offers `shader-f16`, and then asks the device for that feature. `engine.capabilities.halfPrecision` says what the engine took.
 
 ## Data
 
 ### Image tests
 
-`NULL3D_SWITCHES=half=on bun run test:images` gives every page `?half=on`. On 3 October 2026, Chrome on the MacBook Pro M5 Max drew with half precision on all three tiers. SwiftShader drew with it on WebGL2 only, because its WebGPU adapter has no `shader-f16`.
+`NULL3D_SWITCHES=half=on bun run test:images` gives every page `?half=on`. Chrome on the MacBook Pro M5 Max drew with half precision on all three tiers. SwiftShader drew with it on WebGL2 only, because its WebGPU adapter has no `shader-f16`.
 
 - SwiftShader (`CI=1`): all 299 tests passed.
-- The Mac's GPU: 285 of 299 passed. S4 failed on each tier, by the same share of pixels as with half precision off: 0.300%, 0.174% and 0.180%. Its references on main no longer match this Mac. The other 11 failures were the tests that allow no change of color. These are the scenes 100 km and 1,000 km out, which compare with the image at the origin, and the debug drawing test. Half precision changed 0.2% to 6.6% of their pixels, nearly all by one step of 255, below the output's dither. Those tests check positions, which stay at full precision, so they now keep `?half=off`, and they pass.
+- The Mac's GPU: 285 of 299 passed. S4 failed on each tier, by the same share of pixels as with half precision off: 0.300%, 0.174% and 0.180%. Its references on main did not match this Mac at that commit. The other 11 failures were the tests that allow no change of color. These are the scenes 100 km and 1,000 km out, which compare with the image at the origin, and the debug drawing test. Half precision changed 0.2% to 6.6% of their pixels, nearly all by one step of 255, below the output's dither. Those tests check positions, which stay at full precision, so they keep `?half=off`, and they pass.
 - Six tests also draw with `?half=on` in every run, against their own test's references: `standard-grid-half`, `standard-maps-half`, `lights-16-half`, `shadows-half`, `tone-agx-half` and `tone-aces-8-bit-half`. All pass on both reference sets.
-- The S24+ in Chrome 154 ran the device checks with `--switches half=on` on 3 October 2026 (run `20261002-211135-checks`). It has no WebGPU, so it drew WebGL2 only. 202 of its 203 checks passed. 138 of its 168 WebGL2 image tests drew at `mediump`, and the rest keep `?half=off`.
-- The one failure was `shadows-cascades-1`: 0.508% of its pixels differed from the reference, and the device tolerance allows 0.5%. Half precision moved every shadow test further from its reference. In the S24+'s last run at full precision (`20261002-133711-checks`), the shadow tests differed by 0.17%. With half precision on, they differed by 0.25% to 0.51%.
+- The S24+ in Chrome 154 ran the device checks with `--switches half=on` (run `20261002-211135-checks`). It has no WebGPU, so it drew WebGL2 only. 202 of its 203 checks passed. 138 of its 168 WebGL2 image tests drew at `mediump`, and the rest keep `?half=off`.
+- The one failure was `shadows-cascades-1`: 0.508% of its pixels differed from the reference, and the device tolerance allows 0.5%. Half precision moved every shadow test further from its reference. In a run at full precision on the S24+ (`20261002-133711-checks`), the shadow tests differed by 0.17%. With half precision on, they differed by 0.25% to 0.51%.
 
 ### The Mac
 
-`bun run bench:run --scenes s3,s4 --pages null3d-webgpu,null3d-webgpu-half,null3d-webgl2,null3d-webgl2-half --runs 3 --seconds 10`, Chrome on the MacBook Pro M5 Max, 3 October 2026 (run `target/bench/20261002-171200-bench`). The GPU time is the median of each run's frames, from timestamp queries. Other helpers used the Mac's GPU during the run, so single runs moved by up to 25%.
+`bun run bench:run --scenes s3,s4 --pages null3d-webgpu,null3d-webgpu-half,null3d-webgl2,null3d-webgl2-half --runs 3 --seconds 10`, Chrome on the MacBook Pro M5 Max (run `target/bench/20261002-171200-bench`). The GPU time is the median of each run's frames, from timestamp queries. Other helpers used the Mac's GPU during the run, so single runs moved by up to 25%.
 
 | Scene | Path | GPU ms, full precision | GPU ms, half precision | Saved |
 | --- | --- | --- | --- | --- |
@@ -55,7 +55,7 @@ S4's opaque pass took 0.932 ms at full precision and 0.918 ms at half, and its f
 
 ### The S24+ (WebGL2)
 
-`bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s3,s4 --pages null3d-webgl2,null3d-webgl2-half --switches preset=ultra`, Chrome 154 on the Galaxy S24+ (Xclipse 940), 3 October 2026 (run `20261002-205909-bench`). There were 5 runs of each page, which took turns between the two settings. All 20 passed. The phone stayed cool, at a skin temperature of 36 °C at most, and it never throttled.
+`bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s3,s4 --pages null3d-webgl2,null3d-webgl2-half --switches preset=ultra`, Chrome 154 on the Galaxy S24+ (Xclipse 940), run `20261002-205909-bench`. There were 5 runs of each page, which took turns between the two settings. All 20 passed. The phone stayed cool, at a skin temperature of 36 °C at most, and it never throttled.
 
 | Scene | Setting | CPU ms per frame, median | Busiest thread, ms | Frames per second | Frame interval p95, ms |
 | --- | --- | --- | --- | --- | --- |
@@ -68,7 +68,7 @@ The phone held 60 frames per second at its 60 Hz refresh with both settings, eve
 
 ### The iPad (WebGPU and WebGL2)
 
-`bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s3,s4 --pages null3d-webgpu,null3d-webgpu-half,null3d-webgl2,null3d-webgl2-half`, Safari 26.6 on the iPad Pro with Limit Frame Rate on (60 Hz), 3 October 2026 (run `20261002-234410-bench`). There were 5 rounds, and in each round the four pages of a scene took turns. A full precision run and its half precision twin started 37 s apart. All 40 runs passed. The iPad's WebGPU adapter offers `shader-f16`, and with `?half=on` the engine reported `halfPrecision: true` on WebGPU in the device checks of the same build (run `20261003-002947-checks`).
+`bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s3,s4 --pages null3d-webgpu,null3d-webgpu-half,null3d-webgl2,null3d-webgl2-half`, Safari 26.6 on the iPad Pro with Limit Frame Rate on (60 Hz), run `20261002-234410-bench`. There were 5 rounds, and in each round the four pages of a scene took turns. A full precision run and its half precision twin started 37 s apart. All 40 runs passed. The iPad's WebGPU adapter offers `shader-f16`, and with `?half=on` the engine reported `halfPrecision: true` on WebGPU in the device checks of the same build (run `20261003-002947-checks`).
 
 GPU time per frame on WebGPU, the median of each run's frames, from timestamp queries:
 
@@ -85,13 +85,13 @@ Reading the table:
 - In rounds 3 and 5, the preset check lowered the full precision S4 page to Low, at a pixel ratio of 1.5. So it drew fewer pixels than its twin at Medium. Those two pairs do not compare. In the three pairs that do, half precision changed S4's GPU time by -3.0% to +1.1%, by -1.5% on average.
 - S3 took 0.6% to 1.3% longer with half precision in each round after the first.
 - Heat. The tablet was warm from the runs before it. S3 took 9.3 ms in round 1 and 15.6 ms from round 2 on, on the same code. Each pair ran within 37 s, so both of its runs saw about the same heat. The changes therefore compare the runs of each pair. A cooler tablet gives shorter times, and the share that half precision saves could differ there. Nothing in this run points to a saving near 5%.
-- The run came from the H5 branch, before #212 and #222 merged. The first changes how Safari's WebGL2 path waits for the GPU. The second changes how the governor reads Safari's frame rate. Neither changes the shaders' work, and the governor took no step in any run.
+- The run came from the H5 branch, without #212 and #222. The first changes how Safari's WebGL2 path waits for the GPU, and the second how the governor reads Safari's frame rate. Neither changes the shaders' work, and the governor took no step in any run.
 
-On WebGL2 the iPad has no GPU timer. Before #212, Safari's WebGL2 frames were bound by the drawing worker's waits for the GPU. In all 5 rounds, both S4 pages drew at Low. The half precision page's frames took about 5% longer, with a median interval of 33.6 ms against 31.9 ms. S3's half precision page drew at Low from round 2 on, and its twin at Medium, so S3 does not compare.
+On WebGL2 the iPad has no GPU timer. Without #212, Safari's WebGL2 frames are bound by the drawing worker's waits for the GPU. In all 5 rounds, both S4 pages drew at Low. The half precision page's frames took about 5% longer, with a median interval of 33.6 ms against 31.9 ms. S3's half precision page drew at Low from round 2 on, and its twin at Medium, so S3 does not compare.
 
 ### The iPad's image tests with half precision on
 
-Pending. The device checks with `--switches half=on` ran on 3 October 2026 (run `20261003-002947-checks`). 23 of the 107 image pages passed. The other 84 never drew: Safari refused the engine's shared memory (E1109). No page failed on its pixels, but 23 pages are too few to judge. Their rerun waits for #223, which frees the job workers' memory when a page leaves. No result can turn half precision on, because the iPad showed no saving.
+Not judged. In the device checks with `--switches half=on` (run `20261003-002947-checks`), 23 of the 107 image pages passed. The other 84 never drew: Safari refused the engine's shared memory (E1109). No page failed on its pixels, but 23 pages are too few to judge. A rerun with #223, which frees the job workers' memory when a page leaves, can judge them. No result can turn half precision on, because the iPad showed no saving.
 
 ## Decision
 
@@ -100,7 +100,7 @@ Pending. The device checks with `--switches half=on` ran on 3 October 2026 (run 
 
 `?half=on` keeps half precision on both paths for measurement. A new phone or tablet GPU can be measured with the same two runs.
 
-T-22 closes with this decision. The iPad's image check cannot change it, because no device met the speed half of the rule.
+T-22 is closed by this decision. The iPad's image check cannot change it, because no device met the speed half of the rule.
 
 ## How three.js handles it
 
@@ -110,15 +110,13 @@ null3D keeps positions, light distances, shadow lookups and fog depth at full pr
 
 ## Consequences
 
-- The HALF builds double the builds of the standard material and the final pass. The device modules grow from 6 to 12, and the shaders page compiles 261 GLSL programs instead of 163. A page still downloads one module.
-- The shader build lets library modules use 16-bit floats. Entry shaders and custom materials still may not, as `shaders/wgsl-rules` says.
+- The HALF builds double the builds of the standard material and the final pass. They make 12 device modules in place of 6, and the shaders page compiles 261 GLSL programs in place of 163. A page downloads one module.
+- The shader build lets library modules use 16-bit floats. Entry shaders and custom materials may not, as `shaders/wgsl-rules` says.
 - If half precision ships on a path, `guides/performance` describes it, and the image references of that path are drawn with it.
-- The record is in the table in README.md.
 
-## Addendum, 2026-10-04: the iPad runs half precision at twice the rate
+## Half precision rates on phone and tablet GPUs
 
-The web search of 4 October 2026 corrected a fact behind this record. Apple GPUs before the A15, the iPad's A12X among them, run 16-bit floats at twice the rate of 32-bit floats. From the A15 and the M1 on, the rates are equal ([metal-benchmarks](https://github.com/philipturner/metal-benchmarks/blob/main/README.md)). So the iPad's WebGPU run measured a double-rate GPU, and half precision saved only 1.5% there.
+Apple GPUs before the A15, the iPad's A12X among them, run 16-bit floats at twice the rate of 32-bit floats. From the A15 and the M1 on, the rates are equal ([metal-benchmarks](https://github.com/philipturner/metal-benchmarks/blob/main/README.md)). So the iPad's WebGPU run measured a double-rate GPU, and half precision saved only 1.5% there.
 
 - The Mali-G715 of the Pixel 9 also runs 16-bit floats at twice the rate, but only in vector math ([Arm GPU Best Practices](https://documentation-service.arm.com/static/67a62b17091bfc3e0a947695)). The S25's Adreno 830 rate is a vendor family claim, not a measurement. The S24+'s Xclipse 940 gains only from packed math.
-- A re-measure is low priority (prototype L5 of the [technique review](../technique-review-2026-10.md#prototypes)). It runs on BrowserStack's Pixel 9, with the half math written as vectors. It repeats the shadow image test that failed at 0.508% on the S24+.
-- If the roughness floor drops to 0.045, the HALF builds need a floor of their own, 0.089. 0.045⁴ is below the smallest normal 16-bit float. M2-R12 added that floor ("What half precision covers").
+- A re-measure is low priority (prototype L5 of the [technique review](../technique-review.md#prototypes)). It runs on BrowserStack's Pixel 9, with the half math written as vectors. It repeats the shadow image test that failed at 0.508% on the S24+.

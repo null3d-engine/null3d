@@ -69,9 +69,9 @@ concurrency:
 env:
   BUN_VERSION: "1.4.3"
   # git gives up on a transfer that stays under 1 KB/s for 30 s, and actions/checkout then fetches
-  # again. A stalled fetch otherwise waited for curl's own timeout, 23 s and then 11 minutes on a
-  # Safari shard of run 40049563192, and in run 40056066922 a Firefox shard's checkout waited 35
-  # minutes until the job's limit cancelled it and held the whole run.
+  # again. Otherwise a stalled fetch waits for curl's own timeout: 23 s and then 11 minutes on a
+  # Safari shard (run 40049563192), and 35 minutes on a Firefox shard's checkout, until the job's
+  # limit cancelled it and held the whole run (run 40056066922).
   GIT_HTTP_LOW_SPEED_LIMIT: "1000"
   GIT_HTTP_LOW_SPEED_TIME: "30"
   # Only main's runs save caches here: each run saves the city's files under a key of its own, and
@@ -233,9 +233,9 @@ jobs:
     name: benchmark (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: [commits, build]
     runs-on: macos-15
-    # A shard runs both commits' pages. On 24 October 2026 all eight reached this limit a
-    # second after printing their verdict, because the baseline was main's build with the
-    # final pass's loops still in it. Thirty leaves room for that pair.
+    # A shard runs both commits' pages. With a baseline whose final pass runs its upscale loops in
+    # every build (D-236), all eight shards reach a 20-minute limit a second after printing their
+    # verdict. Thirty leaves room for that pair.
     timeout-minutes: 30
     strategy:
       fail-fast: false

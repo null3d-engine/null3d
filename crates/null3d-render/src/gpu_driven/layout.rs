@@ -546,6 +546,27 @@ impl Layout {
         (self.copied * stride + self.indexed * sizes::INDEX_STRIDE).max(stride) + stride
     }
 
+    /// A layout whose buckets read `copied` slots, for the tests of the buffer that holds them,
+    /// which read that count alone.
+    #[cfg(test)]
+    pub(super) fn with_copies(copied: u32) -> Self {
+        Self {
+            copied,
+            ..Self::default()
+        }
+    }
+
+    /// A layout with a tree of `patches` and `indices` of its own, for the tests of the tables that
+    /// hold them, which read those counts alone.
+    #[cfg(test)]
+    pub(super) fn with_cluster_tables(patches: usize, indices: usize) -> Self {
+        Self {
+            cluster_patches: vec![[0; 8]; patches],
+            cluster_indices: vec![0; indices],
+            ..Self::default()
+        }
+    }
+
     /// Bytes of each copy in a view's compacted instance buffer: the motion layout's copies hold the
     /// last frame's matrix too.
     pub(super) fn copy_stride(&self) -> u32 {
@@ -1576,7 +1597,9 @@ impl Layout {
         let mut recreated = false;
         for ((id, size), made) in needed.into_iter().zip(&mut self.buffer_sizes) {
             if size > 0 && *made < size {
-                *made = grown_size(size, binding_bytes);
+                *made = grown_size(size, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
                 // The motion pass copies the matrices into its last frame's copies.
                 let flags = if id == ids::MATRICES {
                     usage::STORAGE | usage::COPY_DST | usage::COPY_SRC

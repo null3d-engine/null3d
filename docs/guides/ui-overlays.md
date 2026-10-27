@@ -123,6 +123,8 @@ engine.labels.bind('card-3', card);
 
 An element's CSS pixels are the scene's units for these labels, as they are for three.js's `CSS3DRenderer`. An element 200 pixels wide is 200 units wide. Size the scene around it to match, and the browser keeps the text sharp at any distance.
 
+A plane follows either lens. An orthographic camera turns and scales the element as a perspective camera does. An element can hold any markup, such as an iframe or a form. Give it `pointer-events: auto` if it takes the pointer, because the layer around it passes the pointer through.
+
 The engine holds 256 planes by default, which take 40 KB of the memory that its threads share. Set `createEngine`'s `maxLabels3d` option for more, or to 0 on a page that shows no plane.
 
 ## GUI panels

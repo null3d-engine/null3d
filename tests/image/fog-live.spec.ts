@@ -18,8 +18,8 @@ interface FogLiveResult {
 
 // The blend never settles to one image: each frame's offset cycles every 16 frames, and the last
 // frame keeps a weight of 0.9, so two loads of the same path differ by the phase of that cycle. On
-// the Mac on 13 October 2026, two WebGPU loads differed over 1.22% of pixels by more than 8 in a
-// channel and over 0.02% by more than 16, and WebGL2 sat at 3.00% and 1.48%. A history read from
+// the Mac, two WebGPU loads differ over 1.22% of pixels by more than 8 in a channel and over 0.02%
+// by more than 16, and WebGL2 sits at 3.00% and 1.48%. A history read from
 // the wrong place moves the whole blend, far past these figures, so the bound sits above the noise.
 /** The most a channel may differ for two pixels to count as the same. */
 const CHANNEL = 16;
@@ -46,12 +46,11 @@ async function load(page: Page, gpu: string) {
 	return result;
 }
 
-// Both other paths against one WebGPU frame. The two tests this replaces each drew their own
-// WebGPU frame, so the scene was loaded four times over the pair where three do now, and each
-// path was judged against a different frame of a blend whose phase cycles. The comparisons are
-// soft, so one path's verdict does not hide the other's. The page counts its frames within a bounded
-// time, so the test runs alone: in CI run 39315370327 a heavy file on the other worker held it to 19
-// frames in the page's 150 seconds.
+// Both other paths against one WebGPU frame. The shared frame loads the scene three times for the
+// pair, and judges both paths against the same frame of a blend whose phase cycles. The comparisons
+// are soft, so one path's verdict does not hide the other's. The page counts its frames within a
+// bounded time, so the test runs alone: in CI run 39315370327 a heavy file on the other worker held
+// it to 19 frames in the page's 150 seconds.
 test(
 	"the volumetric fog in play draws WebGPU's image on compat and webgl2",
 	ALONE,

@@ -3,7 +3,7 @@
 // window that removes one mesh a frame, and a window that adds one a frame, three times each. The
 // difference between the churn windows and the idle one is the render worker's cost of a removal,
 // which closes a hole in its mesh page by moving every mesh after it and uploading their bytes
-// again, and of an addition, which appends. It prints the medians of each side for D-244. It runs
+// again, and of an addition, which appends. It prints the medians of each side for D-247. It runs
 // only with NULL3D_MESH_CHURN_COST set, in a quiet window on a computer with a GPU of its own:
 // NULL3D_MESH_CHURN_COST=1 bun run test:browser -- mesh-churn-cost.spec.ts.
 import { expect, test } from '@playwright/test';
