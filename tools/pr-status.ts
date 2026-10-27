@@ -39,7 +39,6 @@ const ON_BRANCH = new Set(['M3-E9', 'M3-V2']);
 // A tick states that the task is done, so a task those audits found short of its own line is not
 // ticked here until the gap closes, whatever code it already has.
 const INCOMPLETE = new Set([
-	'M3-R16',
 	'M3-B2',
 	'M3-B3',
 	'M3-B5',
@@ -72,7 +71,6 @@ const INCOMPLETE = new Set([
 	'M3-R3',
 	'M3-R4',
 	'M3-R19',
-	'M3-R21',
 	'M3-V1',
 	'M3-V3',
 ]);
@@ -142,8 +140,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-R4': 'D-247 does not compare frame time, and the Mac GPU figure is owed',
 	'M3-R19':
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
-	'M3-R21':
-		'the picture step reads the heavy-test jobs now, but the task is done only when the gate and CI give the same verdict on the screens and skyway pictures, and that comparison is being taken against a run of the current tip',
 	'M3-B2':
 		"the task's finish line needs the material's cost per GPU path and preset, and its own record says that cost is owed: the machine stayed above a load of 100 while the add-on was built",
 	'M3-B3':
@@ -162,9 +158,11 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-K3':
 		"the spot-map picture covers the cookie on every path and passes; what remains is the owner's call on whether a 128 by 128 pixels-only cookie looks good enough, which the better-look rule raises",
 	'M3-A10':
-		"the finish line asks for the S24+, and the S24 run gives only a frame time held at its 30 Hz limit, which its own run file marks unreliable; the S25 is a faster GPU of another make on a path the S24+ lacks, so whether it closes the line is the owner's call. CI's five software sharpen references also show no sharpening at all, so the picture does not hold the effect it claims",
+		"the sharpening now holds on both reference sets: CI's five software pictures were drawn with the effect and the threshold is tight enough to fail when it goes, and the owner's ruling that the Galaxy S25 closes the S24+ line is written in D-205. The tick waits on one CI run of the landed range passing sharpen on the three software tiers",
 	'M3-V6':
 		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
+	'M3-V13':
+		'the history pass keeps its state between frames and its pictures pass on every tier, but no GPU time and memory are recorded for its repeated pass on the iPad, a phone or this Mac, so its branch check is owed',
 	'M3-E4a':
 		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
 	'M3-V5':
