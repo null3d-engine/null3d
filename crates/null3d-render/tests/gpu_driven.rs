@@ -22,7 +22,7 @@ use null3d_render::view::ViewId;
 const MATRIX_BYTES: u32 = 48;
 /// Where a view's culling parameters hold the runs of the cell order: after the planes and the
 /// level choice's inputs.
-const RANGES: u32 = 128;
+const RANGES: u32 = 144;
 /// The builder's buffers of world matrices, of the bucket of every source, and of the layer
 /// mask of every source.
 const MATRICES: u32 = 2;
