@@ -154,7 +154,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Extra shapes',
 		scene: 'Mirror floor at dusk',
 		summary:
-			'A torus knot, polyhedra, a lathe, an extruded star, a tube and a flat heart from @null3d/geometry, with the parameters of three.js geometry classes, in glass, metals and glazed clay over a polished stone floor.',
+			'A torus knot, polyhedra, a lathe, an extruded star, a tube and a flat heart from @null3d/geometry, with the parameters of three.js geometry classes, in glass that separates the light into colors, metals and glazed clay over a polished stone floor.',
 		hold: 1,
 		timeoutSeconds: 120,
 	},

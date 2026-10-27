@@ -647,6 +647,26 @@ describe('materials, textures and lights', () => {
 		);
 	});
 
+	test('KHR_materials_dispersion gives the volume its dispersion', () => {
+		const b = specularBuilder().uses('KHR_materials_transmission').uses('KHR_materials_dispersion');
+		const [glass, plain] = b.json.materials as [GltfJson, GltfJson];
+		glass.extensions = {
+			KHR_materials_transmission: { transmissionFactor: 1 },
+			KHR_materials_dispersion: { dispersion: 0.36 },
+		};
+		plain.extensions = { KHR_materials_transmission: { transmissionFactor: 1 } };
+		const data = parse(b.glb());
+		expect(data.materials[0]?.dispersion).toBe(0.36);
+		// A material without the extension bends every color alike.
+		expect(data.materials[1]?.dispersion).toBe(0);
+		const negative = specularBuilder().uses('KHR_materials_dispersion');
+		(negative.json.materials[0] as GltfJson).extensions = {
+			KHR_materials_dispersion: { dispersion: -1 },
+		};
+		const [code, text] = refusal(negative.glb());
+		expect([code, text.includes("material 0's dispersion is -1")]).toEqual(['E1416', true]);
+	});
+
 	test('a layered material keeps the transmission and thickness textures that fit', () => {
 		const b = specularBuilder()
 			.uses('KHR_materials_transmission')

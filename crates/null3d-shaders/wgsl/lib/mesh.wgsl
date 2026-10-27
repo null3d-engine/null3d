@@ -456,6 +456,17 @@ fn material_anisotropy(id: u32) -> vec4f {
 #endif
 
 #ifdef TRANSMISSION
+/// The strength of material `id`'s dispersion: 20 divided by the Abbe number, as glTF's
+/// `KHR_materials_dispersion` gives it. The anisotropy row keeps it in the float after the layer
+/// map families, which no other build reads.
+fn material_dispersion(id: u32) -> f32 {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(16u, id), 0).w;
+#else
+    return materials[id].anisotropy.w;
+#endif
+}
+
 /// Which family of maps material `id` keeps in each group of shared slots, two bits each: bits 0
 /// and 1 for the light map's slot, bits 2 and 3 for the specular intensity map's, and bits 4 and 5
 /// for the specular color map's. 0 is a clear coat's and a sheen's, 1 is iridescence's and the

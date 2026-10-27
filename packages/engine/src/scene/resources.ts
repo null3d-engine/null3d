@@ -81,6 +81,7 @@ import {
 	MATERIAL_PARAM_DECAL_FADE_START,
 	MATERIAL_PARAM_DIFFUSE_TRANSMISSION,
 	MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
+	MATERIAL_PARAM_DISPERSION,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
@@ -1230,6 +1231,15 @@ export interface StandardValues extends MaterialOptions {
 	 */
 	attenuationDistance?: number;
 	/**
+	 * The strength of the volume's dispersion, 0 or more, as three.js's
+	 * `MeshPhysicalMaterial.dispersion` and glTF's `KHR_materials_dispersion`: 20 divided by the
+	 * Abbe number, so a diamond's 0.36 is weak and rutile's 2.04 is strong. The light from behind
+	 * bends by a slightly different index of refraction for each color, so a prism or a gem
+	 * separates it into colors at its edges. 0 bends every color alike. It shows only with
+	 * `transmission`, and the default is 0.
+	 */
+	dispersion?: number;
+	/**
 	 * How much of the surface's diffuse light passes through it to its other side, from 0 to 1, as
 	 * glTF's `KHR_materials_diffuse_transmission` gives it. Light that reaches the back, such as the
 	 * sun behind a leaf, a petal or an ear, then shows on the front through
@@ -1606,6 +1616,7 @@ export interface DecalValues
 		| 'lightMapIntensity'
 		| 'transmission'
 		| 'thickness'
+		| 'dispersion'
 		| 'attenuationColor'
 		| 'attenuationDistance'
 	> {
@@ -1841,6 +1852,7 @@ type Ranged =
 	| 'envIntensity'
 	| 'transmission'
 	| 'thickness'
+	| 'dispersion'
 	| 'diffuseTransmission'
 	| 'subsurfaceRadius'
 	| 'clearcoat'
@@ -1863,6 +1875,7 @@ const RANGED: readonly (readonly [Ranged, number])[] = [
 	['envIntensity', Number.POSITIVE_INFINITY],
 	['transmission', 1],
 	['thickness', Number.POSITIVE_INFINITY],
+	['dispersion', Number.POSITIVE_INFINITY],
 	['diffuseTransmission', 1],
 	['subsurfaceRadius', Number.POSITIVE_INFINITY],
 	['clearcoat', 1],
@@ -1889,6 +1902,7 @@ const RANGED_NAMES: readonly string[] = [
 	'envIntensity',
 	'transmission',
 	'thickness',
+	'dispersion',
 	'diffuseTransmission',
 	'subsurfaceRadius',
 	'clearcoat',
@@ -2387,6 +2401,13 @@ function writeValues(
 			sendValue(core, id, MATERIAL_PARAM_THICKNESS, call);
 		}
 	}
+	if ('dispersion' in values) {
+		const value = values.dispersion;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_DISPERSION, call);
+		}
+	}
 	if ('diffuseTransmission' in values) {
 		const value = values.diffuseTransmission;
 		if (value !== undefined) {
@@ -2600,6 +2621,7 @@ const ONE_VALUE_PARAMS: ReadonlyMap<string, number> = new Map<string, number>([
 	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY],
 	['transmission', MATERIAL_PARAM_TRANSMISSION],
 	['thickness', MATERIAL_PARAM_THICKNESS],
+	['dispersion', MATERIAL_PARAM_DISPERSION],
 	['diffuseTransmission', MATERIAL_PARAM_DIFFUSE_TRANSMISSION],
 	['subsurfaceRadius', MATERIAL_PARAM_SUBSURFACE_RADIUS],
 	['clearcoat', MATERIAL_PARAM_CLEARCOAT],
