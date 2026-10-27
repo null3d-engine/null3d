@@ -1,6 +1,6 @@
 # D-208: HTML elements as planes of the scene
 
-Status: decided. Built: the label system's planes and the ports. Open faults: the mixed port leaves out the example's depth-writing cut-out plane, so room edges and two strips about ten pixels wide draw across the embedded page. The comparison hides both 3D canvases before it compares, so it sees only the HTML layers. The engine has no depth-only material, which the fix needs. Task: M3-K4.
+Status: decided. Built: the label system's planes and the ports. Open faults: the mixed port leaves out the example's depth-writing cut-out plane, so room edges and two strips about ten pixels wide draw across the embedded page. The comparison hides both 3D canvases before it compares, so it sees only the HTML layers. The engine's material with `colorWrite: false` is the depth-only surface that the fix needs. Task: M3-K4.
 
 Summary: A label whose `transform` is `'world'` or `'billboard'` is an HTML element that CSS turns with the scene's perspective, with three.js's `CSS3DRenderer` matrices. The sketch composes the matrices, and the page writes one `matrix3d` per element and the camera's transform on one container. The matrices take a table set of their own, so a page that shows no such label can hold none.
 
@@ -136,10 +136,10 @@ Where the ports differ from the examples, and why:
   hides the same elements. The picture compares the elements that a viewpoint can see.
 - The mixed example embeds a second three.js example, and the youtube example embeds YouTube
   videos. The ports embed pages made in code, so a held picture needs no network. The mixed
-  example's room draws every edge of a segmented box. The port draws the twelve outer edges. The
-  port leaves out the example's depth-writing cut-out plane, which needs a depth-only material that
-  the engine does not have. So room edges and two strips about ten pixels wide draw across the
-  embedded page.
+  example's room draws every edge of a segmented box, and the port draws the twelve outer edges. The
+  port leaves out the example's depth-writing cut-out plane, which needs a depth-only surface. The
+  engine draws one with `colorWrite: false`; the port does not draw it yet, so room edges and two
+  strips about ten pixels wide draw across the embedded page.
 - No example's controls are ported. Each page draws its example's first state, as the periodic table
   port does. That is the molecules example's caffeine in its atoms-and-bonds view, and a fixed
   camera in place of the controls. The molecules port hides one atom, an outer hydrogen, as the
@@ -152,10 +152,12 @@ Where the ports differ from the examples, and why:
   canvas passes the page through where it draws nothing.
 
 The label system carries every capability that the examples need but one, with no special case in a
-page. The one is the mixed example's cut-out plane, which needs a depth-only material. It takes a billboard that follows its object's scale, and an orthographic lens.
-It hides the element of a hidden object, which the molecules port checks with one atom. It also
-carries an element that holds a live iframe. It holds a page with more planes than the default
-capacity (`maxLabels3d`), over a see-through canvas.
+page. The one is the mixed example's cut-out plane, which needs a depth-only surface. The engine
+draws it with a material that writes depth and no color, and the port draws no such plane yet, which
+M3-K4's remaining work covers. The other capabilities are built: a billboard that follows its
+object's scale, an orthographic lens, a hidden object that hides its element, which the molecules
+port checks with one atom, an element that holds a live iframe, and a page with more planes than the
+default capacity (`maxLabels3d`), over a see-through canvas.
 
 Each of the six ports with a two-stage page ran on WebGPU and on WebGL2, twelve tests in all, for commit `6bdcf8e83`, whose run log is not kept. It compared its layer of elements with three.js's own draw of the same data, at 960
 by 540 pixels. A figure is the share of the picture that differed.
