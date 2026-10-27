@@ -204,7 +204,7 @@ Effects:
 | Leaves and paper lit from behind | `materials.standard({ diffuseTransmission })` (0.2) | `api/materials` |
 | Skin and wax whose light spreads under the surface | `materials.standard({ subsurfaceRadius })` (0.2), on High and Ultra | `api/materials` |
 | Car paint, varnish, wet stone; velvet and cloth | `materials.standard({ clearcoat: 1, clearcoatRoughness })` or `{ sheenColor, sheenRoughness }` (0.2), or a custom material that sets `s.clearcoat` or `s.sheenColor` | `api/materials`, `shaders/surface-functions` |
-| Soap bubbles, beetle shells; brushed metal | `materials.standard({ iridescence })` or `{ anisotropy }` with a map (0.3) | `api/materials`, `shaders/surface-functions` |
+| Soap bubbles, beetle shells; brushed metal | `materials.standard({ iridescence })` or `{ anisotropy }` (0.3) | `api/materials`, `shaders/surface-functions` |
 | Decals: scorch marks, mud, puddles, road paint, moss, cracks, posters | A mesh of `geometry.box()` with `materials.decal({ map, normalMap, metalnessRoughnessMap, angleFade, edgeFade })`; the box's z axis points out of the surfaces it marks; a batch of boxes for many (0.2) | `api/materials` |
 | Fog or sky | `scene.setFog` with the fog's color in `scene.setBackground`; `scene.setBackground({ sky })` (0.2); a physical sky that also hazes distant objects: `scene.setBackground({ atmosphere })` (0.2) | `api/scene` |
 | An aurora, a second layer of clouds, or a backdrop of space over the sky | `scene.setSkyLayer(description, { wgsl })` (0.3) with a feature description at the `'background'` point and WGSL that declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`; it draws over the core sky on every path, reaches its map, and lights the scene | `api/scene` |

@@ -90,3 +90,51 @@ Options C, B and B, decided by the helper for the owner's review.
 - The row's last texel is the anisotropy's, which the shader build's test that reads the row's size names.
 - A material cannot have a clear coat's or a sheen's maps and iridescence's or the anisotropy's maps at once. A file that gives both loses the second family's maps, and the loader says so.
 - The model scenes `gltf-iridescence` and `gltf-anisotropy` make their files in code, since the sample content pins a real Khronos file in a repository of its own. Both match three.js on all three tiers under limits of 0.3% and 0.6%, which are the specular anti-aliasing family's. [Image tests](../image-tests.md) gives the figures.
+
+## Addendum: anisotropy without a map
+
+Status: decided by the helper of M3-G3, for the owner's review. Task: M3-G3.
+
+Summary: The standard material draws anisotropy with no texture at all. A material with texture coordinates draws through the standard material's maps template. Its tangent frame is three.js's exactly: the mesh's tangents where it has them, else the normal map's coordinates, else the first coordinates. A surface with neither takes any frame square to its normal. No shader build is added.
+
+### Problem
+
+The engine dropped anisotropy twice for a material with no texture. The loader set the strength and rotation to 0, with a note. The material API threw E1217 for `materials.standard({ anisotropy })` without a map. Both rested on one claim: the direction comes from the texture coordinates, which the untextured shader build does not read.
+
+The Khronos sample AnisotropyStrengthTest shows the cost. Its 50 materials compare seven anisotropy strengths against seven roughnesses, and 49 of them carry `KHR_materials_anisotropy`. None of those 49 has a texture of any kind, and 42 have a strength above 0. All 49 primitives carry `TANGENT` and `TEXCOORD_0`. three.js r186 draws the 42 stretched, because `HAS_ANISOTROPY` needs no map. It builds the frame from the mesh's tangents when the geometry has them. The engine drew all 42 as round highlights on perfect mirrors, which is a plain white or black ball where a long highlight belongs. The code-built scene `gltf-anisotropy` never met the case: it gave every sphere a white base color texture so that a map existed.
+
+The second half is why this is not a one-line change. A material with no map never enters the maps build, so the shader built no tangent frame at all: the lobe had no direction to stretch along. Keeping the loader's value alone would draw a stretch along a frame that reads zero, which is no stretch.
+
+### Options rejected
+
+- **Give the untextured build its own tangent frame and nothing else.** The frame would come from the surface normal alone. The stretch would show, but its direction would be arbitrary, so the picture would not match three.js on the sample and no strict comparison could pass.
+- **Add `VERTEX_TANGENT` to the untextured lit template.** Then the sample matches exactly, with or without texture coordinates. It doubles the lit family, from 2,208 to 4,416 WebGPU builds and from 5,568 to 11,136 WebGL2 builds. That is 7,776 builds, about a ninth of the whole set. It also adds to the work on build time and shader build size, which the owner's focus covers.
+
+### What the engine does now
+
+- The loader keeps the anisotropy that a material gives, with no note, and the material API takes a material without a map.
+- A material with anisotropy and texture coordinates draws through the standard material's maps template, even with no live map. The frame is the one that three.js builds. The maps group binds its white placeholders where a slot has no texture. The same condition adds `VERTEX_TANGENT` where the mesh has tangents, so a file's own tangents win, as in three.js.
+- A surface without texture coordinates cannot draw through the maps template. It keeps the untextured lit build, which now takes any frame square to the surface's normal. The stretch shows and its direction is steady; no file gives such a surface a direction to match.
+- The shader build count does not change, and neither does any download for a page that draws no anisotropy.
+
+### Consequences
+
+- An untextured anisotropy material loads the standard material's maps template on its first use. That template already loads on first use for every textured standard material. A page that draws this case downloads it, where a page without it does not.
+- The model scenes draw the real Khronos AnisotropyStrengthTest, a 94,444-byte file that the repository keeps beside its tests, since the sample rule lets a file that size stay in this repository. [Sample content](../sample-content.md) names it. Its pictures sit in both reference sets. CI drew the SwiftShader set, and it differs from the Mac set in 0.016% of the pixels or less. It compares with three.js on all three tiers: 0.521%, 0.403% and 0.511% of the pixels differ on the Mac's GPU, and 0.507%, 0.382% and 0.506% on SwiftShader. The scene's limit is 0.6%. With the loader's old zeroing put back, the picture differs in 1.474% of WebGPU's pixels.
+- [Image tests](../image-tests.md) gives the comparison's figures.
+
+## Addendum: the first-use shader budget rises to 53 KB
+
+The grading controls' second design grades light before the tone curve. Its code rides every WebGL2
+tone-map build, and the largest of those files, the half-precision draw-index tone-map set, reached
+53,325 bytes after Brotli. That is 77 bytes over the 52 KB cap set above.
+
+The cap rises to 53 KB, or 54,272 bytes, leaving 947 bytes on the largest file. The helper decided it
+for the owner's review, as the rise of 22 October was. A trim is possible in principle: the grade is
+a function per shader that the WebGL2 build flattens, so inlining it into the tone map would save a
+few hundred bytes. The helper measured the shape of the generated GLSL but did not take that route,
+because it changes a shared library's structure for the sake of a fraction of a kilobyte, and the
+owner may delete the whole design if the display table stands.
+
+The figure comes from a local build of the branch. CI's `wasm-checks` job measures the same files, and
+a later rise should quote its figure.

@@ -336,7 +336,7 @@ Give any of these values, or a map, when you create the material, to change the 
 
 A material with these maps takes no `lightMap` and no specular maps, since the maps take their places. A material takes the maps of a clear coat and a sheen, or the maps of iridescence and the anisotropy: the coat's and the sheen's maps fill every place. Development builds throw E1217 for a material that asks for both families. Production builds keep the coat's and the sheen's maps and draw the others' values alone. The glTF loader keeps the coat's and the sheen's maps and notes the others. A material with `transmission` keeps its `transmissionMap` and `thicknessMap` beside these maps where the slot of one stays free: `iridescenceThicknessMap` fills the transmission map's slot and `anisotropyMap` fills the thickness map's, so a material takes one of each pair.
 
-A material with `anisotropy` needs a map, because the direction it stretches along comes from the surface's tangent frame, which the shader builds from the texture coordinates. Three.js builds that frame from the coordinates too. A material with anisotropy and no map throws E1217.
+A material with `anisotropy` draws with or without a map. The direction that it stretches along comes from the surface's tangent frame. The frame is the mesh's tangents where it has them, else the texture coordinates, else the normal map's coordinates where the material also has a normal map. A material without a map and with no texture coordinates takes any frame square to the surface. Three.js builds the frame the same way from the tangents or the coordinates.
 
 ### How the film and the stretch draw
 
