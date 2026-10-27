@@ -39,8 +39,8 @@ const ON_BRANCH = new Set(['M3-E9', 'M3-V2']);
 // A tick states that the task is done, so a task those audits found short of its own line is not
 // ticked here until the gap closes, whatever code it already has.
 const INCOMPLETE = new Set([
+	'M3-B1',
 	'M3-V3',
-	'M3-B2',
 	'M3-B3',
 	'M3-B5',
 	'M3-V4',
@@ -51,7 +51,6 @@ const INCOMPLETE = new Set([
 	'M3-K3',
 	'M3-E10',
 	'M3-V6',
-	'M3-B1',
 	'M3-E4a',
 	'M3-E6',
 	'M3-E8',
@@ -82,8 +81,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame. The overlay part of the task is not built: D-199's decision 4 asks for one GPU timing scope per built-in step and per add-on feature, and D-173 for each add-on's GPU time, while the add-on rows hold no GPU time and the overlay shows one frame total",
 	'M3-E8':
 		"the compute pass and its WebGL2 fragment form are built and tested, and the wind add-on fills its field through the hook with a compute pass. The owner's 25 October ruling adds M3-V13's history to the hook, and the first-user outcome the plan names still waits on M3-F9's ocean",
-	'M3-B1':
-		'the pictures hold every lens mark now, and the streak and grain ones were tightened after they proved nothing at the default threshold: each mark moves about 2.8 per cent of the pixels against a half per cent limit. The cost per preset is still owed — it needs a machine idle enough for a quiet timing run, and the fleet has not given one since this morning',
 	'M3-L1':
 		'the iPad and phone figures the section asks for are in D-137; what remains is the phone GPU time that the fade item asks for',
 	'M3-L3':
@@ -135,8 +132,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-R4': 'D-247 does not compare frame time, and the Mac GPU figure is owed',
 	'M3-R19':
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
-	'M3-B2':
-		"the task's finish line needs the material's cost per GPU path and preset, and its own record says that cost is owed: the machine stayed above a load of 100 while the add-on was built",
+	'M3-B1':
+		"the lens run does not resolve a cost: four of its twelve cells are at or under zero, the compatibility and WebGL2 High and Ultra rows run at Medium's settings yet differ by more than a millisecond, and the WebGPU off side alone wanders 1.41 to 2.16 ms, so the spread is the run's rather than the look's. To close it, hold the GPU's clock steady by drawing the look several times a frame and dividing, or on a larger canvas; take more rounds and print each cell's spread; and time each effect alone, since the page skips the taps of a value left at zero. Or the owner rules that a bound of about 1.4 ms everywhere meets the line",
 	'M3-B3':
 		"the Showroom tablet the task names is M3-C2's work, which is not built; the screen demo's software-GPU pictures were redrawn from CI on 25 October and no longer stand in the way",
 	'M3-B5':
@@ -156,8 +153,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the compute pass reports its own time on the side where the page turns it off, so a turned-off pass either still dispatches or still times; the page and the engine must say which, each device cost must be restated or retimed, and the Mac timer step of 0.065536 ms must be stated, because one step sits below its resolution',
 	'M3-V6':
 		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
-	'M3-V13':
-		'the history pass keeps its state between frames and its pictures pass on every tier, and its GPU time and memory are recorded on the iPad and a phone; its Mac row and its branch check are owed',
 	'M3-E4a':
 		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
 	'M3-V5':

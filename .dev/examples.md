@@ -686,8 +686,8 @@ and a hero car with two screens.
   draws a mark that a later call sets.
 - **The lens's cost.** The add-on's README holds the look's cost per preset. The cost test times
   the whole look against the same scene without it. It draws at 1920 x 1080 with a render scale of
-  1, and runs as `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. The quiet run of
-  27 October 2026, on the Mac's M3 Max in Chrome 156, gives the look 0.45 ms at Low and 0.76 ms at
+  1, and runs as `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. The quiet run
+  on the Mac's M3 Max in Chrome 156 gives the look 0.45 ms at Low and 0.76 ms at
   Ultra on WebGPU, 0.61 and 1.40 in compatibility mode, and 0.91 and 1.05 on WebGL2, while the
   other presets read within half a millisecond of zero or below it. The add-on's README holds all
   twelve cells with each line's load, and that spread is the figure's own accuracy
