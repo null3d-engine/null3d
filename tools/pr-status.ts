@@ -125,8 +125,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the owner saw the redrawn aurora beside the current pictures on all three Mac paths and ruled that the lake reflection looks too blurry, so the lake drawing is not accepted yet: find where the blur comes from — how the ice samples the sky, whether the material's roughness picks a blurred level of the environment map, or the reflection's own resolution — sharpen it, show the owner, and then redraw the six demo-aurora references in both sets. The ice-plane fix waits with it so the aurora is redrawn once",
 	'M3-G5':
 		'its branch, `fix/m3-g5-masked-transmission` at `305624b36`, is 14 commits ahead and unmerged. The check refuses it until the branch carries a `GPU-Checked:` line, which blocks the landing; its pushed tip has no CI run; the parity load figures are not in the logs; the mirror figure 0.0325 is WebGPU alone, where compatibility reads 0.0327 and WebGL2 0.0328; the ceiling comment grows by an unstated figure; and the cold build was not taken on a quiet machine',
-	'M3-R23':
-		"`fix/m3-r23-today` at `6fa3fec9e` is 16 commits ahead and unmerged. The owner's tenth ruling closed the bar and the iPad frame-time sentence is fixed. It still owes a `GPU-Checked:` line, because the branch changes WebGL2's backend; a D-266 number that does not collide with the landed D-266; the merge; and the unit tests and the ambient-occlusion pictures",
 	'M3-V2':
 		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
 	'M3-G2': 'no Khronos iridescence sample is tested',
