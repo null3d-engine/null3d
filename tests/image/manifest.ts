@@ -2521,10 +2521,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	// A copy that the size rule hides draws at its base level in the view's striped marker color,
-	// so the picture shows what the rule dropped rather than a hole.
+	// so the picture shows what the rule dropped rather than a hole. The marker's squares follow
+	// the pixel position, which each path numbers its own way, so every path keeps its own picture.
 	{
-		// The marker's squares follow the pixel position, which each path numbers its own way, so
-		// every path keeps a picture of its own.
 		name: 'lod-levels-hide',
 		sketch: 'tests/pages/sketches/lod-sketch.ts?hide',
 		hold: 0,
