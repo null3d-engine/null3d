@@ -15,7 +15,7 @@
 		"test": "gltf-iridescence-suzanne",
 		"tier": "compat",
 		"date": "2026-10-27",
-		"reason": "drawn on this machine; the scene is new, and CI's next browser run checks this drawing against CI's Linux SwiftShader"
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all 141 of its tests against these files in run 40442817152, so the two drawings are equal"
 	},
 	"chromium-swiftshader/webgl2/gltf-iridescence-dielectric.png": {
 		"test": "gltf-iridescence-dielectric",
@@ -33,7 +33,7 @@
 		"test": "gltf-iridescence-suzanne",
 		"tier": "webgl2",
 		"date": "2026-10-27",
-		"reason": "drawn on this machine; the scene is new, and CI's next browser run checks this drawing against CI's Linux SwiftShader"
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all 141 of its tests against these files in run 40442817152, so the two drawings are equal"
 	},
 	"chromium-swiftshader/webgpu/gltf-iridescence-dielectric.png": {
 		"test": "gltf-iridescence-dielectric",
@@ -51,6 +51,6 @@
 		"test": "gltf-iridescence-suzanne",
 		"tier": "webgpu",
 		"date": "2026-10-27",
-		"reason": "drawn on this machine; the scene is new, and CI's next browser run checks this drawing against CI's Linux SwiftShader"
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all 141 of its tests against these files in run 40442817152, so the two drawings are equal"
 	}
 }
