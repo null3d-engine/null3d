@@ -127,14 +127,18 @@ export class Quadtree {
 
 	/** The lowest height that the block at `level`, `column` and `row` holds, in meters. */
 	lowAt(level: number, column: number, row: number): number {
-		const { index, arrays } = this.boundsIndex(level, column, row);
-		return (this.lows[arrays] as Float32Array)[index] as number;
+		const arrays = this.boundsLevel(level);
+		return (this.lows[arrays] as Float32Array)[
+			this.boundsIndex(arrays, level, column, row)
+		] as number;
 	}
 
 	/** The highest height that the block at `level`, `column` and `row` holds, in meters. */
 	highAt(level: number, column: number, row: number): number {
-		const { index, arrays } = this.boundsIndex(level, column, row);
-		return (this.highs[arrays] as Float32Array)[index] as number;
+		const arrays = this.boundsLevel(level);
+		return (this.highs[arrays] as Float32Array)[
+			this.boundsIndex(arrays, level, column, row)
+		] as number;
 	}
 
 	/**
@@ -190,7 +194,8 @@ export class Quadtree {
 		at: number,
 	): number {
 		const half = block / 2;
-		const { index, arrays } = this.boundsIndex(level, column, row);
+		const arrays = this.boundsLevel(level);
+		const index = this.boundsIndex(arrays, level, column, row);
 		const low = (this.lows[arrays] as Float32Array)[index] as number;
 		const high = (this.highs[arrays] as Float32Array)[index] as number;
 		const dx = Math.max(Math.abs(x - centerX) - half, 0);
@@ -261,16 +266,15 @@ export class Quadtree {
 		return 1;
 	}
 
-	/** The array of a block's height box, and its place there. */
-	private boundsIndex(
-		level: number,
-		column: number,
-		row: number,
-	): { arrays: number; index: number } {
-		const arrays = level < this.boundLevel ? level : this.boundLevel;
+	/** The array that holds a block's height box: its own level, or its ancestor's. */
+	private boundsLevel(level: number): number {
+		return level < this.boundLevel ? level : this.boundLevel;
+	}
+
+	/** The place of a block's height box in the array of `arrays`, a level at or below its own. */
+	private boundsIndex(arrays: number, level: number, column: number, row: number): number {
 		const shift = level - arrays;
-		const side = leavesPerSide(arrays);
-		return { arrays, index: (column >> shift) * side + (row >> shift) };
+		return (column >> shift) * leavesPerSide(arrays) + (row >> shift);
 	}
 
 	/**
