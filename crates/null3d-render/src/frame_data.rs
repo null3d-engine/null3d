@@ -24,6 +24,8 @@ pub struct FrameUniform {
     pub camera_position: [f32; 4],
     /// The direction the sun's light travels, normalized.
     pub sun_direction: [f32; 4],
+    /// The sun's exposed color, and in w the number of fill directional lights that light the
+    /// frame, from 0 to [`null3d_core::lights::MAX_FILL_DIRECTIONAL_LIGHTS`].
     pub sun_color: [f32; 4],
     /// The directions the fill directional lights travel, in world space, and their exposed
     /// colors after them: one entry of each per fill light, up to
@@ -31,8 +33,6 @@ pub struct FrameUniform {
     /// casts the shadows, is not among them.
     pub fill_direction: [[f32; 4]; null3d_core::lights::MAX_FILL_DIRECTIONAL_LIGHTS],
     pub fill_color: [[f32; 4]; null3d_core::lights::MAX_FILL_DIRECTIONAL_LIGHTS],
-    /// How many of the fill lights light the frame, in x. The other floats are zero.
-    pub fill_count: [f32; 4],
     pub ambient: [f32; 4],
     /// The exposure and the tone mapping, which the 8-bit path's fragment shaders apply.
     pub output: OutputUniform,

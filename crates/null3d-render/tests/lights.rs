@@ -240,8 +240,7 @@ fn fills_reach_the_frame<B: FrameBuilder>(mut world: World<B>) {
         }
     }
     close(u.sun_direction, [0.0, -1.0, 0.0, 0.0]);
-    assert_eq!(u.sun_color, [2.0, 2.0, 2.0, 0.0]);
-    assert_eq!(u.fill_count, [3.0, 0.0, 0.0, 0.0]);
+    assert_eq!(u.sun_color, [2.0, 2.0, 2.0, 3.0]);
     close(u.fill_direction[0], [0.0, 0.0, -1.0, 0.0]);
     close(u.fill_direction[1], [0.0, 1.0, 0.0, 0.0]);
     let root = std::f32::consts::FRAC_1_SQRT_2;
@@ -256,7 +255,7 @@ fn fills_reach_the_frame<B: FrameBuilder>(mut world: World<B>) {
         .set_color(fifth, color::MAIN, [0.9, 0.9, 0.9])
         .unwrap();
     record(&mut world, &mut lights);
-    assert_eq!(camera_uniform(&world).fill_count, [3.0, 0.0, 0.0, 0.0]);
+    assert_eq!(camera_uniform(&world).sun_color[3], 3.0);
 
     // A hidden fill gives its slot to the light created after it.
     world.frame += 1;
@@ -264,7 +263,7 @@ fn fills_reach_the_frame<B: FrameBuilder>(mut world: World<B>) {
     world.scene.apply_commands(&[hide], world.frame).unwrap();
     record(&mut world, &mut lights);
     let u = camera_uniform(&world);
-    assert_eq!(u.fill_count, [3.0, 0.0, 0.0, 0.0]);
+    assert_eq!(u.sun_color[3], 3.0);
     assert_eq!(u.fill_color[1], [0.5, 1.0, 0.5, 0.0]);
     assert_eq!(u.fill_color[2], [0.9, 0.9, 0.9, 0.0]);
 }

@@ -94,13 +94,13 @@ run('replay', async () => {
 	const length = Math.hypot(...sun);
 	frame.set([sun[0]! / length, sun[1]! / length, sun[2]! / length, 0], 20);
 	frame.set([3, 3, 3, 0], 24);
-	// The fill directional lights' three direction slots, three color slots and count lie from
-	// index 28, so the ambient light follows them.
-	frame.set([0.4, 0.4, 0.4, 0], 56);
+	// The fill directional lights' three direction slots and three color slots lie from index 28,
+	// so the ambient light follows them. Their count is the sun color's fourth float, which stays 0.
+	frame.set([0.4, 0.4, 0.4, 0], 52);
 	// The output settings: an exposure of 1 and no tone mapping, so the 8-bit target holds the lit
 	// colors encoded as sRGB.
-	frame[60] = 1;
-	new Uint32Array(frame.buffer)[61] = C.TONE_MAPPING_NONE;
+	frame[56] = 1;
+	new Uint32Array(frame.buffer)[57] = C.TONE_MAPPING_NONE;
 	// Two rows of the material table, each starting with its color and opacity. The shader reads
 	// nothing else of them.
 	const materials = new Float32Array((2 * G.SIZE_MATERIAL_BYTES) / 4);

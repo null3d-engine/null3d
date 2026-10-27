@@ -17,6 +17,7 @@ struct Frame {
     camera_position: vec4f,
     /// The direction the sun's light travels, in world space.
     sun_direction: vec4f,
+    /// The sun's color, and in w the number of fill directional lights that light the frame.
     sun_color: vec4f,
     /// The directions the fill directional lights travel, in world space: the lights after the
     /// one that casts the shadows.
@@ -27,9 +28,6 @@ struct Frame {
     fill_col_a: vec4f,
     fill_col_b: vec4f,
     fill_col_c: vec4f,
-    /// How many of the fill directional lights light the frame: x holds 0 to 3, and the other
-    /// floats are zero.
-    fill_n: vec4f,
     ambient: vec4f,
     /// The exposure and the tone mapping, which fragment shaders apply themselves on the 8-bit
     /// path.

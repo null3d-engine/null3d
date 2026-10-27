@@ -311,31 +311,6 @@ fn clustered_light(
 }
 
 /// The directional lights after the main one that one frame can light a surface with. The frame
-/// keeps their directions and colors in this many slots, and `fill_n.x` says how many are set.
+/// keeps their directions and colors in this many slots, and the sun color's w says how many are
+/// set.
 const FILL_LIGHT_SLOTS: u32 = 3u;
-
-/// The light that the frame's fill directional lights give a surface: the directional lights
-/// created after the main one, which casts the shadows. They are fill and rim lights, so a surface
-/// takes them from a distance with no shadows and no contact shadows. `compensation` holds the
-/// split-sum compensation, as `direct_light` takes it. The material's own lobe adds nothing for
-/// them; it serves the main light alone.
-fn fill_light(m: PbrMaterial, normal: vec3f, to_view: vec3f, compensation: vec3f) -> Reflected {
-    var sum = Reflected(vec3f(0.0), vec3f(0.0));
-    let n = min(u32(frame.fill_n.x), FILL_LIGHT_SLOTS);
-    for (var k = 0u; k < n; k++) {
-        let direction = select(
-            select(frame.fill_dir_a, frame.fill_dir_b, k == 1u),
-            frame.fill_dir_c,
-            k == 2u,
-        );
-        let color = select(
-            select(frame.fill_col_a, frame.fill_col_b, k == 1u),
-            frame.fill_col_c,
-            k == 2u,
-        );
-        let l = direct_surface_light(m, normal, to_view, -direction.xyz, color.rgb, compensation);
-        sum.diffuse += l.diffuse;
-        sum.specular += l.specular;
-    }
-    return sum;
-}
