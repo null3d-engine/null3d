@@ -17,6 +17,12 @@
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
 	},
+	"chromium-swiftshader/compat/demo-terrain.png": {
+		"test": "demo-terrain",
+		"tier": "compat",
+		"date": "2026-10-27",
+		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
 		"tier": "compat",
@@ -52,6 +58,12 @@
 		"tier": "compat",
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/terrain.png": {
+		"test": "terrain",
+		"tier": "compat",
+		"date": "2026-10-27",
+		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
 	"chromium-swiftshader/compat/wind-cards-later.png": {
 		"test": "wind-cards-later",
@@ -89,6 +101,12 @@
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
 	},
+	"chromium-swiftshader/webgl2/demo-terrain.png": {
+		"test": "demo-terrain",
+		"tier": "webgl2",
+		"date": "2026-10-27",
+		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
 		"tier": "webgl2",
@@ -118,6 +136,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/terrain.png": {
+		"test": "terrain",
+		"tier": "webgl2",
+		"date": "2026-10-27",
+		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
 	"chromium-swiftshader/webgl2/wind-cards-later.png": {
 		"test": "wind-cards-later",
@@ -155,6 +179,12 @@
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
 	},
+	"chromium-swiftshader/webgpu/demo-terrain.png": {
+		"test": "demo-terrain",
+		"tier": "webgpu",
+		"date": "2026-10-27",
+		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+	},
 	"chromium-swiftshader/webgpu/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
 		"tier": "webgpu",
@@ -184,6 +214,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/terrain.png": {
+		"test": "terrain",
+		"tier": "webgpu",
+		"date": "2026-10-27",
+		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
 	"chromium-swiftshader/webgpu/wind-cards-later.png": {
 		"test": "wind-cards-later",
