@@ -31,6 +31,8 @@ A `KHR_lights_punctual` file may hold several directional lights, as a key, a fi
 
 `bun run parity -- --scene lights-fills` compares the scene with three.js on the Mac's GPU. WebGPU differs over 0.053% of the pixels, compatibility mode 0.082% and WebGL2 0.049%. The scene's limit is 0.15%, and three.js's two renderers differ by 0.025%.
 
+`bun run bench:gpu-check -- --measure --base <control checkout>` compared the engine at `d7b7c3a30` with the base at `202e8d289`. The control checkout held the branch's benchmark pages on the base engine, so both sides drew the same pages. It passed: s4 at Medium 3.87 to 3.70 ms (+6.5%), s6 at Medium 4.44 to 4.43 ms (-0.1%), s4 at High 4.60 to 4.63 ms (+0.5%) and s6 at High 5.30 to 5.33 ms (+1.2%).
+
 GPU time per frame for one more directional light. The figures come from `NULL3D_FILL_COST=1 bun run test:browser -- fill-cost.spec.ts` on the MacBook Pro (Apple M5 Max), in Chrome. The window was 1600 x 900, with the render scale at 1. Each run draws one fewer fill and then the next, in turns, and prints the medians of three rounds. The load before each run was 2.7 to 6.8.
 
 | GPU path | 1 light | 2 lights | 3 lights | 4 lights |
