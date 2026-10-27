@@ -3443,6 +3443,7 @@ impl SceneSettings {
             map_size: shadow.map_size,
             bias: shadow.bias,
             normal_bias: shadow.normal_bias,
+            intensity: shadow.intensity,
             distance,
             filter: quality.filter,
             blend: quality.blend,
@@ -3797,6 +3798,7 @@ impl SceneSettings {
                 | bit(wireframe, state_flags::LINE_LIST)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
                 | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST)
+                | bit(has(feature::NO_COLOR_WRITE), state_flags::NO_COLOR_WRITE)
                 | bit(covers, state_flags::ALPHA_TO_COVERAGE)
                 | blend_state(features),
             bias: self.materials.depth_bias(id),

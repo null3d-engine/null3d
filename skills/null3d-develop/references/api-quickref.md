@@ -288,7 +288,7 @@ light.setGroundColor(c);                     // hemisphere lights; setColor sets
 light.setCastShadows(true);                  // directional, spot and point lights
 sun.setShadow({ cascades: 2, distance: 80 }); // directional lights; changes only the settings given
 sun.setShadow({ distance: 'auto' });          // follow the farthest visible receiver (the default)
-spot.setShadow({ bias: 1 });                  // spot and point lights take bias and normalBias alone
+spot.setShadow({ bias: 1 });                  // spot and point lights take bias, normalBias and intensity alone
 light.setVisible(false); light.destroy();    // lights are objects: section 4
 ```
 
@@ -361,6 +361,7 @@ const paint = materials.standard({
   forceSinglePass: false,                      // (0.2) with 'blend' and doubleSided: one draw for both faces
   blending: 'normal',                          // with 'blend': 'normal', 'additive', 'multiply' or 'weighted' (0.2)
   depthWrite: true, depthTest: true,           // fixed at creation
+  colorWrite: true,                            // false writes depth and no color, so it hides what lies behind it
   depthBias: { constant: 0, slopeScale: 0 },   // three.js's polygonOffset, for decals
   wireframe: false,                            // (0.2) each triangle's edges as lines, any material
   toneMapped: true,                            // false keeps the display color on both paths; a blended surface keeps the curve on the HDR path

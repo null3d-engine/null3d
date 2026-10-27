@@ -145,8 +145,11 @@ pub mod value {
     /// A larger tile keeps the hero's shadow sharp over an object that a smaller one would blur,
     /// at the same texel ratio to the cascades' nearest one.
     pub const HERO_SIZE: u32 = 15;
+    /// How much of a light's shadow it draws, from 0 for none to 1, the default, for all of it.
+    /// The shader mixes each lookup's shadow toward full light by the rest.
+    pub const SHADOW_INTENSITY: u32 = 16;
     /// The last number.
-    pub const LAST: u32 = HERO_SIZE;
+    pub const LAST: u32 = SHADOW_INTENSITY;
 }
 
 /// The shadow distance that follows the farthest visible receiver: the render worker finds the
@@ -182,6 +185,7 @@ const DEFAULT_VALUES: [f32; value::LAST as usize + 1] = [
     0.025,
     0.0,
     1024.0,
+    1.0,
 ];
 
 /// The cone cosines of a point light's [`VisibleLight`] record. Every direction's cosine is above
@@ -289,6 +293,8 @@ pub struct LightShadow {
     pub bias: f32,
     /// Its normal bias, in meters.
     pub normal_bias: f32,
+    /// How much of its shadow it draws, from 0 for none to 1 for all of it.
+    pub intensity: f32,
     /// The light's layer mask: its tiles draw the casters whose masks share a bit with it.
     pub layers: u32,
 }
@@ -396,6 +402,8 @@ pub struct SunShadow {
     /// How far its contact shadows reach toward the light from each surface, in meters: 0 for
     /// none.
     pub contact: f32,
+    /// How much of its shadow it draws, from 0 for none to 1 for all of it.
+    pub intensity: f32,
     /// The light's layer mask: its cascades draw the casters whose masks share a bit with it.
     pub layers: u32,
     /// The scene slot of the object whose shadow the light draws into a tile of its own, or
@@ -419,6 +427,7 @@ impl SunShadow {
             distance,
             auto: distance <= 0.0,
             contact: values[value::SHADOW_CONTACT as usize].max(0.0),
+            intensity: values[value::SHADOW_INTENSITY as usize].clamp(0.0, 1.0),
             layers,
             hero,
             hero_size: whole(value::HERO_SIZE, 256.0, 16_384.0),
@@ -869,6 +878,7 @@ impl LightTable {
                             range,
                             bias,
                             normal_bias,
+                            intensity: row.values[value::SHADOW_INTENSITY as usize].clamp(0.0, 1.0),
                             layers: scene.layers()[s],
                         });
                     }
