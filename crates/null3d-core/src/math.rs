@@ -65,15 +65,22 @@ impl Float for f64 {
 }
 
 /// A rotation quaternion `(x, y, z, w)` scaled to unit length, so that it turns a matrix without
-/// stretching or shearing it. A quaternion already within a part per million of unit length stays
-/// as it is, so a scene that passes one composes the matrix that it always did. The zero quaternion
-/// stays as it is too: it composes to the matrix that a zero rotation gives.
+/// stretching or shearing it. A quaternion whose length is within a part per million of one stays
+/// as it is, so a scene that passes one composes the matrix that it always did, and the common case
+/// pays no square root. The zero quaternion stays as it is too: it composes to the matrix that a
+/// zero rotation gives.
+///
+/// The scaling sits here, in the one function that composes a matrix, and not where a rotation is
+/// written, because the `rotations` arrays are written directly: a page writes a scene object's or
+/// an instance row's quaternion with no setter to pass through. Only a source whose rotation is not
+/// unit length pays a square root, in the frame that composes its matrix.
 fn unit_rotation<T: Float>(q: [T; 4]) -> [T; 4] {
     let [x, y, z, w] = q;
-    let length = (x * x + y * y + z * z + w * w).sqrt();
-    let off_unit = length < T::from(0.999_999) || length > T::from(1.000_001);
-    if off_unit && length > T::from(0.0) {
-        let inverse = T::from(1.0) / length;
+    // The squared length, so that a rotation close to unit length costs no square root.
+    let square = x * x + y * y + z * z + w * w;
+    let off_unit = square < T::from(0.999_998) || square > T::from(1.000_002);
+    if off_unit && square > T::from(0.0) {
+        let inverse = T::from(1.0) / square.sqrt();
         [x * inverse, y * inverse, z * inverse, w * inverse]
     } else {
         q
@@ -262,11 +269,10 @@ pub(crate) fn compose4(position: [f32x4; 3], rotation: [f32x4; 4], scale: [f32x4
     let one = f32x4::splat(1.0);
     let zero = f32x4::splat(0.0);
     let [qx, qy, qz, qw] = rotation;
-    let length2 = qx * qx + qy * qy + qz * qz + qw * qw;
-    let length = length2.sqrt();
+    let square = qx * qx + qy * qy + qz * qz + qw * qw;
     let off_unit =
-        length.simd_lt(f32x4::splat(0.999_999)) | length.simd_gt(f32x4::splat(1.000_001));
-    let inverse = (off_unit & length.simd_gt(zero)).select(one / length, one);
+        square.simd_lt(f32x4::splat(0.999_998)) | square.simd_gt(f32x4::splat(1.000_002));
+    let inverse = (off_unit & square.simd_gt(zero)).select(one / square.sqrt(), one);
     let [x, y, z, w] = rotation.map(|v| v * inverse);
     let [sx, sy, sz] = scale;
     let (x2, y2, z2) = (x + x, y + y, z + z);
@@ -403,7 +409,7 @@ mod tests {
             [0.1, 0.2, 0.3, 0.927_361_85],
             IDENTITY_ROTATION,
             [0.0, 0.707_106_77, 0.0, 0.707_106_77],
-            [0.0, 2.3, 0.0, 1.0],
+            [-0.5, 0.5, -0.5, 0.5],
         ];
         let scales = [
             [1.0, 2.0, 3.0],
@@ -425,6 +431,33 @@ mod tests {
                 assert_eq!(lane.to_bits(), value.to_bits(), "lane {i}, element {k}");
             }
             assert_eq!(scale4[i].to_bits(), max_axis_scale(&m).to_bits());
+        }
+    }
+
+    /// Four lanes whose rotations are not unit length, the zero rotation among them: each lane
+    /// still matches the scalar function bit for bit, so the scaling that keeps a rotation from
+    /// shearing a matrix is the same on both.
+    #[test]
+    fn four_lanes_normalize_rotations_that_are_not_unit() {
+        let rotations = [
+            [0.0, 2.3, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 3.0],
+            [0.5, -0.5, 0.5, 0.5],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
+        let positions = [[0.0; 3]; 4];
+        let scales = [[1.0, 2.0, 0.5]; 4];
+        let m4 = compose4(
+            [0, 1, 2].map(|k| f32x4::from_array(positions.map(|v| v[k]))),
+            [0, 1, 2, 3].map(|k| f32x4::from_array(rotations.map(|q| q[k]))),
+            [0, 1, 2].map(|k| f32x4::from_array(scales.map(|v| v[k]))),
+        );
+        for i in 0..4 {
+            let m = compose(positions[i], rotations[i], scales[i]);
+            for (k, value) in m.iter().enumerate() {
+                let lane = m4[k / 4][k % 4].to_array()[i];
+                assert_eq!(lane.to_bits(), value.to_bits(), "lane {i}, element {k}");
+            }
         }
     }
 

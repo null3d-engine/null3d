@@ -121,6 +121,7 @@ export default defineSketch(async (ctx) => {
 - `ctx.engine.viewport` gives `{ width, height, pixelRatio }`: the canvas size in CSS pixels, and the pixel ratio the engine draws with. The engine reads them at the start of each frame. `ctx.engine.capabilities` holds the values of `engine.capabilities` on the page.
 - In `onLateUpdate`, `getWorldPosition` already gives this frame's positions, and setters show in the same frame. Structural changes made there, such as creating an object, wait for the next frame.
 - Fixed steps fall due from sketch time. The first frame and the first after a pause run none. A frame runs at most `maxFixedSteps` and drops the rest. `time` keeps the frame's values during the steps, so count simulation time with `step`. Read `wasPressed` in `onUpdate`, because some frames run no fixed step.
+- `rotation` takes a quaternion `(x, y, z, w)`. For a turn of `a` radians about an axis, put `sin(a/2)` along the axis and `cos(a/2)` in `w`. The engine normalizes the quaternion, so one that is not unit length still only turns the object.
 
 ## 3. Scene (`api/scene`)
 
