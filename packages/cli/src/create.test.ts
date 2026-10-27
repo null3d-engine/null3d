@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import {
-	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
@@ -137,7 +136,7 @@ describe('createProject', () => {
 		}
 	});
 
-	it('runs the hook that a new project installs', () => {
+	it('runs every hook that a new project installs', () => {
 		const root = tempRoot();
 		const target = createProject({ dir: join(root, 'my-game'), version: '0.1.0' });
 		const link = join(target, 'node_modules', '@null3d', 'cli');
@@ -145,25 +144,102 @@ describe('createProject', () => {
 		symlinkSync(fileURLToPath(new URL('..', import.meta.url)), link, 'dir');
 
 		const claude = JSON.parse(readFileSync(join(target, '.claude/settings.json'), 'utf8'));
-		const claudeCommand = claude.hooks.PreToolUse[0].hooks[0].command;
-		const refused = spawnSync('sh', ['-c', claudeCommand], {
-			cwd: target,
-			input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'sleep 5' } }),
-			encoding: 'utf8',
-			env: { ...process.env, CLAUDE_PROJECT_DIR: target },
-		});
-		expect(refused.status).toBe(2);
-		expect(refused.stderr).toContain('do not wait with sleep');
-
 		const codex = JSON.parse(readFileSync(join(target, '.codex/hooks.json'), 'utf8'));
-		const codexCommand = codex.hooks.PreToolUse[0].hooks[0].command;
-		const allowed = spawnSync('sh', ['-c', codexCommand], {
-			cwd: target,
-			input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'bun run build' } }),
-			encoding: 'utf8',
+		const commands = (settings: { hooks: { PreToolUse: { hooks: { command: string }[] }[] } }) =>
+			settings.hooks.PreToolUse.map((hook) => hook.hooks[0]?.command ?? '');
+		const [claudeBash = '', claudeEdit = ''] = commands(claude);
+		const [codexBash = '', codexEdit = ''] = commands(codex);
+
+		/** Runs a command's hook the way Claude Code does. */
+		const runClaude = (command: string, call: object) =>
+			spawnSync('sh', ['-c', command], {
+				cwd: target,
+				input: JSON.stringify(call),
+				encoding: 'utf8',
+				env: { ...process.env, CLAUDE_PROJECT_DIR: target },
+			});
+		const withoutProjectDir = { ...process.env };
+		delete withoutProjectDir.CLAUDE_PROJECT_DIR;
+		/** Runs a command's hook the way Codex does, from the project's source folder. */
+		const runCodex = (command: string, call: object) =>
+			spawnSync('sh', ['-c', command], {
+				cwd: join(target, 'src'),
+				input: JSON.stringify({ cwd: target, ...call }),
+				encoding: 'utf8',
+				env: withoutProjectDir,
+			});
+
+		const domInSketch = {
+			tool_name: 'Write',
+			tool_input: {
+				file_path: 'src/sketch.ts',
+				content: 'const el = document.querySelector("canvas");\n',
+			},
+		};
+		const domInPage = {
+			tool_name: 'Write',
+			tool_input: {
+				file_path: 'src/page.ts',
+				content: 'const el = document.querySelector("canvas");\n',
+			},
+		};
+
+		for (const { run, bash, edit } of [
+			{ run: runClaude, bash: claudeBash, edit: claudeEdit },
+			{ run: runCodex, bash: codexBash, edit: codexEdit },
+		]) {
+			const refused = run(bash, { tool_name: 'Bash', tool_input: { command: 'sleep 5' } });
+			expect(refused.status).toBe(2);
+			expect(refused.stderr).toContain('do not wait with sleep');
+
+			const poll = run(bash, {
+				tool_name: 'Bash',
+				tool_input: { command: 'until curl -s localhost:5173; do sleep 1; done' },
+			});
+			expect(poll.status).toBe(2);
+			expect(poll.stderr).toContain('do not wait with sleep');
+
+			const allowed = run(bash, {
+				tool_name: 'Bash',
+				tool_input: { command: 'bun run build' },
+			});
+			expect(allowed.status).toBe(0);
+			expect(allowed.stderr).toBe('');
+
+			const flagged = run(edit, domInSketch);
+			expect(flagged.status).toBe(0);
+			expect(flagged.stdout).toContain('has no DOM');
+
+			const allowedPage = run(edit, domInPage);
+			expect(allowedPage.status).toBe(0);
+			expect(allowedPage.stdout).toBe('');
+		}
+
+		const patch = runCodex(codexEdit, {
+			tool_name: 'apply_patch',
+			tool_input: {
+				command:
+					'*** Begin Patch\n*** Add File: src/scene/sketch.ts\n+const el = document.body;\n*** End Patch',
+			},
 		});
-		expect(allowed.status).toBe(0);
-		expect(allowed.stderr).toBe('');
+		expect(patch.status).toBe(0);
+		expect(patch.stdout).toContain('has no DOM');
+
+		const twoFiles = runCodex(codexEdit, {
+			tool_name: 'apply_patch',
+			tool_input: {
+				command: [
+					'*** Begin Patch',
+					'*** Add File: src/scene/page.ts',
+					'+const el = document.body;',
+					'*** Add File: src/scene/sketch.ts',
+					'+const el = document.body;',
+					'*** End Patch',
+				].join('\n'),
+			},
+		});
+		expect(twoFiles.status).toBe(0);
+		expect(twoFiles.stdout).toContain('src/scene/sketch.ts');
 	});
 
 	it('makes a name that npm accepts from the folder', () => {
