@@ -52,6 +52,7 @@ const INCOMPLETE = new Set([
 	'M3-E4a',
 	'M3-E6',
 	'M3-E8',
+	'M3-K10',
 	'M3-L3',
 	'M3-R12',
 	'M3-R22',
@@ -114,6 +115,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch. The round 24 audit of the aurora fix (findings N1 and N3) records that the tip's capture never runs and that the evidence line claims light the tip does not make; the light sum, the coefficient stride and the aurora pictures are on `fix/m3-sky-layer-light`",
 	'M3-R27':
 		"the owner saw the redrawn aurora beside the current pictures on all three Mac paths and ruled that the lake reflection looks too blurry, so the lake drawing is not accepted yet: find where the blur comes from — how the ice samples the sky, whether the material's roughness picks a blurred level of the environment map, or the reflection's own resolution — sharpen it, show the owner, and then redraw the six demo-aurora references in both sets. The ice-plane fix waits with it so the aurora is redrawn once",
+	'M3-K10':
+		"unticked by the audit: the page test for the asset loader is red at the head, because the byte-progress change left its sketch and image test on file counts. The task's substance is not in doubt — `assets.onProgress` reports bytes loaded against the total, a response with no length still counts its bytes while the total stays unknown, and a failed download counts as finished — but the tick waits until the corrected sketch, the corrected test and the stale doc comment in `packages/engine/src/scene/assets.ts` are in, and the image suite has passed at a head that carries them. No CI workflow runs the image suite, so only a run on the Mac catches it",
 	'M3-G5':
 		'its branch, `fix/m3-g5-masked-transmission` at `305624b36`, is 14 commits ahead and unmerged. The check refuses it until the branch carries a `GPU-Checked:` line, which blocks the landing; its pushed tip has no CI run; the parity load figures are not in the logs; the mirror figure 0.0325 is WebGPU alone, where compatibility reads 0.0327 and WebGL2 0.0328; the ceiling comment grows by an unstated figure; and the cold build was not taken on a quiet machine',
 	'M3-V2':
