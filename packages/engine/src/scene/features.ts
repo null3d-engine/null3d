@@ -9,6 +9,7 @@
 // stay data. The engine's own renderer features stay internal and do not use this API: a feature
 // that leaves the core uses it like any add-on (D-173, D-199).
 
+import { isEngineDebugView } from '../debug/view-names';
 import { EngineError } from '../errors/engine-error';
 import { BUDGET_STEPS } from '../quality/budget';
 import {
@@ -227,6 +228,26 @@ export interface FeatureOutput {
 }
 
 /**
+ * A debug view that an add-on adds. `debug.view` and the page's `?view=` switch pick it by name,
+ * and the engine tells the add-on when it starts and stops. The add-on draws the view itself, with
+ * its own materials or its own debug drawing, so the engine needs no shader for it.
+ *
+ * @category api/features
+ */
+export interface FeatureDebugView {
+	/**
+	 * The name that `debug.view` and `?view=` take, from 1 to 64 characters without a line break.
+	 * It must not name one of the engine's own views, or another add-on's view.
+	 */
+	readonly name: string;
+	/**
+	 * Called with `true` when this view becomes the active one, and with `false` when another view
+	 * replaces it or the engine stops.
+	 */
+	readonly set: (active: boolean) => void;
+}
+
+/**
  * One add-on render feature, as the engine reads it. Every add-on hook that records frame work
  * declares a description of this shape: the frame point where it records, what it reads and
  * writes, what it publishes, the lighting slot it provides, its order band and view mask, and the
@@ -274,6 +295,12 @@ export interface FeatureDescription {
 	readonly outputs?: Readonly<Record<string, FeatureOutput>>;
 	/** The lighting slots that the feature provides. One feature provides each slot. */
 	readonly provides?: readonly FeatureSlot[];
+	/**
+	 * The debug views that the feature adds, each with the name that `debug.view` and `?view=`
+	 * take and the callback that hears when it starts and stops. An add-on draws such a view
+	 * itself, so `debug.view` reaches it without the engine building a shader for it.
+	 */
+	readonly debugViews?: readonly FeatureDebugView[];
 	/**
 	 * The views that the feature records in, as its view mask: the main camera's view, a scene
 	 * pass's view, or a reflection pass's view. It is `['main']` by default. A feature with no frame
@@ -391,6 +418,7 @@ const TAKES: ReadonlySet<string> = new Set([
 	'writes',
 	'outputs',
 	'provides',
+	'debugViews',
 	'views',
 	'ready',
 	'settings',
@@ -512,6 +540,43 @@ function checkOutputs(value: unknown, call: string): Readonly<Record<string, Fea
 			`default of the output '${name}'`,
 		);
 		out[name] = Object.freeze({ default: neutral });
+	}
+	return Object.freeze(out);
+}
+
+/** The debug views that `value` declares, each with a name of its own, or throws E1223. */
+function checkDebugViews(value: unknown, call: string): readonly FeatureDebugView[] {
+	if (value === undefined) return Object.freeze([]);
+	if (!Array.isArray(value))
+		throw invalid(
+			call,
+			`got debugViews ${JSON.stringify(value)}; it takes an array of { name, set }.`,
+		);
+	const out: FeatureDebugView[] = [];
+	for (const view of value) {
+		if (typeof view !== 'object' || view === null || Array.isArray(view))
+			throw invalid(
+				call,
+				`got ${JSON.stringify(view)} in debugViews; give each view { name, set }.`,
+			);
+		const unknown = Object.keys(view).find((key) => key !== 'name' && key !== 'set');
+		if (unknown !== undefined)
+			throw invalid(
+				call,
+				`got the debug view option '${unknown}'; a debug view takes name and set.`,
+			);
+		const name = checkName((view as { name?: unknown }).name, call, 'debug view name');
+		if (isEngineDebugView(name))
+			throw invalid(
+				call,
+				`got the debug view name '${name}', which names one of the engine's own views. Give the add-on's view a name of its own.`,
+			);
+		if (out.some((one) => one.name === name))
+			throw invalid(call, `got the debug view '${name}' twice; give each view a name of its own.`);
+		const set = (view as { set?: unknown }).set;
+		if (typeof set !== 'function')
+			throw invalid(call, `got a debug view '${name}' whose set is not a function.`);
+		out.push(Object.freeze({ name, set: set as (active: boolean) => void }));
 	}
 	return Object.freeze(out);
 }
@@ -710,6 +775,7 @@ type NormalizedFeature = FeatureDescription & {
 	readonly writes: readonly FeatureResource[];
 	readonly outputs: Readonly<Record<string, FeatureOutput>>;
 	readonly provides: readonly FeatureSlot[];
+	readonly debugViews: readonly FeatureDebugView[];
 	readonly views: readonly FeatureView[];
 	readonly settings: Readonly<Record<string, FeatureSetting>>;
 };
@@ -739,6 +805,7 @@ function normalize(description: FeatureDescription, call: string): NormalizedFea
 	const reads = checkList(description.reads, RESOURCES, call, 'resource', 'reads');
 	const writes = checkList(description.writes, RESOURCES, call, 'resource', 'writes');
 	const provides = checkList(description.provides, SLOTS, call, 'slot', 'provides');
+	const debugViews = checkDebugViews(description.debugViews, call);
 	const views = checkList(description.views, VIEWS, call, 'view', 'views');
 	const outputs = checkOutputs(description.outputs, call);
 	const budget = checkBudget(description.budget, call);
@@ -798,6 +865,7 @@ function normalize(description: FeatureDescription, call: string): NormalizedFea
 		writes,
 		outputs,
 		provides,
+		debugViews,
 		settings,
 		...(budget === undefined ? {} : { budget }),
 		...(description.ready === undefined ? {} : { ready: description.ready }),
@@ -896,6 +964,8 @@ export class FeatureRegistry {
 	private readonly outputs = new Map<string, string>();
 	/** The feature that provides each lighting slot. */
 	private readonly slots = new Map<FeatureSlot, string>();
+	/** The feature that adds each debug view. */
+	private readonly debugViews = new Map<string, string>();
 
 	/** The number of registered features. */
 	get size(): number {
@@ -932,9 +1002,18 @@ export class FeatureRegistry {
 					`got the slot '${slot}', which the feature '${owner}' provides already. One feature provides each lighting slot.`,
 				);
 		}
+		for (const view of feature.debugViews) {
+			const owner = this.debugViews.get(view.name);
+			if (owner !== undefined)
+				throw invalid(
+					call,
+					`got the debug view '${view.name}', which the feature '${owner}' adds already. Give each view a name of its own.`,
+				);
+		}
 		this.descriptions.set(feature.name, feature);
 		for (const name of Object.keys(feature.outputs)) this.outputs.set(name, feature.name);
 		for (const slot of feature.provides) this.slots.set(slot, feature.name);
+		for (const view of feature.debugViews) this.debugViews.set(view.name, feature.name);
 		return feature;
 	}
 
@@ -949,6 +1028,7 @@ export class FeatureRegistry {
 		this.descriptions.delete(name);
 		for (const output of Object.keys(feature.outputs)) this.outputs.delete(output);
 		for (const slot of feature.provides) this.slots.delete(slot);
+		for (const view of feature.debugViews) this.debugViews.delete(view.name);
 		return true;
 	}
 

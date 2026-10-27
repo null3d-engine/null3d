@@ -43,6 +43,7 @@ describe('parseSwitches', () => {
 			record: false,
 			still: true,
 			bench: false,
+			view: undefined,
 			stats: undefined,
 			glTiming: undefined,
 			replayDelay: undefined,
@@ -268,6 +269,13 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?gpu=webgl2&cells=off').cells).toBe(false);
 		expect(parseSwitches('?cells=on').cells).toBe(true);
 		expect(parseSwitches('?cells=no').cells).toBe(true);
+	});
+
+	it('reads a debug view name from ?view=, and no name from an empty switch', () => {
+		expect(parseSwitches('?view=levels').view).toBe('levels');
+		expect(parseSwitches('?view=terrain-levels').view).toBe('terrain-levels');
+		expect(parseSwitches('?view=').view).toBeUndefined();
+		expect(parseSwitches('').view).toBeUndefined();
 	});
 
 	it('reads the quality preset, and ignores a name that is no preset', () => {

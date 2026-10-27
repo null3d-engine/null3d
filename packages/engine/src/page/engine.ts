@@ -2511,6 +2511,7 @@ async function startEngine(
 				holdScript,
 				replay,
 				record,
+				switches.view,
 			);
 			// In hold mode the sketch module loads only now, after the runner seeded the random
 			// numbers. The renderer starts before the setup, so a warm-up in the setup has a renderer
@@ -2561,6 +2562,7 @@ async function startEngine(
 				holdScript,
 				replay,
 				record,
+				debugView: switches.view,
 				quality,
 				maxTargetFps: maxTarget,
 				threads: engineThreads,

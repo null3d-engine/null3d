@@ -460,6 +460,7 @@ export class SketchRunner {
 		private readonly holdScript?: HoldScript,
 		replay?: ReplayProgram,
 		record = false,
+		debugView?: string,
 	) {
 		this.replayProgram = replay;
 		this.records = record;
@@ -669,6 +670,10 @@ export class SketchRunner {
 			sketch.sendLabelSlot,
 		);
 		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
+		// The page's ?view switch applies before the sketch's setup, so a sketch that never calls
+		// debug.view still draws the view. A feature that registers an add-on view during the setup
+		// starts it when it registers.
+		if (debugView !== undefined) this.debugDraw?.requestView(debugView);
 		const debug = this.debugDraw ?? new SketchDebug(host);
 		const holdsFrames = this.holdsFrames;
 		this.context = {

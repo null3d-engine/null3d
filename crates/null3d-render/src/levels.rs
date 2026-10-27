@@ -314,7 +314,9 @@ pub(crate) type LevelBucket<'a> = &'a dyn Fn(&BucketKey, usize) -> Option<Bucket
 /// Adds the keys of the level buckets of every key in `keys` whose mesh has levels and that
 /// `eligible` lets pick them: one key for each lower level, and one fade bucket for each level
 /// alike, where the level or the one after it fades, or where `ranged` says its sources draw in a
-/// distance band and `distance_fades` turns those bands on. A key without levels gets a fade bucket
+/// distance band and `distance_fades` turns those bands on. With `codes`, a levels debug view
+/// draws every level through its own bucket and adds no fade bucket, since each of its entries
+/// carries the level's code. A key without levels gets a fade bucket
 /// when its sources draw in a distance band. Each takes the count of the key it comes from, since
 /// any of its sources may draw any level. `level_bucket` gives the bucket of a level, whose
 /// material may differ from the base key's, so the level's pipeline and map group come from the
@@ -324,6 +326,7 @@ pub(crate) fn expand_level_keys(
     keys: &mut Vec<(BucketKey, u32)>,
     levels: &Levels,
     distance_fades: bool,
+    codes: bool,
     ranged: impl Fn(&BucketKey) -> bool,
     eligible: impl Fn(&BucketKey) -> bool,
     level_bucket: LevelBucket<'_>,
@@ -333,6 +336,22 @@ pub(crate) fn expand_level_keys(
         let (key, count) = keys[k];
         let fades = fades_its_way(key.0);
         let range = distance_fades && ranged(&key);
+        // A levels debug view draws every level through its own bucket, whose entries carry the
+        // level's code, so it adds no fade bucket: a band lists both levels' buckets instead.
+        if codes {
+            let Some(set) = levels.of(key.3).filter(|_| eligible(&key)) else {
+                continue;
+            };
+            let mut carried = key;
+            for level in 1..set.len() {
+                let Some(level_key) = level_bucket(&carried, level) else {
+                    continue;
+                };
+                keys.push((level_key, count));
+                carried.4 = level_key.4;
+            }
+            continue;
+        }
         let Some(set) = levels.of(key.3).filter(|_| eligible(&key)) else {
             if fades && range {
                 keys.push((fade_key(key), count));
@@ -376,7 +395,9 @@ pub(crate) fn expand_level_keys(
 }
 
 /// What a bucket key says of its level of detail: the level's switch value and measure, and the
-/// places in the sorted keys of the next coarser level's key and of the level's fade key.
+/// places in the sorted keys of the next coarser level's key and of the level's fade key. A levels
+/// debug view adds no fade bucket, so its fade place names the level's own key, and only a band
+/// that the engine draws gives it one.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct KeyLinks {
     pub value: f32,
@@ -393,19 +414,34 @@ pub(crate) fn links_of(
     key: BucketKey,
     keys: &[(BucketKey, u32)],
     levels: &Levels,
+    codes: bool,
+    bands: impl Fn(&BucketKey) -> bool,
     eligible: impl Fn(&BucketKey) -> bool,
     level_bucket: LevelBucket<'_>,
 ) -> KeyLinks {
     let (base, level) = key_level(key.3);
-    if is_fade_key(&key) {
+    // A levels debug view's buckets all carry the fading bit, since each lists its level's code
+    // beside its entry, so only the bits of another view mark a fade bucket here.
+    if !codes && is_fade_key(&key) {
         return KeyLinks::default();
     }
     let find = |key: Option<BucketKey>| {
         key.and_then(|key| keys.binary_search_by_key(&key, |&(k, _)| k).ok())
             .map(|place| place as u32)
     };
-    let fade = find(Some(fade_key(key)));
     let set = levels.of(base).filter(|_| level > 0 || eligible(&key));
+    // A levels debug view appends a band's entries to the level buckets themselves, so a bucket's
+    // fade link names the bucket. Only a band that the engine draws gives it one: its sources'
+    // distance band, the level's own fade, or the fade of the level after it, as a fade bucket
+    // takes the band of the level that hands over to it.
+    let fades = bands(&key)
+        || set
+            .is_some_and(|set| set.fades(level) || (level + 1 < set.len() && set.fades(level + 1)));
+    let fade = if codes {
+        find(Some(key)).filter(|_| fades)
+    } else {
+        find(Some(fade_key(key)))
+    };
     let Some(set) = set else {
         return KeyLinks {
             fade,
@@ -554,6 +590,7 @@ mod tests {
             &mut keys,
             &levels,
             false,
+            false,
             |_| false,
             eligible,
             &level_bucket,
@@ -568,7 +605,18 @@ mod tests {
         // Level 1 names a material, and level 2, which names none, draws with level 1's.
         assert_eq!((own(1), own(2)), (7, 7));
         // The links walk from the base level to level 1 and from level 1 to level 2.
-        let links = |key: BucketKey| links_of(key, &keys, &levels, eligible, &level_bucket).next;
+        let links = |key: BucketKey| {
+            links_of(
+                key,
+                &keys,
+                &levels,
+                false,
+                |_| false,
+                eligible,
+                &level_bucket,
+            )
+            .next
+        };
         let first = keys
             .iter()
             .find(|(key, _)| key_level(key.3) == (1, 0))

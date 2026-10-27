@@ -289,6 +289,8 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	// the frame-budget governor doubles it while frames take too long. The stats overlay reads the
 	// cadence and the pass's share of a frame from the host's figures.
 	let every = 1;
+	/** True while the `water-bounds` debug view draws. */
+	let debugBounds = false;
 	const host = new FeatureHost({
 		quality,
 		tier: ctx.engine.capabilities.tier,
@@ -309,6 +311,15 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			quality: (_preset, _settings, own) => {
 				every = own.settings.reflectionEvery as number;
 			},
+			// A debug view of the add-on's own: the bounds of each water body at the surface.
+			debugViews: [
+				{
+					name: 'water-bounds',
+					set: (active) => {
+						debugBounds = active;
+					},
+				},
+			],
 		}),
 	);
 	let frame = 0;
@@ -325,6 +336,11 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			return every;
 		},
 		update() {
+			// The add-on draws its own debug view: each body's bounds at the water's surface.
+			if (debugBounds) {
+				for (const body of bodies)
+					ctx.debug.box([body.minX, level, body.minZ], [body.maxX, level, body.maxZ], '#4fc3f7');
+			}
 			if (every <= 1) {
 				render.setPassEnabled(pass, true);
 				return;

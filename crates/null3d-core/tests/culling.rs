@@ -538,7 +538,7 @@ fn a_short_output_panics() {
 /// camera at `distances`, culled into a mesh's three levels and their fade buckets: buckets 0 to 2
 /// are the levels, 3 to 5 their fade buckets. The rule measures to each sphere's nearest point, 1 m
 /// nearer the camera. Returns each bucket's words.
-fn cull_levels(distances: &[f32], by_row: bool, band: f32) -> Vec<Vec<u32>> {
+fn cull_levels(distances: &[f32], by_row: bool, band: f32, codes: bool) -> Vec<Vec<u32>> {
     use null3d_core::culling::{LevelChoice, LevelRows, RowBiases, RowCells, RowRadii, RowRanges};
     use null3d_core::levels::{DrawRange, LevelLink, LevelRule, NO_LINK, Switch};
     let n = distances.len();
@@ -575,6 +575,7 @@ fn cull_levels(distances: &[f32], by_row: bool, band: f32) -> Vec<Vec<u32>> {
         biases: RowBiases::One(1.0),
         ranges: RowRanges::One(DrawRange::NONE),
     };
+    let levels = [0u32, 1, 2, 3, 4, 5];
     let choice = LevelChoice {
         rule: LevelRule {
             factor: 100.0,
@@ -584,6 +585,8 @@ fn cull_levels(distances: &[f32], by_row: bool, band: f32) -> Vec<Vec<u32>> {
         },
         links: &links,
         rows: &rows,
+        codes,
+        levels: &levels,
     };
     let run = CullRun {
         set: 0,
@@ -621,7 +624,7 @@ fn cull_levels(distances: &[f32], by_row: bool, band: f32) -> Vec<Vec<u32>> {
 fn rows_pick_the_level_their_distance_and_scale_give() {
     let distances = [3.0, 4.9, 8.0, 19.0, 30.0, 400.0];
     for by_row in [false, true] {
-        let buckets = cull_levels(&distances, by_row, 0.0);
+        let buckets = cull_levels(&distances, by_row, 0.0, false);
         assert_eq!(
             buckets[0],
             [0, 1],
@@ -635,12 +638,32 @@ fn rows_pick_the_level_their_distance_and_scale_give() {
 }
 
 #[test]
+fn a_levels_debug_view_pairs_each_entry_with_its_code_and_marks_a_hidden_row() {
+    use null3d_core::levels::{LEVEL_CODE_HIDDEN, level_code};
+    // Row 0 draws the base level, and row 1 covers fewer pixels than the threshold, so the size
+    // rule hides it.
+    let distances = [3.0, 400.0];
+    let buckets = cull_levels(&distances, true, 0.0, true);
+    // Every entry pairs with its level code, even outside a fading band.
+    assert_eq!(
+        buckets[0],
+        [0, level_code(0, false, 0.0), 1, level_code(0, true, 0.0)],
+        "the drawn row, then the hidden row at its base level"
+    );
+    assert_eq!(buckets[0][3] & LEVEL_CODE_HIDDEN, LEVEL_CODE_HIDDEN);
+    assert!(
+        buckets[1..].iter().all(Vec::is_empty),
+        "the hidden row draws in no other bucket"
+    );
+}
+
+#[test]
 fn rows_that_cover_less_than_a_pixel_hide_and_fade_out() {
     // A bound of world radius 1 covers a pixel until 200 m. Row 0's nearest point stands just
     // short of it at 195 m, row 1's lies a quarter into the band past it at 207 m, and row 2's
     // past the band at 239 m.
     let distances = [196.0, 208.0, 240.0];
-    let buckets = cull_levels(&distances, true, 0.15);
+    let buckets = cull_levels(&distances, true, 0.15, false);
     let bits = |word: u32| f32::from_bits(word);
     assert_eq!(buckets[2], [0], "the nearest row draws the last level");
     // The dying row lists a pair in the last level's fade bucket, with a negative fade value.
@@ -665,7 +688,7 @@ fn rows_inside_a_band_list_pairs_in_both_levels_fade_buckets() {
     // Distances from the camera to the nearest points: 5.375 m lies halfway through level 1's
     // band, and 21.2 m two fifths into level 2's. The spheres' centres lie 1 m farther out.
     let distances = [6.375, 8.0, 22.2];
-    let buckets = cull_levels(&distances, true, 0.15);
+    let buckets = cull_levels(&distances, true, 0.15, false);
     let bits = |word: u32| f32::from_bits(word);
     assert!(buckets[0].is_empty() && buckets[2].is_empty());
     assert_eq!(buckets[1], [1]);

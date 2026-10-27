@@ -49,6 +49,30 @@
 /// The bucket of a link that names none.
 pub const NO_LINK: u32 = u32::MAX;
 
+/// The highest level that a level code names, in its lowest bits.
+pub const LEVEL_CODE_LEVEL_MAX: u32 = 7;
+/// The bit of a level code that marks a source that the size rule or a draw range hid.
+pub const LEVEL_CODE_HIDDEN: u32 = 1 << 3;
+/// The place of the fade magnitude in a level code.
+pub const LEVEL_CODE_FADE_SHIFT: u32 = 4;
+/// The largest fade magnitude of a level code, in its own bits.
+pub const LEVEL_CODE_FADE_MAX: u32 = 0x3f;
+/// The bit of a level code that marks the side of a fading band that keeps the other level.
+pub const LEVEL_CODE_NEGATIVE: u32 = 1 << 10;
+
+/// The word that a debug view of levels reads beside an entry: the level of the draw, whether the
+/// size rule or a draw range hid the source, and the share of a fading band that its level keeps,
+/// with the sign that marks the side of the band. A source outside such a band has a fade of 0,
+/// which keeps every pixel. The levels debug view's shader reads the same bits.
+#[inline(always)]
+pub fn level_code(level: u32, hidden: bool, fade: f32) -> u32 {
+    let share = (fade.abs().clamp(0.0, 1.0) * LEVEL_CODE_FADE_MAX as f32).round() as u32;
+    (level & LEVEL_CODE_LEVEL_MAX)
+        | if hidden { LEVEL_CODE_HIDDEN } else { 0 }
+        | (share << LEVEL_CODE_FADE_SHIFT)
+        | if fade < 0.0 { LEVEL_CODE_NEGATIVE } else { 0 }
+}
+
 /// The share of the switch distance over which two levels hand over.
 pub const FADE_BAND: f32 = 0.08;
 
@@ -379,6 +403,35 @@ pub fn fade_values(t: f32) -> (f32, f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The levels debug view's shader reads the same bits, so a code round-trips through them.
+    #[test]
+    fn a_level_code_carries_its_level_hidden_mark_and_fade() {
+        let code = level_code(3, false, 0.5);
+        assert_eq!(code & LEVEL_CODE_LEVEL_MAX, 3);
+        assert_eq!(code & LEVEL_CODE_HIDDEN, 0);
+        assert_eq!(
+            (code >> LEVEL_CODE_FADE_SHIFT) & LEVEL_CODE_FADE_MAX,
+            32,
+            "0.5 of the fade's bits"
+        );
+        assert_eq!(code & LEVEL_CODE_NEGATIVE, 0);
+        let hid = level_code(0, true, 0.0);
+        assert_eq!(hid & LEVEL_CODE_HIDDEN, LEVEL_CODE_HIDDEN);
+        assert_eq!((hid >> LEVEL_CODE_FADE_SHIFT) & LEVEL_CODE_FADE_MAX, 0);
+        let old = level_code(1, false, -1.0);
+        assert_eq!((old >> LEVEL_CODE_FADE_SHIFT) & LEVEL_CODE_FADE_MAX, 63);
+        assert_ne!(old & LEVEL_CODE_NEGATIVE, 0);
+        // A fade past either end clamps to the code's own bits.
+        assert_eq!(
+            (level_code(0, false, 9.0) >> LEVEL_CODE_FADE_SHIFT) & LEVEL_CODE_FADE_MAX,
+            63
+        );
+        assert_eq!(
+            (level_code(0, false, -9.0) >> LEVEL_CODE_FADE_SHIFT) & LEVEL_CODE_FADE_MAX,
+            63
+        );
+    }
 
     /// Buckets 0 to 3 are the levels of one mesh, with errors growing, and buckets 4 to 7 their
     /// fade buckets.
