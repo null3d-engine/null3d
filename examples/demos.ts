@@ -43,6 +43,13 @@ export interface Demo {
 	/** True for a demo that starts the engine in large-world mode. */
 	largeWorld?: boolean;
 	/**
+	 * True for a demo whose canvas is see-through over a page backdrop: `startDemo` starts the
+	 * engine on a transparent canvas, puts a page-like backdrop behind the canvas, and puts the
+	 * labels' layer there too. The sketch shows its page as a `'world'` label and sets no
+	 * background, so the page shows where no object draws.
+	 */
+	backdrop?: boolean;
+	/**
 	 * False starts the engine on the 8-bit path, where a material with `toneMapped: false` keeps its
 	 * color as the display shows it, as it does on the HDR path. The image test adds the page's
 	 * switch that takes the same path.
@@ -451,6 +458,18 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'A walk from a sunny courtyard into a dark stone hall and back. The hall starts almost black, then the eye opens and its lamps and golden sphere come out of the dark. Turned toward the door, the courtyard blazes white until the eye closes again, faster, as eyes do.',
 		hold: 6,
+	},
+	{
+		name: 'depth-only',
+		group: 'Light, materials and effects',
+		sketch: new URL('./depth-only/sketch.ts', import.meta.url),
+		title: 'Depth-only holdout',
+		scene: 'Glass over an embedded page',
+		summary:
+			'Glass panes float in front of an embedded page that sits below a see-through canvas, with a hall of glowing pylons behind it. A plane at the page writes depth and no color, so the hall never draws over the page while the glass still shows it through. An opaque plane there would hide the page.',
+		backdrop: true,
+		hold: 1,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'tone-mapped',

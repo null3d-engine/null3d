@@ -7,7 +7,7 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | Path | Contents |
 | --- | --- |
 | `examples/demos.ts` | The list of demos and their groups, in `DEMO_GROUPS` order. Each entry names its group and its sketch, with a literal `new URL('./<name>/sketch.ts', import.meta.url)`, and says why the demo loads files, when it does |
-| `examples/lib/run.ts` | `startDemo`, which starts a demo on a canvas that the page gives it, shows its labels in a layer that the page gives it, and shows the stats overlay |
+| `examples/lib/run.ts` | `startDemo`, which starts a demo on a canvas that the page gives it, shows its labels in a layer that the page gives it, puts a page backdrop under a demo that asks for one, and shows the stats overlay |
 | `examples/lib/source.ts` | `sourceUrl`, the GitHub address of a demo's code, for a "View code" link ([below](#the-link-to-a-demos-code)) |
 | `examples/index.html`, `examples/index.ts` | The examples page of a clone: a sidebar of the demos by group, and a panel that runs the demo that `?demo=<name>` names ([below](#the-examples-page-of-a-clone)) |
 | `examples/<name>/sketch.ts` | One demo, under 150 lines. The sketch shows the feature |
@@ -100,6 +100,14 @@ The reasons are:
 The post effects demo sets its warm and cool grades from lift, gamma and gain in code, through the grading controls. A job worker bakes each grade into a table. Tables loaded from files belong in the planned demo of asset loading.
 
 Demos load sample files through `sampleUrl('<path>')` from `examples/lib/samples.ts`, with a string literal, so the sample check and `copyNamedSamples` find each file.
+
+## A page backdrop under a demo
+
+A demo whose entry sets `backdrop: true` draws over a page. `startDemo` starts the engine on a see-through canvas, and puts a light page-like surface inside the canvas's parent. It moves the labels' layer there too, so the order is the backdrop, the labels, then the canvas. The sketch sets no background, so the page shows where no object draws. A page that lays out its own demos must keep the canvas's parent positioned.
+
+A label of such a demo can be a page of its own. Its message gives `kind: 'page'` with a `text` and a `detail`, and `startDemo` builds a small page card with a title bar and a heading. The card is styled through the DOM, so any layout shows it the same way. The card's width and height in CSS pixels are the size of its plane in the scene.
+
+The depth-only demo shows the use. Its page is a `'world'` label, and a plane of the same size and place has `colorWrite: false`. That plane writes the page's depth and no color. The scene behind the page then never draws over it, while the glass in front shows the page through it. An opaque plane there would hide the page.
 
 ## Always-on interaction
 
