@@ -126,6 +126,12 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch. The round 24 audit of the aurora fix (findings N1 and N3) records that the tip's capture never runs and that the evidence line claims light the tip does not make; the light sum, the coefficient stride and the aurora pictures are on `fix/m3-sky-layer-light`",
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
+	'M3-G5':
+		'its branch, `fix/m3-g5-masked-transmission` at `305624b36`, is 14 commits ahead and unmerged. The check refuses it until the branch carries a `GPU-Checked:` line, which blocks the landing; its pushed tip has no CI run; the parity load figures are not in the logs; the mirror figure 0.0325 is WebGPU alone, where compatibility reads 0.0327 and WebGL2 0.0328; the ceiling comment grows by an unstated figure; and the cold build was not taken on a quiet machine',
+	'M3-R23':
+		"`fix/m3-r23-today` at `6fa3fec9e` is 16 commits ahead and unmerged. The owner's tenth ruling closed the bar and the iPad frame-time sentence is fixed. It still owes a `GPU-Checked:` line, because the branch changes WebGL2's backend; a D-266 number that does not collide with the landed D-266; the merge; and the unit tests and the ambient-occlusion pictures",
+	'M3-V2':
+		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
