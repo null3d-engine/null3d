@@ -43,12 +43,9 @@ const INCOMPLETE = new Set([
 	'M3-B5',
 	'M3-V4',
 	'M3-F2',
-	'M3-R20',
 	'M3-E4',
-	'M3-K3',
 	'M3-E10',
 	'M3-V6',
-	'M3-E4a',
 	'M3-E6',
 	'M3-E8',
 	'M3-L3',
@@ -127,15 +124,10 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'no device has timed the new generator, so the device figures are of the stand-in it replaced; no Mac, iPad or S24 GPU or memory figure exists, and no check-addon run is recorded',
 	'M3-F2':
 		"a 100,000-splat cloud becomes one chunk and cannot stream; the streaming test's last recorded CI failure predates the chunking fix, and no pass has been recorded since",
-	'M3-R20': 'the record gives 1.25 to 2.42 seconds against a finish line that asks for under one',
 	'M3-E4':
 		"whether the approved hook table stands against hard rule 8 is the owner's to decide, and the tick waits on that",
-	'M3-K3':
-		"the spot-map picture covers the cookie on every path and passes; what remains is the owner's call on whether a 128 by 128 pixels-only cookie looks good enough, which the better-look rule raises",
 	'M3-V6':
 		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
-	'M3-E4a':
-		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
 	'M3-V5':
 		"every vegetation picture passes in both reference sets on both GPUs and the crowns keep their coverage at three distances, and the leaf cells now hold a spray of lobed, veined, damaged leaves instead of one smooth shape. Its author's verdict is that the atlas is at least as good as Creek's as a texture, and that the crown is still paler and flatter because the material lights it with one uniform light while Creek's texture carries painted shadowing, which belongs to M3-V7. The task's line asks the owner to judge the two side by side, and the paint time per device is owed too",
 	'M3-V1':
