@@ -529,7 +529,6 @@ const REPLAY = 'replay webgpu/backend.ts';
 
 /**
  * Functions whose objects the check counts in their caller's place. The browser counts an object in
- * Functions whose objects the check counts in their caller's place. The browser counts an object in
  * the function that makes it, or in the caller where it inlines that function, so a change to the
  * code's inlining moves the bytes between the two while their sum holds. Counted in the caller,
  * they read the same whichever way the inlining fell.
