@@ -39,6 +39,7 @@ const ON_BRANCH = new Set(['M3-E9', 'M3-V2']);
 // A tick states that the task is done, so a task those audits found short of its own line is not
 // ticked here until the gap closes, whatever code it already has.
 const INCOMPLETE = new Set([
+	'M3-V3',
 	'M3-B2',
 	'M3-B3',
 	'M3-B5',
@@ -154,6 +155,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the spot-map picture covers the cookie on every path and passes; what remains is the owner's call on whether a 128 by 128 pixels-only cookie looks good enough, which the better-look rule raises",
 	'M3-A10':
 		"the sharpening now holds on both reference sets: CI's five software pictures were drawn with the effect and the threshold is tight enough to fail when it goes, and the owner's ruling that the Galaxy S25 closes the S24+ line is written in D-205. The tick waits on one CI run of the landed range passing sharpen on the three software tiers",
+	'M3-V3':
+		'the compute pass reports its own time on the side where the page turns it off, so a turned-off pass either still dispatches or still times; the page and the engine must say which, each device cost must be restated or retimed, and the Mac timer step of 0.065536 ms must be stated, because one step sits below its resolution',
 	'M3-V6':
 		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
 	'M3-V13':
