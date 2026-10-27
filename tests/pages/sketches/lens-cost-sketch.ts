@@ -145,6 +145,11 @@ export default defineSketch((ctx) => {
 		for (const effect of repeats) post.removeEffect(effect);
 		repeats.length = 0;
 	};
+	/**
+	 * The bloom level that the repeated effect reads, or none: only the streak samples bloom, so
+	 * only its repeats declare the read, and a page without bloom runs no pass that would fail it.
+	 */
+	const bloomLevel = marks.streak > 0 ? (CHOSEN.bloomLevel ?? 3) : null;
 	const addRepeats = () => {
 		if (REPEAT === 1 || !marksOn) return;
 		for (let draw = 0; draw < REPEAT; draw++)
@@ -152,7 +157,7 @@ export default defineSketch((ctx) => {
 				post.addEffect({
 					wgsl: lensEffect,
 					uniforms: marks,
-					bloomLevel: CHOSEN.bloomLevel ?? 3,
+					...(bloomLevel === null ? {} : { bloomLevel }),
 				}),
 			);
 	};
