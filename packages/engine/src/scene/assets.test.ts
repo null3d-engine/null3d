@@ -42,7 +42,8 @@ function serve(answers: Record<string, Answer>): void {
 		if (answer === undefined || answer === 'network') throw new TypeError('Failed to fetch');
 		if (typeof answer === 'number') return new Response('', { status: answer });
 		// A server gives a length for what it sends, so the progress handlers know the total.
-		const length = typeof answer === 'string' ? new TextEncoder().encode(answer).length : answer.length;
+		const length =
+			typeof answer === 'string' ? new TextEncoder().encode(answer).length : answer.length;
 		return new Response(answer as BodyInit, { headers: { 'content-length': String(length) } });
 	}) as typeof fetch;
 	globalThis.createImageBitmap = (async (blob: Blob, options: ImageBitmapOptions) => {
@@ -212,7 +213,7 @@ describe('assets', () => {
 				},
 			});
 			return new Response(stream, { headers: { 'content-length': String(size) } });
-		}) as typeof fetch;
+		}) as unknown as typeof fetch;
 		const { textures } = fakeTextures();
 		const assets = new Assets(textures, PAGE);
 		const seen: [number, number, string][] = [];
@@ -230,7 +231,7 @@ describe('assets', () => {
 
 	test('a file whose response gives no length reports its bytes with the total unknown', async () => {
 		const body = new Uint8Array(4096).fill(3);
-		globalThis.fetch = (async () => new Response(body)) as typeof fetch;
+		globalThis.fetch = (async () => new Response(body)) as unknown as typeof fetch;
 		const { textures } = fakeTextures();
 		const assets = new Assets(textures, PAGE);
 		const seen: [number, number][] = [];
