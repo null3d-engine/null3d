@@ -1457,6 +1457,7 @@ mod tests {
             range: 10.0,
             bias: 0.5,
             normal_bias: 1.0,
+            intensity: 1.0,
             layers: 1,
         }
     }
