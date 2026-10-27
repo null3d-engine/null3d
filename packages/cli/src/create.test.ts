@@ -11,7 +11,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { UsageError } from './args.js';
 import { createProject, packageNameFor, parseCreateArgs, templateNames } from './create.js';
@@ -72,19 +72,29 @@ describe('createProject', () => {
 		const root = tempRoot();
 		const target = createProject({ dir: join(root, 'my-game'), version: '0.1.0' });
 
-		// The project holds the template's every file and nothing more, so a file the template keeps
-		// beside its successor cannot ship unnoticed.
-		const template = join(dirname(fileURLToPath(import.meta.url)), '..', 'templates', 'empty');
+		// Every file the project holds, relative to its folder, in one sorted list.
 		const listed = (root: string): string[] =>
 			readdirSync(root, { recursive: true, withFileTypes: true })
 				.filter((entry) => entry.isFile())
 				.map((entry) => relative(root, join(entry.parentPath, entry.name)))
 				.sort();
-		expect(listed(target)).toEqual(
-			listed(template)
-				.map((file) => (file === 'gitignore' ? '.gitignore' : file))
-				.sort(),
-		);
+
+		// The template holds exactly these files. The list is written out rather than read from the
+		// template folder, so a file left in the folder shows up as a project file that no line here
+		// names.
+		expect(listed(target)).toEqual([
+			'.agent/agent-hook.mjs',
+			'.claude/settings.json',
+			'.codex/hooks.json',
+			'.gitignore',
+			'AGENTS.md',
+			'index.html',
+			'package.json',
+			'src/page.ts',
+			'src/sketch.ts',
+			'tsconfig.json',
+			'vite.config.ts',
+		]);
 
 		const manifest = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'));
 		expect(manifest.name).toBe('my-game');
