@@ -549,7 +549,8 @@ fn a_point_light_draws_six_tiles_when_its_casters_move<B: Tiles>(renderer: B) {
     world.scene.set_position(lit_box, [-3.0, 0.2, 0.0]).unwrap();
     let moved = step(&mut world, &mut mock, false);
     assert_eq!(depth_passes(&moved), 1);
-    // Its record names its first tile, and the tiles' block says that it has six.
+    // Its record names its first tile, and the tiles' block says that it has six, with the
+    // light's shadow strength in the half step past the count.
     let row = world.lights[0].light;
     assert_eq!(world.renderer.grid().lights()[0].shadow, 1.0);
     assert_eq!(
@@ -557,7 +558,7 @@ fn a_point_light_draws_six_tiles_when_its_casters_move<B: Tiles>(renderer: B) {
         1.0
     );
     let params = world.renderer.tiles().uniform().params;
-    assert!(params[..6].iter().all(|p| p[3] == 6.0));
+    assert!(params[..6].iter().all(|p| p[3] == 6.5));
 }
 
 #[test]

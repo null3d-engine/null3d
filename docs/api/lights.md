@@ -259,9 +259,9 @@ The object must cast shadows. Its tile comes from the same atlas as the spot and
 | `pointLight.power = lumens` or `spotLight.power = lumens` | `intensity: lumens, intensityUnit: 'lumen'` at create; `setIntensity` then takes lumens |
 | `scene.add(light)` or `group.add(light)` | Nothing for the scene; the `parent` option or `setParent(group)` for a group |
 | `light.visible = false` | `light.setVisible(false)` |
-| `light.castShadow = true`, `light.shadow.mapSize`, `light.shadow.bias` | `castShadows: true`, and `shadow: { mapSize, bias, normalBias }`, both biases in meters. [Shadows](../concepts/shadows.md) covers the differences. |
+| `light.castShadow = true`, `light.shadow.mapSize`, `light.shadow.bias` | `castShadows: true`, and `shadow: { mapSize, bias, normalBias, intensity }`, both biases in meters. [Shadows](../concepts/shadows.md) covers the differences. |
 | A second shadowed light fitted to one object, or a hand-fitted `DirectionalLight` shadow camera, for a sharper close-up shadow | `sun.setShadow({ hero: object })`: the light gives the object a fitted shadow map of its own, and follows it |
-| `spotLight.castShadow = true` or `pointLight.castShadow = true`, and `shadow.bias` | `castShadows: true`, and `shadow: { bias, normalBias }` in meters. The quality preset sets the tile size. |
+| `spotLight.castShadow = true` or `pointLight.castShadow = true`, and `shadow.bias` | `castShadows: true`, and `shadow: { bias, normalBias, intensity }` in meters. The quality preset sets the tile size. |
 | `spotLight.map = texture` | `map: { width, height, data }` at create, or `setMap({ width, height, data })`: sRGB pixels that the engine resamples and projects, rather than a texture handle. `setMap(null)` goes back to one color |
 
 A three.js `distance` of 0 means a light with no end. null3D needs a finite range, so pick the distance where the light no longer matters.

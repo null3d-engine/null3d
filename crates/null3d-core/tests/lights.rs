@@ -188,6 +188,7 @@ fn point_and_spot_lights_that_cast_shadows_list_where_they_stand_in_view_or_not(
             range: 1.0,
             bias: 0.01,
             normal_bias: 0.02,
+            intensity: 1.0,
             layers: DEFAULT_LAYERS,
         }
     );
