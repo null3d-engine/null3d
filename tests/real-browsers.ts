@@ -88,7 +88,9 @@
 //                       at every preset on each GPU path with the triangles and the memory, or
 //                       tree-generation, which times procedural tree generation in a worker, or
 //                       vegetation-scatter, which places Creek's valley by the vegetation add-on's
-//                       ecological rules and checks the placement against the reference
+//                       ecological rules and checks the placement against the reference, or
+//                       history-cost, which times a compute pass that keeps its state between frames,
+//                       with the pass off and on
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
