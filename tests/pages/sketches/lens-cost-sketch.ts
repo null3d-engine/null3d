@@ -89,7 +89,9 @@ export default defineSketch((ctx) => {
 		});
 	}
 	// Bloom lights the streak, and it stays on for both sides, so only the lens's own cost is timed.
-	post.set({ bloom: { intensity: 0.5, threshold: 1 } });
+	// ?bloom=off leaves it out for a mark that draws no streak, which keeps the frame's passes few
+	// enough for the engine to time the effect's own passes.
+	if (params.get('bloom') !== 'off') post.set({ bloom: { intensity: 0.5, threshold: 1 } });
 	scene.setBackground('#0e1420');
 	scene.setActiveCamera(
 		scene.createPerspectiveCamera({

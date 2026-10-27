@@ -15,7 +15,11 @@
 // The line reads the effect's own passes from the per-pass GPU timer where the device times passes,
 // which is where the step between the timer's values is 0.065536 ms on this Mac. A path that times
 // no pass, as WebGL2 does, reports the whole frame's span instead, and the line says that this is
-// not the look's cost.
+// not the look's cost. The engine times seven passes a frame, and bloom draws fifteen, so while
+// bloom is on the look's passes fall past the timed slots. The three marks that draw no streak
+// therefore run without bloom, which leaves the look's passes inside the timed slots; the streak
+// and the whole look keep bloom and read the last timed pass's growth, which carries the passes
+// after it.
 //
 // The grade and the vignette run inside the final pass, so their runs take no repeat, and their
 // lines show the pass's part with each on and off beside the timer's step. The sharpening draws a
@@ -54,6 +58,8 @@ const HIGHEST_PRESET: Readonly<Record<string, string>> = {
 };
 /** The marks that draw the add-on's effect, which the page repeats. */
 const EFFECT_MARKS = new Set(['aberration', 'streak', 'grain', 'speed']);
+/** The marks that draw no streak, so their pages leave bloom out and keep the frame's passes few. */
+const NO_BLOOM = new Set(['aberration', 'grain', 'speed']);
 /** How many times the page draws the effect in each frame. */
 const REPEAT = 8;
 /** The rounds of each side, and the seconds of each turn. */
@@ -105,15 +111,17 @@ function cell(
 	const between =
 		on.passRoundsMs?.['between passes'] !== undefined &&
 		off.passRoundsMs?.['between passes'] !== undefined;
-	const last = onNames.at(-1);
+	// A pass past the seven that the engine times joins the last timed pass's slot, so that pass's
+	// growth carries the effect's work where no pass of the on side is named on its own.
+	const last = onNames.filter((name) => name !== 'between passes').at(-1);
 	const source =
 		added.length > 0
 			? `passes ${added.join(', ')}${between ? ' and the tail' : ''}`
-			: between
-				? 'between passes'
-				: last === undefined
-					? 'whole frame'
-					: `pass ${last}`;
+			: last !== undefined
+				? `pass ${last}`
+				: between
+					? 'between passes'
+					: 'whole frame';
 	/** The round's reading of the part that the source names, before the repeat count divides it. */
 	const valueAt = (round: number): number | undefined => {
 		if (added.length > 0) {
@@ -133,11 +141,12 @@ function cell(
 			}
 			return sum;
 		}
-		const [drawn, plain] = between
-			? [partRound(on, 'between passes', round), partRound(off, 'between passes', round)]
-			: last !== undefined
+		const [drawn, plain] =
+			last !== undefined
 				? [partRound(on, last, round), partRound(off, last, round)]
-				: [on.gpuRoundsMs?.[round], off.gpuRoundsMs?.[round]];
+				: between
+					? [partRound(on, 'between passes', round), partRound(off, 'between passes', round)]
+					: [on.gpuRoundsMs?.[round], off.gpuRoundsMs?.[round]];
 		return drawn === undefined || plain === undefined ? undefined : drawn - plain;
 	};
 	const rounds = roundCount(off, on);
@@ -160,6 +169,7 @@ function cell(
 function lastSharedDelta(off: Side, on: Side): { name: string; ms: number } | null {
 	const plain = new Map((off.passes ?? []).map((pass) => [pass.name, pass.ms]));
 	for (const pass of [...(on.passes ?? [])].reverse()) {
+		if (pass.name === 'between passes') continue;
 		if (pass.ms === null) continue;
 		const before = plain.get(pass.name);
 		if (before === undefined || before === null) continue;
@@ -178,8 +188,9 @@ async function timeLook(
 	await page.setViewportSize(SIZE);
 	const repeat = mark === undefined || EFFECT_MARKS.has(mark) ? REPEAT : 1;
 	const look = mark === undefined ? '' : `&look=${mark}`;
+	const bloom = mark !== undefined && NO_BLOOM.has(mark) ? '&bloom=off' : '';
 	await page.goto(
-		`effect-cost.html?effect=lens&gpu=${gpu}&preset=${preset}&scale=1&pixel-ratio=${PIXEL_RATIO}&rounds=${ROUNDS}&seconds=${SECONDS}&repeat=${repeat}${look}`,
+		`effect-cost.html?effect=lens&gpu=${gpu}&preset=${preset}&scale=1&pixel-ratio=${PIXEL_RATIO}&rounds=${ROUNDS}&seconds=${SECONDS}&repeat=${repeat}${look}${bloom}`,
 	);
 	const result = await pageResult<CostResult & { repeat: number; seconds: number | null }>(
 		page,
