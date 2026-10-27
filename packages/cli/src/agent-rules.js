@@ -1,6 +1,7 @@
 // The rules that a null3D project gives to an AI agent, in one place. The project's hook applies
-// them to each command and each edit, and a lint rule reads the same list. A rule either refuses
-// the call or flags it: a refusal stops the call, and a flag tells the agent and lets it go on.
+// them to each command and each edit, and a lint rule can read the same list when one is built. A
+// rule either refuses the call or flags it: a refusal stops the call, and a flag tells the agent and
+// lets it go on.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -107,6 +108,26 @@ const WRAPPERS = new Set([
 	'timeout',
 	'gtimeout',
 	'nice',
+]);
+
+/** The shell words that open or close a command list rather than run a program. */
+const LIST_WORDS = new Set([
+	'do',
+	'done',
+	'then',
+	'else',
+	'elif',
+	'fi',
+	'if',
+	'while',
+	'until',
+	'for',
+	'case',
+	'esac',
+	'in',
+	'!',
+	'{',
+	'}',
 ]);
 
 /** The files whose code runs in the sketch worker, where the DOM does not exist. */
@@ -233,14 +254,50 @@ function readSubstitution(text, start) {
 }
 
 /**
- * One shell word from `start`, with its quotes removed and its substitutions kept whole.
+ * The bodies of the command substitutions in `text`, which run what they hold.
+ *
+ * @param {string} text
+ * @returns {string[]}
+ */
+function substitutionsIn(text) {
+	/** @type {string[]} */
+	const bodies = [];
+	let i = 0;
+	while (i < text.length) {
+		const ch = text[i] ?? '';
+		if (ch === '\\') {
+			i += 2;
+			continue;
+		}
+		if (ch === '$' && text[i + 1] === '(') {
+			const end = readSubstitution(text, i);
+			bodies.push(text.slice(i + 2, Math.max(i + 2, end - 1)));
+			i = end;
+			continue;
+		}
+		if (ch === '`') {
+			const end = readBacktick(text, i);
+			bodies.push(text.slice(i + 1, Math.max(i + 1, end - 1)));
+			i = end;
+			continue;
+		}
+		i += 1;
+	}
+	return bodies;
+}
+
+/**
+ * One shell word from `start`, with its quotes removed, its substitutions kept whole, and the
+ * commands that those substitutions run. A single-quoted run is data, so it runs none.
  *
  * @param {string} command
  * @param {number} start
- * @returns {{ text: string, end: number }}
+ * @returns {{ text: string, end: number, substitutions: string[] }}
  */
 function readShellWord(command, start) {
 	let text = '';
+	/** @type {string[]} */
+	const substitutions = [];
 	let i = start;
 	while (i < command.length) {
 		const ch = command[i] ?? '';
@@ -248,18 +305,22 @@ function readShellWord(command, start) {
 		if (ch === ';' || ch === '&' || ch === '|') break;
 		if (ch === "'" || ch === '"') {
 			const end = readQuoted(command, i);
-			text += command.slice(i + 1, Math.max(i + 1, end - 1));
+			const inner = command.slice(i + 1, Math.max(i + 1, end - 1));
+			text += inner;
+			if (ch === '"') substitutions.push(...substitutionsIn(inner));
 			i = end;
 			continue;
 		}
 		if (ch === '$' && command[i + 1] === '(') {
 			const end = readSubstitution(command, i);
+			substitutions.push(command.slice(i + 2, Math.max(i + 2, end - 1)));
 			text += command.slice(i, end);
 			i = end;
 			continue;
 		}
 		if (ch === '`') {
 			const end = readBacktick(command, i);
+			substitutions.push(command.slice(i + 1, Math.max(i + 1, end - 1)));
 			text += command.slice(i, end);
 			i = end;
 			continue;
@@ -272,7 +333,7 @@ function readShellWord(command, start) {
 		text += ch;
 		i += 1;
 	}
-	return { text, end: i };
+	return { text, end: i, substitutions };
 }
 
 /**
@@ -341,6 +402,7 @@ function skipHeredocs(command, start, pending) {
 /**
  * @typedef {object} ShellSegment
  * @property {string[]} words The words of the simple command.
+ * @property {string[]} substitutions The commands that its substitutions run.
  * @property {boolean} piped True when a pipe feeds this command from the one before.
  * @property {string[]} heredocs The bodies of the heredocs that this command declares.
  */
@@ -358,13 +420,16 @@ export function shellSegments(command) {
 	/** @type {string[]} */
 	let words = [];
 	/** @type {string[]} */
+	let substitutions = [];
+	/** @type {string[]} */
 	let bodies = [];
 	/** @type {{ delimiter: string, stripTabs: boolean }[]} */
 	const pending = [];
 	let piped = false;
 	const endSegment = () => {
-		if (words.length > 0) segments.push({ words, piped, heredocs: bodies });
+		if (words.length > 0) segments.push({ words, substitutions, piped, heredocs: bodies });
 		words = [];
+		substitutions = [];
 		bodies = [];
 		piped = false;
 	};
@@ -421,6 +486,7 @@ export function shellSegments(command) {
 		}
 		const word = readShellWord(command, i);
 		words.push(word.text);
+		substitutions.push(...word.substitutions);
 		i = word.end;
 	}
 	endSegment();
@@ -485,6 +551,37 @@ function unwrap(words) {
 		break;
 	}
 	return { words: words.slice(i), xargs };
+}
+
+/**
+ * `words` without the list words that a loop, a condition or a group puts before its command, and
+ * without a leading `(`. A wrapper may stand before a list word, so the two are removed in turns.
+ *
+ * @param {readonly string[]} words
+ * @returns {{ words: string[], xargs: boolean }}
+ */
+function commandWords(words) {
+	let rest = [...words];
+	let xargs = false;
+	let changed = true;
+	while (changed) {
+		const before = rest.length;
+		let i = 0;
+		while (i < rest.length && LIST_WORDS.has(rest[i] ?? '')) i += 1;
+		const first = rest[i] ?? '';
+		const stripped = first.replace(/^[({]+/, '');
+		rest =
+			i >= rest.length
+				? []
+				: stripped === ''
+					? rest.slice(i + 1)
+					: [stripped, ...rest.slice(i + 1)];
+		const unwrapped = unwrap(rest);
+		rest = unwrapped.words;
+		xargs ||= unwrapped.xargs;
+		changed = rest.length < before;
+	}
+	return { words: rest, xargs };
 }
 
 /**
@@ -583,7 +680,7 @@ const NAME_LOOKUPS = new Set(['pgrep', 'pidof', 'ps', 'grep']);
  * @returns {Finding | null}
  */
 function refusedWords(segment, depth, producer) {
-	const { words: command, xargs } = unwrap(withoutRedirections(segment.words));
+	const { words: command, xargs } = commandWords(withoutRedirections(segment.words));
 	const name = basename(command[0] ?? '');
 	const args = command.slice(1);
 	if (SHELLS.has(name)) {
@@ -597,6 +694,10 @@ function refusedWords(segment, depth, producer) {
 			}
 		}
 		return null;
+	}
+	if (name === 'eval') {
+		// eval joins its arguments and runs them as a command, so a wait behind it is the wait.
+		return depth < 3 ? refusedCommand(args.join(' '), depth + 1) : null;
 	}
 	if (name === 'sleep') return { id: 'no-sleep', message: WAITING };
 	if (name === 'pkill' || name === 'killall') return { id: 'no-kill-by-name', message: STOPPING };
@@ -612,6 +713,12 @@ function refusedWords(segment, depth, producer) {
 			return { id: 'no-kill-by-name', message: STOPPING };
 	}
 	if (followsLog(name, args)) return { id: 'no-log-follow', message: FOLLOWING };
+	if (depth < 3) {
+		for (const body of segment.substitutions) {
+			const finding = refusedCommand(body, depth + 1);
+			if (finding) return finding;
+		}
+	}
 	return null;
 }
 

@@ -24,8 +24,9 @@ call goes on.
 Claude Code runs the hook through `.claude/settings.json`, and Codex runs it through
 `.codex/hooks.json`. Both run `.agent/agent-hook.mjs`, which takes its rules from
 `@null3d/cli/agent-rules` in the installed packages. The hook needs `bun install` to find the rules.
-
-The hook is optional: delete its entries in `.claude/settings.json` and `.codex/hooks.json`, or the
+Codex asks you to trust a project's hooks before it runs them. Other agents read this file and
+follow the same rules. The hook is optional: delete its entries in `.claude/settings.json` and
+`.codex/hooks.json`, or the hook file, to stop the checks.
 
 ## Before you build a feature
 
@@ -79,9 +80,3 @@ Settle its state before you design the scene.
    send messages between the two. A sketch on the main thread may use the DOM, but it shares the
    page thread.
 7. Run `bunx @null3d/cli test` before you report the work as done.
-
-Claude Code checks rules 2 to 6 before each command and each edit, through the hook that
-`.claude/settings.json` names. Codex checks the same rules through `.codex/hooks.json`, which runs
-the same hook script on Codex's tool calls. Codex asks you to trust a project's hooks before it
-runs them. Other agents read this file and follow the same rules. The hook is optional: delete
-those files, or their hook entries, to remove the checks.
