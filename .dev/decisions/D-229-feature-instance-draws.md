@@ -353,6 +353,13 @@ that two frames of one count match. A page that ignored the hook would draw the 
 and show no change. The inference is therefore that the draw follows the pass's word. The picture
 checks on each tier show that the pines drawn are the demo's pines.
 
+The run at head 4947bbc78, in this Mac's Chrome at 320 by 180 and after the shared queue's load
+gate, moved 14.89 per cent of the frame at Low on WebGPU and 14.92 on WebGL2, between 90 and 400,
+and 3.20 and 3.21 at High, between 320 and 400. Two frames of one count moved 0.00 per cent in each
+case, and the four cases took 21.0 s. With the count shader's store replaced by a constant in a
+local copy, Low and High on WebGPU both moved 0.00 per cent between the two counts, and the test
+failed. The test therefore has teeth: the picture moves only while the shader reads the word.
+
 One limit belongs to the author's machine, not to the hook. The demo's software-GPU picture times
 out at 180 s there, and the unchanged demo times out the same way. That reference therefore comes
 from CI, as the demo's other software references do.
