@@ -135,6 +135,9 @@ pub(super) struct Draw {
     /// The bind group of the material's maps that the pick pipeline reads, or 0 for the pick
     /// template, which reads none.
     pub(super) pick_textures: u32,
+    /// True for a draw whose surface writes no color. These draws come first, so the depth they
+    /// write holds back the color of the surfaces behind them.
+    pub(super) holdout: bool,
 }
 
 /// A batch's place in the layout: its data texture, its first row there, whether its rows have
@@ -685,6 +688,10 @@ impl Layout {
             let second = (drawn == Drawn::Outlined)
                 .then(|| pipelines.id(mask_keys(pipeline).1.in_pass(targets)));
             let lines = pipeline.state & state_flags::LINE_LIST != 0;
+            // A surface that writes no color holds back what lies behind it, so its draws come
+            // before the surfaces that write color. Only the scene's own layout draws them.
+            let holdout =
+                drawn == Drawn::Scene && pipeline.state & state_flags::NO_COLOR_WRITE != 0;
             let pipeline = first;
             for shift in [0, CLUSTER_SHIFT] {
                 let bucket = self.buckets.len() as u32;
@@ -720,6 +727,7 @@ impl Layout {
                         pairs,
                         pick,
                         pick_textures,
+                        holdout,
                     };
                     self.draws.push(draw);
                     if let Some(second) = second {
@@ -731,6 +739,9 @@ impl Layout {
                 }
             }
         }
+        // A surface that writes no color draws before the ones that do, so its depth holds back
+        // their color. The sort keeps each pipeline's draws together for the multi-draw runs.
+        self.draws.sort_by_key(|draw| !draw.holdout);
         self.draws.extend_from_slice(&self.second_draws);
         // The buckets whose entries belong to a level, or to a distance band's fade: each is a
         // level's own bucket or a bucket that a level's link names.

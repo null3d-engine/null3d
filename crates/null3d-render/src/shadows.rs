@@ -124,6 +124,8 @@ pub struct ShadowSettings {
     /// How far each receiver's point moves along its normal before the lookup, in meters, up to one
     /// texel of its cascade.
     pub normal_bias: f32,
+    /// How much of its shadow the light draws, from 0 for none to 1, the default, for all of it.
+    pub intensity: f32,
     /// The distance along the camera's view, in meters, out to which shadows fall, whatever the
     /// camera's scale. The camera's far plane ends them sooner.
     pub distance: f32,
@@ -1137,7 +1139,7 @@ pub struct ShadowUniform {
     pub texels: [f32; MAX_CASCADES],
     /// The light's bias toward the light and its normal bias, in meters, then 1 when receivers pick
     /// their cascade by their distance from the camera, or 0 by their distance along its view, and
-    /// 0.
+    /// the share of its shadow that the light draws, from 0 to 1.
     pub biases: [f32; 4],
     /// The texels on each side of each layer and the size of one texel in texture coordinates,
     /// then the texels on each side of the filter's square, and the step between two stored
@@ -1169,7 +1171,7 @@ impl ShadowUniform {
                 settings.bias,
                 settings.normal_bias,
                 f32::from(u8::from(cascades.by_distance)),
-                0.0,
+                settings.intensity.clamp(0.0, 1.0),
             ],
             kernel: [
                 map_size,
@@ -1230,6 +1232,7 @@ mod tests {
         distance: 200.0,
         filter: 3,
         blend: DEFAULT_BLEND,
+        intensity: 1.0,
     };
 
     /// The cascades of a camera at the world's origin.
@@ -1584,12 +1587,13 @@ mod tests {
         let settings = ShadowSettings {
             bias: 2.0,
             normal_bias: 0.5,
+            intensity: 0.25,
             ..SETTINGS
         };
         let uniform = ShadowUniform::new(&cascades, &settings, CascadeDepth::Unorm16);
         assert_eq!(uniform.forward[3], 3.0);
         assert_eq!(uniform.as_bytes().len(), SHADOW_UNIFORM_BYTES as usize);
-        assert_eq!(uniform.biases, [2.0, 0.5, 1.0, 0.0]);
+        assert_eq!(uniform.biases, [2.0, 0.5, 1.0, 0.25]);
         for (k, cascade) in cascades.used().iter().enumerate() {
             assert_eq!(uniform.view_proj[k], cascade.view_proj);
             assert_eq!(uniform.ends[k], cascade.end);
