@@ -1503,9 +1503,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		tolerance: { threshold: 0.02, maxDiffRatio: 0.002 },
 		// The sharpening widens a one-step difference at an edge to about 10 steps, so CI's software
-		// GPU on another machine may count more pixels than the tight threshold allows. A picture
-		// that lost the sharpening moves far more, at about a fifth of the image.
-		swiftShaderTolerance: { threshold: 0.1, maxDiffRatio: 0.005 },
+		// GPU on another machine may count more pixels than the tight threshold allows. Its threshold
+		// is tighter than the default for the same reason as the real GPU's: a picture that lost the
+		// sharpening moves about 7 per cent of the image, and the default would not count it.
+		swiftShaderTolerance: { threshold: 0.05, maxDiffRatio: 0.005 },
 	},
 	{
 		name: 'sharpen-8-bit',
@@ -1515,7 +1516,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: ['hdr=off'],
 		expect: { hdr: false },
 		tolerance: { threshold: 0.02, maxDiffRatio: 0.002 },
-		swiftShaderTolerance: { threshold: 0.1, maxDiffRatio: 0.005 },
+		swiftShaderTolerance: { threshold: 0.05, maxDiffRatio: 0.005 },
 	},
 	...toneMappingTests(),
 	// One bright unlit color on two panels, the left with toneMapped: false. The 8-bit path applies
