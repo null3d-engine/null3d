@@ -65,20 +65,22 @@ impl Float for f64 {
 }
 
 /// A rotation quaternion `(x, y, z, w)` scaled to unit length, so that it turns a matrix without
-/// stretching or shearing it. A quaternion whose length is within a part per million of one stays
-/// as it is, so a scene that passes one composes the matrix that it always did, and the common case
-/// pays no square root. The zero quaternion stays as it is too: it composes to the matrix that a
-/// zero rotation gives.
+/// stretching or shearing it. A quaternion whose length is within one per cent of one stays as it
+/// is: scenes write rounded quaternions, such as `[0, 0.38, 0, 0.92]` for a 45 degree turn, and
+/// scaling those would move their pictures for a shear of under one per cent. A larger deviation
+/// is scaled, so a mistyped quaternion cannot stretch a mesh. The zero quaternion stays as it is
+/// too: it composes to the matrix that a zero rotation gives.
 ///
 /// The scaling sits here, in the one function that composes a matrix, and not where a rotation is
 /// written, because the `rotations` arrays are written directly: a page writes a scene object's or
-/// an instance row's quaternion with no setter to pass through. Only a source whose rotation is not
-/// unit length pays a square root, in the frame that composes its matrix.
+/// an instance row's quaternion with no setter to pass through. Only a source whose rotation is
+/// more than one per cent off unit length pays a square root, in the frame that composes its
+/// matrix.
 fn unit_rotation<T: Float>(q: [T; 4]) -> [T; 4] {
     let [x, y, z, w] = q;
     // The squared length, so that a rotation close to unit length costs no square root.
     let square = x * x + y * y + z * z + w * w;
-    let off_unit = square < T::from(0.999_998) || square > T::from(1.000_002);
+    let off_unit = square < T::from(0.98) || square > T::from(1.02);
     if off_unit && square > T::from(0.0) {
         let inverse = T::from(1.0) / square.sqrt();
         [x * inverse, y * inverse, z * inverse, w * inverse]
@@ -88,8 +90,9 @@ fn unit_rotation<T: Float>(q: [T; 4]) -> [T; 4] {
 }
 
 /// The matrix of a translation, a rotation and a scale, applied scale first. The rotation is a
-/// quaternion `(x, y, z, w)`, scaled to unit length first so that a non-unit one turns the matrix
-/// instead of shearing it. Apart from that, it matches three.js `Matrix4.compose`.
+/// quaternion `(x, y, z, w)`; one more than one per cent off unit length is scaled to unit length
+/// first, so that it turns the matrix instead of shearing it. Apart from the scaling, it matches
+/// three.js `Matrix4.compose`.
 #[inline(always)]
 pub fn compose<T: Float>(position: [T; 3], rotation: [T; 4], scale: [T; 3]) -> [T; 12] {
     let one = T::from(1.0);
@@ -270,8 +273,7 @@ pub(crate) fn compose4(position: [f32x4; 3], rotation: [f32x4; 4], scale: [f32x4
     let zero = f32x4::splat(0.0);
     let [qx, qy, qz, qw] = rotation;
     let square = qx * qx + qy * qy + qz * qz + qw * qw;
-    let off_unit =
-        square.simd_lt(f32x4::splat(0.999_998)) | square.simd_gt(f32x4::splat(1.000_002));
+    let off_unit = square.simd_lt(f32x4::splat(0.98)) | square.simd_gt(f32x4::splat(1.02));
     let inverse = (off_unit & square.simd_gt(zero)).select(one / square.sqrt(), one);
     let [x, y, z, w] = rotation.map(|v| v * inverse);
     let [sx, sy, sz] = scale;
@@ -395,6 +397,18 @@ mod tests {
         // The scale still multiplies each axis's turn.
         let scaled = compose([0.0; 3], [0.0, 2.3, 0.0, 1.0], [1.0, 3.0, 1.0]);
         assert!((max_axis_scale(&scaled) - 3.0).abs() < 1e-6, "{scaled:?}");
+    }
+
+    /// A rounded quaternion that a scene writes, such as `[0, 0.38, 0, 0.92]` for a 45 degree
+    /// turn, is under one per cent off unit length and keeps its matrix as it was: scaling it would
+    /// move that scene's pictures for a shear of under one per cent.
+    #[test]
+    fn a_rounded_rotation_keeps_its_matrix() {
+        let m: [f32; 12] = compose([0.0; 3], [0.0, 0.38, 0.0, 0.92], [1.0; 3]);
+        // Row x is (1 - 2y², 0, 2wy, 0) of the components as written, not of a scaled quaternion.
+        let raw = 1.0 - 2.0 * 0.38 * 0.38;
+        assert!((m[0] - raw).abs() < 1e-6, "{m:?}");
+        assert!((m[2] - 2.0 * 0.92 * 0.38).abs() < 1e-6, "{m:?}");
     }
 
     #[test]

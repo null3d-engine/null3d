@@ -189,8 +189,8 @@ export interface NodeOptions {
 	position?: Vec3;
 	/**
 	 * The rotation relative to the parent, as a quaternion (x, y, z, w). The default is none. The
-	 * engine normalizes it, so a quaternion that is not unit length still only turns the object:
-	 * it never stretches or shears it.
+	 * engine scales a rotation more than one per cent off unit length, so a mistyped quaternion
+	 * still only turns the object and never stretches or shears it.
 	 */
 	rotation?: Quat;
 	/** The scale on each axis. The default is (1, 1, 1). */
