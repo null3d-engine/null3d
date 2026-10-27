@@ -47,9 +47,9 @@
 //! buffer the module reuses. So the module holds the builds it writes from and no copy of the
 //! answer, whatever the answer's size. That matters because the answer is not small: the engine's
 //! `standard_maps` entry alone holds 11,456 builds and answers with hundreds of MB, a 32-bit module
-//! holds 4 GB at most, and the engine keeps growing. An earlier version held the whole answer in
-//! one buffer, whose reallocation asked for more than the module had left, and the module stopped
-//! on a failed memory request. The calls that answer with a few megabytes, `compile` and its
+//! holds 4 GB at most, and the engine keeps growing. One buffer that held the whole answer would
+//! ask, as it grows, for more than the module has left, and the module would stop on a failed
+//! memory request. The calls that answer with a few megabytes, `compile` and its
 //! neighbours, keep one buffer and need no pieces.
 
 #![feature(alloc_error_hook)]

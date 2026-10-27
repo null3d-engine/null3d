@@ -4,7 +4,7 @@
 // a step that a viewer would see, the sweep as a whole must move the light, and it must move in as
 // many steps as the sun crossed. The page reads 320 by 180 pixels and sweeps three half-degree
 // steps, which keeps its work small enough for CI's software GPU: 272 captures of a 480-pixel-wide
-// page gave the first version more than the ninety seconds a page may take there.
+// page take more than the ninety seconds a page may take there.
 import { expect, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 

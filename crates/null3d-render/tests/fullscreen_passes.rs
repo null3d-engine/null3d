@@ -72,6 +72,11 @@ fn add_fullscreen<B: FrameBuilder>(
 ) -> ViewId {
     let pass = Fullscreen {
         template: PASS_TEMPLATE,
+        fallback: false,
+        history: false,
+        layers: 1,
+        steps: 1,
+        reset: 0,
         source,
         depth: source == PassSource::SceneColor,
         values: [0.0; EFFECT_FLOATS],

@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it, setDefaultTimeout } from 'bun:test';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { CompilerPool } from './compile-pool';
 import {
 	compileMaterial,
@@ -10,7 +11,7 @@ import {
 
 // A custom surface function builds into every variant of the standard material, which takes seconds
 // on a CI runner of four cores.
-setDefaultTimeout(30_000);
+setDefaultTimeout(scaledBudget(30_000));
 
 /**
  * `bun run test:shader-compiler` sets this. The module must be built first with `bun run build`,

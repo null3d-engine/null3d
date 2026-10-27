@@ -1,8 +1,10 @@
 // The loading calls and the texture calls in a live engine, for the assets test. The sketch loads
-// files by addresses relative to the test page, preloads three of them with a progress handler,
-// makes and updates textures from images and data, and records the code of each call that must
-// fail. Once every texture is on the GPU, it sends the page its record. The test serves two
-// addresses of other origins: one allows the page to read its file, and one does not.
+// files by addresses relative to the test page, preloads three of them with a progress handler that
+// records the bytes and the total it reports, makes and updates textures from images and data, and
+// records the code of each call that must fail. Once every texture is on the GPU, it sends the page
+// its record. The test serves two addresses of other origins: one allows the page to read its file,
+// and one does not. It serves a third with no length, whose bytes the handler reports while the
+// total stays where it stood.
 import { defineSketch, EngineError } from '@null3d/engine';
 
 /** The other origins that the test serves, one with and one without Access-Control-Allow-Origin. */
@@ -20,19 +22,23 @@ async function codeOf(call: () => unknown): Promise<string> {
 }
 
 export default defineSketch(async ({ assets, textures, page }) => {
-	const progress: [number, number][] = [];
-	assets.onProgress((loaded, total) => progress.push([loaded, total]));
+	// Each report gives the bytes downloaded so far, the lengths of the responses that gave one so
+	// far, and the address whose bytes moved.
+	const progress: [number, number, string][] = [];
+	assets.onProgress((loaded, total, url) => progress.push([loaded, total, url]));
 	await assets.preload([
 		'assets/textures/quadrants.png',
 		'assets/textures/quadrants.webp',
 		'assets/data/level.json',
 	]);
 	const preloaded = [...progress];
-	// These take their files from memory, and download nothing more.
+	// These take their files from memory, and report no further download.
 	const picture = await assets.loadTexture('assets/textures/quadrants.png', { wrap: 'repeat' });
 	const bitmap = await assets.loadImageBitmap('assets/textures/quadrants.webp');
 	const level = await assets.loadJson<{ enemies: number }>('assets/data/level.json');
-	const downloadsAfterPreload = progress.length;
+	const reportsAfterPreload = progress.length - preloaded.length;
+	// The response to this file gives no length, so its bytes count while the total stays put.
+	const streamed = await assets.loadBinary('assets/data/stream.bin');
 	const bytes = await assets.loadBinary('assets/data/level.json');
 	const remote = await assets.loadTexture(ALLOWED, { colorSpace: 'linear', filter: 'nearest' });
 
@@ -72,8 +78,9 @@ export default defineSketch(async ({ assets, textures, page }) => {
 			sent = true;
 			page.post('result', {
 				preloaded,
-				downloadsAfterPreload,
+				reportsAfterPreload,
 				progress,
+				streamedBytes: streamed.byteLength,
 				enemies: level.enemies,
 				bytes: bytes.byteLength,
 				sizes: made.map((t) => [t.width, t.height, t.depth]),

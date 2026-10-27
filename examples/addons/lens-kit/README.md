@@ -53,20 +53,31 @@ lens.set({ vignette: false });
 - The effect costs one full-screen pass with about 18 taps where all four of its values are above
   0; a look that leaves one at 0 skips its taps.
 - The whole look's cost, as GPU time per frame in milliseconds, measured on a MacBook Pro with an
-  Apple M5 Max in Chrome at 1920 x 1080, with the governor off and a render scale of 1. The scene
+  Apple M3 Max in Chrome 156, at a canvas of 3840 x 2160 CSS pixels with the pixel ratio held at 2,
+  which draws into a 7680 x 4320 buffer, with the governor off and a render scale of 1. The scene
   holds a wall of lit boxes under bloom, and the same scene runs with the look and without it in
-  turns, three times each; each figure is the median with the look less the median without it.
+  turns, five rounds each, the sides in the opposite order on alternate rounds. Each figure is the
+  median with the look less the median without it; its range is the lowest and highest of the five
+  rounds' differences.
 
   | Path | Low | Medium | High | Ultra |
   | --- | --- | --- | --- | --- |
-  | WebGPU | owed | owed | owed | owed |
-  | Compatibility mode | owed | owed | owed | owed |
-  | WebGL2 | owed | owed | owed | owed |
+  | WebGPU | 2.00 (1.64 to 2.77) | 3.41 (2.71 to 5.16) | 2.02 (0.68 to 3.29) | 1.27 (0.47 to 6.10) |
+  | Compatibility mode | 5.42 (5.35 to 5.46) | 2.35 (0.78 to 2.88) | 0.87 (-0.73 to 5.54) | 2.00 (0.52 to 8.10) |
+  | WebGL2 | 1.41 (0.50 to 2.39) | 1.64 (-7.02 to 1.64) | 0.71 (0.43 to 7.37) | 1.46 (1.42 to 8.77) |
 
-  Compatibility mode draws no custom effect, so its figure is the core's grade, vignette and
-  sharpening alone. Bloom stays on for both sides, so it is no part of any figure. The figures are
-  owed: the timing run needs a quiet computer, and the machine that drew the picture tests was too
-  busy to measure.
+  Ten of the twelve cells keep their whole range above zero. Compatibility High's and WebGL2
+  Medium's ranges cross it. A range that wide is the scene's own variation between rounds, where
+  the off side moved by several milliseconds; the look costs no frames at any of these cells,
+  because every row held the display's 16.665 ms interval.
+- Each mark alone costs, at the highest preset its path allows, with every other value at 0:
+  sharpen, streak and speed on WebGPU, grade and grain in compatibility mode, and vignette and
+  grain on WebGL2. Those seven cells read between 0.38 and 1.58 ms with their whole range above
+  zero. The other fourteen cross zero, so this canvas does not resolve their marks from the scene's
+  own variation; treat their cost as below what five rounds here can tell apart.
+- Compatibility mode draws no custom effect, so its figure is the core's grade, vignette and
+  sharpening alone. The quality chooser caps compatibility mode and WebGL2 at Medium, so their High
+  and Ultra cells repeat Medium's settings.
 - The lens draws no depth of field. The scene keeps the engine's own `dof` setting, which turns on
   from the Post tab.
 - The effect needs HDR color, as bloom does. On a device without a float target it stays off, and

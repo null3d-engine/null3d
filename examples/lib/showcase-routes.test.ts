@@ -1,5 +1,5 @@
 // Each showcase scene's Auto route against its Manual camera's bounds and its shadow range
-// ([D-170](../../.dev/decisions/D-170-showcase-camera.md), owner, 20 October 2026). Every pose of
+// ([D-170](../../.dev/decisions/D-170-showcase-camera.md), owner's ruling). Every pose of
 // the route lies inside the bounds, so taking the camera over at any moment never moves it, and the
 // sun's shadow range reaches past the scene's core from every pose, so the core's shadows never
 // vanish as the route draws back.

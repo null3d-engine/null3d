@@ -1,8 +1,8 @@
 # D-208: HTML elements as planes of the scene
 
-Status: decided. Date: 2026-10-21. Task: M3-K4.
+Status: decided. Built: the label system's planes and the ports. Open faults: the mixed port leaves out the example's depth-writing cut-out plane, so room edges and two strips about ten pixels wide draw across the embedded page. The comparison hides both 3D canvases before it compares, so it sees only the HTML layers. The engine's material with `colorWrite: false` is the depth-only surface that the fix needs. Task: M3-K4.
 
-Summary: A label whose `transform` is `'world'` or `'billboard'` is an HTML element that CSS turns with the scene's perspective. It takes three.js's `CSS3DRenderer` matrices for `CSS3DObject` and `CSS3DSprite`. The sketch composes the element's world matrix and the frame's camera. The page then writes one `matrix3d` per element and the camera's transform on one container. The matrices take a table set of their own, so a page that shows no such label can hold none.
+Summary: A label whose `transform` is `'world'` or `'billboard'` is an HTML element that CSS turns with the scene's perspective, with three.js's `CSS3DRenderer` matrices. The sketch composes the matrices, and the page writes one `matrix3d` per element and the camera's transform on one container. The matrices take a table set of their own, so a page that shows no such label can hold none.
 
 ## Question
 
@@ -35,7 +35,7 @@ The question has four parts:
 | The container's transform against three.js's `CSS3DRenderer` camera transform, a perspective view and two orthographic views | Within a ten-thousandth | Same test |
 | An element's box against three.js's `CSS3DRenderer` box, a turned card and a billboard card | Within 1.5 CSS pixels | `tests/image/labels-3d.spec.ts`, hold mode |
 | A billboard's element against the card's place in the frame on screen, while the camera rolls | Within 2 CSS pixels, in every thread mode: the box comes from two composed transforms, so a reading can catch a fraction of the card's move | Same test |
-| Download, after Brotli | The page's label loop grows from 1,157 to 2,009 bytes, 852 bytes more, and loads with the first bind | `bun run build`, against main's size report |
+| Download, after Brotli | The page's label loop is 2,009 bytes, 852 more than the 1,157 of screen labels alone, and loads with the first bind | `bun run build`, against main's size report |
 
 ## Decision
 
@@ -48,7 +48,7 @@ A 3D label needs twelve floats where a screen label needs two, and the page need
 
 The second wins on principle 8, pay only for what you use. `createEngine`'s `maxLabels3d` sets the capacity, and 256 is the default. That takes 40 KB of the control buffer, and it fits the tables of three.js's periodic table example. A page with `maxLabels3d: 0` holds no 3D table and pays nothing.
 
-The header gains the 3D capacity and the camera of each frame parity. `labelRegion` reads the capacity from the header. The sketch never sees `createEngine`'s options, so it derives the same layout from the buffer alone. The thread that draws copies the parity table and the parity camera into the presented ones, under the sequence counter that guards the screen labels. A 3D element therefore follows the frame on screen by the same rule.
+The header holds the 3D capacity and the camera of each frame parity. `labelRegion` reads the capacity from the header. The sketch never sees `createEngine`'s options, so it derives the same layout from the buffer alone. The thread that draws copies the parity table and the parity camera into the presented ones, under the sequence counter that guards the screen labels. A 3D element therefore follows the frame on screen by the same rule.
 
 A 3D label takes a slot in the 3D table, and a screen label in the screen table. A label that changes its transform gives its slot back and takes one in the other table, under a new generation. The page then never shows an element from the wrong label. The message that names a slot's id also names its table.
 
@@ -81,11 +81,12 @@ A 3D element hides by the same rules as a screen element. It hides when its obje
 - The develop skill's recipe 7 shows a label that is a plane, and the 3D labels demo turns a ring of cards.
 - `tests/image/labels-3d.spec.ts` compares an element's box with three.js's `CSS3DRenderer` and follows the frame on screen.
 
-## Addendum, 25 October 2026: three.js's periodic table example is ported and compared
+## Ports of three.js's CSS3D examples
 
-K4's line asks that `CSS3DRenderer`'s examples port. The label system shipped with a test that
-compares one card's element with `CSS3DRenderer`, but no example was ported. The gap closes with
-three.js's `css3d_periodictable` example:
+K4's line asks that `CSS3DRenderer`'s examples port. All seven CSS3D examples of three.js r186 have
+ports, each with a picture test.
+
+### The periodic table
 
 - `tests/pages/lib/css3d-periodictable.ts` holds the example's 118 cells, its camera, its table
   layout and a fixed tint per cell. The example tints each cell with `Math.random()`, which a held
@@ -105,10 +106,7 @@ three.js's `css3d_periodictable` example:
   layouts and their transitions are not part of this test. The label system supports them, since
   the sketch moves the objects that carry the labels.
 
-## Addendum, 25 October 2026: the other six CSS3D examples are ported too
-
-The addendum above closed K4's line with the periodic table. The other six of three.js r186's seven
-CSS3D examples now have ports beside it, each with a picture test:
+### The other six examples
 
 | Example | The scene | What the port shows |
 | --- | --- | --- |
@@ -138,7 +136,10 @@ Where the ports differ from the examples, and why:
   hides the same elements. The picture compares the elements that a viewpoint can see.
 - The mixed example embeds a second three.js example, and the youtube example embeds YouTube
   videos. The ports embed pages made in code, so a held picture needs no network. The mixed
-  example's room draws every edge of a segmented box. The port draws the twelve outer edges.
+  example's room draws every edge of a segmented box, and the port draws the twelve outer edges. The
+  port leaves out the example's depth-writing cut-out plane, which needs a depth-only surface. The
+  engine draws one with `colorWrite: false`; the port does not draw it yet, so room edges and two
+  strips about ten pixels wide draw across the embedded page.
 - No example's controls are ported. Each page draws its example's first state, as the periodic table
   port does. That is the molecules example's caffeine in its atoms-and-bonds view, and a fixed
   camera in place of the controls. The molecules port hides one atom, an outer hydrogen, as the
@@ -150,14 +151,15 @@ Where the ports differ from the examples, and why:
   frame's border therefore covers the page where the two meet. The port also shows that an engine
   canvas passes the page through where it draws nothing.
 
-No fault of the engine showed while porting. The label system carried every capability that the
-examples need, with no special case in a page. It took a billboard that follows its object's scale,
-and an orthographic lens. It hid the element of a hidden object, which the molecules port checks
-with one atom. It also carried an element that holds a live iframe. It held a page with more planes
-than the default capacity (`maxLabels3d`), over a see-through canvas.
+The label system carries every capability that the examples need but one, with no special case in a
+page. The one is the mixed example's cut-out plane, which needs a depth-only surface. The engine
+draws it with a material that writes depth and no color, and the port draws no such plane yet, which
+M3-K4's remaining work covers. The other capabilities are built: a billboard that follows its
+object's scale, an orthographic lens, a hidden object that hides its element, which the molecules
+port checks with one atom, an element that holds a live iframe, and a page with more planes than the
+default capacity (`maxLabels3d`), over a see-through canvas.
 
-Each of the six ports with a two-stage page ran on WebGPU and on WebGL2 on 25 October 2026, twelve
-tests in all. It compared its layer of elements with three.js's own draw of the same data, at 960
+Each of the six ports with a two-stage page ran on WebGPU and on WebGL2, twelve tests in all, for commit `6bdcf8e83`, whose run log is not kept. It compared its layer of elements with three.js's own draw of the same data, at 960
 by 540 pixels. A figure is the share of the picture that differed.
 
 | Port | WebGPU | WebGL2 |
@@ -173,4 +175,4 @@ The periodic table port makes its comparison once, on the path that its page tak
 differing pixel either. The sprites and the youtube port differ in a few pixels at their edges. That
 is most likely where a matrix that the engine keeps in 32-bit floats lands a fraction of a pixel
 from three.js's. The test allows a thousandth of the picture, the limit of the reference images,
-for a slower rasteriser.
+for a slower rasterizer.

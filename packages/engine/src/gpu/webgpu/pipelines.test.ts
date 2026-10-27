@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { scaledBudget } from '../../../../../tests/lib/run-budget.ts';
 import * as G from '../../generated/gpu';
 import { type DeviceShaders, everyShader, type ShaderVariants } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
@@ -167,12 +168,16 @@ function custom(kind: CustomShader['kind'], textures: number, bits: number): Cus
 
 describe('the WebGPU pipeline layouts', () => {
 	// Every template's every build, which is a few thousand pipelines, so this takes seconds.
-	it('keep every build of every template within the default limits per shader stage', () => {
-		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
-		const templates = renderTemplates(pipelines);
-		expect(templates).toContain(G.TEMPLATE_DECAL_MAPS);
-		expect(templates.flatMap((id) => templateFaults(pipelines, id))).toEqual([]);
-	}, 120_000);
+	it(
+		'keep every build of every template within the default limits per shader stage',
+		() => {
+			const pipelines = new Pipelines(fakeDevice(), deviceShaders());
+			const templates = renderTemplates(pipelines);
+			expect(templates).toContain(G.TEMPLATE_DECAL_MAPS);
+			expect(templates.flatMap((id) => templateFaults(pipelines, id))).toEqual([]);
+		},
+		scaledBudget(120_000),
+	);
 
 	it('never reuse one template’s pipeline layout for another template’s build', () => {
 		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
@@ -257,6 +262,7 @@ describe('the WebGPU pipeline layouts', () => {
 			G.TEMPLATE_LIGHT_COUNT,
 			G.TEMPLATE_LIGHT_PLACE,
 			G.TEMPLATE_LIGHT_WRITE,
+			G.TEMPLATE_FEATURE_ROWS,
 		]) {
 			const descriptor = pipelines.compute(id, 0);
 			for (const fault of faults(layoutOf(descriptor), 0))
@@ -286,6 +292,10 @@ describe('the WebGPU pipeline layouts', () => {
 		// binds fails its dispatch.
 		expect(groups.map((group) => group.label)).toEqual(['compute rgba16float']);
 		expect(faults(layoutOf(descriptor), 0)).toEqual([]);
+		// A pass that fills an instance draw's count word and rows takes the buffers' layout: the
+		// format code 0 names it, and the pass's two storage buffers stay within the limits.
+		const buffers = pipelines.compute(id, 0);
+		expect(faults(layoutOf(buffers), 0)).toEqual([]);
 	});
 
 	it('give an add-on compute pass with maps the maps layout at group 1', () => {

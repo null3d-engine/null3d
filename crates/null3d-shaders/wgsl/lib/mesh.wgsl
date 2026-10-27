@@ -507,6 +507,29 @@ fn material_light_map_uv(id: u32) -> vec4f {
 #endif
 }
 
+/// The texel of a material's row where the transforms of the maps of the slots from the second up
+/// start, two texels for each.
+const MATERIAL_MAP_UV_TEXEL: u32 = 18u;
+
+/// The two rows of a 2 x 3 matrix that places a map on the texture coordinates: the row that gives
+/// u, then the row that gives v. Each row's fourth float is a spare.
+struct MapUvRows {
+    u: vec4f,
+    v: vec4f,
+}
+
+/// The transform of material `id`'s map in `slot`, for a slot from 1 up. The base color map's
+/// transform sits in the values that every shader reads, as `Material::uv_u` and `Material::uv_v`.
+fn material_map_uv(id: u32, slot: u32) -> MapUvRows {
+#ifdef WEBGL2
+    let at = vec2u(MATERIAL_MAP_UV_TEXEL + (slot - 1u) * 2u, id);
+    return MapUvRows(textureLoad(materials, at, 0), textureLoad(materials, at + vec2u(1u, 0u), 0));
+#else
+    let at = (slot - 1u) * 2u;
+    return MapUvRows(materials[id].map_uv[at], materials[id].map_uv[at + 1u]);
+#endif
+}
+
 /// The layer of material `id`'s light map direction map, or a negative value without one.
 fn material_light_map_direction(id: u32) -> f32 {
 #ifdef WEBGL2

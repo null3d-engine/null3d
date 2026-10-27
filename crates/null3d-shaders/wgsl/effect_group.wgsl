@@ -75,6 +75,8 @@ struct EffectInput {
     size: vec2f,
     /// The sketch time in seconds.
     time: f32,
+    /// The array layer that this draw writes, from 0. An effect writes 0.
+    layer: u32,
 }
 
 /// Vector `part` of the uniforms in the block at `slot`.
@@ -184,5 +186,6 @@ fn effect_fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     input.pixel = from_top;
     input.uv = from_top / first.size.xy;
     input.time = first.clock.x;
+    input.layer = 0u;
     return effect_chain(input);
 }

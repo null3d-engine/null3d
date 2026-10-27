@@ -5,6 +5,9 @@ enable f16;
 #import null3d::color::{LINEAR_REC2020_TO_LINEAR_SRGB, LINEAR_SRGB_TO_LINEAR_REC2020}
 #import null3d::lighting::{PbrMaterial, Reflected}
 #ifdef COAT_SHEEN
+#import null3d::math::{half_vector}
+#endif
+#ifdef COAT_SHEEN
 #import null3d::lighting::{d_ggx_anisotropic, v_ggx_smith_correlated_anisotropic}
 #endif
 
@@ -83,7 +86,12 @@ fn direct_light(
     let n = vec3h(normal);
     let v = vec3h(to_view);
     let l = vec3h(to_light);
-    let half_dir = normalize(l + v);
+    let sum = l + v;
+    let cancelled = dot(sum, sum) == 0.0h;
+    var half_dir = vec3h(0.0);
+    if !cancelled {
+        half_dir = normalize(sum);
+    }
     let n_dot_l = saturate(dot(n, l));
     let n_dot_v = saturate(dot(n, v));
     let n_dot_h = saturate(dot(n, half_dir));
@@ -115,16 +123,21 @@ fn direct_light(
             saturate(dot(normal, to_view)),
             saturate(dot(normal, to_light)),
         );
+        let half = half_vector(to_light, to_view);
         let distribution = d_ggx_anisotropic(
             m.alpha_t,
             alpha_b,
-            saturate(dot(normal, normalize(to_light + to_view))),
-            dot(tangent, normalize(to_light + to_view)),
-            dot(bitangent, normalize(to_light + to_view)),
+            saturate(dot(normal, half)),
+            dot(tangent, half),
+            dot(bitangent, half),
         );
         brdf = f16(min(visibility * distribution, f32(MAX)));
     }
 #endif
+    // Where the light and the view cancel there is no bisector, so the lobe has no value.
+    if cancelled {
+        brdf = 0.0h;
+    }
     let irradiance = n_dot_l * half_color(light);
     let diffuse = irradiance * (INV_PI * vec3h(m.diffuse)) * (1.0h - dielectric);
     let reflected = irradiance * specular * brdf * vec3h(compensation);

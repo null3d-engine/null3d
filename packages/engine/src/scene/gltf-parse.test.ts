@@ -465,7 +465,8 @@ describe('materials, textures and lights', () => {
 			emissiveIntensity: 4,
 			normalScale: 0.5,
 			aoMapIntensity: 0.4,
-			uvTransform: { offset: [0.5, 0], repeat: [2, 3], rotation: 0.25 },
+			// Each map keeps its own transform: only the base color map's texture info gives one.
+			uvTransforms: { map: { offset: [0.5, 0], repeat: [2, 3], rotation: 0.25 } },
 		});
 		expect(unlit?.unlit).toBe(true);
 		const uses = data.textures;
@@ -961,6 +962,18 @@ describe('materials, textures and lights', () => {
 			image: 2,
 			colorSpace: 'linear',
 		});
+		expect(data.notes).toEqual([]);
+	});
+
+	test('a material keeps its anisotropy with no texture of any kind', () => {
+		const data = layered({
+			KHR_materials_anisotropy: { anisotropyStrength: 0.75, anisotropyRotation: 0.4 },
+		});
+		expect(data.materials[0]?.layers).toMatchObject({
+			anisotropy: 0.75,
+			anisotropyRotation: 0.4,
+		});
+		expect(data.materials[0]?.maps).toEqual({});
 		expect(data.notes).toEqual([]);
 	});
 

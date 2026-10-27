@@ -124,7 +124,7 @@ fn lobe(input: LobeInput) -> vec3f {
 | `normal` | `vec3f` | The surface's unit normal in world space |
 | `view` | `vec3f` | The unit direction from the surface toward the camera |
 | `light` | `vec3f` | The unit direction from the surface toward the main light |
-| `half` | `vec3f` | The unit half vector between the light and the view |
+| `half` | `vec3f` | The unit half vector between the light and the view, or zero where the two cancel and no unit bisector exists |
 | `roughness` | `f32` | The surface's perceptual roughness, after the engine's filter |
 | `f0` | `vec3f` | The specular reflectance at normal incidence |
 | `specular` | `vec3f` | The specular radiance that the base lobe reflects from the main light, before the layers |

@@ -534,12 +534,15 @@ fn the_source_limit_follows_the_device_storage_binding() {
         one_dispatch * sizes::INSTANCE_STRIDE,
         MAX_USEFUL_BINDING_BYTES
     );
-    // Buffers grow with room to spare, but never past the binding, and never below the need.
-    assert_eq!(grown_size(1000, portable), 1536);
+    // Buffers grow with room to spare, but never past the binding.
+    assert_eq!(grown_size(1000, portable), Some(1536));
     for binding in [portable, MAX_USEFUL_BINDING_BYTES] {
         let full = max_sources(binding) * sizes::INSTANCE_STRIDE;
-        assert_eq!(grown_size(full, binding), binding);
-        assert_eq!(grown_size(full - 1000, binding), binding);
+        assert_eq!(grown_size(full, binding), Some(binding));
+        assert_eq!(grown_size(full - 1000, binding), Some(binding));
+        // A need past the binding is refused, never rounded up into a buffer the device cannot
+        // bind.
+        assert_eq!(grown_size(full + 256, binding), None);
     }
 }
 
@@ -1406,6 +1409,120 @@ fn the_direct_path_uploads_each_bucket_s_visible_copies() {
         assert_eq!(offset % sizes::INSTANCE_STRIDE, 0, "{offset}");
         assert_eq!(size % sizes::INSTANCE_STRIDE, 0, "{size}");
     }
+}
+
+/// The direct path's instance buffer binds at vertex slot 1 and no group reads it, so the device's
+/// largest buffer bounds it, not its largest storage binding. A batch that draws inside a distance
+/// band takes a fading bucket beside its bucket, which doubles its rows: the compacted layout then
+/// passes the binding, while the sources still fit the binding that they must obey.
+#[test]
+fn the_direct_path_sizes_its_instance_buffer_past_the_storage_binding() {
+    /// The box mesh that the world's first objects draw, by engine id.
+    const BOX: u32 = 1;
+    let binding = 1024 * 1024;
+    let rows = 10_000;
+    let mut world = World::with_config(RendererConfig {
+        direct_draws: true,
+        storage_binding_bytes: binding,
+        ..RendererConfig::default()
+    });
+    let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+    let material = world.scene.materials()[slot];
+    let batch = world
+        .batches
+        .create(rows, false, false, BOX, material, 0.9)
+        .unwrap();
+    let batch = world.batches.get_mut(batch).unwrap();
+    batch.set_active_count(rows).unwrap();
+    batch.set_draw_range(0.0, 100.0);
+    world.record(true);
+    let commands = world.commands();
+    let visible = commands
+        .iter()
+        .find(|(op, o)| *op == Op::SetVertexBuffer && o[0] == 1)
+        .map(|(_, o)| o[1])
+        .expect("a draw binds its view's instances");
+    let size = commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateBuffer && o[0] == visible)
+        .map(|(_, o)| o[1])
+        .next_back()
+        .expect("the frame makes the buffer that the draw reads");
+    // The compacted layout reaches past the binding, so its buffer must hold more than a binding
+    // may.
+    let written = commands
+        .iter()
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == visible)
+        .map(|(_, o)| o[1] + o[3])
+        .max()
+        .expect("the frame uploads the copies that the draws read");
+    assert!(
+        written > binding,
+        "the compacted layout ends at {written} bytes, inside the {binding}-byte storage binding"
+    );
+    assert!(
+        size > binding,
+        "the instance buffer holds {size} bytes, past the {binding}-byte storage binding"
+    );
+}
+
+/// The cluster pass binds the scene's patch table and its indices whole, so the storage binding
+/// bounds them. The direct path records no cluster pass and reads neither table, so it builds
+/// neither and draws the tree's mesh from its whole triangle list. A tree whose index table passes
+/// the binding still records there, while the culled path refuses it at the binding.
+#[test]
+fn a_direct_path_frame_builds_no_cluster_table() {
+    use null3d_render::frame::RecordError;
+    use null3d_render::gpu_driven::cluster_table_buffers;
+    use null3d_render::materials::Shading;
+    use null3d_render::patches::PatchTree;
+
+    /// The indices of one patch, past the binding below at four bytes each.
+    const INDICES: u32 = 300_000;
+    let binding = 1024 * 1024;
+    let tree = || {
+        PatchTree::new(
+            [0, 1, 2].repeat(INDICES as usize / 3),
+            vec![[0.0, 0.0, 0.0, 1.0]],
+            vec![[0, INDICES, 0, 0]],
+            0,
+            4,
+        )
+        .expect("a tree over the grid's four vertices")
+    };
+    let world = |direct_draws: bool| {
+        let mut world = World::with_config(RendererConfig {
+            direct_draws,
+            storage_binding_bytes: binding,
+            ..RendererConfig::default()
+        });
+        let mesh = world.add_object(&common::grid(1, 1), Shading::Lit);
+        world
+            .renderer
+            .set_mesh_patches(mesh, Some(tree()))
+            .expect("a tree of one patch, which the mesh's bucket draws");
+        world
+    };
+    let (patches, indices) = cluster_table_buffers();
+
+    let mut direct = world(true);
+    direct
+        .try_record(true)
+        .expect("the direct path builds no cluster table, so its size does not bound the frame");
+    assert!(
+        !direct
+            .commands()
+            .iter()
+            .any(|(op, o)| *op == Op::CreateBuffer && (o[0] == patches || o[0] == indices)),
+        "the direct path made a cluster table"
+    );
+
+    let mut culled = world(false);
+    assert_eq!(
+        culled.try_record(true),
+        Err(RecordError::BufferFull { bytes: binding }),
+        "the culled path binds the tables whole, so a table past the binding fails its frame"
+    );
 }
 
 #[test]

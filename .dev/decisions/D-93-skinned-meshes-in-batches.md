@@ -1,6 +1,6 @@
 # D-93: Skinned meshes in instance batches
 
-Status: decided. Date: 7 October 2026.
+Status: decided. The owner confirmed one matrix and a warning. Built: batches draw skinned meshes with the main joint's matrix.
 
 Summary: `scene.createInstances(prefab)` draws a skinned mesh with one matrix, from the skinning matrix of the joint that carries most of its weight. That is exact when the rest pose is the bind pose. Otherwise the batch draws the bind pose, and development builds warn.
 
@@ -14,7 +14,7 @@ The batch must draw the mesh where a copy from `scene.instantiate` draws it at r
 
 ## Data
 
-At rest, joint `j` moves a vertex by its world matrix times its inverse bind matrix. When the rest pose is the bind pose, every joint gives the same matrix. One matrix then places the whole mesh exactly. The asset tool's scale lives in that matrix, so the Knight draws in meters, raw or processed. Before this record, a batch drew a skinned mesh with no matrix. The tool's Knight then drew about 16,000 times too large.
+At rest, joint `j` moves a vertex by its world matrix times its inverse bind matrix. When the rest pose is the bind pose, every joint gives the same matrix. One matrix then places the whole mesh exactly. The asset tool's scale lives in that matrix, so the Knight draws in meters, raw or processed. A batch that draws a skinned mesh with no matrix draws the tool's Knight about 16,000 times too large.
 
 When the rest pose differs, each joint gives its own matrix, and no one matrix places every vertex.
 
@@ -27,7 +27,7 @@ The parser compares each joint's matrix with the main joint's. They agree when n
 
 ## Decision
 
-One matrix and a warning. A file that binds in its rest pose, as the Knight does, draws exactly, and the asset tool keeps that true. A model with a different rest pose still draws, in its bind pose placed by its main joint. The warning names `scene.instantiate` for a copy at rest. A second mesh would cost GPU memory for every such model, although few pages draw skinned models with batches. The owner confirmed this choice on 7 October 2026.
+One matrix and a warning. A file that binds in its rest pose, as the Knight does, draws exactly, and the asset tool keeps that true. A model with a different rest pose still draws, in its bind pose placed by its main joint. The warning names `scene.instantiate` for a copy at rest. A second mesh would cost GPU memory for every such model, although few pages draw skinned models with batches. The owner confirmed this choice.
 
 ## Consequences
 

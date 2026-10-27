@@ -101,6 +101,10 @@ impl FeatureRows {
             self.uploaded = Some(camera);
         }
         for (id, (_, capacity, _)) in table.iter() {
+            // A draw whose feature is not ready converts nothing: it draws none of its rows.
+            if !table.is_ready(id) {
+                continue;
+            }
             let bound = Bound {
                 counts: ids::feature_count(id),
                 world: ids::feature_instances(id),
@@ -159,7 +163,7 @@ impl FeatureRows {
         let mut begun = false;
         for (id, (_, capacity, _)) in table.iter() {
             let at = id as usize - 1;
-            if self.bound.get(at).copied().flatten().is_none() {
+            if !table.is_ready(id) || self.bound.get(at).copied().flatten().is_none() {
                 continue;
             }
             if !begun {

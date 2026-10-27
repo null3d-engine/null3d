@@ -14,6 +14,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build, createServer } from 'vite';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { GltfBuilder } from '../../../tests/pages/lib/gltf-files';
 import { fixture } from '../../../tools/lib/fixture';
 import {
@@ -27,7 +28,7 @@ import {
 import null3d from './index';
 
 // Texture encodes take seconds each on a busy machine or a CI runner of four cores.
-setDefaultTimeout(60_000);
+setDefaultTimeout(scaledBudget(60_000));
 
 const SCENE = join(import.meta.dir, '../../../tests/pages/assets/models/asset-scene.glb');
 
@@ -67,9 +68,9 @@ describe('optimized models', () => {
 	});
 
 	it('hash the tool code, so a fix to the tool changes the key of every model', () => {
-		// The tool's version stays 0.0.0 in the repository, so its version alone left the cache
-		// serving models that a pipeline before the fix wrote. The module and the file that shares
-		// its name, the WebAssembly one among them, are both part of the code's hash.
+		// The tool's version stays 0.0.0 in the repository, so its version alone would leave the
+		// cache serving models that the tool wrote before a fix. The module and the file that
+		// shares its name, the WebAssembly one among them, are both part of the code's hash.
 		const folder = mkdtempSync(join(tmpdir(), 'null3d-tool-'));
 		try {
 			const module = join(folder, 'assets.js');

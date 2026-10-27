@@ -248,7 +248,7 @@ if (input.wasPressed('Mouse0')) {
 }
 ```
 
-The hit carries `uv` and `hasUv` as a raycast's hit does. Repeated textures give values past 1, and a material's `uvTransform` leaves them alone. A scene with a whole shader of your own answers its picks with a raycast instead. So does a scene with a blended or transmissive material, or a sprite, point or line. A raycast tests triangles, so it ignores masks. Docs: `api/raycast#pixel-exact-picking`.
+The hit carries `uv` and `hasUv` as a raycast's hit does. Repeated textures give values past 1, and a material's `uvTransform` leaves them alone. A scene with a whole shader of your own answers its picks with a raycast instead. So does a scene with a blended or transmissive material, or a sprite, point or line. A raycast tests triangles, so it ignores masks. A pick that waits for its read when the browser takes the GPU away rejects with E1436: ask again on the new device. Docs: `api/raycast#pixel-exact-picking`.
 
 ## 7. HTML labels above objects (0.2)
 
@@ -279,11 +279,13 @@ ui.trackLabel(head, 'title', { transform: 'billboard', rotation: 0.1 });        
 
 The engine moves a plane's element into a container of its own inside the element's parent, and writes its matrix. Keep that parent over the canvas. Planes count against `createEngine({ maxLabels3d })`, 256 by default.
 
+To show a page under the drawn scene, start the engine with `createEngine({ transparent: true })`, put the labels' layer below the canvas, and set no background. A plane at the page writes its depth and no color with `materials.unlit({ colorWrite: false })`, so the scene behind the page never draws over it, while a glass object in front still shows the page through itself. Size the plane like the label: an element's CSS pixels are the scene's units. Docs: `guides/ui-overlays#a-page-under-the-scene`, `api/materials#invisible-surfaces-that-hide`.
+
 ## 8. Loading screen with progress and warm-up
 
 ```ts
 // sketch.ts
-assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+assets.onProgress((loaded, total) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));
 await assets.preload(['/levels/one.json', '/tex/terrain.png', '/tex/rocks.png']);
 const level = await assets.loadJson<Level>('/levels/one.json');   // from memory: preload downloaded it
 const terrain = await assets.loadTexture('/tex/terrain.png', { wrap: 'repeat', anisotropy: 8 });
@@ -635,7 +637,7 @@ fn surface(input: SurfaceInput) -> Surface {
 `;
 
 export default defineSketch(({ scene, geometry, materials, textures, render }) => {
-  scene.setBackground({ sky: { sunPosition: [0.4, 0.35, -0.85] } });
+  scene.setBackground({ sky: { sunPosition: [0.4, 1, 0.5] } });
   scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 2.5, 8], target: [0, 0.5, 0] }));
   scene.createDirectionalLight({ direction: [-0.4, -1, -0.5], intensity: 2.5 });
   scene.createMesh({ mesh: geometry.box(), material: materials.standard({ color: '#e03030' }), position: [0, 0.5, 0] });

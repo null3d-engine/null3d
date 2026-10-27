@@ -1,6 +1,6 @@
 # D-12: Memory budgets per preset
 
-Status: decided for the texture budgets, 2026-10-03, and applied by [D-69](D-69-texture-budget.md) on 2026-10-05. The iPad's WebAssembly and WebGPU buffer rows are measured, 2026-10-17. Task: M1-L3. Test: T-25.
+Status: decided for the texture budgets and the WebAssembly maximum. Built: each preset applies its texture budget, and phones and tablets cap it at 1008 MiB ([D-69](D-69-texture-budget.md)). Every row of the iPad and the S24+ is measured; a 4 GB iPad is not. Task: M1-L3. Test: T-25.
 
 Summary: Keep the texture budgets of 256 to 2048 MiB and the 1024 MiB WebAssembly maximum. The iPad's tab died at 2016 MiB of GPU textures, so Low and Medium stay under half; the S24+ held 7296 MiB.
 
@@ -28,17 +28,17 @@ The failure point of a growth is the step after the last that lived. Each growth
 
 The lowest failure point on each device:
 
-- iPad: 2016 MiB of GPU textures, on WebGPU. Its WebGPU buffers stalled at 512 MiB, but buffers are not a preset value (see below).
+- iPad: 2016 MiB of GPU textures, on WebGPU.
 - S24+: 7296 MiB of GPU textures, on WebGL2 in Chrome.
 
 Other findings:
 
 - Each tab died within a minute of its first step: the iPad's in 9 to 11 s, and the S24+'s in 38 to 48 s. No growth got a refused allocation or a warning first. The browser closed the tab, or once lost the WebGL2 context.
 - On the iPad, GPU textures and buffers on WebGL2 failed within 32 MiB of each other. So one limit on the tab's GPU memory seems to hold for both kinds.
-- On the iPad, the WebGPU buffer growth stopped at its 16th step. The GPU never reported the step's work as done (`onSubmittedWorkDone`), and the tab stayed open. The WebGL2 buffers on the same iPad lived to 2464 MiB. The step ran one minute after a texture growth had crashed the tab, so the GPU process may not have recovered yet. One run cannot tell.
-- The iPad's WebAssembly growth has no result. Safari reloaded the runner page after the first two tab crashes, but not after the third, so the run stopped before that step. [Device sessions](../devices.md#the-tab-memory-plan) says how the plan now runs on the iPad.
+- In a run one minute after a texture growth crashed the tab, the iPad's WebGPU buffer growth stopped at its 16th step, 512 MiB. The GPU never reported the step's work as done (`onSubmittedWorkDone`), and the tab stayed open. The GPU process may not have recovered from the crash. Run alone, the same growth lived to 2528 MiB, and the page answered at every step.
+- Safari reloads the runner page after the first two tab crashes, but not after the third. So the iPad's WebAssembly and WebGPU buffer steps run alone, with someone at the iPad. [Device sessions](../devices.md#the-tab-memory-plan) says how the plan runs on the iPad.
 
-How the data was produced: on 2026-10-02, `bun tests/real-browsers.ts --plan tab-memory --allow-no-webgpu --android chrome`, run 20261002-184211-tab-memory. Then the same with `--android brave --shields on`, run 20261002-184858-tab-memory, and with `--lan ipad-safari`, run 20261002-185931-tab-memory. The iPad is the one of D-04, whose RAM Safari does not report. The S24+ has 12 GB.
+How the data was produced: `bun tests/real-browsers.ts --plan tab-memory --allow-no-webgpu --android chrome`, run 20261002-184211-tab-memory. Then the same with `--android brave --shields on`, run 20261002-184858-tab-memory, and with `--lan ipad-safari`, run 20261002-185931-tab-memory. The iPad's WebAssembly step ran alone with `bun tests/real-browsers.ts --plan tab-memory --lan ipad-safari --attended --only tab-memory-wasm-1`, and its WebGPU buffer step the same way. The iPad is the one of D-04, whose RAM Safari does not report. The S24+ has 12 GB.
 
 ## Decision
 
@@ -48,24 +48,21 @@ High and Ultra start only on desktops, which T-25 did not measure. On the iPad, 
 
 **WebAssembly maximum.** Keep D-04's 1024 MiB on every preset. On the S24+, both browsers filled the cap of 4096 MiB, so the rule allows more than 2048 MiB there. The iPad lived to 2592 MiB and failed at 2624. Half of that is 1296 MiB, so 1024 MiB stays: the rule holds for Medium and Low there.
 
-**GPU buffers.** The presets set no buffer budget. The iPad's WebGPU path lived to 2528 MiB on 2026-10-17 and failed at 2560, so the 512 MiB stall did not recur and the page answered at every step above it. A scene's GPU buffers could therefore go well past that stall point; the presets still set no buffer budget.
+**GPU buffers.** The presets set no buffer budget. Run alone, the iPad's WebGPU buffers lived to 2528 MiB and failed at 2560, and the page answered at every step. So the stall at 512 MiB after a crash sets no limit.
 
 **Shadow maps.** The shadow maps share the GPU memory that the texture budget plans for. M1-G6 set each preset's shadow cascades and map size (#215). They add 8 MiB on Low and 48 MiB on Medium, which fit well inside the room under 1008 MiB. "Each preset's memory" below gives the figures for every preset.
 
 ## How three.js handles it
 
-three.js sets no memory budget. `renderer.info.memory` counts the geometries and textures that the renderer holds, but not their bytes. An app that runs out of memory on a phone learns of it when the browser closes the tab. null3D sets each preset's WebAssembly maximum, and plans its texture budget, from the failure points above. A scene that keeps within its preset then stays under half of what the weakest measured device survived. The engine does not apply the texture budget yet (see "Consequences").
+three.js sets no memory budget. `renderer.info.memory` counts the geometries and textures that the renderer holds, but not their bytes. An app that runs out of memory on a phone learns of it when the browser closes the tab. null3D sets each preset's WebAssembly maximum, and plans its texture budget, from the failure points above. A scene that keeps within its preset then stays under half of what the weakest measured device survived. Each preset applies its texture budget ([D-69](D-69-texture-budget.md)).
 
 ## Consequences
 
-- `memoryMaximumMiB` in `packages/engine/src/quality/presets.ts` stays 1024 MiB on every preset. The planned `textureMemoryMiB` in `preset-docs.ts` keeps its values.
-- The task that builds the texture budget caps it on phones and tablets, whatever preset a page names. The cap is 1008 MiB, under half the iPad's point. A page that sets `textureMemoryMiB` itself still gets its own value.
-- The iPad's WebAssembly step ran on 2026-10-17 with someone at the iPad (`bun tests/real-browsers.ts --plan tab-memory --lan ipad-safari --attended --only tab-memory-wasm-1`): the tab lived to 2592 MiB. The point is above 2048 MiB, so Medium's and Low's maximum stay as they are.
-- The iPad's WebGPU buffer step ran the same day: the tab lived to 2528 MiB. The stall at 512 MiB did not recur, so no cap is needed for it.
+- `memoryMaximumMiB` in `packages/engine/src/quality/presets.ts` is 1024 MiB on every preset, and `textureMemoryMiB` holds the budgets above.
+- Phones and tablets cap the texture budget at 1008 MiB, under half the iPad's point, whatever preset a page names (`MOBILE_TEXTURE_MEMORY_MIB` in `quality/chooser.ts`). A page that sets `textureMemoryMiB` itself gets its own value.
 - A 4 GB iPad, if one becomes available, runs the whole plan. D-04 left T-07 open for one, and it may fail at about half the iPad Pro's points.
 - [Phones and tablets](../../docs/guides/phones.md#memory) gives the measured points.
-- T-25 closed on 2026-10-03 with the failure points.
-- The record is in the table in README.md.
+- T-25 is closed with the failure points.
 
 ## Each preset's memory (M1-G6)
 
@@ -80,4 +77,4 @@ M1-G6 tuned the shadow settings of each preset (D-11), and their shadow maps sha
 
 The shadow atlas of spot and point lights holds `shadowTiles` tiles of `shadowTileSize` texels, 4 bytes each. It adds at most 4 MiB on Low, 8 MiB on Medium, 64 MiB on High and 96 MiB on Ultra. The last column counts it.
 
-The WebAssembly column checks only on the S24+, as the iPad's step has no result yet. M1-G6 keeps every value above. Since M2-A4, each preset applies its texture budget, and phones and tablets cap it at 1008 MiB: [D-69](D-69-texture-budget.md) gives how.
+The WebAssembly column checks on both devices: the iPad lived to 2592 MiB, and the S24+ filled its 4096 MiB cap. Each preset applies its texture budget, and phones and tablets cap it at 1008 MiB: [D-69](D-69-texture-budget.md) gives how.

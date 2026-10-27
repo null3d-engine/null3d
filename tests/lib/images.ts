@@ -100,8 +100,8 @@ export const SKETCH_SIZE = [320, 180] as const;
 
 /**
  * How long a page may take to publish its image, unless its entry gives another time. CI's software
- * GPU compiles a custom shader's pipelines for WebGPU on its CPU: a page that took 18.5 seconds on a
- * passing run gave no result within 30 on a slower runner on 17 October 2026.
+ * GPU compiles a custom shader's pipelines for WebGPU on its CPU: a page that takes 18.5 seconds on
+ * a passing run can give no result within 30 on a slower runner.
  */
 const TIMEOUT_SECONDS = 60;
 
@@ -522,8 +522,8 @@ export function referenceFileProblems(
 /**
  * What is wrong with the references of tests that draw one scene: no two of the scene's tests may
  * keep the same picture. Tests of a scene differ by the switches that turn its features on, so a
- * picture that two of them share is a picture of neither feature: the bench's four area-light
- * scenes once shared one black image, and every one of them passed. A test whose picture must match
+ * picture that two of them share is a picture of neither feature: four area-light scenes that share
+ * one black image would all pass. A test whose picture must match
  * another's says so with `reference`, and then owns no reference of its own, which the check leaves
  * alone; so does a pair that records one picture with `samePicture`, and so do the tiers of one
  * test.

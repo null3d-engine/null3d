@@ -7,17 +7,27 @@
 // It needs the GitHub CLI with access to the repository. The output is one JSON object, which
 // `browserPictures` in bench/lib/gate.ts judges: the counted run, or null, and its jobs.
 import { execFileSync } from 'node:child_process';
+import { repositoryEnv } from '../tools/lib/git-env.ts';
 import {
 	countedRun,
 	GATE_WORKFLOWS,
 	REPOSITORY,
 	type WorkflowJob,
 	type WorkflowRun,
+	wholeCommit,
 } from './lib/gate.ts';
 
 const commit = process.argv[2];
 if (!commit) {
 	console.error('usage: bun bench/ci-browser-jobs.ts <commit>');
+	process.exit(2);
+}
+
+const sha = wholeCommit(commit, (args) =>
+	execFileSync('git', args, { encoding: 'utf8', env: repositoryEnv() }),
+);
+if (sha === null) {
+	console.error(`ci-browser-jobs: ${commit} is not a commit of this repository`);
 	process.exit(2);
 }
 
@@ -31,7 +41,7 @@ const runs = JSON.parse(
 		'--repo',
 		REPOSITORY,
 		'--commit',
-		commit,
+		sha,
 		'--workflow',
 		'ci.yml',
 		'--json',

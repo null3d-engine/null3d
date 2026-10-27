@@ -79,6 +79,11 @@ export interface PropertyBinding {
 	components: number;
 	/** The value before any animation moves it, `components` numbers. */
 	base: Float32Array;
+	/**
+	 * The map slot whose texture transform the value moves, for a material's offset and scale: one
+	 * map's where a file's pointer names it, and every map's when it is left out.
+	 */
+	slot?: number;
 }
 
 /** One track of a clip: the keys of one property, and the binding that names the property. */
