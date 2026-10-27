@@ -10,6 +10,7 @@
 
 import { EngineError } from '../errors/engine-error';
 import { presetIndex, type QualityPreset } from '../quality/presets';
+import { DEV } from '../shared/dev';
 import { FEATURE_STATS_MESSAGE } from '../shared/feature-stats';
 import type { Tier } from '../shared/tier';
 import type { Quality, QualityBudget } from '../sketch/quality';
@@ -172,7 +173,8 @@ export class FeatureHost {
 		};
 		hosted.quality.settings = hosted.settings;
 		this.hosted.set(feature.name, hosted);
-		for (const view of feature.debugViews ?? []) registerAddonDebugView(view);
+		// A debug view draws in development builds only, so a release build registers none.
+		if (DEV) for (const view of feature.debugViews ?? []) registerAddonDebugView(view);
 		if (feature.budget) this.registerBudget(hosted, feature.budget);
 		this.update(hosted);
 		if (!hosted.announced) this.announce(hosted);
@@ -184,7 +186,8 @@ export class FeatureHost {
 	remove(name: string): boolean {
 		const hosted = this.hosted.get(name);
 		if (hosted === undefined) return false;
-		for (const view of hosted.feature.debugViews ?? []) unregisterAddonDebugView(view.name);
+		if (DEV)
+			for (const view of hosted.feature.debugViews ?? []) unregisterAddonDebugView(view.name);
 		hosted.budget?.remove();
 		this.hosted.delete(name);
 		this.registry.remove(name);
@@ -220,7 +223,8 @@ export class FeatureHost {
 		this.stopped = true;
 		this.forget();
 		for (const hosted of this.hosted.values()) {
-			for (const view of hosted.feature.debugViews ?? []) unregisterAddonDebugView(view.name);
+			if (DEV)
+				for (const view of hosted.feature.debugViews ?? []) unregisterAddonDebugView(view.name);
 			hosted.budget?.remove();
 			this.namespaces.releaseFeature(this.addon, exportedNames(hosted.feature));
 		}
