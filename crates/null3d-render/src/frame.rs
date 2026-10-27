@@ -247,6 +247,9 @@ pub enum RecordError {
         /// The bytes the atlas would take, in whole mebibytes.
         megabytes: u32,
     },
+    /// The scene holds a draw whose instance count the GPU writes, but the device chose the direct
+    /// path on its first frame, which has no indirect draw to copy that count into.
+    FeatureDrawAfterFirstFrame,
     /// The render graph of the frame's passes did not compile.
     Graph(GraphError),
 }
