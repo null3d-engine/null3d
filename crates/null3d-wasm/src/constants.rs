@@ -1236,6 +1236,7 @@ pub fn typescript() -> String {
                 ),
                 ("ANISOTROPY", param::ANISOTROPY as u32),
                 ("ANISOTROPY_ROTATION", param::ANISOTROPY_ROTATION as u32),
+                ("DISPERSION", param::DISPERSION as u32),
                 ("LIGHT_MAP_SCALE", param::LIGHT_MAP_SCALE as u32),
                 ("LIGHT_MAP_OFFSET", param::LIGHT_MAP_OFFSET as u32),
                 ("DECAL_FADE_START", param::DECAL_FADE_START as u32),
