@@ -9,6 +9,7 @@
 import { expect, test } from '@playwright/test';
 import type { Tier } from '../../bench/lib/parity.ts';
 import { compareImages, percent, TOLERANCE } from '../../packages/cli/src/compare.js';
+import { writePng } from '../../packages/cli/src/png.js';
 import { loadResult } from '../lib/page-result.ts';
 import { failureText } from '../lib/runs.ts';
 import { manifestRun } from './manifest.ts';
@@ -62,10 +63,20 @@ for (const tier of ['webgpu', 'compat', 'webgl2'] as const)
 		test.setTimeout(420_000);
 		const baked = await draw(page, tier, 'normals=baked', 'low');
 		const vertex = await draw(page, tier, 'normals=vertex', 'low');
-		const normals = share(baked, vertex);
-		const hills = farShare(baked, vertex);
 		const blended = await draw(page, tier, 'blend=on', 'high');
 		const flat = await draw(page, tier, 'blend=off', 'high');
+		for (const [name, data] of [
+			['baked-normals', baked],
+			['vertex-normals', vertex],
+			['height-blended', blended],
+			['plain-blend', flat],
+		] as const)
+			writePng(
+				new URL(`../../test-results/terrain-shading/${tier}-${name}.png`, import.meta.url).pathname,
+				{ width: WIDTH, height: HEIGHT, data },
+			);
+		const normals = share(baked, vertex);
+		const hills = farShare(baked, vertex);
 		const layers = share(blended, flat);
 		console.log(
 			`terrain shading on ${tier}: normals move ${percent(normals)} of the frame and ${percent(hills)} of the far hills, height blending ${percent(layers)}`,
