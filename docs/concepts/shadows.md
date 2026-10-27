@@ -403,7 +403,7 @@ The box holds the object, a radius of space above it and sixteen radii below, wh
 
 ## Which objects cast and receive
 
-- The first directional light created casts the shadows, if it has `castShadows`. Other directional lights light surfaces, and cast none.
+- The first directional light created casts the shadows, if it has `castShadows`. The core keeps only that one directional light, so a further one lights nothing and casts none.
 - Each spot light with `castShadows` casts shadows while it holds a tile of the atlas. Each point light with `castShadows` casts them while it holds six, where the preset's `pointLightShadows` is on.
 - A caster draws into every cascade whose box it reaches, however far toward the light it stands.
 - The light's layers choose the casters: an object casts only when its layer mask shares a bit with the light's. The light still lights every object in a view that it shares a layer with. So an object with `castShadows` on a layer that the light lacks casts nothing, with no warning, and the light shines through it. Give the light that layer too ([Layers and shadows](render-layers.md#layers-and-shadows)). three.js tests casters against the camera's layers instead.

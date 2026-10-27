@@ -98,7 +98,7 @@ fn surface(input: SurfaceInput) -> Surface {
 `;
 
 export default defineSketch(({ scene, materials, geometry, textures, render }) => {
-  scene.setBackground({ sky: { sunPosition: [0.4, 0.35, -0.85] } });
+  scene.setBackground({ sky: { sunPosition: [0.4, 1, 0.5] } });
   const camera = scene.createPerspectiveCamera({ position: [0, 2.5, 8], target: [0, 0.5, 0] });
   scene.setActiveCamera(camera);
   scene.createDirectionalLight({ direction: [-0.4, -1, -0.5], intensity: 2.5 });
