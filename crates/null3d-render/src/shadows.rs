@@ -1587,12 +1587,13 @@ mod tests {
         let settings = ShadowSettings {
             bias: 2.0,
             normal_bias: 0.5,
+            intensity: 0.25,
             ..SETTINGS
         };
         let uniform = ShadowUniform::new(&cascades, &settings, CascadeDepth::Unorm16);
         assert_eq!(uniform.forward[3], 3.0);
         assert_eq!(uniform.as_bytes().len(), SHADOW_UNIFORM_BYTES as usize);
-        assert_eq!(uniform.biases, [2.0, 0.5, 1.0, 0.0]);
+        assert_eq!(uniform.biases, [2.0, 0.5, 1.0, 0.25]);
         for (k, cascade) in cascades.used().iter().enumerate() {
             assert_eq!(uniform.view_proj[k], cascade.view_proj);
             assert_eq!(uniform.ends[k], cascade.end);
