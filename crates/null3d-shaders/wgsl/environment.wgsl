@@ -27,6 +27,7 @@
 #import null3d::fullscreen::{triangle}
 #import null3d::atmosphere::{SkySettings, second_sun, sky_light, sky_whole}
 #import null3d::cubemap::{face_direction, frame_bitangent, frame_tangent, radical_inverse}
+#import null3d::math::{half_vector}
 #import null3d::sky_layer::{SkyLayer, SkyLayerInput, SkyLayerValues}
 
 struct Step {
@@ -325,7 +326,7 @@ fn shade(p: vec3f, n: vec3f) -> f32 {
     // The view points from the surface back to the center.
     let v = normalize(-p);
     let n_dot_v = max(dot(n, v), 1.0e-4);
-    let h = normalize(l + v);
+    let h = half_vector(l, v);
     let v_dot_h = clamp(dot(v, h), 0.0, 1.0);
     // three.js's `F_Schlick`, with its exponential fit of the fifth power.
     let weight = exp2((-5.55473 * v_dot_h - 6.98316) * v_dot_h);

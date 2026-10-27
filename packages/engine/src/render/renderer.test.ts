@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'bun:test';
+import {
+	LIMIT_MAX_USEFUL_BINDING_BYTES,
+	LIMIT_PORTABLE_BUFFER_BYTES,
+	LIMIT_PORTABLE_STORAGE_BINDING_BYTES,
+} from '../generated/core';
 import { FORMAT_RG11B10_UFLOAT, PERMUTATION_HALF } from '../generated/gpu';
 import { releaseContext } from '../gpu/webgl2/context';
 import type { CoreDevice } from '../page/limits';
@@ -156,13 +161,15 @@ describe('the WebGL2 renderer', () => {
 });
 
 describe('the WebGPU renderer', () => {
-	/** Gives the thread a WebGPU adapter with `features`, and lists the features each device asks for. */
+	/** Gives the thread a WebGPU adapter with `features`, and lists what each device asks for. */
 	function fakeGpu(features: string[]) {
 		const requests: string[][] = [];
+		const limits: Record<string, number>[] = [];
 		const adapter = {
 			features: new Set(features),
 			async requestDevice(descriptor: GPUDeviceDescriptor) {
 				requests.push([...(descriptor.requiredFeatures ?? [])]);
+				limits.push((descriptor.requiredLimits ?? {}) as Record<string, number>);
 				throw new Error('the fake adapter makes no device');
 			},
 		};
@@ -174,8 +181,35 @@ describe('the WebGPU renderer', () => {
 		});
 		const restore = () =>
 			Object.defineProperty(navigator, 'gpu', { configurable: true, value: before });
-		return { requests, restore };
+		return { requests, limits, restore };
 	}
+
+	/**
+	 * The engine's own buffers follow the device's largest buffer, and the engine asks for that
+	 * largest buffer here: the portable limit at least, and the storage binding where a device
+	 * offers more. A request that stopped at the portable limit would leave a device with a larger
+	 * binding holding buffers it rejects.
+	 */
+	it('asks for a largest buffer of at least the engine sizes', async () => {
+		for (const binding of [LIMIT_PORTABLE_STORAGE_BINDING_BYTES, LIMIT_MAX_USEFUL_BINDING_BYTES]) {
+			const { requests, limits, restore } = fakeGpu(['core-features-and-limits']);
+			try {
+				const options = {
+					tier: 'webgpu' as const,
+					device: { capabilities: 0, storageBindingBytes: binding } as CoreDevice,
+				};
+				await expect(createRenderer(fakeCanvas().canvas, options)).rejects.toThrow(
+					'the fake adapter makes no device',
+				);
+				expect(requests).toHaveLength(1);
+				expect(limits[0]?.maxBufferSize).toBeGreaterThanOrEqual(
+					Math.max(binding, LIMIT_PORTABLE_BUFFER_BYTES),
+				);
+			} finally {
+				restore();
+			}
+		}
+	});
 
 	for (const [feature, device] of [
 		['shader-f16', { shaderBits: PERMUTATION_HALF }],

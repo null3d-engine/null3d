@@ -331,8 +331,9 @@ export default defineSketch(async ({ assets, post }) => {
 
 The grading controls set a look from a few numbers, without a table file. A job worker bakes them
 into a table of its own. The final pass applies that table to the display color that the tone curve
-leaves, before a `lut`. Changing a value costs the frames nothing: the picture shows the new grade
-once the worker's bake reaches the GPU, usually within a few frames.
+leaves, before a `lut`. A change stalls no frame. The picture shows the new grade once the
+worker's bake reaches the GPU, usually within a few frames. The frame that lands a bake uploads the
+table, 256 KB.
 
 ```ts
 post.set({
@@ -353,7 +354,7 @@ post.set({
 | `grading.whiteBalance.temperature` | The color temperature of the light that whites are corrected for, from 1667 to 25000 kelvin. A low value, such as 3200 for a tungsten lamp, makes the picture cooler. | 6500 |
 | `grading.whiteBalance.tint` | The green to magenta shift, from -1 to 1. Each step of 1 halves or doubles the green channel. | 0 |
 | `grading.lift` | Three values, one per channel, from -1 to 1, added to the color: positive values lift the blacks. | `[0, 0, 0]` |
-| `grading.gamma` | Three powers, one per channel, above 0. Values below 1 brighten the shadows. | `[1, 1, 1]` |
+| `grading.gamma` | The gamma of each channel, above 0. A channel is raised to the power of one over its gamma, so values above 1 brighten the shadows. | `[1, 1, 1]` |
 | `grading.gain` | Three factors, one per channel, from 0 up: higher values brighten the highlights. | `[1, 1, 1]` |
 | `grading.saturation` | How much color the picture keeps: 0 is gray, 1 leaves it as it is, and higher values add color. | 1 |
 | `grading.splitToning.shadows` | The hue that tints the dark parts, as a color. Its brightness does not matter. | Gray, so no tint |
@@ -367,7 +368,7 @@ post.set({
 - The table holds the grade alone, and the tone curve stays a calculation in the pass. A custom tone curve therefore still works with the controls.
 - The final pass applies the built-in grade first and a `lut` after it, so a look from a file can sit over a grade from the controls.
 - The final pass draws on every GPU path, with HDR color or without it, so both paths grade alike.
-- The bake runs in a job worker, so a value that changes in a frame loop does not stall the frames. Where no worker can run tasks, the picture keeps its colors and development builds warn once.
+- The bake runs in a job worker, so a value that changes in a frame loop does not stall the frames. The frame that lands a bake uploads the table, 256 KB. Where no worker can run tasks, the picture keeps its colors and development builds warn once.
 - The values are designed for the null3D grading controls. To match a grade that a colorist made in another tool, load its `.cube` file instead.
 
 ## Vignette
@@ -459,6 +460,7 @@ post.set({ toneMapping: reinhard });
 - An effect samples a texture as `textureSampleLevel(name, nameSampler, uv, 0.0)`. A render pass's texture holds its bottom row first: sample it at `effectPassUv(input.uv)`. The textures are fixed when the effect is added, and an effect with textures draws in a pass of its own.
 - Effects and custom curves need HDR color. On a device without it they stay off, and development builds warn once.
 - [Custom passes](../guides/custom-passes.md) lists what an effect reads, and what effects cost.
+- An add-on's effect takes a [feature description](features.md) instead, through [`post.addFeatureEffect`](feature-effects.md). The description places the pass at the resolve point and says whether it draws.
 
 ## Still views
 

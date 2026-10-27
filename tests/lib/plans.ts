@@ -507,8 +507,8 @@ const partsOf = (set: ShaderSet) => Math.ceil(glslProgramCountOf(set) / SHADER_P
  * with the coat bit in theirs. `sampled` compiles the same builds without the coat, a sample of
  * those with it, and a sample of the first-use builds, which keeps Safari's shards on CI's few Macs
  * short (D-147, D-189). Its samples share the parts of the other builds, since a part downloads its
- * share of every module: a sample with a part of its own downloaded every module, about 2.5 GB on
- * 20 October 2026, and Safari had not compiled one program of it after 205 s.
+ * share of every module: a sample with a part of its own downloads every module, about 2.5 GB, and
+ * Safari compiles no program of it within 205 s.
  */
 export const SHADER_PLANS = ['all', 'sampled'] as const;
 export type ShaderPlan = (typeof SHADER_PLANS)[number];
@@ -1186,6 +1186,36 @@ const EFFECT_TIMEOUT_SECONDS = 60;
 export const EFFECT_SCALES = [1, 0.5] as const;
 
 /**
+ * The way each plan item makes a depth prepass start the stand-in color that it never draws, for
+ * the ambient occlusion cost page: the two candidate fixes and the load that the engine made before
+ * the run chose one. The page tells them apart by their rise with ambient occlusion on.
+ */
+const PREPASS_COLOR_VARIANTS = ['load', 'clear', 'none'] as const;
+
+/**
+ * What each way of starting the prepass's stand-in color costs the ambient occlusion cost page on
+ * WebGL2, at the render scales of the ao plan. Safari's WebGL2 path pays for a framebuffer whose
+ * color was never written and then invalidated, by an amount that follows the texture's size
+ * (WebKit bug 328158), so the same page measures each way against its own frames with ambient
+ * occlusion off. The three pages draw the same image, so a way that looks different is a fault.
+ */
+export function prepassColorPlan(): PlanItem<Check>[] {
+	return EFFECT_SCALES.flatMap((scale) =>
+		PREPASS_COLOR_VARIANTS.map((variant) =>
+			pageItem(
+				`ao-prepass-color-webgl2-${scale * 100}-${variant}`,
+				'effect-cost',
+				{ kind: 'effect', effect: 'ao', tier: 'webgl2', scale },
+				{
+					switches: ['gpu=webgl2', `scale=${scale}`, 'effect=ao', `prepass-color=${variant}`],
+					timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	);
+}
+
+/**
  * What an effect costs on each GPU path at each render scale: the effect's scene fills the window,
  * and the page times its frames with the effect off and on in turns. Ambient occlusion turns the
  * depth prepass on with it, so the ao plan also times each page with the prepass on in both
@@ -1479,6 +1509,34 @@ export function clusterCostPlan(): PlanItem<Check>[] {
 			),
 		);
 	return items;
+}
+
+/**
+ * The GPU paths of the history cost plan, with the tier that each draws on.
+ */
+const HISTORY_PATHS = [
+	['webgpu', 'webgpu'],
+	['compat', 'webgpu'],
+	['webgl2', 'webgl2'],
+] as const;
+
+/**
+ * What a compute pass's history costs: the compute-state page's cost case, which runs a 256 by 256
+ * pass of 40 steps in a frame and measures three seconds, then measures three seconds again with
+ * the pass switched off. A history pass keeps two states and copies the newest one, and the WebGL2
+ * fragment form draws each step into its own target, so each path's own figure shows. The page
+ * reports the frame interval and the CPU time, the GPU time where the device times it, and the
+ * bytes that the pass's texel memory takes. M3-V13 records the figures.
+ */
+export function historyCostPlan(): PlanItem<Check>[] {
+	return HISTORY_PATHS.map(([path, tier]) =>
+		pageItem(
+			`history-cost-${path}`,
+			'compute-state',
+			{ kind: 'probe', tier },
+			{ switches: [`gpu=${path}`, 'case=cost'], timeoutSeconds: 180 },
+		),
+	);
 }
 
 /**
@@ -2267,6 +2325,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	ao: () => effectPlan('ao'),
 	'ao-calls': () => effectPlan('ao', true),
 	'ao-calls-sync': () => effectPlan('ao', 'sync'),
+	'ao-prepass-color': prepassColorPlan,
 	dof: () => effectPlan('dof'),
 	subsurface: () => effectPlan('subsurface'),
 	contact: () => effectPlan('contact'),
@@ -2281,6 +2340,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	grass: grassPlan,
 	'alpha-mask-cost': alphaMaskPlan,
 	'cluster-cost': clusterCostPlan,
+	'history-cost': historyCostPlan,
 	'lod-cost': lodCostPlan,
 	'two-step': twoStepPlan,
 	sky: skyPlan,
@@ -2521,10 +2581,10 @@ function skyRefreshReport(result: SkyRefreshResult): { line: string; problems: s
 }
 
 /**
- * The items that must share an item's shard: the items whose results the check compares with. The
- * parts of the shaders page once stayed in one shard too, where Safari compiles each part faster
- * than the one before. The page has since grown past the 10 minutes that one shard may take, so its
- * parts spread over the shards like the rest, and each shard pays for its own first part.
+ * The items that must share an item's shard: the items whose results the check compares with. In
+ * one shard, Safari compiles each part of the shaders page faster than the one before, but the page
+ * takes longer than the 10 minutes that one shard may take, so its parts spread over the shards
+ * like the rest, and each shard pays for its own first part.
  */
 export function itemsTogether(item: PlanItem<Check>): string[] {
 	return itemsNeeded(item.check);
@@ -2532,9 +2592,9 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
 
 /**
  * About how long the slow pages of the checks plan take in Safari on CI's Mac, for pages that the
- * measured table (`page-times.ts`) does not hold yet. The shaders page's parts grew with the shader
- * set. In run 39291513923 (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled
- * first in its shard. The WebGPU pages of the same names skip there.
+ * measured table (`page-times.ts`) does not hold yet. The shaders page's parts grow with the shader
+ * set: a shard's parts take 122 and 143 seconds, each compiled first in its shard (run
+ * 39291513923). The WebGPU pages of the same names skip there.
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
 	[/^shaders-/, 120],

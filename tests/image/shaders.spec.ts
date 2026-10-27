@@ -27,9 +27,9 @@ const realGpu = !process.env.CI;
 
 /**
  * ANGLE's Vulkan backend builds each program's whole pipeline when it links, to warm its pipeline
- * cache, and on SwiftShader that pipeline's machine code was nearly all of a part's time: on 23
- * October 2026 part 1's GLSL took 24.5 s on 12 to 15 cores with it, and 3.4 s on one core without.
- * The test reads ANGLE's compile and link results and logs, which came out the same either way, so
+ * cache, and on SwiftShader that pipeline's machine code is nearly all of a part's time: part 1's
+ * GLSL takes 24.5 s on 12 to 15 cores with it, and 3.4 s on one core without. The test reads
+ * ANGLE's compile and link results and logs, which come out the same either way, so
  * its browser builds no pipeline at link. The warm-up is the Vulkan backend's, so a real GPU's
  * backend has none to leave out.
  */

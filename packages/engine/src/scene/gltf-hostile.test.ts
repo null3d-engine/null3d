@@ -1,5 +1,5 @@
-// Small hostile glTF files, built in code, that once hung the glTF worker or made it allocate far
-// more than the file holds. Each must now fail fast with E1416 and a reason that names its part.
+// Small hostile glTF files, built in code, that can hang the glTF worker or make it allocate far
+// more than the file holds. Each must fail fast with E1416 and a reason that names its part.
 
 import { describe, expect, test } from 'bun:test';
 import { MeshoptEncoder } from 'meshoptimizer/encoder';

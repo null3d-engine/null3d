@@ -1,0 +1,22 @@
+# Drive the night town showcase through three states, and draw each one. The showcase reads the
+# camera's keys and the pointer, so every state comes from a press or a gesture.
+# The `c` key takes the camera off its route at the opening view, where it holds that pose.
+0.3 key KeyC down
+0.4 key KeyC up
+# A left drag turns the camera around the square.
+0.5 pointer move 160 90
+0.6 pointer down 160 90
+1 pointer move 200 90
+1.1 pointer up
+2 dump #camera.position
+2 shot turned
+# The `w` key walks the camera toward the town.
+2.5 key KeyW down
+2.6 key KeyW up
+3.5 dump #camera.position
+3.5 shot walked
+# The wheel brings the camera closer to the square.
+3.8 pointer move 160 90
+3.9 pointer wheel 0 -600
+5 dump #camera.position
+5 shot closer

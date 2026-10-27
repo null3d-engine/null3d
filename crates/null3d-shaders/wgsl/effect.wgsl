@@ -84,6 +84,8 @@ struct EffectInput {
     size: vec2f,
     /// The sketch time in seconds.
     time: f32,
+    /// The array layer that this draw writes, from 0. An effect writes 0.
+    layer: u32,
 }
 
 /// Vector `part` of the effect's uniforms.
@@ -198,6 +200,7 @@ fn effect_fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
 #endif
     var input: EffectInput;
     input.time = effect_block.clock.x;
+    input.layer = 0u;
     let drawn = effect_block.drawn;
     if drawn.w > 0.5 {
         // A pass texture keeps the image's bottom row first: WebGL2 counts rows from the bottom,
@@ -207,6 +210,8 @@ fn effect_fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
         input.pixel = from_top;
         input.uv = from_top / drawn.xy;
         input.color = effectColor(input.uv);
+        // A pass of several layers writes one of them at a time, counted from 0.
+        input.layer = u32(drawn.w) - 1u;
         return effect(input);
     }
 #ifdef WEBGL2

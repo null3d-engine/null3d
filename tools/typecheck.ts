@@ -13,6 +13,8 @@ import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
+import { acquireLock, cacheRoot, HOLDER_WATCH } from './lib/build-cache';
+import { refuseInQuietWindow } from './lib/quiet-window';
 import { ensureShaderModules, shaderModulesUnlessBusy } from './lib/shader-modules';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -41,6 +43,9 @@ export const PROJECTS = [
 	'packages/water',
 	'packages/water/tsconfig.test.json',
 	'packages/water/tsconfig.page.json',
+	'packages/wind',
+	'packages/wind/tsconfig.test.json',
+	'packages/wind/tsconfig.page.json',
 	'packages/cli',
 	'tests/pages',
 	'tests/fixtures/project',
@@ -130,15 +135,31 @@ function report(result: Checked): void {
 }
 
 /**
+ * Takes the machine's lock of type checks, which lets one run at a time: each runs its projects on
+ * every core, so several commits' hooks at once loaded the machine many times past its cores, where
+ * no job queue saw them. A waiter names the holder and breaks the lock of one that has stopped.
+ */
+function acquireTypecheckLock(): () => void {
+	return acquireLock(join(cacheRoot(), 'typecheck.lock'), { freesSlot: true, watch: HOLDER_WATCH });
+}
+
+/**
  * Checks every project and prints each result. With `shaders`, it first brings the shader modules up
  * to date, or keeps the ones in place while another checkout's build holds the machine's lock;
  * against those, a failure may be theirs, so it prints nothing until it has built them and checked
  * again. Returns the results that it printed.
  */
 async function main(shaders: boolean): Promise<Checked[]> {
+	refuseInQuietWindow('The type check');
 	const shadersMatch = !shaders || shaderModulesUnlessBusy(ROOT);
 	if (shaders && shadersMatch) console.log('The shader modules match their sources.');
-	const results = await checkAll(PROJECTS, undefined, shadersMatch ? report : undefined);
+	const release = acquireTypecheckLock();
+	let results: Checked[];
+	try {
+		results = await checkAll(PROJECTS, undefined, shadersMatch ? report : undefined);
+	} finally {
+		release();
+	}
 	if (shadersMatch) return results;
 	if (results.every((result) => result.passed)) {
 		for (const result of results) report(result);
@@ -148,7 +169,12 @@ async function main(shaders: boolean): Promise<Checked[]> {
 		'A project failed against the modules in place, so this builds them and checks again.',
 	);
 	ensureShaderModules(ROOT);
-	return checkAll(PROJECTS, undefined, report);
+	const again = acquireTypecheckLock();
+	try {
+		return await checkAll(PROJECTS, undefined, report);
+	} finally {
+		again();
+	}
 }
 
 if (import.meta.main) {

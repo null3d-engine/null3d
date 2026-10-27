@@ -1,12 +1,12 @@
 # D-82: Transparency parity: two-sided blending, alpha to coverage, the alpha hash and cut-out shadows
 
-Status: decided; the owner confirmed alpha to coverage on by default on 2026-10-07, and kept two draws for double-sided blended materials on 2026-10-07, which replaces the 5% cost rule. The cost runs on the Mac, the cloud S25 and the owner's iPad are done. The owner skipped the optional S24+ run. Date: 2026-10-05. Task: M2-J6.
+Status: decided. The owner decided alpha to coverage on by default, and two draws for double-sided blended materials. Built: two-sided blending, alpha to coverage, the integer alpha hash and cut-out shadows. Task: M2-J6.
 
-Summary: A double-sided blended run draws its back faces, then its front faces, unless `forceSinglePass` is set. Masks take alpha to coverage by default: the pipeline's where the target has alpha, the shader's `sample_mask` on WebGPU's `rg11b10ufloat`. `alphaMode: 'hash'` ports three.js's alpha hash with an integer hash of each cell, so every GPU draws the same pattern. Masked casters cut their shadows at their own cutoff.
+Summary: A double-sided blended run draws its back faces, then its front faces, unless `forceSinglePass` is set. Masks take alpha to coverage by default, and masked casters cut their shadows at their own cutoff. The alpha hash (`alphaMode: 'hash'`) ports three.js's with an integer hash of each cell, so every GPU draws the same pattern.
 
 ## Question
 
-Three.js has three ways to draw see-through and cut-out surfaces that null3D lacked:
+Three.js has three ways to draw see-through and cut-out surfaces:
 
 1. A double-sided material with `transparent: true` draws twice, back faces then front faces, unless `forceSinglePass` is set.
 2. `alphaToCoverage` turns the alpha into MSAA coverage, with an alpha ramp one pixel wide above `alphaTest`.
@@ -17,15 +17,15 @@ How does null3D draw each one on all three GPU paths? In particular, alpha to co
 ## Rule
 
 - Intent parity ([D-52](D-52-intent-parity.md)): these are material options with one meaning in three.js. So each draws what three.js draws, on every path, and the parity scenes compare with three.js's rule.
-- No change to opaque materials, to masked materials without the new options, or to the start file's size beyond what the new shader code needs. New shader builds load on first use ([D-56](D-56-first-use-shader-files.md)).
-- Only double-sided blended materials pay for the second draw, about one more draw each; solid double-sided materials never pay, and `forceSinglePass` opts out (owner decision, 7 October 2026). This replaces the first rule, "under 5% of GPU time in S2 with every material double-sided" (the technique analysis, prototype G3), which the Mac's worst case broke (Data, "Cost").
+- No change to opaque materials, to masked materials without these options, or to the start file's size beyond what their shader code needs. Their shader builds load on first use ([D-56](D-56-first-use-shader-files.md)).
+- Only double-sided blended materials pay for the second draw, about one more draw each; solid double-sided materials never pay, and `forceSinglePass` opts out (decided by the owner). A limit of 5% of GPU time in S2 with every material double-sided (the technique analysis, prototype G3) does not apply. Its worst case costs 118% on the Mac, as three.js's own two draws would (Data, "Cost").
 - Stay within WebGPU's default limits and compatibility mode (AGENTS.md hard rule 6).
 
 ## Data
 
 ### What WebGPU allows
 
-The WebGPU specification (`gpuweb/gpuweb`, `spec/index.bs`, read on 5 October 2026) says:
+The WebGPU specification (`gpuweb/gpuweb`, `spec/index.bs`) says:
 
 - "validating GPUMultisampleState": if `alphaToCoverageEnabled` is true, `count` must be greater than 1.
 - "validating GPURenderPipelineDescriptor": if `alphaToCoverageEnabled` is true, `fragment.targets[0]` must exist, and its format "must be a GPUTextureFormat which is blendable and has an alpha channel".
@@ -43,12 +43,12 @@ So `rg11b10ufloat` cannot turn alpha into coverage. PlayCanvas reads the specifi
 
 ### Parity with three.js
 
-`bun run parity` in Chrome on the Mac's GPU, 6 October 2026. Each figure is the share of pixels that differ from three.js's frame, and the last column the share by which three.js's two renderers differ.
+`bun run parity` in Chrome on the Mac's GPU. Each figure is the share of pixels that differ from three.js's frame, and the last column the share by which three.js's two renderers differ.
 
 | Scene | WebGPU | Compatibility mode | WebGL2 | three.js's renderers |
 | --- | --- | --- | --- | --- |
 | `alpha-coverage` | 0.056% | 0.000% | 0.153% | 0.155% |
-| `alpha-hash` (sine hash, before 7 October) | 1.068% | 1.069% | 0.004% | 1.117% |
+| `alpha-hash` (three.js's sine hash, rejected) | 1.068% | 1.069% | 0.004% | 1.117% |
 | `alpha-hash` (integer hash, limit 6%) | 4.976% | 4.977% | 4.954% | 1.117% |
 | `transparency-solids` | 0.000% | 0.030% | 0.000% | 0.019% |
 | `alpha-mask-shadows` (limit 0.5%) | 0.122% | 0.129% | 0.115% | 0.053% |
@@ -56,41 +56,41 @@ So `rg11b10ufloat` cannot turn alpha into coverage. PlayCanvas reads the specifi
 | `alpha-mask` | 0.000% | 0.000% | 0.000% | 0.051% |
 
 - WebGPU's alpha to coverage writes its own sample mask on `rg11b10ufloat`, and still differs from three.js by less than three.js's two renderers differ.
-- CI's first full run on the pull request, 8 October 2026, ran the parity scenes on SwiftShader, which the Mac runs above did not. Two scenes failed. `alpha-coverage` on WebGL2 differed from three.js in 0.113% of pixels, where three.js's rule allows 0.1% and its own two renderers differ by 0.063%. The differences are isolated pixels on the cut edges: coverage takes a whole sample of four at each step, so alphas that differ in their last bits flip a sample there. The scene now takes a limit of 0.25% (`ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT`); the Mac's 0.153% sits under it too.
-- The `points` scene failed its limit of 0.2% on WebGPU and in compatibility mode (0.210% and 0.243%; main gave 0.081% and 0.118%). Its masked clouds now take alpha to coverage by default, and its three.js twin drew them with a hard `alphaTest`. The twin now turns `alphaToCoverage` on for masked clouds, as the glTF twin does, and the scene passes: 0.093%, 0.125% and 0.015% on SwiftShader, and 0.055%, 0.115% and 0.039% on the Mac.
-- The alpha hash matches WebGLRenderer to 0.004% on WebGL2. On WebGPU it differs by as much as three.js's WebGPURenderer differs from its WebGLRenderer. The hash multiplies `sin` by 10,000, so the two shading languages' `sin` give other patterns. The parity check passes it on three.js's own baseline.
+- On SwiftShader, `alpha-coverage` on WebGL2 differs from three.js in 0.113% of pixels, where three.js's rule allows 0.1% and its own two renderers differ by 0.063%. The differences are isolated pixels on the cut edges: coverage takes a whole sample of four at each step, so alphas that differ in their last bits flip a sample there. So the scene takes a limit of 0.25% (`ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT`); the Mac's 0.153% sits under it too.
+- The `points` scene's masked clouds take alpha to coverage by default, so its three.js twin turns `alphaToCoverage` on for them, as the glTF twin does. With a hard `alphaTest` in the twin, the scene fails its limit of 0.2% on WebGPU and in compatibility mode (0.210% and 0.243%). With the option on, it passes: 0.093%, 0.125% and 0.015% on SwiftShader, and 0.055%, 0.115% and 0.039% on the Mac.
+- With three.js's sine hash, the alpha hash matches WebGLRenderer to 0.004% on WebGL2. On WebGPU it differs by as much as three.js's WebGPURenderer differs from its WebGLRenderer. The hash multiplies `sin` by 10,000, so the two shading languages' `sin` give other patterns. The integer hash draws a pattern of its own, so the scene takes a sanity limit of 6% (The alpha hash, below).
 - The double-sided solids, the tube with `forceSinglePass` among them, match three.js's frame.
 - three.js's shadows ignore vertex alpha: its depth material copies the map and `alphaTest` alone. null3D cuts the vertex alpha too, which glTF's `COLOR_0` alpha means. So the parity scene casts only from the cards that their map cuts (`?ringShadows=off`), and the other shadow tests keep null3D's own references.
-- `gltf-alpha-modes` changed its references, as its `MASK` materials now take alpha to coverage. Its twin turns `alphaToCoverage` on for materials with an alpha test. No other existing reference changed, on either reference set. The runs covered the image tests of alpha, transparency, glTF, sprites, points, custom materials, blending, skinning, shadows, demos, standard materials and outlines.
+- The `MASK` materials of `gltf-alpha-modes` take alpha to coverage, and its twin turns `alphaToCoverage` on for materials with an alpha test. The other image tests of alpha, transparency, glTF, sprites, points, custom materials, blending, skinning, shadows, demos, standard materials and outlines draw the same images with these options, on both reference sets.
 
 ### The color space that blending works in
 
-Added 8 October 2026 (M2-R6). Until then the materials page said that null3D's blending matches three.js's. That holds for one of three.js's renderers only. three.js 0.186's source shows the two:
+null3D's blending matches only one of three.js's two renderers (M2-R6). three.js 0.186's source shows the two:
 
 - `WebGPURenderer` draws into a render target in the working color space, which is linear, whenever it tone maps or encodes the output (`needsFrameBufferTarget` in `renderers/common/Renderer.js`). An output pass then tone maps and encodes. So it blends in linear color before the tone mapping, as null3D's HDR path does.
 - `WebGLRenderer` tone maps and encodes sRGB at the end of each material's shader, and the canvas's 8-bit buffer blends the encoded values. The sRGB curve is concave, so the encoded mix is never lighter than the linear mix: a see-through surface over another color looks darker there than in null3D, and an additive glow stronger.
 - null3D's 8-bit path tone maps and encodes in each shader too, so there it blends as `WebGLRenderer` does.
 
-The parity scenes still pass because their `WebGLRenderer` frames draw into an sRGB render target (`readFrame` in `bench/pages/threejs/harness.ts`). The GPU then encodes after the blend, so `WebGLRenderer` blends in linear color there too. A port that draws `WebGLRenderer` into the canvas sees the difference. The materials page, the mapping entry for `blending` and the port skill's materials table say so.
+The parity scenes pass because their `WebGLRenderer` frames draw into an sRGB render target (`readFrame` in `bench/pages/threejs/harness.ts`). The GPU then encodes after the blend, so `WebGLRenderer` blends in linear color there too. A port that draws `WebGLRenderer` into the canvas sees the difference. The materials page, the mapping entry for `blending` and the port skill's materials table say so.
 
-### A fault found on the way
+### The fragment stage of cutout casters
 
-WebGPU builds a pipeline that draws depth only with no fragment stage, which the depth template never needed. The cutout templates need theirs to discard, so their templates keep it (`depthFragment`). Before that, every masked caster on WebGPU cast its whole shape, with no error.
+WebGPU builds a pipeline that draws depth only with no fragment stage, which the depth template does not need. The cutout templates need theirs to discard, so their templates keep it (`depthFragment`). Without it, every masked caster on WebGPU casts its whole shape, with no error.
 
 ### Shader builds and compile time
 
-The new files hold 1,648 builds: alpha to coverage's, the hash's and the cutout's, across every module of every device. The engine's shader builds grew from about 1,570 to 3,217. A page builds only the pipelines its materials use: one per masked material kind and one per masked caster kind.
+The files `coverage`, `hash` and `cutout` hold 1,648 builds: alpha to coverage's, the hash's and the cutout's, across every module of every device. With them, the engine has 3,217 shader builds, against about 1,570 without. A page builds only the pipelines its materials use: one per masked material kind and one per masked caster kind.
 
-- The Mac ran the image pages in Chrome one at a time, three runs each, at a load of about 6. A whole page with the new pipelines took 0.42 to 0.48 s from its start to its held frame. The same page with the plain mask, as on main, took 0.41 to 0.48 s. The new pipelines add no time that the Mac shows.
-- The shaders test page compiles every build, in parts of at most 150 GLSL programs, so its parts went from 8 to 15. On CI's software GPU each part takes 13 to 19 s. The browser job's shard weights move so that the shard that holds them stays at about main's longest shard: `PWTEST_SHARD_WEIGHTS` from `233:310:174:109:150:118:175` to `233:310:174:109:145:105:193`. From main's CI times of 5 October 2026, the longest shard estimates at 9.7 minutes of tests, against 10.3 on main. The job's limit is 15 minutes.
-- The shader compiler's test that builds every variant of the engine's shaders and compares them with the native build took 76 s on CI's runners with these builds, past its limit of 60 s. Its limit is now 3 minutes, which leaves room for later bits.
-- Phones compile more slowly. The cold start of a page with masked materials on the cloud phones and the iPad is one of the device runs below.
+- The Mac ran the image pages in Chrome one at a time, three runs each, at a load of about 6. A whole page with these pipelines took 0.42 to 0.48 s from its start to its held frame. The same page with the plain mask took 0.41 to 0.48 s. These pipelines add no time that the Mac shows.
+- The shaders test page compiles every build, in parts of at most 150 GLSL programs: 15 parts with these builds, against 8 without. On CI's software GPU each part takes 13 to 19 s. The browser job's shard weights (`PWTEST_SHARD_WEIGHTS`) place the parts so that the longest shard estimates at 9.7 minutes of tests. The job's limit is 15 minutes.
+- The shader compiler's test that builds every variant of the engine's shaders and compares them with the native build takes about 76 s on CI's runners with these builds. So its limit is 3 minutes, which leaves room for later bits.
+- Phones compile more slowly. The device runs below do not time the cold start of a page with masked materials.
 
 ### Cost
 
 The pages `-two-pass` against `-one-pass` take turns in one run (Benchmarks, "Double-sided see-through objects"). Every box of S2 is see-through and double-sided there, the worst case: no box shares a run with another, so every box draws twice.
 
-The Mac, 7 October 2026, Chrome, S2, 5 runs of 10 s per page, a load of about 5, in a quiet window (run `target/bench/20261007-090804-bench`). The four cost pages ran before the window ended at 17:17:
+The Mac, Chrome, S2, 5 runs of 10 s per page, a load of about 5, in a quiet window (run `target/bench/20261007-090804-bench`). The four cost pages ran inside the window. Its build gave the back faces and the front faces of a run a block of draw records each:
 
 | Page | CPU ms per frame | GPU ms | Draw calls | Upload per frame | Presented fps |
 | --- | --- | --- | --- | --- | --- |
@@ -100,8 +100,8 @@ The Mac, 7 October 2026, Chrome, S2, 5 runs of 10 s per page, a load of about 5,
 | WebGL2, two passes | 0.87 | no timer | 10,091 | 2.85 MB | 60 |
 
 - On WebGPU the second draw adds 118% of GPU time in this scene, against the rule's 5%. The second draw doubles the transparent pass's draws, and three.js's WebGLRenderer draws the same two per object. Opaque double-sided materials take no second draw, so the cost falls only on double-sided see-through materials.
-- On WebGL2 each run's back faces and front faces wrote their own block of draw records, each padded to 256 bytes, so the upload rose eight times. A run's front faces now draw from its back faces' records: one block per run. The render crate's test `a_runs_front_faces_reuse_the_records_of_its_back_faces_on_webgl2` checks it. After the fix, a short check run at a load of about 9 uploaded 1.49 MB per frame with two draws, 308 bytes per visible entry against 559 before, and 0.34 MB with one. The rest is the second draw's own records and multi-draw arrays: each run's two draws use different pipelines, so they cannot join one multi-draw call.
-- The cloud Galaxy S25 (Chrome, a 30 Hz screen), 7 October 2026, the build before the WebGL2 records fix, 3 runs per page in turns (run `20261007-092945-bench`):
+- On WebGL2 a block of draw records for each face set, each padded to 256 bytes, makes the upload eight times as large. So a run's front faces draw from its back faces' records: one block per run. The render crate's test `a_runs_front_faces_reuse_the_records_of_its_back_faces_on_webgl2` checks it. With one block per run, a short check run at a load of about 9 uploaded 1.49 MB per frame with two draws and 0.34 MB with one. That is 308 bytes per visible entry, against 559 with a block for each face set. The rest is the second draw's own records and multi-draw arrays: each run's two draws use different pipelines, so they cannot join one multi-draw call.
+- The cloud Galaxy S25 (Chrome, a 30 Hz screen), with a block of records for each face set, 3 runs per page in turns (run `20261007-092945-bench`):
 
 | Page | GPU ms | CPU ms | Draws | Upload per frame | Presented fps |
 | --- | --- | --- | --- | --- | --- |
@@ -110,9 +110,9 @@ The Mac, 7 October 2026, Chrome, S2, 5 runs of 10 s per page, a load of about 5,
 | WebGL2, one pass | no timer | 2.02 | | 0.34 MB | 29.8 |
 | WebGL2, two passes | no timer | 3.80 | 9,662 | 2.74 MB | 16.9 |
 
-  On WebGPU the second draw adds 26% of GPU time on the S25. On WebGL2 the frame rate fell from 30 to 17 fps, with the eightfold upload that the records fix halves. On the fixed build (run `20261007-095947-bench`) two draws uploaded 1.50 MB per frame and ran at 17.7 fps. So the WebGL2 cost is the draws themselves: each run's two draws switch pipelines, so about 9,600 single draws cannot join multi-draw calls. The alpha hash cost 2% of GPU time on WebGPU (3.34 ms plain, 3.41 ms hashed), and nothing measurable on WebGL2 (1.10 and 1.12 ms of CPU time, both at 30 fps).
-- The S25 and the iPad drew the integer hash's images within the Mac's tolerance: the 6 hash checks passed on 1fd345ab3 on each (runs `20261007-095744-checks` and `20261007-101259-checks`). With the sine hash the iPad had differed from the Mac too, in 4.7% of pixels, so the hash's pattern depended on Apple's GPU as well as Adreno's.
-- The owner's iPad Pro 11-inch (A12X, Safari 26.6.2), 7 October 2026, after a 15-minute rest, with the display at 59 Hz before every page, on 1fd345ab3 with the WebGL2 records fix, 3 runs per page in turns (run `20261007-103322-bench`):
+  On WebGPU the second draw adds 26% of GPU time on the S25. On WebGL2 the frame rate falls from 30 to 17 fps. With one block of records per run (run `20261007-095947-bench`), two draws upload 1.50 MB per frame and run at 17.7 fps. So the WebGL2 cost is the draws themselves: each run's two draws switch pipelines, so about 9,600 single draws cannot join multi-draw calls. The alpha hash cost 2% of GPU time on WebGPU (3.34 ms plain, 3.41 ms hashed), and nothing measurable on WebGL2 (1.10 and 1.12 ms of CPU time, both at 30 fps).
+- The S25 and the iPad drew the integer hash's images within the Mac's tolerance: the 6 hash checks passed at commit 1fd345ab3 on each (runs `20261007-095744-checks` and `20261007-101259-checks`). With the sine hash the iPad differs from the Mac too, in 4.7% of pixels, so that hash's pattern depends on Apple's GPU as well as Adreno's.
+- The owner's iPad Pro 11-inch (A12X, Safari 26.6.2), after a 15-minute rest, with the display at 59 Hz before every page, at commit 1fd345ab3 with one block of records per run, 3 runs per page in turns (run `20261007-103322-bench`):
 
 | Page | GPU ms | Busiest thread, CPU ms | Draws | Presented fps |
 | --- | --- | --- | --- | --- |
@@ -125,11 +125,11 @@ The Mac, 7 October 2026, Chrome, S2, 5 runs of 10 s per page, a load of about 5,
 | WebGL2, S2 as it is | no timer | 0.92 | | 60.0 |
 | WebGL2, hashed | no timer | 0.92 | | 60.0 |
 
-  On the iPad the second draw adds 34% of WebGPU GPU time, and 3.7 times the drawing thread's CPU time on WebGL2, where Safari pays for each of the 9,400 single draws. The alpha hash adds 29% of WebGPU GPU time on this tile GPU, where a shader that drops fragments loses part of the hidden-surface removal, and nothing on WebGL2. An earlier run the same day ran hot, with the display at 45 Hz; `.dev/tested-devices.md` keeps it as a hot run.
-- The pages of plain S2 and the hash later in the same run overlapped a shader build and the end of the quiet window, so the hash's cost comes from the iPad.
-- The cost rule needed a ruling: this worst case cannot meet it, as three.js's own two draws would not.
+  On the iPad the second draw adds 34% of WebGPU GPU time, and 3.7 times the drawing thread's CPU time on WebGL2, where Safari pays for each of the 9,400 single draws. The alpha hash adds 29% of WebGPU GPU time on this tile GPU, where a shader that drops fragments loses part of the hidden-surface removal, and nothing on WebGL2. A run with the display at 45 Hz ran hot; `.dev/tested-devices.md` keeps it as a hot run.
+- The Mac run's pages of plain S2 and the hash overlapped a shader build and the end of the quiet window, so the hash's cost comes from the iPad.
+- No design with two draws meets a rule of 5% in this worst case, and three.js's own two draws would not.
 
-Owner decision, 7 October 2026: double-sided blended materials keep two draws by default. The back faces must draw before the front faces for the near side to cover the far side whatever the triangle order, and three.js draws the same two. Only double-sided blended materials pay, about one more draw each. Solid double-sided materials never pay, and `forceSinglePass: true` opts out; the materials page and the performance guide say so. The worst case above, every box of S2 blended and double-sided, cost 1.88 ms of WebGPU GPU time with one draw and 4.09 ms with two (+118%). The fix of the WebGL2 records came with this change.
+Decided by the owner: double-sided blended materials keep two draws by default. The back faces must draw before the front faces for the near side to cover the far side whatever the triangle order, and three.js draws the same two. Only double-sided blended materials pay, about one more draw each. Solid double-sided materials never pay, and `forceSinglePass: true` opts out; the materials page and the performance guide say so. The worst case above, every box of S2 blended and double-sided, cost 1.88 ms of WebGPU GPU time with one draw and 4.09 ms with two (+118%).
 
 ## Options
 
@@ -139,39 +139,39 @@ Owner decision, 7 October 2026: double-sided blended materials keep two draws by
 2. Switch the scene color to `rgba16float` while any material turns alpha to coverage on. Rejected: it doubles the scene color's bytes for the whole frame, for the sake of a few edges. A format change also rebuilds every scene pipeline.
 3. Drop alpha to coverage there, as PlayCanvas does. Rejected: core WebGPU is the main path, and foliage edges would then differ from the other paths.
 
-### Where the new shader code lives
+### Where the ramp and the hash live
 
-The first build put the ramp and the hash in every masked build, and flags in the material's row chose one. That grew the start's GLSL file by 10% and the skinning files past their limit of 1,536 KB uncompressed ([D-56](D-56-first-use-shader-files.md)). The skinning files stood at 98% of that limit before. So the ramp and the hash have permutation bits of their own, `ALPHA_COVERAGE` and `ALPHA_HASH`, and the plain mask's builds stay as they were. Their builds load on first use, in the files `coverage` and `hash`.
+The ramp and the hash in every masked build, with flags in the material's row, would grow the start's GLSL file by 10%. They would also take the skinning files past their limit of 1,536 KB uncompressed ([D-56](D-56-first-use-shader-files.md)). So the ramp and the hash have permutation bits of their own, `ALPHA_COVERAGE` and `ALPHA_HASH`, and the plain mask's builds do not carry them. Their builds load on first use, in the files `coverage` and `hash`.
 
-A build with SKIN and one of these bits would belong to the skinning file, by D-56's rule of the lowest bit. So a feature table can now claim the builds that it shares with features of lower bits (`claims_shared_builds`). Both new features do, and the skinning and morph files keep their size. On 12 October 2026 a build that needs several features got files of its own, and the claim went ([D-56](D-56-first-use-shader-files.md#addendum-2026-10-12-builds-that-need-several-features)).
+A build with SKIN and one of these bits needs two features. Such a build has a file of its own ([D-56](D-56-first-use-shader-files.md#builds-that-need-several-features)), so the skinning and morph files keep their size.
 
 Custom materials build none of the three bits. Each custom material builds every variant of the standard template with its own WGSL. The bits would add half again to each one's shader file. They take the `mask` mode's cutoff, and `materials.shader` throws E1217 for `alphaToCoverage` and the `hash` mode.
 
 ### The ramp
 
-The ramp is three.js's: `smoothstep(cutoff, cutoff + fwidth(alpha), alpha)`, with the fragment discarded at 0. Bevy, Godot and Filament centre the ramp on the cutoff (Golus's sharpening). Under D-52 the cutoff's meaning is intent, so null3D keeps three.js's. `fwidth` takes a floor of 0.0001, where three.js's `smoothstep` with equal edges is undefined.
+The ramp is three.js's: `smoothstep(cutoff, cutoff + fwidth(alpha), alpha)`, with the fragment discarded at 0. Bevy, Godot and Filament center the ramp on the cutoff (Golus's sharpening). Under D-52 the cutoff's meaning is intent, so null3D keeps three.js's. `fwidth` takes a floor of 0.0001, where three.js's `smoothstep` with equal edges is undefined.
 
 ### The alpha hash
 
 A port of three.js's `getAlphaHashThreshold`, Wyman and McGuire's hashed alpha test. It hashes the vertex position in the mesh's own space, before morphs and skinning, as three.js's `vPosition` holds it.
 
-The first port kept three.js's hash of each cell, `fract(1e4 * sin(...) * ...)`. On the cloud Galaxy S25 (Adreno), 7 October 2026, the hashed image tests differed from the Mac's references in 3.3% of their pixels, and in 5.1% with shadows, while every other alpha test passed. The differences were scattered noise inside the see-through parts, and each image's mean brightness matched the Mac's within 0.07 of 255: the same share of each surface drew, in another pattern. A GPU's sine differs from another's in its last bits, and the 10,000 times scale lifts those bits into the hash. So the pattern depended on the GPU.
+three.js hashes each cell with `fract(1e4 * sin(...) * ...)`. With that hash, the hashed image tests on the cloud Galaxy S25 (Adreno) differ from the Mac's references in 3.3% of their pixels, and in 5.1% with shadows, while every other alpha test passes. The differences are scattered noise inside the see-through parts. Each image's mean brightness matches the Mac's within 0.07 of 255: the same share of each surface draws, in another pattern. A GPU's sine differs from another's in its last bits, and the 10,000 times scale lifts those bits into the hash. So the pattern depends on the GPU.
 
 1. A hash of each cell in integer math: `null3d::noise`'s `lattice`, Jarzynski and Olano's pcg3d. Chosen. Every GPU draws the same pattern, so the device image checks stay strict, and a broken hash still fails them. The cells, their blend and the threshold's spread stay three.js's, so the share that draws is the same.
 2. A wide tolerance for the hash tests on devices. Rejected: one that let 5% of the pixels differ would also pass a hash that drew the wrong share of a surface.
 3. Device references for each GPU. Rejected: every new GPU would need its own references, and a three.js port's pattern would still change between devices.
 
-With the integer hash, the Mac's three GPU paths draw the hash images within 0.2% to 0.4% of each other. The pattern no longer matches three.js's, so the `alpha-hash` parity scene takes a sanity limit of its own (D-52 rule 5), and its references are null3D's own. Sprites hash the corner on their quad: three.js's sprite shader never sets `vPosition`, so its sprites have no pattern to match. The hash is an alpha mode, `alphaMode: 'hash'`, since a surface uses either a cutoff or a hash. It ignores `alphaCutoff`.
+With the integer hash, the Mac's three GPU paths draw the hash images within 0.2% to 0.4% of each other. The pattern does not match three.js's, so the `alpha-hash` parity scene takes a sanity limit of its own (D-52 rule 5), and its references are null3D's own. Sprites hash the corner on their quad: three.js's sprite shader never sets `vPosition`, so its sprites have no pattern to match. The hash is an alpha mode, `alphaMode: 'hash'`, since a surface uses either a cutoff or a hash. It ignores `alphaCutoff`.
 
 ### Alpha to coverage by default
 
-three.js leaves `alphaToCoverage` off. Filament turns it on for every masked material, and Bevy and Godot offer it as an alpha mode. Under D-52 part 2 the best technique is the default. So the owner ruled on 5 October 2026 that masked materials take it whenever MSAA is on. The option costs no draw and no pass: the ramp is a few instructions, and the GPU or the sample mask does the rest. The option `alphaToCoverage: false` gives three.js's hard `alphaTest` edges. A three-compat add-on can set it off for ports. The owner confirmed this default on 7 October 2026.
+three.js leaves `alphaToCoverage` off. Filament turns it on for every masked material, and Bevy and Godot offer it as an alpha mode. Under D-52 part 2 the best technique is the default. So the owner decided that masked materials take it whenever MSAA is on. The option costs no draw and no pass: the ramp is a few instructions, and the GPU or the sample mask does the rest. The option `alphaToCoverage: false` gives three.js's hard `alphaTest` edges. A three-compat add-on can set it off for ports.
 
 The parity tests follow from it. The `alpha-mask` scene turns the option off, so it still checks three.js's `alphaTest`. The glTF twin turns `alphaToCoverage` on for every material with an alpha test, so the glTF scenes compare like with like. The scenes that change images are listed under Data.
 
 ### Masked shadows
 
-Before this record, a masked material cast its mesh's whole shape: the shadow depth template drew no fragment shader. The glTF alpha mode `MASK` cuts the surface, and the shadow is part of the surface's look. So the owner ruled that masked materials cut their shadows in this change.
+The shadow depth template draws no fragment shader, so with it a masked material would cast its mesh's whole shape. The glTF alpha mode `MASK` cuts the surface, and the shadow is part of the surface's look. So the owner decided that masked materials cut their shadows.
 
 - Two templates draw masked casters. The first, `SHADOW_CUTOUT`, tests the opacity and the vertex alpha. The second, `SHADOW_CUTOUT_MAP`, adds the base color map's alpha, from the map's own bind group, as the unlit map template binds it. Both are builds of the shadow depth shader with the `CUTOUT` def, so the caster's vertices stay exactly where the depth template puts them. Their builds load on first use, in the file `cutout`.
 - A masked caster's bucket keeps its material and its map's group, where other casters share one bucket per mesh and template. Only masked casters pay for the split.
@@ -190,7 +190,7 @@ A run of the transparent pass is a set of neighbors in the sorted order that sha
 - `alphaMode: 'hash'`: three.js's cells and threshold on the mesh's own positions, with `null3d::noise`'s integer hash of each cell.
 - Alpha to coverage is on by default for masked materials; `alphaToCoverage: false` turns it off.
 - Masked materials of the engine's mesh templates cut their shadows: templates 37 `SHADOW_CUTOUT` and 38 `SHADOW_CUTOUT_MAP`.
-- New numbers: material features 512 `ALPHA_TO_COVERAGE`, 2048 `ALPHA_HASH` and 4096 `SINGLE_PASS`; state flag 512 `ALPHA_TO_COVERAGE`; permutation bits `SAMPLE_MASK` (1 << 20), `ALPHA_COVERAGE` (1 << 21) and `ALPHA_HASH` (1 << 22).
+- Numbers: material features 512 `ALPHA_TO_COVERAGE`, 2048 `ALPHA_HASH` and 4096 `SINGLE_PASS`; state flag 512 `ALPHA_TO_COVERAGE`; permutation bits `SAMPLE_MASK` (1 << 20), `ALPHA_COVERAGE` (1 << 21) and `ALPHA_HASH` (1 << 22).
 - A bit builds only beside the bits it needs, and `ALPHA_COVERAGE` and `ALPHA_HASH` never build together (`permutation::NEEDS` and `APART`). The builds load on first use (`[first_use.coverage]` and `[first_use.hash]`).
 - One check, `permutation::buildable`, applies both lists for the shader build, the pipeline keys and the mock GPU. The index-only instance switch ([D-23](D-23-index-instances.md)) keeps its own pair, `SKIN` and `INSTANCE_INDEX`, in the same `APART` list. Two checks would let a build pass one list and break the other.
 
@@ -199,4 +199,4 @@ A run of the transparent pass is a set of neighbors in the sorted order that sha
 - `null3d::cutout` holds the ramp, the hash and the sample mask, which the lit, unlit, unlit map and sprite templates share.
 - The docs pages `api/materials` and `concepts/materials`, the three.js mapping entries `side: DoubleSide`, `alphaToCoverage`, `alphaHash` and `forceSinglePass`, and both skills' material references describe the options.
 - The image tests `alpha-coverage`, `alpha-coverage-no-msaa`, `alpha-hash`, `transparency-solids`, `alpha-mask-shadows`, `alpha-coverage-shadows` and `alpha-hash-shadows`, with three.js twins for four of them.
-- The shadows page no longer says that masked materials cast their whole shape.
+- The shadows page says that masked materials cut their shadows.

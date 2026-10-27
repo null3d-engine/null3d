@@ -20,7 +20,7 @@ describe('the background priority guard', () => {
 
 	it('names the switch of every spec that runs only when asked as a cost switch', () => {
 		// A spec that waits for a variable times frames on the computer's own GPU, so the guard must
-		// know its switch by name: three such specs landed with switches that a list did not hold.
+		// know its switch by name: a list misses the switch of a new spec.
 		const folder = new URL('../image/', import.meta.url);
 		const switches = readdirSync(folder)
 			.filter((file) => file.endsWith('.spec.ts'))

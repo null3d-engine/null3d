@@ -14,6 +14,19 @@ interface RecordingPage {
 	__null3dHold?: { ok: boolean; replay?: { frames: number; seconds: number; stopped: boolean } };
 }
 
+/**
+ * Waits until the session has posted `count` frame lines, so the recording holds that many frames.
+ * The session runs frames at the speed of the machine that draws them, and a software GPU draws a
+ * few a second, so a fixed span of time records too short a session there.
+ */
+async function waitForFrames(page: Page, count: number): Promise<void> {
+	await page.waitForFunction(
+		(needed: number) => ((globalThis as RecordingPage).recordingLog?.length ?? 0) >= needed,
+		count,
+		{ timeout: 60_000 },
+	);
+}
+
 /** The page's frame log, which each frame writes one line of. */
 const frameLog = () => (globalThis as RecordingPage).recordingLog?.slice() ?? [];
 
@@ -35,8 +48,9 @@ async function settledLog(page: Page): Promise<string[]> {
 }
 
 // Each part starts an engine and draws frames for a moment, which takes longer than Playwright's
-// default minute on a busy machine.
-test.describe.configure({ timeout: 120_000 });
+// default minute on a busy machine. Each wait on the frame log stops after a minute, so the budget
+// holds the start and three of those waits.
+test.describe.configure({ timeout: 240_000 });
 
 test('a recorded session replays to the same frames', async ({ page }) => {
 	page.on('pageerror', (error) => console.log('page error:', error.message));
@@ -52,11 +66,19 @@ test('a recorded session replays to the same frames', async ({ page }) => {
 		{ timeout: 30_000 },
 	);
 	expect(await page.evaluate(() => (globalThis as RecordingPage).recordingError)).toBeUndefined();
-	// The key moves the box for a while, and the frames in between record it.
+	await waitForFrames(page, 4);
+	// The key moves the box for a while, and the frames in between record it. Waiting for a frame
+	// that read the key, rather than for a fixed time, leaves the session long enough at any rate
+	// the machine draws, and keeps the press in the recording.
 	await page.keyboard.down('w');
-	await page.waitForTimeout(400);
+	await page.waitForFunction(
+		() =>
+			((globalThis as RecordingPage).recordingLog ?? []).some((line) => line.split('|')[3] === '1'),
+		undefined,
+		{ timeout: 60_000 },
+	);
 	await page.keyboard.up('w');
-	await page.waitForTimeout(200);
+	await waitForFrames(page, 10);
 	const bytes = await page.evaluate(async () => {
 		const engine = (globalThis as RecordingPage).null3dEngine;
 		if (engine === undefined) throw new Error('the page has no engine');

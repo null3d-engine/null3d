@@ -55,12 +55,12 @@ use crate::light_grid::DEFAULT_AREA_LIGHT_CAP;
 use crate::light_tables::LightTables;
 use crate::materials::{
     MAP_SLOTS, MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, NO_UNIT, Shading,
-    blend_state, feature,
+    blend_state, feature, param,
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page, UpdateError};
 use crate::motion;
 use crate::outline::Outline;
-use crate::output::{Antialias, GradeUniform, Output, OutputUniform, SceneColor, ToneMapping};
+use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::particles::ParticleTable;
 use crate::physical_sky::{AerialUniform, Atmosphere, PhysicalSkyPass};
 use crate::physical_sky_light::{AirModel, analytic_stand_in};
@@ -232,6 +232,11 @@ pub enum RecordError {
     },
     /// The frame's copies do not fit its upload arena, which the builder sizes for every frame.
     UploadsFull,
+    /// A buffer that the frame fills would take more bytes than the device lets one buffer hold.
+    BufferFull {
+        /// The most bytes that one buffer may take on this device.
+        bytes: u32,
+    },
     /// Memory could not grow for the tables of a new layout.
     OutOfMemory {
         /// The bytes the tables needed, or `u32::MAX` for more than that.
@@ -242,6 +247,9 @@ pub enum RecordError {
         /// The bytes the atlas would take, in whole mebibytes.
         megabytes: u32,
     },
+    /// The scene holds a draw whose instance count the GPU writes, but the device chose the direct
+    /// path on its first frame, which has no indirect draw to copy that count into.
+    FeatureDrawAfterFirstFrame,
     /// The render graph of the frame's passes did not compile.
     Graph(GraphError),
 }
@@ -998,6 +1006,9 @@ pub struct SceneSettings {
     /// The casters that move in every frame, which keep far cascades drawing.
     moving_casters: MovingCasters,
     canvas: CanvasOutput,
+    /// The canvas size and render scale of the last recorded frame, which a region read checks
+    /// against.
+    last_canvas: Option<((u32, u32), RenderScale)>,
     output: Output,
     /// Bloom's settings while the sketch turns it on.
     bloom: Option<Bloom>,
@@ -1008,6 +1019,8 @@ pub struct SceneSettings {
     /// The pick that the next recorded frame draws, until that frame copies its ids back into
     /// engine memory.
     pick: Option<crate::pick::PickRequest>,
+    /// The read of a compute pass's texture that the next recorded frame copies.
+    pass_read: Option<crate::readback::PassRead>,
     /// Ambient occlusion's settings while the sketch turns it on.
     ao: Option<Ao>,
     /// The size of ambient occlusion's targets, as a share of the render size each way, which the
@@ -1053,11 +1066,6 @@ pub struct SceneSettings {
     /// The built-in grading table's texture while the sketch sets grading values. A job worker
     /// baked the values into it.
     grade: Option<Handle>,
-    /// True while the grading table holds the grade over high dynamic range light, which the pass
-    /// reads before the tone curve, instead of display color.
-    grade_hdr: bool,
-    /// The grading controls that the 8-bit path's shaders apply before their tone curve.
-    grade_values: Option<GradeUniform>,
     /// The vignette while the sketch turns it on.
     vignette: Option<Vignette>,
     /// The sharpening's strength while the sketch turns it on, from 0 for off to 1 for the most.
@@ -1214,6 +1222,7 @@ impl SceneSettings {
             cascade_depth,
             moving_casters: MovingCasters::default(),
             canvas,
+            last_canvas: None,
             output: Output::default(),
             bloom: None,
             bloom_chain: ChainFrame::default(),
@@ -1240,8 +1249,6 @@ impl SceneSettings {
             taa_frames: 0,
             lut: None,
             grade: None,
-            grade_hdr: false,
-            grade_values: None,
             vignette: None,
             sharpen: None,
             environment: None,
@@ -1280,6 +1287,7 @@ impl SceneSettings {
             level_quality: LevelQuality::default(),
             level_scale: RenderScale::FULL,
             pick: None,
+            pass_read: None,
         }
     }
 
@@ -1301,6 +1309,21 @@ impl SceneSettings {
     /// True while a pick waits for a frame.
     pub fn picking(&self) -> bool {
         self.pick.is_some()
+    }
+
+    /// The read of a compute pass's region that the next recorded frame copies, if one waits.
+    pub fn pass_read(&self) -> Option<crate::readback::PassRead> {
+        self.pass_read
+    }
+
+    /// Makes the next recorded frame copy a region of a compute pass's texture.
+    pub fn set_pass_read(&mut self, read: crate::readback::PassRead) {
+        self.pass_read = Some(read);
+    }
+
+    /// Takes the read that a frame recorded, once its copy is on that frame's list.
+    pub fn take_pass_read(&mut self) -> Option<crate::readback::PassRead> {
+        self.pass_read.take()
     }
 
     /// The area lights' tables and the lights' images.
@@ -1339,6 +1362,17 @@ impl SceneSettings {
     }
 
     /// How frames reach the canvas.
+    /// The canvas size and render scale of the last recorded frame, which a read of a pass's region
+    /// checks its region against before the next frame records.
+    pub fn last_frame_size(&self) -> Option<((u32, u32), RenderScale)> {
+        self.last_canvas
+    }
+
+    /// Notes the canvas size and render scale that the frame about to be recorded draws at.
+    pub fn set_last_frame_size(&mut self, canvas: (u32, u32), scale: RenderScale) {
+        self.last_canvas = Some((canvas, scale));
+    }
+
     pub fn canvas(&self) -> CanvasOutput {
         self.canvas
     }
@@ -2030,18 +2064,9 @@ impl SceneSettings {
     /// Grades the canvas color with the built-in grading table in 3D texture `texture`, or with
     /// none with `None`, from the next recorded frame on. A job worker bakes the sketch's grading
     /// values into the table's texels. The pass keeps the table's last texels on the GPU while a
-    /// later bake uploads, so changing the values leaves no frame ungraded. `hdr` says the table
-    /// holds the grade over high dynamic range light, which the pass reads before the tone curve,
-    /// instead of display color.
-    pub fn set_grade(&mut self, texture: Option<Handle>, hdr: bool) {
+    /// later bake uploads, so changing the values leaves no frame ungraded.
+    pub fn set_grade(&mut self, texture: Option<Handle>) {
         self.grade = texture;
-        self.grade_hdr = texture.is_some() && hdr;
-    }
-
-    /// Sets the grading controls that the 8-bit path's shaders apply before their tone curve, or
-    /// clears them with `None`, from the next recorded frame on.
-    pub fn set_grade_values(&mut self, values: Option<GradeUniform>) {
-        self.grade_values = values;
     }
 
     /// Turns the vignette on with its settings, or off with `None`, from the next recorded frame
@@ -2194,12 +2219,9 @@ impl SceneSettings {
     /// True while the sketch sets a color grading table or the built-in grading, or the vignette on
     /// the HDR path, outside a debug view, whose colors reach the canvas as its shader writes
     /// them. The final pass then runs on every path. On the 8-bit path the scene shaders apply the
-    /// vignette and the grade over high dynamic range light.
+    /// vignette.
     pub(crate) fn grades(&self) -> bool {
-        // The grade over high dynamic range light runs in the 8-bit path's scene shaders, so its
-        // table needs no final pass there.
-        let display_grade = self.grade.is_some() && !self.grade_hdr;
-        (self.lut.is_some() || display_grade || self.final_vignette().is_some())
+        (self.lut.is_some() || self.grade.is_some() || self.final_vignette().is_some())
             && !self.debug_view.is_debug()
     }
 
@@ -2220,15 +2242,6 @@ impl SceneSettings {
         }
     }
 
-    /// The grading controls that the 8-bit path's scene shaders apply before their tone curve:
-    /// the sketch's while the grade over high dynamic range light runs there, else `None`.
-    pub(crate) fn scene_grade(&self) -> Option<GradeUniform> {
-        if self.canvas.scene_color.is_hdr() || self.debug_view.is_debug() || !self.grade_hdr {
-            return None;
-        }
-        self.grade_values
-    }
-
     /// What the final pass grades the frame with: the table once its texels are on the GPU, the
     /// vignette, and the sharpening. Nothing in a debug view.
     pub(crate) fn grading(&self) -> Grading {
@@ -2246,7 +2259,6 @@ impl SceneSettings {
         Grading {
             lut,
             grade,
-            hdr: self.grade_hdr,
             vignette: self.final_vignette(),
             sharpen: self.sharpen(),
         }
@@ -2540,22 +2552,13 @@ impl SceneSettings {
 
     /// The exposed background color that the camera's view draws as a background on the 8-bit
     /// path while the scene shaders shade it before their tone curve, or none: while the vignette
-    /// or the grade over high dynamic range light is on. A clear alone would leave the color as it
-    /// is. The vignette leaves a black clear black, so a scene without a background color draws
-    /// none for it. A grade's lift raises black, so the grade alone still draws the black that the
-    /// other path grades.
+    /// is on. A clear alone would leave the color as it is. The vignette leaves a black clear
+    /// black, so a scene without a background color draws none for it.
     pub(crate) fn shaded_background_color(&self) -> Option<[f32; 3]> {
-        let vignetted = self.scene_vignette()[0] > 0.0;
-        let graded = self.scene_grade().is_some();
-        if self.background().is_some() || !(vignetted || graded) {
+        if self.background().is_some() || self.scene_vignette()[0] <= 0.0 {
             return None;
         }
-        let color = match self.lighting.background {
-            Some(color) => color,
-            None if graded => [0.0, 0.0, 0.0],
-            None => return None,
-        };
-        Some(self.drawn_output().expose(color))
+        Some(self.drawn_output().expose(self.lighting.background?))
     }
 
     /// Draws `background` behind every object in the camera's view, or only the background color
@@ -2855,7 +2858,11 @@ impl SceneSettings {
         for id in 0..count {
             let shading = self.materials.shading(id);
             let samples = match shading {
-                Ok(Shading::Lit) => self.has_live_map(id),
+                // An anisotropic material draws through the maps template even with no map, which
+                // reads the group's placeholders where a slot has no live map.
+                Ok(Shading::Lit) => {
+                    self.has_live_map(id) || self.materials.features(id) & feature::ANISOTROPY != 0
+                }
                 Ok(Shading::Custom(custom)) => custom.textures > 0,
                 _ => false,
             };
@@ -3081,6 +3088,34 @@ impl SceneSettings {
         {
             pass.values = *values;
             pass.maps.textures = *textures;
+        }
+    }
+
+    /// Gives the compute pass of a view the number of runs that a frame records, from the next
+    /// frame on. A view of another kind, or a removed one, keeps what it has.
+    pub fn set_compute_steps(&mut self, view: ViewId, steps: u32) {
+        let Some(declared) = self.views.get_mut(view.index()) else {
+            return;
+        };
+        if let Some(pass) = declared.compute_pass_mut() {
+            pass.steps = steps;
+        } else if let Some(pass) = declared.fullscreen_pass_mut().filter(|pass| pass.fallback) {
+            // A WebGL2 page runs the fragment form in place of the compute pass.
+            pass.steps = steps;
+        }
+    }
+
+    /// Asks the compute pass of a view to start its states again, from the next frame on: the
+    /// frame clears both states before the pass's first run. A view of another kind, or a removed
+    /// one, keeps what it has.
+    pub fn reset_compute_state(&mut self, view: ViewId) {
+        let Some(declared) = self.views.get_mut(view.index()) else {
+            return;
+        };
+        if let Some(pass) = declared.compute_pass_mut() {
+            pass.reset = pass.reset.wrapping_add(1);
+        } else if let Some(pass) = declared.fullscreen_pass_mut().filter(|pass| pass.fallback) {
+            pass.reset = pass.reset.wrapping_add(1);
         }
     }
 
@@ -3684,6 +3719,13 @@ impl SceneSettings {
         }
         let uv0 = format & vertex::UV0 != 0;
         let live = |slot: MapSlot| self.textures.is_live(self.materials.map(id, slot));
+        // The anisotropy's frame comes from the mesh's tangents or its texture coordinates, so a
+        // material with a stretch draws through the maps template even with no map of its own.
+        let anisotropic = self
+            .materials
+            .rows(id..id + 1)
+            .get(param::ANISOTROPY)
+            .is_some_and(|&value| value > 0.0);
         if shading == Shading::UnlitMap && !(uv0 && live(MapSlot::BaseColor)) {
             shading = Shading::Unlit;
         }
@@ -3693,7 +3735,7 @@ impl SceneSettings {
         if shading == Shading::Particle && live(MapSlot::BaseColor) {
             shading = Shading::ParticleMap;
         }
-        if shading == Shading::Lit && uv0 && self.has_live_map(id) {
+        if shading == Shading::Lit && uv0 && (self.has_live_map(id) || anisotropic) {
             shading = Shading::StandardMaps;
         }
         let needs = shading.attributes();
@@ -3711,9 +3753,9 @@ impl SceneSettings {
         let hashed = own_way && has(feature::ALPHA_HASH);
         let covers = own_way && has(feature::ALPHA_TO_COVERAGE) && !hashed;
         let tangents = shading == Shading::StandardMaps
-            && live(MapSlot::Normal)
-            && self.materials.normal_slot_holds_normals(id)
-            && format & vertex::TANGENT != 0;
+            && format & vertex::TANGENT != 0
+            && (anisotropic
+                || (live(MapSlot::Normal) && self.materials.normal_slot_holds_normals(id)));
         let displaced = shading == Shading::StandardMaps && self.displaces(id);
         let wireframe = has(feature::WIREFRAME);
         let bumped = shading == Shading::StandardMaps && !wireframe && self.materials.bumps(id);
@@ -3737,6 +3779,7 @@ impl SceneSettings {
                 | bit(wireframe, state_flags::LINE_LIST)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
                 | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST)
+                | bit(has(feature::NO_COLOR_WRITE), state_flags::NO_COLOR_WRITE)
                 | bit(covers, state_flags::ALPHA_TO_COVERAGE)
                 | blend_state(features),
             bias: self.materials.depth_bias(id),
@@ -3838,16 +3881,7 @@ impl SceneSettings {
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
             hemisphere: self.lighting.hemisphere,
-            output: {
-                let mut output_uniform = output.uniform();
-                if view_id == ViewId::CAMERA
-                    && let Some(grade) = self.scene_grade()
-                {
-                    output_uniform.flags |= OutputUniform::GRADE_HDR;
-                    output_uniform.grade = grade;
-                }
-                output_uniform
-            },
+            output: output.uniform(),
             fog: {
                 let mut fog = fog::uniform_of(self.lighting.fog.as_ref(), y, output.exposure);
                 // The volumetric fog's sun light replaces the glow in the camera's view.
@@ -3866,10 +3900,16 @@ impl SceneSettings {
                 2.0 * pixel_ratio / pixels.0.max(1) as f32,
                 2.0 * pixel_ratio / pixels.1.max(1) as f32,
             ],
-            occlusion: if view_id == ViewId::CAMERA
-                && (self.ao().is_some() || self.contact_reach().is_some())
-            {
-                ao::frame_values(self.ao(), canvas, scale, self.screen_scale())
+            occlusion: if view_id == ViewId::CAMERA {
+                let mut values = if self.ao().is_some() || self.contact_reach().is_some() {
+                    ao::frame_values(self.ao(), canvas, scale, self.screen_scale())
+                } else {
+                    [0.0; 4]
+                };
+                // The scene target keeps the canvas's height at every render scale, which custom
+                // materials turn their pixel rows by on WebGL2.
+                values[1] = canvas.1.max(1) as f32;
+                values
             } else {
                 [0.0; 4]
             },
@@ -4083,10 +4123,11 @@ impl MeshBuffers {
             let buffers = &mut self.pages[p];
             if buffers.outgrown(page) {
                 let limit = MAX_BUFFER_BYTES as u32;
+                let full = || RecordError::BufferFull { bytes: limit };
                 let (vertex_bytes, index_bytes) = page.buffer_bytes();
                 *buffers = PageBuffers {
-                    vertex_bytes: grown_size(vertex_bytes as u32, limit),
-                    index_bytes: grown_size(index_bytes as u32, limit),
+                    vertex_bytes: grown_size(vertex_bytes as u32, limit).ok_or_else(full)?,
+                    index_bytes: grown_size(index_bytes as u32, limit).ok_or_else(full)?,
                     ..PageBuffers::default()
                 };
                 let copied = buffer_usage::COPY_DST;
@@ -4213,13 +4254,41 @@ pub const fn tests_alpha_its_way(shading: Shading) -> bool {
 }
 
 /// The size to create a buffer at when it must hold `needed` bytes: room to grow, so a slowly
-/// growing scene rarely recreates it, but never past `limit`.
-pub fn grown_size(needed: u32, limit: u32) -> u32 {
-    needed
-        .saturating_add(needed / 2)
-        .next_multiple_of(256)
-        .min(limit)
-        .max(needed)
+/// growing scene rarely recreates it, but never past `limit`. None when the need itself passes
+/// `limit`, so the caller refuses the frame rather than ask for a buffer the device cannot bind.
+pub fn grown_size(needed: u32, limit: u32) -> Option<u32> {
+    if needed > limit {
+        return None;
+    }
+    let roomy = needed.saturating_add(needed / 2);
+    Some(
+        roomy
+            .checked_next_multiple_of(256)
+            .unwrap_or(u32::MAX)
+            .min(limit)
+            .max(needed),
+    )
+}
+
+/// [`grown_size`] for a buffer that the device sets no limit on, such as one the engine fills
+/// from its own memory alone.
+pub fn grown_size_any(needed: u32) -> u32 {
+    grown_size(needed, u32::MAX).expect("every size fits a limit of u32::MAX")
+}
+
+/// The largest buffer that the engine may ask a device for, where no bind group reads the buffer,
+/// such as a vertex buffer that the engine fills each frame. The engine asks a device for at least
+/// [`MAX_BUFFER_BYTES`], and for as much as its largest storage binding where that is bigger.
+/// `None` names a path that binds no storage buffer, such as the WebGL2 one.
+pub fn unbound_buffer_bytes(binding_bytes: Option<u32>) -> u32 {
+    let floor = MAX_BUFFER_BYTES as u32;
+    binding_bytes.map_or(floor, |bytes| bytes.max(floor))
+}
+
+/// [`grown_size`] for a buffer whose device limit is `limit` bytes, so a need past the limit
+/// refuses the frame rather than ask for a buffer the device rejects.
+pub fn grown_size_within(needed: u32, limit: u32) -> Result<u32, RecordError> {
+    grown_size(needed, limit).ok_or(RecordError::BufferFull { bytes: limit })
 }
 
 /// Encodes a linear color channel as sRGB.
@@ -4249,6 +4318,27 @@ mod tests {
         let second = arena.memory_use();
         assert_eq!(second.peak, 300);
         assert_eq!(second.used, 100);
+    }
+
+    /// A buffer that no bind group reads follows the device's largest buffer: the portable buffer
+    /// limit where the storage binding is smaller, and the binding where that is larger. A path
+    /// that binds no storage buffer takes the portable limit alone.
+    #[test]
+    fn a_buffer_that_no_group_binds_grows_to_the_device_s_largest_buffer() {
+        let portable = MAX_BUFFER_BYTES as u32;
+        // A device whose largest storage binding is half the portable buffer limit still holds a
+        // buffer of the full portable size, and a path without storage bindings holds that size.
+        assert_eq!(unbound_buffer_bytes(Some(portable / 2)), portable);
+        assert_eq!(unbound_buffer_bytes(None), portable);
+        // A device with a larger binding holds a buffer up to that binding.
+        let large = portable + 1024 * 1024;
+        assert_eq!(unbound_buffer_bytes(Some(large)), large);
+        // A buffer grows with room within its limit, and a need past the limit fails, naming it.
+        assert_eq!(grown_size_within(portable, portable), Ok(portable));
+        assert_eq!(
+            grown_size_within(large + 1, large),
+            Err(RecordError::BufferFull { bytes: large })
+        );
     }
 
     /// A pair of drawings that differ only in their template: a textured mesh keeps its maps'

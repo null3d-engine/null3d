@@ -1,8 +1,8 @@
 # D-207: Add-on version checks and the upgrade command
 
-Status: decided. Date: 2026-10-21. Task: M3-D2. This record gives the shape of the run-time version check that [D-173](D-173-addon-hooks.md) ruling 13 requires of each foundation add-on. It also gives the shape of the command that brings a project's null3D packages back to one version.
+Status: decided and built. Task: M3-D2. This record gives the shape of the run-time version check that [D-173](D-173-addon-hooks.md) ruling 13 requires of each foundation add-on. It also gives the shape of the command that brings a project's null3D packages back to one version.
 
-Summary: Each add-on calls one public engine function, `checkAddonVersion(name, version)`, as its module loads. The function compares the add-on's version with the engine's `VERSION` and throws E1432, which names the add-on and both versions, when they differ. The match is exact, because an add-on pins the engine version it was built for. `bunx @null3d/cli upgrade` reads the installed engine's version. It writes that version into every `@null3d` package that the project's manifest names, in each dependency section and in its overrides. It edits the manifest alone and leaves file, workspace and git specifiers as they are.
+Summary: Each add-on calls `checkAddonVersion(name, version)` as its module loads, and the engine throws E1432, naming the add-on and both versions, when they differ. The match is exact, because an add-on pins the engine version it was built for. The command `bunx @null3d/cli upgrade` writes the installed engine's version into each `@null3d` package of the manifest, and leaves file, workspace and git specifiers alone.
 
 ## Question
 
@@ -22,8 +22,8 @@ Two shapes answer the add-on rules, and they differ in what a project sees when 
 
 - The engine exports `VERSION`, which the release writes with every package manifest, the Rust workspace version and the lockfile (`tools/lib/release.ts`). In the repository every package is at `0.0.0`, so the source path that tests and the dev server read always matches.
 - Each foundation add-on's manifest names `@null3d/engine` as a peer dependency at `workspace:*`. A project that installs the tarballs gets the version that the release wrote.
-- Before this record, no add-on checked anything at run time. A page that mixed an engine at one version with an add-on at another loaded both and failed later, inside a call, or drew wrong.
-- `bunx @null3d/cli upgrade` is the fix that the plan of 15 October 2026 named: exact pins make a partial upgrade fail.
+- Without a check, a page that mixes an engine and an add-on of two versions loads both, then fails inside a call or draws wrong.
+- `bunx @null3d/cli upgrade` is the fix that the plan names: exact pins make a partial upgrade fail.
 
 ## Decision
 
@@ -57,12 +57,8 @@ A self-built add-on takes the same command: its `peerDependencies` and `devDepen
 ## Consequences
 
 - A mixed-version page stops at the add-on's import with E1432, whose fix names `bunx @null3d/cli upgrade`. The error has a docs page, generated with the other code pages.
-- The engine's start code gains one exported function of a few hundred bytes. A sketch that imports no add-on reaches none of it after tree shaking.
+- The engine's start code holds one exported function of a few hundred bytes. A sketch that imports no add-on reaches none of it after tree shaking.
 - The release writes one more copy per add-on: `src/version.ts`. `tools/lib/release.ts` finds each such file by name, so a new add-on's constant needs no edit there either.
 - `docs/api/engine.md` describes the check for add-on authors, `docs/cli/null3d.md` documents the command, and the develop skill's command table and troubleshooting table name both.
 - The fresh-project run shows the packaged command moving a manifest's null3D package to the engine's version, and its dry run writing nothing. The check skips with a message when the checkout has no built asset tool.
-- The marketplace after 1.0 needs ranges rather than exact pins for add-ons from other sellers ([D-173](D-173-addon-hooks.md)). That ruling changes this check's comparison, and only this function.
-
-## Addendum, 23 October 2026: the range check for outside add-ons
-
-Task M3-D6 built the range check as a second function, `checkPluginInterface(name, range)`, rather than changing this one ([D-223](D-223-plugin-interface-version.md)). The engine's own add-ons keep the exact pin: their versions stay in step with the engine's, so a range would only weaken a check that the release makes exact anyway.
+- Add-ons from other sellers need ranges rather than exact pins ([D-173](D-173-addon-hooks.md)). A second function, `checkPluginInterface(name, range)`, checks those ([D-223](D-223-plugin-interface-version.md)), and this one keeps its exact match. The engine's own add-ons keep the exact pin: their versions stay in step with the engine's, so a range would only weaken a check that the release makes exact anyway.
