@@ -27,6 +27,7 @@ const SUN: SunShadow = SunShadow {
     map_size: 1024,
     bias: 0.5,
     normal_bias: 1.0,
+    intensity: 1.0,
     distance: 60.0,
     auto: false,
     contact: 0.0,
