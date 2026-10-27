@@ -10,17 +10,49 @@ export interface HeavyCheck {
 	readonly file: string;
 	/** Its measured peak in MiB, with room for a busier machine, which its process may hold. */
 	readonly ceilingMiB: number;
+	/**
+	 * The environment that a check needs to run one part of its work. A check that reads more than
+	 * one process may hold names one entry for each part, so that each part runs in a process of its
+	 * own; a check without parts has none.
+	 */
+	readonly env?: Readonly<Record<string, string>>;
 }
+
+/**
+ * The variable that names the part of a check's work that its process runs, as `part/parts`. A
+ * check that runs in parts reads it, and its list names one entry for each part, so that the parts
+ * together read every build ([Test memory](../../.dev/tests.md)).
+ */
+export const PART_ENV = 'NULL3D_CHECK_PART';
 
 export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// The whole generated set beside the text the tests read their counts from.
 	{ file: 'tests/lib/shader-set.test.ts', ceilingMiB: 7168 },
-	// The engine's programs and pipelines, read for every build the build wrote. It reads the whole
-	// generated set as the WebGPU pipelines check does, so it holds the same ceiling: the masked
-	// transmission's permutations took the manifest from 72,989 to 78,261 builds, 7.2 per cent, and
-	// the measured peaks are 7,343 and 7,283 MiB, so both take 7,680 with room for a busy machine.
-	{ file: 'packages/engine/src/gpu/webgl2/programs.test.ts', ceilingMiB: 7680 },
-	// The WebGPU pipeline layouts, read for every build the build wrote.
+	// The engine's programs, read for every build the build wrote. The GLSL sources are most of the
+	// generated set's bytes, and one process that reads every build of it holds 16,839 MiB on the
+	// Mac, past what CI's runner holds beside the rest of the job. So the check runs in three parts,
+	// each in a process of its own: a part reads every third build of the set, and the parts together
+	// read them all. A part holds about 6,000 MiB, and each takes the 7,680 ceiling the whole check
+	// had, with room for a busy machine.
+	{
+		file: 'packages/engine/src/gpu/webgl2/programs.test.ts',
+		ceilingMiB: 7680,
+		env: { [PART_ENV]: '1/3' },
+	},
+	{
+		file: 'packages/engine/src/gpu/webgl2/programs.test.ts',
+		ceilingMiB: 7680,
+		env: { [PART_ENV]: '2/3' },
+	},
+	{
+		file: 'packages/engine/src/gpu/webgl2/programs.test.ts',
+		ceilingMiB: 7680,
+		env: { [PART_ENV]: '3/3' },
+	},
+	// The WebGPU pipeline layouts, read for every build the build wrote. A layout comes from the
+	// WGSL side of a build alone, so this check reads the modules of the WGSL target and leaves the
+	// WebGL2 ones alone: 1,599 MiB measured, against 10,251 for every module of both targets. It
+	// keeps the 7,680 ceiling that the checks beside it take.
 	{ file: 'packages/engine/src/gpu/webgpu/pipelines.test.ts', ceilingMiB: 7680 },
 	// One bundle of the engine for each tree-shaking check, each in a process of its own, with an
 	// empty module in place of the shader modules: about 1.5 GB each.

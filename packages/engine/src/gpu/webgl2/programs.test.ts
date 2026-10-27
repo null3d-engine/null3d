@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { PART_ENV } from '../../../../../tests/lib/heavy-checks.ts';
 import {
 	everyShader,
 	type GlslProgram,
@@ -26,7 +27,17 @@ import {
 	UPLOAD_UNIT,
 } from './programs';
 
-const SHADERS = await everyShader();
+/**
+ * The part of the generated set that this process reads, as `part/parts`, or the whole set. The
+ * check reads every GLSL build, whose sources make the set large, so it runs in parts: each part
+ * holds its own share in a process of its own ([Test memory](../../../../../.dev/tests.md)).
+ */
+const PART = process.env[PART_ENV] ?? '1/1';
+const [part = 1, parts = 1] = PART.split('/').map(Number);
+if (!Number.isInteger(part) || !Number.isInteger(parts) || part < 1 || part > parts)
+	throw new Error(`${PART_ENV} names no part of the set: ${PART}`);
+
+const SHADERS = await everyShader(part, parts);
 
 /**
  * Every GLSL program that the shader build writes, those of every device module too, by a name
