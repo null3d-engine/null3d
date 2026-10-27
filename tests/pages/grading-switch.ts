@@ -19,6 +19,8 @@ interface Window {
 	intervalMedian: number;
 	intervalP99: number;
 	uploadMean: number;
+	/** The frames that the upload mean is over, which can be one more than `frames`. */
+	uploadFrames: number;
 	presentedFps: number;
 	skippedDraws: number;
 	gpuObjects: number;
@@ -33,6 +35,7 @@ function figures(measured: FrameMetrics): Window {
 		intervalMedian: measured.intervalMs.median,
 		intervalP99: measured.intervalMs.p99,
 		uploadMean: measured.uploadBytes.mean,
+		uploadFrames: measured.uploadBytes.count,
 		presentedFps: measured.presentedFps,
 		skippedDraws: measured.skippedDraws,
 		gpuObjects: measured.gpuObjects,

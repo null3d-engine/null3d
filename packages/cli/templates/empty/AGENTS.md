@@ -6,6 +6,28 @@ Read the `null3d-develop` skill before you change the scene. If the project has
 `.claude/skills/null3d-develop/SKILL.md`, read that file first. If it does not, read the engine docs
 in `node_modules/@null3d/engine/docs/`. They match the installed version.
 
+## What the hook checks
+
+The hook holds one rule for each command and each edit. A rule with the action `refuse` blocks the
+call, and the agent must find another way. A rule with the action `flag` tells the agent, and the
+call goes on.
+
+| Rule | Action | What it checks |
+| --- | --- | --- |
+| `no-sleep` | refuse | A command that waits with `sleep`. |
+| `no-kill-by-name` | refuse | `pkill`, `killall`, or `kill` with a process name. |
+| `no-log-follow` | refuse | `tail -f`, `journalctl -f`, `docker logs -f` and their like. |
+| `no-planned-api` | flag | An import that the installed engine does not export. |
+| `no-allocation-in-onupdate` | flag | An object, array or string made inside `onUpdate`. |
+| `no-dom-in-sketch` | flag | A DOM name in `sketch.ts`. |
+
+Claude Code runs the hook through `.claude/settings.json`, and Codex runs it through
+`.codex/hooks.json`. Both run `.agent/agent-hook.mjs`, which takes its rules from
+`@null3d/cli/agent-rules` in the installed packages. The hook needs `bun install` to find the rules.
+Codex asks you to trust a project's hooks before it runs them. Other agents read this file and
+follow the same rules. The hook is optional: delete its entries in `.claude/settings.json` and
+`.codex/hooks.json`, or the hook file, to stop the checks.
+
 ## Before you build a feature
 
 A request may need a capability that null3D has not built. A user who asks for such a feature brings
@@ -58,9 +80,3 @@ Settle its state before you design the scene.
    send messages between the two. A sketch on the main thread may use the DOM, but it shares the
    page thread.
 7. Run `bunx @null3d/cli test` before you report the work as done.
-
-Claude Code checks rules 2 to 6 before each command and each edit, through the hook that
-`.claude/settings.json` names. Codex checks the same rules through `.codex/hooks.json`, which runs
-the same hook script on Codex's tool calls. Codex asks you to trust a project's hooks before it
-runs them. Other agents read this file and follow the same rules. The hook is optional: delete
-those files, or their hook entries, to remove the checks.
