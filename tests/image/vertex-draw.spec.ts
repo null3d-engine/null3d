@@ -8,6 +8,7 @@ interface Figures {
 	uploadBytes: number;
 	uploadP99: number;
 	drawCalls: number;
+	frames: number;
 }
 
 interface VertexDrawResult {
@@ -33,6 +34,9 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 		expect(result.tier.startsWith(gpu)).toBe(true);
 		// The sketch took the new counts, so the second measurement drew 50,000 copies.
 		expect(result.accepted).toEqual({ vertices: 6, instances: result.many });
+		// A measurement with no frame reports zero everywhere, which is not a draw fault.
+		expect(result.before.frames, 'the first measurement holds no frame').toBeGreaterThanOrEqual(1);
+		expect(result.after.frames, 'the second measurement holds no frame').toBeGreaterThanOrEqual(1);
 		// One draw carries them all, and the frame uploads the same bytes as with 1,000.
 		expect(result.after.drawCalls).toBeGreaterThanOrEqual(1);
 		expect(result.after.uploadBytes).toBeLessThanOrEqual(result.before.uploadBytes + 4_096);
