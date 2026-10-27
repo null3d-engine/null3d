@@ -7,6 +7,7 @@
 // It needs the GitHub CLI with access to the repository. The output is one JSON object, which
 // `browserPictures` in bench/lib/gate.ts judges: the counted run, or null, and its jobs.
 import { execFileSync } from 'node:child_process';
+import { repositoryEnv } from '../tools/lib/git-env.ts';
 import {
 	countedRun,
 	GATE_WORKFLOWS,
@@ -20,27 +21,6 @@ const commit = process.argv[2];
 if (!commit) {
 	console.error('usage: bun bench/ci-browser-jobs.ts <commit>');
 	process.exit(2);
-}
-
-/**
- * The environment of a git command that must read the repository its own working directory names.
- * A hook that starts this tool hands its repository to every process it starts, and git obeys that
- * over the directory, so the variables that name a repository come out here.
- */
-function repositoryEnv(): NodeJS.ProcessEnv {
-	const env: NodeJS.ProcessEnv = { ...process.env };
-	for (const name of [
-		'GIT_DIR',
-		'GIT_WORK_TREE',
-		'GIT_INDEX_FILE',
-		'GIT_COMMON_DIR',
-		'GIT_OBJECT_DIRECTORY',
-		'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-		'GIT_NAMESPACE',
-		'GIT_PREFIX',
-	])
-		delete env[name];
-	return env;
 }
 
 const sha = wholeCommit(commit, (args) =>
