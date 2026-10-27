@@ -70,6 +70,28 @@ describe('checkDocsStyle errors', () => {
 		expect(rules('Run the `null3d` command.')).toEqual([]);
 	});
 
+	it('blocks a date in prose and headings, for every audience', () => {
+		const contributors = (md: string) =>
+			checkDocsStyle(md, 'contributors').map((f) => `${f.severity}:${f.rule}:${f.line}`);
+		expect(rules('On 25 October 2026 the job stalled.')).toEqual(['error:dated_history:1']);
+		expect(rules('## Newer techniques, October 2026')).toEqual(['error:dated_history:1']);
+		expect(contributors('Status: decided on 2026-10-08.')).toEqual(['error:dated_history:1']);
+		expect(contributors('- The owner ruled it on 4 and 5 October 2026.')).toEqual([
+			'error:dated_history:1',
+		]);
+		expect(rules('Written on 26 Oct 2026.')).toEqual(['error:dated_history:1']);
+		expect(rules('Measured on October 26, 2026.')).toEqual(['error:dated_history:1']);
+		expect(rules('Checked in Sept. 2026.')).toEqual(['error:dated_history:1']);
+	});
+
+	it('lets a date through in a table row, in code, in a run file name and when marked', () => {
+		expect(rules('| S1 | 2026-10-07 | 120 fps |')).toEqual([]);
+		expect(rules('A run name, such as `checks 2026-10-03`.')).toEqual([]);
+		expect(rules('See [the run](runs/20261006-jitter.md).')).toEqual([]);
+		expect(rules('Tokens stop on 9 December 2025. <!-- outside date -->')).toEqual([]);
+		expect(rules('Since version 0.2, and in 2026, the core owns it.')).toEqual([]);
+	});
+
 	it('lets contributor files name the build process, but not the private plan', () => {
 		const contributors = (md: string) =>
 			checkDocsStyle(md, 'contributors').map((f) => `${f.severity}:${f.rule}:${f.line}`);
@@ -171,6 +193,7 @@ describe('checkSubject', () => {
 			'docs(dev): record the Tab A9+ and the M32 runs',
 			'feat(engine): load KTX2 files, and report E1405',
 			'feat(bench): time S6 on the S25',
+			'docs(dev): record the runs of 2026-10-07',
 		])
 			expect(subjectRules(subject)).toEqual([]);
 	});

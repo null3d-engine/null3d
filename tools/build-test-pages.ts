@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { PRODUCTION_BUILD_PAGES } from '../tests/lib/server.ts';
 import { acquirePageBuildLock, secondsSince } from './lib/build-cache.ts';
 import { refuseStaleCore } from './lib/core-sources.ts';
+import { refuseInQuietWindow } from './lib/quiet-window.ts';
 
 const root = join(import.meta.dirname, '..');
 
@@ -25,6 +26,7 @@ export function pagesToBuild(named: readonly string[]): string[] {
 }
 
 function main(): void {
+	refuseInQuietWindow('The test page build');
 	refuseStaleCore(root);
 	for (const page of pagesToBuild(process.argv.slice(2))) {
 		const started = performance.now();

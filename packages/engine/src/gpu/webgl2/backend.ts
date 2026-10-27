@@ -77,6 +77,8 @@ const COLOR_ATTACHMENT1 = 0x8ce1;
 /** The draw buffers of a framebuffer with two color targets. */
 const TWO_DRAW_BUFFERS = [COLOR_ATTACHMENT0, COLOR_ATTACHMENT1];
 const DISCARD_BOTH = [COLOR_ATTACHMENT0, DEPTH_ATTACHMENT];
+/** The color that a cleared texture's layer takes: black, fully transparent. */
+const CLEAR_ZERO = new Float32Array([0, 0, 0, 0]);
 /** GL's `BACK`, the faces that a context culls until it is told otherwise. */
 const CULL_BACK = 0x0405;
 /** GL's `TRIANGLES`, the mode of every pipeline that does not draw lines. */
@@ -410,6 +412,11 @@ function glTexture(
 export class WebGL2Backend {
 	private readonly buffers: (GlBuffer | undefined)[] = [];
 	private readonly textures: (GlTexture | undefined)[] = [];
+	/**
+	 * The texture that each bind view of a layer range names. GL binds a texture array whole, so a
+	 * view's layer range reaches the shader through the pass's block instead.
+	 */
+	private readonly bindViewBase: (number | undefined)[] = [];
 	private readonly samplers: (WebGLSampler | undefined)[] = [];
 	/** Images for uploads, by id, which outlive the backend when the drawing thread owns them. */
 	private readonly images: ImageTable;
@@ -489,6 +496,8 @@ export class WebGL2Backend {
 	private unpackUsed = 0;
 	/** The framebuffer through which a mip level is drawn, and the sampler that reads the level before. */
 	private mipFramebuffer: WebGLFramebuffer | null = null;
+	/** The framebuffer that clears a range of a texture's layers. */
+	private clearFramebuffer: WebGLFramebuffer | null = null;
 	private mipSampler: WebGLSampler | null = null;
 	/** How the texture generators draw with programs of their own. */
 	private readonly programHost: ProgramHost;
@@ -943,6 +952,9 @@ export class WebGL2Backend {
 			const a = i + 1;
 			switch (op) {
 				case G.OP_CREATE_BUFFER:
+					// A capture draws the frame again, and the buffers of that frame exist already:
+					// making one again would destroy the buffer that a read waits on.
+					if (this.canvasTarget && this.buffers[words[a] as number]) break;
 					this.counts.objects++;
 					this.createBuffer(words[a] as number, words[a + 1] as number, words[a + 2] as number);
 					break;
@@ -969,6 +981,12 @@ export class WebGL2Backend {
 				case G.OP_CREATE_TEXTURE_VIEW:
 					this.counts.objects++;
 					this.createView(words, a);
+					break;
+				case G.OP_CREATE_BIND_VIEW:
+					this.createBindView(words, a);
+					break;
+				case G.OP_CLEAR_TEXTURE:
+					this.clearTexture(words, a);
 					break;
 				case G.OP_DESTROY_TEXTURE:
 					this.destroyTexture(words[a] as number);
@@ -1493,6 +1511,46 @@ export class WebGL2Backend {
 		return record;
 	}
 
+	/** The texture that a bind group entry names, following a bind view to its texture. */
+	private boundTextureOf(id: number): GlTexture {
+		const base = this.bindViewBase[id];
+		return this.textureOf(base === undefined ? id : base);
+	}
+
+	/**
+	 * Names a range of a texture's array layers as a bind view. GL binds the whole array, so the
+	 * recorded base texture is what a bind group sees.
+	 */
+	private createBindView(words: Uint32Array, a: number): void {
+		const id = words[a] as number;
+		this.bindViewBase[id] = words[a + 1] as number;
+	}
+
+	/** Clears a range of a texture's layers to zero, one layer at a time, outside the passes. */
+	private clearTexture(words: Uint32Array, a: number): void {
+		const gl = this.gl;
+		const texture = this.textureOf(words[a] as number);
+		const base = words[a + 1] as number;
+		const count = words[a + 2] as number;
+		if (!this.clearFramebuffer) this.clearFramebuffer = gl.createFramebuffer();
+		gl.bindFramebuffer(gl.FRAMEBUFFER, this.clearFramebuffer);
+		const scissor = gl.isEnabled(gl.SCISSOR_TEST);
+		gl.disable(gl.SCISSOR_TEST);
+		gl.colorMask(true, true, true, true);
+		for (let layer = 0; layer < count; layer++) {
+			gl.framebufferTextureLayer(
+				gl.FRAMEBUFFER,
+				texture.format.attachment,
+				texture.texture,
+				0,
+				base + layer,
+			);
+			gl.clearBufferfv(gl.COLOR, 0, CLEAR_ZERO);
+		}
+		if (scissor) gl.enable(gl.SCISSOR_TEST);
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+	}
+
 	private createView(words: Uint32Array, a: number): void {
 		const id = words[a] as number;
 		this.destroyTexture(id);
@@ -1515,6 +1573,7 @@ export class WebGL2Backend {
 
 	private destroyTexture(id: number): void {
 		const gl = this.gl;
+		this.bindViewBase[id] = undefined;
 		const old = this.textures[id];
 		if (!old) return;
 		this.textures[id] = undefined;
@@ -1810,8 +1869,10 @@ export class WebGL2Backend {
 					? undefined
 					: variantFor(this.images.shaders.get(template)?.variants ?? {}, 0, 'glsl');
 			const capture = words[a + LIGHT_BUFFER_WORD] as number;
+			// A capture draws the frame again to read it back, and the light capture already ran in
+			// the frame that it draws again.
 			const readback =
-				capture === 0
+				capture === 0 || this.canvasTarget
 					? undefined
 					: (this.need(this.buffers, capture, 'buffer').buffer as WebGLBuffer);
 			code.skyStage(
@@ -2666,7 +2727,7 @@ export class WebGL2Backend {
 					this.unitsChanged = true;
 				}
 			} else if (entry.kind === G.RESOURCE_TEXTURE) {
-				const texture = this.textureOf(entry.resource);
+				const texture = this.boundTextureOf(entry.resource);
 				if (this.slotTextures[slot] !== texture.texture) {
 					this.slotTextures[slot] = texture.texture;
 					this.slotTargets[slot] = texture.target;

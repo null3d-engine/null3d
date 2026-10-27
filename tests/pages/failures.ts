@@ -5,8 +5,11 @@
 //   download of its builds, so the page must hear E1424 while it stays responsive.
 // - job-fault: the test makes a job worker fail inside the job system (it rewrites the job
 //   worker's script), and the page must hear E1404 while it stays responsive. The sketch gives the
-//   job workers parallel work, so the engine starts them. A failure during the start comes as the
-//   start's rejection.
+//   job workers parallel work, so the engine starts them; the page waits for one to run before it
+//   waits for the failure, since a slow GPU reaches that point slowly. A failure during the start
+//   comes as the start's rejection, and a page that saw no job worker says so in its result.
+// - late-handler: the engine's frame step throws before the page attaches its failure handler, as a
+//   page that does its own work before it listens does. The first handler must still hear E1404.
 // - same-canvas: an engine starts, and is destroyed without a wait while a second one starts on the
 //   same canvas, as React's StrictMode does. A third start follows at once. With &pattern=then, the first start is destroyed once
 //   it resolves; with &pattern=abort, it is cancelled. The second must draw, with no more workers
@@ -17,7 +20,7 @@
 //   a second engine runs: both calls fail with E1420.
 import { createEngine, type Engine, type EngineError } from '@null3d/engine';
 import { framesDrawn } from './lib/measure';
-import { liveWorkers, progress, run } from './lib/result';
+import { liveWorkers, progress, progressTrail, run } from './lib/result';
 import type { FailuresSketch } from './sketches/failures-sketch';
 
 const params = new URLSearchParams(location.search);
@@ -25,6 +28,14 @@ const sketch = new URL('./sketches/failures-sketch.ts', import.meta.url);
 /** How long the page waits for a failure, and how often its own timer ticks meanwhile. */
 const REPORT_MS = 15_000;
 const TICK_MS = 50;
+/**
+ * How long the job-fault page gives the engine to start a job worker. The engine starts none at
+ * first: it asks for them once its frames show enough parallel work, which a slow GPU draws slowly,
+ * so on such a machine this can take longer than the wait for the failure itself.
+ */
+const JOB_WORKER_WAIT_MS = 60_000;
+/** The page's trail entry of a job worker that reported ready, which means the job system runs it. */
+const JOB_WORKER_READY = /null3d-job-\d+: ready$/;
 
 const canvas = document.querySelector('canvas') as HTMLCanvasElement;
 
@@ -37,25 +48,60 @@ async function started(url = sketch, signal?: AbortSignal): Promise<Engine> {
 
 /**
  * Waits for the engine's first failure, while a timer on the page counts its ticks. A page whose
- * thread hangs counts none, and never publishes a result.
+ * thread hangs counts none, and never publishes a result. `premise` is a condition that the case
+ * rests on, such as a job worker that runs: the wait for the failure starts once it holds, and its
+ * absence appears among the messages, so a result with no code says why.
  */
-async function firstFailure(engine: Engine): Promise<Record<string, unknown>> {
+async function firstFailure(
+	engine: Engine,
+	premise?: { holds: () => boolean; limitMs: number; missing: string },
+): Promise<Record<string, unknown>> {
 	const failures: EngineError[] = [];
-	engine.onFailure((error) => failures.push(error));
+	let seen = false;
+	engine.onFailure((error) => {
+		failures.push(error);
+		seen = true;
+	});
 	let ticks = 0;
 	const timer = setInterval(() => ticks++, TICK_MS);
+	const messages: string[] = [];
+	let ready = true;
+	if (premise) {
+		const premiseDeadline = performance.now() + premise.limitMs;
+		while (!seen && !premise.holds() && performance.now() < premiseDeadline)
+			await new Promise((resolve) => setTimeout(resolve, TICK_MS));
+		ready = seen || premise.holds();
+		if (!ready) messages.push(premise.missing);
+	}
 	const deadline = performance.now() + REPORT_MS;
-	while (failures.length === 0 && performance.now() < deadline)
+	while (ready && failures.length === 0 && performance.now() < deadline)
 		await new Promise((resolve) => setTimeout(resolve, TICK_MS));
 	// Later reports of the same failure, from the other threads it reached.
 	await new Promise((resolve) => setTimeout(resolve, 500));
 	clearInterval(timer);
 	await engine.destroy();
+	for (const error of failures) messages.push(error.message.split(' See ')[0] ?? error.message);
 	return {
 		codes: failures.map((error) => error.code),
-		messages: failures.map((error) => error.message.split(' See ')[0]),
+		messages,
 		ticks,
 	};
+}
+
+/**
+ * Resolves once the sketch has armed its frame-step fault. The engine's next clock read throws, and
+ * the sketch's message reaches the page after that, so the engine has failed by then.
+ */
+function faultArmed(engine: Engine): Promise<void> {
+	return new Promise((resolve) => {
+		// A message that arrived before this call is replayed inside it, before the remover is assigned.
+		let off = () => {};
+		off = engine.onSketchMessage((name) => {
+			if (name !== 'fault-armed') return;
+			off();
+			resolve();
+		});
+	});
 }
 
 /** The code of a failed call, or 'none'. */
@@ -75,14 +121,29 @@ run('failures', async () => {
 		faulty.searchParams.set('fault', which === 'fault' ? 'step' : 'material');
 		return firstFailure(await started(faulty));
 	}
+	if (which === 'late-handler') {
+		const faulty = new URL(sketch);
+		faulty.searchParams.set('fault', 'step');
+		faulty.searchParams.set('report-armed', '');
+		const engine = await started(faulty);
+		// The engine fails before any handler listens, as it does when a page attaches its handler
+		// after its own work. The handler that attaches now must still hear the failure.
+		await faultArmed(engine);
+		return firstFailure(engine);
+	}
 	if (which === 'job-fault') {
 		const busy = new URL(sketch);
 		// Enough parallel work to start the job workers, the first of which fails.
 		busy.searchParams.set('rows', '100000');
 		// On a slow GPU the worker can fail during the start, which then rejects with the failure.
 		const engine = await started(busy).catch((error: EngineError) => error);
-		if (!(engine instanceof Error)) return firstFailure(engine);
-		return { codes: [engine.code], messages: [engine.message.split(' See ')[0]], ticks: 1 };
+		if (engine instanceof Error)
+			return { codes: [engine.code], messages: [engine.message.split(' See ')[0]], ticks: 1 };
+		return firstFailure(engine, {
+			holds: () => progressTrail().some((step) => JOB_WORKER_READY.test(step)),
+			limitMs: JOB_WORKER_WAIT_MS,
+			missing: `no job worker started within ${JOB_WORKER_WAIT_MS / 1000} s`,
+		});
 	}
 	if (which === 'same-canvas') {
 		const first = await started();

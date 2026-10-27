@@ -1,6 +1,6 @@
 # D-223: The plugin interface version for add-ons from other developers
 
-Status: decided. Date: 2026-10-23. Task: M3-D6. This record gives the run-time check that [D-173](D-173-addon-hooks.md) section 5 and ruling 9 ask for. It sits beside the exact engine-version pin of [D-207](D-207-addon-version-checks.md).
+Status: decided and built. Task: M3-D6. This record gives the run-time check that [D-173](D-173-addon-hooks.md) section 5 and ruling 9 ask for. It sits beside the exact engine-version pin of [D-207](D-207-addon-version-checks.md).
 
 Summary: The engine carries one whole-number plugin interface version, `PLUGIN_INTERFACE_VERSION`, which changes only when a stable add-on hook changes. An add-on from another developer calls `checkPluginInterface(name, { min, max })` as its module loads. The engine throws E1433 when its interface lies outside that range, and the message names the add-on, the range and the interface version. The engine's own add-ons keep the exact pin of `checkAddonVersion`.
 
@@ -17,10 +17,10 @@ An add-on from another developer does not release with the engine, so it cannot 
 
 ## Data
 
-- `checkAddonVersion(name, version)` already compares an add-on's version with the engine's `VERSION` exactly (`packages/engine/src/shared/version.ts`). Its kind of pin suits the engine's own add-ons, which the release writes at one version.
+- `checkAddonVersion(name, version)` compares an add-on's version with the engine's `VERSION` exactly (`packages/engine/src/shared/version.ts`). Its kind of pin suits the engine's own add-ons, which the release writes at one version.
 - Five foundation add-ons call it at the top of their entry point: controls, geometry, impostors, particles and terrain. A sixth call pattern would be a second rule for one task.
 - Nothing versions the public hooks that an outside add-on builds against. The feature description of [D-202](D-202-one-feature-description.md), the task hook of [D-54](D-54-addon-modules.md) and the material and pass calls can change between releases.
-- The engine's start code gains only the function that an add-on calls. A sketch that imports no add-on reaches none of it after tree shaking.
+- The check adds only the function that an add-on calls to the engine's start code. A sketch that imports no add-on reaches none of it after tree shaking.
 
 ## Decision
 
@@ -53,7 +53,7 @@ The fix says to install the add-on release that matches the engine's interface, 
 ## Consequences
 
 - `packages/engine/src/index.ts` exports `PLUGIN_INTERFACE_VERSION`, `PluginInterfaceRange` and `checkPluginInterface`. `docs/api/engine.md` gives the declaration to add-on authors.
-- E1433 joins `codes.ts`, `fixes.ts` and the code list in `engine-error.ts`, with a generated docs page like every other code.
+- E1433 is in `codes.ts`, `fixes.ts` and the code list in `engine-error.ts`, with a generated docs page like every other code.
 - The develop skill's troubleshooting table names E1433.
 - `packages/engine/src/shared/version.test.ts` covers the matching case, a range above the engine's interface, a single-version range, and a malformed declaration.
-- The engine's own add-ons and `tools/lib/addon-versions.ts` are unchanged: they keep the exact pin.
+- The engine's own add-ons and `tools/lib/addon-versions.ts` keep the exact pin.

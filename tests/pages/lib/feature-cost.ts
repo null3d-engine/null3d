@@ -26,6 +26,12 @@ export interface SideCost {
 	passes: PassCost[];
 	/** The median busy time per frame of each thread, by name. */
 	threads: Record<string, number | null>;
+	/** Each round's GPU time, in the order the rounds ran; empty without a timer. */
+	gpuRoundsMs: number[];
+	/** Each round's frame interval, in the order the rounds ran. */
+	intervalRoundsMs: number[];
+	/** Each round's CPU time, in the order the rounds ran. */
+	cpuRoundsMs: number[];
 }
 
 /** How a cost page measures its sides. */
@@ -112,6 +118,9 @@ export async function featureCost(
 				.map(([name, values]) => [name, median(values)] as const)
 				.filter(([, ms]) => ms !== null && ms > 0),
 		),
+		gpuRoundsMs: [...sides[side].gpuMs],
+		intervalRoundsMs: [...sides[side].intervalMs],
+		cpuRoundsMs: [...sides[side].cpuMs],
 	});
 	return { off: summary('off'), on: summary('on') };
 }

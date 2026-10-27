@@ -60,9 +60,9 @@ function windowClosed(): string | undefined {
 /**
  * Waits until the computer's 1-minute load is under the quiet limit. Throws when it stays above for
  * the whole wait, so the test fails rather than measuring a busy computer or waiting forever. It also
- * throws at once when the job queue has closed the run's timing window: without this, each test of a
- * spec waited its own ten minutes, and on 25 October 2026 one run held the window for most of an hour
- * while builds outside the queue kept the load high.
+ * throws at once when the job queue has closed the run's timing window: otherwise each test of a
+ * spec waits its own ten minutes, and while builds outside the queue keep the load high, one run
+ * can hold the window for most of an hour.
  */
 export async function waitForQuietLoad(): Promise<void> {
 	if (process.env.NULL3D_COST_TRIAL) return;

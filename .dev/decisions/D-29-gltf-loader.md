@@ -1,8 +1,8 @@
 # D-29: The glTF loader, prefabs and their copies
 
-Status: decided. Date: 2026-10-03. Task: M2-A2.
+Status: decided and built. Task: M2-A2.
 
-Summary: A worker of the loader's own parses glTF files and decodes their images, loaded with the first file. A prefab is a template that `instantiate` creates with one core call and one batch of commands. A model's instance batches share one set of rows through batch parts. Ten sample models match three.js's `GLTFLoader` by its image rule, two under limits with reasons.
+Summary: A worker of the loader's own, loaded with the first file, parses glTF files and decodes their images. A prefab is a template that `instantiate` creates with one core call and one batch of commands, and a model's instance batches share one set of rows. Ten sample models match three.js's `GLTFLoader` by its image rule, two under limits with reasons.
 
 ## Question
 
@@ -34,16 +34,16 @@ The plan's outline said job workers. In this engine a job worker runs only the c
 | --- | --- | --- |
 | `js/sketch-worker-gltf.js` (and `js/page-gltf.js` in the single-threaded build): the loader | 3.0 KB | With the first `loadGltf` call |
 | `js/gltf-worker.js`: the parser and the image decodes | 5.8 KB | With the first `loadGltf` call |
-| The engine's JavaScript of a pipelined page | 89.4 KB, up 2.6 KB | At the start: `instantiate`, `clone`, `createInstances(prefab)`, `loadGltf`'s import and the object state that `clone` copies |
+| The engine's JavaScript of a pipelined page | 89.4 KB, of which these calls take 2.6 KB | At the start: `instantiate`, `clone`, `createInstances(prefab)`, `loadGltf`'s import and the object state that `clone` copies |
 | The core's WebAssembly | Under 1% more | At the start: `reserveObjects`, batch parts and `copyLight` |
 
-`bun run build` and `bun run build:check-size`, 2026-10-03.
+`bun run build` and `bun run build:check-size`.
 
 ### The sample models
 
-Every one of the 31 glTF files of the 28 Khronos sample models in the sample content parses (`bun` with `parseGltf`). Two refuse with E1417, as the rule asks: `RiggedSimple/glTF-Draco` requires `KHR_draco_mesh_compression`, and `MeshoptCubeTest/glTF-Meshopt` requires `KHR_meshopt_compression`.
+Every one of the 31 glTF files of the 28 Khronos sample models in the sample content parses (`bun` with `parseGltf`). Two need an extension's decoder. `RiggedSimple/glTF-Draco` requires `KHR_draco_mesh_compression` ([D-112](D-112-draco-decoding.md)), and `MeshoptCubeTest/glTF-Meshopt` requires `KHR_meshopt_compression` ([D-34](D-34-meshopt-decoding.md)). A file that requires an extension the loader does not read refuses with E1417, as the rule asks.
 
-Ten models draw as image tests on all three tiers. The parity test compares each with its twin, which loads the same file with three.js's `GLTFLoader` and `KTX2Loader`. Pixels that differ, by three.js's rule (`bun run parity`, 2026-10-03):
+Ten models draw as image tests on all three tiers. The parity test compares each with its twin, which loads the same file with three.js's `GLTFLoader` and `KTX2Loader`. Pixels that differ, by three.js's rule (`bun run parity`):
 
 | Scene | Mac GPU: WebGPU, compatibility, WebGL2 | SwiftShader: the same three |
 | --- | --- | --- |
@@ -58,7 +58,7 @@ Ten models draw as image tests on all three tiers. The parity test compares each
 | `gltf-vertex-colors` (VertexColorTest) | 0%, 0%, 0% | 0%, 0%, 0% |
 | `gltf-texture-coordinates` (TextureCoordinateTest) | 0%, 0%, 0% | 0%, 0%, 0% |
 
-Two scenes pass under limits of their own, in `MODEL_LIMITS` of `bench/lib/parity.ts`. The lamp's glass uses `KHR_materials_transmission`, volume and ior, which three.js draws and null3D does not read, so it takes 1%. All its differing pixels lie on the glass and its beads. Since null3D draws transmission ([D-122](D-122-transmission.md)), 0.27% to 0.39% differ on the Mac, all on the stained glass, whose transmission map and clear coat null3D does not draw. The limit is now 0.5%. The instanced cubes put black faces beside white ones at hundreds of edges. Compatibility mode's 8-bit path averages those edges after it encodes the colors, so the scene takes 0.5%. It matches exactly on the other tiers.
+Two scenes pass under limits of their own, in `MODEL_LIMITS` of `bench/lib/parity.ts`. The lamp's glass uses `KHR_materials_transmission`, volume and ior. The table's run drew no transmission, so all its differing pixels lie on the glass and its beads. null3D draws transmission ([D-122](D-122-transmission.md)), but not the stained glass's transmission map and clear coat. So 0.27% to 0.39% of the lamp's pixels differ on the Mac, all on the stained glass, and its limit is 0.5%. The instanced cubes put black faces beside white ones at hundreds of edges. Compatibility mode's 8-bit path averages those edges after it encodes the colors, so the scene takes 0.5%. It matches exactly on the other tiers.
 
 ### Copies
 
@@ -82,10 +82,10 @@ The loader on the sketch thread then makes each mesh, material and texture once.
 
 - A node with a mesh of one primitive becomes a `Mesh`. A node with several primitives, or with a light and a mesh, becomes a `Group` with one child for each. Any other node becomes a `Group`, or the light it holds.
 - Materials follow `GLTFLoader`. Vertex colors turn on where a primitive has them, and a primitive without normals shades flat. One without tangents turns the normal map's green channel over. Blended materials write no depth. The default material of glTF is metal-rough with both factors at 1.
-- `KHR_texture_transform` sets the material's one `uvTransform`. three.js gives each map its own; the engine's materials have one, so the base color map's transform wins, or else the first map's. A map's `texCoord` sets the texture's `uvSet`, so a texture that two materials read on different sets becomes two textures.
+- `KHR_texture_transform` sets the transform of the map that its texture info belongs to, in the material's `mapUvTransforms`. three.js gives each map its own, and the material's row keeps one for each row slot ([below](#each-map-keeps-its-own-transform)). A map's `texCoord` sets the texture's `uvSet`, so a texture that two materials read on different sets becomes two textures.
 - glTF's lights are in three.js's units, and the engine's too. The engine assigns lights to clusters by their ranges. So a point or spot light without a `range` ends where its light falls to 0.001 lux, at `sqrt(intensity / 0.001)` meters. In three.js, `distance = 0` means no end. The parity of the lights scene is exact at that cutoff.
 - `EXT_mesh_gpu_instancing` becomes one instance batch per node of each copy. Batches have no parent, so each row takes the node's place in the world when the copy is created, and stays there.
-- Skins, clips and morph targets wait for M2-C7. Points and lines wait for lane G; the loader leaves them out with a warning in development builds.
+- M2-C7 reads skins, clips and morph targets ([D-35](D-35-gltf-animation.md)). The loader leaves points and lines out, with a warning in development builds.
 - Cameras in the file are left out: a sketch makes its own.
 
 ### `instantiate`
@@ -116,7 +116,22 @@ Its `GLTFLoader` parses on the main thread, and decodes images with `ImageBitmap
 
 - `crates/null3d-core/src/instances.rs` has batch parts, `scene.rs` has `reserve_many`, and `lights.rs` has `duplicate`. The WebAssembly entry point exposes `reserveObjects`, `createBatchPart` and `copyLight`.
 - `packages/engine/src/scene/gltf-parse.ts` is the parser, `workers/gltf-worker.ts` its worker, `scene/gltf.ts` the loader, and `scene/prefab.ts` the prefab. The size report lists the loader and the worker apart.
-- E1416 covers files the loader cannot read, and files that pass a limit on what one file may decode to ([D-59](D-59-file-limits.md)). E1417 covers files that require an extension it does not read. An embedded image that does not decode gives E1412, as an image that the file names does. The `rewriteUrl` option checks the addresses that a file names, for models from users. Draco (M2-A6) and meshopt (M2-A3) lift E1417 for their extensions. M2-A3 decodes meshopt data in the glTF worker, where the parser reads buffer views ([D-34](D-34-meshopt-decoding.md)), so `MeshoptCubeTest/glTF-Meshopt` now loads.
+- E1416 covers files the loader cannot read, and files that pass a limit on what one file may decode to ([D-59](D-59-file-limits.md)). E1417 covers files that require an extension it does not read. An embedded image that does not decode gives E1412, as an image that the file names does. The `rewriteUrl` option checks the addresses that a file names, for models from users. Draco (M2-A6, [D-112](D-112-draco-decoding.md)) and meshopt (M2-A3) lift E1417 for their extensions. M2-A3 decodes meshopt data in the glTF worker, where the parser reads buffer views ([D-34](D-34-meshopt-decoding.md)), so `MeshoptCubeTest/glTF-Meshopt` loads.
 - M2-C7 reads skins, clips and morph targets in the parser, and hands them to M2-C1's core calls from the loader.
 - The image tests `gltf-*` load sample models, so the CI jobs that draw them fetch the sample content first (`.github/actions/samples`).
-- The record is in the table in [README.md](README.md).
+
+## Each map keeps its own transform
+
+`KHR_texture_transform` sets the transform of the map whose texture info carries it, in the material's `mapUvTransforms`. three.js keeps one transform for each texture, and the material row does too ([D-209](D-209-property-animation.md#each-map-keeps-its-own-transform)). A file that places its maps differently therefore draws that way. One transform for all maps, taken from the base color map or the first map, would place every map alike.
+
+Seven models of the sample content carry a transform. Five of them are the manifest's: `TextureTransformTest`, `ClearCoatCarPaint`, `SheenChair`, `SheenCloth` and `ToyCar`. Their references draw each map with its own transform. The car paint and the toy car scale their normal map by 3. The sheen chair places its normal map apart from its base color map. The sheen cloth scales its sheen maps by 30 and leaves its occlusion map at 1. The manifest leaves out `TextureTransformMultiTest`, and the test of `AnimationPointerUVs` reads values and not pixels.
+
+The image tests count a pixel only when a channel moves by about 13 steps, and allow 0.1% of a picture to differ so. A change in where a map sits can stay under that limit and still move every pixel a little.
+
+The parity comparison against three.js passes on all three tiers of all five. The share of pixels that differ, over the tiers, is:
+
+- 0.000% to 0.024% for the texture transform model;
+- 0.026% to 0.036% for the car paint;
+- 0.008% to 0.011% for the sheen chair;
+- 0.003% to 0.004% for the sheen cloth;
+- 0.273% to 0.297% for the toy car, whose own limit is 0.32%.

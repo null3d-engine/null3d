@@ -14,7 +14,8 @@
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { HEAVY_CHECKS } from './lib/heavy-checks.ts';
-import { CHECK_TIMEOUT_MS } from './lib/run-budget.ts';
+import { budgetNote, checkTimeoutMs, LOAD_FACTOR_ENV, loadFactor } from './lib/run-budget.ts';
+import { exactTestPath } from './lib/test-paths.ts';
 
 /** The repository, which the checks' files are relative to. */
 const ROOT = join(import.meta.dirname, '..');
@@ -24,25 +25,33 @@ const CEILING = './tests/lib/memory-ceiling.ts';
 let failed = 0;
 for (const { file, ceilingMiB } of HEAVY_CHECKS) {
 	const started = Date.now();
+	const factor = loadFactor();
+	const timeout = checkTimeoutMs(factor);
 	const result = spawnSync(
 		'bun',
 		[
 			'test',
-			`--timeout=${CHECK_TIMEOUT_MS}`,
+			`--timeout=${timeout}`,
 			'--preload',
 			CEILING,
 			'--conditions=null3d-source',
-			file,
+			exactTestPath(file),
 		],
 		{
 			cwd: ROOT,
 			stdio: 'inherit',
-			env: { ...process.env, NULL3D_TEST_MEMORY_MIB: `${ceilingMiB}` },
+			env: {
+				...process.env,
+				NULL3D_TEST_MEMORY_MIB: `${ceilingMiB}`,
+				[LOAD_FACTOR_ENV]: `${factor}`,
+			},
 		},
 	);
 	const seconds = Math.round((Date.now() - started) / 1000);
 	const outcome = result.status === 0 ? 'passed' : `failed with ${result.status}`;
-	console.log(`heavy-checks: ${file} ${outcome} in ${seconds}s, under ${ceilingMiB} MiB`);
+	console.log(
+		`heavy-checks: ${file} ${outcome} in ${seconds}s, under ${ceilingMiB} MiB${budgetNote(timeout)}`,
+	);
 	if (result.status !== 0) failed += 1;
 }
 process.exit(failed === 0 ? 0 : 1);

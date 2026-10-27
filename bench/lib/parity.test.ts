@@ -305,8 +305,8 @@ describe('feature scenes', () => {
 			expect(featureScene(scene)?.compatLimit).toBeGreaterThan(
 				featureScene(scene)?.limit ?? MAX_DIFFERENT_PERCENT,
 			);
-		// Their other tiers keep three.js's own rule, so a scene that needed 2.5% in compatibility
-		// mode alone no longer passes there with it.
+		// Their other tiers keep three.js's own rule, so a scene that needs 2.5% in compatibility
+		// mode alone does not pass there with it.
 		expect(featureScene('shadow-catcher')?.limit).toBeUndefined();
 		expect(featureScene('morph')?.limit).toBeUndefined();
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);

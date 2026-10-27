@@ -397,6 +397,15 @@ export class Texture {
 	}
 
 	/**
+	 * The array layer that a map of the texture samples now. A pass that keeps two states samples
+	 * the state that its last run wrote, so this is that state's first layer; another texture
+	 * gives 0. A reader that names layers of a texture array reads this layer for the newest state.
+	 */
+	get layer(): number {
+		return this.textures.layerOf(this);
+	}
+
+	/**
 	 * Gives the texture new texels, which upload in their turn. An image may have another size,
 	 * and the texture then takes that size; the image moves to the thread that draws, so this
 	 * thread can use it no more. Data must fit the texture's size and format. Until the new texels
@@ -538,7 +547,7 @@ export class Textures {
 			handle,
 			pass.width,
 			pass.height,
-			1,
+			pass.arrayLayers * (pass.history ? 2 : 1),
 			this.passFormat,
 			'linear',
 			0,
@@ -1217,6 +1226,11 @@ export class Textures {
 	/** @internal */
 	droppedLevelsOf(texture: Texture): number {
 		return this.stat(TEXTURE_STAT_DROPPED_LEVELS, texture.handle);
+	}
+
+	/** @internal */
+	layerOf(texture: Texture): number {
+		return this.core.glue.textureLayer(texture.handle);
 	}
 
 	/**

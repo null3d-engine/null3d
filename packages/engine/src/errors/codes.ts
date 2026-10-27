@@ -532,10 +532,17 @@ const DOCS = {
 			'E1435: createEngine() could not read the recording https://example.com/bug.n3dr: the file is not a null3D recording: it does not start with the format marker. Save the recording again, or ask for a new one.',
 		since: '0.3',
 	},
+	E1436: {
+		title: 'Pick lost with the GPU',
+		cause:
+			'A pick waited for the GPU to copy its pixel back when the browser took the GPU away. The engine started a new device, but the frame that recorded the pick drew on the lost device, so its read never lands. The pick is rejected rather than repeated on the new device.',
+		example: 'E1436: pick() was waiting for its read when the GPU was lost.',
+		since: '0.3',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:
-			'The scene needs more room than the renderer has. The message names the full part: the material table, the upload space, the culling pass, skinning on WebGPU, the draw list, or the shadow atlas. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances. On WebGPU, skinned meshes keep their skinned vertices in at most 8 GPU buffers. Those hold 1 GiB in all on most devices. Skinned meshes fill at most 32 mesh buffers. The draw list grows with the scene, so it fills only when memory runs out. A frame that fails draws nothing, and the canvas keeps the last whole frame.',
+			'The scene needs more room than the renderer has. The message names the full part: the material table, the upload space, the culling pass, skinning on WebGPU, the draw list, one GPU buffer, or the shadow atlas. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances. On WebGPU, skinned meshes keep their skinned vertices in at most 8 GPU buffers. Those hold 1 GiB in all on most devices. Skinned meshes fill at most 32 mesh buffers. The draw list grows with the scene, so it fills only when memory runs out. A frame that fails draws nothing, and the canvas keeps the last whole frame.',
 		example: 'E1501: materials.standard() failed: the material table is full.',
 		since: '0.1',
 	},

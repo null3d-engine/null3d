@@ -1,7 +1,7 @@
 // null3d create: makes a new project from one of the templates that ship with this command. It
 // copies the template's files, writes the version of the command and the project's name into
 // them, and installs nothing. The template holds an AGENTS.md for AI agents and one hook that
-// Claude Code and Codex run.
+// Claude Code and Codex both run.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,8 +34,8 @@ nothing.
 Options:
   --template <name>   The template to use (${DEFAULT_TEMPLATE})
 
-The project holds an AGENTS.md for AI agents and one hook, which Claude Code and Codex run, in
-.claude/ and .codex/. Run bun install in the new folder, then bunx vite.`;
+The project holds an AGENTS.md for AI agents and one agent hook that Claude Code and Codex both run.
+Run bun install in the new folder, then bunx vite.`;
 
 /**
  * @typedef {object} CreateOptions
@@ -140,9 +140,12 @@ export function createProject({
 	if (existsSync(target)) {
 		if (!statSync(target).isDirectory())
 			throw new UsageError(`"${dir}" is a file, and create needs a folder`);
-		if (existsSync(join(target, '.claude', 'settings.json')))
+		const own = ['.claude/settings.json', '.codex/hooks.json'].find((file) =>
+			existsSync(join(target, file)),
+		);
+		if (own !== undefined)
 			throw new UsageError(
-				`"${dir}" already has .claude/settings.json, which can hold your own hooks. create left it as it is: use an empty folder, or move that file first`,
+				`"${dir}" already has ${own}, which can hold your own hooks. create left it as it is: use an empty folder, or move that file first`,
 			);
 		if (readdirSync(target).length > 0)
 			throw new UsageError(`"${dir}" is not empty, and create needs an empty folder`);

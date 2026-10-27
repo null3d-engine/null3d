@@ -1,8 +1,8 @@
 # D-253: In-world screens draw as panels by distance
 
-Status: decided. Date: 24 October 2026. Task: M3-B3. The measured cost of the LCD look is owed: a
-timing run on 25 October 2026 waited the whole ten-minute quiet limit while other jobs held the Mac
-at a load of 37 to 57, so no figure is recorded here yet.
+Status: decided. Built: the screens example add-on, its LCD material and the demos that use it.
+Owed: the measured cost of the LCD look. A timing run waited the whole ten-minute quiet limit while
+other jobs held the Mac at a load of 37 to 57, so no figure is recorded yet. Task: M3-B3.
 
 Summary: An example add-on draws a display on an `OffscreenCanvas` as one canvas-backed texture with
 its own refresh rate, changed-rectangle uploads and a click mapped back to the canvas. Its LCD
@@ -22,7 +22,7 @@ panel at a close distance, and a click that lands on the canvas pixel under the 
   camera position, because a shader surface function has none and a value passed each frame would
   add a uniform write to every screen.
 - A click's point on the canvas comes from the hit's own texture coordinates, so the sketch does no
-  plane maths and no world matrix inversion.
+  plane math and no world matrix inversion.
 - The add-on reaches the engine only through `@null3d/engine`, as an example add-on must.
 
 ## Data
@@ -60,9 +60,9 @@ The add-on, in `examples/addons/screens/`, draws a screen as follows.
   `screen.pointOf(event)` and `screen.texelOf(event)` use it, and `onClick` runs a handler with the
   point.
 
-The alternatives were a per-screen material with a camera distance uniform, which costs a write for
-every screen every frame and gives the wrong look at an angle, and a fixed screen-space pattern,
-which shows sub-pixels at every distance and shimmers far away.
+Two options are rejected. A per-screen material with a camera distance uniform costs a write for
+every screen every frame and gives the wrong look at an angle. A fixed screen-space pattern shows
+sub-pixels at every distance and shimmers far away.
 
 ## Consequences
 
@@ -75,4 +75,4 @@ which shows sub-pixels at every distance and shimmers far away.
   row turn, clamping and whole texels. `bun run test` runs it with the examples.
 - The security camera's monitor keeps its own small LCD look, because its picture comes from a
   render pass rather than a canvas. Moving it onto this material needs a material that takes any
-  texture, and that is a later change.
+  texture.

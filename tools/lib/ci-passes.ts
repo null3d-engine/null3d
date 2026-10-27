@@ -3,11 +3,11 @@
 // compiler tests. CI's passes job runs this once, before those jobs. It works out each part's key
 // from the hashes of the files that the part reads, which the job's own step gives in HASHES, and
 // looks each key up in the Actions cache. A job whose every part passed then starts no runner at
-// all: each part used to take a runner of its own to find its pass, 30 of them in a run that
-// changed no Rust or shader file. A job that runs reads its parts' keys from this job's answer, so
-// each key has one source. Each key also ends with a hash of its job's definition, as the workflow
-// file parses, so a change to a part's commands, tools or steps runs it again, and a YAML comment
-// does not. The workflow's top-level settings are not in it.
+// all, where a runner for each part to find its pass would take 30 of them in a run that changes no
+// Rust or shader file. A job that runs reads its parts' keys from this job's answer, so each key
+// has one source. Each key also ends with a hash of its job's definition, as the workflow file
+// parses, so a change to a part's commands, tools or steps runs it again, and a YAML comment does
+// not. The workflow's top-level settings are not in it.
 //   bun tools/lib/ci-passes.ts    prints keys=, passed= and modules= lines, for $GITHUB_OUTPUT
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';

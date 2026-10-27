@@ -1,12 +1,12 @@
 # D-18: How the asset tool is built
 
-Status: decided by the owner, 2026-10-03, from the research of that day. Measured on S6's content with the built tool, 2026-10-04. The clip step measured and added, 2026-10-05, with near-constant tracks stored once by the owner's ruling of that day. A mesh's extras can keep its positions as floats, approved by the owner on 2026-10-08 for S6's merged towers. Date: 2026-10-03. Tasks: M2-B1, M2-B7.
+Status: decided by the owner and built, with the clip step, and measured on S6's content. Near-constant tracks keep one key, by the owner's ruling. A mesh's extras can keep its positions as floats, as the owner approved for S6's merged towers. Tasks: M2-B1, M2-B7.
 
 Summary: JavaScript on the official WebAssembly encoders, with the formats that the engine also reads from its Rust core built to WebAssembly, and the Vite plugin running the same steps with a cache. Every machine writes the same bytes. One encoder per thread did S6's 144 textures in 18 to 26 s on the Mac, against 130 s for the native encoder with all cores on one texture at a time.
 
 ## Question
 
-`bunx @null3d/cli assets optimize` turns glTF models into files that load and draw fast. Their meshes are quantized and reordered for the GPU's vertex cache, with levels of detail on request, and their textures are KTX2 files. Later commands add environment maps, conversions, blocker meshes and prebuilt BVHs. Which language and which encoders build the tool? And where do the formats that both the tool and the engine read come from?
+`bunx @null3d/cli assets optimize` turns glTF models into files that load and draw fast. Their meshes are quantized and reordered for the GPU's vertex cache, with levels of detail on request, and their textures are KTX2 files. Other commands add environment maps, conversions, blocker meshes and prebuilt BVHs. Which language and which encoders build the tool? And where do the formats that both the tool and the engine read come from?
 
 ## Rule
 
@@ -17,7 +17,7 @@ Summary: JavaScript on the official WebAssembly encoders, with the formats that 
 
 ## The options
 
-The research of 3 October weighed four options.
+The research weighed four options.
 
 | Option | Encoders | Install | Same bytes everywhere | Own code |
 | --- | --- | --- | --- | --- |
@@ -30,7 +30,7 @@ The language does not change what the files cost the engine. With one encoder ve
 
 ## Data
 
-### From the research, 3 October 2026
+### From the research
 
 Single textures, MacBook Pro (Apple M5 Max, 18 cores), Node 24.2, default settings with mip levels:
 
@@ -43,7 +43,7 @@ Single textures, MacBook Pro (Apple M5 Max, 18 cores), Node 24.2, default settin
 - Bytes: native ETC1S on all cores and on one thread wrote different bytes. Native and WebAssembly wrote different bytes for ETC1S and UASTC. Two WebAssembly runs wrote the same bytes.
 - The 32-bit WebAssembly encoder refuses more than 12,582,912 source texels. 4096 x 2048 works, and 4096 x 4096 fails.
 
-### The built tool on S6's content, 4 October 2026
+### The built tool on S6's content
 
 S6's textures are the 40 ambientCG texture sets of the sample content. They hold 144 images of 1024 x 1024 and 1024 x 512, as color, normal, roughness and occlusion maps. A generated glTF file gives each set one material. The tool encodes color and data maps in ETC1S at quality 128 and effort 2, and normal maps in UASTC with Zstandard. The native runs used the basisu 2.50 command with the same settings: `-q 128 -comp_level 2`, and `-uastc -normal_map` for normal maps. Other helpers worked on the Mac during these runs, at load averages of 9 to 30, so the times are rough.
 
@@ -77,7 +77,7 @@ How the data was produced:
 - The native runs: a script that ran `basisu` on the same 144 images, with and without `-no_multithreading`.
 - The unit test `optimize.test.ts` checks the bytes of the test scene's outputs against the files in the repository. So each CI run on Linux checks that its bytes match the Mac's.
 
-### The clip step, 5 October 2026
+### The clip step
 
 Prototype A2 measured the clip step on the sample content's animated models. The KayKit Knight has 76 clips and 8,712 channels. Its keys made about nine tenths of the binary part of the output without the step. Sizes are of the binary part of each `.glb` after Brotli at quality 11. Textures are separate files and not counted.
 
@@ -102,23 +102,23 @@ The Knight's changing rotation keys, after the step, by how they are stored:
 
 Writing the one-key tracks after all changing keys, not between them, saved the Knight 25 KB more.
 
-Near-constant tracks: 459 of the Knight's translation tracks and 519 of its scale tracks move by under a millionth, rounding noise from the exporter. The owner ruled on 5 October 2026 that such tracks count as constant, in the core for every file ([D-26](D-26-animation-clips.md#near-constant-tracks-5-october-2026)). The tool follows the core, so they keep one key. The Knight's binary part then falls from 455,487 B to 404,663 B after Brotli, 7% under gltfpack's 434,451 B. Poses do not change at three significant digits.
+Near-constant tracks: 459 of the Knight's translation tracks and 519 of its scale tracks move by under a millionth, rounding noise from the exporter. By the owner's ruling, such tracks count as constant, in the core for every file ([D-26](D-26-animation-clips.md#near-constant-tracks)). The tool follows the core, so they keep one key. With one key for each, the Knight's binary part falls from 455,487 B to 404,663 B after Brotli, 7% under gltfpack's 434,451 B. Poses do not change at three significant digits.
 
 Poses: the `gltf-poses` test plays each sample model's clips after the tool on the source's skeleton, against three.js r186 on the source file. The Knight differs by 6.65e-5 in a skinning matrix's rotation and scale, against 6.80e-5 for the source file. RiggedFigure moves from 4.14e-5 to 6.44e-5 and InterpolationTest from 2.43e-4 to 2.68e-4. The others do not change. The limit is 1e-3 ([D-35](D-35-gltf-animation.md)).
 
 Load: every model's output loads with no clip resampled. In the same test, the Knight's clips were ready in 7.9 ms on two job workers. From the source file they took 16.5 ms, and the core resampled 69 of the 76 clips. Parse time did not change measurably.
 
-How the data was produced: `node packages/cli/bin/null3d.js assets optimize` on main and on the branch, and `bunx gltfpack@1.3.0 -c`. A script split each binary part by buffer view and compressed each part. The poses and load times came from `cd tests && NULL3D_PORT=14273 bunx playwright test gltf-poses.spec.ts`, in Chrome on the Mac.
+How the data was produced: `node packages/cli/bin/null3d.js assets optimize` without the step and with it, and `bunx gltfpack@1.3.0 -c`. A script split each binary part by buffer view and compressed each part. The poses and load times came from `cd tests && NULL3D_PORT=14273 bunx playwright test gltf-poses.spec.ts`, in Chrome on the Mac.
 
 ## Decision
 
-The owner chose option A with D on 3 October 2026, for three reasons:
+The owner chose option A with D, for three reasons:
 
 - The language does not change load or run speed.
 - Native code is faster on one large texture, but writes different bytes on each CPU and thread count.
 - Only one WebAssembly build gives the same bytes on every machine.
 
-Textures are capped at 2048 x 2048, which the 32-bit encoder takes. A 64-bit build for Node is the way to lift the cap later.
+Textures are capped at 2048 x 2048, which the 32-bit encoder takes. A 64-bit build for Node is the way to lift the cap.
 
 ### What the tool is
 
@@ -128,13 +128,13 @@ Textures are capped at 2048 x 2048, which the 32-bit encoder takes. A 64-bit bui
 - Pure JavaScript decoders read PNG (fast-png) and JPEG (jpeg-js), and the tool resizes in its own code. That code only adds, multiplies, divides and rounds. It reads sRGB values from a written table, not from `Math.pow`. So every JavaScript engine computes the same pixels.
 - Each texture encodes on a worker thread of its own, on one thread inside the encoder. The output does not depend on the thread count, and a set of textures uses every core.
 - The formats shared with the engine come from the engine's Rust core. The `null3d-assets-wasm` crate builds them to WebAssembly, as the shader compiler is built. Its first format is the stored mesh BVH of [D-27](D-27-bvh.md): `meshBvh` in `packages/cli/src/assets/formats.js` returns `MeshBvh::to_bytes()`. M2-B4 writes it into model files for large static meshes, through this function.
-- The Vite plugin runs the same steps on a model that a module imports with `?optimized`. It keeps the result in `node_modules/.cache/null3d-assets`, keyed by the hash of the model's files, the identity of the tool (its version and a hash of its own code) and the options.
+- The Vite plugin runs the same steps on a model that a module imports with `?optimized`. It keeps the result in `node_modules/.cache/null3d-assets`, keyed by the hash of the model's files, the identity of the tool and the options. The tool's identity is the version it reports and a hash of its own code: the module that the plugin loads and the files that share its name, the WebAssembly file among them. The version is `0.0.0` in the repository, so a key of the version alone would keep models that an older build of the tool wrote, with an older shader list or older material names (review finding H-17). A tool whose files cannot be read is keyed by its version alone.
 
 ### The settings
 
 | Step | Setting | Why |
 | --- | --- | --- |
-| Positions | Unsigned 14-bit integers in 16 bits, plain, in steps of 1/16,383 of the longest side of the mesh's group. A mesh whose glTF extras hold `"quantizePositions": false` keeps 32-bit floats | gltfpack's default; meshopt compresses fewer bits better. A 100 m building gets 6 mm steps. The setting serves a mesh that spreads small parts over a large space, such as S6's towers merged by material ([D-106](D-106-s6-city.md#addendum-2026-10-08-one-tower-mesh-per-material)) |
+| Positions | Unsigned 14-bit integers in 16 bits, plain, in steps of 1/16,383 of the longest side of the mesh's group. A mesh whose glTF extras hold `"quantizePositions": false` keeps 32-bit floats | gltfpack's default; meshopt compresses fewer bits better. A 100 m building gets 6 mm steps. The setting serves a mesh that spreads small parts over a large space, such as S6's towers merged by material ([D-106](D-106-s6-city.md#one-tower-mesh-per-material)) |
 | Normals, tangents | Signed bytes, normalized | gltfpack's default; the test scene's normals stay within 0.02 of their sources |
 | Texture coordinates | 16-bit normalized integers when every value lies from 0 to 1, else floats | Values past 1 would need a texture transform, and the engine's materials keep one transform for all maps |
 | Colors, joint weights | Normalized bytes; weights keep their sum at one | |
@@ -154,7 +154,7 @@ The dequantizing transform goes where it moves nothing else:
 - A skin puts it in its inverse bind matrices.
 - A node with children, a camera, a light, an animated transform or a place in a skeleton keeps its transform. Its mesh moves to a new child node.
 
-The simplifier keeps the seams where vertices at one place differ in normals or coordinates. In a mesh of flat faces, such as Kenney's buildings, every edge is a seam, and nothing simplifies. A level that saves too little tries again with the seams free to move. Before that change, 2 of the 213 Kenney models got levels, and after it 91 did. [D-91](D-91-level-planning.md) replaced this planning on 7 October 2026: 162 models now get levels.
+[D-91](D-91-level-planning.md) plans the levels, and with its planning 162 of the 213 Kenney models get levels. The simplifier keeps the seams where vertices at one place differ in normals or coordinates. In a mesh of flat faces, such as Kenney's buildings, every edge is a seam, and nothing simplifies while the seams hold. So a level that saves too little tries again with the seams free to move. Without that second try, 2 of the 213 models got levels, against 91 with it, under the tool's own planning.
 
 ### Clips
 
@@ -162,7 +162,7 @@ The engine keeps each clip at one fixed rate of keys ([D-26](D-26-animation-clip
 
 - The engine core's own `bake` puts each clip's tracks on the clip's frames. The tool calls it through the formats module (`clip()`), so the tool and the loader pick the same rate and evaluate curves the same way. All tracks of a clip share one input of frame times.
 - A rotation that changes keeps a key per frame as 16-bit normalized integers, the form the core stores. They take meshopt's quaternion filter at 16 bits. Translations, scales and morph weights stay 32-bit floats, which meshopt compresses with no loss.
-- A track that the core counts as constant keeps one key, at the clip's last time, so the clip keeps its length in every reader. That is a track whose keys move by under a millionth of its largest value, or of 1 ([D-26](D-26-animation-clips.md#near-constant-tracks-5-october-2026)).
+- A track that the core counts as constant keeps one key, at the clip's last time, so the clip keeps its length in every reader. That is a track whose keys move by under a millionth of its largest value, or of 1 ([D-26](D-26-animation-clips.md#near-constant-tracks)).
 - Step tracks stay step tracks. Cubic spline tracks become linear keys on the curve, the keys the core would store from it.
 - Keys that change come first in the buffer, each path's together, then the one-key tracks.
 
@@ -177,6 +177,7 @@ Options left out:
 | glTF-Transform's filter method for all accessors | Its exponential filter keeps 12 bits of each translation and scale |
 | Dropping constant tracks, as gltfpack does | A clip blends only where it has tracks ([D-26](D-26-animation-clips.md)), so a dropped track changes how it blends |
 | Fewer keys where the curve allows | The track's keys become uneven, so the loader would resample again |
+
 Version 4.5.1 of glTF-Transform gives meshopt's filters to every accessor or to none. So the class `MeshoptWithRotationFilter` in `clips.js` extends its meshopt extension. After glTF-Transform groups the accessors, it switches only the buffer views of rotation keys to the quaternion filter. It reads three fields that glTF-Transform keeps for that step. The tests in `clips.test.ts` fail when a version changes them. They check that the quaternion filter is the file's only filter.
 
 ### How three.js handles it
@@ -190,20 +191,8 @@ three.js has no asset tool of its own. Its users run other tools, such as gltfpa
 - `@null3d/cli/assets` exports the steps, and `@null3d/vite-plugin` loads them on the first `?optimized` import. The plugin names the CLI as an optional peer, so a project that imports no model installs no encoder.
 - meshopt compression is the default in `DEFAULT_OPTIONS` of `packages/cli/src/assets/pipeline.js`, for the command and the Vite plugin alike. The image test `asset-scene-optimized` draws the compressed output.
 - The test scene in `tests/lib/asset-scene.ts` and its outputs in `tests/pages/assets/models/` change only with the tool. `NULL3D_WRITE_ASSET_SCENE=1 bun test packages/cli/src/assets/optimize.test.ts` writes them again.
-- Open: layered KTX2 files that group textures of one size. Today the engine gives each compressed texture an array of its own, since compatibility mode copies no compressed texels. So the tool keeps one file per texture and reports the groups.
+- Open: layered KTX2 files that group textures of one size. The engine gives each compressed texture an array of its own, since compatibility mode copies no compressed texels. So the tool keeps one file per texture and reports the groups.
 - Open: a 64-bit encoder for 4096 x 4096 textures, if a scene needs them.
 - M2-B3 reads FBX with ufbx built to WebAssembly, by the owner's answer. M2-B4 writes blocker meshes and BVHs through the formats module.
 - The file `packages/cli/src/assets/clips.js` holds the clip step and `MeshoptWithRotationFilter`. The core's `bake` and the formats module's `clip()` give it the keys. Its tests check the keys against the source curves, the one-key tracks, the 16-bit rotations and the same bytes on two runs.
 - The `gltf-poses` test loads each sample model after the tool too, and requires that no clip resamples.
-
-## Addendum, 15 October 2026: the model cache key names the tool's code
-
-The code review of 13 to 15 October found that the Vite plugin's model cache was keyed by the tool's
-package version alone (H-17). That version is `0.0.0` in the repository, so two changes to the tool's
-output landed without changing the key: the shader list a model records, and the clear coat and sheen
-names. A project kept the models that the earlier pipeline wrote, and a later fix would be hidden the
-same way.
-
-The key now names the tool's identity: the version it reports and a hash of its own code, which is the
-module the plugin loads and the files that share its name, the WebAssembly file among them. A tool
-whose files cannot be read falls back to the version, as before.

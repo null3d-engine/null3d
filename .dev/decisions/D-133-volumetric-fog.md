@@ -1,12 +1,12 @@
 # D-133: Volumetric fog and light shafts
 
-Status: decided by the helper of M2-EX21, and built on main on 14 October 2026 (`bf57a945b`). The owner has not reviewed the design. Date: 2026-10-11. Task: M2-EX21.
+Status: decided by the helper of M2-EX21. Built: on main (`bf57a945b`). The owner has not reviewed the design. Task: M2-EX21.
 
-Summary: `scene.setFog({ volumetric })` lights the scene's fog with the main directional light and the point and spot lights, through their shadows. Sun rays then fall through trees, and lamps and headlights glow in cones. The engine lights a grid of cells that follow the camera's view (froxels), as Frostbite and Unreal do. It sums the cells front to back, and adds the light that the fog scatters toward the camera after the main pass. Four fragment steps run on every GPU path, and their code and shaders load on first use. The quality setting `fogSlices` sizes the grid. Low keeps the fog's analytic sun glow, at no cost. Data holds the figures per preset and the download sizes.
+Summary: `scene.setFog({ volumetric })` lights the fog with the sun, point and spot lights through their shadows, so sun rays fall through trees and lamps glow in cones. The engine lights and sums a grid of cells along the view (froxels) in four fragment steps that load on first use. The quality setting `fogSlices` sizes the grid, and Low keeps the fog's analytic sun glow at no cost.
 
 ## Question
 
-The showcase scenes need light shafts and lit fog ([D-132](D-132-showcase-look-and-features-2026-10-11.md), the owner's ruling of 11 October 2026). Creek wants sun rays through its trees at golden hour. Night town wants glowing cones around its street lamps and car headlights, and Battle wants dusty light. The fog of [D-74](D-74-native-fog.md) has a sun glow that no shadow blocks, and lamps do not light it. Which technique lights the fog through shadows on WebGPU, its compatibility mode and WebGL2? Where does it run, what does each preset draw, and what does it cost?
+The showcase scenes need light shafts and lit fog (the owner's ruling in [D-132](D-132-showcase-look-and-features.md)). Creek wants sun rays through its trees at golden hour. Night town wants glowing cones around its street lamps and car headlights, and Battle wants dusty light. The fog of [D-74](D-74-native-fog.md) has a sun glow that no shadow blocks, and lamps do not light it. Which technique lights the fog through shadows on WebGPU, its compatibility mode and WebGL2? Where does it run, what does each preset draw, and what does it cost?
 
 ## Rule
 
@@ -15,7 +15,7 @@ The showcase scenes need light shafts and lit fog ([D-132](D-132-showcase-look-a
 - Nothing costs anything while it is off: no pass, no target, no pipeline and no shader download (design principle 8).
 - No allocation per frame ([AGENTS.md](../../AGENTS.md#hard-rules), hard rule 1).
 - Phones have a cheap path. The fog's height falloff and sun glow stay the cheap default.
-- The main pass gains no texture binding. WebGPU's main pass reads 15 of its 16 textures, and screen-space reflections and contact shadows need room too (coordinator's slot plan, 11 October 2026).
+- The main pass gains no texture binding. WebGPU's main pass reads 15 of its 16 textures, and screen-space reflections and contact shadows need room too (the coordinator's slot plan).
 
 ## Options
 
@@ -34,8 +34,8 @@ Option C lights each cell once. A grid of 160 x 90 cells in 64 slices lights abo
 The grid is a texture of slices side by side, 8 slices to a row. Each slice is a tile of columns and rows across the view. The tiles follow the canvas's shape, with a fixed count of cells on its short side. So the grid's cost does not follow the screen's pixels or the render scale. Slice edges lie at `distance × (k / slices)²` along the view, so near slices are thin and far ones thick.
 
 1. **Light**, one triangle over the grid's texture. Each texel is a cell. It finds a point in the cell, moved by the frame's offset. The scene fog's density and height falloff give the fog's density there. It adds the sun's light where the cascades see it, through the four texels nearest the point. Henyey-Greenstein's phase function weighs each light. It adds each point and spot light of the point's cluster, with its range, cone and shadow tile. It blends the result with the last frame's light at the same place in the world, where the last frame's grid held it. It writes the light that the fog scatters per meter and the fog's extinction. Two kept textures take turns, so each frame reads the last frame's grid from one and writes the other.
-2. **Sum**, in two steps of one triangle each, into two more textures of the grid's size. The slices fall into blocks of 8, a row of tiles each. The block step sums, for each cell, the cells from its block's first slice to its own, front to back. Frostbite's integral over each slice keeps the light right however thick the slice is. The sum step then joins, for each cell, the sums of the whole blocks in front of it, front to back, and its own block's sum up to it. It writes the light scattered toward the camera up to the cell's far edge and the share of light that passes. A cell reads at most 8 slices in the first step and one texel per block in the second: 12 and 20 reads at 32 and 96 slices. Until 13 October 2026 one step summed every slice in front of each cell, so its work grew with the square of the slices, and 96 slices cost 3.2 times what 64 did (see Data).
-3. **Apply**, one triangle at the render size. Each pixel finds its place in the grid from its depth. It reads the two nearest slices, each through a cubic B-spline over the 16 nearest cells (see [Smooth reads on a coarse grid](#smooth-reads-on-a-coarse-grid)), and adds that light to the scene's color. Past the grid's reach it adds the sun's light that the fog scatters there, without shadows, in closed form. So no edge shows where the grid ends. The background takes the grid's light in front of it, but none from past the reach. It takes none of D-74's fog either, and its sky holds its own haze around the sun. Adding the closed form there turned a low sun's sky white. The step writes a target that the custom effects, depth of field, bloom and the final pass read.
+2. **Sum**, in two steps of one triangle each, into two more textures of the grid's size. The slices fall into blocks of 8, a row of tiles each. The block step sums, for each cell, the cells from its block's first slice to its own, front to back. Frostbite's integral over each slice keeps the light right however thick the slice is. The sum step then joins, for each cell, the sums of the whole blocks in front of it, front to back, and its own block's sum up to it. It writes the light scattered toward the camera up to the cell's far edge and the share of light that passes. A cell reads at most 8 slices in the first step and one texel per block in the second: 12 and 20 reads at 32 and 96 slices. One step that summed every slice in front of each cell would do work that grows with the square of the slices. In the measured build, 96 slices cost 3.2 times what 64 did (see Data).
+3. **Apply**, one triangle at the render size. Each pixel finds its place in the grid from its depth. It reads the two nearest slices, each through a cubic B-spline over the 16 nearest cells (see [Smooth reads on a coarse grid](#smooth-reads-on-a-coarse-grid)), and adds that light to the scene's color. Past the grid's reach it adds the sun's light that the fog scatters there, without shadows, in closed form. So no edge shows where the grid ends. The background takes the grid's light in front of it, but none from past the reach. It takes none of D-74's fog either, and its sky holds its own haze around the sun. The closed form there would turn a low sun's sky white. The step writes a target that the custom effects, depth of field, bloom and the final pass read.
 
 The light step binds the camera's frame group, as the background and the debug lines do. So it reads the cascades, the clustered lights and the shadow atlas with no new binding there. Its own group holds its block, the last frame's grid and a sampler: three bindings, which fit WebGL2's three slots of group 1.
 
@@ -47,17 +47,17 @@ The grid takes the fog's `density` as the density of exponential fog, with any c
 
 ### Where it runs
 
-On the HDR path, after the transparent passes and before the custom effects. The 8-bit path cannot add HDR light to display color, as bloom cannot. In WebGPU's compatibility mode with MSAA, turning the grid on moves the engine to HDR color with FXAA, as bloom and depth of field do. It moves only once `fogSlices` is above 0. With 0 slices, as on Low, the grid draws nothing, so the move would cost for nothing and change the edges. Until 13 October 2026 it moved anyway, and the image test `fog-volume-no-slices` on compatibility mode then differed from the plain fog's image at 0.53% of its pixels, all on edges. The test now guards it. On WebGL2 devices whose float targets fail the engine's test, the fog keeps its glow. That is the stated fallback.
+On the HDR path, after the transparent passes and before the custom effects. The 8-bit path cannot add HDR light to display color, as bloom cannot. In WebGPU's compatibility mode with MSAA, turning the grid on moves the engine to HDR color with FXAA, as bloom and depth of field do. It moves only once `fogSlices` is above 0. With 0 slices, as on Low, the grid draws nothing, so the move would cost for nothing. It would also change 0.53% of the pixels against the plain fog's image, all on edges. The image test `fog-volume-no-slices` on compatibility mode guards it. On WebGL2 devices whose float targets fail the engine's test, the fog keeps its glow. That is the stated fallback.
 
 Applying the grid in the main pass's shaders instead would dim and light each surface, transparent ones too, with no pass at the render size. It needs a texture binding in the main pass, which the slot plan keeps for other features. The pass after the main pass costs one read and one write of the scene color.
 
 ### Smooth reads on a coarse grid
 
-A single filtered read blends the four nearest cells along straight lines. Where the light changes, the slope of that blend turns at each cell's edge, so the cells show as steps. On 13 October 2026 the light shafts demo showed square steps in the haze on WebGL2, and none on WebGPU. WebGL2 and WebGPU's compatibility mode stop at Medium, so they drew Medium's grid of 32 slices, with 64 cells on the short side. WebGPU drew High's, with 96. On a 720-pixel-high canvas, Medium's cells are about 11 pixels across, and their edges showed. Phones on Medium would show the same steps. Hold mode, which every image test and capture uses, draws its frame with no offset and no last frame, so nothing hid the steps there. In live play, the offsets and the blend with the last frame soften them over a few frames.
+A single filtered read blends the four nearest cells along straight lines. Where the light changes, the slope of that blend turns at each cell's edge, so the cells show as steps. With such a read, the light shafts demo shows square steps in the haze on WebGL2, and none on WebGPU. WebGL2 and WebGPU's compatibility mode stop at Medium, so they draw Medium's grid of 32 slices, with 64 cells on the short side. WebGPU draws High's, with 96. On a 720-pixel-high canvas, Medium's cells are about 11 pixels across, and their edges show. Phones on Medium show the same steps. Hold mode, which every image test and capture uses, draws its frame with no offset and no last frame, so nothing hides the steps there. In live play, the offsets and the blend with the last frame soften them over a few frames.
 
 The apply step therefore reads each slice through a cubic B-spline over the four by four nearest cells. Four filtered reads, each placed between two pairs of cells by their weights, give the spline's sum, so the step takes 8 reads in place of 2. The spline's slope changes smoothly, so no cell's edge shows at any slice count. It softens the shafts' edges by about a cell, which the grid cannot resolve anyway. The cost is in the figures below.
 
-The image test `fog-volume-medium` draws the sun scene at Medium's 32 slices on every GPU path, and each path must draw the first path's image. A plain filtered read would change its image and fail it. Hold mode has a second blind spot. Its frame never blends a last frame's grid, so no held image test runs the light step's blend, and WebGL2 runs that blend with code of its own, as its rows run bottom first. The test `fog-live.spec.ts` covers it: each GPU path draws the sun scene in play, at Medium's grid with a still camera, for 2 s, and compatibility mode and WebGL2 must draw WebGPU's frame. Comparing images by a roughness measure, the mean absolute Laplacian, did not catch the steps: each step spans many pixels, so the measure barely changes. Look at a zoomed crop when judging grid artifacts.
+The image test `fog-volume-medium` draws the sun scene at Medium's 32 slices on every GPU path, and each path must draw the first path's image. A plain filtered read would change its image and fail it. Hold mode has a second blind spot. Its frame never blends a last frame's grid, so no held image test runs the light step's blend, and WebGL2 runs that blend with code of its own, as its rows run bottom first. The test `fog-live.spec.ts` covers it: each GPU path draws the sun scene in play, at Medium's grid with a still camera, for 2 s, and compatibility mode and WebGL2 must draw WebGPU's frame. A roughness measure of the images, the mean absolute Laplacian, does not catch the steps: each step spans many pixels, so the measure barely changes. Look at a zoomed crop when judging grid artifacts.
 
 ### See-through surfaces
 
@@ -97,7 +97,7 @@ The download sizes: the lit fog's shader builds load on the feature's first use,
 
 ### Cost on the Mac
 
-The fog cost test (`NULL3D_FOG_COST=1 bun run test:browser -- fog-cost.spec.ts`) times the effect cost page's fog scene with the volumetric fog off and on, in turns, three times each, at 1920 x 1080 and a render scale of 1, with the governor off. It ran on 13 October 2026 on the Mac's GPU in Chrome, on this record's branch with the smooth read, at loads of 3.4 to 7.1. The figures are the extra GPU time per frame with the grid on, from the medians of each side. The sun scene is a low sun behind pillars; the night scene has three shadowed spot lights and a point light.
+The fog cost test (`NULL3D_FOG_COST=1 bun run test:browser -- fog-cost.spec.ts`) times the effect cost page's fog scene with the volumetric fog off and on, in turns, three times each, at 1920 x 1080 and a render scale of 1, with the governor off. It ran on the Mac's GPU in Chrome, on a build with the smooth read and a single sum step, at loads of 3.4 to 7.1. The figures are the extra GPU time per frame with the grid on, from the medians of each side. The sun scene is a low sun behind pillars; the night scene has three shadowed spot lights and a point light.
 
 | Slices (preset) | WebGPU sun / night | Compatibility mode sun / night | WebGL2 sun / night |
 | --- | --- | --- | --- |
@@ -105,11 +105,11 @@ The fog cost test (`NULL3D_FOG_COST=1 bun run test:browser -- fog-cost.spec.ts`)
 | 64 (High) | +1.70 / +1.70 ms | +1.70 / +1.57 ms | +1.47 / +1.61 ms |
 | 96 (Ultra) | +5.37 / +5.37 ms | +5.31 / +5.05 ms | +4.40 / +4.65 ms |
 
-These figures are with the one step that summed every slice in front of each cell. From 32 to 96 slices the cells grow about 12 times and the cost about 10 times, but from 64 to 96 the cells grow 2.7 times and the cost 3.2 times: that step's work grew with the square of the slices. The block step and the sum split it on 14 October 2026, so a cell reads at most 8 slices and one texel per block, 12 and 20 texels at 32 and 96 slices. The CPU time per frame stayed within 0.04 ms of the fog's off side on every path. The lamps cost little: each cell loops over the lights of its own cluster.
+In that build one step summed every slice in front of each cell. From 32 to 96 slices the cells grow about 12 times and the cost about 10 times. From 64 to 96 the cells grow 2.7 times and the cost 3.2 times, because that step's work grew with the square of the slices. The block step and the sum step replace it. A cell then reads at most 8 slices and one texel per block: 12 and 20 texels at 32 and 96 slices. No figures of the two steps exist yet. The CPU time per frame stayed within 0.04 ms of the fog's off side on every path. The lamps cost little: each cell loops over the lights of its own cluster.
 
 ### Allocation
 
-The allocation check (`bun run bench:allocation --fog`) turns the volumetric fog on in S1, with height fog, while the camera orbits. It passed on WebGPU and on WebGL2 on 12 October 2026. On WebGPU the sketch worker allocated 248 bytes per frame, and on WebGL2 the sketch worker 222 and the render worker 174, each within its budget. On WebGPU the replay may allocate 192 bytes per frame more than without the fog: the browser's encoders of the three render passes, at bloom's 64 bytes per pass.
+The allocation check (`bun run bench:allocation --fog`) turns the volumetric fog on in S1, with height fog, while the camera orbits. It passed on WebGPU and on WebGL2. On WebGPU the sketch worker allocated 248 bytes per frame, and on WebGL2 the sketch worker 222 and the render worker 174, each within its budget. On WebGPU the replay may allocate 192 bytes per frame more than without the fog: the browser's encoders of the three render passes, at bloom's 64 bytes per pass.
 
 ### Image tests
 
@@ -117,8 +117,11 @@ The fog's tests draw the sun scene and the night scene with the volumetric fog o
 
 ## Decision
 
-To come with the data.
+Option C: the froxel grid, lit, summed and applied in four fragment steps after the transparent passes, on every GPU path. The quality setting `fogSlices` sets the grid: no slices on Low, 32 on Medium, 64 on High and 96 on Ultra. Low keeps the analytic sun glow. The apply step reads the grid through the cubic B-spline, so no cell shows on Medium's coarse grid.
 
 ## Consequences
 
-To come with the data.
+- API: `scene.setFog({ volumetric })`, with `intensity`, `anisotropy` and `distance`.
+- Quality: the setting `fogSlices`, and the governor's step that halves the slices.
+- Shaders: the grid's lookup in the shader library, `fog_volume_place` and `fog_volume_blend` in `null3d::fog_volume`, for shaders that draw after the apply step.
+- Tests: the fog's image tests on every GPU path, `fog-volume-medium`, `fog-volume-no-slices`, `fog-live.spec.ts`, `bun run bench:allocation --fog` and the fog cost test.
