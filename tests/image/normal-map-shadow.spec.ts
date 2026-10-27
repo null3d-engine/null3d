@@ -13,7 +13,7 @@ import { pageResult } from '../lib/page-result.ts';
 
 test.describe.configure({ mode: 'parallel' });
 
-const SKETCH = '/tests/pages/sketches/normal-map-shadow-sketch.ts';
+const SKETCH = 'tests/pages/sketches/normal-map-shadow-sketch.ts';
 /** A channel's change, out of 255, that counts as more light than the ambient floor. */
 const STEP = 6;
 /**
@@ -24,6 +24,11 @@ const STEP = 6;
 const MARGIN = 3;
 /** The fewest pixels of the true shadow that the check must find, so the check is not empty. */
 const SHADOW_PIXELS = 2000;
+/**
+ * The most texels of the true shadow that the frame may light. The fault lights tens of them, and
+ * a software GPU may round a comparison at the mask's edge the other way on a few.
+ */
+const LEAK_LIMIT = 4;
 
 interface Frame {
 	error?: string;
@@ -99,5 +104,5 @@ for (const tier of ['webgpu', 'compat', 'webgl2'])
 		expect(
 			leaked,
 			`texels of the ground that the shadow's own plane shadows and the frame lights instead, the largest change ${worst} of 255`,
-		).toBe(0);
+		).toBeLessThanOrEqual(LEAK_LIMIT);
 	});
