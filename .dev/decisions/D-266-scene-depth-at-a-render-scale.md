@@ -2,7 +2,7 @@
 
 Status: decided by the M3-F5 helper on. A custom material's `sceneDepth(uv)` and
 `sceneDistance(uv)` map the place on the image through the image's render size, not through the
-copy's size. The copy keeps the canvas's size.  Task: M3-F5.
+copy's size. The copy keeps the canvas's size.  Task: M3-F5 and M3-R28.
 
 Summary: The frame's scene color and depth targets keep the canvas's size at every render scale. A
 pass below the whole scale draws into a corner of them. The copy of the opaque depth that a custom
@@ -43,10 +43,16 @@ when the scene draws below the whole scale? Which scales can a page reach at all
   canvas's width while the image stopped at the render size. The river went dark past a straight line
   at the scale. The frame values the cull builds now carry the render scale. So `frame.resolution`
   is the render size on every path, as `view_frame` documents it and
-  `crates/null3d-render/tests/lights.rs` asserts. The wider check stays open as M3-R28's own task.
-  It must show that every screen-position lookup on all three paths divides by the size it should.
-  It must also show that nothing else relied on the old value. This record closes the value that
-  the water reads.
+  `crates/null3d-render/tests/lights.rs` asserts. Every shader that reads the target's size wants
+  the render size, and the [implementation notes](../implementation-notes.md#render-scale) list
+  them. A value that counts CSS pixels of the output keeps the canvas's size instead: the two
+  `camera_range` fractions that set a line's width and a screen-sized sprite.
+  `tests/image/frame-resolution.spec.ts` checks the value itself. A material that covers the view
+  paints `input.fragCoord.xy / frame.resolution`, so the paint's change across and its change down
+  sit at the middle of the image only while the value is the render size. The page fixes the whole
+  scale and the floor of each preset, on each path and in every thread mode. With the cull passing
+  the whole scale, the change across sits two thirds of the way across the image at 0.75, five
+  sixths of the way at 0.6, and at Low's floor it does not cross the image at all.
 - The frame-budget governor moves the render scale by `SCALE_STEP`, 50 thousandths. It moves between
   the preset's `minRenderScale` and `maxRenderScale`. The lowest scale of each preset is 0.5 at Low,
   0.6 at Medium, 0.75 at High and 1 at Ultra. A sketch may set both bounds itself.
@@ -66,9 +72,10 @@ no texture, view, bind group or pipeline.
 
 The views' frame values now carry the render scale on the CPU-culled path too, so
 `frame.resolution` is the render size on every path. A custom material's pixel row on WebGL2 then
-turns by the target's height rather than the render size's. The frame writes that height in
-`occlusion.y`: the scene target keeps the canvas's height at every scale, and GL's fragment rows
-count to it.
+turns by the target's height rather than the render size's. The frame writes the view's target
+height in `occlusion.y`: the camera's target keeps the canvas's height at every scale, and another
+view's target, a reflection's or a probe face's, is the size that the view names. GL's fragment rows
+count to that height in both cases.
 
 The picture tests pin the scale at 0.75, because hold mode has no governor and draws at the preset's
 highest scale. They draw the Creek showcase at a near-square canvas from two points on its route.
