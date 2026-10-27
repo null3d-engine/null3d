@@ -1751,22 +1751,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	// The same scene with the sun's shadow thinned, at each of the three values of its intensity:
-	// none, half and all of it, which is the default. The shadows lighten toward no shadow as the
-	// value falls, and the lit surfaces around them do not change.
+	// none, half and all of it. The shadows lighten toward no shadow as the value falls, and the
+	// lit surfaces around them do not change. All of it is the default, so that picture borrows the
+	// still scene's reference.
 	...(
 		[
-			['none', 0],
-			['half', 0.5],
-			['full', 1],
+			['none', 0, undefined],
+			['half', 0.5, undefined],
+			['full', 1, 'shadows-seam'],
 		] as const
 	).map(
-		([name, intensity]): ImageTest => ({
+		([name, intensity, reference]): ImageTest => ({
 			name: `shadows-intensity-${name}`,
 			sketch: `tests/pages/sketches/shadow-scene-sketch.ts?intensity=${intensity}`,
 			hold: 0,
 			size: [480, 270],
 			sameOnEveryTier: true,
 			tolerance: { maxDiffRatio: 0.005 },
+			...(reference && { reference }),
 		}),
 	),
 	// Car-sized boxes standing on a street, in the last cascade from above, and from a low angle in
@@ -1873,17 +1875,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'spot-shadows',
 	},
 	// The same scene with the two spot lights' shadows thinned at each of their intensity values:
-	// none, half and all of it, which is the default. The tile each light casts into carries the
-	// value beside its tile count, so these pictures are the test that a point or spot light reads
-	// its shadow strength where the shader expects it.
+	// none, half and all of it. The tile each light casts into carries the value beside its tile
+	// count, so these pictures are the test that a point or spot light reads its shadow strength
+	// where the shader expects it. All of it is the default, so that picture borrows the spot
+	// shadows test's reference.
 	...(
 		[
-			['none', 0],
-			['half', 0.5],
-			['full', 1],
+			['none', 0, undefined],
+			['half', 0.5, undefined],
+			['full', 1, 'spot-shadows'],
 		] as const
 	).map(
-		([name, intensity]): ImageTest => ({
+		([name, intensity, reference]): ImageTest => ({
 			name: `spot-shadows-intensity-${name}`,
 			sketch: `tests/pages/sketches/spot-shadows-sketch.ts?intensity=${intensity}`,
 			hold: 0,
@@ -1891,6 +1894,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			switches: ['shadowTileSize=1024'],
 			sameOnEveryTier: true,
 			tolerance: { maxDiffRatio: 0.005 },
+			...(reference && { reference }),
 		}),
 	),
 	// Point light shadows: one point light among casters on every side, whose shadows fall across

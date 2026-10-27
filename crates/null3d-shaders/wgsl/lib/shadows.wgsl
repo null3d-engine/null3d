@@ -501,7 +501,8 @@ fn cube_face(direction: vec3f) -> u32 {
     return select(5u, 4u, direction.z > 0.0);
 }
 
-/// How much of a point or spot light reaches a point: 1 in full light, 0 in full shadow. `first`
+/// How much of a point or spot light reaches a point: 1 in full light, 0 in full shadow, mixed
+/// toward full light by the share of its shadow that the light draws. `first`
 /// is the light's first tile. `relative` is the point's position relative to the main camera, as
 /// `sun_shadow` takes it, `normal` its unit normal, `to_light` the unit direction toward the light, and `gap` the distance to it.
 /// The light's biases are in meters, up to one texel of the tile at the point's distance from the
