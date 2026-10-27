@@ -18,6 +18,7 @@ import {
 	parityCount,
 	playwrightCounts,
 	releaseVersion,
+	wholeCommit,
 	workflowResult,
 } from './gate';
 import { type BenchResult, type RunSummary, type SummaryRow, summarizeRuns } from './report';
@@ -248,6 +249,22 @@ describe('the gate steps', () => {
 		const byHand = { ...run, event: 'workflow_dispatch', headBranch: 'm3-start', databaseId: 43 };
 		expect(countedRun([byHand, run], ci)).toEqual(byHand);
 		expect(countedRun([{ ...run, headBranch: 'm3-start', databaseId: 41 }, run], ci)).toEqual(run);
+	});
+
+	test('make a whole hash of a short commit, and refuse a commit the repository lacks', () => {
+		const whole = '6abef3495c'.padEnd(40, '0');
+		// The tool asks git for the commit the hash names; a hash that names nothing makes git exit
+		// nonzero, which is how the tool tells a short one from a wrong one.
+		const git = (args: string[]) => {
+			expect(args).toEqual(['rev-parse', '--verify', '6abef3495^{commit}']);
+			return `${whole}\n`;
+		};
+		expect(wholeCommit('6abef3495', git)).toBe(whole);
+		expect(
+			wholeCommit('notacommit', () => {
+				throw new Error('fatal: Needed a single revision');
+			}),
+		).toBeNull();
 	});
 
 	test('judge the desktop target by own work against three.js', () => {

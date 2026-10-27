@@ -184,7 +184,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'dist/assets.wasm',
 			'src/assets/encode-worker.js',
 			'templates/empty/AGENTS.md',
-			'templates/empty/.claude/agent-hook.mjs',
+			'templates/empty/.agent/agent-hook.mjs',
 			'templates/empty/.claude/settings.json',
 			'templates/empty/.codex/hooks.json',
 			'templates/empty/src/sketch.ts',

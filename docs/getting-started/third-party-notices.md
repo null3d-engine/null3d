@@ -16,9 +16,9 @@ Some null3D packages ship code from other projects, as the original file or as a
 
 | Package | Third-party code | License | Where | Notices |
 | --- | --- | --- | --- | --- |
-| `@null3d/engine` | Basis Universal 2.50 with Zstandard, meshoptimizer 1.3.0, Draco 1.5.7, three.js 0.186.1, TinyEXR and OpenEXR, Linearly transformed cosines, Filament, and the core's Rust crates | Apache License 2.0, BSD 3-Clause and MIT | `vendor/`, the shader modules, `panorama-worker.js`, `dist/wasm` | `THIRD-PARTY-NOTICES.txt` |
+| `@null3d/engine` | Basis Universal 2.50 with Zstandard, meshoptimizer 1.3.0, Draco 1.5.7, three.js 0.186.1, TinyEXR and OpenEXR, Linearly transformed cosines, Filament, KinoBokeh and Unity's post-processing stack v1, AMD FidelityFX FSR 1 and SSSR, Qualcomm Snapdragon GSR 1, and the core's Rust crates | Apache License 2.0, BSD 3-Clause and MIT | `vendor/`, the shader modules, `panorama-worker.js`, `dist/wasm` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/cli` | Basis Universal 2.50 with Zstandard, ufbx 0.23.1, the `exr` and `lebe` crates, three.js 0.186.1, and the asset module's other crates | Apache License 2.0, BSD 3-Clause and MIT | `vendor/`, `dist/assets.wasm` | `THIRD-PARTY-NOTICES.txt` |
-| `@null3d/vite-plugin` | naga and naga-types 30.0.1, naga_oil 0.23.0, serde, serde_json, toml, and the shader compiler's other crates | MIT, Apache License 2.0 and Zlib | `dist/shader-compiler.wasm` | `THIRD-PARTY-NOTICES.txt` |
+| `@null3d/vite-plugin` | naga and naga-types 30.0.1, naga_oil 0.23.0, serde, serde_json, toml, the shader compiler's other crates, and the engine shaders it embeds: three.js 0.186.1, Filament, KinoBokeh and Unity's post-processing stack v1, AMD FidelityFX, Qualcomm Snapdragon GSR 1 | MIT, Apache License 2.0, BSD 3-Clause and Zlib | `dist/shader-compiler.wasm` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/controls` | three.js 0.186.1, the math and the option names of its controls | MIT | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/geometry` | three.js 0.186.1, its generators, curves, paths and shapes; earcut 3.0.2 | MIT and ISC | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/three-compat` | three.js 0.186.1, its tone curves and its outline pass | MIT | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
@@ -44,6 +44,9 @@ The null3D packages themselves are offered under the MIT License or the Apache L
 | Draco 1.5.7, the glTF decoder | Apache License 2.0 | `vendor/draco` |
 | three.js 0.186.1: the specular table, the math, the tone curves, the ambient occlusion and wide line shaders, and the HDR and EXR readers | MIT | the core, the shader library, `panorama-worker.js` |
 | Filament: the specular anti-aliasing kernel, the anisotropic highlight, and AgX's punchy look | Apache License 2.0 | the shader library |
+| KinoBokeh and Unity's post-processing stack v1: the depth-of-field gather, its setup and the composite | MIT | the shader library |
+| AMD FidelityFX: FSR 1's RCAS sharpening and SSSR's ray march | MIT | the shader library |
+| Qualcomm Snapdragon GSR 1: the render-scale upscale | BSD 3-Clause | the shader library |
 | TinyEXR and OpenEXR, whose code the EXR decoders follow | BSD 3-Clause | `panorama-worker.js` |
 | Linearly transformed cosines, the area light tables | BSD 3-Clause | `vendor/ltc` |
 | The Rust crates of the core: the standard library, wasm-bindgen, bumpalo, cfg-if, once_cell and dlmalloc | MIT or Apache License 2.0 | `dist/wasm` |
@@ -52,7 +55,7 @@ The full texts are in the engine's `THIRD-PARTY-NOTICES.txt`.
 
 ## The tools
 
-The command-line tool and the Vite plugin put no code in a page. Their packages still ship WebAssembly modules.
+The command-line tool and the Vite plugin put no code in a page. Their packages still ship WebAssembly modules. The Vite plugin's module also holds the text of every engine shader, so the projects whose code those shaders port are named there too.
 
 `@null3d/cli` ships these parts:
 
@@ -72,6 +75,10 @@ The command-line tool and the Vite plugin put no code in a page. Their packages 
 | naga and naga-types 30.0.1, and naga_oil 0.23.0, the WGSL parser, validator and translator | MIT or Apache License 2.0 |
 | serde 1.0.229, serde_json 1.0.151 and toml 1.1.6, the module's JSON and TOML interfaces | MIT or Apache License 2.0 |
 | The other crates of the shader compiler, such as indexmap, hashbrown, regex and codespan-reporting | MIT, Apache License 2.0 or Zlib, as each crate states |
+| The engine shaders in the module: three.js's ports, Filament's kernel and punchy look | MIT and Apache License 2.0 |
+| The engine shaders in the module: KinoBokeh and Unity's post-processing stack v1 | MIT |
+| The engine shaders in the module: AMD FidelityFX FSR 1's RCAS and SSSR's ray march | MIT |
+| The engine shaders in the module: Qualcomm Snapdragon GSR 1 | BSD 3-Clause |
 
 ## The example add-ons
 
