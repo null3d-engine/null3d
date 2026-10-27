@@ -663,7 +663,7 @@ export interface DirectionalShadowOptions {
 	/**
 	 * How much of the light's shadow it draws, from 0 for none to 1, the default, for all of it.
 	 * The shader mixes each shadow lookup toward full light by the rest, as three.js's
-	 * `LightShadow.intensity` does. It needs no new shader variant.
+	 * `LightShadow.intensity` does.
 	 */
 	intensity?: number;
 }

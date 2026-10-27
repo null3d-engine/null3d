@@ -182,7 +182,7 @@ if (next !== held) {
 
 A new cascade count or map size makes the shadow map again, so set them at setup. The other settings cost nothing to change, so a sketch can change them in any frame.
 
-The `shadow` option and `setShadow` of spot and point lights take `bias`, `normalBias` and `intensity` alone, with the same defaults. Both are in meters, up to one texel of the light's tile at the receiving surface's distance from the light. The preset sets the tile size.
+The `shadow` option and `setShadow` of spot and point lights take `bias`, `normalBias` and `intensity` alone, with the same defaults. The biases are in meters, up to one texel of the light's tile at the receiving surface's distance from the light. The preset sets the tile size.
 
 ## Where the cascades split
 
@@ -443,6 +443,7 @@ WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth tex
 - `light.shadow.camera` has no equivalent. The cascades fit the camera's view by themselves, so delete the shadow camera's bounds.
 - `light.shadow.mapSize` becomes one number, `mapSize`, the texels on each side.
 - `light.shadow.normalBias` is in meters, as in three.js. `light.shadow.bias` is in meters too, where three.js counts depth units. Both scale with each surface's angle to the light, and one texel caps them. Start from the defaults.
+- `light.shadow.intensity` carries over as it stands, from 0 for no shadow to 1 for all of it. It costs the frame nothing, because the shader mixes each lookup toward full light.
 - `renderer.shadowMap.type` becomes the `shadowFilter` quality setting: `PCFShadowMap` and `PCFSoftShadowMap` map to 3 or 5. `BasicShadowMap` and `VSMShadowMap` have no equivalent.
 - `light.shadow.radius` and `light.shadow.blurSamples` become the `shadowFilter` setting too, for every light.
 - The CSM addon is built in: set `cascades` on the directional light. Its `maxFar` and `shadowMapSize` become `distance` and `mapSize`.
