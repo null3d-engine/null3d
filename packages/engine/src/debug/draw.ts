@@ -23,6 +23,7 @@ import type { CoreMemory, ViewHolder } from '../scene/memory';
 import {
 	type Camera,
 	type DirectionalLight,
+	type Mesh,
 	Object3D,
 	type OrthographicCamera,
 	type PerspectiveCamera,
@@ -151,6 +152,12 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 	private readonly followedLights: number[] = [];
 	/** An object's world matrix: rows of a 3 x 4 matrix, with the translation in 64 bits. */
 	private readonly matrix = new Float64Array(C.CORE_MATRIX_FLOATS);
+	/** The center of a culling sphere, which the levels view draws. */
+	private readonly sphereCenter = new Float64Array(3);
+	/** The culling spheres drawn in this frame. */
+	private spheresDrawn = 0;
+	/** Visits each level mesh for the culling spheres, made once so a frame allocates nothing. */
+	private readonly visitCullingSphere = (object: Mesh): boolean => this.drawCullingSphere(object);
 	/**
 	 * Corners in world space: a frustum's near plane's four, then its far plane's, or a light's
 	 * square's four.
@@ -376,27 +383,30 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 	 * levels of detail, from the object's world matrix and the mesh's own sphere.
 	 */
 	private drawCullingSpheres(): void {
-		let drawn = 0;
-		this.scene.forEachLevelMesh((object) => {
-			if (drawn >= MAX_CULL_SPHERES) return false;
-			const mesh = object.mesh;
-			if (mesh === undefined || this.core.readWorldMatrix(object.handle, this.matrix) !== 0)
-				return true;
-			const m = this.matrix;
-			// The largest axis scale of the world matrix, as the culling shader reads it.
-			const scale = Math.max(
-				Math.hypot(m[0] as number, m[4] as number, m[8] as number),
-				Math.hypot(m[1] as number, m[5] as number, m[9] as number),
-				Math.hypot(m[2] as number, m[6] as number, m[10] as number),
-			);
-			this.sphere(
-				[m[3] as number, m[7] as number, m[11] as number],
-				mesh.radius * scale,
-				CULL_SPHERE_COLOR,
-			);
-			drawn += 1;
+		this.spheresDrawn = 0;
+		this.scene.forEachLevelMesh(this.visitCullingSphere);
+	}
+
+	/** Draws the culling sphere of one object whose mesh has levels, or passes the limit. */
+	private drawCullingSphere(object: Mesh): boolean {
+		if (this.spheresDrawn >= MAX_CULL_SPHERES) return false;
+		const mesh = object.mesh;
+		if (mesh === undefined || this.core.readWorldMatrix(object.handle, this.matrix) !== 0)
 			return true;
-		});
+		const m = this.matrix;
+		// The largest axis scale of the world matrix, as the culling shader reads it.
+		const scale = Math.max(
+			Math.hypot(m[0] as number, m[4] as number, m[8] as number),
+			Math.hypot(m[1] as number, m[5] as number, m[9] as number),
+			Math.hypot(m[2] as number, m[6] as number, m[10] as number),
+		);
+		const center = this.sphereCenter;
+		center[0] = m[3] as number;
+		center[1] = m[7] as number;
+		center[2] = m[11] as number;
+		this.sphere(center, mesh.radius * scale, CULL_SPHERE_COLOR);
+		this.spheresDrawn += 1;
+		return true;
 	}
 
 	/**
