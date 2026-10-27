@@ -67,12 +67,10 @@ const INCOMPLETE = new Set([
 	'M3-O1',
 	'M3-G2',
 	'M3-G3',
-	'M3-R2',
 	'M3-R3',
 	'M3-R4',
 	'M3-R19',
 	'M3-V1',
-	'M3-V3',
 ]);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
@@ -135,7 +133,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
-	'M3-R2': 'the stress test has not run on an iPad or a phone-class device since the change',
 	'M3-R3': 'no 5% match is shown for the upload arenas or the shadow casters',
 	'M3-R4': 'D-247 does not compare frame time, and the Mac GPU figure is owed',
 	'M3-R19':
@@ -169,7 +166,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"every vegetation picture passes in both reference sets on both GPUs and the crowns keep their coverage at three distances, and the leaf cells now hold a spray of lobed, veined, damaged leaves instead of one smooth shape. Its author's verdict is that the atlas is at least as good as Creek's as a texture, and that the crown is still paler and flatter because the material lights it with one uniform light while Creek's texture carries painted shadowing, which belongs to M3-V7. The task's line asks the owner to judge the two side by side, and the paint time per device is owed too",
 	'M3-V1':
 		'Creek has no WebGPU figure on any device, and no vegetation task after it has its own budget per preset',
-	'M3-V3': 'the Mac, iPad and phone GPU time and memory are not recorded',
 };
 
 /** The plan's groups, by the first letter of a task's part, in the plan's order. */
