@@ -285,7 +285,14 @@ fn a_views_own_target_height_reaches_the_frame() {
     // 180 at the whole scale and 160 by 90 at half of it. The camera's target keeps the canvas's
     // height at both scales.
     assert_eq!(height(reflection, RenderScale::FULL), 180.0);
-    assert_eq!(height(reflection, RenderScale::from_thousandths(500)), 90.0);
+    let half_reflection = height(reflection, RenderScale::from_thousandths(500));
+    assert_eq!(half_reflection, 90.0);
+    // A custom material turns a fragment's row by this height: the last row of the mirror's target
+    // turns to 0.5, where it turned to -89.5 while the height was 0.
+    assert!(
+        half_reflection - 89.5 > 0.0,
+        "a reflection's rows must not turn negative"
+    );
     assert_eq!(
         height(ViewId::CAMERA, RenderScale::from_thousandths(500)),
         360.0

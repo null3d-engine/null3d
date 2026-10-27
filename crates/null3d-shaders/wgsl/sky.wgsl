@@ -57,6 +57,7 @@ fn fs(in: SkyOut) -> @location(0) vec4f {
     return null3d::tonemap::finish(
         color * scale,
         in.clip.xy,
+        frame.occlusion.y,
         frame.output,
         frame.target_size.xy,
         frame.vignette,

@@ -5,10 +5,15 @@
 // reported the canvas would move both changes to a share of the canvas, and at half the scale the
 // paint would not change at all. The page fixes the whole scale and the floor of each preset, in
 // every thread mode and on every GPU path.
+//
+// The same place serves the vignette that the 8-bit path's scene shaders apply: a plain bright
+// plane below the whole scale must darken as much at its top as at its bottom. The vignette reads
+// the canvas's middle instead of the drawn image's when the target's corner is not turned, which
+// darkens the top band far more than the bottom one.
 import { expect, test } from '@playwright/test';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
-import { FRAME_RESOLUTION_SCALES } from '../pages/lib/render-scale.ts';
+import { FRAME_RESOLUTION_SCALES, VIGNETTE_SCALES } from '../pages/lib/render-scale.ts';
 
 interface FrameResolutionResult {
 	error?: string;
@@ -16,6 +21,8 @@ interface FrameResolutionResult {
 	scales: number[];
 	across: number[];
 	down: number[];
+	top: number[];
+	bottom: number[];
 	failures: string[];
 }
 
@@ -55,3 +62,30 @@ for (const { tier, query } of TIERS)
 				).toBeLessThanOrEqual(PLACE_TOLERANCE);
 			}
 		});
+
+/**
+ * The largest gap between the top and bottom bands of the vignette, in levels of 255. The dither
+ * moves a mean by a level or so. A vignette whose center sits at the canvas's middle rather than
+ * the drawn image's darkens the top band far more than the bottom one below the whole scale.
+ */
+const VIGNETTE_TOLERANCE = 6;
+
+for (const { tier, query } of TIERS)
+	test(`the vignette is centered below the whole scale on ${tier}`, async ({ page }) => {
+		// The 8-bit path is the one whose scene shaders apply the vignette, so the test takes it on
+		// every path, where the corner's place differs.
+		await page.goto(`frame-resolution.html?${query}&vignette&hdr=off`);
+		const result = await pageResult<FrameResolutionResult>(page, 45_000);
+		expect(result.error).toBeUndefined();
+		expect(result.tier).toBe(tier);
+		expect(result.failures).toEqual([]);
+		expect(result.scales).toEqual(VIGNETTE_SCALES);
+		for (const [index, scale] of result.scales.entries()) {
+			const top = result.top[index] ?? 0;
+			const bottom = result.bottom[index] ?? 255;
+			expect(
+				Math.abs(top - bottom),
+				`the vignette reads ${top.toFixed(1)} at the top and ${bottom.toFixed(1)} at the bottom at render scale ${scale}`,
+			).toBeLessThanOrEqual(VIGNETTE_TOLERANCE);
+		}
+	});
