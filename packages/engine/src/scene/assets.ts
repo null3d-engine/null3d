@@ -1,7 +1,7 @@
 // The sketch's loading calls, `ctx.assets`: files downloaded with fetch and decoded by the browser,
 // by the KTX2 transcoder (ktx2.ts), by the color grading table makers (lut-files.ts), by the
 // environment map reader (environment-file.ts) or by the HDR file readers (panorama.ts), outside
-// the sketch's frames, and a count of the downloads for loading screens. Built-in environments need
+// the sketch's frames, and the bytes of the downloads for loading screens. Built-in environments need
 // no file: the GPU makes them (builtin-environments.ts), as it filters HDR files. Relative addresses resolve against the page's address, in every thread
 // mode. Files that `preload` downloaded wait in memory until a load takes them, and loads of one
 // address at the same time share one download; the HTTP cache keeps everything else.
@@ -773,8 +773,9 @@ export class Assets {
 	}
 
 	/**
-	 * Calls `handler` each time a download finishes or fails, with the files downloaded so far and
-	 * the files asked for so far. Loads that take a file that `preload` downloaded count no
+	 * Calls `handler` as a download's bytes arrive and when one finishes or fails, with the bytes
+	 * downloaded so far, the bytes expected so far and the address whose bytes moved, as
+	 * `ProgressHandler` describes. Loads that take a file that `preload` downloaded report no
 	 * further. Returns a function that removes the handler.
 	 */
 	onProgress(handler: ProgressHandler): () => void {
