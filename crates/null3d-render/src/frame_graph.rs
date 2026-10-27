@@ -492,10 +492,42 @@ const DECAL_REDRAW_PASS: &str = "DecalRedraw";
 const PARTICLE_DEPTH_PASS: &str = "ParticleDepth";
 const PARTICLE_DEPTH: &str = "particleDepth";
 /// The color target of the camera's depth prepass while ambient occlusion splits it from the
-/// opaque pass. No pass reads it: it gives the prepass's render pass the formats that its
-/// pipelines draw into, so each render pass ends without storing it, and it can share a texture
-/// with the scene color, whose life starts after it.
+/// opaque pass, where [`PrepassColor::None`] does not leave it out. No pass reads it: it gives the
+/// prepass's render pass the formats that its pipelines draw into, so each render pass ends without
+/// storing it, and it can share a texture with the scene color, whose life starts after it.
 const PREPASS_COLOR: &str = "prepassColor";
+
+/// How the depth prepass starts the stand-in color that it draws into and never writes, while a
+/// screen step splits it from the opaque pass. A framebuffer that holds such a color and invalidates
+/// it costs Safari's WebGL2 path time that follows the texture's size (WebKit bug 328158). All three
+/// ways draw the same image, and the device run chose the depth-only framebuffer: keeping the color
+/// and clearing it paid the whole charge, while no attachment at all paid a fifth of a millisecond
+/// (D-269).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PrepassColor {
+    /// Keeps the color attachment and starts it from what the texture holds, then invalidates it.
+    /// The engine started this way before the device run, and a benchmark page measures it.
+    Load,
+    /// Keeps the color attachment and clears it. The run shows that the clear does not remove the
+    /// charge, so the engine does not draw this way.
+    Clear,
+    /// Gives the prepass a depth-only framebuffer, with no color attachment at all.
+    #[default]
+    None,
+}
+
+impl PrepassColor {
+    /// The way of the core's code, for the switch that a benchmark page sets. An unknown code
+    /// takes the default.
+    pub const fn from_code(code: u32) -> Self {
+        match code {
+            0 => PrepassColor::Load,
+            1 => PrepassColor::Clear,
+            _ => PrepassColor::None,
+        }
+    }
+}
+
 /// The shadow atlas of point and spot lights: a depth texture array with one layer per tile,
 /// kept between frames.
 const SHADOW_ATLAS: &str = "shadowAtlas";
@@ -770,6 +802,9 @@ pub(crate) struct FrameGraph {
     opaque: Vec<(u16, PassId)>,
     /// True when each view has a depth prepass.
     prepass: bool,
+    /// How a prepass that a screen step splits from the opaque pass starts the stand-in color it
+    /// never draws. WebGPU keeps a clear, which is cheap there.
+    prepass_color: PrepassColor,
     /// True when a skinning pass skins meshes before the passes that draw them.
     skinning: bool,
     /// Each view's depth prepass, with the view's place, with the depth prepass.
@@ -1179,6 +1214,7 @@ impl FrameGraph {
             roles: Vec::new(),
             opaque: Vec::new(),
             prepass: false,
+            prepass_color: PrepassColor::default(),
             skinning: false,
             prepasses: Vec::new(),
             occlusion: false,
@@ -1437,6 +1473,15 @@ impl FrameGraph {
     pub(crate) fn set_depth_prepass(&mut self, on: bool) {
         self.prepass = on;
         self.declared = false;
+    }
+
+    /// Sets how a prepass that a screen step splits from the opaque pass starts the stand-in color
+    /// it never draws. The passes are declared again when it changes.
+    pub(crate) fn set_prepass_color(&mut self, color: PrepassColor) {
+        if color != self.prepass_color {
+            self.prepass_color = color;
+            self.declared = false;
+        }
     }
 
     /// Switches the skinning pass on while the scene draws skinned meshes that a compute pass
@@ -3007,12 +3052,17 @@ impl FrameGraph {
                 let screen = if camera { self.screen_target() } else { None };
                 if screen.is_some() {
                     // The screen's steps give the prepass a render pass of its own, and none of
-                    // them reads this color. WebGL2 therefore starts it from what the texture
-                    // holds, which costs less than a clear of the whole canvas.
+                    // them reads this color: it gives the pass the formats that its pipelines draw
+                    // into, and the pass ends without storing it. WebGPU clears it, which is cheap
+                    // there.
                     prepass = if self.gpu_culling {
                         prepass.creates(PREPASS_COLOR, color)
                     } else {
-                        prepass.creates_overwriting(PREPASS_COLOR, color)
+                        match self.prepass_color {
+                            PrepassColor::Load => prepass.creates_overwriting(PREPASS_COLOR, color),
+                            PrepassColor::Clear => prepass.creates(PREPASS_COLOR, color),
+                            PrepassColor::None => prepass,
+                        }
                     };
                 }
                 prepass = reads_targets(prepass, views, &named, index);
@@ -9140,10 +9190,16 @@ mod tests {
                     .iter()
                     .any(|step| step[..] == ["DepthPrepass1", "Opaque1"])
             );
-            // The prepass stores the depth that the depth step reads and the opaque pass loads,
-            // and drops its stand-in color. WebGL2 need not clear that color, which nothing reads.
+            // The prepass stores the depth that the depth step reads and the opaque pass loads. On
+            // WebGL2 it attaches no color, so it never holds one that it does not write (D-269).
+            // WebGPU keeps its clear, which is cheap there.
             let plan = frames.graph().plan().unwrap();
             let attachments = plan.attachments(&plan.steps()[prepass]);
+            assert_eq!(
+                attachments.iter().filter(|a| !a.depth).count(),
+                usize::from(gpu_culling),
+                "the prepass attaches a color only on WebGPU"
+            );
             for attachment in attachments {
                 let store = if attachment.depth {
                     StoreOp::Store
@@ -9151,23 +9207,20 @@ mod tests {
                     StoreOp::Discard
                 };
                 assert_eq!(attachment.store, store);
-                let load = if attachment.depth || gpu_culling {
-                    LoadOp::Clear
-                } else {
-                    LoadOp::Load
-                };
-                assert_eq!(attachment.load, load, "the prepass's attachments start");
+                assert_eq!(
+                    attachment.load,
+                    LoadOp::Clear,
+                    "the prepass's attachments start"
+                );
             }
             let attachments = plan.attachments(&plan.steps()[opaque]);
             let depth = attachments.iter().find(|a| a.depth).unwrap();
             assert_eq!(depth.load, LoadOp::Load);
             // Three targets of half the size, and the camera's depth readable, which no longer
-            // shares a texture with the side view's depth, whose usage differs. With one sample
-            // of HDR color, the prepass's stand-in color takes a texture of its own too: the
-            // scene color, which it would share, is sampled, and the side view's color is kept.
-            let stand_in =
-                usize::from(format == format::RGBA16_FLOAT && antialias == Antialias::Fxaa);
-            assert_eq!(plan.textures().len(), without + 4 + stand_in);
+            // shares a texture with the side view's depth, whose usage differs. The prepass adds
+            // no texture of its own: on WebGL2 it attaches no color, and on WebGPU its stand-in
+            // color shares the scene color where it can.
+            assert_eq!(plan.textures().len(), without + 4);
             let texture = |name: &str| plan.texture_of(frames.graph().find_resource(name).unwrap());
             let depth = texture(SCENE_DEPTH).unwrap();
             let Surface::Texture(index) = depth else {
@@ -9267,6 +9320,95 @@ mod tests {
             assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
             assert!(frames.graph().find_pass("AoDepth").is_none());
             assert_eq!(frames.ao_texture(), None);
+        }
+    }
+
+    #[test]
+    fn a_prepass_split_from_its_opaque_pass_starts_its_stand_in_color_as_the_switch_says() {
+        let lens = ([1.0; 16], [1.0; 16]);
+        let cases = [
+            (PrepassColor::Load, true, LoadOp::Load),
+            (PrepassColor::Clear, true, LoadOp::Clear),
+            // The color is gone, so the pass draws into its depth alone.
+            (PrepassColor::None, false, LoadOp::Clear),
+        ];
+        for (mode, has_color, load) in cases {
+            let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, false, true);
+            frames.set_prepass_color(mode);
+            frames.sync(&[View::default(), shown()]);
+            let mut list = DrawList::with_capacity(4096);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            frames.set_ao(Some(Ao::default()), None, Some(lens), 0.5);
+            frames.request_pipelines(&mut PipelineCache::default(), 0);
+            frames.sync(&[View::default(), shown()]);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound());
+            frames
+                .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            list.clear();
+            frames
+                .record(
+                    &mut list,
+                    |_| [0.0; 4],
+                    |_| false,
+                    |_, _| Ok(()),
+                    |_| Ok(()),
+                    |_| Ok(()),
+                    |_| Ok(()),
+                )
+                .unwrap();
+            let plan = frames.graph().plan().unwrap();
+            let pass = frames.graph().find_pass("DepthPrepass").unwrap();
+            let step = plan.step_of(pass).unwrap();
+            let attachments = plan.attachments(&plan.steps()[step]);
+            let attached_colors = attachments.iter().filter(|a| !a.depth).count();
+            assert_eq!(
+                attached_colors == 1,
+                has_color,
+                "{mode:?}: the prepass attaches a stand-in color"
+            );
+            if let Some(color) = attachments.iter().find(|a| !a.depth) {
+                assert_eq!(color.load, load, "{mode:?}: the stand-in color's load");
+                assert_eq!(
+                    color.store,
+                    StoreOp::Discard,
+                    "{mode:?}: nothing reads the stand-in color"
+                );
+            }
+            // The pass's commands name the attachments that it draws into, so the color leaves the
+            // draw list with the switch too, and the backend opens a framebuffer without one.
+            let earlier = plan.steps()[..step]
+                .iter()
+                .filter(|step| matches!(step.kind, StepKind::Render { .. }))
+                .count();
+            let began = operands(&list, Op::BeginRenderPass);
+            assert_eq!(
+                began[earlier][0] != NO_TARGET,
+                has_color,
+                "{mode:?}: the prepass's render pass names a color"
+            );
+            // The prepass's stand-in color is the only color in the frame that a pass starts from
+            // what the texture holds and then discards, which is the cost that Safari charges. A
+            // later pass that brings the cost back fails here.
+            for (at, other) in plan.steps().iter().enumerate() {
+                if at == step {
+                    continue;
+                }
+                for attachment in plan.attachments(other) {
+                    assert!(
+                        attachment.depth
+                            || attachment.load != LoadOp::Load
+                            || attachment.store != StoreOp::Discard,
+                        "{mode:?}: another pass loads a color and discards it"
+                    );
+                }
+            }
         }
     }
 

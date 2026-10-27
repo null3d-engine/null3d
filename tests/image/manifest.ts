@@ -547,6 +547,17 @@ function aoTests(): ImageTest[] {
 			tiers: ['webgpu', 'webgl2'],
 			reference: 'ao-wide',
 		},
+		// The ways of starting the prepass's stand-in color draw the same image, since no pass reads
+		// it: the engine's default gives the prepass a depth-only framebuffer, and `clear` keeps a
+		// color and clears it (D-269). Only WebGL2 takes the switch. The default needs no test of its
+		// own, since `ao-wide` draws it already, and that reference was drawn before the change, so an
+		// unchanged match shows that the image did not move.
+		{
+			...test('ao-prepass-color-clear', '?ao=wide'),
+			tiers: ['webgl2'],
+			switches: ['prepass-color=clear'],
+			reference: 'ao-wide',
+		},
 	];
 }
 

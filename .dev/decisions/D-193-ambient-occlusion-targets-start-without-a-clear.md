@@ -1,12 +1,15 @@
 # D-193: Ambient occlusion's WebGL2 targets start without a clear
 
-Status: decided and built. The 3.6 ms that ambient occlusion adds on the iPhone does not come from the clears, and two device measurements decide what owns it. Task: M2-R33.
+Status: decided, built and measured. The 3.6 ms that ambient occlusion adds on the iPhone does not
+come from the clears. The prepass's unwritten stand-in color owns it, and the prepass now attaches no
+color on WebGL2. Task: M2-R33.
 
 Summary: Each of ambient occlusion's three steps draws every texel of its target that a later pass
 reads, and every read clamps inside the drawn corner. So on WebGL2 those targets start without a
 clear, which covers the whole target and costs a Safari 27 iPhone about 0.95 ms. The clears do not
-own the 3.6 ms that ambient occlusion adds on that phone, so the decision rests on the whole-target
-cost alone.
+own the 3.6 ms that ambient occlusion adds on that phone. The prepass's unwritten stand-in color
+does, and a depth-only framebuffer removes that charge
+([D-269](D-269-the-prepass-stand-in-color.md)).
 
 ## Question
 
@@ -61,11 +64,13 @@ each device, through the device runner. The iPhone figures come from the records
 ## Decision
 
 The three steps create their targets with `Pass::creates_overwriting`
-(`crates/null3d-render/src/graph.rs`). `frame_graph.rs` makes that declaration on WebGL2 only. It
-also gives the prepass's stand-in color a load on WebGL2, because no pass reads that target and the
-prepass has a render pass of its own there. The compiler's `plan_attachments` then gives each target
-a load rather than a clear. The WebGPU path keeps its clear. A clear is cheap there, and a load
-would read the whole target.
+(`crates/null3d-render/src/graph.rs`). `frame_graph.rs` makes that declaration on WebGL2 only. The
+compiler's `plan_attachments` then gives each target a load rather than a clear. The WebGPU path
+keeps its clear. A clear is cheap there, and a load would read the whole target.
+
+The prepass, whose stand-in color no pass reads, attaches no color at all on WebGL2. It draws into a
+depth-only framebuffer whose draw buffers are `NONE`, so no color is bound with it and no unused
+color is invalidated ([D-269](D-269-the-prepass-stand-in-color.md)).
 
 Every read of these targets clamps inside the drawn corner. The horizon and denoise steps do so in
 `ao.wgsl`, the depth-weighted read in the opaque pass in `lib/gtao.wgsl`, and the pyramid in
@@ -76,11 +81,25 @@ and the targets read only what their steps write.
 
 ## What owns the rest of the cost
 
-With loaded targets the iPhone's cost is the same 3.6 ms. The cost is flat across render scales,
-and the frame holds 60 frames a second. So it is a wait at the frame's end, not slow frames. The horizon
-search and the denoise draws, or the frame's fence, own it. Two device measurements decide which: a
-call profile of the frame, and a run that forces contact shadows, which skip the horizon search. The
-records of both land in the tested-device pages with their figures.
+A loaded target still costs the same 3.6 ms as a cleared one. The horizon search, the denoise
+draws and the frame's fence were the suspects; none of them owns it. The prepass's stand-in color
+owned it. That color was attached and never written, and the pass's end invalidated it. Safari 26.6
+and later charges render-worker time for that, and the charge follows the texture's size
+([D-269](D-269-the-prepass-stand-in-color.md)).
+
+The profile's 0.95 ms for each clear above was this charge, read as a clear. The same page measures a
+clear of the full-canvas target at 0.22 to 0.24 ms. It measures the unwritten color at 3.78 to
+3.92 ms. The stand-alone page charges the iPads too: 3.26 ms on the iPad 10 and 12.28 ms on the iPad
+Pro 13. The engine's own frame on the iPad 10 pays it in frame time, 4.8 to 7.2 ms, which is the
+stand-alone figure scaled by the larger drawing buffer. Its render worker shows only a slice of that,
+0.52 against 0.64 ms, because its frame is GPU-bound
+([D-269](D-269-the-prepass-stand-in-color.md)).
+
+The 0.2 to 0.7 ms quoted above came from the Medium preset's frame, measured before the prepass's
+stand-in color became a load. It does not show that the iPads are free of the charge.
+
+The prepass's stand-in color is the only attachment of this kind in the engine, as D-269's search
+shows, so this decision's rule stands unchanged for the three steps' targets.
 
 ## Consequences
 
@@ -89,3 +108,8 @@ records of both land in the tested-device pages with their figures.
 - The WebGL2 image tests of ambient occlusion match their references.
 - The engine's docs for the render graph name the exception. A target is cleared at its first write
   only when its writer leaves a texel that a later pass reads.
+- On WebGL2 the prepass that a screen step splits from the opaque pass attaches no color: its draw
+  buffers are `NONE`, so Safari binds no unused color and invalidates none. The framebuffer holds one
+  depth target, as a shadow cascade's does.
+- The frame-graph test walks every step of the ambient occlusion frame and refuses any other color
+  that a pass loads and then discards.
