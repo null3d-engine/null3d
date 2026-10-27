@@ -114,8 +114,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch. The round 24 audit of the aurora fix (findings N1 and N3) records that the tip's capture never runs and that the evidence line claims light the tip does not make; the light sum, the coefficient stride and the aurora pictures are on `fix/m3-sky-layer-light`",
 	'M3-R27':
 		"the owner saw the redrawn aurora beside the current pictures on all three Mac paths and ruled that the lake reflection looks too blurry, so the lake drawing is not accepted yet: find where the blur comes from — how the ice samples the sky, whether the material's roughness picks a blurred level of the environment map, or the reflection's own resolution — sharpen it, show the owner, and then redraw the six demo-aurora references in both sets. The ice-plane fix waits with it so the aurora is redrawn once",
-	'M3-G5':
-		'its branch, `fix/m3-g5-masked-transmission` at `305624b36`, is 14 commits ahead and unmerged. The check refuses it until the branch carries a `GPU-Checked:` line, which blocks the landing; its pushed tip has no CI run; the parity load figures are not in the logs; the mirror figure 0.0325 is WebGPU alone, where compatibility reads 0.0327 and WebGL2 0.0328; the ceiling comment grows by an unstated figure; and the cold build was not taken on a quiet machine',
 	'M3-V2':
 		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
 	'M3-G2': 'no Khronos iridescence sample is tested',
