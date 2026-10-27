@@ -75,8 +75,11 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			// A development build notes the used extension that nothing reads, and a release build
 			// prints nothing.
 			const unread = warnings.filter((text) => text.includes('KHR_materials_variants'));
-			expect(unread).toHaveLength(testInfo.project.name === 'production build' ? 0 : 1);
-			expect(unread[0] ?? '').toContain('an extension that the engine does not read');
+			if (testInfo.project.name === 'production build') expect(unread).toEqual([]);
+			else
+				expect(unread).toEqual([
+					expect.stringContaining('an extension that the engine does not read'),
+				]);
 			// One thread loads every file, so the loader and its worker download once. No file holds
 			// meshopt or Draco data, so no decoder downloads.
 			expect(gltfDownloads(requests)).toEqual({
