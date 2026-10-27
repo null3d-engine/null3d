@@ -50,7 +50,9 @@ for (const paths of GROUPS) {
 		CEILING_PRELOAD,
 		'--conditions=null3d-source',
 	];
-	for (const { file } of HEAVY_CHECKS) args.push(`--path-ignore-patterns=${ignorePatternOf(file)}`);
+	// A check that runs in parts names its file more than once, and the run leaves that file out once.
+	for (const file of new Set(HEAVY_CHECKS.map((check) => check.file)))
+		args.push(`--path-ignore-patterns=${ignorePatternOf(file)}`);
 	args.push(...paths.map(exactTestPath));
 	const started = Date.now();
 	const result = spawnSync('bun', args, {
