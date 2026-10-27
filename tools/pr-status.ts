@@ -53,6 +53,7 @@ const INCOMPLETE = new Set([
 	'M3-E4a',
 	'M3-E6',
 	'M3-E8',
+	'M3-R34',
 	'M3-L3',
 	'M3-R12',
 	'M3-R22',
@@ -121,6 +122,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch. The round 24 audit of the aurora fix (findings N1 and N3) records that the tip's capture never runs and that the evidence line claims light the tip does not make; the light sum, the coefficient stride and the aurora pictures are on `fix/m3-sky-layer-light`",
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
+	'M3-R34':
+		"the fix passes the audit: the check counts the frame wait in `runPipelined`, as the browser's inlining moves its objects out of `slotChange`, and no budget was loosened. The tick waits on an idle re-run of `bun run bench:allocation --gpu webgpu`, since the first run shared the machine at load 16 to 18, and on that run's command, commit, load and figures going into the allocation bullet of .dev/benchmarks.md",
 	'M3-G5':
 		'its branch, `fix/m3-g5-masked-transmission` at `305624b36`, is 14 commits ahead and unmerged. The check refuses it until the branch carries a `GPU-Checked:` line, which blocks the landing; its pushed tip has no CI run; the parity load figures are not in the logs; the mirror figure 0.0325 is WebGPU alone, where compatibility reads 0.0327 and WebGL2 0.0328; the ceiling comment grows by an unstated figure; and the cold build was not taken on a quiet machine',
 	'M3-R23':
