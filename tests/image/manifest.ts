@@ -2499,6 +2499,38 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// The levels view: each copy draws its level in the level's color, at the same places as the
+	// first test's copies. A crisp level switches at once, so the picture holds on every path.
+	{
+		name: 'lod-levels',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp',
+		hold: 0,
+		size: [480, 270],
+		switches: ['view=levels'],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The fade band dithers two level colors, and the dither's phase follows each copy, which each
+	// GPU path numbers its own way, so every path keeps a picture of its own, as `lod-fade` does.
+	{
+		name: 'lod-levels-fade',
+		sketch: 'tests/pages/sketches/lod-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		switches: ['view=levels'],
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// A copy that the size rule hides draws at its base level in the view's striped marker color,
+	// so the picture shows what the rule dropped rather than a hole.
+	{
+		name: 'lod-levels-hide',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?hide',
+		hold: 0,
+		size: [480, 270],
+		switches: ['view=levels'],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// The built-in values of custom materials, at a held time: frame, camera and object, and the
 	// surface's world position, in a surface function and a vertex offset.
 	// A full shader as a custom material, at a held time: a hologram on meshes and instances, and a

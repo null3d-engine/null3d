@@ -30,6 +30,7 @@ use null3d_gpu::drawlist::{DrawList, Op, permutation, sizes, state_flags, templa
 use super::data::{TextureRows, write_rows};
 use super::ids;
 use super::skin::Skins;
+use crate::debug_view::DebugView;
 use crate::frame::{
     FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, bucket_of,
     collect_bucket_keys, put_u32,
@@ -211,9 +212,14 @@ pub(super) struct Layout {
     /// Each bucket's level of detail: its level's error, the bucket of rows of the next coarser
     /// level and its fade bucket, or none for a bucket without levels.
     pub(super) level_links: Vec<LevelLink>,
+    /// The level of each bucket, by bucket, which the levels debug view writes beside each entry.
+    pub(super) bucket_levels: Vec<u32>,
     /// Every bucket that a level's rows draw in, or that a distance band's fade draws in, in bucket
     /// order: the buckets whose entries the staged levels' watches read.
     pub(super) level_buckets: Vec<u32>,
+    /// True while the levels debug view draws: each entry pairs with its level's code, and a source
+    /// that the size rule or a draw range hid draws at its base level, marked.
+    pub(super) codes: bool,
     /// Each scene slot's bucket, with 0 for the slots that draw in the transparent pass: the rows
     /// whose matrices the resident texture needs.
     pub(super) drawn_slots: Vec<u32>,
@@ -370,6 +376,7 @@ impl Layout {
     ) -> Result<(), RecordError> {
         let (scene, batches) = (input.scene, input.batches);
         self.scene_rows = scene.capacity() + 1;
+        self.codes = self.drawn == Drawn::Scene && settings.debug_view() == DebugView::Levels;
         self.batches.clear();
         let (mut resident, mut streamed, mut clusters) = (self.scene_rows, 0u32, 0u32);
         let mut largest_static = 0;
@@ -605,7 +612,15 @@ impl Layout {
             ranged_keys.dedup();
         }
         let ranged = |key: &BucketKey| ranged_keys.binary_search(key).is_ok();
-        expand_level_keys(key_counts, levels, fades, ranged, eligible, &level_bucket);
+        expand_level_keys(
+            key_counts,
+            levels,
+            fades,
+            self.codes,
+            ranged,
+            eligible,
+            &level_bucket,
+        );
         self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
@@ -637,6 +652,7 @@ impl Layout {
         self.draws.clear();
         self.second_draws.clear();
         self.level_links.clear();
+        self.bucket_levels.clear();
         self.level_buckets.clear();
         self.material_views = 0;
         self.pick_views = 0;
@@ -674,7 +690,16 @@ impl Layout {
             let (first, prepass) = pipelines_of(pipelines, pipeline);
             let pairs = is_fade_key(&key);
             // Each key's bucket of rows is at twice its place in the keys.
-            let links = links_of(key, &*key_counts, levels, eligible, &level_bucket);
+            let bands = |key: &BucketKey| fades && ranged(key);
+            let links = links_of(
+                key,
+                &*key_counts,
+                levels,
+                self.codes,
+                bands,
+                eligible,
+                &level_bucket,
+            );
             self.level_links.push(LevelLink {
                 value: links.value,
                 switch: links.switch,
@@ -695,6 +720,7 @@ impl Layout {
                     shift,
                     moves,
                 });
+                self.bucket_levels.push(key_level(key.3).1 as u32);
                 // The pass targets that this key's material samples, so a pass that draws it waits
                 // for the pass that writes them.
                 if textures != 0 {
@@ -768,7 +794,10 @@ impl Layout {
         });
         // Rows that fade list two pairs of words in place of one entry, and a row inside a
         // distance band's edge lists its entry and a fade value.
-        let mut fading_rows = if picks_any(&self.scene_buckets, links) || scene_ranges {
+        // A levels debug view pairs every source with its level code, so every run lists pairs,
+        // while a band and a hidden mark take the same room as a fade.
+        let mut fading_rows = if self.codes || picks_any(&self.scene_buckets, links) || scene_ranges
+        {
             self.scene_rows
         } else {
             0
@@ -777,7 +806,7 @@ impl Layout {
             slot.bucket = bucket_of(batch_key(batch));
             let picked = picks(slot.bucket);
             let ranged = !batch_ranges(batches, batch).is_none();
-            slot.levels = picked || ranged;
+            slot.levels = picked || ranged || self.codes;
             if slot.bucket != NO_BUCKET {
                 let chunks = batch.capacity().div_ceil(CULL_CHUNK);
                 runs += chunks;

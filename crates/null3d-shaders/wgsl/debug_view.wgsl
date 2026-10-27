@@ -12,6 +12,10 @@ enable draw_index;
 // - DEBUG_VIEW_HIGH, overdraw: a little warm light for each fragment, which the pipeline adds
 //   without a depth test, so the pixels that many surfaces cover glow;
 // - both bits, wireframe: lines in the material's base color, from each mesh's edge list;
+// - RECEIVE_SHADOWS and DEBUG_VIEW_HIGH alone, levels: one color for each level of detail, and a
+//   dither of two colors where two levels hand over in a fading band. A source that the size rule
+//   or a draw range hid draws at its base level in a striped marker color, so the view shows what
+//   the culling dropped;
 // - RECEIVE_SHADOWS, shadows: the main directional light's shadow factor as a gray, black in full
 //   shadow and white in full light, so a pixel's value is the factor that lit shading multiplies
 //   the sun's light by. A surface that faces away from the sun is black. With the low bit too, the surface shows no shadows and shows white: it
@@ -32,9 +36,48 @@ enable draw_index;
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{sun_shadow}
 #endif
+#ifdef LOD_FADE
+#import null3d::mesh::{lod_hash, lod_kept}
+#ifdef WEBGL2
+#import null3d::mesh::{INDEX_ROW_SHIFT, draw_record, visible}
+#endif
+#endif
 
 /// The light that each fragment adds in the overdraw view, as linear color.
 const OVERDRAW_STEP: vec3f = vec3f(0.05, 0.025, 0.01);
+
+/// The levels view's colors, one for each level of detail from the base mesh down, as sRGB.
+const LEVEL_COLORS = array<vec3f, 8>(
+    vec3f(0.20, 0.45, 0.95),
+    vec3f(0.20, 0.80, 0.35),
+    vec3f(0.95, 0.85, 0.20),
+    vec3f(0.95, 0.50, 0.15),
+    vec3f(0.90, 0.20, 0.20),
+    vec3f(0.85, 0.30, 0.80),
+    vec3f(0.20, 0.85, 0.85),
+    vec3f(0.70, 0.70, 0.70),
+);
+/// The two sRGB colors of the levels view's marker for a source that the size rule or a draw
+/// range hid. The marker alternates them in squares, so it reads as a mark rather than a level.
+const HIDDEN_DARK: vec3f = vec3f(0.22, 0.0, 0.28);
+const HIDDEN_LIGHT: vec3f = vec3f(1.0, 0.05, 0.85);
+
+#ifdef LOD_FADE
+/// The level code that the culling wrote beside the instance that this vertex shader invocation
+/// draws: its level, a mark for a hidden source, the share of a fading band that it keeps and the
+/// band's side. WebGPU carries it in the copy's fourth id, and WebGL2 in the word after the
+/// instance's entry in the index list.
+fn instance_level_code(i: InstanceIn) -> u32 {
+#ifdef WEBGL2
+    let record = draw_record(i);
+    let index_row = (1u << INDEX_ROW_SHIFT) - 1u;
+    let slot = record.x + i.instance * 2u + 1u;
+    return textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x;
+#else
+    return i.ids.w;
+#endif
+}
+#endif
 
 /// The vertex attributes that the template reads: every vertex format has both.
 struct VertexIn {
@@ -58,6 +101,14 @@ struct VertexOut {
     @location(2) @interpolate(flat, either) material: u32,
     /// The position relative to the camera, which the shadows view looks up in the shadow map.
     @location(3) relative: vec3f,
+#ifdef DEBUG_VIEW_LEVELS
+#ifdef LOD_FADE
+    /// The level code of the instance, and the phase of its dither in a fading band, which the
+    /// levels view reads.
+    @location(4) @interpolate(flat, either) level_code: u32,
+    @location(5) @interpolate(flat, either) level_phase: u32,
+#endif
+#endif
 }
 
 @vertex
@@ -83,6 +134,12 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.clip = clip_of(found, out.relative);
     out.depth = out.clip.zw;
     out.material = found.material;
+#ifdef DEBUG_VIEW_LEVELS
+#ifdef LOD_FADE
+    out.level_code = instance_level_code(i);
+    out.level_phase = lod_hash(found.source);
+#endif
+#endif
     return out;
 }
 
@@ -99,8 +156,35 @@ fn depth_gray(depth: vec2f) -> f32 {
     return clamp(1.0 - log(distance / near) / log(far / near), 0.0, 1.0);
 }
 
+/// The color of level `level`, or the striped marker of a source that the size rule or a draw
+/// range hid, at `pixel`.
+fn tint(level: u32, hidden: bool, pixel: vec2f) -> vec3f {
+    if hidden {
+        let cell = (u32(pixel.x) >> 2u) ^ (u32(pixel.y) >> 2u);
+        return srgb_to_linear(select(HIDDEN_DARK, HIDDEN_LIGHT, (cell & 1u) == 0u));
+    }
+    return srgb_to_linear(LEVEL_COLORS[min(level, 7u)]);
+}
+
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4f {
+#ifdef DEBUG_VIEW_LEVELS
+#ifdef LOD_FADE
+    // The code's low bits name the level, its next bit marks a hidden source, and its upper bits
+    // carry the share of the fading band that the level keeps, with the band's side.
+    let level = in.level_code & 7u;
+    let hidden = (in.level_code & 8u) != 0u;
+    let share = f32((in.level_code >> 4u) & 63u) / 63.0;
+    let fade = select(-share, share, (in.level_code & (1u << 10u)) == 0u);
+    if !lod_kept(fade, in.clip.xy, in.level_phase) {
+        discard;
+    }
+    let linear = tint(level, hidden, in.clip.xy);
+#else
+    // A levels view's keys always carry the fading bit, so this build never draws.
+    let linear = vec3f(0.0);
+#endif
+#else
 #ifdef RECEIVE_SHADOWS
 #ifdef DEBUG_VIEW_LOW
     let lit = 1.0;
@@ -124,6 +208,7 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     let linear = srgb_to_linear(vec3f(depth_gray(in.depth)));
 #else
     let linear = srgb_to_linear(normalize(in.normal) * 0.5 + 0.5);
+#endif
 #endif
 #endif
 #endif

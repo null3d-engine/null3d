@@ -13,6 +13,7 @@ import { presetIndex, type QualityPreset } from '../quality/presets';
 import { FEATURE_STATS_MESSAGE } from '../shared/feature-stats';
 import type { Tier } from '../shared/tier';
 import type { Quality, QualityBudget } from '../sketch/quality';
+import { registerAddonDebugView, unregisterAddonDebugView } from './addon-debug-views';
 import {
 	type FeatureDescription,
 	FeatureRegistry,
@@ -171,6 +172,7 @@ export class FeatureHost {
 		};
 		hosted.quality.settings = hosted.settings;
 		this.hosted.set(feature.name, hosted);
+		for (const view of feature.debugViews ?? []) registerAddonDebugView(view);
 		if (feature.budget) this.registerBudget(hosted, feature.budget);
 		this.update(hosted);
 		if (!hosted.announced) this.announce(hosted);
@@ -182,6 +184,7 @@ export class FeatureHost {
 	remove(name: string): boolean {
 		const hosted = this.hosted.get(name);
 		if (hosted === undefined) return false;
+		for (const view of hosted.feature.debugViews ?? []) unregisterAddonDebugView(view.name);
 		hosted.budget?.remove();
 		this.hosted.delete(name);
 		this.registry.remove(name);
@@ -217,6 +220,7 @@ export class FeatureHost {
 		this.stopped = true;
 		this.forget();
 		for (const hosted of this.hosted.values()) {
+			for (const view of hosted.feature.debugViews ?? []) unregisterAddonDebugView(view.name);
 			hosted.budget?.remove();
 			this.namespaces.releaseFeature(this.addon, exportedNames(hosted.feature));
 		}
@@ -346,6 +350,7 @@ function exportedNames(feature: FeatureDescription): ExportedNames {
 		feature: feature.name,
 		outputs: Object.keys(feature.outputs ?? {}),
 		slots: feature.provides ?? [],
+		debugViews: (feature.debugViews ?? []).map((view) => view.name),
 	};
 }
 

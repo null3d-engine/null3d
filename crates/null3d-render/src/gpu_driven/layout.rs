@@ -35,6 +35,7 @@ use super::ids;
 use super::skin::{SkinnedObject, SkinnedPart, Skinning};
 use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
 use crate::data_texture::{self, DataTexture, TextureRows, write_row_values};
+use crate::debug_view::DebugView;
 use crate::frame::{
     FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
@@ -217,6 +218,9 @@ pub(super) struct Bucket {
     pub(super) moves: bool,
     /// Its level of detail's error and links, for a bucket of a mesh with levels.
     pub(super) levels: KeyLinks,
+    /// The level of detail that the bucket draws, 0 for the base level or a mesh without levels.
+    /// The levels debug view writes it beside each copy.
+    pub(super) level: u32,
     /// True for a fade bucket, whose slice holds each instance as a pair: its entry, then its
     /// fade value's bits.
     pub(super) pairs: bool,
@@ -412,6 +416,8 @@ pub(super) struct Layout {
     object_ranges: ObjectRanges,
     ranges_pending: bool,
     pub(super) buckets: Vec<Bucket>,
+    /// The level of each bucket, by bucket, for the CPU culling of the direct path.
+    pub(super) bucket_levels: Vec<u32>,
     /// The views whose pass targets the buckets' materials sample, as a mask of view places.
     pub(super) material_views: u32,
     /// The views whose pass targets the buckets' pick pipelines sample, as a mask of view places.
@@ -469,6 +475,9 @@ pub(super) struct Layout {
     /// The most words that the CPU culling lists for one view: a source that fades between levels
     /// lists three words more than one that does not.
     cull_rows: u32,
+    /// True while the levels debug view draws: the CPU culling writes each entry's level code, and
+    /// the culling shader writes it into each copy, in place of the fade value.
+    pub(super) codes: bool,
     /// Each batch's part of the tables, in `batch_bases` order.
     batch_rows: Vec<BatchRows>,
     /// The per-frame reset of every indirect draw: instance counts at zero.
@@ -591,6 +600,11 @@ impl Layout {
     /// The most words that the CPU culling lists for one view of this layout.
     pub(super) fn cull_rows(&self) -> u32 {
         self.cull_rows.max(self.sources)
+    }
+
+    /// The level of each bucket, by bucket, which the levels debug view writes beside each copy.
+    pub(super) fn bucket_levels(&self) -> &[u32] {
+        &self.bucket_levels
     }
 
     /// The layer mask of every source, which the scene's layout owns.
@@ -881,6 +895,7 @@ impl Layout {
         picking: bool,
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
+        self.codes = self.drawn == Drawn::Scene && settings.debug_view() == DebugView::Levels;
         self.batch_bases.clear();
         self.value_sources = 0;
         let mut sources = scene_rows;
@@ -1095,7 +1110,15 @@ impl Layout {
             ranged_keys.dedup();
         }
         let ranged = |key: &BucketKey| ranged_keys.binary_search(key).is_ok();
-        expand_level_keys(key_counts, levels, fades, ranged, eligible, &level_bucket);
+        expand_level_keys(
+            key_counts,
+            levels,
+            fades,
+            self.codes,
+            ranged,
+            eligible,
+            &level_bucket,
+        );
         self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
@@ -1129,6 +1152,7 @@ impl Layout {
         }
 
         self.buckets.clear();
+        self.bucket_levels.clear();
         self.draws.clear();
         self.skinned.clear();
         self.clusters.clear();
@@ -1140,7 +1164,16 @@ impl Layout {
         let (mut copied, mut indexed) = (0, 0);
         for &(key, count) in key_counts.iter() {
             let (pipeline, group, _, mesh, material, bounds) = key;
-            let links = links_of(key, &*key_counts, levels, eligible, &level_bucket);
+            let bands = |key: &BucketKey| fades && ranged(key);
+            let links = links_of(
+                key,
+                &*key_counts,
+                levels,
+                self.codes,
+                bands,
+                eligible,
+                &level_bucket,
+            );
             let mesh = levels
                 .mesh_of_key(mesh)
                 .expect("level keys name known levels");
@@ -1295,6 +1328,7 @@ impl Layout {
                 indexed: by_index,
                 moves,
                 levels: links,
+                level: key_level(key.3).1 as u32,
                 pairs: is_fade_key(&key),
                 pick,
                 pick_maps,
@@ -1307,6 +1341,7 @@ impl Layout {
                 feature_ready: feature.is_none_or(|id| settings.feature_instances().is_ready(id)),
                 feature_slot: object.unwrap_or(u32::MAX),
             });
+            self.bucket_levels.push(key_level(key.3).1 as u32);
             *base += count;
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
                 // A skinned part draws its region of skinned vertices, from its first vertex.
@@ -1444,7 +1479,7 @@ impl Layout {
             (0..self.buckets.len() as u32).filter(|&bucket| self.marks[bucket as usize] != 0),
         );
         let fades = self.level_links.iter().any(LevelLink::has_next);
-        self.cull_rows = if fades || self.has_ranges {
+        self.cull_rows = if fades || self.has_ranges || self.codes {
             self.sources.saturating_mul(4)
         } else {
             self.sources
@@ -1482,6 +1517,9 @@ impl Layout {
                 bucket.levels.fade.map_or(0, |bucket| bucket + 1),
                 bucket.bias.to_bits(),
                 bucket.levels.switch as u32,
+                // The level that the bucket draws, which the levels debug view writes beside each
+                // copy in place of the fade value.
+                bucket.level,
             ]);
         }
         self.records_dirty = Some(0..self.buckets.len() as u32);

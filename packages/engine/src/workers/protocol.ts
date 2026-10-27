@@ -89,6 +89,8 @@ export type SketchWorkerInit = CoreHandoff & {
 	replay?: ReplayProgram;
 	/** True when the page records the session's frames and input, for a bug report. */
 	record?: boolean;
+	/** The debug view that the page's `?view` switch asks for, from the start. */
+	debugView?: string;
 	/** The quality preset and settings that the page chose. */
 	quality: QualityStart;
 	/** The highest target frame rate, as the sketch runner's options give it. */

@@ -838,15 +838,30 @@ pub enum RowBiases<'a> {
 }
 
 /// What [`cull_into_buckets`] reads to pick levels of detail: the view's rule, each bucket's link,
-/// and each set's rows by row.
+/// and each set's rows by row. A levels debug view also writes each entry's level code, with the
+/// level of every bucket and whether the rule hid a source.
 #[derive(Clone, Copy)]
 pub struct LevelChoice<'a> {
     /// The view's rule.
     pub rule: LevelRule,
-    /// Each bucket's link: the buckets of a mesh's coarser levels and its fade buckets.
+    /// Each bucket's link: the buckets of a mesh's coarser levels and its fade buckets, which in a
+    /// levels debug view name the level's own bucket.
     pub links: &'a [LevelLink],
     /// Each set's rows, by the set's number.
     pub rows: &'a (dyn Fn(u32) -> LevelRows<'a> + Sync),
+    /// True while the view writes each entry's level code beside it, which its debug view reads.
+    pub codes: bool,
+    /// The level of each bucket, by bucket: 0 for a bucket of a mesh without levels.
+    pub levels: &'a [u32],
+}
+
+impl LevelChoice<'_> {
+    /// The code of bucket `bucket`, whose draw hides `hidden` sources at a fade of `fade`.
+    #[inline(always)]
+    fn code(&self, bucket: u32, hidden: bool, fade: f32) -> u32 {
+        let level = self.levels.get(bucket as usize).copied().unwrap_or(0);
+        crate::levels::level_code(level, hidden, fade)
+    }
 }
 
 impl LevelChoice<'_> {
@@ -860,9 +875,10 @@ impl LevelChoice<'_> {
     }
 
     /// True when culling must read each row of the set `set` in bucket `bucket`: its rows pick
-    /// levels, they draw in a distance range, or both.
+    /// levels, they draw in a distance range, or both. A levels debug view reads every row, to pair
+    /// each entry with its level code.
     pub fn run_looks_up(&self, bucket: u32, set: u32) -> bool {
-        bucket == BY_ROW || self.looks_up(bucket, &(self.rows)(set))
+        self.codes || bucket == BY_ROW || self.looks_up(bucket, &(self.rows)(set))
     }
 
     /// True when culling must read each row of `rows` for bucket `bucket`: it picks a level, it
@@ -922,18 +938,21 @@ pub fn batch_ranges<'a>(batches: &'a BatchTable, batch: &'a InstanceBatch) -> Ro
     }
 }
 
-/// Counts a row's picked buckets in a run's histogram: one entry, two in a fade bucket that lists
-/// pairs, and none for a row that hides.
+/// Counts a row's picked buckets in a run's histogram: one entry, two in a bucket that lists pairs,
+/// and none for a row that hides. A levels debug view lists every entry as a pair, the code of its
+/// level, and marks a hidden row in the bucket it would have drawn from.
 #[inline]
-fn count_picked(histogram: &mut [u32], picked: Picked) {
+fn count_picked(histogram: &mut [u32], home: u32, picked: Picked, codes: bool) {
+    let words = if codes { 2 } else { 1 };
     match picked {
-        Picked::One(bucket) => histogram[bucket as usize] += 1,
+        Picked::One(bucket) => histogram[bucket as usize] += words,
         Picked::Fade { new, old, .. } => {
             histogram[new as usize] += 2;
             histogram[old as usize] += 2;
         }
         Picked::FadeIn { bucket, .. } => histogram[bucket as usize] += 2,
         Picked::FadeOut { old, .. } => histogram[old as usize] += 2,
+        Picked::Hidden if codes => histogram[home as usize] += 2,
         Picked::Hidden => {}
     }
 }
@@ -1079,10 +1098,12 @@ pub fn cull_into_buckets<'a>(
     let CullView {
         offsets, layers, ..
     } = view;
-    // A run looks its rows' buckets up when they each have their own, or when its bucket has
-    // coarser levels, so that each row picks its level.
+    // A run looks its rows' buckets up when they each have their own, when its bucket has coarser
+    // levels, so that each row picks its level, or when a levels debug view pairs every entry with
+    // its level code.
+    let codes = levels.is_some_and(|choice| choice.codes);
     let looks_up = |run: &CullRun| {
-        if run.bucket == BY_ROW {
+        if codes || run.bucket == BY_ROW {
             return true;
         }
         match levels {
@@ -1167,9 +1188,16 @@ pub fn cull_into_buckets<'a>(
                 };
                 match &level_rows {
                     Some((choice, rows)) if choice.looks_up(bucket, rows) => {
-                        count_picked(histogram, choice.pick(rows, offsets, row, bucket));
+                        count_picked(
+                            histogram,
+                            bucket,
+                            choice.pick(rows, offsets, row, bucket),
+                            choice.codes,
+                        );
                     }
-                    _ if bucket != NO_BUCKET => histogram[bucket as usize] += 1,
+                    _ if bucket != NO_BUCKET => {
+                        histogram[bucket as usize] += if codes { 2 } else { 1 }
+                    }
                     _ => {}
                 }
             }
@@ -1276,34 +1304,77 @@ pub fn cull_into_buckets<'a>(
                 *at += 1;
             };
             for &row in visible {
-                let bucket = if run.bucket == BY_ROW {
+                let home = if run.bucket == BY_ROW {
                     row_buckets[row as usize]
                 } else {
                     run.bucket
                 };
                 let picked = match &level_rows {
-                    Some((choice, rows)) if choice.looks_up(bucket, rows) => {
-                        choice.pick(rows, offsets, row, bucket)
+                    Some((choice, rows)) if choice.looks_up(home, rows) => {
+                        choice.pick(rows, offsets, row, home)
                     }
-                    _ if bucket != NO_BUCKET => Picked::One(bucket),
+                    _ if home != NO_BUCKET => Picked::One(home),
                     _ => continue,
                 };
+                let choice = level_rows.map(|(choice, _)| choice);
+                let codes = choice.is_some_and(|choice| choice.codes);
+                let code = |bucket: u32, hidden: bool, fade: f32| {
+                    choice.map_or(0, |choice| choice.code(bucket, hidden, fade))
+                };
                 match picked {
-                    Picked::One(bucket) => put(bucket, entry(row)),
+                    Picked::One(bucket) => {
+                        put(bucket, entry(row));
+                        if codes {
+                            put(bucket, code(bucket, false, 0.0));
+                        }
+                    }
                     Picked::Fade { new, old, t } => {
                         let (fade_new, fade_old) = fade_values(t);
                         put(new, entry(row));
-                        put(new, fade_new.to_bits());
+                        put(
+                            new,
+                            if codes {
+                                code(new, false, fade_new)
+                            } else {
+                                fade_new.to_bits()
+                            },
+                        );
                         put(old, entry(row));
-                        put(old, fade_old.to_bits());
+                        put(
+                            old,
+                            if codes {
+                                code(old, false, fade_old)
+                            } else {
+                                fade_old.to_bits()
+                            },
+                        );
                     }
                     Picked::FadeIn { bucket, t } => {
+                        let fade = t.max(1.0e-6);
                         put(bucket, entry(row));
-                        put(bucket, t.max(1.0e-6).to_bits());
+                        put(
+                            bucket,
+                            if codes {
+                                code(bucket, false, fade)
+                            } else {
+                                fade.to_bits()
+                            },
+                        );
                     }
                     Picked::FadeOut { old, t } => {
                         put(old, entry(row));
-                        put(old, (-t).to_bits());
+                        put(
+                            old,
+                            if codes {
+                                code(old, false, -t)
+                            } else {
+                                (-t).to_bits()
+                            },
+                        );
+                    }
+                    Picked::Hidden if codes => {
+                        put(home, entry(row));
+                        put(home, code(home, true, 0.0));
                     }
                     Picked::Hidden => {}
                 }

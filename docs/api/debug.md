@@ -3,7 +3,7 @@ id: api/debug
 title: Debug drawing and stats
 status: experimental
 since: "0.1"
-summary: "debug.line, box, sphere, arrow, axes, grid, frustum, light and skeleton; the stats overlay, debug.frameStats and @null3d/engine/stats; engine.measure and its figures; debug.view and debug.shadowCamera."
+summary: "debug.line, box, sphere, arrow, axes, grid, frustum, light and skeleton; the stats overlay, debug.frameStats and @null3d/engine/stats; engine.measure and its figures; debug.view, the ?view switch and add-on views; debug.shadowCamera."
 ---
 
 # Debug drawing and stats
@@ -87,7 +87,16 @@ flowchart LR
 
 ```ts
 export default defineSketch(({ debug, input }) => {
-  const views = ['lit', 'normals', 'depth', 'overdraw', 'wireframe', 'shadows', 'motion'] as const;
+  const views = [
+    'lit',
+    'normals',
+    'depth',
+    'overdraw',
+    'wireframe',
+    'shadows',
+    'motion',
+    'levels',
+  ] as const;
   let shown = 0;
   return {
     onUpdate() {
@@ -109,13 +118,40 @@ export default defineSketch(({ debug, input }) => {
 | `'wireframe'` | The edges of each triangle as lines one pixel wide, in the material's color |
 | `'shadows'` | How much of the main directional light's shadow falls on each surface, as a gray: black in full shadow, white in full light. The gray is the factor that lit shading multiplies the sun's light by. A surface that faces away from the sun is black, as no sunlight reaches it. A surface that receives no shadows, or whose material takes no light, is white |
 | `'motion'` | How far each pixel's surface moved on the screen since the last frame, the camera's move included, as a color. The hue gives the direction: red to the right, yellow-green downward, cyan to the left and violet upward. The brightness gives the length, full at 16 pixels. A still pixel is black. Moving objects, instance batch rows, skinned and morphed meshes and the vertex offsets of custom materials all show their motion. See-through surfaces show the motion of what lies behind them |
+| `'levels'` | One color for each [level of detail](../concepts/lod.md) that a draw picks: blue for the base mesh, then green, yellow, orange, red, purple, cyan and gray for the lower levels. Where two levels hand over in a fading band, a dither mixes the two colors. A source that the size rule or a draw range hid draws at its base level in a striped magenta marker, so the view shows what the culling dropped instead of a hole |
 
 - A debug view clears to black and hides the background texture. It uses no tone mapping and no exposure, so its colors reach the canvas as the table gives them. The motion view colors every pixel, the background too, and a background that the camera's turn moves shows that motion.
 - The motion view shows the engine's motion vectors, which [the render graph](../concepts/render-graph.md#motion-vectors) explains. While it shows, the engine keeps the last frame's transforms and skinning results on the GPU. In other frames it keeps nothing and draws no motion pass. In [hold mode](../guides/testing.md#hold-mode) the engine draws the frame before the held one too, so the held frame shows one step of motion.
 - The shading views ignore what a material changes: maps, vertex colors, alpha, blending, depth options and custom shaders, vertex offsets included. A mesh keeps its place and the faces it culls.
 - The first frame of a view builds its GPU pipelines, so objects can be missing from a few frames after a change.
 - The wireframe view keeps an edge list for each mesh once it has shown, which takes twice the GPU memory of the mesh's triangle indices.
-- Debug views work in development builds only. In a release build, `debug.view` does nothing, and the build holds neither their code nor their shader. A name that the engine does not know fails with [E1213](../errors/E1213.md).
+- The levels view reads the level of each draw from the culling that picks it. Each level is a bucket of its own, so the view needs no shader for each material. Its first frame builds the pipelines that carry the level code, so the levels can be missing for a few frames after a change.
+- `debug.cullingSpheres(true)` draws the bounding sphere that culling tests for each of the first 128 objects whose mesh has levels, until `debug.cullingSpheres(false)`. Use it beside the levels view to see why the size rule hid a copy. It reads the mesh's own sphere around the object's origin, so it does not draw the sphere that `setBounds` gave an object. Instance batch rows draw no sphere.
+- Debug views work in development builds only. In a release build, `debug.view` does nothing, and the build holds neither their code nor their shader. A name that the engine does not know, and that no add-on feature registers, fails with [E1213](../errors/E1213.md).
+
+### The view from the address
+
+`?view=<name>` picks any debug view on any page, as `?stats` does: in development builds, and in a production build only when the Vite plugin's `urlSwitches` option is on. The views themselves draw in development builds only, as the section above says. A person, or `bunx @null3d/cli shot --page '/your-page?view=levels'`, can then see any demo's levels with no code change. A name that no view has draws the materials.
+
+### Views from add-ons
+
+An add-on adds a view of its own through the `debugViews` field of its [feature description](features.md#the-fields). Each view gives its name and a `set` callback, which hears when the view starts and stops. The add-on draws the view itself, with its own materials or its own debug drawing. A view's name must not name one of the engine's views, and each name belongs to one add-on.
+
+```ts
+host.add(
+  defineFeature({
+    name: 'terrain',
+    debugViews: [
+      {
+        name: 'terrain-blocks',
+        set: (active) => {
+          blocks.watchLevels(active);
+        },
+      },
+    ],
+  }),
+);
+```
 
 ### Watch the shadow cascades from elsewhere
 

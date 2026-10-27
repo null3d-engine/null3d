@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
+import { registerAddonDebugView, unregisterAddonDebugView } from '../scene/addon-debug-views';
 import { orthographicView } from '../scene/lens';
 import { CoreMemory } from '../scene/memory';
 import {
@@ -469,7 +470,15 @@ describe('debug drawing', () => {
 describe('debug.view', () => {
 	test("switches the core's shading to each view by its code", () => {
 		const { draw, views } = fakeCore();
-		for (const view of ['normals', 'depth', 'overdraw', 'wireframe', 'shadows', 'lit'] as const)
+		for (const view of [
+			'normals',
+			'depth',
+			'overdraw',
+			'wireframe',
+			'shadows',
+			'levels',
+			'lit',
+		] as const)
 			draw.view(view);
 		expect(views).toEqual([
 			C.DEBUG_VIEW_NORMALS,
@@ -477,6 +486,7 @@ describe('debug.view', () => {
 			C.DEBUG_VIEW_OVERDRAW,
 			C.DEBUG_VIEW_WIREFRAME,
 			C.DEBUG_VIEW_SHADOWS,
+			C.DEBUG_VIEW_LEVELS,
 			C.DEBUG_VIEW_LIT,
 		]);
 	});
@@ -484,9 +494,25 @@ describe('debug.view', () => {
 	test('refuses a view that it does not know with E1213', () => {
 		const { draw, views } = fakeCore();
 		expect(() => draw.view('flat' as DebugView)).toThrow(
-			`E1213: debug.view() got "flat", which is not 'lit', 'normals', 'depth', 'wireframe', 'overdraw', 'shadows' or 'motion'.`,
+			`E1213: debug.view() got "flat", which is not 'lit', 'normals', 'depth', 'wireframe', 'overdraw', 'shadows', 'motion' or 'levels', and no add-on feature registers a view with that name.`,
 		);
 		expect(views).toEqual([]);
+	});
+
+	test('reaches a view that an add-on feature registers, and stops it', () => {
+		const { draw, views } = fakeCore();
+		const calls: boolean[] = [];
+		registerAddonDebugView({ name: 'terrain-levels', set: (active) => calls.push(active) });
+		try {
+			draw.view('terrain-levels');
+			expect(calls).toEqual([true]);
+			expect(views).toEqual([]);
+			draw.view('lit');
+			expect(calls).toEqual([true, false]);
+			expect(views).toEqual([C.DEBUG_VIEW_LIT]);
+		} finally {
+			unregisterAddonDebugView('terrain-levels');
+		}
 	});
 });
 

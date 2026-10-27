@@ -804,15 +804,17 @@ variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 
 # The debug views, which development builds of the engine draw in place of every material: the
-# normals, the depth, the overdraw or the wireframe, by the two debug view bits, or the shadows, by
-# RECEIVE_SHADOWS, with the low bit on surfaces that receive none. It reads each
-# instance as the mesh templates do, and stays in shaders.ts, where only development builds import
-# it, so release builds hold none of it.
+# normals, the depth, the overdraw or the wireframe, by the two debug view bits, the shadows, by
+# RECEIVE_SHADOWS with the low bit on surfaces that receive none, or the levels of detail, by
+# DEBUG_VIEW_LEVELS. The levels view reads the level code that the culling
+# writes beside each instance, which WebGL2 lists in the word after a fading entry, so the template
+# builds with LOD_FADE too. It reads each instance as the mesh templates do, and stays in
+# shaders.ts, where only development builds import it, so release builds hold none of it.
 [shaders.debug_view]
 file = "debug_view.wgsl"
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "RECEIVE_SHADOWS", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "RECEIVE_SHADOWS", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH", "SKIN", "MORPH"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "RECEIVE_SHADOWS", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH", "DEBUG_VIEW_LEVELS", "LOD_FADE"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "RECEIVE_SHADOWS", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH", "DEBUG_VIEW_LEVELS", "LOD_FADE", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # The motion debug view's step, which development builds draw over the scene color: each pixel's
 # whole motion as a color, from the motion target and the depth. TONE_MAP writes display color for
