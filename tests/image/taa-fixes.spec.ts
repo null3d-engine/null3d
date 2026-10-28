@@ -165,7 +165,9 @@ for (const gpu of GPUS) {
 			test.setTimeout(900_000);
 			const captures = capturesOn(testInfo.project.name);
 			await page.goto(`taa-fixes.html?case=${effect}&gpu=${gpu}&fps=4&captures=${captures}`);
-			const result = await pageResult<EffectResult>(page, 240_000);
+			// A loaded runner draws the fog slowly, and the page runs four fog scenes in turn. A slower
+			// shard took over four minutes on the WebGPU path, so the wait leaves it room.
+			const result = await pageResult<EffectResult>(page, 480_000);
 			// The figures go into the decision record, which says what each effect did.
 			console.log(
 				`TAAFIX ${effect} on ${result.gpu}: frame-to-frame change ${result.off.toFixed(3)} without the resolve, ${result.on.toFixed(3)} with it, and ${result.onNoMask.toFixed(3)} with its transparency signals off; the offset request alone moves it by ${result.jitter.toFixed(3)}; ${result.skipped} of ${result.captures} captures skipped a frame`,
