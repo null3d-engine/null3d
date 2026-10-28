@@ -25,8 +25,6 @@ const BASE = 'origin/main';
 const PARTIAL: Readonly<Record<string, string>> = {
 	'M3-C1':
 		"the scene, its lanes, rain and the hero car are in, and so are the moods (`createMoods` in the skyway sketch) and the instances demo, which is registered and built on the traffic-lanes add-on. What remains is the owner's look approval: the device records are drawn, the iPad Pro 13's in `20261024-081340-skyway.md` and the Galaxy S24's beside it",
-	'M3-T1':
-		"the measured fence is in and the trim landed and was then reverted with a record: moving the fog write, the picks and the events out of the start cost more bytes than it saved, so the start stays at about 190 KB against this task's 160 KB target. The owner dropped the task as superseded: the target predates the ruling that the start's budget may rise",
 	'M3-B4':
 		'the rain streaks, the storm over any hour and the lamp-following city lights are in the Skyway demo; the wet-surface helper, the windshield drops and the particles link remain',
 };
@@ -74,7 +72,7 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-E8':
 		"the compute pass and its WebGL2 fragment form are built and tested, and the wind add-on fills its field through the hook with a compute pass. The owner's 25 October ruling adds M3-V13's history to the hook, and the first-user outcome the plan names still waits on M3-F9's ocean",
 	'M3-L3':
-		'the WebGPU path draws the patches, but D-213 records the WebGL2 multi-draw path and the whole-level fallback as not built, and D-231 holds the GPU time',
+		'both paths draw the patches, the WebGPU compute pass and the WebGL2 multi-draw walk, with the whole-level fallback for a browser without multi-draw; what holds the tick is three runs: the software picture CI must draw, the iPad and phone rows, and a Firefox run of the fallback',
 	'M3-R22':
 		"the shader cache on the branch is D-248's change, not this task's: it reuses every entry when a compiler change leaves the compiled program identical, 0 compiled and 79 reused in 19 s, where the same change cost an hour. The task's own change, three entries instead of four for every module kind, is on `feat/m3-r22-entry-set` and not on this branch, and the determinism list here still holds `lit`; the two checks' CI times remain unmeasured",
 	'M3-F3':
