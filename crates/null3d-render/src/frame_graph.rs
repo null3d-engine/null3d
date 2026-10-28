@@ -166,6 +166,7 @@ use null3d_gpu::drawlist::{
     DrawList, NO_TARGET, Op, format, layout as bind_layout, pass_flags, permutation, resource_kind,
     texture_usage, view,
 };
+use null3d_gpu::pass_role::{self, PassRole};
 
 use crate::accumulate::{self, AccumulateIds, AccumulatePass};
 use crate::ao::{self, Ao, AoIds, AoPass, Contact, StepSources};
@@ -562,6 +563,8 @@ impl ShadowPasses {
 pub(crate) struct TilePasses {
     pub(crate) tiles: u32,
     pub(crate) size: u32,
+    /// The atlas's last tile while the sun names a hero, whose pass labels itself as the hero's.
+    pub(crate) hero: Option<u32>,
 }
 
 /// The pass targets that the objects of the shadow, motion and pick passes sample, each as a mask
@@ -1695,7 +1698,8 @@ impl FrameGraph {
     /// draws no tiles.
     pub(crate) fn set_tiles(&mut self, tiles: Option<TilePasses>) {
         let tiles = tiles.filter(|t| self.shadow_map && t.tiles > 0);
-        if tiles != self.tiles {
+        let shape = |tiles: Option<TilePasses>| tiles.map(|t| (t.tiles, t.size));
+        if shape(tiles) != shape(self.tiles) {
             self.declared = false;
         }
         self.tiles = tiles;
@@ -5607,6 +5611,7 @@ impl FrameGraph {
                         continue;
                     }
                     let start = list.len();
+                    let label = self.step_label(plan, step, false);
                     let mut began = false;
                     let mut wrote = false;
                     for &pass in plan.passes(step) {
@@ -5617,7 +5622,7 @@ impl FrameGraph {
                                 let place = view.index();
                                 if let Some(pass) = self.declared_views[place].compute_pass() {
                                     if !began {
-                                        list.push(Op::BeginComputePass, &[])?;
+                                        list.push(Op::BeginComputePass, &[label])?;
                                         began = true;
                                     }
                                     let before = list.len();
@@ -5641,7 +5646,7 @@ impl FrameGraph {
                             }
                             role => {
                                 if !began {
-                                    list.push(Op::BeginComputePass, &[])?;
+                                    list.push(Op::BeginComputePass, &[label])?;
                                     began = true;
                                 }
                                 let before = list.len();
@@ -5867,6 +5872,87 @@ impl FrameGraph {
         }
     }
 
+    /// What the frame records for a declared pass: the pass's role and its place among the passes
+    /// of that role, packed into the label that the draw list carries.
+    fn role_label(&self, role: Role) -> u32 {
+        use PassRole as P;
+        let view = |view: ViewId| view.index() as u32;
+        let (code, place) = match role {
+            Role::LightClusters => (P::LightClusters, 0),
+            Role::Skin => (P::Skin, 0),
+            Role::Cull(view_id) => (P::Cull, view(view_id)),
+            Role::Prepass(view_id) => (P::Prepass, view(view_id)),
+            Role::Opaque(view_id) => (P::Opaque, view(view_id)),
+            Role::Occluders(view_id) => (P::Occluders, view(view_id)),
+            Role::Pyramid(view_id) => (P::Pyramid, view(view_id)),
+            Role::LateCull(view_id) => (P::LateCull, view(view_id)),
+            Role::Shadow(view_id) => match view_id.cascade_index() {
+                Some(cascade) => (P::ShadowCascade, cascade as u32),
+                None => {
+                    let tile = view_id.tile_index().unwrap_or_default() as u32;
+                    let hero = self.tiles.and_then(|tiles| tiles.hero);
+                    if hero == Some(tile) {
+                        (P::ShadowHero, 0)
+                    } else {
+                        (P::ShadowTile, tile)
+                    }
+                }
+            },
+            Role::DebugLines => (P::DebugLines, 0),
+            Role::Transparent(view_id) => (P::Transparent, view(view_id)),
+            Role::Decals => (P::Decals, 0),
+            Role::DecalRedraw => (P::DecalRedraw, 0),
+            Role::Pick => (P::Pick, 0),
+            Role::PickResolve => (P::PickResolve, 0),
+            Role::Resolve => (P::Resolve, 0),
+            Role::Bloom(step) => (P::Bloom, u32::from(step)),
+            Role::OutlineMask => (P::OutlineMask, 0),
+            Role::SkinLight => (P::SkinLight, 0),
+            Role::Subsurface(step) => (P::Subsurface, u32::from(step)),
+            Role::Ao(step) => (P::Ao, u32::from(step)),
+            Role::Ssr(step) => (P::Ssr, u32::from(step)),
+            Role::Effect(step) => (P::Effect, u32::from(step)),
+            Role::Dof(step) => (P::Dof, u32::from(step)),
+            Role::FogLight(parity) => (P::FogLight, u32::from(parity)),
+            Role::FogBlock => (P::FogBlock, 0),
+            Role::FogSum => (P::FogSum, 0),
+            Role::FogApply => (P::FogApply, 0),
+            Role::Taa(step) => (P::Taa, u32::from(step)),
+            Role::ViewCopy(view_id) => (P::ViewCopy, view(view_id)),
+            Role::Fullscreen(view_id) => (P::Fullscreen, view(view_id)),
+            Role::Compute(view_id) => (P::Compute, view(view_id)),
+            Role::TransmissionCopy => (P::TransmissionCopy, 0),
+            Role::Motion => (P::Motion, 0),
+            Role::MotionView => (P::MotionView, 0),
+            Role::Weighted => (P::Weighted, 0),
+            Role::WeightedComposite => (P::WeightedComposite, 0),
+            Role::ParticleDepthCopy => (P::ParticleDepthCopy, 0),
+            Role::Accumulate => (P::Accumulate, 0),
+            Role::Final => (P::Final, 0),
+            Role::FinalStill => (P::FinalStill, 0),
+            Role::FinalBloom => (P::FinalBloom, 0),
+            Role::Output => (P::Output, 0),
+            Role::OutputBloom => (P::OutputBloom, 0),
+        };
+        pass_role::label(code, place)
+    }
+
+    /// The label of a GPU pass: a render pass draws for the first of its declared passes, and a
+    /// compute pass takes the role that all of its dispatches share, or [`PassRole::Compute`] when
+    /// they differ, since one pass times them together.
+    fn step_label(&self, plan: &Plan, step: &Step, render: bool) -> u32 {
+        let mut label = 0;
+        for (index, &pass) in plan.passes(step).iter().enumerate() {
+            let each = self.role_label(self.roles[pass.index()]);
+            if index == 0 {
+                label = each;
+            } else if !render && each != label {
+                return pass_role::label(PassRole::Compute, 0);
+            }
+        }
+        label
+    }
+
     /// Begins a render pass with the step's attachments and their load and store operations.
     /// Depth clears to 0, the far plane of reversed depth.
     fn begin_render_pass(
@@ -5907,7 +5993,7 @@ impl FrameGraph {
             }
         }
         let [r, g, b, a] = clear;
-        let operands = [
+        let mut operands = [
             color,
             resolve,
             depth,
@@ -5918,8 +6004,16 @@ impl FrameGraph {
             0f32.to_bits(),
             flags,
             second,
+            self.step_label(plan, step, true),
         ];
-        let count = if second == NO_TARGET { 9 } else { 10 };
+        // The label follows the optional second color target, and takes its place when the pass
+        // has none.
+        let count = if second == NO_TARGET {
+            operands[9] = operands[10];
+            10
+        } else {
+            11
+        };
         list.push(Op::BeginRenderPass, &operands[..count])?;
         Ok(())
     }
@@ -6965,6 +7059,101 @@ mod tests {
         steps(frames)
             .iter()
             .position(|step| step.iter().any(|pass| pass == name))
+    }
+
+    #[test]
+    fn a_pass_label_names_the_hero_tile_apart_from_the_cascades() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.bind_shadow_map(CascadeDepth::Unorm16);
+        frames.set_shadows(Some(ShadowPasses {
+            cascades: 1,
+            map_size: 8,
+            layers: 1,
+        }));
+        frames.set_tiles(Some(TilePasses {
+            tiles: 2,
+            size: 8,
+            hero: Some(1),
+        }));
+        assert_eq!(
+            frames.role_label(Role::Shadow(ViewId::cascade(0))),
+            pass_role::label(PassRole::ShadowCascade, 0)
+        );
+        assert_eq!(
+            frames.role_label(Role::Shadow(ViewId::tile(0))),
+            pass_role::label(PassRole::ShadowTile, 0)
+        );
+        assert_eq!(
+            frames.role_label(Role::Shadow(ViewId::tile(1))),
+            pass_role::label(PassRole::ShadowHero, 0),
+            "the atlas's last tile holds the hero while the sun names one"
+        );
+    }
+
+    #[test]
+    fn a_recorded_frame_gives_each_pass_the_label_of_what_it_draws_for() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.bind_shadow_map(CascadeDepth::Unorm16);
+        frames.set_shadows(Some(ShadowPasses {
+            cascades: 1,
+            map_size: 8,
+            layers: 1,
+        }));
+        frames.set_tiles(Some(TilePasses {
+            tiles: 2,
+            size: 8,
+            hero: Some(1),
+        }));
+        frames.sync(&[View::default()]);
+        let mut list = DrawList::with_capacity(8192);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 1);
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        pipelines.create_new(&mut list, 2).unwrap();
+        frames.request_pipelines(&mut pipelines, 2);
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        list.clear();
+        frames
+            .record(
+                &mut list,
+                |_| [0.0; 4],
+                |_| false,
+                |list, role| {
+                    // A compute pass that records nothing is left out, so the frame's compute
+                    // work takes a dispatch of its own.
+                    if matches!(role, Role::LightClusters | Role::Cull(_)) {
+                        list.push(Op::Dispatch, &[1, 1, 1])?;
+                    }
+                    Ok(())
+                },
+                |_| Ok(()),
+                |_| Ok(()),
+                |_| Ok(()),
+            )
+            .unwrap();
+        let labels: Vec<u32> = operands(&list, Op::BeginRenderPass)
+            .iter()
+            .map(|pass| *pass.last().unwrap())
+            .collect();
+        assert!(labels.iter().all(|&label| label != 0));
+        assert!(
+            labels.contains(&pass_role::label(PassRole::ShadowCascade, 0)),
+            "{labels:?}"
+        );
+        assert!(labels.contains(&pass_role::label(PassRole::ShadowHero, 0)));
+        let computes = operands(&list, Op::BeginComputePass);
+        assert!(computes.iter().all(|pass| pass.len() == 1 && pass[0] != 0));
+        assert!(
+            computes
+                .iter()
+                .any(|pass| pass[0] == pass_role::label(PassRole::Compute, 0)),
+            "a step of unlike compute passes takes the compute role: {computes:?} {:?}",
+            steps(&frames)
+        );
     }
 
     #[test]
@@ -10012,7 +10201,7 @@ mod tests {
                 .unwrap();
             let pairs: Vec<_> = operands(&list, Op::BeginRenderPass)
                 .into_iter()
-                .filter(|pass| pass.len() == 10)
+                .filter(|pass| pass.len() == 11)
                 .collect();
             assert_eq!(
                 pairs.len(),

@@ -388,14 +388,18 @@ for (const part of stats.gpuPassMs ?? []) {
 
 `gpuMs` is the latest pass end less the earliest pass begin, not the sum of the passes' own times. A tile GPU overlaps the spans of its passes, so a sum counts the shared time more than once. A browser gives no period for its timestamps, so `gpuStepMs` finds the step between them as the greatest common divisor of the offsets that the timer reads back. It is null when they look exact. Start Chrome with `--enable-webgpu-developer-features --disable-dawn-features=timestamp_quantization` to turn off its timestamp rounding.
 
-`gpuPassMs` splits `gpuMs` into the parts of the frame, in the order the GPU runs them:
+`gpuPassMs` splits `gpuMs` into the parts of the frame, in the order the GPU runs them. Each pass is named by what it draws for, so a figure belongs to a named pass and not to the slot that it happened to land in:
 
 | Part | What it is |
 | --- | --- |
 | `copies` | Copies recorded before the frame's first pass, where the browser times them |
-| `compute 1`, `compute 2` and so on | Each compute pass, such as the culling pass on WebGPU, where the browser times it |
-| `render 1`, `render 2` and so on | Each render pass, such as the main pass, where the browser times it |
+| `compute` | The compute passes that the browser times together, such as the culling passes on WebGPU |
+| `shadow cascade 1`, `shadow tile 2`, `shadow hero` | A shadow pass, by what casts into it |
+| `opaque`, `transparent`, `final` | The camera's passes, by what they draw |
+| `bloom 0`, `ambient occlusion 2`, `depth of field 1` | A step of a post effect, by its place in the effect's chain |
 | `between passes` | The time from the end of one pass to the start of the next, in a frame of more than one pass where the browser times every pass |
+
+A pass whose role has a place among the passes of that role, such as a shadow cascade, prints it. A role without a place, such as `final`, prints only its name. A pass whose role is the same in each frame keeps its name where the number of passes before it changes.
 
 These figures time the GPU's work only. Work that the browser does outside the passes shows in `gpuLatencyMs` and in the frame rates.
 
