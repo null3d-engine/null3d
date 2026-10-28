@@ -210,11 +210,30 @@ The browser test reads each band's heights back and compares them with the trans
 thread. On WebGPU the worst texel of the read square differs by 0.004 m, and in compatibility mode
 by 0.004 m, of a field of 0.73 m. On WebGL2 it differs by 0.60 m, and the review holds that open.
 
-The transform's own cost per frame, which is the effect page's frames with the passes off and on in
-turns, is owed. The one run made so far took 0.421 ms on WebGPU at Low beside a full engine build,
-so its figures measure the machine as well as the change. Its command is
-`NULL3D_OCEAN_COST=1 bun run test:browser -- ocean-cost.spec.ts` in a quiet window, which times the
-three GPU paths at the four presets.
+The transform's own cost does not separate from a frame of 4 to 5 ms by the effect page's on-and-off
+difference. Over one quiet run of three bands at 128 squared, the difference ranged from -0.62 to
+0.54 ms on WebGPU, and the same work at the four presets spread the same way. So that method does
+not resolve the cost. `ocean-cost.spec.ts` keeps the instrument, gated by `NULL3D_OCEAN_COST`.
+
+The frame rates that each state gives, from `ocean-rate.spec.ts` at 1920 by 1080 on the Low preset,
+put the WebGL2 fallback out of reach. With the ocean on, the page draws 1.21 frames a second; with
+its transform off, 6.32; and with the transform on but the surface hidden, 1.20. The simulation is
+therefore 675 ms of the 833 ms frame, and the surface draw adds nothing measurable.
+
+The options at that size, on the assumption that the cost follows the pixels:
+
+| Option | Transform | Frame | Rate |
+| --- | --- | --- | --- |
+| Three bands at 128 squared, as it stands | 675 ms | 833 ms | 1.2 fps |
+| Two bands | 450 ms | 608 ms | 1.6 fps |
+| One band | 225 ms | 383 ms | 2.6 fps |
+| A 64 squared grid | 169 ms | 327 ms | 3.1 fps |
+| A 32 squared grid | 42 ms | 200 ms | 5.0 fps |
+| A 16 squared grid | 11 ms | 169 ms | 5.9 fps |
+| No simulation, the analytic waves | 0 | 158 ms | 6.3 fps |
+
+The grid rows assume that the cost follows the pixels. If it follows the draws instead, a smaller
+grid does not help, and a 64 squared build would settle that in one run.
 
 ### Decision
 
@@ -251,6 +270,9 @@ vertex's world place is the origin with its place in the mesh.
   after the read buffers, and a unit test in each builder refuses their meeting.
 - The add-on's own page draws the sea on the three GPU paths, and a browser test reads each band's
   heights back and compares them with the transform on the page's thread.
+- The WebGL2 fallback cannot draw the sea at a usable rate: its simulation is 675 ms of an 833 ms
+  frame. The table in the data gives what fewer bands, a smaller grid or the analytic waves would
+  cost. That choice is the owner's, and the demo waits for it.
 - The WebGL2 fragment form draws a sea that differs from the compute form by 0.60 m of height. Its
   stage, size, layer, tile and texel all read right, and a chain that copies its map returns a field
   five times smaller than the map gives, so the map's binding is what differs. The review holds that
