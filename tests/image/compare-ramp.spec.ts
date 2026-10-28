@@ -27,7 +27,7 @@ interface RampProbe {
 	signatures: (SceneSignature | null)[];
 }
 
-for (const compare of ['battle', 'factory', 'night-effects'] as const)
+for (const compare of ['battle', 'factory', 'night-town'] as const)
 	for (const gpu of ['webgpu', 'webgl2'] as const)
 		test(`${compare}'s ramp on null3D keeps the scene updating at each step on ${gpu}`, async ({
 			page,

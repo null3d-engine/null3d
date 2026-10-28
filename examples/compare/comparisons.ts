@@ -231,7 +231,7 @@ export const COMPARISONS: readonly Comparison[] = [
 		effects: LENS_EFFECTS,
 	},
 	{
-		name: 'night-effects',
+		name: 'night-town',
 		code: 'compare/night-town/',
 		title: 'Night effects',
 		summary:
