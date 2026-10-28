@@ -236,7 +236,9 @@ describe('the list of files for offline play', () => {
 			{ root },
 			{ mode: 'production', command: 'build' },
 		);
-		const [workerFiles] = (config.worker as { plugins: () => Plugin[] }).plugins();
+		const workerFiles = (config.worker as { plugins: () => Plugin[] })
+			.plugins()
+			.find((plugin) => plugin.name === 'null3d:worker-files') as Plugin;
 		const ktx2 = `${root}/node_modules/@null3d/engine/lib/scene/ktx2.js`;
 		((workerFiles as Plugin).generateBundle as (o: object, b: object) => void)(
 			{},
