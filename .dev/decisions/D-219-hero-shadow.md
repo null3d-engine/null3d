@@ -93,7 +93,7 @@ frames subtracted. The run's record is [the Mac's hero cost run](../tested-devic
 - No thread's CPU time moved by more than 0.015 ms. The busiest thread moved by 0 to +0.012 ms. The
   sketch worker moved by 0 to +0.015 ms, and the render worker by -0.002 to +0.009 ms.
 - The rule holds on every path: a moving hero costs one extra shadow pass a frame, and a still
-  hero costs none. The record names no millisecond limit. The largest frame GPU time, 3.80 ms,
+  hero costs none. The record names no millisecond limit. The largest frame GPU time, 4.029 ms on WebGL2,
   sits well inside the display's 16.665 ms frame.
 - With no hero the atlas holds no hero layer, and the frame draws only its usual passes. The Rust
   test `the_hero_draws_its_own_tile` checks the layer count, the two cascade passes and the zeroed
