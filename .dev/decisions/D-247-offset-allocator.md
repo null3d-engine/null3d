@@ -52,7 +52,7 @@ The oldest model's range sits before the others in its page. Its removal closes 
 
 On WebGPU all 240 models share one page of about 77 MB, and a removal near the page's start moves nearly all of it. On WebGL2 a page holds 8 models, about 2.6 MB, and a removal moves about seven eighths of one page.
 
-The additions' bytes upload in both churn windows, so they cancel in the difference. A hole-closing frame costs 2.044 ms more of the render worker and 1.770 ms more of the sketch worker's own code. It also uploads 73,570,736 bytes more than a frame that cuts the page's end on WebGPU. On WebGL2 it costs 0.117 ms, 0.107 ms and 2,175,168 bytes more.
+The additions' bytes upload in both churn windows, so they cancel in the difference. A hole-closing frame costs 2.044 ms more of the render worker and 1.770 ms more of the sketch worker's own code. It also uploads 73,570,736 bytes more than a frame that cuts the page's end on WebGPU. On WebGL2 it costs 0.117 ms of the render worker, 0.108 ms of the sketch worker's own code and 2,175,168 bytes more.
 
 The second churn window is modelled on an allocator's free, not run with the allocator. It removes the newest range, which moves no bytes, and an allocator's free does the same. Its placement side is today's append, not the allocator's placement in a hole. The allocator does not run in any frame. The mesh storage appends into pages that grow and shrink. A page that an allocator fills keeps a fixed capacity that the storage does not keep.
 
