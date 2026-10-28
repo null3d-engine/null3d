@@ -1065,9 +1065,11 @@ variants.depth = { defs = ["DEPTH"], targets = ["wgsl", "glsl"] }
 variants.fog = { defs = ["FOG"], targets = ["wgsl", "glsl"] }
 variants.lighting = { defs = ["LIGHTING"], targets = ["wgsl", "glsl"] }
 variants.math = { defs = ["MATH"], targets = ["wgsl", "glsl"] }
+variants.motion_math = { defs = ["MOTION_MATH"], targets = ["wgsl", "glsl"] }
 variants.noise = { defs = ["NOISE"], targets = ["wgsl", "glsl"] }
 variants.reflection = { defs = ["REFLECTION"], targets = ["wgsl", "glsl"] }
 variants.sdf = { defs = ["SDF"], targets = ["wgsl", "glsl"] }
+variants.temporal = { defs = ["TEMPORAL"], targets = ["wgsl", "glsl"] }
 variants.vertex = { defs = ["VERTEX"], targets = ["wgsl", "glsl"] }
 
 # A test shader for the build itself.

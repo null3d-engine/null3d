@@ -1170,6 +1170,7 @@ export class Pipelines {
 			{ binding: 4, visibility: fragment, texture: {} },
 			{ binding: 5, visibility: fragment, texture: {} },
 			{ binding: 6, visibility: fragment, sampler: {} },
+			{ binding: 7, visibility: fragment, texture: {} },
 		];
 		this.defineLayout(LAYOUT_TAA, 'taa', taa(false));
 		this.defineLayout(LAYOUT_TAA_MS, 'taa ms', taa(true));

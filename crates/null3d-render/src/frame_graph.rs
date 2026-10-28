@@ -395,8 +395,13 @@ const FOG_SUM_PASS: &str = "FogSum";
 const FOG_SUMMED: &str = "fogSummed";
 const FOG_APPLY_PASS: &str = "FogApply";
 const FOG_COLOR: &str = "fogColor";
-/// The resolve's step and the copy into each of the two histories.
-const TAA_PASSES: [&str; taa::STEPS + 1] = ["TaaResolve", "TaaCopy0", "TaaCopy1"];
+/// The copy of the scene's color after the opaque pass, which the resolve compares with the
+/// composited color to find where a blended surface drew.
+const TAA_OPAQUE_PASS: &str = "TaaOpaque";
+const TAA_OPAQUE: &str = "taaOpaqueColor";
+/// The resolve's step, and the copy into each of the two histories.
+const TAA_RESOLVE_PASS: &str = "TaaResolve";
+const TAA_COPY_PASSES: [&str; 2] = ["TaaCopy0", "TaaCopy1"];
 /// The resolve's target, which the chain after it reads in place of the scene color.
 const TAA_COLOR: &str = "taaColor";
 /// The kept targets that hold the resolved color of the last frame of each parity.
@@ -1047,6 +1052,9 @@ pub(crate) struct FrameGraph {
     /// True once temporal anti-aliasing's pipelines draw: built, after the frame whose list
     /// created them.
     taa_built: bool,
+    /// True while the declared passes hold the copy of the scene's color after the opaque pass,
+    /// which the resolve compares with the composited color.
+    taa_opaque_declared: bool,
     /// True when the declared passes hold temporal anti-aliasing's steps.
     taa_declared: bool,
     /// The textures that its steps read, found once for each compile of the graph.
@@ -1337,6 +1345,7 @@ impl FrameGraph {
             taa_ids: ids.taa,
             taa: None,
             taa_built: false,
+            taa_opaque_declared: false,
             taa_declared: false,
             taa_textures: CompileCache::default(),
             ao_pass: None,
@@ -2529,6 +2538,9 @@ impl FrameGraph {
     /// Switches the views' transparent passes on while some object blends or lets light through,
     /// and off otherwise. The graph compiles again only when that changes.
     pub(crate) fn set_transparent(&mut self, on: bool) {
+        if self.transparent_on == on {
+            return;
+        }
         self.transparent_on = on;
         self.enable_views();
     }
@@ -3143,6 +3155,19 @@ impl FrameGraph {
         let lines = self.add(lines, Role::DebugLines);
         self.graph.set_enabled(lines, false);
         self.debug_lines = Some(lines);
+        // The copy holds the color that the opaque pass and the debug lines leave, before a
+        // blended surface draws over it, so the resolve can tell where this frame blended. It
+        // reads the scene color so far, which places it between the two passes. It draws whenever
+        // the resolve does, so the bind group that reads it is always the copy.
+        self.taa_opaque_declared = self.taa_draws() && !views.is_empty();
+        if self.taa_opaque_declared {
+            let size = view_size(&views[ViewId::CAMERA.index()]);
+            let copy = Pass::new(TAA_OPAQUE_PASS, PassKind::Fullscreen)
+                .size(size)
+                .reads_so_far(SCENE_COLOR)
+                .creates(TAA_OPAQUE, Target::color(taa::FORMAT));
+            self.add(copy, Role::Taa(taa::OPAQUE_STEP as u8));
+        }
         self.transmission_declared =
             (self.transmission_draws() || self.ssr_draws()) && !views.is_empty();
         if self.transmission_declared {
@@ -3749,19 +3774,24 @@ impl FrameGraph {
             self.graph
                 .keep(name, Target::color(taa::FORMAT), Size::Full);
         }
-        let resolve = Pass::new(TAA_PASSES[0], PassKind::Fullscreen)
+        let resolve = Pass::new(TAA_RESOLVE_PASS, PassKind::Fullscreen)
             .reads(input)
             .reads(SCENE_DEPTH)
             .reads(MOTION_TARGET)
             .reads_so_far(TAA_HISTORIES[0])
             .reads_so_far(TAA_HISTORIES[1])
             .creates(TAA_COLOR, Target::color(taa::FORMAT));
-        self.add(resolve, Role::Taa(0));
+        let resolve = if self.taa_opaque_declared {
+            resolve.reads(TAA_OPAQUE)
+        } else {
+            resolve
+        };
+        self.add(resolve, Role::Taa(taa::RESOLVE_STEP as u8));
         for (index, name) in TAA_HISTORIES.into_iter().enumerate() {
-            let copy = Pass::new(TAA_PASSES[1 + index], PassKind::Fullscreen)
+            let copy = Pass::new(TAA_COPY_PASSES[index], PassKind::Fullscreen)
                 .reads(TAA_COLOR)
                 .writes(name);
-            self.add(copy, Role::Taa(1 + index as u8));
+            self.add(copy, Role::Taa(taa::COPY_STEPS[index] as u8));
         }
     }
 
@@ -5170,6 +5200,8 @@ impl FrameGraph {
                 motion: id(MOTION_TARGET),
                 histories: TAA_HISTORIES.map(id),
                 resolved: id(TAA_COLOR),
+                scene: id(SCENE_COLOR),
+                opaque: id(TAA_OPAQUE),
             }
         });
         self.taa_textures = found;
@@ -5808,8 +5840,7 @@ impl FrameGraph {
                                 .taa_pass
                                 .as_ref()
                                 .expect("temporal anti-aliasing's steps run once they are declared")
-                                // The resolve is step 0; either history's copy is step 1.
-                                .record(list, usize::from(step).min(1))?,
+                                .record(list, usize::from(step))?,
                             Role::ViewCopy(view) => {
                                 if let Some(copies) = self.view_copies.as_ref() {
                                     copies.record(list, view.index())?;
@@ -5867,7 +5898,7 @@ impl FrameGraph {
                 .as_ref()
                 .is_some_and(|fog| fog.parity() == usize::from(parity)),
             // A frame draws only the copy into the history of its own parity.
-            (Role::Taa(step @ 1..), _) => self.taa.is_some_and(|f| f.parity + 1 == step),
+            (Role::Taa(step @ 2..), _) => self.taa.is_some_and(|f| f.parity + 2 == step),
             _ => true,
         }
     }
@@ -8608,6 +8639,74 @@ mod tests {
     }
 
     #[test]
+    fn the_resolve_copies_the_opaque_color_before_a_blend_draws() {
+        let canvas = (1280, 720);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        frames.set_transparent(true);
+        let mut list = DrawList::with_capacity(8192);
+        let mut pipelines = PipelineCache::default();
+        let mut identity = [0.0; 16];
+        for k in 0..4 {
+            identity[k * 5] = 1.0;
+        }
+        frames.set_taa(Some(TaaFrame {
+            taa: taa::Taa::default(),
+            size: canvas,
+            projection: identity,
+            jitter: [0.0; 2],
+            last_jitter: [0.0; 2],
+            reproject: identity,
+            exposure_ratio: 1.0,
+            reset: true,
+            parity: 1,
+        }));
+        let list_pipelines = |frames: &mut FrameGraph, pipelines: &mut PipelineCache| {
+            frames.request_pipelines(pipelines, 1);
+            pipelines
+                .create_new(&mut DrawList::with_capacity(8192), 2)
+                .unwrap();
+            frames.request_pipelines(pipelines, 2);
+        };
+        list_pipelines(&mut frames, &mut pipelines);
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
+        assert!(
+            names.iter().any(|name| name == TAA_OPAQUE_PASS),
+            "{names:?}"
+        );
+        let place = |name: &str| names.iter().position(|n| n == name).unwrap();
+        assert!(place(TAA_OPAQUE_PASS) < place("Transparent"), "{names:?}");
+        assert!(
+            place(TAA_OPAQUE_PASS) < place(TAA_RESOLVE_PASS),
+            "{names:?}"
+        );
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
+            .iter()
+            .filter(|group| (140..143).contains(&group[0]))
+            .map(|group| group[1])
+            .collect();
+        let resolve = if true {
+            bind_layout::TAA_MS
+        } else {
+            bind_layout::TAA
+        };
+        assert_eq!(
+            layouts,
+            [resolve, bind_layout::VIEW_COPY, bind_layout::VIEW_COPY]
+        );
+    }
+
+    #[test]
     fn temporal_anti_aliasing_resolves_before_the_effects_and_keeps_its_history() {
         let canvas = (1280, 720);
         for gpu_culling in [true, false] {
@@ -8634,6 +8733,7 @@ mod tests {
                 jitter: [0.0; 2],
                 last_jitter: [0.0; 2],
                 reproject: identity,
+                exposure_ratio: 1.0,
                 reset: true,
                 parity: 1,
             }));
@@ -8648,10 +8748,19 @@ mod tests {
                 .unwrap();
             let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
             let place = |name: &str| names.iter().position(|n| n == name).unwrap();
-            assert!(place(TAA_PASSES[0]) < place(TAA_PASSES[1]), "{names:?}");
-            assert!(place(TAA_PASSES[0]) < place(TAA_PASSES[2]), "{names:?}");
-            assert!(place(TAA_PASSES[2]) < place("Final"), "{names:?}");
-            assert!(place(TAA_PASSES[0]) < place(EFFECT_PASSES[0]), "{names:?}");
+            assert!(
+                place(TAA_RESOLVE_PASS) < place(TAA_COPY_PASSES[0]),
+                "{names:?}"
+            );
+            assert!(
+                place(TAA_RESOLVE_PASS) < place(TAA_COPY_PASSES[1]),
+                "{names:?}"
+            );
+            assert!(place(TAA_COPY_PASSES[1]) < place("Final"), "{names:?}");
+            assert!(
+                place(TAA_RESOLVE_PASS) < place(EFFECT_PASSES[0]),
+                "{names:?}"
+            );
             assert_eq!(frames.scene_output(), TAA_COLOR);
             let mut arena = UploadArena::default();
             arena.reset(frames.upload_bound());
@@ -8671,7 +8780,7 @@ mod tests {
             };
             assert_eq!(layouts, [resolve, bind_layout::VIEW_COPY]);
             // A frame of parity 1 draws only the copy into the second history.
-            assert!(!frames.draws(Role::Taa(1)) && frames.draws(Role::Taa(2)));
+            assert!(!frames.draws(Role::Taa(2)) && frames.draws(Role::Taa(3)));
         }
     }
 
