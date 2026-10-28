@@ -1067,9 +1067,16 @@ impl MockBackend {
             }
         };
         let (color, resolve, depth) = (optional(o[0])?, optional(o[1])?, optional(o[2])?);
-        let second = match o.get(9) {
-            Some(&id) => Some(self.target(op, id)?),
-            None => None,
+        // The label follows the optional second color target. A list that names no label, as a
+        // test's hand-made list may, is read as if it named none.
+        check(
+            o.len() <= 11,
+            op,
+            "a render pass names its targets, then its label",
+        )?;
+        let second = match o.len() {
+            0..=10 => None,
+            _ => Some(self.target(op, o[9])?),
         };
         if let Some(second) = second {
             let Some(color) = color else {
