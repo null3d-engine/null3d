@@ -117,6 +117,13 @@ const COUNTERS = PHASES + PHASE_NAMES.length;
  */
 const PASS_ROLES = COUNTERS + COUNTER_NAMES.length;
 const RECORD_WORDS = 32;
+// The record's spare words hold one label per timed pass. Nothing bounds the pass count to them but
+// this check, so a new timed pass that outgrows the record stops the module rather than writing past
+// the record at the first frame.
+if (PASS_ROLES + GPU_TIMED_PASSES > RECORD_WORDS)
+	throw new Error(
+		`the frame record holds ${RECORD_WORDS} words, and its counters and ${GPU_TIMED_PASSES} pass labels need ${PASS_ROLES + GPU_TIMED_PASSES}`,
+	);
 
 // Int32 words of the header, then one written count per ring.
 const CAPACITY = 0;
