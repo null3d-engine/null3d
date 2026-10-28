@@ -254,7 +254,9 @@ A feature whose work records inside a pass of the engine's own, such as a draw a
 
 The overlay also lists the GPU time of each step of the frame that the GPU timed, under `GPU steps`. A step is one of the engine's own passes, by its name, or a sketch's pass, by the feature that declares it.
 
-`FeatureStats` holds the same figures. `FeatureHost.stats` gives them to the sketch, for tests and logs. The host sends them to the page, which the overlay reads, whenever one changes. The sketch's copy of a feature's `gpuMs` stays null, because the page is what reads the frame's GPU timings.
+`FeatureStats` holds the same figures. `FeatureHost.stats` gives them to the sketch, for tests and logs. The host sends them to the page, which the overlay reads, whenever one changes. The sketch's copy of a feature's `gpuMs` stays null, because the page is what reads the frame's GPU timings. Each add-on sends its own list. Two add-ons on one page show side by side, and an add-on that stops keeps the other's rows.
+
+A feature's `memory` callback runs when the engine reads the figures, which happens when the quality changes. Call `handle.refresh()` after the feature's objects change outside those moments. One example is a batch that takes its row count once the link has resolved the preset's value. The call reads the figures afresh and sends them; it allocates, so call it between frames.
 
 ## Callbacks
 

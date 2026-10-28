@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from 'bun:test';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { presetSettings, type QualityPreset, type QualitySettings } from '../quality/presets';
+import type { FeatureStatsMessage } from '../shared/feature-stats';
 import { SketchQuality } from '../sketch/quality';
 import { FeatureHost, type FeatureHostOptions } from './feature-host';
 import { defineFeature, type FeatureDescription, type FeatureStats } from './features';
@@ -202,11 +203,11 @@ describe('the governor’s steps reaching an add-on feature', () => {
 describe('the figures of an add-on feature', () => {
 	it('names its values, its budget and its memory, with one GPU scope', () => {
 		const quality = qualityOn('medium');
-		const reported: (readonly FeatureStats[])[] = [];
+		const reported: FeatureStatsMessage[] = [];
 		const host = hostOn({
 			quality,
 			tier: 'webgpu',
-			page: { post: (_name, data) => reported.push(data as readonly FeatureStats[]) },
+			page: { post: (_name, data) => reported.push(data as FeatureStatsMessage) },
 		});
 		host.add(glow());
 		const figures = host.stats;
@@ -219,9 +220,27 @@ describe('the figures of an add-on feature', () => {
 		expect(figure?.bytes).toBe(1024 * 1024);
 		// The feature records no frame work, so the engine times none of its GPU scope.
 		expect(figure?.gpuMs).toBeNull();
-		expect(reported.at(-1)).toEqual(figures);
+		expect(reported.at(-1)).toEqual({ addon: 'test', features: figures });
 		host.destroy();
-		expect(reported.at(-1)).toEqual([]);
+		expect(reported.at(-1)).toEqual({ addon: 'test', features: [] });
+	});
+
+	it('reports a figure that changes after the link is made when the add-on refreshes it', () => {
+		const quality = qualityOn('medium');
+		let bytes = 1024;
+		const reported: FeatureStatsMessage[] = [];
+		const host = hostOn({
+			quality,
+			tier: 'webgpu',
+			page: { post: (_name, data) => reported.push(data as FeatureStatsMessage) },
+		});
+		const feature = host.add(glow({ memory: () => bytes }));
+		expect(feature.stats.bytes).toBe(1024);
+		bytes = 4096;
+		feature.refresh();
+		expect(feature.stats.bytes).toBe(4096);
+		expect(reported.at(-1)?.features[0]?.bytes).toBe(4096);
+		host.destroy();
 	});
 
 	it('removes a feature and gives its budget back', () => {

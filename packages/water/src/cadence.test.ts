@@ -15,7 +15,7 @@ function fakeContext(start: QualityPreset = 'medium') {
 	/** The governor's steps of the budgets' scale that the budgets follow now. */
 	let level = 0;
 	const budgets = new Map<string, { min: number; onScale: OnScale | undefined; scale: number }>();
-	const posted: (readonly FeatureStats[] | undefined)[] = [];
+	const posted: unknown[] = [];
 	const quality = {
 		preset: start,
 		settings: {},
@@ -52,15 +52,15 @@ function fakeContext(start: QualityPreset = 'medium') {
 		engine: { capabilities: { tier: 'webgpu' } },
 		page: {
 			post(_type: string, data?: unknown) {
-				posted.push(data as readonly FeatureStats[] | undefined);
+				posted.push(data);
 			},
 		},
 		scene: { createMesh: () => ({ destroy() {} }) },
 		geometry: { fromArrays: (arrays: unknown) => arrays },
 		materials: { shader: () => ({ set() {}, destroy() {} }) },
 		textures: {
-			fromPass: () => ({ destroy() {} }),
-			fromData: () => ({ destroy() {} }),
+			fromPass: () => ({ bytes: 4096, destroy() {} }),
+			fromData: () => ({ bytes: 4, destroy() {} }),
 		},
 		render: {
 			addPass: () => ({ name: 'water', writes: 'water', place: 1 }),
@@ -71,7 +71,7 @@ function fakeContext(start: QualityPreset = 'medium') {
 	return {
 		ctx: ctx as unknown as SketchContext & { quality: typeof quality },
 		/** The last figures that the page was told. */
-		figures: () => posted.at(-1),
+		figures: () => (posted.at(-1) as { features?: readonly FeatureStats[] } | undefined)?.features,
 		posted,
 		/** Moves the governor's steps, as the frame loop does. */
 		step(next: number) {
@@ -175,10 +175,11 @@ describe('the water’s figures in the stats overlay', () => {
 		expect(figure?.budgetMs).toBe(1.7);
 		expect(figure?.allowedMs).toBe(1.7);
 		// The overlay adds up the GPU time of the reflection pass that the add-on made, which is the
-		// feature's scope. The add-on owns no buffer or texture of its own to report.
+		// feature's scope. The memory counts the mesh arrays, the reflection target and the foam
+		// texture that the add-on made.
 		expect(figure?.scope).toEqual([{ name: 'water', place: 1 }]);
 		expect(figure?.gpuMs).toBeNull();
-		expect(figure?.bytes).toBeNull();
+		expect(figure?.bytes).toBeGreaterThanOrEqual(4100);
 		context.step(1);
 		expect(waterFigure(context)?.settings).toEqual({ reflectionEvery: 4 });
 		expect(waterFigure(context)?.allowedMs).toBe(1.275);

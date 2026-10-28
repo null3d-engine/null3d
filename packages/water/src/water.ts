@@ -7,6 +7,7 @@ import {
 	declareAddonNamespace,
 	defineFeature,
 	FeatureHost,
+	type MeshArrays,
 	type QualityPreset,
 	type ShaderOptions,
 	type SketchContext,
@@ -206,6 +207,24 @@ export function waveHeight(
 	return height;
 }
 
+/** The bytes of one array that a water mesh was made from: a typed array's bytes, or four a number. */
+function arrayBytes(values: unknown): number {
+	if (values === undefined) return 0;
+	const array = values as { readonly byteLength?: number; readonly length?: number };
+	return array.byteLength ?? (array.length ?? 0) * 4;
+}
+
+/** The bytes of the arrays of one water mesh that the add-on made. */
+function meshArrayBytes(arrays: MeshArrays): number {
+	return (
+		arrayBytes(arrays.positions) +
+		arrayBytes(arrays.normals) +
+		arrayBytes(arrays.uvs) +
+		arrayBytes(arrays.uvs1) +
+		arrayBytes(arrays.indices)
+	);
+}
+
 /** A texture of one black texel, which a water without a foam map samples. */
 function noFoam({ textures }: SketchContext): Texture {
 	return textures.fromData({
@@ -270,21 +289,22 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			foamSize: [foamSize[0], foamSize[1]],
 		},
 	});
-	const meshes = bodies.map((body, index) =>
-		scene.createMesh({
-			mesh: geometry.fromArrays(
-				bodyMesh(
-					(Array.isArray(options.shapes) ? options.shapes[index] : options.shapes) as WaterShape,
-					body,
-					level,
-					options.mesh ?? {},
-				),
-			),
+	let meshBytes = 0;
+	const meshes = bodies.map((body, index) => {
+		const arrays = bodyMesh(
+			(Array.isArray(options.shapes) ? options.shapes[index] : options.shapes) as WaterShape,
+			body,
+			level,
+			options.mesh ?? {},
+		);
+		meshBytes += meshArrayBytes(arrays);
+		return scene.createMesh({
+			mesh: geometry.fromArrays(arrays),
 			material,
 			position: [0, 0, 0],
 			receiveShadows: true,
-		}),
-	);
+		});
+	});
 	// The feature carries the cadence through the sketch's quality: the preset gives the row, and
 	// the frame-budget governor doubles it while frames take too long. The stats overlay reads the
 	// cadence and the pass's share of a frame from the host's figures.
@@ -307,6 +327,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 				},
 			},
 			budget: { presets: REFLECT_MS, min: 0.25 },
+			memory: () => meshBytes + mirror.bytes + (ownFoam ? foamMap.bytes : 0),
 			quality: (_preset, _settings, own) => {
 				every = own.settings.reflectionEvery as number;
 			},

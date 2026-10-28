@@ -228,6 +228,9 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 			Math.max(totalSplats, 1),
 		),
 	);
+	// The rows that the batch holds decide the memory that the feature reports, and they are known
+	// only after the link resolved the preset's count.
+	feature.refresh();
 	const draw = await ctx.scene.addFeatureInstances(description, {
 		shader: splatShader,
 		vertices: QUAD,
