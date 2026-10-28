@@ -251,9 +251,11 @@ vertex's world place is the origin with its place in the mesh.
   after the read buffers, and a unit test in each builder refuses their meeting.
 - The add-on's own page draws the sea on the three GPU paths, and a browser test reads each band's
   heights back and compares them with the transform on the page's thread.
-- The WebGL2 fragment form draws a sea that differs from the compute form by 0.60 m of height. The
-  review holds the cause open, and the test marks that path as an expected failure until it is
-  fixed. The demo follows when the three paths draw one sea.
+- The WebGL2 fragment form draws a sea that differs from the compute form by 0.60 m of height. Its
+  stage, size, layer, tile and texel all read right, and a chain that copies its map returns a field
+  five times smaller than the map gives, so the map's binding is what differs. The review holds that
+  open with the test that will name it, and the test marks that path as an expected failure until
+  then. The demo follows when the three paths draw one sea.
 
 ## Consequences
 
