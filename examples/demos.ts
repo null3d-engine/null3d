@@ -343,6 +343,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 180,
 	},
 	{
+		name: 'ocean',
+		group: 'Light, materials and effects',
+		sketch: new URL('./ocean/sketch.ts', import.meta.url),
+		code: 'ocean/',
+		title: 'Ocean',
+		scene: 'Open sea',
+		summary:
+			"An open sea drawn by @null3d/water from three bands of wave spectra. Compute passes transform each band's tile of sea from its spectrum every frame, and one material reads all three at their own scales: the swell lifts the surface, the chop breaks its slope, foam tears off the crests, and the sky mirrors in the water.",
+		hold: 1,
+		timeoutSeconds: 180,
+	},
+	{
 		name: 'weighted-transparency',
 		group: 'Light, materials and effects',
 		sketch: new URL('./weighted-transparency/sketch.ts', import.meta.url),
