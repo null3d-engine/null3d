@@ -106,7 +106,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
 	'M3-A9':
-		"the 1.8 m limit at High was the fixed tile size's fault. D-219 makes the tile size a setting on the owner's ruling, and each preset now defaults to a size that keeps the demo car at or above four times. The costs were taken at loads of 13.6 to 26.3 against the spec's own limit of 8",
+		"the 1.8 m limit at High was the fixed tile size's fault. D-219 makes the tile size a setting on the owner's ruling, and each preset now defaults to a size that keeps the demo car at or above four times. The cost is owed rather than over its limit: the runs taken so far ran at machine loads of 13.6 to 26.3, which the record itself says give no measurement. It waits on the quiet-window timing run the cost spec's protocol describes, not on a ruling",
 	'M3-A11':
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-E10':
