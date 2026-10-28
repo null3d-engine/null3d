@@ -4,9 +4,10 @@
 // its green comes from the layer when the map's fill runs in the held frame. The rough sphere takes
 // the map's diffuse light, which the GPU captures during that fill and whose read lands after the
 // frame's own list is recorded, so a held frame is lit by the core sky's model. In live frames the
-// copy of the map's levels waits for that read, and `sky-layer-light` finds the light with the
-// map's texels or up to a few frames before them, never after. The same scene without the layer is
-// the control, so the green is the layer's rather than the core sky's.
+// copy of the map's levels waits for that read, up to four frames, and `sky-layer-light` finds the
+// light with the map's texels or up to a few frames before them; a read later than the wait
+// publishes the levels without the light. The same scene without the layer is the control, so the
+// green is the layer's rather than the core sky's.
 import { expect, type Page, test } from '@playwright/test';
 import { pageResultWhileProgressing } from '../lib/page-result.ts';
 
