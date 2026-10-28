@@ -25,16 +25,20 @@ export type GpuCheckStatus = 'passed' | 'failed' | 'not measured' | 'not judged'
 
 export interface GpuCheckResult {
 	status: GpuCheckStatus;
-	/** The trailer line, which names the two commits, the status and each page's GPU times. */
+	/** The trailer line: the two commits, the status, and each page's times, direction and noise. */
 	line: string;
 }
 
 const signed = (change: number) => `${change >= 0 ? '+' : ''}${(change * 100).toFixed(1)}%`;
 
-/** A page's GPU times in words, with "slower" when the rule failed it. */
+/**
+ * A page's GPU times in words: its change, whether it is the same, faster or slower beyond its
+ * rounds' noise, and that noise. A slower page that a `Bench-Expected:` trailer names says so.
+ */
 function figureText(preset: string, c: Comparison): string {
-	const slower = c.result === 'slower' ? (c.expected ? ', slower, expected' : ', slower') : '';
-	return `${c.scene} ${preset} ${c.baseline.median.toFixed(2)} to ${c.new.median.toFixed(2)} ms (${signed(c.change)}${slower})`;
+	const direction = c.result === 'slower' && c.expected ? 'slower, expected' : c.result;
+	const noise = (c.noise * 100).toFixed(1);
+	return `${c.scene} ${preset} ${c.baseline.median.toFixed(2)} to ${c.new.median.toFixed(2)} ms (${signed(c.change)}, ${direction}, noise ${noise}%)`;
 }
 
 /**
