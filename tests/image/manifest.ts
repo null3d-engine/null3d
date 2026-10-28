@@ -3128,8 +3128,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clear coats over car paint and sheens over velvet, their maps, and a wet stone whose surface
 	// function sets its coat, in the room's light. The layers spec checks that layers turned off
-	// draw as no layers do. A software GPU builds the layers' shaders and the room slowly.
-	{ name: 'coat-sheen', sketch: COAT_SHEEN_SKETCH, hold: 0, timeoutSeconds: 60 },
+	// draw as no layers do. A software GPU builds the layers' shaders and the room slowly, which
+	// took this page past sixty seconds on seven runs in a row, so it has the time car paint has.
+	{ name: 'coat-sheen', sketch: COAT_SHEEN_SKETCH, hold: 0, timeoutSeconds: 120 },
 	// The coated and sheened balls with a custom material that keeps the default surface: they
 	// draw as the standard material does, so the references are copies of the coat-sheen test's.
 	{
@@ -3137,7 +3138,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: `${COAT_SHEEN_SKETCH}?custom`,
 		hold: 0,
 		reference: 'coat-sheen',
-		timeoutSeconds: 60,
+		timeoutSeconds: 120,
 	},
 	// Car paint: a metallic body with filtered flakes and panel seams, and the same body with each
 	// part left out or with a carbon weave whose tows stretch their highlight. The paint spec
