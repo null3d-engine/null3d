@@ -17,10 +17,13 @@ of those draws, or the engine's work around each pass?
 ## Rule
 
 A pass that need not draw every frame must reach its cadence without changing what the graph
-compiles: the plan is the same on every frame whatever the cadence, and the pass's texture keeps its
-last image while it waits. A caller must be able to change the cadence as often as once a frame, and
-the change must take effect on the next frame. A pass that is switched off must stop drawing, and a
-pass that is switched on again must draw on the next frame.
+compiles: the plan is the same on every frame whatever the cadence. A caller must be able to change
+the cadence as often as once a frame, and the change must take effect on the next frame. A pass that
+is switched off must stop drawing, and a pass that is switched on again must draw on the next frame.
+
+A material that samples a pass's target in a frame that the pass skips shows the last image that the
+pass drew. The target is never culled and never cleared for the cadence, so the picture is the one
+from the pass's last turn, not black.
 
 ## Data
 
@@ -77,6 +80,9 @@ changes. It is not the frame-rate switch.
 
 - `render.setPassEvery(pass, every)` is public. It throws E1101 for a removed pass and E1220 for a
   cadence that is not a whole number from 1.
+- A view's pass stays in the graph while the view is switched on, whatever its cadence; the frame
+  records no passes for a view that is not due. A material that samples the target on a skipped
+  frame reads the last image, as `compute-state`'s `cadence-kept` case checks on every GPU path.
 - The water and ocean add-ons set their reflection's cadence through it in the quality callback, and
   their `update()` no longer switches the pass.
 - [The render API](../../docs/api/render.md), [custom passes](../../docs/guides/custom-passes.md) and the develop

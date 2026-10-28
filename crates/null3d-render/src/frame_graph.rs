@@ -2508,14 +2508,17 @@ impl FrameGraph {
             self.declare(views, names);
         }
         self.declared_views.copy_from_slice(views);
+        // The graph keeps a view's pass while the view is switched on, whatever its cadence: a
+        // cadence skips the pass's recording in the frames that are not its turn, so the plan does
+        // not depend on it and no frame compiles when the turn comes round.
         if views
             .iter()
             .zip(&self.view_on)
-            .any(|(view, &on)| view.target().draws() != on)
+            .any(|(view, &on)| view.target().enabled != on)
         {
             self.view_on.clear();
             self.view_on
-                .extend(views.iter().map(|view| view.target().draws()));
+                .extend(views.iter().map(|view| view.target().enabled));
             self.enable_views();
         }
         for &(index, pass) in self.opaque.iter().chain(&self.prepasses) {
@@ -3279,7 +3282,7 @@ impl FrameGraph {
         }
         self.view_on.clear();
         self.view_on
-            .extend(views.iter().map(|view| view.target().draws()));
+            .extend(views.iter().map(|view| view.target().enabled));
         self.enable_views();
         self.declare_outline(color.samples);
         self.subsurface_declared = self.subsurface_draws() && !views.is_empty();
