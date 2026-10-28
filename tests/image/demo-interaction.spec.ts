@@ -3,11 +3,14 @@
 // sketch time of the frame that answered. A hover leads the math demo's lamp and leaves its camera
 // alone. In the instances demo, a drag hands the scripted camera over to the user with no jump, the
 // script then stops moving it, and the wheel zooms. In the walk and fly demo, a key hands the
-// scripted walk over to first-person controls, and Space switches to fly controls.
+// scripted walk over to first-person controls, and Space switches to fly controls. In the weighted
+// transparency demo, a key swaps the two blends and the picture follows it, while the pointer leaves
+// the blend alone.
 // CI's software GPU draws only a few frames a second, and a frame's step is at most 0.25 s, so
 // sketch time can run slower than the page's. Every check therefore waits on sketch time or on a
 // condition, never on the page's clock alone.
 import { expect, type Page, test } from '@playwright/test';
+import { frameDifference, readFrame } from '../lib/canvas-frame.ts';
 import { pageResult } from '../lib/page-result.ts';
 import type { DemoProbe } from '../pages/lib/demo-probe.ts';
 
@@ -176,5 +179,58 @@ test('a key hands the walk and fly demo to first-person controls, and Space to f
 	const flown = await probeAt(page, later.time + 1.5);
 	await page.keyboard.up('KeyR');
 	expect(flown.camera[1]).toBeGreaterThan(3.5);
+	expect(errors).toEqual([]);
+});
+
+test('a key swaps the weighted demo between its two blends, and the pointer does not', async ({
+	page,
+}) => {
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	page.on('console', (message) => {
+		if (message.type() === 'error' && !message.location().url.endsWith('/favicon.ico'))
+			errors.push(message.text());
+	});
+	// The demos page publishes its running engine behind ?bench, which reads the canvas with no page
+	// element over it. The Low preset draws the same blend several times faster on a software GPU.
+	await page.goto('/examples/index.html?demo=weighted-transparency&preset=low&bench');
+	await page.waitForFunction(
+		() => (globalThis as { __null3dEngine?: unknown }).__null3dEngine !== undefined,
+		undefined,
+		{ timeout: PATIENCE },
+	);
+	// The label over the brazier names the blend on show.
+	const label = page.locator('.label');
+	await expect(label).toHaveText('Weighted blending', { timeout: PATIENCE });
+	// The scene's own drift over the gap that the key's change is measured over.
+	const before = await readFrame(page);
+	await page.waitForTimeout(400);
+	const rest = await readFrame(page);
+	const drift = frameDifference(rest, before);
+	// A hover over the right half of the canvas leaves the blend alone.
+	const box = await page.locator('canvas').boundingBox();
+	if (!box) throw new Error('the page has no canvas');
+	await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.5);
+	await page.mouse.move(box.x + box.width * 0.8 + 2, box.y + box.height * 0.5 + 2);
+	await page.waitForTimeout(1500);
+	await expect(label).toHaveText('Weighted blending');
+	// The key swaps the blend, and the picture changes by more than the scene drifts over the same
+	// gap. A slow GPU may draw no frame within a fixed wait, so the difference is polled.
+	const parked = await readFrame(page);
+	await page.keyboard.press('KeyS');
+	await expect(label).toHaveText('Sorted blending', { timeout: PATIENCE });
+	let change = 0;
+	await expect
+		.poll(
+			async () => {
+				change = frameDifference(await readFrame(page), parked);
+				return change;
+			},
+			{ timeout: PATIENCE },
+		)
+		.toBeGreaterThan(Math.max(2, drift * 3));
+	// A second press gives the weighted blending back.
+	await page.keyboard.press('KeyS');
+	await expect(label).toHaveText('Weighted blending', { timeout: PATIENCE });
 	expect(errors).toEqual([]);
 });
