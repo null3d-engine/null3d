@@ -220,9 +220,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			"Curtains of green and violet light over a still night, drawn by the aurora example add-on through the sky-layer hook: one WGSL function over the core sky, under the moon and the stars, with the sky's thin clouds hiding it where they thicken. The pines stand dark against the light, and the frozen lake mirrors them.",
 		hold: 1.5,
-		// The lake's material is hand-written WGSL, which the dev server compiles once, and the
-		// reflection pass draws the scene again: a busy machine needs longer than the default.
-		timeoutSeconds: 120,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'canvas-screen',
