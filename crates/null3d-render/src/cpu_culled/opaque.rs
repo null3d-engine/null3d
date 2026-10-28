@@ -854,7 +854,7 @@ impl Opaque {
     /// view's index list, draw records and instance textures, as its opaque pass draws: each call
     /// of the opaque pass that draws a bucket that `moving` marks, with its draws' motion pipeline
     /// and the map that it reads, and the motion view's frame group `group` in place of the
-    /// camera's.
+    /// camera's. A tree's calls draw the tree's own index list, as they do in the opaque pass.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn record_motion(
         &self,
@@ -880,9 +880,11 @@ impl Opaque {
         let mut pipeline = None;
         let mut textures = 0;
         let mut run = usize::MAX;
+        // The cluster whose index buffer the pass has bound, or the page's when it is `None`.
+        let mut bound: Option<Option<u32>> = None;
         // The draw records are numbered by the opaque pass's calls, which include a tree's calls
         // for each block of its ranges. The walk here passes the same patch view, so a tree's
-        // calls keep their places, and it skips them by their own draw.
+        // calls keep their places, and a call without a motion pipeline draws nothing.
         for_each_call(draws, &visible, patches, multi_draw, |index, call| {
             let drawing = draws[call.from];
             let moves = (call.from..call.to)
@@ -890,8 +892,11 @@ impl Opaque {
             if drawing.motion == 0 || !moves {
                 return Ok(());
             }
-            if call.run != run {
+            // A tree's calls draw its chosen runs against the tree's index list, whose buffer a run
+            // can change even when the vertex page stays the same.
+            if call.run != run || bound != Some(drawing.cluster) {
                 run = call.run;
+                bound = Some(drawing.cluster);
                 if pipeline != Some(drawing.motion) {
                     list.push(Op::SetPipeline, &[drawing.motion])?;
                     pipeline = Some(drawing.motion);
@@ -903,7 +908,13 @@ impl Opaque {
                     )?;
                     textures = drawing.motion_textures;
                 }
-                let (vertices, indices) = meshes.ids(drawing.page);
+                let (vertices, indices) = match drawing.cluster {
+                    Some(cluster) => {
+                        let mesh = layout.cluster_buckets[cluster as usize].mesh;
+                        (meshes.ids(drawing.page).0, ids::patch_index(mesh))
+                    }
+                    None => meshes.ids(drawing.page),
+                };
                 list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
                 list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
             }
@@ -1040,6 +1051,51 @@ mod tests {
     }
 
     #[test]
+    fn a_moving_tree_binds_its_own_index_list_in_the_motion_pass() {
+        let mut opaque = Opaque::new(ViewId::CAMERA, true);
+        opaque.views.push(ViewDraws::default());
+        let mut layout = Layout::default();
+        layout.buckets.push(Bucket {
+            material: 1,
+            mesh_key: 1,
+            group: 0,
+            shift: 0,
+            moves: true,
+        });
+        let mut tree = draw(1, 0);
+        tree.cluster = Some(0);
+        tree.motion = 7;
+        layout.draws.push(tree);
+        layout.cluster_buckets.push(ClusterBucket {
+            bucket: 0,
+            mesh: 1,
+            object: 0,
+        });
+        let starts = [0, 1];
+        let runs = [[0, 3]];
+        let patch_starts = [0, 1];
+        let patches = PatchView::new(&patch_starts, &runs);
+        let mut list = DrawList::with_capacity(256);
+        let mut arena = UploadArena::default();
+        arena.reset(1 << 16);
+        let meshes = MeshBuffers::new(100);
+        opaque
+            .record_motion(
+                &mut list,
+                &mut arena,
+                &starts,
+                &layout,
+                &meshes,
+                0,
+                &[true],
+                patches,
+            )
+            .unwrap();
+        // The moving tree draws its chosen runs from the tree's own list, not the mesh page's.
+        assert_eq!(index_buffers(&list), vec![ids::patch_index(1)]);
+    }
+
+    #[test]
     fn a_tree_draws_in_calls_of_the_most_ranges() {
         let mut tree = draw(1, 0);
         tree.cluster = Some(0);
@@ -1067,6 +1123,16 @@ mod tests {
         );
         // The ranges count as records, not one record for the whole draw.
         assert_eq!(out.iter().map(|entry| entry.2).sum::<u32>(), 301);
+    }
+
+    /// The index buffers that a recorded pass binds, in order.
+    fn index_buffers(list: &DrawList) -> Vec<u32> {
+        null3d_gpu::drawlist::decode(list.words())
+            .filter_map(|command| {
+                let command = command.unwrap();
+                (command.op == Op::SetIndexBuffer).then(|| command.operands[0])
+            })
+            .collect()
     }
 
     /// The dynamic offsets of the draw records that a recorded pass binds, and its draw calls.
