@@ -11,7 +11,7 @@ import {
 	KHRMaterialsTransmission,
 } from '@gltf-transform/extensions';
 import { parseGltf, readContainer } from '../../../engine/src/scene/gltf-parse.ts';
-import { lodOf } from './lod-extension.js';
+import { lodOf, MSFT_LOD, MSFTLod } from './lod-extension.js';
 import { budgetWarnings, PRESET_TEXTURE_MEMORY_MIB } from './report.js';
 import {
 	ASSET_PERMUTATIONS,
@@ -145,6 +145,29 @@ describe('shaderList', () => {
 		expect(list.buckets[0]?.key).toBe(
 			'lit uv0+color+joints+weights+morph VERTEX_COLOR+SKIN+MORPH+LOD_FADE',
 		);
+	});
+
+	it('lists the fade file only for levels that fade', () => {
+		/** The list of a document whose one node has levels with `errors` and `coverage`. */
+		const list = (errors: number[], coverage?: number[]) => {
+			const doc = new Document();
+			const lod = doc.createExtension(MSFTLod).createLod().setErrors(errors);
+			if (coverage) lod.setCoverage(coverage);
+			const node = doc
+				.createNode('hill')
+				.setMesh(doc.createMesh('hill').addPrimitive(triangle(doc, doc.createMaterial('rock'))));
+			node.setExtension(MSFT_LOD, lod);
+			doc.createScene().addChild(node);
+			return shaderList(doc, { lodOf });
+		};
+		// The tool writes the coverage beside each measured error, so those levels switch at once.
+		const measured = list([0.02, 0.04], [0.5, 0.2]);
+		expect(measured.permutations).toEqual([]);
+		expect(measured.features).toEqual([]);
+		// A hand-set error comes alone, so its levels fade.
+		const handSet = list([0.02, 0.04]);
+		expect(handSet.permutations).toEqual(['LOD_FADE']);
+		expect(handSet.features).toEqual(['lod_fade']);
 	});
 
 	it('names the clear coat and sheen of a layered material', () => {
