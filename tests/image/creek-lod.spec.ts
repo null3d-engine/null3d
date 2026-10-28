@@ -44,11 +44,18 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 	test(`the Creek's hand-set tree levels fade at their switch on ${gpu}`, async ({
 		page,
 	}, testInfo) => {
-		const size = testInfo.project.name === 'chromium-swiftshader' ? SOFTWARE_SIZE : SIZE;
+		const software = testInfo.project.name === 'chromium-swiftshader';
+		const size = software ? SOFTWARE_SIZE : SIZE;
+		/**
+		 * The steps the page's search takes. A software GPU draws every step on the CPU, and the
+		 * twenty-four that find the switch to a fine bias on a real GPU ran past four minutes there,
+		 * so it searches coarser: the switch is a distance and eight steps still bracket it.
+		 */
+		const steps = software ? 8 : 24;
 		test.setTimeout(300_000);
 		await page.setViewportSize({ width: size.width + 20, height: size.height + 20 });
 		await page.goto(
-			`creek-lod.html?gpu=${gpu}&lod=1&steps=24&width=${size.width}&height=${size.height}`,
+			`creek-lod.html?gpu=${gpu}&lod=1&steps=${steps}&width=${size.width}&height=${size.height}`,
 		);
 		const result = await pageResult<CreekLodResult>(page, 240_000);
 		console.log(
@@ -73,7 +80,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 
 		// The camera holds still, so the base mesh at every bias changes nothing.
 		await page.goto(
-			`creek-lod.html?gpu=${gpu}&lod=0&steps=24&width=${size.width}&height=${size.height}`,
+			`creek-lod.html?gpu=${gpu}&lod=0&steps=${steps}&width=${size.width}&height=${size.height}`,
 		);
 		const still = await pageResult<CreekLodResult>(page, 240_000);
 		expect(still.worst.share).toBe(0);
