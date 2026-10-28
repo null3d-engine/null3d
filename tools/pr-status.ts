@@ -44,7 +44,6 @@ const INCOMPLETE = new Set([
 	'M3-F2',
 	'M3-K9',
 	'M3-E4',
-	'M3-E10',
 	'M3-V6',
 	'M3-E6',
 	'M3-E8',
@@ -100,8 +99,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"unticked by its check at 652fd235b on `feat/m3-f4-lightmap-evidence`: the captured frame is one side of the comparison rather than the comparison itself, D-258 claims more than that frame settles, not every figure has a recorded run. The evidence entry is written now and names what is owed rather than claiming it: the engine-to-viewer comparison does not exist, and the picture's failure without the direction is unrecorded. The same branch's ae46e947d states the viewer-side limit in D-258 lines 78 to 82 instead of closing it, so the owner has not ruled whether an engine-to-viewer comparison is owed",
 	'M3-L4':
 		'the three studies are proposed, awaiting the owner ruling (D-273 vertex morphing, D-274 impostors, D-275 staged loading), and the work each leaves to build has not started; the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
-	'M3-E10':
-		"the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch. The round 24 audit's finding that the capture never runs is stale at the published head: the light sum (`8bebdff7f`) and the merge that carried it (`1857377b1`) are ancestors, `fs_feedback` sums the nine coefficients, and D-242 records the light as built. What the task still owes is the held-frame proof and the ice look",
 	'M3-V2':
 		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
 	'M3-R19':
