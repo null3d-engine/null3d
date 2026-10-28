@@ -11,6 +11,8 @@ import { createOcean } from '@null3d/water';
 const params = new URL(import.meta.url).searchParams;
 const SCALE = params.get('scale');
 const FIXED = params.has('fixed');
+/** A reflection cadence for every preset, so a run can hold the reflection on each frame. */
+const EVERY = params.get('every');
 
 export default defineSketch((ctx) => {
 	const { scene, page, quality, time } = ctx;
@@ -33,7 +35,20 @@ export default defineSketch((ctx) => {
 		target: [0, 1, 0],
 	});
 	scene.setActiveCamera(camera);
-	const ocean = createOcean(ctx, { camera });
+	const ocean = createOcean(
+		ctx,
+		EVERY === null
+			? { camera }
+			: {
+					camera,
+					reflectionEvery: {
+						low: Number(EVERY),
+						medium: Number(EVERY),
+						high: Number(EVERY),
+						ultra: Number(EVERY),
+					},
+				},
+	);
 	let settle: (() => void) | undefined;
 	page.onMessage((type) => {
 		if (type === 'on') {
