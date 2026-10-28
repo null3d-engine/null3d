@@ -21,7 +21,7 @@ function fakeQuality(start: QualityPreset = 'medium') {
 	const handlers = new Set<() => void>();
 	let level = 0;
 	const budgets = new Map<string, { min: number; onScale: OnScale | undefined; scale: number }>();
-	const posted: (readonly FeatureStats[] | undefined)[] = [];
+	const posted: unknown[] = [];
 	const quality = {
 		preset: start,
 		settings: {},
@@ -52,12 +52,15 @@ function fakeQuality(start: QualityPreset = 'medium') {
 		quality,
 		page: {
 			post(_type: string, data?: unknown) {
-				posted.push(data as readonly FeatureStats[] | undefined);
+				posted.push(data);
 			},
 		},
 		posted,
 		/** The last figures that the page was told. */
-		figures: () => posted.at(-1)?.find((figure) => figure.name === 'splats'),
+		figures: () =>
+			(posted.at(-1) as { features?: readonly FeatureStats[] } | undefined)?.features?.find(
+				(figure) => figure.name === 'splats',
+			),
 		/** Moves the governor's steps, as the frame loop does. */
 		step(next: number) {
 			level = next;

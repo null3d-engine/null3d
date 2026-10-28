@@ -11,7 +11,7 @@
 import { EngineError } from '../errors/engine-error';
 import { presetIndex, type QualityPreset } from '../quality/presets';
 import { DEV } from '../shared/dev';
-import { FEATURE_STATS_MESSAGE } from '../shared/feature-stats';
+import { FEATURE_STATS_MESSAGE, type FeatureStatsMessage } from '../shared/feature-stats';
 import type { Tier } from '../shared/tier';
 import type { Quality, QualityBudget } from '../sketch/quality';
 import { registerAddonDebugView, unregisterAddonDebugView } from './addon-debug-views';
@@ -106,6 +106,12 @@ export interface FeatureHandle {
 	readonly budgetMs: number;
 	/** The feature's figures, as the stats overlay shows them. */
 	readonly stats: FeatureStats;
+	/**
+	 * Reads the feature's figures afresh and sends them to the stats overlay. Call it when a figure
+	 * changes outside the engine's own changes of quality, such as the memory that the feature's
+	 * `memory` callback reports. It allocates, so call it between frames, never in a frame.
+	 */
+	refresh(): void;
 	/** Removes the feature and its budget. It does not call the feature's `destroy`. */
 	remove(): void;
 }
@@ -217,6 +223,17 @@ export class FeatureHost {
 		return this.figures;
 	}
 
+	/**
+	 * Reads each feature's figures afresh and sends them to the stats overlay. Call it when a
+	 * figure changes outside the engine's own changes of quality, such as a memory figure. It
+	 * allocates, so call it between frames, never in a frame.
+	 */
+	refresh(): void {
+		if (this.stopped) return;
+		for (const hosted of this.hosted.values()) this.update(hosted);
+		this.report();
+	}
+
 	/** Stops following the sketch's quality and removes every budget. */
 	destroy(): void {
 		if (this.stopped) return;
@@ -230,7 +247,7 @@ export class FeatureHost {
 		}
 		this.hosted.clear();
 		this.figures = Object.freeze([]);
-		this.options.page?.post(FEATURE_STATS_MESSAGE, this.figures);
+		this.post();
 	}
 
 	/** A handle over one hosted feature, which reads the values that the host keeps current. */
@@ -251,10 +268,20 @@ export class FeatureHost {
 			get stats() {
 				return hosted.stats;
 			},
+			refresh() {
+				host.refreshFeature(hosted);
+			},
 			remove() {
 				host.remove(name);
 			},
 		});
+	}
+
+	/** Reads one feature's figures afresh and sends them to the page. */
+	private refreshFeature(hosted: Hosted): void {
+		if (this.stopped || !this.hosted.has(hosted.feature.name)) return;
+		this.update(hosted);
+		this.report();
 	}
 
 	/** Registers the feature's budget for the preset in use, or updates its full time. */
@@ -344,7 +371,13 @@ export class FeatureHost {
 		const figures: FeatureStats[] = [];
 		for (const hosted of this.hosted.values()) figures.push(hosted.stats);
 		this.figures = Object.freeze(figures);
-		this.options.page?.post(FEATURE_STATS_MESSAGE, this.figures);
+		this.post();
+	}
+
+	/** Sends this add-on's newest figures to the page, which keeps a list for each add-on. */
+	private post(): void {
+		const message: FeatureStatsMessage = { addon: this.addon, features: this.figures };
+		this.options.page?.post(FEATURE_STATS_MESSAGE, message);
 	}
 }
 
