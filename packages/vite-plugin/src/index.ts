@@ -150,6 +150,13 @@ function readCertificate(root: string, certDir: string): { cert: Buffer; key: Bu
 const SCRIPT_URL =
 	/new\s+URL\(\s*(['"])(\.{1,2}\/[^'"]+?\.[cm]?[jt]sx?)\1\s*,\s*import\.meta\.url\s*\)/g;
 
+/**
+ * Marks a copied shader file's address in a transformed module until the build knows where the
+ * module that names it lands. The mark is not a path, so no bundler resolves it; `generateBundle`
+ * replaces it with the address from that module's own place in the output.
+ */
+const SHADER_URL_MARK = '__null3d_shader__';
+
 /** Text just before a script address that a worker constructor takes; Vite builds those itself. */
 const WORKER_BEFORE = /new\s+(?:Shared)?Worker\(\s*$/;
 
@@ -448,6 +455,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 	 * the same files, so each file is read and hashed once for the whole build.
 	 */
 	const copiedShaderHashes = new Map<string, string>();
+	/** A copied shader file's path in the output, whatever the assets folder is called. */
+	const assetPath = (name: string) => (assetsDir === '' ? name : posix.join(assetsDir, name));
 	/** Compiles WGSL on worker threads, so the dev server answers other requests meanwhile. */
 	const compiler = new CompilerPool();
 	/** Keeps each compiled shader in the project's cache, so a later build skips the compile. */
@@ -555,6 +564,10 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 		buildStart() {
 			emitted.clear();
 			workerChunks.clear();
+			// The copies follow the generated set: a watch rebuild reads the files again, so a hash
+			// from the last build would name old bytes, and a file that went away would be copied.
+			copiedShaders.clear();
+			copiedShaderHashes.clear();
 			earlyCoreId = undefined;
 			earlyCoreSought = false;
 			if (!building) return;
@@ -688,16 +701,14 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 			},
 		},
 		transform: {
-			// A packed engine's generated shader files also load their builds by address, so this
-			// runs for package files too; the compiled work below stays out of them.
 			filter: {
+				id: { exclude: PACKAGE_MODULE },
 				code: { include: [WGSL_TAG, 'import.meta.url'] },
 			},
 			async handler(code, id) {
 				const file = id.split('?')[0] ?? id;
-				const packaged = PACKAGE_MODULE.test(id);
 				let out: MagicString | undefined;
-				if (!packaged && SCRIPT_FILE.test(file) && WGSL_TAG.test(code)) {
+				if (SCRIPT_FILE.test(file) && WGSL_TAG.test(code)) {
 					const path = projectPath(root, file);
 					const tagged = await compileTaggedWgsl(code, file, path, shaders);
 					if ('error' in tagged) return this.error(tagged.error);
@@ -721,7 +732,6 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 						if (WORKER_BEFORE.test(code.slice(Math.max(0, start - 40), start))) continue;
 						const address = match[2] ?? '';
 						if (isGeneratedShaderFile(file, address)) continue;
-						if (packaged) continue;
 						const script = await this.resolve(address, id);
 						if (!script || !isImportedModule(script.id)) continue;
 						// The worker imports the compiled module by this address, as a sketch or a task.
@@ -800,36 +810,59 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 						bundle,
 						[...workerChunks].map((ref) => this.getFileName(ref)),
 					);
+				// Each file that names a copy now knows where it sits, so the mark becomes the
+				// address from there to the copy's own place in the output. A worker's files reach
+				// this bundle as the worker built them, so they take the same pass.
+				for (const file of Object.values(bundle)) {
+					const text =
+						file.type === 'chunk'
+							? file.code
+							: typeof file.source === 'string'
+								? file.source
+								: new TextDecoder().decode(file.source);
+					if (!text.includes(SHADER_URL_MARK)) continue;
+					const from = posix.dirname(file.fileName);
+					const rewritten = text.replaceAll(
+						/__null3d_shader__([^"'`\s)]+)/g,
+						(_match, name: string) => {
+							const address = posix.relative(from, assetPath(name));
+							return address.startsWith('.') ? address : `./${address}`;
+						},
+					);
+					if (file.type === 'chunk') file.code = rewritten;
+					else file.source = rewritten;
+				}
 				const tables = emitParagraphTables.call(this, bundle, root);
-				if (buildingPages) {
-					// The copied device modules are not in the bundle, so the tables of shared
-					// paragraphs that they import are emitted from here, once each, and the module
-					// of each copy names them as its loads.
-					const emittedTables = new Set([...tables.values()].flat());
-					const loads = new Map<string, string[]>();
-					for (const [name, source] of copiedShaders) {
-						const own: string[] = [];
-						for (const stem of tableStemsOfFile(source)) {
-							const table = `${assetsDir}/${stem}.js`;
-							own.push(table);
-							if (emittedTables.has(table)) continue;
-							const file = join(dirname(source), `${stem}.js`);
-							if (!existsSync(file))
-								this.error(
-									`null3D: ${assetsDir}/${name} imports ${stem}.js, which the engine's shader modules do not hold. Run \`bun run shaders\` again, and reinstall @null3d/engine if the build still fails.`,
-								);
-							emittedTables.add(table);
-							this.emitFile({ type: 'asset', fileName: table, source: readFileSync(file) });
-						}
-						loads.set(name, own);
+				// The copied device modules are not in the bundle, so the tables of shared
+				// paragraphs that they import are emitted from here, once each, and each copy's
+				// module names them as its loads. Every build that copies the files needs them,
+				// whatever it is for.
+				const emittedTables = new Set([...tables.values()].flat());
+				const loads = new Map<string, string[]>();
+				for (const [name, source] of copiedShaders) {
+					const own: string[] = [];
+					for (const stem of tableStemsOfFile(source)) {
+						const table = assetPath(`${stem}.js`);
+						own.push(table);
+						if (emittedTables.has(table)) continue;
+						const file = join(dirname(source), `${stem}.js`);
+						if (!existsSync(file))
+							this.error(
+								`null3D: ${assetPath(name)} imports ${stem}.js, which the engine's shader modules do not hold. Run \`bun run shaders\` again, and reinstall @null3d/engine if the build still fails.`,
+							);
+						emittedTables.add(table);
+						this.emitFile({ type: 'asset', fileName: table, source: readFileSync(file) });
 					}
+					loads.set(name, own);
+				}
+				if (buildingPages) {
 					const listed = listedFiles(bundle, workerFiles, packageOf, root, tables);
 					// The copied shader files are not in the bundle, so the list of files for offline
 					// play takes them here, by the module each one holds.
 					for (const [name, source] of copiedShaders) {
 						const module = engineModule(source, packageOf);
 						listed.push({
-							fileName: `${assetsDir}/${name}`,
+							fileName: assetPath(name),
 							entry: false,
 							modules: module === undefined ? [] : [module],
 							imports: [],
@@ -930,6 +963,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 	 * `new URL('./shaders-<name>.js', import.meta.url)`, and a bundler reads every one of them into
 	 * memory to emit it as an asset; here each file is hashed and copied on its own, and the module
 	 * names the copy, so the build never holds the whole generated set at once.
+	 *
+	 * The argument is a mark rather than an address: where a copy lands is fixed, but the file that
+	 * names it can sit anywhere in the output, and only `generateBundle` knows where.
 	 */
 	const streamedShaderAssets: Plugin = {
 		name: 'null3d:streamed-shader-assets',
@@ -955,14 +991,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 				}
 				const name = `${base}-${hash}.js`;
 				copiedShaders.set(name, target);
-				const stem = address.slice(0, -'.js'.length);
 				out ??= new MagicString(code);
-				// The argument is an expression, not a literal, so Vite does not look for a file
-				// that this plugin copies itself; the copy lands beside the module that names it.
 				out.overwrite(
 					match.index,
 					match.index + match[0].length,
-					`((u) => new URL(u, import.meta.url))(${JSON.stringify(`${stem}-`)} + ${JSON.stringify(hash)} + '.js')`,
+					`((u) => new URL(u, import.meta.url))(${JSON.stringify(SHADER_URL_MARK + name)})`,
 				);
 			}
 			return out
