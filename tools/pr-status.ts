@@ -259,7 +259,10 @@ function main(): void {
 		process.exit(1);
 	}
 	const body = description();
-	const owed = landedTasks();
+	// A task the plan no longer holds can still be named by an old commit's trailer, and it owes
+	// nothing: the owed set is what the plan lists, not every id a trailer ever carried.
+	const planIds = new Set(planTasks().map((task) => task.id));
+	const owed = [...landedTasks()].filter((id) => planIds.has(id));
 	for (const id of owed) {
 		if (!(id in TASK_EVIDENCE) && !INCOMPLETE.has(id) && !ON_BRANCH.has(id) && !PARTIAL[id])
 			console.error(
