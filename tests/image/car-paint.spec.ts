@@ -118,3 +118,33 @@ test('car-paint: each part changes the image', async ({ page }) => {
 			.toBeGreaterThan(108);
 	}
 });
+
+/**
+ * The paint's flakes answer every light, not only the sun. The run draws the body with the sun
+ * left out, so the point light alone lights it: its flakes must still change the image there. A
+ * paint whose lobe answers the sun alone draws the same body with and without flakes, and measures
+ * no difference at all.
+ */
+test('car-paint: the flakes glint under a point light', async ({ page }) => {
+	const runs = IMAGE_RUNS.filter((run) => run.test === 'car-paint');
+	expect(runs.length).toBe(3);
+	test.setTimeout(runs.length * 2 * PAGE_MS);
+	for (const run of runs) {
+		const glints = await imageOf(page, variant(run.path, '?sun=off'));
+		const smooth = await imageOf(page, variant(run.path, '?sun=off&flakes=off'));
+		const mean = difference(glints, smooth);
+		const share = changed(glints, smooth, 8 / 255);
+		console.log(
+			`${run.id}: point-light flakes mean ${mean.toFixed(5)} changed ${share.toFixed(5)}`,
+		);
+		// The reference run measures a mean channel difference of 0.00264 and 0.01583 to 0.01589 of
+		// the channels changing by more than 8 steps on every tier. Each floor is half of that, and
+		// a lobe that skipped the point light would measure zero, so it fails by the whole floor.
+		expect
+			.soft(mean, `${run.id}: the point light's flakes change the image`)
+			.toBeGreaterThan(0.0013);
+		expect
+			.soft(share, `${run.id}: the point light's flakes change many pixels`)
+			.toBeGreaterThan(0.0079);
+	}
+});

@@ -109,7 +109,7 @@ To show a value while you work on a function, put it in the emissive light and m
 
 ## A material's own lobe
 
-A material can add its own specular lobe beside the base lobe. Declare `fn lobe(input: LobeInput) -> vec3f` next to its surface function. The engine calls it for the main directional light and adds the color it returns to that light's specular.
+A material can add its own specular lobe beside the base lobe. Declare `fn lobe(input: LobeInput) -> vec3f` next to its surface function. The engine calls it for the main directional light, and for each point and spot light that reaches the surface. It adds the color it returns to that light's specular.
 
 ```wgsl
 fn lobe(input: LobeInput) -> vec3f {
@@ -123,17 +123,17 @@ fn lobe(input: LobeInput) -> vec3f {
 | --- | --- | --- |
 | `normal` | `vec3f` | The surface's unit normal in world space |
 | `view` | `vec3f` | The unit direction from the surface toward the camera |
-| `light` | `vec3f` | The unit direction from the surface toward the main light |
+| `light` | `vec3f` | The unit direction from the surface toward the light |
 | `half` | `vec3f` | The unit half vector between the light and the view, or zero where the two cancel and no unit bisector exists |
 | `roughness` | `f32` | The surface's perceptual roughness, after the engine's filter |
 | `f0` | `vec3f` | The specular reflectance at normal incidence |
-| `specular` | `vec3f` | The specular radiance that the base lobe reflects from the main light, before the layers |
-| `irradiance` | `vec3f` | The main light's irradiance on the surface: the cosine, the color and the shadow |
+| `specular` | `vec3f` | The specular radiance that the base lobe reflects from the light, before the layers |
+| `irradiance` | `vec3f` | The light's irradiance on the surface: the cosine, the color and the shadow |
 | `values` | `vec4f` | The four values that the surface function wrote to `s.lobe` |
 
 The surface function passes four values to the lobe through `s.lobe`, and the lobe reads them as `input.values`. Use them for what the lobe needs from the surface, such as a footprint, a mask or a random value. `defaultSurface` leaves them zero.
 
-The lobe runs for the main directional light alone. Point, spot and area lights draw with the base lobe only, so a look that needs their glints is not built. A material that declares no lobe pays nothing, and the lobe runs in the builds of a material that declares one alone.
+The engine calls the lobe once for the main directional light and once for each point and spot light that reaches the surface. Area lights, and the ambient, hemisphere and environment light, draw with the base lobe only. A material that declares no lobe pays nothing, and the lobe runs in the builds of a material that declares one alone. A light that the lobe answers for costs it one call at each pixel that the light reaches.
 
 ## Uniforms
 
@@ -477,7 +477,7 @@ fn surface(input: SurfaceInput) -> Surface {
 
 Your WGSL shares one file with the engine's standard material, so a few rules apply besides the [WGSL rules for portable shaders](wgsl-rules.md):
 
-- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `LobeInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `custom_texture_layers`, `load_custom_texture_layers`, `VertexIn`, `VertexOut`, `vs`, `fs`, `FLAT_SHADING`, `sceneDepth`, `sceneDistance`, `scene_depth_copy` and `scene_depth_texel`. They also include the library items that the standard material imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. WGSL that reads `instance` or `object.id` also meets `object_ids`, and WGSL that reads the object's matrices meets `affine_matrix` and `affine_normal_matrix`. The names `surface`, `vertexOffset` and `lobe` are yours to declare.
+- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `LobeInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `custom_texture_layers`, `load_custom_texture_layers`, `VertexIn`, `VertexOut`, `vs`, `fs`, `FLAT_SHADING`, `sceneDepth`, `sceneDistance`, `scene_depth_copy` and `scene_depth_texel`. They also include the library items that the standard material imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. WGSL that reads `instance` or `object.id` also meets `object_ids`, and WGSL that reads the object's matrices meets `affine_matrix` and `affine_normal_matrix`. A material that declares a lobe also meets `clustered_lobed_light`, `Reflected`, `half_vector`, `cluster_lights`, `cluster_sample`, `light_of`, `grid_word`, `KIND_RECT`, `area_light`, `AreaTerms` and `area_terms`, which its lobe's loop reads. The names `surface`, `vertexOffset` and `lobe` are yours to declare.
 - Import library items by name, as in `#import null3d::noise::{fbm3}`. An import of a whole module reserves the module's name. After `#import null3d::color`, no name in the file can be `color`.
 - The WGSL cannot hold directives such as `enable`.
 - Do not declare a name that ends in `Sampler` after a texture's name, such as `detailSampler` beside `detail`. The engine declares it.

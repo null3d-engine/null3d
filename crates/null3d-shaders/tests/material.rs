@@ -976,6 +976,68 @@ fn a_lobe_function_builds_into_every_variant_with_the_surface_values() {
     assert!(builds > 0);
 }
 
+/// The number of times a WebGPU build calls the material's lobe. Every call builds the lobe's
+/// input record, and the declaration names the record's type without a construction.
+fn lobe_calls(source: &str) -> usize {
+    source.matches("lobe(LobeInput(").count()
+}
+
+/// The number of times a WebGL2 build calls the material's lobe. That path passes the record as one
+/// parameter for each of its fields, so a call reads as an assignment to the lobe's function, where
+/// the declaration reads its return type before the name.
+fn glsl_lobe_calls(source: &str) -> usize {
+    source.matches("= lobe(").count()
+}
+
+/// What a source says about the lobe, for a failed count: each line that names it.
+fn summary(source: &str) -> String {
+    let lines: Vec<&str> = source
+        .lines()
+        .filter(|line| line.contains("lobe"))
+        .map(str::trim)
+        .collect();
+    format!("{} lobe lines: {}", lines.len(), lines.join(" | "))
+}
+
+#[test]
+fn a_material_with_a_lobe_answers_the_sun_and_every_point_and_spot_light_on_both_paths() {
+    let built = compile(SPARKLE).expect("the material with a lobe builds");
+    for name in ["webgpu", "webgl2"] {
+        let variant = &built.variants[name];
+        // The shading build calls the lobe once for the sun and once for the lights of the
+        // surface's cluster.
+        let mut shading = 0;
+        if let Some(wgsl) = &variant.wgsl {
+            assert_eq!(
+                lobe_calls(&wgsl.source),
+                2,
+                "{name}: {}",
+                summary(&wgsl.source)
+            );
+            shading += 1;
+        }
+        if let Some(programs) = &variant.glsl {
+            for (program, build) in programs {
+                assert_eq!(
+                    glsl_lobe_calls(&build.fragment.source),
+                    2,
+                    "{name} {program}: {}",
+                    summary(&build.fragment.source)
+                );
+                shading += 1;
+            }
+        }
+        assert!(shading > 0, "{name}");
+    }
+    // A material that declares no lobe keeps the library's clustered loop, so it pays nothing.
+    let plain = compile(STRIPES).expect("the material without a lobe builds");
+    for variant in plain.variants.values() {
+        if let Some(wgsl) = &variant.wgsl {
+            assert!(!wgsl.source.contains("clustered_lobed_light"));
+        }
+    }
+}
+
 #[test]
 fn a_lobe_with_another_signature_is_refused_at_its_name() {
     let problem = only_problem("fn lobe(input: SurfaceInput) -> vec3f { return vec3f(0.0); }");
