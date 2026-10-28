@@ -4,6 +4,9 @@
 import type { Page } from '@playwright/test';
 import { decodePngRgba } from '../../packages/cli/src/png.js';
 
+/** How long a read waits for the canvas to hold pixels, for a page still finding its size. */
+const EMPTY_READ_MS = 10_000;
+
 /** One frame of the canvas: its size and its RGBA pixels, top row first. */
 export interface Frame {
 	width: number;
@@ -22,24 +25,42 @@ export interface Frame {
  * several demos starves both, for the whole of a test's budget. The engine's own reader instead waits
  * on the engine's frame loop, which keeps its turn, and gives the frame drawn last when no new frame
  * comes: measured here, one read took 17 ms where the screenshots ran the test out.
+ *
+ * A page that has not sized its canvas yet captures nothing, so the read waits for a picture with
+ * pixels in it rather than handing back an empty frame.
  */
 export async function readFrame(page: Page): Promise<Frame> {
-	const base64 = await page.evaluate(async () => {
-		const engine = (globalThis as { __null3dEngine?: { capture(): Promise<Blob> } }).__null3dEngine;
-		if (!engine)
-			throw new Error('the page publishes its engine behind ?bench, and it has not started one');
-		const bytes = new Uint8Array(await (await engine.capture()).arrayBuffer());
-		let text = '';
-		// Each chunk keeps the argument count of fromCharCode inside its own limit.
-		for (let at = 0; at < bytes.length; at += 0x8000)
-			text += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
-		return btoa(text);
-	});
-	return decodePngRgba(Buffer.from(base64, 'base64'), 'the canvas');
+	const deadline = Date.now() + EMPTY_READ_MS;
+	for (;;) {
+		const base64 = await page.evaluate(async () => {
+			const engine = (globalThis as { __null3dEngine?: { capture(): Promise<Blob> } })
+				.__null3dEngine;
+			if (!engine)
+				throw new Error('the page publishes its engine behind ?bench, and it has not started one');
+			const bytes = new Uint8Array(await (await engine.capture()).arrayBuffer());
+			let text = '';
+			// Each chunk keeps the argument count of fromCharCode inside its own limit.
+			for (let at = 0; at < bytes.length; at += 0x8000)
+				text += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+			return btoa(text);
+		});
+		const frame = decodePngRgba(Buffer.from(base64, 'base64'), 'the canvas');
+		if (frame.data.length > 0) return frame;
+		if (Date.now() >= deadline)
+			throw new Error(`the canvas held no pixels for ${EMPTY_READ_MS} ms`);
+		await page.waitForTimeout(50);
+	}
 }
 
-/** The mean difference of two frames' colour, in steps of 255, over every pixel and channel. */
+/**
+ * The mean difference of two frames' colour, in steps of 255, over every pixel and channel. A frame
+ * with no pixels has no difference to give, so it is an error rather than a figure.
+ */
 export function frameDifference(a: Frame, b: Frame): number {
+	if (a.data.length === 0 || b.data.length === 0)
+		throw new Error(
+			`a frame holds no pixels: ${a.width} by ${a.height} against ${b.width} by ${b.height}`,
+		);
 	let sum = 0;
 	for (let i = 0; i < a.data.length; i += 4)
 		for (let c = 0; c < 3; c++)
