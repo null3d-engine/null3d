@@ -70,7 +70,9 @@ export async function readFrame(page: Page): Promise<Frame> {
 					? `the canvas held no pixels for ${EMPTY_READ_MS} ms`
 					: `the canvas never settled for ${EMPTY_READ_MS} ms, last ${frame.width} by ${frame.height}${frame.width === DEFAULT_CANVAS.width && frame.height === DEFAULT_CANVAS.height ? ', the browser default' : ''}`,
 			);
-		previous = frame;
+		// A default-sized read says nothing about the page's size, so it does not count as a
+		// settle; two real reads must agree around it.
+		if (laidOut) previous = frame;
 		await page.waitForTimeout(50);
 	}
 }

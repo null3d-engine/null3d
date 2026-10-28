@@ -79,7 +79,7 @@ The frame figures come from the cost page in a quiet window. [The Mac run](../te
 
 The engine keeps the repack placement. The memory rule fails. The allocator holds 25% more at the end, 21.08 MB against 16.86 MB, and it cannot give a buffer's end back without a copy. Neither half of rule 2 holds.
 
-Rule 1 holds on WebGPU and not on WebGL2. A hole-closing frame costs 2.044 ms more of the render worker than the modelled free frame, which clears the 1 ms bar. On WebGL2 it costs 0.117 ms more, because its pages hold 8 models. The rule's second sentence still decides the case: no shipped scene removes a range at least once a second.
+Rule 1's cost sentence holds on WebGPU and not on WebGL2: a hole-closing frame costs 2.044 ms more of the render worker than the modelled free frame, which clears the 1 ms bar. The rule as a whole does not hold, because the memory line beside it fails and the placement is not adopted. On WebGL2 it costs 0.117 ms more, because its pages hold 8 models. The rule's second sentence still decides the case: no shipped scene removes a range at least once a second.
 
 A tenth of the workload is 4.1 ms. One frame reaches that by removing about 17 models of 10.3 MiB, or by unloading a prefab whose pages hold about 175 MiB. Nothing that ships does the first. Dynamic units use instance batches, whose rows share one mesh. The second is a level transition.
 
