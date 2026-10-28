@@ -50,8 +50,8 @@ export default defineSketch(async (ctx) => {
 
 	const paint = (color: string, roughness = 0.7, flatShading = false) =>
 		materials.standard({ color, roughness, flatShading });
-	// The lake's ice: glossy enough to hold the moon and the sky's last light.
-	const ice = materials.standard({ color: '#16232f', roughness: 0.16, metalness: 0.0 });
+	// The lake's ice: a mirror, tinted by the water, that holds the aurora and the moon.
+	const ice = materials.standard({ color: '#5d7686', roughness: 0.06, metalness: 1 });
 	const plane = geometry.plane({ width: 4000, height: 4000 });
 	scene.createMesh({
 		mesh: plane,
@@ -65,11 +65,13 @@ export default defineSketch(async (ctx) => {
 		const x = math.randFloat(-320, 320);
 		const z = math.randFloat(-190, -120);
 		const height = math.randFloat(14, 46);
+		// Each cone turns about Y by its own angle: the quaternion of a turn of `turn` radians.
+		const turn = math.randFloat(0, Math.PI);
 		scene.createMesh({
 			mesh: geometry.cone({ radius: height * 1.7, height, radialSegments: 6 }),
 			material: snow,
 			position: [x, height * 0.5 - 3, z],
-			rotation: [0, math.randFloat(0, Math.PI), 0, 1],
+			rotation: [0, Math.sin(turn / 2), 0, Math.cos(turn / 2)],
 		});
 	}
 	// Pines on the near shore, dark against the ice, each two cones of needles.
