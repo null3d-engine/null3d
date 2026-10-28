@@ -463,8 +463,10 @@ Some unit tests build a bundle of engine code with Vite inside the test process,
 - A library build inlines every asset as a base64 data URL, and does not copy it as a file. Vite's
   `shouldInline` returns true on `config.build.lib` before it reads `assetsInlineLimit`, so
   `new URL('./x.js', import.meta.url)` becomes a data URL.
-- The engine's generated shaders are around 850 MB of assets. A worker build inherits the parent's
-  `lib` setting, so each worker bundle encodes that payload again inside itself.
+- The plugin names the generated shader files' copies before Vite's asset step, in worker builds and
+  library builds alike. Each file is hashed and copied to the assets folder. The file that loads it
+  names the copy once the build knows where that file lands. So no worker bundle encodes the set
+  inside itself, and a library build no longer turns it into data URLs.
 - One such build of a sketch that imports `vec3` takes 22 s and 13.8 GB of memory footprint. The
   same build without `lib` takes 4.8 s and 4.1 GB. A test file that builds twice holds 18.6 GB
   against 5.1 GB.
@@ -1291,24 +1293,23 @@ close it. The test suite compiles every variant of every generated module, so al
 are needed. And `shaders.ts` names every device module by URL, so a bundler copies all of them into
 every page's build whatever the page draws. Grouping those copies only defers the download.
 
-### A page build's memory follows its largest worker build
+### A page build no longer holds the generated shaders
 
-With a set of 5,962 files and 2.8 GB, the engine test page's production build peaks at 15.9 GB of
-resident memory. The page's own build of the shader graph costs 6.3 GB. One worker build of the
-same graph costs 15.0 GB when it runs in a process of its own, and the page build's peak is about
-that figure. Two worker builds do not add up, because Vite frees a worker's bundle when it ends.
-Writing the set adds nothing to the peak.
+With a set of 6,209 device modules, a page build used to peak at 15.9 GB of resident memory. Every
+worker build read each generated file to emit it as an asset. Vite copies a worker's output into the
+bundle of the build that triggered it, so the page held the whole set to write it out. The plugin
+now names the copies in the worker builds too. Each file is hashed and copied to the assets folder,
+and the page build peaks under 1 GB. The copies are written one at a time, so the peak does not
+follow their size.
 
-Vite's worker plugin copies a worker's 5,566 device assets into the bundle of the build that
-triggered the worker. In the page build the page already holds those assets, so the duplicate check
-skips them. In a build of the worker alone the copy is made, which is why a child process does not
-lower the peak. The plugin therefore builds workers in the page build's process, as Vite does.
+A copy's address is written once the build knows where the file that loads it lands. A chunk in a
+folder of its own names the copy by the path from there. A worker or a library build names it the
+same way.
 
 The plugin's transform skips the device modules when it looks for sketch scripts. Otherwise it would
 take `new URL('./shaders-<name>.js', import.meta.url)` inside a generated module as a possible sketch
-address, and read each file in full to look for `defineSketch(`. That is a pass over 5,566 files and
-2.8 GB in every page build. A generated shader file is never a sketch, so the plugin skips the
-address without reading the file.
+address, and resolve it for the whole generated set. A generated shader file is never a sketch, so
+the plugin skips the address without reading the file.
 
 The set's own size lowers every copy at once, so the savings in the sections above also lower this
 peak.
