@@ -1,8 +1,8 @@
 # D-247: An offset allocator for GPU sub-ranges, and why the engine keeps its repack placement
 
-Status: decided by the helper of M3-R4, for the owner's review. Built: the offset allocator in `crates/null3d-render/src/offset_alloc.rs`, its unit tests, a comparison test against the engine's repack placement, and a cost page. The cost page measures a hole-closing removal frame against a frame that cuts a page's end. No renderer path places meshes with the allocator. The cheap frame models the allocator's free, as "Frame time" says. Task: M3-R4.
+Status: the engine keeps its repack placement, because a page that the allocator fills must keep a fixed capacity and that fails the memory rule. Decided by the helper of M3-R4, for the owner's review. Built: the offset allocator in `crates/null3d-render/src/offset_alloc.rs`, its unit tests, a comparison test against the engine's repack placement, and a cost page. The cost page measures a hole-closing removal frame against a modelled frame that cuts a page's end. No renderer path places meshes with the allocator, so the cheap frame models the allocator's free. Task: M3-R4.
 
-Summary: The engine's mesh pages keep their append-and-repack placement. On one churn workload, Aaltonen's allocator moves no bytes where the repack placement moves 10.3 MiB for each removed model. A hole-closing frame costs 2.0 ms of the render worker and 73.6 MB of upload more than a modelled free frame on WebGPU. On WebGL2 the gap is 0.1 ms and 2.2 MB. But the allocator holds its buffer's peak for the life of the page: 21.08 MB against 16.86 MB when the live set shrinks.
+Summary: The engine keeps its repack placement, because a page that the allocator fills must keep a fixed capacity. The allocator therefore holds 21.08 MB where the repack placement holds 16.86 MB when the live set shrinks. It moves no bytes where the repack placement moves 10.3 MiB for each removed model. It would have bought 2.0 ms of the render worker and 73.6 MB of upload in a hole-closing frame on WebGPU. On WebGL2 it would have bought 0.1 ms and 2.2 MB.
 
 ## Question
 
