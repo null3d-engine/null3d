@@ -144,7 +144,8 @@ The `shadow` option of `createDirectionalLight` and the light's `setShadow` call
 | `mapSize` | The preset's `shadowMapSize` | Texels on each side of each cascade's layer: 256, 512, 1,024, 2,048 or 4,096. |
 | `distance` | `'auto'` | How far from the camera, in meters along its view, shadows fall, or `'auto'` to follow the farthest visible receiver. The camera's far plane ends them sooner. Shadows fade out over the last tenth of the distance. A camera under a scaled parent keeps the distance in meters. |
 | `bias` | 0.01 | How far each receiving surface moves toward the light before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
-| `normalBias` | 0.02 | How far each receiving surface moves along its normal before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
+| `normalBias` | 0.02 | How far each receiving surface moves along its mesh normal, before a normal map bends it, in meters, up to one texel of its cascade, scaled by its angle to the light. |
+| `intensity` | 1 | How much of the light's shadow it draws, from 0 for none to 1 for all of it. The shader mixes each lookup toward full light by the rest, so shadows thin out without a new shader variant. |
 | `contactDistance` | 0.3 | How far [contact shadows](#contact-shadows) reach from each surface toward the light, in meters. 0 turns them off for this light. |
 | `hero` | None | The object that gets a [hero shadow](#a-hero-shadow) of its own, or `null` for none. |
 | `heroTileSize` | The preset's `heroTileSize` | Texels on each side of the hero's tile: 1,024, 2,048 or 4,096. A larger tile keeps a larger object's shadow sharp. |
@@ -181,7 +182,7 @@ if (next !== held) {
 
 A new cascade count or map size makes the shadow map again, so set them at setup. The other settings cost nothing to change, so a sketch can change them in any frame.
 
-The `shadow` option and `setShadow` of spot and point lights take `bias` and `normalBias` alone, with the same defaults. Both are in meters, up to one texel of the light's tile at the receiving surface's distance from the light. The preset sets the tile size.
+The `shadow` option and `setShadow` of spot and point lights take `bias`, `normalBias` and `intensity` alone, with the same defaults. The biases are in meters, up to one texel of the light's tile at the receiving surface's distance from the light. The preset sets the tile size.
 
 ## Where the cascades split
 
@@ -280,7 +281,7 @@ Each read weights the texels by where the point falls between them, so an edge m
 A surface that casts and receives shadows can shadow itself in stripes, which is called shadow acne. It comes from the finite size of the map's texels. Both biases move the surface before its test, in meters:
 
 - `bias` moves the surface toward the light. The move is the setting times the tangent of the angle between the surface and the light, up to twice the setting.
-- `normalBias` moves the surface along its normal, by the setting times the sine of that angle.
+- `normalBias` moves the surface along its mesh normal, before a normal map bends it, by the setting times the sine of that angle.
 
 A surface that faces the light takes little of either. A surface at a steep angle takes more, because its depth changes faster across each texel. The casters draw only the faces that point away from the light, as three.js's shadows draw them. A closed mesh's lit faces then compare with its far side, which keeps acne off most surfaces. A caster that draws both faces, such as a plane with a double-sided material, is the likeliest to show acne.
 
@@ -306,7 +307,7 @@ The 5 cm cap protects floors that cast shadows. Such a floor compares its lit to
 
 A low flat caster, such as a pavement slab, holds its bottom face in the map under its lit top. The top and the bottom are parallel. So across the filter's square, the bottom rises toward the light as fast as the top does. Suppose every read compared with the depth at the surface's own point. The reads on the side toward the light would then find parts of the bottom nearer the light than that point. The top would shadow itself in stripes and rings.
 
-So the directional light's filter compares each texel with the receiving surface's own plane at that texel's center. It does so where the plane is nearer the light than the surface's point. The plane lies 1 cm below the surface, or one and a half steps of the map's stored depth where those are longer. So a caster just under the surface stays under the plane. A caster below the plane, such as the slab's own bottom, then leaves the top lit, however large the texels are. A caster on the plane or above it, such as a box that stands on the slab, still shadows it. So the shadow still meets the box's base. The filter reads four texels at once and compares each with its own depth. So it takes as many reads as a filter that compares them all with one depth.
+So the directional light's filter compares each texel with the receiving surface's own plane at that texel's center. The plane comes from the mesh's triangle, so a normal map's tilt leaves it alone. The filter uses the plane where it is nearer the light than the surface's point. The plane lies 1 cm below the surface, or one and a half steps of the map's stored depth where those are longer. So a caster just under the surface stays under the plane. A caster below the plane, such as the slab's own bottom, then leaves the top lit, however large the texels are. A caster on the plane or above it, such as a box that stands on the slab, still shadows it. So the shadow still meets the box's base. The filter reads four texels at once and compares each with its own depth. So it takes as many reads as a filter that compares them all with one depth.
 
 The tiles of spot and point lights compare each read with the depth at the surface's own point. Their views are not orthographic, so a surface's plane is not a plane in the tile.
 
@@ -442,6 +443,7 @@ WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth tex
 - `light.shadow.camera` has no equivalent. The cascades fit the camera's view by themselves, so delete the shadow camera's bounds.
 - `light.shadow.mapSize` becomes one number, `mapSize`, the texels on each side.
 - `light.shadow.normalBias` is in meters, as in three.js. `light.shadow.bias` is in meters too, where three.js counts depth units. Both scale with each surface's angle to the light, and one texel caps them. Start from the defaults.
+- `light.shadow.intensity` carries over as it stands, from 0 for no shadow to 1 for all of it. It costs the frame nothing, because the shader mixes each lookup toward full light.
 - `renderer.shadowMap.type` becomes the `shadowFilter` quality setting: `PCFShadowMap` and `PCFSoftShadowMap` map to 3 or 5. `BasicShadowMap` and `VSMShadowMap` have no equivalent.
 - `light.shadow.radius` and `light.shadow.blurSamples` become the `shadowFilter` setting too, for every light.
 - The CSM addon is built in: set `cascades` on the directional light. Its `maxFar` and `shadowMapSize` become `distance` and `mapSize`.

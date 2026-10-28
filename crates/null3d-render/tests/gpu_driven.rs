@@ -1529,6 +1529,7 @@ fn a_direct_path_frame_builds_no_cluster_table() {
 fn a_material_that_keeps_its_display_color_draws_the_tone_mask() {
     use null3d_gpu::drawlist::template;
     use null3d_render::frame::CanvasOutput;
+    use null3d_render::gpu_driven::view_frame;
     use null3d_render::materials::{Shading, feature};
     use null3d_render::output::{Antialias, SceneColor};
 
@@ -1557,8 +1558,9 @@ fn a_material_that_keeps_its_display_color_draws_the_tone_mask() {
         let mut made = Vec::new();
         let mut drew = false;
         let mut uploaded = false;
-        // The tone view's frame uniform: a view's four buffers start at the builder's seventh id.
-        let frame = 7 + 4 * ViewId::TONE.index() as u32;
+        // The tone view's frame uniform, asked of the builder rather than pinned here, so the
+        // numbering can move without this test reading the wrong buffer.
+        let frame = view_frame(ViewId::TONE);
         for _ in 0..4 {
             let commands = world.step(&mut mock, true);
             made = commands

@@ -141,7 +141,9 @@ enable draw_index;
 #endif
 #import null3d::ibl::{reflected_direction}
 #import null3d::lighting::{horizon_occlusion, indirect_specular, specular_occlusion}
+#ifndef CUSTOM_LOBE
 #import null3d::lights::{clustered_light}
+#endif
 #ifndef PARALLAX
 #import null3d::ssr::{screen_reflection}
 #endif
@@ -223,11 +225,11 @@ fn pick_color(key: u32) -> vec4f {
 #endif
 #ifdef TRANSMISSION
 #import null3d::globals::{MaterialTransmission}
-#import null3d::mesh::{NO_FOG, layer_maps_kind_of, material_transmission}
+#import null3d::mesh::{NO_FOG, layer_maps_kind_of, material_dispersion, material_transmission}
 #import null3d::refraction::{transmitted_light}
 #ifdef TONE_MAP
 #import null3d::fog::{fog_factor}
-#import null3d::tonemap::{encode, tone_map, vignette}
+#import null3d::tonemap::{encode, tone_map, vignette, vignette_place}
 #endif
 #endif
 #ifdef TRANSLUCENCY
@@ -253,7 +255,11 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::math::{rotate_2d}
 #endif
 #ifdef CUSTOM_LOBE
+#import null3d::lighting::{Reflected}
+#import null3d::lights::{cluster_lights, cluster_sample, grid_word, light_of}
+#import null3d::lights::{KIND_RECT, area_light}
 #import null3d::math::{half_vector}
+#import null3d::tables::{AreaTerms, area_terms}
 #endif
 #ifdef ALPHA_COVERAGE
 #import null3d::cutout::{alpha_coverage}
@@ -338,6 +344,10 @@ var<private> transmission_row: MaterialTransmission;
 /// through names 2 for the slots that hold its transmission and thickness maps, so `with_maps`
 /// reads them instead of the specular maps.
 var<private> layer_maps_kinds: u32;
+
+/// The strength of the volume's dispersion, which spreads the light through it over three rays,
+/// one per color.
+var<private> volume_dispersion: f32;
 
 /// The diffuse light that `light_surface` gathers, of which the light through the surface takes
 /// the transmission's share.
@@ -1129,26 +1139,27 @@ struct Surface {
 }
 
 #ifdef CUSTOM_LOBE
-/// What a custom material's own lobe function knows of the main directional light. The surface
-/// function passes its own four values through `Surface.lobe`, and the engine adds the lobe's
-/// return to the base lobe's specular.
+/// What a custom material's own lobe function knows of one light that reaches the surface. The
+/// surface function passes its own four values through `Surface.lobe`, and the engine adds the
+/// lobe's return to that light's base specular. The engine calls the lobe for the sun and for each
+/// point and spot light of the surface's cluster; area lights keep the base lobe.
 struct LobeInput {
     /// The surface's unit normal in world space.
     normal: vec3f,
     /// The unit direction from the surface toward the camera.
     view: vec3f,
-    /// The unit direction from the surface toward the main light.
+    /// The unit direction from the surface toward the light.
     light: vec3f,
-    /// The unit half vector between the main light and the camera, or zero where the two cancel,
-    /// since no unit bisector exists there.
+    /// The unit half vector between the light and the camera, or zero where the two cancel, since
+    /// no unit bisector exists there.
     half: vec3f,
     /// The surface's perceptual roughness, after the engine's filter.
     roughness: f32,
     /// The specular reflectance at normal incidence.
     f0: vec3f,
-    /// The specular radiance that the base lobe reflects from the main light, before the layers.
+    /// The specular radiance that the base lobe reflects from the light, before the layers.
     specular: vec3f,
-    /// The main light's irradiance on the surface: the cosine, the color and the shadow.
+    /// The light's irradiance on the surface: the cosine, the color and the shadow.
     irradiance: vec3f,
     /// The four values that the surface function wrote to `Surface.lobe`.
     values: vec4f,
@@ -1819,6 +1830,71 @@ fn has_surrounding() -> bool {
 #endif
 }
 
+#ifdef CUSTOM_LOBE
+/// The light that a surface reflects toward the camera from the point and spot lights of its
+/// cluster, with the material's own lobe added beside each light's base specular. It walks the
+/// cluster itself rather than calling `null3d::lights`'s loop, because a library module cannot call
+/// a function of the shader that declares it, and the material declares the lobe here. Area lights
+/// keep the base lobe, and the per-light work beyond the lobe is the library's own `cluster_sample`.
+/// The arguments are those that `light_surface` passes to its clustered lights, and `lobe_values`
+/// holds the material's four values for its lobe.
+fn clustered_lobed_light(
+    m: PbrMaterial,
+    relative: vec3f,
+    normal: vec3f,
+    mesh_normal: vec3f,
+    to_view: vec3f,
+    compensation: vec3f,
+    lobe_values: vec4f,
+) -> Reflected {
+    var sum = Reflected(vec3f(0.0), vec3f(0.0));
+    let found = cluster_lights(relative);
+#ifdef AREA_LIGHTS
+    // The area lights' tables for the surface, read with the cluster's first area light.
+    var terms = AreaTerms(vec4f(0.0), vec2f(0.0));
+    var have_terms = false;
+#endif
+    for (var k = 0u; k < found.y; k++) {
+        let light = light_of(grid_word(found.x + k));
+        let kind = bitcast<u32>(light.penumbra.y);
+#ifdef AREA_LIGHTS
+        if kind >= KIND_RECT {
+            if !have_terms {
+                terms = area_terms(dot(normal, to_view), m.roughness);
+                have_terms = true;
+            }
+            let reflected = area_light(m, terms, light, kind, relative, normal, to_view);
+            sum.diffuse += reflected.diffuse;
+            sum.specular += reflected.specular;
+            continue;
+        }
+#else
+        if kind >= KIND_RECT {
+            continue;
+        }
+#endif
+        let sample = cluster_sample(light, relative, normal, mesh_normal, to_view);
+        var reflected = direct_light(m, normal, to_view, sample.to_light, sample.incoming, compensation);
+        // The material's own lobe adds its specular beside the base lobe's for this light. It
+        // knows the light, the view and the half vector, which a surface function cannot see.
+        reflected.specular += lobe(LobeInput(
+            normal,
+            to_view,
+            sample.to_light,
+            half_vector(sample.to_light, to_view),
+            m.roughness,
+            m.specular_blended,
+            reflected.specular,
+            saturate(dot(normal, sample.to_light)) * sample.incoming,
+            lobe_values,
+        ));
+        sum.diffuse += reflected.diffuse;
+        sum.specular += reflected.specular;
+    }
+    return sum;
+}
+#endif
+
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
 /// where its shadows fall, the point and spot lights of the surface's cluster, the ambient and
 /// hemisphere lights, `extra` irradiance such as a light map's, and the light around it, from the
@@ -1828,20 +1904,25 @@ fn has_surrounding() -> bool {
 /// `occlusion` darkens the ambient and hemisphere lights and the environment's diffuse light, and
 /// its specular light as three.js's `computeSpecularOcclusion` does. The environment's specular
 /// light also fades where the shading `normal` reflects the view below the mesh's own
-/// `vertex_normal`. `contact` is the share of the sun's light that the sun's contact shadows let
-/// through. `relative` is the surface's position relative to the camera, `to_view` points from the
-/// surface toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and
-/// view angle. `reflection` holds light from the mirror direction and its share, from screen-space
+/// `vertex_normal`. The sun and the clustered lights move their shadow lookups off the surface by
+/// the mesh's own normal, `vertex_normal`, before a normal map bends it, and the sun compares each
+/// stored depth with the plane of the mesh's triangle, `face_normal`, turned toward the sun.
+/// `contact` is the share of the sun's light that the sun's contact shadows let through. `relative`
+/// is the surface's position relative to the camera, `to_view` points from the surface toward the
+/// camera, and `dfg` holds the split-sum terms at the surface's roughness and view angle.
+/// `reflection` holds light from the mirror direction and its share, from screen-space
 /// reflections and a custom material's planar reflection, which takes the place of that share of
 /// the reflection probes' and the environment's reflection, with or without either. `lobe_values`
-/// holds the material's own values for its lobe function, which the engine calls for the main
-/// light. In the TRANSLUCENCY builds the lights also gather the light that reaches the surface's
-/// back, and the ambient, hemisphere and environment light from behind goes to `back_indirect`.
+/// holds the material's own values for its lobe function, which the engine calls for the sun and
+/// for each point and spot light. In the TRANSLUCENCY builds the lights also gather the light that
+/// reaches the surface's back, and the ambient, hemisphere and environment light from behind goes
+/// to `back_indirect`.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
     normal: vec3f,
     vertex_normal: vec3f,
+    face_normal: vec3f,
     to_view: vec3f,
     dfg: vec2f,
     extra: vec3f,
@@ -1861,7 +1942,7 @@ fn light_surface(
     // the surface itself in its way.
     let seen = relative + engine_frame.shadow_origin.xyz;
     let facing = dot(normal, to_sun) > 0.0;
-    sun_color *= sun_shadow(seen, lit_side(normal, to_sun), to_sun) * select(1.0, contact, facing);
+    sun_color *= sun_shadow(seen, lit_side(vertex_normal, to_sun), face_normal, to_sun) * select(1.0, contact, facing);
 #else
     // A surface that faces away from the sun gets none of its light whatever the shadow map
     // holds, so it skips the lookup and the filter's reads. A coat that faces the sun still
@@ -1873,7 +1954,7 @@ fn light_surface(
     let facing = dot(normal, to_sun);
 #endif
     if facing > 0.0 {
-        sun_color *= sun_shadow(relative + engine_frame.shadow_origin.xyz, normal, to_sun) * contact;
+        sun_color *= sun_shadow(relative + engine_frame.shadow_origin.xyz, vertex_normal, face_normal, to_sun) * contact;
     }
 #endif
 #endif
@@ -1883,8 +1964,8 @@ fn light_surface(
 #endif
     var sun = direct_light(m, normal, to_view, to_sun, sun_color, compensation);
 #ifdef CUSTOM_LOBE
-    // The material's own lobe adds its specular beside the base lobe's for the main light. It
-    // knows the light, the view and the half vector, which a surface function cannot see.
+    // The material's own lobe adds its specular beside the base lobe's for the sun. It knows the
+    // light, the view and the half vector, which a surface function cannot see.
     sun.specular += lobe(LobeInput(
         normal,
         to_view,
@@ -1901,7 +1982,13 @@ fn light_surface(
     gather_back_light(normal, to_sun, sun_color);
     back_indirect = ambient_light(-normal) * occlusion;
 #endif
-    let clustered = clustered_light(m, relative, normal, to_view, compensation);
+#ifdef CUSTOM_LOBE
+    // The material's own lobe answers each light, so the cluster's point and spot lights run
+    // through the loop of this file.
+    let clustered = clustered_lobed_light(m, relative, normal, vertex_normal, to_view, compensation, lobe_values);
+#else
+    let clustered = clustered_light(m, relative, normal, vertex_normal, to_view, compensation);
+#endif
     let n_dot_v = saturate(dot(normal, to_view));
     let surrounding_light = ambient_light(normal) + extra;
 #ifdef COAT_SHEEN
@@ -1967,12 +2054,15 @@ fn light_surface(
 /// camera sees what lies behind it. The exposure and the tone mapping apply, and the scene's fog does
 /// not, as three.js applies them to that material. Only the main directional light's shadows fall on
 /// it. The mesh must receive shadows, so a build without `RECEIVE_SHADOWS` draws nothing.
-fn shadow_catcher(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
+/// `face_normal` is the unit normal of the triangle's plane, turned toward the sun, which each
+/// stored depth compares with.
+fn shadow_catcher(s: Surface, input: SurfaceInput, face_normal: vec3f, pixel: vec4f) -> vec4f {
     var shadow = 0.0;
 #ifdef RECEIVE_SHADOWS
     shadow = 1.0 - sun_shadow(
         input.relativePosition + engine_frame.shadow_origin.xyz,
-        s.normal,
+        input.normal,
+        face_normal,
         -engine_frame.sun_direction.xyz,
     );
 #endif
@@ -2006,6 +2096,12 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     let face = cross(dpdx(input.relativePosition), dpdy(input.relativePosition));
 #endif
+    // The plane of the mesh's triangle, turned toward the sun: the shadow filter compares each
+    // stored depth with this plane, and the map holds the triangles themselves, so a normal map's
+    // tilt must not move it. The turn gives the plane the side that the light's projection reads.
+    let plane_normal = normalize(
+        select(face, -face, dot(face, engine_frame.sun_direction.xyz) > 0.0),
+    );
     // The alpha tests' derivatives come here too, before the shadow-catcher branch: a derivative
     // must run in uniform control flow, and everything after the branch depends on it.
 #ifdef ALPHA_HASH
@@ -2015,7 +2111,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let alpha_width = fwidth(s.alpha);
 #endif
     if (u32(material_row.strengths.z) & SHADOW_CATCHER_FLAG) != 0u {
-        return shadow_catcher(s, input, pixel);
+        return shadow_catcher(s, input, plane_normal, pixel);
     }
     // The material's dielectric specular values, times its specular maps in the MAPS builds.
     var specular = material_row.specular;
@@ -2144,6 +2240,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         input.relativePosition,
         normal,
         input.normal,
+        plane_normal,
         input.viewDirection,
         dfg,
         s.irradiance * engine_frame.output.exposure,
@@ -2167,6 +2264,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         transmission_row.values.z,
         transmission_row.attenuation,
         object_scale,
+        volume_dispersion,
     ) * pbr.diffuse * (1.0 - fresnel);
 #ifdef TONE_MAP
     let emitted = s.emissive * engine_frame.output.exposure;
@@ -2242,7 +2340,11 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     // joins after the tone mapping, as far as the fog lets it.
     let unfogged = (u32(material_row.strengths.z) & NO_FOG) != 0u;
     let fog = select(fog_factor(engine_frame.fog, input.relativePosition), 0.0, unfogged);
-    let shade = vignette(pixel.xy, engine_frame.target_size.xy, engine_frame.vignette);
+    let shade = vignette(
+        vignette_place(pixel.xy, engine_frame.occlusion.y),
+        engine_frame.target_size.xy,
+        engine_frame.vignette,
+    );
     let shaded = fogged(layered, input.relativePosition, material_row) * shade;
     let keeps = keeps_display_color(material_row);
     let toned = select(
@@ -2314,6 +2416,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef TRANSMISSION
     transmission_row = material_transmission(in.material);
     layer_maps_kinds = layer_maps_kind_of(in.material);
+    volume_dispersion = material_dispersion(in.material);
     object_scale = in.scale;
 #else ifdef TRANSLUCENCY
     translucency_row = material_translucency(in.material);

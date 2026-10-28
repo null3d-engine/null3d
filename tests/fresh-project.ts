@@ -412,7 +412,7 @@ async function playsOffline(dist: string): Promise<void> {
 		const firstPathFailed = failed.splice(0, failed.length);
 		if (offline.start !== 'threaded' || !offline.isolated || firstPathFailed.length > 0)
 			throw new Error(
-				`offline, the page did not start the threaded engine from the cache alone: start ${offline.start}, isolated ${offline.isolated}, failed requests ${JSON.stringify(failed)}`,
+				`offline, the page did not start the threaded engine from the cache alone: start ${offline.start}, isolated ${offline.isolated}, failed requests ${JSON.stringify(firstPathFailed)}`,
 			);
 		// The first visit drew with one GPU path. The cache must also start the other, which a
 		// device that changes its GPU or browser between visits takes.

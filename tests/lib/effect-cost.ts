@@ -13,6 +13,8 @@ export interface Side {
 	gpuMs: number | null;
 	intervalMs: number | null;
 	cpuMs: number | null;
+	/** The display's refresh rate in hertz, where the page measured one. */
+	refreshHz?: number | null;
 	/** Draw calls per frame, where the page reports them. */
 	draws?: number | null;
 	/** Each part of the frame's GPU time, where the device times its passes. */

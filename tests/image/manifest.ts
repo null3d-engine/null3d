@@ -212,6 +212,12 @@ const HERO_SIZE = [640, 360] as const;
  * page draws, so the view crops the sides the way the owner's recording does.
  */
 const CREEK_SCALE_SIZE = [320, 279] as const;
+/**
+ * The close picture of the Creek's water: a buffer large enough to resolve the surface's waves and
+ * foam. The bank views draw the stream a few dozen pixels wide, so a fault in the surface's pattern
+ * passes them unseen.
+ */
+const CREEK_WATER_SIZE = [640, 360] as const;
 
 /**
  * The volumetric fog: the sun's rays between the pillars, and the street lamps' cones at night with
@@ -1750,6 +1756,27 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// The same scene with the sun's shadow thinned, at each of the three values of its intensity:
+	// none, half and all of it. The shadows lighten toward no shadow as the value falls, and the
+	// lit surfaces around them do not change. All of it is the default, so that picture borrows the
+	// still scene's reference.
+	...(
+		[
+			['none', 0, undefined],
+			['half', 0.5, undefined],
+			['full', 1, 'shadows-seam'],
+		] as const
+	).map(
+		([name, intensity, reference]): ImageTest => ({
+			name: `shadows-intensity-${name}`,
+			sketch: `tests/pages/sketches/shadow-scene-sketch.ts?intensity=${intensity}`,
+			hold: 0,
+			size: [480, 270],
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+			...(reference && { reference }),
+		}),
+	),
 	// Car-sized boxes standing on a street, in the last cascade from above, and from a low angle in
 	// the first cascade and in the last. Each box's shadow must meet its base with no lit line
 	// between them.
@@ -1853,6 +1880,29 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: { maxDiffRatio: 0.005 },
 		reference: 'spot-shadows',
 	},
+	// The same scene with the two spot lights' shadows thinned at each of their intensity values:
+	// none, half and all of it. The tile each light casts into carries the value beside its tile
+	// count, so these pictures are the test that a point or spot light reads its shadow strength
+	// where the shader expects it. All of it is the default, so that picture borrows the spot
+	// shadows test's reference.
+	...(
+		[
+			['none', 0, undefined],
+			['half', 0.5, undefined],
+			['full', 1, 'spot-shadows'],
+		] as const
+	).map(
+		([name, intensity, reference]): ImageTest => ({
+			name: `spot-shadows-intensity-${name}`,
+			sketch: `tests/pages/sketches/spot-shadows-sketch.ts?intensity=${intensity}`,
+			hold: 0,
+			size: [480, 270],
+			switches: ['shadowTileSize=1024'],
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+			...(reference && { reference }),
+		}),
+	),
 	// Point light shadows: one point light among casters on every side, whose shadows fall across
 	// the six tiles of its cube onto the ground and a wall. The switch turns point light shadows
 	// on, as the presets of WebGL2 and compatibility mode leave them off.
@@ -2732,7 +2782,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 2,
 	},
 	// Terrain of the terrain add-on: a height field drawn as a camera-centred quadtree of blocks,
-	// with grass, soil, rock and snow blended by a splat map, and stones seated with heightAt.
+	// lit per pixel from normals baked over the ground, with grass, soil, rock and snow blended by
+	// a splat map and each layer's own height, and stones seated with heightAt.
 	{
 		name: 'terrain',
 		sketch: 'tests/pages/sketches/terrain-sketch.ts',
@@ -3115,8 +3166,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clear coats over car paint and sheens over velvet, their maps, and a wet stone whose surface
 	// function sets its coat, in the room's light. The layers spec checks that layers turned off
-	// draw as no layers do. A software GPU builds the layers' shaders and the room slowly.
-	{ name: 'coat-sheen', sketch: COAT_SHEEN_SKETCH, hold: 0, timeoutSeconds: 60 },
+	// draw as no layers do. A software GPU builds the layers' shaders and the room slowly, which
+	// took this page past sixty seconds on seven runs in a row, so it has the time car paint has.
+	{ name: 'coat-sheen', sketch: COAT_SHEEN_SKETCH, hold: 0, timeoutSeconds: 120 },
 	// The coated and sheened balls with a custom material that keeps the default surface: they
 	// draw as the standard material does, so the references are copies of the coat-sheen test's.
 	{
@@ -3124,7 +3176,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: `${COAT_SHEEN_SKETCH}?custom`,
 		hold: 0,
 		reference: 'coat-sheen',
-		timeoutSeconds: 60,
+		timeoutSeconds: 120,
 	},
 	// Car paint: a metallic body with filtered flakes and panel seams, and the same body with each
 	// part left out or with a carbon weave whose tows stretch their highlight. The paint spec
@@ -3216,6 +3268,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...DEMOS.map((demo): ImageTest => {
 		const switches = [
 			...(demo.largeWorld ? ['largeWorld'] : []),
+			// A demo with a backdrop draws over a page, so the image page starts the engine on the
+			// see-through canvas that the demo's own start asks for.
+			...(demo.backdrop ? ['transparent'] : []),
 			// The engine reads the page's switch, but not the demo's option, which a sketch test has no
 			// page to pass. Both take the 8-bit path that the demo's own start takes.
 			...(demo.hdr === false ? ['hdr=off'] : []),
@@ -3274,6 +3329,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'examples/showcase/creek/sketch.ts?render-scale=0.75',
 		size: CREEK_SCALE_SIZE,
 		hold: 17,
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 300,
+	},
+	// The Creek's water from just above the stream, looking along it, so its surface fills the
+	// frame. The bank views draw the stream a few dozen pixels wide, and a fault in the surface's
+	// pattern passes them unseen.
+	{
+		name: 'creek-water-close',
+		sketch: 'examples/showcase/creek/sketch.ts?water-close',
+		size: CREEK_WATER_SIZE,
+		hold: 0.5,
 		swiftShaderSwitches: ['preset=low'],
 		timeoutSeconds: 300,
 	},

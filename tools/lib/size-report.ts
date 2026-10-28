@@ -1110,6 +1110,30 @@ export const FIRST_USE_SHADER_BUDGET: Budget = {
 };
 
 /**
+ * The extra uncompressed budget that two first-use shader files receive over
+ * [`FIRST_USE_SHADER_BUDGET`], by the name the report gives each file. Every other first-use
+ * shader file keeps the standard figure. The generated GLSL of a loop that fills four directional
+ * lights is verbose, and the loop repeats in every build that a file holds: these two coat and
+ * sheen files hold the most builds. The owner raised the two figures in writing.
+ */
+export const FIRST_USE_SHADER_RAW_RAISE: Readonly<Record<string, number>> = {
+	'shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-draw-index-tone-map-half.js':
+		16 * 1024,
+	'shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-tone-map-half.js':
+		16 * 1024,
+};
+
+/**
+ * The budget for the first-use shader file named `name`: [`FIRST_USE_SHADER_BUDGET`], with the
+ * raise that [`FIRST_USE_SHADER_RAW_RAISE`] gives the file when it names it.
+ */
+export function firstUseShaderBudget(name: string): Budget {
+	const raise = FIRST_USE_SHADER_RAW_RAISE[name];
+	if (!raise) return FIRST_USE_SHADER_BUDGET;
+	return { ...FIRST_USE_SHADER_BUDGET, raw: FIRST_USE_SHADER_BUDGET.raw + raise };
+}
+
+/**
  * The share of a budget that a start or a file may reach in any column before the build prints a
  * warning: 97%. A start or a file that passes it has little room for the next feature, so the
  * report names it while the build still passes. The owner asked for this warning on the start in
@@ -1157,7 +1181,7 @@ function budgetedSizes(
 							{
 								what: `js/${name}, the shader builds of a feature that loads on first use,`,
 								size,
-								budget: FIRST_USE_SHADER_BUDGET,
+								budget: firstUseShaderBudget(name),
 							},
 						]
 					: [],

@@ -486,11 +486,12 @@ export function sharesVertices(
 /**
  * Gives each primitive's mesh of a node the levels of detail that `MSFT_lod` names: the same
  * primitive of each level node's mesh. Each level's error comes from the asset tool's
- * `NULL3D_lod_error`, which measured the level's own error, or its share of the screen's height
- * from `MSFT_screencoverage`. A measured error changes the picture by under a pixel at its switch,
- * so the level switches at once; a coverage given by hand keeps a fading band. A level that names
- * another material than the node's primitive draws with it. Levels whose meshes have other
- * primitives, or no errors, are left out, and so are levels that a mesh cannot take, with a note.
+ * `NULL3D_lod_error`, or its share of the screen's height from `MSFT_screencoverage`. A measured
+ * error changes the picture by under a pixel at its switch, so the level switches at once; a
+ * hand-set error or a coverage keeps a fading band. A level that names another material than the
+ * node's primitive draws with it. Levels whose meshes have other primitives are left out, and so
+ * are levels that a mesh cannot take, with a note. A node that gives neither an error nor a coverage
+ * gives the mesh no levels.
  */
 function setFileLevels(
 	base: readonly MeshGeometry[],
@@ -504,10 +505,9 @@ function setFileLevels(
 	if (levels.meshes.some((k) => (data.meshes[k] as MeshData).primitives.length !== count)) return;
 	const lower = levels.meshes.map(levelOf);
 	for (const [p, mesh] of base.entries()) {
-		const measured = levels.errors !== undefined;
 		const errors = levels.errors;
 		const coverage = levels.coverage;
-		if (!measured && !coverage) return;
+		if (!errors && !coverage) return;
 		const own = primitives[p] as PrimitiveData | undefined;
 		try {
 			mesh.setLevels(
@@ -518,9 +518,7 @@ function setFileLevels(
 					const material = own && level.material !== own.material ? materials.of(level) : undefined;
 					return {
 						mesh: meshes[p] as MeshGeometry,
-						...(measured
-							? { error: (errors as number[])[j] as number, fade: false }
-							: { coverage: (coverage as number[])[j] as number }),
+						...fileLevelMeasure(errors, coverage, j),
 						...(material && { material }),
 					};
 				}),
@@ -530,6 +528,27 @@ function setFileLevels(
 			return;
 		}
 	}
+}
+
+/**
+ * The measure that a file gives a level: its error, or its coverage where the file gives no errors,
+ * and whether the level switches at once. The asset tool writes the screen coverage that its
+ * measured error implies beside the error, so an error that comes alone is one its author set as a
+ * switch distance, and that switch shows.
+ */
+export function fileLevelMeasure(
+	errors: readonly number[] | undefined,
+	coverage: readonly number[] | undefined,
+	j: number,
+): { error?: number; coverage?: number; fade?: boolean } {
+	if (errors) {
+		const measured = coverage !== undefined;
+		return {
+			error: errors[j] as number,
+			...(measured ? { fade: false } : {}),
+		};
+	}
+	return { coverage: (coverage as readonly number[])[j] as number };
 }
 
 /** A node's staged levels, and the meshes that draw them, one for each primitive of its mesh. */
@@ -762,6 +781,21 @@ async function loadStages(
 	}
 }
 
+/**
+ * Warns, in a development build alone, about each extension that a file uses and that neither the
+ * loader nor a registered add-on reads: its data does not draw. A package that reads one is named,
+ * so a page that imports it draws the file's data.
+ */
+export function warnUnreadExtensions(data: GltfData, address: URL, call: string): void {
+	if (!DEV) return;
+	for (const { name, addon } of data.unread ?? [])
+		console.warn(
+			addon
+				? `${call}() loaded ${address}, which uses ${name}, an extension that the engine does not read. Import ${addon}, which reads it.`
+				: `${call}() loaded ${address}, which uses ${name}, an extension that the engine does not read, so its data does not draw.`,
+		);
+}
+
 /** The prefab of a parsed file, once its textures and materials exist. */
 async function buildPrefab(
 	context: GltfContext,
@@ -946,6 +980,7 @@ async function buildPrefab(
 	const { parts, bounds } = partsOf(template, data, meshes, instancing);
 	if (DEV && data.notes.length > 0)
 		console.warn(`${call}() left out parts of ${address}: ${data.notes.join('; ')}.`);
+	warnUnreadExtensions(data, address, call);
 	if (DEV && data.draco)
 		console.warn(
 			`${call}() loaded ${address}, whose meshes use Draco compression. Draco's decoder adds about 60 KB to the page's download, and decodes slower than meshopt. Convert the file to meshopt with \`bunx @null3d/cli assets optimize\`.`,
@@ -1424,6 +1459,7 @@ class FileMaterials {
 			options.attenuationDistance = volume.attenuationDistance;
 		}
 		if (m.transmission) options.transmission = m.transmission.factor;
+		if (m.dispersion > 0) options.dispersion = m.dispersion;
 		if (m.diffuseTransmission) {
 			options.diffuseTransmission = m.diffuseTransmission.factor;
 			options.diffuseTransmissionColor = m.diffuseTransmission.color;
@@ -1614,6 +1650,8 @@ function propertyBase(target: RigPropertyTarget, data: GltfData): Float32Array |
 				return Float32Array.from(m.specularColor);
 			case 'transmission':
 				return one(m.transmission?.factor);
+			case 'dispersion':
+				return one(m.dispersion);
 			case 'thickness':
 				return one(m.transmission?.thickness ?? m.diffuseTransmission?.thickness);
 			case 'clearcoat':

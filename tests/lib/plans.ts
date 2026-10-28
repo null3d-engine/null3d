@@ -1650,6 +1650,56 @@ export function vegetationPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * The GPU paths of the terrain plan's pages, and the presets that each one draws. WebGL2 and
+ * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
+ * under another name.
+ */
+const TERRAIN_PATHS = [
+	{ path: 'webgpu', tier: 'webgpu', presets: ['low', 'medium', 'high', 'ultra'] },
+	{ path: 'compat', tier: 'webgpu', presets: ['low', 'medium'] },
+	{ path: 'webgl2', tier: 'webgl2', presets: ['low', 'medium'] },
+] as const;
+
+/**
+ * How long one page of the terrain plan may take: the demo builds its ground, its layers and its
+ * boulders, draws its first frame, then measures five seconds and reads the overlay.
+ */
+const TERRAIN_TIMEOUT_SECONDS = 600;
+
+/**
+ * The terrain demo at each preset that a GPU path draws, for the terrain add-on's cost per preset:
+ * the frame interval, CPU time per frame, GPU time per pass, the triangles drawn and the memory.
+ * Each page fixes its path and its preset, so the start-up check cannot lower either, and holds the
+ * render scale at 1 with the governor's target at a rate that no frame misses, so each preset's own
+ * cost shows. The capabilities page comes first, so a device without WebGPU skips those pages.
+ */
+export function terrainPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const { path, tier, presets } of TERRAIN_PATHS)
+		for (const preset of presets)
+			items.push(
+				pageItem(
+					`terrain-${preset}-${path}`,
+					'demo-device',
+					{ kind: 'probe', tier },
+					{
+						switches: [
+							`gpu=${path}`,
+							'demo=terrain',
+							`preset=${preset}`,
+							'target-fps=1',
+							'seconds=5',
+						],
+						timeoutSeconds: TERRAIN_TIMEOUT_SECONDS,
+					},
+				),
+			);
+	return items;
+}
+
+/**
  * One page for the bisect of the Creek stall on Apple WebGPU: Creek at Low on core WebGPU, with the
  * page's own switches naming what to measure and which shared effects to turn off. The time limit is
  * short, so a page that stalls ends its session instead of holding it for the full limit.
@@ -2347,6 +2397,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	demos: demosPlan,
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
+	terrain: terrainPlan,
 	'tree-generation': treeGenerationPlan,
 	'vegetation-scatter': vegetationScatterPlan,
 	'canvas-cost': canvasCostPlan,
@@ -3048,7 +3099,7 @@ export function judge(
 			const relinked = (result.relinked ?? []) as { shader: string; log: string }[];
 			if (relinked.length > 0)
 				context?.note?.(
-					`${relinked.length} ${relinked.length === 1 ? 'program' : 'programs'} linked at the second try after Safari's random Metal fault: ${relinked.map(({ shader, log }) => `${shader} (${metalFaultLine(log)})`).join('; ')}`,
+					`${relinked.length} ${relinked.length === 1 ? 'program' : 'programs'} linked again after Safari's random Metal fault: ${relinked.map(({ shader, log }) => `${shader} (${metalFaultLine(log)})`).join('; ')}`,
 				);
 			// A part holds one share of the builds, and the browser's extension decides which of them
 			// it can compile at all: a browser without `WEBGL_multi_draw` cannot compile the builds

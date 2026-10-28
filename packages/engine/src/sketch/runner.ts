@@ -91,7 +91,7 @@ import {
 } from '../shared/images';
 import { MEMORY_AREA_COUNT } from '../shared/memory-area';
 import { MemoryViews } from '../shared/memory-views';
-import { Counter, FrameRecorder, MemoryFigure, Phase, Role } from '../shared/metrics';
+import { Counter, FrameRecorder, MemoryFigure, PHASE_NAMES, Phase, Role } from '../shared/metrics';
 import type { Recorder, ReplayProgram, ReplayResult } from '../shared/recording';
 import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
@@ -360,6 +360,8 @@ export class SketchRunner {
 	private frameOpen = false;
 	/** When the current phase of the frame started. */
 	private phaseStart = 0;
+	/** The last phase that the frame in progress ended, which names where a hold stopped. */
+	private lastPhase: string | undefined;
 	/** True while hold mode steps the sketch: the first failure then stops it. */
 	private holding = false;
 	/** Gives the thread its own Math.random back, after hold mode seeded it. */
@@ -905,6 +907,7 @@ export class SketchRunner {
 		const at = this.record.phaseIndex(phase);
 		floats[at] = (floats[at] as number) + (now - this.phaseStart);
 		this.phaseStart = now;
+		this.lastPhase = PHASE_NAMES[phase];
 	}
 
 	/**
@@ -1311,9 +1314,13 @@ export class SketchRunner {
 				frame = this.frame();
 			}
 		} catch (error) {
+			// The message alone rarely says where the frame stopped, so name the phase that finished
+			// last: a failure during the phase after it belongs to that part of the frame.
+			const phase =
+				this.frameOpen && this.lastPhase !== undefined ? ` (past its ${this.lastPhase} phase)` : '';
 			throw new EngineError(
 				'E1408',
-				`hold mode stopped at ${Number(this.clock.now.toFixed(3))} seconds, in frame ${this.context.time.frame}: ${messageOf(error)}`,
+				`hold mode stopped at ${Number(this.clock.now.toFixed(3))} seconds, in frame ${this.context.time.frame}: ${messageOf(error)}${phase}`,
 			);
 		} finally {
 			this.holding = false;
@@ -1614,6 +1621,7 @@ export class SketchRunner {
 		this.updateFailed = false;
 		this.frameOpen = true;
 		this.phaseStart = start;
+		this.lastPhase = undefined;
 		this.readViewport();
 		// The governor judges the frames so far before the sketch's update, which then sees the
 		// render scale of this frame, and whose change handlers hear of a shadow step.

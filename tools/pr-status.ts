@@ -24,7 +24,7 @@ const BASE = 'origin/main';
 /** Tasks whose work is partly on the branch: the part that landed, and the part that remains. */
 const PARTIAL: Readonly<Record<string, string>> = {
 	'M3-C1':
-		'the scene, its lanes, rain and the hero car are in; the moods, the instances demo and the device figures remain',
+		"the scene, its lanes, rain and the hero car are in, and so are the moods (`createMoods` in the skyway sketch) and the instances demo, which is registered and built on the traffic-lanes add-on. What remains is the device figures, which cover the Mac alone with no iPad or phone row, and the owner's look approval",
 	'M3-T1':
 		"the measured fence is in and the trim landed and was then reverted with a record: moving the fog write, the picks and the events out of the start cost more bytes than it saved, so the start stays at about 190 KB against this task's 160 KB target. The owner dropped the task as superseded: the target predates the ruling that the start's budget may rise",
 	'M3-B4':
@@ -32,31 +32,28 @@ const PARTIAL: Readonly<Record<string, string>> = {
 };
 
 /** Tasks whose work is on a helper branch, whether or not part of it has reached this branch. */
-const ON_BRANCH = new Set(['M3-V2']);
+const ON_BRANCH = new Set(['M3-V2', 'M3-F9']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 // The branch's audits read every ticked task against its own "Done when" and its section's rule.
 // A tick states that the task is done, so a task those audits found short of its own line is not
 // ticked here until the gap closes, whatever code it already has.
 const INCOMPLETE = new Set([
+	'M3-F5',
 	'M3-B1',
-	'M3-B3',
 	'M3-B5',
 	'M3-V4',
 	'M3-F2',
-	'M3-R20',
+	'M3-K9',
 	'M3-E4',
-	'M3-K3',
 	'M3-E10',
 	'M3-V6',
-	'M3-E4a',
 	'M3-E6',
 	'M3-E8',
 	'M3-L3',
 	'M3-R12',
 	'M3-R22',
 	'M3-L4',
-	'M3-A9',
 	'M3-V5',
 	'M3-A11',
 	'M3-G2',
@@ -67,10 +64,12 @@ const INCOMPLETE = new Set([
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
+	'M3-F5':
+		"the owner rejected the look and withdrew the earlier approval: the water has sideways lines interspersed with the flow, and the Creek should match what it had before the add-on. The add-on moved the phase, the foam drift and the caustics onto a current vector read from the river mesh's texture coordinates instead of the old fixed flow, took the thickness from the screen-space depth copy instead of the analytic bed, and made the shore a soft alpha ramp. The unchanged-reference clause was never proved either: the Creek references were redrawn two days after the add-on replaced its water, and the shipped pictures are 320 by 180 bank views where the stream is a few dozen pixels wide, which cannot see this. Creek's own water is being restored and the migration waits until the add-on reproduces the old look",
+	'M3-K9':
+		'the budget raise it needed is landed and its shader build now passes, but the task itself is not in: its branch is not merged with the head, it has no judged speed line over the final tree, and its Done-when asks for the cost per extra light on an iPad and an S24-class phone, which no device row covers yet',
 	'M3-A8':
 		"the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, over the prototype's one-step tolerance. The owner accepted that cost and ruled that the display table stays and the light table comes out",
-	'M3-A9':
-		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
 	'M3-E6':
 		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame. The overlay part of the task is not built: D-199's decision 4 asks for one GPU timing scope per built-in step and per add-on feature, and D-173 for each add-on's GPU time, while the add-on rows hold no GPU time and the overlay shows one frame total",
 	'M3-E8':
@@ -83,11 +82,15 @@ const NOTES: Readonly<Record<string, string>> = {
 		"dropped with the temporal resolve it waited on (D-206); M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F10':
 		"dropped with the temporal resolve it needs (D-206); M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
+	'M3-F9':
+		"the simulation, the material and the older path's fragment form are on `feat/m3-f9-fft-ocean` in four commits, and the engine buffer-id fault it found has landed separately. Owed: the older path cannot simulate at a usable rate. Its frame is 833 ms with the simulation against 158 without, and a quarter-size grid measured 683 ms, so the cost follows the number of draws at about 22 ms each rather than the pixels, and neither fewer bands nor a smaller grid rescues it. The owner chooses between a redesign of the pass chain, the analytic waves the add-on already draws on that path, or a modern-path-only feature. The demo entry is held because its picture on that path would record a flat sea. No cost per preset is stated: two runs of identical work differed by more than the effect, so the frame-difference method cannot resolve a sub-millisecond chain",
 	'M3-R12':
 		'the narrowing is not on the branch at all. It exists only on an unlanded branch from 23 October, and there it stops recording before the scene builds its own pipelines, strips the device bits the build compares, and drops the empty word that compute and full-screen passes need. Whatever the list then holds is not the set the pages draw with, so a narrowed build fails at the first pipeline it lacks rather than compiling the wrong thing quietly. A helper is proving each fault, and no time or size figure exists yet',
 	'M3-A11':
 		'measured on both paths at every preset; it does not beat the presets, so it stays behind the internal setting and does not ship (D-206). Its black-capture and bind-group faults are fixed, its shader file still loads on first use, and that first-use case is now tested on both paths',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
+	'M3-R23':
+		'the depth-only prepass is the default and passes the bar on the iPhone 18 Pro at both scales and on the iPad 10 at half scale; the iPad 10 at full scale reads 0.52 and 0.64 ms against the 0.5 ms bar, and the owner ruled that margin accepted (D-269)',
 };
 
 /**
@@ -100,22 +103,16 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"unticked by the round 24 audit: no allocation run and no full check-addon run exist for the wind (only the sizes gate, which passes since M3-R25), the gust call is a fading push at one place rather than a gust that travels, a device without float targets reads still air rather than the analytic field, the sampling function is a copy that reads the box's edge rather than a function in the add-on's WGSL namespace with the analytic far field. The owner ruled that M3-V15 waits for M3-V13 with no split into two stages. It stays not done until the solver, the forces and the fixed step are built on M3-V13's repeated pass",
 	'M3-F4':
 		"unticked by its check at 652fd235b on `feat/m3-f4-lightmap-evidence`: the captured frame is one side of the comparison rather than the comparison itself, D-258 claims more than that frame settles, not every figure has a recorded run, and the evidence entry is missing. The same branch's ae46e947d states the viewer-side limit in D-258 lines 78 to 82 instead of closing it, so the owner has not ruled whether an engine-to-viewer comparison is owed",
-	'M3-E7':
-		'unticked by the round 18 audit: the car-paint clause is met, but the hook answers only the main light, so the paint glints under the sun and stays smooth under the point light that both the Showroom and the test page carry. The record declines the other lights as a larger change, which hard rule 40 forbids. Either point and spot lights call the lobe too, or the owner rules that the main light alone stands',
 	'M3-K4':
-		"unticked by the tick audit, and the tick before it was wrong: the mixed port leaves out the example's depth-writing cut-out plane, so room edges and two strips about ten pixels wide draw across the embedded page; the comparison hides both 3D canvases before it compares, so it can only see the HTML layers; and the engine has no depth-only material, which the fix needs",
+		"unticked by the tick audit, and the tick before it was wrong: the mixed port leaves out the example's depth-writing cut-out plane, so room edges and two strips about ten pixels wide draw across the embedded page; the comparison hides both 3D canvases before it compares, so it can only see the HTML layers. The depth-only material that fix needs now exists: M3-K7 landed a material that writes depth and no colour, so that part is no longer a blocker",
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
-	'M3-A9':
-		"the 1.8 m limit at High was the fixed tile size's fault. D-219 makes the tile size a setting on the owner's ruling, and each preset now defaults to a size that keeps the demo car at or above four times. The costs were taken at loads of 13.6 to 26.3 against the spec's own limit of 8",
 	'M3-A11':
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-E10':
 		"the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch. The round 24 audit of the aurora fix (findings N1 and N3) records that the tip's capture never runs and that the evidence line claims light the tip does not make; the light sum, the coefficient stride and the aurora pictures are on `fix/m3-sky-layer-light`",
 	'M3-R27':
 		"the owner saw the redrawn aurora beside the current pictures on all three Mac paths and ruled that the lake reflection looks too blurry, so the lake drawing is not accepted yet: find where the blur comes from — how the ice samples the sky, whether the material's roughness picks a blurred level of the environment map, or the reflection's own resolution — sharpen it, show the owner, and then redraw the six demo-aurora references in both sets. The ice-plane fix waits with it so the aurora is redrawn once",
-	'M3-G5':
-		'its branch, `fix/m3-g5-masked-transmission` at `305624b36`, is 14 commits ahead and unmerged. The check refuses it until the branch carries a `GPU-Checked:` line, which blocks the landing; its pushed tip has no CI run; the parity load figures are not in the logs; the mirror figure 0.0325 is WebGPU alone, where compatibility reads 0.0327 and WebGL2 0.0328; the ceiling comment grows by an unstated figure; and the cold build was not taken on a quiet machine',
 	'M3-V2':
 		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
 	'M3-G2': 'no Khronos iridescence sample is tested',
@@ -124,23 +121,16 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
 	'M3-B1':
 		"the re-run at four times the pixels does not resolve the cost either: its off side reads 2.72 to 5.03 ms on WebGPU and 8.24 to 11.23 on WebGL2 across the presets, more than most marks cost, so the scene's own variation still swamps the look, and the GPU idles through most of each frame. Seven of the twenty-one marks keep their whole range above zero but that is not resolution: WebGL2 grain is 0.38 with a range to 9.40 and WebGL2 vignette 1.16 with a range to 5.90, and the WebGPU presets read Low 2.00, Medium 3.41 and Ultra 1.27, out of order for the same work. The method to close it: draw the look, or one mark, sixteen to thirty-two times a frame and divide; on WebGPU read the look's own pass from the per-pass timer (0.065536 ms steps), not the whole frame's difference; and alternate the sides every frame or few frames so a clock change hits both. Grade and vignette run inside the final pass and add no pass, so read that pass's part with each on and off, or state the design reason and show the part unchanged within a step. WebGL2's whole-frame figure spans the shared timeline, so those rows need another measure or must say they are not a cost",
-	'M3-B3':
-		"the Showroom tablet the task names is M3-C2's work, which is not built; the screen demo's software-GPU pictures were redrawn from CI on 25 October and no longer stand in the way",
 	'M3-B5':
 		'the glints draw and are tested in both sets; its cost per preset is owed (D-255), which needs a quiet GPU',
 	'M3-V4':
-		'no device has timed the new generator, so the device figures are of the stand-in it replaced; no Mac, iPad or S24 GPU or memory figure exists, and no check-addon run is recorded',
+		"three tracked records of 27 October time the 78-variant generator on the Mac (65.2 to 77.7 ms), the owner's iPad (79.6 to 94.8) and the S25 (137.9 to 163.0), each with its memory, and the entry's 50 ms figure is an older 24-variant run. What is owed is the iPad budget, a check-addon run, and proof on both GPU paths",
 	'M3-F2':
-		"a 100,000-splat cloud becomes one chunk and cannot stream; the streaming test's last recorded CI failure predates the chunking fix, and no pass has been recorded since",
-	'M3-R20': 'the record gives 1.25 to 2.42 seconds against a finish line that asks for under one',
+		"the cloud that arrives as 100,000 splats used to become one chunk and could not stream; `chunks.ts` now cuts it into up to eight, which landed in `dcbacc193`. The streaming test's last recorded CI failure predates that change and no pass has been recorded since, so the fix is in the tree and unproved",
 	'M3-E4':
 		"whether the approved hook table stands against hard rule 8 is the owner's to decide, and the tick waits on that",
-	'M3-K3':
-		"the spot-map picture covers the cookie on every path and passes; what remains is the owner's call on whether a 128 by 128 pixels-only cookie looks good enough, which the better-look rule raises",
 	'M3-V6':
-		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
-	'M3-E4a':
-		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
+		'the same placement is shown on two Android phones in Chrome and on an iPad in Safari 26.6.1, so a second JavaScript engine has placed the same points (`.dev/tested-devices/ipad-pro-13-safari/20261027-000756-vegetation-scatter.md`, two passed, both paths); the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
 	'M3-V5':
 		"every vegetation picture passes in both reference sets on both GPUs and the crowns keep their coverage at three distances, and the leaf cells now hold a spray of lobed, veined, damaged leaves instead of one smooth shape. Its author's verdict is that the atlas is at least as good as Creek's as a texture, and that the crown is still paler and flatter because the material lights it with one uniform light while Creek's texture carries painted shadowing, which belongs to M3-V7. The task's line asks the owner to judge the two side by side, and the paint time per device is owed too",
 	'M3-V1':
@@ -239,7 +229,9 @@ function description(): string {
 			const note = PARTIAL[id]
 				? ` — part landed: ${PARTIAL[id]}`
 				: ON_BRANCH.has(id)
-					? ' — on a helper branch'
+					? NOTES[id]
+						? ` — on a helper branch: ${NOTES[id]}`
+						: ' — on a helper branch'
 					: INCOMPLETE.has(id) || NOTES[id] || AUDIT_GAPS[id]
 						? (AUDIT_GAPS[id] ?? NOTES[id])
 							? ` — ${AUDIT_GAPS[id] ?? NOTES[id]}`

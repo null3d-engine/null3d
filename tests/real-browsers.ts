@@ -86,6 +86,8 @@
 //                       preset's budget, with the frame rate, the first-frame time and the bytes
 //                       the page downloaded, or vegetation, which times Creek and the forest demo
 //                       at every preset on each GPU path with the triangles and the memory, or
+//                       terrain, which times the terrain demo at each preset that a GPU path draws,
+//                       the same way, or
 //                       tree-generation, which times procedural tree generation in a worker, or
 //                       vegetation-scatter, which places Creek's valley by the vegetation add-on's
 //                       ecological rules and checks the placement against the reference, or
@@ -1128,6 +1130,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'splats',
 	'demos',
 	'vegetation',
+	'terrain',
 	'tree-generation',
 	'vegetation-scatter',
 	'webgpu-stall',

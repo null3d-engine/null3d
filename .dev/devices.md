@@ -355,6 +355,30 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - The `splats` plan also runs each GPU path at a quarter of the cloud's splat count, at the same
   pixel count. A pair of rows then shows whether the cost follows the count or the screen's fill.
 
+## The terrain plan
+
+- The `terrain` plan times the terrain demo at every preset that each GPU path draws, for the
+  terrain add-on's cost per preset ([D-152](decisions/D-152-terrain.md)). Each page fixes its path
+  and its preset with `?gpu=` and `?preset=`, so the start-up check cannot lower either.
+- The page is the one that the vegetation plan uses. It starts the demo live, waits for its first
+  frame, measures five seconds, and then reads the stats overlay for the triangles and the GPU's
+  memory. It reports the frame interval, the CPU time per frame, the GPU time per pass and the
+  bytes that the page downloaded.
+- WebGL2 and compatibility mode cap the preset at Medium ([the chooser](../packages/engine/src/quality/chooser.ts)),
+  so those paths run Low and Medium, and core WebGPU runs every preset.
+- Each page sets `?target-fps=1`, so the quality governor holds the whole render scale and each
+  preset's own cost shows. The ground's own detail follows the preset, through its level-of-detail
+  threshold, so the triangle counts fall from High to Low.
+- The page has 8 items: 4 presets on core WebGPU, 2 on compatibility mode and 2 on WebGL2. The
+  capabilities page comes first, so a device that lacks a path skips those pages.
+- Run it on the Mac, the owner's iPad and an S24-class phone. The Mac and the iPad are timing runs,
+  so start them through the queue with `QUIET_OK=1`. The iPad loads the runner page over the local
+  network and its own WebAssembly build must exist in the worktree:
+  `bun tests/real-browsers.ts --plan terrain "Google Chrome"` and
+  `bun tests/real-browsers.ts --plan terrain --lan ipad-safari`. Then run the cloud phone:
+  `bun run devices:cloud --only bsgalaxys24-chrome --plan terrain -- --only capabilities,terrain-low-webgl2,terrain-medium-webgl2`.
+  The Galaxy S24 has no WebGPU, so its command runs the two WebGL2 pages alone.
+
 ## The reflection plan
 
 - The `reflection` plan times a reflection pass, for [D-120](decisions/D-120-planar-reflections.md). It plays S1 with water under the swarm, through the benchmark page's `reflection` switch, with the pass at a quarter and at half the render size. It plays S1 without the water too. It runs each on null3D's WebGPU and WebGL2 pages, for 10 seconds of warm-up and 10 measured, in 3 rounds. The sizes take turns in each round, so a device that warms up slows each size alike.
@@ -834,6 +858,7 @@ These facts come from BrowserStack's Automate docs, read on 3 October 2026: [mob
 - An Android phone's screen can run at 24 to 30 Hz. The pages that limit the time between frames then fail, at 41.7 ms against a limit of 34 ms. The runner also marks every timing figure unreliable. Before you call a frame-rate failure on a cloud device a fault of the engine, read the runner's warning about the refresh rate.
 - A still screen gives such a low reading too. A runner page that measures on a still screen gives 24 Hz on the S24+ over USB. So do engine pages that run under the report, as [A hidden canvas and the display's rate](implementation-notes.md#a-hidden-canvas-and-the-displays-rate) says. A record of 24 to 30 Hz from a cloud phone, such as the cloud Galaxy S24, may show such a fault. It is not always the phone's real rate. To check on the Galaxy S25 and S24: `bun run devices:cloud --only bsgalaxys25-chrome,bsgalaxys24-chrome --plan checks -- --only capabilities,engine-webgl2-pipelined,engine-webgl2-low-latency,engine-webgl2-single-threaded --rounds 3`. Then read `refreshRateHz` in each phone's `device.json`, and each engine page's `refreshHz` and median frame interval.
 - Cloud frame rates do not compare with real devices. The cloud iPad 10th draws S4 at Low at 22 fps on WebGPU, with its screen at 60 Hz. The page's GPU work takes 12 to 15 ms a frame, yet each frame waits 44 to 60 ms for the GPU. That holds with the session's video on and off. The runs: 20261005-041513-bench with video off, 20261005-041911-bench with video on, and 20261005-042324-bench with WebGL2 forced, at 33 fps. Work outside the page holds the GPU, likely the screen's compositing and the live stream that interactive debugging needs. So a cloud comparison of two commits uses the page's GPU time, measured in turns within one session, and never the frame rate.
+- A cloud timing row states the display's rate first. When a frame interval equals the display's own period, the row says the frame figures are the screen's cap, not the scene's cost. The CPU, triangle and memory figures then carry the evidence. The cloud Galaxy S24's 30 Hz display is the case. Its terrain rows sit at 33.33 ms, but their CPU time, triangles and textures still compare.
 - iOS does not send `localhost` through the tunnel, so every device opens `bs-local.com`. BrowserStack allows every port for current browsers.
 - On the cloud iPhone 16 (iOS 18), the memory of an engine in a frame that a live page removed does not come back. It stays held whether the engine ran or stopped, and with no worker kept for its canvas. In run 20261006-010201-checks, `frame-restarts-pipelined` started 5 engines in frames with a room of 6, and Safari refused the 6th for 40 s. The room stayed 0 through 31 s of counts, and the next two pages found it at 0 too. Each removed frame got its `pagehide`, and every job worker had left its loop. So the `frame-restarts-*` and `frame-destroyed-restarts-*` checks fail there.
 - Safari opened on the Mac with `open -a` gives that memory back in 12 of 12 frame rounds, and the owner's iPad passes the frame restart checks. Playwright's WebKit keeps it, with or without the engine's canvas reuse. A lead to test: the automation link that Automate and Playwright both drive the browser through keeps removed frames alive. Until that is tested, a frame restart failure on a cloud iPhone says nothing about the engine.

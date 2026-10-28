@@ -279,6 +279,8 @@ ui.trackLabel(head, 'title', { transform: 'billboard', rotation: 0.1 });        
 
 The engine moves a plane's element into a container of its own inside the element's parent, and writes its matrix. Keep that parent over the canvas. Planes count against `createEngine({ maxLabels3d })`, 256 by default.
 
+To show a page under the drawn scene, start the engine with `createEngine({ transparent: true })`, put the labels' layer below the canvas, and set no background. A plane at the page writes its depth and no color with `materials.unlit({ colorWrite: false })`, so the scene behind the page never draws over it, while a glass object in front still shows the page through itself. Size the plane like the label: an element's CSS pixels are the scene's units. Docs: `guides/ui-overlays#a-page-under-the-scene`, `api/materials#invisible-surfaces-that-hide`.
+
 ## 8. Loading screen with progress and warm-up
 
 ```ts
@@ -751,13 +753,13 @@ export default defineSketch((ctx) => {
     height: ground,
     resolution: 256,
     layers: [
-      { map: layers.grass, tile: 6, roughness: 1 },
-      { map: layers.soil, tile: 10, roughness: 1 },
-      { map: layers.rock, tile: 7, roughness: 0.85 },
-      { map: layers.snow, tile: 12, roughness: 0.7 },
+      { map: layers.grass, tile: 6, roughness: 1, heightFrom: 'alpha' },
+      { map: layers.soil, tile: 10, roughness: 1, heightFrom: 'alpha' },
+      { map: layers.rock, tile: 7, roughness: 0.85, heightFrom: 'alpha' },
+      { map: layers.snow, tile: 12, roughness: 0.7, heightFrom: 'alpha' },
     ],
     maxLevel: 6,
-    split: 2.1,
+    camera,
   });
 
   // Seat an object on the ground with heightAt, since the terrain carries no collision.
@@ -781,7 +783,7 @@ export default defineSketch((ctx) => {
 });
 ```
 
-The quadtree splits a block only when the camera comes near it, so a still camera costs no work. Read `heightAt` and `normalAt` to place objects, and call `terrain.destroy()` to free the ground. The layers blend by a splat map that the add-on fills from the height and the slope by default. Give `splat` to paint the weights yourself. Docs: `api/terrain`.
+The quadtree splits a block by the screen error of its cells. The camera's position, field of view and the preset's `lodThreshold` set that error, so a still camera costs no work. Every pixel lights from normals that the add-on bakes over the ground, so the far hills keep their relief. Set `bakedNormals: false` to light from the mesh's own normals. Read `heightAt` and `normalAt` to place objects, and call `terrain.destroy()` to free the ground. The layers blend by a splat map that the add-on fills from the height and the slope by default. Each layer's own height pushes it through its neighbours at a boundary, and `contrast` sets how strongly. Give `splat` to paint the weights yourself. Docs: `api/terrain`.
 
 ## 23. Outdoor land with an edge the camera never sees
 

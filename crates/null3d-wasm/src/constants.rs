@@ -840,6 +840,7 @@ pub fn typescript() -> String {
                 ("RADIUS", light_value::RADIUS),
                 ("IMAGE", light_value::IMAGE),
                 ("HERO_SIZE", light_value::HERO_SIZE),
+                ("SHADOW_INTENSITY", light_value::SHADOW_INTENSITY),
             ],
         ),
         (
@@ -1084,6 +1085,7 @@ pub fn typescript() -> String {
                 ("BLEND", feature::BLEND),
                 ("NO_DEPTH_WRITE", feature::NO_DEPTH_WRITE),
                 ("NO_DEPTH_TEST", feature::NO_DEPTH_TEST),
+                ("NO_COLOR_WRITE", feature::NO_COLOR_WRITE),
                 ("ADDITIVE", feature::ADDITIVE),
                 ("MULTIPLY", feature::MULTIPLY),
                 ("NO_FOG", feature::NO_FOG),
@@ -1235,6 +1237,7 @@ pub fn typescript() -> String {
                 ),
                 ("ANISOTROPY", param::ANISOTROPY as u32),
                 ("ANISOTROPY_ROTATION", param::ANISOTROPY_ROTATION as u32),
+                ("DISPERSION", param::DISPERSION as u32),
                 ("LIGHT_MAP_SCALE", param::LIGHT_MAP_SCALE as u32),
                 ("LIGHT_MAP_OFFSET", param::LIGHT_MAP_OFFSET as u32),
                 ("DECAL_FADE_START", param::DECAL_FADE_START as u32),
