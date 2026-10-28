@@ -91,6 +91,10 @@ function setup(webgl2 = false) {
 			calls.push(['enabled', place, on]);
 			return 0;
 		},
+		setScenePassEvery(place: number, every: number) {
+			calls.push(['every', place, every]);
+			return 0;
+		},
 		renderGraphDot: () => 'digraph "render graph" {}',
 		renderGraphMessage: () => error[1],
 		lastErrorCode: () => error[0],
@@ -294,6 +298,26 @@ describe('render passes', () => {
 		expect(thrown(() => render.removePass(pass)).code).toBe('E1101');
 		// Its texture name is free again.
 		render.addPass({ kind: 'scene', camera: camera().camera, writes: 'map', size: [8, 8] });
+	});
+
+	it('gives a pass a cadence, and refuses one that is not a whole frame count', () => {
+		const { render, calls } = setup();
+		const pass = render.addPass({
+			kind: 'scene',
+			camera: camera().camera,
+			writes: 'map',
+			size: [8, 8],
+		});
+		render.setPassEvery(pass, 4);
+		render.setPassEvery(pass, 1);
+		expect(calls.slice(1)).toEqual([
+			['every', 1, 4],
+			['every', 1, 1],
+		]);
+		expect(thrown(() => render.setPassEvery(pass, 0)).code).toBe('E1220');
+		expect(thrown(() => render.setPassEvery(pass, 1.5)).code).toBe('E1220');
+		render.removePass(pass);
+		expect(thrown(() => render.setPassEvery(pass, 2)).code).toBe('E1101');
 	});
 
 	it('throws the graph error with its names, and the pass is not added', () => {
