@@ -1,8 +1,9 @@
 # D-252: A material's own specular lobe
 
 Status: decided and built, for the owner's review. Built: the hook and its input record, answering
-every point and spot light on both GPU paths through the WGSL-to-GLSL step. First user: M3-B5's
-car paint, whose glints declare it. Still owed: the car paint's cost per preset. Task: M3-E7.
+each point and spot light that reaches the surface, on both GPU paths through the WGSL-to-GLSL
+step. First user: M3-B5's car paint, whose glints declare it. Still owed: the car paint's cost per
+preset. Task: M3-E7.
 
 Summary: A custom material declares `fn lobe(input: LobeInput) -> vec3f`. The engine calls it for the
 main directional light and for each point and spot light that reaches the surface, and adds the color
