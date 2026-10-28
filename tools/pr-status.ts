@@ -39,6 +39,7 @@ const ON_BRANCH = new Set(['M3-V2', 'M3-F9']);
 // A tick states that the task is done, so a task those audits found short of its own line is not
 // ticked here until the gap closes, whatever code it already has.
 const INCOMPLETE = new Set([
+	'M3-F5',
 	'M3-B1',
 	'M3-B5',
 	'M3-V4',
@@ -63,6 +64,8 @@ const INCOMPLETE = new Set([
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
+	'M3-F5':
+		"the owner rejected the look and withdrew the earlier approval: the water has sideways lines interspersed with the flow, and the Creek should match what it had before the add-on. The add-on moved the phase, the foam drift and the caustics onto a current vector read from the river mesh's texture coordinates instead of the old fixed flow, took the thickness from the screen-space depth copy instead of the analytic bed, and made the shore a soft alpha ramp. The unchanged-reference clause was never proved either: the Creek references were redrawn two days after the add-on replaced its water, and the shipped pictures are 320 by 180 bank views where the stream is a few dozen pixels wide, which cannot see this. Creek's own water is being restored and the migration waits until the add-on reproduces the old look",
 	'M3-K9':
 		'the budget raise it needed is landed and its shader build now passes, but the task itself is not in: its branch is not merged with the head, it has no judged speed line over the final tree, and its Done-when asks for the cost per extra light on an iPad and an S24-class phone, which no device row covers yet',
 	'M3-A8':
