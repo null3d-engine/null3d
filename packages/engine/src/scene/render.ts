@@ -968,6 +968,21 @@ export class Render {
 	}
 
 	/**
+	 * Gives a pass a cadence: it draws in one frame of every `every`, from the next frame on, and its
+	 * texture keeps the last image that it drew in between. A cadence of 1 draws every frame. It
+	 * compiles nothing, so a sketch may change it whenever the quality preset or the frame budget
+	 * moves, as often as once a frame. Throws E1101 for a pass that was removed, and E1220 for a
+	 * cadence that is not a whole number from 1. It allocates nothing.
+	 */
+	setPassEvery(pass: RenderPass, every: number): void {
+		const call = 'render.setPassEvery';
+		checkPass(pass, call);
+		if (!Number.isInteger(every) || every < 1)
+			throw invalid(call, `got every ${String(every)}; it takes a whole number from 1.`);
+		this.core.check(this.core.glue.setScenePassEvery(pass.place, every), call, undefined, true);
+	}
+
+	/**
 	 * Removes a pass from the next frame on, and destroys the textures that `textures.fromPass`
 	 * made of it. Throws E1101 for a pass that was removed, and E1502 while another pass reads its
 	 * texture: remove that pass first.
