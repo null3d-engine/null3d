@@ -1,7 +1,9 @@
 // Measures the ocean's frame rate in three states on the GPU tier that the URL names: the transform
 // and the surface drawn, the surface drawn with the transform off, and the transform run with no
 // surface drawn. Each state is timed in windows of its own, taken in turns, after a warm-up long
-// enough for the WebGL2 fragment form to build every program it draws.
+// enough for the WebGL2 fragment form to build every program it draws. ?every= sets the reflection's
+// cadence for every preset, which holds the pass on so a run can tell a pass toggle's recompile from
+// the transform itself.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -39,7 +41,8 @@ run('ocean-rate', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL('./sketches/ocean-rate-sketch.ts', import.meta.url);
-	sketch.search = '?scale=1&fixed';
+	const every = new URLSearchParams(location.search).get('every');
+	sketch.search = `?scale=1&fixed${every === null ? '' : `&every=${every}`}`;
 	const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1 });
 	await engine.firstFrame;
 	const settled = () =>
