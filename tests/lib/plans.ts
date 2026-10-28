@@ -1500,9 +1500,10 @@ export function clusterCostPlan(): PlanItem<Check>[] {
 				'cluster-cost',
 				{ kind: 'cluster', tier },
 				{
-					// The patch pass belongs to the path that culls on the GPU, so the switches
-					// keep the start-up probe from choosing the direct path, which draws the whole
-					// mesh and would time another drawing.
+					// The patch route draws on WebGPU's indirect path and on WebGL2 with
+					// `WEBGL_multi_draw`, so the switches keep the start-up probe from choosing
+					// the direct path, which draws the whole levels and would time another
+					// drawing.
 					switches: [`gpu=${path}`, 'preset=high', 'direct=off'],
 					timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
 				},

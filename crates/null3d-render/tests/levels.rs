@@ -3,12 +3,13 @@
 
 mod common;
 
-use common::{World, base_sphere, count};
+use common::{World, base_sphere, count, grid};
 use null3d_core::levels::Switch;
 use null3d_core::scene::Command;
 use null3d_gpu::drawlist::{Op, permutation, template};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, LevelQuality};
+use null3d_render::geometry::Geometry;
 use null3d_render::levels::LevelError;
 use null3d_render::materials::{Shading, feature};
 
@@ -748,5 +749,125 @@ fn the_culling_shader_culls_a_row_by_its_own_bound_where_it_has_one() {
     assert!(
         radius.contains("own * scale"),
         "the shader ignores the row's own radius: {radius}"
+    );
+}
+
+#[test]
+fn the_direct_path_draws_a_trees_whole_levels_rather_than_its_patches() {
+    use null3d_render::gpu_driven::RendererConfig;
+    let mut world = World::with_config(RendererConfig {
+        direct_draws: true,
+        ..RendererConfig::default()
+    });
+    // One object draws this mesh, so the two-copy rule cannot keep its levels by itself.
+    let mesh = world.add_object(&base_sphere(0.5, [6, 4]), Shading::Lit);
+    let settings = world.renderer.settings_mut();
+    let lower = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
+        .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+    settings
+        .set_mesh_levels(mesh, &lower, &[0.01, 0.05], &[Switch::Error; 2], &[0, 0], 0)
+        .unwrap();
+    world
+        .renderer
+        .set_mesh_patches(mesh, Some(one_patch_tree()))
+        .unwrap();
+    world.record(true);
+    let drawn: Vec<(u32, u32)> = world
+        .commands()
+        .iter()
+        .filter(|(op, _)| *op == Op::DrawIndexed)
+        .map(|(_, o)| (o[0], o[1]))
+        .collect();
+    // The direct path runs no cluster pass, so the tree leaves the whole levels in place.
+    assert!(
+        drawn.contains(&(indices_of(&world, lower[1]), 1)),
+        "{drawn:?}"
+    );
+    assert!(
+        world
+            .commands()
+            .iter()
+            .all(|(op, o)| !(*op == Op::CreateComputePipeline && o[1] == template::CLUSTER))
+    );
+}
+
+/// A tree of one patch over the first three indices of a mesh: the smallest tree the GPU path
+/// accepts.
+fn one_patch_tree() -> null3d_render::patches::PatchTree {
+    null3d_render::patches::PatchTree::new(
+        vec![0, 1, 2],
+        vec![[0.0, 0.0, 0.0, 1.0]],
+        vec![[0, 3, 0, 0]],
+        0,
+        4,
+    )
+    .unwrap()
+}
+
+/// Gives mesh `mesh` two lower levels, for the GPU path's tests of a tree.
+fn give_levels_to<B: FrameBuilder>(world: &mut World<B>, mesh: u32, levels: [Geometry; 2]) {
+    let settings = world.renderer.settings_mut();
+    let lower = levels.map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+    settings
+        .set_mesh_levels(mesh, &lower, &[0.01, 0.05], &[Switch::Error; 2], &[0, 0], 0)
+        .unwrap();
+}
+
+#[test]
+fn the_gpu_path_keeps_a_trees_levels_when_two_objects_draw_the_mesh() {
+    let mut plain = World::new();
+    give_levels_to(
+        &mut plain,
+        BALL,
+        [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])],
+    );
+    let without = indirect_draws(&mut plain);
+    let mut world = World::new();
+    give_levels_to(
+        &mut world,
+        BALL,
+        [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])],
+    );
+    world
+        .renderer
+        .set_mesh_patches(BALL, Some(one_patch_tree()))
+        .unwrap();
+    // Two ball objects share the mesh's bucket, so the pass has no single copy to pick patches
+    // for. Its levels stay, and no cluster pipeline is made.
+    assert_eq!(indirect_draws(&mut world), without);
+    assert!(
+        world
+            .commands()
+            .iter()
+            .all(|(op, o)| !(*op == Op::CreateComputePipeline && o[1] == template::CLUSTER))
+    );
+}
+
+#[test]
+fn the_gpu_path_keeps_a_trees_levels_when_its_mesh_fills_several_parts() {
+    let mut plain = World::new();
+    let plain_mesh = plain.add_object(&grid(256, 256), Shading::Lit);
+    give_levels_to(&mut plain, plain_mesh, [grid(2, 2), grid(1, 1)]);
+    let without = indirect_draws(&mut plain);
+    let mut world = World::new();
+    let mesh = world.add_object(&grid(256, 256), Shading::Lit);
+    give_levels_to(&mut world, mesh, [grid(2, 2), grid(1, 1)]);
+    let settings = world.renderer.settings();
+    let parts = settings
+        .meshes()
+        .parts(settings.meshes().mesh(mesh - 1).unwrap(), false)
+        .len();
+    assert!(parts > 1, "the mesh of the test fills {parts} parts");
+    world
+        .renderer
+        .set_mesh_patches(mesh, Some(one_patch_tree()))
+        .unwrap();
+    // A patch's indices name one part's vertices, so a split mesh keeps its whole levels.
+    assert_eq!(indirect_draws(&mut world), without);
+    assert!(
+        world
+            .commands()
+            .iter()
+            .all(|(op, o)| !(*op == Op::CreateComputePipeline && o[1] == template::CLUSTER))
     );
 }
