@@ -124,9 +124,9 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-B5':
 		'the glints draw and are tested in both sets; its cost per preset is owed (D-255), which needs a quiet GPU',
 	'M3-V4':
-		'no device has timed the new generator, so the device figures are of the stand-in it replaced; no Mac, iPad or S24 GPU or memory figure exists, and no check-addon run is recorded',
+		"three tracked records of 27 October time the 78-variant generator on the Mac (65.2 to 77.7 ms), the owner's iPad (79.6 to 94.8) and the S25 (137.9 to 163.0), each with its memory, and the entry's 50 ms figure is an older 24-variant run. What is owed is the iPad budget, a check-addon run, and proof on both GPU paths",
 	'M3-F2':
-		"a 100,000-splat cloud becomes one chunk and cannot stream; the streaming test's last recorded CI failure predates the chunking fix, and no pass has been recorded since",
+		"the cloud that arrives as 100,000 splats used to become one chunk and could not stream; `chunks.ts` now cuts it into up to eight, which landed in `dcbacc193`. The streaming test's last recorded CI failure predates that change and no pass has been recorded since, so the fix is in the tree and unproved",
 	'M3-E4':
 		"whether the approved hook table stands against hard rule 8 is the owner's to decide, and the tick waits on that",
 	'M3-V6':
