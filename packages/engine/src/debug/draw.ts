@@ -200,7 +200,9 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 	 */
 	requestView(view: string): void {
 		if (this.applyView(view)) return;
-		// Store the name, so a feature that registers it during the sketch's setup starts it.
+		// Store the name, so a feature that registers it during the sketch's setup starts it. The
+		// engine's own view must not stay set under an add-on's view, as when one is registered now.
+		this.core.glue.setDebugView(C.DEBUG_VIEW_LIT);
 		activateAddonDebugView(view);
 	}
 
@@ -213,6 +215,8 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 			return true;
 		}
 		if (!hasAddonDebugView(view)) return false;
+		// An add-on draws its own view, so the engine's view must not stay set under it.
+		this.core.glue.setDebugView(C.DEBUG_VIEW_LIT);
 		activateAddonDebugView(view);
 		return true;
 	}

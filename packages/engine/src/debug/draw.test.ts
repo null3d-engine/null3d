@@ -504,37 +504,81 @@ describe('debug.view', () => {
 		expect(views).toEqual([]);
 	});
 
-	test('reaches a view that an add-on feature registers, and stops it', () => {
+	test('reaches a view that an add-on feature registers, clears the engine view under it, and stops it', () => {
 		const { draw, views } = fakeCore();
 		const calls: boolean[] = [];
 		registerAddonDebugView({ name: 'terrain-levels', set: (active) => calls.push(active) });
 		try {
+			draw.view('levels');
+			expect(views).toEqual([C.DEBUG_VIEW_LEVELS]);
 			draw.view('terrain-levels');
 			expect(calls).toEqual([true]);
-			expect(views).toEqual([]);
+			expect(views).toEqual([C.DEBUG_VIEW_LEVELS, C.DEBUG_VIEW_LIT]);
 			draw.view('lit');
 			expect(calls).toEqual([true, false]);
-			expect(views).toEqual([C.DEBUG_VIEW_LIT]);
+			expect(views).toEqual([C.DEBUG_VIEW_LEVELS, C.DEBUG_VIEW_LIT, C.DEBUG_VIEW_LIT]);
 		} finally {
 			unregisterAddonDebugView('terrain-levels');
+		}
+	});
+
+	test('clears the engine view for a view that an add-on registers later', () => {
+		const { draw, views } = fakeCore();
+		draw.view('levels');
+		draw.requestView('terrain-late');
+		expect(views).toEqual([C.DEBUG_VIEW_LEVELS, C.DEBUG_VIEW_LIT]);
+		const calls: boolean[] = [];
+		registerAddonDebugView({ name: 'terrain-late', set: (active) => calls.push(active) });
+		try {
+			expect(calls).toEqual([true]);
+		} finally {
+			unregisterAddonDebugView('terrain-late');
 		}
 	});
 });
 
 describe('debug.cullingSpheres', () => {
-	test('draws one sphere for each object whose mesh has levels, until turned off', () => {
+	/** How far a point stands from a place. */
+	const reach = (point: Point, center: readonly [number, number, number]) =>
+		Math.hypot(
+			point.position[0] - center[0],
+			point.position[1] - center[1],
+			point.position[2] - center[2],
+		);
+
+	test('draws the mesh sphere in white about each level mesh, until turned off', () => {
 		const { draw, frames, matrices } = fakeCore([
 			{ handle: 21, mesh: { radius: 2, levels: [{}] } },
 			{ handle: 22, mesh: { radius: 1, levels: [{}] } },
 		]);
 		matrices.set(21, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
+		// A mesh of radius 1 at twice the scale: its sphere is the first's size, at another place.
 		matrices.set(22, [2, 0, 0, 5, 0, 2, 0, 0, 0, 0, 2, 0]);
 		draw.cullingSpheres(true);
 		draw.flush(1, 1);
-		expect(frames[0]?.length).toBe(6 * 32 * 2);
+		const drawn = frames[0] as Point[];
+		expect(drawn.length).toBe(2 * 32 * 3 * 2);
+		const white = packedColor('#ffffff', 'debug.sphere');
+		for (const point of drawn) expect(point.color).toBe(white);
+		for (const point of drawn.slice(0, drawn.length / 2))
+			expect(reach(point, [0, 0, 0])).toBeCloseTo(2, 6);
+		for (const point of drawn.slice(drawn.length / 2))
+			expect(reach(point, [5, 0, 0])).toBeCloseTo(2, 6);
 		draw.cullingSpheres(false);
 		draw.flush(1, 1);
 		expect(frames.length).toBe(1);
+	});
+
+	test('draws the spheres of the first 128 objects, and no more', () => {
+		const meshes = Array.from({ length: 130 }, (_, k) => ({
+			handle: 100 + k,
+			mesh: { radius: 1, levels: [{}] },
+		}));
+		const { draw, frames, matrices } = fakeCore(meshes);
+		for (const { handle } of meshes) matrices.set(handle, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
+		draw.cullingSpheres(true);
+		draw.flush(1, 1);
+		expect(frames[0]?.length).toBe(128 * 32 * 3 * 2);
 	});
 });
 
