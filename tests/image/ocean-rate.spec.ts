@@ -22,7 +22,9 @@ test(`the ocean's frame rate in each state on ${GPU} at ${PRESET}`, async ({ pag
 	test.skip(!process.env.NULL3D_OCEAN_RATE, 'set NULL3D_OCEAN_RATE to time the ocean');
 	test.setTimeout(900_000);
 	await page.setViewportSize({ width: 1920, height: 1080 });
-	await page.goto(`ocean-rate.html?gpu=${GPU}&preset=${PRESET}`);
+	await page.goto(
+		`ocean-rate.html?gpu=${GPU}&preset=${PRESET}${process.env.NULL3D_OCEAN_RATE_EVERY ? `&every=${process.env.NULL3D_OCEAN_RATE_EVERY}` : ''}`,
+	);
 	const result = await pageResult<RateResult>(page, 840_000);
 	expect(result.error).toBeUndefined();
 	for (const state of result.states)
