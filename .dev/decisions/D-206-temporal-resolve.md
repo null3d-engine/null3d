@@ -62,7 +62,7 @@ The camera held still, orbited at 0.1 radians per second, or orbited at 0.3. The
 
 The grass scene's blade sway comes from a uniform that the sketch sets from the frame number. That is the condition D-129 measured. The engine does carry a custom material's `frame.time` sway in its motion target ([D-140](D-140-motion-vectors.md)). `tests/image/motion-vectors.spec.ts`'s `a custom material's vertex offset shows its motion` holds that. A quad moved by the clock shows its motion in the debug view. This scene does not use that path. A 64-sample reference is a second run whose clock cannot line up with the first. The frame-number sway is what D-129 measured. The wind's quality against a reference is therefore not measured here.
 
-The two jittered effects drew at 320 x 180. **Thin rain** is 6,000 additive streaks thinner than a pixel, moved by the frame's clock. **The volumetric fog** is a fog over towers whose grid the engine moves by a sub-pixel offset each frame. Each run captured 16 consecutive frames at four frames a second. The scene's clock moves the rain, so two runs cannot hold the same picture in the same frame. The figures compare the frame-to-frame change over a run, which is stable over the sequence. The offset request alone was run with the resolve off, to show it changes nothing.
+The two jittered effects drew at 320 x 180. **Thin rain** is 6,000 additive streaks thinner than a pixel, moved by the frame's clock. **The volumetric fog** is a fog over towers whose grid the engine moves by a sub-pixel offset each frame. Each run captured 16 frames at four frames a second. The page records the sketch frame that each capture drew, so a slow machine's replayed capture still pairs with the right frame. The scene's clock moves the rain, so two runs cannot hold the same picture in the same frame. The figures compare the frame-to-frame change over the frames that all four runs hold. The fog's change alternates from frame to frame. A mean over different frames therefore differs by more than the offset request can move it. The offset request alone was run with the resolve off, to show it changes nothing.
 
 Cost ran at 1920 x 1080, render scale 1, with the resolve off and on in turns. Each side took three rounds of 2 seconds, and the figures are the medians of GPU time per frame. The light scenes ran at each preset on both paths. The busy scene is the Creek showcase, played through a wrapper page that turns only the resolve, at Low, Medium and High. The phone path ran at Medium on both paths. Each timing run started in a quiet window on the Mac, and the load is on each run's line.
 
@@ -125,7 +125,7 @@ The resolve cuts the grass's shimmer with the camera moving. It cuts 10% to 43% 
 
 ### Thin rain and the volumetric fog
 
-The resolve's frame-to-frame change, in levels, over 16 consecutive frames:
+The resolve's frame-to-frame change, in levels, over the frames all four runs hold:
 
 | Effect | WebGPU, off / on / signals off | WebGL2, off / on / signals off |
 | --- | --- | --- |

@@ -216,21 +216,34 @@ function compare(a: Run, b: Run): { mean: number; overlap: number } {
 	return { mean: sum / Math.max(1, overlap), overlap };
 }
 
-/**
- * The mean frame-to-frame change over a run's adjacent frames, and how many pairs it used. A pair
- * that a capture skipped a frame over is left out, so the figure is the same one on every machine
- * that holds the frame rate. A scene that moves with the real clock differs between runs at the
- * same frame number, so two runs of an effect are compared by this statistic.
- */
-function change(run: Run): { mean: number; pairs: number } {
-	let sum = 0;
-	let pairs = 0;
+/** The frame-to-frame change of each adjacent pair, by the later frame's number. */
+function pairChanges(run: Run): Map<number, number> {
+	const found = new Map<number, number>();
 	for (let k = 1; k < run.frames.length; k++) {
-		if ((run.numbers[k] as number) - (run.numbers[k - 1] as number) !== 1) continue;
-		sum += distance(run.frames[k] as Frame, run.frames[k - 1] as Frame);
-		pairs++;
+		const frame = run.numbers[k] as number;
+		if (frame - (run.numbers[k - 1] as number) !== 1) continue;
+		found.set(frame, distance(run.frames[k] as Frame, run.frames[k - 1] as Frame));
 	}
-	return { mean: sum / Math.max(1, pairs), pairs };
+	return found;
+}
+
+/**
+ * Each run's mean frame-to-frame change over the frames all of them hold, and how many pairs that
+ * is. The fog's change alternates from frame to frame, so a mean over different frames differs by
+ * more than the offset request could. Comparing one set of frames keeps the figures comparable on
+ * a machine whose captures skip frames.
+ */
+function sharedChange(runs: readonly Run[]): { means: number[]; pairs: number } {
+	const found = runs.map(pairChanges);
+	const frames = [...(found[0] as Map<number, number>).keys()].filter((frame) =>
+		found.every((pairs) => pairs.has(frame)),
+	);
+	const means = found.map(
+		(pairs) =>
+			frames.reduce((sum, frame) => sum + (pairs.get(frame) as number), 0) /
+			Math.max(1, frames.length),
+	);
+	return { means, pairs: frames.length };
 }
 
 /** Runs one scene, and stops its engine. */
@@ -369,23 +382,26 @@ run('taa-fixes', async () => {
 	// The same resolve with both transparency signals off, so a difference that stays is the
 	// history's place rather than a mask dropping it.
 	const onNoMask = await measure(`case=${CASE}&gpu=${GPU}&taa=1&jitter=1&reactive=off`);
-	const offChange = change(off);
-	const onChange = change(on);
-	const onNoMaskChange = change(onNoMask);
-	const offJitterChange = change(offJitter);
 	const runs = [off, offJitter, on, onNoMask];
+	const shared = sharedChange(runs);
+	const [offChange, offJitterChange, onChange, onNoMaskChange] = shared.means as [
+		number,
+		number,
+		number,
+		number,
+	];
 	return {
 		case: CASE,
 		gpu: GPU,
-		off: offChange.mean,
-		on: onChange.mean,
-		onNoMask: onNoMaskChange.mean,
-		jitter: Math.abs(offJitterChange.mean - offChange.mean),
+		off: offChange,
+		on: onChange,
+		onNoMask: onNoMaskChange,
+		jitter: Math.abs(offJitterChange - offChange),
 		offMean: mean(off.frames[0] as Frame),
 		onMean: mean(on.frames[0] as Frame),
 		onNoMaskMean: mean(onNoMask.frames[0] as Frame),
-		// The fewest adjacent pairs of the four runs, which the figures all rest on.
-		steps: Math.min(offChange.pairs, offJitterChange.pairs, onChange.pairs, onNoMaskChange.pairs),
+		// The frames all four runs hold, which every figure is measured over.
+		steps: shared.pairs,
 		// The captures that skipped a sketch frame, whose pairs every figure leaves out.
 		skipped: runs.reduce((sum, run) => sum + run.skipped, 0),
 		captures: runs.reduce((sum, run) => sum + run.numbers.length, 0),
