@@ -58,6 +58,8 @@ const RENDER_LIMITS: Record<number, string | ((value: string) => string)> = {
 	// The ceiling is `MAX_ATLAS_BYTES` in crates/null3d-render/src/shadow_tiles.rs.
 	18: (megabytes) =>
 		`the shadow atlas would need ${megabytes} MB, more than the 1,024 MB it may take; name a smaller heroTileSize or fewer shadowTiles`,
+	19: (bytes) =>
+		`a buffer that the frame fills needs more than the ${bytes} bytes that one GPU buffer may take on this device`,
 };
 
 /** What the renderer ran out of, for the details `limit` and `value` of E1501. */
@@ -180,6 +182,11 @@ export function coreFailure(core: CoreErrors, call: string, what = 'an object'):
 					: `${name} failed: the render graph does not compile.`,
 			);
 		}
+		case 1506:
+			return error(
+				'E1506',
+				`${name} failed: a draw whose instance count the GPU writes arrived after the first frame, and this device draws directly.`,
+			);
 		default: {
 			const id = `E${code}`;
 			return error(

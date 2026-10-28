@@ -43,7 +43,7 @@ The first error in a thread can show its fix a moment later, while the engine do
 | The setup function throws | `createEngine` rejects with [E1405](../errors/E1405.md), which quotes your error |
 | During the start, an engine thread fails or the GPU is lost for good | `createEngine` stops the engine and rejects with [E1404](../errors/E1404.md) or [E1302](../errors/E1302.md) |
 | A callback such as `onUpdate` throws | The console shows each distinct error once, with its stack. The engine carries on, and calls the callback again when it next runs |
-| After the start, the GPU is lost and cannot come back, or an engine thread fails | `engine.onFailure` receives [E1302](../errors/E1302.md) or [E1404](../errors/E1404.md). Without a handler, the console shows it. The canvas keeps the last frame: destroy the engine and start a new one |
+| After the start, the GPU is lost and cannot come back, or an engine thread fails | `engine.onFailure` receives [E1302](../errors/E1302.md) or [E1404](../errors/E1404.md). The first handler that attaches after the failure still receives it, and the console shows it too. The canvas keeps the last frame: destroy the engine and start a new one |
 | After the start, the WebGPU device runs out of memory or rejects the engine's work | `engine.onFailure` receives [E1304](../errors/E1304.md) or [E1305](../errors/E1305.md), once per GPU device. The engine draws on without the objects that failed |
 | Sketch code runs after `destroy()`, from a timer, a promise or an event listener | The call throws [E1420](../errors/E1420.md). Remove such code in the sketch's `onDestroy` |
 | Hold mode | The hold stops at the first error, and the result says why. [Testing your sketch](testing.md#when-a-hold-fails) lists the cases |
@@ -117,7 +117,7 @@ debug.arrow(muzzle, aim, 10);                        // where a shot goes, from 
 
 Only development builds draw the lines. [Debug drawing and stats](../api/debug.md) lists every call.
 
-To check normals, depth, overdraw, triangle edges or shadows, draw the whole scene with a debug view. In the sketch, `debug.view('wireframe')` draws every triangle's edges, and `debug.view('lit')` draws the materials again. [Debug views](../api/debug.md#debug-views) lists the views. To see whether shadow edges crawl as the camera moves, draw `'shadows'` from a still camera. Then let `debug.shadowCamera` place the cascades from the moving one ([Watch the shadow cascades from elsewhere](../api/debug.md#watch-the-shadow-cascades-from-elsewhere)).
+To check normals, depth, overdraw, triangle edges, shadows or levels of detail, draw the whole scene with a debug view. In the sketch, `debug.view('wireframe')` draws every triangle's edges, and `debug.view('lit')` draws the materials again. `?view=levels` in the page's address shows a demo's levels with no code change. [Debug views](../api/debug.md#debug-views) lists the views. To see whether shadow edges crawl as the camera moves, draw `'shadows'` from a still camera. Then let `debug.shadowCamera` place the cascades from the moving one ([Watch the shadow cascades from elsewhere](../api/debug.md#watch-the-shadow-cascades-from-elsewhere)).
 
 ## Reproduce a frame
 

@@ -1,9 +1,16 @@
 // The null3d engine: createEngine runs on the page, defineSketch in the sketch module, and the math
 // helpers in both.
 
-export type { Debug, DebugGridOptions, DebugLightOptions, DebugView } from './debug/debug';
+export type {
+	Debug,
+	DebugGridOptions,
+	DebugLightOptions,
+	DebugView,
+	DebugViewName,
+} from './debug/debug';
 export type { FrameStats, FrameStatsThread } from './debug/stats';
 export type { StatsOverlayOptions } from './debug/stats-options';
+export type { EngineDebugView } from './debug/view-names';
 export { EngineError } from './errors/engine-error';
 export type { ErrorCode } from './errors/fixes';
 export type { ShaderFeature } from './generated/shader-features';
@@ -135,6 +142,7 @@ export type {
 	FeatureInstancesOptions,
 	FeatureRowOptions,
 } from './scene/feature-draws';
+export type { FeatureEffect, FeatureEffectOptions } from './scene/feature-effects';
 export type { FeatureHandle, FeatureHostOptions } from './scene/feature-host';
 export { FeatureHost } from './scene/feature-host';
 export type {
@@ -146,6 +154,7 @@ export type {
 export type {
 	FeatureBand,
 	FeatureBudget,
+	FeatureDebugView,
 	FeatureDescription,
 	FeatureFrame,
 	FeatureGovernor,
@@ -241,6 +250,8 @@ export type {
 	ComputeWorkgroup,
 	FullscreenPassOptions,
 	PassInput,
+	PassReadRegion,
+	PassReadResult,
 	PassScale,
 	ReflectionPassOptions,
 	ReflectionPlane,
@@ -264,6 +275,7 @@ export type {
 	DepthBias,
 	Geometry,
 	IntegerArray,
+	MapUvTransforms,
 	Material,
 	MaterialFeatures,
 	MaterialOptions,

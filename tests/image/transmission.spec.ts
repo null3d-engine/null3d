@@ -141,6 +141,43 @@ test('transmission-maps: a clear coat keeps the transmission and thickness maps'
 	}
 });
 
+/**
+ * The mean difference between every pixel left of the middle column of `image` and the pixel at
+ * its mirror in the right half, from 0 to 1 per channel.
+ */
+function mirroredDifference(image: Image): number {
+	let sum = 0;
+	let count = 0;
+	for (let y = 0; y < image.height; y++)
+		for (let x = 0; x < image.width / 2; x++) {
+			const left = 3 * (y * image.width + x);
+			const right = 3 * (y * image.width + (image.width - 1 - x));
+			for (let c = 0; c < 3; c++)
+				sum += Math.abs((image.rgb[left + c] ?? 0) - (image.rgb[right + c] ?? 0));
+			count += 3;
+		}
+	return sum / count;
+}
+
+/**
+ * A glTF file whose glass both masks its alpha and lets light through: two panes draw in front of a
+ * striped backdrop, the left one takes its transmission and thickness from maps and the right one
+ * takes neither. Every other part of the picture mirrors about its middle column, so the panes draw
+ * alike on a tier that drops the maps and differ where the maps vary the light from behind. The
+ * three.js twin draws the same file, which the parity test compares.
+ */
+test('gltf-transmission-mask: masked glTF glass keeps its transmission maps', async ({ page }) => {
+	test.setTimeout(240_000);
+	const runs = IMAGE_RUNS.filter((run) => run.test === 'gltf-transmission-mask');
+	expect(runs.length).toBe(3);
+	for (const run of runs) {
+		const image = await imageOf(page, run.path);
+		expect
+			.soft(mirroredDifference(image), `${run.id}: the maps change the pane that reads them`)
+			.toBeGreaterThan(0.01);
+	}
+});
+
 test('transmission-water: ripples bend the bed that shows through the water', async ({ page }) => {
 	test.setTimeout(240_000);
 	const runs = IMAGE_RUNS.filter((run) => run.test === 'transmission-water');

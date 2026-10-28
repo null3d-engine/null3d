@@ -4,6 +4,7 @@
 // unit run shares one process, where the 1,343 modules cost about 3.6 GB that every test after them
 // still pays for, so the unit script ignores this file and `bun run test:heavy` runs it in a
 // process of its own ([Test memory](../../.dev/tests.md)).
+
 import { describe, expect, it } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -16,6 +17,7 @@ import {
 	variantOf,
 } from '../pages/lib/shader-list.ts';
 import { PLANNED_SHADER_SETS, SHADER_PROGRAMS_PER_PART } from './plans.ts';
+import { scaledBudget } from './run-budget.ts';
 import {
 	glslProgramCount,
 	glslProgramCountOf,
@@ -33,7 +35,7 @@ const MAIN_MODULE = 'shaders.ts';
 /** The most GLSL programs that one page compiles: more than a part's share holds, with room. */
 const MOST_PROGRAMS_PER_PART = 600;
 /** Loading every module takes seconds on a busy machine, which the tests may have. */
-const LOADING_MS = 120_000;
+const LOADING_MS = scaledBudget(120_000);
 
 /** The GLSL programs of one generated module, by build name, loaded from the module itself. */
 async function programsLoadedFrom(name: string): Promise<Map<string, number>> {

@@ -136,16 +136,19 @@ draw.setCount(liveCount);
 
 On WebGL2, each row's matrix is split into a position, a rotation and a scale that the batch's rows carry. A matrix with shear does not split, so keep the rotation and the scale apart.
 
-`draw.setCount(n)` works on both paths. On WebGPU it is the count that a shadow view draws. It is also the count of a frame that the add-on's compute has not written yet. The compute's word replaces it in the same frame.
+`draw.setCount(n)` works on both paths. On WebGPU it is the count of a frame that the add-on's compute has not written yet. The compute's word replaces it in the same frame. The camera's view and every shadow view draw the word's count. An instance that the GPU counts therefore casts its shadow by that same count.
 
 ## Limits
 
-- The draw records in the main view alone, at the opaque point. A transparent instance draw, and one in a reflection or a scene pass, arrives with the add-on that first needs it.
+- The draw records at the opaque point, and its feature records in the main view alone. The engine still draws the object into the shadow views of the lights that it casts into. A transparent instance draw, and one in a reflection or a scene pass, arrives with the add-on that first needs it.
+- The draw records only while the description's `ready` callback answers true. The sketch's thread asks it once each frame. While it answers false the engine records no draw, no count copy and no conversion for it, and draws none of its rows on WebGL2.
 - The engine does not cull the draw by the camera's frustum or layers. Your compute's cull, or your count, decides what draws. `draw.setVisible(false)` stops it, and so does a hidden parent.
 - The engine does not bound the count. Keep the add-on's count at or under `capacity`. Past it, the GPU reads past the end of the buffer.
 - The engine keeps two buffers of `capacity` rows: the world rows that you fill and the camera-relative rows that it converts them into each frame. A large capacity therefore takes twice the instance memory.
-- The conversion uses the main view's camera. A shadow view draws `draw.setCount`'s count, because the add-on's compute writes the main view's count alone, and it reads the rows converted for the main view's camera.
+- The conversion uses the main view's camera, so every view, the shadows included, reads the rows converted for that camera. A shadow view draws the add-on's count word too, so the instances that cast shadows are the instances that the GPU counts.
+- The shadow views cull the faces that point away from the light, as every caster does. A thin surface, such as a leaf or a standing disc, therefore casts nothing while the light reaches its back. Give such a draw `doubleSided` to cast from either side.
 - The add-on's compute pass must run before the scene draws: use `band: 'before'`, as the example does. Rows that it writes after the scene are too late for that frame's opaque pass.
+- Create the draw in the sketch's setup, and await `addComputeInstances()` before the first frame. A device that draws the scene directly fixes that choice at its first frame. Such a device cannot take a draw whose count the GPU writes later. The frame then fails with [E1506](../errors/E1506.md).
 - The feature description's `reads`, `writes`, `outputs` and `provides` stay with the [feature registry](features.md).
 
 [The API reference](reference/feature-instances.md) lists every export of this page with its type and description. The engine's doc comments make it.

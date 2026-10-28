@@ -8,6 +8,7 @@ import {
 	byteSize,
 	dumpLine,
 	parseShotArgs,
+	readPage,
 	type ShotOptions,
 	type ShotReport,
 	scriptSummary,
@@ -16,6 +17,12 @@ import {
 	shotSummary,
 } from './shot.js';
 import { shownPath } from './text.js';
+
+it('keeps a query on the page path, and refuses a full address', () => {
+	expect(() => readPage('/?view=levels')).not.toThrow();
+	expect(() => readPage('/tests/pages/image.html?view=levels')).not.toThrow();
+	expect(() => readPage('https://example.com/?view=levels')).toThrow(UsageError);
+});
 
 const DEFAULTS: ShotOptions = {
 	out: 'shot.png',

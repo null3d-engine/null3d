@@ -1,8 +1,8 @@
 # D-210: Gizmos in the controls add-on
 
-Status: decided. Date: 2026-10-21. Task: M3-K2.
+Status: decided and built. Task: M3-K2.
 
-Summary: `@null3d/controls` gains translate, rotate and scale gizmos shaped after three.js's `TransformControls`, and `DragControls` beside them. The handles draw on layers 30 and 29 of their own, which no scene gives out and no camera draws, so a press tests the gizmo alone. A turn takes the exact angle that the pointer sweeps around the axis, where three.js scales a linear approximation, so a long drag can differ by a few degrees.
+Summary: `@null3d/controls` holds translate, rotate and scale gizmos shaped after three.js's `TransformControls`, and `DragControls` beside them. The handles draw on layers 30 and 29 of their own, which no scene gives out and no camera draws, so a press tests the gizmo alone. A turn takes the exact angle that the pointer sweeps around the axis, where three.js scales a linear approximation, so a long drag can differ by a few degrees.
 
 ## Question
 
@@ -31,11 +31,11 @@ Three.js's `TransformControls` gives the same protection with picker meshes that
 - A press is a raycast with `layers: pickLayers` alone. The hit is a picker, and its object's name gives the axis.
 - A turn uses the angle between the two pointer arms about the axis, from the screen-facing plane through the object. A move and a scale follow three.js's plane and ratios, and the tests compare both with three.js's own results.
 - `DragControls` reports `dragging`, `hovered` and `state` instead of three.js's events, as the camera controls report their state through `update`'s return value.
-- The engine gains `getLayers()` and `getParent()`: a gizmo adds a layer to the camera and needs the parent's world transform to carry a world move into the object's parent space. Both are three.js API that the engine lacked.
+- The engine has `getLayers()` and `getParent()`: a gizmo adds a layer to the camera and needs the parent's world transform to carry a world move into the object's parent space. Both are three.js API.
 
 ## Consequences
 
 - `docs/api/controls.md` describes the gizmos and the drag controls, `docs/api/objects.md` the two getters, and the mapping's `gizmos` entry points at `api/controls`.
-- The examples gain the `gizmos` demo, which the image test manifest draws in hold mode.
+- The examples hold the `gizmos` demo, which the image test manifest draws in hold mode.
 - `packages/controls/src/gizmo-drag.test.ts` compares a move and a scale with three.js's `TransformControls`, and works a turn's expected angle from the plane that both engines share.
 - `tests/image/gizmos.spec.ts` drives the handles with the mouse and with a finger through Chrome's input, for a move, a turn and a scale. The finger's code does not depend on the mode, so the three tests share its path and each shows its own mode's arithmetic.

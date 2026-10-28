@@ -1,4 +1,5 @@
 {
+	"description": "The null3D rules for an AI agent, checked before each command and each file edit.",
 	"hooks": {
 		"PreToolUse": [
 			{
@@ -6,8 +7,8 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "node \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/agent-hook.mjs\" bash",
-						"statusMessage": "Checking the null3D rules"
+						"command": "d=$PWD; while [ ! -f \"$d/.agent/agent-hook.mjs\" ] && [ \"$d\" != \"/\" ]; do d=$(dirname \"$d\"); done; node \"$d/.agent/agent-hook.mjs\" bash",
+						"timeout": 30
 					}
 				]
 			},
@@ -16,8 +17,8 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "node \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/agent-hook.mjs\" edit",
-						"statusMessage": "Checking the null3D rules"
+						"command": "d=$PWD; while [ ! -f \"$d/.agent/agent-hook.mjs\" ] && [ \"$d\" != \"/\" ]; do d=$(dirname \"$d\"); done; node \"$d/.agent/agent-hook.mjs\" edit",
+						"timeout": 30
 					}
 				]
 			}

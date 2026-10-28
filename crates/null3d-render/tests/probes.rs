@@ -136,3 +136,86 @@ fn a_probe_captures_when_made_and_again_on_request_on_both_paths() {
         ..CpuCulledConfig::default()
     })));
 }
+
+/// The probe slots whose filter a frame records.
+fn filtered(commands: &[(Op, Vec<u32>)]) -> Vec<u32> {
+    filters(commands)
+        .into_iter()
+        .map(|(_, words)| words[2])
+        .collect()
+}
+
+/// A probe whose box is centred at `x`, as a held scene's two probes stand side by side.
+fn probe_at(x: f64) -> ProbeSettings {
+    ProbeSettings {
+        low: [x - 4.0, -5.0, -5.0],
+        high: [x + 4.0, 5.0, 5.0],
+        capture: [x, 1.0, 0.0],
+        ..ProbeSettings::default()
+    }
+}
+
+/// A held scene records every frame before the thread that draws draws one, so no pipeline is
+/// built when any held frame records, and the held frame starts on a fresh device. The hold records
+/// a second frame while a probe waits for its first capture, so both probes should filter across
+/// those two frames. The test started from the round 26 checker's reproduction.
+fn check_two_probes_capture_in_held_frames<B: FrameBuilder>(name: &str, mut world: World<B>) {
+    let mut mock = MockBackend::default();
+    world.step(&mut mock, true);
+    let settings = world.renderer.settings_mut();
+    settings.set_probe(0, probe_at(-3.0)).unwrap();
+    settings.set_probe(1, probe_at(3.0)).unwrap();
+    let generator = settings.textures_mut().take_image_id();
+    settings.probes_mut().set_generator(generator);
+    world.step(&mut mock, true);
+    mock.provide_generator(generator);
+    let taken = world.frame - 1;
+    world
+        .renderer
+        .settings_mut()
+        .textures_mut()
+        .sync(generator, taken);
+
+    // Live frames, every pipeline built as each frame records: both probes capture in turn.
+    let mut live = Vec::new();
+    for _ in 0..6 {
+        live.extend(filtered(&world.step(&mut mock, false)));
+    }
+    assert!(
+        live.contains(&0) && live.contains(&1),
+        "{name}: live, both probes capture: {live:?}"
+    );
+
+    // The held frame: a fresh device, as hold mode's reset gives, and no frame drawn yet.
+    world.pipelines_built = 0;
+    world.renderer.reset_gpu();
+    let mut fresh = MockBackend::default();
+    fresh.provide_generator(generator);
+    let taken = world.frame - 1;
+    world
+        .renderer
+        .settings_mut()
+        .textures_mut()
+        .sync(generator, taken);
+    let mut held = Vec::new();
+    for _ in 0..2 {
+        held.extend(filtered(&world.step(&mut fresh, false)));
+    }
+    assert!(
+        held.contains(&0) && held.contains(&1),
+        "{name}: the two held frames capture both probes, but filtered {held:?}"
+    );
+    assert!(!world.renderer.settings().probes().waiting());
+}
+
+#[test]
+fn two_probes_both_capture_in_the_held_frames() {
+    check_two_probes_capture_in_held_frames("gpu-driven", World::new());
+    check_two_probes_capture_in_held_frames(
+        "cpu-culled",
+        World::build(CpuCulledRenderer::new(CpuCulledConfig {
+            multi_draw: true,
+            ..CpuCulledConfig::default()
+        })),
+    );
+}

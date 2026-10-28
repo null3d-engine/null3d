@@ -334,6 +334,24 @@ fn the_parts_that_shards_stored_join_into_the_whole_entry() {
     );
 }
 
+/// Builds that compile to the same text hold one copy of it in memory, as the builds that a cache
+/// read gives back do, so a build that compiles every entry holds each source once.
+#[test]
+fn compiled_builds_with_the_same_text_hold_one_copy_of_it() {
+    let output = null3d_shaders::build(&project_with_parts()).unwrap();
+    let source = |name: &str| {
+        let wgsl = output.shaders["a"][name].wgsl.as_ref();
+        std::sync::Arc::clone(&wgsl.expect("the build targets WGSL").source)
+    };
+    let one = source("one");
+    for name in ["two", "three", "four"] {
+        assert!(
+            std::sync::Arc::ptr_eq(&one, &source(name)),
+            "build `{name}` holds its own copy of a text that build `one` holds"
+        );
+    }
+}
+
 /// The shared texts of one cache file, sorted, as the file stores them.
 fn shared_texts(file: &std::path::Path) -> Vec<String> {
     let entry: serde_json::Value = serde_json::from_slice(&fs::read(file).unwrap()).unwrap();

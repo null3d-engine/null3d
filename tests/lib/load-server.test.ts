@@ -17,6 +17,7 @@ import {
 	markCore,
 	prepareLoads,
 } from './load-server.ts';
+import { scaledBudget } from './run-budget.ts';
 
 /** A module with one exported function, `one`, which returns 1. */
 const MODULE = Uint8Array.from([
@@ -333,27 +334,31 @@ describe('a download that the browser drops', () => {
 });
 
 describe('prepareLoads', () => {
-	it('asks again after a failed attempt and succeeds once the server answers', async () => {
-		let attempts = 0;
-		const server = createServer((req, res) => {
-			attempts++;
-			// The first ask is how a server that is still compressing its files behaves to a caller
-			// whose own request has ended: the answer never comes. The work carries on, and the next
-			// ask is answered from what it has built.
-			if (attempts === 1) {
-				req.socket.destroy();
-				return;
-			}
-			res.setHeader('content-type', 'application/json');
-			res.end(JSON.stringify({ files: 1, builds: ['benchmark pages'] }));
-		});
-		await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready));
-		const { port } = server.address() as AddressInfo;
-		await prepareLoads(`http://127.0.0.1:${port}`, ['benchmark pages']);
-		expect(attempts).toBe(2);
-		server.close();
-		// The wait between asks is seconds long, since the thing it waits for takes minutes.
-	}, 30_000);
+	it(
+		'asks again after a failed attempt and succeeds once the server answers',
+		async () => {
+			let attempts = 0;
+			const server = createServer((req, res) => {
+				attempts++;
+				// The first ask is how a server that is still compressing its files behaves to a caller
+				// whose own request has ended: the answer never comes. The work carries on, and the next
+				// ask is answered from what it has built.
+				if (attempts === 1) {
+					req.socket.destroy();
+					return;
+				}
+				res.setHeader('content-type', 'application/json');
+				res.end(JSON.stringify({ files: 1, builds: ['benchmark pages'] }));
+			});
+			await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready));
+			const { port } = server.address() as AddressInfo;
+			await prepareLoads(`http://127.0.0.1:${port}`, ['benchmark pages']);
+			expect(attempts).toBe(2);
+			server.close();
+			// The wait between asks is seconds long, since the thing it waits for takes minutes.
+		},
+		scaledBudget(30_000),
+	);
 
 	it('reports a server that serves none of the builds the loads need', async () => {
 		const server = createServer((req, res) => {

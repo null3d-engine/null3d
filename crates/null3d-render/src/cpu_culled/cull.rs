@@ -576,6 +576,8 @@ impl Culling {
                 rule: rule_of(ViewId::from_index(first + k)),
                 links,
                 rows: &level_rows,
+                codes: layout.codes,
+                levels: &layout.bucket_levels,
             };
             let buffer = occlusion
                 .as_ref()

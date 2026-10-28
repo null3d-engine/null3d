@@ -1,6 +1,6 @@
 # D-239: Custom WGSL samples texture arrays by the layer that the shader picks
 
-Status: decided. Date: 24 October 2026. Task: M3-A3.
+Status: decided. Built: texture array declarations in custom materials and effects, on both GPU paths. Task: M3-A3.
 
 Summary: A custom material or effect may declare `var name: texture_2d_array<f32>;` and give its `textures` slot a texture of several layers, and the WGSL then picks the layer in each texture function. The engine binds the texture's own array in the map slot, as it binds a 2D texture's, and its build keeps the layer that the shader wrote; the engine's layer value only says whether the array is on the GPU. One slot, one number of the uniforms and no new bind group layout serve every layer, so a facade shader picks among 6 or more layers per pixel on both GPU paths.
 
@@ -17,11 +17,11 @@ A custom material samples a texture as a layer of the engine's texture array, an
 
 ## Data
 
-The engine already keeps a texture of several layers in an array of its own, with exactly its layers ([the texture store](../../crates/null3d-render/src/textures.rs)), so its first layer is 0. A custom material's map slot binds that array, and its layer value is 0 once the texture's texels are on the GPU; until then the slot binds the white texel and the layer value is -1.
+The engine keeps a texture of several layers in an array of its own, with exactly its layers ([the texture store](../../crates/null3d-render/src/textures.rs)), so its first layer is 0. A custom material's map slot binds that array, and its layer value is 0 once the texture's texels are on the GPU; until then the slot binds the white texel and the layer value is -1.
 
 `crates/null3d-shaders/src/textures.rs` rewrites each declaration into a `texture_2d_array<f32>` binding in a map slot. A call of a texture array keeps the layer that the shader wrote, and the build wraps it in the same white-check as a 2D texture's call, so the white rule holds without a second code path.
 
-The first picture run of the image test failed on the WebGL2 tiers: `textureGather` has no form in GLSL ES 3.00, so a custom material that gathers failed to link. The docs had listed it for both paths. The test draws its third plane with `textureSampleBias` instead, and the docs and the develop skill now say that gather draws on WebGPU alone.
+`textureGather` has no form in GLSL ES 3.00, so a custom material that gathers fails to link on the WebGL2 tiers. The image test draws its third plane with `textureSampleBias`, and the docs and the develop skill say that gather draws on WebGPU alone.
 
 Tests:
 
@@ -42,7 +42,7 @@ Rejected. The render store shares an array between textures of one size and form
 
 ### An option that names the layers, with the engine mapping indices
 
-Rejected. Each array would take one number of the uniforms per layer, and a texture of 6 layers would leave the row with less room than six separate textures do today. The engine would also keep a table to remap the shader's index, for no gain over the texture's own layers.
+Rejected. Each array would take one number of the uniforms per layer, and a texture of 6 layers would leave the row with less room than six separate textures do. The engine would also keep a table to remap the shader's index, for no gain over the texture's own layers.
 
 ### Raise the 6-texture limit
 
@@ -52,5 +52,5 @@ Not needed for this task and not measured: it would let 6 separate textures samp
 
 - `docs/shaders/surface-functions.md`, `docs/guides/custom-shaders.md`, `docs/guides/custom-passes.md` and `docs/api/materials.md` describe the declaration, the layer the shader picks and the texture of several layers that the option takes.
 - `skills/null3d-develop/references/shaders.md` gives the rule and an example.
-- E1216's cause and fix name both declarations, and the error page is generated again.
+- E1216's cause and fix, and its generated error page, name both declarations.
 - No engine API signature changes: `textures` takes a `Texture`, which may have several layers, and a slot that the WGSL declares as a 2D texture still refuses one.

@@ -349,24 +349,27 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
             return triple(null3d::lighting::brdf_ggx_physical(m, f[2].xyz, f[3].xyz, f[5].xyz));
         }
 #endif
+#ifdef MATH
+        case 114u: { return triple(null3d::math::half_vector(f[0].xyz, f[1].xyz)); }
+#endif
 #ifdef MOTION_MATH
-        case 114u: {
+        case 115u: {
             // A still surface writes this frame's place less the same place of the last frame,
             // which is exactly zero bit for bit.
             return floats(null3d::motion_math::surface_motion(f[0], f[1]), vec4f(0.0), vec4f(0.0), vec4f(0.0));
         }
 #endif
 #ifdef TEMPORAL
-        case 115u: { return triple(null3d::temporal::temporal_ycocg(f[0].xyz)); }
-        case 116u: { return triple(null3d::temporal::temporal_rgb(f[0].xyz)); }
-        case 117u: {
+        case 116u: { return triple(null3d::temporal::temporal_ycocg(f[0].xyz)); }
+        case 117u: { return triple(null3d::temporal::temporal_rgb(f[0].xyz)); }
+        case 118u: {
             let box = null3d::temporal::temporal_widen(
                 null3d::temporal::TemporalBox(f[0].xyz, f[1].xyz),
                 f[2].xyz,
             );
             return triples(box.low, box.high);
         }
-        case 118u: {
+        case 119u: {
             return scalar(null3d::temporal::temporal_weight(f[0].x, f[0].y, f[0].z));
         }
 #endif

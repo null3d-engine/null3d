@@ -124,6 +124,8 @@ pub struct ShadowSettings {
     /// How far each receiver's point moves along its normal before the lookup, in meters, up to one
     /// texel of its cascade.
     pub normal_bias: f32,
+    /// How much of its shadow the light draws, from 0 for none to 1, the default, for all of it.
+    pub intensity: f32,
     /// The distance along the camera's view, in meters, out to which shadows fall, whatever the
     /// camera's scale. The camera's far plane ends them sooner.
     pub distance: f32,
@@ -1137,7 +1139,7 @@ pub struct ShadowUniform {
     pub texels: [f32; MAX_CASCADES],
     /// The light's bias toward the light and its normal bias, in meters, then 1 when receivers pick
     /// their cascade by their distance from the camera, or 0 by their distance along its view, and
-    /// 0.
+    /// the share of its shadow that the light draws, from 0 to 1.
     pub biases: [f32; 4],
     /// The texels on each side of each layer and the size of one texel in texture coordinates,
     /// then the texels on each side of the filter's square, and the step between two stored
@@ -1169,7 +1171,7 @@ impl ShadowUniform {
                 settings.bias,
                 settings.normal_bias,
                 f32::from(u8::from(cascades.by_distance)),
-                0.0,
+                settings.intensity.clamp(0.0, 1.0),
             ],
             kernel: [
                 map_size,
@@ -1230,6 +1232,7 @@ mod tests {
         distance: 200.0,
         filter: 3,
         blend: DEFAULT_BLEND,
+        intensity: 1.0,
     };
 
     /// The cascades of a camera at the world's origin.
@@ -1584,12 +1587,13 @@ mod tests {
         let settings = ShadowSettings {
             bias: 2.0,
             normal_bias: 0.5,
+            intensity: 0.25,
             ..SETTINGS
         };
         let uniform = ShadowUniform::new(&cascades, &settings, CascadeDepth::Unorm16);
         assert_eq!(uniform.forward[3], 3.0);
         assert_eq!(uniform.as_bytes().len(), SHADOW_UNIFORM_BYTES as usize);
-        assert_eq!(uniform.biases, [2.0, 0.5, 1.0, 0.0]);
+        assert_eq!(uniform.biases, [2.0, 0.5, 1.0, 0.25]);
         for (k, cascade) in cascades.used().iter().enumerate() {
             assert_eq!(uniform.view_proj[k], cascade.view_proj);
             assert_eq!(uniform.ends[k], cascade.end);
@@ -1670,6 +1674,57 @@ mod tests {
 
     /// A camera far from the world's origin, in its own cell, as the core places it.
     const FAR_OUT: [f64; 3] = [977.0 * 1024.0 + 3.3, 5.0, -2.0e5 - 0.7];
+
+    #[test]
+    fn every_cascade_reads_rows_relative_to_the_main_camera() {
+        // A frame converts a feature-instance draw's world rows once, relative to the main camera,
+        // and every shadow view reads those rows through its own light's matrix. That matrix takes
+        // positions relative to the main camera, so the one conversion serves every view: a
+        // conversion for each view would subtract the same position in each of them.
+        let camera = CellPosition {
+            cell: [7, -3, 11],
+            local: [1.5, 0.25, -2.0],
+        };
+        let frame = ShadowFrame {
+            cascades: fit_cascades(
+                &turned(0.0),
+                camera.absolute(),
+                &LENS,
+                16.0 / 9.0,
+                DOWN_AND_ACROSS,
+                &SETTINGS,
+            ),
+            settings: SETTINGS,
+            camera,
+            layers: 1,
+            drawn: 0b111,
+            depth: CascadeDepth::default(),
+            clock: [0.0; 4],
+            hero: None,
+        };
+        // A point below the camera and in front of it, and the same point left in world
+        // coordinates, as a draw that skipped the conversion would hand the shadow view.
+        let relative = [0.0, -4.0, -6.0];
+        let world: [f32; 3] = std::array::from_fn(|k| camera.absolute()[k] as f32 + relative[k]);
+        let mut held = 0;
+        for cascade in 0..SETTINGS.cascades as usize {
+            let view = frame.view_frame(cascade);
+            assert_eq!(
+                view.camera, camera,
+                "cascade {cascade} carries the main camera"
+            );
+            let [x, y, _] = project(&view.uniform.view_proj, relative);
+            if x.abs() < 1.0 && y.abs() < 1.0 {
+                held += 1;
+            }
+            let [x, y, _] = project(&view.uniform.view_proj, world);
+            assert!(
+                x.abs() > 1.0 || y.abs() > 1.0,
+                "cascade {cascade} holds world rows, so its matrix takes them unconverted"
+            );
+        }
+        assert!(held > 0, "a cascade holds the camera-relative point");
+    }
 
     /// The texel of each cascade's layer that holds the world's point `point`, as fractions of
     /// texels, seen from a camera at `position` turned by `yaw` degrees, or `None` where the

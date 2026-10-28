@@ -16,6 +16,7 @@ import { chmodSync, copyFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { transcodeTestFiles } from './lib/basis-transcoder.ts';
 import { emscripten, unpack } from './lib/emsdk.ts';
+import { refuseInQuietWindow } from './lib/quiet-window.ts';
 
 const ROOT = join(import.meta.dirname, '..');
 const WORK = join(ROOT, 'target/basis-transcoder');
@@ -61,6 +62,7 @@ const LINK_FLAGS = [
 ];
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The KTX2 transcoder build');
 	const emcc = await emscripten();
 	await unpack(WORK, 'basis', BASIS);
 

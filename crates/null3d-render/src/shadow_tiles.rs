@@ -582,11 +582,14 @@ impl ShadowTiles {
                     layers: light.layers,
                 };
                 self.uniform.view_proj[tile] = view.view_proj;
+                // The tile count shares the fourth value with the light's shadow intensity, which
+                // takes half a step each: the count is the whole part and the intensity twice the
+                // rest, so neither needs a value of its own.
                 self.uniform.params[tile] = [
                     view.texel_per_meter,
                     light.bias,
                     light.normal_bias,
-                    lit.faces as f32,
+                    lit.faces as f32 + light.intensity.clamp(0.0, 1.0) * 0.5,
                 ];
                 let slot = &mut self.slots[tile];
                 if slot.key != Some(key) {
@@ -666,7 +669,7 @@ impl ShadowTiles {
     }
 
     /// The hero tile's layer, while the frame planned last holds a hero.
-    fn hero_tile(&self) -> Option<u32> {
+    pub(crate) fn hero_tile(&self) -> Option<u32> {
         (self.hero.key.is_some() && self.shape.layers > 0).then(|| self.shape.layers - 1)
     }
 
@@ -1454,6 +1457,7 @@ mod tests {
             range: 10.0,
             bias: 0.5,
             normal_bias: 1.0,
+            intensity: 1.0,
             layers: 1,
         }
     }
