@@ -67,6 +67,9 @@ const GPUS = ['webgpu', 'webgl2'] as const;
  */
 const capturesOn = (projectName: string) => (projectName === 'chromium-swiftshader' ? 2 : 1);
 
+/** True on the software tier, where a capture can span more than one frame of the page's own rate. */
+const softwareOn = (projectName: string) => projectName === 'chromium-swiftshader';
+
 for (const gpu of GPUS) {
 	test(`a history follows a change of the exposure on ${gpu}`, async ({ page }, testInfo) => {
 		test.setTimeout(600_000);
@@ -165,6 +168,17 @@ for (const gpu of GPUS) {
 		test(`the resolve over ${effect} on ${gpu}`, async ({ page }, testInfo) => {
 			test.setTimeout(900_000);
 			const captures = capturesOn(testInfo.project.name);
+			// The figures are the ones this page draws at four frames a second, and a capture on a
+			// software GPU takes longer than the 250 ms a frame then lasts, so most captures span two
+			// frames: thirty-two of them gave four adjacent pairs against the twelve the check needs
+			// on WebGPU, and none at all for fog. A slower page would give the pairs and measure a
+			// different rate than the record holds, so those runs wait for a GPU that holds the rate.
+			// The software WebGL2 runs line up enough pairs to give a figure, so they stay: a figure
+			// that fails there is a finding, not an alignment fault, and must not be skipped.
+			test.skip(
+				softwareOn(testInfo.project.name) && gpu === 'webgpu',
+				'a software WebGPU capture spans more than the 250 ms frame, so too few pairs line up',
+			);
 			await page.goto(`taa-fixes.html?case=${effect}&gpu=${gpu}&fps=4&captures=${captures}`);
 			// A loaded runner draws the fog slowly, and the page runs four fog scenes in turn. A slower
 			// shard took over four minutes on the WebGPU path, so the wait leaves it room.
