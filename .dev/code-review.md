@@ -26,23 +26,29 @@ Godot found that MSAA crashed Mali-G52, G72 and G76 GPUs on its Vulkan mobile pa
 
 `@null3d/water`'s ocean transforms each band's spectrum with a chain of compute passes on WebGPU and
 with their fragment forms on WebGL2. On WebGPU and in compatibility mode the heights match the same
-transform on the page's thread within 0.004 m of a field of 0.7 m
+transform on the page's thread within 0.004 m of a field of 0.73 m
 (`tests/image/ocean-waves.spec.ts`). On WebGL2 the sea moves and keeps its scale, but its heights
-differ from that transform by 0.27 m or more. A probe of the first pass already differed, so the
-first stage reads something other than the spectrum and the stage's values that the compute form
-reads.
+differ from that transform by 0.60 m or more.
+
+Probes of the fragment form, each read back through the chain, put every value it receives right:
+the stage of the pass, the pass's size in texels, the band's layer, the band's tile in meters, and
+the texel that each pixel writes. A pass that wrote its texel's coordinates, and the later passes,
+read them back unchanged on both paths. So the block and the per-layer draw are right.
+
+The map is not. A chain of passes that copies its source unchanged returns, on WebGL2, values about
+five times smaller than the same chain on WebGPU: -0.001 to 0.000 at the read square against -0.006
+to 0.002 there. The spectrum is normalized so its own values spread about 0.0055, so WebGL2 reads
+something other than the map that the pass gives, while WebGPU reads the spectrum itself.
 
 The pass is the first *textured* compute pass of several layers: its fragment form reads a texture
 array of two layers, one for each band, at the layer that it draws, and writes one layer. The
 engine's layered fallback test (`compute-state`, the `layers` case) draws a pass without textures,
-so nothing else in the suite covers that shape. The transform writes the sketch time of its waves in
-the alpha channel, so a read of the heights uses the pass's own time. The eight turns and flips of
-the pass's image, a swapped band, and a read shifted by up to two texels do not explain the
-difference.
+so nothing else in the suite covers that shape.
 
-The fix needs a test that reads a *textured* layered fallback's layers against their sources, which
-will name whether the texture array's read, the per-layer block, or the layer's view differs on that
-path. `tests/image/ocean-waves.spec.ts` marks the WebGL2 case as an expected failure until then.
+The fix needs a test that binds a known two-layer texture as a fallback pass's map and reads each
+layer back against its source, through a second pass. That names whether the map's binding, its
+layer, or the texture view differs on that path.
+`tests/image/ocean-waves.spec.ts` marks the WebGL2 case as an expected failure until then.
 
 ## Closed findings
 
