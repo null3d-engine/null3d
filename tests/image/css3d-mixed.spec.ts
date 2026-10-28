@@ -8,10 +8,11 @@ import { expect, test } from '@playwright/test';
 import { expectSameElements, GPU_PATHS } from '../lib/css3d-compare.ts';
 
 /**
- * The most of the drawn scene that may differ: the two engines shade the frame and draw the room's
- * lines a little differently, and the record states the share that the correct port differs by.
+ * The most of the drawn scene that may differ: three.js's own rule. The correct port drew no
+ * differing pixel on this Mac, and a port without the example's cut-out plane differs in 0.243%, so
+ * the rule catches a plane that goes missing.
  */
-const MAX_SCENE_DIFFERENCE = 0.02;
+const MAX_SCENE_DIFFERENCE = 0.001;
 
 for (const gpu of GPU_PATHS)
 	test(`the ported CSS3D mixed scene draws where three.js draws it, ${gpu}`, async ({ page }) => {
