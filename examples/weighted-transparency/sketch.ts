@@ -8,8 +8,8 @@
 // it in the scene. The puffs' soft dot is a texture made from data. The sky, the paving, the plinth
 // and the brazier live in pavilion.ts.
 import { defineSketch, math } from '@null3d/engine';
-import { type HudOption, radioGroup } from '../lib/controls';
 import { interact } from '../lib/interact';
+import { blendGroup } from './blends';
 import { pavilion } from './pavilion';
 
 const PUFFS = 600;
@@ -29,20 +29,6 @@ const GLASS = [
 ] as const;
 /** Texels along each side of the puffs' soft dot. */
 const DOT = 32;
-/** The two blends that the controls HUD offers: the weighted blending and the sorted twins. */
-const BLENDS: readonly HudOption[] = [
-	{
-		id: 'Weighted',
-		label: 'Weighted',
-		tip: 'Blend the crossing panes and the smoke in any order.',
-	},
-	{
-		id: 'Sorted',
-		label: 'Sorted',
-		tip: 'Sort the panes and the smoke by object, with normal blending.',
-		key: 'S',
-	},
-];
 
 export default defineSketch(async (ctx) => {
 	const { scene, geometry, materials, textures, time, input, ui, page } = ctx;
@@ -94,11 +80,7 @@ export default defineSketch(async (ctx) => {
 	let announced = false;
 	// A label over the brazier names the blending on show, so the picture never has to be guessed at.
 	ui.trackLabel(bowl, 'blending', { offset: [0, 1.8, 0] });
-	const postHud = () =>
-		page.post('hud', {
-			groups: [radioGroup('blend', 'Blending', BLENDS, showsSorted ? 'Sorted' : 'Weighted')],
-			visible: true,
-		});
+	const postHud = () => page.post('hud', { groups: [blendGroup(showsSorted)], visible: true });
 	const setBlend = (next: boolean) => {
 		showsSorted = next;
 		for (const { mesh, looks } of glasses)
