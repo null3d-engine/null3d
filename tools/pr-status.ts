@@ -54,7 +54,6 @@ const INCOMPLETE = new Set([
 	'M3-L4',
 	'M3-V5',
 	'M3-A11',
-	'M3-R4',
 	'M3-R19',
 	'M3-V1',
 ]);
@@ -108,7 +107,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch. The round 24 audit's finding that the capture never runs is stale at the published head: the light sum (`8bebdff7f`) and the merge that carried it (`1857377b1`) are ancestors, `fs_feedback` sums the nine coefficients, and D-242 records the light as built. What the task still owes is the held-frame proof and the ice look",
 	'M3-V2':
 		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
-	'M3-R4': 'D-247 does not compare frame time, and the Mac GPU figure is owed',
 	'M3-R19':
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
 	'M3-B1':
