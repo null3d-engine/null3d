@@ -2,9 +2,10 @@
 // diffuse light. The page installs the layer during its setup, as an example add-on does, and hold
 // mode draws one frame at the aurora demo's own hold time. The mirror sphere reflects the map, so
 // its green comes from the layer when the map's fill runs in the held frame. The rough sphere takes
-// the map's diffuse light, which the GPU captures during that fill and reads back after the frame's
-// own list is recorded, so a held frame is lit by the core sky's model: `sky-layer-light` proves the
-// light in live frames, where a later frame takes the capture. The same scene without the layer is
+// the map's diffuse light, which the GPU captures during that fill and whose read lands after the
+// frame's own list is recorded, so a held frame is lit by the core sky's model. In live frames the
+// copy of the map's levels waits for that read, and `sky-layer-light` finds the light with the
+// map's texels or up to a few frames before them, never after. The same scene without the layer is
 // the control, so the green is the layer's rather than the core sky's.
 import { expect, type Page, test } from '@playwright/test';
 import { pageResultWhileProgressing } from '../lib/page-result.ts';
@@ -58,7 +59,7 @@ for (const gpu of Object.keys(TIERS) as (keyof typeof TIERS)[])
 		// The mirror reflects the map, and a held frame fills the map whole with the layer in it.
 		expect(green(withLayer.mirror) - green(without.mirror), text).toBeGreaterThan(CHANGE);
 		expect(Math.abs(green(without.mirror)), text).toBeLessThanOrEqual(NEAR);
-		// The rough sphere takes the map's diffuse light, whose capture lands after the held frame's
+		// The rough sphere takes the map's diffuse light, whose read lands after the held frame's
 		// list is recorded, so the layer's green does not reach it in this frame.
 		expect(Math.abs(green(withLayer.rough) - green(without.rough)), text).toBeLessThanOrEqual(NEAR);
 		console.log(
