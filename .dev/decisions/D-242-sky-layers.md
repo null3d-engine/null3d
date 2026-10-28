@@ -3,8 +3,9 @@
 Status: decided by the helper of M3-E10, for the owner's review, and widened by the owner's ruling
 to the sky's environment map and the CPU sky light. Built: the template, the compiler, both GPU
 paths, `scene.setSkyLayer`, the layer in the sky's environment map and in the diffuse light that the
-scene takes from it, and the aurora example add-on. Open: a proof of whether a held frame's map
-holds the layer, and the look of the aurora demo's ice, which is with the owner. Task: M3-E10.
+scene takes from it, and the aurora example add-on. A held frame's map holds the layer, and a held
+frame keeps the core sky's diffuse light because the map's read lands after the frame's list. The
+aurora's ice is the lake of M3-R27, which the owner accepted. Task: M3-E10.
 
 Summary: A sky layer is one WGSL function, `fn skyLayer(input: SkyLayerInput) -> SkyLayer`, which
 the shader compiler joins to the engine's sky-layer templates. The engine draws it as a box at the
@@ -97,12 +98,12 @@ reflections alone. Its measurements explain what the wider line costs, below.
 
 The wider line looks better wherever a scene shows its sky more than once. Without the layer in the
 map, the aurora demo's snow needs a dim ambient light of the sketch's own that no measure of the sky
-gives it. With the layer in the map, the snow takes the aurora's green from above, so the demo
-carries no light of its own for it. The map lights the scene. The lake no longer takes its
+gives it. With the layer in the map, the snow takes the aurora's green from above in a live frame, so
+the demo carries no light of its own for it. The map lights the scene. The lake no longer takes its
 reflection from the map: M3-R27 draws it as a planar reflection through a reflection pass, which
-mirrors the camera's view across the ice at the render size. The layer draws in the reflection view,
-so that pass carries the curtains as the sky draws them, whether or not the map holds them, and the
-ridge and the pines stand in the water too.
+mirrors the camera's view across the ice at the render size, and the owner accepted that look. The
+layer draws in the reflection view, so that pass carries the curtains as the sky draws them, whether
+or not the map holds them, and the ridge and the pines stand in the water too.
 
 The map's cost is met within the frame budget by filling it per change rather than per frame
 (below), which is a cheaper technique of the same look, not a smaller look. The pass draws every
@@ -238,14 +239,9 @@ sky, installs a green layer, removes it, and checks that each sphere takes the l
 loses it, and that neither shows it while the other does not beyond the frames that the light takes
 to follow the map. It runs on every GPU tier through the `sky` plan.
 
-The aurora demo's six pictures hold the layer in the map, in the form that [image
-tests](../image-tests.md#references) records (`89bd5640a`, `ac51f07b6`). The demo has no stand-in
-ambient light. A picture that holds such a light differs from the drawn one in 48.86 to 48.92 per
-cent of its pixels by more than ten levels, with a mean channel difference of about 5.2 levels. Its
-ice has a mean green of 22.5, where the drawn picture's has 6.6. The manifest's tolerance weighs a
-pixel's color distance rather than its levels, so only 0.000 to 0.012 per cent of those pixels count
-as different, under the 0.1 per cent limit. A passing comparison alone does not mean the same
-picture. The Mac's GPU draws that set, and CI's software GPU draws the other.
+The aurora demo's six pictures hold the layer in the map and the lake's planar reflection, in the
+form that [image tests](../image-tests.md#references) records. The demo has no stand-in ambient
+light. The Mac's GPU draws one reference set, and CI's software GPU draws the other.
 
 `sky-layer-light` keeps no pictures: it reads the spheres' colors, so it needs no reference.
 
@@ -259,23 +255,27 @@ passes on webgpu, compatibility mode and webgl2 on SwiftShader.
 The task's other proofs stand. `tests/image/errors.spec.ts` runs in every engine mode and in the
 production build, and it asserts the E1223 refusal in a running sketch.
 
-The held frame's map may hold no aurora, and that is an inference. The checker measured the ice's
-green excess fall from +7.7 to -0.8 against the sky above, which is a blue sky with no curtains.
-The draw thread shows the map's build of the layer's shader present at every stage, and the light
-capture running. Its light can still miss a held frame: a held frame is drawn once, and the capture
-replays that drawing, so a light that lands after the frame's list is recorded cannot enter the
-picture. On a loaded machine the light read was queued at 0.87 seconds and landed at 4.1, while the
-capture answered at 5.65. The reflections are a separate question, and the checker's mechanism for
-them is that a layer installed during setup arrives after the first fill, and hold mode draws no
-later frame for the retry fill that would bring it in. That needs a proof, and one page can give it:
-install the layer during setup and read the ice on the first frames, blue first and green only after
-the next fill, or read one sky-map texel where the layer is bright. Until then it stays an
-inference.
+`tests/image/sky-layer-held.spec.ts` installs a layer during the setup, as the aurora add-on does,
+and draws one held frame at 1.5 seconds with a mirror sphere and a rough sphere, beside the same
+scene without the layer. The mirror's green excess moves from 0 to 121 levels on WebGPU,
+compatibility mode and WebGL2, so the held frame's fill of the map draws the layer. A layer
+installed during the setup therefore reaches the thread that draws before the held frame's list is
+recorded, and the retry fill that a later frame would make is not needed.
+
+The held frame's own diffuse light keeps the core sky's model. Its map's light capture runs in the
+held frame's list, and its read lands after that list is recorded, so a frame that draws once cannot
+take it: the rough sphere's green excess stays at 0 with the layer and without it. In live frames
+the copy of the map's levels waits for the read of the fill, so the levels publish no earlier than
+the light. That wait is bounded at four frames: a read later than the bound publishes the levels
+without the light, so a frame can show the layer in the mirror beside the core sky's light. Until a
+layer's first capture lands the map keeps the CPU model's coefficients, and a later fill brings
+them in. `sky-layer-light` checks the order within that bound on the same tiers: the light's
+crossing is no later than the mirror's plus one frame, and the mirror's no later than the light's
+plus three.
 
 The demo's cloud coverage does not suppress the layer. The aurora's brightness scales by the clear
 fraction, about 0.96 at the demo's settings (`examples/addons/aurora/aurora.wgsl`), not by the
-coverage. A demo whose ice shows a plain blue sky is a look question under the owner's better-look
-rule, and it is with the owner.
+coverage.
 
 ### The map's light and a layer that never arrives
 
