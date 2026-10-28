@@ -152,7 +152,14 @@ async function runDemo(demo: Demo): Promise<void> {
 	path.setAttribute('stroke-linejoin', 'round');
 	svg.append(path);
 	chevron.append(svg);
-	title.append(h1, chevron);
+	title.append(h1);
+	// The demo's keys sit under its title, so a reader finds them without pressing at random.
+	if (demo.controls) {
+		const keys = element('span', demo.controls);
+		keys.className = 'controls';
+		title.append(keys);
+	}
+	title.append(chevron);
 	caption.append(title, element('p', demo.summary));
 	const code = element('a', 'View code', sourceUrl(demo));
 	code.target = '_blank';
