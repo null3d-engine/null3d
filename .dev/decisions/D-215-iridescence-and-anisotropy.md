@@ -162,7 +162,7 @@ camera frames each sphere grid at a radius of 9, so the spheres fill the picture
 | Suzanne | The Mac's GPU | 0.366% | 0.367% | 0.352% |
 | Suzanne | SwiftShader | 0.340% | 0.346% | 0.341% |
 
-three.js's two renderers differ by 0.368% on the dielectric scene on the Mac. On the metal grid they
+three.js's two renderers differ by 0.369% on the dielectric scene on the Mac. On the metal grid they
 differ by 5.929% on the Mac and 5.954% under SwiftShader, because r186's WebGPURenderer draws the
 film without its colors. The measurement removes the scene's `webglOnly` flag, because that flag
 makes `twinPath` draw both pages of a pair run with WebGLRenderer. The metal scene therefore takes
