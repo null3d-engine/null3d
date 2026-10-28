@@ -1,15 +1,15 @@
 # D-257: The water add-on
 
 Status: decided. Built: the `@null3d/water` add-on, its demo, the reflection's cadence through
-the feature host, and one owner for each point where bodies meet. Owed: the cost per preset, and
-the Creek's migration to the add-on, which waits until the add-on follows the current as the Creek
-does. Tasks: M3-F5, M3-E6.
+the feature host, one owner for each point where bodies meet, and the ocean. Owed: the cost per
+preset, for the water and for the ocean, and the Creek's migration to the add-on, which waits until
+the add-on follows the current as the Creek does. Tasks: M3-F5, M3-E6, M3-F9.
 
-Summary: `@null3d/water` draws a river and a lake from one shape, with waves, ripples, caustics,
-foam, soft shores, a reflection and an underwater view. The surface reads the copy of the scene's
-depth, so a shore fades against the real bed. The reflection's cadence is a feature setting of the
-preset and the governor. The Creek draws its own water, by the owner's ruling on the look. Its waves
-run along the stream's current, so the whole surface moves downstream.
+Summary: `@null3d/water` draws a river and a lake from one shape and an open sea of wave spectra,
+with waves, ripples, caustics, foam, soft shores, a reflection and an underwater view. The surface
+reads the copy of the scene's depth, so a shore fades against the real bed. The reflection's cadence
+is a feature setting of the preset and the governor. The Creek draws its own water, by the owner's
+ruling on the look. Its waves run along the stream's current, so the whole surface moves downstream.
 
 ## Question
 
@@ -180,6 +180,80 @@ from 1 to 0. The surface lies flat at the meeting, and both meshes carry one cur
 shows the mouth only from far away. The other three, the software set, still show the previous tour:
 a frame of the loop differs from them in most of its pixels, so a software image run of this branch
 is red until a CI run draws them and `images:review` takes them from it.
+
+## The ocean
+
+`createOcean` draws an open sea. Its waves come from two or three bands of wave spectra. Compute
+passes transform each band into the height of the sea every frame. The fragment forms of the same
+passes draw the chain on WebGL2. It is the compute hook's first user (D-173's H1, M3-E8).
+
+### Question
+
+How does an open sea turn a wind's spectrum into waves that one material moves and lights, on both
+GPU paths, without work on the page's thread?
+
+### Rule
+
+- The compute hook fills the heights in the frame that the material reads them, and its fragment
+  form draws the same chain on WebGL2. Both paths draw one sea.
+- The add-on owns the ocean as it owns the river (D-173).
+- A pass may not read its own texture. WebGL2 draws a fragment form one texel for each pixel. So a
+  stage that each pixel computes alone is the form that both paths share.
+
+### Data
+
+A band of 128 by 128 texels takes seven radix-2 stages for each axis. A sea of three bands runs 14
+passes on that grid, then one more that puts the heights in meters and adds the slopes. The plan's
+estimate is about 0.5 ms for three bands.
+
+The browser test reads each band's heights back and compares them with the transform on the page's
+thread. On WebGPU the worst texel of the read square differs by 0.004 m, and in compatibility mode
+by 0.004 m, of a field of 0.73 m. On WebGL2 it differs by 0.60 m, and the review holds that open.
+
+The transform's own cost per frame, which is the effect page's frames with the passes off and on in
+turns, is owed. The one run made so far took 0.421 ms on WebGPU at Low beside a full engine build,
+so its figures measure the machine as well as the change. Its command is
+`NULL3D_OCEAN_COST=1 bun run test:browser -- ocean-cost.spec.ts` in a quiet window, which times the
+three GPU paths at the four presets.
+
+### Decision
+
+**A band.** A band is a square tile of the sea whose waves are a sum of plane waves. The Phillips
+spectrum gives each wave an amplitude from its length and the wind, and a seeded random number in
+the page gives its phase. The page generates about two hundred thousand numbers once, at startup,
+and uploads them as a texture of a layer for each band. The spectrum is normalized so that the raw
+sum of its waves has a spread of one. The transform then adds the spectrum with no scaling of its
+own. Every intermediate value stays inside the range that a 16-bit float keeps.
+
+**The chain.** Each stage is a compute pass on a 128 by 128 grid, with a band to a layer. A pass
+carries its stage and the three tiles in its values, so one compiled shader runs every stage, and it
+reads the pass before it as a texture of the maps' group. The first horizontal stage adds the waves
+at the sketch time, in the bit-reversed order that the butterfly takes. No pass then turns the input
+over. The first vertical stage turns its own axis the same way. A fifteenth pass scales each band to
+its significant height and writes the slopes along x and z from the heights beside it, with the
+tile's other edge standing in for the one past it.
+
+**The surface.** One material reads the three bands of the last pass at each band's own scale. It
+sums their heights for the vertices, sums their slopes for the normal, mirrors the sky with the
+slopes, breaks foam on the crests, and fades where the bed behind it rises to meet the surface. The
+bands' tiles differ, so the material samples each layer at its own share of the world.
+
+**The mesh.** A square grid follows the camera, and its cells grow with distance, so the eye sees
+fine waves without a mesh of millions of vertices. The camera's place is the mesh's origin, and a
+vertex's world place is the origin with its place in the mesh.
+
+### Consequences
+
+- The ocean takes 15 of the 31 passes that a sketch may add, beside its reflection. A sketch that
+  draws a sea leaves room for its own passes.
+- The read buffers of the GPU-driven path took ids that a view of the tenth pass also took, so a
+  frame of many passes mapped a view's frame buffer as a read's buffer. The per-view ids now start
+  after the read buffers, and a unit test in each builder refuses their meeting.
+- The add-on's own page draws the sea on the three GPU paths, and a browser test reads each band's
+  heights back and compares them with the transform on the page's thread.
+- The WebGL2 fragment form draws a sea that differs from the compute form by 0.60 m of height. The
+  review holds the cause open, and the test marks that path as an expected failure until it is
+  fixed. The demo follows when the three paths draw one sea.
 
 ## Consequences
 
