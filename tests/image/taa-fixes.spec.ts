@@ -168,16 +168,16 @@ for (const gpu of GPUS) {
 		test(`the resolve over ${effect} on ${gpu}`, async ({ page }, testInfo) => {
 			test.setTimeout(900_000);
 			const captures = capturesOn(testInfo.project.name);
-			// The figures are the ones this page draws at four frames a second, and a capture on a
-			// software GPU takes longer than the 250 ms a frame then lasts, so most captures span two
-			// frames: thirty-two of them gave four adjacent pairs against the twelve the check needs
-			// on WebGPU, and none at all for fog. A slower page would give the pairs and measure a
-			// different rate than the record holds, so those runs wait for a GPU that holds the rate.
-			// The software WebGL2 runs line up enough pairs to give a figure, so they stay: a figure
-			// that fails there is a finding, not an alignment fault, and must not be skipped.
+			// The figures are the ones this page draws at four frames a second, and each is a mean
+			// over the frames all four runs hold, so a machine whose captures skip frames has fewer
+			// of them to compare. A capture on a software GPU takes longer than the 250 ms a frame
+			// then lasts: the last CI run there skipped 20 of 128 captures on rain and 47 of 128 on
+			// fog, and the shared sets came to 11 and 2 frames against the 12 the check needs. A
+			// slower page would give the pairs and measure a different rate than the record holds,
+			// so these cases run where the rate holds.
 			test.skip(
-				softwareOn(testInfo.project.name) && gpu === 'webgpu',
-				'a software WebGPU capture spans more than the 250 ms frame, so too few pairs line up',
+				softwareOn(testInfo.project.name),
+				'a software GPU skips frames, so too few shared frames remain to mean the figures over',
 			);
 			await page.goto(`taa-fixes.html?case=${effect}&gpu=${gpu}&fps=4&captures=${captures}`);
 			// A loaded runner draws the fog slowly, and the page runs four fog scenes in turn. A slower
