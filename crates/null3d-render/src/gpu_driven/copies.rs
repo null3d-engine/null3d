@@ -252,6 +252,9 @@ impl Layout {
                 }
                 Picked::FadeIn { bucket, .. } => keep(bucket),
                 Picked::FadeOut { old, .. } => keep(old),
+                // A levels debug view draws a hidden source at its base level, marked with the
+                // hidden bit, so the home bucket's slice holds it.
+                Picked::Hidden if self.codes => keep(home),
                 Picked::Hidden => {}
             }
         }
@@ -267,7 +270,9 @@ impl Layout {
         loop {
             counts[bucket as usize] += 1;
             let link = self.level_links[bucket as usize];
-            if link.fade != NO_LINK {
+            // A levels debug view's fade link names the level's own bucket, which this counts
+            // already.
+            if link.fade != NO_LINK && link.fade != bucket {
                 counts[link.fade as usize] += 1;
             }
             if link.next == NO_LINK {

@@ -16,8 +16,9 @@
 // thread that draws wait before it replays each frame's list, for a test of memory that the sketch
 // thread frees while the list may still point at it. ?hold starts hold mode for image tests, ?preset= fixes the quality preset,
 // ?target-fps= sets the frame rate that the engine defends, ?bench publishes the running engine
-// for benchmark tools, ?gl-timing times each WebGL call for benchmark pages, and ?stats shows the
-// stats overlay.
+// for benchmark tools, ?gl-timing times each WebGL call for benchmark pages, ?stats shows the
+// stats overlay, and ?view picks a debug view, one of the engine's own or one that an add-on's
+// feature registers.
 
 import type { StatsRequest } from '../debug/stats-options';
 import type { TargetFps } from '../quality/check';
@@ -287,6 +288,11 @@ export interface Switches {
 	/** True when ?bench asks the engine to publish itself on the page for a benchmark tool. */
 	bench: boolean;
 	/**
+	 * The debug view that ?view= asks for, by the name that `debug.view` takes: one of the engine's
+	 * own views, or a view that an add-on's feature registers. Undefined without the switch.
+	 */
+	view: string | undefined;
+	/**
 	 * True when a bare ?stats or ?stats=on shows the stats overlay, false when ?stats=off hides it,
 	 * options when ?stats=collapsed or ?stats=open shows it collapsed or open, and undefined without
 	 * the switch. It wins over the page's option.
@@ -416,6 +422,7 @@ export function parseSwitches(search: string): Switches {
 		record: params.has('record'),
 		still: params.get('still-camera') !== 'off',
 		bench: params.has('bench'),
+		view: params.get('view') || undefined,
 		stats: statsSwitch(params.get('stats')),
 		glTiming: !params.has('gl-timing')
 			? undefined
