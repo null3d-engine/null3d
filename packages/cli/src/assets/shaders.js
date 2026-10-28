@@ -204,10 +204,10 @@ function templateOf(prim, material) {
  * @param {import('@gltf-transform/core').Primitive} draw.prim
  * @param {import('@gltf-transform/core').Material | null} draw.material
  * @param {boolean} draw.skinned
- * @param {boolean} draw.levels
+ * @param {boolean} draw.fades True when the node's levels hand over in a fading band.
  * @returns {{ bits: string[], files: string[] }}
  */
-function needsOf({ prim, material, skinned, levels }) {
+function needsOf({ prim, material, skinned, fades }) {
 	const bits = [];
 	const files = [];
 	const morph = prim.listTargets().length > 0;
@@ -219,7 +219,7 @@ function needsOf({ prim, material, skinned, levels }) {
 	if (skinned) bits.push('SKIN');
 	if (morph) bits.push('MORPH');
 	if (transmits(material)) bits.push('TRANSMISSION');
-	if (levels) bits.push('LOD_FADE');
+	if (fades) bits.push('LOD_FADE');
 	if (layered(material)) bits.push('COAT_SHEEN');
 	if (skinned) files.push('skinning');
 	if (morph) files.push('morph');
@@ -227,9 +227,23 @@ function needsOf({ prim, material, skinned, levels }) {
 	// engine's materials from glTF files do by default.
 	if (masked) files.push('cutout', 'coverage');
 	if (transmits(material)) files.push('transmission');
-	if (levels) files.push('lod_fade');
+	if (fades) files.push('lod_fade');
 	if (layered(material)) files.push('coat_sheen');
 	return { bits, files };
+}
+
+/**
+ * True when a node's levels of detail hand over in a fading band. A file that gives a level both
+ * its measured error and the screen coverage that follows from it switches at once, since the
+ * change is under a pixel at the switch. A hand-set error, or a coverage alone, keeps the band.
+ * The engine's glTF loader reads a file's levels by this rule.
+ *
+ * @param {any} lod
+ */
+function levelsFade(lod) {
+	const errors = lod.getErrors?.() ?? [];
+	const coverage = lod.getCoverage?.() ?? [];
+	return errors.length === 0 || coverage.length === 0;
 }
 
 /**
@@ -238,7 +252,7 @@ function needsOf({ prim, material, skinned, levels }) {
  *
  * @param {import('@gltf-transform/core').Document} doc
  * @param {{ lodOf: (node: import('@gltf-transform/core').Node) => unknown }} levels `lodOf` of
- *   `lod-extension.js`, which says whether a node holds levels of detail.
+ *   `lod-extension.js`, which gives a node's levels of detail.
  * @returns {ShaderList}
  */
 export function shaderList(doc, { lodOf }) {
@@ -255,13 +269,14 @@ export function shaderList(doc, { lodOf }) {
 		const mesh = node.getMesh();
 		if (mesh) {
 			const skinned = node.getSkin() !== null;
-			const levels = lodOf(node) !== null;
+			const lod = lodOf(node);
+			const fades = lod !== null && levelsFade(lod);
 			const instancing = /** @type {any} */ (node.getExtension('EXT_mesh_gpu_instancing'));
 			const objects = instancing ? (instancing.listAttributes()[0]?.getCount() ?? 0) : 1;
 			for (const prim of mesh.listPrimitives()) {
 				if (prim.getMode() !== 4) continue;
 				const material = prim.getMaterial();
-				const { bits: own, files: needed } = needsOf({ prim, material, skinned, levels });
+				const { bits: own, files: needed } = needsOf({ prim, material, skinned, fades });
 				const template = templateOf(prim, material);
 				const format = formatOf(prim, prim.listTargets().length > 0);
 				const key = `${template} ${format || 'position'} ${
