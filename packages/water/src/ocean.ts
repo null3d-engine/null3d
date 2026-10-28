@@ -113,8 +113,8 @@ export interface Ocean {
 	/** The frames between two draws of the reflection now. */
 	readonly reflectionEvery: number;
 	/**
-	 * Moves the sea's mesh about the camera and draws the reflection in its turn. Call once in each
-	 * frame, after the camera moves and before the engine draws.
+	 * Moves the sea's mesh about the camera. The reflection pass carries its own cadence. Call once in
+	 * each frame, after the camera moves and before the engine draws.
 	 */
 	update(): void;
 	/**
@@ -344,11 +344,12 @@ export function createOcean(ctx: SketchContext, options: OceanOptions): Ocean {
 			budget: { presets: REFLECT_MS, min: 0.25 },
 			quality: (_preset, _settings, own) => {
 				every = own.settings.reflectionEvery as number;
+				// The pass carries its cadence itself, so no frame recompiles the graph.
+				render.setPassEvery(reflection, every);
 			},
 		}),
 	);
 
-	let frame = 0;
 	const eye: [number, number, number] = [0, 0, 0];
 	const fields: Float32Array[] = [];
 	/** The field of one band at a sketch time, which the sums below read. */
@@ -380,12 +381,6 @@ export function createOcean(ctx: SketchContext, options: OceanOptions): Ocean {
 		update() {
 			camera.getPosition(eye);
 			mesh.setPosition(eye[0], level, eye[2]);
-			if (every <= 1) {
-				render.setPassEnabled(reflection, true);
-				return;
-			}
-			frame = (frame + 1) % every;
-			render.setPassEnabled(reflection, frame === 0);
 		},
 		heightAt(x, z) {
 			return sum(x, z, ctx.time.now);
