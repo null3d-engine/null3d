@@ -926,7 +926,9 @@ export interface NodeData {
  * The lower levels of detail of a node's mesh, as `MSFT_lod` names them: the mesh of each lower
  * level's node, from the most detailed down, and each level's error from the asset tool's
  * `NULL3D_lod_error`, or else the screen coverage of each level from `MSFT_screencoverage`, the
- * node's own first.
+ * node's own first. The tool writes the coverage that its measured error implies beside the error;
+ * a file that holds the errors alone holds levels whose author set the switch, and the loader
+ * fades those.
  */
 export interface NodeLevels {
 	meshes: number[];
@@ -2376,8 +2378,8 @@ function parseNodes(
 /**
  * A node's levels of detail from its `MSFT_lod` extension: the meshes of the level nodes it names,
  * which need not be in the scene, and their errors or screen coverage from the node's extras. A
- * level node without a mesh ends the list there. Errors or coverage of the wrong length are left
- * out, and the loader then gives the mesh no levels.
+ * level node without a mesh ends the list there. An error or a coverage list of the wrong length is
+ * left out, and a node that then gives neither gives the mesh no levels.
  */
 function parseLevels(
 	lod: Entry,
@@ -2399,7 +2401,7 @@ function parseLevels(
 			? (value.slice(0, length) as number[])
 			: undefined;
 	const errors = read(extras.NULL3D_lod_error, meshes.length);
-	const coverage = errors ? undefined : read(extras.MSFT_screencoverage, meshes.length);
+	const coverage = read(extras.MSFT_screencoverage, meshes.length);
 	return { meshes, errors, coverage };
 }
 
