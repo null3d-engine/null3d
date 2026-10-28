@@ -29,6 +29,30 @@
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
 	},
+	"chromium-swiftshader/compat/creek-render-scale-opening.png": {
+		"test": "creek-render-scale-opening",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/compat/creek-render-scale-route.png": {
+		"test": "creek-render-scale-route",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/compat/creek-water-close.png": {
+		"test": "creek-water-close",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/compat/demo-creek.png": {
+		"test": "demo-creek",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
 	"chromium-swiftshader/compat/demo-depth-only.png": {
 		"test": "demo-depth-only",
 		"tier": "compat",
@@ -131,6 +155,30 @@
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
 	},
+	"chromium-swiftshader/webgl2/creek-render-scale-opening.png": {
+		"test": "creek-render-scale-opening",
+		"tier": "webgl2",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/webgl2/creek-render-scale-route.png": {
+		"test": "creek-render-scale-route",
+		"tier": "webgl2",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/webgl2/creek-water-close.png": {
+		"test": "creek-water-close",
+		"tier": "webgl2",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/webgl2/demo-creek.png": {
+		"test": "demo-creek",
+		"tier": "webgl2",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
 	"chromium-swiftshader/webgl2/demo-depth-only.png": {
 		"test": "demo-depth-only",
 		"tier": "webgl2",
@@ -226,6 +274,30 @@
 		"tier": "webgpu",
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgpu/creek-render-scale-opening.png": {
+		"test": "creek-render-scale-opening",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/webgpu/creek-render-scale-route.png": {
+		"test": "creek-render-scale-route",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/webgpu/creek-water-close.png": {
+		"test": "creek-water-close",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/webgpu/demo-creek.png": {
+		"test": "demo-creek",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
 	},
 	"chromium-swiftshader/webgpu/demo-depth-only.png": {
 		"test": "demo-depth-only",
