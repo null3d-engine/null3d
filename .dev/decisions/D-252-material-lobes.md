@@ -1,8 +1,8 @@
 # D-252: A material's own specular lobe
 
-Status: decided by the helper of M3-E7, for the owner's review. Built: the hook, the input record
-and both GPU paths through the WGSL-to-GLSL step. First user: M3-B5's car paint, whose glints
-declare it. Owed: a GPU check of the final code, and the car paint's cost per preset. Task: M3-E7.
+Status: decided and built, for the owner's review. Built: the hook and its input record, answering
+every point and spot light on both GPU paths through the WGSL-to-GLSL step. First user: M3-B5's
+car paint, whose glints declare it. Still owed: the car paint's cost per preset. Task: M3-E7.
 
 Summary: A custom material declares `fn lobe(input: LobeInput) -> vec3f`. The engine calls it for the
 main directional light and for each point and spot light that reaches the surface, and adds the color
@@ -106,3 +106,19 @@ The build tests are `cargo test -p null3d-shaders --test material`: a lobe in ev
 signature refused, the two call sites of every path, and the car paint on both paths. The suite
 passed 34 of 34 on the Mac for this branch, in 117.7 s, and its log is not kept. The full shader
 build, `bun tools/shaders.ts`, compiled all 80 entries of the manifest with the changed library.
+
+## The two light loops must move together
+
+The template's cluster walk duplicates the library's light loop, and it has to. A library module
+cannot call a function that the entry shader declares, which is why the walk lives in the template
+in the first place. The two loops are copies of each other's body, so a change to one alone drifts
+from the other silently.
+
+The call-count test does not cover that drift. It compiles a material with a lobe and one without,
+then checks that the lobed build calls the lobe and the plain build does not. That proves the wiring
+and says nothing about the loop body. A divergence inside the body would pass it.
+
+So a change to the clustered light loop has to be made in both copies in the same commit. That
+includes the area-light branch, the cached terms, the irradiance and the compensation. A reviewer
+should read the two side by side.
+
