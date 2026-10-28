@@ -236,14 +236,29 @@ function needsOf({ prim, material, skinned, fades }) {
  * True when a node's levels of detail hand over in a fading band. A file that gives a level both
  * its measured error and the screen coverage that follows from it switches at once, since the
  * change is under a pixel at the switch. A hand-set error, or a coverage alone, keeps the band.
- * The engine's glTF loader reads a file's levels by this rule.
+ * The engine's glTF loader reads a file's levels by this rule, so this reads the same shapes: it
+ * counts the level nodes up to the first one without a mesh, takes a list only where it reaches
+ * that count and holds numbers throughout, and gives a node with no measure no levels at all.
  *
  * @param {any} lod
  */
 function levelsFade(lod) {
-	const errors = lod.getErrors?.() ?? [];
-	const coverage = lod.getCoverage?.() ?? [];
-	return errors.length === 0 || coverage.length === 0;
+	const levelNodes = lod.listLevels?.() ?? [];
+	let count = 0;
+	for (const level of levelNodes) {
+		if (!level.getMesh?.()) break;
+		count++;
+	}
+	// A node whose levels carry no measure draws its base mesh alone: the loader gives it no levels,
+	// so no band ever runs.
+	if (count === 0) return false;
+	/** @param {number[]} list */
+	const reaches = (list) =>
+		list.length >= count && list.every((value) => typeof value === 'number');
+	const errors = reaches(lod.getErrors?.() ?? []);
+	const coverage = reaches(lod.getCoverage?.() ?? []);
+	if (!errors && !coverage) return false;
+	return !(errors && coverage);
 }
 
 /**

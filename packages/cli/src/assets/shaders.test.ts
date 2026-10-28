@@ -138,8 +138,14 @@ describe('shaderList', () => {
 		const joint = doc.createNode('joint');
 		const skin = doc.createSkin('skin').addJoint(joint).setSkeleton(joint);
 		doc.createScene().addChild(doc.createNode('knight').setMesh(mesh).setSkin(skin));
-		// The tool marks the nodes with levels of detail; the fake says which one.
-		const list = shaderList(doc, { lodOf: (node) => (node.getName() === 'knight' ? {} : null) });
+		// The tool marks the nodes with levels of detail; the fake gives the knight's levels one node
+		// with a mesh, and an error that its author set, which fades.
+		const list = shaderList(doc, {
+			lodOf: (node) =>
+				node.getName() === 'knight'
+					? { listLevels: () => [{ getMesh: () => mesh }], getErrors: () => [0.02] }
+					: null,
+		});
 		expect(list.permutations).toEqual(['VERTEX_COLOR', 'SKIN', 'MORPH', 'LOD_FADE']);
 		expect(list.features).toEqual(['lod_fade', 'morph', 'skinning']);
 		expect(list.buckets[0]?.key).toBe(
@@ -153,6 +159,17 @@ describe('shaderList', () => {
 			const doc = new Document();
 			const lod = doc.createExtension(MSFTLod).createLod().setErrors(errors);
 			if (coverage) lod.setCoverage(coverage);
+			// A level is a node with a mesh, one for each measure the file gives.
+			for (const [index] of errors.entries())
+				lod.addLevel(
+					doc
+						.createNode(`hill-${index}`)
+						.setMesh(
+							doc
+								.createMesh(`hill-${index}`)
+								.addPrimitive(triangle(doc, doc.createMaterial('rock'))),
+						),
+				);
 			const node = doc
 				.createNode('hill')
 				.setMesh(doc.createMesh('hill').addPrimitive(triangle(doc, doc.createMaterial('rock'))));
@@ -168,6 +185,29 @@ describe('shaderList', () => {
 		const handSet = list([0.02, 0.04]);
 		expect(handSet.permutations).toEqual(['LOD_FADE']);
 		expect(handSet.features).toEqual(['lod_fade']);
+		// A node that names its levels but gives them no measure draws its base mesh alone: the
+		// loader gives it no levels, so nothing hands over and nothing fades. The level node holds a
+		// mesh, so only the missing measure can hold the fade back.
+		const doc = new Document();
+		const lod = doc.createExtension(MSFTLod).createLod();
+		lod.addLevel(
+			doc
+				.createNode('hill-1')
+				.setMesh(doc.createMesh('hill-1').addPrimitive(triangle(doc, doc.createMaterial('rock')))),
+		);
+		const node = doc
+			.createNode('hill')
+			.setMesh(doc.createMesh('hill').addPrimitive(triangle(doc, doc.createMaterial('rock'))));
+		node.setExtension(MSFT_LOD, lod);
+		doc.createScene().addChild(node);
+		const unmeasured = shaderList(doc, { lodOf });
+		expect(unmeasured.permutations).toEqual([]);
+		expect(unmeasured.features).toEqual([]);
+		// A coverage list that reaches only some of the levels is no measure at all, so the errors
+		// stand alone and the band keeps. The loader reads the lists by the same length.
+		const short = list([0.02, 0.04], [0.5]);
+		expect(short.permutations).toEqual(['LOD_FADE']);
+		expect(short.features).toEqual(['lod_fade']);
 	});
 
 	it('names the clear coat and sheen of a layered material', () => {
