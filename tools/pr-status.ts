@@ -32,7 +32,7 @@ const PARTIAL: Readonly<Record<string, string>> = {
 };
 
 /** Tasks whose work is on a helper branch, whether or not part of it has reached this branch. */
-const ON_BRANCH = new Set(['M3-V2', 'M3-F9']);
+const ON_BRANCH = new Set(['M3-V2', 'M3-F9', 'M3-R27']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 // The branch's audits read every ticked task against its own "Done when" and its section's rule.
@@ -111,7 +111,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-E10':
 		"the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch. The round 24 audit's finding that the capture never runs is stale at the published head: the light sum (`8bebdff7f`) and the merge that carried it (`1857377b1`) are ancestors, `fs_feedback` sums the nine coefficients, and D-242 records the light as built. What the task still owes is the held-frame proof and the ice look",
 	'M3-R27':
-		"the owner saw the redrawn aurora beside the current pictures on all three Mac paths and ruled that the lake reflection looks too blurry, so the lake drawing is not accepted yet: find where the blur comes from — how the ice samples the sky, whether the material's roughness picks a blurred level of the environment map, or the reflection's own resolution — sharpen it, show the owner, and then redraw the six demo-aurora references in both sets. The ice-plane fix waits with it so the aurora is redrawn once",
+		"the blur was the environment map and not the material: roughness 0 and 0.06 draw the same lake, and no map size adds the shore, because a standard material reflects only the sky. The fix is a planar reflection through the engine's `reflection` pass, with a custom ice material that samples it, the six demo-aurora references redrawn once in both sets and a picture test that fails while the lake is missing. The audit passed the lake, the test and the references and failed only on text, which is corrected. The task waits on the owner's ruling on the new look",
 	'M3-V2':
 		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
 	'M3-R4': 'D-247 does not compare frame time, and the Mac GPU figure is owed',
