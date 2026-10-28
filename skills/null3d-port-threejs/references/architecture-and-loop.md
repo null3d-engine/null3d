@@ -67,7 +67,7 @@ for (let index = 0; index < ELEMENTS.length; index++) {
 - An element can hold an iframe or any other markup. Give it `pointer-events: auto` for the clicks that `CSS3DRenderer` gives its elements.
 - An orthographic camera carries the planes too. Give `scene.createOrthographicCamera` the height, or the four edges, that the example's camera uses.
 
-All seven three.js CSS3D examples have a port under `tests/pages/`: `css3d_periodictable`, `css3d_molecules`, `css3d_sprites`, `css3d_sandbox`, `css3d_orthographic`, `css3d_mixed` and `css3d_youtube`. Each page draws its scene with null3D and with three.js's `CSS3DRenderer`, and its test compares the element pictures of the two stages. Read one before porting a CSS3D scene of your own.
+All seven three.js CSS3D examples have a port under `tests/pages/`: `css3d_periodictable`, `css3d_molecules`, `css3d_sprites`, `css3d_sandbox`, `css3d_orthographic`, `css3d_mixed` and `css3d_youtube`. Each page draws its scene with null3D and with three.js's `CSS3DRenderer`, and its test compares the element pictures of the two stages. The mixed port's test also compares the two drawn frames. Where an example adds an invisible plane that writes depth and no color, give its material `colorWrite: false` (0.3). Read a port before porting a CSS3D scene of your own.
 
 ## 2. Messages between page and sketch
 

@@ -2395,8 +2395,8 @@ export class WebGL2Backend {
 		this.skipDraws = false;
 		const color = words[a] as number;
 		const depth = words[a + 2] as number;
-		// The weighted layer's pass names a second color target after the flags.
-		const second = length > 10 ? (words[a + 9] as number) : G.NO_TARGET;
+		// The weighted layer's pass names a second color target after the flags, before the label.
+		const second = length > 11 ? (words[a + 9] as number) : G.NO_TARGET;
 		const flags = words[a + 8] as number;
 		this.passResolve = words[a + 1] as number;
 		this.passFlags = flags;

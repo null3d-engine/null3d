@@ -2,6 +2,7 @@
 // a page that draws with WebGL2 never downloads the WebGPU backend.
 
 import { SKINNING_FULL, SKINNING_SKIP_ONLY, SKINNING_VERTEX } from '../generated/core';
+import { PASS_ROLE_BACKGROUND } from '../generated/gpu';
 import { clearWebGPUCanvas } from '../gpu/canvas-release';
 import { QueueCompletion } from '../gpu/completion';
 import type { DeviceShaderSet } from '../gpu/device-shaders';
@@ -96,7 +97,7 @@ class WebGPURenderer implements Renderer {
 		color[1] = linearToSrgb(background[1]);
 		color[2] = linearToSrgb(background[2]);
 		pass.setColor(view, undefined, true, true, color, 0);
-		pass.setTimestampWrites(this.timer?.passWrites(true));
+		pass.setTimestampWrites(this.timer?.passWrites(true, PASS_ROLE_BACKGROUND));
 		encoder.beginRenderPass(pass.descriptor).end();
 		this.timer?.endFrame();
 		submitOne(this.device.queue, encoder.finish());

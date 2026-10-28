@@ -451,7 +451,8 @@ The galaxy's sketch time is the loop that turns every star and writes its row. I
 
 `aurora: A frozen lake at night` shows the sky-layer hook: the aurora example add-on draws one WGSL function over the core sky, under the moon and the stars, in the camera's view, in scene passes and in reflections.
 
-- The layer reaches both places that a sky is seen. Its WGSL is built into the shader that fills the sky's environment map, so the ice mirrors the curtains, and the map's own texels give the scene its diffuse light, so the ice and the snow read green from above. The demo needs no ambient light of its own for the aurora, and has none.
+- The layer reaches both places that a sky is seen. Its WGSL is built into the shader that fills the sky's environment map. The map's own texels give the scene its diffuse light, so the ice and the snow read green from above. The demo needs no ambient light of its own for the aurora, and has none.
+- The lake is a real mirror of the scene, not the environment map. A reflection pass mirrors the camera's view across the ice at ground level, at the render size. The ice's custom material lights that picture as its surface's reflection. The ridge and the pines therefore stand in the water as well as the curtains, which no map of the sky alone can show.
 - The aurora drifts, so the demo asks the map to capture it twice a second with `refresh: 0.5`. The map's light follows each capture within a couple of frames, which the demo's slow clouds hide.
 - The layer reads the core sky's cloud coverage and density, so the demo keeps the physical sky's thin clouds: they hide the aurora where they thicken, as they hide the stars.
 - The curtains are flat in the sky and have no parallax. The camera stays at eye height over the ice, so the layer reads as a sky and not as a wall.

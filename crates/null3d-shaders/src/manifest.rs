@@ -261,8 +261,8 @@ pub struct BuildCounts {
 /// that adds builds on purpose raises the figure it passes and records why there. The test
 /// `the_manifests_builds_stay_within_the_recorded_figure` refuses a count past it.
 pub const BUILD_BUDGET: BuildCounts = BuildCounts {
-    glsl: 57_484,
-    wgsl: 20_777,
+    glsl: 57_676,
+    wgsl: 20_825,
 };
 
 impl Manifest {

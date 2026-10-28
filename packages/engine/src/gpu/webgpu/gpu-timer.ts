@@ -81,6 +81,8 @@ export class GpuTimer {
 	private readonly frames = new Uint32Array(SLOTS);
 	private readonly passCounts = new Uint32Array(SLOTS);
 	private readonly renderMasks = new Uint32Array(SLOTS);
+	/** Per slot, the label of each pass that the timer times alone. */
+	private readonly passLabels = new Uint32Array(SLOTS * GPU_TIMED_PASSES);
 	/** Each timestamp of a frame as read back, in nanoseconds from the beginning of its first pass. */
 	private readonly times = new Float64Array(QUERIES);
 	private slot = -1;
@@ -174,13 +176,14 @@ export class GpuTimer {
 
 	/**
 	 * Timestamp writes for the frame's next pass, a render pass or a compute pass, or undefined when
-	 * the frame is not timed.
+	 * the frame is not timed. `label` says what the pass draws for, so the frame's parts name it.
 	 */
-	passWrites(render: boolean): GPURenderPassTimestampWrites | undefined {
+	passWrites(render: boolean, label: number): GPURenderPassTimestampWrites | undefined {
 		if (this.slot < 0) return undefined;
 		const pass = this.passes++;
 		if (pass >= GPU_TIMED_PASSES) return this.laterWrites[this.slot];
 		if (render) this.renderMask |= 1 << pass;
+		this.passLabels[this.slot * GPU_TIMED_PASSES + pass] = label;
 		return this.passWriteSets[this.slot]?.[pass];
 	}
 
@@ -263,6 +266,7 @@ export class GpuTimer {
 			const end = times[at + 1] as number;
 			const ordered = begin >= 0 && end >= begin;
 			recorder.gpuTime(1 + pass, ordered ? (end - begin) / NS_PER_MS : UNTIMED);
+			recorder.gpuPassRole(pass, this.passLabels[slot * GPU_TIMED_PASSES + pass] as number);
 			if (!ordered) continue;
 			if (begin < earliest) earliest = begin;
 			if (end > latest) latest = end;

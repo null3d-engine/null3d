@@ -76,6 +76,6 @@ runPort({
 			elements.push(cross.element);
 		});
 		renderer.render(scene, camera);
-		return elements;
+		return { elements };
 	},
 });

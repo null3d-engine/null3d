@@ -3,9 +3,10 @@
 // element's box. This module loads the page on each GPU path, checks that both stages drew their
 // elements, hides both canvases, and compares the pixels of the two layers of elements.
 //
-// The comparison reads the page's own element pixels, which no GPU draws, so a screenshot is the
-// reading, as it is for the CSS3D periodic table. The engine's own pixels are checked separately by
-// the page, which reports them for a port whose scene has WebGL content.
+// A port whose example also draws a scene through WebGL gives its twin the same scene. The page
+// reads the engine's frame through `captureFrame` and the twin's through WebGL's own readback, and
+// publishes both, so this module compares the drawn scenes too. A browser screenshot never reads a
+// GPU's pixels (hard rule 16): the screenshots hold only the elements, which no GPU draws.
 import { expect, type Page } from '@playwright/test';
 import { compareImages, percent } from '../../packages/cli/src/compare.js';
 import { decodePngRgba } from '../../packages/cli/src/png.js';
@@ -17,6 +18,12 @@ import { pageResult } from './page-result.ts';
  * placement, which comes from the same matrices.
  */
 const MAX_DIFFERENCE = 0.001;
+
+/**
+ * The most of the drawn scene that may differ: three.js's own rule. A port whose cut-out plane goes
+ * missing differs by more, so the rule catches it.
+ */
+const MAX_SCENE_DIFFERENCE = 0.001;
 
 /** The GPU paths that every port draws on. */
 export const GPU_PATHS = ['webgpu', 'webgl2'] as const;
@@ -35,21 +42,39 @@ export interface PortResult {
 	shown: { mine: boolean[] };
 	/** The pixels that the engine drew, for a port whose scene has WebGL content. */
 	webglPixels: number;
+	/**
+	 * The drawn scenes of the two stages as base64 RGBA rows, for a port whose twin draws the
+	 * example's scene. The engine's frame comes from `captureFrame` and the twin's from WebGL's own
+	 * readback, so neither comes from a browser screenshot.
+	 */
+	frames?: { mine: string; theirs: string };
 	mode: { hold: number | null };
 }
 
 /** How far an element's box may sit from three.js's, in CSS pixels. */
 const BOX_TOLERANCE = 1.5;
 
+/** The shares of the picture that a port's test may allow to differ. */
+export interface CompareLimits {
+	/** The share of the elements' layer that may differ. */
+	elements?: number;
+	/** The share of a drawn scene that may differ. */
+	scene?: number;
+}
+
 /**
- * Loads a port at one GPU path and compares its elements with three.js's own draw. Returns the
- * page's result, so a test can assert on the scene it drew.
+ * Loads a port at one GPU path and compares its stage with three.js's own draw. Returns the page's
+ * result, so a test can assert on the scene it drew. `limits` widens a share that the two engines
+ * shade a little differently.
  */
 export async function expectSameElements(
 	page: Page,
 	name: string,
 	gpu: string,
+	limits: CompareLimits = {},
 ): Promise<PortResult> {
+	const maxDifference = limits.elements ?? MAX_DIFFERENCE;
+	const maxSceneDifference = limits.scene ?? MAX_SCENE_DIFFERENCE;
 	await page.goto(`${name}.html?gpu=${gpu}`);
 	const result = await pageResult<PortResult>(page, 60_000);
 	expect(result.error, 'the page failed').toBeUndefined();
@@ -73,8 +98,9 @@ export async function expectSameElements(
 	}
 	expect(shown, 'elements that the engine shows').toBeGreaterThan(0);
 
-	// Hide both canvases, so the screenshots hold the elements and the stage's background alone.
-	// The engine's own pixels are a separate reading, which the page reports.
+	// Hide both canvases, so the screenshots hold the elements and the stage's background alone. A
+	// GPU's pixels never come from a browser screenshot: the page publishes the two frames, which
+	// this reads through each engine.
 	await page.evaluate(async () => {
 		const globals = globalThis as unknown as {
 			document: {
@@ -104,6 +130,36 @@ export async function expectSameElements(
 	expect(
 		share,
 		`${percent(share)} of the pixels differ from three.js's draw at ${gpu}`,
-	).toBeLessThanOrEqual(MAX_DIFFERENCE);
+	).toBeLessThanOrEqual(maxDifference);
+
+	// A drawn scene compares as its two engines read it: the engine's frame through `captureFrame`
+	// and the twin's through WebGL. A surface that the engine draws over the page shows here, since
+	// the twin's own cut-out leaves those pixels empty.
+	if (result.frames) {
+		const size = result.stage.width * result.stage.height * 4;
+		const drawn = (data: string) => {
+			const pixels = new Uint8Array(Buffer.from(data, 'base64'));
+			expect(pixels.length, 'the frame holds four bytes a pixel').toBe(size);
+			return { width: result.stage.width, height: result.stage.height, data: pixels };
+		};
+		const mineFrame = drawn(result.frames.mine);
+		const theirFrame = drawn(result.frames.theirs);
+		// Each engine must have drawn something: a blank frame would compare equal to another one.
+		const lit = (image: { data: Uint8Array }) => {
+			let count = 0;
+			for (let i = 3; i < image.data.length; i += 4) if ((image.data[i] as number) > 8) count++;
+			return count;
+		};
+		expect(lit(mineFrame), 'the scene that the engine drew').toBeGreaterThan(1_000);
+		expect(lit(theirFrame), 'the scene that three.js drew').toBeGreaterThan(1_000);
+		const scene = compareImages(theirFrame, mineFrame, 0.1);
+		console.log(
+			`${name} at ${gpu}: ${percent(scene.share)} of the scene differs from three.js's draw`,
+		);
+		expect(
+			scene.share,
+			`${percent(scene.share)} of the scene differs from three.js's draw at ${gpu}`,
+		).toBeLessThanOrEqual(maxSceneDifference);
+	}
 	return result;
 }

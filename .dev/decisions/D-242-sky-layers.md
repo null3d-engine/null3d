@@ -96,12 +96,18 @@ reflections alone. Its measurements explain what the wider line costs, below.
 ### Look
 
 The wider line looks better wherever a scene shows its sky more than once. Without the layer in the
-map, the aurora demo's ice holds the moon and the stars and no curtain. The snow then needs a dim
-ambient light of the sketch's own that no measure of the sky gives it. With the layer in the map,
-the snow takes the aurora's green from above, so the demo carries no light of its own for it. The
-ice that would mirror the curtains at the sky's own sharpness waits for M3-R27. The cost is met
-within the frame budget by taking it per change rather than per frame (below), which is a cheaper
-technique of the same look, not a smaller look.
+map, the aurora demo's snow needs a dim ambient light of the sketch's own that no measure of the sky
+gives it. With the layer in the map, the snow takes the aurora's green from above, so the demo
+carries no light of its own for it. The map lights the scene. The lake no longer takes its
+reflection from the map: M3-R27 draws it as a planar reflection through a reflection pass, which
+mirrors the camera's view across the ice at the render size. The layer draws in the reflection view,
+so that pass carries the curtains as the sky draws them, whether or not the map holds them, and the
+ridge and the pines stand in the water too.
+
+The map's cost is met within the frame budget by filling it per change rather than per frame
+(below), which is a cheaper technique of the same look, not a smaller look. The pass draws every
+frame, and it costs about 0.4 ms of GPU time a frame at 1280 by 720 on the Mac's GPU, from two
+on/off pairs whose deltas were 0.66 and 0.13 ms, measured while the machine carried other jobs.
 
 ### How the layer reaches the map
 

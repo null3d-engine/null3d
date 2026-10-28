@@ -259,7 +259,12 @@ describe('the names that add-ons release', () => {
 		const namespaces = new AddonNamespaces();
 		claim(namespaces, { name: 'water' });
 		claim(namespaces, { name: 'ocean' });
-		const names = { feature: 'waves', outputs: ['spray'], slots: ['sky'] as const };
+		const names = {
+			feature: 'waves',
+			outputs: ['spray'],
+			slots: ['sky'] as const,
+			debugViews: ['water-waves'],
+		};
 		namespaces.claimFeature('water', names);
 		expect(() => namespaces.claimFeature('ocean', names)).toThrow(
 			/E1225: FeatureHost.add\(\) got the feature 'waves' for the add-on 'ocean', which the add-on 'water' registers already\./,

@@ -76,6 +76,7 @@ A description is data, apart from its callbacks. The engine can send the declara
 | `writes` | The scene resources that the feature writes. | None |
 | `outputs` | The textures that the feature publishes to materials, effects and passes, by name, each with a neutral default. | None |
 | `provides` | The lighting slots that the feature provides. One feature provides each slot. | None |
+| `debugViews` | The debug views that the feature adds, each with a name and a `set` callback. See [Debug drawing and stats](debug.md#views-from-add-ons). | None |
 | `views` | The views that the feature records in, as its view mask. | `['main']` |
 | `ready` | Called when the engine needs to know whether the feature draws. `false` means no cost at all. | Always ready |
 | `settings` | The feature's own settings, by name, each with a value on every preset and the values it takes. | None |
@@ -86,7 +87,7 @@ A description is data, apart from its callbacks. The engine can send the declara
 | `reset` | Called with `'resize'`, `'camera'` or `'exposure'` when the feature must drop its history. | None |
 | `destroy` | Called once when the feature is removed or the engine stops. | None |
 
-A feature with no `frame` records no frame work. It gives no `kind`, `reads`, `writes` or `views`. It can still publish outputs, provide a lighting slot and receive the callbacks.
+A feature with no `frame` records no frame work. It gives no `kind`, `reads`, `writes` or `views`. It can still publish outputs, provide a lighting slot, add debug views and receive the callbacks.
 
 ## Frame points
 
@@ -282,7 +283,7 @@ The other hooks still need their own payload, and they arrive with the add-on th
 
 `defineFeature` returns a frozen description with the defaults filled. It throws E1223 for an option that a description does not take. It also throws for a frame point or kind that does not go together. The same holds for an order outside its band, or a name that is too long. An output with no neutral default throws too. So does a resource, view or slot that does not exist. A setting whose preset value is not one of its values throws. So does a setting with a governor but no budget, and a budget whose four times are not above 0.
 
-`FeatureRegistry.add` refuses a feature name that another feature has. It also refuses an output name that another feature publishes, and a lighting slot that another feature provides. `remove` gives those names back.
+`FeatureRegistry.add` refuses a feature name that another feature has. It also refuses an output name that another feature publishes, a lighting slot that another feature provides, and a debug view name that another feature adds. `remove` gives those names back. A debug view name that names one of the engine's own views is refused too.
 
 ## Errors
 

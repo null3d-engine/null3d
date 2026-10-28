@@ -93,9 +93,11 @@ pub enum Op {
     /// [color target texture id or 0 for the canvas or `NO_TARGET`, resolve target texture id or
     /// 0 for the canvas or `NO_TARGET`, depth texture id or `NO_TARGET`, clear red, green, blue,
     /// alpha (f32), clear depth (f32), pass flags, then optionally a second color target texture
-    /// id]. A target is a texture of one layer and one mip level, or a view of one. A pass without
-    /// a color target draws depth only. A second color target has one sample, no resolve, and the
-    /// first target's clear color and flags; its pipelines are those with `permutation::WEIGHTED`.
+    /// id, then the pass's label]. A target is a texture of one layer and one mip level, or a view
+    /// of one. A pass without a color target draws depth only. A second color target has one
+    /// sample, no resolve, and the first target's clear color and flags; its pipelines are those
+    /// with `permutation::WEIGHTED`. The label says what the pass draws for, from
+    /// [`crate::pass_role`], so a frame's GPU time names the pass rather than its slot.
     BeginRenderPass = 16,
     /// [render pipeline id]
     SetPipeline = 17,
@@ -130,7 +132,8 @@ pub enum Op {
     BeginBundle = 32,
     /// []
     EndBundle = 33,
-    /// []
+    /// [the pass's label]: what the dispatches in this pass do, from [`crate::pass_role`], so a
+    /// frame's GPU time names the pass rather than its slot.
     BeginComputePass = 40,
     /// [compute pipeline id]
     SetComputePipeline = 41,
@@ -1007,6 +1010,11 @@ pub mod permutation {
     pub const DEBUG_VIEW_LOW: u32 = 1024;
     /// The high bit of the debug view's number.
     pub const DEBUG_VIEW_HIGH: u32 = 2048;
+    /// The debug view of levels of detail: each draw takes its level's color, a fading band dithers
+    /// its two levels, and a source that the size rule or a draw range hid draws in a marker
+    /// color. It shares [`OUTLINE_VISIBLE`]'s value: only the debug view template lists it, and only
+    /// the outline mask template lists the outline bit.
+    pub const DEBUG_VIEW_LEVELS: u32 = OUTLINE_VISIBLE;
     /// The pipeline draws the camera's depth prepass. On WebGPU it is a build of the depth
     /// template, which clips what lies in front of the near plane, as the templates that shade
     /// do; without the bit, the shadow passes flatten casters there onto the near face. On WebGL2
@@ -1110,7 +1118,7 @@ pub mod permutation {
     pub const WEIGHTED: u32 = 1 << 31;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 35] = [
+    pub const NAMES: [(&str, u32); 36] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -1131,6 +1139,7 @@ pub mod permutation {
         ("BLOOM", BLOOM),
         ("PICK", PICK),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
+        ("DEBUG_VIEW_LEVELS", DEBUG_VIEW_LEVELS),
         ("INSTANCE_INDEX", INSTANCE_INDEX),
         ("DEPTH_MULTISAMPLED", DEPTH_MULTISAMPLED),
         ("LOD_FADE", LOD_FADE),
@@ -1150,10 +1159,11 @@ pub mod permutation {
 
     /// Pairs of names that share one value, because no template lists both: the shader build
     /// refuses a template that lists two names of one value, and any other shared value.
-    pub const SHARED: [(&str, &str); 3] = [
+    pub const SHARED: [(&str, &str); 4] = [
         ("FXAA", "AREA_LIGHTS"),
         ("CASTER_OFFSET", "UPSCALE"),
         ("BLOOM", "PICK"),
+        ("OUTLINE_VISIBLE", "DEBUG_VIEW_LEVELS"),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -1728,9 +1738,9 @@ pub mod sizes {
     /// of a skin that the vertex shader skins, 1 for a bucket whose slice holds source indices
     /// instead of copies of the matrices, for a mesh with levels of detail the level's switch
     /// value, the bucket of the next coarser level plus one, the level's fade bucket plus one, the
-    /// threshold bias that picks the levels, 1 for none, and the measure that the switch value
-    /// names.
-    pub const BUCKET_WORDS: u32 = 15;
+    /// threshold bias that picks the levels, 1 for none, the measure that the switch value names,
+    /// and the level that the bucket draws, which the levels debug view writes beside each copy.
+    pub const BUCKET_WORDS: u32 = 16;
     /// A bucket record's first joint that sends the culling shader to each source's own: the
     /// buckets that skinned objects share, whose vertex shaders skin, read the first joint of each
     /// object's skin from a data texture of 32-bit indices, at the object's source.
@@ -2932,6 +2942,30 @@ pub fn typescript_constants() -> String {
     out.push_str(&format!(
         "/** Each vertex attribute in vertex order, which is also its shader location: its format bit (0 for one every format has), its values per vertex, the first bit of its type field, its types by the field's value, and whether shaders read whole numbers. */\nexport const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, components: number, shift: number, types: readonly number[], integer: boolean])[] = [{}];\n",
         attributes.join(", ")
+    ));
+    let role_names: Vec<String> = crate::pass_role::PassRole::ALL
+        .iter()
+        .map(|role| format!("\"{}\"", role.name()))
+        .collect();
+    let role_places: Vec<String> = crate::pass_role::PassRole::ALL
+        .iter()
+        .map(|role| (role.place() as u32).to_string())
+        .collect();
+    out.push_str(&format!(
+        "/** The name of each pass role by code. */\nexport const PASS_ROLE_NAMES: readonly string[] = [{}];\n",
+        role_names.join(", ")
+    ));
+    out.push_str(&format!(
+        "/** Whether each pass role prints its place: 0 never, 1 always, 2 when the place is not 0. */\nexport const PASS_ROLE_PLACES: readonly number[] = [{}];\n",
+        role_places.join(", ")
+    ));
+    out.push_str(&format!(
+        "/** The bits of a pass label that hold the pass's place. */\nexport const PASS_ROLE_PLACE_SHIFT = {};\n",
+        crate::pass_role::PLACE_SHIFT
+    ));
+    out.push_str(&format!(
+        "/** The role code of the background pass, which the page's renderer records itself. */\nexport const PASS_ROLE_BACKGROUND = {};\n",
+        crate::pass_role::PassRole::Background.code()
     ));
     out
 }

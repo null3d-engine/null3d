@@ -11,6 +11,7 @@
 // and its sketches have one thread each, and an add-on's names are claimed in the thread that loads
 // it.
 
+import { ENGINE_DEBUG_VIEWS } from '../debug/view-names';
 import { EngineError } from '../errors/engine-error';
 import { QUALITY_SETTINGS } from '../quality/presets';
 import { checkPluginInterface, type PluginInterfaceRange } from '../shared/version';
@@ -168,6 +169,8 @@ export interface ExportedNames {
 	readonly outputs: readonly string[];
 	/** The lighting slots that the feature provides. */
 	readonly slots: readonly FeatureSlot[];
+	/** The debug views that the feature adds, by name. */
+	readonly debugViews: readonly string[];
 }
 
 /**
@@ -192,6 +195,8 @@ export class AddonNamespaces {
 	private readonly outputs = new Map<string, string>();
 	/** The add-on that provides each lighting slot. */
 	private readonly slots = new Map<FeatureSlot, string>();
+	/** The add-on that adds each debug view. */
+	private readonly debugViews = new Map<string, string>();
 
 	/** The number of claimed namespaces. */
 	get size(): number {
@@ -285,6 +290,7 @@ export class AddonNamespaces {
 		for (const [feature, owner] of this.features) if (owner === name) this.features.delete(feature);
 		for (const [output, owner] of this.outputs) if (owner === name) this.outputs.delete(output);
 		for (const [slot, owner] of this.slots) if (owner === name) this.slots.delete(slot);
+		for (const [view, owner] of this.debugViews) if (owner === name) this.debugViews.delete(view);
 		return true;
 	}
 
@@ -316,9 +322,23 @@ export class AddonNamespaces {
 					`got the slot '${slot}' for the add-on '${addon}', which the add-on '${owner}' provides already. One feature provides each lighting slot.`,
 				);
 		}
+		for (const view of names.debugViews) {
+			if ((ENGINE_DEBUG_VIEWS as readonly string[]).includes(view))
+				throw clash(
+					call,
+					`got the debug view '${view}' for the add-on '${addon}', which names one of the engine's own views. Give the add-on's view a name of its own.`,
+				);
+			const owner = this.debugViews.get(view);
+			if (owner !== undefined)
+				throw clash(
+					call,
+					`got the debug view '${view}' for the add-on '${addon}', which the add-on '${owner}' adds already. Give each view a name of its own.`,
+				);
+		}
 		this.features.set(names.feature, addon);
 		for (const output of names.outputs) this.outputs.set(output, addon);
 		for (const slot of names.slots) this.slots.set(slot, addon);
+		for (const view of names.debugViews) this.debugViews.set(view, addon);
 	}
 
 	/** Removes the names that one feature of `addon` registered. */
@@ -327,6 +347,8 @@ export class AddonNamespaces {
 		for (const output of names.outputs)
 			if (this.outputs.get(output) === addon) this.outputs.delete(output);
 		for (const slot of names.slots) if (this.slots.get(slot) === addon) this.slots.delete(slot);
+		for (const view of names.debugViews)
+			if (this.debugViews.get(view) === addon) this.debugViews.delete(view);
 	}
 
 	/** The error-code range, checked against the engine's codes and the other add-ons'. */

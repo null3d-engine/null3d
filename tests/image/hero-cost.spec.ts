@@ -37,7 +37,7 @@ const CASES = [
 /** The parts of a side's frame, with their GPU time where the device times passes. */
 const passesLine = (side: Side) =>
 	(side.passes ?? [])
-		.map((pass) => `${pass.name} ${pass.ms === null ? 'none' : pass.ms.toFixed(3)} ms`)
+		.map((pass) => `${pass.name}: ${pass.ms === null ? 'none' : pass.ms.toFixed(3)} ms`)
 		.join(', ') || 'none';
 
 for (const [gpu, preset, tile] of CASES)

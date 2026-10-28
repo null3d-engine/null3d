@@ -67,6 +67,7 @@ The test file's 12 tests pass. It changes no built-in and does not ship.
 | `writes` | The scene resources that the feature writes. A compute feature writes none. | None |
 | `outputs` | Textures published by name, each with a neutral default: `'black'`, `'white'` or `'transparent'`. | None |
 | `provides` | Lighting slots: `'shadow'`, `'ambient'`, `'sky'`, `'ao'`, `'reflection'` or `'fog'`. | None |
+| `debugViews` | The debug views that the feature adds, each a name of its own and a `set(active)` callback that hears when `debug.view` or `?view=` starts and stops it. The name must not be one of the engine's own views or another feature's. | None |
 | `views` | The view mask: `'main'`, `'scenePass'` or `'reflection'`. | `['main']` |
 | `ready` | Returns whether the feature draws. False means no cost at all. | Ready |
 | `quality` | Gets the preset and the settings, and maps them onto the feature's own settings. | None |

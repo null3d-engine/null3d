@@ -190,6 +190,9 @@ struct InstanceBucket {
     fade_bucket: u32,
     bias: f32,
     level_switch: u32,
+    /// The level of detail that the bucket draws. The vertex shader reads none of it, but the
+    /// record's stride holds it.
+    level: u32,
 }
 
 // The group after the template's own: the frame's, then the maps' in the builds that sample maps
