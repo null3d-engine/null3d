@@ -146,7 +146,12 @@ interface Run {
 	consecutive: boolean;
 }
 
-/** Captures `count` consecutive frames, with the sketch frame number of each. */
+/**
+ * Captures `count` frames, with the sketch frame number of each, and says whether every capture
+ * advanced the sketch. A software GPU draws slower than the page asks, so a capture there takes a
+ * frame that is one or more ahead; what the run must not do is take a frame that did not advance,
+ * or one that came back out of order, since the figures compare each pair of frames it holds.
+ */
 async function sequence(engine: Engine, heard: number[], count: number): Promise<Run> {
 	const frames: Frame[] = [];
 	const numbers: number[] = [];
@@ -155,7 +160,7 @@ async function sequence(engine: Engine, heard: number[], count: number): Promise
 		const before = heard.at(-1) ?? 0;
 		frames.push(await capture(engine));
 		const after = heard.at(-1) ?? 0;
-		if (after - before !== 1) consecutive = false;
+		if (after - before < 1) consecutive = false;
 		numbers.push(before);
 	}
 	return { frames, numbers, consecutive };
