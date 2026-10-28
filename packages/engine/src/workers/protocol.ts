@@ -46,6 +46,12 @@ export interface CapturedFrame {
 	width: number;
 	height: number;
 	pixels: Uint8Array;
+	/**
+	 * The sketch frame that the capture drew, as the frame numbers the sketch posts. A capture can
+	 * hold a frame recorded before a scene change, so a page that measures frames reads this number
+	 * rather than the latest one it saw.
+	 */
+	frame: number;
 }
 
 /** What the thread that draws needs: its canvas, the GPU path and how it paces its frames. */
