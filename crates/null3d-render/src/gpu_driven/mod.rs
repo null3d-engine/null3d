@@ -796,6 +796,10 @@ mod ids {
     }
 }
 
+/// The id of a view's frame uniform. A test that reads the buffer the builder writes for a view
+/// asks for it here, so the numbering can move without the test pinning an old value.
+pub use ids::frame as view_frame;
+
 /// The ids of a feature-instance draw's world-rows buffer and its count word, which the frame
 /// makes and the page or the add-on's compute fills.
 pub fn feature_buffer_ids(id: u32) -> (u32, u32) {
