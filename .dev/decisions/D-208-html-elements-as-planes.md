@@ -121,10 +121,11 @@ The ports share a page helper, `tests/pages/lib/css3d-example.ts`. It starts the
 port's sketch and binds the page's elements. It waits for the labels of the held frame, then draws
 three.js's twin from the same data. A second helper, `tests/lib/css3d-compare.ts`, loads a page on
 WebGPU and on WebGL2. It checks each element's box against three.js's, hides both canvases, and
-compares the pixels of the two layers of elements. A port whose example also draws WebGL content
-gives its twin the same content. The page reads each engine's frame through that engine, and the
-helper compares those frames too. A browser screenshot never reads a GPU's pixels, as hard rule 16
-says. The periodic table port reads its whole stage, since no GPU draws any of it.
+compares the pixels of the two layers of elements. Three examples also draw WebGL content: mixed,
+sandbox and orthographic. Only the mixed port's twin draws that content, the example's room,
+light, cut-out and frame, and the test compares those frames. The sandbox and orthographic twins
+return elements only; their drawn wireframe planes are not compared. A browser screenshot never
+reads a GPU's pixels, as hard rule 16 says. The periodic table port reads its whole stage, since no GPU draws any of it.
 
 Where the ports differ from the examples, and why:
 
