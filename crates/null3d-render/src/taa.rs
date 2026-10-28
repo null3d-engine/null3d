@@ -6,13 +6,15 @@
 //!
 //! # The steps
 //!
-//! The render graph declares the steps after the subsurface blur and before the fog (see
-//! [`crate::frame_graph`]):
+//! The render graph declares the steps around the scene's passes (see [`crate::frame_graph`]):
 //!
-//! 1. The resolve reads the scene's color and depth, the motion target, and both histories, and
-//!    writes the blend into a frame target that the rest of the chain reads in place of the
-//!    scene's color.
-//! 2. A copy step copies that target into the history that the frame after reads. Frames of even
+//! 1. A copy of the scene's color after the opaque pass, before any blended surface draws over it.
+//!    The resolve compares it with the composited color, where this frame's transparency mask
+//!    comes from.
+//! 2. The resolve reads the scene's color and depth, the motion target, the opaque-only copy and
+//!    both histories, and writes the blend into a frame target that the rest of the chain reads in
+//!    place of the scene's color.
+//! 3. A copy step copies that target into the history that the frame after reads. Frames of even
 //!    and odd numbers take turns: each frame reads the target that the frame before it wrote and
 //!    writes the other, and the copy into the target it reads does not draw. A frame drawn again,
 //!    as a capture draws it, then reads and writes the same targets and leaves the same history.
@@ -21,6 +23,10 @@
 //! target gives the surface's own move, the grass's wind among it, and the pixel's depth and the
 //! last frame's camera give the camera's part. The offsets follow the Halton sequence of bases 2
 //! and 3, eight frames long, as Unreal Engine's does.
+//!
+//! The phone path reads one depth sample where the scene's depth is multisampled, samples the
+//! history with four taps, and skips the transparency mask and the brightness weighting. It keeps
+//! the same pipelines, so turning it on builds nothing of its own.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, address, buffer_usage as usage, compare, filter, format, layout as bind_layout,
@@ -33,8 +39,15 @@ use crate::frame::{RecordError, UploadArena};
 use crate::graph::{RenderScale, Size};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
-/// The steps: the resolve and the copy into the history.
-pub(crate) const STEPS: usize = 2;
+/// The steps: the opaque-only copy, the resolve, and the copy into each history.
+pub(crate) const STEPS: usize = 4;
+
+/// The step of the opaque-only copy.
+pub(crate) const OPAQUE_STEP: usize = 0;
+/// The step of the resolve.
+pub(crate) const RESOLVE_STEP: usize = 1;
+/// The step of the copy into the history of parity 0, and the one for parity 1.
+pub(crate) const COPY_STEPS: [usize; 2] = [2, 3];
 
 /// The format of the resolve's target and of the history: HDR color, as the scene color holds it.
 pub(crate) const FORMAT: u32 = format::RGBA16_FLOAT;
@@ -54,6 +67,35 @@ pub struct Taa {
     /// True to move the projection by the sequence's offsets. False keeps it still, so the
     /// resolve only blends frames, for measuring what the offsets add.
     pub jitter: bool,
+    /// True for the phone path, which reads one depth sample, samples the history with four taps,
+    /// and skips the transparency mask and the brightness weighting.
+    pub phone: bool,
+    /// The transparency signals that lower the history: see [`Reactive`].
+    pub reactive: Reactive,
+    /// True to scale the history by this frame's exposure over the last frame's. False keeps the
+    /// history's own exposure, for measuring what the ratio does.
+    pub exposure: bool,
+}
+
+/// The signals that tell the resolve where a blended surface moved, as bits: 1 reads the scene's
+/// alpha, where the canvas shows through, and 2 compares the composited color with the opaque-only
+/// copy, which finds a blended surface over an opaque one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Reactive(pub u8);
+
+impl Reactive {
+    /// Every signal on.
+    pub const ALL: Self = Self(3);
+    /// The bits as the block holds them.
+    const fn code(self) -> f32 {
+        (self.0 & 3) as f32
+    }
+}
+
+impl Default for Reactive {
+    fn default() -> Self {
+        Self::ALL
+    }
 }
 
 impl Default for Taa {
@@ -61,6 +103,9 @@ impl Default for Taa {
         Self {
             feedback: 0.9,
             jitter: true,
+            phone: false,
+            reactive: Reactive::ALL,
+            exposure: true,
         }
     }
 }
@@ -142,6 +187,8 @@ pub struct TaaFrame {
     pub last_jitter: [f32; 2],
     /// From this frame's clip space to the last frame's: see [`reprojection`].
     pub reproject: Mat4,
+    /// This frame's exposure over the last frame's, which the history takes before the blend.
+    pub exposure_ratio: f32,
     /// True when the history holds nothing of use, as in the first frames after the resolve turns
     /// on: the resolve writes this frame's color alone.
     pub reset: bool,
@@ -164,11 +211,15 @@ struct Block {
     /// The last frame's jitter in clip space, which moves the history's sample.
     last_jitter: [f32; 4],
     /// x: the share of the history that a pixel keeps. y: 1 while the histories hold no frame. z:
-    /// 1 for a perspective camera. w: unused.
+    /// this frame's exposure over the last frame's. w: unused.
     settings: [f32; 4],
-    /// x: 1 while the frame writes the second history target, so it reads the first. yzw: the
-    /// scale from the drawn corner's texture coordinates into the history target's.
+    /// x: 1 while the frame writes the second history target, so it reads the first. yz: the scale
+    /// from the drawn corner's texture coordinates into the history target's. w: 1 on the phone
+    /// path.
     parity: [f32; 4],
+    /// x: the transparency signals to read, as [`Reactive`]'s bits. y: 1 while the opaque-only copy
+    /// is bound. zw: unused.
+    reactive: [f32; 4],
 }
 
 const _: () = assert!(std::mem::size_of::<Block>() <= BLOCK);
@@ -180,12 +231,13 @@ pub(crate) struct TaaIds {
     pub(crate) buffer: u32,
     /// The linear sampler that reads the history.
     pub(crate) sampler: u32,
-    /// The bind group of each step, from this id on: the resolve's, then the copy's.
+    /// The bind groups from this id on: the resolve's, the history copy's, and the opaque-only
+    /// copy's.
     pub(crate) first_group: u32,
 }
 
-/// The textures that the steps read: the scene's color, depth and motion, the two histories, and
-/// the resolve's target.
+/// The textures that the steps read: the scene's color, depth and motion, the two histories, the
+/// resolve's target, and the copy of the scene's color after the opaque pass.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct TaaSources {
     pub(crate) color: u32,
@@ -193,13 +245,19 @@ pub(crate) struct TaaSources {
     pub(crate) motion: u32,
     pub(crate) histories: [u32; 2],
     pub(crate) resolved: u32,
+    /// The scene's color, which the opaque-only copy reads after the opaque pass. It differs from
+    /// `color` when the subsurface blur drew between the two.
+    pub(crate) scene: u32,
+    /// The copy of the scene's color after the opaque pass, which the resolve reads where a blended
+    /// surface may have changed the color.
+    pub(crate) opaque: u32,
 }
 
-/// The pipeline of step `step`: one triangle into its target.
+/// The pipeline of step `step`: the resolve, or a copy.
 const fn pipeline(step: usize, multisampled: bool) -> PipelineKey {
     let template = match step {
-        0 if multisampled => template::TAA_RESOLVE_MS,
-        0 => template::TAA_RESOLVE,
+        RESOLVE_STEP if multisampled => template::TAA_RESOLVE_MS,
+        RESOLVE_STEP => template::TAA_RESOLVE,
         _ => template::TAA_COPY,
     };
     PipelineKey {
@@ -313,8 +371,9 @@ impl TaaPass {
         Ok(())
     }
 
-    /// Records the resolve's bind group, which reads the scene's color, depth and motion, and the
-    /// histories, and the copy's, which reads the resolve's target.
+    /// Records the resolve's bind group, which reads the scene's color, depth and motion, the
+    /// histories and the opaque-only copy, and the copy's, which reads the resolve's target. The
+    /// opaque-only step reads the scene's color through a group of its own.
     fn bind(&self, list: &mut DrawList, sources: TaaSources) -> Result<(), RecordError> {
         let ids = self.ids;
         let layout = if self.multisampled {
@@ -331,39 +390,46 @@ impl TaaPass {
             texture(4, sources.histories[0]),
             texture(5, sources.histories[1]),
             [6, resource_kind::SAMPLER, ids.sampler, 0, 0],
+            texture(7, sources.opaque),
         ];
-        let mut words = [0u32; 3 + 7 * 5];
+        let mut words = [0u32; 3 + 8 * 5];
         words[..3].copy_from_slice(&[ids.first_group, layout, entries.len() as u32]);
         for (place, entry) in entries.iter().enumerate() {
             words[3 + 5 * place..][..5].copy_from_slice(entry);
         }
         list.push(Op::CreateBindGroup, &words)?;
-        list.push(
-            Op::CreateBindGroup,
-            &[
-                ids.first_group + 1,
+        let view_copy = |group: u32, id: u32| {
+            [
+                group,
                 bind_layout::VIEW_COPY,
                 1,
                 0,
                 resource_kind::TEXTURE,
-                sources.resolved,
+                id,
                 0,
                 0,
-            ],
+            ]
+        };
+        list.push(
+            Op::CreateBindGroup,
+            &view_copy(ids.first_group + 1, sources.resolved),
         )?;
+        if sources.opaque != 0 {
+            list.push(
+                Op::CreateBindGroup,
+                &view_copy(ids.first_group + 2, sources.scene),
+            )?;
+        }
         Ok(())
     }
 
     /// The resolve's block for `inputs`.
     fn block(&self, inputs: Staged) -> Block {
-        let Staged { canvas, frame } = inputs;
+        let Staged { canvas, frame, .. } = inputs;
         let extent = Size::Full.extent(canvas);
         let (width, height) = frame.size;
         let (width, height) = (width.max(1), height.max(1));
         let m = frame.projection;
-        // The projection's terms: a depth value gives the view's z as
-        // (-m15 * depth + m14) / (m11 * depth - m10), which the resolve negates for a distance.
-        let view_scale = if m[11] != 0.0 { 1.0 } else { 0.0 };
         Block {
             reproject: frame.reproject,
             size: [
@@ -378,27 +444,31 @@ impl TaaPass {
             settings: [
                 frame.taa.feedback.clamp(0.0, 0.99),
                 if frame.reset { 1.0 } else { 0.0 },
-                view_scale,
+                frame.exposure_ratio,
                 0.0,
             ],
             parity: [
                 f32::from(frame.parity & 1),
                 width as f32 / extent.0.max(1) as f32,
                 height as f32 / extent.1.max(1) as f32,
-                0.0,
+                if frame.taa.phone { 1.0 } else { 0.0 },
             ],
+            // The opaque-only copy is always bound while the resolve draws.
+            reactive: [frame.taa.reactive.code(), 1.0, 0.0, 0.0],
         }
     }
 
     /// Records step `step` inside the render pass that the render graph began into its target: the
-    /// resolve with the resolve's bind group, and the copy with the copy's.
+    /// resolve with the resolve's bind group, and either copy with its own.
     pub(crate) fn record(&self, list: &mut DrawList, step: usize) -> Result<(), RecordError> {
         let pipeline = self.pipelines[step].expect("the steps ask for their pipelines first");
+        let group = match step {
+            OPAQUE_STEP => self.ids.first_group + 2,
+            RESOLVE_STEP => self.ids.first_group,
+            _ => self.ids.first_group + 1,
+        };
         list.push(Op::SetPipeline, &[pipeline])?;
-        list.push(
-            Op::SetBindGroup,
-            &[0, self.ids.first_group + step as u32, 0],
-        )?;
+        list.push(Op::SetBindGroup, &[0, group, 0])?;
         list.push(Op::Draw, &[3, 1, 0, 0])?;
         Ok(())
     }

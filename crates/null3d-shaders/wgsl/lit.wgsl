@@ -199,7 +199,8 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::mesh::{caster_clip}
 #endif
 #ifdef MOTION
-#import null3d::motion::{last_transform, motion_block, surface_motion}
+#import null3d::motion::{last_transform, motion_block}
+#import null3d::motion_math::surface_motion
 #import null3d::vertex::{transform_point}
 #ifndef WEBGL2
 #import null3d::motion::{LastIn}

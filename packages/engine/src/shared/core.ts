@@ -873,10 +873,17 @@ export interface CoreGlue extends CoreErrors {
 	/** The taps of each step of the subsurface blur, from the next frame on: 0 draws none. */
 	setSubsurfaceTaps(taps: number): number;
 	/**
-	 * Temporal anti-aliasing, a prototype: the history's share in thousandths, 0 for off, and
-	 * whether the camera takes its sub-pixel offsets.
+	 * Temporal anti-aliasing, a prototype: the history's share in thousandths, 0 for off, whether
+	 * the camera takes its sub-pixel offsets, whether the cheaper path draws, the bits of the
+	 * transparency signals that lower the history, and whether the history follows the exposure.
 	 */
-	setTaa(feedback: number, jitter: boolean): number;
+	setTaa(
+		feedback: number,
+		jitter: boolean,
+		phone: boolean,
+		reactive: number,
+		exposure: boolean,
+	): number;
 	/** Turns automatic exposure on with the post-processing values' settings, or off. */
 	setAutoExposure(on: boolean): number;
 	/** The meter of automatic exposure, from the next frame on: 0 the downsample, 1 the histogram. */
