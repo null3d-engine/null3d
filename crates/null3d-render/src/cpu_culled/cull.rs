@@ -54,11 +54,14 @@ use null3d_core::culling::{
     NO_BUCKET, RowBiases, RowRadii, RowRanges, SetLayers, SetOrder,
 };
 use null3d_core::levels::LevelRule;
+use null3d_core::math::{max_axis_scale, world_sphere_at};
+use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::drawlist::DrawList;
 
 use super::data::{DataTexture, RING, RingSlot, TextureRows, write_rows};
 use super::ids;
 use super::layout::{Clusters, CullRoom, Layout};
+use super::opaque::PatchView;
 use crate::cells::{CellCulling, CellMask, MOVING};
 use crate::frame::{
     CellOffsets, FrameInput, RecordError, RunCells, address, push_runs, words_as_bytes,
@@ -66,6 +69,7 @@ use crate::frame::{
 use crate::materials::MaterialTable;
 use crate::meshes::MeshStorage;
 use crate::occlusion::Occluders;
+use crate::patches::PatchStorage;
 use crate::sorted::{SortedLayout, SortedView};
 use crate::view::{ViewFrame, ViewId};
 
@@ -118,6 +122,11 @@ struct ViewCull {
     /// Each frame parity's entry lists that a growth replaced, kept until that parity sorts again:
     /// the list of its last frame may still upload from them.
     sorted_kept: [Vec<Vec<u32>>; 2],
+    /// Each frame parity's chosen patch runs, by cluster bucket: each cluster bucket's first run,
+    /// then one past the last.
+    patch_starts: [Vec<u32>; 2],
+    /// Each frame parity's chosen patch runs, one first index and count each.
+    patch_runs: [Vec<[u32; 2]>; 2],
 }
 
 /// Each view's culling output, and the runs of rows that a view culls. The views are of one kind,
@@ -206,6 +215,93 @@ fn push_view_runs(
     Ok(())
 }
 
+impl ViewCull {
+    /// Picks the patches that the view draws from each cluster bucket's tree. A patch draws where
+    /// its own error passes the view's threshold and the error of the patch above it does not, at
+    /// the distance from the view's camera to the patch's own sphere, as the compute pass reads
+    /// the rule. Runs that are neighbours in the tree's index list merge, so a view uploads fewer
+    /// ranges for the same triangles.
+    fn walk_patches(
+        &mut self,
+        input: &FrameInput<'_>,
+        layout: &Layout,
+        patches: &PatchStorage,
+        rule: &LevelRule,
+    ) {
+        let parity = input.parity();
+        let (patch_runs, patch_starts) =
+            (&mut self.patch_runs[parity], &mut self.patch_starts[parity]);
+        patch_runs.clear();
+        patch_starts.clear();
+        patch_starts.push(0);
+        if layout.cluster_buckets.is_empty() {
+            return;
+        }
+        let starts = self.culls[parity].bucket_starts();
+        let world = input.scene.world(parity);
+        let matrices = world.matrices();
+        let cells = input.scene.cells();
+        let offsets = self.offsets.as_slice();
+        for cluster in &layout.cluster_buckets {
+            let bucket = cluster.bucket as usize;
+            let listed = starts.get(bucket + 1).copied().unwrap_or(0)
+                > starts.get(bucket).copied().unwrap_or(0);
+            let tree = if listed {
+                patches.of(cluster.mesh)
+            } else {
+                None
+            };
+            if let Some(tree) = tree {
+                let slot = cluster.object as usize;
+                let cell = cells.get(slot).copied().unwrap_or(0);
+                let offset = offsets.get(cell as usize).copied().unwrap_or([0.0; 4]);
+                let matrix: &null3d_core::math::Affine = matrices
+                    [slot * MATRIX_FLOATS..(slot + 1) * MATRIX_FLOATS]
+                    .try_into()
+                    .expect("a matrix is 12 floats");
+                let first = patch_runs.len();
+                let scale = max_axis_scale(matrix);
+                for (k, sphere) in tree.bounds().iter().enumerate() {
+                    let [x, y, z, radius] =
+                        world_sphere_at(matrix, [sphere[0], sphere[1], sphere[2]], sphere[3]);
+                    let (x, y, z) = (x + offset[0], y + offset[1], z + offset[2]);
+                    if self
+                        .frame
+                        .as_ref()
+                        .is_some_and(|frame| !frame.frustum.contains_sphere(x, y, z, radius))
+                    {
+                        continue;
+                    }
+                    let distance = rule.distance([x, y, z], radius);
+                    if let Some(run) = tree
+                        .run(k as u32)
+                        .filter(|_| tree.draws(k as u32, rule.factor, scale, distance))
+                    {
+                        patch_runs.push([run.0, run.1]);
+                    }
+                }
+                patch_runs[first..].sort_unstable();
+                let mut write = first;
+                for read in first..patch_runs.len() {
+                    let run = patch_runs[read];
+                    let joint = write > first && {
+                        let before = patch_runs[write - 1];
+                        before[0] + before[1] == run[0]
+                    };
+                    if joint {
+                        patch_runs[write - 1][1] += run[1];
+                    } else {
+                        patch_runs[write] = run;
+                        write += 1;
+                    }
+                }
+                patch_runs.truncate(write);
+            }
+            patch_starts.push(patch_runs.len() as u32);
+        }
+    }
+}
+
 impl Culling {
     /// No culling output yet, for views from `first` on.
     pub(super) fn new(first: ViewId) -> Self {
@@ -258,6 +354,18 @@ impl Culling {
     /// The offset from a view's camera to each cell in use, in the frame that culled last.
     pub(super) fn offsets(&self, view: ViewId) -> &CellOffsets {
         &self.views[self.slot(view)].offsets
+    }
+
+    /// The chosen patch runs of a view, by cluster bucket, for a frame's parity.
+    pub(super) fn patch_view(&self, frame: u32, view: ViewId) -> PatchView<'_> {
+        let parity = (frame & 1) as usize;
+        match view.index().checked_sub(self.first.index()) {
+            Some(slot) => match self.views.get(slot) {
+                Some(view) => PatchView::new(&view.patch_starts[parity], &view.patch_runs[parity]),
+                None => PatchView::NONE,
+            },
+            None => PatchView::NONE,
+        }
     }
 
     /// The objects, rows and clusters that a view's culling tested in the frame that culled last.
@@ -417,6 +525,7 @@ impl Culling {
         frame_of: &dyn Fn(ViewId) -> Option<ViewFrame>,
         rule_of: &dyn Fn(ViewId) -> LevelRule,
         sorted: Option<(&SortedLayout, &SortedLayout, &SortedLayout)>,
+        patches: Option<&PatchStorage>,
         mut occlusion: Option<Occlusion<'_>>,
     ) -> Result<(), TryReserveError> {
         let (parity, scene, batches) = (input.parity(), input.scene, input.batches);
@@ -628,6 +737,20 @@ impl Culling {
                 &mut view.culls[parity],
             );
             view.occluded = view.culls[parity].hidden() as u32;
+            // The camera's views draw their cluster meshes from the trees, which the walk picks
+            // patch by patch with the same rule as the GPU's compute pass. Every other layout
+            // draws whole meshes or whole levels.
+            match patches {
+                Some(patches) => view.walk_patches(input, layout, patches, &choice.rule),
+                None => {
+                    for (runs, starts) in
+                        view.patch_runs.iter_mut().zip(view.patch_starts.iter_mut())
+                    {
+                        runs.clear();
+                        starts.clear();
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -712,9 +835,14 @@ impl Culling {
         let k = self.slot(view);
         let state = &mut self.views[k];
         let entries = &state.sorted_entries;
+        // A frame whose index list and patch runs equal the frame before it draws from the ring
+        // slot that already holds them. A camera that moves keeps the same sources in view but
+        // picks other patches, so the runs must match too.
         let kept = state.listed.holds_previous(frame)
             && state.culls[parity].same_entries(&state.culls[parity ^ 1])
-            && entries[parity] == entries[parity ^ 1];
+            && entries[parity] == entries[parity ^ 1]
+            && state.patch_runs[parity] == state.patch_runs[parity ^ 1]
+            && state.patch_starts[parity] == state.patch_starts[parity ^ 1];
         let slot = state.listed.take(frame, !kept);
         if !kept {
             let indices = state.culls[parity].indices();

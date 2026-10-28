@@ -146,28 +146,68 @@ pub(super) struct ViewUpload<'a> {
     pub(super) new_list: bool,
     /// The start of each bucket's entries, and last the total, as the culling output lists them.
     pub(super) starts: &'a [u32],
+    /// The patch runs that the view's trees draw, by cluster bucket.
+    pub(super) patches: PatchView<'a>,
+}
+
+/// A view's chosen patch ranges by cluster bucket: each cluster's runs of its tree's index list,
+/// as a first index and a count.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct PatchView<'a> {
+    /// Each cluster bucket's first run, then one past the last.
+    starts: &'a [u32],
+    runs: &'a [[u32; 2]],
+}
+
+impl<'a> PatchView<'a> {
+    /// A view that draws no tree.
+    pub(super) const NONE: Self = Self {
+        starts: &[],
+        runs: &[],
+    };
+
+    /// The runs of each cluster bucket, from `starts`.
+    pub(super) const fn new(starts: &'a [u32], runs: &'a [[u32; 2]]) -> Self {
+        Self { starts, runs }
+    }
+
+    /// Cluster `cluster`'s chosen runs.
+    fn of(&self, cluster: u32) -> &'a [[u32; 2]] {
+        let at = cluster as usize;
+        let first = self.starts.get(at).copied().unwrap_or(0) as usize;
+        let end = self.starts.get(at + 1).copied().unwrap_or(first as u32) as usize;
+        self.runs.get(first..end).unwrap_or(&[])
+    }
 }
 
 /// One draw call of a frame: draws `from..to` of the run that starts at draw `run`, `drawn` of
-/// them with visible instances.
+/// them with visible instances. A call that draws a tree draws the patch runs at `patches` of the
+/// one draw at `from`, in place of that draw's whole index list.
 #[derive(Clone, Copy, Debug)]
 struct Call {
     run: usize,
     from: usize,
     to: usize,
     drawn: u32,
+    patches: Option<(usize, usize)>,
 }
 
 /// Calls `f` with each draw call of a frame and its number, in draw order: per run of draws that
 /// share a pipeline and a vertex page, one multi-draw call per block of drawn draws, or one call
-/// per drawn draw. Draws with no visible instances draw nothing.
+/// per drawn draw. A draw of a tree takes a call for each block of its chosen patch runs. Draws
+/// with no visible instances draw nothing.
 fn for_each_call(
     draws: &[Draw],
     visible: &dyn Fn(usize) -> u32,
+    patches: PatchView<'_>,
     multi: bool,
     mut f: impl FnMut(u32, Call) -> Result<(), RecordError>,
 ) -> Result<(), RecordError> {
-    let per_call = if multi { sizes::MULTI_DRAW_RECORDS } else { 1 };
+    let per_call = if multi {
+        sizes::MULTI_DRAW_RECORDS as usize
+    } else {
+        1
+    };
     let mut index = 0;
     let mut start = 0;
     while start < draws.len() {
@@ -178,9 +218,30 @@ fn for_each_call(
                 b += 1;
                 continue;
             }
+            if let Some(cluster) = draws[b].cluster {
+                let runs = patches.of(cluster);
+                let mut at = 0;
+                while at < runs.len() {
+                    let to = (at + per_call).min(runs.len());
+                    f(
+                        index,
+                        Call {
+                            run: start,
+                            from: b,
+                            to: b + 1,
+                            drawn: (to - at) as u32,
+                            patches: Some((at, to)),
+                        },
+                    )?;
+                    index += 1;
+                    at = to;
+                }
+                b += 1;
+                continue;
+            }
             let from = b;
             let mut drawn = 0;
-            while b < end && drawn < per_call {
+            while b < end && drawn < per_call as u32 && draws[b].cluster.is_none() {
                 drawn += u32::from(visible(b) > 0);
                 b += 1;
             }
@@ -191,6 +252,7 @@ fn for_each_call(
                     from,
                     to: b,
                     drawn,
+                    patches: None,
                 },
             )?;
             index += 1;
@@ -213,37 +275,69 @@ fn visible_in<'a>(draws: &'a [Draw], starts: &'a [u32]) -> impl Fn(usize) -> u32
 
 /// Records one call's draws: a multi-draw call of its drawn draws where the device has
 /// `WEBGL_multi_draw`, or one call per drawn draw, each with its visible instances, which a draw of
-/// clusters draws `shift` times over.
+/// clusters draws `shift` times over. A call of a tree draws its chosen patch runs, each with the
+/// draw's visible instances.
+#[allow(clippy::too_many_arguments)]
 fn draw_call(
     list: &mut DrawList,
     arena: &mut UploadArena,
     draws: &[Draw],
     visible: &dyn Fn(usize) -> u32,
     shift: &dyn Fn(usize) -> u32,
+    patches: PatchView<'_>,
     call: Call,
     multi_draw: bool,
 ) -> Result<(), RecordError> {
-    let drawn = (call.from..call.to).filter(|&d| visible(d) > 0);
     if multi_draw {
         let n = call.drawn as usize;
+        // The arena gives each array as it is pushed, so the three are filled one after another.
         let (counts_at, counts) = arena.push_zeroed(n * 4)?;
-        for (k, d) in drawn.clone().enumerate() {
-            put_u32(counts, k, draws[d].index_count);
+        if let Some((from, to)) = call.patches {
+            let cluster = draws[call.from].cluster.expect("a patch call draws a tree");
+            for (k, run) in patches.of(cluster)[from..to].iter().enumerate() {
+                put_u32(counts, k, run[1]);
+            }
+        } else {
+            for (k, d) in (call.from..call.to).filter(|&d| visible(d) > 0).enumerate() {
+                put_u32(counts, k, draws[d].index_count);
+            }
         }
         let (offsets_at, offsets) = arena.push_zeroed(n * 4)?;
-        for (k, d) in drawn.clone().enumerate() {
-            put_u32(offsets, k, draws[d].first_index * 2);
+        if let Some((from, to)) = call.patches {
+            let cluster = draws[call.from].cluster.expect("a patch call draws a tree");
+            for (k, run) in patches.of(cluster)[from..to].iter().enumerate() {
+                put_u32(offsets, k, run[0] * 2);
+            }
+        } else {
+            for (k, d) in (call.from..call.to).filter(|&d| visible(d) > 0).enumerate() {
+                put_u32(offsets, k, draws[d].first_index * 2);
+            }
         }
         let (instances_at, instances) = arena.push_zeroed(n * 4)?;
-        for (k, d) in drawn.enumerate() {
-            put_u32(instances, k, visible(d) << shift(d));
+        if let Some((from, to)) = call.patches {
+            let d = call.from;
+            let copies = visible(d) << shift(d);
+            for k in 0..to - from {
+                put_u32(instances, k, copies);
+            }
+        } else {
+            for (k, d) in (call.from..call.to).filter(|&d| visible(d) > 0).enumerate() {
+                put_u32(instances, k, visible(d) << shift(d));
+            }
         }
         list.push(
             Op::MultiDrawIndexed,
             &[call.drawn, counts_at, offsets_at, instances_at],
         )?;
+    } else if let Some((from, to)) = call.patches {
+        let d = call.from;
+        let cluster = draws[d].cluster.expect("a patch call draws a tree");
+        let instances = visible(d) << shift(d);
+        for run in &patches.of(cluster)[from..to] {
+            list.push(Op::DrawIndexed, &[run[1], instances, run[0], 0, 0])?;
+        }
     } else {
-        for d in drawn {
+        for d in (call.from..call.to).filter(|&d| visible(d) > 0) {
             let draw = draws[d];
             let instances = visible(d) << shift(d);
             list.push(
@@ -584,10 +678,11 @@ impl Opaque {
         }
         let (buckets, draws) = (&layout.buckets, &layout.draws);
         let (starts, multi_draw) = (frame.starts, self.multi_draw);
+        let patches = frame.patches;
         let visible = visible_in(draws, starts);
         let stride = record_stride(multi_draw);
         let mut calls = 0;
-        for_each_call(draws, &visible, multi_draw, |_, _| {
+        for_each_call(draws, &visible, patches, multi_draw, |_, _| {
             calls += 1;
             Ok(())
         })?;
@@ -595,16 +690,28 @@ impl Opaque {
             return Ok(());
         }
         let (at, records) = arena.push_zeroed((calls * stride) as usize)?;
-        for_each_call(draws, &visible, multi_draw, |index, call| {
-            let drawn = (call.from..call.to).filter(|&d| visible(d) > 0);
-            for (r, d) in drawn.enumerate() {
+        for_each_call(draws, &visible, patches, multi_draw, |index, call| {
+            let mut r = 0;
+            let write = |d: usize, r: usize, records: &mut [u8]| {
                 let b = draws[d].bucket as usize;
                 let word = (index * stride / 4) as usize + r * 4;
                 put_u32(records, word, starts[b]);
                 put_u32(records, word + 1, buckets[b].material - 1);
                 put_u32(records, word + 2, buckets[b].group);
                 put_u32(records, word + 3, buckets[b].shift);
+            };
+            if let Some((from, to)) = call.patches {
+                for _ in from..to {
+                    write(call.from, r, records);
+                    r += 1;
+                }
+            } else {
+                for d in (call.from..call.to).filter(|&d| visible(d) > 0) {
+                    write(d, r, records);
+                    r += 1;
+                }
             }
+            debug_assert_eq!(r, call.drawn as usize);
             Ok(())
         })?;
         let slot = frame.listed * layout.draws_slot_bytes;
@@ -661,6 +768,7 @@ impl Opaque {
         meshes: &MeshBuffers,
         shading: Shading,
         hidden: &dyn Fn(u32) -> bool,
+        patches: PatchView<'_>,
         scene: u32,
     ) -> Result<(), RecordError> {
         let slots = self.views[self.slot(view)].slots;
@@ -684,7 +792,8 @@ impl Opaque {
         let mut pipeline = None;
         let mut textures = 0;
         let mut run = usize::MAX;
-        for_each_call(draws, &visible, multi_draw, |index, call| {
+        let mut tree = false;
+        for_each_call(draws, &visible, patches, multi_draw, |index, call| {
             let first = draws[call.run];
             let id = if pick {
                 first.pick
@@ -701,8 +810,14 @@ impl Opaque {
             if id == 0 || (maps != 0 && hidden(maps)) {
                 return Ok(());
             }
-            if call.run != run {
+            // A draw of a tree draws the tree's own index list, so the call after another draw of
+            // the same run binds it: the vertex page is the mesh's, and the index buffer is the
+            // tree's.
+            let drawing = draws[call.from];
+            let drawing_tree = drawing.cluster.is_some();
+            if call.run != run || drawing_tree != tree {
                 run = call.run;
+                tree = drawing_tree;
                 if pipeline != Some(id) {
                     list.push(Op::SetPipeline, &[id])?;
                     pipeline = Some(id);
@@ -714,7 +829,13 @@ impl Opaque {
                     list.push(Op::SetBindGroup, &[TEXTURES_GROUP, maps, 0])?;
                     textures = maps;
                 }
-                let (vertices, indices) = meshes.ids(first.page);
+                let (vertices, indices) = match drawing.cluster {
+                    Some(cluster) => {
+                        let mesh = layout.cluster_buckets[cluster as usize].mesh;
+                        (meshes.ids(drawing.page).0, ids::patch_index(mesh))
+                    }
+                    None => meshes.ids(drawing.page),
+                };
                 list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
                 list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
             }
@@ -722,7 +843,9 @@ impl Opaque {
                 Op::SetBindGroup,
                 &[1, ids::draws_group(view), 1, slot + index * stride],
             )?;
-            draw_call(list, arena, draws, &visible, &shift, call, multi_draw)
+            draw_call(
+                list, arena, draws, &visible, &shift, patches, call, multi_draw,
+            )
         })
     }
 
@@ -755,36 +878,51 @@ impl Opaque {
         let mut pipeline = None;
         let mut textures = 0;
         let mut run = usize::MAX;
-        for_each_call(draws, &visible, multi_draw, |index, call| {
-            let first = draws[call.run];
-            let moves = (call.from..call.to)
-                .any(|d| visible(d) > 0 && moving.get(draws[d].bucket as usize) == Some(&true));
-            if first.motion == 0 || !moves {
-                return Ok(());
-            }
-            if call.run != run {
-                run = call.run;
-                if pipeline != Some(first.motion) {
-                    list.push(Op::SetPipeline, &[first.motion])?;
-                    pipeline = Some(first.motion);
+        for_each_call(
+            draws,
+            &visible,
+            PatchView::NONE,
+            multi_draw,
+            |index, call| {
+                let first = draws[call.run];
+                let moves = (call.from..call.to)
+                    .any(|d| visible(d) > 0 && moving.get(draws[d].bucket as usize) == Some(&true));
+                if first.motion == 0 || !moves {
+                    return Ok(());
                 }
-                if first.motion_textures != 0 && first.motion_textures != textures {
-                    list.push(
-                        Op::SetBindGroup,
-                        &[TEXTURES_GROUP, first.motion_textures, 0],
-                    )?;
-                    textures = first.motion_textures;
+                if call.run != run {
+                    run = call.run;
+                    if pipeline != Some(first.motion) {
+                        list.push(Op::SetPipeline, &[first.motion])?;
+                        pipeline = Some(first.motion);
+                    }
+                    if first.motion_textures != 0 && first.motion_textures != textures {
+                        list.push(
+                            Op::SetBindGroup,
+                            &[TEXTURES_GROUP, first.motion_textures, 0],
+                        )?;
+                        textures = first.motion_textures;
+                    }
+                    let (vertices, indices) = meshes.ids(first.page);
+                    list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
+                    list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
                 }
-                let (vertices, indices) = meshes.ids(first.page);
-                list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
-                list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
-            }
-            list.push(
-                Op::SetBindGroup,
-                &[1, ids::draws_group(view), 1, slot + index * stride],
-            )?;
-            draw_call(list, arena, draws, &visible, &shift, call, multi_draw)
-        })
+                list.push(
+                    Op::SetBindGroup,
+                    &[1, ids::draws_group(view), 1, slot + index * stride],
+                )?;
+                draw_call(
+                    list,
+                    arena,
+                    draws,
+                    &visible,
+                    &shift,
+                    PatchView::NONE,
+                    call,
+                    multi_draw,
+                )
+            },
+        )
     }
 
     /// Forgets every view's rings, so each is made again, after the thread that draws replaced
@@ -815,15 +953,22 @@ mod tests {
             pick: 0,
             pick_textures: 0,
             holdout: false,
+            cluster: None,
         }
     }
 
     fn calls(draws: &[Draw], visible: &[u32], multi: bool) -> Vec<(u32, usize, usize, usize, u32)> {
         let mut out = Vec::new();
-        for_each_call(draws, &|d| visible[d], multi, |index, call| {
-            out.push((index, call.run, call.from, call.to, call.drawn));
-            Ok(())
-        })
+        for_each_call(
+            draws,
+            &|d| visible[d],
+            PatchView::NONE,
+            multi,
+            |index, call| {
+                out.push((index, call.run, call.from, call.to, call.drawn));
+                Ok(())
+            },
+        )
         .unwrap();
         out
     }
@@ -843,6 +988,36 @@ mod tests {
             vec![(0, 0, 0, 1, 1), (1, 2, 2, 3, 1), (2, 3, 4, 5, 1)]
         );
         assert!(calls(&draws, &[0; 5], true).is_empty());
+    }
+
+    #[test]
+    fn a_tree_draws_in_calls_of_the_most_ranges() {
+        let mut tree = draw(1, 0);
+        tree.cluster = Some(0);
+        let draws = [draw(1, 0), tree];
+        // The tree lists one source, as a cluster bucket does.
+        let visible = [1, 1];
+        let runs: Vec<[u32; 2]> = (0..300).map(|k| [k * 3, 3]).collect();
+        let starts = [0, 300];
+        let patches = PatchView::new(&starts, &runs);
+        let mut out = Vec::new();
+        for_each_call(&draws, &|d| visible[d], patches, true, |index, call| {
+            out.push((index, call.from, call.drawn, call.patches));
+            Ok(())
+        })
+        .unwrap();
+        // The whole mesh's draw takes one call, then the tree's 300 ranges fill a call of 256 and
+        // a second of 44. The tree's records share the draw's bucket.
+        assert_eq!(
+            out,
+            vec![
+                (0, 0, 1, None),
+                (1, 1, 256, Some((0, 256))),
+                (2, 1, 44, Some((256, 300))),
+            ]
+        );
+        // The ranges count as records, not one record for the whole draw.
+        assert_eq!(out.iter().map(|entry| entry.2).sum::<u32>(), 301);
     }
 
     /// The dynamic offsets of the draw records that a recorded pass binds, and its draw calls.
@@ -899,6 +1074,7 @@ mod tests {
                     &meshes,
                     shading,
                     &hidden,
+                    PatchView::NONE,
                     0,
                 )
                 .unwrap();

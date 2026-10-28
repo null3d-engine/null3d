@@ -52,7 +52,8 @@ import { encodeTextures, TEXTURE_FOLDER } from './textures.js';
  * @property {boolean} stages Write the levels of detail as separate downloads beside the model,
  *   so the engine draws the coarsest level first and refines it as the rest arrive. It needs
  *   `lod`.
- * @property {boolean} clusters Make trees of cluster patches.
+ * @property {boolean} clusters Make trees of cluster patches, and the whole levels that each tree
+ *   cuts into for a viewer that draws no patches.
  * @property {number} simplify The share of each mesh's triangles to keep, from 0 to 1, as far
  *   as the error limit allows. 1 keeps them all.
  * @property {number} simplifyError The largest error of that simplification, as a share of each
@@ -271,14 +272,17 @@ export async function optimizeModel(path, options, encode) {
 	if (options.simplify < 1) await simplifyMeshes(doc, options.simplify, options.simplifyError);
 	await reorderMeshes(doc);
 	quantizeMeshes(doc);
-	const levels = options.lod ? await planLevels(doc) : new Map();
-	if (levels.size > 0) orderLevels(doc, levels);
+	// A tree of cluster patches is planned before the levels, because the tree cuts into the whole
+	// levels that a viewer without the patches draws.
+	const clusters = options.clusters ? await planClusters(doc) : new Map();
+	const levels =
+		options.lod || clusters.size > 0 ? await planLevels(doc, clusters, options.lod) : new Map();
+	if (levels.size > 0) orderLevels(doc, levels, clusters);
 	/** @type {Map<string, Uint8Array>} */
 	const stages = new Map();
 	if (options.stages && levels.size > 0)
 		storeStages(doc, levels, stages, basename(path, extname(path)));
 	else storeLevels(doc, levels);
-	const clusters = options.clusters ? await planClusters(doc) : new Map();
 	storeClusters(doc, clusters);
 	merged.accessors = dedupAccessors(doc);
 	const spatial = addSpatialData(doc, {
