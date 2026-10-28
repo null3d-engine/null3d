@@ -43,7 +43,6 @@ const INCOMPLETE = new Set([
 	'M3-B5',
 	'M3-V4',
 	'M3-F2',
-	'M3-R39',
 	'M3-E4',
 	'M3-E10',
 	'M3-V6',
@@ -64,8 +63,6 @@ const INCOMPLETE = new Set([
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
-	'M3-R39':
-		"three of its four conditions are proved on the head; the fourth asks the terrain demo's frame counters to show a cell crossing rebuilds no draw table, and nothing has read those counters, so the tick waits for that run. The unit test on bounds is evidence about the mechanism, not about the counter the plan names",
 	'M3-A8':
 		"the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, over the prototype's one-step tolerance. The owner accepted that cost and ruled that the display table stays and the light table comes out",
 	'M3-A9':
