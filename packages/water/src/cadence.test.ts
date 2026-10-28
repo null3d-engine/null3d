@@ -69,6 +69,7 @@ function fakeContext(start: QualityPreset = 'medium') {
 		render: {
 			addPass: () => ({ name: 'water', writes: 'water', place: 1 }),
 			setPassEnabled() {},
+			setPassEvery() {},
 			removePass() {},
 		},
 		debug: {

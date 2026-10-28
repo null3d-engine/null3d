@@ -124,8 +124,8 @@ export interface Water {
 	/** The frames between two draws of the reflection now. */
 	readonly reflectionEvery: number;
 	/**
-	 * Draws the reflection in its turn if this frame's cadence draws it. Call once in each frame,
-	 * after the camera moves and before the engine draws.
+	 * Keeps the sketch's frame loop, as every sketch calls it. The reflection pass carries its own
+	 * cadence, so this call changes nothing.
 	 */
 	update(): void;
 	/**
@@ -321,6 +321,8 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			memory: () => meshBytes + junctionMap.bytes + (ownFoam ? foamMap.bytes : 0),
 			quality: (_preset, _settings, own) => {
 				every = own.settings.reflectionEvery as number;
+				// The pass carries its cadence itself, so no frame recompiles the graph.
+				render.setPassEvery(pass, every);
 			},
 			// A debug view of the add-on's own: the bounds of each water body at the surface.
 			debugViews: [
@@ -333,7 +335,6 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			],
 		}),
 	);
-	let frame = 0;
 	const current: [number, number] = [0, 0];
 	const causticLight: [number, number, number] = [0, 0, 0];
 	const still: [number, number] = [0, 0];
@@ -363,12 +364,6 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 				for (const body of bodies)
 					ctx.debug.box([body.minX, level, body.minZ], [body.maxX, level, body.maxZ], '#4fc3f7');
 			}
-			if (every <= 1) {
-				render.setPassEnabled(pass, true);
-				return;
-			}
-			frame = (frame + 1) % every;
-			render.setPassEnabled(pass, frame === 0);
 		},
 		surfaceHeight(x, z, t) {
 			const ripple = options.ripple ?? RIPPLE;
