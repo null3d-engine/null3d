@@ -60,6 +60,9 @@ export interface StartOptions {
 	signal?: AbortSignal;
 }
 
+/** How long the loading overlay waits after the last loading message before it hides, in ms. */
+const LOADER_QUIET_MS = 400;
+
 /** Starts the demo's sketch on the canvas, and resolves to its engine once it runs. */
 export async function startDemo({
 	canvas,
@@ -92,6 +95,27 @@ export async function startDemo({
 			signal?.addEventListener('abort', () => page.remove());
 		}
 	}
+	// A scene that builds in stages posts its own loading messages, and its worker can outlive the
+	// engine's first frame. The overlay then waits for a quiet gap after the last message or the
+	// frame, so it fades once at the end of the build rather than twice over a drawn scene.
+	let firstFrame = false;
+	let firstFrameAt = 0;
+	let lastLoadingAt = 0;
+	const hideWhenQuiet = (): void => {
+		if (!firstFrame) return;
+		// A scene that posts nothing hides at the first frame. One that reports its own stages waits
+		// for a quiet gap after the frame or its last message, so a stage that arrives late never
+		// changes a card that is already going.
+		const from = lastLoadingAt === 0 ? 0 : Math.max(lastLoadingAt, firstFrameAt);
+		const wait = from + LOADER_QUIET_MS - performance.now();
+		if (wait > 0) window.setTimeout(hideWhenQuiet, wait);
+		else loader.hide();
+	};
+	const reachedFirstFrame = (): void => {
+		firstFrame = true;
+		firstFrameAt = performance.now();
+		hideWhenQuiet();
+	};
 	let engine: Engine;
 	try {
 		// No preset: the engine's start-up check picks one that the device holds at its frame rate.
@@ -103,7 +127,14 @@ export async function startDemo({
 			transparent: behind,
 			// Collapsed, the overlay stays small until clicked.
 			stats: stats && { collapsed: true },
-			onProgress: (stage) => loader.stage(stage),
+			onProgress: (stage) => {
+				// The loader hears of the first frame through `hideWhenQuiet`, with any last message.
+				if (stage === 'first-frame') {
+					reachedFirstFrame();
+					return;
+				}
+				loader.stage(stage);
+			},
 		});
 	} catch (error) {
 		loader.fail(error instanceof Error ? error.message : String(error));
@@ -119,16 +150,16 @@ export async function startDemo({
 	];
 	engine.onSketchMessage((type, data) => {
 		if (type === 'loading') {
+			lastLoadingAt = performance.now();
 			loader.note(data);
+			hideWhenQuiet();
 			return;
 		}
 		for (const reader of readers) reader(type, data);
 	});
-	// The overlay leaves with the first frame, so it never covers a drawn scene.
-	void engine.firstFrame.then(
-		() => loader.hide(),
-		() => loader.hide(),
-	);
+	// The overlay leaves once the first frame is drawn and the scene's own loading has gone quiet,
+	// so a stage that reports after the frame never changes a card that is already going.
+	void engine.firstFrame.then(reachedFirstFrame, reachedFirstFrame);
 	// Browsers lock the pointer only right after the user acts, and refuse it on phones.
 	if (demo.pointerLock)
 		canvas.addEventListener('click', () => engine.requestPointerLock().catch(() => {}), { signal });
