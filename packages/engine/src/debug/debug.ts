@@ -65,7 +65,8 @@ export type DebugViewName = DebugView | (string & {});
  * `stats` shows frame figures on the page, and `frameStats` gives the sketch the same figures.
  *
  * Only development builds draw. In a release build every drawing call does nothing, and the build
- * holds none of the drawing code. The calls `stats` and `frameStats` work in every build.
+ * holds none of the drawing code, apart from one traversal of the scene's objects whose meshes have
+ * levels, which the culling spheres read. The calls `stats` and `frameStats` work in every build.
  *
  * @category api/debug
  */

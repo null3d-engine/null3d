@@ -12,10 +12,10 @@ enable draw_index;
 // - DEBUG_VIEW_HIGH, overdraw: a little warm light for each fragment, which the pipeline adds
 //   without a depth test, so the pixels that many surfaces cover glow;
 // - both bits, wireframe: lines in the material's base color, from each mesh's edge list;
-// - RECEIVE_SHADOWS and DEBUG_VIEW_HIGH alone, levels: one color for each level of detail, and a
-//   dither of two colors where two levels hand over in a fading band. A source that the size rule
-//   or a draw range hid draws at its base level in a striped marker color, so the view shows what
-//   the culling dropped;
+// - DEBUG_VIEW_LEVELS and LOD_FADE, levels: one color for each level of detail, and a dither of
+//   two colors where two levels hand over in a fading band. A source that the size rule or a draw
+//   range hid draws at its base level in a striped marker color, so the view shows what the
+//   culling dropped;
 // - RECEIVE_SHADOWS, shadows: the main directional light's shadow factor as a gray, black in full
 //   shadow and white in full light, so a pixel's value is the factor that lit shading multiplies
 //   the sun's light by. A surface that faces away from the sun is black. With the low bit too, the surface shows no shadows and shows white: it
