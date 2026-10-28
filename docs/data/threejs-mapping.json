@@ -1440,7 +1440,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "assets.onProgress((loaded, total) => ...) and assets.preload([...urls])",
-      "notes": "",
+      "notes": "loaded and total count bytes, not files: a download that announces no length still adds its bytes to loaded while total stays unknown, so divide by Math.max(total, loaded).",
       "docs": "guides/loading-screens",
       "detect": "\\bLoadingManager\\b"
     },
