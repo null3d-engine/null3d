@@ -10,7 +10,6 @@
 // route that is made for this scene (see SHOTS); `c` hands it to the user. For held frames, the
 // sketch's address takes the mood too: `?mood=Night&dslr`.
 import { defineSketch, math, type QualityPreset, timeOfDay } from '@null3d/engine';
-import { createUnderwater, createWater, foamMap } from '@null3d/water';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { createHaze } from '../../lib/haze';
 import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
@@ -23,10 +22,8 @@ import { createGrass } from './grass';
 import {
 	createLand,
 	createMountains,
-	FLOW,
 	GORGE,
 	groundHeight,
-	streamHalf,
 	streamZ,
 	UNREFLECTED_LAYER,
 	WATER,
@@ -34,16 +31,18 @@ import {
 import { loadModels } from './models';
 import { createShafts } from './shafts';
 import { createStones } from './stones';
+import { createUnderwater } from './underwater';
+import { createWater } from './water';
 
 /** The detail that each preset builds at the start: the land's quads, texture sizes and more. */
 const DETAIL: Record<
 	QualityPreset,
-	{ land: number; texture: number; rock: number; ring: readonly [number, number] }
+	{ land: number; texture: number; rock: number; water: number; ring: readonly [number, number] }
 > = {
-	low: { land: 192, texture: 256, rock: 2, ring: [160, 32] },
-	medium: { land: 256, texture: 512, rock: 3, ring: [224, 40] },
-	high: { land: 320, texture: 512, rock: 3, ring: [288, 48] },
-	ultra: { land: 384, texture: 1024, rock: 3, ring: [320, 56] },
+	low: { land: 192, texture: 256, rock: 2, water: 200, ring: [160, 32] },
+	medium: { land: 256, texture: 512, rock: 3, water: 300, ring: [224, 40] },
+	high: { land: 320, texture: 512, rock: 3, water: 400, ring: [288, 48] },
+	ultra: { land: 384, texture: 1024, rock: 3, water: 400, ring: [320, 56] },
 };
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
@@ -147,6 +146,21 @@ const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean)
  * or undefined to leave the scale to the governor.
  */
 const RENDER_SCALE = Number(params.get('render-scale')) || undefined;
+/**
+ * True draws the scene from just above the stream, looking along it, so the picture shows the
+ * water's surface close up. The picture tests ask for it; the demo and its route never do.
+ */
+const WATER_CLOSE = params.has('water-close');
+/** The close camera's place, just over the stream, and the point it looks at down the stream. */
+const CLOSE_POSITION: readonly [number, number, number] = [-11, 0.55, streamZ(-11) + 0.9];
+const CLOSE_TARGET: readonly [number, number, number] = [1, -0.5, streamZ(1)];
+/** The shot that holds the close camera, so the picture draws the surface and nothing else moves. */
+const CLOSE_SHOT: Shot = {
+	position: CLOSE_POSITION,
+	target: CLOSE_TARGET,
+	seconds: 1,
+	move: 'hold',
+};
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time } = ctx;
@@ -206,38 +220,17 @@ export default defineSketch(async (ctx) => {
 	page.post('loading', 'Loading the trees, plants and cave');
 	const models = await loadModels(ctx);
 	const stones = createStones(ctx, detail.rock, detail.texture, models.cave);
-	// The stream's middle line, sampled finely over the land and coarsely down the gorges.
-	const middle: [number, number][] = [];
-	for (let x = -GORGE.end; x < GORGE.end; x += Math.abs(x) < 70 ? 1.5 : 8)
-		middle.push([x, streamZ(x)]);
-	middle.push([GORGE.end, streamZ(GORGE.end)]);
 	const water = WITHOUT.has('water')
 		? undefined
-		: createWater(ctx, {
-				level: WATER,
-				// The reflection draws layer 0 alone, which leaves out what lies on or under the water.
-				layers: 1,
-				// The address can draw the reflection every frame, and at a share of the render size, for
-				// the bisect of the Apple WebGPU stall.
-				...(ALWAYS_REFLECT && { reflectionEvery: { low: 1, medium: 1, high: 1, ultra: 1 } }),
-				...(REFLECT_SCALE !== undefined && {
-					reflectionScale: REFLECT_SCALE as 0.25 | 0.5 | 1,
-				}),
-				shapes: {
-					kind: 'river',
-					middle,
-					halfWidth: middle.map(([x]) => streamHalf(x)),
-					depth: 0.62,
-					speed: FLOW,
-				},
-				foam: foamMap(ctx, stones.obstacles, {
-					origin: [-30, -6.5],
-					size: [60, 13],
-					width: 1024,
-					height: 224,
-				}),
-			});
-	const underwater = water === undefined ? undefined : createUnderwater(ctx, camera, water);
+		: createWater(
+				ctx,
+				detail.water,
+				stones.obstacles,
+				GORGE.end,
+				ALWAYS_REFLECT,
+				REFLECT_SCALE as 0.25 | 0.5 | 1 | undefined,
+			);
+	const underwater = createUnderwater(ctx, camera, WATER);
 	const flora = await createFlora(ctx, models);
 	const air = await createAir(ctx, flora.crowns);
 	const shafts = createShafts(ctx, camera);
@@ -247,6 +240,7 @@ export default defineSketch(async (ctx) => {
 	const fit = () => {
 		grass?.fit(quality.preset);
 		stones.fit(quality.preset);
+		water?.fit(quality.preset);
 	};
 	fit();
 
@@ -367,7 +361,7 @@ export default defineSketch(async (ctx) => {
 	for (const haze of hazes) haze.update(stage.airColor, stage.light);
 
 	const film = createCinematic(ctx, camera, {
-		shots: SHOTS,
+		shots: WATER_CLOSE ? [CLOSE_SHOT] : SHOTS,
 		target,
 		groups: controls.groups,
 		bounds: {
@@ -397,7 +391,7 @@ export default defineSketch(async (ctx) => {
 			}
 			film.update(dt);
 			// After the camera moves, so the view under the water turns the frame the camera dips.
-			underwater?.update(t, stage.airColor, caustics);
+			underwater.update(t, stage.airColor, caustics);
 			const lens = controls.lens();
 			if (lens) post.set(lens);
 			flora.update(t);
