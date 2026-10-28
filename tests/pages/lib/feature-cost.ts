@@ -20,6 +20,8 @@ export interface SideCost {
 	gpuMs: number | null;
 	intervalMs: number | null;
 	cpuMs: number | null;
+	/** The display's refresh rate in hertz, where the device measured one. */
+	refreshHz: number | null;
 	/** Draw calls per frame in the middle of the side's measurements. */
 	draws: number | null;
 	/** Each part of the frame's GPU time, in the order that the device reported it. */
@@ -71,6 +73,7 @@ export async function featureCost(
 			gpuMs: [] as number[],
 			intervalMs: [] as number[],
 			cpuMs: [] as number[],
+			refreshHz: [] as number[],
 			draws: [] as number[],
 			passes: new Map<string, number[]>(),
 		},
@@ -78,6 +81,7 @@ export async function featureCost(
 			gpuMs: [] as number[],
 			intervalMs: [] as number[],
 			cpuMs: [] as number[],
+			refreshHz: [] as number[],
 			draws: [] as number[],
 			passes: new Map<string, number[]>(),
 		},
@@ -93,6 +97,7 @@ export async function featureCost(
 			if (stats.gpuMs) sides[side].gpuMs.push(stats.gpuMs.median);
 			sides[side].intervalMs.push(stats.intervalMs.median);
 			sides[side].cpuMs.push(stats.cpuMs.median);
+			if (stats.refreshHz) sides[side].refreshHz.push(stats.refreshHz);
 			sides[side].draws.push(stats.drawCalls.median);
 			for (const pass of stats.gpuPassMs ?? []) {
 				const values = sides[side].passes.get(pass.name) ?? [];
@@ -111,6 +116,7 @@ export async function featureCost(
 		gpuMs: median(sides[side].gpuMs),
 		intervalMs: median(sides[side].intervalMs),
 		cpuMs: median(sides[side].cpuMs),
+		refreshHz: median(sides[side].refreshHz),
 		draws: median(sides[side].draws),
 		passes: [...sides[side].passes].map(([name, values]) => ({ name, ms: median(values) })),
 		threads: Object.fromEntries(
