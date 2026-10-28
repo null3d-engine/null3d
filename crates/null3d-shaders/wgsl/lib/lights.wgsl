@@ -201,6 +201,66 @@ fn spot_map(
     return light_image(i32(light.up_image.w) - 1, uv, level);
 }
 
+/// One point or spot light of a cluster, ready for a surface to shade: the unit direction from the
+/// surface toward the light, and the light's color after its distance and cone attenuation, its
+/// shadow, its spot map and the layers. `relative` is the surface's position relative to the
+/// camera, `normal` its unit normal, `mesh_normal` that normal before a normal map bends it, which
+/// moves a shadow lookup off the surface, and `to_view` the unit direction toward the camera.
+struct ClusterSample {
+    /// The unit direction from the surface toward the light.
+    to_light: vec3f,
+    /// The light's color, with its intensity, after the attenuation and shadows that reach the
+    /// surface, and after the clear coat and sheen take their share.
+    incoming: vec3f,
+}
+
+/// The light of one point or spot light of a cluster, in the form that a surface shades it with.
+/// In the TRANSLUCENCY builds the light that reaches the surface's back gathers here too, shadowed
+/// from the side that it falls on (null3d::translucency), and COAT_SHEEN builds light the clear
+/// coat and sheen here (null3d::coat_sheen).
+fn cluster_sample(
+    light: PointLight,
+    relative: vec3f,
+    normal: vec3f,
+    mesh_normal: vec3f,
+    to_view: vec3f,
+) -> ClusterSample {
+    let offset = light.position_range.xyz - relative;
+    let gap = length(offset);
+    let to_light = offset / max(gap, 1e-6);
+    let fade = distance_attenuation(gap, light.position_range.w, light.color_decay.w);
+    let cone = spot_attenuation(
+        light.direction_cone.w,
+        light.penumbra.x,
+        dot(-to_light, light.direction_cone.xyz),
+    );
+    var strength = fade * cone;
+#ifdef RECEIVE_SHADOWS
+    let tile = light.penumbra.w;
+    if tile > 0.5 && strength > 0.0 {
+        let seen = relative + frame.shadow_origin.xyz;
+#ifdef TRANSLUCENCY
+        let side = lit_side(mesh_normal, to_light);
+        strength *= light_shadow(u32(tile) - 1u, seen, side, to_light, gap);
+#else
+        strength *= light_shadow(u32(tile) - 1u, seen, mesh_normal, to_light, gap);
+#endif
+    }
+#endif
+    var incoming = light.color_decay.rgb * strength;
+    if (light.up_image.w > 0.5) {
+        incoming *= spot_map(light, relative, normal, to_view, to_light);
+    }
+#ifdef COAT_SHEEN
+    // The layers gather their light first, and the sheen keeps part of it from the base.
+    incoming *= layered_light(normal, to_view, to_light, incoming);
+#endif
+#ifdef TRANSLUCENCY
+    gather_back_light(normal, to_light, incoming);
+#endif
+    return ClusterSample(to_light, incoming);
+}
+
 /// The light that a PBR surface reflects toward the camera from the point, spot and area lights of
 /// its cluster, as three.js's `RE_Direct_Physical` gives it for each point and spot light, and its
 /// `RE_Direct_RectArea_Physical` for each area light. `relative` is the
@@ -210,6 +270,9 @@ fn spot_map(
 /// TRANSLUCENCY builds each light also adds the light that reaches the surface's back, shadowed
 /// from the side that it falls on (null3d::translucency). COAT_SHEEN builds each light lights the
 /// surface's clear coat and sheen too (null3d::coat_sheen).
+/// A shader that adds a lobe of its own for each light walks the cluster itself, since this module
+/// cannot call a function of the shader that declares it, and shades each light with
+/// `cluster_sample`.
 fn clustered_light(
     m: PbrMaterial,
     relative: vec3f,
@@ -248,40 +311,8 @@ fn clustered_light(
             continue;
         }
 #endif
-        let offset = light.position_range.xyz - relative;
-        let gap = length(offset);
-        let to_light = offset / max(gap, 1e-6);
-        let fade = distance_attenuation(gap, light.position_range.w, light.color_decay.w);
-        let cone = spot_attenuation(
-            light.direction_cone.w,
-            light.penumbra.x,
-            dot(-to_light, light.direction_cone.xyz),
-        );
-        var strength = fade * cone;
-#ifdef RECEIVE_SHADOWS
-        let tile = light.penumbra.w;
-        if tile > 0.5 && strength > 0.0 {
-            let seen = relative + frame.shadow_origin.xyz;
-#ifdef TRANSLUCENCY
-            let side = lit_side(mesh_normal, to_light);
-            strength *= light_shadow(u32(tile) - 1u, seen, side, to_light, gap);
-#else
-            strength *= light_shadow(u32(tile) - 1u, seen, mesh_normal, to_light, gap);
-#endif
-        }
-#endif
-        var incoming = light.color_decay.rgb * strength;
-        if (light.up_image.w > 0.5) {
-            incoming *= spot_map(light, relative, normal, to_view, to_light);
-        }
-#ifdef COAT_SHEEN
-        // The layers gather their light first, and the sheen keeps part of it from the base.
-        incoming *= layered_light(normal, to_view, to_light, incoming);
-#endif
-        let reflected = direct_light(m, normal, to_view, to_light, incoming, compensation);
-#ifdef TRANSLUCENCY
-        gather_back_light(normal, to_light, incoming);
-#endif
+        let sample = cluster_sample(light, relative, normal, mesh_normal, to_view);
+        let reflected = direct_light(m, normal, to_view, sample.to_light, sample.incoming, compensation);
         sum.diffuse += reflected.diffuse;
         sum.specular += reflected.specular;
     }
