@@ -43,6 +43,7 @@ const INCOMPLETE = new Set([
 	'M3-B5',
 	'M3-V4',
 	'M3-F2',
+	'M3-K9',
 	'M3-E4',
 	'M3-E10',
 	'M3-V6',
@@ -63,6 +64,8 @@ const INCOMPLETE = new Set([
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
+	'M3-K9':
+		'the budget raise it needed is landed and its shader build now passes, but the task itself is not in: its branch is not merged with the head, it has no judged speed line over the final tree, and its Done-when asks for the cost per extra light on an iPad and an S24-class phone, which no device row covers yet',
 	'M3-A8':
 		"the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, over the prototype's one-step tolerance. The owner accepted that cost and ruled that the display table stays and the light table comes out",
 	'M3-A9':
