@@ -11,6 +11,7 @@ use null3d_core::culling::{
     cull_spheres_in_cells, cull_spheres_reference,
 };
 use null3d_core::layers::{ALL_LAYERS, DEFAULT_LAYERS};
+use null3d_core::levels::DrawRange;
 use null3d_core::world::SphereArrays;
 
 #[test]
@@ -539,8 +540,19 @@ fn a_short_output_panics() {
 /// are the levels, 3 to 5 their fade buckets. The rule measures to each sphere's nearest point, 1 m
 /// nearer the camera. Returns each bucket's words.
 fn cull_levels(distances: &[f32], by_row: bool, band: f32, codes: bool) -> Vec<Vec<u32>> {
+    cull_levels_in_range(distances, by_row, band, codes, DrawRange::NONE)
+}
+
+/// The same, with a distance range that hides each row outside it.
+fn cull_levels_in_range(
+    distances: &[f32],
+    by_row: bool,
+    band: f32,
+    codes: bool,
+    range: DrawRange,
+) -> Vec<Vec<u32>> {
     use null3d_core::culling::{LevelChoice, LevelRows, RowBiases, RowCells, RowRadii, RowRanges};
-    use null3d_core::levels::{DrawRange, LevelLink, LevelRule, NO_LINK, Switch};
+    use null3d_core::levels::{LevelLink, LevelRule, NO_LINK, Switch};
     let n = distances.len();
     let (xs, ys) = (vec![0.0; n], vec![0.0; n]);
     let zs: Vec<f32> = distances.iter().map(|d| -d).collect();
@@ -573,7 +585,7 @@ fn cull_levels(distances: &[f32], by_row: bool, band: f32, codes: bool) -> Vec<V
         cells: RowCells::One(0),
         radii: RowRadii::One(1.0),
         biases: RowBiases::One(1.0),
-        ranges: RowRanges::One(DrawRange::NONE),
+        ranges: RowRanges::One(range),
     };
     let levels = [0u32, 1, 2, 3, 4, 5];
     let choice = LevelChoice {
@@ -655,6 +667,29 @@ fn a_levels_debug_view_pairs_each_entry_with_its_code_and_marks_a_hidden_row() {
         buckets[1..].iter().all(Vec::is_empty),
         "the hidden row draws in no other bucket"
     );
+}
+
+#[test]
+fn a_levels_debug_view_marks_a_source_that_its_draw_range_hides() {
+    use null3d_core::levels::{LEVEL_CODE_HIDDEN, level_code};
+    // The row lies 3 m away, where it would draw the base level, and its draw starts at 10 m, so
+    // the draw range hides it with no size rule at work.
+    let distances = [3.0];
+    let range = DrawRange::new(10.0, 100.0);
+    let buckets = cull_levels_in_range(&distances, true, 0.0, true, range);
+    assert_eq!(
+        buckets[0],
+        [0, level_code(0, true, 0.0)],
+        "the range-hidden row draws at its base level, marked"
+    );
+    assert_eq!(buckets[0][1] & LEVEL_CODE_HIDDEN, LEVEL_CODE_HIDDEN);
+    assert!(
+        buckets[1..].iter().all(Vec::is_empty),
+        "the range-hidden row draws in no other bucket"
+    );
+    // Without the view's codes, the same range lists the row in no bucket at all.
+    let hidden = cull_levels_in_range(&distances, true, 0.0, false, range);
+    assert!(hidden.iter().all(Vec::is_empty));
 }
 
 #[test]

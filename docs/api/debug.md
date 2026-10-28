@@ -127,7 +127,7 @@ export default defineSketch(({ debug, input }) => {
 - The wireframe view keeps an edge list for each mesh once it has shown, which takes twice the GPU memory of the mesh's triangle indices.
 - The levels view reads the level of each draw from the culling that picks it. Each level is a bucket of its own, so the view needs no shader for each material. Its first frame builds the pipelines that carry the level code, so the levels can be missing for a few frames after a change.
 - `debug.cullingSpheres(true)` draws the bounding sphere that culling tests for each of the first 128 objects whose mesh has levels, until `debug.cullingSpheres(false)`. Use it beside the levels view to see why the size rule hid a copy. It reads the mesh's own sphere around the object's origin, so it does not draw the sphere that `setBounds` gave an object. Instance batch rows draw no sphere.
-- Debug views work in development builds only. In a release build, `debug.view` does nothing, and the build holds neither their code nor their shader. A name that the engine does not know, and that no add-on feature registers, fails with [E1213](../errors/E1213.md).
+- Debug views work in development builds only. In a release build, `debug.view` does nothing, and the build holds none of the views' shaders or drawing code. A few small parts stay, because the engine shares them: the scene's traversal of objects whose meshes have levels, and the culling's level code. Together they add under 2 KB after Brotli. A name that the engine does not know, and that no add-on feature registers, fails with [E1213](../errors/E1213.md).
 
 ### The view from the address
 
@@ -135,7 +135,7 @@ export default defineSketch(({ debug, input }) => {
 
 ### Views from add-ons
 
-An add-on adds a view of its own through the `debugViews` field of its [feature description](features.md#the-fields). Each view gives its name and a `set` callback, which hears when the view starts and stops. The add-on draws the view itself, with its own materials or its own debug drawing. A view's name must not name one of the engine's views, and each name belongs to one add-on.
+An add-on adds a view of its own through the `debugViews` field of its [feature description](features.md#the-fields). Each view gives its name and a `set` callback, which hears when the view starts and stops. The add-on draws the view itself, with its own materials or its own debug drawing. Picking an add-on's view clears the engine's own view, so the two never draw together. A name that no feature has registered yet clears it too. A view's name must not name one of the engine's views, and each name belongs to one add-on.
 
 ```ts
 host.add(
