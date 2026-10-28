@@ -31,12 +31,12 @@ interface CreekLodResult {
 const SIZE = { width: 640, height: 360 };
 /**
  * The canvas on a software GPU. The search draws a picture for each step, and a software GPU draws
- * them on the CPU, so the same twenty-four steps at the full size ran past four minutes in CI. At
- * under half the sides each draw costs about a fifth, and the crown is still a large share of the
- * picture the assertions judge. The eight steps have run from passing in under three minutes to
- * timing out at four in CI, so the size leaves the search room rather than sitting at its limit.
+ * them on the CPU, so the twenty-four steps at the full size ran past four minutes in CI. Halving
+ * the sides twice brought it to a quarter of the full size and a sixteenth of the drawing, and the
+ * crown still covers about a third of the picture the assertions judge: a whole-crown swap leaves
+ * some four thousand pixels changed against the two thousand the test allows.
  */
-const SOFTWARE_SIZE = { width: 256, height: 144 };
+const SOFTWARE_SIZE = { width: 160, height: 90 };
 /** The page's first and last level bias, and the share of the picture that counts as a change. */
 const SEARCH_HIGH = 32;
 const VISIBLE = 0.001;
@@ -48,11 +48,12 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 		const software = testInfo.project.name === 'chromium-swiftshader';
 		const size = software ? SOFTWARE_SIZE : SIZE;
 		/**
-		 * The steps the page's search takes. A software GPU draws every step on the CPU, and the
-		 * twenty-four that find the switch to a fine bias on a real GPU ran past four minutes there,
-		 * so it searches coarser: the switch is a distance and eight steps still bracket it.
+		 * The frames of the fine sweep that follows the bisection. The page bisects the switch in
+		 * twelve steps whatever this is, then samples the band around it, so this counts the pictures
+		 * drawn after the switch is found and not the search for it. A software GPU draws each one on
+		 * the CPU, so it samples the band coarser there.
 		 */
-		const steps = software ? 8 : 24;
+		const steps = software ? 6 : 24;
 		test.setTimeout(300_000);
 		await page.setViewportSize({ width: size.width + 20, height: size.height + 20 });
 		await page.goto(
