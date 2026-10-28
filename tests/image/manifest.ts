@@ -212,6 +212,12 @@ const HERO_SIZE = [640, 360] as const;
  * page draws, so the view crops the sides the way the owner's recording does.
  */
 const CREEK_SCALE_SIZE = [320, 279] as const;
+/**
+ * The close picture of the Creek's water: a buffer large enough to resolve the surface's waves and
+ * foam. The bank views draw the stream a few dozen pixels wide, so a fault in the surface's pattern
+ * passes them unseen.
+ */
+const CREEK_WATER_SIZE = [640, 360] as const;
 
 /**
  * The volumetric fog: the sun's rays between the pillars, and the street lamps' cones at night with
@@ -3290,6 +3296,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'examples/showcase/creek/sketch.ts?render-scale=0.75',
 		size: CREEK_SCALE_SIZE,
 		hold: 17,
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 300,
+	},
+	// The Creek's water from just above the stream, looking along it, so its surface fills the
+	// frame. The bank views draw the stream a few dozen pixels wide, and a fault in the surface's
+	// pattern passes them unseen.
+	{
+		name: 'creek-water-close',
+		sketch: 'examples/showcase/creek/sketch.ts?water-close',
+		size: CREEK_WATER_SIZE,
+		hold: 0.5,
 		swiftShaderSwitches: ['preset=low'],
 		timeoutSeconds: 300,
 	},
