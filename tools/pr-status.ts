@@ -71,7 +71,7 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-E8':
 		"the compute pass and its WebGL2 fragment form are built and tested, and the wind add-on fills its field through the hook with a compute pass. The owner's 25 October ruling adds M3-V13's history to the hook, and the first-user outcome the plan names still waits on M3-F9's ocean",
 	'M3-L3':
-		'both paths draw the patches, the WebGPU compute pass and the WebGL2 multi-draw walk, with the whole-level fallback for a browser without multi-draw; what holds the tick is two runs of the multi-draw path, one on the iPad and one on the phone, since the device rows of 23 October predate that walk and measure the whole-level path, and a Firefox run of the fallback',
+		'both paths draw the patches, the WebGPU compute pass and the WebGL2 multi-draw walk, with the whole-level fallback for a browser without multi-draw, which Firefox runs on this Mac at three distances with the extension absent; what holds the tick is two runs of the multi-draw path, one on the iPad and one on the phone, since the device rows of 23 October predate that walk and measure the whole-level path',
 	'M3-R22':
 		"the shader cache on the branch is D-248's change, not this task's: it reuses every entry when a compiler change leaves the compiled program identical, 0 compiled and 79 reused in 19 s, where the same change cost an hour. The task's own change, three entries instead of four for every module kind, is on `feat/m3-r22-entry-set` and not on this branch, and the determinism list here still holds `lit`; the two checks' CI times remain unmeasured",
 	'M3-F3':
