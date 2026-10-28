@@ -32,8 +32,9 @@ export interface GpuCheckResult {
 const signed = (change: number) => `${change >= 0 ? '+' : ''}${(change * 100).toFixed(1)}%`;
 
 /**
- * A page's GPU times in words: its change, whether it is the same, faster or slower beyond its
- * rounds' noise, and that noise. A slower page that a `Bench-Expected:` trailer names says so.
+ * A page's GPU times in words: its change and its rounds' noise, with the direction it takes once
+ * both the page's allowance for its measure and twice that noise are passed. A slower page that a
+ * `Bench-Expected:` trailer names says so.
  */
 function figureText(preset: string, c: Comparison): string {
 	const direction = c.result === 'slower' && c.expected ? 'slower, expected' : c.result;
