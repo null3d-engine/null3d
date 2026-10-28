@@ -59,6 +59,9 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			expect(largest(live.data, 0), 'the live canvas is black').toBeGreaterThan(40);
 			// The capture holds the image the live canvas shows.
 			const apart = distance(captured, live.data);
+			console.log(
+				`TAA capture ${antialias} on ${gpu}: the capture differs from the live canvas by ${apart.toFixed(2)} levels; the capture's red mean is ${mean(captured, 0).toFixed(1)}`,
+			);
 			expect(
 				apart,
 				`the capture differs from the live canvas by ${apart.toFixed(1)} levels`,
@@ -93,5 +96,9 @@ test('a capture without the resolve holds the live image, msaa on webgpu', async
 	const live = decodePngRgba(Buffer.from(await page.locator('canvas').screenshot()), 'live');
 	expect(mean(captured, 0)).toBeGreaterThan(3);
 	expect(largest(captured, 0)).toBeGreaterThan(40);
-	expect(distance(captured, live.data)).toBeLessThan(16);
+	const apart = distance(captured, live.data);
+	console.log(
+		`TAA capture off on webgpu: the capture differs from the live canvas by ${apart.toFixed(2)} levels`,
+	);
+	expect(apart).toBeLessThan(16);
 });

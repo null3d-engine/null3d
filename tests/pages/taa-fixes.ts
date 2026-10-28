@@ -66,17 +66,6 @@ function distance(
 	return sum / (width * height);
 }
 
-/** The mean frame-to-frame change over a sequence. */
-function change(frames: Frame[]): number {
-	let sum = 0;
-	let steps = 0;
-	for (let t = 1; t < frames.length; t++) {
-		sum += distance(frames[t] as Frame, frames[t - 1] as Frame);
-		steps++;
-	}
-	return sum / Math.max(1, steps);
-}
-
 /** Starts one engine that draws the sketch with `query`, and waits for its first frame. */
 async function start(
 	query: string,
@@ -125,6 +114,15 @@ async function apply(
 	}
 }
 
+/** Waits until the sketch has recorded frame `target` or a later one. */
+async function waitFrame(heard: number[], target: number): Promise<void> {
+	const deadline = performance.now() + 60_000;
+	while ((heard.at(-1) ?? 0) < target) {
+		if (performance.now() > deadline) throw new Error(`the sketch never reached frame ${target}`);
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+}
+
 /** Waits until the sketch has drawn `count` frames beyond the last one it posted. */
 async function advance(heard: number[], count: number): Promise<void> {
 	const from = heard.at(-1) ?? 0;
@@ -141,11 +139,59 @@ async function capture(engine: Engine): Promise<Frame> {
 	return luma(pixels, width, height);
 }
 
-/** Captures `count` consecutive frames. */
-async function sequence(engine: Engine, count: number): Promise<Frame[]> {
+/** One run's captured frames, the sketch frame of each, and whether each capture held one frame. */
+interface Run {
+	frames: Frame[];
+	numbers: number[];
+	consecutive: boolean;
+}
+
+/** Captures `count` consecutive frames, with the sketch frame number of each. */
+async function sequence(engine: Engine, heard: number[], count: number): Promise<Run> {
 	const frames: Frame[] = [];
-	for (let k = 0; k < count; k++) frames.push(await capture(engine));
-	return frames;
+	const numbers: number[] = [];
+	let consecutive = true;
+	for (let k = 0; k < count; k++) {
+		const before = heard.at(-1) ?? 0;
+		frames.push(await capture(engine));
+		const after = heard.at(-1) ?? 0;
+		if (after - before !== 1) consecutive = false;
+		numbers.push(before);
+	}
+	return { frames, numbers, consecutive };
+}
+
+/** The mean distance of two runs' frames that hold the same sketch frame, and how many there are. */
+function compare(a: Run, b: Run): { mean: number; overlap: number } {
+	const other = new Map<number, Frame>();
+	b.numbers.forEach((number, index) => {
+		other.set(number, b.frames[index] as Frame);
+	});
+	let sum = 0;
+	let overlap = 0;
+	a.numbers.forEach((number, index) => {
+		const frame = other.get(number);
+		if (!frame) return;
+		sum += distance(a.frames[index] as Frame, frame);
+		overlap++;
+	});
+	return { mean: sum / Math.max(1, overlap), overlap };
+}
+
+/**
+ * The mean frame-to-frame change over a run's consecutive frames. A scene that moves with the real
+ * clock differs between runs at the same frame number, so the two sides of an effect are compared
+ * by this statistic, which is stable over the sequence.
+ */
+function change(run: Run): number {
+	let sum = 0;
+	let steps = 0;
+	for (let k = 1; k < run.frames.length; k++) {
+		if ((run.numbers[k] as number) - (run.numbers[k - 1] as number) !== 1) continue;
+		sum += distance(run.frames[k] as Frame, run.frames[k - 1] as Frame);
+		steps++;
+	}
+	return sum / Math.max(1, steps);
 }
 
 /** Runs one scene, and stops its engine. */
@@ -165,40 +211,35 @@ async function scene<T>(
 
 run('taa-fixes', async () => {
 	if (CASE === 'exposure') {
-		// The history settles at an exposure of 1, the page doubles it, and the next resolved frame
-		// must hold the scene at the new exposure. The same scene without the resolve is the
-		// reference: a history that keeps the old exposure darkens it by about a half. The ratio
+		// The history settles at an exposure of 1 and the sketch doubles it at a frame of the
+		// sequence, so every run draws the step at the same frame. The same scene without the resolve
+		// is the reference: a history that keeps the old exposure draws darker than it. The ratio
 		// switch runs the scene again with the history held at its own exposure.
-		const run = async (ratio: number) => {
-			const settled = await scene(
-				`case=exposure&gpu=${GPU}&taa=1&jitter=1&ratio=${ratio}`,
-				async (engine, heard, applied) => {
-					await advance(heard, 8);
-					await apply(engine, applied, 'exposure', 2);
-					const frame = await capture(engine);
-					engine.postToSketch('taa-off', null);
-					await advance(heard, 4);
-					const reference = await capture(engine);
-					return { frame, reference };
+		const step = Number(params.get('step') ?? '8');
+		const run = (taa: boolean, ratio: boolean) =>
+			scene(
+				`case=exposure&gpu=${GPU}&taa=${taa ? 1 : 0}&jitter=0&ratio=${ratio ? 1 : 0}&step=${step}`,
+				async (engine, heard) => {
+					await waitFrame(heard, step);
+					return sequence(engine, heard, 12);
 				},
 			);
-			return {
-				resolved: mean(settled.frame),
-				reference: mean(settled.reference),
-				error: mean(settled.frame) - mean(settled.reference),
-			};
-		};
-		const on = await run(1);
-		const off = await run(0);
+		const reference = await run(false, true);
+		const on = await run(true, true);
+		const off = await run(true, false);
+		const onError = compare(on, reference);
+		const offError = compare(off, reference);
 		return {
 			case: CASE,
 			gpu: GPU,
-			resolved: on.resolved,
-			reference: on.reference,
-			error: on.error,
-			offResolved: off.resolved,
-			offReference: off.reference,
-			offError: off.error,
+			resolved: mean(on.frames[0] as Frame),
+			reference: mean(reference.frames[0] as Frame),
+			error: onError.mean,
+			offResolved: mean(off.frames[0] as Frame),
+			offReference: mean(reference.frames[0] as Frame),
+			offError: offError.mean,
+			overlap: Math.min(onError.overlap, offError.overlap),
+			consecutive: reference.consecutive && on.consecutive && off.consecutive,
 		};
 	}
 
@@ -236,36 +277,39 @@ run('taa-fixes', async () => {
 	}
 
 	if (CASE === 'phone') {
-		// Both paths settle on a still scene with no jitter: they hold the same picture, and the
-		// phone path reads less of it. The phone path draws the same picture with the transparency
-		// signals off and on, because it reads neither.
-		const full = await scene(
-			`case=phone&gpu=${GPU}&taa=1&jitter=0&phone=0`,
-			async (engine, heard) => {
-				await advance(heard, 8);
-				return capture(engine);
-			},
-		);
-		const phone = await scene(
-			`case=phone&gpu=${GPU}&taa=1&jitter=0&phone=1&reactive=off`,
-			async (engine, heard) => {
-				await advance(heard, 8);
-				return capture(engine);
-			},
-		);
-		const masked = await scene(
-			`case=phone&gpu=${GPU}&taa=1&jitter=0&phone=1&reactive=both`,
-			async (engine, heard) => {
-				await advance(heard, 8);
-				return capture(engine);
-			},
-		);
+		// A blended square slides across a transparent canvas, from the frame number, so every run
+		// draws the same picture in the same frame. The scene's alpha lowers the full path's history;
+		// the phone path reads no signal, so the same setting must not change its picture. The
+		// signal's own figure shows that the scene would change if the path read it.
+		const run = (phone: boolean, reactive: 'off' | 'alpha') =>
+			scene(
+				`case=phone&gpu=${GPU}&taa=1&jitter=1&phone=${phone ? 1 : 0}&reactive=${reactive}`,
+				async (engine, heard) => {
+					await waitFrame(heard, 12);
+					return sequence(engine, heard, 16);
+				},
+				{ transparent: true },
+			);
+		const fullOff = await run(false, 'off');
+		const fullAlpha = await run(false, 'alpha');
+		const phoneOff = await run(true, 'off');
+		const phoneAlpha = await run(true, 'alpha');
+		const signal = compare(fullAlpha, fullOff);
+		const skip = compare(phoneAlpha, phoneOff);
+		const path = compare(fullOff, phoneOff);
 		return {
 			case: CASE,
 			gpu: GPU,
-			distance: distance(full, phone),
-			skip: distance(phone, masked),
-			mean: mean(phone),
+			distance: path.mean,
+			signal: signal.mean,
+			skip: skip.mean,
+			mean: mean(phoneOff.frames[0] as Frame),
+			overlap: Math.min(signal.overlap, skip.overlap, path.overlap),
+			consecutive:
+				fullOff.consecutive &&
+				fullAlpha.consecutive &&
+				phoneOff.consecutive &&
+				phoneAlpha.consecutive,
 		};
 	}
 
@@ -273,25 +317,29 @@ run('taa-fixes', async () => {
 	// change of each, which is what a temporal resolve is meant to lower. The resolve off draws
 	// the scene with and without the offset request, which the frame applies only while the
 	// resolve draws, so the two says whether the offsets alone change the picture.
-	const off = await scene(`case=${CASE}&gpu=${GPU}&taa=0&jitter=0`, async (engine, heard) => {
-		await advance(heard, 6);
-		return sequence(engine, 16);
-	});
-	const offJitter = await scene(`case=${CASE}&gpu=${GPU}&taa=0&jitter=1`, async (engine, heard) => {
-		await advance(heard, 6);
-		return sequence(engine, 16);
-	});
-	const on = await scene(`case=${CASE}&gpu=${GPU}&taa=1&jitter=1`, async (engine, heard) => {
-		await advance(heard, 8);
-		return sequence(engine, 16);
-	});
+	const measure = (query: string) =>
+		scene(query, async (engine, heard) => {
+			await waitFrame(heard, 12);
+			return sequence(engine, heard, 16);
+		});
+	const off = await measure(`case=${CASE}&gpu=${GPU}&taa=0&jitter=0`);
+	const offJitter = await measure(`case=${CASE}&gpu=${GPU}&taa=0&jitter=1`);
+	const on = await measure(`case=${CASE}&gpu=${GPU}&taa=1&jitter=1`);
+	// The same resolve with both transparency signals off, so a difference that stays is the
+	// history's place rather than a mask dropping it.
+	const onNoMask = await measure(`case=${CASE}&gpu=${GPU}&taa=1&jitter=1&reactive=off`);
+	const offChange = change(off);
 	return {
 		case: CASE,
 		gpu: GPU,
-		off: change(off),
-		offJitter: change(offJitter),
+		off: offChange,
 		on: change(on),
-		offMean: mean(off[0] as Frame),
-		onMean: mean(on[0] as Frame),
+		onNoMask: change(onNoMask),
+		jitter: Math.abs(change(offJitter) - offChange),
+		offMean: mean(off.frames[0] as Frame),
+		onMean: mean(on.frames[0] as Frame),
+		onNoMaskMean: mean(onNoMask.frames[0] as Frame),
+		steps: off.frames.length - 1,
+		consecutive: off.consecutive && offJitter.consecutive && on.consecutive && onNoMask.consecutive,
 	};
 });

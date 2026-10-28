@@ -30,6 +30,8 @@ const size = (params.get('size') ?? '960x540').split('x').map(Number) as [number
 const referenceSize = (params.get('ref') ?? '3840x2160').split('x').map(Number) as [number, number];
 const down = Number(params.get('down') ?? '4');
 const jitter = params.get('jitter') !== '0';
+/** True measures the resolve's cheaper phone path instead of the full one. */
+const phone = params.get('phone') === '1';
 /** Radians per second that each camera name turns at. */
 const ORBITS: Record<string, number> = { still: 0, slow: 0.1, brisk: 0.3 };
 const SKETCHES: Record<string, string> = {
@@ -152,7 +154,7 @@ function figures(frames: Sequence, reference: Sequence) {
 function sketchURL(camera: string, taa: boolean, moving: boolean): URL {
 	const url = new URL(SKETCHES[scene] as string, import.meta.url);
 	const orbit = ORBITS[camera] as number;
-	url.search = `?orbit=${orbit}&taa=${taa ? 1 : 0}&jitter=${jitter ? 1 : 0}&frames&fixed${moving ? '' : '&moving=0'}`;
+	url.search = `?orbit=${orbit}&taa=${taa ? 1 : 0}&jitter=${jitter ? 1 : 0}&frames&fixed${moving ? '' : '&moving=0'}${phone ? '&phone=1' : ''}`;
 	return url;
 }
 
@@ -297,7 +299,7 @@ run('taa-quality', async () => {
 		const effective = engine.mode.preset;
 		await engine.destroy();
 		canvas.remove();
-		return { mode, scene, tier, preset: effective, off, on, failures };
+		return { mode, scene, phone, tier, preset: effective, off, on, failures };
 	}
 
 	const cases: {

@@ -382,13 +382,6 @@ impl TaaPass {
             bind_layout::TAA
         };
         let texture = |binding: u32, id: u32| [binding, resource_kind::TEXTURE, id, 0, 0];
-        // The comparison is off while no blended surface draws, so the history's texture stands
-        // in for the copy that the frame leaves out.
-        let opaque = if sources.opaque == 0 {
-            sources.histories[0]
-        } else {
-            sources.opaque
-        };
         let entries = [
             [0, resource_kind::BUFFER, ids.buffer, 0, BLOCK as u32],
             texture(1, sources.color),
@@ -397,7 +390,7 @@ impl TaaPass {
             texture(4, sources.histories[0]),
             texture(5, sources.histories[1]),
             [6, resource_kind::SAMPLER, ids.sampler, 0, 0],
-            texture(7, opaque),
+            texture(7, sources.opaque),
         ];
         let mut words = [0u32; 3 + 8 * 5];
         words[..3].copy_from_slice(&[ids.first_group, layout, entries.len() as u32]);

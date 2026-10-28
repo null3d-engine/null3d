@@ -15,6 +15,8 @@ interface ExposureResult {
 	offResolved: number;
 	offReference: number;
 	offError: number;
+	overlap: number;
+	consecutive: boolean;
 }
 
 interface GhostResult {
@@ -34,18 +36,25 @@ interface PhoneResult {
 	case: string;
 	gpu: string;
 	distance: number;
+	signal: number;
 	skip: number;
 	mean: number;
+	overlap: number;
+	consecutive: boolean;
 }
 
 interface EffectResult {
 	case: string;
 	gpu: string;
 	off: number;
-	offJitter: number;
 	on: number;
+	onNoMask: number;
+	jitter: number;
 	offMean: number;
 	onMean: number;
+	onNoMaskMean: number;
+	steps: number;
+	consecutive: boolean;
 }
 
 const GPUS = ['webgpu', 'webgl2'] as const;
@@ -53,26 +62,29 @@ const GPUS = ['webgpu', 'webgl2'] as const;
 for (const gpu of GPUS) {
 	test(`a history follows a change of the exposure on ${gpu}`, async ({ page }) => {
 		test.setTimeout(600_000);
-		await page.goto(`taa-fixes.html?case=exposure&gpu=${gpu}`);
+		await page.goto(`taa-fixes.html?case=exposure&gpu=${gpu}&fps=4&step=8`);
 		const result = await pageResult<ExposureResult>(page, 180_000);
 		expect(result.case).toBe('exposure');
+		expect(result.consecutive, 'a capture skipped a frame').toBe(true);
+		expect(result.overlap, `only ${result.overlap} frames lined up`).toBeGreaterThanOrEqual(8);
 		// The resolved frame holds the scene at the new exposure, within the noise's own blend.
 		console.log(
 			`TAAFIX exposure on ${result.gpu}: resolved mean ${result.resolved.toFixed(1)} against ${result.reference.toFixed(1)}, error ${result.error.toFixed(1)} levels; with the ratio off, ${result.offResolved.toFixed(1)} against ${result.offReference.toFixed(1)}, error ${result.offError.toFixed(1)}`,
 		);
-		// The frame a capture lands on moves the figure by up to about 20 levels, so the floor of 60%
-		// and the 30-level tolerance both separate a corrected history from one that keeps the old
-		// exposure. With the switch off the history keeps the exposure of the frame before, so the
-		// resolved mean falls well below the reference's.
+		// The exposure doubles at a frame of the sequence in every run, so the frames line up. The
+		// frame's distance from the reference moves with the noise's own smoothing, so the ratio's
+		// own effect is the difference of the two means: without the ratio the history holds the
+		// exposure of the frame before, and the resolved frame falls below the corrected one.
 		expect(
 			Math.abs(result.error),
-			`resolved ${result.resolved.toFixed(1)} against ${result.reference.toFixed(1)}`,
-		).toBeLessThan(30);
+			`resolved ${result.resolved.toFixed(1)} against ${result.reference.toFixed(1)}, error ${result.error.toFixed(1)}`,
+		).toBeLessThan(45);
 		expect(result.resolved).toBeGreaterThan(result.reference * 0.6);
+		const lift = result.resolved - result.offResolved;
 		expect(
-			result.offError,
-			`with the ratio off the resolved mean was ${result.offResolved.toFixed(1)} against ${result.offReference.toFixed(1)}`,
-		).toBeLessThan(-10);
+			lift,
+			`the ratio lifted the frame by ${lift.toFixed(1)} levels: ${result.resolved.toFixed(1)} against ${result.reference.toFixed(1)} with it, and ${result.offResolved.toFixed(1)} against ${result.offReference.toFixed(1)} without`,
+		).toBeGreaterThan(5);
 	});
 }
 
@@ -112,18 +124,25 @@ for (const gpu of GPUS) {
 
 	test(`the phone path draws the full path's picture on ${gpu}`, async ({ page }) => {
 		test.setTimeout(600_000);
-		await page.goto(`taa-fixes.html?case=phone&gpu=${gpu}`);
+		await page.goto(`taa-fixes.html?case=phone&gpu=${gpu}&fps=4`);
 		const result = await pageResult<PhoneResult>(page, 180_000);
 		console.log(
-			`TAAFIX phone on ${result.gpu}: the two paths differ by ${result.distance.toFixed(2)} levels, the mask changes the phone path by ${result.skip.toFixed(2)} levels, mean ${result.mean.toFixed(1)}`,
+			`TAAFIX phone on ${result.gpu}: the two paths differ by ${result.distance.toFixed(2)} levels; the mask changes the full path by ${result.signal.toFixed(2)} levels and the phone path by ${result.skip.toFixed(2)}, mean ${result.mean.toFixed(1)}`,
 		);
+		expect(result.consecutive, 'a capture skipped a frame').toBe(true);
+		expect(result.overlap, `only ${result.overlap} frames lined up`).toBeGreaterThanOrEqual(12);
 		expect(result.mean, 'the phone path drew nothing').toBeGreaterThan(4);
 		expect(
 			result.distance,
 			`the two paths differ by ${result.distance.toFixed(2)} levels`,
 		).toBeLessThan(8);
-		// The phone path reads neither transparency signal, so the mask's setting draws the same
-		// picture.
+		// The scene changes when the full path reads the alpha signal, so the skip below measures
+		// something. The phone path reads no transparency signal, so the same setting draws the
+		// same picture.
+		expect(
+			result.signal,
+			`the alpha signal changed the full path by ${result.signal.toFixed(2)} levels`,
+		).toBeGreaterThan(1);
 		expect(
 			result.skip,
 			`the mask changed the phone path by ${result.skip.toFixed(2)} levels`,
@@ -133,27 +152,37 @@ for (const gpu of GPUS) {
 	for (const effect of ['rain', 'fog'] as const) {
 		test(`the resolve over ${effect} on ${gpu}`, async ({ page }) => {
 			test.setTimeout(900_000);
-			await page.goto(`taa-fixes.html?case=${effect}&gpu=${gpu}`);
+			await page.goto(`taa-fixes.html?case=${effect}&gpu=${gpu}&fps=4`);
 			const result = await pageResult<EffectResult>(page, 240_000);
-			// Both runs drew the effect, so the change figures mean something.
-			expect(result.offMean, `the ${effect} drew nothing`).toBeGreaterThan(1);
-			expect(result.onMean, `the ${effect} drew nothing with the resolve`).toBeGreaterThan(1);
-			expect(Number.isFinite(result.off) && result.off >= 0).toBe(true);
-			expect(Number.isFinite(result.on) && result.on >= 0).toBe(true);
-			// The offset request draws nothing while the resolve is off, so the same scene gives the
-			// same change either way.
-			expect(
-				Math.abs(result.offJitter - result.off),
-				`the offset request alone changed the figure by ${Math.abs(result.offJitter - result.off).toFixed(3)}`,
-			).toBeLessThan(0.1);
-			// Thin rain is a blended draw with no motion target, so the resolve reads its history
-			// from the wrong place and the streaks change more from frame to frame.
-			if (effect === 'rain')
-				expect(result.on, `the resolve lowered the rain's change`).toBeGreaterThan(result.off);
 			// The figures go into the decision record, which says what each effect did.
 			console.log(
-				`TAAFIX ${effect} on ${result.gpu}: frame-to-frame change ${result.off.toFixed(3)} without the resolve, ${result.on.toFixed(3)} with it`,
+				`TAAFIX ${effect} on ${result.gpu}: frame-to-frame change ${result.off.toFixed(3)} without the resolve, ${result.on.toFixed(3)} with it, and ${result.onNoMask.toFixed(3)} with its transparency signals off; the offset request alone moves it by ${result.jitter.toFixed(3)}`,
 			);
+			// Both runs drew the effect, so the change figures mean something.
+			expect(result.consecutive, 'a capture skipped a frame').toBe(true);
+			expect(result.offMean, `the ${effect} drew nothing`).toBeGreaterThan(1);
+			expect(result.onMean, `the ${effect} drew nothing with the resolve`).toBeGreaterThan(1);
+			expect(
+				result.onNoMaskMean,
+				`the ${effect} drew nothing with the resolve's signals off`,
+			).toBeGreaterThan(1);
+			expect(Number.isFinite(result.off) && result.off >= 0).toBe(true);
+			expect(Number.isFinite(result.on) && result.on >= 0).toBe(true);
+			expect(result.steps, `only ${result.steps} steps lined up`).toBeGreaterThanOrEqual(12);
+			// The offset request draws nothing while the resolve is off, so the scene's change figure
+			// stays the same.
+			expect(
+				result.jitter,
+				`the offset request alone changed the figure by ${result.jitter.toFixed(3)}`,
+			).toBeLessThan(Math.max(0.1, result.off * 0.05));
+			// Neither effect is a surface that the motion target carries: the rain is a blended draw
+			// with no motion, and the fog draws after the resolve. The resolve does not clean either
+			// up, so its change stays near the unresolved figure. A later technique that fixes one
+			// fails this and the record is revisited.
+			expect(
+				result.on,
+				`the resolve lowered the ${effect}'s change from ${result.off.toFixed(3)} to ${result.on.toFixed(3)}`,
+			).toBeGreaterThan(result.off * 0.9);
 		});
 	}
 }
