@@ -3263,3 +3263,35 @@ impl FrameBuilder for CpuCulledRenderer {
         self.graph.allow_motion(one_sample, multisampled);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ids;
+    use crate::readback::RING as READ_RING;
+    use crate::sky_maps::LIGHT_RING;
+    use crate::view::{MAX_VIEW_IDS, ViewId};
+
+    #[test]
+    fn the_buffers_that_reads_land_in_keep_ids_of_their_own() {
+        // A read maps the buffer at its id with the region's bytes, so a view's shorter buffer at
+        // that id refuses the map. A frame with many passes makes many views, so the two ranges
+        // must not meet at any view.
+        let mut reads = Vec::new();
+        for ring in 0..READ_RING as u32 {
+            reads.push(ids::PASS_READ_BUFFERS + ring);
+            reads.push(ids::PICK_BUFFERS + ring);
+        }
+        for ring in 0..LIGHT_RING as u32 {
+            reads.push(ids::SKY_LIGHT_BUFFERS + ring);
+        }
+        for index in 0..MAX_VIEW_IDS {
+            let view = ViewId::from_index(index);
+            for id in [ids::frame(view), ids::draws(view)] {
+                assert!(
+                    !reads.contains(&id),
+                    "view {index} takes the buffer id {id}, which a read maps"
+                );
+            }
+        }
+    }
+}
