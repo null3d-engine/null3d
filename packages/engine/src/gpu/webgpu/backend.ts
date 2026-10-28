@@ -107,6 +107,16 @@ function lookUp<T>(table: (T | undefined)[], code: number, what: string): T {
 	return value;
 }
 
+/**
+ * A pass command's label, which follows the optional second color target. A list that names no
+ * label, as a hand-made one may, gives 0 for the timer to leave the pass unnamed.
+ */
+function passLabel(a: number, length: number, words: Uint32Array): number {
+	if (length > 11) return words[a + 10] as number;
+	if (length === 11) return words[a + 9] as number;
+	return 0;
+}
+
 /** The views, bind groups and pass descriptors that make the mip levels of one layer of a texture. */
 interface MipChain {
 	readonly layer: number;
@@ -1238,8 +1248,10 @@ export class WebGPUBackend {
 						floats,
 						a + 3,
 					);
-					// The weighted layer's pass names a second color target after the flags.
-					setup.setSecondColor(length > 10 ? this.targetView(words[a + 9] as number) : undefined);
+					// The weighted layer's pass names a second color target after the flags, and
+					// every pass names its label last.
+					const hasSecond = length > 11;
+					setup.setSecondColor(hasSecond ? this.targetView(words[a + 9] as number) : undefined);
 					setup.setDepth(
 						this.targetView(words[a + 2] as number),
 						(flags & G.PASS_CLEAR_DEPTH) !== 0,
@@ -1247,7 +1259,7 @@ export class WebGPUBackend {
 						floats,
 						a + 7,
 					);
-					setup.setTimestampWrites(this.timer?.passWrites(true));
+					setup.setTimestampWrites(this.timer?.passWrites(true, passLabel(a, length, words)));
 					this.indirect.begin(words, i + length, end, this.bundles, this.buffers, this.openEncoder);
 					pass = this.commandEncoder().beginRenderPass(setup.descriptor);
 					this.skipDraws = false;
@@ -1306,7 +1318,10 @@ export class WebGPUBackend {
 					break;
 				}
 				case G.OP_BEGIN_COMPUTE_PASS:
-					this.computePass.timestampWrites = this.timer?.passWrites(false);
+					this.computePass.timestampWrites = this.timer?.passWrites(
+						false,
+						length > 1 ? (words[a] as number) : 0,
+					);
 					computePass = this.commandEncoder().beginComputePass(this.computePass);
 					this.skipDispatches = false;
 					break;

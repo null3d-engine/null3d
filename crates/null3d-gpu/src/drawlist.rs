@@ -93,9 +93,11 @@ pub enum Op {
     /// [color target texture id or 0 for the canvas or `NO_TARGET`, resolve target texture id or
     /// 0 for the canvas or `NO_TARGET`, depth texture id or `NO_TARGET`, clear red, green, blue,
     /// alpha (f32), clear depth (f32), pass flags, then optionally a second color target texture
-    /// id]. A target is a texture of one layer and one mip level, or a view of one. A pass without
-    /// a color target draws depth only. A second color target has one sample, no resolve, and the
-    /// first target's clear color and flags; its pipelines are those with `permutation::WEIGHTED`.
+    /// id, then the pass's label]. A target is a texture of one layer and one mip level, or a view
+    /// of one. A pass without a color target draws depth only. A second color target has one
+    /// sample, no resolve, and the first target's clear color and flags; its pipelines are those
+    /// with `permutation::WEIGHTED`. The label says what the pass draws for, from
+    /// [`crate::pass_role`], so a frame's GPU time names the pass rather than its slot.
     BeginRenderPass = 16,
     /// [render pipeline id]
     SetPipeline = 17,
@@ -130,7 +132,8 @@ pub enum Op {
     BeginBundle = 32,
     /// []
     EndBundle = 33,
-    /// []
+    /// [the pass's label]: what the dispatches in this pass do, from [`crate::pass_role`], so a
+    /// frame's GPU time names the pass rather than its slot.
     BeginComputePass = 40,
     /// [compute pipeline id]
     SetComputePipeline = 41,
@@ -2932,6 +2935,30 @@ pub fn typescript_constants() -> String {
     out.push_str(&format!(
         "/** Each vertex attribute in vertex order, which is also its shader location: its format bit (0 for one every format has), its values per vertex, the first bit of its type field, its types by the field's value, and whether shaders read whole numbers. */\nexport const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, components: number, shift: number, types: readonly number[], integer: boolean])[] = [{}];\n",
         attributes.join(", ")
+    ));
+    let role_names: Vec<String> = crate::pass_role::PassRole::ALL
+        .iter()
+        .map(|role| format!("\"{}\"", role.name()))
+        .collect();
+    let role_places: Vec<String> = crate::pass_role::PassRole::ALL
+        .iter()
+        .map(|role| (role.place() as u32).to_string())
+        .collect();
+    out.push_str(&format!(
+        "/** The name of each pass role by code. */\nexport const PASS_ROLE_NAMES: readonly string[] = [{}];\n",
+        role_names.join(", ")
+    ));
+    out.push_str(&format!(
+        "/** Whether each pass role prints its place: 0 never, 1 always, 2 when the place is not 0. */\nexport const PASS_ROLE_PLACES: readonly number[] = [{}];\n",
+        role_places.join(", ")
+    ));
+    out.push_str(&format!(
+        "/** The bits of a pass label that hold the pass's place. */\nexport const PASS_ROLE_PLACE_SHIFT = {};\n",
+        crate::pass_role::PLACE_SHIFT
+    ));
+    out.push_str(&format!(
+        "/** The role code of the background pass, which the page's renderer records itself. */\nexport const PASS_ROLE_BACKGROUND = {};\n",
+        crate::pass_role::PassRole::Background.code()
     ));
     out
 }

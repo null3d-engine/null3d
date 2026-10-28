@@ -110,6 +110,12 @@ const BUSY = 2;
 const INTERVAL = 3;
 const PHASES = 4;
 const COUNTERS = PHASES + PHASE_NAMES.length;
+/**
+ * A GPU record's label of each pass that the timer times alone, in the order of the pass slots
+ * after the copies. The label says what the pass draws for, so a frame's parts name a pass rather
+ * than its position. The spare words of a record hold them.
+ */
+const PASS_ROLES = COUNTERS + COUNTER_NAMES.length;
 const RECORD_WORDS = 32;
 
 // Int32 words of the header, then one written count per ring.
@@ -324,6 +330,11 @@ export class FrameRecorder {
 		this.views.floats[this.at + PHASES + slot] = ms;
 	}
 
+	/** A GPU record's label of the pass in one slot, from 0 for the first pass after the copies. */
+	gpuPassRole(slot: number, label: number): void {
+		this.views.words[this.at + PASS_ROLES + slot] = label;
+	}
+
 	/** Time since the previous presented frame, recorded by the thread that presents. */
 	interval(ms: number): void {
 		this.views.floats[this.at + INTERVAL] = ms;
@@ -419,6 +430,8 @@ export interface RingRecords {
 	intervals: number[];
 	phases: number[][];
 	counters: number[][];
+	/** Each GPU record's pass labels, in the order of its pass slots after the copies. */
+	passRoles: number[][];
 }
 
 function emptyRecords(): RingRecords {
@@ -428,6 +441,7 @@ function emptyRecords(): RingRecords {
 		intervals: [],
 		phases: PHASE_NAMES.map(() => []),
 		counters: COUNTER_NAMES.map(() => []),
+		passRoles: Array.from({ length: GPU_TIMED_PASSES }, () => []),
 	};
 }
 
@@ -525,6 +539,8 @@ export class MetricsReader {
 					out.phases[p]?.push(floats[at + PHASES + p] as number);
 				for (let c = 0; c < COUNTER_NAMES.length; c++)
 					out.counters[c]?.push(words[at + COUNTERS + c] as number);
+				for (let p = 0; p < GPU_TIMED_PASSES; p++)
+					out.passRoles[p]?.push(words[at + PASS_ROLES + p] as number);
 				if (!this.views.holds(at, sequence)) {
 					dropLast(out);
 					this.lost++;
@@ -662,4 +678,5 @@ function dropLast(records: RingRecords): void {
 	records.intervals.pop();
 	for (const values of records.phases) values.pop();
 	for (const values of records.counters) values.pop();
+	for (const values of records.passRoles) values.pop();
 }

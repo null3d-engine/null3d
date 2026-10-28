@@ -468,7 +468,7 @@ for (const kind of [
  */
 const S4_LOW_DRAW_CALLS = 63;
 /** The passes of S4's frames at Low: the culling, the cascades, the scene and the final pass. */
-const S4_LOW_PASSES = ['compute 1', 'render 1', 'render 2', 'render 3', 'render 4'];
+const S4_LOW_PASSES = ['compute', 'shadow cascade 0', 'shadow cascade 1', 'opaque', 'final'];
 
 function s4LowPassesTest(): void {
 	testInOwnBrowser(
