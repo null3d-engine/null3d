@@ -32,7 +32,7 @@ const PARTIAL: Readonly<Record<string, string>> = {
 };
 
 /** Tasks whose work is on a helper branch, whether or not part of it has reached this branch. */
-const ON_BRANCH = new Set(['M3-V2']);
+const ON_BRANCH = new Set(['M3-V2', 'M3-F9']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 // The branch's audits read every ticked task against its own "Done when" and its section's rule.
@@ -79,6 +79,8 @@ const NOTES: Readonly<Record<string, string>> = {
 		"dropped with the temporal resolve it waited on (D-206); M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F10':
 		"dropped with the temporal resolve it needs (D-206); M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
+	'M3-F9':
+		"the simulation, the material and the older path's fragment form are on `feat/m3-f9-fft-ocean` in four commits, and the engine buffer-id fault it found has landed separately. Owed: the older path cannot simulate at a usable rate. Its frame is 833 ms with the simulation against 158 without, and a quarter-size grid measured 683 ms, so the cost follows the number of draws at about 22 ms each rather than the pixels, and neither fewer bands nor a smaller grid rescues it. The owner chooses between a redesign of the pass chain, the analytic waves the add-on already draws on that path, or a modern-path-only feature. The demo entry is held because its picture on that path would record a flat sea. No cost per preset is stated: two runs of identical work differed by more than the effect, so the frame-difference method cannot resolve a sub-millisecond chain",
 	'M3-R12':
 		'the narrowing is not on the branch at all. It exists only on an unlanded branch from 23 October, and there it stops recording before the scene builds its own pipelines, strips the device bits the build compares, and drops the empty word that compute and full-screen passes need. Whatever the list then holds is not the set the pages draw with, so a narrowed build fails at the first pipeline it lacks rather than compiling the wrong thing quietly. A helper is proving each fault, and no time or size figure exists yet',
 	'M3-A11':
@@ -224,7 +226,9 @@ function description(): string {
 			const note = PARTIAL[id]
 				? ` — part landed: ${PARTIAL[id]}`
 				: ON_BRANCH.has(id)
-					? ' — on a helper branch'
+					? NOTES[id]
+						? ` — on a helper branch: ${NOTES[id]}`
+						: ' — on a helper branch'
 					: INCOMPLETE.has(id) || NOTES[id] || AUDIT_GAPS[id]
 						? (AUDIT_GAPS[id] ?? NOTES[id])
 							? ` — ${AUDIT_GAPS[id] ?? NOTES[id]}`

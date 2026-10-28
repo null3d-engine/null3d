@@ -284,8 +284,10 @@ mod ids {
     /// Every drawn source's place, in cell order.
     pub const ORDER: u32 = 6;
     /// Each view's buffers: its frame uniform, culling parameters, compacted instances and
-    /// indirect draws, four ids from `VIEW_BUFFERS + 4 * view`.
-    const VIEW_BUFFERS: u32 = 7;
+    /// indirect draws, four ids from `VIEW_BUFFERS + 4 * view`. They start at the graph's first
+    /// texture id, which no buffer takes, so a frame of many passes cannot give a view's buffers
+    /// the ids that reads land in: a read would then map a view's shorter buffer in place of its.
+    const VIEW_BUFFERS: u32 = TARGETS;
 
     pub const fn frame(view: ViewId) -> u32 {
         VIEW_BUFFERS + 4 * view.index() as u32
@@ -3960,4 +3962,41 @@ fn copy_feature_counts(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ids;
+    use crate::readback::RING as READ_RING;
+    use crate::sky_maps::LIGHT_RING;
+    use crate::view::{MAX_VIEW_IDS, ViewId};
+
+    #[test]
+    fn the_buffers_that_reads_land_in_keep_ids_of_their_own() {
+        // A read maps the buffer at its id with the region's bytes, so a view's shorter buffer at
+        // that id refuses the map. A frame with many passes makes many views, so the two ranges
+        // must not meet at any view.
+        let mut reads = Vec::new();
+        for ring in 0..READ_RING as u32 {
+            reads.push(ids::PASS_READ_BUFFERS + ring);
+            reads.push(ids::PICK_BUFFERS + ring);
+        }
+        for ring in 0..LIGHT_RING as u32 {
+            reads.push(ids::SKY_LIGHT_BUFFERS + ring);
+        }
+        for index in 0..MAX_VIEW_IDS {
+            let view = ViewId::from_index(index);
+            for id in [
+                ids::frame(view),
+                ids::cull_params(view),
+                ids::visible(view),
+                ids::indirect(view),
+            ] {
+                assert!(
+                    !reads.contains(&id),
+                    "view {index} takes the buffer id {id}, which a read maps"
+                );
+            }
+        }
+    }
 }
