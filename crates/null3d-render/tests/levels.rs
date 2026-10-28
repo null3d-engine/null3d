@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{World, base_sphere, count};
+use common::{World, base_sphere, count, grid};
 use null3d_core::levels::Switch;
 use null3d_core::scene::Command;
 use null3d_gpu::drawlist::{Op, permutation, template};
@@ -758,16 +758,18 @@ fn the_direct_path_draws_a_trees_whole_levels_rather_than_its_patches() {
         direct_draws: true,
         ..RendererConfig::default()
     });
+    // One object draws this mesh, so the two-copy rule cannot keep its levels by itself.
+    let mesh = world.add_object(&base_sphere(0.5, [6, 4]), Shading::Lit);
     let settings = world.renderer.settings_mut();
     let lower = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
         .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
     settings
-        .set_mesh_levels(BALL, &lower, &[0.01, 0.05], &[Switch::Error; 2], &[0, 0], 0)
+        .set_mesh_levels(mesh, &lower, &[0.01, 0.05], &[Switch::Error; 2], &[0, 0], 0)
         .unwrap();
     world
         .renderer
         .set_mesh_patches(
-            BALL,
+            mesh,
             Some(
                 null3d_render::patches::PatchTree::new(
                     vec![0, 1, 2],
@@ -780,7 +782,6 @@ fn the_direct_path_draws_a_trees_whole_levels_rather_than_its_patches() {
             ),
         )
         .unwrap();
-    ball_at(&mut world, 20.0);
     world.record(true);
     let drawn: Vec<(u32, u32)> = world
         .commands()
@@ -801,17 +802,35 @@ fn the_direct_path_draws_a_trees_whole_levels_rather_than_its_patches() {
     );
 }
 
+/// Gives mesh `mesh` two lower levels, for the GPU path's tests of a tree.
+fn give_levels_to<B: FrameBuilder>(world: &mut World<B>, mesh: u32) {
+    let settings = world.renderer.settings_mut();
+    let lower =
+        [grid(2, 2), grid(1, 1)].map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+    settings
+        .set_mesh_levels(mesh, &lower, &[0.01, 0.05], &[Switch::Error; 2], &[0, 0], 0)
+        .unwrap();
+}
+
 #[test]
-fn the_gpu_path_keeps_a_trees_levels_when_two_objects_draw_the_mesh() {
+fn the_gpu_path_keeps_a_trees_levels_when_its_mesh_fills_several_parts() {
     let mut plain = World::new();
-    give_levels(&mut plain, 0);
+    let plain_mesh = plain.add_object(&grid(256, 256), Shading::Lit);
+    give_levels_to(&mut plain, plain_mesh);
     let without = indirect_draws(&mut plain);
     let mut world = World::new();
-    give_levels(&mut world, 0);
+    let mesh = world.add_object(&grid(256, 256), Shading::Lit);
+    give_levels_to(&mut world, mesh);
+    let settings = world.renderer.settings();
+    let parts = settings
+        .meshes()
+        .parts(settings.meshes().mesh(mesh - 1).unwrap(), false)
+        .len();
+    assert!(parts > 1, "the mesh of the test fills {parts} parts");
     world
         .renderer
         .set_mesh_patches(
-            BALL,
+            mesh,
             Some(
                 null3d_render::patches::PatchTree::new(
                     vec![0, 1, 2],
@@ -824,8 +843,7 @@ fn the_gpu_path_keeps_a_trees_levels_when_two_objects_draw_the_mesh() {
             ),
         )
         .unwrap();
-    // Two ball objects share the mesh's bucket, so the pass has no single copy to pick patches
-    // for. Its levels stay, and no cluster pipeline is made.
+    // A patch's indices name one part's vertices, so a split mesh keeps its whole levels.
     assert_eq!(indirect_draws(&mut world), without);
     assert!(
         world

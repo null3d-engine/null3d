@@ -8,10 +8,10 @@ Owed: the WebGL2 rows for the iPad and the phone, which the landing session's de
 cost. Task: M3-L3.
 
 Summary: A heightfield of 32,768 triangles in a tree of 511 patches draws its frame in 3.1 to 4.8 ms
-of GPU time on a Galaxy S25 and 4.1 to 5.1 ms on an iPad Pro 13, as the camera stands 12, 30 and 80
-meters from the middle of the ground. The frame falls by about a third as the camera draws back,
-which is the saving that coarser patches make, and the pass that picks them holds the chosen
-patches' indices for one draw. On the Mac the WebGPU route takes 0.6, 0.9 and 0.4 ms, and the
+of GPU time on a Galaxy S25 and 3.4 to 5.1 ms on an iPad Pro 13, as the camera stands 12, 30 and 80
+meters from the middle of the ground. Its GPU time falls by about a third as the camera draws back,
+which is the saving that coarser patches make, while the frame interval stays at the display's
+rate; the pass that picks the patches holds their indices for one draw. On the Mac the WebGPU route takes 0.6, 0.9 and 0.4 ms, and the
 WebGL2 route 2.1, 2.5 and 1.7 ms, at those distances.
 
 ## Question
@@ -51,12 +51,14 @@ The WebGPU route:
 | iPad Pro 13 (2025), iOS 26, Safari 26.6.1 | compatibility | 2064 × 2528 | 4.57 ms | 5.05 ms | 3.39 ms |
 
 The figures are the GPU time of the whole frame, not of the pass alone. The page draws nothing else
-that follows the camera, so the fall from the closest distance to the farthest is the saving that
-coarser patches make: on the Galaxy S25 it is 1.31 ms of 4.72, or 28 percent, and on the iPad's
-compatibility path 1.18 ms of 4.57, or 26 percent. The iPad's core WebGPU row falls less, by 0.46 ms,
+that follows the camera, so the fall in GPU time from the closest distance to the farthest is the
+saving that coarser patches make: on the Galaxy S25 it is 1.31 ms of 4.72, or 28 percent, and on
+the iPad's compatibility path 1.18 ms of 4.57, or 26 percent. The middle row of each route can be
+higher than its close row, on WebGPU as on WebGL2, because the camera sees more of the ground from
+that distance. The iPad's core WebGPU row falls less, by 0.46 ms,
 because its 2,064 by 2,528 pixels cost more fill than the far patches save in triangles. The Mac's
-row is the whole frame in 0.4 to 0.9 ms, where the frame runs at the display's 60 Hz; the tree
-costs it under a millisecond at every distance, and the figures there are at the timer's
+row is the whole frame's GPU time in 0.4 to 0.9 ms, where the frame runs at the display's 60 Hz;
+the tree costs it under a millisecond at every distance, and the figures there are at the timer's
 resolution.
 
 The WebGL2 route, on the Mac at Medium in the same quiet window:
@@ -69,9 +71,11 @@ The WebGL2 route, on the Mac at Medium in the same quiet window:
 
 The WebGL2 route costs more GPU time than WebGPU at every distance, because it draws one range a
 mesh at a time through the driver's multi-draw path, where WebGPU draws one indirect call. The
-saving still reaches the frame: at 80 m the frame takes 1.7 ms against 2.1 ms at 12 m, 19 percent
+saving still reaches the GPU time: at 80 m it takes 1.7 ms against 2.1 ms at 12 m, 19 percent
 less. The 30 m row is 0.4 ms above the close row because the camera sees more of the ground there.
-The measurement lists no job thread for these frames, so the CPU time is the render worker's own.
+The CPU figure is the busiest thread's. The raw report names the sketch worker as that thread in
+every row, at about twice the drawing thread's time, because the walk runs inline on the caller
+that the report names `sketch-worker`; no job worker is listed.
 
 The Mac's run holds the Medium preset alone, because the branch's two measurements shared one
 quiet window. It ran both routes at a one-minute load of 2.5 before and 2.5 after, with the page's
@@ -79,10 +83,11 @@ frame at 60 Hz. The earlier Mac row held 0.7, 0.2 and 0.5 ms; this run replaced 
 measured beside the WebGL2 route, where the two can be compared.
 
 The WebGL2 rows for the iPad and the phone are owed, because the device runs are the landing
-session's. The plan runs the page on `gpu=webgl2` at the Medium preset with `direct=off`, and the
-record wants the median GPU time where the device times it, and the frame interval, CPU time and
-busiest job worker's time at 12, 30 and 80 metres. Medium matches the rows above; a route that only
-holds High would not be the claim.
+session's. The plan runs the page on `gpu=webgl2` at the High preset with `direct=off`, as its
+other items do, and the record wants the median GPU time where the device times it, and the frame
+interval, CPU time and busiest job worker's time at 12, 30 and 80 metres. High matches the earlier
+device rows, which the 23 October runs measured at High. A table that mixed presets would compare
+different work.
 
 The memory is in [D-213](D-213-cluster-levels.md#what-it-costs) for the WebGPU route: 4 bytes a
 patch for the runs and the offsets, the view's list at 4 bytes an index for every patch in the
@@ -92,16 +97,22 @@ in [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md): the tree's indices ta
 mesh, a view's chosen runs at most 4,088 bytes, and the draw-record buffer 36,864 bytes a view for
 the test model.
 
-The GPU check compared this branch with its own base, `m3-start` at `216178b10`, on the Mac's GPU:
-`s4 medium 4.10 to 4.06 ms (+3.7%); s6 medium 4.62 to 4.56 ms (+0.0%); s4 high 4.54 to 4.04 ms
-(-13.3%); s6 high 5.39 to 5.37 ms (-0.6%)`. Each page is inside its allowance and inside twice its
-noise, which was 2.9% for S4 Medium and 1.5% for S6 Medium in the run.
+The GPU check compared this branch with its own base, `m3-start` at `216178b10`, on the Mac's GPU.
+The check's table judges all twelve rows: the four pages' GPU times, and their busiest threads and
+own work. The four GPU times changed by +3.7% with 2.9% noise, +0.0% with 1.5%, -13.3% with 1.4%
+and -0.6% with 0.2%, and every page's verdict is `same`. A page is slower only past its allowance
+and twice its noise; for GPU time the allowance is 25% and 0.3 ms. S4 High fell 13.3%, or 0.60 ms
+by the medians, inside the 25% share, so the rule calls it `same` rather than `faster`. The line
+that the tool prints names a verdict only for a slower page, so it drops the verdict for the other
+pages and the noise for the two High pages. The measurement is sound and the line is a formatting
+gap. The line is re-taken with the formatter that gives a verdict for every page, and it names the
+branch's own commits.
 
 ## Decision
 
-No change follows. Both routes fall from the close frame to the far one, which is what the pass
-exists for, and the frames stay within a 60 Hz frame on the phone. The WebGL2 route costs more
-absolute GPU time than WebGPU, and it still saves a fifth of its frame at 80 m. The per-view list
+No change follows. Both routes' GPU time falls from the close distance to the far one, which is
+what the pass exists for, and the frames stay within a 60 Hz frame on the phone. The WebGL2 route
+costs more absolute GPU time than WebGPU, and it still saves a fifth of its GPU time at 80 m. The per-view list
 is sized for the whole tree rather than for the patches a view draws, which costs a
 1,000,000-triangle mesh about 8 MB a view; sizing it per frame is the trim that
 [D-213](D-213-cluster-levels.md#what-it-costs) names, and it waits for a scene that needs it. The

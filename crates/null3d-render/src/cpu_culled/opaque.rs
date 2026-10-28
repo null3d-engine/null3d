@@ -792,7 +792,9 @@ impl Opaque {
         let mut pipeline = None;
         let mut textures = 0;
         let mut run = usize::MAX;
-        let mut tree = false;
+        // The cluster whose index buffer the pass has bound, or the page's when it is `None`. A
+        // run can hold two trees, so the binding follows the tree and not only the kind of draw.
+        let mut bound: Option<Option<u32>> = None;
         for_each_call(draws, &visible, patches, multi_draw, |index, call| {
             let first = draws[call.run];
             let id = if pick {
@@ -810,14 +812,13 @@ impl Opaque {
             if id == 0 || (maps != 0 && hidden(maps)) {
                 return Ok(());
             }
-            // A draw of a tree draws the tree's own index list, so the call after another draw of
-            // the same run binds it: the vertex page is the mesh's, and the index buffer is the
-            // tree's.
+            // A draw of a tree draws the tree's own index list, so a call binds a tree's buffer
+            // when its own tree or its run changes: the vertex page is the mesh's, and the index
+            // buffer is the tree's.
             let drawing = draws[call.from];
-            let drawing_tree = drawing.cluster.is_some();
-            if call.run != run || drawing_tree != tree {
+            if call.run != run || bound != Some(drawing.cluster) {
                 run = call.run;
-                tree = drawing_tree;
+                bound = Some(drawing.cluster);
                 if pipeline != Some(id) {
                     list.push(Op::SetPipeline, &[id])?;
                     pipeline = Some(id);
@@ -864,6 +865,7 @@ impl Opaque {
         meshes: &MeshBuffers,
         group: u32,
         moving: &[bool],
+        patches: PatchView<'_>,
     ) -> Result<(), RecordError> {
         let view = ViewId::CAMERA;
         let slots = self.views[self.slot(view)].slots;
@@ -878,51 +880,41 @@ impl Opaque {
         let mut pipeline = None;
         let mut textures = 0;
         let mut run = usize::MAX;
-        for_each_call(
-            draws,
-            &visible,
-            PatchView::NONE,
-            multi_draw,
-            |index, call| {
-                let first = draws[call.run];
-                let moves = (call.from..call.to)
-                    .any(|d| visible(d) > 0 && moving.get(draws[d].bucket as usize) == Some(&true));
-                if first.motion == 0 || !moves {
-                    return Ok(());
+        // The draw records are numbered by the opaque pass's calls, which include a tree's calls
+        // for each block of its ranges. The walk here passes the same patch view, so a tree's
+        // calls keep their places, and it skips them by their own draw.
+        for_each_call(draws, &visible, patches, multi_draw, |index, call| {
+            let drawing = draws[call.from];
+            let moves = (call.from..call.to)
+                .any(|d| visible(d) > 0 && moving.get(draws[d].bucket as usize) == Some(&true));
+            if drawing.motion == 0 || !moves {
+                return Ok(());
+            }
+            if call.run != run {
+                run = call.run;
+                if pipeline != Some(drawing.motion) {
+                    list.push(Op::SetPipeline, &[drawing.motion])?;
+                    pipeline = Some(drawing.motion);
                 }
-                if call.run != run {
-                    run = call.run;
-                    if pipeline != Some(first.motion) {
-                        list.push(Op::SetPipeline, &[first.motion])?;
-                        pipeline = Some(first.motion);
-                    }
-                    if first.motion_textures != 0 && first.motion_textures != textures {
-                        list.push(
-                            Op::SetBindGroup,
-                            &[TEXTURES_GROUP, first.motion_textures, 0],
-                        )?;
-                        textures = first.motion_textures;
-                    }
-                    let (vertices, indices) = meshes.ids(first.page);
-                    list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
-                    list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
+                if drawing.motion_textures != 0 && drawing.motion_textures != textures {
+                    list.push(
+                        Op::SetBindGroup,
+                        &[TEXTURES_GROUP, drawing.motion_textures, 0],
+                    )?;
+                    textures = drawing.motion_textures;
                 }
-                list.push(
-                    Op::SetBindGroup,
-                    &[1, ids::draws_group(view), 1, slot + index * stride],
-                )?;
-                draw_call(
-                    list,
-                    arena,
-                    draws,
-                    &visible,
-                    &shift,
-                    PatchView::NONE,
-                    call,
-                    multi_draw,
-                )
-            },
-        )
+                let (vertices, indices) = meshes.ids(drawing.page);
+                list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
+                list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
+            }
+            list.push(
+                Op::SetBindGroup,
+                &[1, ids::draws_group(view), 1, slot + index * stride],
+            )?;
+            draw_call(
+                list, arena, draws, &visible, &shift, patches, call, multi_draw,
+            )
+        })
     }
 
     /// Forgets every view's rings, so each is made again, after the thread that draws replaced
@@ -934,7 +926,7 @@ impl Opaque {
 
 #[cfg(test)]
 mod tests {
-    use super::super::layout::Bucket;
+    use super::super::layout::{Bucket, ClusterBucket};
     use super::*;
 
     /// A draw of pipeline `pipeline` from vertex page `page`.
@@ -988,6 +980,63 @@ mod tests {
             vec![(0, 0, 0, 1, 1), (1, 2, 2, 3, 1), (2, 3, 4, 5, 1)]
         );
         assert!(calls(&draws, &[0; 5], true).is_empty());
+    }
+
+    #[test]
+    fn a_tree_keeps_the_motion_pass_in_step_with_the_opaque_draw_records() {
+        let mut opaque = Opaque::new(ViewId::CAMERA, true);
+        opaque.views.push(ViewDraws::default());
+        let mut layout = Layout::default();
+        for moving in [false, true] {
+            layout.buckets.push(Bucket {
+                material: 1,
+                mesh_key: 1,
+                group: 0,
+                shift: 0,
+                moves: moving,
+            });
+        }
+        let mut tree = draw(1, 0);
+        tree.cluster = Some(0);
+        tree.bucket = 0;
+        let moving = Draw {
+            motion: 7,
+            bucket: 1,
+            page: 1,
+            ..draw(2, 1)
+        };
+        layout.draws.push(tree);
+        layout.draws.push(moving);
+        layout.cluster_buckets.push(ClusterBucket {
+            bucket: 0,
+            mesh: 1,
+            object: 0,
+        });
+        // Each bucket lists its one source.
+        let starts = [0, 1, 2];
+        let runs = [[0, 3]];
+        let patch_starts = [0, 1];
+        let patches = PatchView::new(&patch_starts, &runs);
+        let mut list = DrawList::with_capacity(1024);
+        let mut arena = UploadArena::default();
+        arena.reset(1 << 16);
+        let meshes = MeshBuffers::new(100);
+        opaque
+            .record_motion(
+                &mut list,
+                &mut arena,
+                &starts,
+                &layout,
+                &meshes,
+                0,
+                &[false, true],
+                patches,
+            )
+            .unwrap();
+        // The tree takes call 0, and the moving draw is call 1, as it is in the opaque pass.
+        let (offsets, draws) = recorded(&list);
+        assert_eq!(draws, 1);
+        assert_eq!(offsets, vec![record_stride(true)]);
     }
 
     #[test]

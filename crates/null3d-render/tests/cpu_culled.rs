@@ -1513,3 +1513,48 @@ fn a_one_row_batch_keeps_its_whole_levels() {
     assert_eq!(after, keys);
     assert!(!bound);
 }
+
+#[test]
+fn two_trees_in_one_run_bind_their_own_index_buffers() {
+    let mut world = world(true);
+    let settings = world.renderer.settings_mut();
+    let first = settings.meshes_mut().add(&grid(1, 1)).unwrap() + 1;
+    let second = settings.meshes_mut().add(&grid(1, 1)).unwrap() + 1;
+    let material = settings
+        .materials_mut()
+        .create(Shading::Lit, 0, [1.0, 1.0, 1.0, 1.0])
+        .unwrap()
+        + 1;
+    for mesh in [first, second] {
+        let object = world.scene.reserve().unwrap();
+        world.scene.set_local_radius(object, 1.0).unwrap();
+        world
+            .scene
+            .apply_commands(
+                &[
+                    Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+                    Command::set_material(object, material),
+                ],
+                world.frame,
+            )
+            .unwrap();
+    }
+    world
+        .renderer
+        .set_mesh_patches(first, Some(one_patch()))
+        .unwrap();
+    world
+        .renderer
+        .set_mesh_patches(second, Some(one_patch()))
+        .unwrap();
+    world.record(true);
+    // The two meshes share a page and a material, so their trees share one run, and each draw
+    // binds its own tree's index buffer.
+    let bound = bound_indices(&world.commands());
+    for mesh in [first, second] {
+        assert!(
+            bound.contains(&(PATCH_INDEX + mesh)),
+            "tree {mesh} is not bound: {bound:?}"
+        );
+    }
+}

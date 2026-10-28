@@ -116,6 +116,9 @@ them.
   the indirect path with `?direct=off`, and so does the cost page, because the probe's choice moves
   with the machine and with it the picture.
 - The shadow maps draw a cluster mesh's whole levels on both paths, as the concept page says.
+  The plan asks for a cut per cascade or tile view, with `lodShadowFactor` on the threshold. That
+  cut is not built, so the deviation is for the owner to accept
+  ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)).
 - A mesh that several copies draw, and a one-row instance batch, draw whole levels on both paths.
   [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md) gives the WebGL2 routes and their
   figures.
