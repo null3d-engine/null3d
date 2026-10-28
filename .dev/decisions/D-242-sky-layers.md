@@ -265,10 +265,13 @@ recorded, and the retry fill that a later frame would make is not needed.
 The held frame's own diffuse light keeps the core sky's model. Its map's light capture runs in the
 held frame's list, and its read lands after that list is recorded, so a frame that draws once cannot
 take it: the rough sphere's green excess stays at 0 with the layer and without it. In live frames
-the read of a fill lands a frame or two after the list that records it, and the copy of the map's
-levels waits for that read, so the light reaches with the map's texels or up to a few frames before
-them, never after. `sky-layer-light` checks that order on the same tiers: the light's crossing is no
-later than the mirror's plus one frame, and the mirror's no later than the light's plus three.
+the copy of the map's levels waits for the read of the fill, so the levels publish no earlier than
+the light. That wait is bounded at four frames: a read later than the bound publishes the levels
+without the light, so a frame can show the layer in the mirror beside the core sky's light. Until a
+layer's first capture lands the map keeps the CPU model's coefficients, and a later fill brings
+them in. `sky-layer-light` checks the order within that bound on the same tiers: the light's
+crossing is no later than the mirror's plus one frame, and the mirror's no later than the light's
+plus three.
 
 The demo's cloud coverage does not suppress the layer. The aurora's brightness scales by the clear
 fraction, about 0.96 at the demo's settings (`examples/addons/aurora/aurora.wgsl`), not by the

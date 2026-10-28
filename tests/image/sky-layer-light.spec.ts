@@ -3,7 +3,7 @@
 // rough sphere. The sky layer light sketch draws both spheres under a sky with no light of its own,
 // installs a green layer, and later removes it. This test reads the spheres' colors in every capture
 // and checks that each shows the layer, that each loses it, and that neither shows it while the
-// other does not for more than the few frames that the light takes to follow the map.
+// other does not beyond the frames that the copy's wait on the light allows.
 import { expect, test } from '@playwright/test';
 import { pageResultWhileProgressing } from '../lib/page-result.ts';
 
@@ -19,8 +19,10 @@ const [BEFORE, WITH, AFTER] = [0, 1, 2];
 /** The change of a color that counts as the layer's, in levels of 255. */
 const CHANGE = 15;
 /**
- * The frames that the diffuse light may reach the scene before the map's levels do. It is never
- * after them: no frame draws a mirror that holds the layer beside a light that does not.
+ * The frames that the diffuse light may reach the scene before the map's levels do. The copy of
+ * the levels waits for the light's read, so the levels publish with the light or after it. A read
+ * later than that wait publishes the levels without the light, so the check below allows the light
+ * to cross one frame after them.
  */
 const LEAD = 3;
 /** How far the captures at the end of a stretch must agree, in levels of 255. */
@@ -108,9 +110,9 @@ for (const gpu of Object.keys(TIERS) as (keyof typeof TIERS)[])
 				.map((place) => `${place} ${greens[place].map((value) => value.toFixed(1)).join(' ')}`)
 				.join(', ')}`,
 		);
-		// The light follows the map's own texels, so it reaches the scene with them or a frame
-		// before them, never after: no frame shows the layer in the mirror beside the core sky's
-		// light alone.
+		// The light follows the map's own texels, so it reaches the scene with them or up to a few
+		// frames before them. A read later than the copy's wait publishes the levels without the
+		// light, so the checks below allow the light to cross one frame after them.
 		const crossed = {
 			mirror: crossing(frames, 'mirror', greens.mirror[0], greens.mirror[1]),
 			rough: crossing(frames, 'rough', greens.rough[0], greens.rough[1]),
