@@ -2,9 +2,10 @@
 // other in two squares, around a brazier whose smoke rises through them. Sorting by object cannot
 // order panes that cross, nor puffs of smoke inside each other, so with normal blending they pop as
 // the camera turns. With the weighted blending the panes and the 600 puffs blend in any order, as
-// three.js's OITPassNode blends them. Point at the right half of the square to see the same scene
-// sorted, and at the left half for the weighted blending again. The puffs' soft dot is a texture
-// made from data. The sky, the paving, the plinth and the brazier live in pavilion.ts.
+// three.js's OITPassNode blends them. Press S to swap the whole scene between the weighted blending
+// and the sorted twins, so the camera and the pointer never change the mode. A label over the
+// brazier names the mode on show. The puffs' soft dot is a texture made from data. The sky, the
+// paving, the plinth and the brazier live in pavilion.ts.
 import { defineSketch, math } from '@null3d/engine';
 import { interact } from '../lib/interact';
 import { pavilion } from './pavilion';
@@ -28,8 +29,8 @@ const GLASS = [
 const DOT = 32;
 
 export default defineSketch(async (ctx) => {
-	const { scene, geometry, materials, textures, time } = ctx;
-	const { panes, flicker } = await pavilion(ctx);
+	const { scene, geometry, materials, textures, time, input, ui, page } = ctx;
+	const { panes, flicker, bowl } = await pavilion(ctx);
 	const camera = scene.createPerspectiveCamera({ fov: 45, far: 500, position: [5.5, 2.6, 7.5] });
 	camera.lookAt(0, 1.8, 0);
 	scene.setActiveCamera(camera);
@@ -74,17 +75,26 @@ export default defineSketch(async (ctx) => {
 	const seeds = new Float32Array(PUFFS * 3).map(() => math.randFloat(0, 1));
 
 	let showsSorted = false;
+	// A label over the brazier names the blending on show, so the picture never has to be guessed at.
+	ui.trackLabel(bowl, 'blending', { offset: [0, 1.8, 0] });
+	const showMode = () => {
+		for (const { mesh, looks } of glasses)
+			mesh.setMaterial(showsSorted ? looks.normal : looks.weighted);
+		weighted.setActiveCount(showsSorted ? 0 : PUFFS);
+		sorted.setActiveCount(showsSorted ? PUFFS : 0);
+		page.post('label', {
+			id: 'blending',
+			text: showsSorted ? 'Sorted blending' : 'Weighted blending',
+		});
+	};
+	showMode();
 	return {
 		onUpdate(dt) {
 			view.update(dt);
-			// The right half of the square shows the sorted twins.
-			const wantsSorted = view.steering > 0.5 && view.point[0] > 0;
-			if (wantsSorted !== showsSorted) {
-				showsSorted = wantsSorted;
-				for (const { mesh, looks } of glasses)
-					mesh.setMaterial(wantsSorted ? looks.normal : looks.weighted);
-				weighted.setActiveCount(wantsSorted ? 0 : PUFFS);
-				sorted.setActiveCount(wantsSorted ? PUFFS : 0);
+			// The key swaps the two blends, so the comparison is the same scene from the same view.
+			if (input.wasPressed('KeyS')) {
+				showsSorted = !showsSorted;
+				showMode();
 			}
 			flicker(time.now);
 			const puffs = showsSorted ? sorted : weighted;
