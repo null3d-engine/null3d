@@ -70,6 +70,10 @@ own must apply that base. The three paths answer as follows:
   the other mesh's vertices. The test model is the first mesh in its page, so no picture can see
   the fault. The unit test `a_trees_indices_add_the_meshs_first_vertex_in_its_page` fails when the
   base is left out.
+- A run of draws can hold two trees, which share a page, a pipeline and a material. Each call binds
+  its own tree's index buffer, not only a change between a tree and a whole mesh. The test
+  `two_trees_in_one_run_bind_their_own_index_buffers` fails when the binding follows the kind of
+  draw instead of the tree.
 - **The whole-level fallback** draws meshes that `MeshStorage::add_level` made. That method applies
   the base itself, shifting a level's indices by the base part's first vertex on WebGL2 and leaving
   them alone for shared buffers, whose draw adds the base vertex. The fallback therefore needs no
@@ -120,22 +124,29 @@ Each fallback case has a test that fails if the case draws patched instead:
 - **More than one copy:** `a_tree_with_two_copies_keeps_its_whole_levels` in `tests/cpu_culled.rs`,
   and `the_gpu_path_keeps_a_trees_levels_when_two_objects_draw_the_mesh` in `tests/levels.rs`.
   Two objects share a bucket, so its count is two and the walk has no single matrix.
-- **More than one part:** `a_tree_split_into_parts_keeps_its_whole_levels`, which builds a grid
-  past 65,535 vertices and asserts that it fills more than one part. The GPU path reads the same
-  part count in its scan. A GPU test would build the same large mesh to check the same line, so
-  the WebGL2 test carries the case for both.
+- **More than one part:** `a_tree_split_into_parts_keeps_its_whole_levels` on WebGL2 and
+  `the_gpu_path_keeps_a_trees_levels_when_its_mesh_fills_several_parts` on the GPU, each of which
+  builds a grid past 65,535 vertices and asserts that it fills more than one part.
 - **An instance batch:** `a_one_row_batch_keeps_its_whole_levels`, which draws the tree's mesh as
   one batch row. The row carries its own matrix, and the walk takes a scene object's. The GPU
   path's scan also reads scene object keys alone, which the same test's WebGL2 layout exercises.
 - **The direct WebGPU path:** `the_direct_path_draws_a_trees_whole_levels_rather_than_its_patches`
-  in `tests/levels.rs`, which forces `direct_draws` and asserts that a far object draws its lower
-  level and that no cluster pipeline is made.
+  in `tests/levels.rs`, which forces `direct_draws`, draws the tree's mesh as one object, and
+  asserts that a far object draws its lower level and that no cluster pipeline is made. One object
+  matters: the world's own ball mesh is drawn twice, and the two-copy rule would keep its levels
+  with no direct-path guard at all.
 - **No `WEBGL_multi_draw`:** `a_tree_draws_whole_where_the_device_draws_one_range_a_call`, and
   the level test `a_tree_draws_no_whole_level_where_the_device_draws_many_ranges`, which shows the
   level buckets return without multi-draw.
 
 The shadow maps are not a separate test: they draw the casters' layout, which never takes a tree,
 so the same `drawn` check that the direct path exercises keeps their levels.
+
+The motion pass walks the same calls as the opaque pass, with the same patch view, so a tree's
+calls keep their places in the draw records. Its own draws are skipped after their calls are
+numbered. The test `a_tree_keeps_the_motion_pass_in_step_with_the_opaque_draw_records` binds the
+draw record at the second call's offset; without the patch view it binds the first, as the probe
+showed.
 
 ### Pictures
 
@@ -175,3 +186,7 @@ records. No path is dropped and no route waits on a gated feature.
   grow the file.
 - A one-row instance batch draws whole levels on both paths, even though one copy draws it. The
   walk takes one scene object's matrix, and the batch's row carries its own.
+- The plan asks for a shadow cut per cascade or tile view, with `lodShadowFactor` on the
+  threshold. The shadow maps draw the whole levels instead, on both paths, as
+  [D-213](D-213-cluster-levels.md) records. That is a deviation from the plan, and the owner
+  should accept it or ask for the cut.

@@ -2699,7 +2699,16 @@ impl CpuCulledRenderer {
                 Role::Motion if motion_draws && culling.frame(ViewId::CAMERA).is_some() => {
                     let starts = culling.culled(frame, ViewId::CAMERA).bucket_starts();
                     let moving = motion_moving.as_slice();
-                    opaque.record_motion(list, arena, starts, layout, meshes, motion_group, moving)
+                    opaque.record_motion(
+                        list,
+                        arena,
+                        starts,
+                        layout,
+                        meshes,
+                        motion_group,
+                        moving,
+                        culling.patch_view(frame, ViewId::CAMERA),
+                    )
                 }
                 Role::FogLight(_) => {
                     let slot = opaque.frame_slot(ViewId::CAMERA);

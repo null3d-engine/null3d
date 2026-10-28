@@ -90,7 +90,7 @@ A level covers the whole mesh at one detail. A mesh that is close at one end and
 
 The asset tool builds the tree with `--clusters`, as [the asset pipeline](../guides/assets-pipeline.md#cluster-levels) explains. It splits a large static mesh into patches, then simplifies groups of patches into the patches above them. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. It costs about twice the mesh's indices.
 
-A view draws a patch while the patch's own error passes its threshold and the error of the patch above it does not. A patch that fails the threshold is too coarse for that distance, so the walk descends into its children. The patches that draw then cover the mesh once, and the patches of one group switch together, so no gap opens.
+A view draws a patch while the patch's own error passes its threshold and the error of the patch above it does not. A patch that fails the threshold is too coarse for that distance, so the walk descends into its children. The chosen patches are the frontier of that one rule. Their errors rise along every chain, so the patches cover the mesh once, and neighbours of different detail meet at their edges with no gap.
 
 The engine draws a tree's patches on both GPU paths. On WebGPU, a compute pass picks the patches that a view draws, copies their indices into a list of the view's own, and the view draws them in one draw. A view that sees none of a mesh's patches draws none of it. The pass runs three dispatches: one to test each patch, one to add the counts up, and one to copy the indices that draw. The list takes about four bytes an index.
 
