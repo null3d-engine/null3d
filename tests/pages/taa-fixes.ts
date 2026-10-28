@@ -11,6 +11,12 @@ const params = new URLSearchParams(location.search);
 const CASE = params.get('case') ?? 'exposure';
 const GPU = params.get('gpu') ?? 'webgpu';
 const REACTIVE = params.get('reactive') ?? 'both';
+/**
+ * How many times over the run captures its frames. A software GPU draws slower than the page asks,
+ * so its captures skip frames and two runs line up on fewer sketch frames. More captures give the
+ * same number of lined-up pairs.
+ */
+const CAPTURES = Number(params.get('captures') ?? '1');
 /** The measurement's size in pixels. */
 const SIZE = [320, 180] as const;
 /** The square's place after it jumped, in pixels from the top left, inside its 40 pixel edge. */
@@ -91,20 +97,23 @@ async function start(
 		transparent: options.transparent === true,
 		onSketchMessage: (name, data) => {
 			if (name === 'frame') heard.push(data as number);
-			else if (name === 'applied') applied.push(1);
+			else if (name === 'applied') applied.push((data as { frame: number }).frame);
 		},
 	});
 	await engine.firstFrame;
 	return { engine, canvas, heard, applied };
 }
 
-/** Sends a message and waits for the sketch to apply it, so the next capture shows it. */
+/**
+ * Sends a message and waits for the sketch to apply it, so the next capture shows it. Resolves
+ * with the last sketch frame the sketch drew before the change, which a capture must pass.
+ */
 async function apply(
 	engine: Engine,
 	applied: number[],
 	name: string,
 	data: unknown,
-): Promise<void> {
+): Promise<number> {
 	const from = applied.length;
 	engine.postToSketch(name, data);
 	const deadline = performance.now() + 30_000;
@@ -112,6 +121,7 @@ async function apply(
 		if (performance.now() > deadline) throw new Error(`the sketch never applied ${name}`);
 		await new Promise((resolve) => setTimeout(resolve, 10));
 	}
+	return applied.at(-1) as number;
 }
 
 /** Waits until the sketch has recorded frame `target` or a later one. */
@@ -133,30 +143,53 @@ async function advance(heard: number[], count: number): Promise<void> {
 	}
 }
 
-/** Draws and captures the next frame, which holds every setting applied before the call. */
-async function capture(engine: Engine): Promise<Frame> {
-	const { width, height, pixels } = await engine.captureFrame();
-	return luma(pixels, width, height);
+/** One capture: the luma of its frame, and the sketch frame that the capture drew. */
+interface Shot {
+	image: Frame;
+	frame: number;
 }
 
-/** One run's captured frames, the sketch frame of each, and whether each capture held one frame. */
+/** Draws and captures the next frame, with the sketch frame that it drew. */
+async function shot(engine: Engine): Promise<Shot> {
+	const { width, height, pixels, frame } = await engine.captureFrame();
+	return { image: luma(pixels, width, height), frame };
+}
+
+/** The luma of the next captured frame. */
+async function capture(engine: Engine): Promise<Frame> {
+	return (await shot(engine)).image;
+}
+
+/**
+ * Captures the first frame past sketch frame `from`, the frame that the sketch drew before a
+ * change. A capture can replay the frame recorded before the change when the GPU draws slower than
+ * the page asks, so a capture that does not pass it is taken again.
+ */
+async function capturedAfter(engine: Engine, from: number): Promise<Frame> {
+	const deadline = performance.now() + 30_000;
+	for (;;) {
+		const taken = await shot(engine);
+		if (taken.frame > from || performance.now() > deadline) return taken.image;
+	}
+}
+
+/** One run's captured frames, the sketch frame of each, and whether every capture advanced. */
 interface Run {
 	frames: Frame[];
 	numbers: number[];
 	consecutive: boolean;
 }
 
-/** Captures `count` consecutive frames, with the sketch frame number of each. */
-async function sequence(engine: Engine, heard: number[], count: number): Promise<Run> {
+/** Captures `count` frames, with the sketch frame that each drew. */
+async function sequence(engine: Engine, count: number): Promise<Run> {
 	const frames: Frame[] = [];
 	const numbers: number[] = [];
 	let consecutive = true;
 	for (let k = 0; k < count; k++) {
-		const before = heard.at(-1) ?? 0;
-		frames.push(await capture(engine));
-		const after = heard.at(-1) ?? 0;
-		if (after - before !== 1) consecutive = false;
-		numbers.push(before);
+		const taken = await shot(engine);
+		if (k > 0 && taken.frame <= (numbers[k - 1] as number)) consecutive = false;
+		frames.push(taken.image);
+		numbers.push(taken.frame);
 	}
 	return { frames, numbers, consecutive };
 }
@@ -221,7 +254,7 @@ run('taa-fixes', async () => {
 				`case=exposure&gpu=${GPU}&taa=${taa ? 1 : 0}&jitter=0&ratio=${ratio ? 1 : 0}&step=${step}`,
 				async (engine, heard) => {
 					await waitFrame(heard, step);
-					return sequence(engine, heard, 12);
+					return sequence(engine, 12 * CAPTURES);
 				},
 			);
 		const reference = await run(false, true);
@@ -251,8 +284,10 @@ run('taa-fixes', async () => {
 			async (engine, heard, applied) => {
 				await apply(engine, applied, 'place', 0);
 				await advance(heard, 8);
-				await apply(engine, applied, 'place', 1);
-				const frame = await capture(engine);
+				// A capture that still holds the frame before the jump is taken again, so this is the
+				// first frame that shows the square's new place.
+				const before = await apply(engine, applied, 'place', 1);
+				const frame = await capturedAfter(engine, before);
 				engine.postToSketch('taa-off', null);
 				await advance(heard, 4);
 				await apply(engine, applied, 'place', 1);
@@ -286,7 +321,7 @@ run('taa-fixes', async () => {
 				`case=phone&gpu=${GPU}&taa=1&jitter=1&phone=${phone ? 1 : 0}&reactive=${reactive}`,
 				async (engine, heard) => {
 					await waitFrame(heard, 12);
-					return sequence(engine, heard, 16);
+					return sequence(engine, 16 * CAPTURES);
 				},
 				{ transparent: true },
 			);
@@ -320,7 +355,7 @@ run('taa-fixes', async () => {
 	const measure = (query: string) =>
 		scene(query, async (engine, heard) => {
 			await waitFrame(heard, 12);
-			return sequence(engine, heard, 16);
+			return sequence(engine, 16 * CAPTURES);
 		});
 	const off = await measure(`case=${CASE}&gpu=${GPU}&taa=0&jitter=0`);
 	const offJitter = await measure(`case=${CASE}&gpu=${GPU}&taa=0&jitter=1`);
