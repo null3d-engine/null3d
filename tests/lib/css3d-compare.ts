@@ -20,10 +20,10 @@ import { pageResult } from './page-result.ts';
 const MAX_DIFFERENCE = 0.001;
 
 /**
- * The most of the drawn scene that may differ. The two engines shade the scene and draw its lines a
- * little differently, and each port's test names the share that its scene differs by.
+ * The most of the drawn scene that may differ: three.js's own rule. A port whose cut-out plane goes
+ * missing differs by more, so the rule catches it.
  */
-const MAX_SCENE_DIFFERENCE = 0.02;
+const MAX_SCENE_DIFFERENCE = 0.001;
 
 /** The GPU paths that every port draws on. */
 export const GPU_PATHS = ['webgpu', 'webgl2'] as const;
