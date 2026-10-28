@@ -102,7 +102,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-L4':
 		'the three studies are proposed, awaiting the owner ruling (D-273 vertex morphing, D-274 impostors, D-275 staged loading), and the work each leaves to build has not started; the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
 	'M3-A11':
-		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
+		'the six study fixes that D-199 made test cases are built and tested on `feat/m3-a11-temporal-resolve`, and D-206 rules that the temporal resolve does not ship; the branch awaits its audit before the tick',
 	'M3-E10':
 		"the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch. The round 24 audit's finding that the capture never runs is stale at the published head: the light sum (`8bebdff7f`) and the merge that carried it (`1857377b1`) are ancestors, `fs_feedback` sums the nine coefficients, and D-242 records the light as built. What the task still owes is the held-frame proof and the ice look",
 	'M3-V2':
