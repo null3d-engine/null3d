@@ -8,7 +8,7 @@
 //! path that must stay exact far from the origin, such as keeping an object's place in the world
 //! when its parent changes.
 
-use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, Div, Mul, Sub};
 use std::simd::prelude::*;
 use std::simd::{StdFloat, simd_swizzle};
 
@@ -38,18 +38,66 @@ pub const IDENTITY_ROTATION: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
 /// A float type that [`compose`] works in: `f32` for frame code, `f64` for exact work.
 pub trait Float:
-    Copy + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + From<f32>
+    Copy
+    + PartialOrd
+    + Add<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + Div<Output = Self>
+    + From<f32>
 {
+    /// The square root.
+    fn sqrt(self) -> Self;
 }
 
-impl<T: Copy + Add<Output = T> + Sub<Output = T> + Mul<Output = T> + From<f32>> Float for T {}
+impl Float for f32 {
+    #[inline(always)]
+    fn sqrt(self) -> Self {
+        f32::sqrt(self)
+    }
+}
 
-/// The matrix of a translation, a rotation (a unit quaternion `(x, y, z, w)`) and a scale,
-/// applied scale first. It matches three.js `Matrix4.compose`.
+impl Float for f64 {
+    #[inline(always)]
+    fn sqrt(self) -> Self {
+        f64::sqrt(self)
+    }
+}
+
+/// A rotation quaternion `(x, y, z, w)` scaled to unit length, so that it turns a matrix without
+/// stretching or shearing it. A quaternion whose squared length is within one per cent of one stays
+/// exactly as written: scenes write rounded quaternions, such as `[0, 0.38, 0, 0.92]` for a 45
+/// degree turn, and rescaling those would move their pictures. The band is worth knowing about,
+/// because the test is on the squared length: the worst quaternion it leaves alone shears by about
+/// four per cent, not one. A larger deviation is scaled, so a mistyped quaternion cannot stretch a
+/// mesh. The zero quaternion stays as it is too: it composes to the matrix that a zero rotation
+/// gives.
+///
+/// The scaling sits here, in the one function that composes a matrix, and not where a rotation is
+/// written, because the `rotations` arrays are written directly: a page writes a scene object's or
+/// an instance row's quaternion with no setter to pass through. Only a source whose squared length
+/// is more than one per cent from one pays a square root, in the frame that composes its matrix.
+fn unit_rotation<T: Float>(q: [T; 4]) -> [T; 4] {
+    let [x, y, z, w] = q;
+    // The squared length, so that a rotation close to unit length costs no square root.
+    let square = x * x + y * y + z * z + w * w;
+    let off_unit = square < T::from(0.98) || square > T::from(1.02);
+    if off_unit && square > T::from(0.0) {
+        let inverse = T::from(1.0) / square.sqrt();
+        [x * inverse, y * inverse, z * inverse, w * inverse]
+    } else {
+        q
+    }
+}
+
+/// The matrix of a translation, a rotation and a scale, applied scale first. The rotation is a
+/// quaternion `(x, y, z, w)`; one more than one per cent off unit length is scaled to unit length
+/// first, so that it turns the matrix instead of shearing it. Apart from the scaling, it matches
+/// three.js `Matrix4.compose`.
 #[inline(always)]
 pub fn compose<T: Float>(position: [T; 3], rotation: [T; 4], scale: [T; 3]) -> [T; 12] {
     let one = T::from(1.0);
-    let [x, y, z, w] = rotation;
+    let [x, y, z, w] = unit_rotation(rotation);
     let [sx, sy, sz] = scale;
     let (x2, y2, z2) = (x + x, y + y, z + z);
     let (xx, xy, xz) = (x * x2, x * y2, x * z2);
@@ -222,13 +270,18 @@ pub(crate) type Affine4 = [[f32x4; 4]; 3];
 /// the same order as [`compose`], so the results match it bit for bit.
 #[inline(always)]
 pub(crate) fn compose4(position: [f32x4; 3], rotation: [f32x4; 4], scale: [f32x4; 3]) -> Affine4 {
-    let [x, y, z, w] = rotation;
+    let one = f32x4::splat(1.0);
+    let zero = f32x4::splat(0.0);
+    let [qx, qy, qz, qw] = rotation;
+    let square = qx * qx + qy * qy + qz * qz + qw * qw;
+    let off_unit = square.simd_lt(f32x4::splat(0.98)) | square.simd_gt(f32x4::splat(1.02));
+    let inverse = (off_unit & square.simd_gt(zero)).select(one / square.sqrt(), one);
+    let [x, y, z, w] = rotation.map(|v| v * inverse);
     let [sx, sy, sz] = scale;
     let (x2, y2, z2) = (x + x, y + y, z + z);
     let (xx, xy, xz) = (x * x2, x * y2, x * z2);
     let (yy, yz, zz) = (y * y2, y * z2, z * z2);
     let (wx, wy, wz) = (w * x2, w * y2, w * z2);
-    let one = f32x4::splat(1.0);
     [
         [
             (one - (yy + zz)) * sx,
@@ -325,6 +378,40 @@ mod tests {
         assert!(close(&world_sphere(&m, 0.5), &[1.0, 2.0, 3.0, 1.0]));
     }
 
+    /// A rotation quaternion whose length is not one turns the matrix instead of stretching and
+    /// shearing it, so a mistyped quaternion cannot draw an object past its scale.
+    #[test]
+    fn a_non_unit_rotation_turns_without_shearing() {
+        let m = compose([0.0; 3], [0.0, 2.3, 0.0, 1.0], [1.0; 3]);
+        let row = |k: usize| [m[4 * k], m[4 * k + 1], m[4 * k + 2]];
+        let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        for k in 0..3 {
+            let r = row(k);
+            assert!((dot(r, r).sqrt() - 1.0).abs() < 1e-6, "row {k} of {m:?}");
+        }
+        for (a, b) in [(0, 1), (0, 2), (1, 2)] {
+            assert!(
+                dot(row(a), row(b)).abs() < 1e-6,
+                "rows {a} and {b} of {m:?}"
+            );
+        }
+        // The scale still multiplies each axis's turn.
+        let scaled = compose([0.0; 3], [0.0, 2.3, 0.0, 1.0], [1.0, 3.0, 1.0]);
+        assert!((max_axis_scale(&scaled) - 3.0).abs() < 1e-6, "{scaled:?}");
+    }
+
+    /// A rounded quaternion that a scene writes, such as `[0, 0.38, 0, 0.92]` for a 45 degree
+    /// turn, is under one per cent off unit length and keeps its matrix as it was: scaling it would
+    /// move that scene's pictures for a shear of under one per cent.
+    #[test]
+    fn a_rounded_rotation_keeps_its_matrix() {
+        let m: [f32; 12] = compose([0.0; 3], [0.0, 0.38, 0.0, 0.92], [1.0; 3]);
+        // Row x is (1 - 2y², 0, 2wy, 0) of the components as written, not of a scaled quaternion.
+        let raw = 1.0 - 2.0 * 0.38 * 0.38;
+        assert!((m[0] - raw).abs() < 1e-6, "{m:?}");
+        assert!((m[2] - 2.0 * 0.92 * 0.38).abs() < 1e-6, "{m:?}");
+    }
+
     #[test]
     fn four_lanes_match_the_scalar_functions_bit_for_bit() {
         let positions = [
@@ -359,6 +446,33 @@ mod tests {
                 assert_eq!(lane.to_bits(), value.to_bits(), "lane {i}, element {k}");
             }
             assert_eq!(scale4[i].to_bits(), max_axis_scale(&m).to_bits());
+        }
+    }
+
+    /// Four lanes whose rotations are not unit length, the zero rotation among them: each lane
+    /// still matches the scalar function bit for bit, so the scaling that keeps a rotation from
+    /// shearing a matrix is the same on both.
+    #[test]
+    fn four_lanes_normalize_rotations_that_are_not_unit() {
+        let rotations = [
+            [0.0, 2.3, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 3.0],
+            [0.5, -0.5, 0.5, 0.5],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
+        let positions = [[0.0; 3]; 4];
+        let scales = [[1.0, 2.0, 0.5]; 4];
+        let m4 = compose4(
+            [0, 1, 2].map(|k| f32x4::from_array(positions.map(|v| v[k]))),
+            [0, 1, 2, 3].map(|k| f32x4::from_array(rotations.map(|q| q[k]))),
+            [0, 1, 2].map(|k| f32x4::from_array(scales.map(|v| v[k]))),
+        );
+        for i in 0..4 {
+            let m = compose(positions[i], rotations[i], scales[i]);
+            for (k, value) in m.iter().enumerate() {
+                let lane = m4[k / 4][k % 4].to_array()[i];
+                assert_eq!(lane.to_bits(), value.to_bits(), "lane {i}, element {k}");
+            }
         }
     }
 
