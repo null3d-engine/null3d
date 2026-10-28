@@ -209,7 +209,7 @@ Each model is a temporary fixture in the engine repository, under
 `tests/pages/assets/models/sources/khronos/`. Their durable home is the sample content, which keeps
 each file with its licence and SHA-256. The sample-assets repository's branch
 `add-iridescence-sphere-models` adds all three models, which are CC0, and pull request 6 holds it
-with a passing check. Each fixture's bytes equal that branch's file and Khronos's published file.
+with a passing check. Suzanne's bytes equal that branch's file and Khronos's published file; the two grids hold the same content as Khronos's files in a GLB of their own, so their bytes differ while what they draw does not.
 When the pull request merges, these fixtures are deleted and the three addresses in
 `bench/scenes/gltf-models.ts` name the samples. The pin bump follows the merge.
 
