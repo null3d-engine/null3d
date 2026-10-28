@@ -19,12 +19,6 @@ filter = 'binary_id(null3d-shaders::build) & test(=the_repository_build_is_the_s
 threads-required = 2
 priority = 50
 
-# The module exports test builds the few entries that make one module of every kind, which takes
-# minutes, so it starts before the short tests.
-[[profile.default.overrides]]
-filter = 'binary_id(null3d-shaders-wasm) & test(=tests::prepare_modules_lists_every_module_and_module_renders_one)'
-priority = 45
-
 # The custom material and effect tests build their templates' variants, which take seconds each.
 [[profile.default.overrides]]
 filter = 'binary_id(null3d-shaders::material) | binary_id(null3d-shaders::effect) | binary_id(null3d-shaders::pieces)'

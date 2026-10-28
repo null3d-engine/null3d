@@ -1,10 +1,10 @@
 // A custom effect that folds into the final pass, beside bloom and the vignette, for the effect fold
 // test. The effect draws light shafts toward the sun: it reads only its own pixel and the scene's
-// depth, in a loop, as a sketch's god rays do. A loop in an effect once made the WebGL2 fold's
-// shader define the final pass's main twice, so the fold failed and the effect drew a pass of its
-// own. Bloom reads the effects' image, so the fold builds and draws only once the page's
-// 'bloom-off' message turns bloom off. The render scale stays whole, as the fold draws only at the
-// canvas's size, and the governor would lower it on a slow GPU.
+// depth, in a loop, as a sketch's god rays do. A WebGL2 fold whose shader defines the final pass's
+// main twice for a loop fails, and the effect draws a pass of its own. Bloom reads the effects'
+// image, so the fold builds and draws only once the page's 'bloom-off' message turns bloom off.
+// The render scale stays whole, as the fold draws only at the canvas's size, and the governor would
+// lower it on a slow GPU.
 import { defineSketch } from '@null3d/engine';
 
 const rays = /* wgsl */ `

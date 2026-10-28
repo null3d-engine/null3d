@@ -1,7 +1,8 @@
-// Car paint for its image tests: a long rounded body in candy red under the built-in room's light
-// and a sun. ?flakes=off leaves the metal flakes out, ?seams=off the panel seams, and ?weave=on
-// gives the body a carbon weave whose tows stretch their highlight. The paint spec checks that
-// each part changes the image.
+// Car paint for its image tests: a long rounded body in candy red under the built-in room's light,
+// a sun and a point light. ?flakes=off leaves the metal flakes out, ?seams=off the panel seams,
+// ?weave=on gives the body a carbon weave whose tows stretch their highlight, and ?sun=off leaves
+// the sun out, so the point light alone lights the body. The paint spec checks that each part
+// changes the image, and that the flakes glint under the point light too.
 import { defineSketch } from '@null3d/engine';
 import { createCarPaint } from '../../../examples/addons/car-paint';
 
@@ -20,11 +21,13 @@ export default defineSketch(async (ctx) => {
 			target: [0, 0.55, 0],
 		}),
 	);
-	scene.createDirectionalLight({
-		direction: [-0.5, -0.7, -0.45],
-		color: '#ffe6c8',
-		intensity: 3.2,
-	});
+	if (params.get('sun') !== 'off') {
+		scene.createDirectionalLight({
+			direction: [-0.5, -0.7, -0.45],
+			color: '#ffe6c8',
+			intensity: 3.2,
+		});
+	}
 	scene.createPointLight({
 		position: [1.6, 1.6, 1.6],
 		color: '#bcd6ff',
@@ -35,7 +38,7 @@ export default defineSketch(async (ctx) => {
 		color: '#9e0b16',
 		metalness: 0.72,
 		roughness: 0.34,
-		flakes: params.get('flakes') === 'off' ? false : { cells: [110, 180], tilt: 0.28 },
+		flakes: params.get('flakes') === 'off' ? false : { cells: [330, 90], tilt: 0.28 },
 		seams:
 			params.get('seams') === 'off' ? false : { spacing: [0.34, 0], width: 0.0024, shade: 0.85 },
 		weave: params.get('weave') === 'on' ? { cells: [70, 120], shine: 0.9 } : false,

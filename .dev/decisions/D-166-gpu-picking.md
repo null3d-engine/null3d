@@ -1,15 +1,15 @@
 # D-166: GPU picking: which object a pixel shows
 
-Status: decided, 18 October 2026. Task: M2-D6.
+Status: decided. Built: the GPU pick on both GPU paths, and its texture coordinates from a raycast.
+Also built: the rejection of a pick that waits when the GPU device is lost. Not built yet: the
+device proof of the depth test on the Mac, the iPad and an Adreno phone. Task: M2-D6, M3-A1,
+M3-R35.
 
-Summary: `scene.pick(x, y)` draws the camera's opaque objects once more into an id target. It draws
-after the opaque pass and against the same depth. It then copies one pixel back through a promise.
-The id pass keeps only the pixels where its own vertex placement meets the scene's depth. The test
-is exact on WebGPU. On WebGL2 it is a nearer test with a small bias toward the camera, because two
-programs can differ by a rounding step (D-43). A material's mask discarded the fragment that wrote
-no depth, so masked objects pick by their mask. The id target has four bytes a pixel, because the
-ids pass through a resolve on every device with MSAA. A scene with a source the id target cannot
-hold answers with a raycast instead.
+Summary: `scene.pick(x, y)` draws the camera's opaque objects once more into an id target of four
+bytes a pixel, and copies one pixel back through a promise. The depth test against the opaque pass
+is exact on WebGPU and has a small bias on WebGL2 (D-43). Masked objects pick by their mask. A
+raycast through the same point gives the texture coordinates. It also answers the whole pick in a
+scene with a source that the id target cannot hold.
 
 ## Question
 
@@ -33,6 +33,9 @@ hits, to the pixel. These choices needed settling:
   answers the whole pick with a raycast. A raycast tests triangles, so it ignores masks. The
   public docs say so.
 - Picks wait in a queue of their own. Each answers in a frame after the one that records it.
+- A pick that waits for its read when the GPU device is lost is rejected with E1436. It is not
+  asked again on the new device. A pick still queued behind it was never recorded, so it goes to
+  the new device in its turn.
 
 ## Data
 
@@ -45,17 +48,15 @@ the pick template writes that key. `pick_color` packs its four bytes into a targ
 exactly. The sketch turns the key into a target with the layout's batch bases: the object's slot,
 or the batch's core handle and the row.
 
-`RGBA8_UNORM` replaces the `RGBA32_UINT` that the first template used. A multisampled
-`RGBA32_UINT` target is 16 bytes a pixel. That is 33 MiB at 1,080p with four samples. The
-eight-bit target is 4 bytes, 8 MiB, and it draws multisampled on every device. An integer format's
-multisampling is less certain.
+The eight-bit target is 4 bytes a pixel, 8 MiB at 1,080p with four samples, and it draws
+multisampled on every device.
 
 ### The depth test
 
 `pick.wgsl` places each vertex as the shading template of the same draw does. It has `SKIN` and
 `MORPH` builds where the shading has them. On WebGPU the pipeline keeps a pixel only where the two
-depths are equal, as D-30's addendum says. On WebGL2 two programs gave depths a rounding step apart
-in Chrome on a Mac (D-43). The pipeline there tests for a nearer depth, with a constant bias of
+depths are equal, as D-30's addendum says. On WebGL2 two programs can give depths a rounding step apart,
+as in Chrome on a Mac (D-43). The pipeline there tests for a nearer depth, with a constant bias of
 four steps toward the camera. The outline mask's visible draw uses the same bias (D-36). A surface
 that wrote the depth passes. An object behind it fails by more than the bias. The bias is tiny
 against a real distance, so it cannot reach an object in front of the surface.
@@ -101,6 +102,19 @@ is unaffected. A click during a fast pan can name the object under the point in 
 The same rule makes a still camera answer. A frame with a pick's read must draw, so `frameRests`
 reports false for it. A rested frame would never copy the ids back.
 
+### A pick when the GPU device is lost
+
+A pick in flight waits for the GPU to copy its four bytes back. When the browser takes the device
+away, recovery replaces it and raises the GPU epoch, and every GPU object of the old device is
+gone. The read that the old device recorded never lands, so the pick's control slot stays unraised
+and polling waits forever.
+
+Each pick in flight therefore remembers the epoch it was recorded for. The frame loop rejects the
+pick once the epoch moves. Its promise settles with E1436, and the pick is not asked again on the
+new device. A pick in the queue behind it holds no read, so it is sent to the new device in its
+turn. Rejecting rather than re-asking is the owner's ruling, made for M3-R35: a repeated pick
+would answer from a later frame, after the scene may have moved.
+
 ### The rest of the scene
 
 A scene whose sources all have pick builds and draw opaque answers with the GPU. The core answers
@@ -110,6 +124,37 @@ when every drawn pair had a pick build, and when the transparent pass's list was
 the pick answers with a raycast. The ray uses the camera of the frame that last ran. It tests
 triangles and ignores masks. This is the documented CPU path for custom materials that D-30's
 addendum asks for.
+
+### A pick's texture coordinates
+
+`scene.pick` gives the `uv` and `hasUv` fields that a raycast and a pointer event carry. A page that
+clicks an in-world screen then needs no plane math of its own.
+
+The id target holds the source key of a pixel and nothing else. A key names the object or the
+instance row, not the triangle under the pixel, so the pick cannot read the coordinates from the
+target. A raycast through the same point gives them, from the camera of the frame that recorded the
+pick. The core already blends a triangle's first texture coordinates for a raycast, so nothing new
+computes them. The ray costs one CPU query per pick, which is a user interaction, and no GPU memory.
+
+The core records the engine frame that drew the landed pick, and `pickFrame` gives it to the sketch.
+`FrameCameras.frameRay` then casts the ray with that frame's camera. So the coordinates match the
+frame that produced the object answer. The sketch keeps the id target's answer as the source. A ray
+that meets another source, or none, leaves `hasUv` false. It never names a triangle that the pixel
+did not show.
+
+The coordinates stay the mesh's own, as a raycast's do. A repeated texture reports values past 1,
+and a material's `uvTransform` does not move them. A skinned or morphed character, and a custom
+material that offsets vertices, draws a shape that the ray does not test. Their coordinates
+describe the mesh's own triangle, and can differ from the drawn pose. The API page says so.
+
+## Options rejected
+
+- **An id target of `RGBA32_UINT`.** Multisampled, it is 16 bytes a pixel, 33 MiB at 1,080p with
+  four samples. An integer format's multisampling is also less certain.
+- **A second target for the texture coordinates.** The pick pass would write them in four bytes a
+  pixel. That costs about 41 MB at 1080p with four samples, plus the single-sample copy that a read
+  takes, and a second resolve. Every page that picks at all would pay that memory for a pick that
+  otherwise costs one draw and a read of four bytes.
 
 ## Consequences
 
@@ -121,45 +166,18 @@ addendum asks for.
   resolve pass's bind group. They append the copy and the read after the graph records.
 - `crates/null3d-wasm` adds `requestPick`, `pickResultAddress`, `pickCoversScene`, `pickTargetId`
   and `pickTargetRow`.
-- `packages/engine/src/scene/picks.ts` holds the queue, the ring and the decoding. `scene.pick` is
-  the public call, and `docs/api/raycast` describes it.
+- `packages/engine/src/scene/picks.ts` holds the queue, the ring, the epoch of each read in flight
+  and the decoding. `scene.pick` is the public call, and `docs/api/raycast` describes it.
 - The three.js mapping takes no entry, as three.js offers no pixel pick. The raycast mapping
   entries stay as they are.
 - The device proof of the depth test that D-30's addendum asks for is still to run. It covers the
   Mac, the iPad and an Adreno phone. The pick template's WebGL2 path asserts the test with the
   bias. The browser image test draws a thin and a masked object on both GPU paths in Chrome. The
   prototype G7 on the iPad and the cloud S25 follows.
-
-## Addendum, 25 October 2026: a pick's texture coordinates
-
-M3-A1 gives `scene.pick` the `uv` and `hasUv` fields that a raycast and a pointer event already
-carry. A page that clicks an in-world screen then needs no plane math of its own.
-
-The id target holds the source key of a pixel and nothing else. A key names the object or the
-instance row, not the triangle under the pixel, so the pick cannot read the coordinates from the
-target. Two ways were open:
-
-- A second target that the pick pass writes the coordinates into, in four bytes a pixel. It costs
-  about 41 MB at 1080p with four samples, plus the single-sample copy of the pixel that a read
-  takes, and a second resolve. A pick that today costs one draw and a read of four bytes would cost
-  far more memory in every page that picks at all.
-- A raycast through the same point, from the camera of the frame that recorded the pick. The core
-  already blends a triangle's first texture coordinates for a raycast, so nothing new computes
-  them. The ray costs one CPU query per pick, which is a user interaction, and no GPU memory.
-
-The second way wins. The core records the engine frame that drew the landed pick, and `pickFrame`
-gives it to the sketch. `FrameCameras.frameRay` then casts the ray with that frame's camera. So the
-coordinates match the frame that produced the object answer. The sketch keeps the id target's
-answer as the source. A ray that meets another source, or none, leaves `hasUv` false. It never
-names a triangle that the pixel did not show.
-
-The coordinates stay the mesh's own, as a raycast's do. A repeated texture reports values past 1,
-and a material's `uvTransform` does not move them. A skinned or morphed character, and a custom
-material that offsets vertices, draws a shape that the ray does not test. Their coordinates
-describe the mesh's own triangle, and can differ from the drawn pose. The API page says so.
-
-Tests: `packages/engine/src/scene/picks.test.ts` checks the queue's decoding with the ray's frame,
-a pick that names no frame, another source and a mesh without coordinates.
-`tests/image/pick-uv.spec.ts` compares a pick with a raycast and with the geometry on both GPU
-paths. It covers a repeated set, a texture transform, a batch of rows that differ in scale, and a
-mesh with no coordinates.
+- Tests: `packages/engine/src/scene/picks.test.ts` checks the queue's decoding with the ray's
+  frame. It also checks a pick that names no frame, another source and a mesh without coordinates.
+  It rejects a pick whose device was lost, and sends the picks behind it to the new device.
+  `tests/image/pick.spec.ts` loses the device with a pick in flight, on both GPU paths, and checks
+  that the promise rejects with E1436. `tests/image/pick-uv.spec.ts` compares a pick with a raycast
+  and with the geometry on both GPU paths. It covers a repeated set, a texture transform, a batch of
+  rows that differ in scale, and a mesh with no coordinates.

@@ -169,18 +169,18 @@ The returned animation has these calls and values:
 | `stop()` | Stops the animation, and leaves the target at its last value |
 | `time`, `playing`, `speed`, `loop` | What it holds |
 
-An animation of a material changes every object that uses the material, as a change through `set` does. A value that an animation writes costs nothing per frame. The engine samples the tracks on the sketch's thread, after the job workers advanced the clips, so a sketch has no update call to make. A material has one transform for all its maps, so `uvOffset` and `uvScale` move every map of the material together.
+An animation of a material changes every object that uses the material, as a change through `set` does. A value that an animation writes costs nothing per frame. The engine samples the tracks on the sketch's thread, after the job workers advanced the clips, so a sketch has no update call to make. A material keeps a transform for each of its maps, and `uvOffset` and `uvScale` move every map of the material together.
 
 ### Files with KHR_animation_pointer
 
-The loader reads a pointer to a node's transform, its morph weights, or its visibility under `KHR_node_visibility`. It also reads a pointer to a material's values, and to a light's intensity, color or range. A base color factor moves the material's color, and its fourth number moves the opacity. The offset and scale of a base color texture's or an emissive texture's `KHR_texture_transform` move the material's maps. Each track joins its clip, so `animator().play(name)` plays it with the clip's other tracks. A clip at less than full weight mixes the value with the value that the file gave the property.
+The loader reads a pointer to a node's transform, its morph weights, or its visibility under `KHR_node_visibility`. It also reads a pointer to a material's values, and to a light's intensity, color or range. A base color factor moves the material's color, and its fourth number moves the opacity. The offset and scale of a base color texture's or an emissive texture's `KHR_texture_transform` move that map's own transform, and leave the material's other maps as the file places them. Each track joins its clip, so `animator().play(name)` plays it with the clip's other tracks. A clip at less than full weight mixes the value with the value that the file gave the property.
 
 ```ts
 const copy = scene.instantiate(await assets.loadGltf(url));
 copy.animator().play('Cube Animation');
 ```
 
-A pointer that the engine does not read leaves the value as the file has it. Development builds warn about each one. The names show the kind. The engine leaves out a camera's values, because it reads no cameras from files. It leaves out a texture transform's rotation, and the transforms of every texture but a base color or an emissive one. It leaves out a light's inner cone angle. It also leaves out `normalTexture/scale`, and the pointers of `KHR_materials_ior`, `KHR_materials_volume`'s attenuation color and distance, and `KHR_materials_iridescence`'s thickness range. It leaves out the values of extensions that it does not draw. A material keeps one transform for all its maps, so a file that moves two of them apart plays the first.
+A pointer that the engine does not read leaves the value as the file has it. Development builds warn about each one. The names show the kind. The engine leaves out a camera's values, because it reads no cameras from files. It leaves out an animated texture transform's rotation, and an animated transform of every texture but a base color or an emissive one. That matches three.js's animation-pointer plugin, which moves the same four values. It leaves out a light's inner cone angle. It also leaves out `normalTexture/scale`, and the pointers of `KHR_materials_ior`, `KHR_materials_volume`'s attenuation color and distance, and `KHR_materials_iridescence`'s thickness range. It leaves out the values of extensions that it does not draw. A file's own transforms stay per map, so a file that places its maps differently draws that way.
 
 ## Clip weights
 

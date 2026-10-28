@@ -63,6 +63,7 @@ A feature that changes what a shader costs is a variant of the shader, which the
 | A clear coat, a sheen, iridescence or anisotropy | A shader variant that lights the layers above the surface, whose shaders load with the first such material |
 | `doubleSided` | The pipeline's state: it culls no faces. A blended one draws with two pipelines, one per face, unless `forceSinglePass` asks for one |
 | `depthWrite`, `depthTest`, `depthBias` | The pipeline's depth state |
+| `colorWrite: false` | The pipeline's color state, and the place in the opaque pass: its objects draw first, so their depth holds back the surfaces behind them |
 | `flatShading` | The material's row: every standard shader can light with face normals |
 
 three.js compiles a new program when `material.needsUpdate` is set after such a change. null3D has no `needsUpdate`: create one material for each combination in the setup instead.

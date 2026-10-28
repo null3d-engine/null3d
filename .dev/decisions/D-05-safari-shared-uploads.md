@@ -1,6 +1,6 @@
 # D-05: WebGL shared-memory upload path on Safari
 
-Status: decided. Date: 2026-09-29. Test: T-06.
+Status: decided. Built: the startup test picks direct uploads per device, and copies stay as the tested fallback. Test: T-06.
 
 Summary: Upload straight from shared memory wherever the startup test passes, which is every browser measured; copies stay as the fallback.
 
@@ -18,7 +18,7 @@ The capability probe runs the startup test at every engine start and reports it 
 
 | Browser | `bufferSubData` from shared memory | `texSubImage2D` from shared memory | Run |
 | --- | --- | --- | --- |
-| Safari 26.6, iPad Pro 11-inch (8 cores) | passes | passes | 20260929-150841-checks, and every iPad checks run that day |
+| Safari 26.6, iPad Pro 11-inch (8 cores) | passes | passes | 20260929-150841-checks, and every iPad checks run of that session |
 | Safari 26, MacBook Pro | passes | passes | 20260929-055017-checks |
 | Chrome 154, Galaxy S24+ | passes | passes | 20260929-074614-checks |
 | Firefox, MacBook Pro | passes | passes | 20260929-055017-checks |
@@ -29,12 +29,12 @@ How the data was produced: the device runner's checks plan (`bun tests/real-brow
 
 ## Decision
 
-Direct uploads wherever the startup test passes, which is every browser measured, Safari on the iPad included. The engine already applies the rule per device: `coreDevice` in `packages/engine/src/page/limits.ts` sets `sharedUploads` from the probe, and the WebGL2 backend copies changed ranges only when the test fails or `?uploads=copy` asks for it. The copy route stays as the fallback, and the page switch keeps it testable.
+Direct uploads wherever the startup test passes, which is every browser measured, Safari on the iPad included. The engine applies the rule per device: `coreDevice` in `packages/engine/src/page/limits.ts` sets `sharedUploads` from the probe, and the WebGL2 backend copies changed ranges only when the test fails or `?uploads=copy` asks for it. The copy route stays as the fallback, and the page switch keeps it testable.
 
-An earlier suspicion that shared uploads made Safari's WebGL2 frames slow was wrong. The cause was multi-draw arrays that spanned all of engine memory, fixed in #30 ("draw with multi-draw in Safari at full speed").
+Shared uploads do not slow Safari's WebGL2 frames. Multi-draw arrays that span all of engine memory do. The engine does not draw with such arrays (#30, "draw with multi-draw in Safari at full speed").
 
 ## Consequences
 
-- No engine change: the probe and the fallback exist.
+- The probe and the fallback are in the engine.
 - T-06 is closed: both uploads pass in Safari and in Brave on the iPad.
 - The upload path is decided: direct, with a tested copy fallback.

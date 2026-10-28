@@ -297,8 +297,9 @@ const UNNAMED_LOCK_MS = 60_000;
  * How a waiter watches a lock's holder: how often it reads the processor time that the holder's
  * processes have used, how often it says what it read, how much of that time counts as progress,
  * and how long a holder may go without progress. A page build at normal priority uses about a
- * minute of processor time per minute. On 25 October 2026 two holders at background priority held
- * the page-build lock for 46 and 54 minutes on 38 s and 4 s, while every other page build waited.
+ * minute of processor time per minute. At background priority a holder can keep the page-build lock
+ * for most of an hour on seconds of it (46 minutes on 38 s, 54 minutes on 4 s), while every other
+ * page build waits.
  * A sample every two seconds sees nearly all the time of a child that lives only a few seconds.
  */
 export interface HolderWatch {
@@ -507,6 +508,28 @@ export function liveLockHolder(path: string): number | undefined {
 	return lockHolder(path);
 }
 
+/** The command line of process `pid`, cut to `width` characters, or nothing when it has gone. */
+function commandOf(pid: number, width = 80): string {
+	const ps = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' });
+	return ps.status === 0 ? ps.stdout.trim().slice(0, width) : '';
+}
+
+/**
+ * Who holds a lock taken at `takenMs` by `holder`, for a waiter's first line: the process, what it
+ * runs and since when. A wait inside a commit hook prints nothing else for minutes, and looks hung.
+ */
+export function holderText(
+	holder: number,
+	takenMs: number,
+	command = commandOf(holder),
+	now = Date.now(),
+): string {
+	if (holder <= 0) return 'taken by a process that named no id';
+	const since = new Date(takenMs).toTimeString().slice(0, 8);
+	const running = command ? ` (${command})` : '';
+	return `held by pid ${holder}${running} since ${since}, ${Math.round((now - takenMs) / 1000)} s ago`;
+}
+
 /** The process that holds the lock at `path`, or 0 when it names none. */
 function lockHolder(path: string): number {
 	try {
@@ -561,8 +584,8 @@ export const HEAVY_SLOT_ENV = 'NULL3D_HEAVY_SLOT';
  * With `freesSlot`, a wait gives back the slot of the Mac's job queue (`heavy.sh`) that runs this
  * process, named by `NULL3D_HEAVY_SLOT`: the process writes `waiting-<pid>` into the slot while it
  * waits, and the queue opens another slot for each slot so marked. Only a lock that its caller takes
- * while the job does nothing else frees the slot. On 24 October 2026 six jobs held slots for up to
- * 49 minutes with almost no processor time, and were killed by hand as hung.
+ * while the job does nothing else frees the slot. A waiting job that keeps its slot can hold it for
+ * up to 49 minutes with almost no processor time, and looks hung.
  */
 export function acquireLock(
 	path: string,
@@ -620,7 +643,7 @@ function waitForLock(path: string, marker: string | undefined, watch?: HolderWat
 			// minutes. Say who holds it: without this a build that waits prints nothing and looks
 			// hung. When the holder is an orphaned build, or one whose work has already landed, kill
 			// it and the lock moves.
-			const who = holder > 0 ? `held by pid ${holder}` : 'taken by a process that named no id';
+			const who = holderText(holder, takenMs);
 			const free = marker ? "; this job's slot of the job queue counts as free while it waits" : '';
 			console.log(`waiting for the lock at ${path}, ${who}${free}`);
 		}
@@ -706,9 +729,9 @@ export function processPriority(pid: number = process.pid): number | undefined {
 /**
  * Why a page build at `priority` must not take the machine's page-build lock, or undefined when it
  * may. At macOS background priority its bundler inherits that priority, and on a loaded machine gets
- * almost no processor time while every other page build waits for the lock: on 25 October 2026 one
- * held it for 46 minutes, its bundler having used 38 s of processor time. No call lifts a process
- * out of background priority, so the build must start without it.
+ * almost no processor time while every other page build waits for the lock: one such build can
+ * hold it for 46 minutes on 38 s of processor time. No call lifts a process out of background
+ * priority, so the build must start without it.
  */
 export function pageBuildPriorityProblem(priority: number | undefined): string | undefined {
 	if (priority === undefined || priority > BACKGROUND_PRIORITY) return undefined;
@@ -736,11 +759,10 @@ export function acquirePageBuildLock(): () => void {
  * figure bounds runaway growth rather than a working set, so a tighter limit evicts sets and entries
  * that the next build would then rebuild.
  *
- * It was 24 GB until 22 October 2026. That day the module cache held four sets in 23 GB, so one set
- * is about 5.8 GB rather than the 850 MB this note claimed: the shader set grew with every feature
- * that added a family. A worktree that merged the milestone branch found its set evicted and rebuilt
- * the whole thing, which takes a minute on an idle machine and over an hour through the queue. The
- * disk held 1.6 TB free, so the limit now holds about eleven sets.
+ * The module cache holds about four sets in 23 GB, so one set is about 5.8 GB: the shader set grows
+ * with every feature that adds a family. A worktree whose set is evicted rebuilds the whole thing,
+ * which takes a minute on an idle machine and over an hour through the queue. The disk has 1.6 TB
+ * free, so the limit holds about eleven sets.
  */
 export const CACHE_LIMIT_BYTES = 64 * 1024 * 1024 * 1024;
 

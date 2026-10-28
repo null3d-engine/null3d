@@ -23,6 +23,7 @@ describe('parseSwitches', () => {
 			half: undefined,
 			cells: true,
 			prepass: undefined,
+			prepassColor: undefined,
 			occlusion: undefined,
 			occlusionBuffer: undefined,
 			skinning: 'vertex',
@@ -35,7 +36,6 @@ describe('parseSwitches', () => {
 			queue: undefined,
 			jobs: undefined,
 			join: true,
-			grading: 'display',
 			memoryMiB: undefined,
 			preset: undefined,
 			hold: undefined,
@@ -43,17 +43,11 @@ describe('parseSwitches', () => {
 			record: false,
 			still: true,
 			bench: false,
+			view: undefined,
 			stats: undefined,
 			glTiming: undefined,
 			replayDelay: undefined,
 		});
-	});
-
-	it('picks where the grading table takes its input with ?grading=', () => {
-		expect(parseSwitches('?grading=hdr').grading).toBe('hdr');
-		expect(parseSwitches('?grading=display').grading).toBe('display');
-		for (const bad of ['HDR', 'light', '', 'hdrx'])
-			expect(parseSwitches(`?grading=${bad}`).grading).toBe('display');
 	});
 
 	it('sizes the software occlusion buffer with ?occlusion-buffer=, and leaves it to the core otherwise', () => {
@@ -100,6 +94,13 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?prepass=on').prepass).toBe(true);
 		expect(parseSwitches('?prepass=off').prepass).toBe(false);
 		expect(parseSwitches('?prepass=yes').prepass).toBeUndefined();
+	});
+
+	it('picks how the prepass starts its stand-in color with ?prepass-color=', () => {
+		expect(parseSwitches('?prepass-color=load').prepassColor).toBe('load');
+		expect(parseSwitches('?prepass-color=clear').prepassColor).toBe('clear');
+		expect(parseSwitches('?prepass-color=none').prepassColor).toBe('none');
+		expect(parseSwitches('?prepass-color=other').prepassColor).toBeUndefined();
 	});
 
 	it('turns GPU occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {
@@ -268,6 +269,13 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?gpu=webgl2&cells=off').cells).toBe(false);
 		expect(parseSwitches('?cells=on').cells).toBe(true);
 		expect(parseSwitches('?cells=no').cells).toBe(true);
+	});
+
+	it('reads a debug view name from ?view=, and no name from an empty switch', () => {
+		expect(parseSwitches('?view=levels').view).toBe('levels');
+		expect(parseSwitches('?view=terrain-levels').view).toBe('terrain-levels');
+		expect(parseSwitches('?view=').view).toBeUndefined();
+		expect(parseSwitches('').view).toBeUndefined();
 	});
 
 	it('reads the quality preset, and ignores a name that is no preset', () => {

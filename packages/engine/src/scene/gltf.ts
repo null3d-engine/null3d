@@ -29,6 +29,8 @@ import {
 	LIGHT_VALUE_INTENSITY,
 	LIGHT_VALUE_PENUMBRA,
 	LIGHT_VALUE_RANGE,
+	MAP_SLOT_BASE_COLOR,
+	MAP_SLOT_EMISSIVE,
 } from '../generated/core';
 import { DEV } from '../shared/dev';
 import { onEngineStop } from '../shared/helper-workers';
@@ -484,11 +486,12 @@ export function sharesVertices(
 /**
  * Gives each primitive's mesh of a node the levels of detail that `MSFT_lod` names: the same
  * primitive of each level node's mesh. Each level's error comes from the asset tool's
- * `NULL3D_lod_error`, which measured the level's own error, or its share of the screen's height
- * from `MSFT_screencoverage`. A measured error changes the picture by under a pixel at its switch,
- * so the level switches at once; a coverage given by hand keeps a fading band. A level that names
- * another material than the node's primitive draws with it. Levels whose meshes have other
- * primitives, or no errors, are left out, and so are levels that a mesh cannot take, with a note.
+ * `NULL3D_lod_error`, or its share of the screen's height from `MSFT_screencoverage`. A measured
+ * error changes the picture by under a pixel at its switch, so the level switches at once; a
+ * hand-set error or a coverage keeps a fading band. A level that names another material than the
+ * node's primitive draws with it. Levels whose meshes have other primitives are left out, and so
+ * are levels that a mesh cannot take, with a note. A node that gives neither an error nor a coverage
+ * gives the mesh no levels.
  */
 function setFileLevels(
 	base: readonly MeshGeometry[],
@@ -502,10 +505,9 @@ function setFileLevels(
 	if (levels.meshes.some((k) => (data.meshes[k] as MeshData).primitives.length !== count)) return;
 	const lower = levels.meshes.map(levelOf);
 	for (const [p, mesh] of base.entries()) {
-		const measured = levels.errors !== undefined;
 		const errors = levels.errors;
 		const coverage = levels.coverage;
-		if (!measured && !coverage) return;
+		if (!errors && !coverage) return;
 		const own = primitives[p] as PrimitiveData | undefined;
 		try {
 			mesh.setLevels(
@@ -516,9 +518,7 @@ function setFileLevels(
 					const material = own && level.material !== own.material ? materials.of(level) : undefined;
 					return {
 						mesh: meshes[p] as MeshGeometry,
-						...(measured
-							? { error: (errors as number[])[j] as number, fade: false }
-							: { coverage: (coverage as number[])[j] as number }),
+						...fileLevelMeasure(errors, coverage, j),
 						...(material && { material }),
 					};
 				}),
@@ -528,6 +528,27 @@ function setFileLevels(
 			return;
 		}
 	}
+}
+
+/**
+ * The measure that a file gives a level: its error, or its coverage where the file gives no errors,
+ * and whether the level switches at once. The asset tool writes the screen coverage that its
+ * measured error implies beside the error, so an error that comes alone is one its author set as a
+ * switch distance, and that switch shows.
+ */
+export function fileLevelMeasure(
+	errors: readonly number[] | undefined,
+	coverage: readonly number[] | undefined,
+	j: number,
+): { error?: number; coverage?: number; fade?: boolean } {
+	if (errors) {
+		const measured = coverage !== undefined;
+		return {
+			error: errors[j] as number,
+			...(measured ? { fade: false } : {}),
+		};
+	}
+	return { coverage: (coverage as readonly number[])[j] as number };
 }
 
 /** A node's staged levels, and the meshes that draw them, one for each primitive of its mesh. */
@@ -760,6 +781,21 @@ async function loadStages(
 	}
 }
 
+/**
+ * Warns, in a development build alone, about each extension that a file uses and that neither the
+ * loader nor a registered add-on reads: its data does not draw. A package that reads one is named,
+ * so a page that imports it draws the file's data.
+ */
+export function warnUnreadExtensions(data: GltfData, address: URL, call: string): void {
+	if (!DEV) return;
+	for (const { name, addon } of data.unread ?? [])
+		console.warn(
+			addon
+				? `${call}() loaded ${address}, which uses ${name}, an extension that the engine does not read. Import ${addon}, which reads it.`
+				: `${call}() loaded ${address}, which uses ${name}, an extension that the engine does not read, so its data does not draw.`,
+		);
+}
+
 /** The prefab of a parsed file, once its textures and materials exist. */
 async function buildPrefab(
 	context: GltfContext,
@@ -944,6 +980,7 @@ async function buildPrefab(
 	const { parts, bounds } = partsOf(template, data, meshes, instancing);
 	if (DEV && data.notes.length > 0)
 		console.warn(`${call}() left out parts of ${address}: ${data.notes.join('; ')}.`);
+	warnUnreadExtensions(data, address, call);
 	if (DEV && data.draco)
 		console.warn(
 			`${call}() loaded ${address}, whose meshes use Draco compression. Draco's decoder adds about 60 KB to the page's download, and decodes slower than meshopt. Convert the file to meshopt with \`bunx @null3d/cli assets optimize\`.`,
@@ -1386,7 +1423,7 @@ class FileMaterials {
 			alphaCutoff: Math.min(m.alphaCutoff, 1),
 			doubleSided: m.doubleSided,
 			vertexColors,
-			uvTransform: m.uvTransform,
+			mapUvTransforms: m.uvTransforms,
 			// three.js's GLTFLoader writes no depth for blended materials.
 			depthWrite: m.alphaMode !== 'blend',
 			map: map(m.maps.map),
@@ -1422,6 +1459,7 @@ class FileMaterials {
 			options.attenuationDistance = volume.attenuationDistance;
 		}
 		if (m.transmission) options.transmission = m.transmission.factor;
+		if (m.dispersion > 0) options.dispersion = m.dispersion;
 		if (m.diffuseTransmission) {
 			options.diffuseTransmission = m.diffuseTransmission.factor;
 			options.diffuseTransmissionColor = m.diffuseTransmission.color;
@@ -1469,11 +1507,20 @@ const LIGHT_PROPERTIES: ReadonlyMap<string, number> = new Map([
 ]);
 
 /**
+ * The slot of each map whose transform a `KHR_animation_pointer` moves, by the map's key. These are
+ * the maps that three.js's animation-pointer plugin moves: a base color map and an emissive map.
+ */
+const POINTER_MAP_SLOTS: ReadonlyMap<string, number> = new Map<string, number>([
+	['map', MAP_SLOT_BASE_COLOR],
+	['emissiveMap', MAP_SLOT_EMISSIVE],
+]);
+
+/**
  * The properties that a model's clips move, as the prefab's copies play them: one binding for each
  * property, with the value that the file gave it, and the tracks of each clip by its id in the
  * core. Returns undefined when no clip moves a property, and notes the tracks that name a target
- * the copy does not have. A material keeps one transform for all its maps, so a clip that moves two
- * of them plays the first.
+ * the copy does not have. Each map keeps a transform of its own, so a clip that moves two maps of
+ * one material plays both.
  *
  * @internal
  */
@@ -1496,12 +1543,13 @@ export function propertyAnimation(
 		const id = rig.clips.get(clip.name);
 		if (id === undefined) continue;
 		const tracks: PropertyTrack[] = [];
-		// A material keeps one texture transform for every map, so a clip that moves two of them
-		// plays the first and notes the other rather than mixing the two into one value.
+		// A clip that moves one property twice plays the first track and notes the other, rather
+		// than mixing the two into one value.
 		const played = new Set<number>();
 		for (const track of clip.properties ?? []) {
 			const { target, components } = track;
-			const key = `${target.kind} ${target.index} ${target.value}`;
+			const moved = target.kind === 'material' ? target.map : undefined;
+			const key = `${target.kind} ${target.index} ${target.value} ${moved ?? ''}`;
 			let binding = known.get(key);
 			if (binding === undefined) {
 				const base = propertyBase(target, data);
@@ -1524,6 +1572,7 @@ export function propertyAnimation(
 					name: target.kind === 'material' ? target.value : '',
 					components,
 					base,
+					slot: moved === undefined ? undefined : POINTER_MAP_SLOTS.get(moved),
 				});
 				targets.push(where);
 				// The key names the property as a file's pointer does, such as "materials/0/color".
@@ -1533,7 +1582,7 @@ export function propertyAnimation(
 			}
 			if (played.has(binding)) {
 				notes.push(
-					`the clip "${clip.name}" moves two transforms of ${target.kind} ${target.index}, and the engine keeps one for every map, so it plays the first`,
+					`the clip "${clip.name}" moves ${target.kind} ${target.index}'s ${target.value} twice, so it plays the first track`,
 				);
 				continue;
 			}
@@ -1601,6 +1650,8 @@ function propertyBase(target: RigPropertyTarget, data: GltfData): Float32Array |
 				return Float32Array.from(m.specularColor);
 			case 'transmission':
 				return one(m.transmission?.factor);
+			case 'dispersion':
+				return one(m.dispersion);
 			case 'thickness':
 				return one(m.transmission?.thickness ?? m.diffuseTransmission?.thickness);
 			case 'clearcoat':
@@ -1620,9 +1671,9 @@ function propertyBase(target: RigPropertyTarget, data: GltfData): Float32Array |
 			case 'anisotropyRotation':
 				return one(layers?.anisotropyRotation);
 			case 'uvOffset':
-				return Float32Array.from(m.uvTransform?.offset ?? [0, 0]);
+				return Float32Array.from(m.uvTransforms?.[target.map ?? 'map']?.offset ?? [0, 0]);
 			case 'uvScale':
-				return Float32Array.from(m.uvTransform?.repeat ?? [1, 1]);
+				return Float32Array.from(m.uvTransforms?.[target.map ?? 'map']?.repeat ?? [1, 1]);
 		}
 		return undefined;
 	}

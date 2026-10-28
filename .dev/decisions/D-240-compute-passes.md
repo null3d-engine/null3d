@@ -1,7 +1,8 @@
 # D-240: Compute passes with a storage output that the same frame reads
 
-Status: decided by the helper of M3-E8 on 23 October 2026, for the owner's review. Built: the
-pass, both GPU paths and the tests, as the consequences list. Date: 2026-10-23. Task: M3-E8.
+Status: decided by the helper of M3-E8, for the owner's review. Built: the pass, both GPU paths
+and the tests, as the consequences list, and the wait of every pass that draws a reader (M3-V3).
+Tasks: M3-E8, M3-V3.
 
 Summary: A compute pass is a render pass of the graph whose target is a storage texture that
 materials, effects and other passes sample in the same frame. The add-on gives a compiled compute
@@ -29,18 +30,19 @@ the pass before its readers, and what happens on WebGL2?
 
 ## Data
 
-The engine before this change:
+The engine parts that the pass builds on:
 
-- **Public passes.** `render.addPass` takes a scene, a reflection or a full-screen pass. Each
-  publishes a texture that `textures.fromPass` gives to materials, effects and sprites.
+- **Public passes.** Besides a compute pass, `render.addPass` takes a scene, a reflection or a
+  full-screen pass. Each publishes a texture that `textures.fromPass` gives to materials, effects and sprites.
 - **The graph.** `null3d-render`'s render graph takes a pass's reads and writes, orders the passes,
   culls one that nothing running reads, and plans each target's usage and memory. A pass of
   `PassKind::Compute` that writes a resource gets `STORAGE_BINDING` on that target
   (`graph/compile.rs`, `kept_usage`), and the frame opens one compute step for it. The engine's own
   compute passes, the light clusters, the skinning pass, the culling passes, the depth pyramid and
   the exposure histogram, all write buffers.
-- **Bindings.** A compute pipeline takes a bind group layout of the engine's. The exposure meter's
-  layout is the only one with a storage texture, of `rgba32float`.
+- **Bindings.** A compute pipeline takes a bind group layout of the engine's. Among the engine's
+  own compute passes, the exposure meter's layout is the only one with a storage texture, of
+  `rgba32float`.
 - **The drawing thread.** A sketch's compiled WGSL reaches it as a `CustomShader` under a render
   pipeline template. The WebGPU backend builds compute pipelines from templates the engine knows,
   and parks one whose shader has not arrived.
@@ -77,7 +79,7 @@ The description's one output names the pass's target. Its frame point says when 
 in the frame, and its output's default says what a reader shows before the pass first runs. WebGPU
 starts a texture at zero, so `'black'` and `'transparent'` hold; `'white'` is refused, because it
 would need the texture filled first. The adapter places the main view alone, as the draw adapter
-does, and refuses scene resource reads, because the adapter binds no scene resource yet. Both
+does, and refuses scene resource reads, because the adapter binds no scene resource. Both
 refusals are E1223.
 
 ### The bindings
@@ -102,9 +104,9 @@ struct ComputeBlock {
 The storage texture is read as an array of one layer, as every pass target is sampled, so the
 shader writes layer 0. Group 1 binds the `textures` array in the order it gives them, with the
 materials' maps layout: a texture array at bindings 0 to 7, its samplers at 8 to 15, then the
-displacement map's array and sampler. The maps layout's entries now name the compute stage too.
+displacement map's array and sampler. The maps layout's entries name the compute stage too.
 
-The block is the engine's effect block, which a full-screen pass already gives its WGSL. The
+The block is the engine's effect block, which a full-screen pass also gives its WGSL. The
 compute pass shares it rather than adding a second layout.
 
 ### The order
@@ -144,13 +146,13 @@ same floats that the compute block's eight vectors hold.
 - **A storage buffer output.** Materials sample textures, not buffers. H2's count word goes into
   the engine's indirect buffer, which is H2's own surface (M3-E9), and a general public buffer
   would be a second promise before its user exists.
-- **An adapter of its own, `scene.addFeatureCompute`.** The pass already has a handle that
+- **An adapter of its own, `scene.addFeatureCompute`.** The pass has a handle that
   `textures.fromPass`, `render.setPassEnabled` and `render.removePass` take. A second handle type
   would repeat all four calls and the graph naming.
 - **One description per path.** The description names one kind. The fallback is an option of the
   pass, not a second feature, because both forms publish one output for one user.
-- **Running compute inside a render pass.** WGSL forbids it, and the engine's step planner already
-  opens a compute step of its own.
+- **Running compute inside a render pass.** WGSL forbids it, and the engine's step planner opens a
+  compute step of its own.
 - **A uniform block of the add-on's own layout.** The shader compiler reflects a custom material's
   uniforms, but not a whole shader's. The effect block needs no reflection, and 32 numbers cover
   what the first users need.
@@ -183,14 +185,14 @@ same floats that the compute block's eight vectors hold.
   wait for first use. The start's growth is the option checks and the call, and the size check
   reports it.
 
-## Addendum: every pass that draws a reader waits for the pass (M3-V3, 24 October 2026)
+## Every pass that draws a reader waits for the pass
 
-M3-V3 needed a custom material's vertex offset to read a compute pass's output in every build that
-draws the material, the shadow caster, motion and pick builds among them. The graph ordered the
-pass before the camera's passes, because their opaque and prepass passes read the target of every
-view that a texture shows. The shadow, motion and pick passes read no view target at all, so the
-pass could run after them: a shadow then drew the frame before's data, and a pick or motion pass
-that ran first drew the target's initial zeros.
+A custom material's vertex offset reads a compute pass's output in every build that draws the
+material, the shadow caster, motion and pick builds among them (M3-V3). The camera's opaque and
+prepass passes read the target of every view that a texture shows, so the graph orders the pass
+before them. The shadow, motion and pick passes read no view target at all. Without an edge, the
+pass could run after them. A shadow would then draw the frame before's data, and a pick or motion
+pass that ran first would draw the target's initial zeros.
 
 **The rule.** Each of those three passes reads, and so runs after, every early pass's target that
 the materials it draws sample:
@@ -216,12 +218,12 @@ and checks the cascade's step comes after the pass. The `compute-vertex-offset` 
 box that a vertex offset moves by the pass's output, in the main view and its shadow, on both
 paths, and the motion spec reads the plane's motion back from the debug view.
 
-## Addendum: the compute path's cost and memory (25 October 2026)
+## The compute path's cost and memory
 
-M3-V3's section asks for the GPU time and the memory of the compute path on the Mac, an iPad and a
-phone-class device. None was recorded when the task first landed.
+M3-V3 asks for the GPU time and the memory of the compute path on the Mac, an iPad and a
+phone-class device.
 
-**How it is measured.** The effect cost page, `tests/pages/effect-cost.ts`, gains a `compute` case.
+**How it is measured.** The effect cost page, `tests/pages/effect-cost.ts`, has a `compute` case.
 Its sketch, `tests/pages/sketches/compute-cost-sketch.ts`, draws a field of quads whose vertex
 offset reads a 512 by 512 texture that a compute pass writes in the same frame, so the pass and the
 vertex reads belong to the feature. The page times the scene with the pass off and on in turns: off
@@ -245,14 +247,166 @@ the useful figure is the on side's total.
 | compatibility mode | 67.5 MiB | 2.2 MiB | 6.6 MiB | 85.5 MiB |
 | WebGL2 | 115.4 MiB | 0.6 MiB | 7.6 MiB | 133.4 MiB |
 
-The GPU time is owed. The cost harness measures only while the machine's 1-minute load is under 8,
-and the Mac's load stayed between 100 and 200 through the night, so every attempt refused to record
-a figure. Take it in a quiet window with
-`NULL3D_COMPUTE_COST=1 bun run test:browser -- compute-cost.spec.ts`, which prints each path's GPU
-time with the pass off and on, and the load beside it.
+**The GPU time.** The difference between the sides is the feature's cost. It holds the pass, the
+vertex offset's texture reads in every pass that draws the material, and the custom material's own
+work. The per-pass figures do not separate the pass's own dispatch. The page turns the pass off
+with `render.setPassEnabled`, and the next frame's graph leaves it out. The frame records no
+compute pass for it and dispatches nothing. A live reader does not keep a switched-off pass
+running: the compute-state cost case draws one, and its off side loses the whole pass.
 
-The iPad and the S24 run the same page through the `compute` device plan:
-`bun run devices:cloud --only bsipadpro13-safari --plan compute`, and the same with
-`--only bsgalaxys24-chrome`. Each runs six pages: the three GPU paths at scales 1 and 0.5.
+The frame runs one GPU compute pass, which the engine's own compute fills on both sides. A sketch's
+compute pass joins it when on, and its dispatch is inside that figure. The timer's `compute 1` part
+therefore reads the same on both sides, within a timer step. On the off side it is the engine's
+compute cost, not the pass's. The part follows the render scale on the iPad: 0.0207 ms at scale 1
+and 0.0109 at 0.5. The pass's target stays 512 by 512.
+
+| Device | Run | Window (CSS px, ratio) | Scale | GPU off (ms) | GPU on (ms) | Difference (ms) | `compute 1` off, on (ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| iPad Pro 13-inch, Safari 26.6.1 | 20261026-235238-compute | 1,032 by 1,264 at 2x | 1 | 4.760 | 5.181 | 0.422 | 0.0207, 0.0210 |
+| | | | 0.5 | 3.946 | 4.271 | 0.325 | 0.0109, 0.0127 |
+| Galaxy S25, Chrome 152 | 20261027-002006-compute | 360 by 621 at 3x | 1 | 3.146 | 4.063 | 0.918 | 0.2621, 0.2621 |
+| | | | 0.5 | 4.129 | 4.653 | 0.524 | 0.2621, 0.2621 |
+| MacBook Pro, Apple M3 Max, Chrome 156 | 20261027-003222-compute | 1,200 by 723 at 2x | 1 | 1.835 | 1.901 | 0.066 | 0, 0.0655 |
+| | | | 0.5 | 2.556 | 2.556 | 0 | 0.0655, 0.0655 |
+
+The three runs are in `/Users/ram/dev/null3d-devices/target/runs/`. The commands are
+`bun run devices:cloud --only bsipadpro13-safari --plan compute`,
+`bun run devices:cloud --only bsgalaxys25-chrome --plan compute`, and
+`bun tests/real-browsers.ts --plan compute "Google Chrome"`. Each runs six pages: the three GPU
+paths at both scales. The iPad ran at 59 Hz and the Galaxy S25 at 30 Hz. Each GPU time stands on
+the GPU's own timer.
+
+The Mac's WebGPU timer shows whole steps of 0.065536 ms: 1.835 ms is 28 steps, 1.901 ms is 29 and
+2.556 ms is 39. One step is the smallest figure that machine can show, so its whole-scale
+difference is one step and its half-scale difference is below one. Its render parts each rose by
+one step at half scale, and the frame's span stayed the same because the GPU overlaps them. The
+Galaxy S25's timer shows the same step, so its part is four steps. The iPad's timer reports exact
+times. Its `compute 1` part reads 0.0003 ms higher with the pass on at scale 1, and 0.0018 ms at
+0.5. That bounds the pass's own dispatch there. The Mac's WebGL2 timer is finer: its frame rose
+from 3.870 to 3.950 ms at scale 1 and from 3.879 to 3.989 ms at 0.5. The iPad and the Galaxy S25
+have no WebGL2 GPU timer, so their WebGL2 rows give the CPU time of the busiest thread.
+
+The cost harness measures only while the machine's 1-minute load is under 8. Take a finer Mac
+figure in a quiet window with `NULL3D_COMPUTE_COST=1 bun run test:browser -- compute-cost.spec.ts`.
+It prints each path's GPU time with the pass off and on, and the load beside it.
 
 
+
+## Compute passes that keep their state
+
+The fluid wind of M3-V15 needs a pass that reads its own output from the run before: advection and
+each Jacobi step of the pressure solve read the state that the step before wrote. D-240 refused a
+pass that reads its own texture, because the render graph would make a cycle. This addendum keeps
+that refusal for every other loop and adds one option that closes the loop legally.
+
+**The two states.** `history: true` gives a pass two states. Two textures of `layers` array layers
+hold them, so a run writes one and samples the other through whole-texture views. Compatibility
+mode binds a whole array texture and nothing less, so the states cannot share one texture there. A
+run writes the state that the run before read, and the frame swaps the two textures between runs.
+Once the frame's runs have finished, the frame copies both states into the pass's target: the first
+state into the first `layers` layers, and the second into the layers after them. Readers sample the
+state that the last run wrote. A reader that wants both declares the target as
+`texture_2d_array<f32>`. A one-layer shader writes layer 0 as before, so the option changes nothing
+for a pass that does not use it.
+
+**The runs.** `steps` is the number of dispatches that a frame records: 40 runs of a pressure solve
+are one pass, not 40. `render.setPassSteps` changes it in a frame without an allocation. A pass
+that keeps no history runs once, and a call past one throws E1220. The state that the last run
+wrote is the one a reader samples; each run writes the state that the one before read, so an odd
+count leaves the state that the frame started from.
+
+**The layers.** `layers` is the array layers of each state, from 1 to 256, and 128 at most with
+history. A `'writes'` dispatch runs one workgroup along z for each layer, and the shader writes
+layer `id.z`. The pass texture has the states' layers, and its first layer in each state is the one
+a material or an effect samples.
+
+**The graph.** The pass's target is a kept target, as D-240 made it. The pass reads its own
+previous state through its own bind group, not through `Pass::reads`, so the graph adds no edge and
+finds no cycle. A page that names the pass's own texture in `textures` still throws E1504, and so
+does every other loop.
+
+**The order.** The states need no barrier of their own: each frame's commands are submitted in
+order, and a history pass's copies into the target are recorded between compute passes, before any
+pass that samples it. A reader in the same step therefore sees the state this frame wrote, and the
+frame before's writes finish before this frame's reads. The page's forty-runs-in-one-frame case
+reading the same as forty frames is the proof; a read that saw stale state would not count to forty.
+Keep that case: a change that adds a graph edge must keep it passing.
+
+**Readers.** A material or an effect that declares the pass's texture as `texture_2d<f32>` samples
+the state that the last run wrote: the engine writes that state's first layer into the map's layer
+each frame. A reader that declares `texture_2d_array<f32>` sees both states and names the layers
+itself. `texture.layer` gives the first layer of the state that the last run wrote. A reader of the
+array then names the newest state without counting its own runs.
+
+**A stopped pass.** A pass that does not run keeps the state that its last run wrote, because the
+graph keeps the target and does not clear it. A device loss or a target shape change makes the
+plan's textures again. The state then starts empty at the first one.
+
+**Reset.** `render.resetPass(pass)` asks the next frame to clear every layer of the target. The pass
+then starts again from the first, empty state. A lost device starts every texture empty, so the
+pass starts again from its seed as well.
+
+**A region read.** `render.readPass(pass, { x, y, width, height, layer })` resolves with four numbers
+for each texel of at most 64 by 64, row by row from the top left. It also gives the frames that the
+read took. A frame copies the region into one buffer of a four-buffer ring after the pass's runs. It
+then reads the buffer into engine memory. The GPU's read raises a control slot, and the sketch's
+frame loop answers the promise. No thread waits, so hard rule 4 holds. The layer defaults to the
+state that the pass wrote last, which a history pass needs because the state alternates. A stopped
+pass reads its kept image. The page checks answer a 2 by 2 region three frames after the call on
+WebGPU and compatibility mode, and four to five on WebGL2. A region that reaches past the pass's
+texture is refused with E1220 before a frame records it, because a copy past the end would reject
+the frame's commands. A canvas that shrinks between the call and that frame skips the copy and the
+call times out, so no copy past the edge reaches the GPU. The caller waits for the timeout and sees
+the same E1220 as a read that never lands; this shape is the trade for never copying past an edge.
+
+**WebGL2.** No compute shader runs there, so the fragment form keeps the same two states. Each run
+copies the state before from the target into a scratch texture. It then draws the pass into a layer
+view of the other state. Both states stay in the target's layers, so a reader sees the same two
+layers on both paths. The fragment form reads the state before as `input.color`.
+
+WebGL2 binds a texture array whole. It cannot sample one of its layers in a fragment shader, so the
+fragment form draws one layer at a time. A run of a pass of several layers copies the state
+before's layer into the scratch, then draws that layer. `input.layer` names the layer that the draw
+writes. Each layer has a block of its own in a buffer of the fragment forms, because the block
+carries the layer. Up to 32 layers work on WebGL2, and the call throws E1220 past them. The WebGPU
+paths draw 128 with history and 256 without. This is a limit of the path, not a dropped feature.
+
+**Cost and memory.** The target holds both states as `layers * 2` layers, and the two state
+textures hold them once more, so a history pass takes four times the texels of one state on the
+WebGPU paths. On WebGL2 the target holds both states and the fallback adds one scratch, so it takes
+three times. A frame
+that runs the pass copies both states into the target, `layers * 2` layer copies, and records one
+dispatch for each step. A WebGL2 history pass adds a scratch texture of one state and one copy for
+each run.
+
+**The figures.** The cost page runs a 256 by 256 history pass of 40 steps in one frame with an 8 by
+8 workgroup, and measures the same scene with the pass switched off, on every GPU path. A workgroup
+of one invocation and a measurement with no pass-off baseline are rejected: the first dispatches
+65,536 workgroups for a 256 by 256 pass, and the second cannot separate the pass's cost from the
+frame's. The difference between the two sides is the pass's cost where the timer separates them. The
+page turns the pass off with `render.setPassEnabled`, and the graph leaves it out, so the
+switched-off frame records no pass and dispatches nothing.
+
+| Device | Run | WebGPU off, on (ms) | compatibility off, on (ms) | WebGL2 |
+| --- | --- | --- | --- | --- |
+| MacBook Pro, Apple M3 Max, Chrome 156 | 20261027-013423-history-cost | 0.459, 0.524 | 0.328, 0.524 | 0.339, 11.080, the whole frame |
+| iPad Pro 13-inch, Safari 26.6.1 | 20261027-010154-history-cost | 0.080, 0.574 | 0.079, 0.543 | no timer; CPU 0.74, 4.27 |
+| Galaxy S25, Chrome 152 | 20261027-010335-history-cost | 0.328, 4.325 | 0.328, 4.325 | no timer; CPU 0.48, 0.79 |
+
+The pass costs 0.066 ms on the Mac's WebGPU path, 0.197 ms in its compatibility mode, 0.49 and
+0.46 ms on the iPad, and 4.0 ms on both Galaxy S25 paths. The Galaxy S25 stands in for the S24 class
+by the owner's ruling.
+
+The Mac's WebGPU timer shows whole steps of 0.065536 ms: 0.066 ms is one step and lies below the
+timer's resolution, and 0.197 ms is three. The Galaxy S25's timer shows the same step, so its 4.0 ms
+is 61 steps. The iPad's timer reports exact times.
+
+On WebGL2 the Mac's timer wraps a frame's replay in one `TIME_ELAPSED` query, so its row is the
+whole frame's GPU work with the pass inside it, not the pass's cost. The span passes the 8.28 ms
+frame interval, so it takes in more than this frame's commands: the query's markers bound a span of
+the GPU's shared timeline. That row records what the timer reads, and it does not separate the pass.
+The iPad and the Galaxy S25 have no WebGL2 GPU timer, so their WebGL2 rows give the busiest thread's
+CPU time.
+
+The pass holds 2 MiB of texels on the compute paths and 1.5 MiB on WebGL2. The run files are in
+`.dev/tested-devices/`, and their raw results are in `/Users/ram/dev/null3d-devices/target/runs/`.

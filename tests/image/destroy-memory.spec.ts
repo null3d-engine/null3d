@@ -23,8 +23,8 @@ interface MemoryResult {
 
 /**
  * The rounds in which the engine's start-up may still move the heap. A slower runner's start-up
- * arrives over more rounds: a run of 140 rounds settled at round 131 on 17 October 2026, which left
- * nine rounds of churn to test. Two hundred rounds keep fifty above this bound.
+ * arrives over more rounds: one run of 140 rounds settled at round 131, which left nine rounds of
+ * churn to test. Two hundred rounds keep fifty above this bound.
  */
 const WARM_ROUNDS = 150;
 

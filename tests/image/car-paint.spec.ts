@@ -53,6 +53,20 @@ function changed(a: Float32Array, b: Float32Array, step: number): number {
 	return count / a.length;
 }
 
+/** The number of pixels with a channel that is brighter by more than `step`. */
+function brightened(a: Float32Array, b: Float32Array, step: number): number {
+	let count = 0;
+	for (let i = 0; i < a.length; i += 3) {
+		let most = 0;
+		for (let c = 0; c < 3; c++) {
+			const d = (a[i + c] ?? 0) - (b[i + c] ?? 0);
+			if (d > most) most = d;
+		}
+		if (most > step) count++;
+	}
+	return count;
+}
+
 test('car-paint: each part changes the image', async ({ page }) => {
 	const runs = IMAGE_RUNS.filter((run) => run.test === 'car-paint');
 	expect(runs.length).toBe(3);
@@ -64,17 +78,21 @@ test('car-paint: each part changes the image', async ({ page }) => {
 			seams: await imageOf(page, variant(run.path, '?seams=off')),
 			weave: await imageOf(page, variant(run.path, '?weave=on')),
 		};
-		// The flakes flash from cell to cell, the seams darken their grooves, and the weave draws
-		// its twill with a highlight along the tows. Each changes a fair share of the image, which a
-		// shader that skipped it would not. The three GPU tiers measure: the flakes a mean channel
-		// difference of 0.00842 and 0.0986 of the channels changing by more than 8 steps, the seams
-		// 0.00074 and 0.00330, and the weave 0.01222 and 0.11545. Each floor is half the smallest
-		// of those figures, and a skipped part would draw the plain body, so it fails by the whole
-		// floor.
+		// The flakes glint where the sun's band crosses the body, the seams darken their grooves,
+		// and the weave draws its twill with a highlight along the tows. Each changes a fair share
+		// of the image, which a shader that skipped it would not. The flakes must also brighten
+		// pixels. That count is the only guard against a lobe that darkens without sparkling: the
+		// mean and share floors below pass such a paint.
+		// Each set's picture pairs measure the flakes a mean channel difference of 0.00262 to
+		// 0.00267 and 0.01607 to 0.01631 of the channels changing by more than 8 steps, with 216 to
+		// 232 pixels brighter, the seams 0.00070 and 0.00339 to 0.00341, and the weave 0.01491 to
+		// 0.01504 and 0.12667 to 0.12770. The part test's own runs measure the same to within a
+		// step. Each floor is half the smallest of those figures, and a skipped part would draw the
+		// plain body, so it fails by the whole floor.
 		const parts = [
-			['flakes', plain.flakes, 0.004, 0.045],
+			['flakes', plain.flakes, 0.0013, 0.008],
 			['seams', plain.seams, 0.00035, 0.0016],
-			['weave', plain.weave, 0.006, 0.055],
+			['weave', plain.weave, 0.0074, 0.063],
 		] as const;
 		console.log(
 			[
@@ -84,6 +102,7 @@ test('car-paint: each part changes the image', async ({ page }) => {
 						`${part} mean ${difference(painted, without).toFixed(5)} ` +
 						`changed ${changed(painted, without, 8 / 255).toFixed(5)}`,
 				),
+				`glints ${brightened(painted, plain.flakes, 8 / 255)}`,
 			].join(' '),
 		);
 		for (const [part, without, meanFloor, shareFloor] of parts) {
@@ -94,5 +113,38 @@ test('car-paint: each part changes the image', async ({ page }) => {
 				.soft(changed(painted, without, 8 / 255), `${run.id}: the ${part} change many pixels`)
 				.toBeGreaterThan(shareFloor);
 		}
+		expect
+			.soft(brightened(painted, plain.flakes, 8 / 255), `${run.id}: the flakes glint`)
+			.toBeGreaterThan(108);
+	}
+});
+
+/**
+ * The paint's flakes answer every light, not only the sun. The run draws the body with the sun
+ * left out, so the point light alone lights it: its flakes must still change the image there. A
+ * paint whose lobe answers the sun alone draws the same body with and without flakes, and measures
+ * no difference at all.
+ */
+test('car-paint: the flakes glint under a point light', async ({ page }) => {
+	const runs = IMAGE_RUNS.filter((run) => run.test === 'car-paint');
+	expect(runs.length).toBe(3);
+	test.setTimeout(runs.length * 2 * PAGE_MS);
+	for (const run of runs) {
+		const glints = await imageOf(page, variant(run.path, '?sun=off'));
+		const smooth = await imageOf(page, variant(run.path, '?sun=off&flakes=off'));
+		const mean = difference(glints, smooth);
+		const share = changed(glints, smooth, 8 / 255);
+		console.log(
+			`${run.id}: point-light flakes mean ${mean.toFixed(5)} changed ${share.toFixed(5)}`,
+		);
+		// The reference run measures a mean channel difference of 0.00264 and 0.01583 to 0.01589 of
+		// the channels changing by more than 8 steps on every tier. Each floor is half of that, and
+		// a lobe that skipped the point light would measure zero, so it fails by the whole floor.
+		expect
+			.soft(mean, `${run.id}: the point light's flakes change the image`)
+			.toBeGreaterThan(0.0013);
+		expect
+			.soft(share, `${run.id}: the point light's flakes change many pixels`)
+			.toBeGreaterThan(0.0079);
 	}
 });

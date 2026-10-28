@@ -16,6 +16,9 @@ import {
 	LAYOUT_BACKGROUND_LAYER,
 	LAYOUT_BLOOM,
 	LAYOUT_CLUSTER_CULL,
+	LAYOUT_COMPUTE_HISTORY_R32_FLOAT,
+	LAYOUT_COMPUTE_HISTORY_RGBA8_UNORM,
+	LAYOUT_COMPUTE_HISTORY_RGBA16_FLOAT,
 	LAYOUT_COMPUTE_INSTANCE_BUFFERS,
 	LAYOUT_COMPUTE_R32_FLOAT,
 	LAYOUT_COMPUTE_RGBA8_UNORM,
@@ -290,14 +293,28 @@ export interface ComputeTemplate {
 export const COMPUTE_MAPS_BIT = 1 << 8;
 
 /**
+ * The bit of a compute pass's format code that says the pass keeps two states: each run writes one
+ * state as its storage texture and reads the other, so its group 0 also binds the other state as a
+ * sampled texture.
+ */
+export const COMPUTE_HISTORY_BIT = 1 << 9;
+
+/**
  * The bind group layout of an add-on compute pass's group 0 for the target's format code: its
  * block of uniforms, then the storage texture that it fills. A format code of 0 names a pass that
  * fills an instance draw's two buffers instead, with no texture. The maps bit says the pass also
- * samples textures at group 1.
+ * samples textures at group 1. The history bit names the layout that also binds the previous
+ * state.
  */
 export function layoutOfComputeFormat(code: number): number {
-	const format = code & ~COMPUTE_MAPS_BIT;
+	const format = code & ~(COMPUTE_MAPS_BIT | COMPUTE_HISTORY_BIT);
+	const history = (code & COMPUTE_HISTORY_BIT) !== 0;
 	if (format === 0) return LAYOUT_COMPUTE_INSTANCE_BUFFERS;
+	if (history) {
+		if (format === FORMAT_R32_FLOAT) return LAYOUT_COMPUTE_HISTORY_R32_FLOAT;
+		if (format === FORMAT_RGBA8_UNORM) return LAYOUT_COMPUTE_HISTORY_RGBA8_UNORM;
+		return LAYOUT_COMPUTE_HISTORY_RGBA16_FLOAT;
+	}
 	if (format === FORMAT_R32_FLOAT) return LAYOUT_COMPUTE_R32_FLOAT;
 	if (format === FORMAT_RGBA8_UNORM) return LAYOUT_COMPUTE_RGBA8_UNORM;
 	return LAYOUT_COMPUTE_RGBA16_FLOAT;
@@ -949,6 +966,35 @@ export class Pipelines {
 			LAYOUT_COMPUTE_RGBA8_UNORM,
 			'compute rgba8unorm',
 			computeEntries('rgba8unorm'),
+			true,
+		);
+		// Group 0 of a compute pass that keeps two states: its block of uniforms, the state that
+		// this run writes as a storage texture, and the state of the run before, which the shader
+		// reads. Each run binds a view of one state's layers, so no subresource is both written
+		// and read in one dispatch.
+		const historyEntries = (
+			format: GPUTextureFormat,
+			sampleType: GPUTextureSampleType,
+		): GPUBindGroupLayoutEntry[] => [
+			...computeEntries(format),
+			{ binding: 2, visibility: compute, texture: { sampleType, viewDimension: '2d-array' } },
+		];
+		this.defineLayout(
+			LAYOUT_COMPUTE_HISTORY_RGBA16_FLOAT,
+			'compute history rgba16float',
+			historyEntries('rgba16float', 'float'),
+			true,
+		);
+		this.defineLayout(
+			LAYOUT_COMPUTE_HISTORY_R32_FLOAT,
+			'compute history r32float',
+			historyEntries('r32float', 'unfilterable-float'),
+			true,
+		);
+		this.defineLayout(
+			LAYOUT_COMPUTE_HISTORY_RGBA8_UNORM,
+			'compute history rgba8unorm',
+			historyEntries('rgba8unorm', 'float'),
 			true,
 		);
 		// Group 0 of an add-on's compute pass that fills an instance draw: its block of uniforms,

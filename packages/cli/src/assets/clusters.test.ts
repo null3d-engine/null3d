@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Accessor, Document, NodeIO } from '@gltf-transform/core';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { parseGltf, readContainer } from '../../../engine/src/scene/gltf-parse.ts';
 import { clustersOf, NULL3D_CLUSTERS, Null3dClusters } from './cluster-extension.js';
 import { buildClusterFixture, CLUSTER_FILE, MODELS_DIR } from './cluster-fixture.js';
@@ -17,7 +18,7 @@ import {
 
 // The build of a mesh of 32,000 triangles simplifies its tree in a second or two on a busy
 // machine, and a CI runner of four cores takes longer.
-setDefaultTimeout(60_000);
+setDefaultTimeout(scaledBudget(60_000));
 
 const scratch = mkdtempSync(join(tmpdir(), 'null3d-clusters-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -308,11 +309,15 @@ describe('the tree of a large mesh', () => {
 		expect(summary.bytes).toBeGreaterThan(0);
 	});
 
-	it('writes the model that the cluster sketch loads, byte for byte', async () => {
-		const built = await buildClusterFixture();
-		const committed = readFileSync(join(MODELS_DIR, CLUSTER_FILE));
-		expect(Buffer.from(built).equals(committed)).toBe(true);
-	}, 180_000);
+	it(
+		'writes the model that the cluster sketch loads, byte for byte',
+		async () => {
+			const built = await buildClusterFixture();
+			const committed = readFileSync(join(MODELS_DIR, CLUSTER_FILE));
+			expect(Buffer.from(built).equals(committed)).toBe(true);
+		},
+		scaledBudget(180_000),
+	);
 
 	it('writes the tree where the engine reads it', async () => {
 		const { doc, plans } = await planned;

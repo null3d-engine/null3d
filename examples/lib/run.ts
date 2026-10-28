@@ -11,12 +11,19 @@ interface LabelMessage {
 	/** The id that the sketch tracks the label under with ui.trackLabel. */
 	id: string;
 	text: string;
+	/** A line under the text, for a `'page'` element. */
+	detail?: string;
 	/** True to highlight the label, such as for a selected object. */
 	active?: boolean;
 	/** The element's width in CSS pixels, for a label that is a plane of the scene. */
 	width?: number;
-	/** The element's height in CSS pixels, for a label that is a plane of the scene. */
+	/**
+	 * The element's height in CSS pixels, for a label that is a plane of the scene. A label with
+	 * `kind: 'page'` is a page of its own, with a title bar and the text and detail on it.
+	 */
 	height?: number;
+	/** `'page'` shows the element as a small embedded page; the default is plain text. */
+	kind?: 'text' | 'page';
 }
 
 export interface StartOptions {
@@ -25,7 +32,8 @@ export interface StartOptions {
 	/**
 	 * The element that holds the demo's labels: it should cover the canvas and let the pointer
 	 * through. Each label is a div with the class `label`, and `active` while the demo highlights
-	 * it. Without a layer, the demo shows no labels.
+	 * it. Without a layer, the demo shows no labels. A demo with `backdrop` puts the layer below
+	 * its canvas instead.
 	 */
 	labels?: HTMLElement;
 	/**
@@ -52,6 +60,9 @@ export interface StartOptions {
 	signal?: AbortSignal;
 }
 
+/** How long the loading overlay waits after the last loading message before it hides, in ms. */
+const LOADER_QUIET_MS = 400;
+
 /** Starts the demo's sketch on the canvas, and resolves to its engine once it runs. */
 export async function startDemo({
 	canvas,
@@ -68,6 +79,43 @@ export async function startDemo({
 	const loader = createLoader(canvas);
 	// A stopped demo takes its loading overlay away with it; the controls HUD follows below.
 	signal?.addEventListener('abort', () => loader.hide());
+	// A demo with a backdrop draws over a page: the backdrop and the labels' layer go behind the
+	// canvas, and the engine draws on a see-through canvas above them.
+	const behind = demo.backdrop === true;
+	if (behind) {
+		const parent = canvas.parentElement;
+		if (parent) {
+			const page = createBackdrop();
+			parent.insertBefore(page, canvas);
+			// The canvas paints over the backdrop and the labels. A canvas in the page's flow keeps
+			// its place with a relative position, which changes no layout.
+			if (getComputedStyle(canvas).position === 'static') canvas.style.position = 'relative';
+			if (labels) parent.insertBefore(labels, canvas);
+			// A stopped demo takes its backdrop away with it, as it takes its overlay.
+			signal?.addEventListener('abort', () => page.remove());
+		}
+	}
+	// A scene that builds in stages posts its own loading messages, and its worker can outlive the
+	// engine's first frame. The overlay then waits for a quiet gap after the last message or the
+	// frame, so it fades once at the end of the build rather than twice over a drawn scene.
+	let firstFrame = false;
+	let firstFrameAt = 0;
+	let lastLoadingAt = 0;
+	const hideWhenQuiet = (): void => {
+		if (!firstFrame) return;
+		// A scene that posts nothing hides at the first frame. One that reports its own stages waits
+		// for a quiet gap after the frame or its last message, so a stage that arrives late never
+		// changes a card that is already going.
+		const from = lastLoadingAt === 0 ? 0 : Math.max(lastLoadingAt, firstFrameAt);
+		const wait = from + LOADER_QUIET_MS - performance.now();
+		if (wait > 0) window.setTimeout(hideWhenQuiet, wait);
+		else loader.hide();
+	};
+	const reachedFirstFrame = (): void => {
+		firstFrame = true;
+		firstFrameAt = performance.now();
+		hideWhenQuiet();
+	};
 	let engine: Engine;
 	try {
 		// No preset: the engine's start-up check picks one that the device holds at its frame rate.
@@ -76,9 +124,17 @@ export async function startDemo({
 			sketch: demo.sketch,
 			largeWorld: demo.largeWorld,
 			hdr: demo.hdr,
+			transparent: behind,
 			// Collapsed, the overlay stays small until clicked.
 			stats: stats && { collapsed: true },
-			onProgress: (stage) => loader.stage(stage),
+			onProgress: (stage) => {
+				// The loader hears of the first frame through `hideWhenQuiet`, with any last message.
+				if (stage === 'first-frame') {
+					reachedFirstFrame();
+					return;
+				}
+				loader.stage(stage);
+			},
 		});
 	} catch (error) {
 		loader.fail(error instanceof Error ? error.message : String(error));
@@ -94,16 +150,16 @@ export async function startDemo({
 	];
 	engine.onSketchMessage((type, data) => {
 		if (type === 'loading') {
+			lastLoadingAt = performance.now();
 			loader.note(data);
+			hideWhenQuiet();
 			return;
 		}
 		for (const reader of readers) reader(type, data);
 	});
-	// The overlay leaves with the first frame, so it never covers a drawn scene.
-	void engine.firstFrame.then(
-		() => loader.hide(),
-		() => loader.hide(),
-	);
+	// The overlay leaves once the first frame is drawn and the scene's own loading has gone quiet,
+	// so a stage that reports after the frame never changes a card that is already going.
+	void engine.firstFrame.then(reachedFirstFrame, reachedFirstFrame);
 	// Browsers lock the pointer only right after the user acts, and refuse it on phones.
 	if (demo.pointerLock)
 		canvas.addEventListener('click', () => engine.requestPointerLock().catch(() => {}), { signal });
@@ -231,23 +287,141 @@ function labelReader(engine: Engine, layer: HTMLElement): (type: string, data: u
 	const tags = new Map<string, HTMLElement>();
 	return (type, data) => {
 		if (type !== 'label') return;
-		const { id, text, active = false, width, height } = data as LabelMessage;
+		const { id, text, detail, active = false, width, height, kind = 'text' } = data as LabelMessage;
 		let tag = tags.get(id);
 		if (!tag) {
-			tag = document.createElement('div');
-			// A label that is a plane of the scene is sized in CSS pixels, which are the scene's units.
-			const sized = width !== undefined || height !== undefined;
-			tag.className = sized ? 'label label--card' : 'label';
-			if (width !== undefined) tag.style.width = `${width}px`;
-			if (height !== undefined) tag.style.height = `${height}px`;
-			if (sized) tag.style.boxSizing = 'border-box';
+			tag = kind === 'page' ? pageCard(width, height) : document.createElement('div');
+			if (kind !== 'page') {
+				// A label that is a plane of the scene is sized in CSS pixels, which are the scene's units.
+				const sized = width !== undefined || height !== undefined;
+				tag.className = sized ? 'label label--card' : 'label';
+				if (width !== undefined) tag.style.width = `${width}px`;
+				if (height !== undefined) tag.style.height = `${height}px`;
+				if (sized) tag.style.boxSizing = 'border-box';
+			}
 			layer.append(tag);
 			tags.set(id, tag);
 			engine.labels.bind(id, tag);
 		}
+		const parts = pageParts.get(tag);
+		if (parts) {
+			parts.title.textContent = text;
+			parts.detail.textContent = detail ?? '';
+			return;
+		}
 		tag.textContent = text;
 		tag.classList.toggle('active', active);
 	};
+}
+
+/** The title and the detail of a page card, which the label's messages update. */
+interface PageParts {
+	title: HTMLElement;
+	detail: HTMLElement;
+}
+
+/** The parts of each page card that a label's messages update. */
+const pageParts = new WeakMap<HTMLElement, PageParts>();
+
+/**
+ * A label shown as a small embedded page: a title bar, a heading and a line of detail, sized in
+ * CSS pixels. The page is styled through the DOM so it looks the same in any page's layout.
+ */
+function pageCard(width?: number, height?: number): HTMLElement {
+	const card = document.createElement('div');
+	card.className = 'label-page';
+	Object.assign(card.style, {
+		boxSizing: 'border-box',
+		overflow: 'hidden',
+		display: 'flex',
+		flexDirection: 'column',
+		borderRadius: '12px',
+		border: '1px solid rgb(255 255 255 / 0.14)',
+		background: 'linear-gradient(165deg, #141c29 0%, #0a0f18 60%, #0c1726 100%)',
+		boxShadow: '0 30px 90px rgb(0 0 0 / 0.45), inset 0 1px 0 rgb(255 255 255 / 0.08)',
+		color: '#e8f1ff',
+		fontFamily: 'Helvetica, Arial, sans-serif',
+		pointerEvents: 'none',
+	});
+	if (width !== undefined) card.style.width = `${width}px`;
+	if (height !== undefined) card.style.height = `${height}px`;
+	const bar = document.createElement('div');
+	Object.assign(bar.style, {
+		height: '26px',
+		flex: '0 0 auto',
+		display: 'flex',
+		alignItems: 'center',
+		gap: '6px',
+		padding: '0 12px',
+		background: 'rgb(255 255 255 / 0.05)',
+	});
+	for (const tone of ['#ff6b5f', '#ffc94d', '#5fd48a']) {
+		const dot = document.createElement('span');
+		Object.assign(dot.style, {
+			width: '7px',
+			height: '7px',
+			borderRadius: '50%',
+			background: tone,
+		});
+		bar.append(dot);
+	}
+	const body = document.createElement('div');
+	Object.assign(body.style, {
+		flex: '1 1 auto',
+		display: 'flex',
+		flexDirection: 'column',
+		justifyContent: 'center',
+		alignItems: 'center',
+		gap: '10px',
+		padding: '0 26px',
+		textAlign: 'center',
+	});
+	const title = document.createElement('div');
+	Object.assign(title.style, { fontSize: '26px', fontWeight: '700', letterSpacing: '0.18em' });
+	const detail = document.createElement('div');
+	Object.assign(detail.style, {
+		fontSize: '13px',
+		lineHeight: '1.45',
+		color: '#9fb6d4',
+		maxWidth: '300px',
+	});
+	const action = document.createElement('div');
+	action.textContent = 'Open the hall';
+	Object.assign(action.style, {
+		marginTop: '4px',
+		padding: '7px 16px',
+		borderRadius: '999px',
+		fontSize: '12px',
+		letterSpacing: '0.08em',
+		background: 'rgb(126 180 255 / 0.18)',
+		border: '1px solid rgb(126 180 255 / 0.35)',
+		color: '#cfe4ff',
+	});
+	body.append(title, detail, action);
+	card.append(bar, body);
+	pageParts.set(card, { title, detail });
+	return card;
+}
+
+/**
+ * The page that a demo with `backdrop` draws over: a light surface behind the canvas, so the
+ * see-through parts of the scene show the page rather than the layout's background.
+ */
+function createBackdrop(): HTMLElement {
+	const page = document.createElement('div');
+	page.className = 'demo-backdrop';
+	page.setAttribute('aria-hidden', 'true');
+	Object.assign(page.style, {
+		position: 'absolute',
+		inset: '0',
+		pointerEvents: 'none',
+		// A ruled page, so the see-through canvas reads as a layer over a document.
+		background:
+			'repeating-linear-gradient(0deg, rgb(32 42 62 / 0.05) 0 1px, transparent 1px 44px), ' +
+			'repeating-linear-gradient(90deg, rgb(32 42 62 / 0.05) 0 1px, transparent 1px 44px), ' +
+			'radial-gradient(120% 90% at 50% 0%, #ffffff 0%, #f2eee6 38%, #dfe6f0 100%)',
+	});
+	return page;
 }
 
 /** The message that a showcase scene posts with its controls. */

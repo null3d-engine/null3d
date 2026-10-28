@@ -1,21 +1,22 @@
 # D-161: Crowd update rates and shared poses
 
-Status: accepted. Built under the owner's ruling 2 of 8 October 2026 (vertex-shader skinning is the WebGPU default). Date: 2026-10-13. Task: M2-C6.
+Status: accepted. Built, under the owner's ruling that the vertex shaders skin on WebGPU by default ([D-20](D-20-webgpu-skinning.md)). Not measured yet: the saving on S5's busiest thread. Task: M2-C6.
 
-Summary: A far character's pose updates once every 1, 2 or 4 frames. A sketch gives each character that interval with `animator.setUpdateInterval`, and the `farAnimationInterval` quality setting gives the value for far ones. On the frames between two updates the engine samples, blends and composes nothing for that instance. It holds the last matrices and leaves the pose step unchanged, so the skinning pass skips the held pose too. Each update covers the frames its clips skipped, so they keep their real speed. The governor doubles the interval after every other live step. The task's shared-pose idea is met by the vertex-shader default. A crowd of one model draws in one instanced draw per part, and it shares the clip data. The compute path's skin-region sharing belongs to the pose stamp of M2-C8.
+Summary: A far character's pose updates once every 1, 2 or 4 frames, from `animator.setUpdateInterval` and the `farAnimationInterval` quality setting, which the governor doubles last. Between updates the engine holds the instance's matrices and samples nothing, and each update spends the skipped frames' time, so clips keep real speed. The vertex-shader default meets the task's shared poses: a crowd of one model draws in one instanced draw per part and shares the clip data.
 
 ## Question
 
-M2-C6 asks for crowd update rates and shared poses. Its text assumed compute skinning on
+M2-C6 asks for crowd update rates and shared poses. Its text assumes compute skinning on
 WebGPU: slower rates would save CPU sampling, and the compute pass's pose skip would save GPU work
-as well. The owner's ruling 2 of 8 October 2026 made vertex-shader skinning the WebGPU default
-(`SkinningMode::default() == VERTEX`), which is already on main. What of M2-C6 is still to build,
-and how does a slower rate save work when every pass skins a character in its vertex shader?
+as well. The owner ruled that the vertex shaders skin on WebGPU by default
+(`SkinningMode::default() == VERTEX`, [D-20](D-20-webgpu-skinning.md)). What does that leave of
+M2-C6 to build? How does a slower rate save work when every pass skins a character in its vertex
+shader?
 
 ## Rule
 
 - A far character's pose updates every 1, 2 or 4 frames by preset, from a live setting. 1
-  measures the same frame as today.
+  measures the same frame as a scene without the setting.
 - A character the camera sees near updates in every frame, so nothing steps where the viewer
   looks. A sketch sets the intervals, because only the sketch knows which characters are far.
 - A slower rate saves the CPU work of sampling, blending and composing on the frames it skips. On
@@ -39,8 +40,8 @@ and how does a slower rate save work when every pass skins a character in its ve
 
 | Option | Verdict |
 | --- | --- |
-| The update adds up the time of each frame the instance skipped, each at its own time scale, and spends the sum on its next pose | Chosen, 15 October 2026 (the code review's finding M-3 replaced the rejected row below). Every frame counts once, whatever its length, so the clip keeps real time and a play-once clip ends when it should. It needs one float per instance, which the table grows with the rest |
-| The update advances the clip by the frames it skipped, so its mean rate is the frame's rate | Rejected, 15 October 2026. It multiplies the frame that poses the instance by the whole gap, so free frame times drift: on an interval of 4, frames of 16, 16, 16 and 100 ms advanced the clip by 400 ms instead of the 148 ms that passed |
+| The update adds up the time of each frame the instance skipped, each at its own time scale, and spends the sum on its next pose | Chosen (review finding M-3). Every frame counts once, whatever its length, so the clip keeps real time and a play-once clip ends when it should. It needs one float per instance, which the table grows with the rest |
+| The update advances the clip by the frames it skipped, so its mean rate is the frame's rate | Rejected. It multiplies the frame that poses the instance by the whole gap, so uneven frame times make the clip drift: on an interval of 4, frames of 16, 16, 16 and 100 ms advance the clip by 400 ms instead of the 148 ms that passed |
 | The update advances by one frame, as usual | Rejected. A character would then animate at 1/interval of its speed |
 
 ### The shared poses of the task
@@ -48,7 +49,7 @@ and how does a slower rate save work when every pass skins a character in its ve
 | Option | Verdict |
 | --- | --- |
 | The vertex-shader default already shares the work: a crowd of one model draws in one instanced draw per part and reads one clip's data | Chosen. The bucket and the clip data are shared, and M2-C8's pose stamp skips a held pose on the compute path |
-| Add a per-pose skinned region that identical characters share, as the compute path once planned | Rejected. Vertex-shader skinning gives each pass the character's own vertices and its own joints, so a shared region saves nothing there, and the compute path's M2-C8 pose stamp already skips a repeated skin |
+| Add a per-pose skinned region that identical characters share, for the compute path | Rejected. Vertex-shader skinning gives each pass the character's own vertices and its own joints, so a shared region saves nothing there, and the compute path's M2-C8 pose stamp already skips a repeated skin |
 | Bake vertex animation textures for a very large crowd | Left to the asset tool as the plan allows; nothing in the engine depends on it |
 
 ### Where the governor acts
@@ -81,19 +82,19 @@ task's shared-pose wording is met by the vertex-shader default and M2-C8's pose 
 ## Consequences
 
 - `animator.setUpdateInterval(frames)` takes a whole number from 1 to 64, and `animator.updateInterval`
-  reads it. A scene that never calls it updates every character in every frame, as before.
+  reads it. A scene that never calls it updates every character in every frame.
 - A far character steps between its updates, which is why a sketch holds the near ones at 1. Its
   events reach the sketch's handlers on its next update, up to `frames` frames late.
 - The engine's S5 benchmark uses the setting: it gives characters within 24 m of the camera 1 and
   the rest the governed interval. Its image and parity tests pass `?anim=every`, which holds every
   character at 1, so a held frame stays repeatable.
-- The wall-clock saving on S5's busiest thread is owed: a quiet-Mac run of `bun run bench:profile
-  --thread sketch --scene s5` with and without `?anim=every` records it. The figure goes into this
-  record and the device record.
+- Not measured yet: the wall-clock saving on S5's busiest thread. A quiet-Mac run of `bun run
+  bench:profile --thread sketch --scene s5` with and without `?anim=every` measures it. The figure
+  goes into this record and the device record.
 
 ## Follow-ups
 
 1. Stagger the updates of a crowd so one frame does not carry all of it, if a profile shows the
-   burst. Today the instances of a crowd created together pose on the same frames.
+   burst. The instances of a crowd created together pose on the same frames.
 2. Let a sketch say that a character is off screen. The engine then skips its sampling until the
    character returns, which the task's "off-screen characters skip sampling" asks for.

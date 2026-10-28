@@ -70,7 +70,7 @@ A phone closes a tab that uses too much memory, with no warning. The engine's ta
 | 11-inch iPad Pro, Safari, WebGL2 | 2,528 MiB | 2,496 MiB |
 | Galaxy S24+, Chrome, WebGL2 | 7,296 MiB | 7,616 MiB |
 
-No allocation failed first, and no error came. A scene holds its textures, buffers, render targets and WebAssembly memory at once, and a device with less memory gives a tab less. So the quality preset's texture memory budget keeps textures under 256 MiB on Low and 512 MiB on Medium. On phones and tablets, no preset gives textures more than 1,008 MiB. On the iPad's WebGPU path, an earlier run stopped answering at 512 MiB of GPU buffers, but that stall did not come back in a rerun on 17 October 2026. Keep a scene's GPU buffers under half the point in the table.
+No allocation failed first, and no error came. A scene holds its textures, buffers, render targets and WebAssembly memory at once, and a device with less memory gives a tab less. So the quality preset's texture memory budget keeps textures under 256 MiB on Low and 512 MiB on Medium. On phones and tablets, no preset gives textures more than 1,008 MiB. The iPad's WebGPU path can stop answering at 512 MiB of GPU buffers, though not in every run. Keep a scene's GPU buffers under half the point in the table.
 
 On a page with worker threads, the engine's threads share one WebAssembly memory, whose maximum the preset sets. The browser reserves address space for the whole maximum, and every other engine and WebAssembly module on the page shares what is left. [Page API: createEngine](../api/engine.md#memory) says when to ask for more.
 

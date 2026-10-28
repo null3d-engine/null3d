@@ -16,9 +16,10 @@ import { watchIgnored } from './tools/lib/watch-ignored.ts';
 
 // One dev server for every browser page in the repository: the test pages under tests/pages, the
 // benchmark pages under bench/pages and the demos under examples, with the isolation headers.
-// Plain HTTP stays on localhost, which phones reach through adb. NULL3D_HTTPS=1 serves HTTPS on the
-// local network instead, on its own port, for tablets and phones that reach the Mac by its .local
-// name. The dev server and `vite preview` also serve the startup build of the engine test page, one
+// Plain HTTP binds every interface, so a demo is reachable from outside this machine as well as from
+// a phone over USB, whose forwarding rule reaches the loopback that such a server also answers.
+// NULL3D_HTTPS=1 serves HTTPS on its own port, for tablets and phones that reach the Mac by its
+// .local name. The dev server and `vite preview` also serve the startup build of the engine test page, one
 // address prefix per load, and the pinned sample content under /samples/ from the shared cache,
 // with the environment maps of its HDR files under /sample-environments/ and the KTX2 files of its
 // images under /sample-textures/, and S6's model files, built from the sample content's city
@@ -87,10 +88,9 @@ const config: UserConfig = {
 	// The pages take the packages' source, not the files that their pack step builds.
 	resolve: sourceResolve,
 	server: {
-		// The phone reaches the plain server through a USB forwarding rule to the IPv4 loopback, so
-		// that server binds 127.0.0.1 rather than the name that resolves to IPv6 first. The secure
-		// server answers the local network, so it binds every interface.
-		host: https ? true : '127.0.0.1',
+		// Both servers bind every interface, so a demo is reachable from outside this machine. A phone
+		// over USB reaches the loopback, which such a server answers too.
+		host: true,
 		port: https ? HTTPS_PORT : HTTP_PORT,
 		strictPort: true,
 		fs: { strict: true, allow: [searchForWorkspaceRoot(import.meta.dirname)], deny: DENIED },

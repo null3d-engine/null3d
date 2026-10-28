@@ -1,8 +1,8 @@
 # D-201: A material override draws the main pass, not the shadow pass
 
-Status: decided on 21 October 2026. Built in M3. Task: M3-K5.
+Status: decided and built. Task: M3-K5.
 
-Summary: `scene.overrideMaterial` replaces the material of every mesh and instance batch of the main pass. Sprites, points, lines, particle systems and the shadow pass keep their own materials, as three.js's does. Setting it or clearing it rebuilds the draw tables once. After that it adds no draw call per object and no pipeline per frame, because all the meshes share the override's buckets. A masked caster keeps its own material, so its shadow still cuts.
+Summary: `scene.overrideMaterial` replaces the material of every mesh and instance batch of the main pass, as three.js's does. Sprites, points, lines, particle systems and the shadow pass keep their own materials, so a masked caster's shadow still cuts. Setting or clearing it rebuilds the draw tables once, and then it adds no draw call per object and no pipeline per frame.
 
 ## Question
 
@@ -28,7 +28,7 @@ The render tests of both builders show the cost:
 | Draw calls | One per run of a bucket | One per run of the buckets that remain, never more |
 | Draw-table rebuilds | On each structural change | One when the override changes |
 
-How the data was produced: `cargo test -p null3d-render --test override_material`, 21 October 2026, on the Mac, for the WebGPU builder and the WebGL2 builder with and without multi-draw.
+How the data was produced: `cargo test -p null3d-render --test override_material` on the Mac, for the WebGPU builder and the WebGL2 builder with and without multi-draw.
 
 ## Decision
 
@@ -38,12 +38,12 @@ The substitution happens when the tables are built. An override that never chang
 
 The engine classifies a mesh by the override's pipeline, so an override that blends draws every mesh in the transparent pass and sorts it. three.js sorts by the original material and then draws with the override. The engine's order is the one that works for its bucket tables; the difference shows only for an override whose blending differs from the scene's.
 
-A displacement-map override grows the culling spheres of the WebGPU builder by its own margin. On the WebGL2 builder the core's world spheres keep each object's own margin. Such an override can then cull an object at the screen's edge a moment early. Every other override has a margin of 0, so it has no such effect. A later change can write the override's margin into the objects' world bounds.
+A displacement-map override grows the culling spheres of the WebGPU builder by its own margin. On the WebGL2 builder the core's world spheres keep each object's own margin. Such an override can then cull an object at the screen's edge a moment early. Every other override has a margin of 0, so it has no such effect. Writing the override's margin into the objects' world bounds would remove that.
 
 ## Consequences
 
 - `scene.overrideMaterial` is a property on the scene, with `null` to clear it, beside three.js's name and type (`docs/api/scene.md`).
 - `SceneSettings` holds the id; both frame builders apply it through one helper, and the texture budget, software occlusion and the skinning bounds follow it.
-- The three.js mapping entry for `scene.overrideMaterial` becomes direct, and the porting skill describes the mapping.
-- The objects demo gains a Look button that draws its whole stage with one material. A second image test holds that look beside the demo's own image.
-- A scene without an override draws exactly as before, which the existing image references show unchanged.
+- The three.js mapping entry for `scene.overrideMaterial` is direct, and the porting skill describes the mapping.
+- The objects demo has a Look button that draws its whole stage with one material. A second image test holds that look beside the demo's own image.
+- A scene without an override draws as if the feature did not exist, and its image references show it.

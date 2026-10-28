@@ -445,9 +445,18 @@ const vGgx = (alpha: number, nDotL: number, nDotV: number) => {
 	const gl = nDotV * Math.sqrt(a2 + (1 - a2) * nDotL * nDotL);
 	return 0.5 / Math.max(gv + gl, 1e-6);
 };
+/**
+ * The unit vector halfway between two unit directions. Where the two cancel no unit bisector
+ * exists, so the result is zero, as `null3d::math::half_vector` gives it.
+ */
+const halfVector = (toLight: V3, toView: V3): V3 => {
+	const sum = add(toLight, toView);
+	return length(sum) === 0 ? [0, 0, 0] : normalize(sum);
+};
 function brdfGgx(toLight: V3, toView: V3, normal: V3, f0: V3, f90: number, roughness: number): V3 {
 	const alpha = roughness * roughness;
-	const half = normalize(add(toLight, toView));
+	const half = halfVector(toLight, toView);
+	if (length(half) === 0) return [0, 0, 0];
 	const nDotL = saturate(dot(normal, toLight));
 	const nDotV = saturate(dot(normal, toView));
 	const nDotH = saturate(dot(normal, half));
@@ -474,6 +483,15 @@ const length32 = (a: readonly number[]) => sqrt32(dot32(a, a));
 const normalize32 = (a: V3): V3 => {
 	const l = length32(a);
 	return [div32(a[0], l), div32(a[1], l), div32(a[2], l)];
+};
+/** The unit half vector, rounded at each step, and zero where the light and the view cancel. */
+const halfVector32 = (toLight: V3, toView: V3): V3 => {
+	const sum: V3 = [
+		add32(toLight[0], toView[0]),
+		add32(toLight[1], toView[1]),
+		add32(toLight[2], toView[2]),
+	];
+	return dot32(sum, sum) === 0 ? [0, 0, 0] : normalize32(sum);
 };
 const saturate32 = (x: number) => Math.min(Math.max(x, 0), 1);
 /** The shader's `INV_PI` and `EPSILON`, as 32-bit floats. */
@@ -537,11 +555,8 @@ function brdfGgxPhysicalF32(
 	roughness: number,
 ): V3 {
 	const alpha = mul32(roughness, roughness);
-	const half = normalize32([
-		add32(toLight[0], toView[0]),
-		add32(toLight[1], toView[1]),
-		add32(toLight[2], toView[2]),
-	]);
+	const half = halfVector32(toLight, toView);
+	if (length32(half) === 0) return [0, 0, 0];
 	const nDotL = saturate32(dot32(normal, toLight));
 	const nDotV = saturate32(dot32(normal, toView));
 	const nDotH = saturate32(dot32(normal, half));
@@ -972,16 +987,26 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 	},
 	{
 		name: 'lighting::brdf_ggx',
-		cases: samples((random) => {
-			const normal = unit(random);
-			const facing = (v: V3) => (dot(v, normal) < 0 ? scale(v, -1) : v);
-			return new Inputs()
-				.setF(0, facing(unit(random)))
-				.setF(1, facing(unit(random)))
-				.setF(2, normal)
-				.setF(3, [...values(random, 3, 0.02, 1), 1])
-				.setF(4, [between(random, 0.1, 1)]);
-		}),
+		cases: (random) => [
+			// The light and the view cancel, so no unit half vector exists: the lobe has no value
+			// there, whatever the normal and the roughness.
+			new Inputs()
+				.setF(0, [0, 0, 1])
+				.setF(1, [0, 0, -1])
+				.setF(2, [1, 0, 0])
+				.setF(3, [0.04, 0.04, 0.04, 1])
+				.setF(4, [0.5, 0, 0, 0]),
+			...samples((random) => {
+				const normal = unit(random);
+				const facing = (v: V3) => (dot(v, normal) < 0 ? scale(v, -1) : v);
+				return new Inputs()
+					.setF(0, facing(unit(random)))
+					.setF(1, facing(unit(random)))
+					.setF(2, normal)
+					.setF(3, [...values(random, 3, 0.02, 1), 1])
+					.setF(4, [between(random, 0.1, 1)]);
+			})(random),
+		],
 		expected: (i) =>
 			floats(brdfGgx(xyz(i.f(0)), xyz(i.f(1)), xyz(i.f(2)), xyz(i.f(3)), i.f(3)[3], i.f(4)[0])),
 	},
@@ -1113,15 +1138,28 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 	},
 	{
 		name: 'lighting::direct_light',
-		cases: materialCase((random, i) => {
-			const normal = unit(random);
-			const facing = (v: V3) => (dot(v, normal) < 0 ? scale(v, -1) : v);
-			i.setF(2, normal)
-				.setF(3, facing(unit(random)))
-				.setF(4, facing(unit(random)))
-				.setF(5, values(random, 3, 0, 3))
-				.setF(6, values(random, 3, 1, 1.5));
-		}),
+		cases: (random) => [
+			// The surface faces the light head on while the camera stands behind it, so the light and
+			// the view cancel: the specular lobe gives nothing, and the diffuse takes the Fresnel
+			// limit there.
+			new Inputs()
+				.setF(0, [0.8, 0.8, 0.8, 0])
+				.setF(1, [0.4, 0])
+				.setF(2, [0, 0, 1])
+				.setF(3, [0, 0, -1])
+				.setF(4, [0, 0, 1])
+				.setF(5, [1, 1, 1])
+				.setF(6, [1.2, 1.2, 1.2]),
+			...materialCase((random, i) => {
+				const normal = unit(random);
+				const facing = (v: V3) => (dot(v, normal) < 0 ? scale(v, -1) : v);
+				i.setF(2, normal)
+					.setF(3, facing(unit(random)))
+					.setF(4, facing(unit(random)))
+					.setF(5, values(random, 3, 0, 3))
+					.setF(6, values(random, 3, 1, 1.5));
+			})(random),
+		],
 		expected: (i) => {
 			const m = materialOf(i);
 			const [normal, toView, toLight, light, compensation] = [2, 3, 4, 5, 6].map((k) =>
@@ -1129,7 +1167,7 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			);
 			const irradiance = scale(light!, saturate(dot(normal!, toLight!)));
 			const brdf = brdfGgx(toLight!, toView!, normal!, m.blended, m.grazing, m.roughness);
-			const vDotH = saturate(dot(toView!, normalize(add(toLight!, toView!))));
+			const vDotH = saturate(dot(toView!, halfVector(toLight!, toView!)));
 			const fresnel = fSchlick(m.specular, m.grazing, vDotH);
 			return floats(
 				mul(
@@ -1807,6 +1845,15 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 				.setF(3, [0, 0, 1])
 				.setF(4, [1, 1, 1])
 				.setF(5, [0, 0.6, 0.8]),
+			// The light and the view cancel, so no unit half vector exists: the lobe has no value
+			// there, whatever the normal and the roughness.
+			new Inputs()
+				.setF(0, [0.5, 0.5, 0.5, 0])
+				.setF(1, [0.5, 0, 0.04, 1])
+				.setF(2, [1, 0, 0])
+				.setF(3, [0, 0, -1])
+				.setF(4, [1, 1, 1])
+				.setF(5, [0, 0, 1]),
 			// Roughness at zero reaches the floor, so the lobe peaks finitely instead of dividing by
 			// a zero alpha. The view stands a few degrees off the normal, since at the exact peak the
 			// distribution's denominator is a difference of two numbers near one, which loses about
@@ -1851,6 +1898,17 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 				),
 			);
 		},
+	},
+	{
+		name: 'math::half_vector',
+		cases: (random) => [
+			// The two directions cancel, so no unit bisector exists and the result is zero.
+			new Inputs().setF(0, [0, 0, 1]).setF(1, [0, 0, -1]),
+			// A pair that faces the same way has no rotation, and the bisector is that direction.
+			new Inputs().setF(0, [0, 0, 1]).setF(1, [0, 0, 1]),
+			...samples((random) => new Inputs().setF(0, unit(random)).setF(1, unit(random)))(random),
+		],
+		expected: (i) => floats(halfVector(xyz(i.f(0)), xyz(i.f(1)))),
 	},
 	// null3d::motion
 	{

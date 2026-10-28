@@ -271,9 +271,15 @@ describe('outcomeText and summaryLine', () => {
 	});
 
 	it('counts the results by status', () => {
-		const outcome = (status: 'PASS' | 'FAIL' | 'SKIP' | 'SAVED') => ({ status, text: '' });
+		const outcome = (status: 'PASS' | 'WARN' | 'FAIL' | 'SKIP' | 'SAVED') => ({
+			status,
+			text: '',
+		});
 		expect(summaryLine(['PASS', 'PASS', 'FAIL', 'SKIP'].map(outcome as never))).toBe(
 			'2 passed, 1 failed, 1 skipped.',
+		);
+		expect(summaryLine(['PASS', 'WARN', 'WARN', 'SKIP'].map(outcome as never))).toBe(
+			'1 passed, 1 skipped, 2 warnings.',
 		);
 		expect(summaryLine(['PASS', 'SAVED'].map(outcome as never))).toBe(
 			'1 passed, 1 reference saved.',

@@ -190,6 +190,9 @@ struct InstanceBucket {
     fade_bucket: u32,
     bias: f32,
     level_switch: u32,
+    /// The level of detail that the bucket draws. The vertex shader reads none of it, but the
+    /// record's stride holds it.
+    level: u32,
 }
 
 // The group after the template's own: the frame's, then the maps' in the builds that sample maps
@@ -456,6 +459,17 @@ fn material_anisotropy(id: u32) -> vec4f {
 #endif
 
 #ifdef TRANSMISSION
+/// The strength of material `id`'s dispersion: 20 divided by the Abbe number, as glTF's
+/// `KHR_materials_dispersion` gives it. The anisotropy row keeps it in the float after the layer
+/// map families, which no other build reads.
+fn material_dispersion(id: u32) -> f32 {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(16u, id), 0).w;
+#else
+    return materials[id].anisotropy.w;
+#endif
+}
+
 /// Which family of maps material `id` keeps in each group of shared slots, two bits each: bits 0
 /// and 1 for the light map's slot, bits 2 and 3 for the specular intensity map's, and bits 4 and 5
 /// for the specular color map's. 0 is a clear coat's and a sheen's, 1 is iridescence's and the
@@ -504,6 +518,29 @@ fn material_light_map_uv(id: u32) -> vec4f {
     return textureLoad(materials, vec2u(17u, id), 0);
 #else
     return materials[id].light_map_uv;
+#endif
+}
+
+/// The texel of a material's row where the transforms of the maps of the slots from the second up
+/// start, two texels for each.
+const MATERIAL_MAP_UV_TEXEL: u32 = 18u;
+
+/// The two rows of a 2 x 3 matrix that places a map on the texture coordinates: the row that gives
+/// u, then the row that gives v. Each row's fourth float is a spare.
+struct MapUvRows {
+    u: vec4f,
+    v: vec4f,
+}
+
+/// The transform of material `id`'s map in `slot`, for a slot from 1 up. The base color map's
+/// transform sits in the values that every shader reads, as `Material::uv_u` and `Material::uv_v`.
+fn material_map_uv(id: u32, slot: u32) -> MapUvRows {
+#ifdef WEBGL2
+    let at = vec2u(MATERIAL_MAP_UV_TEXEL + (slot - 1u) * 2u, id);
+    return MapUvRows(textureLoad(materials, at, 0), textureLoad(materials, at + vec2u(1u, 0u), 0));
+#else
+    let at = (slot - 1u) * 2u;
+    return MapUvRows(materials[id].map_uv[at], materials[id].map_uv[at + 1u]);
 #endif
 }
 
@@ -803,6 +840,7 @@ fn finish_exposed(c: vec3f, pixel: vec2f) -> vec4f {
     return null3d::tonemap::finish(
         c,
         pixel,
+        frame.occlusion.y,
         frame.output,
         frame.target_size.xy,
         frame.vignette,
@@ -822,7 +860,13 @@ fn finish_material(m: Material, c: vec3f, pixel: vec2f) -> vec4f {
 fn finish_exposed_material(m: Material, c: vec3f, pixel: vec2f) -> vec4f {
 #ifdef TONE_MAP
     if (keeps_display_color(m)) {
-        return null3d::tonemap::finish_unmapped(c, pixel, frame.target_size.xy, frame.vignette);
+        return null3d::tonemap::finish_unmapped(
+            c,
+            pixel,
+            frame.occlusion.y,
+            frame.target_size.xy,
+            frame.vignette,
+        );
     }
 #endif
     return finish_exposed(c, pixel);

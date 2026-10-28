@@ -175,10 +175,12 @@
       "devDependencies": {
         "@null3d/engine": "workspace:*",
         "@null3d/vite-plugin": "workspace:*",
+        "@null3d/wind": "workspace:*",
         "@webgpu/types": "0.1.74",
       },
       "peerDependencies": {
         "@null3d/engine": "workspace:*",
+        "@null3d/wind": "workspace:*",
       },
     },
     "packages/vite-plugin": {
@@ -211,6 +213,18 @@
         "@null3d/engine": "workspace:*",
       },
     },
+    "packages/wind": {
+      "name": "@null3d/wind",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@null3d/engine": "workspace:*",
+        "@null3d/vite-plugin": "workspace:*",
+        "@webgpu/types": "0.1.74",
+      },
+      "peerDependencies": {
+        "@null3d/engine": "workspace:*",
+      },
+    },
     "tests": {
       "name": "@null3d/tests",
       "devDependencies": {
@@ -224,6 +238,7 @@
         "@null3d/three-compat": "workspace:*",
         "@null3d/vegetation": "workspace:*",
         "@null3d/vite-plugin": "workspace:*",
+        "@null3d/wind": "workspace:*",
         "@playwright/test": "1.63.0",
         "@types/three": "0.186.0",
         "@webgpu/types": "0.1.74",
@@ -335,6 +350,8 @@
     "@null3d/vite-plugin": ["@null3d/vite-plugin@workspace:packages/vite-plugin"],
 
     "@null3d/water": ["@null3d/water@workspace:packages/water"],
+
+    "@null3d/wind": ["@null3d/wind@workspace:packages/wind"],
 
     "@oxc-project/types": ["@oxc-project/types@0.151.0", "", {}, "sha512-J1yXrIlNDZVzE3ada310xeAw7nH8yCAyLPuUIsjKatFPmfn5bS1oW+cM+QsGOtVWd5nhSpbwZWx/rue+r5Z+PA=="],
 

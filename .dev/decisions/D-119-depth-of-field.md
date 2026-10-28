@@ -1,8 +1,8 @@
 # D-119: Depth of field
 
-Status: proposed by the helper of M2-EX17 on 9 October 2026. Built: depth of field is on main (`ea4df4b37`, 9 October 2026). No ruling is recorded. Date: 2026-10-09. Task: M2-EX17.
+Status: proposed by the helper of M2-EX17. Built: depth of field is on main (`ea4df4b37`). The owner ruled on the Low preset; no ruling on the rest of the design is recorded. Task: M2-EX17.
 
-Summary: `post.set({ dof })` blurs by distance from the focus, as a camera lens does, with the near and far fields apart, so a sharp object never spreads a halo and a blurred one in front spreads over what lies behind it. It is the gather of KinoBokeh at half the render size: four steps after the custom effects and before bloom, whose code and shaders load on first use. The lens takes a focal length in millimetres on a full-frame sensor, an f-number and a focus distance, or a world point to focus on in each frame. The camera's `setFocalLength` sets the field of view of the same lens. The quality setting `dofSamples` gives the gather 22 taps on Medium, 43 on High and 71 on Ultra, and keeps it off on Low, by the owner's ruling after the cloud phone runs. At 1920 x 1080 on the Mac it costs about 0.6 ms of GPU time per frame at 22 taps with WebGL2 and 0.85 ms with WebGPU, about 0.9 and 1.3 ms at 43 taps, and nothing while it is off.
+Summary: `post.set({ dof })` blurs by distance from the focus, as a camera lens does, with the near and far fields apart, so a sharp object never spreads a halo and a blurred one in front spreads over what lies behind it. It is the gather of KinoBokeh at half the render size: four steps after the custom effects and before bloom, whose code and shaders load on first use. The lens takes a focal length in millimeters on a full-frame sensor, an f-number and a focus distance, or a world point to focus on in each frame. The camera's `setFocalLength` sets the field of view of the same lens. The quality setting `dofSamples` gives the gather 22 taps on Medium, 43 on High and 71 on Ultra, and keeps it off on Low, by the owner's ruling. At 1920 x 1080 on the Mac it costs about 0.6 ms of GPU time per frame at 22 taps with WebGL2 and 0.85 ms with WebGPU, about 0.9 and 1.3 ms at 43 taps, and nothing while it is off.
 
 ## Question
 
@@ -14,7 +14,7 @@ The showcase scenes need depth of field, with a "DSLR" switch that turns it on w
 - No halo at depth edges: a sharp object's color never spreads into the blurred background, and a blurred object in front spreads over a sharp one behind it.
 - One look on all three GPU paths, with image references for each.
 - No allocation per frame while the focus moves ([AGENTS.md](../../AGENTS.md#hard-rules), hard rule 1).
-- Nothing costs anything while depth of field is off, and its code and shaders load on first use. The code that a page downloads at its start barely grows: the pipelined start was at 137.8 KB of 140 KB after Brotli.
+- Nothing costs anything while depth of field is off, and its code and shaders load on first use. The code that a page downloads at its start barely grows. Without depth of field, the pipelined start takes 137.8 KB of 140 KB after Brotli.
 - Each quality preset draws it at a sensible cost, off on Low unless it is cheap.
 
 ## Options
@@ -35,13 +35,13 @@ Option D is the gather that Unity's post-processing stack ships. The steps are:
 3. **Tent**, at half size: four filtered taps, as far apart as the gather's taps.
 4. **Composite**, at the render size: mixes the blur into each pixel by the pixel's own blur, read from the full-size depth, and by the near field's share, into a target that bloom and the final pass read.
 
-Three changes to KinoBokeh came from the image tests:
+The design changes KinoBokeh in three ways, each for a fault that the image tests show:
 
-- **The smallest blur wins in the setup.** KinoBokeh keeps the largest. On a sharp object's edge, the half-size texel then took the background's blur with the object's color, and the gather spread an orange band about 10 pixels wide over the blurred wall above the test scene's box. With the smallest blur, the edge texel stays sharp. Measured in the test scene's column through the box's top edge, the rows above the edge then match the image without depth of field.
-- **A sharp texel gathers the background around it.** Its own result shows only where the composite's filtered read reaches into a blurred pixel beside it. Gathering the background there, by each tap's own blur, removed a dark fringe two pixels wide along the same edge.
-- **A spiral of taps, turned at each texel.** KinoBokeh's rings of 7, 14 and 21 taps left gaps that a small highlight cannot fill: at Medium's 22 taps the highlights drew seven-lobed blobs and rings. A spiral that turns each tap by the golden angle (Vogel's method) gives each tap an even share of the disk. A round aperture also turns it by a different angle at each texel, from Jimenez's interleaved gradient noise, and the tent reaches half the taps' spacing. The highlights then draw round disks with a fine grain at their edges.
+- **The smallest blur wins in the setup.** KinoBokeh keeps the largest. A sharp object's edge texel at half size then takes the background's blur with the object's color. The gather spreads it as an orange band about 10 pixels wide over the blurred wall above the test scene's box. With the smallest blur, the edge texel stays sharp. Measured in the test scene's column through the box's top edge, the rows above the edge then match the image without depth of field.
+- **A sharp texel gathers the background around it.** Its own result shows only where the composite's filtered read reaches into a blurred pixel beside it. Gathering the background there, by each tap's own blur, removes a dark fringe two pixels wide along the same edge.
+- **A spiral of taps, turned at each texel.** KinoBokeh's rings of 7, 14 and 21 taps leave gaps that a small highlight cannot fill: at Medium's 22 taps the highlights draw seven-lobed blobs and rings. A spiral that turns each tap by the golden angle (Vogel's method) gives each tap an even share of the disk. A round aperture also turns it by a different angle at each texel, from Jimenez's interleaved gradient noise, and the tent reaches half the taps' spacing. The highlights then draw round disks with a fine grain at their edges.
 
-With MSAA on WebGPU the composite reads each pixel's nearest depth sample. An edge pixel's color is mostly the object in front, so it keeps its own color where that object is sharp, and the edge keeps its smoothing. The setup reads the first sample only: the smallest-blur rule already keeps sharp edges from spreading, and every sample there cost about 0.5 ms more per frame at 1920 x 1080, as it reads the whole multisampled depth twice. WebGL2 reads the copy of one sample that its backend keeps.
+With MSAA on WebGPU the composite reads each pixel's nearest depth sample. An edge pixel's color is mostly the object in front, so it keeps its own color where that object is sharp, and the edge keeps its smoothing. The setup reads the first sample only: the smallest-blur rule already keeps sharp edges from spreading, and every sample there costs about 0.5 ms more per frame at 1920 x 1080, as it reads the whole multisampled depth twice. WebGL2 reads the copy of one sample that its backend keeps.
 
 ### Where it runs
 
@@ -70,7 +70,7 @@ The sensor is full frame, 36 x 24 mm, so the field of view is `2 atan(12 / focal
 
 ### The lens
 
-The blur of a point at distance `d` is the thin lens's circle of confusion, as a share of the sensor's height `h`: `f² / (N (s - f) h) × (1 - s / d)`, with focal length `f`, f-number `N` and focus distance `s`. World units count as metres, as in glTF. The blur is 0 at the focus, grows toward its far value behind it, and grows without bound in front of it, so `maxBlur`, 2% of the image's height by default, caps it. The gather reaches only as far as the frame's largest blur: the lens's blur at the camera's near and far planes, capped by `maxBlur`, so a lens closed down gathers a smaller disk.
+The blur of a point at distance `d` is the thin lens's circle of confusion, as a share of the sensor's height `h`: `f² / (N (s - f) h) × (1 - s / d)`, with focal length `f`, f-number `N` and focus distance `s`. World units count as meters, as in glTF. The blur is 0 at the focus, grows toward its far value behind it, and grows without bound in front of it, so `maxBlur`, 2% of the image's height by default, caps it. The gather reaches only as far as the frame's largest blur: the lens's blur at the camera's near and far planes, capped by `maxBlur`, so a lens closed down gathers a smaller disk.
 
 ## Data
 
@@ -85,7 +85,7 @@ GPU time per frame that depth of field adds, from the effect cost page (`tests/p
 | 43 (High) | 1.31 ms (0.85 to 1.64) | 0.94 ms (0.68 to 1.12) |
 | 71 (Ultra) | 1.84 ms (1.64 to 2.03) | 1.25 ms (0.76 to 1.37) |
 
-How the data was produced: a local Playwright run of the cost page, one page at a time, through `heavy.sh`, on 9 October 2026. Each figure is the median of three such runs at loads of 3 to 6, two or three with the final shaders. The runs spread widely: the frames without depth of field alone moved between 0.33 and 1.6 ms from run to run, as the GPU's clock changes under a light load. The medians are the figures to use. Bloom costs 0.79 to 0.85 ms on the same Mac at the same size ([D-21](D-21-effect-chain.md)).
+How the data was produced: a local Playwright run of the cost page, one page at a time, through `heavy.sh`. Each figure is the median of three such runs at loads of 3 to 6, two or three of them with the shaders as they ship. The runs spread widely: the frames without depth of field alone moved between 0.33 and 1.6 ms from run to run, as the GPU's clock changes under a light load. The medians are the figures to use. Bloom costs 0.79 to 0.85 ms on the same Mac at the same size ([D-21](D-21-effect-chain.md)).
 
 With MSAA, a setup that read every depth sample cost about 0.5 ms more per frame at 22 taps (1.25 to 1.31 ms against 0.72 ms). So the setup reads the first sample, and only the composite reads each pixel's nearest sample.
 
@@ -93,7 +93,7 @@ While depth of field is off it costs nothing: the frame graph declares none of i
 
 The allocation check (`bun run bench:allocation --dof`) turns depth of field on in S1 with a focus point that moves every frame. It passed on WebGPU and on WebGL2. On WebGPU the replay allocated about 220 bytes more per frame than without depth of field: the browser's encoders of the four render passes, which the check budgets at bloom's 64 bytes per pass.
 
-**Cloud devices, a rough guide.** These are cloud timings. The device runner's `dof` plan ran on BrowserStack Automate on 9 October 2026, at ccad5d286 on this record's branch: runs `20261009-035340-dof` and `20261009-035934-dof`. The page drew the whole window at the preset's cap on the pixel ratio, with depth of field off and on in turns.
+**Cloud devices, a rough guide.** These are cloud timings. The device runner's `dof` plan ran on BrowserStack Automate at ccad5d286 on this record's branch: runs `20261009-035340-dof` and `20261009-035934-dof`. The page drew the whole window at the preset's cap on the pixel ratio, with depth of field off and on in turns.
 
 | Device and path | Render scale | 16 taps | 22 taps |
 | --- | --- | --- | --- |
@@ -107,14 +107,14 @@ At 16 taps and a render scale of 1, depth of field takes about 13% of a 60 Hz fr
 
 ### Download size
 
-| File | Before | After |
+| File | Without depth of field | With it |
 | --- | --- | --- |
 | The pipelined start, after Brotli | 137.8 KB | 138.3 KB |
 | Each WebAssembly file, after Brotli | 338.7 KB | 344.1 KB |
 | `shaders-dof-wgsl.js`, first use | none | 2.3 KB |
 | `shaders-dof-glsl.js`, first use | none | 2.4 KB |
 
-The start grew by about 0.5 KB: the setter of `post.set`, the camera's focal length, the WebGPU layouts and the templates of both paths. One shared writer of the settings' numbers now serves bloom, ambient occlusion, the vignette and depth of field, which took back part of it. The shaders load with the first `post.set({ dof })` on a device that draws it.
+The start grows by about 0.5 KB: the setter of `post.set`, the camera's focal length, the WebGPU layouts and the templates of both paths. One shared writer of the settings' numbers serves bloom, ambient occlusion, the vignette and depth of field, which keeps the growth down. The shaders load with the first `post.set({ dof })` on a device that draws it.
 
 ### Image tests
 
@@ -126,7 +126,7 @@ Option D, with the API of option A. The quality setting `dofSamples` takes 0, 16
 
 | Preset | Taps | Why |
 | --- | --- | --- |
-| Low | 0 (off) | Phones run Low. The owner ruled on 9 October 2026 that Low stays off for now: 16 taps take about 13% of a 60 Hz frame on the iPad at full render scale, and no Android phone could time it (see the cloud figures above) |
+| Low | 0 (off) | Phones run Low. The owner ruled that Low stays off for now: 16 taps take about 13% of a 60 Hz frame on the iPad at full render scale, and no Android phone could time it (see the cloud figures above) |
 | Medium | 22 | The most that WebGL2 and compatibility mode run. Round disks with a fine grain at their edges |
 | High | 43 | Desktops. Smooth disks, at about 1 ms at 1920 x 1080 |
 | Ultra | 71 | Desktops with time to spare |

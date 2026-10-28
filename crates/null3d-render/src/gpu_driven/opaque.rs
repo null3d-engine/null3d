@@ -4,6 +4,10 @@
 //! layout or the mesh buffers change. The shadow passes record and replay their bundles the same
 //! way (see [`super::shadow`]).
 //!
+//! A bucket whose surface writes no color draws before the buckets that write color, so the depth
+//! it writes holds back their color. A no-color surface is a holdout: it shows nothing itself and
+//! hides what lies behind it.
+//!
 //! A bucket whose pipelines read their instances by index draws its slice of index entries, which
 //! follow the copies in the view's compacted instance buffer, and binds the view's index group
 //! after its other groups (see [`super::cull`]).
@@ -317,17 +321,31 @@ pub(super) fn record_bundle(
         scene: ids::MATERIAL_SCENE_GROUPS,
     };
     match kind {
-        Bundle::Opaque | Bundle::Subsurface => {
-            draws.record(list, |b| b.pipeline, |_| true, |b| b.group)?
+        Bundle::Opaque => {
+            // The surfaces that write no color draw first, so the depth they write holds back the
+            // color of the surfaces behind them.
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group, |b| b.holdout)?;
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group, |b| !b.holdout)?;
         }
-        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own, |b| b.group)?,
-        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true, |b| b.group)?,
-        Bundle::Motion(_) => draws.record(list, |b| b.pipeline, |_| false, |b| b.group)?,
+        Bundle::Subsurface => {
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group, |_| true)?
+        }
+        Bundle::Prepass => draws.record(
+            list,
+            |b| b.prepass,
+            |b| b.prepass_own,
+            |b| b.group,
+            |_| true,
+        )?,
+        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true, |b| b.group, |_| true)?,
+        Bundle::Motion(_) => {
+            draws.record(list, |b| b.pipeline, |_| false, |b| b.group, |_| true)?
+        }
         Bundle::Outline => {
-            draws.record(list, |b| b.pipeline, |_| false, |_| 0)?;
-            draws.record(list, |b| b.prepass, |_| false, |_| 0)?;
+            draws.record(list, |b| b.pipeline, |_| false, |_| 0, |_| true)?;
+            draws.record(list, |b| b.prepass, |_| false, |_| 0, |_| true)?;
         }
-        Bundle::Tone => draws.record(list, |b| b.pipeline, |_| false, |_| 0)?,
+        Bundle::Tone => draws.record(list, |b| b.pipeline, |_| false, |_| 0, |_| true)?,
     }
     list.push(Op::EndBundle, &[])?;
     Ok(())
@@ -378,17 +396,31 @@ pub(super) fn record_direct(
         },
     };
     match kind {
-        Bundle::Opaque | Bundle::Subsurface => {
-            draws.record(list, |b| b.pipeline, |_| true, |b| b.group)?
+        Bundle::Opaque => {
+            // The surfaces that write no color draw first, so the depth they write holds back the
+            // color of the surfaces behind them.
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group, |b| b.holdout)?;
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group, |b| !b.holdout)?;
         }
-        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own, |b| b.group)?,
-        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true, |b| b.group)?,
-        Bundle::Motion(_) => draws.record(list, |b| b.pipeline, |_| false, |b| b.group)?,
+        Bundle::Subsurface => {
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group, |_| true)?
+        }
+        Bundle::Prepass => draws.record(
+            list,
+            |b| b.prepass,
+            |b| b.prepass_own,
+            |b| b.group,
+            |_| true,
+        )?,
+        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true, |b| b.group, |_| true)?,
+        Bundle::Motion(_) => {
+            draws.record(list, |b| b.pipeline, |_| false, |b| b.group, |_| true)?
+        }
         Bundle::Outline => {
-            draws.record(list, |b| b.pipeline, |_| false, |_| 0)?;
-            draws.record(list, |b| b.prepass, |_| false, |_| 0)?;
+            draws.record(list, |b| b.pipeline, |_| false, |_| 0, |_| true)?;
+            draws.record(list, |b| b.prepass, |_| false, |_| 0, |_| true)?;
         }
-        Bundle::Tone => draws.record(list, |b| b.pipeline, |_| false, |_| 0)?,
+        Bundle::Tone => draws.record(list, |b| b.pipeline, |_| false, |_| 0, |_| true)?,
     }
     Ok(())
 }
@@ -429,6 +461,7 @@ pub(super) fn record_pick(
         // the shading of the same draw does.
         |_| true,
         |bucket| if bucket.pick_maps { bucket.group } else { 0 },
+        |_| true,
     )
 }
 
@@ -457,15 +490,17 @@ struct Draws<'a> {
 
 impl Draws<'_> {
     /// Records the draws of every bucket of the layout with the pipeline that `pipeline_of` picks,
-    /// leaving out the buckets for which it gives 0. A bucket for which `own_of` is true draws with
-    /// its own template's vertex shader: it reads the view's frame group and its maps' group as its
-    /// shading does. The others read the depth group alone, as the depth and mask templates do.
+    /// leaving out the buckets for which it gives 0 and the buckets that `takes` refuses. A bucket
+    /// for which `own_of` is true draws with its own template's vertex shader: it reads the view's
+    /// frame group and its maps' group as its shading does. The others read the depth group alone,
+    /// as the depth and mask templates do.
     fn record(
         &self,
         list: &mut DrawList,
         pipeline_of: impl Fn(&Bucket) -> u32,
         own_of: impl Fn(&Bucket) -> bool,
         maps_of: impl Fn(&Bucket) -> u32,
+        takes: impl Fn(&Bucket) -> bool,
     ) -> Result<(), RecordError> {
         let Self {
             view,
@@ -485,8 +520,16 @@ impl Draws<'_> {
         let mut groups = DrawGroups::default();
         let mut bound = None;
         for (b, bucket) in layout.buckets.iter().enumerate() {
+            if !takes(bucket) {
+                continue;
+            }
             let id = pipeline_of(bucket);
-            if id == 0 || (bucket.group != 0 && hidden(bucket.group)) {
+            // A feature-instance draw whose feature does not draw now records nothing: the views
+            // take no room for it, and its count word is not copied either.
+            if id == 0
+                || (bucket.feature != 0 && !bucket.feature_ready)
+                || (bucket.group != 0 && hidden(bucket.group))
+            {
                 continue;
             }
             let own = own_of(bucket);

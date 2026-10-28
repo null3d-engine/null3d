@@ -72,8 +72,8 @@ const VERSION_CALL = /checkAddonVersion\(\s*['"]([^'"]+)['"]\s*,\s*VERSION\s*\)/
 
 /**
  * The budget of each column for a file that an add-on loads after the start (D-14). It follows the
- * engine's own figure for the same kind of file, which rose to 18 KB on 25 October 2026 for the glTF
- * worker's texture-transform pointers; an add-on may not take more room than the engine allows it.
+ * engine's own figure for the same kind of file, which has room for the glTF worker's
+ * texture-transform pointers; an add-on may not take more room than the engine allows it.
  */
 export const ADDON_FILE_BUDGET = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 18 * 1024 };
 
@@ -114,7 +114,8 @@ Runs the engine's gates on one add-on package, in \`folder\` (the current folder
   interface    the entry declares the plugin interface that it works with, or, for a null3D
                package, pins the engine version
   shaders      a build compiles the add-on's WGSL for WebGPU and WebGL2
-  sizes        each file that the add-on loads after the start holds to its budget
+  sizes        each file that the add-on loads after the start is checked against its
+               budget; a file over budget warns, and does not fail the check
   page         with a page, it starts from another origin under the strict policy
   cost         with a page, its cost per frame is measured on each quality preset
   allocation   with a page, the bytes that the add-on's own code allocates per frame are
@@ -469,19 +470,52 @@ function buildTools(folder) {
 }
 
 /**
- * One file that a build wrote, with its size in each column.
+ * One buffer's size in each column.
  *
- * @typedef {object} BuiltFileSize
- * @property {string} name
+ * @typedef {object} ByteSize
  * @property {number} raw
  * @property {number} gzip
  * @property {number} brotli
  */
 
 /**
+ * One file that a build wrote. The three columns are what a page downloads. `code` and `shader`
+ * split that file by what it holds: the add-on's own code, and the compiled WGSL that the plugin
+ * inlines in it. The two parts add up to the whole in every column. A file of a build that holds
+ * no compiled WGSL has no split, and its whole size answers the code budget.
+ *
+ * @typedef {object} BuiltFileSize
+ * @property {string} name
+ * @property {number} raw
+ * @property {number} gzip
+ * @property {number} brotli
+ * @property {ByteSize} [code]
+ * @property {ByteSize} [shader]
+ */
+
+/** A file that a module imports as WGSL, which the plugin compiles for both GPU paths. */
+const WGSL_IMPORT = /\.wgsl$/;
+
+/**
+ * A Vite plugin that answers each WGSL import with an empty module. A build with it writes the
+ * add-on's code alone: no shader compiles, and nothing of one reaches a file. The difference from
+ * a build with the null3D plugin is the shader data that the plugin inlined.
+ */
+export function emptyShaders() {
+	return {
+		name: 'null3d-addon-sizes',
+		enforce: 'pre',
+		load(/** @type {string} */ id) {
+			return WGSL_IMPORT.test(id) ? 'export default {};' : undefined;
+		},
+	};
+}
+
+/**
  * Builds the add-on's entry with the null3D plugin, which compiles its WGSL for WebGPU and WebGL2,
  * and gives the size of each file that the build wrote. The engine stays external: the sizes are
- * the add-on's own.
+ * the add-on's own. A second build answers each WGSL import with an empty module. It gives each
+ * file's code alone, so the size gate can tell that code from the compiled WGSL inlined beside it.
  *
  * @param {string} folder
  * @param {string} entry
@@ -494,42 +528,95 @@ export async function buildAddon(folder, entry) {
 	try {
 		const { build } = await import(pathToFileURL(tools.vite).href);
 		const plugin = await import(pathToFileURL(tools.plugin).href);
-		const result = await build({
-			configFile: false,
-			root: folder,
-			logLevel: 'silent',
-			plugins: [plugin.default()],
-			build: {
-				write: false,
-				minify: true,
-				lib: { entry, formats: ['es'], fileName: 'addon' },
-				rollupOptions: { external: [/^@null3d\/engine(?:\/stats)?$/] },
-			},
-		});
-		const outputs = /** @type {unknown[]} */ (Array.isArray(result) ? result : [result]);
-		/** @type {BuiltFileSize[]} */
-		const files = [];
-		for (const output of outputs) {
-			const parts = /** @type {{ output?: unknown[] }} */ (output).output ?? [];
-			for (const part of parts) {
-				const file =
-					/** @type {{ type?: string, fileName?: string, code?: string, source?: unknown }} */ (
-						part
-					);
-				if (file.type !== 'chunk' && file.type !== 'asset') continue;
-				const bytes = Buffer.from(String(file.type === 'chunk' ? file.code : file.source));
-				files.push({
-					name: file.fileName ?? 'addon.js',
-					raw: bytes.length,
-					gzip: gzipSync(bytes, { level: 9 }).length,
-					brotli: brotliCompressSync(bytes).length,
-				});
+		const outputsOf = async (/** @type {unknown[]} */ plugins) => {
+			const result = await build({
+				configFile: false,
+				root: folder,
+				logLevel: 'silent',
+				plugins: /** @type {never[]} */ (plugins),
+				build: {
+					write: false,
+					minify: true,
+					lib: { entry, formats: ['es'], fileName: 'addon' },
+					rollupOptions: { external: [/^@null3d\/engine(?:\/stats)?$/] },
+				},
+			});
+			return /** @type {unknown[]} */ (Array.isArray(result) ? result : [result]);
+		};
+		const written = (/** @type {unknown[]} */ outputs) => {
+			/** @type {BuiltOutput[]} */
+			const files = [];
+			for (const output of outputs) {
+				const parts = /** @type {{ output?: unknown[] }} */ (output).output ?? [];
+				for (const part of parts) {
+					const file =
+						/** @type {{ type?: string, fileName?: string, code?: string, source?: unknown }} */ (
+							part
+						);
+					if (file.type !== 'chunk' && file.type !== 'asset') continue;
+					files.push({
+						name: file.fileName ?? 'addon.js',
+						bytes: Buffer.from(String(file.type === 'chunk' ? file.code : file.source)),
+					});
+				}
 			}
-		}
-		return { files };
+			return files;
+		};
+		const full = written(await outputsOf([plugin.default()]));
+		const codeOnly = written(await outputsOf([emptyShaders(), plugin.default()]));
+		return { files: splitShaderData(full, codeOnly) };
 	} catch (error) {
 		return { error: error instanceof Error ? error.message : String(error) };
 	}
+}
+
+/**
+ * The size of each file that the build with the plugin wrote, split by what it holds: its own code
+ * and the shader data that the plugin inlined in it. `codeOnly` is what the build with the empty
+ * WGSL imports wrote. A file that build did not write has no code of its own here, such as a set of
+ * builds that the plugin writes apart, so only its whole size is known.
+ *
+ * @param {readonly BuiltOutput[]} full
+ * @param {readonly BuiltOutput[]} codeOnly
+ * @returns {BuiltFileSize[]}
+ */
+export function splitShaderData(full, codeOnly) {
+	const code = new Map(codeOnly.map((file) => [file.name, file.bytes]));
+	return full.map(({ name, bytes }) => {
+		const file = { name, ...sizesOf(bytes) };
+		const alone = code.get(name);
+		if (alone === undefined) return file;
+		const size = sizesOf(alone);
+		return { ...file, code: size, shader: difference(file, size) };
+	});
+}
+
+/**
+ * One file that a build wrote, before its sizes are measured.
+ *
+ * @typedef {object} BuiltOutput
+ * @property {string} name
+ * @property {Buffer} bytes
+ */
+
+/** The size of `bytes` in each column. */
+function sizesOf(/** @type {Buffer} */ bytes) {
+	return {
+		raw: bytes.length,
+		gzip: gzipSync(bytes, { level: 9 }).length,
+		brotli: brotliCompressSync(bytes).length,
+	};
+}
+
+/**
+ * The bytes that the shader data adds to a file in each column: the whole file less the same file
+ * built without it. A column never reads below zero, so such a column charges those bytes to code.
+ */
+function difference(/** @type {ByteSize} */ whole, /** @type {ByteSize} */ code) {
+	/** @type {ByteSize} */
+	const shader = { raw: 0, gzip: 0, brotli: 0 };
+	for (const column of COLUMNS) shader[column] = Math.max(0, whole[column] - code[column]);
+	return shader;
 }
 
 /** A size in KB, to one decimal place. */
@@ -548,31 +635,103 @@ export function budgetOf(name) {
 
 /**
  * The budget problems of the files that a build wrote: one for each column of a file over its
- * budget, and none when every file holds to it.
+ * budget, and none when every file holds to it. A file of code that holds compiled WGSL answers
+ * both budgets. Its own code takes the later-file budget, and the shader data takes the shader one.
  *
  * @param {readonly BuiltFileSize[]} files
  * @returns {string[]}
  */
 export function sizeProblems(files) {
+	const zero = { raw: 0, gzip: 0, brotli: 0 };
 	return files.flatMap((file) => {
-		const budget = budgetOf(file.name);
-		return COLUMNS.filter((column) => file[column] > budget[column]).map(
-			(column) =>
-				`${file.name} is ${kb(file[column])} ${column}, over its ${kb(budget[column])} budget`,
-		);
+		if (budgetOf(file.name) === ADDON_SHADER_BUDGET)
+			return overBudget(file.name, '', file, ADDON_SHADER_BUDGET);
+		// A file that the build wrote the same without its shader data answers one budget as before.
+		if (file.code === undefined || COLUMNS.every((column) => (file.shader?.[column] ?? 0) === 0))
+			return overBudget(file.name, '', file, ADDON_FILE_BUDGET);
+		return [
+			...overBudget(file.name, ' of code', file.code, ADDON_FILE_BUDGET),
+			...overBudget(file.name, ' of shader data', file.shader ?? zero, ADDON_SHADER_BUDGET),
+		];
 	});
 }
 
 /**
- * The size of a group of built files, as its largest in each column.
+ * A problem for each column of `size` over `budget`, and none when it holds to it. `part` names
+ * what of the file the size is, such as ` of code`, or is empty for the whole file.
+ *
+ * @param {string} name
+ * @param {string} part
+ * @param {ByteSize} size
+ * @param {ByteSize} budget
+ * @returns {string[]}
+ */
+function overBudget(name, part, size, budget) {
+	return COLUMNS.filter((column) => size[column] > budget[column]).map(
+		(column) =>
+			`${name} is ${kb(size[column])} ${column}${part}, over its ${kb(budget[column])} budget`,
+	);
+}
+
+/**
+ * The size of a group of built files, as its largest in each column. `part` picks what of a file
+ * the size is: the whole file, or its own code without the shader data inlined beside it.
  *
  * @param {readonly BuiltFileSize[]} files
+ * @param {'all' | 'code'} [part]
  * @returns {string}
  */
-function largestSizes(files) {
+function largestSizes(files, part = 'all') {
+	const sizeOf = (/** @type {BuiltFileSize} */ file) =>
+		part === 'code' ? (file.code ?? file) : file;
 	const largest = (/** @type {'raw' | 'gzip' | 'brotli'} */ column) =>
-		Math.max(0, ...files.map((file) => file[column]));
+		Math.max(0, ...files.map((file) => sizeOf(file)[column]));
 	return `${kb(largest('raw'))} raw, ${kb(largest('gzip'))} gzip, ${kb(largest('brotli'))} brotli`;
+}
+
+/**
+ * The sizes gate's result: PASS when every file that the build wrote holds to its budget, and WARN
+ * when one goes over. The three size budgets are the code budget, the later-file budget and the
+ * shader-data budget. An add-on is a choice, so a file over one of them warns rather than fails the
+ * check (owner's ruling). The page, cost and allocation gates still fail.
+ *
+ * @param {readonly BuiltFileSize[]} files
+ * @returns {Outcome}
+ */
+export function sizeOutcome(files) {
+	const over = sizeProblems(files);
+	const shaderBuilds = files.filter((file) => budgetOf(file.name) === ADDON_SHADER_BUDGET);
+	const code = files.filter((file) => budgetOf(file.name) === ADDON_FILE_BUDGET);
+	const split = code.filter((file) => (file.shader?.raw ?? 0) > 0);
+	const inlined = split.reduce((sum, file) => sum + (file.shader?.raw ?? 0), 0);
+	/** What the gate adds to the plain line about a file that holds shader data. */
+	const notes = [];
+	if (inlined > 0 || shaderBuilds.length > 0) {
+		if (code.length > 0) notes.push(`the largest code file at ${largestSizes(code, 'code')}`);
+		if (shaderBuilds.length > 0)
+			notes.push(`the largest shader build at ${largestSizes(shaderBuilds)}`);
+		if (inlined > 0)
+			notes.push(
+				`${kb(inlined)} of shader data inlined in ${counted(split.length, 'code file')}, within the shader budget`,
+			);
+	}
+	if (over.length > 0)
+		return {
+			status: 'WARN',
+			text: `sizes: ${counted(over.length, 'file')} load more than the budget for a file after the start`,
+			details: over,
+		};
+	return {
+		status: 'PASS',
+		text:
+			notes.length === 0
+				? `sizes: the largest file is ${largestSizes(files)}, within budget`
+				: `sizes: ${counted(files.length, 'file')} within budget, ${notes.join(', ')}`,
+		details: split.map(
+			(file) =>
+				`${file.name}: ${kb(file.raw)} in all, ${kb(file.code?.raw ?? 0)} of code and ${kb(file.shader?.raw ?? 0)} of shader data, which adds ${kb(file.shader?.gzip ?? 0)} gzip and ${kb(file.shader?.brotli ?? 0)} brotli`,
+		),
+	};
 }
 
 /** How many more lines than `SHOWN_LINES` a message printed, as a note, or nothing. */
@@ -1307,24 +1466,7 @@ export async function run(args) {
 			status: 'PASS',
 			text: `shaders: ${counted(files.length, 'file')} built with WGSL for WebGPU and WebGL2`,
 		});
-		const over = sizeProblems(files);
-		const shaderBuilds = files.filter((file) => budgetOf(file.name) === ADDON_SHADER_BUDGET);
-		const code = files.filter((file) => budgetOf(file.name) === ADDON_FILE_BUDGET);
-		print(
-			over.length === 0
-				? {
-						status: 'PASS',
-						text:
-							shaderBuilds.length === 0
-								? `sizes: the largest file is ${largestSizes(files)}, within budget`
-								: `sizes: ${counted(files.length, 'file')} within budget, the largest code file at ${largestSizes(code)}, and the largest shader build at ${largestSizes(shaderBuilds)}`,
-					}
-				: {
-						status: 'FAIL',
-						text: `sizes: ${counted(over.length, 'file')} load more than the budget for a file after the start`,
-						details: over,
-					},
-		);
+		print(sizeOutcome(files));
 	}
 
 	if (options.skipBrowser) {

@@ -93,9 +93,11 @@ pub enum Op {
     /// [color target texture id or 0 for the canvas or `NO_TARGET`, resolve target texture id or
     /// 0 for the canvas or `NO_TARGET`, depth texture id or `NO_TARGET`, clear red, green, blue,
     /// alpha (f32), clear depth (f32), pass flags, then optionally a second color target texture
-    /// id]. A target is a texture of one layer and one mip level, or a view of one. A pass without
-    /// a color target draws depth only. A second color target has one sample, no resolve, and the
-    /// first target's clear color and flags; its pipelines are those with `permutation::WEIGHTED`.
+    /// id, then the pass's label]. A target is a texture of one layer and one mip level, or a view
+    /// of one. A pass without a color target draws depth only. A second color target has one
+    /// sample, no resolve, and the first target's clear color and flags; its pipelines are those
+    /// with `permutation::WEIGHTED`. The label says what the pass draws for, from
+    /// [`crate::pass_role`], so a frame's GPU time names the pass rather than its slot.
     BeginRenderPass = 16,
     /// [render pipeline id]
     SetPipeline = 17,
@@ -130,7 +132,8 @@ pub enum Op {
     BeginBundle = 32,
     /// []
     EndBundle = 33,
-    /// []
+    /// [the pass's label]: what the dispatches in this pass do, from [`crate::pass_role`], so a
+    /// frame's GPU time names the pass rather than its slot.
     BeginComputePass = 40,
     /// [compute pipeline id]
     SetComputePipeline = 41,
@@ -221,12 +224,23 @@ pub enum Op {
     /// octahedral map. Level `i` of `n` holds perceptual roughness `1 - sqrt(1 - i / (n - 1))`,
     /// as an environment map's levels do.
     ProbeFilter = 56,
+    /// [view id, texture id, base layer, layer count]: a view of a range of one texture's array
+    /// layers, for bind groups to name in place of the whole texture. A draw that writes one range
+    /// as storage and reads the other as a sampled texture keeps each subresource in one usage,
+    /// which WebGPU requires. WebGL2 binds the whole texture and lets the shader pick the layer,
+    /// so the view names the texture there. The view has no texels of its own: `DestroyTexture`
+    /// releases it with its texture.
+    CreateBindView = 57,
+    /// [texture id, base layer, layer count]: clears a range of a texture's layers to zero, outside
+    /// every pass. The texture takes `RENDER_ATTACHMENT` usage, and each layer is one clear. A
+    /// compute pass asks for it when the page starts the pass's state again.
+    ClearTexture = 58,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 44] = [
+    pub const ALL: [Op; 46] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -270,6 +284,8 @@ impl Op {
         Op::GenerateTexture,
         Op::SkyMapStep,
         Op::ProbeFilter,
+        Op::CreateBindView,
+        Op::ClearTexture,
         Op::Submit,
     ];
 
@@ -322,6 +338,8 @@ impl Op {
             Op::GenerateTexture => "GENERATE_TEXTURE",
             Op::SkyMapStep => "SKY_MAP_STEP",
             Op::ProbeFilter => "PROBE_FILTER",
+            Op::CreateBindView => "CREATE_BIND_VIEW",
+            Op::ClearTexture => "CLEAR_TEXTURE",
             Op::Submit => "SUBMIT",
         }
     }
@@ -727,6 +745,19 @@ pub mod layout {
     /// block of uniforms, then the draw's count word and its per-instance rows, which the shader
     /// reads and writes as storage. A pass of this layout has no storage texture.
     pub const COMPUTE_INSTANCE_BUFFERS: u32 = 56;
+    /// Group 0 of a compute pass that keeps two states, as 16-bit floats: its block of uniforms,
+    /// the state that the run writes as a storage texture, and the state of the run before as a
+    /// sampled texture that the shader reads with `textureLoad`. Each run binds views of the two
+    /// states, so one subresource is never both written and read.
+    pub const COMPUTE_HISTORY_RGBA16_FLOAT: u32 = 13;
+    /// [`COMPUTE_HISTORY_RGBA16_FLOAT`] for a target of 32-bit floats.
+    pub const COMPUTE_HISTORY_R32_FLOAT: u32 = 15;
+    /// [`COMPUTE_HISTORY_RGBA16_FLOAT`] for a target of 8-bit color.
+    pub const COMPUTE_HISTORY_RGBA8_UNORM: u32 = 29;
+    /// Group 0 of a full-screen pass that runs in place of a compute pass with history: the pass's
+    /// block of uniforms, then the pass's two states as one sampled texture, which the shader
+    /// reads at a layer its block names. Only the WebGL2 path has it.
+    pub const FULLSCREEN_HISTORY: u32 = 62;
     /// Group 0 of the compute pipeline that converts a feature-instance draw's world rows to the
     /// camera-relative rows that the engine's vertex shaders read: its block of uniforms, which
     /// holds the camera's world position, then the draw's count word, its world rows and the rows
@@ -979,6 +1010,11 @@ pub mod permutation {
     pub const DEBUG_VIEW_LOW: u32 = 1024;
     /// The high bit of the debug view's number.
     pub const DEBUG_VIEW_HIGH: u32 = 2048;
+    /// The debug view of levels of detail: each draw takes its level's color, a fading band dithers
+    /// its two levels, and a source that the size rule or a draw range hid draws in a marker
+    /// color. It shares [`OUTLINE_VISIBLE`]'s value: only the debug view template lists it, and only
+    /// the outline mask template lists the outline bit.
+    pub const DEBUG_VIEW_LEVELS: u32 = OUTLINE_VISIBLE;
     /// The pipeline draws the camera's depth prepass. On WebGPU it is a build of the depth
     /// template, which clips what lies in front of the near plane, as the templates that shade
     /// do; without the bit, the shadow passes flatten casters there onto the near face. On WebGL2
@@ -1082,7 +1118,7 @@ pub mod permutation {
     pub const WEIGHTED: u32 = 1 << 31;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 35] = [
+    pub const NAMES: [(&str, u32); 36] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -1103,6 +1139,7 @@ pub mod permutation {
         ("BLOOM", BLOOM),
         ("PICK", PICK),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
+        ("DEBUG_VIEW_LEVELS", DEBUG_VIEW_LEVELS),
         ("INSTANCE_INDEX", INSTANCE_INDEX),
         ("DEPTH_MULTISAMPLED", DEPTH_MULTISAMPLED),
         ("LOD_FADE", LOD_FADE),
@@ -1122,10 +1159,11 @@ pub mod permutation {
 
     /// Pairs of names that share one value, because no template lists both: the shader build
     /// refuses a template that lists two names of one value, and any other shared value.
-    pub const SHARED: [(&str, &str); 3] = [
+    pub const SHARED: [(&str, &str); 4] = [
         ("FXAA", "AREA_LIGHTS"),
         ("CASTER_OFFSET", "UPSCALE"),
         ("BLOOM", "PICK"),
+        ("OUTLINE_VISIBLE", "DEBUG_VIEW_LEVELS"),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -1147,10 +1185,13 @@ pub mod permutation {
     /// A mask tests its alpha one way, by coverage or by the hash. A mesh that WebGPU skins in the
     /// vertex shader reads the culling shader's copies, so the builds that read their instances by
     /// index never skin: those builds would load with the skinning feature and double its WebGPU
-    /// files. A surface that lets light through tests no mask, and draws in the transparent pass,
-    /// which never reads instances by index. Row values come from instance batches, which neither
-    /// skin nor morph, read their instances from the culling shader's copies, and test a mask
-    /// against its cutoff; a surface that lets light through draws its rows without their values.
+    /// files. A surface that lets light through draws in the transparent pass, which never reads
+    /// instances by index, and keeps its mask: the cut-out leaves the pixels whose alpha passes, by
+    /// the cutoff or by coverage, and their light comes from behind. It takes no hash, which three.js
+    /// has no counterpart for, so the glTF files that ask for both draw with the plain mask. Row
+    /// values come from instance batches, which neither skin nor morph, read their instances from
+    /// the culling shader's copies, and test a mask against its cutoff; a surface that lets light
+    /// through draws its rows without their values.
     /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
     /// Displacement and bump builds load on first use, so the test switch's builds do without them.
     /// A bump map takes the normal map's slot, so its builds never read the mesh's tangents.
@@ -1173,8 +1214,8 @@ pub mod permutation {
     /// with neither FXAA nor bloom.
     pub const APART: [(u32, u32); 56] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
+        (TRANSMISSION, ALPHA_HASH),
         (SKIN, INSTANCE_INDEX),
-        (TRANSMISSION, ALPHA_MASK),
         (TRANSMISSION, INSTANCE_INDEX),
         (ROW_VALUES, SKIN),
         (ROW_VALUES, MORPH),
@@ -1684,10 +1725,10 @@ pub mod sizes {
     /// screen-space reflections' matrix into the frame before's view and their two vectors, a
     /// still view's jitter, which the scene's vertex shaders add, the physical sky's aerial
     /// perspective's six vectors, and the vignette that the 8-bit path's fragment shaders apply.
-    pub const FRAME_UNIFORM_BYTES: u32 = 1088;
+    pub const FRAME_UNIFORM_BYTES: u32 = 992;
     /// Bytes of the output settings: the exposure, the tone mapping, the flags and the render
-    /// size, then the grading controls that the 8-bit path's shaders apply before their curve.
-    pub const OUTPUT_UNIFORM_BYTES: u32 = 112;
+    /// size.
+    pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
     pub const CULL_WORKGROUP_SIZE: u32 = 128;
     /// 32-bit words per indexed indirect draw.
@@ -1697,9 +1738,9 @@ pub mod sizes {
     /// of a skin that the vertex shader skins, 1 for a bucket whose slice holds source indices
     /// instead of copies of the matrices, for a mesh with levels of detail the level's switch
     /// value, the bucket of the next coarser level plus one, the level's fade bucket plus one, the
-    /// threshold bias that picks the levels, 1 for none, and the measure that the switch value
-    /// names.
-    pub const BUCKET_WORDS: u32 = 15;
+    /// threshold bias that picks the levels, 1 for none, the measure that the switch value names,
+    /// and the level that the bucket draws, which the levels debug view writes beside each copy.
+    pub const BUCKET_WORDS: u32 = 16;
     /// A bucket record's first joint that sends the culling shader to each source's own: the
     /// buckets that skinned objects share, whose vertex shaders skin, read the first joint of each
     /// object's skin from a data texture of 32-bit indices, at the object's source.
@@ -1748,12 +1789,12 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: eighteen `vec4f`s. The row holds the
+    /// Bytes of one material's row in the material table: thirty-two `vec4f`s. The row holds the
     /// base values, the transmission's values, the attenuation's, the clear coat's, the sheen's,
-    /// the diffuse transmission's, the subsurface scatter's, the iridescence's, the anisotropy's
-    /// and the light map's transform. On WebGL2 each row is a row of eighteen `RGBA32_FLOAT`
-    /// texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 288;
+    /// the diffuse transmission's, the subsurface scatter's, the iridescence's, the anisotropy's,
+    /// the light map's transform, and the transforms of the maps of the slots from the second up.
+    /// On WebGL2 each row is a row of thirty-two `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 512;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
@@ -2576,6 +2617,19 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("COMPUTE_R32_FLOAT", layout::COMPUTE_R32_FLOAT),
     ("COMPUTE_RGBA8_UNORM", layout::COMPUTE_RGBA8_UNORM),
     ("COMPUTE_INSTANCE_BUFFERS", layout::COMPUTE_INSTANCE_BUFFERS),
+    (
+        "COMPUTE_HISTORY_RGBA16_FLOAT",
+        layout::COMPUTE_HISTORY_RGBA16_FLOAT,
+    ),
+    (
+        "COMPUTE_HISTORY_R32_FLOAT",
+        layout::COMPUTE_HISTORY_R32_FLOAT,
+    ),
+    (
+        "COMPUTE_HISTORY_RGBA8_UNORM",
+        layout::COMPUTE_HISTORY_RGBA8_UNORM,
+    ),
+    ("FULLSCREEN_HISTORY", layout::FULLSCREEN_HISTORY),
     ("FEATURE_ROWS", layout::FEATURE_ROWS),
     ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
     ("AO_DEPTH", layout::AO_DEPTH),
@@ -2889,6 +2943,30 @@ pub fn typescript_constants() -> String {
         "/** Each vertex attribute in vertex order, which is also its shader location: its format bit (0 for one every format has), its values per vertex, the first bit of its type field, its types by the field's value, and whether shaders read whole numbers. */\nexport const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, components: number, shift: number, types: readonly number[], integer: boolean])[] = [{}];\n",
         attributes.join(", ")
     ));
+    let role_names: Vec<String> = crate::pass_role::PassRole::ALL
+        .iter()
+        .map(|role| format!("\"{}\"", role.name()))
+        .collect();
+    let role_places: Vec<String> = crate::pass_role::PassRole::ALL
+        .iter()
+        .map(|role| (role.place() as u32).to_string())
+        .collect();
+    out.push_str(&format!(
+        "/** The name of each pass role by code. */\nexport const PASS_ROLE_NAMES: readonly string[] = [{}];\n",
+        role_names.join(", ")
+    ));
+    out.push_str(&format!(
+        "/** Whether each pass role prints its place: 0 never, 1 always, 2 when the place is not 0. */\nexport const PASS_ROLE_PLACES: readonly number[] = [{}];\n",
+        role_places.join(", ")
+    ));
+    out.push_str(&format!(
+        "/** The bits of a pass label that hold the pass's place. */\nexport const PASS_ROLE_PLACE_SHIFT = {};\n",
+        crate::pass_role::PLACE_SHIFT
+    ));
+    out.push_str(&format!(
+        "/** The role code of the background pass, which the page's renderer records itself. */\nexport const PASS_ROLE_BACKGROUND = {};\n",
+        crate::pass_role::PassRole::Background.code()
+    ));
     out
 }
 
@@ -2958,10 +3036,11 @@ mod tests {
                 "const VALUES_ROW_SHIFT: u32 = {}u;",
                 shift(sizes::ROW_VALUES_PER_TEXTURE_ROW)
             ),
-            // The last of a material row's texels on WebGL2, one per vec4f.
+            // The texel of a material's row where the maps' own transforms start, one per vec4f:
+            // the last fourteen of the row's texels, two for each of the seven maps.
             format!(
-                "textureLoad(materials, vec2u({}u, id), 0)",
-                sizes::MATERIAL_BYTES / 16 - 1
+                "const MATERIAL_MAP_UV_TEXEL: u32 = {}u;",
+                sizes::MATERIAL_BYTES / 16 - 14
             ),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
             format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),

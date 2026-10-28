@@ -62,15 +62,15 @@ traffic.update(eye, time.now);
 
 - A frame's CPU work is nearly the same at 30,000 and at 100,000 vehicles: everything moves on the
   GPU. The real-light search reads the rows of the lanes near the camera four times a second, so
-  only those lanes cost anything. Measured on 25 October 2026 at a Mac load near 55: one search took
-  about 0.3 ms at 30,000 rows and 1.1 ms at 100,000 rows, with medians of 0.6 and 2.5 ms. A search
+  only those lanes cost anything. Measured on the Mac at a load near 55, one search takes about
+  0.3 ms at 30,000 rows and 1.1 ms at 100,000 rows, with medians of 0.6 and 2.5 ms. A search
   lands whole in one frame, so the cost is a spike every quarter second, not a spread. The instances
   demo keeps all of its lanes in range of its camera and pays the 100,000-row figure at Ultra;
   Skyway's camera sees one or two of its ten streets and pays 0.25 to 0.5 ms. The row count sets the
   cost, so fewer lights do not lower it. A page that cannot spare the spike on its slowest device
   leaves `realLights` out.
   The draws are four, and the rows are 100,000 small hulls. The Skyway demo's figures, and the
-  phone expectation, are in the [examples guide](../../../.dev/examples.md#skyway-m3-c1-22-october-2026).
+  phone expectation, are in the [examples guide](../../../.dev/examples.md#skyway-m3-c1).
 - The lanes are straight and axis-aligned. A curved lane needs a route the vertex shader can
   evaluate, which this add-on does not build.
 - The vehicles keep clear of each other only by their start offsets. Two lanes at one height may

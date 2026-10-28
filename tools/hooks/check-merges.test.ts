@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import {
 	analyseMerge,
 	conflictsIn,
@@ -91,7 +92,7 @@ describe('conflictsIn', () => {
 describe('analyseMerge', () => {
 	// Each case builds a repository and merges in it, which starts many git processes. A loaded
 	// machine needs longer than the default test limit.
-	const gitCase = (name: string, fn: () => void) => it(name, fn, 30_000);
+	const gitCase = (name: string, fn: () => void) => it(name, fn, scaledBudget(30_000));
 
 	gitCase('passes a merge that only resolves its conflict from the two sides', () => {
 		const finding = analyseMerge(...mergeWith({ 'scene.ts': resolved }), '');

@@ -619,8 +619,10 @@ export interface Engine {
 	 * builds that a pipeline needs and that did not download fail the thread that draws with E1424.
 	 * After E1404 or E1424 the engine draws no new frames: destroy it and start a new one. On WebGPU,
 	 * the GPU can also run out of memory (E1304) or reject the engine's work (E1305), and the engine
-	 * draws on without the objects that failed. The engine reports each failure once. Without a
-	 * handler, it logs the failure to the console. Returns a function that removes the handler.
+	 * draws on without the objects that failed. The engine reports each failure once. A failure that
+	 * no handler listened for when the engine reported it reaches the first handler that listens, so
+	 * a failure that the app could not hear yet still arrives, and the engine also logs it to the
+	 * console. Returns a function that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
 	/**
@@ -745,9 +747,9 @@ const MAX_EARLY_MESSAGES = 256;
  * The longest that a request may wait for a worker's answer, in milliseconds. The slowest answer is
  * a capture: the thread that draws waits for a frame's pipelines for up to `BUILD_WAIT_LIMIT_MS`
  * before it draws, reads the frame back and encodes it. On a software renderer that work costs
- * minutes, and the forest demo's held frame passed a minute on CI's SwiftShader, so this figure
- * sits well above the slowest frame that was measured and below the image tests' own limit. A
- * thread that stops taking messages then fails the request with a named error instead of leaving
+ * minutes, and the forest demo's held frame takes more than a minute on CI's SwiftShader, so this
+ * figure sits well above the slowest frame that was measured and below the image tests' own limit.
+ * A thread that stops taking messages then fails the request with a named error instead of leaving
  * the page to wait with no end.
  */
 export const WORKER_REPLY_LIMIT_MS = 300_000;
@@ -1747,6 +1749,11 @@ async function startEngine(
 	};
 	const failureHandlers = new Set<(error: EngineError) => void>();
 	const sketchErrorHandlers = new Set<(error: Error) => void>();
+	/**
+	 * The failures that the engine reported while no handler listened, for the first handler that
+	 * does: a failure that reaches nothing is worse than a slow path.
+	 */
+	const earlyFailures: EngineError[] = [];
 	const reported = new Set<string>();
 	const onSketchError = (error: Error) => {
 		for (const handler of sketchErrorHandlers) handler(error);
@@ -1770,7 +1777,11 @@ async function startEngine(
 			start.abort(error);
 			return;
 		}
-		if (failureHandlers.size === 0) console.error(error);
+		if (failureHandlers.size === 0) {
+			earlyFailures.push(error);
+			console.error(error);
+			return;
+		}
 		for (const handler of failureHandlers) handler(error);
 	};
 	// The GPU path, the mode and the threads, which the start sets once the probe has run. The
@@ -1840,13 +1851,14 @@ async function startEngine(
 	const { slots } = views;
 	if (switches.replayDelay !== undefined)
 		Atomics.store(slots, Slot.ReplayDelayMs, switches.replayDelay);
-	// Hold mode and the image tests draw each frame as it is: a still view there must not accumulate
-	// or rest, so a captured frame is the frame the sketch drew once.
+	// Hold mode, a replay and the image tests draw each frame as it is: a still view there must not
+	// accumulate or rest, so a captured frame is the frame the sketch drew once.
 	if (
 		!switches.still ||
 		options.still === false ||
 		options.hold !== undefined ||
-		switches.hold !== undefined
+		switches.hold !== undefined ||
+		switches.replay !== undefined
 	)
 		Atomics.store(slots, Slot.StillOff, 1);
 	const statsSwitch = new StatsSwitch(() => ({
@@ -2499,6 +2511,7 @@ async function startEngine(
 				holdScript,
 				replay,
 				record,
+				switches.view,
 			);
 			// In hold mode the sketch module loads only now, after the runner seeded the random
 			// numbers. The renderer starts before the setup, so a warm-up in the setup has a renderer
@@ -2549,6 +2562,7 @@ async function startEngine(
 				holdScript,
 				replay,
 				record,
+				debugView: switches.view,
 				quality,
 				maxTargetFps: maxTarget,
 				threads: engineThreads,
@@ -2646,6 +2660,7 @@ async function startEngine(
 			},
 			onFailure(handler) {
 				failureHandlers.add(handler);
+				for (const error of earlyFailures.splice(0)) handler(error);
 				return () => failureHandlers.delete(handler);
 			},
 			onSketchError(handler) {

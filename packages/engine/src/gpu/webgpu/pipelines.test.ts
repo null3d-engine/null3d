@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { scaledBudget } from '../../../../../tests/lib/run-budget.ts';
+import { everyWgslShader } from '../../../../../tests/lib/shader-builds.ts';
 import * as G from '../../generated/gpu';
-import { type DeviceShaders, everyShader, type ShaderVariants } from '../../generated/shaders';
+import type { DeviceShaders, ShaderVariants } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
 import { engineTemplates } from '../webgl2/programs';
 import { COMPUTE_MAPS_BIT, Pipelines } from './pipelines';
@@ -12,8 +14,12 @@ afterAll(() => {
 	for (const name of Object.keys(GLOBALS)) delete scope[name];
 });
 
-/** Every shader build the shader compiler wrote, as this device's pipeline builders see them. */
-const SHADERS = await everyShader();
+/**
+ * Every WGSL build the shader compiler wrote, as this device's pipeline builders see them. The
+ * pipeline layouts come from the WGSL side of a build alone, and the WebGL2 modules hold most of
+ * the set's bytes, so the check reads the WGSL modules and holds a fraction of the whole set.
+ */
+const SHADERS = await everyWgslShader();
 
 /** WebGPU's default limits, which every device offers and the engine stays within. */
 const LIMITS = {
@@ -167,12 +173,16 @@ function custom(kind: CustomShader['kind'], textures: number, bits: number): Cus
 
 describe('the WebGPU pipeline layouts', () => {
 	// Every template's every build, which is a few thousand pipelines, so this takes seconds.
-	it('keep every build of every template within the default limits per shader stage', () => {
-		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
-		const templates = renderTemplates(pipelines);
-		expect(templates).toContain(G.TEMPLATE_DECAL_MAPS);
-		expect(templates.flatMap((id) => templateFaults(pipelines, id))).toEqual([]);
-	}, 120_000);
+	it(
+		'keep every build of every template within the default limits per shader stage',
+		() => {
+			const pipelines = new Pipelines(fakeDevice(), deviceShaders());
+			const templates = renderTemplates(pipelines);
+			expect(templates).toContain(G.TEMPLATE_DECAL_MAPS);
+			expect(templates.flatMap((id) => templateFaults(pipelines, id))).toEqual([]);
+		},
+		scaledBudget(120_000),
+	);
 
 	it('never reuse one template’s pipeline layout for another template’s build', () => {
 		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
@@ -257,6 +267,7 @@ describe('the WebGPU pipeline layouts', () => {
 			G.TEMPLATE_LIGHT_COUNT,
 			G.TEMPLATE_LIGHT_PLACE,
 			G.TEMPLATE_LIGHT_WRITE,
+			G.TEMPLATE_FEATURE_ROWS,
 		]) {
 			const descriptor = pipelines.compute(id, 0);
 			for (const fault of faults(layoutOf(descriptor), 0))
@@ -286,6 +297,10 @@ describe('the WebGPU pipeline layouts', () => {
 		// binds fails its dispatch.
 		expect(groups.map((group) => group.label)).toEqual(['compute rgba16float']);
 		expect(faults(layoutOf(descriptor), 0)).toEqual([]);
+		// A pass that fills an instance draw's count word and rows takes the buffers' layout: the
+		// format code 0 names it, and the pass's two storage buffers stay within the limits.
+		const buffers = pipelines.compute(id, 0);
+		expect(faults(layoutOf(buffers), 0)).toEqual([]);
 	});
 
 	it('give an add-on compute pass with maps the maps layout at group 1', () => {

@@ -294,7 +294,8 @@ pub struct SkyLayer {
 struct LayerUniform {
     /// The core sky's cloud coverage, cloud density, cloud elevation and cloud scale.
     clouds: [f32; 4],
-    /// The share of the sun that the layer hides, its opacity, and two spare values.
+    /// The share of the sun that the layer hides, its opacity, a value that the box does not read,
+    /// and the background's intensity, which the layer's color takes as the sky around it does.
     view: [f32; 4],
 }
 
@@ -302,15 +303,15 @@ const _: () =
     assert!(std::mem::size_of::<LayerUniform>() == sizes::BACKGROUND_LAYER_UNIFORM_BYTES as usize);
 
 impl LayerUniform {
-    /// The values of `layer`, over the core sky's `clouds`.
-    fn of(layer: &SkyLayer, clouds: [f32; 4]) -> Self {
+    /// The values of `layer`, over the core sky's `clouds`, under a background of `intensity`.
+    fn of(layer: &SkyLayer, clouds: [f32; 4], intensity: f32) -> Self {
         Self {
             clouds,
             view: [
                 layer.sun.clamp(0.0, 1.0),
                 layer.opacity.clamp(0.0, 1.0),
                 0.0,
-                0.0,
+                intensity,
             ],
         }
     }
@@ -644,7 +645,8 @@ impl BackgroundPass {
             return Ok(());
         }
         let clouds = settings.background().map_or([0.0; 4], |b| b.clouds());
-        let uniform = LayerUniform::of(&layer, clouds);
+        let intensity = settings.background().map_or(1.0, |b| b.intensity);
+        let uniform = LayerUniform::of(&layer, clouds, intensity);
         let ids = self.layer.ids;
         if !self.layer.created {
             list.push(
