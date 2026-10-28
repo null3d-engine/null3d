@@ -69,22 +69,32 @@ export async function readFrame(page: Page): Promise<Frame> {
 
 /**
  * The mean difference of two frames' colour, in steps of 255, over every pixel and channel. A frame
- * with no pixels, or two frames of different sizes, have no difference to give, so they are an error
- * rather than a figure: a canvas that resized between the two reads would otherwise compare the
- * shorter frame's pixels against a prefix of the longer one.
+ * with no pixels has no difference to give, so it is an error rather than a figure.
+ *
+ * Two frames a pixel apart in size are compared over the part they share. A fractional layout rounds
+ * a canvas's height differently from read to read, so a settled page can hand back 640 by 319 after
+ * 640 by 320, and refusing that pair would fail on the layout rather than on the picture. Anything
+ * wider apart is a resize, and its frames are an error: comparing a shorter frame against a prefix of
+ * a longer one is not a difference at all.
  */
 export function frameDifference(a: Frame, b: Frame): number {
 	if (a.data.length === 0 || b.data.length === 0)
 		throw new Error(
 			`a frame holds no pixels: ${a.width} by ${a.height} against ${b.width} by ${b.height}`,
 		);
-	if (a.data.length !== b.data.length)
+	const width = Math.min(a.width, b.width);
+	const height = Math.min(a.height, b.height);
+	if (Math.abs(a.width - b.width) > 1 || Math.abs(a.height - b.height) > 1)
 		throw new Error(
 			`the frames differ in size: ${a.width} by ${a.height} against ${b.width} by ${b.height}`,
 		);
 	let sum = 0;
-	for (let i = 0; i < a.data.length; i += 4)
-		for (let c = 0; c < 3; c++)
-			sum += Math.abs((a.data[i + c] as number) - (b.data[i + c] as number));
-	return sum / ((a.data.length / 4) * 3);
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			const i = (y * a.width + x) * 4;
+			const j = (y * b.width + x) * 4;
+			for (let c = 0; c < 3; c++)
+				sum += Math.abs((a.data[i + c] as number) - (b.data[j + c] as number));
+		}
+	return sum / (width * height * 3);
 }
