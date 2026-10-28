@@ -53,7 +53,7 @@ opposite order from the one before. Each round measured 2 s after a 2 s warm-up,
 a pixel ratio of 1. The run went through the job queue with the quiet window held. The loads were
 2.1 to 5.6 before each page and 2.1 to 4.7 after, under the cost specs' limit of 8. Every case
 recorded the display's 60 Hz rate and a 16.665 ms median frame interval. The figures are the medians
-of each side's rounds, in ms.
+of each side's rounds, in ms. The run's record is [the Mac's hero cost run](../tested-devices/macbook-pro-chrome/20261028-085328-hero-cost.md).
 
 | GPU path | Preset | Hero tile | Case | Draws off / on | GPU off | GPU on | Change | CPU off / on | Sketch off / on | Render off / on |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
