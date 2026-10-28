@@ -111,8 +111,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-E10':
 		"the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch. The round 24 audit of the aurora fix (findings N1 and N3) records that the tip's capture never runs and that the evidence line claims light the tip does not make; the light sum, the coefficient stride and the aurora pictures are on `fix/m3-sky-layer-light`",
-	'M3-R27':
-		"the blur was the environment map and not the material: roughness 0 and 0.06 draw the same lake, and no map size adds the shore, because a standard material reflects only the sky. The fix is a planar reflection through the engine's `reflection` pass, with a custom ice material that samples it, the six demo-aurora references redrawn once in both sets and a picture test that fails while the lake is missing. The audit passed the lake, the test and the references and failed only on text, which is corrected. The task waits on the owner's ruling on the new look",
 	'M3-V2':
 		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
 	'M3-G2': 'no Khronos iridescence sample is tested',
