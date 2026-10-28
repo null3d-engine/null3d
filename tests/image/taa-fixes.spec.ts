@@ -58,11 +58,18 @@ interface EffectResult {
 }
 
 const GPUS = ['webgpu', 'webgl2'] as const;
+/**
+ * How many times over a software run captures its frames. A software GPU draws slower than the page
+ * asks, so its captures skip frames and two runs line up on fewer sketch frames; twice the captures
+ * gives back the lined-up pairs the checks count. A Mac's GPU keeps the page's rate and needs one.
+ */
+const capturesOn = (projectName: string) => (projectName === 'chromium-swiftshader' ? 2 : 1);
 
 for (const gpu of GPUS) {
-	test(`a history follows a change of the exposure on ${gpu}`, async ({ page }) => {
+	test(`a history follows a change of the exposure on ${gpu}`, async ({ page }, testInfo) => {
+		const captures = capturesOn(testInfo.project.name);
 		test.setTimeout(600_000);
-		await page.goto(`taa-fixes.html?case=exposure&gpu=${gpu}&fps=4&step=8`);
+		await page.goto(`taa-fixes.html?case=exposure&gpu=${gpu}&fps=4&step=8&captures=${captures}`);
 		const result = await pageResult<ExposureResult>(page, 180_000);
 		expect(result.case).toBe('exposure');
 		expect(result.consecutive, 'a capture skipped a frame').toBe(true);
@@ -89,10 +96,11 @@ for (const gpu of GPUS) {
 }
 
 for (const gpu of GPUS) {
-	test(`the scene's alpha lowers the history on ${gpu}`, async ({ page }) => {
+	test(`the scene's alpha lowers the history on ${gpu}`, async ({ page }, testInfo) => {
+		const captures = capturesOn(testInfo.project.name);
 		test.setTimeout(600_000);
-		const off = await ghost(page, gpu, 'alpha', 'off');
-		const on = await ghost(page, gpu, 'alpha', 'alpha');
+		const off = await ghost(page, gpu, 'alpha', 'off', captures);
+		const on = await ghost(page, gpu, 'alpha', 'alpha', captures);
 		console.log(
 			`TAAFIX alpha on ${gpu}: error ${on.error.toFixed(1)} levels with the mask, ${off.error.toFixed(1)} without; captured ${on.frameLeft.toFixed(1)} left and ${on.frameRight.toFixed(1)} right, reference ${on.referenceArrived.toFixed(1)} arrived and ${on.referenceRight.toFixed(1)} right`,
 		);
@@ -103,12 +111,13 @@ for (const gpu of GPUS) {
 		).toBeLessThan(Math.max(1.5, off.error * 0.8));
 	});
 
-	test(`the opaque-only copy lowers the history on ${gpu}`, async ({ page }) => {
+	test(`the opaque-only copy lowers the history on ${gpu}`, async ({ page }, testInfo) => {
+		const captures = capturesOn(testInfo.project.name);
 		test.setTimeout(600_000);
 		// The square is blended over an opaque wall, so the scene's alpha stays at one and only the
 		// opaque-only copy can find the surface that moved.
-		const off = await ghost(page, gpu, 'opaque', 'off');
-		const on = await ghost(page, gpu, 'opaque', 'opaque');
+		const off = await ghost(page, gpu, 'opaque', 'off', captures);
+		const on = await ghost(page, gpu, 'opaque', 'opaque', captures);
 		console.log(
 			`TAAFIX opaque on ${gpu}: error ${on.error.toFixed(1)} levels with the mask, ${off.error.toFixed(1)} without; captured ${on.frameLeft.toFixed(1)} left and ${on.frameRight.toFixed(1)} right, reference ${on.referenceArrived.toFixed(1)} arrived and ${on.referenceRight.toFixed(1)} right`,
 		);
@@ -122,9 +131,10 @@ for (const gpu of GPUS) {
 		).toBeLessThan(Math.max(1.5, off.error * 0.8));
 	});
 
-	test(`the phone path draws the full path's picture on ${gpu}`, async ({ page }) => {
+	test(`the phone path draws the full path's picture on ${gpu}`, async ({ page }, testInfo) => {
+		const captures = capturesOn(testInfo.project.name);
 		test.setTimeout(600_000);
-		await page.goto(`taa-fixes.html?case=phone&gpu=${gpu}&fps=4`);
+		await page.goto(`taa-fixes.html?case=phone&gpu=${gpu}&fps=4&captures=${captures}`);
 		const result = await pageResult<PhoneResult>(page, 180_000);
 		console.log(
 			`TAAFIX phone on ${result.gpu}: the two paths differ by ${result.distance.toFixed(2)} levels; the mask changes the full path by ${result.signal.toFixed(2)} levels and the phone path by ${result.skip.toFixed(2)}, mean ${result.mean.toFixed(1)}`,
@@ -150,9 +160,10 @@ for (const gpu of GPUS) {
 	});
 
 	for (const effect of ['rain', 'fog'] as const) {
-		test(`the resolve over ${effect} on ${gpu}`, async ({ page }) => {
+		test(`the resolve over ${effect} on ${gpu}`, async ({ page }, testInfo) => {
+			const captures = capturesOn(testInfo.project.name);
 			test.setTimeout(900_000);
-			await page.goto(`taa-fixes.html?case=${effect}&gpu=${gpu}&fps=4`);
+			await page.goto(`taa-fixes.html?case=${effect}&gpu=${gpu}&fps=4&captures=${captures}`);
 			const result = await pageResult<EffectResult>(page, 240_000);
 			// The figures go into the decision record, which says what each effect did.
 			console.log(
@@ -193,8 +204,11 @@ async function ghost(
 	gpu: string,
 	kind: 'alpha' | 'opaque',
 	reactive: string,
+	captures: number,
 ): Promise<GhostResult> {
-	await page.goto(`taa-fixes.html?case=${kind}&gpu=${gpu}&reactive=${reactive}`);
+	await page.goto(
+		`taa-fixes.html?case=${kind}&gpu=${gpu}&reactive=${reactive}&captures=${captures}`,
+	);
 	const result = await pageResult<GhostResult>(page, 180_000);
 	expect(result.reactive).toBe(reactive);
 	return result;

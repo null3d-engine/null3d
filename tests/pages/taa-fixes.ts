@@ -11,6 +11,12 @@ const params = new URLSearchParams(location.search);
 const CASE = params.get('case') ?? 'exposure';
 const GPU = params.get('gpu') ?? 'webgpu';
 const REACTIVE = params.get('reactive') ?? 'both';
+/**
+ * How many times over the run captures its frames. A software GPU draws slower than the page asks,
+ * so a capture there can take a frame two or more ahead of the one before it, and two runs then
+ * line up on fewer sketch frames. Asking for more captures gives the same number of lined-up pairs.
+ */
+const CAPTURES = Number(params.get('captures') ?? '1');
 /** The measurement's size in pixels. */
 const SIZE = [320, 180] as const;
 /** The square's place after it jumped, in pixels from the top left, inside its 40 pixel edge. */
@@ -226,7 +232,7 @@ run('taa-fixes', async () => {
 				`case=exposure&gpu=${GPU}&taa=${taa ? 1 : 0}&jitter=0&ratio=${ratio ? 1 : 0}&step=${step}`,
 				async (engine, heard) => {
 					await waitFrame(heard, step);
-					return sequence(engine, heard, 12);
+					return sequence(engine, heard, 12 * CAPTURES);
 				},
 			);
 		const reference = await run(false, true);
@@ -291,7 +297,7 @@ run('taa-fixes', async () => {
 				`case=phone&gpu=${GPU}&taa=1&jitter=1&phone=${phone ? 1 : 0}&reactive=${reactive}`,
 				async (engine, heard) => {
 					await waitFrame(heard, 12);
-					return sequence(engine, heard, 16);
+					return sequence(engine, heard, 16 * CAPTURES);
 				},
 				{ transparent: true },
 			);
@@ -325,7 +331,7 @@ run('taa-fixes', async () => {
 	const measure = (query: string) =>
 		scene(query, async (engine, heard) => {
 			await waitFrame(heard, 12);
-			return sequence(engine, heard, 16);
+			return sequence(engine, heard, 16 * CAPTURES);
 		});
 	const off = await measure(`case=${CASE}&gpu=${GPU}&taa=0&jitter=0`);
 	const offJitter = await measure(`case=${CASE}&gpu=${GPU}&taa=0&jitter=1`);
