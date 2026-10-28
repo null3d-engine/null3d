@@ -14,29 +14,18 @@ import {
 	type SketchContext,
 	type Texture,
 } from '@null3d/engine';
+import { cadenceRow, REFLECT_EVERY_MAX, REFLECT_MS } from './cadence';
 import { type Junctions, junctions } from './junction';
 import { bodyMesh, type MeshDetail } from './mesh';
 import { type WaterBody, type WaterShape, waterBody } from './shape';
 import waterShader from './water.wgsl';
 
 /** The add-on's names, claimed once as the sketch's module loads. */
-const NAMESPACE = declareAddonNamespace({
+export const NAMESPACE = declareAddonNamespace({
 	name: 'water',
 	package: '@null3d/water',
 	errorCodes: [2200, 2299],
 });
-
-/** The presets in the order that a setting's row gives them. */
-const PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
-/** The frames between two draws of the reflection at each preset, before the governor's steps. */
-const REFLECT_EVERY = [2, 2, 1, 1] as const;
-/** The most frames between two reflection draws that the governor may reach. */
-const REFLECT_EVERY_MAX = 16;
-/**
- * The reflection pass's time at full quality, per frame, on each preset: the shared figure from
- * the S25's check of planar reflections, halved where the cadence draws every other frame.
- */
-const REFLECT_MS: readonly [number, number, number, number] = [1.7, 1.7, 3.4, 3.4];
 
 /** The ripple strength that the water takes when the caller gives none. */
 const RIPPLE = 1;
@@ -165,25 +154,6 @@ function bodyList(shapes: WaterShape | readonly WaterShape[]): WaterBody[] {
 	const list = Array.isArray(shapes) ? shapes : [shapes as WaterShape];
 	if (list.length === 0) throw new Error('@null3d/water: createWater needs at least one shape');
 	return list.map((shape) => waterBody(shape));
-}
-
-/**
- * The cadence that each preset takes, with the caller's own cadence where it names one. It is the
- * row that the feature host resolves for the preset in use.
- */
-function cadenceRow(
-	cadence: Partial<Record<QualityPreset, number>> | undefined,
-): [number, number, number, number] {
-	const row = PRESETS.map((preset, index) => {
-		const given = cadence?.[preset];
-		const every = Math.round(given ?? (REFLECT_EVERY[index] as number));
-		if (!Number.isFinite(every) || every < 1 || every > REFLECT_EVERY_MAX)
-			throw new Error(
-				`@null3d/water: a reflection cadence must be from 1 to ${REFLECT_EVERY_MAX} frames, and it is ${given}`,
-			);
-		return every;
-	});
-	return row as [number, number, number, number];
 }
 
 /**

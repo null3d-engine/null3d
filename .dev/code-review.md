@@ -22,6 +22,28 @@ The engine starts job workers only when its parallel loops take 0.2 ms or more p
 
 Godot found that MSAA crashed Mali-G52, G72 and G76 GPUs on its Vulkan mobile path. Its fix, [godot#114785](https://github.com/godotengine/godot/pull/114785), moved all uniforms to set 0. The engine binds its uniforms in several bind groups. A Mali phone with MSAA on must run the shadow and custom material image tests on WebGPU to rule the fault out ([implementation notes](implementation-notes.md#browser-faults)). The fault is a driver crash, so only a device run can show it.
 
+## The fragment form of a layered, textured compute pass reads another field (M3-F9)
+
+`@null3d/water`'s ocean transforms each band's spectrum with a chain of compute passes on WebGPU and
+with their fragment forms on WebGL2. On WebGPU and in compatibility mode the heights match the same
+transform on the page's thread within 0.004 m of a field of 0.7 m
+(`tests/image/ocean-waves.spec.ts`). On WebGL2 the sea moves and keeps its scale, but its heights
+differ from that transform by 0.27 m or more. A probe of the first pass already differed, so the
+first stage reads something other than the spectrum and the stage's values that the compute form
+reads.
+
+The pass is the first *textured* compute pass of several layers: its fragment form reads a texture
+array of two layers, one for each band, at the layer that it draws, and writes one layer. The
+engine's layered fallback test (`compute-state`, the `layers` case) draws a pass without textures,
+so nothing else in the suite covers that shape. The transform writes the sketch time of its waves in
+the alpha channel, so a read of the heights uses the pass's own time. The eight turns and flips of
+the pass's image, a swapped band, and a read shifted by up to two texels do not explain the
+difference.
+
+The fix needs a test that reads a *textured* layered fallback's layers against their sources, which
+will name whether the texture array's read, the per-layer block, or the layer's view differs on that
+path. `tests/image/ocean-waves.spec.ts` marks the WebGL2 case as an expected failure until then.
+
 ## Closed findings
 
 Every other finding of the review is fixed or settled. The table names the code, test or record that closes each one.
