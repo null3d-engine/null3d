@@ -1,6 +1,6 @@
 # D-219: One object's shadow at its own scale
 
-Status: decided and built, with the tile size a setting by the owner's ruling. Not measured yet: the cost figures, which the timing helper takes in a quiet window. Task: M3-A9.
+Status: decided and built, with the tile size a setting by the owner's ruling and the cost measured in a quiet window. Task: M3-A9.
 
 Summary: A directional light can name one object as its hero, which adds one draw when it moves. Its shadow draws into a tightly fitted tile of the shadow atlas, which receivers in the box read before the cascades. The tile's size is a setting: 1,024, 2,048 or 4,096 texels, with a default on each quality preset. At the defaults the demo's 4.4 m car keeps at least four times the texel density of the cascade that holds 10 m, on every preset.
 
@@ -47,34 +47,63 @@ The ratio is the tile's texels over the object's width, so it falls as the objec
 
 ## Cost
 
-The cost figures are not measured yet. Runs at loads of 13.6 to 26.3 on the Mac, against the cost
-specs' limit of 8, give no measurement, because other jobs move each figure. The timing helper takes
-the figures in a quiet window, so this record states what is owed.
+The hero cost spec (`tests/image/hero-cost.spec.ts`) timed the hero demo's car and yard on the Mac's
+own GPU. The sun's hero was off and on in turns, four rounds for each side, with each round in the
+opposite order from the one before. Each round measured 2 s after a 2 s warm-up, at 1920 x 1080 and
+a pixel ratio of 1. The run went through the job queue with the quiet window held. The loads were
+2.1 to 5.6 before each page and 2.1 to 4.7 after, under the cost specs' limit of 8. Every case
+recorded the display's 60 Hz rate and a 16.665 ms median frame interval. The figures are the medians
+of each side's rounds, in ms.
 
-The run must measure the hero demo's car and yard on the Mac's own GPU, with the cost spec's
-protocol: the hero off and on in turns, four rounds, each round in the opposite order from the one
-before, and the medians of the GPU time per frame, of the frame interval and of the CPU time of
-each thread. It must take, at each preset's default tile size (1,024, 2,048 and 4,096):
+| GPU path | Preset | Hero tile | Case | Draws off / on | GPU off | GPU on | Change | CPU off / on | Sketch off / on | Render off / on |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| WebGPU | High | 1,024 | Still | 62 / 62 | 2.155 | 2.854 | +0.699 | 0.110 / 0.112 | 0.082 / 0.085 | 0.100 / 0.105 |
+| WebGPU | High | 1,024 | Moving | 62 / 76 | 2.246 | 2.892 | +0.646 | 0.130 / 0.150 | 0.100 / 0.123 | 0.118 / 0.135 |
+| WebGPU | High | 2,048 | Still | 62 / 62 | 2.250 | 2.167 | -0.083 | 0.118 / 0.135 | 0.093 / 0.110 | 0.112 / 0.120 |
+| WebGPU | High | 2,048 | Moving | 62 / 76 | 2.786 | 2.678 | -0.108 | 0.123 / 0.127 | 0.108 / 0.115 | 0.113 / 0.125 |
+| WebGPU | High | 4,096 | Still | 62 / 62 | 3.634 | 3.280 | -0.354 | 0.135 / 0.142 | 0.100 / 0.115 | 0.115 / 0.117 |
+| WebGPU | High | 4,096 | Moving | 62 / 76 | 2.108 | 2.241 | +0.133 | 0.148 / 0.142 | 0.110 / 0.110 | 0.127 / 0.118 |
+| WebGPU | Medium | 2,048 | Still | 44 / 44 | 1.974 | 2.056 | +0.082 | 0.142 / 0.124 | 0.100 / 0.088 | 0.115 / 0.098 |
+| WebGPU | Medium | 2,048 | Moving | 44 / 58 | 2.081 | 1.793 | -0.288 | 0.144 / 0.145 | 0.104 / 0.103 | 0.111 / 0.105 |
+| Compatibility | Medium | 2,048 | Still | 43 / 43 | 1.530 | 1.758 | +0.228 | 0.116 / 0.132 | 0.080 / 0.110 | 0.085 / 0.108 |
+| Compatibility | Medium | 2,048 | Moving | 43 / 57 | 1.782 | 1.746 | -0.036 | 0.140 / 0.125 | 0.098 / 0.097 | 0.097 / 0.100 |
+| WebGL2 | Medium | 2,048 | Still | 57 / 57 | 3.115 | 3.912 | +0.797 | 0.163 / 0.090 | 0.142 / 0.078 | 0.103 / 0.065 |
+| WebGL2 | Medium | 2,048 | Moving | 57 / 66 | 3.745 | 3.429 | -0.316 | 0.135 / 0.169 | 0.115 / 0.159 | 0.080 / 0.106 |
 
-- The still case and the moving case, against the same scene with no hero, on WebGPU, in
-  compatibility mode and on WebGL2.
-- The draw calls and the passes, and the GPU time of the hero's own pass.
-- The atlas's size and layer count, with no light tile, with 8 and with 16.
-
-What the design shows without a run:
-
-- A still hero adds no pass. The tile rests after its first draw, so the frame draws the passes
-  and the draw calls that it drew with no hero. A receiver inside the box reads the tile with the
-  atlas filter, as it reads a light's tile.
-- A moving hero adds one depth-only render pass a frame, which draws the car into the tile and
-  clears it. The pass clears and draws the tile's whole area, so its cost grows with the square of
-  the tile size.
+- A still hero adds no draw call and no pass. Its draw counts match the off side on every path. So
+  does its pass count where the timer lists the passes. The frame's GPU time changed by -0.35 to
+  +0.80 ms, with no sign that follows the path. The off side's own GPU time ranged from 1.53 to
+  3.63 ms across the cases. A change of that size sits inside the scene's spread.
+- A moving hero adds one depth-only render pass and draws the car into the tile. The draw calls
+  rise by 14 on WebGPU and in compatibility mode: 62 to 76 at High and 44 to 58 at Medium. In
+  compatibility mode they go from 43 to 57. On WebGL2 they rise by 9, from 57 to 66.
+- The timer names passes by kind and their order, not by their target. The scene's far cascades
+  draw every 2 or 3 frames, so a median pass slot mixes the hero's pass with the cascades'. The run
+  therefore gives no figure for the hero's own pass. The frame's total is the bound: it changed by
+  -0.32 to +0.65 ms while moving, inside the scene's spread. A run that draws every far cascade in
+  every frame would give the pass a stable slot.
+- No thread's CPU time moved by more than 0.073 ms. The busiest thread moved by -0.073 to
+  +0.034 ms. The sketch worker moved by -0.064 to +0.044 ms, and the render worker by -0.038 to
+  +0.026 ms.
+- The rule holds on every path: a moving hero costs one extra shadow pass a frame, and a still
+  hero costs none. The record names no millisecond limit. The largest frame GPU time, 3.63 ms,
+  sits well inside the display's 16.665 ms frame.
 - With no hero the atlas holds no hero layer, and the frame draws only its usual passes. The Rust
   test `the_hero_draws_its_own_tile` checks the layer count, the two cascade passes and the zeroed
   values.
-- The atlas holds the tile, and every layer of a texture array takes one size, on both GPU paths.
-  So a hero tile above the preset's `shadowTileSize` sets the size of every layer. The atlas takes
-  (light tiles + 1) x size x size x 4 bytes.
+
+The atlas holds the tile, and every layer of a texture array takes one size, on both GPU paths.
+So a hero tile above the preset's `shadowTileSize` sets the size of every layer. The atlas takes
+(light tiles + 1) x size x size x 4 bytes.
+
+| Hero tile | 1 layer, no light tile | 9 layers, 8 light tiles | 17 layers, 16 light tiles |
+| --- | --- | --- | --- |
+| 1,024 | 4 MiB | 36 MiB | 68 MiB |
+| 2,048 | 16 MiB | 144 MiB | 272 MiB |
+| 4,096 | 64 MiB | 576 MiB | 1,088 MiB, refused |
+
+A 4,096 hero tile with 16 light tiles needs 1,088 MiB, over the 1 GiB cap, so the frame fails with
+E1501. The demo names no spot or point light that casts, so its atlas holds the hero's layer alone.
 
 | Preset | Hero tile | Light tiles at most | Every layer | Atlas at most | The demo's atlas, one layer |
 | --- | --- | --- | --- | --- | --- |
