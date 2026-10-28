@@ -36,10 +36,13 @@ function sideOf(positions: Float32Array): number {
 /** A sketch context with just what a terrain calls, which logs every block it makes. */
 function fakeContext() {
 	const blocks: FakeBlock[] = [];
-	const texture = { destroy: () => {} } as unknown as Texture;
+	const texture = () => ({ destroy: () => {} }) as unknown as Texture;
 	const context = {
-		textures: { fromData: () => texture },
+		textures: { fromData: texture },
 		materials: { shader: () => ({ destroy: () => {} }) },
+		// The ground picks blocks from the drawing buffer's height and the preset's detail.
+		engine: { viewport: { width: 1920, height: 1080, pixelRatio: 1 } },
+		quality: { settings: { lodThreshold: 1, maxRenderScale: 1 } },
 		geometry: {
 			// The ground writes a block's vertices into whichever mesh it holds, so the mesh's side
 			// follows the ground it now carries.
@@ -103,7 +106,7 @@ function terrain(options: Partial<TerrainOptions> = {}) {
 		height: () => 0,
 		resolution: 8,
 		splatResolution: 2,
-		chunkQuads: 2,
+		chunkQuads: 16,
 		layers: [layer],
 		maxLevel: 5,
 		...options,
@@ -112,9 +115,9 @@ function terrain(options: Partial<TerrainOptions> = {}) {
 }
 
 /** Moves the camera to a place and lets every update that the new selection needs run. */
-function settle(t: ReturnType<typeof terrain>, x: number, z: number): void {
-	t.ground.update([x, 0, z]);
-	while (t.ground.building) t.ground.update([x, 0, z]);
+function settle(t: ReturnType<typeof terrain>, x: number, z: number, y = 0): void {
+	t.ground.update([x, y, z]);
+	while (t.ground.building) t.ground.update([x, y, z]);
 }
 
 describe('terrain updates', () => {
@@ -231,9 +234,27 @@ describe('terrain updates', () => {
 		expect(t.blocks.every((b) => b.destroyed)).toBe(true);
 	});
 
-	test('createTerrain refuses a split or blocksPerUpdate out of range', () => {
-		expect(() => terrain({ split: 9 })).toThrow('up to 8');
+	test('createTerrain refuses an error or blocksPerUpdate out of range', () => {
+		expect(() => terrain({ error: -1 })).toThrow('0 or more');
+		expect(() => terrain({ error: Number.POSITIVE_INFINITY })).toThrow('0 or more');
 		expect(() => terrain({ blocksPerUpdate: 0 })).toThrow('blocksPerUpdate');
+	});
+
+	test('a high camera picks coarser blocks under it', () => {
+		const t = terrain();
+		settle(t, 10, 10, 0);
+		const near = t.ground.drawn;
+		settle(t, 10, 10, 500);
+		expect(t.ground.drawn).toBeLessThan(near);
+		expect(t.area()).toBeCloseTo(SIZE * SIZE, 6);
+	});
+
+	test('the ground picks again when the camera rises without moving across', () => {
+		const t = terrain();
+		settle(t, 10, 10, 0);
+		const before = t.ground.drawn;
+		settle(t, 10, 10, 400);
+		expect(t.ground.drawn).toBeLessThan(before);
 	});
 });
 

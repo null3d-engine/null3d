@@ -1,9 +1,11 @@
 // Terrain: a 1.2 km valley drawn by the terrain add-on. The height field is a function of the
 // place, and the ground near the camera draws at about a meter of detail while the hills far away
-// draw coarser blocks, each with a skirt that hides the seam where two levels meet. Four tiled
-// layers, grass, soil, rock and snow, blend by a splat map that the add-on fills from the height
-// and the slope. Boulders made in code stand on the ground, placed with `terrain.heightAt`, and the
-// camera flies a slow circle over the valley. The terrain carries no collision of its own.
+// draw coarser blocks, each with a skirt that hides the seam where two levels meet. Every pixel
+// takes its normal from a map baked over the whole ground, so the far hills keep their relief.
+// Four tiled layers, grass, soil, rock and snow, blend by a splat map that the add-on fills from
+// the height and the slope, and each layer's own height shows it through its neighbours where two
+// meet. Boulders made in code stand on the ground, placed with `terrain.heightAt`, and the camera
+// flies a slow circle over the valley. The terrain carries no collision of its own.
 import { defineSketch, math, timeOfDay, vec3 } from '@null3d/engine';
 import { createTerrain, terrainTextures } from '@null3d/terrain';
 import { interact } from '../lib/interact';
@@ -49,11 +51,15 @@ function fbm(x: number, y: number, octaves: number): number {
 	return sum;
 }
 
-/** The height of the ground at a point: rolling hills with a valley that runs along z. */
+/**
+ * The height of the ground at a point: rolling hills with a valley that runs along z, and small
+ * folds that a far block's own vertices would miss.
+ */
 function ground(x: number, z: number): number {
 	const hills = 62 * fbm(x * 0.0021, z * 0.0021, 5) + 7 * fbm(x * 0.014 + 3, z * 0.014, 3);
 	const valley = -34 * Math.exp(-(z * z) / (2 * 260 * 260));
-	return hills + valley + 12;
+	const folds = 1.1 * Math.sin(x * 0.22 + z * 0.16) + 0.5 * Math.sin(x * 0.44 - z * 0.33);
+	return hills + valley + folds + 12;
 }
 
 export default defineSketch(async (ctx) => {
@@ -83,13 +89,13 @@ export default defineSketch(async (ctx) => {
 		height: ground,
 		resolution: 256,
 		layers: [
-			{ map: layers.grass, tile: 6, roughness: 1 },
-			{ map: layers.soil, tile: 11, roughness: 1 },
-			{ map: layers.rock, tile: 7, roughness: 0.85 },
-			{ map: layers.snow, tile: 14, roughness: 0.7 },
+			{ map: layers.grass, tile: 6, roughness: 1, heightFrom: 'alpha' },
+			{ map: layers.soil, tile: 11, roughness: 1, heightFrom: 'alpha' },
+			{ map: layers.rock, tile: 7, roughness: 0.85, heightFrom: 'alpha' },
+			{ map: layers.snow, tile: 14, roughness: 0.7, heightFrom: 'alpha' },
 		],
 		maxLevel: 6,
-		split: 2,
+		camera,
 	});
 
 	// Boulders seated on the ground, each where the height field says the ground is.
