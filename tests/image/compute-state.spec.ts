@@ -156,6 +156,17 @@ for (const { tier, query } of TIERS) {
 		expect(result.same).toBe(true);
 	});
 
+	test(`a cadence's skipped frame keeps the image a material samples on ${tier}`, async ({
+		page,
+	}) => {
+		// The pass draws in one frame of two; the picture is taken while it drew, then after its turn
+		// is pushed far away. The material must keep sampling the pass's texture, and its last image.
+		const result = await stateCase(page, query, 'cadence-kept');
+		expect(result.left?.[0] ?? 0).toBeGreaterThan(120);
+		expect(result.right?.[0] ?? 255).toBeLessThan(40);
+		expect(result.same).toBe(true);
+	});
+
 	test(`a stopped full-screen pass keeps its image and its alpha on ${tier}`, async ({ page }) => {
 		// The M3-V5 fault, on a full-screen pass rather than a compute pass.
 		const result = await stateCase(page, query, 'fs-kept');

@@ -302,7 +302,7 @@ A pass that need not change every frame draws every few frames. `setPassEvery` g
 render.setPassEvery(map, 4);
 ```
 
-The call compiles nothing, so a sketch may change the cadence whenever the quality preset or the frame budget moves, as often as once a frame. Do not switch a pass off to slow it down: `setPassEnabled` recompiles the render graph, so a pass that toggles every frame pays for a new plan on every frame. A pass that carried its own cadence through the toggle cost about 700 ms a frame in the ocean's measurement; the same pass with a cadence costs nothing measurable.
+The call compiles nothing, so a sketch may change the cadence whenever the quality preset or the frame budget moves, as often as once a frame. A material that samples the pass's texture in a frame that the pass skips shows the last image that it drew: the target is neither culled nor cleared. Do not switch a pass off to slow it down: `setPassEnabled` recompiles the render graph, so a pass that toggles every frame pays for a new plan on every frame. A pass that carried its own cadence through the toggle cost about 700 ms a frame in the ocean's measurement; the same pass with a cadence costs nothing measurable.
 
 ### What a scene pass draws
 
