@@ -1,9 +1,15 @@
 // The glTF loader's texture step and its levels, with a fake engine: a load whose textures fail
-// part way frees what it made, and a level whose primitive names its base's accessors shares the
-// base's vertices.
+// part way frees what it made, a level whose primitive names its base's accessors shares the
+// base's vertices, and a file's error fades unless the tool's coverage comes beside it.
 
 import { expect, test } from 'bun:test';
-import { type GltfContext, makeTextures, readStage, sharesVertices } from './gltf';
+import {
+	fileLevelMeasure,
+	type GltfContext,
+	makeTextures,
+	readStage,
+	sharesVertices,
+} from './gltf';
 import type { GltfData, PrimitiveData, TextureUse } from './gltf-parse';
 
 const use = (image: number): TextureUse => ({
@@ -113,6 +119,15 @@ test('a level copies its vertices when its base morphs or has no indices', () =>
 		),
 	).toBe(false);
 	expect(sharesVertices({ ...primitive(), indices: undefined }, base)).toBe(false);
+});
+
+test("a file's level fades unless the coverage that its measured error implies comes beside it", () => {
+	// A hand-set error, as the Creek trees' levels hold: the switch shows, so the level fades.
+	expect(fileLevelMeasure([28.297, 56.594], undefined, 0)).toEqual({ error: 28.297 });
+	// A measured error, which the asset tool writes with the coverage that the error implies.
+	expect(fileLevelMeasure([919.294], [0.0165], 0)).toEqual({ error: 919.294, fade: false });
+	// A file that gives the coverage of its levels alone.
+	expect(fileLevelMeasure(undefined, [0.0165], 0)).toEqual({ coverage: 0.0165 });
 });
 
 /** A stage file of `lists`, each at the width that its largest index takes, as the asset tool writes it. */
