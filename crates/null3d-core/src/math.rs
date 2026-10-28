@@ -76,8 +76,9 @@ impl Float for f64 {
 /// The scaling sits here, in the one function that composes a matrix, and not where a rotation is
 /// written, because the `rotations` arrays are written directly: a page writes a scene object's or
 /// an instance row's quaternion with no setter to pass through. A rotation off unit length pays a
-/// square root in the frame that composes its matrix. The four-at-once form pays none while all four
-/// of its rotations sit inside the band, and one square root for the four otherwise.
+/// square root in the frame that composes its matrix, unless it is zero, which no scaling turns.
+/// The four-at-once form pays none while all four of its rotations sit inside the band, and one
+/// square root for the four otherwise.
 fn unit_rotation<T: Float>(q: [T; 4]) -> [T; 4] {
     let [x, y, z, w] = q;
     // The squared length, so that a rotation close to unit length costs no square root.
