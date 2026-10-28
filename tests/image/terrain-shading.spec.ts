@@ -19,6 +19,17 @@ const WIDTH = 320;
 const HEIGHT = 180;
 
 /**
+ * The per-channel difference that counts as a moved pixel. The image tests' own threshold, one
+ * tenth of full scale, answers whether two draws of one scene match. This test asks the opposite
+ * question, how far a feature moves the picture, and both of these features move many pixels a
+ * little rather than a few pixels a lot: measured against their own pairs, about four tenths of
+ * the frame moves for the baked normals and a quarter for the height blending, and almost none of
+ * that reaches a tenth of full scale. One 8-bit step is the smallest change a picture can carry,
+ * and a switch that the sketch never reads moves exactly nothing, so the test still fails then.
+ */
+const MOVED = 1 / 255;
+
+/**
  * The pixels that one load of the terrain test draws with these switches and preset. The switches
  * join the sketch's own query, which the page passes to the module.
  */
@@ -42,7 +53,7 @@ async function draw(
 /** The share of two pictures that differs past the image tests' own threshold. */
 function share(a: Uint8Array, b: Uint8Array): number {
 	const image = (data: Uint8Array) => ({ width: WIDTH, height: HEIGHT, data });
-	return compareImages(image(a), image(b), TOLERANCE.threshold).share;
+	return compareImages(image(a), image(b), MOVED).share;
 }
 
 /** The upper half of a picture, where the far hills stand, as a picture of its own. */
@@ -51,9 +62,9 @@ function farHills(data: Uint8Array): { width: number; height: number; data: Uint
 	return { width: WIDTH, height: rows, data: data.subarray(0, WIDTH * rows * 4) };
 }
 
-/** The share of the two pictures' far hills that differs past the image tests' own threshold. */
+/** The share of the two pictures' far hills that carries any difference at all. */
 function farShare(a: Uint8Array, b: Uint8Array): number {
-	return compareImages(farHills(a), farHills(b), TOLERANCE.threshold).share;
+	return compareImages(farHills(a), farHills(b), MOVED).share;
 }
 
 for (const tier of ['webgpu', 'compat', 'webgl2'] as const)
