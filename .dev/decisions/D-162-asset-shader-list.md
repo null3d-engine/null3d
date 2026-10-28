@@ -40,3 +40,32 @@ The list goes in `asset.extras.NULL3D_shaders` as `{ "permutations": [...], "fea
 - The loader asks for the recorded features in `packages/engine/src/scene/gltf.ts`; `parseGltf` reads the field.
 - A unit test checks that every name the tool writes exists in `crates/null3d-gpu/src/drawlist.rs` and `crates/null3d-shaders/shaders.toml`, and that the tool's preset budgets equal the engine's.
 - `guides/assets-pipeline`, `guides/loading-screens` and the develop skill describe the list.
+
+## Addendum, 25 October 2026: the list that a production build compiles
+
+Status: decided. Task: M3-R12.
+
+The model's list above records what a model may draw with, and its permutation names are a record.
+A production build reads a second list, of whole permutation words, which a run of a project's
+pages records. `bun tools/shader-permutations.ts --pages demos` drives each page in hold mode with
+`?permutations=record` on both GPU paths. The engine collects the word of every variant that a
+pipeline asked for while the held frame drew, and the tool writes one hexadecimal word on each line
+of the file that `NULL3D_SHADER_PERMUTATIONS` names.
+
+What the build's list covers:
+
+- One word for each set of bits that a template's builds vary in. The bits that a device fixes are
+  left out, which are the draw index, tone mapping in the shader and half precision. One word then
+  serves every device module, and the build makes that word's builds for each value of those bits.
+- The word without any bit, which the compute passes, the pre-passes and the full-screen passes ask
+  for. A list without it would leave those passes without a shader.
+- Both GPU paths' words, because each path's variants list a few bits that the other's do not:
+  WebGL2 has the morph targets, and WebGPU has the instance index and the sample mask.
+- Nothing for a bit that no recorded scene draws with.
+
+A build without the variable compiles every word, as before. The engine's release set, which serves
+every project rather than one project's pages, is built without a list and stays full.
+
+A permutation word that nothing lists is not built. A build that a template cannot make builds
+nothing for that template, so one list serves every template. At run time the variant lookup of a
+narrowed set names the missing word and the file to record again, instead of drawing nothing.
