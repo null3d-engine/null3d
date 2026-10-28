@@ -31,10 +31,13 @@ export interface GpuCheckResult {
 
 const signed = (change: number) => `${change >= 0 ? '+' : ''}${(change * 100).toFixed(1)}%`;
 
-/** A page's GPU times in words, with "slower" when the rule failed it. */
+/**
+ * A page's GPU times in words, with the comparison's own verdict against its noise: "same",
+ * "faster" or "slower". The percentage is information beside the verdict, never the verdict.
+ */
 function figureText(preset: string, c: Comparison): string {
-	const slower = c.result === 'slower' ? (c.expected ? ', slower, expected' : ', slower') : '';
-	return `${c.scene} ${preset} ${c.baseline.median.toFixed(2)} to ${c.new.median.toFixed(2)} ms (${signed(c.change)}${slower})`;
+	const verdict = c.result === 'slower' && c.expected ? 'slower, expected' : c.result;
+	return `${c.scene} ${preset} ${c.baseline.median.toFixed(2)} to ${c.new.median.toFixed(2)} ms (${signed(c.change)}, ${verdict})`;
 }
 
 /**

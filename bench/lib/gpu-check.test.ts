@@ -45,7 +45,7 @@ describe('the GPU check', () => {
 		);
 		expect(result.status).toBe('passed');
 		expect(result.line).toBe(
-			'GPU-Checked: 061177262..a0a7c1777 passed: s4 medium 1.86 to 1.90 ms (+2.2%); s6 medium 3.82 to 3.93 ms (+2.9%); s4 high 1.82 to 1.80 ms (-1.1%); s6 high 6.17 to 6.30 ms (+2.1%)',
+			'GPU-Checked: 061177262..a0a7c1777 passed: s4 medium 1.86 to 1.90 ms (+2.2%, same); s6 medium 3.82 to 3.93 ms (+2.9%, same); s4 high 1.82 to 1.80 ms (-1.1%, same); s6 high 6.17 to 6.30 ms (+2.1%, same)',
 		);
 		expect(gpuCheckPasses(result)).toBe(true);
 	});
@@ -84,7 +84,7 @@ describe('the GPU check', () => {
 		);
 		expect(result.status).toBe('not measured');
 		expect(result.line).toBe(
-			'GPU-Checked: a..b not measured: s4 medium 2.00 to 2.00 ms (+0.0%); no GPU time from both builds on s6 medium, s4 high, s6 high',
+			'GPU-Checked: a..b not measured: s4 medium 2.00 to 2.00 ms (+0.0%, same); no GPU time from both builds on s6 medium, s4 high, s6 high',
 		);
 		expect(gpuCheckPasses(result)).toBe(false);
 	});
