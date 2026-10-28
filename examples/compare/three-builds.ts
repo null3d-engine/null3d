@@ -5,7 +5,7 @@ import type { ThreeBuilder } from '../lib/three-worker';
 import type { Comparison } from './comparisons';
 
 const BUILDS: Readonly<Record<string, () => Promise<ThreeBuilder>>> = {
-	'night-town': () => import('./night-town/three-build').then((module) => module.buildNightTown),
+	'night-effects': () => import('./night-town/three-build').then((module) => module.buildNightTown),
 };
 
 /** Loads the three.js build of a comparison's scene, to run on the page's thread. */

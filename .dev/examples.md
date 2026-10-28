@@ -277,7 +277,7 @@ No phone or tablet has run these six demos. The hold mode demo's 400 shadowed ba
 
 ## Comparisons with three.js
 
-A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count at which each engine's scene updates at 20 fps or more on the viewer's device. There are three: Factory, Battle and Night town ([D-121](decisions/D-121-comparison-tier.md)).
+A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count at which each engine's scene updates at 20 fps or more on the viewer's device. There are three: Factory, Battle and Night effects ([D-121](decisions/D-121-comparison-tier.md)).
 
 ### The parts
 
