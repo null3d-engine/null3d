@@ -53,7 +53,7 @@ import {
 } from './offline.ts';
 import { ShaderPack } from './pack.ts';
 import { null3dPackages } from './package-files.ts';
-import { emitParagraphTables, shaderParagraphsPlugin } from './paragraphs.ts';
+import { emitParagraphTables, shaderParagraphsPlugin, tableStemsOfFile } from './paragraphs.ts';
 import { ShaderCache, shaderCacheOff } from './shader-cache.ts';
 import {
 	compileLiteral,
@@ -802,6 +802,27 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 					);
 				const tables = emitParagraphTables.call(this, bundle, root);
 				if (buildingPages) {
+					// The copied device modules are not in the bundle, so the tables of shared
+					// paragraphs that they import are emitted from here, once each, and the module
+					// of each copy names them as its loads.
+					const emittedTables = new Set([...tables.values()].flat());
+					const loads = new Map<string, string[]>();
+					for (const [name, source] of copiedShaders) {
+						const own: string[] = [];
+						for (const stem of tableStemsOfFile(source)) {
+							const table = `${assetsDir}/${stem}.js`;
+							own.push(table);
+							if (emittedTables.has(table)) continue;
+							const file = join(dirname(source), `${stem}.js`);
+							if (!existsSync(file))
+								this.error(
+									`null3D: ${assetsDir}/${name} imports ${stem}.js, which the engine's shader modules do not hold. Run \`bun run shaders\` again, and reinstall @null3d/engine if the build still fails.`,
+								);
+							emittedTables.add(table);
+							this.emitFile({ type: 'asset', fileName: table, source: readFileSync(file) });
+						}
+						loads.set(name, own);
+					}
 					const listed = listedFiles(bundle, workerFiles, packageOf, root, tables);
 					// The copied shader files are not in the bundle, so the list of files for offline
 					// play takes them here, by the module each one holds.
@@ -812,7 +833,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 							entry: false,
 							modules: module === undefined ? [] : [module],
 							imports: [],
-							loads: [],
+							loads: loads.get(name) ?? [],
 						});
 					}
 					const files = offlineFiles(listed);
