@@ -115,9 +115,13 @@ function generatorLoader(tier: Tier): () => Promise<unknown> {
 export async function captureFrame(
 	drawing: Drawing<Renderer>,
 	slots: Int32Array,
-): Promise<{ width: number; height: number; pixels: Uint8Array }> {
+): Promise<{ width: number; height: number; pixels: Uint8Array; frame: number }> {
 	await drawing.nextFrame();
-	return drawing.renderer.capture(emptySceneInput(Atomics.load(slots, Slot.FramesTaken)));
+	// The frame that the thread draws took last, which the replay below holds even when the scene
+	// changed since the sketch recorded it.
+	const frame = Atomics.load(slots, Slot.FramesTaken);
+	const { width, height, pixels } = await drawing.renderer.capture(emptySceneInput(frame));
+	return { width, height, pixels, frame };
 }
 
 /**

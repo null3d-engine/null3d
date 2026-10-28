@@ -169,7 +169,7 @@ test('an answer resolves the request and takes the wait down with it', async () 
 	const timers = heldTimers();
 	try {
 		const answer = engineWorker.request({ type: 'capture' });
-		reply({ type: 'captured', width: 2, height: 2, pixels: new Uint8Array(16) });
+		reply({ type: 'captured', width: 2, height: 2, pixels: new Uint8Array(16), frame: 1 });
 		await expect(answer).resolves.toMatchObject({ type: 'captured', width: 2 });
 		expect(timers.cleared).toHaveLength(1);
 		// The wait is gone, so nothing is left to fire.
