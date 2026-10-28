@@ -23,6 +23,13 @@ const PATIENCE = 60_000;
  * pipeline before its first frame, and that took over three minutes on a busy runner.
  */
 const FIRST_FRAME_MS = 300_000;
+/**
+ * How long a key's change of the blend may take to show in the canvas. A switch costs the page work
+ * and a frame read costs the frame loop a whole frame, so on a software GPU one read can take many
+ * seconds and a few of them fill a minute before the change is in a frame. The showcase HUD tests
+ * allow their switches three minutes for the same reason.
+ */
+const CHANGE_MS = 180_000;
 
 /** Opens a demo on the probe page, and collects the page's errors. */
 async function open(page: Page, demo: string): Promise<string[]> {
@@ -55,7 +62,7 @@ const apart = (a: number[], b: number[]) =>
 // longer than the default limit on a slow GPU. The swap test also waits for the engine's first
 // frame, which on a busy software renderer can take minutes past the page's own start, so the limit
 // covers the worst case of every wait in it rather than the common one.
-test.describe.configure({ timeout: 660_000 });
+test.describe.configure({ timeout: 780_000 });
 
 /** The probe of the first frame at or after the sketch time `time`. */
 async function probeAt(page: Page, time: number): Promise<DemoProbe> {
@@ -238,7 +245,7 @@ test('a key swaps the weighted demo between its two blends, as the HUD does, and
 				change = frameDifference(await readFrame(page), parked);
 				return change;
 			},
-			{ timeout: PATIENCE },
+			{ timeout: CHANGE_MS },
 		)
 		.toBeGreaterThan(Math.max(2, drift * 3));
 	// A second press gives the weighted blending back.
