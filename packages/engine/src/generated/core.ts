@@ -246,6 +246,7 @@ export const DEBUG_VIEW_OVERDRAW = 3;
 export const DEBUG_VIEW_WIREFRAME = 4;
 export const DEBUG_VIEW_SHADOWS = 5;
 export const DEBUG_VIEW_MOTION = 6;
+export const DEBUG_VIEW_LEVELS = 7;
 
 export const FOG_CURVE_NONE = 0;
 export const FOG_CURVE_LINEAR = 1;

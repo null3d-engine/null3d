@@ -3,6 +3,7 @@
 
 import { messageOf } from '../errors/message';
 import { CORE_NOT_COUNTED } from '../generated/core';
+import { PASS_ROLE_NAMES, PASS_ROLE_PLACE_SHIFT, PASS_ROLE_PLACES } from '../generated/gpu';
 import { commonStep, stepMs } from '../shared/gpu-clock';
 import {
 	COUNTER_NAMES,
@@ -43,8 +44,9 @@ export interface ThreadStats {
  */
 export interface GpuPassStats {
 	/**
-	 * The part: `copies` for the copies before the frame's first pass, a pass by its kind and its
-	 * place among the passes of that kind, such as `compute 1` or `render 2`, or `between passes`.
+	 * The part: `copies` for the copies before the frame's first pass, a pass by what it draws for
+	 * and its place among the passes of that role, such as `shadow cascade 1`, `opaque` or
+	 * `shadow hero`, or `between passes`.
 	 */
 	name: string;
 	/** GPU time per frame of the part. */
@@ -86,9 +88,12 @@ export interface FrameSummary {
 	/**
 	 * The parts of the GPU time per frame, in the order the frame runs them: the copies before the
 	 * first pass, where the browser times them, each pass that the browser times, and the time
-	 * between passes in frames where it times every pass. In a frame with more passes than the
-	 * engine times one by one, the last pass it times also counts the passes after it. Null where
-	 * `gpuMs` is. On WebGL2 the frame has no parts, so the list is empty.
+	 * between passes in frames where it times every pass. Each pass is named by what it draws for,
+	 * such as `shadow cascade 1` or `final`, with its place among the passes of that role where the
+	 * role has one. A pass that names no role, as a list built by hand may not, keeps its kind and
+	 * its place among the passes of that kind, such as `render 1`. In a frame with more passes than
+	 * the engine times one by one, the last pass it times also counts the passes after it. Null
+	 * where `gpuMs` is. On WebGL2 the frame has no parts, so the list is empty.
 	 */
 	gpuPassMs: GpuPassStats[] | null;
 	/**
@@ -274,6 +279,7 @@ const NO_RECORDS: RingRecords = {
 	intervals: [],
 	phases: PHASE_NAMES.map(() => []),
 	counters: COUNTER_NAMES.map(() => []),
+	passRoles: Array.from({ length: GPU_TIMED_PASSES }, () => []),
 };
 
 /** The sum of a counter's values over the frames. */
@@ -388,8 +394,9 @@ export function secondRates(records: readonly RingRecords[]): SecondRates[] {
 
 /**
  * The parts of the GPU records' frames by name, in the order the frames run them: the copies before
- * the first pass, each pass by its kind and its place among the passes of that kind, and the time
- * between passes where a frame has more than one. Null without GPU records.
+ * the first pass, each pass by what it draws for, and the time between passes where a frame has
+ * more than one. A pass without a label keeps its kind and its place among the passes of that kind.
+ * Null without GPU records.
  */
 export function gpuPassStats(records: RingRecords): GpuPassStats[] | null {
 	if (records.busy.length === 0) return null;
@@ -413,7 +420,9 @@ export function gpuPassStats(records: RingRecords): GpuPassStats[] | null {
 		let whole = true;
 		for (let pass = 0; pass < Math.min(passes, GPU_TIMED_PASSES); pass++) {
 			const kind = (renderPasses >>> pass) & 1 ? 'render' : 'compute';
-			const name = `${kind} ${++kinds[kind]}`;
+			const place = ++kinds[kind];
+			const label = records.passRoles[pass]?.[r] ?? 0;
+			const name = passRoleName(label) ?? `${kind} ${place}`;
 			const ms = slot(1 + pass, r);
 			// A pass that the GPU left untimed has no time of its own, and the time between passes
 			// would hold it.
@@ -427,6 +436,21 @@ export function gpuPassStats(records: RingRecords): GpuPassStats[] | null {
 		if (passes > 1 && whole) add('between passes', Math.max(0, frameMs - parted));
 	});
 	return Array.from(parts, ([name, values]) => ({ name, ms: percentiles(values) }));
+}
+
+/** The bits of a pass label that hold the role; the rest hold the place. */
+const ROLE_MASK = 0xffff;
+
+/**
+ * A pass label's name, with its place where the role prints one, or null for a pass that names no
+ * role.
+ */
+function passRoleName(label: number): string | null {
+	const name = PASS_ROLE_NAMES[label & ROLE_MASK];
+	if (!name) return null;
+	const place = label >>> PASS_ROLE_PLACE_SHIFT;
+	const prints = PASS_ROLE_PLACES[label & ROLE_MASK];
+	return prints === 1 || (prints === 2 && place > 0) ? `${name} ${place}` : name;
 }
 
 /**

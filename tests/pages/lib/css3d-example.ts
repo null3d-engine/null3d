@@ -1,16 +1,17 @@
 // The shared stages of the ports of three.js's CSS3D examples (examples/css3d_*.html, r186). Each
 // port draws its scene twice on one page: by null3D, where an HTML element with `transform: 'world'`
 // or `'billboard'` is a plane of the scene, and by three.js's CSS3DRenderer, from the same data and
-// camera. A picture test screenshots each stage's elements alone and compares the two.
+// camera. A picture test compares the two layers of elements, and, for a port whose example also
+// draws a scene through WebGL, the two drawn frames as each engine reads them.
 //
-// The engine's own pixels are not part of that comparison. The test hides both canvases first, so
-// the screenshots hold the elements and the stage's background only. An example whose scene also
-// has WebGL content reports the pixels that the engine drew, which proves that half drew too.
+// A port whose example draws WebGL content gives its twin the same content through `webglTwin`,
+// which stands a three.js WebGLRenderer above the CSS3D layer as the example does and reads its
+// frame through WebGL. A twin of elements alone gives no frame.
 import { createEngine } from '@null3d/engine';
 import * as THREE from 'three';
 import { CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import { STAGE } from './css3d-shared';
-import { run } from './result';
+import { run, toBase64 } from './result';
 
 /** One of the ports: the sketch, the page's own markup, and three.js's twin of the same scene. */
 export interface Css3dPort {
@@ -27,8 +28,11 @@ export interface Css3dPort {
 	 * elements in the order of the twin's.
 	 */
 	markup(layer: HTMLElement, bind: (id: string, element: HTMLElement) => void): HTMLElement[];
-	/** Draws the same scene with three.js's CSS3DRenderer into `layer`, and gives its elements. */
-	twin(layer: HTMLElement, time: number): HTMLElement[];
+	/**
+	 * Draws the same scene with three.js's CSS3DRenderer into `layer`, and gives its elements and,
+	 * for a port whose example also draws a scene through WebGL, that scene's frame pixels.
+	 */
+	twin(layer: HTMLElement, time: number): { elements: HTMLElement[]; frame?: Uint8Array };
 	/** True when the example's scene draws WebGL content beside its elements. */
 	webgl?: boolean;
 	/**
@@ -111,7 +115,8 @@ async function whenElementsLoaded(limit = 240): Promise<void> {
 
 /**
  * Draws a port's page: the engine's stage from the sketch, then three.js's twin from the same data,
- * held at the same time. The page publishes each element's box and the pixels that the engine drew.
+ * held at the same time. The page publishes each element's box, the pixels that the engine drew, and,
+ * where the twin draws the example's scene, the two frames.
  */
 export function runPort(port: Css3dPort): void {
 	run(port.name, async () => {
@@ -141,7 +146,8 @@ export function runPort(port: Css3dPort): void {
 		await frames(4);
 		await whenElementsLoaded();
 		const time = engine.mode.hold ?? port.hold;
-		const theirElements = port.twin(theirLayer, time);
+		const drawn = port.twin(theirLayer, time);
+		const theirElements = drawn.elements;
 		await frames(2);
 		await whenElementsLoaded();
 		const captured = port.webgl ? await engine.captureFrame() : undefined;
@@ -153,6 +159,12 @@ export function runPort(port: Css3dPort): void {
 			boxes: { mine: boxes(elements, mineStage), theirs: boxes(theirElements, theirStage) },
 			shown: { mine: elements.map((element) => element.style.visibility !== 'hidden') },
 			webglPixels: captured ? litPixels(captured.pixels, seeThrough) : 0,
+			// The drawn scenes, which the test compares as each engine read them: the engine's frame
+			// and the twin's own readback. A twin of elements alone gives no frame.
+			frames:
+				captured && drawn.frame
+					? { mine: toBase64(captured.pixels), theirs: toBase64(drawn.frame) }
+					: undefined,
 			mode: engine.mode,
 		};
 	});
@@ -171,6 +183,44 @@ export function css3dTwin(
 	layer.append(renderer.domElement);
 	const scene = new THREE.Scene();
 	return { renderer, camera, scene };
+}
+
+/**
+ * Draws three.js's half of a port's scene into its stage, above the CSS3D layer, as the example
+ * orders its canvas. The renderer keeps the example's settings: a transparent canvas, the neutral
+ * tone curve and one pixel per CSS pixel. It reads its frame back through WebGL, so the comparison
+ * reads the drawn scene as both engines give it, never as a screenshot. The port adds the same
+ * WebGL content that its sketch draws to the scene, then calls this.
+ */
+export function webglTwin(
+	layer: HTMLElement,
+	camera: THREE.Camera,
+	scene: THREE.Scene,
+): Uint8Array {
+	const stage = layer.parentElement;
+	if (!stage) throw new Error('the labels layer has no stage');
+	// The buffer keeps its pixels after the page composites, so a readback after the render holds
+	// the frame.
+	const renderer = new THREE.WebGLRenderer({
+		antialias: true,
+		alpha: true,
+		preserveDrawingBuffer: true,
+	});
+	renderer.setPixelRatio(1);
+	renderer.setSize(STAGE.width, STAGE.height);
+	renderer.toneMapping = THREE.NeutralToneMapping;
+	stage.append(renderer.domElement);
+	renderer.render(scene, camera);
+	const gl = renderer.getContext();
+	const { width, height } = renderer.getDrawingBufferSize(new THREE.Vector2());
+	const pixels = new Uint8Array(width * height * 4);
+	gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+	// WebGL reads a frame's rows from the bottom up, and the engine's frame comes from the top.
+	const row = width * 4;
+	const frame = new Uint8Array(pixels.length);
+	for (let y = 0; y < height; y++)
+		frame.set(pixels.subarray((height - 1 - y) * row, (height - y) * row), y * row);
+	return frame;
 }
 
 /** A three.js camera at `position`, turned toward `target`, with the example's own lens. */

@@ -669,7 +669,7 @@ impl ShadowTiles {
     }
 
     /// The hero tile's layer, while the frame planned last holds a hero.
-    fn hero_tile(&self) -> Option<u32> {
+    pub(crate) fn hero_tile(&self) -> Option<u32> {
         (self.hero.key.is_some() && self.shape.layers > 0).then(|| self.shape.layers - 1)
     }
 

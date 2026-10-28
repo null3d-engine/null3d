@@ -16,6 +16,7 @@
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, layout as bind_layout, resource_kind, template,
 };
+use null3d_gpu::pass_role::{self, PassRole};
 
 use crate::feature_instances::{COUNT_BYTES, FeatureInstanceTable, INSTANCE_BYTES};
 use crate::frame::{RecordError, UploadArena, floats_as_bytes};
@@ -167,7 +168,10 @@ impl FeatureRows {
                 continue;
             }
             if !begun {
-                list.push(Op::BeginComputePass, &[])?;
+                list.push(
+                    Op::BeginComputePass,
+                    &[pass_role::label(PassRole::FeatureRows, 0)],
+                )?;
                 list.push(Op::SetComputePipeline, &[ids::FEATURE_ROWS])?;
                 begun = true;
             }

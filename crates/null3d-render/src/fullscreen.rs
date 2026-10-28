@@ -17,6 +17,7 @@ use null3d_gpu::drawlist::{
     DrawList, NO_TARGET, Op, buffer_usage as usage, format, layout as bind_layout, pass_flags,
     permutation, state_flags, texture_usage, view,
 };
+use null3d_gpu::pass_role::{self, PassRole};
 
 use crate::bloom::bytes_of;
 use crate::camera::Mat4;
@@ -488,6 +489,7 @@ impl FullscreenPasses {
                         0,
                         0,
                         pass_flags::STORE_COLOR,
+                        pass_role::label(PassRole::Fullscreen, place as u32),
                     ],
                 )?;
                 list.push(Op::SetPipeline, &[pipeline])?;

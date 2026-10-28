@@ -29,16 +29,26 @@ interface CreekLodResult {
 
 /** The canvas, so the crown fills a good share of it. */
 const SIZE = { width: 640, height: 360 };
+/**
+ * The canvas on a software GPU. The search draws a picture for each step, and a software GPU draws
+ * them on the CPU, so the same twenty-four steps at the full size ran past four minutes in CI. At
+ * half the sides each draw costs a quarter, and the crown is still a large share of the picture the
+ * assertions judge.
+ */
+const SOFTWARE_SIZE = { width: 320, height: 180 };
 /** The page's first and last level bias, and the share of the picture that counts as a change. */
 const SEARCH_HIGH = 32;
 const VISIBLE = 0.001;
 
 for (const gpu of ['webgpu', 'webgl2'] as const)
-	test(`the Creek's hand-set tree levels fade at their switch on ${gpu}`, async ({ page }) => {
+	test(`the Creek's hand-set tree levels fade at their switch on ${gpu}`, async ({
+		page,
+	}, testInfo) => {
+		const size = testInfo.project.name === 'chromium-swiftshader' ? SOFTWARE_SIZE : SIZE;
 		test.setTimeout(300_000);
-		await page.setViewportSize({ width: SIZE.width + 20, height: SIZE.height + 20 });
+		await page.setViewportSize({ width: size.width + 20, height: size.height + 20 });
 		await page.goto(
-			`creek-lod.html?gpu=${gpu}&lod=1&steps=24&width=${SIZE.width}&height=${SIZE.height}`,
+			`creek-lod.html?gpu=${gpu}&lod=1&steps=24&width=${size.width}&height=${size.height}`,
 		);
 		const result = await pageResult<CreekLodResult>(page, 240_000);
 		console.log(
@@ -63,7 +73,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 
 		// The camera holds still, so the base mesh at every bias changes nothing.
 		await page.goto(
-			`creek-lod.html?gpu=${gpu}&lod=0&steps=24&width=${SIZE.width}&height=${SIZE.height}`,
+			`creek-lod.html?gpu=${gpu}&lod=0&steps=24&width=${size.width}&height=${size.height}`,
 		);
 		const still = await pageResult<CreekLodResult>(page, 240_000);
 		expect(still.worst.share).toBe(0);

@@ -1921,6 +1921,7 @@ impl GpuDrivenRenderer {
         self.graph.set_tiles(self.tiles.shape().map(|s| TilePasses {
             tiles: s.layers,
             size: s.size,
+            hero: self.tiles.hero_tile(),
         }));
         self.graph.set_skinning(self.skinning.dispatches());
         self.settings.prepare_probe_capture(input.frame);

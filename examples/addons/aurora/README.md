@@ -52,8 +52,8 @@ aurora looks, change the constants in `aurora.wgsl`.
   the map, so a surface that reflects the map shows the curtains, and a map that a layer moves fills
   again on the layer's `refresh`, so its reflection follows the curtains at that rate. The layer
   reaches the map's diffuse light, so the aurora lights what its sky lights, and a scene it should
-  light needs no light of its own. The demo's own ice is a rough dielectric, and its plane at ground
-  level does not reach the demo's frame (M3-R27).
+  light needs no light of its own. The demo's lake mirrors the scene through a reflection pass, so
+  its ice shows the ridge and the pines as well as the curtains.
 
 ## Licence
 

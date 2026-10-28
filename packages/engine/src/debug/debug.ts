@@ -7,6 +7,7 @@ import type { ColorInput } from '../scene/color';
 import type { Camera, DirectionalLight, Object3D } from '../scene/scene';
 import type { FrameStats } from './stats';
 import type { StatsOverlayOptions } from './stats-options';
+import type { EngineDebugView } from './view-names';
 
 /**
  * Options for `debug.grid`.
@@ -41,18 +42,20 @@ export interface DebugLightOptions {
 
 /**
  * A debug view of `debug.view`: the materials' own shading with `'lit'`, one debug shading in
- * place of every material, or each pixel's motion with `'motion'`.
+ * place of every material, each pixel's motion with `'motion'`, or each draw's level of detail
+ * with `'levels'`. An add-on registers further views in its feature description.
  *
  * @category api/debug
  */
-export type DebugView =
-	| 'lit'
-	| 'normals'
-	| 'depth'
-	| 'wireframe'
-	| 'overdraw'
-	| 'shadows'
-	| 'motion';
+export type DebugView = EngineDebugView;
+
+/**
+ * The name that `debug.view` takes: one of the engine's own views, or a view that an add-on
+ * feature registers.
+ *
+ * @category api/debug
+ */
+export type DebugViewName = DebugView | (string & {});
 
 /**
  * Debug drawing and frame figures. The drawing calls draw lines that show where things are, such
@@ -62,7 +65,8 @@ export type DebugView =
  * `stats` shows frame figures on the page, and `frameStats` gives the sketch the same figures.
  *
  * Only development builds draw. In a release build every drawing call does nothing, and the build
- * holds none of the drawing code. The calls `stats` and `frameStats` work in every build.
+ * holds none of the drawing code, apart from one traversal of the scene's objects whose meshes have
+ * levels, which the culling spheres read. The calls `stats` and `frameStats` work in every build.
  *
  * @category api/debug
  */
@@ -99,12 +103,25 @@ export interface Debug {
 	 * that face away from the sun are black, and surfaces that receive no shadows are white.
 	 * `'motion'` shows how far each pixel's surface moved on the screen since the last frame, the
 	 * camera's move included: its direction as the hue, red to the right, and its length as the
-	 * brightness, full at 16 pixels. A still pixel is black. The other views clear to black. Debug
-	 * views use no tone mapping. Only
-	 * development builds draw them: in a release build the call does nothing. A view's first frame
-	 * builds its pipelines, so objects can be missing for a few frames after a change.
+	 * brightness, full at 16 pixels. A still pixel is black. `'levels'` gives each level of detail
+	 * a color of its own and dithers two colors where two levels hand over in a fading band. A
+	 * source that the size rule or a draw range hid draws at its base level in a striped marker
+	 * color, so the view shows what the culling dropped. The other views clear to black. Debug
+	 * views use no tone mapping. A view may also be the name that an add-on registers in its
+	 * feature description.
+	 *
+	 * Only development builds draw them: in a release build the call does nothing. A view's first
+	 * frame builds its pipelines, so objects can be missing for a few frames after a change.
 	 */
-	view(view: DebugView): void;
+	view(view: DebugViewName): void;
+	/**
+	 * Draws the bounding sphere that culling tests for each object whose mesh has levels of
+	 * detail, from the next frame on, until the next call. It draws the first 128 such objects, so
+	 * a forest of many copies does not fill the frame. Call it beside the `'levels'` view to see
+	 * where each copy's culling sphere lies, and why the size rule hid one. Only development
+	 * builds draw it.
+	 */
+	cullingSpheres(show?: boolean): void;
 	/**
 	 * Places the main directional light's shadow cascades from `camera` instead of from the active
 	 * camera, from the next frame on, until the next call. The active camera still draws the frame,

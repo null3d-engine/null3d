@@ -111,6 +111,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 				message.holdScript,
 				message.replay,
 				message.record,
+				message.debugView,
 			);
 			step('engine created');
 			// The sketch downloads while the renderer starts. The renderer starts before the setup,
