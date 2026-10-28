@@ -1203,6 +1203,25 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule, Builds<'_>>) ->
         "export const DEPTH_MAPPING_UNIFORM = {};",
         quote(DEPTH_MAPPING_UNIFORM)
     ));
+    ts.line("");
+    ts.line("/**");
+    ts.line(
+        " * The permutation words that this build made, or null when it made every word. A page that",
+    );
+    ts.line(
+        " * asks for a word that is missing here draws a pipeline that this set lacks, so the engine",
+    );
+    ts.line(" * names the word and the list that must carry it.");
+    ts.line(" */");
+    if output.listed.is_empty() {
+        ts.line("export const LISTED_PERMUTATIONS: readonly number[] | null = null;");
+    } else {
+        let words: Vec<String> = output.listed.iter().map(|word| word.to_string()).collect();
+        ts.line(&format!(
+            "export const LISTED_PERMUTATIONS: readonly number[] | null = [{}];",
+            words.join(", ")
+        ));
+    }
     let own: Vec<(&String, &BTreeMap<String, VariantOutput>)> = output
         .shaders
         .iter()

@@ -447,3 +447,39 @@ export default defineSketch(async ({ scene, assets }) => {
 ## Encode time
 
 Each texture encodes on its own worker thread, so a set of textures uses every CPU core. On a MacBook Pro with 18 cores, those 40 sets, 144 textures in all, took 18 to 26 seconds. A texture of 2048 x 2048 takes several seconds on its core. The command prints each model's time.
+
+## Build only the shader permutations you draw with
+
+A production build can compile only the shader permutations that your scenes draw with, instead of every combination of every bit. That shortens the build and shrinks the set it writes. The build reads one file that lists the permutations as hexadecimal words, one on each line.
+
+The list belongs to one set of pages. A project that adds a scene records again, because the build compiles only what the list holds. A build without the list stays a full build, as before.
+
+A word leaves out the bits that a device fixes when it starts: the draw index, tone mapping in the shader and half precision. One list then serves every device module. A build compiles each word's builds for every value of those bits. Record both GPU paths, because a path's variants list a few bits of their own. WebGL2 has the morph targets, and WebGPU has the instance index.
+
+Record the list from a run of your pages. Each page draws in hold mode, and the engine collects the permutation words that its pipelines asked for while it drew the held frame:
+
+```sh
+bun run examples:build
+bun run examples:preview
+bun tools/shader-permutations.ts --base http://localhost:5173 --pages demos --out shader-permutations.txt
+```
+
+The recorder runs from a checkout of this repository, because it drives a browser through the repository's own page list and browser launcher. A project outside the repository runs it from such a checkout and names its pages with one `--page <path>` for each, instead of `--pages demos`.
+
+Build with the list:
+
+```sh
+NULL3D_SHADER_PERMUTATIONS=shader-permutations.txt bun run build
+```
+
+Without the variable, the build compiles every permutation, as before. With it, the build's cache keys and its input hash include the list, so a changed list builds again.
+
+Record again after a scene gains a feature that turns on a new permutation bit. The build then lacks that word. The engine throws an error that names the word the first time a pipeline asks for it, instead of drawing nothing. A path that a recording cannot reach, such as a feature that a visitor turns on later, goes into the list by hand:
+
+```sh
+bun tools/shader-permutations.ts --base http://localhost:5173 --pages demos --extra 0x00000010 --out shader-permutations.txt
+```
+
+A word that the recording cannot reach is written without the device bits, as the recorded words are. `0x00000010` is the alpha mask bit, for a masked material that a visitor's action shows.
+
+The file that the asset command writes into a model, `asset.extras.NULL3D_shaders`, names the bits that the model turns on. The list here is different: it holds the whole words that your scenes draw with. A narrowed build compiles those words. [Loading screens](loading-screens.md#loading-everything-up-front) describes the model's list.
