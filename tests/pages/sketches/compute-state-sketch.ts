@@ -342,6 +342,19 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 			await wait(10);
 			page.post('measuring', { format: shown.format });
 			return;
+		} else if (CASE === 'cadence') {
+			// The pass draws in one frame of two for eight frames, then in every frame for four,
+			// so the value counts what the cadence drew rather than the frames that went by.
+			render.setPassSteps(field, 1);
+			render.setPassEvery(field, 2);
+			await wait(8);
+			render.setPassSteps(field, 0);
+			values[0] = await read();
+			render.setPassEvery(field, 1);
+			render.setPassSteps(field, 1);
+			await wait(4);
+			render.setPassSteps(field, 0);
+			values[1] = await read();
 		} else if (CASE === 'refuse') {
 			render.setPassSteps(field, 1);
 			await wait(1);

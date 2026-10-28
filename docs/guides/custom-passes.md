@@ -296,17 +296,13 @@ A pass reads only the textures of passes added before it, so passes cannot read 
 
 ### Drawing less often
 
-A pass that need not change every frame can draw every few frames. Its texture keeps the last image while the pass is off:
+A pass that need not change every frame draws every few frames. `setPassEvery` gives it a cadence, and its texture keeps the last image while the pass waits:
 
 ```ts
-let frame = 0;
-return {
-  onUpdate() {
-    frame++;
-    render.setPassEnabled(map, frame % 4 === 0);
-  },
-};
+render.setPassEvery(map, 4);
 ```
+
+The call compiles nothing, so a sketch may change the cadence whenever the quality preset or the frame budget moves, as often as once a frame. Do not switch a pass off to slow it down: `setPassEnabled` recompiles the render graph, so a pass that toggles every frame pays for a new plan on every frame. A pass that carried its own cadence through the toggle cost about 700 ms a frame in the ocean's measurement; the same pass with a cadence costs nothing measurable.
 
 ### What a scene pass draws
 

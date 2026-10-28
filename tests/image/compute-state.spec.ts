@@ -107,6 +107,13 @@ for (const { tier, query } of TIERS) {
 		expect(result.frames).toBeGreaterThanOrEqual(1);
 	});
 
+	test(`a cadence skips its frames and changes on the next frame on ${tier}`, async ({ page }) => {
+		const result = await stateCase(page, query, 'cadence');
+		// Four runs in eight frames at a cadence of two, then four more in four frames at one.
+		expect(result.values[0]).toBe(4);
+		expect(result.values[1]).toBe(8);
+	});
+
 	test(`an out-of-range read is refused on ${tier}`, async ({ page }) => {
 		const result = await stateCase(page, query, 'refuse');
 		expect(result.values[0]).toBe(1);

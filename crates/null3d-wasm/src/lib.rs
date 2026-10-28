@@ -3654,6 +3654,19 @@ pub fn set_scene_pass_enabled(place: u32, enabled: bool) -> u32 {
     })
 }
 
+/// Gives the scene pass of view place `place`, from 1, a cadence of one frame in `every`, from the
+/// next frame on: it draws in the next frame, then waits `every - 1` frames. The render graph does
+/// not compile again, so a caller may change the cadence with the quality preset or the frame
+/// budget without paying for a new plan.
+#[wasm_bindgen(js_name = setScenePassEvery)]
+pub fn set_scene_pass_every(place: u32, every: u32) -> u32 {
+    with_engine(|e| {
+        let view = ViewId::from_place(place as usize);
+        e.renderer.settings_mut().set_view_every(view, every.max(1));
+        0
+    })
+}
+
 /// Creates a texture that shows the target of the scene pass of view place `place`, from 1, and
 /// returns its handle. It holds the pass's `width` x `height` texels, or for a reflection pass,
 /// whose target follows the render size, 0 x 0, and samples as no texture until the pass first
