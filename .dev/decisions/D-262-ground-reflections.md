@@ -65,6 +65,12 @@ redraws the six `demo-aurora` references. This record shows the sky's own color:
 mirror plane at ground level reflects the map that the layer fills, and the sky and its reflection
 hold one color at two exposures.
 
+After M3-R27 the plane draws. Its absence was not a fault of the plane: the demo's sixteenth snow
+cone, stretched about 10.7 times by a rotation quaternion that was not unit length, painted the band
+that the plane lay behind (M3-R33). The engine scales such a rotation now, and the lake is a planar
+reflection through a reflection pass at the render size, so the ridge, the pines and the sky stand
+inverted in it.
+
 ## Decision
 
 The plane's fault is ruled out, one explanation at a time. Its normal and winding are right: the
