@@ -13,8 +13,8 @@ const GPU = params.get('gpu') ?? 'webgpu';
 const REACTIVE = params.get('reactive') ?? 'both';
 /**
  * How many times over the run captures its frames. A software GPU draws slower than the page asks,
- * so a capture there can take a frame two or more ahead of the one before it, and two runs then
- * line up on fewer sketch frames. Asking for more captures gives the same number of lined-up pairs.
+ * so its captures skip frames and two runs line up on fewer sketch frames. More captures give the
+ * same number of lined-up pairs.
  */
 const CAPTURES = Number(params.get('captures') ?? '1');
 /** The measurement's size in pixels. */
@@ -97,20 +97,23 @@ async function start(
 		transparent: options.transparent === true,
 		onSketchMessage: (name, data) => {
 			if (name === 'frame') heard.push(data as number);
-			else if (name === 'applied') applied.push(1);
+			else if (name === 'applied') applied.push((data as { frame: number }).frame);
 		},
 	});
 	await engine.firstFrame;
 	return { engine, canvas, heard, applied };
 }
 
-/** Sends a message and waits for the sketch to apply it, so the next capture shows it. */
+/**
+ * Sends a message and waits for the sketch to apply it, so the next capture shows it. Resolves
+ * with the last sketch frame the sketch drew before the change, which a capture must pass.
+ */
 async function apply(
 	engine: Engine,
 	applied: number[],
 	name: string,
 	data: unknown,
-): Promise<void> {
+): Promise<number> {
 	const from = applied.length;
 	engine.postToSketch(name, data);
 	const deadline = performance.now() + 30_000;
@@ -118,6 +121,7 @@ async function apply(
 		if (performance.now() > deadline) throw new Error(`the sketch never applied ${name}`);
 		await new Promise((resolve) => setTimeout(resolve, 10));
 	}
+	return applied.at(-1) as number;
 }
 
 /** Waits until the sketch has recorded frame `target` or a later one. */
@@ -139,37 +143,63 @@ async function advance(heard: number[], count: number): Promise<void> {
 	}
 }
 
-/** Draws and captures the next frame, which holds every setting applied before the call. */
-async function capture(engine: Engine): Promise<Frame> {
-	const { width, height, pixels } = await engine.captureFrame();
-	return luma(pixels, width, height);
+/** One capture: the luma of its frame, and the sketch frame that the capture drew. */
+interface Shot {
+	image: Frame;
+	frame: number;
 }
 
-/** One run's captured frames, the sketch frame of each, and whether each capture held one frame. */
+/** Draws and captures the next frame, with the sketch frame that it drew. */
+async function shot(engine: Engine): Promise<Shot> {
+	const { width, height, pixels, frame } = await engine.captureFrame();
+	return { image: luma(pixels, width, height), frame };
+}
+
+/** The luma of the next captured frame. */
+async function capture(engine: Engine): Promise<Frame> {
+	return (await shot(engine)).image;
+}
+
+/**
+ * Captures the first frame past sketch frame `from`, the frame that the sketch drew before a
+ * change. A capture can replay the frame recorded before the change when the GPU draws slower than
+ * the page asks, so a capture that does not pass it is taken again. A run that never gets past it
+ * throws, as the page's other waits do, so a replay can never stand in for a frame that followed.
+ */
+async function capturedAfter(engine: Engine, from: number): Promise<Frame> {
+	const deadline = performance.now() + 30_000;
+	for (;;) {
+		const taken = await shot(engine);
+		if (taken.frame > from) return taken.image;
+		if (performance.now() > deadline)
+			throw new Error(`no capture passed sketch frame ${from} within 30 s`);
+	}
+}
+
+/** One run's captured frames, the sketch frame of each, and whether every capture advanced. */
 interface Run {
 	frames: Frame[];
 	numbers: number[];
 	consecutive: boolean;
+	/** How many captures skipped a sketch frame, whose pairs the figures leave out. */
+	skipped: number;
 }
 
-/**
- * Captures `count` frames, with the sketch frame number of each, and says whether every capture
- * advanced the sketch. A software GPU draws slower than the page asks, so a capture there takes a
- * frame that is one or more ahead; what the run must not do is take a frame that did not advance,
- * or one that came back out of order, since the figures compare each pair of frames it holds.
- */
-async function sequence(engine: Engine, heard: number[], count: number): Promise<Run> {
+/** Captures `count` frames, with the sketch frame that each drew. */
+async function sequence(engine: Engine, count: number): Promise<Run> {
 	const frames: Frame[] = [];
 	const numbers: number[] = [];
 	let consecutive = true;
+	let skipped = 0;
 	for (let k = 0; k < count; k++) {
-		const before = heard.at(-1) ?? 0;
-		frames.push(await capture(engine));
-		const after = heard.at(-1) ?? 0;
-		if (after - before < 1) consecutive = false;
-		numbers.push(before);
+		const taken = await shot(engine);
+		const last = numbers[k - 1] as number | undefined;
+		if (k > 0 && taken.frame <= (last as number)) consecutive = false;
+		else if (last !== undefined && taken.frame - last > 1) skipped++;
+		frames.push(taken.image);
+		numbers.push(taken.frame);
 	}
-	return { frames, numbers, consecutive };
+	return { frames, numbers, consecutive, skipped };
 }
 
 /** The mean distance of two runs' frames that hold the same sketch frame, and how many there are. */
@@ -190,19 +220,20 @@ function compare(a: Run, b: Run): { mean: number; overlap: number } {
 }
 
 /**
- * The mean frame-to-frame change over a run's consecutive frames. A scene that moves with the real
- * clock differs between runs at the same frame number, so the two sides of an effect are compared
- * by this statistic, which is stable over the sequence.
+ * The mean frame-to-frame change over a run's adjacent frames, and how many pairs it used. A pair
+ * that a capture skipped a frame over is left out, so the figure is the same one on every machine
+ * that holds the frame rate. A scene that moves with the real clock differs between runs at the
+ * same frame number, so two runs of an effect are compared by this statistic.
  */
-function change(run: Run): number {
+function change(run: Run): { mean: number; pairs: number } {
 	let sum = 0;
-	let steps = 0;
+	let pairs = 0;
 	for (let k = 1; k < run.frames.length; k++) {
 		if ((run.numbers[k] as number) - (run.numbers[k - 1] as number) !== 1) continue;
 		sum += distance(run.frames[k] as Frame, run.frames[k - 1] as Frame);
-		steps++;
+		pairs++;
 	}
-	return sum / Math.max(1, steps);
+	return { mean: sum / Math.max(1, pairs), pairs };
 }
 
 /** Runs one scene, and stops its engine. */
@@ -232,7 +263,7 @@ run('taa-fixes', async () => {
 				`case=exposure&gpu=${GPU}&taa=${taa ? 1 : 0}&jitter=0&ratio=${ratio ? 1 : 0}&step=${step}`,
 				async (engine, heard) => {
 					await waitFrame(heard, step);
-					return sequence(engine, heard, 12 * CAPTURES);
+					return sequence(engine, 12 * CAPTURES);
 				},
 			);
 		const reference = await run(false, true);
@@ -262,8 +293,10 @@ run('taa-fixes', async () => {
 			async (engine, heard, applied) => {
 				await apply(engine, applied, 'place', 0);
 				await advance(heard, 8);
-				await apply(engine, applied, 'place', 1);
-				const frame = await capture(engine);
+				// A capture that still holds the frame before the jump is taken again, so this is the
+				// first frame that shows the square's new place.
+				const before = await apply(engine, applied, 'place', 1);
+				const frame = await capturedAfter(engine, before);
 				engine.postToSketch('taa-off', null);
 				await advance(heard, 4);
 				await apply(engine, applied, 'place', 1);
@@ -297,7 +330,7 @@ run('taa-fixes', async () => {
 				`case=phone&gpu=${GPU}&taa=1&jitter=1&phone=${phone ? 1 : 0}&reactive=${reactive}`,
 				async (engine, heard) => {
 					await waitFrame(heard, 12);
-					return sequence(engine, heard, 16 * CAPTURES);
+					return sequence(engine, 16 * CAPTURES);
 				},
 				{ transparent: true },
 			);
@@ -331,7 +364,7 @@ run('taa-fixes', async () => {
 	const measure = (query: string) =>
 		scene(query, async (engine, heard) => {
 			await waitFrame(heard, 12);
-			return sequence(engine, heard, 16 * CAPTURES);
+			return sequence(engine, 16 * CAPTURES);
 		});
 	const off = await measure(`case=${CASE}&gpu=${GPU}&taa=0&jitter=0`);
 	const offJitter = await measure(`case=${CASE}&gpu=${GPU}&taa=0&jitter=1`);
@@ -340,17 +373,25 @@ run('taa-fixes', async () => {
 	// history's place rather than a mask dropping it.
 	const onNoMask = await measure(`case=${CASE}&gpu=${GPU}&taa=1&jitter=1&reactive=off`);
 	const offChange = change(off);
+	const onChange = change(on);
+	const onNoMaskChange = change(onNoMask);
+	const offJitterChange = change(offJitter);
+	const runs = [off, offJitter, on, onNoMask];
 	return {
 		case: CASE,
 		gpu: GPU,
-		off: offChange,
-		on: change(on),
-		onNoMask: change(onNoMask),
-		jitter: Math.abs(change(offJitter) - offChange),
+		off: offChange.mean,
+		on: onChange.mean,
+		onNoMask: onNoMaskChange.mean,
+		jitter: Math.abs(offJitterChange.mean - offChange.mean),
 		offMean: mean(off.frames[0] as Frame),
 		onMean: mean(on.frames[0] as Frame),
 		onNoMaskMean: mean(onNoMask.frames[0] as Frame),
-		steps: off.frames.length - 1,
-		consecutive: off.consecutive && offJitter.consecutive && on.consecutive && onNoMask.consecutive,
+		// The fewest adjacent pairs of the four runs, which the figures all rest on.
+		steps: Math.min(offChange.pairs, offJitterChange.pairs, onChange.pairs, onNoMaskChange.pairs),
+		// The captures that skipped a sketch frame, whose pairs every figure leaves out.
+		skipped: runs.reduce((sum, run) => sum + run.skipped, 0),
+		captures: runs.reduce((sum, run) => sum + run.numbers.length, 0),
+		consecutive: runs.every((run) => run.consecutive),
 	};
 });

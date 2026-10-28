@@ -684,13 +684,15 @@ export interface Engine {
 	 * Resolves with the pixels of the next frame that the engine draws, as RGBA8 rows, top row
 	 * first, for tests. The thread that draws waits until its frame loop has taken a new frame, then
 	 * draws that frame again offscreen and reads it back, so captures back to back give newer frames
-	 * even where each readback holds that thread up. In hold mode, and while the engine is paused,
+	 * even where each readback holds that thread up. `frame` is the sketch frame that the capture
+	 * drew: a capture that follows a scene change can hold the frame recorded before it, and a test
+	 * that measures frames aligns them by this number. In hold mode, and while the engine is paused,
 	 * it returns the frame on the canvas. A hidden page draws no frames, so its pixels come once the
 	 * page shows again. When no new frame comes within a second or two, as after a
 	 * sketch error, it returns the frame drawn last. It fails when the thread that draws gives no
 	 * answer within the engine's wait, rather than waiting with no end.
 	 */
-	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array }>;
+	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array; frame: number }>;
 	/**
 	 * Resolves with the recording of the session so far, or undefined when the page does not record
 	 * one. A page records with the `?record` switch, which also puts a save button on the page. The
@@ -2626,7 +2628,12 @@ async function startEngine(
 			if (localDrawing && draw) return draw.captureFrame(localDrawing, slots);
 			const reply = await rendererHost?.request({ type: 'capture' });
 			if (reply?.type === 'captured')
-				return { width: reply.width, height: reply.height, pixels: reply.pixels };
+				return {
+					width: reply.width,
+					height: reply.height,
+					pixels: reply.pixels,
+					frame: reply.frame,
+				};
 			throw captureFailure(reply);
 		};
 		/**
@@ -2787,10 +2794,10 @@ async function startEngine(
 		publishHold({
 			ok: true,
 			time: hold ?? replayResult?.seconds ?? 0,
+			...held,
 			frame: Atomics.load(slots, Slot.FramesTaken),
 			tier,
 			directDraws: device.directDraws,
-			...held,
 			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
 			...(scriptResult !== undefined && { script: scriptResult }),
 			...(replayResult !== undefined && { replay: replayResult }),

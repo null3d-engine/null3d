@@ -177,8 +177,9 @@ export default defineSketch(
 				if (name !== 'place') return;
 				side = Number(data ?? 0);
 				square.setPosition(SIDES[side] ?? 0, 0, NEAR);
-				// The page captures the frame after this one, so it waits for the answer.
-				page.post('applied', {});
+				// The page captures the frame after this one, so it waits for the answer, which names
+				// the last frame the sketch drew before the change.
+				page.post('applied', { frame: time.frame });
 			});
 		} else if (CASE === 'rain') {
 			scene.setBackground('#080d14');
