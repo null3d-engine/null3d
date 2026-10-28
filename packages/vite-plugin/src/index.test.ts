@@ -15,6 +15,13 @@ import null3d, {
 	thirdPartyNotices,
 } from './index';
 
+/** The main null3D plugin, which the streamed shader plugin accompanies. */
+function enginePlugin(options: Parameters<typeof null3d>[0] = {}): Plugin {
+	const plugin = null3d(options).find((entry) => entry.name === 'null3d');
+	if (plugin === undefined) throw new Error('the null3D plugin is missing');
+	return plugin;
+}
+
 /** A project with the engine package installed, holding the given core files. */
 function project(files: readonly string[]): string {
 	const engine = 'node_modules/@null3d/engine';
@@ -48,7 +55,7 @@ describe('missingCoreFiles', () => {
 describe('the HTTPS server', () => {
 	it('serves HTTP/1.1 only, with the certificate from the certificate folder', () => {
 		const root = fixture({ 'cert/cert.pem': 'CERT', 'cert/key.pem': 'KEY' });
-		const plugin = null3d({ https: true, certDir: 'cert' });
+		const plugin = enginePlugin({ https: true, certDir: 'cert' });
 		const config = (plugin.config as (c: object, e: object) => UserConfig)(
 			{ root },
 			{ mode: 'development', command: 'serve' },
@@ -149,7 +156,7 @@ function resolvedPlugin(
 	command: 'build' | 'serve',
 	format: 'es' | 'iife' = 'es',
 	bundle: Rollup.OutputBundle = {},
-	plugin = null3d(),
+	plugin = enginePlugin(),
 ) {
 	const warnings: string[] = [];
 	const config = {
@@ -224,7 +231,7 @@ describe('the list of files for offline play', () => {
 			'package.json': '{}',
 			'node_modules/@null3d/engine/package.json': '{"name":"@null3d/engine"}',
 		});
-		const plugin = null3d();
+		const plugin = enginePlugin();
 		const config = (plugin.config as (c: object, e: object) => UserConfig)(
 			{ root },
 			{ mode: 'production', command: 'build' },
@@ -292,7 +299,7 @@ describe('the worker format', () => {
 
 describe('the test switches in the address', () => {
 	const define = (options: Parameters<typeof null3d>[0], mode: string) =>
-		(null3d(options).config as (c: object, e: object) => UserConfig)(
+		(enginePlugin(options).config as (c: object, e: object) => UserConfig)(
 			{ root: fixture({ 'package.json': '{}' }) },
 			{ mode, command: 'build' },
 		).define;
