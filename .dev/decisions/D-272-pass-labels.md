@@ -21,7 +21,18 @@ The far shadow cascades draw in one frame of two or of three. The hero tile draw
 
 The timer times seven passes one by one: `GPU_TIMED_PASSES` is the seven phase slots after the copies. A pass after them adds its time to the last one, as it did before. The hero's pass is among the first render passes, so the label reaches it.
 
-The hero cost spec (`tests/image/hero-cost.spec.ts`) times the same scene with the hero off and on, four rounds each, in a quiet window held by the job queue. Its moving cases are where the label adds a figure: the `shadow hero` part of the frame. The run's record beside the change gives every figure and the loads.
+The hero cost spec (`tests/image/hero-cost.spec.ts`) times the same scene with the hero off and on, four rounds each. It ran beside the queue's fresh-project test, with the 1-minute load at 3.1 to 4.9. Its moving cases are where the label adds a figure: the `shadow hero` part of the frame. The run's record is [the Mac's hero cost run](../tested-devices/macbook-pro-chrome/20261028-143438-hero-cost.md).
+
+| GPU path | Preset | Hero tile | `shadow hero`, moving (ms) |
+| --- | --- | --- | --- |
+| WebGPU | High | 1,024 | 0.025 |
+| WebGPU | High | 2,048 | 0.052 |
+| WebGPU | High | 4,096 | 0.327 |
+| WebGPU | Medium | 2,048 | 0.098 |
+| Compatibility | Medium | 2,048 | 0.087 |
+| WebGL2 | Medium | 2,048 | no split |
+
+The off side has no `shadow hero` part in any case, and a still hero names none, because its tile rests. Across the moving cases the tile reads 0.025 to 0.327 ms, while the frame's GPU time changed by -0.374 to +0.293 ms. Each figure is separate from every cascade's part, so the label names the pass that the slot could not.
 
 ## Look
 

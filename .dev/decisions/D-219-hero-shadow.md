@@ -50,43 +50,50 @@ The ratio is the tile's texels over the object's width, so it falls as the objec
 The hero cost spec (`tests/image/hero-cost.spec.ts`) timed the hero demo's car and yard on the Mac's
 own GPU. The sun's hero was off and on in turns, four rounds for each side, with each round in the
 opposite order from the one before. Each round measured 2 s after a 2 s warm-up, at 1920 x 1080 and
-a pixel ratio of 1. The run went through the job queue with the quiet window held. The loads were
-2.1 to 5.6 before each page and 2.1 to 4.7 after, under the cost specs' limit of 8. Every case
-recorded the display's 60 Hz rate and a 16.665 ms median frame interval. The figures are the medians
-of each side's rounds, in ms. The run's record is [the Mac's hero cost run](../tested-devices/macbook-pro-chrome/20261028-085328-hero-cost.md).
+a pixel ratio of 1. The run went beside the job queue's fresh-project test, a node process on one
+core. Each page held the 1-minute load between 3.1 and 4.9, under the cost specs' limit of 8.
+Every case recorded the display's 60 Hz rate and a 16.665 ms median frame interval. The figures are
+the medians of each side's rounds, in ms. The pass figures come from the GPU timer, not from two
+frames subtracted. The run's record is [the Mac's hero cost run](../tested-devices/macbook-pro-chrome/20261028-143438-hero-cost.md).
 
-| GPU path | Preset | Hero tile | Case | Draws off / on | GPU off | GPU on | Change | CPU off / on | Sketch off / on | Render off / on |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| WebGPU | High | 1,024 | Still | 62 / 62 | 2.155 | 2.854 | +0.699 | 0.110 / 0.112 | 0.082 / 0.085 | 0.100 / 0.105 |
-| WebGPU | High | 1,024 | Moving | 62 / 76 | 2.246 | 2.892 | +0.646 | 0.130 / 0.150 | 0.100 / 0.123 | 0.118 / 0.135 |
-| WebGPU | High | 2,048 | Still | 62 / 62 | 2.250 | 2.167 | -0.083 | 0.118 / 0.135 | 0.093 / 0.110 | 0.112 / 0.120 |
-| WebGPU | High | 2,048 | Moving | 62 / 76 | 2.786 | 2.678 | -0.108 | 0.123 / 0.127 | 0.108 / 0.115 | 0.113 / 0.125 |
-| WebGPU | High | 4,096 | Still | 62 / 62 | 3.634 | 3.280 | -0.354 | 0.135 / 0.142 | 0.100 / 0.115 | 0.115 / 0.117 |
-| WebGPU | High | 4,096 | Moving | 62 / 76 | 2.108 | 2.241 | +0.133 | 0.148 / 0.142 | 0.110 / 0.110 | 0.127 / 0.118 |
-| WebGPU | Medium | 2,048 | Still | 44 / 44 | 1.974 | 2.056 | +0.082 | 0.142 / 0.124 | 0.100 / 0.088 | 0.115 / 0.098 |
-| WebGPU | Medium | 2,048 | Moving | 44 / 58 | 2.081 | 1.793 | -0.288 | 0.144 / 0.145 | 0.104 / 0.103 | 0.111 / 0.105 |
-| Compatibility | Medium | 2,048 | Still | 43 / 43 | 1.530 | 1.758 | +0.228 | 0.116 / 0.132 | 0.080 / 0.110 | 0.085 / 0.108 |
-| Compatibility | Medium | 2,048 | Moving | 43 / 57 | 1.782 | 1.746 | -0.036 | 0.140 / 0.125 | 0.098 / 0.097 | 0.097 / 0.100 |
-| WebGL2 | Medium | 2,048 | Still | 57 / 57 | 3.115 | 3.912 | +0.797 | 0.163 / 0.090 | 0.142 / 0.078 | 0.103 / 0.065 |
-| WebGL2 | Medium | 2,048 | Moving | 57 / 66 | 3.745 | 3.429 | -0.316 | 0.135 / 0.169 | 0.115 / 0.159 | 0.080 / 0.106 |
+| GPU path | Preset | Hero tile | Case | Draws off / on | GPU off | GPU on | Change | `shadow hero` on | CPU off / on | Sketch off / on | Render off / on |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| WebGPU | High | 1,024 | Still | 62 / 62 | 2.208 | 2.691 | +0.483 | none | 0.125 / 0.127 | 0.112 / 0.115 | 0.123 / 0.125 |
+| WebGPU | High | 1,024 | Moving | 62 / 76 | 2.085 | 2.229 | +0.144 | 0.025 | 0.120 / 0.125 | 0.110 / 0.115 | 0.115 / 0.120 |
+| WebGPU | High | 2,048 | Still | 62 / 62 | 2.959 | 3.480 | +0.521 | none | 0.100 / 0.105 | 0.080 / 0.093 | 0.090 / 0.095 |
+| WebGPU | High | 2,048 | Moving | 62 / 76 | 2.067 | 1.980 | -0.087 | 0.052 | 0.103 / 0.112 | 0.095 / 0.095 | 0.100 / 0.105 |
+| WebGPU | High | 4,096 | Still | 62 / 62 | 3.509 | 3.532 | +0.023 | none | 0.105 / 0.105 | 0.087 / 0.095 | 0.100 / 0.100 |
+| WebGPU | High | 4,096 | Moving | 62 / 76 | 3.510 | 3.803 | +0.293 | 0.327 | 0.100 / 0.112 | 0.082 / 0.097 | 0.093 / 0.102 |
+| WebGPU | Medium | 2,048 | Still | 44 / 44 | 2.016 | 2.006 | -0.010 | none | 0.088 / 0.088 | 0.075 / 0.080 | 0.080 / 0.078 |
+| WebGPU | Medium | 2,048 | Moving | 44 / 58 | 2.049 | 2.064 | +0.015 | 0.098 | 0.090 / 0.097 | 0.077 / 0.087 | 0.080 / 0.088 |
+| Compatibility | Medium | 2,048 | Still | 43 / 43 | 1.141 | 1.123 | -0.018 | none | 0.090 / 0.090 | 0.075 / 0.080 | 0.080 / 0.078 |
+| Compatibility | Medium | 2,048 | Moving | 43 / 57 | 1.738 | 1.364 | -0.374 | 0.087 | 0.088 / 0.095 | 0.078 / 0.083 | 0.075 / 0.083 |
+| WebGL2 | Medium | 2,048 | Still | 57 / 57 | 4.029 | 3.781 | -0.248 | none | 0.085 / 0.090 | 0.085 / 0.090 | 0.063 / 0.063 |
+| WebGL2 | Medium | 2,048 | Moving | 57 / 66 | 3.256 | 2.941 | -0.315 | no split | 0.088 / 0.095 | 0.088 / 0.093 | 0.060 / 0.065 |
 
-- A still hero adds no draw call and no pass. Its draw counts match the off side on every path. So
-  does its pass count where the timer lists the passes. The frame's GPU time changed by -0.35 to
-  +0.80 ms, with no sign that follows the path. The off side's own GPU time ranged from 1.53 to
-  3.63 ms across the cases. A change of that size sits inside the scene's spread.
-- A moving hero adds one depth-only render pass and draws the car into the tile. The draw calls
-  rise by 14 on WebGPU and in compatibility mode: 62 to 76 at High and 44 to 58 at Medium. In
-  compatibility mode they go from 43 to 57. On WebGL2 they rise by 9, from 57 to 66.
-- The timer names passes by kind and their order, not by their target. The scene's far cascades
-  draw every 2 or 3 frames, so a median pass slot mixes the hero's pass with the cascades'. The run
-  therefore gives no figure for the hero's own pass. The frame's total is the bound: it changed by
-  -0.32 to +0.65 ms while moving, inside the scene's spread. A run that draws every far cascade in
-  every frame would give the pass a stable slot.
-- No thread's CPU time moved by more than 0.073 ms. The busiest thread moved by -0.073 to
-  +0.034 ms. The sketch worker moved by -0.064 to +0.044 ms, and the render worker by -0.038 to
-  +0.026 ms.
+- A still hero adds no draw call and no pass. Its draw counts match the off side on every path. Its
+  frame's GPU time changed by -0.25 to +0.52 ms, with no sign that follows the path. The off side's
+  own GPU time ranged from 1.14 to 4.03 ms across the cases. The timer names no `shadow hero` part
+  on a still hero, because its tile rests.
+- A moving hero adds one depth-only render pass and the car's draws: 14 more on WebGPU and in
+  compatibility mode, 9 on WebGL2. On the WebGPU paths the timer names that pass `shadow hero`
+  ([D-272](D-272-pass-labels.md)) and gives its own figure: 0.025 to 0.327 ms across the five
+  moving cases. The part is separate from each cascade's, so the figure is the tile's rather than a
+  slot's.
+- The tile does not replace a cascade pass: all three cascades draw on both sides. It replaces the
+  cascade read in the opaque pass for the pixels inside its box, which read the tile before the
+  cascades. So a moving hero can make the frame cheaper even while it adds a pass. In compatibility
+  mode at Medium the frame reads 1.738 ms with the hero off and 1.364 ms with it on. The tile itself
+  reads 0.087 ms. The frame falls by 0.374 ms, which the receivers' shorter shadow path also moves.
+  The 0.087 ms is the tile's cost.
+- Across the WebGPU cases the moving frame changed by -0.374 to +0.293 ms, inside the scene's
+  spread. The figure that the pass slot could not give is the tile's own: 0.025 to 0.327 ms.
+- On WebGL2 the timer covers the frame as a whole and gives no parts, so that path has no split of
+  the pass. It is not a zero for the pass.
+- No thread's CPU time moved by more than 0.015 ms. The busiest thread moved by 0 to +0.012 ms. The
+  sketch worker moved by 0 to +0.015 ms, and the render worker by -0.002 to +0.009 ms.
 - The rule holds on every path: a moving hero costs one extra shadow pass a frame, and a still
-  hero costs none. The record names no millisecond limit. The largest frame GPU time, 3.63 ms,
+  hero costs none. The record names no millisecond limit. The largest frame GPU time, 3.80 ms,
   sits well inside the display's 16.665 ms frame.
 - With no hero the atlas holds no hero layer, and the frame draws only its usual passes. The Rust
   test `the_hero_draws_its_own_tile` checks the layer count, the two cascade passes and the zeroed
