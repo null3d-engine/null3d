@@ -54,16 +54,22 @@ the browser, the load at each start, the viewport and the log.
 
 ## Look
 
-The demo's ice is a dielectric of 4 per cent, with roughness 0.16 and metalness 0, and the map that
-it samples holds the aurora. The demo's own view has no lake to judge. The ice plane at
-ground level does not reach the demo's held frame: an unlit magenta material on it changes no pixel,
-at plane sizes of 100 and 4000, in both rotations, with and without the layer (M3-R27). The stored
-`demo-aurora` reference shows the same flat lower half, so the plane is absent from it too.
+Before M3-R27, the demo's ice was a dielectric of 4 per cent, with roughness 0.16 and metalness 0,
+and the map that it sampled held the aurora. The demo's own view had no lake to judge: the ice plane
+at ground level did not reach the demo's held frame, since an unlit magenta material on it changed
+no pixel, at plane sizes of 100 and 4000, in both rotations, with and without the layer. The stored
+`demo-aurora` reference showed the same flat lower half, so the plane was absent from it too.
 
-The look of that lake is judged in M3-R27, which makes the plane draw at the demo's own camera and
-redraws the six `demo-aurora` references. This record shows the sky's own color: in the kept page a
-mirror plane at ground level reflects the map that the layer fills, and the sky and its reflection
-hold one color at two exposures.
+The look of that lake was then judged in M3-R27, which makes the plane draw at the demo's own
+camera and redraws the six `demo-aurora` references. This record shows the sky's own color: in the
+kept page a mirror plane at ground level reflects the map that the layer fills, and the sky and its
+reflection hold one color at two exposures.
+
+After M3-R27 the plane draws. Its absence was not a fault of the plane: the demo's sixteenth snow
+cone, stretched about 10.7 times by a rotation quaternion that was not unit length, painted the band
+that the plane lay behind (M3-R33). The engine scales such a rotation now, and the lake is a planar
+reflection through a reflection pass at the render size, so the ridge, the pines and the sky stand
+inverted in it.
 
 ## Decision
 

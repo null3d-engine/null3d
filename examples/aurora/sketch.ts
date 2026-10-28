@@ -1,8 +1,8 @@
 // Aurora: a still night over a frozen lake, with curtains of green light across the sky. The aurora
 // is the sky-layer example add-on: one WGSL function draws it over the core sky, which still draws
-// the moon, the stars and the thin clouds that hide the light. The sky's environment map holds the
-// aurora too, so the ice mirrors it, and the light that the map gives the scene lights the ice and
-// the snow green from above.
+// the moon, the stars and the thin clouds that hide the light. The lake is a mirror across its own
+// plane: a reflection pass draws the ridge, the pines and the sky mirrored, and the ice's material
+// lights that picture as its surface's reflection, so the shore stands in the water.
 import {
 	defineSketch,
 	emptyTimeOfDay,
@@ -18,13 +18,29 @@ const TARGET = [0, 16, -140] as const;
 /** The turn of the sun's path, so that the moon stands behind the ridges. */
 const HEADING = 0.55;
 
+// The ice: the reflection pass's picture where the surface shows on the screen, lit as the
+// surface's reflection. A flat frozen lake bends the mirror direction by nothing, so the picture
+// needs no offset.
+const ICE = /* wgsl */ `
+#import null3d::reflection::{reflection_uv}
+
+var lake: texture_2d<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+    s.reflection = vec4f(textureSampleLevel(lake, lakeSampler, reflection_uv(clip, vec2f(0.0)), 0.0).rgb, 1.0);
+    return s;
+}
+`;
+
 /** The hour at a sketch time: the night turns slowly, from 21:00 to 3:00. */
 function clock(seconds: number): number {
 	return 21 + math.euclideanModulo(seconds / 120, 6);
 }
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, post, time } = ctx;
+	const { scene, assets, geometry, materials, post, render, textures, time } = ctx;
 	const day = emptyTimeOfDay();
 	const dayOptions: TimeOfDayOptions = { heading: HEADING, model: 'physical' };
 	const sky = {
@@ -50,8 +66,21 @@ export default defineSketch(async (ctx) => {
 
 	const paint = (color: string, roughness = 0.7, flatShading = false) =>
 		materials.standard({ color, roughness, flatShading });
-	// The lake's ice: glossy enough to hold the moon and the sky's last light.
-	const ice = materials.standard({ color: '#16232f', roughness: 0.16, metalness: 0.0 });
+	// The lake: a mirror across the ice at ground level, tinted by the water. The pass draws at the
+	// render size, so the ridge and the pines come back as sharp as the view above them.
+	const reflection = render.addPass({
+		kind: 'reflection',
+		writes: 'lake',
+		plane: { point: [0, 0, 0] },
+		scale: 1,
+	});
+	const ice = materials.shader({
+		wgsl: ICE,
+		color: '#5d7686',
+		roughness: 0.06,
+		metalness: 1,
+		textures: { lake: textures.fromPass(reflection) },
+	});
 	const plane = geometry.plane({ width: 4000, height: 4000 });
 	scene.createMesh({
 		mesh: plane,
@@ -65,11 +94,13 @@ export default defineSketch(async (ctx) => {
 		const x = math.randFloat(-320, 320);
 		const z = math.randFloat(-190, -120);
 		const height = math.randFloat(14, 46);
+		// Each cone turns about Y by its own angle: the quaternion of a turn of `turn` radians.
+		const turn = math.randFloat(0, Math.PI);
 		scene.createMesh({
 			mesh: geometry.cone({ radius: height * 1.7, height, radialSegments: 6 }),
 			material: snow,
 			position: [x, height * 0.5 - 3, z],
-			rotation: [0, math.randFloat(0, Math.PI), 0, 1],
+			rotation: [0, Math.sin(turn / 2), 0, Math.cos(turn / 2)],
 		});
 	}
 	// Pines on the near shore, dark against the ice, each two cones of needles.
