@@ -355,6 +355,30 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - The `splats` plan also runs each GPU path at a quarter of the cloud's splat count, at the same
   pixel count. A pair of rows then shows whether the cost follows the count or the screen's fill.
 
+## The terrain plan
+
+- The `terrain` plan times the terrain demo at every preset that each GPU path draws, for the
+  terrain add-on's cost per preset ([D-152](decisions/D-152-terrain.md)). Each page fixes its path
+  and its preset with `?gpu=` and `?preset=`, so the start-up check cannot lower either.
+- The page is the one that the vegetation plan uses. It starts the demo live, waits for its first
+  frame, measures five seconds, and then reads the stats overlay for the triangles and the GPU's
+  memory. It reports the frame interval, the CPU time per frame, the GPU time per pass and the
+  bytes that the page downloaded.
+- WebGL2 and compatibility mode cap the preset at Medium ([the chooser](../packages/engine/src/quality/chooser.ts)),
+  so those paths run Low and Medium, and core WebGPU runs every preset.
+- Each page sets `?target-fps=1`, so the quality governor holds the whole render scale and each
+  preset's own cost shows. The ground's own detail follows the preset, through its level-of-detail
+  threshold, so the triangle counts fall from High to Low.
+- The page has 8 items: 4 presets on core WebGPU, 2 on compatibility mode and 2 on WebGL2. The
+  capabilities page comes first, so a device that lacks a path skips those pages.
+- Run it on the Mac, the owner's iPad and an S24-class phone. The Mac and the iPad are timing runs,
+  so start them through the queue with `QUIET_OK=1`. The iPad loads the runner page over the local
+  network and its own WebAssembly build must exist in the worktree:
+  `bun tests/real-browsers.ts --plan terrain "Google Chrome"` and
+  `bun tests/real-browsers.ts --plan terrain --lan ipad-safari`. Then run the cloud phone:
+  `bun run devices:cloud --only bsgalaxys24-chrome --plan terrain -- --only capabilities,terrain-low-webgl2,terrain-medium-webgl2`.
+  The Galaxy S24 has no WebGPU, so its command runs the two WebGL2 pages alone.
+
 ## The reflection plan
 
 - The `reflection` plan times a reflection pass, for [D-120](decisions/D-120-planar-reflections.md). It plays S1 with water under the swarm, through the benchmark page's `reflection` switch, with the pass at a quarter and at half the render size. It plays S1 without the water too. It runs each on null3D's WebGPU and WebGL2 pages, for 10 seconds of warm-up and 10 measured, in 3 rounds. The sizes take turns in each round, so a device that warms up slows each size alike.
