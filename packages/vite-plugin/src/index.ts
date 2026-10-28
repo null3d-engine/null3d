@@ -443,6 +443,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 	 * each is hashed and copied in a stream, so the build never holds the whole set in memory.
 	 */
 	const copiedShaders = new Map<string, string>();
+	/**
+	 * The content hash of each generated shader file by its path. A page build and its workers reach
+	 * the same files, so each file is read and hashed once for the whole build.
+	 */
+	const copiedShaderHashes = new Map<string, string>();
 	/** Compiles WGSL on worker threads, so the dev server answers other requests meanwhile. */
 	const compiler = new CompilerPool();
 	/** Keeps each compiled shader in the project's cache, so a later build skips the compile. */
@@ -506,6 +511,10 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 				worker: {
 					format: 'es',
 					plugins: () => [
+						// A worker build keeps only these plugins, so the generated shader files are
+						// named here as they are on the page; otherwise every one of them is read
+						// into memory to reach the page's bundle through the worker's own.
+						streamedShaderAssets,
 						workerFilesPlugin(workerFiles),
 						workerPreloadPlugin(),
 						shaderParagraphsPlugin(),
@@ -918,7 +927,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 				const target = resolve(dirname(file), address);
 				if (!existsSync(target)) continue;
 				const base = target.slice(target.lastIndexOf('/') + 1).replace(/\.js$/, '');
-				const hash = copiedShaderHash(target);
+				let hash = copiedShaderHashes.get(target);
+				if (hash === undefined) {
+					hash = copiedShaderHash(target);
+					copiedShaderHashes.set(target, hash);
+				}
 				const name = `${base}-${hash}.js`;
 				copiedShaders.set(name, target);
 				const stem = address.slice(0, -'.js'.length);
