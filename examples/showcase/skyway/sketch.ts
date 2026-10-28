@@ -9,8 +9,8 @@
 // holds any hour, Auto moves the sun and the moon, and Studio opens its own light. The city's own
 // lights follow the hour, so its windows and street lamps go out by day and light it at night. The
 // HUD's Traffic buttons change how many cars fly, and the Quality buttons change the preset. The
-// stats overlay is on from the first frame.
-import { defineSketch, type GradingSettings, type QualityPreset, vec3 } from '@null3d/engine';
+// stats overlay starts collapsed to its frame rate, as every demo's does.
+import { defineSketch, type GradingSettings, vec3 } from '@null3d/engine';
 import { createLensKit } from '../../addons/lens-kit/index';
 import { type CameraBounds, type Cinematic, createCinematic, type Shot } from '../../lib/cinematic';
 import { type HudGroup, radioGroup } from '../../lib/controls';
@@ -175,7 +175,8 @@ export default defineSketch(async (ctx) => {
 		// The speed blur follows the camera's own travel, below, so a held frame has none.
 		speedBlur: 0,
 	});
-	debug.stats(true);
+	// Collapsed, like every other demo's overlay, so the panel does not cover the city on load.
+	debug.stats({ collapsed: true });
 
 	page.post('loading', 'Raising the towers');
 	const facades = createFacades(ctx);
