@@ -1255,10 +1255,13 @@ material's maps templates. That makes their builds 3.33 times as many
 ([D-190](decisions/D-190-hold-relief-until-the-split.md)). The shader build splits the shared
 paragraph tables, so the extra builds stay out of every page's start.
 
-The masked transmission joined the pair that the permutation table allows, so the manifest
-makes 57,484 GLSL builds and 20,777 WGSL builds, 78,261 in all. The cut-out
-keeps its transmission, and its three mask shapes multiply the transmission words. The shader build
-compiled 78,249 programs in the run that wrote the modules. `BUILD_BUDGET` records the two figures.
+The masked transmission joined the pair that the permutation table allows, so the cut-out keeps its
+transmission, and its three mask shapes multiply the transmission words. The levels debug view adds
+the `DEBUG_VIEW_LEVELS` and `LOD_FADE` bits to the debug view template: 192 GLSL builds and 48 WGSL
+builds. That template stays in `shaders.ts`, where only development builds import it, so a release
+page downloads none of those builds. The manifest makes 57,676 GLSL builds and 20,825 WGSL builds,
+78,501 in all. The shader build compiled 78,489 programs in the run that wrote the modules.
+`BUILD_BUDGET` records the two figures.
 
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this

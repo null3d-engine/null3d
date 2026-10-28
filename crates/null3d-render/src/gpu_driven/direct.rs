@@ -180,6 +180,8 @@ impl Direct {
             rule,
             links: drawn.level_links(),
             rows: &level_rows,
+            codes: drawn.codes,
+            levels: drawn.bucket_levels(),
         };
         let by_row = runs
             .iter()

@@ -3991,6 +3991,20 @@ export class Scene implements ViewHolder {
 		else this.names.set(name, new Set([known, object]));
 	}
 
+	/**
+	 * @internal Visits each live object whose mesh has lower levels of detail, until `visit`
+	 * returns false. The debug view of levels draws their culling spheres, so it reads the objects
+	 * that have such a sphere of their own.
+	 */
+	forEachLevelMesh(visit: (object: Mesh) => boolean): void {
+		for (const object of this.objectSlots) {
+			if (object === undefined || object.destroyedFrame !== -1) continue;
+			if (!(object instanceof Mesh) || object.mesh === undefined) continue;
+			if (object.mesh.levels.length === 0) continue;
+			if (!visit(object)) return;
+		}
+	}
+
 	/** Adds a new batch to the index that queries read, by the slot of each of its core batches. */
 	private rememberBatch(batch: InstanceBatch): void {
 		this.batchSlots[batch.id & SLOT_MASK] = batch;

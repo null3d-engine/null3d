@@ -114,6 +114,24 @@ describe('defineFeature', () => {
 		expect(() => minimal({ ready: true as never })).toThrow(/E1223/);
 		expect(() => minimal({ destroy: 'now' as never })).toThrow(/E1223/);
 	});
+
+	it('checks the debug views that a feature adds', () => {
+		const set = () => {};
+		const feature = minimal({ debugViews: [{ name: 'terrain-blocks', set }] });
+		expect(feature.debugViews?.map((view) => view.name)).toEqual(['terrain-blocks']);
+		expect(feature.debugViews?.[0]?.set).toBe(set);
+		expect(() => minimal({ debugViews: [{} as never] })).toThrow(/E1223/);
+		expect(() => minimal({ debugViews: [{ name: 'levels', set }] })).toThrow(/E1223/);
+		expect(() =>
+			minimal({
+				debugViews: [
+					{ name: 'blocks', set },
+					{ name: 'blocks', set },
+				],
+			}),
+		).toThrow(/E1223/);
+		expect(() => minimal({ debugViews: [{ name: 'blocks', set: 4 as never }] })).toThrow(/E1223/);
+	});
 });
 
 describe('FeatureRegistry', () => {
@@ -145,15 +163,20 @@ describe('FeatureRegistry', () => {
 		expect(() => registry.add(defineFeature({ name: 'ao', provides: ['ambient'] }))).toThrow(
 			/E1223/,
 		);
+		const view = [{ name: 'terrain-blocks', set: () => {} }];
+		registry.add(defineFeature({ name: 'terrain', debugViews: view }));
+		expect(() => registry.add(defineFeature({ name: 'other', debugViews: view }))).toThrow(/E1223/);
 	});
 
 	it('gives the names back when a feature is removed', () => {
 		const registry = new FeatureRegistry();
+		const view = [{ name: 'sky-layers', set: () => {} }];
 		registry.add(
 			defineFeature({
 				name: 'sky',
 				outputs: { environment: { default: 'white' } },
 				provides: ['sky'],
+				debugViews: view,
 			}),
 		);
 		expect(registry.remove('sky')).toBe(true);
@@ -167,6 +190,7 @@ describe('FeatureRegistry', () => {
 				name: 'sky',
 				outputs: { environment: { default: 'black' } },
 				provides: ['sky'],
+				debugViews: view,
 			}),
 		);
 		expect(registry.outputDefault('environment')).toBe('black');
