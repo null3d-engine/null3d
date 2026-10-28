@@ -71,4 +71,3 @@ off changes nothing.
 
 `asset-scene-lod` and `asset-scene-lod-copied` draw a tool file, which holds both arrays, and keep
 their references. So does `skinned-lod`, whose camera stands past its level's band.
-

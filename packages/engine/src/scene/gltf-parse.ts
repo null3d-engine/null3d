@@ -925,7 +925,7 @@ export interface NodeData {
 /**
  * The lower levels of detail of a node's mesh, as `MSFT_lod` names them: the mesh of each lower
  * level's node, from the most detailed down, and each level's error from the asset tool's
- * `NULL3D_lod_error`, or else the screen coverage of each level from `MSFT_screencoverage`, the
+ * `NULL3D_lod_error` beside the screen coverage of each level from `MSFT_screencoverage`, the
  * node's own first. The tool writes the coverage that its measured error implies beside the error;
  * a file that holds the errors alone holds levels whose author set the switch, and the loader
  * fades those.
