@@ -1259,9 +1259,15 @@ The masked transmission joined the pair that the permutation table allows, so th
 transmission, and its three mask shapes multiply the transmission words. The levels debug view adds
 the `DEBUG_VIEW_LEVELS` and `LOD_FADE` bits to the debug view template: 192 GLSL builds and 48 WGSL
 builds. That template stays in `shaders.ts`, where only development builds import it, so a release
-page downloads none of those builds. The manifest makes 57,676 GLSL builds and 20,825 WGSL builds,
-78,501 in all. The shader build compiled 78,489 programs in the run that wrote the modules.
+page downloads none of those builds. The manifest makes 57,678 GLSL builds and 20,827 WGSL builds,
+78,505 in all. The shader build compiled 78,489 programs in the run that wrote the modules.
 `BUILD_BUDGET` records the two figures.
+
+The temporal resolve's study added two library modules. One is the motion math that a custom
+material's vertex offset calls, and the other is the temporal helpers that its history pass uses.
+Each is a case of the shader library, built for both targets. They add 2 GLSL builds and 2 WGSL
+builds. The library page compiles them as test cases. No page draws with them unless a material asks
+for them.
 
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this
