@@ -114,7 +114,7 @@ for (const engine of ['null3d', 'threejs'] as const)
 			// On the software GPU, three.js takes about a minute to build the shaders of each new
 			// count of lights, so the ramp holds the image tests' count there.
 			await page.goto(
-				`compare.html?compare=night-town&engine=${engine}&gpu=${gpu}&effects=${quickTown()}`,
+				`compare.html?compare=night-effects&engine=${engine}&gpu=${gpu}&effects=${quickTown()}`,
 			);
 			const result = await pageResult<{
 				error?: string;
