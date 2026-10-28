@@ -105,7 +105,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-K4':
 		"unticked by the tick audit, and the tick before it was wrong: the mixed port leaves out the example's depth-writing cut-out plane, so room edges and two strips about ten pixels wide draw across the embedded page; the comparison hides both 3D canvases before it compares, so it can only see the HTML layers. The depth-only material that fix needs now exists: M3-K7 landed a material that writes depth and no colour, so that part is no longer a blocker",
 	'M3-L4':
-		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
+		'the three studies are decided (D-273 vertex morphing, D-274 impostors, D-275 staged loading) and none of their builds has started; the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
 	'M3-A11':
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-E10':
