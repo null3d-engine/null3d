@@ -210,7 +210,8 @@ const CASES: Record<string, Case> = {
 	lod_fade: fadingLevels,
 	// A tree of cluster patches comes only from the asset tool, so the case loads the model that
 	// the tool cut. A frame draws the tree only while its mesh is culled into a layout, which the
-	// camera does from outside the ground. WebGL2 draws the mesh whole and builds no cluster pass.
+	// camera does from outside the ground. WebGL2 picks the patches on the job workers, so it
+	// builds no cluster pass and downloads no cluster shader.
 	cluster_levels: async ({ scene, assets }) => {
 		scene.instantiate(await assets.loadGltf('assets/models/cluster-terrain.glb'));
 		scene.setActiveCamera(

@@ -750,3 +750,87 @@ fn the_culling_shader_culls_a_row_by_its_own_bound_where_it_has_one() {
         "the shader ignores the row's own radius: {radius}"
     );
 }
+
+#[test]
+fn the_direct_path_draws_a_trees_whole_levels_rather_than_its_patches() {
+    use null3d_render::gpu_driven::RendererConfig;
+    let mut world = World::with_config(RendererConfig {
+        direct_draws: true,
+        ..RendererConfig::default()
+    });
+    let settings = world.renderer.settings_mut();
+    let lower = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
+        .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+    settings
+        .set_mesh_levels(BALL, &lower, &[0.01, 0.05], &[Switch::Error; 2], &[0, 0], 0)
+        .unwrap();
+    world
+        .renderer
+        .set_mesh_patches(
+            BALL,
+            Some(
+                null3d_render::patches::PatchTree::new(
+                    vec![0, 1, 2],
+                    vec![[0.0, 0.0, 0.0, 1.0]],
+                    vec![[0, 3, 0, 0]],
+                    0,
+                    4,
+                )
+                .unwrap(),
+            ),
+        )
+        .unwrap();
+    ball_at(&mut world, 20.0);
+    world.record(true);
+    let drawn: Vec<(u32, u32)> = world
+        .commands()
+        .iter()
+        .filter(|(op, _)| *op == Op::DrawIndexed)
+        .map(|(_, o)| (o[0], o[1]))
+        .collect();
+    // The direct path runs no cluster pass, so the tree leaves the whole levels in place.
+    assert!(
+        drawn.contains(&(indices_of(&world, lower[1]), 1)),
+        "{drawn:?}"
+    );
+    assert!(
+        world
+            .commands()
+            .iter()
+            .all(|(op, o)| !(*op == Op::CreateComputePipeline && o[1] == template::CLUSTER))
+    );
+}
+
+#[test]
+fn the_gpu_path_keeps_a_trees_levels_when_two_objects_draw_the_mesh() {
+    let mut plain = World::new();
+    give_levels(&mut plain, 0);
+    let without = indirect_draws(&mut plain);
+    let mut world = World::new();
+    give_levels(&mut world, 0);
+    world
+        .renderer
+        .set_mesh_patches(
+            BALL,
+            Some(
+                null3d_render::patches::PatchTree::new(
+                    vec![0, 1, 2],
+                    vec![[0.0, 0.0, 0.0, 1.0]],
+                    vec![[0, 3, 0, 0]],
+                    0,
+                    4,
+                )
+                .unwrap(),
+            ),
+        )
+        .unwrap();
+    // Two ball objects share the mesh's bucket, so the pass has no single copy to pick patches
+    // for. Its levels stay, and no cluster pipeline is made.
+    assert_eq!(indirect_draws(&mut world), without);
+    assert!(
+        world
+            .commands()
+            .iter()
+            .all(|(op, o)| !(*op == Op::CreateComputePipeline && o[1] == template::CLUSTER))
+    );
+}

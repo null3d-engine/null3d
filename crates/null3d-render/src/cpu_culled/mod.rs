@@ -125,8 +125,8 @@ use crate::final_pass::FinalIds;
 use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
-    RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows, joined_rows,
-    settled, unbound_buffer_bytes,
+    RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows,
+    indices_as_bytes, joined_rows, settled, unbound_buffer_bytes,
 };
 use crate::frame_graph::{
     DrawnViews, FrameGraph, GraphIds, PrepassColor, Role, ShadowPasses, TilePasses,
@@ -158,7 +158,7 @@ use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices, write_row_values};
 use layout::{BatchSlot, Clusters, Drawn, Layout, RESIDENT, STREAMED};
 use lights::LightTextures;
-use opaque::{LitTextures, OFFSETS_BYTES, Opaque, Shading, ViewUpload};
+use opaque::{LitTextures, OFFSETS_BYTES, Opaque, PatchView, Shading, ViewUpload};
 use skin::Skins;
 use transparent::Transparent;
 
@@ -349,6 +349,13 @@ mod ids {
     pub const PASS_READ_BUFFERS: u32 = PICK_GROUP + 1;
     /// The buffers of the sky maps' light captures, one for each read that may wait for the GPU.
     pub const SKY_LIGHT_BUFFERS: u32 = PASS_READ_BUFFERS + crate::readback::RING as u32;
+    /// The index buffer of mesh `mesh`'s tree of cluster patches, which a view draws its chosen
+    /// patches from. It sits above every other id, so its range warns nothing else.
+    pub const PATCH_INDEX: u32 = 1 << 22;
+
+    pub const fn patch_index(mesh: u32) -> u32 {
+        PATCH_INDEX + mesh
+    }
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = SKY_LIGHT_BUFFERS + crate::sky_maps::LIGHT_RING as u32;
     /// The texture arrays of materials' maps, after every id the render graph can take.
@@ -606,6 +613,9 @@ pub struct CpuCulledRenderer {
     /// True when the scene's layout was built with the depth prepass's pipelines.
     layout_prepass: bool,
     clusters: Clusters,
+    /// Each mesh's tree of cluster patches, as the made bytes of its GPU index buffer, by the
+    /// mesh's id minus one: 0 before a buffer exists or after the GPU replaced it.
+    patch_indices: Vec<u32>,
     /// Grid-cell culling: the still scene objects in cell order, and each cell's box.
     cells: CellCulling,
     culling: Culling,
@@ -868,6 +878,7 @@ impl CpuCulledRenderer {
             layouts_picked: false,
             layout_prepass: false,
             clusters: Clusters::default(),
+            patch_indices: Vec::new(),
             cells: CellCulling::new(config.cell_culling, true),
             culling: Culling::new(ViewId::CAMERA),
             occluders: Occluders::default(),
@@ -1476,6 +1487,17 @@ impl CpuCulledRenderer {
     /// [`Self::upload_bound`] without the cluster orders.
     fn upload_bound_without_clusters(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
+        // A rebuilt scene uploads each mesh's tree of cluster patches again, when the device
+        // draws many ranges in one call.
+        let patches = if self.config.multi_draw {
+            self.settings
+                .patches()
+                .iter()
+                .map(|(_, tree)| tree.indices().len() * 2 + 256)
+                .sum()
+        } else {
+            0
+        };
         let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2
             + dfg::BYTES
             + ao::BLANK_BYTES;
@@ -1490,6 +1512,7 @@ impl CpuCulledRenderer {
         let outline = per_view(&self.outlined) + per_view(&self.scattering) + per_view(&self.tone);
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         meshes
+            + patches
             + materials
             + self.lights.upload_room()
             + views * per_view(&self.layout)
@@ -2055,6 +2078,15 @@ impl CpuCulledRenderer {
         }
         self.meshes
             .upload(list, arena, self.settings.meshes().pages())?;
+        upload_patches(
+            &mut self.patch_indices,
+            self.settings.patches(),
+            self.settings.meshes(),
+            self.config.multi_draw,
+            list,
+            arena,
+            rebuilt,
+        )?;
         // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.
         let table = MaterialStorage::Texture(ids::MATERIALS);
         let camera_y = self
@@ -2413,6 +2445,7 @@ impl CpuCulledRenderer {
                         meshes,
                         shading,
                         &hidden,
+                        culling.patch_view(frame, view),
                         scene_blank,
                     )?;
                     if backdrop {
@@ -2427,21 +2460,48 @@ impl CpuCulledRenderer {
                     };
                     let hidden = hidden_in(view);
                     opaque.record(
-                        list, arena, view, starts, layout, meshes, shading, &hidden, 0,
+                        list,
+                        arena,
+                        view,
+                        starts,
+                        layout,
+                        meshes,
+                        shading,
+                        &hidden,
+                        culling.patch_view(frame, view),
+                        0,
                     )
                 }
                 Role::Shadow(view) if cascade_culling.frame(view).is_some() => {
                     let starts = cascade_culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Depth;
                     cascade_draws.record(
-                        list, arena, view, starts, casters, meshes, shading, &never, 0,
+                        list,
+                        arena,
+                        view,
+                        starts,
+                        casters,
+                        meshes,
+                        shading,
+                        &never,
+                        PatchView::NONE,
+                        0,
                     )
                 }
                 Role::Shadow(view) if tile_culling.frame(view).is_some() => {
                     let starts = tile_culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Tile;
                     tile_draws.record(
-                        list, arena, view, starts, casters, meshes, shading, &never, 0,
+                        list,
+                        arena,
+                        view,
+                        starts,
+                        casters,
+                        meshes,
+                        shading,
+                        &never,
+                        PatchView::NONE,
+                        0,
                     )
                 }
                 Role::OutlineMask
@@ -2460,6 +2520,7 @@ impl CpuCulledRenderer {
                             meshes,
                             Shading::Depth,
                             &never,
+                            PatchView::NONE,
                             0,
                         )?;
                     }
@@ -2476,6 +2537,7 @@ impl CpuCulledRenderer {
                             meshes,
                             Shading::Depth,
                             &never,
+                            PatchView::NONE,
                             0,
                         )?;
                     }
@@ -2497,6 +2559,7 @@ impl CpuCulledRenderer {
                         meshes,
                         shading,
                         &hidden,
+                        PatchView::NONE,
                         scene_blank,
                     )
                 }
@@ -2617,6 +2680,7 @@ impl CpuCulledRenderer {
                         meshes,
                         Shading::Pick,
                         &hidden,
+                        culling.patch_view(frame, view),
                         0,
                     )
                 }
@@ -2748,6 +2812,7 @@ fn upload_views(
             listed,
             new_list,
             starts,
+            patches: culling.patch_view(frame, view),
         };
         draws.upload(list, arena, view, upload, layout)?;
         let Some(SortedPasses {
@@ -2974,6 +3039,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 },
                 &|view| settings.level_view(view, canvas),
                 Some((sorted, decal_layout, redraw_layout)),
+                Some(settings.patches()),
                 Some(cull::Occlusion {
                     occluders: &mut self.occluders,
                     meshes: settings.meshes(),
@@ -3017,6 +3083,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 &|_| shadow_rule,
                 None,
                 None,
+                None,
             )
             .map_err(|_| out_of_memory(&self.casters))?;
         let tiles = &self.tiles;
@@ -3028,6 +3095,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 cells,
                 &|view| tiles.frame(view.tile_index()?).copied(),
                 &|_| shadow_rule,
+                None,
                 None,
                 None,
             )
@@ -3047,6 +3115,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 &|_| camera_rule,
                 None,
                 None,
+                None,
             )
             .map_err(|_| out_of_memory(&self.outlined))?;
         // The subsurface view sees what the camera's view sees, while some object's material has a
@@ -3062,6 +3131,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 &|_| camera_rule,
                 None,
                 None,
+                None,
             )
             .map_err(|_| out_of_memory(&self.scattering))?;
         // The tone view sees what the camera's view sees, while some object's material keeps its
@@ -3075,6 +3145,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 cells,
                 &|_| camera.filter(|_| tones),
                 &|_| camera_rule,
+                None,
                 None,
                 None,
             )
@@ -3187,6 +3258,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.settings.forget_shadow_maps();
         self.layout.built = false;
         self.meshes.forget();
+        self.patch_indices.clear();
         self.pipelines.forget();
         self.textures.forget_gpu();
         self.culling.forget_gpu();
@@ -3264,6 +3336,62 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 }
 
+/// Uploads each mesh's tree of cluster patches into its own GPU index buffer, which a view draws
+/// its chosen patches from. A buffer is made at the mesh's id, which no other id takes, and
+/// uploaded when it is new or the scene's structure changed, so a replaced tree reaches the GPU.
+/// The indices add the mesh's first vertex in its page, because WebGL2's pages hold several meshes
+/// and rebase the mesh's own index list. A mesh that fills more than one part draws no tree, so it
+/// gets no buffer.
+fn upload_patches(
+    sizes: &mut Vec<u32>,
+    patches: &crate::patches::PatchStorage,
+    meshes: &MeshStorage,
+    multi_draw: bool,
+    list: &mut DrawList,
+    arena: &mut UploadArena,
+    rebuilt: bool,
+) -> Result<(), RecordError> {
+    if !multi_draw {
+        return Ok(());
+    }
+    for (mesh, tree) in patches.iter() {
+        let Some(slot) = meshes.mesh(mesh.wrapping_sub(1)) else {
+            continue;
+        };
+        let parts = meshes.parts(slot, false);
+        let [part] = parts else {
+            continue;
+        };
+        let at = mesh.wrapping_sub(1) as usize;
+        if sizes.len() <= at {
+            sizes.resize(at + 1, 0);
+        }
+        let bytes = (tree.indices().len() * 2) as u32;
+        if sizes[at] < bytes {
+            sizes[at] = bytes.max(2);
+            list.push(
+                Op::CreateBuffer,
+                &[
+                    ids::patch_index(mesh),
+                    sizes[at],
+                    buffer_usage::INDEX | buffer_usage::COPY_DST,
+                ],
+            )?;
+        } else if !rebuilt {
+            continue;
+        }
+        let mut halves = Vec::with_capacity(tree.indices().len());
+        halves.extend(
+            tree.indices()
+                .iter()
+                .map(|&index| (index + part.first_vertex) as u16),
+        );
+        let (at, length) = arena.push(indices_as_bytes(&halves))?;
+        list.push(Op::WriteBuffer, &[ids::patch_index(mesh), 0, at, length])?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::ids;
@@ -3293,5 +3421,74 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod patch_tests {
+    use super::*;
+
+    /// A quad of four vertices of the base format, all at the origin.
+    fn quad() -> crate::geometry::Geometry {
+        let stride = null3d_gpu::drawlist::vertex::stride(0) as usize;
+        crate::geometry::Geometry {
+            format: 0,
+            vertices: vec![0; 4 * stride],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        }
+    }
+
+    /// A page holds several meshes and rebases their indices, so a tree's own indices add the
+    /// mesh's first vertex in the page. Without that, a tree whose mesh follows another in the page
+    /// would draw the other mesh's vertices.
+    #[test]
+    fn a_trees_indices_add_the_meshs_first_vertex_in_its_page() {
+        let mut meshes = MeshStorage::new(Packing::Pages);
+        meshes.add(&quad()).unwrap();
+        let index = meshes.add(&quad()).unwrap();
+        let mesh = index + 1;
+        let slot = meshes.mesh(index).unwrap();
+        let first_vertex = meshes.parts(slot, false)[0].first_vertex;
+        assert!(first_vertex > 0, "the second mesh starts after the first");
+        let mut patches = crate::patches::PatchStorage::default();
+        patches.set(
+            mesh,
+            Some(
+                crate::patches::PatchTree::new(
+                    vec![0, 1, 2],
+                    vec![[0.0, 0.0, 0.0, 1.0]],
+                    vec![[0, 3, 0, 0]],
+                    0,
+                    4,
+                )
+                .unwrap(),
+            ),
+        );
+        let mut list = DrawList::with_capacity(64);
+        let mut arena = UploadArena::default();
+        arena.reset(1 << 16);
+        let mut sizes = Vec::new();
+        upload_patches(
+            &mut sizes, &patches, &meshes, true, &mut list, &mut arena, true,
+        )
+        .unwrap();
+        null3d_gpu::drawlist::decode(list.words())
+            .filter_map(Result::ok)
+            .find(|command| {
+                command.op == Op::WriteBuffer && command.operands[0] == ids::patch_index(mesh)
+            })
+            .expect("the tree's indices are written");
+        // The list names the arena's address, not an offset. The tree's indices are its only push.
+        let at = 0;
+        let bytes = arena.bytes();
+        let index = |k: usize| u16::from_le_bytes([bytes[at + 2 * k], bytes[at + 2 * k + 1]]);
+        assert_eq!(
+            [index(0), index(1), index(2)],
+            [
+                first_vertex as u16,
+                (1 + first_vertex) as u16,
+                (2 + first_vertex) as u16
+            ]
+        );
     }
 }

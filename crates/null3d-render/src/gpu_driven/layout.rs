@@ -882,6 +882,7 @@ impl Layout {
         key_counts: &mut KeyCounts,
         pick_targets: PassTargets,
         picking: bool,
+        clusters: bool,
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
         self.batch_bases.clear();
@@ -1044,7 +1045,39 @@ impl Layout {
         // object may pick one when every level of its set draws the base mesh's own vertices, which
         // the skin moves and the level then names from indices of its own.
         let levels = settings.levels();
-        let eligible = |key: &BucketKey| levels.may_pick(key.3, key.0.permutation);
+        // A mesh whose bucket draws its tree of cluster patches draws no whole level: the patches
+        // already cover it at the view's threshold. This holds only where the cluster pass runs,
+        // which the direct path does not, and only for the one copy and one part that the pass
+        // draws.
+        let patches = settings.patches();
+        let mut treed_keys: Vec<BucketKey> = Vec::new();
+        if clusters && drawn == Drawn::Scene {
+            for slot in 0..scene_rows as usize {
+                let Some(key) = scene_key(slot) else {
+                    continue;
+                };
+                let single = key_counts
+                    .binary_search_by_key(&key, |&(key, _)| key)
+                    .is_ok_and(|at| key_counts[at].1 == 1);
+                if !single || patches.of(key.3).is_none() {
+                    continue;
+                }
+                let mesh = levels.mesh_of_key(key.3).unwrap_or(key.3);
+                let Some(slot_mesh) = settings.meshes().mesh(mesh.wrapping_sub(1)) else {
+                    continue;
+                };
+                let lines = key.0.state & state_flags::LINE_LIST != 0;
+                let by_index = self.index_instances && key.0.reads_index();
+                if settings.meshes().parts(slot_mesh, lines).len() != 1 || by_index {
+                    continue;
+                }
+                treed_keys.push(key);
+            }
+            treed_keys.sort_unstable();
+            treed_keys.dedup();
+        }
+        let treed = |key: &BucketKey| treed_keys.binary_search(key).is_ok();
+        let eligible = |key: &BucketKey| !treed(key) && levels.may_pick(key.3, key.0.permutation);
         // A level may name a material of its own, so its bucket key comes from the level's mesh and
         // material, while it keeps the fields of the bucket that names it: its bounds, and the
         // object's receive-shadows bit, which the base key's pipeline holds.
@@ -1160,14 +1193,17 @@ impl Layout {
             };
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let parts = meshes.parts(slot, pipeline.state & state_flags::LINE_LIST != 0);
-            // A mesh with a tree of cluster patches draws it in the camera's views, when its
-            // vertices fit one part, which every patch's indices then name. One copy draws it: the
-            // pass picks the patches of that copy alone, and the mesh draws them in one indirect
-            // draw of one instance. A bucket that reads its copies by index holds the copy's id
-            // alone, not its matrix, so the patch test has no matrix to move the patch with.
-            let tree = settings.patches().of(mesh).filter(|_| {
-                matches!(drawn, Drawn::Scene) && parts.len() == 1 && count == 1 && !by_index
-            });
+            // A mesh with a tree of cluster patches draws it in the camera's views, when one scene
+            // object draws the bucket: the pass picks the patches of that object alone, and the
+            // mesh draws them in one indirect draw of one instance. The keys that draw a tree were
+            // chosen before the levels were added, and they already hold one object, one part and
+            // a copy whose matrix the pass reads. A batch row draws whole levels instead, as a
+            // browser that picks no patches does.
+            let tree = if treed(&key) {
+                settings.patches().of(mesh)
+            } else {
+                None
+            };
             let slot_base = if by_index { indexed } else { copied };
             let first_draw = self.draws.len() as u32;
             let cluster = tree.map(|tree| {
@@ -2061,6 +2097,7 @@ mod tests {
                 &mut KeyCounts::new(),
                 targets,
                 false,
+                false,
             )
             .unwrap();
 
@@ -2154,6 +2191,7 @@ mod tests {
                 &mut KeyCounts::new(),
                 targets,
                 false,
+                false,
             )
             .unwrap();
         let texels = uploaded_ranges(&mut layout);
@@ -2214,6 +2252,7 @@ mod tests {
                 &Skinning::default(),
                 &mut KeyCounts::new(),
                 targets,
+                false,
                 false,
             )
             .unwrap();
@@ -2279,6 +2318,7 @@ mod tests {
                 &Skinning::default(),
                 &mut KeyCounts::new(),
                 targets,
+                false,
                 false,
             )
             .unwrap();
@@ -2365,6 +2405,7 @@ mod tests {
                 &mut KeyCounts::new(),
                 targets,
                 false,
+                false,
             )
             .unwrap();
         let biases: Vec<(u32, f32)> = layout
@@ -2430,6 +2471,7 @@ mod tests {
                     &Skinning::default(),
                     &mut KeyCounts::new(),
                     targets,
+                    false,
                     false,
                 )
                 .unwrap();
