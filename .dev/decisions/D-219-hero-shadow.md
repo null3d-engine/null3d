@@ -1,6 +1,6 @@
 # D-219: One object's shadow at its own scale
 
-Status: decided and built, with the tile size a setting by the owner's ruling and the cost measured in a quiet window. Task: M3-A9.
+Status: decided and built, with the tile size a setting by the owner's ruling and the cost measured in a run that shared the machine with another job, at page loads of 3.1 to 4.9. Task: M3-A9.
 
 Summary: A directional light can name one object as its hero, which adds one draw when it moves. Its shadow draws into a tightly fitted tile of the shadow atlas, which receivers in the box read before the cascades. The tile's size is a setting: 1,024, 2,048 or 4,096 texels, with a default on each quality preset. At the defaults the demo's 4.4 m car keeps at least four times the texel density of the cascade that holds 10 m, on every preset.
 
