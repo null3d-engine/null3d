@@ -6,6 +6,11 @@ import { decodePngRgba } from '../../packages/cli/src/png.js';
 
 /** How long a read waits for the canvas to hold pixels, for a page still finding its size. */
 const EMPTY_READ_MS = 10_000;
+/**
+ * The canvas a browser makes when a page has not sized one. A read that gets this size has caught a
+ * page before its layout, whatever pixels it holds, so the read keeps waiting.
+ */
+const DEFAULT_CANVAS = { width: 300, height: 150 };
 
 /** One frame of the canvas: its size and its RGBA pixels, top row first. */
 export interface Frame {
@@ -49,8 +54,11 @@ export async function readFrame(page: Page): Promise<Frame> {
 		const frame = decodePngRgba(Buffer.from(base64, 'base64'), 'the canvas');
 		// A fractional layout rounds the canvas's height differently from read to read, so a page
 		// that has settled can still move by a pixel; the read waits for the size to hold within one.
-		if (
+		const laidOut =
 			frame.data.length > 0 &&
+			!(frame.width === DEFAULT_CANVAS.width && frame.height === DEFAULT_CANVAS.height);
+		if (
+			laidOut &&
 			previous !== null &&
 			Math.abs(previous.width - frame.width) <= 1 &&
 			Math.abs(previous.height - frame.height) <= 1
@@ -60,7 +68,7 @@ export async function readFrame(page: Page): Promise<Frame> {
 			throw new Error(
 				frame.data.length === 0
 					? `the canvas held no pixels for ${EMPTY_READ_MS} ms`
-					: `the canvas kept changing size for ${EMPTY_READ_MS} ms, last ${frame.width} by ${frame.height}`,
+					: `the canvas never settled for ${EMPTY_READ_MS} ms, last ${frame.width} by ${frame.height}${frame.width === DEFAULT_CANVAS.width && frame.height === DEFAULT_CANVAS.height ? ', the browser default' : ''}`,
 			);
 		previous = frame;
 		await page.waitForTimeout(50);
