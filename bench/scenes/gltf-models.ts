@@ -59,10 +59,25 @@ export interface ModelScene {
 	 */
 	frame?: { center: readonly [number, number, number]; radius: number };
 	/**
-	 * True when the HDR environment of the backgrounds scene lights the model too, as
-	 * `scene.environment` in three.js: a clear coat and a sheen show their reflections there.
+	 * True when an HDR environment lights the model too, as `scene.environment` in three.js: a clear
+	 * coat and a sheen show their reflections there.
 	 */
 	environment?: boolean;
+	/**
+	 * The HDR file that lights the scene, when it is not the backgrounds scene's. A material test
+	 * model takes a neutral studio, as its own viewer draws it.
+	 */
+	environmentHdr?: string;
+	/**
+	 * How strongly the environment lights the model, as three.js's `scene.environmentIntensity`. The
+	 * default is 1. A bright studio takes less, so the film's colors show rather than clip to white.
+	 */
+	environmentIntensity?: number;
+	/**
+	 * True when the environment and the dim ambient light light the model alone, without the sun.
+	 * The studio-lit material test models take this, as their own viewer draws them.
+	 */
+	ambientOnly?: boolean;
 	/**
 	 * The seconds that the scene's image test waits for its frame, when a software GPU takes longer
 	 * than the default to build its shaders, as for a clear coat or a sheen.
@@ -79,6 +94,29 @@ const GRID_SECONDS = 150;
 /** The HDR file of the model scenes' environment: the backgrounds scene's, at full intensity. */
 export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr');
 
+/** The neutral studio that lights a material test model, as the Khronos viewer lights it. */
+const STUDIO_HDR = sampleUrl('sources/hdri/polyhaven/studio_small_09/studio_small_09_2k.hdr');
+
+/**
+ * The three Khronos iridescence test models, each one binary glTF so the model scenes' build ships
+ * it as one file. They are temporary fixtures: their durable home is the sample content, and they
+ * go when those assets are pinned. The originals are Khronos models under CC0, with the same meshes,
+ * materials and textures. The sphere grids pack their glTF variant, and Suzanne is Khronos's own
+ * binary file.
+ */
+const IRIDESCENCE_DIELECTRIC = new URL(
+	'../../tests/pages/assets/models/sources/khronos/IridescenceDielectricSpheres/IridescenceDielectricSpheres.glb',
+	import.meta.url,
+).href;
+const IRIDESCENCE_METALLIC = new URL(
+	'../../tests/pages/assets/models/sources/khronos/IridescenceMetallicSpheres/IridescenceMetallicSpheres.glb',
+	import.meta.url,
+).href;
+const IRIDESCENCE_SUZANNE = new URL(
+	'../../tests/pages/assets/models/sources/khronos/IridescenceSuzanne/IridescenceSuzanne.glb',
+	import.meta.url,
+).href;
+
 /**
  * The model scenes by name. Each names a feature of the loader: metal-rough materials with their
  * texture maps, texture transforms in a .gltf file whose buffers and images are files of their
@@ -92,9 +130,10 @@ export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice
  * lights of their own (KHR_materials_specular's factors and textures, KHR_materials_ior's indices
  * with the specular values, KHR_materials_iridescence's films, and KHR_materials_anisotropy's
  * stretched highlights), and a glass that masks its alpha and takes its transmission and thickness
- * from maps. The four Khronos equivalents' own lights light them. The vendor name's file is the
- * instancing model as gltfpack compresses it (tests/lib/meshopt-fixtures.ts), which the repository
- * keeps. The Khronos
+ * from maps. The four Khronos equivalents' own lights light them. The Khronos iridescence models
+ * draw under a neutral studio, as their own viewer draws them, from temporary fixtures that the
+ * sample content replaces. The vendor name's file is the instancing model as gltfpack compresses it
+ * (tests/lib/meshopt-fixtures.ts), which the repository keeps. The Khronos
  * name's file covers every mode and filter. The Draco scenes draw the sample content's skinned
  * Draco model, and the coordinates test model as Draco's encoder compresses it
  * (tests/lib/draco-fixtures.ts), each against its uncompressed scene. The Khronos models of
@@ -183,6 +222,43 @@ export const MODEL_SCENES = {
 	iridescence: {
 		file: () => iridescenceBuilder().glb(),
 		ownLights: true,
+		timeoutSeconds: LAYERS_SECONDS,
+	},
+	// The three Khronos iridescence test models, lit by a neutral studio as their own viewer draws
+	// them. The dielectric grid runs over the base index of refraction, the film's thickness and the
+	// film's index. The metal grid replaces the base index with the base color. Suzanne's third head
+	// carries a thickness texture and transmission. The hand-made scene above keeps the film's two
+	// maps, which the sphere grids do not use.
+	'iridescence-dielectric': {
+		url: IRIDESCENCE_DIELECTRIC,
+		environment: true,
+		environmentHdr: STUDIO_HDR,
+		environmentIntensity: 0.35,
+		ambientOnly: true,
+		frame: { center: [0, 0, 0], radius: 9 },
+		view: [0.35, 0.28, 1],
+		timeoutSeconds: LAYERS_SECONDS,
+	},
+	'iridescence-metallic': {
+		url: IRIDESCENCE_METALLIC,
+		environment: true,
+		environmentHdr: STUDIO_HDR,
+		environmentIntensity: 0.15,
+		ambientOnly: true,
+		frame: { center: [0, 0, 0], radius: 9 },
+		view: [0.35, 0.28, 1],
+		timeoutSeconds: LAYERS_SECONDS,
+	},
+	// Three heads in a row, one of each of the file's materials. The third carries a thickness
+	// texture and transmission, so its film varies over the surface and the light behind shows.
+	'iridescence-suzanne': {
+		url: IRIDESCENCE_SUZANNE,
+		environment: true,
+		environmentHdr: STUDIO_HDR,
+		environmentIntensity: 0.35,
+		ownLights: true,
+		frame: { center: [0, 0, 0], radius: 3.2 },
+		view: [0.12, 0.06, 1],
 		timeoutSeconds: LAYERS_SECONDS,
 	},
 	anisotropy: {
