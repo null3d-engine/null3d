@@ -43,7 +43,6 @@ const INCOMPLETE = new Set([
 	'M3-B3',
 	'M3-B5',
 	'M3-V4',
-	'M3-F14',
 	'M3-F2',
 	'M3-R20',
 	'M3-E4',
@@ -68,8 +67,6 @@ const INCOMPLETE = new Set([
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
-	'M3-F14':
-		"the lights and the pictures are in and the Mac's cost is measured, and the branch carries its entry; the plan also asks for the cost per preset on an iPad and on an S24-class phone, and neither row exists yet, so the tick waits for device time",
 	'M3-A8':
 		"the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, over the prototype's one-step tolerance. The owner accepted that cost and ruled that the display table stays and the light table comes out",
 	'M3-A9':
