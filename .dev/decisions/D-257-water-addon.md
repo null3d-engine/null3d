@@ -232,8 +232,20 @@ The options at that size, on the assumption that the cost follows the pixels:
 | A 16 squared grid | 11 ms | 169 ms | 5.9 fps |
 | No simulation, the analytic waves | 0 | 158 ms | 6.3 fps |
 
-The grid rows assume that the cost follows the pixels. If it follows the draws instead, a smaller
-grid does not help, and a 64 squared build would settle that in one run.
+The grid rows assume that the cost follows the pixels, which was the first reading. The 64 squared
+run disproved it. Before that run, the two readings predicted this. At 64 squared the chain draws 26
+times rather than 30. A cost that follows the pixels therefore predicts 675 ms times a quarter and
+26/30: 146 ms of transform, a 304 ms frame, 3.3 frames a second. A cost that follows the draws
+predicts the same 675 ms times 26/30: 585 ms of transform, a 743 ms frame, 1.35 frames a second.
+
+The run used the same page and tier at 1920 by 1080 on Low, with a 20 s warm-up and two 4 s windows
+for each state. At 64 squared it gave 1.45 frames a second with the ocean (691.6 ms, windows 700.0
+and 683.3), 7.50 without the transform (133.3 ms, both windows), and 1.46 with the simulation alone
+(683.3 ms, both windows). The transform is 550 ms against 675 ms at 128 squared. A quarter of the
+pixels took away 18 per cent of the cost, not 75, so the run matches the per-draw prediction and not
+the per-pixel one. A draw's fixed cost is about 21 of its 22.5 ms, and its pixels about 2 ms at 128
+squared. The passes and the bands, not the grid, are the lever, and the table's grid rows are the
+reading that this run rules out.
 
 ### Decision
 
