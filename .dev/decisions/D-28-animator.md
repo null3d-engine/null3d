@@ -1,6 +1,6 @@
 # D-28: The animator: where play state lives, and how layers, masks, additive clips and events work
 
-Status: decided, 2026-10-03; the phone and tablet timings of the step pending. Date: 2026-10-03. Task: M2-C2.
+Status: decided and built. Not run yet: the phone and tablet timings of the step with the animator. Task: M2-C2.
 
 Summary: The core keeps each object's play state and advances it in the same job worker loop that blends. 8 slots and 4 layers per object; layers above 0 replace the pose below, through joint masks; additive clips convert once, as three.js's `makeClipAdditive` does; events come in one sorted buffer. Fades, masks and additive clips stay within 1.7e-4 of three.js.
 
@@ -38,21 +38,21 @@ The loop and finished events match three.js's counts in every script. A 0.75 s c
 
 `frames_allocate_nothing` counts 0 allocator calls in 197 frames. Its crowd has 64 characters of 40 joints. They play clips with fades, and stop and cross-fade them every 40 frames. Each has a masked layer, an additive layer and clip events. A third of the crowd still has clip times and weights that sketch code writes.
 
-`bun run bench:allocation --animated 64` adds 64 such characters to S1 in Chrome on the Mac (MacBook Pro M5 Max, 3 October 2026). It passes on WebGPU and with `--gpu webgl2`, and the animator's places allocate 0 bytes a frame. The check found three faults on the way:
+`bun run bench:allocation --animated 64` adds 64 such characters to S1 in Chrome on the Mac (MacBook Pro M5 Max). It passes on WebGPU and with `--gpu webgl2`, and the animator's places allocate 0 bytes a frame. Three patterns would allocate in each frame, and the animator avoids each:
 
-| Fault | Bytes a frame | Fix |
+| Pattern | Bytes a frame | What the animator does |
 | --- | --- | --- |
-| The check of the array views declared a function inside it, so the browser made room for that function on every call, even with nothing to remake | 29 | The rare remake moved to a function of its own, as instance batches do |
-| The sketch's 64 calls a frame to `setLayerWeight` each passed a fraction to a call that the browser did not inline | 933 | The call shrank to one write through a small view check, which the browser inlines |
-| Each cross-fade built the object's description for an error message, even when it succeeded | 24 | The description is built only on failure |
+| A check of the array views that declares a function inside it, so the browser makes room for that function on every call, even with nothing to remake | 29 | The rare remake is a function of its own, as in instance batches |
+| 64 calls a frame to `setLayerWeight` that each pass a fraction to a call that the browser does not inline | 933 | The call is one write through a small view check, which the browser inlines |
+| A cross-fade that builds the object's description for an error message, even when it succeeds | 24 | The description is built only on failure |
 
-The frame loop's own place rose with the animated characters, from 169 to between 192 and 229 bytes a frame, within its budget of 240. The rise comes from code outside the animator. Each job worker that worked in a frame reports its busy time as a fraction, and each such reading is a new number object. The animation step gives more of the 16 job workers work. With `?jobs=2`, the place read 68 bytes with the characters and 71 without them.
+With the animated characters, the frame loop's own place reads 192 to 229 bytes a frame, against 169 without them. That is within its budget of 240. The rise comes from code outside the animator. Each job worker that worked in a frame reports its busy time as a fraction, and each such reading is a new number object. The animation step gives more of the 16 job workers work. With `?jobs=2`, the place read 68 bytes with the characters and 71 without them.
 
-### A fault in clip resampling
+### Key times in clip resampling
 
-The masked base layer script first missed three.js's pose by 0.099. The fault was in [D-26](D-26-animation-clips.md)'s resampling. A clip that keeps its own key grid computes each frame's time in 64 bits. Its key times are 32-bit floats, and one can round up past the frame's time. A step track then took the key before. The resampler now counts a key within a millionth of the time as reached. The earlier fixture cases passed by chance: the two keys they hit held the same value.
+A clip that keeps its own key grid computes each frame's time in 64 bits. Its key times are 32-bit floats, and one can round up past the frame's time. A step track then takes the key before, and the masked base layer script misses three.js's pose by 0.099. So [D-26](D-26-animation-clips.md)'s resampler counts a key within a millionth of the time as reached. D-26's own fixture cases cannot show the fault: the two keys they hit hold the same value.
 
-How the data was produced: `bun bench/three-fixtures.ts`, then `cargo test -p null3d-core --test animation -- --nocapture` and `cargo test -p null3d-core --test no_alloc`, on 2026-10-03.
+How the data was produced: `bun bench/three-fixtures.ts`, then `cargo test -p null3d-core --test animation -- --nocapture` and `cargo test -p null3d-core --test no_alloc`.
 
 ## Decision
 
@@ -64,7 +64,7 @@ The rejected option kept the play state in TypeScript and wrote each slot's time
 
 ### Slots and layers
 
-Each object has 8 slots, up from the 4 of D-26, and 4 layers. Two layers that each cross-fade between two clips, plus an additive clip, fill 5. The rest absorb quick changes of mind, such as a cross-fade back while the first still runs. When all 8 hold clips, a play first takes the slot of a clip that fades out. Only then does it take the slot whose clip counts least, as [D-62](D-62-clip-weights-and-blends.md) changed it. A slot costs 32 bytes and an unused slot costs one comparison per frame.
+Each object has 8 slots and 4 layers. Two layers that each cross-fade between two clips, plus an additive clip, fill 5. The rest absorb quick changes of mind, such as a cross-fade back while the first still runs. When all 8 hold clips, a play first takes the slot of a clip that fades out. Only then does it take the slot whose clip counts least, as [D-62](D-62-clip-weights-and-blends.md) sets it. A slot costs 32 bytes and an unused slot costs one comparison per frame.
 
 Inside a layer, clips blend as three.js's mixer does, as D-26 settled: each clip counts only where it has tracks. Layer 0 blends with the rest pose below. Each layer above replaces the pose below by the layer's weight, times its own blend's weight up to 1. This is the override layer of Unity and Unreal. three.js has no layers. Its way to split a body is clips with tracks taken out, which blend half and half where both clips have tracks. With a layer at full weight, the upper body follows the wave alone. A masked layer at weight 1 gives what three.js gives for clips with the masked tracks taken out. The fixture checks both weights.
 
@@ -86,11 +86,11 @@ Events live in the clip's data, by id, with the names kept in TypeScript. The st
 
 The handlers run on the sketch's thread at the start of the next frame's update, before `onFixedUpdate` and `onUpdate`, as the plan asks. The sketch's update then sees what the clips reached, and a clip that a handler plays starts in that frame's step. The step runs after the frame's queued changes apply, and its time counts in the frame's transform time.
 
-A first version ran the handlers right after the step, and timed the step and the handlers as phases of their own. Each phase boundary reads the clock once more per frame, and each reading is a new number object. The handlers now run in the update phase and the step counts with the transforms, so the animator adds no boundary. The cost is a frame of delay for a sound that a footstep starts, about 17 ms at 60 frames per second.
+Handlers that ran right after the step, with the step and the handlers timed as phases of their own, would add phase boundaries. Each boundary reads the clock once more per frame, and each reading is a new number object. So the handlers run in the update phase and the step counts with the transforms, and the animator adds no boundary. The cost is a frame of delay for a sound that a footstep starts, about 17 ms at 60 frames per second.
 
 ### Removing an object
 
-Destroying an animated object removes its instance from the core. Its id and its run of skinning matrices go to the next instance that fits them, first fit. The matrix buffer never moves, so the threads that read it keep their views. Freed runs merge with the free runs next to them. A run at the end of the joints handed out is handed back, as [D-62](D-62-clip-weights-and-blends.md) decided after the core review. A first version left them apart. A game that mixed skeleton sizes could then be refused joints that were free.
+Destroying an animated object removes its instance from the core. Its id and its run of skinning matrices go to the next instance that fits them, first fit. The matrix buffer never moves, so the threads that read it keep their views. Freed runs merge with the free runs next to them. A run at the end of the joints handed out is handed back, as [D-62](D-62-clip-weights-and-blends.md) decided. Without the merge, a game that mixes skeleton sizes could be refused joints that are free.
 
 ## How three.js handles it
 
@@ -99,9 +99,8 @@ Each three.js `AnimationAction` keeps its time, weight, fade interpolant, loop m
 ## Consequences
 
 - `crates/null3d-core/src/animation/actions.rs` holds the play state and the advance; `system.rs` holds the layers, masks and additive blend; `clip.rs` builds additive clips.
-- The animation calls are now part of the engine's core interface (`CoreGlue`), and `updateAnimations` takes the step in whole microseconds.
-- `packages/engine/src/scene/animation.ts` holds the animator, and the rig that model loaders create. The glTF loader (M2-C7) creates rigs with `createAnimationRig` and animates objects with `animateObject`. Until it lands, only engine code and tests can give an object clips.
-- The E1218 error page now covers animator calls.
+- The animation calls are part of the engine's core interface (`CoreGlue`), and `updateAnimations` takes the step in whole microseconds.
+- `packages/engine/src/scene/animation.ts` holds the animator, and the rig that model loaders create. The glTF loader (M2-C7) creates rigs with `createAnimationRig` and animates objects with `animateObject`.
+- The E1218 error page covers animator calls.
 - The crowd features (M2-C6) skip or share the advance and the sample inside the same loop.
 - The phone and tablet timings of the step with the animator come from the [animation plan](../devices.md#the-animation-plan). Add them here.
-- The record is in the table in [README.md](README.md).

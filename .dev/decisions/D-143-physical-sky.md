@@ -1,12 +1,12 @@
 # D-143: Physical sky and aerial perspective
 
-Status: design decided by the helper of M2-EX26 on 11 October 2026, for the owner's review. The owner approved the demo's look on 13 October 2026. Its exposure band was fixed on 14 October 2026 (addendum). The figures of cost and size are under Data. Built: the physical sky is on main (`3dce97f60`). The owner's review of the design is pending. Date: 2026-10-11. Task: M2-EX26.
+Status: design decided by the helper of M2-EX26, for the owner's review. The owner approved the demo's look. Built: the physical sky is on main (`3dce97f60`), with the day's light and exposure under "The light through the day". The figures of cost and size are under Data. The owner's review of the design, and of the fixes that this record gives, is pending. Task: M2-EX26; the moon and the sunset light: M2-EX8.
 
-Summary: `scene.setBackground({ atmosphere })` draws a physically based sky: Rayleigh and Mie scattering and ozone, from Hillaire's three lookup tables (2020), as Unreal Engine and Bevy draw theirs. The same air hazes distant objects by distance and by the sun's angle, inside each surface's shader, as fog does. The sky's environment, the moon, the stars and the clouds follow it. The Low preset draws three.js's analytic sky in its place, matched in brightness. Nothing runs or downloads while no scene uses it.
+Summary: `scene.setBackground({ atmosphere })` draws a physical sky of Rayleigh and Mie scattering and ozone from Hillaire's three lookup tables, as Unreal Engine and Bevy do. The same air hazes distant objects in each surface's fog step, and the sky's environment, moon, stars, clouds and day's light follow it. Low draws three.js's analytic sky instead, matched in brightness, and nothing runs or downloads while no scene uses it.
 
 ## Question
 
-The owner asked on 11 October 2026 for the demos to be "as amazing as possible" (D-142). The sky is three.js's Preetham model ([D-118](D-118-sky-environment.md)). It has no ozone, no twilight past 2 degrees under the horizon, and it does not haze the scene's objects. How does the engine draw a physical sky on all three GPU paths? How do distant objects take the air's color? How does it light the scene, and what does it cost?
+The owner asked for the demos to be "as amazing as possible" (D-142). The analytic sky is three.js's Preetham model ([D-118](D-118-sky-environment.md)). It has no ozone, no twilight past 2 degrees under the horizon, and it does not haze the scene's objects. How does the engine draw a physical sky on all three GPU paths? How do distant objects take the air's color? How does it light the scene, and what does it cost?
 
 ## Rule
 
@@ -22,7 +22,7 @@ The owner asked on 11 October 2026 for the demos to be "as amazing as possible" 
 
 | Option | Verdict |
 | --- | --- |
-| A: an analytic fit, such as Preetham (now) or Hosek-Wilkie | Kept as the cheap sky. No ozone, no twilight, no altitude, and no physical link to the haze on objects |
+| A: an analytic fit, such as Preetham (the analytic sky) or Hosek-Wilkie | Kept as the cheap sky. No ozone, no twilight, no altitude, and no physical link to the haze on objects |
 | B: Bruneton's precomputed tables (2008), 4D scattering in a 3D texture | Rejected. Its tables are large, and its precompute is long: seconds on a phone. three.js's community atmosphere uses it, for scenes seen from space |
 | C: a march along each pixel's ray | Rejected. 30 or more steps of the air per pixel cost too much at full resolution, and more on phones |
 | D: Hillaire's tables (2020): transmittance, multiple scattering and a sky view | Chosen. Unreal Engine and Bevy use it. The tables are small and quick to draw, and a pixel of the sky reads one texel |
@@ -44,7 +44,7 @@ Each table is one triangle over a small 16-bit float target, which every GPU pat
 | B: a pass after the opaque objects that reads the depth | Rejected for the same reasons, and for its cost in bandwidth on phones |
 | C: work it out per pixel in the shaders' fog step, from a few values of each frame | Chosen |
 
-Over the distances of a scene, the air's density falls with height as the fog's does, and the sun's light changes little. So the shaders integrate Rayleigh and Mie along each ray exactly, with the fog's own height integral, one per kind of particle. They take the phase of each light per pixel. The core works out, once a frame, the sun's and the moon's light at the camera and the multiple scattering there, from the same model as the tables. This is exact for an air of two exponential layers, and it ignores the earth's curve. That error stays small within a few tens of kilometres.
+Over the distances of a scene, the air's density falls with height as the fog's does, and the sun's light changes little. So the shaders integrate Rayleigh and Mie along each ray exactly, with the fog's own height integral, one per kind of particle. They take the phase of each light per pixel. The core works out, once a frame, the sun's and the moon's light at the camera and the multiple scattering there, from the same model as the tables. This is exact for an air of two exponential layers, and it ignores the earth's curve. That error stays small within a few tens of kilometers.
 
 The step runs before the scene fog, so fog still lies over a hazed scene. The lit fog (D-133) applies after the opaque pass, over both. The values grow the frame's uniform block by 96 bytes. Without a physical sky, the shaders skip the step on one value of the frame, as they skip fog.
 
@@ -69,7 +69,7 @@ The coordinator asked that the Low preset keep the analytic sky. The quality set
 
 ## Data
 
-The `physical-sky` timing plan ran on the Mac (Apple M5 Max, Chrome 155, 120 Hz) on 13 October 2026, at a load of 3.3 ([devices](../devices.md)). Its page draws a ground of boxes under a low sun and clouds, with the window at 1512 x 758 points and 2 pixels to a point. Each item times three.js's analytic sky (off) against the physical sky (on), with the haze on the boxes. The figures are each side's median GPU time per frame, from the page's GPU timer.
+The `physical-sky` timing plan ran on the Mac (Apple M5 Max, Chrome 155, 120 Hz) at a load of 3.3 ([devices](../devices.md), [run file](../tested-devices/macbook-pro-chrome/20261012-214141-physical-sky.md)). Its page draws a ground of boxes under a low sun and clouds, with the window at 1512 x 758 points and 2 pixels to a point. Each item times three.js's analytic sky (off) against the physical sky (on), with the haze on the boxes. The figures are each side's median GPU time per frame, from the page's GPU timer.
 
 | Item | Analytic sky (ms) | Physical sky (ms) | Difference (ms) |
 | --- | --- | --- | --- |
@@ -88,7 +88,7 @@ The `physical-sky` timing plan ran on the Mac (Apple M5 Max, Chrome 155, 120 Hz)
 - The CPU time per frame of both workers stayed at 0.07 to 0.21 ms on both sides. The diffuse light from the CPU's copy of the model adds no time that the page can measure, even with the sun moving.
 - The page's timer measures whole frames, so the plan gives no GPU time for each table alone. SwiftShader's times say nothing about a real GPU, so the plan runs on the Mac's GPU only.
 - The Low preset draws the analytic sky, so its cost does not change. Medium, High and Ultra draw the physical sky at the costs above.
-- The allocation check (`bun run bench:allocation --atmosphere`, also with `--atmosphere-environment`, and on WebGL2) passed on 12 October 2026: no allocation per frame in the sketch worker or the render worker.
+- The allocation check (`bun run bench:allocation --atmosphere`, also with `--atmosphere-environment`, and on WebGL2) passes: no allocation per frame in the sketch worker or the render worker.
 - Download sizes are under Consequences.
 
 ## Decision
@@ -100,190 +100,84 @@ The `physical-sky` timing plan ran on the Mac (Apple M5 Max, Chrome 155, 120 Hz)
 
 ## Consequences
 
-- The sky model now has two more copies: the shaders' and the core's CPU copy for the diffuse light and the frame's values. A unit test compares the CPU copy's transmittance and sky light with known values.
+- The sky model has two more copies: the shaders' and the core's CPU copy for the diffuse light and the frame's values. A unit test compares the CPU copy's transmittance and sky light with known values.
 - The frame's uniform block grows by 96 bytes on every path.
 - Every surface shader holds the haze step, so each shader build grows by 2 to 4% after Brotli, and the small sprite and line builds by 6 to 11%. The engine core grows by 2.5%, and the environment's generator by 2.2% for its panorama step. The physical sky's own shaders load on first use: 8 to 9 KB after Brotli for each GPU path.
 
-## Addendum: the physical exposure's band and the sun-to-moon hand-over
+## The light through the day
 
-Status: fixed on 14 October 2026, for the owner's review. Date: 2026-10-14. Task: none.
+`timeOfDay(hour, { model: 'physical' })` gives the main light, the ambient light, the fog and the exposure that match the physical sky. The analytic model follows D-118's rules, and its moon keeps D-118's floor of 25 degrees.
 
-The owner hit a fault in the showcase scenes on 14 October 2026. Surfaces washed out at some times of day, and one moment was far too bright. The physical model's exposure rose to its limit of 200 just above the horizon, and its main light fell to zero there.
+### Exposure
 
-### The cause
+- The exposure follows `ratio ** PHYSICAL_ADAPTATION`, at most `PHYSICAL_EXPOSURE_LIMIT`. Here `ratio` is the day sky's mean luminance over the sky's at the sun's height. `PHYSICAL_ADAPTATION` is 0.6, and the limit is 4. The exposure has no floor.
+- The sky's mean luminance is continuous across the horizon, and its interpolation blends in log space between the table's rows. It falls about 9-fold from 15 degrees down to the horizon. By 6 degrees under it, it has fallen about 700-fold.
+- The day's exposure is about 0.55, which brings the physical day's brightness to the analytic model's. The day's ambient luminance times its exposure is 0.66 at noon, against the analytic model's 0.64, and 0.62 at 10:00, against 0.68.
+- The exposure follows the sun alone. It moves from the dusk's to the night's `NIGHT_EXPOSURE` of 1.1 as the sun sinks from 6 to 14 degrees under the horizon (`NIGHT_EXPOSURE_DEPTH`). It then holds at 1.1 until dawn.
 
-The exposure followed `ratio ** PHYSICAL_ADAPTATION`, clamped to `PHYSICAL_EXPOSURE_LIMIT = 200`. Here `ratio` is the day sky's mean luminance over the sky's at the sun's height. That mean is continuous across the horizon. It falls about 9-fold from 15 degrees down to the horizon. By 6 degrees under it, it has fallen about 700-fold. The interpolation blends in log space between the table's rows. With a nearly full adaptation, 0.85, the exposure reached the 200 limit at the darkest dusk. The moon's main light was `nightfall ** 3`, which is zero until 6 degrees under the horizon. So the sun's light went out at the horizon, and nothing lit the scene from 0 to 6 degrees down.
+### The moon is brightest at midnight
 
-| Hour | Exposure before | Exposure after | Main light before | Main light after |
-| --- | --- | --- | --- | --- |
-| 15 | 1 | 1 | 3.26 | 3.26 |
-| 17.6, golden hour | 2.12 | 1.30 | 1.98 | 1.98 |
-| 18.0, the horizon | 6.58 | 1.94 | 0 | 0.23 |
-| 18.4, blue hour | 164 | 4.0 | 0 | 0.21 |
-| 18.5 | 200 | 4.0 | 0 | 0.26 |
-| 23, night | 3.5 | 3.5 | 0.4 | 0.4 |
+- The physical moon stands opposite the sun and rises from the horizon: its height is `Math.max(-elevation, 0)`, and the physical sky shows that moon. It is highest at midnight and on the horizon at dusk and dawn.
+- The moon's light, its sky's light, and its share of the ambient light and the fog fall with its height (`moonShareAt`). The share is the sine of its height over the sine of 60 degrees, raised to the power 0.35, and at most 1. The fall is gentle near midnight and quickens near the horizon, where moonlight crosses the most air.
+- The physical moon's light is `PHYSICAL_MOON = 0.3`, a little below the analytic model's 0.4.
 
-### The fix
+### The main light goes out with the sun's disc
 
-- `PHYSICAL_EXPOSURE_LIMIT` falls from 200 to 4, and `PHYSICAL_ADAPTATION` from 0.85 to 0.3. The sun on the horizon then gives an exposure of about 2, as the analytic model's `EXPOSURE` table does. The curve rises from 1 by day to 4 at the darkest dusk, then settles at 3.5 under the moon.
-- The main light cross-fades from the sun to the moon between 6 degrees above and 12 degrees below the horizon (`MOON_LIGHT`). So the sun's light and the moon's overlap, and they are never both zero.
-- The sky's mean luminance and its interpolation are unchanged: they were already continuous, and a unit test now holds them so.
+- The sun's light goes out as its disc sets: full on the horizon, gone 1 degree under it (`SUN_SET`). Once the disc is down, the glowing sky lights the scene through the ambient light and the sky's environment.
+- The moon's light begins once the sun is 5 degrees down, and is complete by 18 degrees (`MOON_LIGHT = [-5, -18]`). So the moon never lights the scene while the sun stands up, and blue hour is the sun 5 degrees down, lit by the sky alone.
+- Between the two, the light gives none, and only then does its direction turn from the sun's place to the moon's. Whenever the light is on, it comes from the sun's place, held 1 degree up as the sun sets, or from the moon's.
+- The total light that a flat surface takes holds at 0.70 through the turn, against 0.68 at sunset. Walls that face the sunset lose their red light within four minutes of sunset, as they do outdoors.
 
-Over 0 to 24 hours the exposure stays within 1 to 4, and no step of 0.1 hours changes it by more than 1.30 times. The main light's least intensity is 0.12, at about half a degree under the horizon. There the sun has gone and the moon has not yet risen. Before, the light was zero from 0 to 6 degrees down. Three unit tests hold the band, the step and the continuity of the sky's mean light across the horizon.
+### Ambient light and fog through the twilight
 
-The exposure changes at golden hour and at blue hour, and in the atmosphere demo's held frame. Those image references must be made again in both sets.
+- The ambient light and the fog cross-fade between the sun's sky and the moon's night sky, with the same hand-over as the main light, so the twilight's fill never goes out.
+- The sun's sky mean is held at a sun height of 5 degrees (`SUN_SKY_HOLD`), and the moon's sky at a moon height of 40 degrees (`MOON_SKY_FLOOR`). Either sky alone collapses at the crossing: the sun's sky mean falls to 0.001 at 6 degrees down. Held this way, a main light that goes out does not darken the scene.
+- The moon's sky, times the exposure, falls from 0.13 at midnight to 0.09 at 05:00, and holds there until the sun's sky takes over. So the sky never goes dark before dawn, and the moon on the horizon shows a fifth of the glow that a full-strength moon would.
 
-The second addendum below raises the day's exposure and reworks this hand-over; its curve and its figures replace the ones here.
+### Rejected options
 
-## Second addendum: the main light, the ambient and the day's exposure
+- **A near-full adaptation, such as 0.85 with a limit of 200.** At the darkest dusk it drives the exposure to its limit, and surfaces wash out.
+- **An exposure of at least 1.** The physical sky's ambient light is about 1.9 times the analytic model's at noon, so the day looks flat.
+- **An exposure that follows the moon's height.** It rises as the moon sinks toward dawn, to 3.4 at 05:00 against 1.1 at midnight. The scene brightens as the moon sets, and the low moon's disc and glow read as a sun's.
+- **A moon held 25 degrees up, as the analytic model holds it.** It already stands there at sunset, so a hand-over to it swings the light 25 degrees and flips the shadows.
+- **A main light kept on through the hand-over.** For an hour after sunset it grazes the scene from bearings where neither the sun nor the moon stands. When its bearing crosses Creek's stream, the water's ripples catch it as a red glint path, and the slope that faces it lights up. A grazing light gives a flat surface almost nothing, so turning it off costs no light.
 
-Status: fixed on 14 October 2026, for the owner's review. Date: 2026-10-14. Task: none.
-
-The owner found the first fix wrong in the showcase. Dusk and Night looked swapped, the day looked washed out, and the ambient went out at dusk. Dusk then read as the darkest moment of the day.
-
-### The cause
-
-- The moon stood at `Math.max(-elevation, MOON_FLOOR)`, and the floor of 25 degrees lifted it whenever the sun was less than 25 degrees below the horizon. At the horizon it already stood 25 degrees up, opposite the sun, so the hand-over swung the light 25 degrees and flipped the shadows. With the sky still the sunset's, that read as night.
-- The moon's light began at a sun height of +6 degrees (`MOON_LIGHT = [-6, 12]`), while the sun was still warm.
-- The ambient light added the sun's sky mean and the moon's, and the moon's was gated by `nightfall`. The sun's sky mean collapses below the horizon, so the ambient fell to 0.001 at 6 degrees down: a hole at dusk. The night, lit as by day from the moon, then had more light than the dusk.
-- The exposure was held to at least 1, so the day never adapted below 1. The physical sky's ambient is about 1.9 times the analytic model's at noon, so the day looked flat.
-
-### The fix
-
-- The main light cross-fades its direction, its colour and its intensity between the sun and the moon. The direction sweeps about the horizon from the sun's bearing to the moon's, and its height passes between them, so nothing jumps.
-- The physical model's own moon rises from the horizon: its height is `Math.max(-elevation, 0)`, and the physical sky shows that moon. The analytic model and its sky keep D-118's floor of 25 degrees, so its night look and its references do not change.
-- The moon's light begins once the sun is 5 degrees down, and is complete by 18 degrees (`MOON_LIGHT = [-5, -18]`). The sun's own light fades over the same twilight (`SUN_TWILIGHT = [0, -18]`), so the light never falls to zero. Blue hour is then the sun 5 degrees down, as its name gives, and not the moon.
-- The ambient light and the fog cross-fade between the sun's sky and the moon's night sky. They use the same hand-over, so the twilight's fill never goes out. The sun's sky mean is held at a sun height of 5 degrees (`SUN_SKY_HOLD`), and the moon's sky at a moon height of 40 degrees (`MOON_SKY_FLOOR`). Either sky alone collapses at the crossing.
-- `PHYSICAL_ADAPTATION` rises from 0.3 to 0.6, and the floor of 1 on the exposure goes. The day's exposure is then about 0.55, which brings the physical day's brightness to the analytic model's.
-- The physical moon's light is `PHYSICAL_MOON = 0.3`, a little below the analytic model's 0.4. The exposure moves to `NIGHT_EXPOSURE = 1.1` over the moon's first `MOON_EXPOSURE_RISE = 58` degrees of height, not over the sun's hand-over. The dusk's exposure is held while the moon is low, so its missing key is not paid for with a dark moment. The night is then dimmer than the dusk.
-
-### The corrected curve
+### The curve
 
 `Total light` is the key plus the ambient, each times the exposure, for a flat surface: `max(0, -direction.y) * intensity * exposure + luminance(ambient.color) * ambient.intensity * exposure`.
 
 | Hour | Light height | Light intensity | Exposure | Sun height | Total light |
 | --- | --- | --- | --- | --- | --- |
-| 6 | 0.0 | 0.234 | 3.78 | 0.0 | 0.663 |
+| 0 | 60.0 | 0.300 | 1.10 | -60.0 | 0.330 |
+| 3 | 37.8 | 0.266 | 1.10 | -37.8 | 0.209 |
+| 4.5 | 19.4 | 0.214 | 1.10 | -19.4 | 0.102 |
+| 5.3 | 9.1 | 0.039 | 2.61 | -9.1 | 0.377 |
+| 6 | 1.0 | 0.234 | 3.78 | 0.0 | 0.679 |
 | 8 | 25.7 | 3.124 | 0.79 | 25.7 | 1.580 |
 | 10 | 48.6 | 3.315 | 0.60 | 48.6 | 2.108 |
 | 12 | 60.0 | 3.360 | 0.55 | 60.0 | 2.253 |
 | 15 | 37.8 | 3.262 | 0.66 | 37.8 | 1.895 |
 | 17 | 13.0 | 2.754 | 1.08 | 13.0 | 1.086 |
-| 17.6 | 5.2 | 1.976 | 1.70 | 5.2 | 0.613 |
-| 18 | 0.0 | 0.234 | 3.78 | 0.0 | 0.663 |
-| 18.4 | -5.2 | 0.187 | 3.88 | -5.2 | 0.682 |
-| 19 | 4.3 | 0.244 | 3.39 | -13.0 | 0.331 |
-| 20 | 25.7 | 0.300 | 2.34 | -25.7 | 0.377 |
-| 23 | 56.8 | 0.300 | 1.10 | -56.8 | 0.319 |
+| 17.6, golden hour | 5.2 | 1.976 | 1.70 | 5.2 | 0.613 |
+| 18, the horizon | 1.0 | 0.234 | 3.78 | 0.0 | 0.679 |
+| 18.4, blue hour | 5.2 | 0.000 | 4.00 | -5.2 | 0.702 |
+| 19 | 13.0 | 0.124 | 1.17 | -13.0 | 0.116 |
+| 21 | 37.8 | 0.266 | 1.10 | -37.8 | 0.209 |
+| 23, night | 56.8 | 0.296 | 1.10 | -56.8 | 0.314 |
 
-The day's ambient luminance times its exposure is 0.66 at noon against the analytic model's 0.64, and 0.62 at 10:00 against 0.68. The total light falls from 2.25 at noon to 1.09 at 17:00 and 0.68 at the crossing. From 18:00 to midnight it runs between 0.31 and 0.38. Dusk is 0.68, the low moon at 19:00 is 0.33, the moon at 20:00 is 0.38, and the night is 0.32. No hour falls more than a tenth below the night's value. The exposure stays within 0.55 to 4, and no 0.1-hour step changes it by more than 1.5 times. Between 0.05-hour samples the total light changes by less than 1.25 times. The main light's direction changes by less than 0.24, and its intensity by less than 0.39. The moon takes no part while the sun stands up. Four unit tests hold the direction and the intensity, the moon's absence by day, the presets' heights, and the total light's continuity and order.
+How the figures were produced: `timeOfDay(hour, { model: 'physical' })` from `packages/engine/src/scene/time-of-day.ts` at `e7df2a293`, with the total light worked out as above and Rec. 709 luminance.
 
-The night and night-8-bit `physical-sky-*` tests draw different pixels, so their references are made again in both sets. The blue-hour, golden-hour, afternoon and no-haze images stay within their tolerance.
+- The total light falls from 2.25 at noon to 1.09 at 17:00 and 0.68 at the crossing. The night is brightest at midnight. From midnight it fades without a step to its least light at about 04:30, under a third of midnight's. The dawn's light then rises. The evening is the same curve in reverse.
+- Over the whole day the exposure stays within 0.55 to 4, and no 0.1-hour step changes it by more than 1.5 times. Between 0.05-hour samples the total light changes by less than 1.25 times.
+- The showcase moods Dawn (06:12) and Dusk (18:24) lie before the moon's part of the night.
+- Unit tests in `time-of-day.test.ts` hold the exposure's band and step, and the continuity of the sky's mean light across the horizon. They hold that the light comes only from the sun's or the moon's place while it is on, that its direction moves with no step while it gives light, and that it never shines up from under the ground. They hold that the light is out at blue hour and that the moon takes no part while the sun stands up. They hold that the scene is brightest at midnight, falls without rising from midnight to 04:30, and keeps a quarter of midnight's light. They hold that the moon's light dims as it sinks while the exposure holds at 1.1.
 
-## Third addendum: fog at dusk follows the mean sky light
+## Fog follows the mean sky light
 
-Status: fixed on 19 October 2026, for the owner's review. Date: 2026-10-19. Task: the dusk haze experiment.
+The fog takes the sky's mean light at every hour, and the exposure follows the same mean. The sky's light along the horizon is its brightest band, and at a low sun that band keeps the sunset's glow after the sun has gone. A fog of the horizon's light would reach an exposed luminance of 0.48 at blue hour, against 0.22 at golden hour. It would grow brighter as the sun sets and lay a warm haze over Creek and Night town, with only the fireflies reading. The analytic model's fog takes the sky's mean too.
 
-The owner found Creek and Night town washed out at Dusk and Golden. At Dusk a bright brown haze lay over the trees, rocks and stream, and only the fireflies read.
+- A unit test holds that the fog's red never exceeds 1.1 times its blue at any hour, which is the mean of a clear sky. The smoothness test holds the values between hours.
+- Measured fog colors, red over blue: dawn 1.03, morning 0.75, midday 0.76, afternoon 0.75, golden hour 1.02, blue hour 1.03, night 0.52.
+- The showcase scenes thin their own haze at golden hour: Creek's factor is 1.2, and Night town's is 0.7. `examples.md` records the pictures and the figures.
 
-### The cause
-
-The physical model gave the fog the sky's light 3 degrees up, averaged all around. That band keeps the sunset's glow after the sun has gone. The exposure followed the sky's mean light, which falls away far faster than that band. It rose to its limit of 4. The exposed fog then reached a luminance of 0.48 at the blue hour, against 0.22 at golden hour. The fog grew brighter as the sun set, and its color was the sunset's warm glow. The analytic model had already turned its fog from the horizon's color to the sky's average as the sun set (`mix(DAY_HORIZON, DAY_AVERAGE, dusk)`). The physical model had not.
-
-At the held afternoon and night hours no value changes, and no other test sketch sets a fog from the physical model.
-
-### The fix
-
-`physicalDay` blends the fog's color from the horizon's light to the sky's mean light. The blend runs over the sun's height, from 5 degrees above the horizon to 5 below it. It starts before the sun reaches the horizon, where the exposure rises fastest. So no evening hour carries a brighter fog than the sky. The moon's light takes the same share as before.
-
-| Hour | Exposure | Fog's exposed luminance, before | After |
-| --- | --- | --- | --- |
-| 15, afternoon | 0.658 | 0.185 | 0.185 |
-| 17.6, golden hour | 1.700 | 0.218 | 0.218 |
-| 18.0, the sun on the horizon | 3.779 | 0.471 | 0.288 |
-| 18.4, blue hour | 3.885 | 0.484 | 0.109 |
-| 19 | 3.394 | 0.053 | 0.053 |
-| 23, night | 1.102 | 0.011 | 0.011 |
-
-- A unit test holds that no hour of the evening has an exposed fog above 1.5 times golden hour's. It also holds that the dusk fog's red is under 1.5 times its blue, while golden hour's is above 1.8.
-- The showcase scenes also thin their own haze at golden hour. Creek's factor falls from 2.2 to 1.2, and the showcase Night town gains a factor of 0.7. `examples.md` records the pictures and the figures.
-- No image reference changes. The physical sky's test sketch sets no fog, and the showcase image tests hold the afternoon and the night.
-
-### What the fix showed
-
-With the veil gone, Creek at Dusk is dark. The sun is below the horizon, its main light grazes the ground, and the sky's environment is nearly out. The scene's fine detail survives: the spread a one-pixel blur leaves out stayed at 1.3 of 255 in the near band, against 1.3 before. Raising the exposure was tried at 1.6 and 2.2 times. It brightened the fog with the scene and did not add detail, so the exposure band stays as it is. A scene that faces the sunset, as the dawn side of Creek's route does, keeps a lit valley.
-
-### Addendum, 19 October 2026: the mean light at every hour
-
-The owner asked for the rule at every hour: the Creek and Night town items
-wash out at every time of day except night. The fog now takes the sky's mean
-light at every hour, not only as the sun sets, and the exposure follows that
-same mean. The evening-only rule and its golden-hour bound are gone. The unit
-test now holds that the fog's red never exceeds 1.1 times its blue at any
-hour, which is the mean of a clear sky, and the smoothness test holds the
-values between hours.
-
-Measured fog colours, red over blue: dawn 1.03, morning 0.75, midday 0.76,
-afternoon 0.75, golden hour 1.02, blue hour 1.03, night 0.52. Before this
-change, golden hour's fog carried the horizon's warm glow, with red more than
-1.8 times blue, and every daytime hour took the horizon's light rather than
-the mean.
-
-## Fourth addendum: the moon is brightest at midnight
-
-Status: fixed on 20 October 2026, for the owner's review. Date: 2026-10-20. Task: M2-EX8.
-
-The owner watched Night town run from midnight to dawn and asked for the night to peak at midnight. The moon's light should be brightest then, and the moonlight and the dark should both fade slowly toward dawn. The owner found three faults. The scene brightened toward dawn. The low moon glowed like a sun. The sky went dark for a moment just before the dawn's light came.
-
-### The cause
-
-- The physical moon stands opposite the sun, so it is highest at midnight and on the horizon at dusk and dawn. Its light and its sky had the same strength at every height above the horizon.
-- The exposure moved from the dusk's to the night's over the moon's first 58 degrees of height (`MOON_EXPOSURE_RISE`). At midnight it was 1.1. As the moon sank toward dawn, the exposure rose again: 1.6 at 03:00, 2.3 at 04:00 and 3.4 at 05:00. The scene brightened as the moon set, and the moon on the horizon took more than three times its midnight exposure, so its disc and its glow read as a sun's.
-- At 05:20 the moon's sky began its hand-over to the sun's, which halved it while the exposure stayed high. The sun's sky was still too dim to make up for it, so the sky went dark for a moment before dawn.
-
-### The fix
-
-- The moon's light, its sky's light, and its share of the ambient light and the fog fall with its height: the sine of its height over the sine of 60 degrees, raised to the power 0.35, and at most 1 (`moonShareAt`). The fall is gentle near midnight and quickens near the horizon, where moonlight crosses the most air.
-- The exposure follows the sun alone. It moves from the dusk's to the night's as the sun sinks from 6 to 14 degrees under the horizon (`NIGHT_EXPOSURE_DEPTH`), then holds at 1.1 until dawn. It no longer rises as the moon sinks.
-- The analytic model is unchanged: its moon keeps D-118's floor of 25 degrees.
-
-### The measured curve
-
-`Total light` is the key plus the ambient, each times the exposure, for a flat surface, as in the second addendum.
-
-| Hour | Moon height | Exposure, before | After | Total light, before | After |
-| --- | --- | --- | --- | --- | --- |
-| 19 | 13.0 | 3.39 | 1.17 | 0.398 | 0.114 |
-| 21 | 37.8 | 1.58 | 1.10 | 0.339 | 0.209 |
-| 23 | 56.8 | 1.10 | 1.10 | 0.319 | 0.314 |
-| 0 | 60.0 | 1.10 | 1.10 | 0.330 | 0.330 |
-| 3 | 37.8 | 1.58 | 1.10 | 0.339 | 0.209 |
-| 4 | 25.7 | 2.34 | 1.10 | 0.377 | 0.139 |
-| 4.5 | 19.4 | 2.86 | 1.10 | 0.373 | 0.102 |
-| 5 | 13.0 | 3.39 | 1.17 | 0.398 | 0.114 |
-| 5.3 | 9.1 | 3.67 | 2.61 | 0.555 | 0.382 |
-| 5.6 | 0 | 3.89 | 4.00 | 0.694 | 0.715 |
-
-The night is now brightest at midnight. From midnight it fades without a step to its least light at about 04:30, under a third of midnight's. The dawn's light then rises. The moon's sky, times the exposure, falls from 0.13 at midnight to 0.09 at 05:00 and holds there until the sun's sky takes over, so the sky never goes dark before dawn. The moon on the horizon at 05:00 shows 0.09 against 0.41 before, a fifth of its old glow. The evening is the same curve in reverse: the night deepens after dusk and brightens as the moon climbs.
-
-The showcase moods are unchanged: Dawn (06:12) and Dusk (18:24) lie before the moon's part of the night, and Night (23:00) moves by under 2 percent. Two unit tests hold the curve. The first holds that the scene is brightest at midnight, falls without rising from midnight to 04:30, and keeps a quarter of midnight's light. The second holds that the moon's light dims as it sinks while the exposure holds at 1.1.
-
-## Fifth addendum: the main light goes out with the sun's disc
-
-Status: fixed on 20 October 2026, for the owner's review. Date: 2026-10-20. Task: M2-EX8.
-
-The owner watched Creek at dusk. About 40 minutes after sunset, a red glitter path ran up the stream toward the camera and lit one mountain slope red, then went away. The owner asked what it was.
-
-### The cause
-
-The second addendum kept the main light on through the whole hand-over, so that the light never fell to zero. The sun's own light faded over the sun's first 18 degrees under the horizon, and the moon's rose from 5 degrees under. Their direction swept about the horizon, from the sun's bearing to the moon's, at a height of about 1 to 5 degrees. So for an hour after sunset a red light grazed the scene from bearings where neither the sun nor the moon stood. At 18:40 its bearing crossed Creek's stream, which runs down its gorge. The water's ripples then caught it as a sunset glint path, and the slope that faced it lit up.
-
-The dip that the second addendum feared came from the ambient light, which fell to nothing below the horizon. The ambient light and the fog have held the twilight's sky since then (`SUN_SKY_HOLD`), so a main light that goes out no longer darkens the scene.
-
-### The fix
-
-- The sun's light goes out as its disc sets: full on the horizon, gone 1 degree under it (`SUN_SET`). Once the disc is down, the glowing sky lights the scene through the ambient light and the sky's environment.
-- The moon's light rises from 5 degrees under the horizon, as before.
-- Between the two, the light gives none, and only then does its direction turn from the sun's place to the moon's. Whenever the light is on, it comes from the sun's place, held 1 degree up as the sun sets, or from the moon's.
-
-The total light that a flat surface takes, the key and the ambient times the exposure, holds at 0.70 through the turn, against 0.68 at sunset. A grazing light gave a flat surface almost nothing. Walls that face the sunset lose their red light within four minutes of sunset, as they do outdoors. Blue hour, the showcase's Dusk mood, is lit by the sky alone. Four unit tests changed with the rule. The light comes only from the sun's or the moon's place while it is on. Its direction moves with no step while it gives light. It never shines up from under the ground. At blue hour it is out. The analytic model is unchanged.
+Without the veil, Creek at Dusk is dark. The sun is below the horizon, its main light is out, and the sky's environment is nearly out. The scene's fine detail survives: the spread that a one-pixel blur leaves out is 1.3 of 255 in the near band. A higher exposure, of 1.6 and 2.2 times, was rejected: it brightens the fog with the scene and adds no detail, so the exposure band stays as it is. A scene that faces the sunset, as the dawn side of Creek's route does, keeps a lit valley.

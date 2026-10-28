@@ -35,7 +35,7 @@
     },
     {
       "id": 3,
-      "prompt": "Add an animated water surface to my null3d scene: gentle waves that move the vertices, a lighter color on the crests, and it should still receive shadows and fog.",
+      "prompt": "Add an animated liquid-mercury surface to my null3d sci-fi logo reveal: gentle waves that move the vertices, a brighter color on the crests, and it should still receive shadows and fog.",
       "expected_output": "A materials.shader material whose one WGSL literal holds a vertexOffset for the waves and a surface function that starts from defaultSurface and changes color by wave height, keeping engine lighting, shadows and fog; bounds enlarged; WebGL2 check suggested.",
       "files": [],
       "expectations": [

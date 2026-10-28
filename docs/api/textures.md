@@ -200,6 +200,7 @@ const screen = materials.unlit({ map: textures.fromPass(map) });
 - The texture has the pass's size. It holds linear color after the exposure, so its `colorSpace` is `'linear'`. Its `format` is `'rgba16float'` where the device draws high dynamic range color, and `'rgba8unorm'` elsewhere.
 - The image stands upright on a plane, with v = 0 at its bottom row.
 - It samples as no texture until the pass first draws, and keeps the last image while the pass is switched off.
+- A pass that keeps two states (`history: true`) samples the state that its last run wrote. `texture.layer` gives that state's first layer, which a reader of the texture array names for the newest state.
 - `texture.update` throws E1208: the pass alone gives its texels. `render.removePass` destroys the textures of the pass.
 - A pass runs only while a texture shows it. [Render graph API](render.md) covers passes.
 

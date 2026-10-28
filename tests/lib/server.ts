@@ -7,6 +7,7 @@ import { constants } from 'node:os';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import { localHostName } from '../../tools/lib/host.ts';
+import { refuseInQuietWindow } from '../../tools/lib/quiet-window.ts';
 import { RUNS_DIR } from './report-collector.ts';
 
 /**
@@ -263,6 +264,7 @@ export async function refuseOtherCopy(url: string, root = REPO_ROOT): Promise<vo
  * and waits until it answers.
  */
 export async function startServer(https = false): Promise<DevServer> {
+	refuseInQuietWindow('The dev server');
 	const url = https
 		? `https://${localHostName()}.local:${HTTPS_PORT}`
 		: `http://localhost:${HTTP_PORT}`;
@@ -298,6 +300,7 @@ export async function startPreview(
 	probe: string,
 	root = REPO_ROOT,
 ): Promise<DevServer> {
+	refuseInQuietWindow('The preview server');
 	const url = `http://localhost:${port}`;
 	await refuseTaken(url);
 	const args = ['preview', '--outDir', outDir, '--port', String(port), '--strictPort'];

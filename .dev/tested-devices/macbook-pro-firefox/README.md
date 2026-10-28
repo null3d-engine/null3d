@@ -2,7 +2,7 @@
 
 - Device: MacBook Pro, Apple M5 Max
 - OS: macOS 26.6.2
-- Browser: Firefox 158.0 (157.0 before October 2026)
+- Browser: Firefox 158.0
 - GPU: Hidden: "Apple M1, or similar", and empty WebGPU adapter details
 - GPU paths: WebGPU, compatibility mode, WebGL2
 - Where: The owner's Mac

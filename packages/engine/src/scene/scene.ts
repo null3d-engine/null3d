@@ -660,6 +660,12 @@ export interface DirectionalShadowOptions {
 	 * that moves draws the larger tile again in every frame.
 	 */
 	heroTileSize?: 1024 | 2048 | 4096;
+	/**
+	 * How much of the light's shadow it draws, from 0 for none to 1, the default, for all of it.
+	 * The shader mixes each shadow lookup toward full light by the rest, as three.js's
+	 * `LightShadow.intensity` does.
+	 */
+	intensity?: number;
 }
 
 /**
@@ -712,6 +718,12 @@ export interface LightShadowOptions {
 	 * times the sine of its angle to the light. The default is 0.02.
 	 */
 	normalBias?: number;
+	/**
+	 * How much of the light's shadow it draws, from 0 for none to 1, the default, for all of it.
+	 * The shader mixes each shadow lookup toward full light by the rest, as three.js's
+	 * `LightShadow.intensity` does.
+	 */
+	intensity?: number;
 }
 
 /**
@@ -889,6 +901,7 @@ const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = 
 	[C.LIGHT_VALUE_PENUMBRA]: ['penumbra', 0, 1, 'from 0 to 1'],
 	[C.LIGHT_VALUE_SHADOW_BIAS]: ['shadow bias', 0, Number.MAX_VALUE, 'at least 0'],
 	[C.LIGHT_VALUE_SHADOW_NORMAL_BIAS]: ['shadow normal bias', 0, Number.MAX_VALUE, 'at least 0'],
+	[C.LIGHT_VALUE_SHADOW_INTENSITY]: ['shadow intensity', 0, 1, 'from 0 to 1'],
 	[C.LIGHT_VALUE_SHADOW_CASCADES]: ['shadow cascades', 1, 4, 'a whole number from 1 to 4'],
 	[C.LIGHT_VALUE_SHADOW_MAP_SIZE]: [
 		'shadow map size',
@@ -918,6 +931,7 @@ const SHADOW_NUMBERS = [
 	['distance', C.LIGHT_VALUE_SHADOW_DISTANCE],
 	['contactDistance', C.LIGHT_VALUE_SHADOW_CONTACT],
 	['heroTileSize', C.LIGHT_VALUE_HERO_SIZE],
+	['intensity', C.LIGHT_VALUE_SHADOW_INTENSITY],
 ] as const;
 
 /** The direction a new directional or spot light points: straight down. */
@@ -1715,7 +1729,7 @@ export class Mesh extends Object3D {
 
 	/**
 	 * Raises or lowers the threshold that picks this mesh's levels of detail, as Godot's
-	 * `lod_bias` does. A bias above 1 makes every switch happen farther away, so the object draws
+	 * `lod_bias` does. A bias above 1 makes every switch happen nearer, so the object draws
 	 * coarser levels. A bias below 1 keeps its detail, which a hero object wants. The bias
 	 * multiplies the threshold of the level switches and of the distance at which the object
 	 * hides, so both move by the same factor. The default is 1. The object's mesh needs levels
@@ -3212,9 +3226,9 @@ function writeProperty(
 		const material = target as Material;
 		if (!material.live) return;
 		if (binding.components === 2) {
-			// A pair is where the maps sit on the texture coordinates.
+			// A pair is where a map sits on the texture coordinates: one map's, or every map's.
 			if (binding.name === 'uvOffset' || binding.name === 'uvScale')
-				material.writeUvPair(binding.name, mixed(0), mixed(1));
+				material.writeUvPair(binding.name, mixed(0), mixed(1), binding.slot);
 			return;
 		}
 		if (binding.components === 1) material.writeUniform(binding.name, mixed(0));
@@ -3410,6 +3424,8 @@ export class Scene implements ViewHolder {
 	private readonly imageTasks = new Set<Promise<void>>();
 	/** @internal The picture that failed to write, once: the frame loop reports it. */
 	private imageFailure: unknown;
+	/** @internal The draws that answer each frame whether their feature is ready. */
+	private readonly readiness: Array<() => void> = [];
 
 	/** @internal Starts the area lights' tables' load, once, which loads their code on first use. */
 	private loadAreaTables(): void {
@@ -4772,7 +4788,9 @@ export class Scene implements ViewHolder {
 	 *
 	 * Throws E1223 for a description that the adapter cannot place or a capacity that it cannot
 	 * take, E1215, E1216 and E1217 for WGSL and values that `materials.shader` refuses, E1206 for
-	 * vertex data that makes no mesh, and E1406 when the adapter does not download.
+	 * vertex data that makes no mesh, and E1406 when the adapter does not download. A draw that
+	 * arrives after the first frame on a device that draws directly fails the frame with E1506:
+	 * create it in the setup, and await this call there.
 	 */
 	async addComputeInstances<const Wgsl extends string | CompiledWgsl = string | CompiledWgsl>(
 		description: FeatureDescription,
@@ -4792,10 +4810,33 @@ export class Scene implements ViewHolder {
 				materials: makers.materials,
 				createMesh: (mesh, material, place) => this.createMesh({ mesh, material, ...place }),
 				createBatch: (mesh, material, count) => this.createInstances(mesh, count, { material }),
+				watchReady: (poll) => this.watchReady(poll),
 				fail: (detail) => new EngineError('E1223', detail),
 			},
 			call,
 		);
+	}
+
+	/**
+	 * @internal Asks `poll` before each frame's work, and forgets it when the returned function is
+	 * called. A feature-instance draw reports each frame whether its feature's `ready` callback
+	 * says that it draws.
+	 */
+	private watchReady(poll: () => void): () => void {
+		this.readiness.push(poll);
+		return () => {
+			const at = this.readiness.indexOf(poll);
+			if (at >= 0) this.readiness.splice(at, 1);
+		};
+	}
+
+	/**
+	 * @internal Asks each feature draw whether it draws now. The sketch's thread calls it before
+	 * the frame's commands, so a feature that stops drawing takes no room in that frame.
+	 */
+	pollReadiness(): void {
+		const polls = this.readiness;
+		for (let k = 0; k < polls.length; k++) polls[k]?.();
 	}
 
 	/**

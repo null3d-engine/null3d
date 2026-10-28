@@ -27,6 +27,7 @@
 		"null3d": "bin/null3d.js"
 	},
 	"exports": {
+		"./agent-rules": "./src/agent-rules.js",
 		"./assets": "./src/assets/index.js",
 		"./package.json": "./package.json"
 	},

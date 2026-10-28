@@ -11,6 +11,7 @@ import {
 	GltfBuilder,
 	type GltfJson,
 	iorBuilder,
+	maskedTransmissionBuilder,
 	morphBuilder,
 	shipBuilder,
 	specularBuilder,
@@ -93,9 +94,35 @@ describe('the container', () => {
 			'E1417',
 			'it requires KHR_materials_variants, which the engine does not read',
 		]);
-		// One that the file only uses is left alone.
-		expect(() => parse(shipBuilder().uses('KHR_materials_clearcoat').glb())).not.toThrow();
-		expect(() => parse(shipBuilder().uses('KHR_materials_unlit', true).glb())).not.toThrow();
+	});
+
+	test('a used extension that nothing reads is listed, with an add-on that reads it', () => {
+		const unread = (file: Uint8Array, handled: readonly string[] = []) => {
+			const data = parseGltf(readContainer(file, URL_OF, handled), new Map(), URL_OF, {}, handled);
+			return data.unread;
+		};
+		// The loader reads these two, so the file lists nothing.
+		expect(unread(shipBuilder().uses('KHR_materials_clearcoat').glb())).toBeUndefined();
+		expect(unread(shipBuilder().uses('KHR_materials_unlit', true).glb())).toBeUndefined();
+		// The asset tool's own extensions sit on primitives, which the loader reads.
+		expect(unread(shipBuilder().uses('NULL3D_mesh_bvh').glb())).toBeUndefined();
+		// An add-on that reads one is named, and a file with its handler reads it too.
+		expect(unread(shipBuilder().uses('KHR_gaussian_splatting').glb())).toEqual([
+			{ name: 'KHR_gaussian_splatting', addon: '@null3d/splats' },
+		]);
+		expect(
+			unread(shipBuilder().uses('KHR_gaussian_splatting').glb(), ['KHR_gaussian_splatting']),
+		).toBeUndefined();
+		// Nothing reads this one, so no package is named.
+		expect(unread(shipBuilder().uses('KHR_materials_variants').glb())).toEqual([
+			{ name: 'KHR_materials_variants' },
+		]);
+		// A name that the file lists twice comes once.
+		const twice = shipBuilder().uses('KHR_materials_variants');
+		twice.json.extensionsUsed?.push('KHR_materials_variants');
+		expect(unread(twice.glb())).toEqual([{ name: 'KHR_materials_variants' }]);
+		// A file that lists no extension has no note.
+		expect(unread(shipBuilder().glb())).toBeUndefined();
 	});
 });
 
@@ -464,7 +491,8 @@ describe('materials, textures and lights', () => {
 			emissiveIntensity: 4,
 			normalScale: 0.5,
 			aoMapIntensity: 0.4,
-			uvTransform: { offset: [0.5, 0], repeat: [2, 3], rotation: 0.25 },
+			// Each map keeps its own transform: only the base color map's texture info gives one.
+			uvTransforms: { map: { offset: [0.5, 0], repeat: [2, 3], rotation: 0.25 } },
 		});
 		expect(unlit?.unlit).toBe(true);
 		const uses = data.textures;
@@ -644,6 +672,63 @@ describe('materials, textures and lights', () => {
 				"material 1's transmissionTexture, which it leaves out beside a specular texture",
 			]),
 		);
+	});
+
+	test('a masked material keeps its transmission, volume and maps', () => {
+		const b = texturedBuilder().uses('KHR_materials_transmission').uses('KHR_materials_volume');
+		const [painted] = b.json.materials as [GltfJson, GltfJson];
+		painted.extensions = {
+			...painted.extensions,
+			KHR_materials_transmission: {
+				transmissionFactor: 0.6,
+				transmissionTexture: { index: 0 },
+			},
+			KHR_materials_volume: { thicknessFactor: 0.3, thicknessTexture: { index: 1 } },
+		};
+		const data = parse(b.glb());
+		const glass = data.materials[0];
+		// The cut-out decides which pixels draw, and the light from behind fills the rest.
+		expect(glass?.alphaMode).toBe('mask');
+		expect(glass?.transmission).toMatchObject({ factor: 0.6, thickness: 0.3 });
+		expect(glass?.maps.transmissionMap).toBeDefined();
+		expect(glass?.maps.thicknessMap).toBeDefined();
+		expect(data.notes.some((note) => note.includes('alpha mode MASK'))).toBe(false);
+	});
+
+	test('the masked glass picture-test file keeps its cut-out and its maps', () => {
+		const data = parse(maskedTransmissionBuilder().glb());
+		const [backdrop, mapped, plain] = data.materials;
+		expect(backdrop?.unlit).toBe(true);
+		// Both panes cut the same holes; one takes its transmission and thickness from maps.
+		expect(mapped?.alphaMode).toBe('mask');
+		expect(mapped?.transmission).toMatchObject({ factor: 1, thickness: 0.6 });
+		expect(mapped?.maps.transmissionMap).toBeDefined();
+		expect(mapped?.maps.thicknessMap).toBeDefined();
+		expect(mapped?.maps.clearcoatMap).toBeDefined();
+		expect(plain?.alphaMode).toBe('mask');
+		expect(plain?.transmission).toMatchObject({ factor: 1, thickness: 0.6 });
+		expect(plain?.maps.transmissionMap).toBeUndefined();
+		expect(plain?.maps.thicknessMap).toBeUndefined();
+	});
+
+	test('KHR_materials_dispersion gives the volume its dispersion', () => {
+		const b = specularBuilder().uses('KHR_materials_transmission').uses('KHR_materials_dispersion');
+		const [glass, plain] = b.json.materials as [GltfJson, GltfJson];
+		glass.extensions = {
+			KHR_materials_transmission: { transmissionFactor: 1 },
+			KHR_materials_dispersion: { dispersion: 0.36 },
+		};
+		plain.extensions = { KHR_materials_transmission: { transmissionFactor: 1 } };
+		const data = parse(b.glb());
+		expect(data.materials[0]?.dispersion).toBe(0.36);
+		// A material without the extension bends every color alike.
+		expect(data.materials[1]?.dispersion).toBe(0);
+		const negative = specularBuilder().uses('KHR_materials_dispersion');
+		(negative.json.materials[0] as GltfJson).extensions = {
+			KHR_materials_dispersion: { dispersion: -1 },
+		};
+		const [code, text] = refusal(negative.glb());
+		expect([code, text.includes("material 0's dispersion is -1")]).toEqual(['E1416', true]);
 	});
 
 	test('a layered material keeps the transmission and thickness textures that fit', () => {
@@ -923,6 +1008,18 @@ describe('materials, textures and lights', () => {
 			image: 2,
 			colorSpace: 'linear',
 		});
+		expect(data.notes).toEqual([]);
+	});
+
+	test('a material keeps its anisotropy with no texture of any kind', () => {
+		const data = layered({
+			KHR_materials_anisotropy: { anisotropyStrength: 0.75, anisotropyRotation: 0.4 },
+		});
+		expect(data.materials[0]?.layers).toMatchObject({
+			anisotropy: 0.75,
+			anisotropyRotation: 0.4,
+		});
+		expect(data.materials[0]?.maps).toEqual({});
 		expect(data.notes).toEqual([]);
 	});
 

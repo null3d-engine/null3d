@@ -1,6 +1,6 @@
 # Tested devices
 
-This record lists every device and browser that null3D has run on, with the plans that ran and their results. [Device sessions](devices.md) says how each device runs. It feeds the compatibility matrix in the README and in the user docs, as the owner asked on 4 October 2026.
+This record lists every device and browser that null3D has run on, with the plans that ran and their results. [Device sessions](devices.md) says how each device runs. It feeds the compatibility matrix in the README and in the user docs, as the owner asked.
 
 ## The record
 
@@ -10,7 +10,7 @@ A new run is a new file, so two pull requests that record runs do not edit the s
 
 The dates are the dates in the run names, which are in UTC. An empty cell means that nobody recorded the fact. "TestingBot's device list" or "BrowserStack's device list" marks a fact that the browser does not report, read from the cloud's own list of devices.
 
-The Where fact names the place of each run: the owner's phone, tablet or Mac, TestingBot's device cloud, BrowserStack Live, or BrowserStack Automate. On BrowserStack Live, a person picks the device and the browser in each session. On BrowserStack Automate, which the team uses from 3 October 2026, the device runner opens and drives each session, with nobody at it ([Device sessions](devices.md#browserstack-automate)).
+The Where fact names the place of each run: the owner's phone, tablet or Mac, TestingBot's device cloud, BrowserStack Live, or BrowserStack Automate. On BrowserStack Live, a person picks the device and the browser in each session. On BrowserStack Automate, the device runner opens and drives each session, with nobody at it ([Device sessions](devices.md#browserstack-automate)).
 
 ## How to add a run
 
@@ -22,23 +22,21 @@ The Where fact names the place of each run: the owner's phone, tablet or Mac, Te
 6. Add a known issue as a new paragraph under "Known issues" in the README, with a link to its pull request or decision record. Then run `bun run docs`.
 7. Write links in these files relative to the file, such as `../../decisions/D-12-memory-budgets.md`. The tables move them to the page's folder.
 8. The runner page saves what it found in `device.json`, in each runner's folder of the run: `target/runs/<run>/<runner>/device.json`. It holds the user agent and, where the browser has them, the client hints. It also holds the detected browser, the GPU, the screen, the pixel ratio, the cores and the page's address. `jq '{browser, gpu, userAgent, userAgentData}' target/runs/<run>/<runner>/device.json` prints the main facts.
-9. The GPU facts are `gpu.webgpu`, the WebGPU adapter's details, `gpu.compatibility`, which says whether compatibility mode gave an adapter, and `gpu.webgl2.renderer`. Runs before October 2026 have no `gpu` and no `browser` in `device.json`. For those, read the checks plan's `capabilities.json`, under `report.webgpu.adapterInfo` and `report.webgl2.renderer`.
+9. The GPU facts are `gpu.webgpu`, the WebGPU adapter's details, `gpu.compatibility`, which says whether compatibility mode gave an adapter, and `gpu.webgl2.renderer`. When `device.json` has no `gpu` and no `browser`, read the checks plan's `capabilities.json`, under `report.webgpu.adapterInfo` and `report.webgl2.renderer`.
 10. Leave a fact empty rather than guess. User agents freeze the OS version. Safari 26 reports iOS 18.7 on iOS 26, and Safari on an iPad reports a Mac. Chrome reports Android 10 on every Android. Only client hints give the real version. Brave and Firefox hide the GPU.
 
 `bun run docs:check` and the commit hook refuse a file that breaks these rules. A folder's name is lowercase words joined by hyphens. A run file's name starts with the run's date as eight digits. Each folder has a README with all six facts and a "Known issues" section, and at least one run. Each run file has a `Plans:` paragraph, then the `Result:`, which may take several paragraphs to the end of the file.
 
-A branch from before the split edited the old single table. [Branches and parallel work](pull-requests.md#a-branch-that-edited-the-old-table-of-tested-devices) says how to move its edits into run files.
-
-## iPad Pro 11-inch, iPadOS 26.7, 19 October 2026
+## iPad Pro 11-inch, iPadOS 26.7: the upscaler probe
 
 - Brave on iOS is WebKit, so this run measures the same engine as Safari. Two-step upscaler probe, canvas 1920x1080, render scale 0.5, FXAA on, timer wall clock with `gl.finish`, seven samples of twenty rounds. Head 5949e07cf.
-- Mip bias 0: today's pass 2.184 ms, GSR 0.537 ms, so GSR is 1.647 ms faster. Image scores at the engine's setting favour GSR: SSIM 0.9552 against 0.9532, MAE 1.48 against 1.49.
-- Mip bias -1: today's pass 2.434 ms, GSR 0.732 ms, so GSR is 1.702 ms faster. GSR scores slightly lower there: SSIM 0.9586 against 0.9655, MAE 1.34 against 1.20.
+- Mip bias 0: the bilinear pass 2.184 ms, GSR 0.537 ms, so GSR is 1.647 ms faster. Image scores at the engine's setting favor GSR: SSIM 0.9552 against 0.9532, MAE 1.48 against 1.49.
+- Mip bias -1: the bilinear pass 2.434 ms, GSR 0.732 ms, so GSR is 1.702 ms faster. GSR scores slightly lower there: SSIM 0.9586 against 0.9655, MAE 1.34 against 1.20.
 - The rule that decides the upscaler asks for a cost inside 0.2 ms. GSR is faster by more than eight times that on this iPad, and better at the engine's mip bias, so the iPad keeps GSR 1.
 
-## iPad Pro 13-inch, iPadOS 26, Safari, 23 October 2026, on BrowserStack
+## iPad Pro 13-inch, iPadOS 26, Safari, on BrowserStack: the M2 gate's timed rows
 
-The M2 gate's timed rows were rerun on the newest tip through BrowserStack's cloud iPad Pro 13, the
+The M2 gate's timed rows ran again on a newer tip through BrowserStack's cloud iPad Pro 13, the
 same device the gate commit was measured on. Each row draws the showcase scene for 300 seconds, rests
 five minutes while the device cools, and reports the frames presented.
 
@@ -51,11 +49,12 @@ five minutes while the device cools, and reports the frames presented.
 | S6 | WebGPU | 59.8 | 59.8 |
 | S6 | WebGL2 | 59.8 | 59.9 |
 
-The device holds its target on every scene but S5, and S5 has lost frames on both paths since the gate
-commit. The engine's own threads use 3.1 ms of a 33 ms frame there, so the loss is on the graphics side.
+The device holds its target on every scene but S5, and S5 draws fewer frames on both paths than on
+the gate commit. The engine's own threads use 3.1 ms of a 33 ms frame there, so the loss is on the
+graphics side.
 The rows were read from `target/runs/20261023-002748-showcase/bsipadpro13-safari` in the gate checkout.
 
-## Vegetation on four cloud devices, 24 October 2026
+## Vegetation on four cloud devices
 
 Creek and the forest demo ran for M3-V1 ([D-241](decisions/D-241-vegetation-foundation.md)) on the
 cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet. The runs took one
@@ -198,7 +197,7 @@ variant on the tablet was an oak at Ultra: 5.42 ms for 27,090 triangles. The tab
 The other three are in their folders: the iPhone and the iPad at 20261024-084032, and the S24 at
 20261024-084231.
 
-### The splats add-on's first full run, iPad Pro 13 and Galaxy S24
+### The splats add-on at its full count, iPad Pro 13 and Galaxy S24
 
 The splats streaming page drew a 400,000-splat cloud at the Low preset on the cloud iPad and the
 cloud S24-class phone ([its plan](devices.md#the-splats-plan)). Each path drew exactly the budget
@@ -212,7 +211,7 @@ that it settled on, so the cloud stayed within it.
 
 The iPad's display ran at 59 Hz. The S24's ran at 30 Hz, so the runner marks its timing figures
 unreliable. The cloud in these runs was built in the page's code and handed to the add-on as a blob,
-so the add-on was not yet downloading a stream. The add-on's streaming reads an index and downloads
+so the add-on downloaded no stream. The add-on's streaming reads an index and downloads
 only the chunks that the view needs.
 
 The runs:
@@ -221,7 +220,7 @@ The runs:
 
 ### The splats add-on streaming, iPad Pro 13 and Galaxy S24
 
-Both cloud devices ran the streaming plan on 24 October 2026 ([its plan](devices.md#the-splats-plan)).
+Both cloud devices ran the streaming plan ([its plan](devices.md#the-splats-plan)).
 The page read an index of 11 chunk files, 5,628,772 bytes for 400,000 splats, and the add-on
 downloaded only the chunks that the view asked for.
 
@@ -240,7 +239,7 @@ The 100,000-splat quarter clouds arrived whole on both devices, because each cut
 almost all the splats.
 
 The S24's display ran at 30 Hz and the Mac was loaded, so the timing figures are unreliable. The
-rates follow the earlier runs of the same cloud: 12.4, 3.29 and 1.07 frames a second.
+rates match the full-count runs of the same cloud: 12.4, 3.29 and 1.07 frames a second.
 
 The runs:
 [20261024-171907-splats](tested-devices/ipad-pro-13-safari/20261024-171907-splats.md) and
@@ -256,13 +255,13 @@ The splats streaming page drew 100,000 splats at the same pixel count as its ful
 | WebGPU | 100,000 | 250,000 | 2.84 | 26.5 s |
 | WebGL2 | 25,003 | 37,500 | 6.88 | 26.3 s |
 
-The full count drew 1.07 frames a second on WebGPU and 3.29 on WebGL2 in the same cloud, earlier
-that day. So a quarter of the count gave between two and three times the rate, and not four times.
+The full count drew 1.07 frames a second on WebGPU and 3.29 on WebGL2 in the same cloud. So a
+quarter of the count gave between two and three times the rate, and not four times.
 The cards' fill sets much of the cost, and the work of each splat sets the rest.
 
 The WebGPU budget reads 250,000, which is Medium's count rather than Low's 100,000. The page reported
 again only when the drawn count changed. This cloud's 100,000 splats fit under both Medium's 250,000
-and Low's 100,000, so the move to Low changed no drawn count, sent no new report, and left the
-earlier figure in place. The record's first version gave a different cause, which was wrong.
+and Low's 100,000, so the move to Low changed no drawn count, sent no new report, and left
+Medium's figure in place.
 
 The run: [20261024-111706-splats](tested-devices/ipad-pro-13-safari/20261024-111706-splats.md).

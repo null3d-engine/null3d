@@ -59,6 +59,7 @@ fn v_ggx_smith_correlated(alpha: f32, n_dot_l: f32, n_dot_v: f32) -> f32 {
 
 /// The GGX specular reflectance for one light, as three.js's `BRDF_GGX`: the GGX distribution,
 /// Schlick's Fresnel term and the correlated Smith visibility term. `roughness` is perceptual.
+/// Where the light and the view cancel there is no half vector, and the result is zero.
 fn brdf_ggx(
     to_light: vec3f,
     to_view: vec3f,
@@ -68,7 +69,11 @@ fn brdf_ggx(
     roughness: f32,
 ) -> vec3f {
     let alpha = roughness * roughness;
-    let half_dir = normalize(to_light + to_view);
+    let half_dir = null3d::math::half_vector(to_light, to_view);
+    // Where the light and the view cancel there is no bisector, so the lobe has no value.
+    if dot(half_dir, half_dir) == 0.0 {
+        return vec3f(0.0);
+    }
     let n_dot_l = saturate(dot(normal, to_light));
     let n_dot_v = saturate(dot(normal, to_view));
     let n_dot_h = saturate(dot(normal, half_dir));
@@ -115,7 +120,8 @@ fn d_ggx_anisotropic(
 /// The GGX specular reflectance for one direct light of a physical material, as three.js's
 /// `BRDF_GGX`: the distribution, the Fresnel term and the visibility term, with the thin film's
 /// Fresnel term where the material is iridescent, and stretched along the tangent where it is
-/// anisotropic.
+/// anisotropic. Where the light and the view cancel there is no half vector, and the result is
+/// zero.
 fn brdf_ggx_physical(
     m: PbrMaterial,
     normal: vec3f,
@@ -123,7 +129,11 @@ fn brdf_ggx_physical(
     to_light: vec3f,
 ) -> vec3f {
     let alpha = m.roughness * m.roughness;
-    let half_dir = normalize(to_light + to_view);
+    let half_dir = null3d::math::half_vector(to_light, to_view);
+    // Where the light and the view cancel there is no bisector, so the lobe has no value.
+    if dot(half_dir, half_dir) == 0.0 {
+        return vec3f(0.0);
+    }
     let n_dot_l = saturate(dot(normal, to_light));
     let n_dot_v = saturate(dot(normal, to_view));
     let n_dot_h = saturate(dot(normal, half_dir));
@@ -395,7 +405,7 @@ fn direct_light(
 ) -> Reflected {
     let irradiance = saturate(dot(normal, to_light)) * light;
     let brdf = brdf_ggx_physical(m, normal, to_view, to_light);
-    let v_dot_h = saturate(dot(to_view, normalize(to_light + to_view)));
+    let v_dot_h = saturate(dot(to_view, null3d::math::half_vector(to_light, to_view)));
     let fresnel = f_schlick(m.specular, m.specular_grazing, v_dot_h);
     return Reflected(
         irradiance * brdf_lambert(m.diffuse) * (1.0 - fresnel),

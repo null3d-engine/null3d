@@ -63,12 +63,13 @@ export default defineSketch(async (ctx) => {
 		size: 520,
 		height: ground,
 		layers: [
-			{ map: layers.grass, tile: 6, roughness: 1 },
-			{ map: layers.soil, tile: 9, roughness: 1 },
-			{ map: layers.rock, tile: 7, roughness: 0.9 },
-			{ map: layers.snow, tile: 14, roughness: 0.8 },
+			{ map: layers.grass, tile: 6, roughness: 1, heightFrom: 'alpha' },
+			{ map: layers.soil, tile: 9, roughness: 1, heightFrom: 'alpha' },
+			{ map: layers.rock, tile: 7, roughness: 0.9, heightFrom: 'alpha' },
+			{ map: layers.snow, tile: 14, roughness: 0.8, heightFrom: 'alpha' },
 		],
 		maxLevel: 6,
+		camera,
 	});
 
 	// Boulders along the river's banks. They break the water, and the add-on's foam map draws the

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import {
 	type ShaderVariant as EngineShaderVariant,
 	everyShader,
@@ -238,12 +239,16 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 	// over in pieces (`.dev/implementation-notes.md`).
 	const ENGINE_SHADERS = ['decal', 'final', 'line', 'texcoords', 'unlit'];
 
-	it("gives the native build's output for the engine's shaders", async () => {
-		const result = buildShaders(engineShaderInputs(ENGINE_SHADERS));
-		if (!result.ok) throw new Error(result.problems.map((p) => p.message).join('\n'));
-		const whole = await everyShader();
-		// Every name asked for is an entry of the engine's own manifest, so its variants are there.
-		const expected = Object.fromEntries(ENGINE_SHADERS.map((name) => [name, whole[name]!]));
-		expect(result.output.shaders).toEqual(expected);
-	}, 180_000);
+	it(
+		"gives the native build's output for the engine's shaders",
+		async () => {
+			const result = buildShaders(engineShaderInputs(ENGINE_SHADERS));
+			if (!result.ok) throw new Error(result.problems.map((p) => p.message).join('\n'));
+			const whole = await everyShader();
+			// Every name asked for is an entry of the engine's own manifest, so its variants are there.
+			const expected = Object.fromEntries(ENGINE_SHADERS.map((name) => [name, whole[name]!]));
+			expect(result.output.shaders).toEqual(expected);
+		},
+		scaledBudget(180_000),
+	);
 });

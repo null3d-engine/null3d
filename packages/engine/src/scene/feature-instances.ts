@@ -84,6 +84,8 @@ export interface ComputeInstancesHost {
 	): Mesh;
 	/** One batch of `count` rows of `mesh` and `material`, for the CPU path. */
 	createBatch(mesh: MeshGeometry, material: Material, count: number): InstanceBatch;
+	/** Asks `poll` before each frame's work, and forgets it when the returned function is called. */
+	watchReady(poll: () => void): () => void;
 	/** The error that a description the adapter cannot place throws. */
 	fail(detail: string): Error;
 }
@@ -95,6 +97,9 @@ const INSTANCE_FLOATS = C.FEATURE_INSTANCE_INSTANCE_FLOATS;
  * One add-on draw whose live count the GPU writes. Draw its instances from the add-on's own buffer
  * with `setInstances`, or from a compute pass that writes the count word, and free it with
  * `destroy`.
+ *
+ * The description's `ready` callback decides each frame whether the draw draws. While it answers
+ * false the engine records nothing for the draw: no draw, no count copy and no conversion.
  *
  * @category api/feature-instances
  */
@@ -117,9 +122,16 @@ export class ComputeInstances<Wgsl extends string | CompiledWgsl = string | Comp
 		private readonly call: string,
 		/** The most instances that the draw holds. */
 		private readonly capacityValue: number,
+		/** The feature's own answer to whether it draws now, or `undefined` for always. */
+		private readonly ready: (() => boolean) | undefined,
 		private countValue: number,
 		private live = true,
 	) {}
+
+	/** True while the feature's `ready` callback answers true. */
+	private readyValue = true;
+	/** Stops the per-frame readiness poll, once the draw is destroyed. */
+	private unwatch: (() => void) | undefined;
 
 	/** The count that the GPU or the CPU set. */
 	get count(): number {
@@ -127,13 +139,14 @@ export class ComputeInstances<Wgsl extends string | CompiledWgsl = string | Comp
 	}
 
 	/**
-	 * Sets the count that a shadow view draws and that a page without compute sets. On WebGL2 it
-	 * is the count that the draw renders. It is a whole number from 0 to the capacity.
+	 * Sets the count that a page without compute draws, which the count word starts each frame
+	 * from. On WebGL2 it is the count that the draw renders. It is a whole number from 0 to the
+	 * capacity.
 	 */
 	setCount(count: number): this {
 		this.checkCount(count);
 		if (this.id !== 0) this.core.glue.setFeatureInstanceCount(this.id, count);
-		else (this.object as InstanceBatch).setActiveCount(count);
+		else (this.object as InstanceBatch).setActiveCount(this.readyValue ? count : 0);
 		this.countValue = count;
 		return this;
 	}
@@ -161,7 +174,7 @@ export class ComputeInstances<Wgsl extends string | CompiledWgsl = string | Comp
 			const batch = this.object as InstanceBatch;
 			writeRows(batch, values, count);
 			batch.markDirty(0, count);
-			batch.setActiveCount(count);
+			batch.setActiveCount(this.readyValue ? count : 0);
 		}
 		this.countValue = count;
 		return this;
@@ -170,13 +183,35 @@ export class ComputeInstances<Wgsl extends string | CompiledWgsl = string | Comp
 	/** Draws the draw, or hides it, from the next frame on. */
 	setVisible(visible: boolean): void {
 		if (this.id !== 0) (this.object as Mesh).setVisible(visible);
-		else (this.object as InstanceBatch).setActiveCount(visible ? this.countValue : 0);
+		else
+			(this.object as InstanceBatch).setActiveCount(
+				visible && this.readyValue ? this.countValue : 0,
+			);
+	}
+
+	/** @internal Starts the per-frame readiness poll, and records its first answer. */
+	listenToReady(host: ComputeInstancesHost): void {
+		this.unwatch = host.watchReady(() => this.refreshReady());
+		this.refreshReady();
+	}
+
+	/**
+	 * Records whether the feature draws now. The engine takes no room for a draw that is not ready,
+	 * and the CPU path draws none of its rows.
+	 */
+	private refreshReady(): void {
+		const ready = this.ready?.() ?? true;
+		if (ready === this.readyValue) return;
+		this.readyValue = ready;
+		if (this.id !== 0) this.core.glue.setFeatureInstanceReady(this.id, ready);
+		else (this.object as InstanceBatch).setActiveCount(ready ? this.countValue : 0);
 	}
 
 	/** Frees the draw's object, material and vertices. Later calls on it throw E1101. */
 	destroy(): void {
 		if (!this.live) return;
 		this.live = false;
+		this.unwatch?.();
 		if (this.id !== 0) {
 			this.core.glue.destroyFeatureInstances(this.id);
 			(this.object as Mesh).destroy();
@@ -260,7 +295,7 @@ export function createComputeInstances<const Wgsl extends string | CompiledWgsl>
 		if (layers !== undefined) batch.setLayers(layers);
 		batch.setActiveCount(count);
 		const none = { buffer: 0, bytes: 0 };
-		return new ComputeInstances(
+		const draw = new ComputeInstances(
 			host.core,
 			0,
 			batch,
@@ -270,8 +305,11 @@ export function createComputeInstances<const Wgsl extends string | CompiledWgsl>
 			none,
 			call,
 			capacity,
+			description.ready,
 			count,
 		);
+		if (description.ready !== undefined) draw.listenToReady(host);
+		return draw;
 	}
 	const object = host.createMesh(mesh, material as unknown as Material, {
 		name: description.name,
@@ -297,7 +335,7 @@ export function createComputeInstances<const Wgsl extends string | CompiledWgsl>
 		buffer: host.core.glue.featureInstanceBuffer(id),
 		bytes: capacity * C.FEATURE_INSTANCE_INSTANCE_BYTES,
 	};
-	return new ComputeInstances(
+	const draw = new ComputeInstances(
 		host.core,
 		id,
 		object,
@@ -307,8 +345,11 @@ export function createComputeInstances<const Wgsl extends string | CompiledWgsl>
 		instances,
 		call,
 		capacity,
+		description.ready,
 		count,
 	);
+	if (description.ready !== undefined) draw.listenToReady(host);
+	return draw;
 }
 
 /** Places the rows that a page wrote in an instance batch, which the CPU path draws. */
@@ -318,55 +359,51 @@ function writeRows(batch: InstanceBatch, values: Float32Array, count: number): v
 	const scales = batch.scales;
 	for (let row = 0; row < count; row++) {
 		const at = row * INSTANCE_FLOATS;
-		const r0: [number, number, number] = [
-			values[at] ?? 0,
-			values[at + 1] ?? 0,
-			values[at + 2] ?? 0,
-		];
-		const r1: [number, number, number] = [
-			values[at + 4] ?? 0,
-			values[at + 5] ?? 0,
-			values[at + 6] ?? 0,
-		];
-		const r2: [number, number, number] = [
-			values[at + 8] ?? 0,
-			values[at + 9] ?? 0,
-			values[at + 10] ?? 0,
-		];
+		const m00 = values[at] ?? 0;
+		const m01 = values[at + 1] ?? 0;
+		const m02 = values[at + 2] ?? 0;
+		const m10 = values[at + 4] ?? 0;
+		const m11 = values[at + 5] ?? 0;
+		const m12 = values[at + 6] ?? 0;
+		const m20 = values[at + 8] ?? 0;
+		const m21 = values[at + 9] ?? 0;
+		const m22 = values[at + 10] ?? 0;
 		positions[row * 3] = values[at + 3] ?? 0;
 		positions[row * 3 + 1] = values[at + 7] ?? 0;
 		positions[row * 3 + 2] = values[at + 11] ?? 0;
 		// The rows hold the rotation scaled along each of its columns, so a column's length is
-		// that axis's scale and its direction is the rotation's basis vector.
-		const sx = Math.hypot(r0[0], r1[0], r2[0]) || 1;
-		const sy = Math.hypot(r0[1], r1[1], r2[1]) || 1;
-		const sz = Math.hypot(r0[2], r1[2], r2[2]) || 1;
+		// that axis's scale and its direction is the rotation's basis vector. The length is worked
+		// out here rather than with Math.hypot, which keeps its arguments in an array that a frame
+		// would allocate.
+		const sx = Math.sqrt(m00 * m00 + m10 * m10 + m20 * m20) || 1;
+		const sy = Math.sqrt(m01 * m01 + m11 * m11 + m21 * m21) || 1;
+		const sz = Math.sqrt(m02 * m02 + m12 * m12 + m22 * m22) || 1;
 		scales[row * 3] = sx;
 		scales[row * 3 + 1] = sy;
 		scales[row * 3 + 2] = sz;
-		const q = quaternionOf(
-			r0[0] / sx,
-			r1[0] / sx,
-			r2[0] / sx,
-			r0[1] / sy,
-			r1[1] / sy,
-			r2[1] / sy,
-			r0[2] / sz,
-			r1[2] / sz,
-			r2[2] / sz,
+		writeQuaternion(
+			rotations,
+			row * 4,
+			m00 / sx,
+			m10 / sx,
+			m20 / sx,
+			m01 / sy,
+			m11 / sy,
+			m21 / sy,
+			m02 / sz,
+			m12 / sz,
+			m22 / sz,
 		);
-		rotations[row * 4] = q[0];
-		rotations[row * 4 + 1] = q[1];
-		rotations[row * 4 + 2] = q[2];
-		rotations[row * 4 + 3] = q[3];
 	}
 }
 
 /**
- * The quaternion of a rotation matrix, given its columns. The matrix is orthonormal, so the
- * largest diagonal term picks the stable branch.
+ * Writes the quaternion of a rotation matrix into `out` at `at`, given the matrix's columns. The
+ * matrix is orthonormal, so the largest diagonal term picks the stable branch.
  */
-function quaternionOf(
+function writeQuaternion(
+	out: Float32Array,
+	at: number,
 	m00: number,
 	m10: number,
 	m20: number,
@@ -376,7 +413,7 @@ function quaternionOf(
 	m02: number,
 	m12: number,
 	m22: number,
-): [number, number, number, number] {
+): void {
 	const trace = m00 + m11 + m22;
 	let x: number;
 	let y: number;
@@ -407,5 +444,8 @@ function quaternionOf(
 		y = (m12 + m21) / s;
 		z = s / 4;
 	}
-	return [x, y, z, w];
+	out[at] = x;
+	out[at + 1] = y;
+	out[at + 2] = z;
+	out[at + 3] = w;
 }

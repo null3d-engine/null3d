@@ -9,8 +9,10 @@ import {
 	ENGINE_PARTS,
 	ENGINE_SOURCE,
 	FIRST_USE_SHADER_BUDGET,
+	FIRST_USE_SHADER_RAW_RAISE,
 	findEngineParts,
 	findFirstUseFiles,
+	firstUseShaderBudget,
 	isFirstUseShaderPart,
 	isParagraphTable,
 	isSizePartFile,
@@ -279,7 +281,8 @@ describe('findEngineParts', () => {
 		// The reader and the worker are listed before the files that load them, as in the engine's
 		// list. The assets file names the reader and a panorama file, and the panorama file names a
 		// worker that bundles a copy of the reader, two steps down from the assets file. Linux and
-		// macOS list the build's files in different orders, and the reader once took the worker.
+		// macOS list the build's files in different orders, and in one of them the reader can take
+		// the worker.
 		const ordered = [
 			{ name: 'page.js', module: 'page/engine.ts' },
 			{ name: 'page-reader.js', module: 'scene/reader.ts', loadedBy: 'page-assets.js' },
@@ -613,6 +616,47 @@ describe('budgetProblems', () => {
 		]);
 	});
 
+	it('gives two first-use shader files more uncompressed room, and no other file', () => {
+		// The owner raised these two figures for the generated GLSL of the directional lights' loop.
+		const drawIndex =
+			'shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-draw-index-tone-map-half.js';
+		const noDrawIndex =
+			'shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-tone-map-half.js';
+		const other = 'shaders-area-lights-glsl-draw-index-half.js';
+		const raisedRaw = FIRST_USE_SHADER_BUDGET.raw + 16 * 1024;
+		expect(FIRST_USE_SHADER_BUDGET.raw).toBe(1_792 * 1024);
+		expect(Object.keys(FIRST_USE_SHADER_RAW_RAISE).sort()).toEqual([drawIndex, noDrawIndex].sort());
+		for (const name of [drawIndex, noDrawIndex])
+			expect(firstUseShaderBudget(name)).toEqual({
+				...FIRST_USE_SHADER_BUDGET,
+				raw: raisedRaw,
+			});
+		expect(firstUseShaderBudget(other)).toEqual(FIRST_USE_SHADER_BUDGET);
+
+		// A file at the raised figure passes for the two, and the same figure fails for the rest.
+		const within = new Map([
+			[drawIndex, size(raisedRaw, 1, 1)],
+			[noDrawIndex, size(raisedRaw, 1, 1)],
+			[other, size(raisedRaw, 1, 1)],
+		]);
+		expect(budgetProblems(within, downloads, [])).toEqual([
+			`js/${other}, the shader builds of a feature that loads on first use, is ${raisedRaw.toLocaleString('en-US')} bytes uncompressed, over its ${FIRST_USE_SHADER_BUDGET.raw / 1024} KB budget set in tools/lib/size-report.ts`,
+		]);
+
+		// The compressed figures stay at the standard limits, and the raise stops at its figure.
+		const over = new Map([
+			[
+				drawIndex,
+				size(raisedRaw + 1, FIRST_USE_SHADER_BUDGET.gzip + 1, FIRST_USE_SHADER_BUDGET.brotli + 1),
+			],
+		]);
+		expect(budgetProblems(over, downloads, [])).toEqual([
+			`js/${drawIndex}, the shader builds of a feature that loads on first use, is ${(raisedRaw + 1).toLocaleString('en-US')} bytes uncompressed, over its ${raisedRaw / 1024} KB budget set in tools/lib/size-report.ts`,
+			`js/${drawIndex}, the shader builds of a feature that loads on first use, is ${(FIRST_USE_SHADER_BUDGET.gzip + 1).toLocaleString('en-US')} bytes after gzip, over its ${FIRST_USE_SHADER_BUDGET.gzip / 1024} KB budget set in tools/lib/size-report.ts`,
+			`js/${drawIndex}, the shader builds of a feature that loads on first use, is ${(FIRST_USE_SHADER_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${FIRST_USE_SHADER_BUDGET.brotli / 1024} KB budget set in tools/lib/size-report.ts`,
+		]);
+	});
+
 	it('gives a generated combination table more raw room and the same compressed limits', () => {
 		const tables = [
 			{
@@ -684,5 +728,27 @@ describe('budgetWarnings', () => {
 
 	it('leaves a start over its budget to budgetProblems', () => {
 		expect(budgetWarnings(start(START_BUDGET.brotli + 1), downloads)).toEqual([]);
+	});
+
+	it('warns about each budgeted file past 97% of its budget in a column, as for a start', () => {
+		const file = 'shaders-area-lights-glsl-draw-index-half.js';
+		const raw = Math.floor(FIRST_USE_SHADER_BUDGET.raw * 0.998);
+		const sizes = new Map([
+			...start(Math.floor(START_BUDGET.brotli * 0.5)),
+			[file, size(raw, FIRST_USE_SHADER_BUDGET.gzip / 2, FIRST_USE_SHADER_BUDGET.brotli / 2)],
+		]);
+		expect(budgetWarnings(sizes, downloads, [])).toEqual([
+			`js/${file}, the shader builds of a feature that loads on first use, is ${raw.toLocaleString('en-US')} bytes uncompressed, past 97% of its ${FIRST_USE_SHADER_BUDGET.raw / 1024} KB budget, with ${(FIRST_USE_SHADER_BUDGET.raw - raw).toLocaleString('en-US')} bytes left`,
+		]);
+		sizes.set(
+			file,
+			size(
+				FIRST_USE_SHADER_BUDGET.raw + 1,
+				FIRST_USE_SHADER_BUDGET.gzip / 2,
+				FIRST_USE_SHADER_BUDGET.brotli / 2,
+			),
+		);
+		expect(budgetWarnings(sizes, downloads, [])).toEqual([]);
+		expect(budgetProblems(sizes, downloads, [])).toHaveLength(1);
 	});
 });

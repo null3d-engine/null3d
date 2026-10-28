@@ -340,6 +340,16 @@ impl SortedLayout {
         }
     }
 
+    /// A layout that lists `rows` rows and nothing else, for the tests of the buffers that hold
+    /// them, which read the row count alone.
+    #[cfg(test)]
+    pub(crate) fn with_rows(rows: u32) -> Self {
+        Self {
+            rows,
+            ..Self::default()
+        }
+    }
+
     /// Lets a redraw layout's view draw only the objects that share a layer with `mask` and one
     /// with `view_layers`, the layers of the view that drew them first. Each frame tests both, so
     /// a change needs no rebuild.

@@ -1,9 +1,10 @@
 // The terrain add-on: a height field drawn as a camera-centered quadtree of blocks, so the ground
 // near the camera is fine and the far ground is cheap. Each block is a mesh whose vertices carry
 // the height field's heights, with a skirt around its edge that closes the seam where two blocks
-// of different levels meet. One splat-mapped material blends up to four tiled layers over all the
-// blocks. The terrain has no collision: a game reads `heightAt` and `normalAt` to place what
-// stands on it.
+// of different levels meet. One material lights every pixel from normals baked over the whole
+// ground, so a coarse block keeps the hills' relief. The material blends up to four tiled layers
+// over all the blocks, and each layer's own height shows it through its neighbours at a boundary.
+// The terrain has no collision: a game reads `heightAt` and `normalAt` to place what stands on it.
 import type {
 	Material,
 	Mesh,
@@ -52,11 +53,21 @@ export interface TerrainOptions {
 	/** The finest level, from 0 to 15: a block covers `size / 2 ** maxLevel` meters. The default is 6. */
 	maxLevel?: number;
 	/**
-	 * How far from a block's edge the camera may stand and still split it, as a multiple of the
-	 * block's size, above 0 and up to 8. The default is 2. A larger value keeps detail farther out
-	 * and draws more.
+	 * The camera whose field of view sets how far a block keeps its detail, which the ground reads
+	 * when it picks blocks. Without one the ground assumes a vertical field of view of 50 degrees.
 	 */
-	split?: number;
+	camera?: { readonly fov: number };
+	/**
+	 * The screen error, in pixels, above which a block splits into four. The default is 35 times
+	 * the quality preset's `lodThreshold`, so the ground draws with that preset's detail: Low picks
+	 * coarser blocks. 0 keeps the finest level everywhere.
+	 */
+	error?: number;
+	/**
+	 * True lights every pixel from a normal map baked over the ground, which shows relief that a
+	 * coarse block's vertices cannot. The default is true; false lights from the mesh's own normals.
+	 */
+	bakedNormals?: boolean;
 	/**
 	 * How far the skirt around each block hangs down, in meters. The default is four of the block's
 	 * cells, which closes the seam against a neighbour up to a level or two coarser.
@@ -91,6 +102,8 @@ interface Block {
 	key: number;
 	readonly object: Mesh;
 	readonly mesh: MeshGeometry;
+	/** The level whose mesh this block holds, which a block only takes a mesh of. */
+	level: number;
 	stamp: number;
 	shown: boolean;
 }
@@ -99,8 +112,10 @@ interface Block {
 const DEFAULT_QUADS = 16;
 /** The default finest level. */
 const DEFAULT_MAX_LEVEL = 6;
-/** The default split distance, as a multiple of a block's size. */
-const DEFAULT_SPLIT = 2;
+/** The screen error, in pixels, that a block's cell may show. */
+const DEFAULT_ERROR = 35;
+/** The vertical field of view, in degrees, that the ground assumes without a camera. */
+const DEFAULT_FOV = 50;
 /** The default texels along each side of the splat map. */
 const DEFAULT_SPLAT = 256;
 /** The default meshes the ground holds. */
@@ -119,9 +134,14 @@ export class Terrain {
 	private readonly tree: Quadtree;
 	private readonly material: Material;
 	private readonly splatTexture: Texture;
+	private readonly normalTexture: Texture | undefined;
 	private readonly white: Texture | undefined;
 	private readonly shape: ChunkShape;
 	private readonly fixedSkirt: number | undefined;
+	/** The camera whose field of view sets the split, or undefined for the default. */
+	private readonly camera: { readonly fov: number } | undefined;
+	/** The screen error, in pixels, that a block's cell may show, or undefined for the preset's. */
+	private readonly fixedError: number | undefined;
 	private readonly cast: boolean;
 	private readonly receive: boolean;
 	private readonly maxBlocks: number;
@@ -139,8 +159,16 @@ export class Terrain {
 	/** The vertices of the block being written, which every block writes into in turn. */
 	private readonly positions: Float32Array;
 	private readonly normals: Float32Array;
-	/** The center of a block's own sphere, which holds every block at its own corner. */
-	private readonly center: [number, number, number] = [0, 0, 0];
+	/**
+	 * The sphere of each level's blocks: centred on the block's middle and reaching its farthest
+	 * vertex, so one level's bounds hold every block of that level and a reused block keeps them.
+	 */
+	private readonly spheres = new Map<
+		number,
+		{ center: [number, number, number]; radius: number }
+	>();
+	/** The level that `scanOldest` looks for while `evict` frees a block. */
+	private scanLevel = 0;
 	/** The block and the key that `scanOldest` found, which `evict` takes. */
 	private oldest: Block | undefined = undefined;
 	private oldestKey = 0;
@@ -161,7 +189,7 @@ export class Terrain {
 	};
 	/** Notes the oldest block that the newest selection leaves out and that no longer draws. */
 	private readonly scanOldest = (block: Block, key: number): void => {
-		if (block.stamp === this.stamp) return;
+		if (block.stamp === this.stamp || block.level !== this.scanLevel) return;
 		// A block that draws holds the last complete selection, which stays whole until the newest
 		// one is built, so its mesh is not free yet.
 		if (block.shown) return;
@@ -177,6 +205,11 @@ export class Terrain {
 	private stamp = 0;
 	private lastCellX = Number.NaN;
 	private lastCellZ = Number.NaN;
+	/** The eye's height and the view that the newest selection used. */
+	private lastY = Number.NaN;
+	private lastFov = Number.NaN;
+	private lastScreen = Number.NaN;
+	private lastError = Number.NaN;
 	/** How many blocks draw, which `drawn` reports as none while the ground is hidden. */
 	private drawnBlocks = 0;
 	/** True while the newest selection has blocks still to build. */
@@ -190,7 +223,6 @@ export class Terrain {
 			size,
 			chunkQuads = DEFAULT_QUADS,
 			maxLevel = DEFAULT_MAX_LEVEL,
-			split = DEFAULT_SPLIT,
 			maxBlocks = DEFAULT_BLOCKS,
 			blocksPerUpdate = DEFAULT_BUILDS,
 		} = options;
@@ -210,14 +242,20 @@ export class Terrain {
 		this.fixedSkirt = options.skirt;
 		this.cast = options.castShadows ?? true;
 		this.receive = options.receiveShadows ?? true;
+		if (options.error !== undefined && !(options.error >= 0 && Number.isFinite(options.error)))
+			throw new Error(
+				`createTerrain() got the error ${options.error}, which is not a number of 0 or more.`,
+			);
 		this.maxBlocks = maxBlocks;
 		this.builds = blocksPerUpdate;
+		this.camera = options.camera;
+		this.fixedError = options.error;
 		this.field = createHeightfield({
 			size,
 			resolution: options.resolution,
 			height: options.height,
 		});
-		this.tree = new Quadtree({ size, maxLevel, split });
+		this.tree = new Quadtree({ size, maxLevel, quads: chunkQuads, field: this.field });
 		this.cellSize = this.tree.blockSize(maxLevel);
 		this.halfSize = size / 2;
 		this.shape = chunkShape(chunkQuads);
@@ -230,14 +268,38 @@ export class Terrain {
 			options.splatResolution ?? DEFAULT_SPLAT,
 			splat,
 		);
+		// The ground's normals, one texel for each height sample, which every block's surface reads.
+		this.normalTexture =
+			options.bakedNormals === false ? undefined : this.bakeNormals(context.textures);
 		const built = splatMaterial(context, {
 			layers: options.layers,
 			splat: this.splatTexture,
 			size,
 			metalness: options.metalness,
+			normals: this.normalTexture,
 		});
 		this.material = built.material;
 		this.white = built.white;
+	}
+
+	/**
+	 * The ground's normals as a texture: the field's slope at one texel for each height sample,
+	 * built here in the sketch worker. A block's surface reads it, so a coarse block keeps the
+	 * relief that its vertices cannot show.
+	 */
+	private bakeNormals(textures: SketchContext['textures']): Texture {
+		const texels = this.field.resolution;
+		const data = new Uint8Array(texels * texels * 4);
+		this.field.writeNormalMap(texels, data);
+		return textures.fromData({
+			width: texels,
+			height: texels,
+			data,
+			colorSpace: 'linear',
+			wrap: 'clamp',
+			mipmaps: true,
+			anisotropy: 8,
+		});
 	}
 
 	/** The width and depth of the ground, in meters. */
@@ -284,24 +346,43 @@ export class Terrain {
 	}
 
 	/**
-	 * Picks the blocks to draw for a camera whose world position `eye` holds, as x, y and z: the
-	 * ground reads the x and the z. It does nothing until the camera moves into a new cell of the
-	 * finest level, so a still camera costs no work. A new cell builds at most `blocksPerUpdate`
-	 * blocks per call, and the ground draws the selection it had until the new one is built. A
-	 * block that the new selection needs takes the mesh of one that it left out. Call it in
-	 * `onUpdate` with the camera's own position, in an array you keep: an array crosses the call as
-	 * it is, where two fractions make the browser box each of them into an object.
+	 * Picks the blocks to draw for a camera whose world position `eye` holds, as x, y and z. The
+	 * ground picks again when the camera crosses a cell of the finest level, rises by one such
+	 * cell, or draws through a different field of view or buffer height, so a still camera costs
+	 * no work. A new selection builds at most `blocksPerUpdate` blocks per call, and the ground
+	 * draws the selection it had until the new one is built. A block that the new selection needs
+	 * takes the mesh of one that it left out. Call it in `onUpdate` with the camera's own position,
+	 * in an array you keep: an array crosses the call as it is, where two fractions make the
+	 * browser box each of them into an object.
 	 */
 	update(eye: Vec3Like): void {
 		const x = eye[0] as number;
 		const z = eye[2] as number;
 		if (this.ended) return;
+		const y = eye[1] as number;
+		const fov = this.camera?.fov ?? DEFAULT_FOV;
+		const viewport = this.context.engine.viewport;
+		const quality = this.context.quality.settings;
+		const screen = Math.max(viewport.height * viewport.pixelRatio * quality.maxRenderScale, 1);
+		// The preset's level-of-detail threshold counts in the pixels that the buffer draws.
+		const error = this.fixedError ?? DEFAULT_ERROR * quality.lodThreshold;
 		const cellX = Math.floor((x + this.halfSize) / this.cellSize);
 		const cellZ = Math.floor((z + this.halfSize) / this.cellSize);
-		if (cellX !== this.lastCellX || cellZ !== this.lastCellZ) {
+		if (
+			cellX !== this.lastCellX ||
+			cellZ !== this.lastCellZ ||
+			Math.abs(y - this.lastY) >= this.cellSize ||
+			fov !== this.lastFov ||
+			screen !== this.lastScreen ||
+			error !== this.lastError
+		) {
 			this.lastCellX = cellX;
 			this.lastCellZ = cellZ;
-			this.tree.select(x, z);
+			this.lastY = y;
+			this.lastFov = fov;
+			this.lastScreen = screen;
+			this.lastError = error;
+			this.tree.select(eye, fov, screen, error);
 			this.stamp++;
 			this.pending = true;
 		} else if (!this.pending) return;
@@ -344,6 +425,7 @@ export class Terrain {
 		this.spareCount = 0;
 		this.material.destroy();
 		this.splatTexture.destroy();
+		this.normalTexture?.destroy();
 		this.white?.destroy();
 		this.drawnBlocks = 0;
 		this.pending = false;
@@ -397,12 +479,13 @@ export class Terrain {
 			this.positions,
 			this.normals,
 		);
-		let block = this.takeBlock();
+		let block = this.takeBlock(level);
 		if (block) {
+			// The mesh is the level's own, so it already carries that level's sphere: a crossing
+			// gives the object a new place and leaves the bounds, and the draw table, alone.
 			block.mesh.updateVertices('positions', this.positions);
 			block.mesh.updateVertices('normals', this.normals);
 			block.object.setPosition(originX, 0, originZ);
-			block.object.setBounds(this.center, this.blockRadius());
 		} else {
 			const mesh = this.context.geometry.fromArrays({
 				positions: this.positions,
@@ -417,9 +500,12 @@ export class Terrain {
 				castShadows: this.cast,
 				receiveShadows: this.receive,
 			});
-			block = { key, object, mesh, stamp: this.stamp, shown: false };
+			const { center, radius } = this.blockSphere(level, blockSize, skirt);
+			object.setBounds(center, radius);
+			block = { key, object, mesh, level, stamp: this.stamp, shown: false };
 		}
 		block.key = key;
+		block.level = level;
 		block.stamp = this.stamp;
 		block.object.setVisible(false);
 		blocks.set(key, block);
@@ -431,10 +517,12 @@ export class Terrain {
 	 * unused among the blocks the newest selection leaves out. Undefined while the ground holds fewer
 	 * meshes than `maxBlocks`, or while every mesh it holds draws, where the new block builds one.
 	 */
-	private takeBlock(): Block | undefined {
-		const waiting = this.unpark();
+	private takeBlock(level: number): Block | undefined {
+		const waiting = this.unpark(level);
 		if (waiting) return waiting;
-		if (this.blocks.size + this.spareCount >= this.maxBlocks && this.evict()) return this.unpark();
+		if (this.blocks.size + this.spareCount >= this.maxBlocks && this.evict(level)) {
+			return this.unpark(level);
+		}
 		return undefined;
 	}
 
@@ -443,39 +531,49 @@ export class Terrain {
 		this.spares[this.spareCount++] = block;
 	}
 
-	/** Takes the last parked block, or undefined when none waits. */
-	private unpark(): Block | undefined {
-		if (this.spareCount === 0) return undefined;
-		const taken = this.spares[--this.spareCount] as Block;
-		this.spares[this.spareCount] = undefined as unknown as Block;
-		return taken;
+	/** Takes the last parked block of `level`, or undefined when none of that level waits. */
+	private unpark(level: number): Block | undefined {
+		for (let i = this.spareCount - 1; i >= 0; i--) {
+			const block = this.spares[i] as Block;
+			if (block.level !== level) continue;
+			for (let k = i; k < this.spareCount - 1; k++) this.spares[k] = this.spares[k + 1] as Block;
+			this.spares[--this.spareCount] = undefined as unknown as Block;
+			return block;
+		}
+		return undefined;
 	}
 
 	/**
-	 * The distance from a block's low corner to the farthest vertex that was just written into it.
-	 * A mesh keeps the sphere it was made with, so a block that takes another's mesh gives the object
-	 * the sphere of the ground that it now holds.
+	 * The sphere a block of this level reports: centred on the block's middle, with the radius to the
+	 * farthest corner of the level's ground. One sphere serves every block of a level, so a block that
+	 * takes another's mesh keeps it, and a cell crossing writes no new bounds.
 	 */
-	private blockRadius(): number {
-		const { positions } = this;
-		let radius = 0;
-		for (let at = 0; at < positions.length; at += 3) {
-			const x = positions[at] as number;
-			const y = positions[at + 1] as number;
-			const z = positions[at + 2] as number;
-			const distance = Math.sqrt(x * x + y * y + z * z);
-			if (distance > radius) radius = distance;
-		}
-		return radius;
+	private blockSphere(
+		level: number,
+		blockSize: number,
+		skirt: number,
+	): { center: [number, number, number]; radius: number } {
+		const cached = this.spheres.get(level);
+		if (cached) return cached;
+		const { min, max } = this.field;
+		const low = min - skirt;
+		const center: [number, number, number] = [blockSize / 2, (low + max) / 2, blockSize / 2];
+		// The block's box: its middle across the two sides, its middle in height, and the distance
+		// from there to a corner at the top or the bottom of the ground.
+		const radius = Math.hypot(blockSize / Math.SQRT2, (max - low) / 2);
+		const sphere = { center, radius };
+		this.spheres.set(level, sphere);
+		return sphere;
 	}
 
 	/**
 	 * Parks the oldest block that the newest selection leaves out and that no longer draws, for the
 	 * next block to take. False when every block either belongs to the newest selection or draws.
 	 */
-	private evict(): boolean {
+	private evict(level: number): boolean {
 		this.oldest = undefined;
 		this.oldestKey = 0;
+		this.scanLevel = level;
 		this.blocks.forEach(this.scanOldest);
 		const oldest = this.oldest;
 		if (!oldest) return false;

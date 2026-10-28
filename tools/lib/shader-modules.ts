@@ -37,6 +37,7 @@ import {
 	touchCacheEntry,
 	writeFileAtomic,
 } from './build-cache';
+import { refuseInQuietWindow } from './quiet-window';
 
 /** The folder that the shader build writes its modules into. */
 export const MODULE_DIR = 'packages/engine/src/generated';
@@ -365,10 +366,11 @@ export function announceColdBuild(entries: string): void {
  * while another process holds the machine's shader lock and this checkout already holds a whole
  * set. It then keeps that set, which does not match the sources, says so, and returns false; it
  * returns true when the modules match. A commit's type check takes this path, so that it does not
- * wait for another checkout's shader build, which can hold the lock for many minutes: on 25 October
- * 2026 a landing's commit waited 8 minutes behind a helper's build, at no processor time.
+ * wait for another checkout's shader build, which can hold the lock for many minutes: a landing's
+ * commit can wait 8 minutes behind a helper's build, at no processor time.
  */
 export function shaderModulesUnlessBusy(root: string): boolean {
+	refuseInQuietWindow('The shader build');
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs) || restoreFromCache(root, inputs)) return true;
 	const holder = freshShadersRequired() ? undefined : liveLockHolder(shaderLock());
@@ -724,6 +726,7 @@ function pruneCaches(): void {
  * Returns true when it ran the build.
  */
 export function ensureShaderModules(root: string): boolean {
+	refuseInQuietWindow('The shader build');
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs)) return false;
 	if (freshShadersRequired()) throw new Error(staleSetMessage(root));
@@ -733,10 +736,10 @@ export function ensureShaderModules(root: string): boolean {
 	// is a miss, so a restore beside a build that stores the same set reads the whole set or nothing.
 	if (restoreFromCache(root, inputs)) return false;
 	// A build holds the machine-wide lock, so a queue job that starts one holds every other build
-	// back for however long the queue runs it at background priority: on 25 October 2026 one build
-	// waited 71 minutes that way and used three hundredths of a second of processor time, while
-	// picture runs behind it could not start. A job that reaches this line needs a real build, so
-	// it stops here and says how to make the job fast instead of making every other job slow.
+	// back for however long the queue runs it at background priority: one such build can wait 71
+	// minutes on three hundredths of a second of processor time, while picture runs behind it cannot
+	// start. A job that reaches this line needs a real build, so it stops here and says how to make
+	// the job fast instead of making every other job slow.
 	if (process.env.NULL3D_HEAVY_SLOT)
 		throw new Error(
 			`the shader modules of ${root} are neither built nor cached, and building them inside the job queue holds the machine-wide shader lock for tens of minutes at background priority while every other build waits. Run \`bun tools/shaders.ts\` in that checkout outside the queue first, which takes under two minutes at normal priority, then run this job again. The queue sets NULL3D_HEAVY_SLOT, which is how this check knows it is inside one.`,

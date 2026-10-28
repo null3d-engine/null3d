@@ -32,6 +32,9 @@ const AROUND_OFFSETS = new Int32Array([0, 0, 1, 0, -1, 0, 0, 1, 0, -1]);
 /** The heights of those five points, which a write of a block reuses. */
 const AROUND = new Float64Array(5);
 
+/** The normal that a write of the normal map reuses, so a whole ground costs no object per texel. */
+const NORMAL = [0, 0, 0];
+
 /**
  * The height field that a terrain builds every block from: the height of a square piece of ground,
  * sampled once and read back with bilinear interpolation.
@@ -150,6 +153,40 @@ export class Heightfield {
 		out[0] = -dx / length;
 		out[1] = 1 / length;
 		out[2] = -dz / length;
+	}
+
+	/**
+	 * Writes the ground's normals into a square image of `resolution` texels along each side, row
+	 * by row from `z = -size / 2` upward, as four bytes per texel: the normal's x and z, each from
+	 * -1 to 1 as 0 to 255, then two bytes that hold no value. A surface rebuilds the y from the
+	 * unit length. The slope is read with the same central differences as `normalAt`, so every
+	 * block of every level shades from one picture of the ground rather than from its own
+	 * vertices. Allocates nothing beyond what the caller gives.
+	 */
+	writeNormalMap(resolution: number, data: Uint8Array): void {
+		if (!Number.isInteger(resolution) || resolution < 1)
+			throw new Error(
+				`writeNormalMap() got the resolution ${resolution}, which is not a whole number of 1 or more.`,
+			);
+		if (data.length !== resolution * resolution * 4)
+			throw new Error(
+				`writeNormalMap() got ${data.length} bytes, but ${resolution} texels along each side need ${resolution * resolution * 4}.`,
+			);
+		const { corner, size } = this;
+		const span = size / resolution;
+		const out = NORMAL;
+		let at = 0;
+		for (let row = 0; row < resolution; row++) {
+			const z = corner + (row + 0.5) * span;
+			for (let col = 0; col < resolution; col++) {
+				this.normalAt(corner + (col + 0.5) * span, z, out);
+				data[at] = Math.round(((out[0] as number) * 0.5 + 0.5) * 255);
+				data[at + 1] = Math.round(((out[2] as number) * 0.5 + 0.5) * 255);
+				data[at + 2] = 128;
+				data[at + 3] = 255;
+				at += 4;
+			}
+		}
 	}
 
 	/**

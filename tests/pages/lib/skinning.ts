@@ -482,7 +482,7 @@ export interface ImageComparison {
 
 /** What a skinning page reports. */
 export interface SkinningResult {
-	/** The GPU interface the page drew with. Results from before WebGPU's page had none: WebGL2. */
+	/** The GPU interface the page drew with. A result without one drew with WebGL2. */
 	gpu?: SkinningGpu;
 	characters: number;
 	cascades: number;
@@ -500,10 +500,7 @@ export interface SkinningResult {
 	drawn: number[];
 	/** Characters that the path that skins once skins: those that some pass draws. */
 	skinned: number;
-	/**
-	 * Bytes of each vertex that the path that skins once writes, where the page says. Results from
-	 * before 6 October 2026 lack it: the WebGPU page wrote 24 then.
-	 */
+	/** Bytes of each vertex that the path that skins once writes, where the page says. */
 	skinnedBytes?: number;
 	image: ImageComparison;
 	/** The timings of the page's two paths, as `skinningPaths` names them. */

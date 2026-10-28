@@ -10,6 +10,7 @@ import {
 	colorMorphBuilder,
 	iorBuilder,
 	iridescenceBuilder,
+	maskedTransmissionBuilder,
 	specularBuilder,
 } from '../../tests/pages/lib/gltf-files';
 import { PARITY_CANVAS } from './spec';
@@ -87,6 +88,9 @@ export interface ModelScene {
 /** The wait of a scene with a clear coat or a sheen, whose builds a software GPU makes slowly. */
 const LAYERS_SECONDS = 60;
 
+/** The wait of a scene with hundreds of materials, whose pipeline setup a software GPU makes slowly. */
+const GRID_SECONDS = 150;
+
 /** The HDR file of the model scenes' environment: the backgrounds scene's, at full intensity. */
 export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr');
 
@@ -121,20 +125,26 @@ const IRIDESCENCE_SUZANNE = new URL(
  * compression under each of its two names, Draco compression, and morph targets: weights that a
  * clip animates, eight
  * targets on two primitives, a file's default weight on primitives that share targets, and targets
- * that move vertex colors. Five scenes make their files in code: the color targets, and small
+ * that move vertex colors. Six scenes make their files in code: the color targets, small
  * equivalents of four Khronos test models whose originals need an environment map, transmission or
- * lights of their own: KHR_materials_specular's factors and textures, KHR_materials_ior's indices
+ * lights of their own (KHR_materials_specular's factors and textures, KHR_materials_ior's indices
  * with the specular values, KHR_materials_iridescence's films, and KHR_materials_anisotropy's
- * stretched highlights. Those scenes' own lights light them. The Khronos iridescence models draw
- * under a neutral studio, as their own viewer draws them, from temporary fixtures that the sample
- * content replaces. The vendor name's file is the instancing model as
- * gltfpack compresses it (tests/lib/meshopt-fixtures.ts), which the repository keeps. The Khronos
+ * stretched highlights), and a glass that masks its alpha and takes its transmission and thickness
+ * from maps. The four Khronos equivalents' own lights light them. The Khronos iridescence models
+ * draw under a neutral studio, as their own viewer draws them, from temporary fixtures that the
+ * sample content replaces. The vendor name's file is the instancing model as gltfpack compresses it
+ * (tests/lib/meshopt-fixtures.ts), which the repository keeps. The Khronos
  * name's file covers every mode and filter. The Draco scenes draw the sample content's skinned
  * Draco model, and the coordinates test model as Draco's encoder compresses it
  * (tests/lib/draco-fixtures.ts), each against its uncompressed scene. The Khronos models of
  * KHR_materials_clearcoat and KHR_materials_sheen draw under the sun, and two of them also under the
  * HDR environment, whose light the coat reflects and the sheen gathers. The toy car has a coat, a
- * sheen and glass in one model.
+ * sheen and glass in one model. The Khronos grid of KHR_materials_anisotropy draws beside the
+ * code-built scene, so a strict comparison covers the real file too. The Khronos linear
+ * interpolation test compares a factor with the value that a texture samples, so a transfer
+ * function applied after filtering changes its picture, and the test of KHR_materials_dispersion
+ * draws its prisms in front of a patterned cloth, so the colors that each dispersion strength
+ * separates show.
  */
 export const MODEL_SCENES = {
 	'metal-rough': {
@@ -254,6 +264,41 @@ export const MODEL_SCENES = {
 	anisotropy: {
 		file: () => anisotropyBuilder().glb(),
 		ownLights: true,
+		timeoutSeconds: LAYERS_SECONDS,
+	},
+	// Khronos's linear interpolation test: a sphere whose emissive factor is 0.5 green beside one
+	// that samples the same value from a 2 by 1 texture. The two must draw the same green, so a
+	// texture decoded after its texels filter shows a difference. The repository keeps this CC0
+	// file, 13 KB, beside its tests.
+	'texture-linear-interpolation': {
+		url: new URL(
+			'../../tests/pages/assets/models/sources/khronos/TextureLinearInterpolationTest/TextureLinearInterpolationTest.glb',
+			import.meta.url,
+		).href,
+	},
+	// The Khronos test grid: the stretch of KHR_materials_anisotropy over seven strengths against
+	// seven roughnesses, whose polished surfaces reflect the environment's light.
+	'anisotropy-strength': {
+		url: new URL(
+			'../../tests/pages/assets/models/sources/khronos/AnisotropyStrengthTest/AnisotropyStrengthTest.glb',
+			import.meta.url,
+		).href,
+		environment: true,
+		timeoutSeconds: GRID_SECONDS,
+	},
+	'transmission-mask': {
+		file: () => maskedTransmissionBuilder().glb(),
+		frame: { center: [0, 0, -0.4], radius: 2 },
+		timeoutSeconds: LAYERS_SECONDS,
+	},
+	// The Khronos test of KHR_materials_dispersion: prisms over five indices of refraction and five
+	// dispersion strengths, in front of a patterned cloth. The transmission shader bends one ray
+	// through each prism without dispersion and three with it, so the colors separate.
+	dispersion: {
+		url: new URL(
+			'../../tests/pages/assets/models/sources/khronos/DispersionTest/DispersionTest.glb',
+			import.meta.url,
+		).href,
 		timeoutSeconds: LAYERS_SECONDS,
 	},
 	'morph-primitives': {

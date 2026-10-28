@@ -16,6 +16,11 @@ interface FakeBlock {
 	visible: boolean;
 	destroyed: boolean;
 	meshDestroyed: boolean;
+	/** The vertices the block's mesh was made with, which its bounds must hold. */
+	positions: Float32Array;
+	/** The sphere the object was given, and how many times it was given one. */
+	bounds: { center: readonly [number, number, number]; radius: number } | undefined;
+	boundsCalls: number;
 }
 
 /**
@@ -31,14 +36,18 @@ function sideOf(positions: Float32Array): number {
 /** A sketch context with just what a terrain calls, which logs every block it makes. */
 function fakeContext() {
 	const blocks: FakeBlock[] = [];
-	const texture = { destroy: () => {} } as unknown as Texture;
+	const texture = () => ({ destroy: () => {} }) as unknown as Texture;
 	const context = {
-		textures: { fromData: () => texture },
+		textures: { fromData: texture },
 		materials: { shader: () => ({ destroy: () => {} }) },
+		// The ground picks blocks from the drawing buffer's height and the preset's detail.
+		engine: { viewport: { width: 1920, height: 1080, pixelRatio: 1 } },
+		quality: { settings: { lodThreshold: 1, maxRenderScale: 1 } },
 		geometry: {
 			// The ground writes a block's vertices into whichever mesh it holds, so the mesh's side
 			// follows the ground it now carries.
 			fromArrays: (arrays: { positions: Float32Array }) => {
+				const kept = arrays.positions.slice();
 				const mesh: FakeMesh = {
 					side: sideOf(arrays.positions),
 					destroyed: false,
@@ -49,16 +58,20 @@ function fakeContext() {
 						if (name === 'positions') this.side = sideOf(values);
 					},
 				};
+				(mesh as FakeMesh & { positions: Float32Array }).positions = kept;
 				return mesh;
 			},
 		},
 		scene: {
-			createMesh: ({ mesh }: { mesh: FakeMesh }) => {
+			createMesh: ({ mesh }: { mesh: FakeMesh & { positions?: Float32Array } }) => {
 				const block: FakeBlock = {
 					mesh,
 					visible: true,
 					destroyed: false,
 					meshDestroyed: false,
+					positions: mesh.positions ?? new Float32Array(0),
+					bounds: undefined,
+					boundsCalls: 0,
 				};
 				blocks.push(block);
 				return {
@@ -66,7 +79,10 @@ function fakeContext() {
 						block.visible = visible;
 					},
 					setPosition: () => {},
-					setBounds: () => {},
+					setBounds: (center: readonly [number, number, number], radius: number) => {
+						block.bounds = { center: [center[0], center[1], center[2]], radius };
+						block.boundsCalls++;
+					},
 					destroy: () => {
 						block.destroyed = true;
 						block.meshDestroyed = mesh.destroyed;
@@ -90,7 +106,7 @@ function terrain(options: Partial<TerrainOptions> = {}) {
 		height: () => 0,
 		resolution: 8,
 		splatResolution: 2,
-		chunkQuads: 2,
+		chunkQuads: 16,
 		layers: [layer],
 		maxLevel: 5,
 		...options,
@@ -99,9 +115,9 @@ function terrain(options: Partial<TerrainOptions> = {}) {
 }
 
 /** Moves the camera to a place and lets every update that the new selection needs run. */
-function settle(t: ReturnType<typeof terrain>, x: number, z: number): void {
-	t.ground.update([x, 0, z]);
-	while (t.ground.building) t.ground.update([x, 0, z]);
+function settle(t: ReturnType<typeof terrain>, x: number, z: number, y = 0): void {
+	t.ground.update([x, y, z]);
+	while (t.ground.building) t.ground.update([x, y, z]);
 }
 
 describe('terrain updates', () => {
@@ -218,8 +234,93 @@ describe('terrain updates', () => {
 		expect(t.blocks.every((b) => b.destroyed)).toBe(true);
 	});
 
-	test('createTerrain refuses a split or blocksPerUpdate out of range', () => {
-		expect(() => terrain({ split: 9 })).toThrow('up to 8');
+	test('createTerrain refuses an error or blocksPerUpdate out of range', () => {
+		expect(() => terrain({ error: -1 })).toThrow('0 or more');
+		expect(() => terrain({ error: Number.POSITIVE_INFINITY })).toThrow('0 or more');
 		expect(() => terrain({ blocksPerUpdate: 0 })).toThrow('blocksPerUpdate');
+	});
+
+	test('a high camera picks coarser blocks under it', () => {
+		const t = terrain();
+		settle(t, 10, 10, 0);
+		const near = t.ground.drawn;
+		settle(t, 10, 10, 500);
+		expect(t.ground.drawn).toBeLessThan(near);
+		expect(t.area()).toBeCloseTo(SIZE * SIZE, 6);
+	});
+
+	test('the ground picks again when the camera rises without moving across', () => {
+		const t = terrain();
+		settle(t, 10, 10, 0);
+		const before = t.ground.drawn;
+		settle(t, 10, 10, 400);
+		expect(t.ground.drawn).toBeLessThan(before);
+	});
+});
+
+describe('terrain block spheres', () => {
+	/** The skirt the test sets, which every block's sphere must cover below the ground. */
+	const SKIRT = 5;
+
+	test("a block's bounds are centred on its middle and hold every vertex of its mesh", () => {
+		const t = terrain({
+			skirt: SKIRT,
+			height: (x: number, z: number) => Math.sin(x / 40) * 20 + Math.cos(z / 60) * 12,
+		});
+		settle(t, 10, 10);
+		expect(t.blocks.length).toBeGreaterThan(0);
+		// A level's block size identifies it, so the radii its blocks report are gathered by it.
+		const levelRadii = new Map<number, { radius: number; blocks: number }>();
+		const { min, max } = t.ground.heightfield;
+		for (const block of t.blocks) {
+			expect(block.bounds).toBeDefined();
+			const { center, radius } = block.bounds as {
+				center: readonly [number, number, number];
+				radius: number;
+			};
+			let farthest = 0;
+			let corner = 0;
+			let maxX = 0;
+			let maxZ = 0;
+			for (let at = 0; at < block.positions.length; at += 3) {
+				const x = block.positions[at] as number;
+				const y = block.positions[at + 1] as number;
+				const z = block.positions[at + 2] as number;
+				farthest = Math.max(farthest, Math.hypot(x - center[0], y - center[1], z - center[2]));
+				corner = Math.max(corner, Math.hypot(x, y, z));
+				maxX = Math.max(maxX, x);
+				maxZ = Math.max(maxZ, z);
+			}
+			expect(farthest).toBeLessThanOrEqual(radius + 1e-3);
+			// The sphere sits on the block's middle across its two sides, not on its low corner.
+			expect(center[0]).toBeCloseTo(maxX / 2, 6);
+			expect(center[2]).toBeCloseTo(maxZ / 2, 6);
+			expect(corner).toBeGreaterThan(0);
+			// Every block of a level reports the same radius, and its block size identifies the level.
+			const level = levelRadii.get(maxX);
+			if (level) {
+				expect(radius).toBe(level.radius);
+				level.blocks++;
+			} else {
+				levelRadii.set(maxX, { radius, blocks: 1 });
+			}
+			// No larger than the level's ground needs: the diagonal across the block's two sides,
+			// and half the height range that its ground spans, the skirt below it included.
+			const required = Math.hypot(maxX / Math.SQRT2, (max - (min - SKIRT)) / 2);
+			expect(radius).toBeLessThanOrEqual(required + 1e-3);
+		}
+		// A shared radius means something only where a level holds more than one block, and the
+		// selection covers more than one level.
+		expect(levelRadii.size).toBeGreaterThan(1);
+		for (const level of levelRadii.values()) expect(level.blocks).toBeGreaterThan(1);
+	});
+
+	test('a cell crossing gives no block that already draws new bounds', () => {
+		const t = terrain({ maxBlocks: 64 });
+		settle(t, 10, 10);
+		const existing = t.blocks.slice();
+		settle(t, 200, 10);
+		expect(existing.length).toBeGreaterThan(0);
+		for (const block of existing) expect(block.boundsCalls).toBe(1);
 	});
 });

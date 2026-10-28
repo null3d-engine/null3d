@@ -187,6 +187,9 @@ pub(super) struct Bucket {
     /// True when that pipeline is the bucket's own template's, which reads the frame group and the
     /// maps' group as the shading does, and false for the depth template's.
     pub(super) prepass_own: bool,
+    /// True for a bucket whose surface writes no color. Its draws come first, so the depth it
+    /// writes holds back the color of the surfaces behind it.
+    pub(super) holdout: bool,
     /// The bind group of its material's map, or 0 for a pipeline that reads none.
     pub(super) group: u32,
     pub(super) material: u32,
@@ -238,6 +241,9 @@ pub(super) struct Bucket {
     pub(super) feature: u32,
     /// The most instances that the feature draw's buffer holds, 0 for a bucket of the engine's own.
     pub(super) feature_capacity: u32,
+    /// True while the add-on's feature says that the draw draws, and true for a bucket of the
+    /// engine's own. A bucket whose feature is not ready records no draw in any view.
+    pub(super) feature_ready: bool,
     /// The scene slot of the object that places the feature draw, or `u32::MAX` for a bucket of the
     /// engine's own.
     pub(super) feature_slot: u32,
@@ -541,6 +547,27 @@ impl Layout {
     pub(super) fn compacted_bytes(&self) -> u32 {
         let stride = self.copy_stride();
         (self.copied * stride + self.indexed * sizes::INDEX_STRIDE).max(stride) + stride
+    }
+
+    /// A layout whose buckets read `copied` slots, for the tests of the buffer that holds them,
+    /// which read that count alone.
+    #[cfg(test)]
+    pub(super) fn with_copies(copied: u32) -> Self {
+        Self {
+            copied,
+            ..Self::default()
+        }
+    }
+
+    /// A layout with a tree of `patches` and `indices` of its own, for the tests of the tables that
+    /// hold them, which read those counts alone.
+    #[cfg(test)]
+    pub(super) fn with_cluster_tables(patches: usize, indices: usize) -> Self {
+        Self {
+            cluster_patches: vec![[0; 8]; patches],
+            cluster_indices: vec![0; indices],
+            ..Self::default()
+        }
     }
 
     /// Bytes of each copy in a view's compacted instance buffer: the motion layout's copies hold the
@@ -1190,6 +1217,10 @@ impl Layout {
                     || regions.is_some()
                     || (pipeline.template >= template::CUSTOM_FIRST
                         && pipeline.permutation & permutation::MOTION != 0));
+            // A surface that writes no color holds back what lies behind it, so its draws come
+            // before the surfaces that write color. Only the scene's own layout draws them.
+            let holdout =
+                drawn == Drawn::Scene && pipeline.state & state_flags::NO_COLOR_WRITE != 0;
             // The motion template's pipelines bind a map's group after the frame's, and a blank
             // one's where the pair has no map.
             let group =
@@ -1255,6 +1286,7 @@ impl Layout {
                 pipeline,
                 prepass,
                 prepass_own,
+                holdout,
                 group,
                 material,
                 scene_depth,
@@ -1280,6 +1312,7 @@ impl Layout {
                 cluster,
                 feature: feature.unwrap_or(0),
                 feature_capacity: record.map_or(0, |(_, capacity, _)| capacity),
+                feature_ready: feature.is_none_or(|id| settings.feature_instances().is_ready(id)),
                 feature_slot: object.unwrap_or(u32::MAX),
             });
             *base += count;
@@ -1464,18 +1497,12 @@ impl Layout {
         Ok(())
     }
 
-    /// The count that a view drawing this layout draws for feature-instance draw `id`, or `None`
-    /// when the layout holds no bucket for it.
-    pub(super) fn feature_template_count(&self, id: u32) -> Option<u32> {
-        let bucket = self.buckets.iter().find(|bucket| bucket.feature == id)?;
-        Some(self.indirect_template[(bucket.first_draw * sizes::INDIRECT_WORDS + 1) as usize])
-    }
-
-    /// Sets each feature-instance draw's count in the template that a frame's reset uploads. A
-    /// shadow view draws that count, because the add-on's compute writes the main view's count
-    /// alone. The culling shader never visits these buckets, so it keeps the count as it is.
-    /// `radii` holds each scene slot's world radius: a hidden object draws nothing, as its draw
-    /// would in any other bucket, so its count is 0.
+    /// Sets each feature-instance draw's count in the template that a frame's reset uploads, for
+    /// the views that the frame's count copy does not reach: the camera's mirrors and probes, and
+    /// the outline, skin and motion views. The camera's own view and every shadow view take the
+    /// add-on's count word instead. The culling shader never visits these buckets, so it keeps the
+    /// count as it is. `radii` holds each scene slot's world radius: a hidden object draws
+    /// nothing, as its draw would in any other bucket, so its count is 0.
     pub(super) fn set_feature_counts(
         &mut self,
         features: &crate::feature_instances::FeatureInstanceTable,
@@ -1578,7 +1605,9 @@ impl Layout {
         let mut recreated = false;
         for ((id, size), made) in needed.into_iter().zip(&mut self.buffer_sizes) {
             if size > 0 && *made < size {
-                *made = grown_size(size, binding_bytes);
+                *made = grown_size(size, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
                 // The motion pass copies the matrices into its last frame's copies.
                 let flags = if id == ids::MATRICES {
                     usage::STORAGE | usage::COPY_DST | usage::COPY_SRC
@@ -2414,11 +2443,10 @@ mod tests {
                 .unwrap_or_else(|| panic!("the draw with the bounds {bounds} has a bucket"));
             assert_eq!(feature_capacity, 40);
             let count_word = (first_draw * sizes::INDIRECT_WORDS + 1) as usize;
-            // The template that the frame's reset uploads keeps the page's count, which a shadow
-            // view draws.
+            // The template that the frame's reset uploads holds the page's count for the camera's
+            // mirrors and probes, which the frame's count copy does not reach.
             assert_eq!(layout.indirect_template[count_word], 0);
             layout.set_feature_counts(settings.feature_instances(), scene.world(1).radii());
-            assert_eq!(layout.feature_template_count(id), Some(6));
             assert_eq!(layout.indirect_template[count_word], 6);
         }
     }

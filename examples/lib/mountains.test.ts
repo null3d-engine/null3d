@@ -1,5 +1,5 @@
 // The ring of mountains around each showcase scene keeps the plain background out of view
-// ([D-170](../../.dev/decisions/D-170-showcase-camera.md), owner, 20 October 2026). Every bearing's
+// ([D-170](../../.dev/decisions/D-170-showcase-camera.md), owner's ruling). Every bearing's
 // crest stands above the highest that the Manual camera can climb, the ring lies under the land
 // where the two meet, so they never overlap, and it lies past the farthest the camera can reach.
 import { describe, expect, it } from 'bun:test';

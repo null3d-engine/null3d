@@ -1,6 +1,7 @@
 # D-260: Open-source readiness before the API freeze
 
-Status: decided by the owner on 25 October 2026. Date: 2026-10-25. Task: M4-O1 to M4-O6.
+Status: decided by the owner. Built: the built WebAssembly modules hold no folder of the builder's
+machine. Tasks: M4-O1 to M4-O6.
 
 Summary: M4 makes the repository ready for outside contributors. Decision records are simplified,
 and user docs do not link to them. Dated history becomes the key points a reader needs. The user
@@ -20,7 +21,7 @@ and its build process and scripts work for any developer.
 
 ## Decision
 
-Six tasks join M4:
+M4 holds six tasks:
 
 - M4-O1: refactor the decision records. Remove redundant and superseded text, and update every
   reference to the records. User-facing docs do not link to them.
@@ -36,3 +37,11 @@ Six tasks join M4:
 ## Consequences
 
 - `tools/hooks/task-ids.txt` lists M4-O1 to M4-O6, so commits can name them.
+- The compiler writes the Rust toolchain's folder and cargo's home into a WebAssembly module's
+  panic locations, and with them the builder's user name. Left as they are, the shader compiler
+  module that `@null3d/vite-plugin` publishes holds 183 such paths. Of those, 22 come from the
+  toolchain and 161 from 21 crates, such as naga and regex. The asset tool's module, which `@null3d/cli` publishes,
+  holds 27, from the toolchain and 3 crates. The engine's two cores hold 9 and 20. The build gives
+  these folders fixed paths, and it refuses a module that still holds a folder of the machine. So no
+  built file names the builder's machine, as M4-O5 asks of the text
+  ([Benchmarks](../benchmarks.md#download-size)).

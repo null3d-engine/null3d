@@ -370,7 +370,7 @@ mod tests {
         // builds. Decals, particles, sprites and the fog's light step draw with templates that
         // never take that bit, and a record's fields hold a rectangle's shape and image layer
         // where a point light keeps its decay, cone and shadow tile. So a light loop that has no
-        // tables must leave an area light out (D-145's addendum of 16 October).
+        // tables must leave an area light out (D-145).
         let lights = include_str!("../../null3d-shaders/wgsl/lib/lights.wgsl");
         assert_eq!(
             lights.matches("if kind >= KIND_RECT {").count(),

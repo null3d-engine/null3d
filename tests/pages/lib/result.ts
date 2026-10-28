@@ -50,6 +50,11 @@ export function progress(step: string): void {
 	trail.push(`${Math.round(performance.now())} ms ${step}`);
 }
 
+/** The page's steps so far, each with the time since the page started, as the trail records them. */
+export function progressTrail(): readonly string[] {
+	return trail;
+}
+
 /**
  * The shared memories that the page's thread made, the engine's included, those refused, and the
  * last one made, which the page does not keep alive.

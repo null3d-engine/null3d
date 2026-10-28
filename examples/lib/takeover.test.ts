@@ -1,7 +1,7 @@
 // Taking the camera halts the route at once: when the user takes over at any moment of the route,
 // the camera holds the route's pose that moment, from the first frame and with no drift afterwards,
 // and never jumps to a shot of its own ([D-170](../../.dev/decisions/D-170-showcase-camera.md),
-// owner, 14 October 2026).
+// owner's ruling).
 import { expect, test } from 'bun:test';
 import { quat, vec3 } from '@null3d/engine';
 import { StandInCamera } from '../../tests/pages/lib/stand-in-cameras';

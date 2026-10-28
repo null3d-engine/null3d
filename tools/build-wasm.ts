@@ -87,6 +87,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ASSET_FORMATS_URL } from '../packages/cli/src/assets/formats.js';
@@ -112,15 +113,19 @@ import {
 	writeFolderAtomic,
 } from './lib/build-cache';
 import { coreSourcesStamp, stampGlue } from './lib/core-sources';
+import { refuseInQuietWindow } from './lib/quiet-window';
 import { ensureShaderModules, inputHash } from './lib/shader-modules';
 import {
 	type BaseChoice,
 	chooseBase,
 	compareSizes,
-	grownFiles,
 	growthLines,
 	growthProblems,
 	growthSummary,
+	nearLimit,
+	nearLimitWarnings,
+	overLimit,
+	warningLine,
 } from './lib/size-check';
 import {
 	keepSizeMemo,
@@ -145,6 +150,7 @@ import {
 	FIRST_USE_SHADER_BUDGET,
 	findEngineParts,
 	findFirstUseFiles,
+	firstUseShaderBudget,
 	isCombosPart,
 	isFirstUseShaderPart,
 	isSizePartFile,
@@ -303,6 +309,94 @@ export function checkHeapStart(linked: Uint8Array, bound: Uint8Array): void {
 		throw new Error(
 			`wasm-bindgen made the threaded core's memory ${after ?? 'unknown'} pages from the linker's ${before ?? 'unknown'}, not one page more: update BINDGEN_PAGES in crates/null3d-wasm/src/heap.rs for this wasm-bindgen version`,
 		);
+}
+
+/**
+ * The compiler option that names the Rust library's source folder by the fixed path that the
+ * toolchain's own build gives it, `/rustc/<commit>`, from `rustc -vV`'s output. With the library's
+ * source installed, the compiler writes that folder's place on the machine into the panic
+ * locations of the library code that it compiles. Each machine then built other bytes, and so the
+ * hashed name of every file that names a module differed too, and with it that file's size.
+ */
+export function librarySourceRemap(sysroot: string, rustcVersion: string): string {
+	const commit = /^commit-hash: ([0-9a-f]+)$/m.exec(rustcVersion)?.[1];
+	if (!commit)
+		throw new Error(
+			'rustc -vV names no commit hash, so the build cannot give the Rust library source a fixed path',
+		);
+	return `--remap-path-prefix=${sysroot}/lib/rustlib/src/rust=/rustc/${commit}`;
+}
+
+/**
+ * The compiler option that names cargo's home folder, where it keeps the sources of the crates that
+ * the build downloads, by the fixed path `/cargo`. Those crates write their source paths into
+ * their panic locations as the Rust library does, from a folder in each machine's home.
+ */
+export function cargoHomeRemap(cargoHome: string): string {
+	return `--remap-path-prefix=${cargoHome}=/cargo`;
+}
+
+/**
+ * Refuses a built module that holds one of `folders`, the folders of the machine that built it. A
+ * folder in the bytes makes each machine build other bytes, and every page that loads the module
+ * would download the folder's name.
+ */
+export function checkNoMachineFolders(
+	bytes: Uint8Array,
+	folders: readonly string[],
+	module: string,
+): void {
+	const held = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	const found = folders.filter((folder) => held.includes(folder));
+	if (found.length > 0)
+		throw new Error(
+			`${module} holds the build machine's folder ${found.join(' and ')}: give the folder a fixed path with --remap-path-prefix in the build's compiler options`,
+		);
+}
+
+/** A folder's path without its trailing slashes. */
+const trimmed = (folder: string) => folder.replace(/\/+$/, '');
+
+/**
+ * Each folder with one trailing slash, as a path inside it starts. The root folder is left out,
+ * since every absolute path starts with it.
+ */
+export function machineFolders(folders: readonly string[]): string[] {
+	return folders
+		.map(trimmed)
+		.filter((folder) => folder !== '')
+		.map((folder) => `${folder}/`);
+}
+
+/**
+ * The compiler options that every WebAssembly build adds to its own, and the folders that no built
+ * module may hold: the Rust toolchain's, cargo's home, the checkout's and the home folder. Read
+ * once, on the first build that misses the cache. The compiler applies the last option whose
+ * folder matches, so the library source's option comes last, in case cargo's home holds it.
+ */
+let machine: { options: string[]; folders: string[] } | undefined;
+function buildMachine() {
+	if (!machine) {
+		const rustc = (args: string[]) => execFileSync('rustc', args, { cwd: root, encoding: 'utf8' });
+		const sysroot = trimmed(rustc(['--print', 'sysroot']).trim());
+		const cargoHome = trimmed(process.env.CARGO_HOME || join(homedir(), '.cargo'));
+		machine = {
+			options: [cargoHomeRemap(cargoHome), librarySourceRemap(sysroot, rustc(['-vV']))],
+			folders: machineFolders([sysroot, cargoHome, root, homedir()]),
+		};
+	}
+	return machine;
+}
+
+/**
+ * The variable that hands cargo the compiler options `options`, then `added`, one by one, so that a
+ * folder with a space in its name stays one option.
+ */
+export function compilerOptions(
+	options: string,
+	added: readonly string[] = buildMachine().options,
+): Record<string, string> {
+	return { CARGO_ENCODED_RUSTFLAGS: [...options.split(' '), ...added].join('\x1f') };
 }
 
 /** The locked version of a package in Cargo.lock. */
@@ -906,7 +1000,7 @@ async function buildVariant(
 	log.say(`building the ${variant.name} WebAssembly file`);
 	await log.cargo(
 		['build', '-p', CRATE, '--release', '--target', 'wasm32-unknown-unknown', ...variant.cargoArgs],
-		{ RUSTFLAGS: variant.rustflags },
+		compilerOptions(variant.rustflags),
 		targetDir,
 	);
 	// The files take shape in this build's own staging folder, and go in place whole once every step
@@ -937,6 +1031,11 @@ async function buildVariant(
 		wasm,
 	]);
 	if (variant.reclaimsHeap) checkHeapStart(readFileSync(linked), readFileSync(wasm));
+	checkNoMachineFolders(
+		readFileSync(wasm),
+		buildMachine().folders,
+		`the ${variant.name} WebAssembly file`,
+	);
 	// Every file the build staged, which replaceFolder then puts in place: the same set a read restores.
 	const stagedFiles = readdirSync(staged)
 		.filter((name) => !name.endsWith('.partial'))
@@ -988,22 +1087,21 @@ async function buildToolModules(
 	}
 	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
 	log.say("building the shader compiler and the asset tool's formats");
-	await log.cargo(
-		[
-			'build',
-			...TOOL_MODULES.flatMap(({ crate }) => ['-p', crate]),
-			'--release',
-			'--target',
-			'wasm32-unknown-unknown',
-		],
-		{ RUSTFLAGS: '-Cstrip=symbols' },
-		targetDir,
-	);
+	// Each module builds in a cargo call of its own. One call over both merges the features of the
+	// dependencies they share, so each module's bytes would follow what else the call builds: with
+	// the shader compiler beside it, the asset module's `half` and `libm` gained features.
+	for (const { crate } of TOOL_MODULES)
+		await log.cargo(
+			['build', '-p', crate, '--release', '--target', 'wasm32-unknown-unknown'],
+			compilerOptions('-Cstrip=symbols'),
+			targetDir,
+		);
+	const built = (crate: string) =>
+		`${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
+	for (const { crate } of TOOL_MODULES)
+		checkNoMachineFolders(readFileSync(built(crate)), buildMachine().folders, `${crate}.wasm`);
 	withInstallLock('tools', () => {
-		for (const { crate, path } of TOOL_MODULES) {
-			const built = `${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
-			copyInPlace(built, path);
-		}
+		for (const { crate, path } of TOOL_MODULES) copyInPlace(built(crate), path);
 	});
 	// The tools' crates are hashed before cargo builds them, so an edit during the build means these
 	// modules are not what the key names (see buildVariant, which takes the same care).
@@ -1229,8 +1327,8 @@ function resolveBase(choice: BaseChoice): Base {
 /**
  * Why the base worktree is locked. `git worktree list` shows it, and `git worktree remove` and
  * `git worktree prune` refuse a locked worktree, so a tidy-up of the clone's worktrees leaves it.
- * On 24 October 2026 a sweep of worktrees whose commit had landed removed a base worktree while its
- * page build ran, and the check failed with ENOENT on a file that the build had just written.
+ * Without the lock, a sweep of worktrees whose commit has landed can remove a base worktree while
+ * its page build runs, and the check fails with ENOENT on a file that the build has just written.
  */
 const BASE_TREE_LOCK =
 	'the size check of tools/build-wasm.ts builds its base commit here, and reuses this worktree';
@@ -1240,7 +1338,7 @@ function checkoutBaseTree(tree: string, sha: string): boolean {
 	if (existsSync(join(tree, '.git'))) {
 		const args = ['checkout', '--force', '--quiet', '--detach', sha];
 		if (spawnSync('git', args, { cwd: tree }).status === 0) {
-			// A worktree from before the lock gets it now; a locked one refuses a second lock.
+			// A worktree without the lock gets it here; a locked one refuses a second lock.
 			spawnSync('git', ['worktree', 'lock', '--reason', BASE_TREE_LOCK, tree], { cwd: root });
 			return false;
 		}
@@ -1358,14 +1456,15 @@ function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 function checkGrowth(sizes: Record<string, SizeEntry>, ref: string | undefined): string[] {
 	const base = resolveBase(chooseBase(ref, process.env));
 	const changes = compareSizes(baseSizes(base.sha), sizes);
-	const grown = grownFiles(changes).map(({ file }) => file);
-	const explainedBy = explainedFiles(keptCommits(`${base.sha}..HEAD`, root), grown);
+	const watched = changes.filter((c) => overLimit(c) || nearLimit(c)).map(({ file }) => file);
+	const explainedBy = explainedFiles(keptCommits(`${base.sha}..HEAD`, root), watched);
 	const short = base.sha.slice(0, 8);
 	console.log(`\ngrowth after Brotli against the base, ${short} "${base.subject}", ${base.why}`);
 	for (const line of growthLines(changes, explainedBy)) console.log(line);
 	const summary = process.env.GITHUB_STEP_SUMMARY;
 	if (summary)
 		appendFileSync(summary, growthSummary(changes, explainedBy, `\`${short}\`, ${base.why}`));
+	for (const warning of nearLimitWarnings(changes, explainedBy)) console.warn(warningLine(warning));
 	return growthProblems(changes, explainedBy);
 }
 
@@ -1398,6 +1497,7 @@ async function main(): Promise<void> {
 		console.log(`removed ${removed.length} cache entries that this build does not write`);
 		return;
 	}
+	refuseInQuietWindow(options.checkSize ? 'The size check' : 'The WebAssembly build');
 	// Only a size check takes the lock: it also builds the base commit with that commit's own build
 	// script, which may stage into the shared target folder. Ordinary builds overlap, because each one
 	// stages in a folder of its own and Cargo locks the target folder that builds share. The lock is
@@ -1503,10 +1603,10 @@ async function main(): Promise<void> {
 		printSize(`js/${part}`, size, isCombosPart(part) ? COMBOS_BUDGET : LATER_BUDGET);
 	printSize('after the start, total', totalSize(later.values()));
 	console.log(
-		`\nthe shader builds of each feature that loads on first use, and of each set of such features that builds need together, one file for each GPU path and each value of the bits a device fixes (${budgetNote(FIRST_USE_SHADER_BUDGET)} for each file; no start counts them)`,
+		`\nthe shader builds of each feature that loads on first use, and of each set of such features that builds need together, one file for each GPU path and each value of the bits a device fixes (${budgetNote(FIRST_USE_SHADER_BUDGET)} for each file, with the raise that D-14 gives two files; no start counts them)`,
 	);
 	for (const [part, size] of parts)
-		if (isFirstUseShaderPart(part)) printSize(`js/${part}`, size, FIRST_USE_SHADER_BUDGET);
+		if (isFirstUseShaderPart(part)) printSize(`js/${part}`, size, firstUseShaderBudget(part));
 	console.log(
 		"\nthe files besides code that load on first use: the KTX2 transcoder with the first KTX2 file, the meshopt decoder with the first glTF file that holds meshopt data, Draco's decoder with the first glTF file that holds Draco data, and the area lights' tables with the first rectangle or tube light, recorded exceptions (D-14, D-145) (no budget)",
 	);
@@ -1529,7 +1629,7 @@ async function main(): Promise<void> {
 		.map(([file]) => `${file} is over its 600 KB Brotli budget`);
 	problems.push(...budgetProblems(parts));
 	const growth = options.checkSize ? checkGrowth(sizes, options.base) : [];
-	for (const warning of budgetWarnings(parts)) console.warn(`warning: ${warning}`);
+	for (const warning of budgetWarnings(parts)) console.warn(warningLine(warning));
 	for (const p of [...problems, ...growth]) console.error(`error: ${p}`);
 	if (growth.length > 0) {
 		console.error('');

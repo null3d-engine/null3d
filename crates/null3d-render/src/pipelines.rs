@@ -376,6 +376,14 @@ pub fn built_by(created: u32, pipelines_built: u32) -> bool {
     !frame_after(created, pipelines_built)
 }
 
+/// True when the thread that draws has built the pipelines that frame `created` made, or has not
+/// drawn a frame yet: until it has drawn one, each frame waits for its pipelines, so every pipeline
+/// draws then. A held scene records every frame before the thread that draws draws one, so no held
+/// frame needs work kept back for that alone.
+pub fn built_by_or_first(created: u32, pipelines_built: u32) -> bool {
+    pipelines_built == 0 || built_by(created, pipelines_built)
+}
+
 /// True when a pipeline of `template` reads the frame's clock from the frame's values: the physical
 /// sky, whose stars twinkle, and every custom material, whose shaders may read the time. The
 /// still-camera comparison leaves the clock out (see [`crate::still`]), so a frame that draws with
@@ -476,7 +484,17 @@ impl PipelineCache {
         }
         let shading = key.after_prepass().in_pass(targets);
         let depth = if prepass == Prepass::OwnVertexShader || key.places_own_vertices() {
+            // The WebGL2 prepass draws with the shading build's own shader, whose fragment stage
+            // writes nothing. Its pipeline therefore names no color target: a screen step may split
+            // the prepass from the opaque pass into a framebuffer of depth alone, and the pipeline
+            // fits either pass (D-269).
+            let color_format = if prepass == Prepass::OwnVertexShader {
+                format::NONE
+            } else {
+                shading.color_format
+            };
             PipelineKey {
+                color_format,
                 permutation: shading.permutation | permutation::PREPASS,
                 state: depth.state,
                 ..shading
@@ -958,10 +976,13 @@ mod tests {
         let (shading, depth) = (cache.keys()[0], cache.keys()[1]);
         assert_eq!(shading, key.after_prepass().in_pass(targets));
         // The same template and bits, so the same vertex shader, with the faces and the bias of
-        // the pair, and no color.
+        // the pair. The build's fragment shader writes nothing, so its pipeline names no color
+        // target: the prepass draws into the opaque pass's color, or into a depth-only pass of its
+        // own, and one pipeline fits both (D-269).
         assert_eq!(
             depth,
             PipelineKey {
+                color_format: format::NONE,
                 permutation: shading.permutation | permutation::PREPASS,
                 state: state_flags::CULL_NONE | state_flags::NO_COLOR_WRITE,
                 ..shading
@@ -973,6 +994,24 @@ mod tests {
             ..lit(0)
         };
         assert_eq!(cache.opaque(masked, targets, Prepass::OwnVertexShader).1, 0);
+    }
+
+    #[test]
+    fn the_depth_template_prepass_keeps_the_color_that_webgpu_attaches() {
+        let key = DrawKey {
+            template: template::CUSTOM_FIRST,
+            ..lit(0)
+        };
+        let mut cache = PipelineCache::default();
+        let (_, depth) = cache.opaque(key, TARGETS, Prepass::DepthTemplate);
+        // The pair draws with its own vertex shader, but the depth template's pass keeps the
+        // scene's color on WebGPU, so the pipeline names it.
+        let depth = cache.keys()[depth as usize - 1];
+        assert_eq!(depth.color_format, TARGETS.color_format);
+        assert_eq!(
+            depth.state & state_flags::NO_COLOR_WRITE,
+            state_flags::NO_COLOR_WRITE
+        );
     }
 
     #[test]

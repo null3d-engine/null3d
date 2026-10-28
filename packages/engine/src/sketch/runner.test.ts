@@ -1,4 +1,5 @@
 import { describe, expect, it, spyOn } from 'bun:test';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { messageOf } from '../errors/message';
 import * as C from '../generated/core';
 import { FORMAT_CANVAS, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
@@ -284,8 +285,8 @@ async function start(
 				shaderBits: 0,
 				cellCulling: true,
 				joinEffects: true,
-				gradingHdr: false,
 				depthPrepass: false,
+				prepassColor: C.PREPASS_COLOR_LOAD,
 				skinning: C.SKINNING_VERTEX,
 				indexInstances: false,
 				shadowDepthBits: 16,
@@ -1063,46 +1064,54 @@ describe('SketchRunner and quality presets', () => {
 		expect(check?.rounds).toEqual([{ preset: 'medium', presentedFps: 62.5, completedFps: 60.6 }]);
 	});
 
-	it('lowers the preset when the GPU finishes too few frames, down to Low', async () => {
-		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
-			quality: { ...MEDIUM, check: true },
-			drawing: { presentedMs: 16, completedMs: 40 },
-		});
-		stopDrawing();
-		expect(context.quality.preset).toBe('low');
-		expect(context.quality.settings.maxPixelRatio).toBe(1.5);
-		const last = updates.at(-1);
-		expect(last?.preset).toBe('low');
-		expect(last?.check?.rounds.map((round) => [round.preset, round.completedFps])).toEqual([
-			['medium', 25],
-			['low', 25],
-		]);
-	}, 10_000);
+	it(
+		'lowers the preset when the GPU finishes too few frames, down to Low',
+		async () => {
+			const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
+				quality: { ...MEDIUM, check: true },
+				drawing: { presentedMs: 16, completedMs: 40 },
+			});
+			stopDrawing();
+			expect(context.quality.preset).toBe('low');
+			expect(context.quality.settings.maxPixelRatio).toBe(1.5);
+			const last = updates.at(-1);
+			expect(last?.preset).toBe('low');
+			expect(last?.check?.rounds.map((round) => [round.preset, round.completedFps])).toEqual([
+				['medium', 25],
+				['low', 25],
+			]);
+		},
+		scaledBudget(10_000),
+	);
 
-	it("keeps the settings that the sketch's setup chose when the check lowers the preset", async () => {
-		const { context, log, stopDrawing } = await start(
-			(ctx, log) => {
-				ctx.textures.setUploadBudget(2048);
-				ctx.quality.set({ maxAnisotropy: 16 });
-				log.length = 0;
-				return {};
-			},
-			undefined,
-			{ quality: { ...MEDIUM, check: true }, drawing: { presentedMs: 16, completedMs: 40 } },
-		);
-		stopDrawing();
-		expect(context.quality.preset).toBe('low');
-		// Low's pixel ratio cap and texture memory budget apply, and the sketch's own anisotropy cap
-		// and upload budget stay.
-		expect(context.quality.settings.maxPixelRatio).toBe(1.5);
-		expect(context.quality.settings.maxAnisotropy).toBe(16);
-		expect(log.filter((line) => line.startsWith('setTextureOption'))).toEqual([
-			textureOption(
-				C.TEXTURE_OPTION_MEMORY_BUDGET_KIB,
-				presetSettings('low').textureMemoryMiB * 1024,
-			),
-		]);
-	}, 10_000);
+	it(
+		"keeps the settings that the sketch's setup chose when the check lowers the preset",
+		async () => {
+			const { context, log, stopDrawing } = await start(
+				(ctx, log) => {
+					ctx.textures.setUploadBudget(2048);
+					ctx.quality.set({ maxAnisotropy: 16 });
+					log.length = 0;
+					return {};
+				},
+				undefined,
+				{ quality: { ...MEDIUM, check: true }, drawing: { presentedMs: 16, completedMs: 40 } },
+			);
+			stopDrawing();
+			expect(context.quality.preset).toBe('low');
+			// Low's pixel ratio cap and texture memory budget apply, and the sketch's own anisotropy cap
+			// and upload budget stay.
+			expect(context.quality.settings.maxPixelRatio).toBe(1.5);
+			expect(context.quality.settings.maxAnisotropy).toBe(16);
+			expect(log.filter((line) => line.startsWith('setTextureOption'))).toEqual([
+				textureOption(
+					C.TEXTURE_OPTION_MEMORY_BUDGET_KIB,
+					presetSettings('low').textureMemoryMiB * 1024,
+				),
+			]);
+		},
+		scaledBudget(10_000),
+	);
 
 	it('asks for no more than the highest target that the page and ?fps= allow', async () => {
 		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {

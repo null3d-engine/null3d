@@ -516,6 +516,49 @@ function linkError(gl: WebGL2RenderingContext, p: Program, attempt: string): Err
 }
 
 /**
+ * The texture units that the stages of a program read, as triples of the unit, the slot where bind
+ * groups leave the unit's texture and the slot of the sampler it reads with, or `NO_SAMPLER`. Units
+ * count from 0, in the order the stages visit their textures, and a texture that both stages read
+ * takes one unit. A texture that `locationOf` gives no uniform, as the driver drops for one that a
+ * program never reads, needs no unit. `setUnit` gives each texture the unit that it reads.
+ */
+export function textureUnitsOf(
+	source: GlslProgram,
+	locationOf: (name: string) => WebGLUniformLocation | null,
+	setUnit?: (location: WebGLUniformLocation, unit: number) => void,
+): number[] {
+	const textureUnits: number[] = [];
+	for (const stage of [source.vertex, source.fragment]) {
+		for (const texture of stage.textures) {
+			const location = locationOf(texture.name);
+			if (!location) continue;
+			const slot = slotOf(texture.group, texture.binding);
+			const sampler = texture.sampler;
+			const samplerSlot = sampler ? slotOf(sampler.group, sampler.binding) : NO_SAMPLER;
+			let known = -1;
+			for (let k = 0; k < textureUnits.length; k += 3) if (textureUnits[k + 1] === slot) known = k;
+			if (known < 0) {
+				known = textureUnits.length;
+				textureUnits.push(known / 3, slot, samplerSlot);
+			} else if (textureUnits[known + 2] !== samplerSlot) {
+				throw new Error('a WebGL2 program samples one texture with two samplers');
+			}
+			setUnit?.(location, textureUnits[known] as number);
+		}
+	}
+	if (textureUnits.length / 3 > UPLOAD_UNIT)
+		throw new Error(`a WebGL2 program reads ${textureUnits.length / 3} textures, past its units`);
+	return textureUnits;
+}
+
+/** The unit that the triples from `textureUnitsOf` give a binding, or a refusal when they lack it. */
+export function textureUnitOf(units: readonly number[], group: number, binding: number): number {
+	const slot = slotOf(group, binding);
+	for (let k = 0; k < units.length; k += 3) if (units[k + 1] === slot) return units[k] as number;
+	throw new Error(`a WebGL2 program reads no texture at group ${group}, binding ${binding}`);
+}
+
+/**
  * Checks the program's link result, binds its uniform blocks to the slots of their WGSL groups and
  * bindings, gives each texture it reads a unit, counting from 0, and sets its vertex shader's
  * depth mapping for the backend's depth mode, once, at its first use. A texture that both stages
@@ -540,33 +583,17 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: De
 		gl.deleteShader(shader);
 	}
 	gl.useProgram(p.program);
-	const textureUnits: number[] = [];
-	for (const stage of [p.source.vertex, p.source.fragment]) {
+	for (const stage of [p.source.vertex, p.source.fragment])
 		for (const block of stage.uniformBlocks) {
 			const index = gl.getUniformBlockIndex(p.program, block.name);
 			if (index !== gl.INVALID_INDEX)
 				gl.uniformBlockBinding(p.program, index, slotOf(block.group, block.binding));
 		}
-		for (const texture of stage.textures) {
-			const location = gl.getUniformLocation(p.program, texture.name);
-			if (!location) continue;
-			const slot = slotOf(texture.group, texture.binding);
-			const sampler = texture.sampler;
-			const samplerSlot = sampler ? slotOf(sampler.group, sampler.binding) : NO_SAMPLER;
-			let known = -1;
-			for (let k = 0; k < textureUnits.length; k += 3) if (textureUnits[k + 1] === slot) known = k;
-			if (known < 0) {
-				known = textureUnits.length;
-				textureUnits.push(known / 3, slot, samplerSlot);
-			} else if (textureUnits[known + 2] !== samplerSlot) {
-				throw new Error('a WebGL2 program samples one texture with two samplers');
-			}
-			gl.uniform1i(location, textureUnits[known] as number);
-		}
-	}
-	if (textureUnits.length / 3 > UPLOAD_UNIT)
-		throw new Error(`a WebGL2 program reads ${textureUnits.length / 3} textures, past its units`);
-	p.textureUnits = textureUnits;
+	p.textureUnits = textureUnitsOf(
+		p.source,
+		(name) => gl.getUniformLocation(p.program, name),
+		(location, unit) => gl.uniform1i(location, unit),
+	);
 	p.firstInstance = gl.getUniformLocation(p.program, 'naga_vs_first_instance');
 	const mapping = gl.getUniformLocation(p.program, DEPTH_MAPPING_UNIFORM);
 	if (mapping) gl.uniform2f(mapping, depth.scale, depth.offset);
@@ -623,11 +650,7 @@ export function programHost(
 		},
 		slot: slotOf,
 		unit(program, group, binding) {
-			const units = linked.get(program)?.textureUnits ?? [];
-			const slot = slotOf(group, binding);
-			for (let k = 0; k < units.length; k += 3)
-				if (units[k + 1] === slot) return units[k] as number;
-			throw new Error(`a WebGL2 program reads no texture at group ${group}, binding ${binding}`);
+			return textureUnitOf(linked.get(program)?.textureUnits ?? [], group, binding);
 		},
 	};
 }

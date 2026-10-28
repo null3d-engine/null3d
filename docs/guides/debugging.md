@@ -43,7 +43,7 @@ The first error in a thread can show its fix a moment later, while the engine do
 | The setup function throws | `createEngine` rejects with [E1405](../errors/E1405.md), which quotes your error |
 | During the start, an engine thread fails or the GPU is lost for good | `createEngine` stops the engine and rejects with [E1404](../errors/E1404.md) or [E1302](../errors/E1302.md) |
 | A callback such as `onUpdate` throws | The console shows each distinct error once, with its stack. The engine carries on, and calls the callback again when it next runs |
-| After the start, the GPU is lost and cannot come back, or an engine thread fails | `engine.onFailure` receives [E1302](../errors/E1302.md) or [E1404](../errors/E1404.md). Without a handler, the console shows it. The canvas keeps the last frame: destroy the engine and start a new one |
+| After the start, the GPU is lost and cannot come back, or an engine thread fails | `engine.onFailure` receives [E1302](../errors/E1302.md) or [E1404](../errors/E1404.md). The first handler that attaches after the failure still receives it, and the console shows it too. The canvas keeps the last frame: destroy the engine and start a new one |
 | After the start, the WebGPU device runs out of memory or rejects the engine's work | `engine.onFailure` receives [E1304](../errors/E1304.md) or [E1305](../errors/E1305.md), once per GPU device. The engine draws on without the objects that failed |
 | Sketch code runs after `destroy()`, from a timer, a promise or an event listener | The call throws [E1420](../errors/E1420.md). Remove such code in the sketch's `onDestroy` |
 | Hold mode | The hold stops at the first error, and the result says why. [Testing your sketch](testing.md#when-a-hold-fails) lists the cases |

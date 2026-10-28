@@ -1,12 +1,12 @@
 # D-203: Multiple views draw into rectangles of the camera's scene color
 
-Status: decided by the M3-K1 task on 21 October 2026, for the owner's review. Built: `scene.createView`, the render graph's rectangle viewport, both frame builders, the `multiple-views` demo with the second view in the joint overrides demo, and the tests. The GPU time and memory on the Mac, the iPad and an S24-class phone are not recorded yet. Date: 2026-10-21. Task: M3-K1.
+Status: decided by the M3-K1 task, for the owner's review. Built: `scene.createView`, the render graph's rectangle viewport, both frame builders, the `multiple-views` demo with the second view in the joint overrides demo, and the tests. The GPU time and memory on the Mac, the iPad and an S24-class phone are not recorded yet. Task: M3-K1.
 
 Summary: A view draws the scene again from its own camera into a rectangle of the camera's scene color, after the camera's passes, through the viewport and the scissor, with a depth target of its own. It adds one cull and one scene draw at the rectangle's pixels, with no color target and no copy, on both GPU paths and in every thread mode. The camera's view still draws the whole canvas first, so a split screen draws the scene once more than its halves need.
 
 ## Question
 
-Three.js draws a second view by calling `renderer.setViewport` and `setScissor` and drawing the scene again. null3D declares its passes, so a view has to take a place in the render graph. Two designs were possible:
+Three.js draws a second view by calling `renderer.setViewport` and `setScissor` and drawing the scene again. null3D declares its passes, so a view has to take a place in the render graph. Two designs fit:
 
 1. A view renders into a color target of its own, and a full-screen pass copies that image into the rectangle of the final image. Tone mapping and the effects then apply once, to the whole image, but the view needs a color texture and a copy.
 2. A view renders directly into the camera's scene color, which the final pass or the resolve pass takes to the canvas. The rectangle's viewport and scissor limit its pixels. The view needs a depth target only.
@@ -52,4 +52,4 @@ Design 2: a view draws into the camera's scene color, limited by the viewport an
 - **Render graph:** a view's rectangle is the render area of the steps that hold its passes, resolved at record time from the views as they stand, so a rectangle change needs no compile and allocates nothing.
 - **What a view leaves out:** a view's objects take no ambient occlusion or screen-space reflections, and objects whose material shows a render pass's texture do not draw in it. The camera's volumetric fog and outline are added after the views draw, so they reach a view's rectangle.
 - **Docs and skills:** `guides/multiple-views`, `api/scene`, the render graph concept page, the three.js mapping's `viewports` entry, and the develop skill's quick reference and minimap recipe.
-- **Demos:** a new `multiple-views` demo, and a close-up second view in the joint overrides demo.
+- **Demos:** the `multiple-views` demo, and a close-up second view in the joint overrides demo.
