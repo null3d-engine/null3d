@@ -54,6 +54,8 @@ interface EffectResult {
 	onMean: number;
 	onNoMaskMean: number;
 	steps: number;
+	skipped: number;
+	captures: number;
 	consecutive: boolean;
 }
 
@@ -166,7 +168,7 @@ for (const gpu of GPUS) {
 			const result = await pageResult<EffectResult>(page, 240_000);
 			// The figures go into the decision record, which says what each effect did.
 			console.log(
-				`TAAFIX ${effect} on ${result.gpu}: frame-to-frame change ${result.off.toFixed(3)} without the resolve, ${result.on.toFixed(3)} with it, and ${result.onNoMask.toFixed(3)} with its transparency signals off; the offset request alone moves it by ${result.jitter.toFixed(3)}`,
+				`TAAFIX ${effect} on ${result.gpu}: frame-to-frame change ${result.off.toFixed(3)} without the resolve, ${result.on.toFixed(3)} with it, and ${result.onNoMask.toFixed(3)} with its transparency signals off; the offset request alone moves it by ${result.jitter.toFixed(3)}; ${result.skipped} of ${result.captures} captures skipped a frame`,
 			);
 			// Both runs drew the effect, so the change figures mean something.
 			expect(result.consecutive, 'a capture did not advance').toBe(true);

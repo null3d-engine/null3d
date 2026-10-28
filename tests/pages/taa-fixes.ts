@@ -178,6 +178,8 @@ interface Run {
 	frames: Frame[];
 	numbers: number[];
 	consecutive: boolean;
+	/** How many captures skipped a sketch frame, whose pairs the figures leave out. */
+	skipped: number;
 }
 
 /** Captures `count` frames, with the sketch frame that each drew. */
@@ -185,13 +187,16 @@ async function sequence(engine: Engine, count: number): Promise<Run> {
 	const frames: Frame[] = [];
 	const numbers: number[] = [];
 	let consecutive = true;
+	let skipped = 0;
 	for (let k = 0; k < count; k++) {
 		const taken = await shot(engine);
-		if (k > 0 && taken.frame <= (numbers[k - 1] as number)) consecutive = false;
+		const last = numbers[k - 1] as number | undefined;
+		if (k > 0 && taken.frame <= (last as number)) consecutive = false;
+		else if (last !== undefined && taken.frame - last > 1) skipped++;
 		frames.push(taken.image);
 		numbers.push(taken.frame);
 	}
-	return { frames, numbers, consecutive };
+	return { frames, numbers, consecutive, skipped };
 }
 
 /** The mean distance of two runs' frames that hold the same sketch frame, and how many there are. */
@@ -212,19 +217,20 @@ function compare(a: Run, b: Run): { mean: number; overlap: number } {
 }
 
 /**
- * The mean frame-to-frame change over a run's consecutive frames. A scene that moves with the real
- * clock differs between runs at the same frame number, so the two sides of an effect are compared
- * by this statistic, which is stable over the sequence.
+ * The mean frame-to-frame change over a run's adjacent frames, and how many pairs it used. A pair
+ * that a capture skipped a frame over is left out, so the figure is the same one on every machine
+ * that holds the frame rate. A scene that moves with the real clock differs between runs at the
+ * same frame number, so two runs of an effect are compared by this statistic.
  */
-function change(run: Run): number {
+function change(run: Run): { mean: number; pairs: number } {
 	let sum = 0;
-	let steps = 0;
+	let pairs = 0;
 	for (let k = 1; k < run.frames.length; k++) {
 		if ((run.numbers[k] as number) - (run.numbers[k - 1] as number) !== 1) continue;
 		sum += distance(run.frames[k] as Frame, run.frames[k - 1] as Frame);
-		steps++;
+		pairs++;
 	}
-	return sum / Math.max(1, steps);
+	return { mean: sum / Math.max(1, pairs), pairs };
 }
 
 /** Runs one scene, and stops its engine. */
@@ -364,17 +370,25 @@ run('taa-fixes', async () => {
 	// history's place rather than a mask dropping it.
 	const onNoMask = await measure(`case=${CASE}&gpu=${GPU}&taa=1&jitter=1&reactive=off`);
 	const offChange = change(off);
+	const onChange = change(on);
+	const onNoMaskChange = change(onNoMask);
+	const offJitterChange = change(offJitter);
+	const runs = [off, offJitter, on, onNoMask];
 	return {
 		case: CASE,
 		gpu: GPU,
-		off: offChange,
-		on: change(on),
-		onNoMask: change(onNoMask),
-		jitter: Math.abs(change(offJitter) - offChange),
+		off: offChange.mean,
+		on: onChange.mean,
+		onNoMask: onNoMaskChange.mean,
+		jitter: Math.abs(offJitterChange.mean - offChange.mean),
 		offMean: mean(off.frames[0] as Frame),
 		onMean: mean(on.frames[0] as Frame),
 		onNoMaskMean: mean(onNoMask.frames[0] as Frame),
-		steps: off.frames.length - 1,
-		consecutive: off.consecutive && offJitter.consecutive && on.consecutive && onNoMask.consecutive,
+		// The fewest adjacent pairs of the four runs, which the figures all rest on.
+		steps: Math.min(offChange.pairs, offJitterChange.pairs, onChange.pairs, onNoMaskChange.pairs),
+		// The captures that skipped a sketch frame, whose pairs every figure leaves out.
+		skipped: runs.reduce((sum, run) => sum + run.skipped, 0),
+		captures: runs.reduce((sum, run) => sum + run.numbers.length, 0),
+		consecutive: runs.every((run) => run.consecutive),
 	};
 });
