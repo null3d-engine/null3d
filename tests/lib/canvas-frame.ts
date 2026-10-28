@@ -54,12 +54,18 @@ export async function readFrame(page: Page): Promise<Frame> {
 
 /**
  * The mean difference of two frames' colour, in steps of 255, over every pixel and channel. A frame
- * with no pixels has no difference to give, so it is an error rather than a figure.
+ * with no pixels, or two frames of different sizes, have no difference to give, so they are an error
+ * rather than a figure: a canvas that resized between the two reads would otherwise compare the
+ * shorter frame's pixels against a prefix of the longer one.
  */
 export function frameDifference(a: Frame, b: Frame): number {
 	if (a.data.length === 0 || b.data.length === 0)
 		throw new Error(
 			`a frame holds no pixels: ${a.width} by ${a.height} against ${b.width} by ${b.height}`,
+		);
+	if (a.data.length !== b.data.length)
+		throw new Error(
+			`the frames differ in size: ${a.width} by ${a.height} against ${b.width} by ${b.height}`,
 		);
 	let sum = 0;
 	for (let i = 0; i < a.data.length; i += 4)
