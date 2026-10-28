@@ -7,7 +7,9 @@
 //   surface, and `opaque` draws it over an opaque wall, where only the opaque-only copy finds it.
 //   The square jumps from one side of the view to the other, so the side it left shows how much
 //   history the resolve kept.
-// - `phone` draws a still textured scene, for comparing the phone path with the full one.
+// - `phone` draws the `alpha` scene, a blended square that jumps, so the transparency signal lowers
+//   the full path's history. The phone path reads no signal, so the same setting must not change its
+//   picture.
 // - `rain` draws thin rain streaks, which have no anti-aliasing of their own, and `fog` draws a
 //   volumetric fog whose grid moves each frame. Both are effects that a temporal resolve would
 //   have to clean up.
@@ -28,14 +30,16 @@ const SIZE = [320, 180] as const;
 /** The blended square's two places across the view, in world units from its center. */
 const SIDES = [100, -100] as const;
 /**
- * The square's depth in front of the background, in world units: close enough that the depth test
- * draws it, and close enough that the resolve's depth rejection keeps the history of the surface
- * under it. A square well in front of the background leaves no history to reject, so it would test
- * nothing of the transparency mask.
+ * How far the square stands toward the camera from the background, in world units: close enough
+ * that it draws in front of the wall, and close enough that the resolve's depth rejection keeps the
+ * history of the surface under it. A square well in front of the background leaves no history to
+ * reject, so it would test nothing of the transparency mask.
  */
 const NEAR = 0.01;
 /** The noise texture's side, which fills the view at one texel per pixel. */
 const NOISE = [320, 180] as const;
+/** The frame at which the exposure case doubles the exposure, from the frame number. */
+const EXPOSURE_STEP = Number(params.get('step') ?? '8');
 
 const RAIN = /* wgsl */ `
 #import null3d::builtins::{camera, fill_builtins, frame}
@@ -134,6 +138,10 @@ export default defineSketch(
 		scene.setActiveCamera(camera);
 		const frames = params.has('frames');
 		let side = 0;
+		/** The phone case's square, which moves every frame, so the mask's effect is steady. */
+		let moving: { setPosition(x: number, y: number, z: number): void } | undefined;
+		/** The exposure that the exposure case has set, so it posts only on the step. */
+		let exposure = 1;
 
 		if (CASE === 'exposure') {
 			scene.setBackground('#000000');
@@ -143,46 +151,34 @@ export default defineSketch(
 				mesh: geometry.plane({ width: SIZE[0], height: SIZE[1] }),
 				material: materials.standard({ map: noise }),
 			});
-		} else if (CASE === 'alpha' || CASE === 'opaque') {
+		} else if (CASE === 'alpha' || CASE === 'opaque' || CASE === 'phone') {
 			// The background is fine noise, so a history from the other side of the view is inside the
-			// neighborhood's box and only the transparency signals can drop it. On `alpha` the canvas
-			// has no background and the noise is blended, so the scene's alpha carries the surface.
-			if (CASE === 'opaque') scene.setBackground('#202020');
+			// neighborhood's box and only the transparency signals can drop it. On `alpha` and `phone`
+			// the canvas has no background and the noise is blended, so the scene's alpha carries the
+			// surface; on `opaque` a wall fills the view and only the opaque-only copy finds it.
+			const wall = CASE === 'opaque';
+			if (wall) scene.setBackground('#202020');
 			const noise = noiseTexture(textures);
 			scene.createMesh({
 				mesh: geometry.plane({ width: SIZE[0], height: SIZE[1] }),
-				material:
-					CASE === 'alpha'
-						? materials.unlit({ map: noise, opacity: 0.5, alphaMode: 'blend' })
-						: materials.unlit({ map: noise }),
+				material: wall
+					? materials.unlit({ map: noise })
+					: materials.unlit({ map: noise, opacity: 0.5, alphaMode: 'blend' }),
 			});
 			// The square is fine noise too, so its neighborhood's box holds the background's colors
 			// and only a transparency signal can keep them out of its history.
 			const square = scene.createMesh({
 				mesh: geometry.plane({ width: 40, height: 40 }),
 				material: materials.standard({ map: noise, opacity: 0.6, alphaMode: 'blend' }),
-				position: [SIDES[0] as number, 0, -NEAR],
+				position: [SIDES[0] as number, 0, NEAR],
 			});
+			if (CASE === 'phone') moving = square;
 			page.onMessage((name, data) => {
 				if (name !== 'place') return;
 				side = Number(data ?? 0);
-				square.setPosition(SIDES[side] ?? 0, 0, -NEAR);
+				square.setPosition(SIDES[side] ?? 0, 0, NEAR);
 				// The page captures the frame after this one, so it waits for the answer.
 				page.post('applied', {});
-			});
-		} else if (CASE === 'phone') {
-			scene.setBackground('#101820');
-			scene.createAmbientLight({ color: '#c8d8ff', intensity: 0.6 });
-			scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 2.0 });
-			const noise = noiseTexture(textures);
-			scene.createMesh({
-				mesh: geometry.plane({ width: SIZE[0], height: SIZE[1] }),
-				material: materials.standard({ map: noise }),
-			});
-			scene.createMesh({
-				mesh: geometry.box({ width: 60, height: 30, depth: 1 }),
-				material: materials.standard({ color: '#c86a40', roughness: 0.4 }),
-				position: [40, 10, -1],
 			});
 		} else if (CASE === 'rain') {
 			scene.setBackground('#080d14');
@@ -235,14 +231,23 @@ export default defineSketch(
 				feedback = 0;
 				setResolve();
 				void scene.warmUp().then(() => page.post('settled', {}));
-			} else if (name === 'exposure') {
-				post.set({ exposure: Number(data ?? 1) });
-				page.post('applied', {});
 			}
 		});
 		return {
 			onUpdate() {
 				if (frames) page.post('frame', time.frame);
+				// The exposure case doubles the exposure at a frame of the sequence, so every run
+				// draws the step at the same frame and the history sees the same change.
+				if (CASE === 'exposure') {
+					const wanted = time.frame >= EXPOSURE_STEP ? 2 : 1;
+					if (wanted !== exposure) {
+						exposure = wanted;
+						post.set({ exposure: wanted });
+					}
+				}
+				// The phone case's square slides across the view from the frame number, so every run
+				// draws the same picture in the same frame and the mask's effect is steady.
+				if (moving) moving.setPosition(90 * Math.sin(time.frame * 0.12), 0, NEAR);
 			},
 		};
 	},

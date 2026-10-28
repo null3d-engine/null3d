@@ -5201,7 +5201,7 @@ impl FrameGraph {
                 histories: TAA_HISTORIES.map(id),
                 resolved: id(TAA_COLOR),
                 scene: id(SCENE_COLOR),
-                opaque: self.sampled_id(TAA_OPAQUE).unwrap_or(0),
+                opaque: id(TAA_OPAQUE),
             }
         });
         self.taa_textures = found;
