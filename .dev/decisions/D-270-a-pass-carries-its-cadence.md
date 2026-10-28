@@ -31,14 +31,26 @@ The rate page draws the sea in three states in turn, at 1920 by 1080 on Low, aft
 warmup, in two windows of 4 seconds each. The first column switched the reflection off and on every
 other frame. The second held it on every frame, which is the cadence the setter is built for:
 
-| Measure | Switched every other frame | Held on every frame |
-| --- | --- | --- |
-| Ocean on | 825.0 ms, 1.21 fps (833.3 and 816.6) | 16.7 ms, 60.01 fps |
-| Transform off | 158.3 ms, 6.32 fps (150.0 and 166.7) | 16.7 ms, 60.01 fps |
-| Simulation only | 833.3 ms, 1.20 fps (833.3, 833.3) | 16.7 ms, 60.01 fps |
+| Measure | Switched every other frame | Held on every frame | The setter set to two |
+| --- | --- | --- | --- |
+| Ocean on | 825.0 ms, 1.21 fps (833.3 and 816.6) | 16.7 ms, 60.01 fps | 16.7 ms, 60.01 fps |
+| Transform off | 158.3 ms, 6.32 fps (150.0 and 166.7) | 16.7 ms, 60.01 fps | 16.7 ms, 60.01 fps |
+| Simulation only | 833.3 ms, 1.20 fps (833.3, 833.3) | 16.7 ms, 60.01 fps | 16.7 ms, 60.01 fps |
 
-The page with the pass carrying a cadence of two through the setter is measured next, and its
-figures join this table when they land.
+Two things are separate, and the table's two right columns say different things. The held-on column
+shows that the compile is gone: the same page and the same 45 draws that took 862 ms hold 60.01
+frames a second while the pass draws every frame. The setter column was taken before the recording
+skip existed, so it also drew every frame; it says the setter alone removes the compile, not that the
+cadence skips.
+
+The skip is checked by `compute-state`: a pass that draws in one frame of two counts four runs in
+eight frames and then four more in four frames once its cadence changes, and a pass whose turn is
+pushed away keeps the image that a material samples. Both pass on all three GPU paths.
+
+The setter column was taken while the one-minute load was 15 and rising to 21 through another
+session's graphics check. The page held vsync, which a chip at 1.2 frames a second cannot do, so the
+figure is a ceiling. The cadence run on the rebuilt engine, where the skip records four runs in
+eight frames and the page draws half as often, follows and replaces it if it differs.
 
 The draw thread is busy 847.7 ms a frame with the simulation and 154.1 ms without. Every WebGL call
 it makes totals 2.5 ms a frame, so the cost is engine compute on that thread. The engine made and
@@ -51,9 +63,8 @@ Commands, all on the WebGL2 path:
   frame of two and then in every frame.
 
 The switched run was measured at a one-minute load of 3.1 before and 3.3 after, with the 15-minute
-average at 7.7 while another session's build held the queue. The held and cadence runs were measured
-at a load of 2.5. The draw thread's figures come from the effect page's `?gltiming` on the same
-case.
+average at 7.7 while another session's build held the queue. The held run was at a load of 2.5. The
+draw thread's figures come from the effect page's `?gltiming` on the same case.
 
 ## Look
 
@@ -88,4 +99,4 @@ changes. It is not the frame-rate switch.
 - [The render API](../../docs/api/render.md), [custom passes](../../docs/guides/custom-passes.md) and the develop
   skill's quick reference and recipes state the setter, and say why the switch is not the pacing
   control.
-- The ocean's own page on WebGL2 at 1920 by 1080 on Low carries its cadence of two through the setter; its frame time is measured in the run that follows this commit.
+- The ocean's own page on WebGL2 at 1920 by 1080 on Low carries its cadence of two through the setter and runs at 60.01 frames a second (16.7 ms) in all three states, against 825 ms (1.21 fps) when the pass was switched.
