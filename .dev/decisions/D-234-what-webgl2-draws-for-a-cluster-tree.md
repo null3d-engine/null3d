@@ -82,8 +82,10 @@ own must apply that base. The three paths answer as follows:
   its indirect draw carries the mesh's `base_vertex` in the shared vertex buffer. The tree's
   indices and that base vertex are what the pass writes.
 
-The class of fault is a per-page index base that each new buffer path has to apply. A path that
-uploads its own indices inherits it.
+The rebase fix was necessary but not sufficient. The page's base is not the only per-page state
+that a tree's indices depend on: a run can hold two trees, and each must bind its own buffer. The
+class of fault is per-page state that a new buffer path has to apply, and a path that uploads its
+own indices inherits it.
 
 ### The draw-record buffer's memory
 
@@ -138,6 +140,13 @@ Each fallback case has a test that fails if the case draws patched instead:
 - **No `WEBGL_multi_draw`:** `a_tree_draws_whole_where_the_device_draws_one_range_a_call`, and
   the level test `a_tree_draws_no_whole_level_where_the_device_draws_many_ranges`, which shows the
   level buckets return without multi-draw.
+
+Firefox is the browser that takes that route, and no run in it has drawn this branch yet. The
+frame builder's tests with no multi-draw prove the choice on the engine, but not on the browser. A
+run of the `checks` plan in Firefox on this Mac, `bun run test:real-browsers Firefox`, draws the
+manifest, the three cluster pictures among it, against the `chrome-real-gpu` references. CI's
+Firefox job draws the same manifest. Either settles the browser claim, and the run can be arranged
+here while the Mac's Firefox answers.
 
 The shadow maps are not a separate test: they draw the casters' layout, which never takes a tree,
 so the same `drawn` check that the direct path exercises keeps their levels.
