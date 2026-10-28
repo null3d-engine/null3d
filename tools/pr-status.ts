@@ -24,7 +24,7 @@ const BASE = 'origin/main';
 /** Tasks whose work is partly on the branch: the part that landed, and the part that remains. */
 const PARTIAL: Readonly<Record<string, string>> = {
 	'M3-C1':
-		'the scene, its lanes, rain and the hero car are in; the moods, the instances demo and the device figures remain',
+		"the scene, its lanes, rain and the hero car are in, and so are the moods (`createMoods` in the skyway sketch) and the instances demo, which is registered and built on the traffic-lanes add-on. What remains is the device figures, which cover the Mac alone with no iPad or phone row, and the owner's look approval",
 	'M3-T1':
 		"the measured fence is in and the trim landed and was then reverted with a record: moving the fog write, the picks and the events out of the start cost more bytes than it saved, so the start stays at about 190 KB against this task's 160 KB target. The owner dropped the task as superseded: the target predates the ruling that the start's budget may rise",
 	'M3-B4':
