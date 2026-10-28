@@ -129,7 +129,7 @@ the bed at a point, and the current there.
 
 | Member | What it does |
 | --- | --- |
-| `update()` | Draws the reflection in its turn. Call it once in each frame, after the camera moves |
+| `update()` | Keeps the sketch's frame loop. The reflection pass carries its own cadence now, so the call changes nothing |
 | `reflectionEvery` | The frames between two draws of the reflection now |
 | `surfaceHeight(x, z, t)` | The height of the surface at a point and a sketch time, in meters, from its long waves |
 | `currentAt(x, z, out)` | The current at a point, as a direction and a speed in meters a second, written into `out` |
@@ -218,7 +218,7 @@ holds longer waves, and a taller significant height lifts them further.
 
 | Member | What it does |
 | --- | --- |
-| `update()` | Moves the mesh about the camera and draws the reflection in its turn. Call it once in each frame, after the camera moves |
+| `update()` | Moves the mesh about the camera. The reflection pass carries its own cadence. Call it once in each frame, after the camera moves |
 | `reflectionEvery` | The frames between two draws of the reflection now |
 | `heightAt(x, z)` | The height of the sea at a world place, in meters, at the sketch time. It runs the bands' transforms on this thread, so read it now and then |
 | `bands` | The bands, in the order that they sum |
