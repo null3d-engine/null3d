@@ -4,9 +4,9 @@ A paint material for car bodies and other painted metal. It draws a metallic bas
 coat, with three parts that a look turns on and off:
 
 - **Metal flakes.** The flakes are the metal's microfacets, drawn with the glint model of Deliot
-  and Belcour. Each pixel counts how many of the flakes in its footprint reflect the main light
-  into the eye, and uses that count in place of the smooth highlight. The paint therefore sparkles
-  where the light is, and draws as a smooth metal far away, without shimmering as the car moves.
+  and Belcour. Each pixel counts how many of the flakes in its footprint reflect a light into the
+  eye, and uses that count in place of the smooth highlight. The paint therefore sparkles where
+  the light is, and draws as a smooth metal far away, without shimmering as the car moves.
 - **Panel seams.** Narrow grooves at the look's intervals, as between a door and a wing. The groove
   keeps at least the width of a pixel, so it never crawls. The clear coat follows the groove and
   catches an edge of light along it.
@@ -55,17 +55,18 @@ coordinates, so the caller sets their density and spacing.
 | `weave` | `{ cells, shine }`, or `false` | `false` |
 
 `flakes.cells` and `weave.cells` count cells across each texture coordinate. `flakes.tilt` is how
-far the flakes' normals spread from the surface normal. `flakes.angle` is the main light's angular
-radius in radians, which sets how many flakes glint at once, and `flakes.max` bounds a bright single
-flake. `seams.spacing` gives the interval along each coordinate, and a value of 0 draws no seam
-along that coordinate. A look with `weave` shapes each tow's normal, so the highlight runs along the
-tow. A look without one draws a smooth panel.
+far the flakes' normals spread from the surface normal. `flakes.angle` is a light's angular radius
+in radians, which sets how many flakes glint at once, and `flakes.max` bounds a bright single flake.
+Every light answers the same angle, so a point light's glints read as sun glints of that size.
+`seams.spacing` gives the interval along each coordinate, and a value of 0 draws no seam along that
+coordinate. A look with `weave` shapes each tow's normal, so the highlight runs along the tow. A
+look without one draws a smooth panel.
 
 ## Cost
 
 The paint pays for the clear coat's lobe. The flakes cost the footprint's derivatives and one hash
-for each pixel, and the lobe adds two hashes and a short sum of terms for each pixel
-of the main light. The seams cost a few derivatives for each pixel. The weave adds its own pattern,
+for each pixel, and the lobe adds two hashes and a short sum of terms for each pixel and each light
+that reaches it. The seams cost a few derivatives for each pixel. The weave adds its own pattern,
 slope and roughness change.
 
 ## Limits
@@ -74,8 +75,8 @@ slope and roughness change.
 - A mesh without texture coordinates does not draw with the paint.
 - The flakes read the texture coordinates, so a mesh whose coordinates stretch draws stretched
   flakes. Give the paint a mesh with even coordinates, or change `cells`.
-- The glints come from the main directional light. Point, spot and area lights draw the base
-  highlight alone, so a scene without a main light shows no sparkle.
+- The glints come from the main directional light and from each point and spot light. Area lights
+  draw the base highlight alone.
 
 ## Licence
 

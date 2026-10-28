@@ -61,17 +61,19 @@ function cannot see a light, so the model needs the material lobe hook
 - The surface function computes two derivatives of the flake coordinates and one hash for each
   pixel.
 - The lobe computes the cap, the density, the light's solid angle, two hashes and either a short
-  Poisson sum or a Gaussian sample for each pixel of the main light. The terms are a few dozen
-  floating-point operations.
+  Poisson sum or a Gaussian sample for each pixel of each light that reaches it. The terms are a few
+  dozen floating-point operations.
 - The plan estimates 0.3 to 1 ms on a full screen. The paint's own cost per preset is owed, and the
   command is `NULL3D_PAINT_COST=1 bun run test:browser -- car-paint-cost.spec.ts`, in a quiet
   window on a computer with a GPU of its own.
 
-## The main light alone
+## Every light
 
-The lobe hook runs for the main directional light alone ([D-252](D-252-material-lobes.md)). Point,
-spot and area lights draw the base highlight with no glints, and the guide and the add-on README
-say so.
+The lobe hook runs for the main directional light and for each point and spot light that reaches the
+surface ([D-252](D-252-material-lobes.md)). The paint's glints therefore follow every such light,
+and a scene without the sun still sparkles under a lamp. Area lights draw the base highlight alone.
+The model gives each light the same angular radius, `flakes.angle`, since a point light has no size
+in the engine either.
 
 ## Consequences
 
