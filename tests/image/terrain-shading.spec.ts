@@ -19,13 +19,14 @@ const WIDTH = 320;
 const HEIGHT = 180;
 
 /**
- * The per-channel difference that counts as a moved pixel. The image tests' own threshold, one
- * tenth of full scale, answers whether two draws of one scene match. This test asks the opposite
- * question, how far a feature moves the picture, and both of these features move many pixels a
- * little rather than a few pixels a lot: measured against their own pairs, about four tenths of
- * the frame moves for the baked normals and a quarter for the height blending, and almost none of
- * that reaches a tenth of full scale. One 8-bit step is the smallest change a picture can carry,
- * and a switch that the sketch never reads moves exactly nothing, so the test still fails then.
+ * The pixelmatch threshold that counts a moved pixel. The image tests' own threshold, one tenth of
+ * full scale, answers whether two draws of one scene match. This test asks the opposite question,
+ * how far a feature moves the picture, and both of these features move many pixels a little rather
+ * than a few pixels a lot: measured against their own pairs, about four tenths of the frame moves
+ * for the baked normals and a quarter for the height blending, and almost none of that reaches a
+ * tenth of full scale. At this threshold a two-step change in a channel counts and a one-step
+ * change does not, and a switch that the sketch never reads moves exactly nothing, so the test
+ * still fails then.
  */
 const MOVED = 1 / 255;
 
