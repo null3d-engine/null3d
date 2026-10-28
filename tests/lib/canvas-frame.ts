@@ -4,8 +4,13 @@
 import type { Page } from '@playwright/test';
 import { decodePngRgba } from '../../packages/cli/src/png.js';
 
-/** How long a read keeps asking for a canvas that holds still, for a page still finding its size. */
-const SETTLE_READ_MS = 30_000;
+/**
+ * How long a read keeps asking for a canvas that holds still, for a page still finding its size. A
+ * page on a software GPU can take most of a minute to draw its first frame, and until it does the
+ * canvas keeps the browser's default size, so a read before that frame finds nothing to take. One
+ * showcase page measured its first frame at 55 seconds on CI's software GPU.
+ */
+const SETTLE_READ_MS = 90_000;
 /**
  * How old the last laid-out frame may be when a read gives up on a size that holds. The engine hands
  * back the frame it drew last when no new one comes, so a page that stopped and one that keeps
