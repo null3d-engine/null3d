@@ -364,5 +364,59 @@
 		"tier": "webgpu",
 		"date": "2026-10-25",
 		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/compat/gltf-iridescence-dielectric.png": {
+		"test": "gltf-iridescence-dielectric",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all its tests against these files in run 40226184684, so the two drawings are equal"
+	},
+	"chromium-swiftshader/compat/gltf-iridescence-metallic.png": {
+		"test": "gltf-iridescence-metallic",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all its tests against these files in run 40226184684, so the two drawings are equal"
+	},
+	"chromium-swiftshader/compat/gltf-iridescence-suzanne.png": {
+		"test": "gltf-iridescence-suzanne",
+		"tier": "compat",
+		"date": "2026-10-27",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all 141 of its tests against these files in run 40442817152, so the two drawings are equal"
+	},
+	"chromium-swiftshader/webgl2/gltf-iridescence-dielectric.png": {
+		"test": "gltf-iridescence-dielectric",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all its tests against these files in run 40226184684, so the two drawings are equal"
+	},
+	"chromium-swiftshader/webgl2/gltf-iridescence-metallic.png": {
+		"test": "gltf-iridescence-metallic",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all its tests against these files in run 40226184684, so the two drawings are equal"
+	},
+	"chromium-swiftshader/webgl2/gltf-iridescence-suzanne.png": {
+		"test": "gltf-iridescence-suzanne",
+		"tier": "webgl2",
+		"date": "2026-10-27",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all 141 of its tests against these files in run 40442817152, so the two drawings are equal"
+	},
+	"chromium-swiftshader/webgpu/gltf-iridescence-dielectric.png": {
+		"test": "gltf-iridescence-dielectric",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all its tests against these files in run 40226184684, so the two drawings are equal"
+	},
+	"chromium-swiftshader/webgpu/gltf-iridescence-metallic.png": {
+		"test": "gltf-iridescence-metallic",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all its tests against these files in run 40226184684, so the two drawings are equal"
+	},
+	"chromium-swiftshader/webgpu/gltf-iridescence-suzanne.png": {
+		"test": "gltf-iridescence-suzanne",
+		"tier": "webgpu",
+		"date": "2026-10-27",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all 141 of its tests against these files in run 40442817152, so the two drawings are equal"
 	}
 }
