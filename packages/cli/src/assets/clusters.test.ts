@@ -15,6 +15,7 @@ import {
 	planClusters,
 	storeClusters,
 } from './clusters.js';
+import { LOD_MAX_LEVELS, orderLevels, planLevels } from './levels.js';
 
 // The build of a mesh of 32,000 triangles simplifies its tree in a second or two on a busy
 // machine, and a CI runner of four cores takes longer.
@@ -307,6 +308,55 @@ describe('the tree of a large mesh', () => {
 		expect(summary.patches).toBeGreaterThan(summary.leaves);
 		expect(summary.triangles).toBeGreaterThan(summary.base);
 		expect(summary.bytes).toBeGreaterThan(0);
+	});
+
+	it('cuts the tree into whole levels for a viewer that draws no patches', async () => {
+		const { doc, plans } = await planned;
+		const levels = await planLevels(doc, plans, false);
+		expect(levels.size).toBe(1);
+		const cut = [...levels.values()][0];
+		if (!cut) throw new Error('the mesh of the test got no levels');
+		const { plan } = await only();
+		const patches = readTree(plan);
+		expect(cut.levels.length).toBeGreaterThan(0);
+		expect(cut.levels.length).toBeLessThanOrEqual(LOD_MAX_LEVELS);
+		let previous = plan.triangles;
+		let lastError = 0;
+		for (const level of cut.levels) {
+			// Every cut errs more than the one before it, so the engine switches them in order,
+			// and holds fewer triangles, so each pays for itself.
+			expect(level.error).toBeGreaterThan(lastError);
+			lastError = level.error;
+			expect(level.triangles).toBeLessThan(previous);
+			previous = level.triangles;
+			// The level is the tree's cut at its error: each patch whose own error passes and
+			// whose parent's does not, so the level covers the mesh once.
+			let expected = 0;
+			for (const patch of patches) {
+				if (patch.error > level.error) continue;
+				if (patch.parent >= 0 && entry(patches, patch.parent).error <= level.error) continue;
+				expected += patch.count;
+			}
+			const indices = entry(/** @type {Uint32Array[]} */ (level.indices), 0);
+			expect(indices.length).toBe(expected);
+			// The level names the mesh's own vertices, as the tree does.
+			for (const index of indices) expect(index).toBeLessThan(mesh.positions.length / 3);
+		}
+	});
+
+	it('renames the tree when the levels order the vertices', async () => {
+		const fresh = documentOf(mesh);
+		const trees = await planClusters(fresh);
+		const levels = await planLevels(fresh, trees, false);
+		orderLevels(fresh, levels, trees);
+		const { plan } = await only();
+		const stored = [...trees.values()][0];
+		if (!stored) throw new Error('the mesh of the test got no tree');
+		// The reorder changes the vertex numbering, so the tree names the vertices again.
+		const prim = fresh.getRoot().listMeshes()[0]?.listPrimitives()[0];
+		const vertices = prim?.getAttribute('POSITION')?.getCount() ?? 0;
+		for (const index of stored.indices) expect(index).toBeLessThan(vertices);
+		expect(stored.indices.length).toBe(plan.indices.length);
 	});
 
 	it(

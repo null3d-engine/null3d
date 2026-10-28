@@ -60,7 +60,9 @@ Options:
                                refines it as the others arrive (NULL3D_stages)
   --clusters                   Add a tree of cluster patches to each large static mesh of 20,000
                                triangles or more, whose patches draw near the camera at fine
-                               detail and far from it at coarse detail (NULL3D_clusters)
+                               detail and far from it at coarse detail (NULL3D_clusters). Also
+                               writes the whole levels that the tree cuts into, for viewers that
+                               draw no patches (MSFT_lod)
   --simplify <share>           Keep this share of each mesh's triangles, from 0 to 1, as far as
                                --simplify-error allows (1)
   --simplify-error <share>     The most that --simplify may move the surface, as a share of each

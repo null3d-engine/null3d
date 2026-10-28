@@ -1594,6 +1594,7 @@ impl GpuDrivenRenderer {
                 &mut self.key_counts,
                 self.graph.pick_targets(),
                 picking,
+                !self.config.direct_draws,
             )?;
             self.layout_prepass = self.graph.depth_prepass();
             let (skinning, layout) = (&self.skinning, &self.layout);
@@ -1665,6 +1666,7 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                     self.graph.pick_targets(),
                     false,
+                    !self.config.direct_draws,
                 )?;
             } else {
                 self.casters.clear();
@@ -1687,6 +1689,7 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                     self.graph.pick_targets(),
                     false,
+                    !self.config.direct_draws,
                 )?;
             } else {
                 self.outlined.clear();
@@ -1709,6 +1712,7 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                     self.graph.pick_targets(),
                     false,
+                    !self.config.direct_draws,
                 )?;
             } else {
                 self.scattering.clear();
@@ -1730,6 +1734,7 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                     self.graph.pick_targets(),
                     false,
+                    !self.config.direct_draws,
                 )?;
             } else {
                 self.tone.clear();
@@ -1751,6 +1756,7 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                     self.graph.pick_targets(),
                     false,
+                    !self.config.direct_draws,
                 )?;
             } else {
                 self.moving.clear();
