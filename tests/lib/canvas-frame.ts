@@ -27,8 +27,8 @@ export interface Frame {
  * comes: measured here, one read took 17 ms where the screenshots ran the test out.
  *
  * A page that has not sized its canvas yet captures nothing, or captures the browser's default
- * canvas, so the read waits until two captures in a row hold the same pixels at the same size. A
- * page still laying out changes its canvas between reads; a settled one does not.
+ * canvas, so the read waits until two captures in a row report the same size. A page still laying
+ * out changes its canvas between reads; a settled one does not.
  */
 export async function readFrame(page: Page): Promise<Frame> {
 	const deadline = Date.now() + EMPTY_READ_MS;
