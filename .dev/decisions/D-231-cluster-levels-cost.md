@@ -97,16 +97,13 @@ in [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md): the tree's indices ta
 mesh, a view's chosen runs at most 4,088 bytes, and the draw-record buffer 36,864 bytes a view for
 the test model.
 
-The GPU check compared this branch with its own base, `m3-start` at `216178b10`, on the Mac's GPU.
-The check's table judges all twelve rows: the four pages' GPU times, and their busiest threads and
-own work. The four GPU times changed by +3.7% with 2.9% noise, +0.0% with 1.5%, -13.3% with 1.4%
-and -0.6% with 0.2%, and every page's verdict is `same`. A page is slower only past its allowance
-and twice its noise; for GPU time the allowance is 25% and 0.3 ms. S4 High fell 13.3%, or 0.60 ms
-by the medians, inside the 25% share, so the rule calls it `same` rather than `faster`. The line
-that the tool prints names a verdict only for a slower page, so it drops the verdict for the other
-pages and the noise for the two High pages. The measurement is sound and the line is a formatting
-gap. The line is re-taken with the formatter that gives a verdict for every page, and it names the
-branch's own commits.
+The GPU check compared this branch with the milestone head that it merged, `cff5625d4`, on the
+Mac's GPU: `cff5625d4..24b9efcb0 passed: s4 medium 3.85 to 3.97 ms (+3.1%, same, noise 0.9%); s6
+medium 4.51 to 4.58 ms (+1.7%, same, noise 5.3%); s4 high 4.42 to 4.27 ms (-0.7%, same, noise
+6.5%); s6 high 5.37 to 5.37 ms (-0.2%, same, noise 0.5%)`. Every page carries its verdict and the
+noise that decided it: all four are `same`, and none is faster or slower beyond its allowance. The
+first line, taken before the merge, named an empty range and dropped the verdicts and the two High
+noise figures; this line replaces it.
 
 ## Decision
 
