@@ -65,8 +65,8 @@ impl Float for f64 {
 }
 
 /// A rotation quaternion `(x, y, z, w)` scaled to unit length, so that it turns a matrix without
-/// stretching or shearing it. A quaternion whose squared length is within one per cent of one stays
-/// exactly as written: scenes write rounded quaternions, such as `[0, 0.38, 0, 0.92]` for a 45
+/// stretching or shearing it. A quaternion whose length is within about one per cent of unit length
+/// stays exactly as written: scenes write rounded quaternions, such as `[0, 0.38, 0, 0.92]` for a 45
 /// degree turn, and rescaling those would move their pictures. The band is worth knowing about,
 /// because the test is on the squared length: the worst quaternion it leaves alone shears by about
 /// four per cent, not one. A larger deviation is scaled, so a mistyped quaternion cannot stretch a
@@ -75,8 +75,9 @@ impl Float for f64 {
 ///
 /// The scaling sits here, in the one function that composes a matrix, and not where a rotation is
 /// written, because the `rotations` arrays are written directly: a page writes a scene object's or
-/// an instance row's quaternion with no setter to pass through. Only a source whose squared length
-/// is more than one per cent from one pays a square root, in the frame that composes its matrix.
+/// an instance row's quaternion with no setter to pass through. A rotation off unit length pays a
+/// square root in the frame that composes its matrix. The four-at-once form pays none while all four
+/// of its rotations sit inside the band, and one square root for the four otherwise.
 fn unit_rotation<T: Float>(q: [T; 4]) -> [T; 4] {
     let [x, y, z, w] = q;
     // The squared length, so that a rotation close to unit length costs no square root.
@@ -275,7 +276,13 @@ pub(crate) fn compose4(position: [f32x4; 3], rotation: [f32x4; 4], scale: [f32x4
     let [qx, qy, qz, qw] = rotation;
     let square = qx * qx + qy * qy + qz * qz + qw * qw;
     let off_unit = square.simd_lt(f32x4::splat(0.98)) | square.simd_gt(f32x4::splat(1.02));
-    let inverse = (off_unit & square.simd_gt(zero)).select(one / square.sqrt(), one);
+    // A group whose four rotations all sit inside the band takes no square root: the mask tells
+    // which lanes are scaled, and the division is paid only when one of them is.
+    let inverse = if off_unit.any() {
+        (off_unit & square.simd_gt(zero)).select(one / square.sqrt(), one)
+    } else {
+        one
+    };
     let [x, y, z, w] = rotation.map(|v| v * inverse);
     let [sx, sy, sz] = scale;
     let (x2, y2, z2) = (x + x, y + y, z + z);
