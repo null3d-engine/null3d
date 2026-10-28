@@ -24,7 +24,7 @@ const BASE = 'origin/main';
 /** Tasks whose work is partly on the branch: the part that landed, and the part that remains. */
 const PARTIAL: Readonly<Record<string, string>> = {
 	'M3-C1':
-		"the scene, its lanes, rain and the hero car are in, and so are the moods (`createMoods` in the skyway sketch) and the instances demo, which is registered and built on the traffic-lanes add-on. What remains is the device figures, which cover the Mac alone with no iPad or phone row, and the owner's look approval",
+		"the scene, its lanes, rain and the hero car are in, and so are the moods (`createMoods` in the skyway sketch) and the instances demo, which is registered and built on the traffic-lanes add-on. What remains is the owner's look approval: the device records are drawn, the iPad Pro 13's in `20261024-081340-skyway.md` and the Galaxy S24's beside it",
 	'M3-T1':
 		"the measured fence is in and the trim landed and was then reverted with a record: moving the fog write, the picks and the events out of the start cost more bytes than it saved, so the start stays at about 190 KB against this task's 160 KB target. The owner dropped the task as superseded: the target predates the ruling that the start's budget may rise",
 	'M3-B4':
@@ -179,10 +179,15 @@ function landedTasks(): Set<string> {
 /** Each task of the plan, in its order, with the name it was given. */
 function planTasks(): { id: string; name: string }[] {
 	const text = readFileSync(PLAN, 'utf8');
-	return [...text.matchAll(/^(M3-[A-Z0-9]+[a-z]?) (.+?)(?: \(P.*)?$/gm)].map((match) => ({
-		id: match[1] as string,
-		name: (match[2] as string).trim(),
-	}));
+	// A plan entry that names a closed investigation rather than work is not a task, and counting
+	// it among the open ones says the milestone has work it does not have.
+	const NOT_TASKS = new Set(['M3-R37']);
+	return [...text.matchAll(/^(M3-[A-Z0-9]+[a-z]?) (.+?)(?: \(P.*)?$/gm)]
+		.filter((match) => !NOT_TASKS.has(match[1] as string))
+		.map((match) => ({
+			id: match[1] as string,
+			name: (match[2] as string).trim(),
+		}));
 }
 
 function description(): string {
