@@ -53,7 +53,6 @@ const INCOMPLETE = new Set([
 	'M3-R12',
 	'M3-R22',
 	'M3-L4',
-	'M3-A9',
 	'M3-V5',
 	'M3-A11',
 	'M3-G2',
@@ -68,8 +67,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		'the budget raise it needed is landed and its shader build now passes, but the task itself is not in: its branch is not merged with the head, it has no judged speed line over the final tree, and its Done-when asks for the cost per extra light on an iPad and an S24-class phone, which no device row covers yet',
 	'M3-A8':
 		"the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, over the prototype's one-step tolerance. The owner accepted that cost and ruled that the display table stays and the light table comes out",
-	'M3-A9':
-		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
 	'M3-E6':
 		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame. The overlay part of the task is not built: D-199's decision 4 asks for one GPU timing scope per built-in step and per add-on feature, and D-173 for each add-on's GPU time, while the add-on rows hold no GPU time and the overlay shows one frame total",
 	'M3-E8':
@@ -107,8 +104,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"unticked by the tick audit, and the tick before it was wrong: the mixed port leaves out the example's depth-writing cut-out plane, so room edges and two strips about ten pixels wide draw across the embedded page; the comparison hides both 3D canvases before it compares, so it can only see the HTML layers. The depth-only material that fix needs now exists: M3-K7 landed a material that writes depth and no colour, so that part is no longer a blocker",
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
-	'M3-A9':
-		"the 1.8 m limit at High was the fixed tile size's fault. D-219 makes the tile size a setting on the owner's ruling, and each preset now defaults to a size that keeps the demo car at or above four times. The cost is owed rather than over its limit: the runs taken so far ran at machine loads of 13.6 to 26.3, which the record itself says give no measurement. It waits on the quiet-window timing run the cost spec's protocol describes, not on a ruling",
 	'M3-A11':
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-E10':
