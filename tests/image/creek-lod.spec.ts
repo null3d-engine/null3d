@@ -32,10 +32,11 @@ const SIZE = { width: 640, height: 360 };
 /**
  * The canvas on a software GPU. The search draws a picture for each step, and a software GPU draws
  * them on the CPU, so the same twenty-four steps at the full size ran past four minutes in CI. At
- * half the sides each draw costs a quarter, and the crown is still a large share of the picture the
- * assertions judge.
+ * under half the sides each draw costs about a fifth, and the crown is still a large share of the
+ * picture the assertions judge. The eight steps have run from passing in under three minutes to
+ * timing out at four in CI, so the size leaves the search room rather than sitting at its limit.
  */
-const SOFTWARE_SIZE = { width: 320, height: 180 };
+const SOFTWARE_SIZE = { width: 256, height: 144 };
 /** The page's first and last level bias, and the share of the picture that counts as a change. */
 const SEARCH_HIGH = 32;
 const VISIBLE = 0.001;
