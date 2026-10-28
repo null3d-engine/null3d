@@ -39,6 +39,13 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 					`transform ${transform.toFixed(3)} ms of GPU time per frame`,
 				].join('\n'),
 			);
+			for (const [side, values] of [
+				['on', result.on.passes ?? []],
+				['off', result.off.passes ?? []],
+			] as const)
+				console.log(
+					`  ${side} passes: ${values.map((pass) => `${pass.name} ${pass.ms === null ? 'none' : pass.ms.toFixed(3)}`).join(', ')}`,
+				);
 			expect(result.failures).toEqual([]);
 			expect(result.off.gpuMs).not.toBeNull();
 			expect(result.on.gpuMs).not.toBeNull();

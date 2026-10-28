@@ -132,6 +132,8 @@ export interface Ocean {
 	readonly bandsPass: RenderPass;
 	/** @internal Turns the transform's passes on or off, for a cost measurement. */
 	setTransformEnabled(on: boolean): void;
+	/** @internal Draws the sea's surface or leaves it out, for a cost measurement. */
+	setSurfaceDrawn(on: boolean): void;
 	/** Removes the surface, the transform's passes, the reflection and the material. */
 	destroy(): void;
 }
@@ -395,6 +397,9 @@ export function createOcean(ctx: SketchContext, options: OceanOptions): Ocean {
 		setTransformEnabled(on) {
 			for (const pass of passes) render.setPassEnabled(pass, on);
 			render.setPassEnabled(bandPass, on);
+		},
+		setSurfaceDrawn(on) {
+			mesh.setVisible(on);
 		},
 		destroy() {
 			host.destroy();
