@@ -1,12 +1,13 @@
 # D-257: The water add-on
 
-Status: decided. Built: the `@null3d/water` add-on, the Creek's water through it, and the
-reflection's cadence through the feature host. Owed: the cost per preset. Tasks: M3-F5, M3-E6.
+Status: decided. Built: the `@null3d/water` add-on, its demo, and the reflection's cadence through
+the feature host. Owed: the cost per preset, and the Creek's migration to the add-on, which waits
+until the add-on reproduces the old look. Tasks: M3-F5, M3-E6.
 
-Summary: `@null3d/water` draws a river and a lake from one shape, with the Creek showcase's waves,
-ripples, caustics, foam, soft shores, reflection and underwater view. The surface reads the copy of
-the scene's depth, so a shore fades against the real bed, and the reflection's cadence is a feature
-setting of the preset and the governor. The Creek keeps no water code of its own.
+Summary: `@null3d/water` draws a river and a lake from one shape, with waves, ripples, caustics,
+foam, soft shores, a reflection and an underwater view. The surface reads the copy of the scene's
+depth, so a shore fades against the real bed. The reflection's cadence is a feature setting of the
+preset and the governor. The Creek draws its own water, by the owner's ruling on the look.
 
 ## Question
 
@@ -67,10 +68,23 @@ of the Creek's own.
 the same long waves and the same current, and the effect shows only near or under the surface. It keeps the
 Creek's per-pixel test, wobble, caustics and absorption.
 
-**The Creek.** It samples its own middle line and half width into the shape. It passes its own
-stone foam map. Its bisect switches keep working: `without=water` leaves the water out, and
-`reflect=always` and `reflection-scale` feed the add-on's cadence and its reflection size. The Creek
-holds no `water.ts` or `underwater.ts`, and its route test reads `waveHeight` from the add-on.
+**The Creek.** It keeps its own `water.ts` and `underwater.ts`. Its bisect switches keep working:
+`without=water` leaves the water out, and `reflect=always` and `reflection-scale` set the
+reflection's cadence and its size. The add-on's river and the Creek's water differ in three ways,
+and the owner rules those differences wrong for the Creek.
+
+- **The current.** The add-on reads it from the river mesh's texture coordinates, so each vertex
+  carries a vector. The wave phase, the foam drift and the caustic drift follow that vector. The
+  Creek's water runs the same three along the world's x axis with one speed.
+- **The thickness.** The add-on takes it from the screen-space copy of the scene's depth. The
+  Creek's water computes an analytic bed. The change moves the caustics and the edge foam.
+- **The shore.** The add-on fades the water's alpha over a soft ramp. The Creek's water ends
+  opaque at the mesh's edge.
+
+The owner rejects the add-on's look in the Creek: the surface shows sideways lines between stretches
+of flow. The Creek therefore draws its own water, and M3-F5's migration of the Creek to the add-on
+waits until the add-on reproduces that look. A close picture of the stream's surface guards it, as
+the bank views draw the stream only a few dozen pixels wide.
 
 ### The cadence through the feature host
 
@@ -103,8 +117,8 @@ is stepped too, and a page with no water has no row.
 - The add-on's material sets are 53.3 KB after Brotli, so D-14's first-use shader budget is 56 KB.
 - A custom effect that draws its own pass keeps no pieces in its module, because they never reach a
   host. The underwater effect's pieces would be 93 KB of the add-on's entry. D-225 gives the rule.
-- The Creek's image references may move where its analytic bed meets the general depth read. A
-  redraw of them sends its reason before the change is accepted.
+- The Creek's pictures draw its own water, and the add-on's demo draws the add-on. A change to one
+  moves only that one's pictures.
 - The page and allocation gates ran in the browser against E4a's engine: the water page starts from
   another origin under the strict policy, threaded and single-threaded, and the add-on's own code
   allocates zero bytes a frame on all four presets. That is E4a's first user, end to end.
