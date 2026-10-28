@@ -42,7 +42,10 @@ export interface Demo {
 	scene: string;
 	/** What the demo shows. */
 	summary: string;
-	/** The keys that the demo reads, and what each one does. A demo that reads no key leaves it out. */
+	/**
+	 * How the demo takes input of its own: the keys that it reads, or the pointer's part where it
+	 * does more than turn the camera. A demo with neither leaves it out.
+	 */
 	controls?: string;
 	/** The sketch time, in seconds, that the demo's image test holds at. */
 	hold: number;
@@ -348,7 +351,6 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'Glass pavilion',
 		summary:
 			"Eight panes of stained glass that cross each other, and 600 puffs of smoke from a brazier, blend in any order with the weighted blending, as three.js's OITPassNode blends them. Sorting by object cannot order them, so with normal blending they pop as the camera turns.",
-		controls: 'S swaps the scene between the weighted blending and the sorted twins.',
 		hold: 2,
 		timeoutSeconds: 60,
 	},

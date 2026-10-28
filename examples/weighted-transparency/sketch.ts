@@ -2,11 +2,13 @@
 // other in two squares, around a brazier whose smoke rises through them. Sorting by object cannot
 // order panes that cross, nor puffs of smoke inside each other, so with normal blending they pop as
 // the camera turns. With the weighted blending the panes and the 600 puffs blend in any order, as
-// three.js's OITPassNode blends them. Press S to swap the whole scene between the weighted blending
-// and the sorted twins, so the camera and the pointer never change the mode. A label over the
-// brazier names the mode on show. The puffs' soft dot is a texture made from data. The sky, the
-// paving, the plinth and the brazier live in pavilion.ts.
+// three.js's OITPassNode blends them. S swaps the whole scene between the weighted blending and the
+// sorted twins, so the camera and the pointer never change the mode. The page's controls HUD names
+// the key and the blend on show, its buttons set the blend too, and a label over the brazier names
+// it in the scene. The puffs' soft dot is a texture made from data. The sky, the paving, the plinth
+// and the brazier live in pavilion.ts.
 import { defineSketch, math } from '@null3d/engine';
+import { type HudOption, radioGroup } from '../lib/controls';
 import { interact } from '../lib/interact';
 import { pavilion } from './pavilion';
 
@@ -27,6 +29,20 @@ const GLASS = [
 ] as const;
 /** Texels along each side of the puffs' soft dot. */
 const DOT = 32;
+/** The two blends that the controls HUD offers: the weighted blending and the sorted twins. */
+const BLENDS: readonly HudOption[] = [
+	{
+		id: 'Weighted',
+		label: 'Weighted',
+		tip: 'Blend the crossing panes and the smoke in any order.',
+	},
+	{
+		id: 'Sorted',
+		label: 'Sorted',
+		tip: 'Sort the panes and the smoke by object, with normal blending.',
+		key: 'S',
+	},
+];
 
 export default defineSketch(async (ctx) => {
 	const { scene, geometry, materials, textures, time, input, ui, page } = ctx;
@@ -75,9 +91,16 @@ export default defineSketch(async (ctx) => {
 	const seeds = new Float32Array(PUFFS * 3).map(() => math.randFloat(0, 1));
 
 	let showsSorted = false;
+	let announced = false;
 	// A label over the brazier names the blending on show, so the picture never has to be guessed at.
 	ui.trackLabel(bowl, 'blending', { offset: [0, 1.8, 0] });
-	const showMode = () => {
+	const postHud = () =>
+		page.post('hud', {
+			groups: [radioGroup('blend', 'Blending', BLENDS, showsSorted ? 'Sorted' : 'Weighted')],
+			visible: true,
+		});
+	const setBlend = (next: boolean) => {
+		showsSorted = next;
 		for (const { mesh, looks } of glasses)
 			mesh.setMaterial(showsSorted ? looks.normal : looks.weighted);
 		weighted.setActiveCount(showsSorted ? 0 : PUFFS);
@@ -86,16 +109,24 @@ export default defineSketch(async (ctx) => {
 			id: 'blending',
 			text: showsSorted ? 'Sorted blending' : 'Weighted blending',
 		});
+		postHud();
 	};
-	showMode();
+	// A pick on the controls HUD sets the same blend that the key does.
+	page.onMessage((name, value) => {
+		if (name === 'blend') setBlend(value === 'Sorted');
+	});
+	setBlend(false);
 	return {
 		onUpdate(dt) {
 			view.update(dt);
-			// The key swaps the two blends, so the comparison is the same scene from the same view.
-			if (input.wasPressed('KeyS')) {
-				showsSorted = !showsSorted;
-				showMode();
+			// The page binds its message listener after the sketch's setup, so send the model again on
+			// the first frame, as a showcase scene does.
+			if (!announced) {
+				announced = true;
+				postHud();
 			}
+			// The key swaps the two blends, so the comparison is the same scene from the same view.
+			if (input.wasPressed('KeyS')) setBlend(!showsSorted);
 			flicker(time.now);
 			const puffs = showsSorted ? sorted : weighted;
 			const { positions, sizes, colors, rotations } = puffs;

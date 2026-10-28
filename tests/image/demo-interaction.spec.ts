@@ -4,8 +4,8 @@
 // alone. In the instances demo, a drag hands the scripted camera over to the user with no jump, the
 // script then stops moving it, and the wheel zooms. In the walk and fly demo, a key hands the
 // scripted walk over to first-person controls, and Space switches to fly controls. In the weighted
-// transparency demo, a key swaps the two blends and the picture follows it, while the pointer leaves
-// the blend alone.
+// transparency demo, a key and the controls HUD swap the two blends and the picture follows, while
+// the pointer leaves the blend alone.
 // CI's software GPU draws only a few frames a second, and a frame's step is at most 0.25 s, so
 // sketch time can run slower than the page's. Every check therefore waits on sketch time or on a
 // condition, never on the page's clock alone.
@@ -182,7 +182,7 @@ test('a key hands the walk and fly demo to first-person controls, and Space to f
 	expect(errors).toEqual([]);
 });
 
-test('a key swaps the weighted demo between its two blends, and the pointer does not', async ({
+test('a key swaps the weighted demo between its two blends, as the HUD does, and the pointer does not', async ({
 	page,
 }) => {
 	const errors: string[] = [];
@@ -232,5 +232,23 @@ test('a key swaps the weighted demo between its two blends, and the pointer does
 	// A second press gives the weighted blending back.
 	await page.keyboard.press('KeyS');
 	await expect(label).toHaveText('Weighted blending', { timeout: PATIENCE });
+	// The controls HUD names the blend and the key, and its buttons pick a blend with no keyboard.
+	await page.locator('.hud__chevron').click();
+	const blend = page.locator('#hud-panel-blend');
+	const weighted = blend.getByRole('button', { name: /Weighted/ });
+	const sorted = blend.getByRole('button', { name: /Sorted/ });
+	await expect(page.getByRole('tab', { name: 'Blending' })).toHaveAttribute(
+		'aria-selected',
+		'true',
+	);
+	await expect(weighted).toHaveAttribute('aria-pressed', 'true');
+	await expect(sorted).toContainText('S');
+	await sorted.click();
+	await expect(label).toHaveText('Sorted blending', { timeout: PATIENCE });
+	await expect(sorted).toHaveAttribute('aria-pressed', 'true');
+	// The key and the HUD set one mode, so the key turns the HUD's pick back.
+	await page.keyboard.press('KeyS');
+	await expect(label).toHaveText('Weighted blending', { timeout: PATIENCE });
+	await expect(weighted).toHaveAttribute('aria-pressed', 'true');
 	expect(errors).toEqual([]);
 });
