@@ -47,10 +47,13 @@ export async function readFrame(page: Page): Promise<Frame> {
 			return btoa(text);
 		});
 		const frame = decodePngRgba(Buffer.from(base64, 'base64'), 'the canvas');
+		// A fractional layout rounds the canvas's height differently from read to read, so a page
+		// that has settled can still move by a pixel; the read waits for the size to hold within one.
 		if (
 			frame.data.length > 0 &&
-			previous?.width === frame.width &&
-			previous.height === frame.height
+			previous !== null &&
+			Math.abs(previous.width - frame.width) <= 1 &&
+			Math.abs(previous.height - frame.height) <= 1
 		)
 			return frame;
 		if (Date.now() >= deadline)
