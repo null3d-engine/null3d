@@ -152,10 +152,12 @@ The shadow maps are not a separate test: they draw the casters' layout, which ne
 so the same `drawn` check that the direct path exercises keeps their levels.
 
 The motion pass walks the same calls as the opaque pass, with the same patch view, so a tree's
-calls keep their places in the draw records. Its own draws are skipped after their calls are
-numbered. The test `a_tree_keeps_the_motion_pass_in_step_with_the_opaque_draw_records` binds the
-draw record at the second call's offset; without the patch view it binds the first, as the probe
-showed.
+calls keep their places in the draw records. A tree that moves draws its chosen runs from the
+tree's own index list, as the opaque pass does, and the pass binds that list whenever the call's
+tree changes within a run. `a_moving_tree_binds_its_own_index_list_in_the_motion_pass` proves the
+binding; without it the pass draws the mesh page's list. The other test,
+`a_tree_keeps_the_motion_pass_in_step_with_the_opaque_draw_records`, binds the draw record at the
+second call's offset; without the patch view it binds the first, as the probe showed.
 
 ### Pictures
 

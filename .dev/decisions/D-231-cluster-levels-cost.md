@@ -120,6 +120,6 @@ WebGL2 draw-record buffer's figures are in
 
 - The page and the plan stay as the way to measure either route again when it changes.
 - A device without a GPU timer reports no GPU figure; its frame interval and CPU time stand in.
-- The WebGL2 rows for the iPad and the phone wait on the landing session's runs, at the Medium
+- The WebGL2 rows for the iPad and the phone wait on the landing session's runs, at the High
   preset.
 - The Mac's figures are one preset's and one window's.
