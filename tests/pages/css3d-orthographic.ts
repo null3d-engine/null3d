@@ -33,6 +33,6 @@ runPort({
 			return element;
 		});
 		renderer.render(scene, camera);
-		return elements;
+		return { elements };
 	},
 });
