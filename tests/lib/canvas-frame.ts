@@ -26,11 +26,13 @@ export interface Frame {
  * on the engine's frame loop, which keeps its turn, and gives the frame drawn last when no new frame
  * comes: measured here, one read took 17 ms where the screenshots ran the test out.
  *
- * A page that has not sized its canvas yet captures nothing, so the read waits for a picture with
- * pixels in it rather than handing back an empty frame.
+ * A page that has not sized its canvas yet captures nothing, or captures the browser's default
+ * canvas, so the read waits until two captures in a row hold the same pixels at the same size. A
+ * page still laying out changes its canvas between reads; a settled one does not.
  */
 export async function readFrame(page: Page): Promise<Frame> {
 	const deadline = Date.now() + EMPTY_READ_MS;
+	let previous: Frame | null = null;
 	for (;;) {
 		const base64 = await page.evaluate(async () => {
 			const engine = (globalThis as { __null3dEngine?: { capture(): Promise<Blob> } })
@@ -45,9 +47,19 @@ export async function readFrame(page: Page): Promise<Frame> {
 			return btoa(text);
 		});
 		const frame = decodePngRgba(Buffer.from(base64, 'base64'), 'the canvas');
-		if (frame.data.length > 0) return frame;
+		if (
+			frame.data.length > 0 &&
+			previous?.width === frame.width &&
+			previous.height === frame.height
+		)
+			return frame;
 		if (Date.now() >= deadline)
-			throw new Error(`the canvas held no pixels for ${EMPTY_READ_MS} ms`);
+			throw new Error(
+				frame.data.length === 0
+					? `the canvas held no pixels for ${EMPTY_READ_MS} ms`
+					: `the canvas kept changing size for ${EMPTY_READ_MS} ms, last ${frame.width} by ${frame.height}`,
+			);
+		previous = frame;
 		await page.waitForTimeout(50);
 	}
 }
