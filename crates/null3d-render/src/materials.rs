@@ -308,8 +308,9 @@ pub mod feature {
     /// The surface lets light through, as three.js's `transmission` does: it draws in the
     /// transparent pass, after the opaque objects, and samples a copy of their color behind it,
     /// bent by its index of refraction and its thickness and blurred by its roughness. The
-    /// material's transmission value sets how much light passes. It takes no mask, so it wins over
-    /// [`ALPHA_MASK`].
+    /// material's transmission value sets how much light passes. It keeps its mask, which cuts the
+    /// pixels that draw nothing before the light from behind fills the rest, as three.js's
+    /// `alphaTest` draws one.
     pub const TRANSMISSION: u32 = 8192;
     /// Light that reaches the surface's back shows on its front, as glTF's diffuse transmission
     /// draws a leaf, a petal or an ear against the light. The material's diffuse transmission
@@ -373,6 +374,12 @@ pub mod feature {
     /// color is multiplied by its alpha times 8, then the sRGB transfer turns it linear. The
     /// texture is uploaded as linear texels, so the shader makes that decode itself.
     pub const LIGHT_MAP_RGBM: u32 = 1 << 27;
+    /// The surface writes depth and no color, so it shows nothing itself and hides what lies
+    /// behind it, as three.js's `colorWrite: false` does. Its objects draw before the opaque
+    /// objects that write color, so the depth it writes holds their color back. With
+    /// [`ALPHA_MASK`] the parts below the cutoff write nothing at all, so the surface cuts a shape
+    /// out of the depth it holds.
+    pub const NO_COLOR_WRITE: u32 = 1 << 28;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -401,17 +408,19 @@ pub mod feature {
         | SCENE_DEPTH
         | IRIDESCENCE
         | ANISOTROPY
-        | LIGHT_MAP_RGBM;
+        | LIGHT_MAP_RGBM
+        | NO_COLOR_WRITE;
 
     /// The features whose material lights layers above its base: a clear coat, a sheen,
     /// iridescence or anisotropy. Each takes the shader builds that [`COAT_SHEEN`] names, whose
     /// row holds every one of their values.
     pub const LAYERS: u32 = COAT_SHEEN | IRIDESCENCE | ANISOTROPY;
 
-    /// True for features that test alpha with the masked shader variant: a mask that neither
-    /// blends nor lets light through.
+    /// True for features that test alpha with the masked shader variant: a mask that does not
+    /// blend. A surface that lets light through keeps its mask too, and cuts its holes before the
+    /// light from behind fills the pixels that remain.
     pub const fn masks(features: u32) -> bool {
-        features & ALPHA_MASK != 0 && features & (BLEND | TRANSMISSION) == 0
+        features & ALPHA_MASK != 0 && features & BLEND == 0
     }
 
     /// True for features that draw in the camera's weighted layer: [`WEIGHTED`] with normal
@@ -641,6 +650,11 @@ pub mod param {
     /// of the light slot, and each specular slot names its own family, since one may hold a layer map
     /// while the other holds a transmission or a thickness map.
     pub const LAYER_MAPS_KIND: usize = 66;
+    /// The strength of the volume's dispersion, 0 or more, in materials that let light through:
+    /// 20 divided by the Abbe number, as glTF's `KHR_materials_dispersion` gives it. Each color
+    /// channel bends by its own index of refraction, so the light from behind separates into
+    /// colors. 0 bends every channel alike.
+    pub const DISPERSION: usize = 67;
     /// How a light map's texture coordinates stretch along u and along v: 2 floats. The scale is
     /// 1 by default, which leaves the coordinates alone.
     pub const LIGHT_MAP_SCALE: usize = 68;
@@ -673,7 +687,7 @@ pub mod param {
     pub const DECAL_EDGE_FADE: usize = IOR;
 
     /// The floats of the value that starts at `at`, for a value that sketches set, or `None` for
-    /// the flags, the map layers, a spare float or a float inside a value.
+    /// the flags, the map layers or a float inside a value.
     pub const fn width(at: usize) -> Option<usize> {
         // Each map transform of the slots from the second up is the row that gives u, and the row
         // that gives v, 4 floats further on.
@@ -715,7 +729,8 @@ pub mod param {
             | IRIDESCENCE_THICKNESS_MIN
             | IRIDESCENCE_THICKNESS_MAX
             | ANISOTROPY
-            | ANISOTROPY_ROTATION => Some(1),
+            | ANISOTROPY_ROTATION
+            | DISPERSION => Some(1),
             _ => None,
         }
     }
@@ -1990,6 +2005,7 @@ mod tests {
             (param::IRIDESCENCE_THICKNESS_MAX, 1),
             (param::ANISOTROPY, 1),
             (param::ANISOTROPY_ROTATION, 1),
+            (param::DISPERSION, 1),
         ];
         // Each map of the slots from the second up keeps the two rows of its transform apart from
         // the material's.
@@ -2435,6 +2451,8 @@ mod tests {
         assert_eq!(row(&table, 1)[param::FLAGS], flag::BLEND as f32);
         assert!(feature::masks(hashed));
         assert!(!feature::masks(feature::ALPHA_MASK | feature::BLEND));
+        // A surface that lets light through keeps the mask that cuts its holes.
+        assert!(feature::masks(feature::ALPHA_MASK | feature::TRANSMISSION));
     }
 
     #[test]

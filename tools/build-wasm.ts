@@ -150,6 +150,7 @@ import {
 	FIRST_USE_SHADER_BUDGET,
 	findEngineParts,
 	findFirstUseFiles,
+	firstUseShaderBudget,
 	isCombosPart,
 	isFirstUseShaderPart,
 	isSizePartFile,
@@ -1602,10 +1603,10 @@ async function main(): Promise<void> {
 		printSize(`js/${part}`, size, isCombosPart(part) ? COMBOS_BUDGET : LATER_BUDGET);
 	printSize('after the start, total', totalSize(later.values()));
 	console.log(
-		`\nthe shader builds of each feature that loads on first use, and of each set of such features that builds need together, one file for each GPU path and each value of the bits a device fixes (${budgetNote(FIRST_USE_SHADER_BUDGET)} for each file; no start counts them)`,
+		`\nthe shader builds of each feature that loads on first use, and of each set of such features that builds need together, one file for each GPU path and each value of the bits a device fixes (${budgetNote(FIRST_USE_SHADER_BUDGET)} for each file, with the raise that D-14 gives two files; no start counts them)`,
 	);
 	for (const [part, size] of parts)
-		if (isFirstUseShaderPart(part)) printSize(`js/${part}`, size, FIRST_USE_SHADER_BUDGET);
+		if (isFirstUseShaderPart(part)) printSize(`js/${part}`, size, firstUseShaderBudget(part));
 	console.log(
 		"\nthe files besides code that load on first use: the KTX2 transcoder with the first KTX2 file, the meshopt decoder with the first glTF file that holds meshopt data, Draco's decoder with the first glTF file that holds Draco data, and the area lights' tables with the first rectangle or tube light, recorded exceptions (D-14, D-145) (no budget)",
 	);

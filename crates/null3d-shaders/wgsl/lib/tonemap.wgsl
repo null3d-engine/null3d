@@ -96,16 +96,35 @@ fn vignette(pixel: vec2f, size: vec2f, shape: vec4f) -> f32 {
     return max(mix(1.0 - shape.x, 1.0, light), 0.0);
 }
 
+/// The place on the image, counted from its top left, that the vignette measures its distance from:
+/// `pixel` is a fragment position of a target whose height is `target_height` pixels. WebGL2 counts
+/// fragment rows from the bottom, and below the whole render scale the scene draws into a corner of
+/// a target that keeps the canvas's height, so the rows turn by the target's height.
+fn vignette_place(pixel: vec2f, target_height: f32) -> vec2f {
+#ifdef WEBGL2
+    return vec2f(pixel.x, target_height - pixel.y);
+#else
+    return pixel;
+#endif
+}
+
 /// The color that a scene shader writes for exposed linear color `c` at framebuffer position
-/// `pixel` of a target of `size` pixels: `c` itself into the HDR scene color, which the final pass
-/// tone maps, or on the 8-bit path (the TONE_MAP builds), `c` darkened by the vignette of `shape`
-/// and after the output transform that `settings` sets, encoded for the canvas. Both paths take `c`
-/// no brighter than the 16-bit float target holds, with a NaN as black, so the tone curves never
-/// meet infinity or NaN.
-fn finish(c: vec3f, pixel: vec2f, settings: Output, size: vec2f, shape: vec4f) -> vec4f {
+/// `pixel` of a target of `size` pixels and `target_height` rows: `c` itself into the HDR scene
+/// color, which the final pass tone maps, or on the 8-bit path (the TONE_MAP builds), `c` darkened
+/// by the vignette of `shape` and after the output transform that `settings` sets, encoded for the
+/// canvas. Both paths take `c` no brighter than the 16-bit float target holds, with a NaN as black,
+/// so the tone curves never meet infinity or NaN.
+fn finish(
+    c: vec3f,
+    pixel: vec2f,
+    target_height: f32,
+    settings: Output,
+    size: vec2f,
+    shape: vec4f,
+) -> vec4f {
     let limited = limit_hdr(c);
 #ifdef TONE_MAP
-    let shaded = limited * vignette(pixel, size, shape);
+    let shaded = limited * vignette(vignette_place(pixel, target_height), size, shape);
     return vec4f(encode(tone_map(shaded, settings), pixel), 1.0);
 #else
     return vec4f(limited, 1.0);
@@ -113,13 +132,20 @@ fn finish(c: vec3f, pixel: vec2f, settings: Output, size: vec2f, shape: vec4f) -
 }
 
 /// The color that a scene shader writes for exposed linear color `c` at framebuffer position
-/// `pixel` of a material that keeps its color as the display shows it: `finish` without the tone
-/// curve. The vignette darkens it as it darkens every other surface. Both paths take `c` through
-/// the same limit, so a NaN draws black here too.
-fn finish_unmapped(c: vec3f, pixel: vec2f, size: vec2f, shape: vec4f) -> vec4f {
+/// `pixel` of a target of `target_height` rows, for a material that keeps its color as the display
+/// shows it: `finish` without the tone curve. The vignette darkens it as it darkens every other
+/// surface. Both paths take `c` through the same limit, so a NaN draws black here too.
+fn finish_unmapped(
+    c: vec3f,
+    pixel: vec2f,
+    target_height: f32,
+    size: vec2f,
+    shape: vec4f,
+) -> vec4f {
     let limited = limit_hdr(c);
 #ifdef TONE_MAP
-    return vec4f(encode(limited * vignette(pixel, size, shape), pixel), 1.0);
+    let shaded = limited * vignette(vignette_place(pixel, target_height), size, shape);
+    return vec4f(encode(shaded, pixel), 1.0);
 #else
     return vec4f(limited, 1.0);
 #endif

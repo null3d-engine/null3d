@@ -127,6 +127,31 @@ A plane follows either lens. An orthographic camera turns and scales the element
 
 The engine holds 256 planes by default, which take 40 KB of the memory that its threads share. Set `createEngine`'s `maxLabels3d` option for more, or to 0 on a page that shows no plane.
 
+### A page under the scene
+
+A plane of the scene can sit over a page. Start the engine on a see-through canvas, put the labels' layer below the canvas, and set no background. The page then shows wherever no object draws.
+
+```ts
+// page.ts
+const engine = await createEngine({ canvas, sketch, transparent: true });
+canvas.before(layer);
+```
+
+A page plane shows the page, but the scene behind the plane would draw over it. Give the plane's object a material that writes depth and no color, at the same place and size:
+
+```ts
+// sketch.ts
+const pagePlane = scene.createMesh({
+  mesh: geometry.plane({ width: 800, height: 600 }),
+  material: materials.unlit({ colorWrite: false }),
+});
+ui.trackLabel(pagePlane, 'page', { transform: 'world' });
+```
+
+The plane writes its depth and nothing else. Objects behind the page then fail the depth test. Objects in front still draw over it, and a glass object in front still shows the page through itself. An opaque plane would hide the page instead. [Invisible surfaces that hide](../api/materials.md#invisible-surfaces-that-hide) covers the material.
+
+The [depth-only demo](https://github.com/null3d-engine/null3d/tree/main/examples/depth-only) shows the pattern, with glass in front of an embedded page and a hall of glowing pylons behind it.
+
 ## GUI panels
 
 A settings panel, such as one made with lil-gui, lives on the page like any other HTML. Each change goes to the sketch as a message, and the sketch applies it in its next frame.

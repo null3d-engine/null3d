@@ -39,6 +39,7 @@ import {
 	MATERIAL_FEATURE_IRIDESCENCE,
 	MATERIAL_FEATURE_LIGHT_MAP_RGBM,
 	MATERIAL_FEATURE_MULTIPLY,
+	MATERIAL_FEATURE_NO_COLOR_WRITE,
 	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
@@ -66,6 +67,7 @@ import {
 	MATERIAL_PARAM_DECAL_FADE_START,
 	MATERIAL_PARAM_DIFFUSE_TRANSMISSION,
 	MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
+	MATERIAL_PARAM_DISPERSION,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
@@ -160,6 +162,7 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX, 1],
 	[MATERIAL_PARAM_ANISOTROPY, 1],
 	[MATERIAL_PARAM_ANISOTROPY_ROTATION, 1],
+	[MATERIAL_PARAM_DISPERSION, 1],
 	[MATERIAL_PARAM_DECAL_FADE_START, 1],
 	[MATERIAL_PARAM_DECAL_FADE_END, 1],
 	[MATERIAL_PARAM_DECAL_EDGE_FADE, 1],
@@ -438,6 +441,36 @@ describe('Material.set', () => {
 			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_MULTIPLY,
 			MATERIAL_FEATURE_BLEND,
 			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_WEIGHTED | MATERIAL_FEATURE_DOUBLE_SIDED,
+		]);
+	});
+
+	test('transmission keeps a masked surface and refuses only the hash', () => {
+		const { features, materials } = fakeCore();
+		materials.standard({ alphaMode: 'mask', alphaCutoff: 0.4, transmission: 0.5 });
+		expect(features).toEqual([
+			MATERIAL_FEATURE_ALPHA_MASK |
+				MATERIAL_FEATURE_ALPHA_TO_COVERAGE |
+				MATERIAL_FEATURE_TRANSMISSION,
+		]);
+		const hashed = thrown(() => materials.standard({ alphaMode: 'hash', transmission: 0.5 }));
+		expect(hashed.code).toBe('E1217');
+		expect(hashed.message).toStartWith(
+			"E1217: materials.standard() got transmission with the alpha mode 'hash'; a material that lets light through takes 'opaque', 'mask' or 'blend'.",
+		);
+		expect(features).toHaveLength(1);
+	});
+
+	test('passes a material that writes depth alone, which the opaque pass draws first', () => {
+		const { features, materials } = fakeCore();
+		materials.unlit({ colorWrite: false });
+		materials.standard({ colorWrite: false, alphaMode: 'mask', alphaCutoff: 0.3 });
+		materials.unlit({ colorWrite: true });
+		expect(features).toEqual([
+			MATERIAL_FEATURE_NO_COLOR_WRITE,
+			MATERIAL_FEATURE_NO_COLOR_WRITE |
+				MATERIAL_FEATURE_ALPHA_MASK |
+				MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
+			0,
 		]);
 	});
 
@@ -1009,6 +1042,15 @@ describe('Material.set', () => {
 			[4, MAP_SLOT_COAT_NORMAL, 7, 0],
 		]);
 		expect(table).toHaveLength(4);
+	});
+
+	test('gives a transmission material its dispersion, which set changes at any time', () => {
+		const { table, materials } = fakeCore();
+		const glass = materials.standard({ transmission: 1, dispersion: 0.36 });
+		expect((table[0] as number[])[MATERIAL_PARAM_DISPERSION]).toBe(0.36);
+		glass.set({ dispersion: 2.04 });
+		expect((table[0] as number[])[MATERIAL_PARAM_DISPERSION]).toBe(2.04);
+		expect(thrown(() => glass.set({ dispersion: -1 })).code).toBe('E1108');
 	});
 
 	test('refuses diffuse transmission beside layers and the weighted blending', () => {

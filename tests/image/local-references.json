@@ -1,16 +1,4 @@
 {
-	"chromium-swiftshader/compat/feature-instances-shadow.png": {
-		"test": "feature-instances-shadow",
-		"tier": "compat",
-		"date": "2026-10-25",
-		"reason": "M3-E9's picture draws no text and no 2D canvas, so this Mac's Chromium and CI's SwiftShader round the same frame alike. CI run 40223106242 compared it on both tiers and passed, so the reference stands until a later CI drawing replaces it."
-	},
-	"chromium-swiftshader/webgpu/feature-instances-shadow.png": {
-		"test": "feature-instances-shadow",
-		"tier": "webgpu",
-		"date": "2026-10-25",
-		"reason": "M3-E9's picture draws no text and no 2D canvas, so this Mac's Chromium and CI's SwiftShader round the same frame alike. CI run 40223106242 compared it on both tiers and passed, so the reference stands until a later CI drawing replaces it."
-	},
 	"chromium-swiftshader/compat/asset-bent-grid.png": {
 		"test": "asset-bent-grid",
 		"tier": "compat",
@@ -22,6 +10,66 @@
 		"tier": "compat",
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/car-paint-no-seams.png": {
+		"test": "car-paint-no-seams",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/compat/car-paint-weave.png": {
+		"test": "car-paint-weave",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/compat/car-paint.png": {
+		"test": "car-paint",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/compat/creek-render-scale-opening.png": {
+		"test": "creek-render-scale-opening",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/compat/creek-render-scale-route.png": {
+		"test": "creek-render-scale-route",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/compat/creek-water-close.png": {
+		"test": "creek-water-close",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/compat/demo-creek.png": {
+		"test": "demo-creek",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/compat/demo-depth-only.png": {
+		"test": "demo-depth-only",
+		"tier": "compat",
+		"date": "2026-10-27",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
+	},
+	"chromium-swiftshader/compat/demo-terrain.png": {
+		"test": "demo-terrain",
+		"tier": "compat",
+		"date": "2026-10-27",
+		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+	},
+	"chromium-swiftshader/compat/feature-instances-shadow.png": {
+		"test": "feature-instances-shadow",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "M3-E9's picture draws no text and no 2D canvas, so this Mac's Chromium and CI's SwiftShader round the same frame alike. CI run 40223106242 compared it on both tiers and passed, so the reference stands until a later CI drawing replaces it."
 	},
 	"chromium-swiftshader/compat/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -53,6 +101,30 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},
+	"chromium-swiftshader/compat/terrain.png": {
+		"test": "terrain",
+		"tier": "compat",
+		"date": "2026-10-27",
+		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+	},
+	"chromium-swiftshader/compat/wind-cards-later.png": {
+		"test": "wind-cards-later",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/compat/wind-cards.png": {
+		"test": "wind-cards",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/compat/wind-wake.png": {
+		"test": "wind-wake",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
 	"chromium-swiftshader/webgl2/asset-bent-grid.png": {
 		"test": "asset-bent-grid",
 		"tier": "webgl2",
@@ -64,6 +136,60 @@
 		"tier": "webgl2",
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/car-paint-no-seams.png": {
+		"test": "car-paint-no-seams",
+		"tier": "webgl2",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgl2/car-paint-weave.png": {
+		"test": "car-paint-weave",
+		"tier": "webgl2",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgl2/car-paint.png": {
+		"test": "car-paint",
+		"tier": "webgl2",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgl2/creek-render-scale-opening.png": {
+		"test": "creek-render-scale-opening",
+		"tier": "webgl2",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/webgl2/creek-render-scale-route.png": {
+		"test": "creek-render-scale-route",
+		"tier": "webgl2",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/webgl2/creek-water-close.png": {
+		"test": "creek-water-close",
+		"tier": "webgl2",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/webgl2/demo-creek.png": {
+		"test": "demo-creek",
+		"tier": "webgl2",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/webgl2/demo-depth-only.png": {
+		"test": "demo-depth-only",
+		"tier": "webgl2",
+		"date": "2026-10-27",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
+	},
+	"chromium-swiftshader/webgl2/demo-terrain.png": {
+		"test": "demo-terrain",
+		"tier": "webgl2",
+		"date": "2026-10-27",
+		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -95,6 +221,30 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},
+	"chromium-swiftshader/webgl2/terrain.png": {
+		"test": "terrain",
+		"tier": "webgl2",
+		"date": "2026-10-27",
+		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+	},
+	"chromium-swiftshader/webgl2/wind-cards-later.png": {
+		"test": "wind-cards-later",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgl2/wind-cards.png": {
+		"test": "wind-cards",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgl2/wind-wake.png": {
+		"test": "wind-wake",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
 	"chromium-swiftshader/webgpu/asset-bent-grid.png": {
 		"test": "asset-bent-grid",
 		"tier": "webgpu",
@@ -106,6 +256,66 @@
 		"tier": "webgpu",
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/car-paint-no-seams.png": {
+		"test": "car-paint-no-seams",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgpu/car-paint-weave.png": {
+		"test": "car-paint-weave",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgpu/car-paint.png": {
+		"test": "car-paint",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgpu/creek-render-scale-opening.png": {
+		"test": "creek-render-scale-opening",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/webgpu/creek-render-scale-route.png": {
+		"test": "creek-render-scale-route",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/webgpu/creek-water-close.png": {
+		"test": "creek-water-close",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/webgpu/demo-creek.png": {
+		"test": "demo-creek",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+	},
+	"chromium-swiftshader/webgpu/demo-depth-only.png": {
+		"test": "demo-depth-only",
+		"tier": "webgpu",
+		"date": "2026-10-27",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
+	},
+	"chromium-swiftshader/webgpu/demo-terrain.png": {
+		"test": "demo-terrain",
+		"tier": "webgpu",
+		"date": "2026-10-27",
+		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+	},
+	"chromium-swiftshader/webgpu/feature-instances-shadow.png": {
+		"test": "feature-instances-shadow",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "M3-E9's picture draws no text and no 2D canvas, so this Mac's Chromium and CI's SwiftShader round the same frame alike. CI run 40223106242 compared it on both tiers and passed, so the reference stands until a later CI drawing replaces it."
 	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -131,41 +341,17 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},
-	"chromium-swiftshader/compat/wind-cards-later.png": {
-		"test": "wind-cards-later",
-		"tier": "compat",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	"chromium-swiftshader/webgpu/skinning-shadows.png": {
+		"test": "skinning-shadows",
+		"tier": "webgpu",
+		"date": "2026-10-27",
+		"reason": "drawn on this Mac's SwiftShader from the branch that redrew the skinning-shadow picture; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/compat/wind-cards.png": {
-		"test": "wind-cards",
-		"tier": "compat",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
-	},
-	"chromium-swiftshader/compat/wind-wake.png": {
-		"test": "wind-wake",
-		"tier": "compat",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
-	},
-	"chromium-swiftshader/webgl2/wind-cards-later.png": {
-		"test": "wind-cards-later",
-		"tier": "webgl2",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
-	},
-	"chromium-swiftshader/webgl2/wind-cards.png": {
-		"test": "wind-cards",
-		"tier": "webgl2",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
-	},
-	"chromium-swiftshader/webgl2/wind-wake.png": {
-		"test": "wind-wake",
-		"tier": "webgl2",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	"chromium-swiftshader/webgpu/terrain.png": {
+		"test": "terrain",
+		"tier": "webgpu",
+		"date": "2026-10-27",
+		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
 	"chromium-swiftshader/webgpu/wind-cards-later.png": {
 		"test": "wind-cards-later",

@@ -569,7 +569,7 @@ const water = materials.unlit({ map: textures.fromPass(field) });
 | --- | --- |
 | E1215 | WGSL that the null3D Vite plugin did not compile, or compiled WGSL of another kind, such as a material's. |
 | E1216 | A uniform or a texture that the WGSL does not declare, or a value of the wrong kind. |
-| E1213 | A ninth effect. |
+| E1213 | A ninth effect, or a `bloomLevel` missing from an effect whose WGSL calls `effectBloom`. |
 | E1203 | An `order` that is not a number. |
 | E1101 | `setEffectUniform` on an effect that `removeEffect` removed, or a call on a render pass that `render.removePass` removed. |
 | E1220 | Options that `render.addPass` does not take, such as a reflection's plane without a point, a full-screen pass with both a `size` and a `scale`, or a texture name that another pass writes. |

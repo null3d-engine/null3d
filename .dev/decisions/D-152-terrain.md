@@ -2,7 +2,7 @@
 
 Status: decided by the helper of M2-EX35, for the owner's review. Built: the terrain add-on is on main (`64439513b`). Not measured yet: a timing run of its frame cost. The owner's review is pending. Task: M2-EX35.
 
-Summary: `@null3d/terrain` draws a height field as a camera-centered quadtree of blocks, fine near the camera and coarse far away, with skirts over the seams. Up to four tiled color layers blend by a splat map, and `heightAt` and `normalAt` place what stands on the ground, which has no collision. Built on public API only, it draws about 200 blocks and 130,000 triangles over a 1,200 meter ground, and a sketch without it pays nothing.
+Summary: `@null3d/terrain` draws a height field as a camera-centered quadtree of blocks, fine near the camera and coarse far away, with skirts over the seams. A block splits by the screen error of its cells, measured from the camera's 3D distance to each block's height box. Every pixel lights from a normal map baked over the whole ground, so a coarse block keeps the hills' relief. Up to four tiled color layers blend by a splat map, and each layer's own height shows it through its neighbours at a boundary. `heightAt` and `normalAt` place what stands on the ground, which has no collision. Built on public API only, it draws about 200 blocks and 130,000 triangles over a 1,200 meter ground, and a sketch without it pays nothing.
 
 ## Question
 
@@ -49,6 +49,32 @@ Option B needs a per-block morph factor in the shader, so each block would take 
 | B: per-vertex colors baked from the layers | Rejected: no tiling detail |
 | C: one albedo map baked for the whole ground | Rejected: the fine tiling of a large ground does not fit one texture |
 
+Each layer also carries a height at each texel, and that height offsets its weight before the layers normalize. Two layers at equal weight then meet where their heights cross, in ragged patches that follow each map's own detail, rather than in a smooth cross-fade. The method is Mishkinis's height-based blending (GPU Pro 4, 2013). The height comes from the map's brightness by default, which suits a color map with no height of its own. The maps that `terrainTextures` makes carry a relief height in their alpha channel, so their layers set `heightFrom: 'alpha'`. Brightness alone does not separate rock from grass, whose linear brightness is close; a height that the map authors is what makes the rock rise through the grass. `contrast`, from 0 to 1 and 1 by default, sets how far a layer's height scales its weight: at 1 the weight is twice the texel's height, so a layer with no height has no weight at a meeting. A contrast of 0 restores the plain splat blend, and the image test compares the two.
+
+Rejected: a separate height map for each layer. A fifth texture per layer would cost a slot and an asset, and a port has no height maps of its own.
+
+### How a pixel lights
+
+| Option | Verdict |
+| --- | --- |
+| A: a normal map baked per pixel over the whole ground, from the height field's central differences | Chosen |
+| B: the mesh's vertex normals | Rejected: a far block's cells are larger than the height samples, so the far hills shade flat |
+| C: the field's normal in the vertex shader | Rejected: the engine's custom surface function reads no vertex texture, and a coarse mesh still has too few vertices |
+
+The normal map is `rgba8` at the height field's resolution, with mip levels, built on the CPU in the sketch worker when the terrain is made. It stores the normal's x and z, each remapped to a byte, and the surface rebuilds y from the unit length and renormalizes. It is the material's sixth texture beside the splat map and the four layer maps. `bakedNormals: false` skips the texture and lights from the mesh's own normals, which the image test uses to show the difference.
+
+### How a block splits
+
+| Option | Verdict |
+| --- | --- |
+| A: a screen-space error of the block's cell, with the camera's 3D distance to the block's height box | Chosen |
+| B: the camera's distance across the ground alone, as a multiple of the block's size | Rejected: a high camera keeps full detail under it, and the field of view does not count |
+| C: the height range of the block projected to pixels | Rejected: the range overstates the error of a smooth hill, and picks far more blocks than it needs |
+
+The block splits while one cell of its grid would project to more screen pixels than the allowed error. The cell's world size, the vertical field of view, the drawing buffer's height and the 3D distance to the block's height box set that projection. A narrow field of view then keeps detail farther out, and a camera high above the ground draws the ground under it coarser. The height boxes come from the field's samples once, when the quadtree is made, so a selection reads no heights. The `error` option names the allowed error in pixels, and its default is 35 times the quality preset's `lodThreshold`: Low doubles the threshold and draws coarser ground, as it does for a mesh's levels of detail ([D-137](D-137-lod-groups.md)).
+
+The relation keeps the earlier default look. At 1,080 device pixels and a 52 degree field of view, an error of 35 pixels of a 16 cell grid puts the split distance at about twice the block's size, as the earlier rule did. The High preset's 208 blocks and 133,120 triangles for a 1,200 meter ground are the earlier figures for that reason.
+
 ### How the shader reaches a project that installs the package
 
 The null3D Vite plugin compiles a project's own WGSL, and it skips `node_modules`, as [D-54](D-54-addon-modules.md) says. A tagged literal in the package's own source would stay an uncompiled string once the package is built into `lib/`, and `materials.shader` would refuse it. So the surface function lives in `packages/terrain/src/terrain.wgsl` and the module imports it.
@@ -59,17 +85,17 @@ Rejected: copying the raw file into `lib/` for the user's plugin to compile. It 
 
 ## Data
 
-**Blocks and triangles.** The quadtree's selection is scale-invariant: with the same `maxLevel` and `split`, a ground of any size picks the same blocks, because the split distance is a multiple of a block's size. A unit test and the numbers below come from the selection alone, which allocates nothing:
+**Blocks and triangles.** The quadtree's selection is scale-invariant: with the same `maxLevel`, error and view, a ground of any size picks the same blocks, because the error is a share of a block's cell. A unit test and the numbers below come from the selection alone, which allocates nothing:
 
-| Ground | `maxLevel` | `split` | Blocks | Triangles | Blocks by level |
+| Ground | `maxLevel` | `error` | Blocks | Triangles | Blocks by level |
 | --- | --- | --- | --- | --- | --- |
-| 1,200 m | 6 | 2.0 | 208 | 133,120 | 48, 48, 48, 64 |
-| 1,200 m | 6 | 1.4 | 160 | 102,400 | 4, 36, 36, 36, 48 |
-| 512 m | 5 | 2.2 | 208 | 133,120 | 40, 72, 96 |
+| 1,200 m | 6 | 35 | 208 | 133,120 | 48, 48, 48, 64 |
+| 1,200 m | 6 | 70 | 64 | 40,960 | 12, 12, 12, 12, 16 |
+| 512 m | 5 | 35 | 160 | 102,400 | 48, 48, 64 |
 
-Each block draws a 16 x 16 grid, 512 triangles, and a skirt of 128 triangles. The count is close to 200 whatever the camera does, and it does not grow with the ground's size. This is the frame's draw-call count and its vertex work; the fragment work scales with the pixels the ground covers. The figure is from the selection, not from a timing run. A timing run needs the browser queue and the display at its full rate, and none is taken yet. Until one is, the record gives the frame cost as the block and triangle counts.
+The camera stands at ground level in a flat field, at 1,080 device pixels and a 52 degree field of view. An error of 35 is High's default, since the preset's `lodThreshold` is 1, and 70 is Low's. A camera 500 m above the same ground picks 52 blocks instead. Each block draws a 16 x 16 grid, 512 triangles, and a skirt of 128 triangles. The count does not grow with the ground's size. This is the frame's draw-call count and its vertex work; the fragment work scales with the pixels the ground covers. The figure is from the selection, not from a timing run. A timing run needs the browser queue and the display at its full rate, and none is taken yet. Until one is, the record gives the frame cost as the block and triangle counts, per preset.
 
-**Unit tests.** `bun run test` covers the height field (bilinear reads, the edge clamp, the range, the slope and the normal), the quadtree (the leaves tile the square exactly, the near ground is finer than the far ground, the same camera gives the same leaves, every key is unique) and a block's arrays (the grid sits on the ground, the skirt hangs below it, the positions are relative to the block's corner, every index names a vertex). The tests import no engine code, so they run without a browser.
+**Unit tests.** `bun run test` covers the height field (bilinear reads, the edge clamp, the range, the slope, the normal, and the normal map), the quadtree (the leaves tile the square exactly, the near ground is finer than the far ground, a high camera draws coarser blocks than a low one, a narrow field of view keeps detail farther out, a block's height box counts in the distance, an error of 0 keeps the finest level, the same camera gives the same leaves, every key is unique) and a block's arrays (the grid sits on the ground, the skirt hangs below it, the positions are relative to the block's corner, every index names a vertex). The tests import no engine code, so they run without a browser.
 
 **Cost when unused.** A sketch that never imports `@null3d/terrain` downloads none of its code, creates no material and draws no block. The package's JavaScript is in the sketch's own bundle and is not part of the engine's page start, so the engine's size budgets do not change.
 
@@ -79,16 +105,16 @@ Option A for the ground, a skirt for the seam, a custom splat surface function, 
 
 ## Consequences
 
-- The add-on `@null3d/terrain`: `createTerrain(ctx, options)` and the `Terrain` class, the `Heightfield`, the `Quadtree`, the splat material and `terrainTextures`. `terrain.update(eye)` rebuilds only when the camera crosses a cell of the finest level, so a still camera costs no work. `heightAt` and `normalAt` place objects. No collision.
+- The add-on `@null3d/terrain`: `createTerrain(ctx, options)` and the `Terrain` class, the `Heightfield`, the `Quadtree`, the splat material and `terrainTextures`. `terrain.update(eye)` rebuilds only when the camera crosses a cell of the finest level, rises by one, or changes its lens, so a still camera costs no work. `heightAt` and `normalAt` place objects. No collision.
 - The tools: the pack step compiles a package's `.wgsl` files into modules in `lib/`, beside their declarations. This serves any add-on that ships a surface function.
 - The engine: no change. The add-on adds no template, bind layout, permutation bit, opcode, state flag, control slot, format, capability or error code.
-- Docs and skills: `api/terrain`, the three.js mapping's terrain entry, the develop skill's table, quick reference and recipe.
-- A demo, `examples/terrain`, and an image test on all three GPU tiers.
-- Limits: the ground carries no collision, the seam closes with a skirt rather than a morph, and the layers carry color and a roughness, not normal or occlusion maps. The demo, the image test and the allocation switch exercise the add-on; no timed benchmark scene uses it.
+- Docs and skills: `api/terrain`, the three.js mapping's terrain entry, and the develop skill's quick reference and recipe.
+- A demo, `examples/terrain`, and an image test on all three GPU tiers. The image test's references show the baked normals and the height blending. `tests/image/terrain-shading.spec.ts` compares each feature with its own switch, so a picture that loses the feature could not match the reference.
+- Limits: the ground carries no collision, the seam closes with a skirt rather than a morph, and a layer carries a color, a roughness and a height, not its own normal or occlusion map. The demo, the image test and the allocation switch exercise the add-on; no timed benchmark scene uses it.
 
 ## The frame path allocates nothing
 
-`terrain.update(eye)` takes the camera's world position in one array that the caller keeps, and reads the x and the z from it. A fraction that crosses a call the browser does not inline becomes an object of its own. The camera's ground position is a fraction, so an `update(x, z)` would allocate in every frame. The impostor add-on takes the camera's position the same way. So both add-ons ask a sketch for the same thing: one array, kept by the caller, passed once a frame.
+`terrain.update(eye)` takes the camera's world position in one array that the caller keeps, and reads the x, y and z from it. A fraction that crosses a call the browser does not inline becomes an object of its own. The camera's position is a fraction, so an `update(x, y, z)` would allocate in every frame. The impostor add-on takes the camera's position the same way. So both add-ons ask a sketch for the same thing: one array, kept by the caller, passed once a frame.
 
 Three more habits keep the frame path free of allocation, in the add-on and in the engine's vertex update. Each is in the [implementation notes](../implementation-notes.md#hot-paths-without-allocation).
 

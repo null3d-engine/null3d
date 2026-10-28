@@ -711,13 +711,13 @@
     {
       "id": "shadow-params",
       "category": "Lights and shadows",
-      "three": "light.shadow.mapSize / bias / normalBias / radius / camera",
+      "three": "light.shadow.mapSize / bias / normalBias / intensity / radius / camera",
       "status": "changed",
       "since": "0.1",
-      "target": "shadow: { mapSize, bias, normalBias, cascades, distance } in the directional light's options, or light.setShadow()",
-      "notes": "mapSize is one number, the texels on each side. bias and normalBias are in meters, where three.js gives bias in depth units, so start from the defaults. The directional light's map stores 16-bit depth, so in each cascade bias covers at least 1.5 of its depth steps, about 2 cm in a far cascade 200 m out. radius and blurSamples become the shadowFilter quality setting, 3 or 5 texels on each side. shadow.camera has no equivalent: the cascades fit the camera's view.",
+      "target": "shadow: { mapSize, bias, normalBias, intensity, cascades, distance } in the directional light's options, or light.setShadow()",
+      "notes": "mapSize is one number, the texels on each side. bias and normalBias are in meters, where three.js gives bias in depth units, so start from the defaults. The directional light's map stores 16-bit depth, so in each cascade bias covers at least 1.5 of its depth steps, about 2 cm in a far cascade 200 m out. radius and blurSamples become the shadowFilter quality setting, 3 or 5 texels on each side. shadow.camera has no equivalent: the cascades fit the camera's view. intensity is 0 to 1 and carries over as it stands: the shader mixes each shadow lookup toward full light by the rest, at no cost to the frame.",
       "docs": "concepts/shadows",
-      "detect": "\\.shadow\\.(mapSize|bias|normalBias|camera|radius|blurSamples)\\b"
+      "detect": "\\.shadow\\.(mapSize|bias|normalBias|intensity|camera|radius|blurSamples)\\b"
     },
     {
       "id": "legacy-lights",
@@ -843,10 +843,10 @@
     {
       "id": "mat-physical",
       "category": "Materials",
-      "three": "MeshPhysicalMaterial (clearcoat, transmission, sheen, iridescence, anisotropy, specular)",
+      "three": "MeshPhysicalMaterial (clearcoat, transmission, dispersion, sheen, iridescence, anisotropy, specular)",
       "status": "changed",
       "since": "0.1",
-      "target": "materials.standard, with ior, specularIntensity, specularColor and their maps, transmission, clearcoat, sheen, iridescence and anisotropy",
+      "target": "materials.standard, with ior, specularIntensity, specularColor and their maps, transmission, dispersion, clearcoat, sheen, iridescence and anisotropy",
       "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas, transmission, thickness, attenuationColor and attenuationDistance (see the transmission entry), the clear coat and the sheen (see their entries), and iridescence and anisotropy (see their entries).",
       "docs": "api/materials",
       "detect": "\\bMeshPhysicalMaterial\\b"
@@ -865,13 +865,13 @@
     {
       "id": "mat-transmission",
       "category": "Materials",
-      "three": "MeshPhysicalMaterial transmission / thickness / attenuationColor / attenuationDistance",
+      "three": "MeshPhysicalMaterial transmission / thickness / attenuationColor / attenuationDistance / dispersion",
       "status": "changed",
       "since": "0.2",
-      "target": "materials.standard({ transmission, thickness, ior, roughness, attenuationColor, attenuationDistance })",
-      "notes": "Same names, ranges and formulas: the surface samples a mipmapped copy of the opaque objects' colors where its bent ray leaves the volume, as three.js does, and glTF's KHR_materials_transmission and KHR_materials_volume load into them. Give transmission when you create the material, even as 0, to change it later. transmissionMap and thicknessMap take the specular maps' slots, whose red and green scale the transmission and the thickness, so a material with them takes no specular maps. A layered material keeps them beside its layers unless a layer map fills the same slot, which a development build refuses. dispersion has no option. The copy holds opaque objects only: three.js also draws the back faces of double-sided glass into it. Where the bent ray lands on an opaque object in front of the surface, null3D shows what lies straight behind the surface, and three.js shows that object's color. A custom material sets s.transmission in its surface function.",
+      "target": "materials.standard({ transmission, thickness, ior, dispersion, roughness, attenuationColor, attenuationDistance })",
+      "notes": "Same names, ranges and formulas: the surface samples a mipmapped copy of the opaque objects' colors where its bent ray leaves the volume, as three.js does, and glTF's KHR_materials_transmission, KHR_materials_volume and KHR_materials_dispersion load into them. Give transmission when you create the material, even as 0, to change it later. A masked material keeps its transmission, as three.js's alphaTest with transmission draws one: the cut-out leaves the pixels that show what lies behind, and the mask cuts the shadow the same way. The hash alpha mode has no three.js counterpart and throws. transmissionMap and thicknessMap take the specular maps' slots, whose red and green scale the transmission and the thickness, so a material with them takes no specular maps. A layered material keeps them beside its layers unless a layer map fills the same slot, which a development build refuses. dispersion spreads the index of refraction over three rays, one per color, with red taking the lowest, so a prism separates the light behind it into colors; its cost falls on the materials that set it. The copy holds opaque objects only: three.js also draws the back faces of double-sided glass into it. Where the bent ray lands on an opaque object in front of the surface, null3D shows what lies straight behind the surface, and three.js shows that object's color. A custom material sets s.transmission in its surface function.",
       "docs": "api/materials",
-      "detect": "\\b(transmission|thickness|attenuationColor|attenuationDistance)\\s*[:=]"
+      "detect": "\\b(transmission|thickness|attenuationColor|attenuationDistance|dispersion)\\s*[:=]"
     },
     {
       "id": "mat-subsurface",
@@ -1040,13 +1040,13 @@
     {
       "id": "mat-flags",
       "category": "Materials",
-      "three": "transparent / opacity / alphaTest / depthWrite / depthTest / blending / vertexColors / flatShading",
+      "three": "transparent / opacity / alphaTest / depthWrite / depthTest / blending / vertexColors / flatShading / colorWrite",
       "status": "changed",
       "since": "0.1",
-      "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), depthWrite, depthTest, blending: 'normal' | 'additive' | 'multiply' | 'weighted' (0.2), vertexColors, flatShading",
-      "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; its cut edges are smoothed by default, and alphaToCoverage: false keeps three.js's hard edges. depthTest: false writes no depth either, as in three.js's WebGL renderer. blending takes effect with alphaMode: 'blend' only, where three.js blends an opaque material with additive or multiply blending too. The engine blends in linear color before the tone mapping, as WebGPURenderer does; WebGLRenderer blends after its tone mapping and sRGB encoding, so see-through surfaces look a little lighter in null3D and additive glows a little weaker.",
+      "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), depthWrite, depthTest, colorWrite, blending: 'normal' | 'additive' | 'multiply' | 'weighted' (0.2), vertexColors, flatShading",
+      "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; its cut edges are smoothed by default, and alphaToCoverage: false keeps three.js's hard edges. depthTest: false writes no depth either, as in three.js's WebGL renderer. colorWrite: false writes depth and no color. Its objects draw before the opaque objects that write color, so the depth holds back their color behind the surface. three.js orders that by material. blending takes effect with alphaMode: 'blend' only, where three.js blends an opaque material with additive or multiply blending too. The engine blends in linear color before the tone mapping, as WebGPURenderer does; WebGLRenderer blends after its tone mapping and sRGB encoding, so see-through surfaces look a little lighter in null3D and additive glows a little weaker.",
       "docs": "api/materials",
-      "detect": "\\b(transparent|alphaTest|depthWrite|depthTest|blending|vertexColors|flatShading)\\s*[:=]"
+      "detect": "\\b(transparent|alphaTest|depthWrite|depthTest|colorWrite|blending|vertexColors|flatShading)\\s*[:=]"
     },
     {
       "id": "oit-pass",
@@ -1440,7 +1440,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "assets.onProgress((loaded, total) => ...) and assets.preload([...urls])",
-      "notes": "",
+      "notes": "loaded and total count bytes, not files: a download that announces no length still adds its bytes to loaded while total stays unknown, so divide by Math.max(total, loaded).",
       "docs": "guides/loading-screens",
       "detect": "\\bLoadingManager\\b"
     },
@@ -1966,8 +1966,8 @@
       "three": "A PlaneGeometry displaced on the CPU, with heights from ImprovedNoise or a height map",
       "status": "changed",
       "since": "0.2",
-      "target": "createTerrain(ctx, { size, height, layers, splat, maxLevel, split }) from @null3d/terrain; terrain.update(cameraX, cameraZ) in onUpdate; terrain.heightAt(x, z)",
-      "notes": "A port replaces one displaced grid with a height field drawn as a camera-centerd quadtree of blocks: the ground near the camera keeps fine detail, the far hills draw coarse blocks, and a skirt around each block hides the seam where two levels meet. Up to four tiled layers blend by a splat map, which the add-on fills by default from the height and the slope, in place of a hand-painted or vertex-colored ground. The terrain carries no collision, so a port that walked on the ground reads heightAt and normalAt to place objects instead of a physics collider. A port that morphed two levels on the GPU keeps its own morph; this add-on draws the levels as they are and closes the seam with the skirt.",
+      "target": "createTerrain(ctx, { size, height, layers, splat, maxLevel, camera }) from @null3d/terrain; terrain.update(eye) in onUpdate; terrain.heightAt(x, z)",
+      "notes": "A port replaces one displaced grid with a height field drawn as a camera-centered quadtree of blocks. The ground near the camera keeps fine detail, the far hills draw coarse blocks, and a skirt around each block hides the seam where two levels meet. Up to four tiled layers blend by a splat map. The add-on fills the map by default from the height and the slope, in place of a hand-painted or vertex-colored ground. Each layer's own height pushes it through its neighbours at a boundary. Every pixel lights from normals baked over the whole ground, so the far hills keep their relief. The terrain carries no collision, so a port that walked on the ground reads heightAt and normalAt to place objects instead of a physics collider. A port that morphed two levels on the GPU keeps its own morph; this add-on draws the levels as they are and closes the seam with the skirt.",
       "docs": "api/terrain",
       "detect": "\\bImprovedNoise\\b|\\bgenerateHeight\\b|\\bgetHeightAt\\b"
     },
@@ -1989,7 +1989,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "Sketch: ui.trackLabel(obj, 'hp-12', { offset: [0, 2, 0] }). Page: engine.labels.bind('hp-12', element). A plane of the scene: ui.trackLabel(obj, 'card', { transform: 'world' }), or 'billboard' with a rotation",
-      "notes": "The sketch places each label with the camera of each frame, and the page moves the element over it in the frame on screen; no messages per frame. The element's center sits where CSS2DRenderer puts a CSS2DObject's, and the offset turns and scales with the object, as a CSS2DObject's position does under its parent. Put the elements in a container that covers the canvas. Hidden labels get visibility: hidden, not display: none. No z-index by distance, and no center. For CSS3DRenderer, a label with transform 'world' takes a CSS3DObject's matrix and 'billboard' takes a CSS3DSprite's, with rotation2D as rotation: the page moves the element into a container inside its parent, which holds the camera's perspective, and turns the element with its world matrix, as CSS3DRenderer draws it. An element is sized in CSS pixels, which are the scene's units. Both a perspective camera and an orthographic camera carry the planes, so a scene that uses either lens ports as it is. The engine hides a plane whose anchor is behind the camera or outside the near and far planes, which CSS3DRenderer does not do, and it leaves the pointer to your CSS, so give an element pointer-events: auto for the clicks that CSS3DRenderer gives it. The engine has no camera view offset, which some examples offer only in a debug panel. It writes a transform only when it changes, and a page holds its planes with maxLabels3d. All seven of three.js's CSS3D examples have a port: css3d_periodictable, css3d_molecules, css3d_sprites, css3d_sandbox, css3d_orthographic, css3d_mixed and css3d_youtube. Each port's test draws its scene with null3D and with CSS3DRenderer, and compares the pictures of the two stages, so it shows where a port matches three.js and where it differs by design. A cell table ports directly: one object and one ui.trackLabel(object, id, { transform: 'world' }) for each cell, the cell's HTML in the element, and the example's camera; the port skill's architecture guide shows it.",
+      "notes": "The sketch places each label with the camera of each frame, and the page moves the element over it in the frame on screen; no messages per frame. The element's center sits where CSS2DRenderer puts a CSS2DObject's, and the offset turns and scales with the object, as a CSS2DObject's position does under its parent. Put the elements in a container that covers the canvas. Hidden labels get visibility: hidden, not display: none. No z-index by distance, and no center. For CSS3DRenderer, a label with transform 'world' takes a CSS3DObject's matrix and 'billboard' takes a CSS3DSprite's, with rotation2D as rotation: the page moves the element into a container inside its parent, which holds the camera's perspective, and turns the element with its world matrix, as CSS3DRenderer draws it. An element is sized in CSS pixels, which are the scene's units. Both a perspective camera and an orthographic camera carry the planes, so a scene that uses either lens ports as it is. The engine hides a plane whose anchor is behind the camera or outside the near and far planes, which CSS3DRenderer does not do, and it leaves the pointer to your CSS, so give an element pointer-events: auto for the clicks that CSS3DRenderer gives it. The engine has no camera view offset, which some examples offer only in a debug panel. It writes a transform only when it changes, and a page holds its planes with maxLabels3d. All seven of three.js's CSS3D examples have a port: css3d_periodictable, css3d_molecules, css3d_sprites, css3d_sandbox, css3d_orthographic, css3d_mixed and css3d_youtube. Each port's test draws its scene with null3D, and with three.js's CSS3DRenderer from the same data and camera. It then compares the two layers of elements. A scene whose example also draws WebGL content gives its twin the same content. The page reads each engine's frame through that engine, and the test compares those frames too, so a surface that the engine draws over the page shows. Where the mixed example's invisible plane writes depth alone to show its embedded page clean, a material with colorWrite: false does the same. The comparison shows where a port matches three.js and where it differs by design. A cell table ports directly: one object and one ui.trackLabel(object, id, { transform: 'world' }) for each cell, the cell's HTML in the element, and the example's camera; the port skill's architecture guide shows it.",
       "docs": "api/ui",
       "detect": "\\bCSS[23]D(Renderer|Object|Sprite)\\b"
     },

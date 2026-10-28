@@ -130,6 +130,9 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - A full-screen step reads the texel under its own fragment at `position.xy` on both paths, since WebGL2 counts the fragment's rows and the target's rows from the bottom alike. Only a place on the image, which counts from the top, turns around on WebGL2 (`size.w - position.y`). A step that turns its own texel around too shows each object's motion, in the motion debug view, at the mirrored row. That view's WebGL2 cases in the motion vectors spec catch this.
 - Bloom's levels have a fixed number of texels on the canvas's shorter side (`Size::ShortSide`), which the render scale leaves whole. Only its first step reads the scene's corner, so a new scale uploads its blocks again and makes no texture. The governor's step draws every level into a corner of its target, which the blocks place on each path too.
 - Below a scale of 1, a fragment's position covers only the drawn corner. A scene shader that turns the position into a place on the view, such as a light grid tile, divides it by the render size. The target's size is wrong there. The frame graph knows the render size after its `prepare`. A place on the image that a shader reads from a target keeping the canvas's size, such as the copy behind `sceneDepth(uv)`, lands at the render size's texel within that target: the target's own size would carry the place past the drawn corner, where the image holds nothing.
+- The size a shader reads for the render target is the size the scene drew at, on every path ([D-266](decisions/D-266-scene-depth-at-a-render-scale.md)). The CPU-culled path builds the views' frame values while the job workers cull at the canvas's full size, so `cullFrame` hands the frame the render scale, and `recordFrame` draws with the values of the cull it reuses. `tests/image/frame-resolution.spec.ts` checks the value itself: a custom material covers the view and paints `input.fragCoord.xy / frame.resolution`, so the paint's change across and its change down sit at the middle of the image only while the value is the render size. The page fixes the whole scale and the floor of each preset, on each path and in every thread mode. With the cull passing the whole scale, the change across sits two thirds of the way across the image at 0.75, five sixths of the way at 0.6, and at Low's floor it does not cross the image at all.
+- Every shader that reads the target's size wants the render size, and the one value serves them all: the water's screen place and its depth lookup, the splats' conic, centre and world-per-pixel, a custom material's place and its WebGL2 pixel row, `refraction`'s copy of the opaque color, `gtao`'s grid corner, `lights`'s and a shadow caster's pixel footprint, and the vignette that the 8-bit path's scene shaders apply. One lookup took that value as the image's own size: `sceneDepth(uv)` and `sceneDistance(uv)` multiplied a place by it, so on WebGL2 the identity mapping held only while the value stayed the canvas's. That helper takes the image's size as an argument, and the corrected value supplies the render size on every path. A value that counts CSS pixels of the output keeps the canvas's size instead: the two `camera_range` fractions that set a line's width and a screen-sized sprite. The target's height, which the WebGL2 row turn needs, is the separate value that the frame writes in `occlusion.y` for every view: the camera's target keeps the canvas's height at every scale, and another view's target, a reflection's or a probe face's, is the size that the view names.
+- The vignette that the 8-bit path's scene shaders apply turns a fragment's row by the target's height on WebGL2, as a custom material's pixel row does, so it measures from the middle of the drawn image. Without the turn it measured from the middle of the canvas, which sits higher than the image's middle below the whole scale, and the darkening moved up the image. `tests/image/frame-resolution.spec.ts` draws a plain bright plane at the whole scale and below it with the vignette on, on every path with HDR off, and holds the top and bottom bands within 6 levels of each other.
 
 ## The drawing buffer's size
 
@@ -460,8 +463,10 @@ Some unit tests build a bundle of engine code with Vite inside the test process,
 - A library build inlines every asset as a base64 data URL, and does not copy it as a file. Vite's
   `shouldInline` returns true on `config.build.lib` before it reads `assetsInlineLimit`, so
   `new URL('./x.js', import.meta.url)` becomes a data URL.
-- The engine's generated shaders are around 850 MB of assets. A worker build inherits the parent's
-  `lib` setting, so each worker bundle encodes that payload again inside itself.
+- The plugin names the generated shader files' copies before Vite's asset step, in worker builds and
+  library builds alike. Each file is hashed and copied to the assets folder. The file that loads it
+  names the copy once the build knows where that file lands. So no worker bundle encodes the set
+  inside itself, and a library build no longer turns it into data URLs.
 - One such build of a sketch that imports `vec3` takes 22 s and 13.8 GB of memory footprint. The
   same build without `lib` takes 4.8 s and 4.1 GB. A test file that builds twice holds 18.6 GB
   against 5.1 GB.
@@ -511,6 +516,15 @@ Some unit tests build a bundle of engine code with Vite inside the test process,
 - The engine's shaders ship in one module for each GPU path and each value of the permutation bits that a device fixes ([D-13](decisions/D-13-shader-variants.md)). The thread that draws starts to load its module while it waits for the WebGPU device or the WebGL2 context. The renderer starts once both are ready.
 - A device module holds the builds of each shader that a device with its bits asks for. The builds of features that load on first use are the exception. So the culling shader, which has no bits, is in every WGSL module. A device whose bits have no module fails to start its renderer, with an error that names the bits.
 - On WebGPU, a pipeline that draws depth only has no fragment stage, so its pixels cannot be dropped. Shadow casters draw that way. So a shadow cutout template without a fragment stage casts each masked caster's whole shape on WebGPU. No error shows: the cutout code is in the shader, but no pipeline runs it. WebGL2 always builds a fragment shader, so it cuts the holes. A depth template that must drop pixels asks for its fragment stage (`depthFragment` in `gpu/webgpu/pipelines.ts`), with no color targets. The shadow cutout templates do so. The plain depth template skips the stage, which keeps solid casters cheap. The `alpha-mask-shadows` image test catches a missing stage on WebGPU. [D-82](decisions/D-82-transparency-parity.md#the-fragment-stage-of-cutout-casters) has the details.
+
+## Surfaces that write no color
+
+- A material with `colorWrite: false` sets its pipeline's color write mask to none. Both GPU paths already had that state for the depth prepass.
+- The engine also draws the opaque surfaces that write no color before those that write color. The GPU-driven builder records their buckets first, and the WebGL2 builder sorts its draw list when it builds a layout.
+- Such a surface is a holdout: it shows nothing itself, and the depth it writes holds back the surfaces behind it. The order cannot come from the pipeline keys, because a key with another state bit sorts after the keys it must beat.
+- A holdout with the `mask` or `hash` alpha mode writes no depth where its alpha drops the fragment, so it cuts a shape out of the space it holds.
+- A blended surface that writes no color keeps its place among the blended surfaces, which `setRenderOrder` orders.
+- The feature takes bit 28 of the material's feature word. It changes no shader, only the pipeline's state. The mixed CSS3D port needed it for the example's invisible plane ([D-208](decisions/D-208-html-elements-as-planes.md)).
 
 ## Shader files that load on first use
 
@@ -1241,6 +1255,11 @@ material's maps templates. That makes their builds 3.33 times as many
 ([D-190](decisions/D-190-hold-relief-until-the-split.md)). The shader build splits the shared
 paragraph tables, so the extra builds stay out of every page's start.
 
+The masked transmission joined the pair that the permutation table allows, so the manifest
+makes 57,484 GLSL builds and 20,777 WGSL builds, 78,261 in all. The cut-out
+keeps its transmission, and its three mask shapes multiply the transmission words. The shader build
+compiled 78,249 programs in the run that wrote the modules. `BUILD_BUDGET` records the two figures.
+
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this
 guard refuses.
@@ -1274,24 +1293,23 @@ close it. The test suite compiles every variant of every generated module, so al
 are needed. And `shaders.ts` names every device module by URL, so a bundler copies all of them into
 every page's build whatever the page draws. Grouping those copies only defers the download.
 
-### A page build's memory follows its largest worker build
+### A page build no longer holds the generated shaders
 
-With a set of 5,962 files and 2.8 GB, the engine test page's production build peaks at 15.9 GB of
-resident memory. The page's own build of the shader graph costs 6.3 GB. One worker build of the
-same graph costs 15.0 GB when it runs in a process of its own, and the page build's peak is about
-that figure. Two worker builds do not add up, because Vite frees a worker's bundle when it ends.
-Writing the set adds nothing to the peak.
+With a set of 6,209 device modules, a page build used to peak at 15.9 GB of resident memory. Every
+worker build read each generated file to emit it as an asset. Vite copies a worker's output into the
+bundle of the build that triggered it, so the page held the whole set to write it out. The plugin
+now names the copies in the worker builds too. Each file is hashed and copied to the assets folder,
+and the page build peaks under 1 GB. The copies are written one at a time, so the peak does not
+follow their size.
 
-Vite's worker plugin copies a worker's 5,566 device assets into the bundle of the build that
-triggered the worker. In the page build the page already holds those assets, so the duplicate check
-skips them. In a build of the worker alone the copy is made, which is why a child process does not
-lower the peak. The plugin therefore builds workers in the page build's process, as Vite does.
+A copy's address is written once the build knows where the file that loads it lands. A chunk in a
+folder of its own names the copy by the path from there. A worker or a library build names it the
+same way.
 
 The plugin's transform skips the device modules when it looks for sketch scripts. Otherwise it would
 take `new URL('./shaders-<name>.js', import.meta.url)` inside a generated module as a possible sketch
-address, and read each file in full to look for `defineSketch(`. That is a pass over 5,566 files and
-2.8 GB in every page build. A generated shader file is never a sketch, so the plugin skips the
-address without reading the file.
+address, and resolve it for the whole generated set. A generated shader file is never a sketch, so
+the plugin skips the address without reading the file.
 
 The set's own size lowers every copy at once, so the savings in the sections above also lower this
 peak.

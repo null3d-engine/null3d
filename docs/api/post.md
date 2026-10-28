@@ -440,7 +440,7 @@ post.removeEffect(effect);
 | `uniforms` | The first value of each field of the WGSL's `struct Uniforms`, by name | 0 for each field |
 | `textures` | The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name, or a texture of several layers for a `var name: texture_2d_array<f32>;` declaration: a texture from a file or data, or a render pass's texture from `textures.fromPass` | None: white |
 | `order` | A number. Effects run from the lowest order to the highest. | 0 |
-| `bloomLevel` | The level of bloom's chain that the WGSL reads with `effectBloom`, a whole number from 0 for the narrowest glow to 9 for the widest | None: the WGSL reads no bloom |
+| `bloomLevel` | The level of bloom's chain that the WGSL reads with `effectBloom`, a whole number from 0 for the narrowest glow to 9 for the widest | Required when the WGSL calls `effectBloom`, and E1213 without it. The compiler reads the shader text rather than the uniform values, so a call inside a branch that never runs still needs a level. Otherwise it reads no bloom |
 
 A custom tone curve takes the place of the built-in curves:
 

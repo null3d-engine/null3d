@@ -52,6 +52,7 @@ import {
 	MATERIAL_FEATURE_IRIDESCENCE,
 	MATERIAL_FEATURE_LIGHT_MAP_RGBM,
 	MATERIAL_FEATURE_MULTIPLY,
+	MATERIAL_FEATURE_NO_COLOR_WRITE,
 	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
@@ -81,6 +82,7 @@ import {
 	MATERIAL_PARAM_DECAL_FADE_START,
 	MATERIAL_PARAM_DIFFUSE_TRANSMISSION,
 	MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
+	MATERIAL_PARAM_DISPERSION,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
@@ -208,8 +210,8 @@ export interface MeshLevel {
 	 * True to hand over between two levels in a short band past each switch distance, where a
 	 * dither pattern shares the pixels between them, so a switch does not pop. False to switch at
 	 * once. The default is `fade` in the options. A level with a measured error changes the picture
-	 * by under a pixel at its switch, so its band only costs; the glTF reader switches those at
-	 * once.
+	 * by under a pixel at its switch, so its band only costs. The glTF reader switches a file's
+	 * measured error at once and fades an error that comes alone, which its author set by hand.
 	 */
 	fade?: boolean;
 	/**
@@ -1207,8 +1209,9 @@ export interface StandardValues extends MaterialOptions {
 	 * becomes the light from behind, and the reflections stay. Roughness blurs what shows through.
 	 * Give it when you create the material, even as 0, to change it later. A material created
 	 * without it lets no light through. Such a material draws after the opaque objects, with the
-	 * blended ones, and only opaque objects show through it. It takes the `opaque` or `blend` alpha
-	 * mode. The default is 0.
+	 * blended ones, and only opaque objects show through it. It takes the `opaque`, `mask` or
+	 * `blend` alpha mode. A mask decides which pixels draw, and the light from behind fills the
+	 * pixels that remain, as three.js's `alphaTest` does. The default is 0.
 	 */
 	transmission?: number;
 	/**
@@ -1229,6 +1232,15 @@ export interface StandardValues extends MaterialOptions {
 	 * `Infinity`.
 	 */
 	attenuationDistance?: number;
+	/**
+	 * The strength of the volume's dispersion, 0 or more, as three.js's
+	 * `MeshPhysicalMaterial.dispersion` and glTF's `KHR_materials_dispersion`: 20 divided by the
+	 * Abbe number, so a diamond's 0.36 is weak and rutile's 2.04 is strong. The light from behind
+	 * bends by a slightly different index of refraction for each color, so a prism or a gem
+	 * separates it into colors at its edges. 0 bends every color alike. It shows only with
+	 * `transmission`, and the default is 0.
+	 */
+	dispersion?: number;
 	/**
 	 * How much of the surface's diffuse light passes through it to its other side, from 0 to 1, as
 	 * glTF's `KHR_materials_diffuse_transmission` gives it. Light that reaches the back, such as the
@@ -1506,6 +1518,15 @@ export interface MaterialFeatures {
 	 * in three.js's WebGL renderer. The default is true.
 	 */
 	depthTest?: boolean;
+	/**
+	 * False to write no color, so the surface shows nothing itself and hides what lies behind it
+	 * by the depth it writes, as three.js's `colorWrite: false` does. Its objects draw before the
+	 * opaque objects that write color, so nothing behind it shows through. With the `mask` or
+	 * `hash` alpha mode, the parts that the alpha drops write no depth either, so the surface cuts
+	 * a shape out of the space it holds. A blended surface keeps its place among the blended
+	 * objects, which `setRenderOrder` orders. The default is true.
+	 */
+	colorWrite?: boolean;
 	/** Moves the surface's depth, as three.js's polygon offset does. The default is no bias. */
 	depthBias?: DepthBias;
 	/**
@@ -1606,6 +1627,7 @@ export interface DecalValues
 		| 'lightMapIntensity'
 		| 'transmission'
 		| 'thickness'
+		| 'dispersion'
 		| 'attenuationColor'
 		| 'attenuationDistance'
 	> {
@@ -1841,6 +1863,7 @@ type Ranged =
 	| 'envIntensity'
 	| 'transmission'
 	| 'thickness'
+	| 'dispersion'
 	| 'diffuseTransmission'
 	| 'subsurfaceRadius'
 	| 'clearcoat'
@@ -1863,6 +1886,7 @@ const RANGED: readonly (readonly [Ranged, number])[] = [
 	['envIntensity', Number.POSITIVE_INFINITY],
 	['transmission', 1],
 	['thickness', Number.POSITIVE_INFINITY],
+	['dispersion', Number.POSITIVE_INFINITY],
 	['diffuseTransmission', 1],
 	['subsurfaceRadius', Number.POSITIVE_INFINITY],
 	['clearcoat', 1],
@@ -1889,6 +1913,7 @@ const RANGED_NAMES: readonly string[] = [
 	'envIntensity',
 	'transmission',
 	'thickness',
+	'dispersion',
 	'diffuseTransmission',
 	'subsurfaceRadius',
 	'clearcoat',
@@ -2387,6 +2412,13 @@ function writeValues(
 			sendValue(core, id, MATERIAL_PARAM_THICKNESS, call);
 		}
 	}
+	if ('dispersion' in values) {
+		const value = values.dispersion;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_DISPERSION, call);
+		}
+	}
 	if ('diffuseTransmission' in values) {
 		const value = values.diffuseTransmission;
 		if (value !== undefined) {
@@ -2600,6 +2632,7 @@ const ONE_VALUE_PARAMS: ReadonlyMap<string, number> = new Map<string, number>([
 	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY],
 	['transmission', MATERIAL_PARAM_TRANSMISSION],
 	['thickness', MATERIAL_PARAM_THICKNESS],
+	['dispersion', MATERIAL_PARAM_DISPERSION],
 	['diffuseTransmission', MATERIAL_PARAM_DIFFUSE_TRANSMISSION],
 	['subsurfaceRadius', MATERIAL_PARAM_SUBSURFACE_RADIUS],
 	['clearcoat', MATERIAL_PARAM_CLEARCOAT],
@@ -2876,10 +2909,10 @@ function checkFeatures(options: StandardOptions, call: string): void {
 			'E1217',
 			`${call}() got parallax with ${transmission !== undefined ? 'transmission' : options.diffuseTransmission !== undefined ? 'diffuseTransmission' : "the alpha mode 'blend'"}; parallax takes an opaque or masked surface. Leave parallax out to keep the displacement alone.`,
 		);
-	if (transmission !== undefined && (alphaMode === 'mask' || alphaMode === 'hash'))
+	if (transmission !== undefined && alphaMode === 'hash')
 		throw new EngineError(
 			'E1217',
-			`${call}() got transmission with the alpha mode '${alphaMode}'; a material that lets light through takes 'opaque' or 'blend'.`,
+			`${call}() got transmission with the alpha mode 'hash'; a material that lets light through takes 'opaque', 'mask' or 'blend'.`,
 		);
 	if (transmission !== undefined && blending === 'weighted')
 		throw new EngineError(
@@ -2976,6 +3009,7 @@ function featureBits(options: StandardOptions): number {
 		BLENDINGS[options.blending ?? 'normal'] |
 		(options.depthWrite === false ? MATERIAL_FEATURE_NO_DEPTH_WRITE : 0) |
 		(options.depthTest === false ? MATERIAL_FEATURE_NO_DEPTH_TEST : 0) |
+		(options.colorWrite === false ? MATERIAL_FEATURE_NO_COLOR_WRITE : 0) |
 		(options.fog === false ? MATERIAL_FEATURE_NO_FOG : 0) |
 		(options.toneMapped === false ? MATERIAL_FEATURE_NO_TONE_MAP : 0) |
 		(options.contactShadows === false ? MATERIAL_FEATURE_NO_CONTACT_SHADOWS : 0) |

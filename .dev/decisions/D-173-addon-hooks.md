@@ -319,7 +319,7 @@ Tasks, each with its first user:
 - A run-time check of the engine's version in each add-on, and `bunx @null3d/cli upgrade` (F9).
 - Without a handler, E1417 names the add-on for known glTF extensions (F7).
 - A written docs page for `scene.createParticleBuffer` (ruling 3).
-- The water add-on: river and lake in M3, after splats, then the FFT ocean before 1.0 ([D-179](D-179-technique-rulings.md)). The docs' water recipe and the Creek use it.
+- The water add-on: river and lake in M3, after splats, then the FFT ocean before 1.0 ([D-179](D-179-technique-rulings.md)). The docs' water recipe uses it. The Creek keeps its own water until the add-on reproduces the look the owner approved ([D-257](D-257-water-addon.md)).
 - The `three-compat` add-on in M3, with Reinhard, Cineon and `OutlinePass`'s glow ([D-179](D-179-technique-rulings.md)).
 - M3-B1 to M3-B6 live in `examples/addons/`.
 **What shows it.** The hook's visible user is the splats add-on, which brings its demo. No demo shows a job-worker task on its own, so this change adds no demo (M3-F2 owns that one).
