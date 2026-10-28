@@ -44,6 +44,31 @@ const OFF: LensLook = {
 	speedBlur: 0,
 };
 
+/** A strong grade, so the colors move plainly against the picture without one. */
+const GRADE = {
+	whiteBalance: { temperature: 3600 },
+	lift: [0.02, 0.02, 0.04] as const,
+	gain: [1.12, 1.0, 0.9] as const,
+	saturation: 1.7,
+	splitToning: { shadows: '#2f4fff', highlights: '#ffb45a', strength: 0.5 },
+};
+/**
+ * One mark alone, with every other value at 0, so each mark's own cost shows. `?look=` names the
+ * mark; without it the whole look is timed.
+ */
+const MARKS: Record<string, LensLook> = {
+	grade: { grading: GRADE },
+	vignette: { vignette: { intensity: 0.8, size: 1.0, falloff: 2 } },
+	sharpen: { sharpen: 0.8 },
+	aberration: { aberration: 8 },
+	streak: { streak: 0.6, bloomLevel: 3 },
+	grain: { grain: 0.25 },
+	speed: { speedBlur: 0.5 },
+};
+const MARK = params.get('look');
+const CHOSEN = MARK === null ? LOOK : MARKS[MARK];
+if (CHOSEN === undefined) throw new Error(`the lens kit has no mark ${MARK}`);
+
 export default defineSketch((ctx) => {
 	const { scene, materials, geometry, post, quality, page } = ctx;
 	if (SCALE !== null) {
@@ -100,7 +125,7 @@ export default defineSketch((ctx) => {
 			return;
 		}
 		if (message !== 'lens') return;
-		lens.set(LOOK);
+		lens.set(CHOSEN);
 		void scene.warmUp().then(() => page.post('settled', {}));
 	});
 	return {};

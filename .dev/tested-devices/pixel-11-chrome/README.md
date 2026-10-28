@@ -9,5 +9,6 @@
 
 ## Known issues
 
-The driver could not build the library test shader's pipeline on WebGPU, and the WebGL2 draw read back zeros.
-The test shader held the whole library in one 50 KB switch, and now draws one module at a time ([#235](https://github.com/null3d-engine/null3d/pull/235), [Implementation notes](../../implementation-notes.md#browser-faults))
+The driver cannot build a WebGPU pipeline from a test shader that holds the whole shader library in one 50 KB switch.
+The WebGL2 draw of that shader reads back zeros.
+So the library test shader draws one module at a time ([#235](https://github.com/null3d-engine/null3d/pull/235), [Implementation notes](../../implementation-notes.md#browser-faults)).

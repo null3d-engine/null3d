@@ -11,11 +11,16 @@ import {
 	baseTreeDamaged,
 	buildCodeHash,
 	buildLog,
+	cargoHomeRemap,
 	cargoTargetBase,
 	checkHeapStart,
+	checkNoMachineFolders,
+	compilerOptions,
 	currentArtifactKeys,
 	keepOnlyArtifacts,
+	librarySourceRemap,
 	lockedVersion,
+	machineFolders,
 	parseOptions,
 	readArtifacts,
 	releaseTarget,
@@ -222,6 +227,73 @@ describe('checkHeapStart', () => {
 	});
 });
 
+describe('librarySourceRemap', () => {
+	const sysroot = '/Users/someone/.rustup/toolchains/nightly-2026-09-26-aarch64-apple-darwin';
+
+	it("names the library source by the toolchain's own fixed path", () => {
+		const version = 'rustc 1.92.0-nightly\nbinary: rustc\ncommit-hash: 5ceaf6608eb3\nhost: x\n';
+		expect(librarySourceRemap(sysroot, version)).toBe(
+			`--remap-path-prefix=${sysroot}/lib/rustlib/src/rust=/rustc/5ceaf6608eb3`,
+		);
+	});
+
+	it('fails when the compiler names no commit, rather than build bytes that differ by machine', () => {
+		expect(() => librarySourceRemap(sysroot, 'rustc 1.92.0\ncommit-hash: unknown\n')).toThrow(
+			'no commit hash',
+		);
+	});
+});
+
+describe('cargoHomeRemap', () => {
+	it("names cargo's home, where the downloaded crates' sources live, by a fixed path", () => {
+		expect(cargoHomeRemap('/home/runner/.cargo')).toBe(
+			'--remap-path-prefix=/home/runner/.cargo=/cargo',
+		);
+	});
+});
+
+describe('machineFolders', () => {
+	it('gives each folder one trailing slash, so a path inside it matches', () => {
+		expect(machineFolders(['/home/runner/.cargo/', '/home/runner//', '/srv/null3d'])).toEqual([
+			'/home/runner/.cargo/',
+			'/home/runner/',
+			'/srv/null3d/',
+		]);
+	});
+
+	it('leaves out the root folder, which starts every absolute path', () => {
+		expect(machineFolders(['/', '/home/runner'])).toEqual(['/home/runner/']);
+	});
+});
+
+describe('compilerOptions', () => {
+	it("hands cargo a variant's options in order, then the added ones, each whole", () => {
+		const added = ['--remap-path-prefix=/Users/some one/.cargo=/cargo'];
+		const options = compilerOptions(VARIANTS[1]!.rustflags, added).CARGO_ENCODED_RUSTFLAGS;
+		expect(options?.split('\x1f')).toEqual([...VARIANTS[1]!.rustflags.split(' '), ...added]);
+		expect(compilerOptions(VARIANTS[0]!.rustflags, []).CARGO_ENCODED_RUSTFLAGS).toBe(
+			VARIANTS[0]!.rustflags.split(' ').join('\x1f'),
+		);
+	});
+});
+
+describe('checkNoMachineFolders', () => {
+	const folders = ['/home/runner/.rustup/toolchains/x/', '/home/runner/'];
+	const module = (text: string) => new TextEncoder().encode(`\0asm${text}`);
+
+	it('passes a module whose paths are all fixed or relative', () => {
+		const paths = '/rustc/5ceaf66/library/core/src/str.rs crates/null3d-render/src/taa.rs';
+		expect(() => checkNoMachineFolders(module(paths), folders, 'the core')).not.toThrow();
+	});
+
+	it('names each folder of the build machine that the module holds', () => {
+		const path = '/home/runner/.rustup/toolchains/x/lib/rustlib/src/rust/library/core/src/str.rs';
+		expect(() => checkNoMachineFolders(module(path), folders, 'the core')).toThrow(
+			"the core holds the build machine's folder /home/runner/.rustup/toolchains/x/ and /home/runner/",
+		);
+	});
+});
+
 const TOOLS: ToolVersions = {
 	rust: 'channel = "nightly-2026-09-26"',
 	bindgen: '0.2.129-aarch64-apple-darwin',
@@ -276,7 +348,8 @@ describe('buildCodeHash', () => {
 	it('changes with this script or with the module that rewrites the glue', () => {
 		// Both decide what an entry holds: the script sets the flags and the staging, and the glue
 		// module rewrites every built module. Neither is a Rust source, so neither reaches the
-		// sources' stamp, and without this an edit here kept serving an entry an earlier version wrote.
+		// sources' stamp, and without this an edit here would keep serving an entry an earlier version
+		// wrote.
 		const root = mkdtempSync(join(tmpdir(), 'null3d-code-'));
 		try {
 			for (const file of ['tools/build-wasm.ts', 'tools/lib/core-sources.ts']) {
@@ -535,23 +608,38 @@ describe('runBuilds', () => {
 			(line, stderr) => printed.push([line.replace(/\d+ s/, 'N s'), stderr]),
 		);
 		await expect(run).rejects.toThrow('the broken build failed; its whole log is above');
-		// The builds' lines mix as they come, each with its build's name; the slow build ran to its
-		// end after the broken one failed; and the failed build's log then printed again in one piece.
-		expect(printed).toEqual([
-			['[slow] slow starts', false],
-			['[broken] broken starts', false],
-			['[quick] quick starts', false],
-			['[quick] quick ends', false],
-			['[quick] done in N s', false],
-			['[broken] error: cargo build failed', true],
-			['[broken] failed after N s', true],
-			['[slow] slow ends', false],
-			['[slow] done in N s', false],
-			[
-				'\nthe whole log of the broken build, which failed after N s:\nbroken starts\nerror: cargo build failed',
-				true,
-			],
+		// The builds run at once, so their lines may mix in any order. Each build's own lines keep
+		// the order that it emits them, after its start, and the failed build's whole log prints
+		// once, after every build has ended.
+		const lines = printed.map(([line]) => line);
+		const ofBuild = (name: string) => lines.filter((line) => line.startsWith(`[${name}] `));
+		expect(ofBuild('slow')).toEqual([
+			'[slow] slow starts',
+			'[slow] slow ends',
+			'[slow] done in N s',
 		]);
+		expect(ofBuild('broken')).toEqual([
+			'[broken] broken starts',
+			'[broken] error: cargo build failed',
+			'[broken] failed after N s',
+		]);
+		expect(ofBuild('quick')).toEqual([
+			'[quick] quick starts',
+			'[quick] quick ends',
+			'[quick] done in N s',
+		]);
+		const whole = printed.at(-1);
+		expect(whole?.[1]).toBe(true);
+		expect(whole?.[0]).toContain('the whole log of the broken build, which failed after N s:');
+		expect(whole?.[0]).toContain('broken starts');
+		expect(whole?.[0]).toContain('error: cargo build failed');
+		// The whole log comes last, so no build's own line follows it.
+		expect(lines.slice(0, -1).every((line) => /^\[(slow|broken|quick)\] /.test(line))).toBe(true);
+		// The error lines go to stderr, and the progress lines do not.
+		const stderrOf = (line: string) => printed.find(([text]) => text === line)?.[1];
+		expect(stderrOf('[broken] error: cargo build failed')).toBe(true);
+		expect(stderrOf('[broken] failed after N s')).toBe(true);
+		expect(stderrOf('[slow] done in N s')).toBe(false);
 	});
 
 	it('names every build that failed, in the order of the builds', async () => {

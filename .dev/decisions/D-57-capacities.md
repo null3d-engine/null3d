@@ -1,12 +1,12 @@
 # D-57: Capacities that grow, frames that fail whole, and skinning split by the device's limits
 
-Status: decided. Date: 2026-10-04. Task: M2-R13.
+Status: decided and built. Task: M2-R13.
 
-Summary: The draw list grows, so no count of draws stops a scene. A frame that fails publishes no commands; one that fails after its first command halts the builder until a new GPU device. WebGPU skinning spreads its workgroups over rows and its vertices over up to 8 buffers within the storage binding, and a scene past its caps gets E1501 that names them. Animation tables hold at most 1,048,576 joints, so the joint texture fits WebGL2.
+Summary: The draw list grows; a failed frame publishes no commands, and after its first command halts the builder until a new GPU device. WebGPU skinning spreads workgroups over rows and vertices over up to 8 buffers, and a scene past those caps gets E1501. Animation tables hold at most 1,048,576 joints, so the joint texture fits WebGL2.
 
 ## Question
 
-Some of the renderer's capacities were fixed, and a scene past them failed with no error, or stopped drawing for good. The code review of 4 October found four:
+A fixed capacity that a scene passes fails with no error, or stops drawing for good. The code review found four:
 
 - Each frame's draw list had a fixed size. A crowd of about 300 animated characters with 4 cascades filled it on WebGPU, and about 1,500 meshes did on WebGL2 without `WEBGL_multi_draw` (Firefox). After that, every frame failed and the scene never drew again.
 - A frame that failed part way still reached the GPU with half its commands, and the builder believed the rest had run. A texture could then lose its mipmaps for good.
@@ -21,7 +21,7 @@ No capacity fails silently. A capacity that memory alone bounds grows, so a scen
 
 ## Data
 
-The Rust tests in `crates/null3d-render/tests/capacities.rs` record each case through the mock backend. That backend now refuses a dispatch past 65,535 workgroups on any axis, as a GPU does. Each test failed on the crowd branch (`feat/m2-l2-crowd`, 9bdbce14), which this change builds on.
+The Rust tests in `crates/null3d-render/tests/capacities.rs` record each case through the mock backend. That backend refuses a dispatch past 65,535 workgroups on any axis, as a GPU does. Each test fails on the crowd branch (`feat/m2-l2-crowd`, 9bdbce14), the base of this change.
 
 | Case | Before | After |
 | --- | --- | --- |
@@ -33,17 +33,18 @@ The Rust tests in `crates/null3d-render/tests/capacities.rs` record each case th
 | 25 columns of 9,000 vertices at a 1 MiB binding, which 8 buffers of 1 MiB cannot hold | Not handled | E1501, "the 8 MB that GPU skinning holds"; with one column fewer the next frame records |
 | Skinned meshes on 33 mesh pages | Pages past 32 were never skinned | E1501, "more than 32 mesh pages" |
 
-How the data was produced: `cargo test -p null3d-render --test capacities`, on this branch and with the crowd branch's renderer sources in its place, on 4 October 2026.
+How the data was produced: `cargo test -p null3d-render --test capacities`, on this branch and with the crowd branch's renderer sources in its place.
 
 ## Decision
 
 ### The draw list grows
 
-A draw list grows when a command needs more room than it has, to at least twice its size, up to a limit. The limit is the words that 32-bit addresses of engine memory reach, unless a test sets a lower one (`draw_list_limit` on both builders). Each frame parity keeps its own list. So frames of one size grow the list only in the first of them, and steady frames allocate nothing. Growing moves the words. So the sketch thread gives the thread that draws each list's address with every frame, as it has since the crowd branch.
+A draw list grows when a command needs more room than it has, to at least twice its size, up to a limit. The limit is the words that 32-bit addresses of engine memory reach, unless a test sets a lower one (`draw_list_limit` on both builders). Each frame parity keeps its own list. So frames of one size grow the list only in the first of them, and steady frames allocate nothing. Growing moves the words. So the sketch thread gives the thread that draws each list's address with every frame.
 
-The crowd branch reserved room per writer instead: each bundle and each transparent draw reserved its bound before it recorded. That left WebGL2's per-frame draws without multi-draw. The planned work also adds writers. These are one indirect draw per detail level, a second draw for double-sided blended runs, fade draws, and joint rows for wide lines. Each would need its own bound, and one missed bound brings the cliff back. Growth covers every writer. The bounds' code (`bundles_bound`, `words_bound`, `reserve_words`) is gone.
+Two other designs were rejected:
 
-A larger fixed list would waste memory on small scenes and still have a cliff.
+- Room reserved per writer, where each bundle and each transparent draw reserves its bound before it records. That leaves WebGL2's per-frame draws without multi-draw. The planned writers would each need a bound of their own too. They are one indirect draw per detail level, a second draw for double-sided blended runs, fade draws, and joint rows for wide lines. One missed bound brings the cliff back. Growth covers every writer.
+- A larger fixed list. It would waste memory on small scenes and still have a cliff.
 
 ### A frame is all or nothing
 
@@ -65,7 +66,7 @@ The notes on crowds propose skinning in the vertex shader past a memory cap, and
 
 ### The joint texture fits WebGL2
 
-The crowd branch's change keeps: 512 joints per row, 1,536 texels wide. An animation table may hold at most 2,048 rows of joints, which is 1,048,576 joints. So the texture's height fits WebGL2's floor too. `initAnimations` refuses a larger table with E1108. The engine's table holds 65,536 joints, 128 rows. A Rust test checks that the renderer, `skin.wgsl` and `lib/mesh.wgsl` give the row the same size.
+A row holds 512 joints, 1,536 texels wide. An animation table may hold at most 2,048 rows of joints, which is 1,048,576 joints. So the texture's height fits WebGL2's floor too. `initAnimations` refuses a larger table with E1108. The engine's table holds 65,536 joints, 128 rows. A Rust test checks that the renderer, `skin.wgsl` and `lib/mesh.wgsl` give the row the same size.
 
 ## How three.js handles it
 
@@ -74,7 +75,6 @@ three.js's renderers issue GPU calls as they go, with no command list, so they h
 ## Consequences
 
 - `null3d_gpu::drawlist::DrawList` grows, with `DrawListError::Full { limit }` and `OutOfMemory`. The parallel recorder keeps lists of a fixed size, as it promises no allocation.
-- `RecordError::DrawListFull` carries the limit in mebibytes, and `SkinnedVerticesFull` and `SkinnedPagesFull` are new. E1501's message names each, and its docs page lists the caps.
+- `RecordError::DrawListFull` carries the limit in mebibytes, and `SkinnedVerticesFull` and `SkinnedPagesFull` name the skinning caps. E1501's message names each, and its docs page lists the caps.
 - `caps::MAX_WORKGROUPS_PER_DIMENSION` holds the dispatch limit, which the skinning pass, the culling pass's binding cap and the mock backend share.
 - [D-20](D-20-webgpu-skinning.md) describes the split pass. The animation docs state the skinning caps, and the performance guide gives the crowd limits.
-- The record is in the table in [README.md](README.md).

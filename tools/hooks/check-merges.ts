@@ -28,9 +28,8 @@ export const MERGE_RULE_SINCE = '2026-10-15T14:28:48+0800';
 
 /**
  * Merges on the milestone branch that hold new work beyond their resolutions, from before landings
- * ran this check. The owner ruled on 25 October 2026 that they stay, named here, and that the rule
- * holds for every other merge: their content is on the branch, and rewriting them would risk more
- * than it fixes (D-259).
+ * ran this check. By the owner's ruling they stay, named here, and the rule holds for every other
+ * merge: their content is on the branch, and rewriting them would risk more than it fixes (D-259).
  */
 export const KNOWN_MERGES: ReadonlySet<string> = new Set([
 	'f593dbb4e8cee3db614f7ca327e6e67e90cc6ff7', // Merge commit '148fd2660' into m3-start

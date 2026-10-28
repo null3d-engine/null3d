@@ -3,7 +3,10 @@
 // reference could take in. This spec checks that the chrome ball in the middle of the room
 // reflects the green wall on its left and the red wall on its right, as the walls stand, and that
 // the mirror floor in front of the ball reflects the lit room, not the black of a scene without an
-// environment. So it fails even before a test has references.
+// environment. It also checks the floor beyond the near probe's box, which only a further probe
+// can light: a held picture whose second probe never captures draws that half black, and a
+// reference drawn from such a picture records the fault, so this check is the one that sees it. So
+// the spec fails even before a test has references.
 import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 import { IMAGE_RUNS } from './manifest.ts';
@@ -86,6 +89,12 @@ function brightness(image: Image, [left, right, top, bottom]: readonly number[])
 const BALL = [0.3, 0.7, 0.25, 0.65] as const;
 /** The floor between the ball and the camera. */
 const FLOOR = [0.4, 0.6, 0.85, 1] as const;
+/**
+ * The floor beyond the near probe's box, across the room, which only a further probe lights. Its
+ * box lies past the west probe's blend, so a picture in which the second probe never captured shows
+ * it as the black of a surface that no probe lights.
+ */
+const EAST_FLOOR = [0.65, 0.85, 0.9, 1] as const;
 
 for (const name of ['probe-room', 'probe-rough', 'probe-flat', 'probe-blend'])
 	test(`${name}: the ball reflects each wall on its own side, and the floor reflects the room`, async ({
@@ -103,6 +112,9 @@ for (const name of ['probe-room', 'probe-rough', 'probe-flat', 'probe-blend'])
 				expect.soft(green.x < red.x, `${run.id}: green on the left, red on the right`).toBe(true);
 			expect
 				.soft(brightness(image, FLOOR), `${run.id}: the floor reflects the lit room`)
+				.toBeGreaterThan(40);
+			expect
+				.soft(brightness(image, EAST_FLOOR), `${run.id}: the east floor reflects the lit room`)
 				.toBeGreaterThan(40);
 		}
 	});

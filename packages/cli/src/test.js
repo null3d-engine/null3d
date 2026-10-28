@@ -393,6 +393,8 @@ export function summaryLine(outcomes) {
 	]
 		.filter(([n]) => n)
 		.map(([n, word]) => `${n} ${word}`);
+	const warnings = count('WARN');
+	if (warnings > 0) parts.push(counted(warnings, 'warning'));
 	const saved = count('SAVED');
 	if (saved > 0) parts.push(`${counted(saved, 'reference')} saved`);
 	return `${parts.join(', ')}.`;

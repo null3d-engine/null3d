@@ -184,6 +184,20 @@ export function countedRun(
 }
 
 /**
+ * The commit's whole hash, or null when the repository holds no such commit.
+ *
+ * GitHub matches a commit exactly, so a short hash finds no run, and a step reading that as "no
+ * run" would judge the pictures of a commit whose CI never drew them.
+ */
+export function wholeCommit(commit: string, git: (args: string[]) => string): string | null {
+	try {
+		return git(['rev-parse', '--verify', `${commit}^{commit}`]).trim();
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Judges the newest counted run of each gate workflow on the commit.
  *
  * The run's state is its conclusion, or its status while it still runs.

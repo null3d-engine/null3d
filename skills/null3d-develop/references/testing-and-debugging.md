@@ -27,7 +27,7 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 | `bunx @null3d/cli test --update-references` | Keeps each new or changed image as its reference; check the images before committing them |
 | `bunx @null3d/cli bench [--gpu webgpu,webgl2] [--page /other.html]` | Builds the project for production and measures the page headless: 5 fresh runs of 30 seconds, each after 5 seconds of warm-up. Prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves every run's figures in `bench.json` |
 | `bunx @null3d/cli bench --runs 3 --seconds 10 --warmup 5 --size 390x844` | Measures with fewer or shorter runs, or in another window size in CSS pixels. Compare only runs made with the same options on the same computer |
-| `bunx @null3d/cli check-addon [folder] [--page /demo.html] [--skip-browser]` | Runs the engine's gates on one add-on package: its public imports, its plugin interface range, a build of its shaders for both GPU paths, the size of its first-use files, and, with a page, its start from another origin under the strict policy, its cost per quality preset, and the bytes per frame that its own code allocates. Prints one line per gate and exits with 1 when one fails |
+| `bunx @null3d/cli check-addon [folder] [--page /demo.html] [--skip-browser]` | Runs the engine's gates on one add-on package: its public imports, its plugin interface range, a build of its shaders for both GPU paths, the size of its first-use files (a file over budget warns, and does not fail), and, with a page, its start from another origin under the strict policy, its cost per quality preset, and the bytes per frame that its own code allocates. Prints one line per gate and exits with 1 when one fails |
 | `bunx @null3d/cli upgrade [--to 0.2.0] [--dry-run]` | Moves every `@null3d` package in `package.json` to one version: the installed engine's, or the one `--to` names. Writes the manifest only, and edits no code; run `bun install` after it |
 | `bunx @null3d/cli doctor` (0.3, not built yet) | Checks versions, headers, asset CORS, and the capabilities of the local browser |
 | `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` (0.3, not built yet) | Prints docs for the installed engine version |
@@ -88,6 +88,12 @@ Test logic in three ways:
 - Drive the sketch with a timed script: `bunx @null3d/cli shot --script` and a `test` entry that gives `script` put keys, pointer events and property writes at exact sketch times, and each `shot` step draws that state (`cli/null3d`, "Timed scripts"). This is the way to draw a state that input causes.
 - Keep game rules in plain modules that take numbers and arrays and import nothing from the engine, and test them with `bun test`. The sketch calls them from `onUpdate` or `onFixedUpdate`.
 - Put a scene into a state for an image test through the sketch module's address, such as `sketch.ts?score=90`, and check the held frame. A hold without a script gives the sketch no input.
+
+Before you believe a picture that judges a change, prove the page read the change:
+
+- A sketch reads its address with `new URL(import.meta.url).searchParams`. Settings that a page puts on the sketch's address are silently lost if the query does not reach the module, and the sketch then draws its own defaults, so every variant is one picture. Have the sketch post back the values it built and print them beside the frame.
+- A dev server answers a sketch address whose query carries a `v=` value with `Cache-Control: max-age=31536000, immutable`, while any other address, with or without a query, answers `no-cache`. The plugin's immutable rule covers only hashed files under `/assets/`. A browser may therefore keep the first module it fetched for a `v=` address. When a value changes between runs, open the page twice with two markers, have the sketch report the one it read, and compare before trusting any difference.
+- When two variants look identical, suspect the pipeline first: the sketch not being re-read, the wrong module, or a stale server. The material is the last explanation, not the first.
 
 ## 4. Testing on real devices
 

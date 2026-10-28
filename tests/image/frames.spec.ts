@@ -39,9 +39,9 @@ for (const mode of ENGINE_MODES) {
 			'frames left to land during the pause',
 		).toBeLessThanOrEqual(softwareGpu() ? 1 : 0);
 		// What this proves is that drawing resumed after the pause. How many frames a machine fits
-		// into the window is a speed figure, and the benchmark measures it: on 24 October 2026 CI's
-		// software GPU drew three where a real one draws many, and the count alone cannot tell a
-		// slow machine from a broken engine.
+		// into the window is a speed figure, and the benchmark measures it: CI's software GPU draws
+		// three where a real one draws many, and the count alone cannot tell a slow machine from a
+		// broken engine.
 		expect(result.pause?.resumed.frames ?? 0).toBeGreaterThan(0);
 		expect(result.pause?.resumed.presented ?? 0).toBeGreaterThan(MIN_FRAMES_RESUMED);
 		expect(result.count.largestStep, 'the longest step').toBeLessThan(LONGEST_STEP_S);
@@ -60,9 +60,9 @@ for (const mode of ENGINE_MODES) {
 				`the display refreshes at ${hz} Hz, below ${MIN_REFRESH_HZ} Hz`,
 			);
 			// A software GPU draws a frame slower than the target's interval at times, and no pacer
-			// presents at a rate that its frames cannot reach: on 20 October 2026 the worker's thread
-			// read 25.7 frames a second here against a 27 floor, while the modes that draw on the
-			// page's thread read 30. Its own guide skips the governor's stages for the same reason.
+			// presents at a rate that its frames cannot reach: the worker's thread can read 25.7
+			// frames a second here against a 27 floor, while the modes that draw on the page's
+			// thread read 30. Its own guide skips the governor's stages for the same reason.
 			test.skip(
 				softwareGpu() && result.stats.presentedFps < HELD_FPS * (1 - HELD_FPS_SHARE),
 				"the software GPU draws some frames slower than the target's interval",

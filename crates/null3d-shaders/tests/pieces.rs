@@ -186,12 +186,13 @@ fn join_glsl(host: &str, effects: &[&PieceOutput], curve: Option<&PieceOutput>) 
         ));
         text.replace_range(span, &hook);
     }
-    let members: [(&str, &str); 5] = [
+    let members: [(&str, &str); 6] = [
         ("vec4", "chain_color"),
         ("vec2", "chain_uv"),
         ("vec2", "chain_pixel"),
         ("vec2", "chain_size"),
         ("float", "chain_time"),
+        ("uint", "chain_layer"),
     ];
     let parameters: Vec<String> = members.iter().map(|(t, n)| format!("{t} {n}")).collect();
     let unchanged: Vec<&str> = members[1..].iter().map(|(_, n)| *n).collect();
@@ -501,7 +502,7 @@ fn the_host_chains_take_the_input_members_in_the_structure_order() {
             .collect();
         assert_eq!(
             types,
-            ["vec4", "vec2", "vec2", "vec2", "float"],
+            ["vec4", "vec2", "vec2", "vec2", "float", "uint"],
             "{name}'s chain: {line}"
         );
     }

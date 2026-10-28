@@ -348,8 +348,8 @@ for (const gpu of ['webgpu', 'webgl2'])
 		await page.evaluate(showFromPage, { collapsed: false });
 		await page.waitForTimeout(500);
 		const open = await counted(softwareGpu() ? 8000 : 2000);
-		// The software GPU advertises the timer but reports none: 0 queries in 8 seconds on 20
-		// October 2026, with the card open. Its own page reports the timer from the adapter's list.
+		// The software GPU advertises the timer but reports none: 0 queries in 8 seconds, with the
+		// card open. Its own page reports the timer from the adapter's list.
 		if (result.gpuTimer && !softwareGpu())
 			expect(open.timerQueries + open.resolves + open.readbacks).toBeGreaterThan(0);
 	});

@@ -97,18 +97,26 @@ class Noise {
 	}
 }
 
-/** Makes a tiling sRGB color map, calling `sample` once per texel with the texel's u and v. */
+/**
+ * Makes a tiling sRGB color map, calling `sample` once per texel with the texel's u and v. The
+ * sample writes three colors and the texel's height, which the map keeps in its alpha channel so a
+ * layer can raise itself above its neighbours at a boundary.
+ */
 function colorMap(
 	textures: SketchContext['textures'],
 	size: number,
 	sample: (u: number, v: number, out: number[]) => void,
 ): Texture {
 	const data = new Uint8Array(size * size * 4);
-	const rgb = [0, 0, 0];
+	const texel = [0, 0, 0, 0.5];
 	const byte = (value: number) => Math.round(Math.min(Math.max(value, 0), 1) * 255);
 	for (let i = 0; i < size * size; i++) {
-		sample(((i % size) + 0.5) / size, (Math.floor(i / size) + 0.5) / size, rgb);
-		data.set([byte(rgb[0] as number), byte(rgb[1] as number), byte(rgb[2] as number), 255], i * 4);
+		sample(((i % size) + 0.5) / size, (Math.floor(i / size) + 0.5) / size, texel);
+		const at = i * 4;
+		data[at] = byte(texel[0] as number);
+		data[at + 1] = byte(texel[1] as number);
+		data[at + 2] = byte(texel[2] as number);
+		data[at + 3] = byte(texel[3] as number);
 	}
 	return textures.fromData({
 		width: size,
@@ -123,7 +131,9 @@ function colorMap(
 
 /**
  * Makes the four layer maps in code. Each is `size` texels across and repeats; the noise tiles, so
- * the maps do too, and the same seed gives the same maps on every run.
+ * the maps do too, and the same seed gives the same maps on every run. Each map keeps a height in
+ * its alpha channel, so a layer that reads its height from there pushes its clumps and stones
+ * through a neighbour at a boundary.
  *
  * @category api/terrain
  */
@@ -140,6 +150,8 @@ export function terrainTextures(
 		out[0] = 0.16 + 0.1 * green;
 		out[1] = 0.32 + 0.34 * green;
 		out[2] = 0.1 + 0.07 * green;
+		// Clumps of blades stand above the flat ground between them.
+		out[3] = 0.5 + 0.42 * clumps + 0.18 * blades;
 	});
 	const soil = colorMap(textures, size, (u, v, out) => {
 		const clods = noise.fbm2(u * 10, v * 10, 4, 10);
@@ -149,6 +161,8 @@ export function terrainTextures(
 		out[0] = 0.45 * tone;
 		out[1] = 0.36 * tone;
 		out[2] = 0.26 * tone;
+		// Clods rise, and the small stones stand above them.
+		out[3] = 0.5 + 0.42 * clods + 0.2 * (stone - 0.5);
 	});
 	const rock = colorMap(textures, size, (u, v, out) => {
 		const facets = noise.fbm2(u * 8, v * 8, 3, 8);
@@ -157,6 +171,9 @@ export function terrainTextures(
 		out[0] = tone;
 		out[1] = tone * 0.98;
 		out[2] = tone * 0.95;
+		// The facets are the rock's own relief; the cracks stay a color, so the layer keeps its
+		// height about the middle where its neighbours meet it.
+		out[3] = 0.5 + 0.5 * facets;
 	});
 	const snow = colorMap(textures, size, (u, v, out) => {
 		const drift = noise.fbm2(u * 14, v * 14, 3, 14);
@@ -165,6 +182,8 @@ export function terrainTextures(
 		out[0] = tone * 0.97;
 		out[1] = tone * 0.99;
 		out[2] = Math.min(tone, 1);
+		// Drifts stand above the snow between them.
+		out[3] = 0.5 + 0.4 * drift + 0.15 * grain;
 	});
 	return { grass, soil, rock, snow };
 }

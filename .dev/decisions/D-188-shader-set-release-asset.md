@@ -1,8 +1,8 @@
 # D-188: The shader set ships as a release asset, not in the package
 
-Status: decided. Date: 2026-10-17. Task: none.
+Status: decided and built. Task: none.
 
-Summary: The engine package no longer ships the built shader modules, 684 MiB in 1,353 files. Each release publishes them as one Brotli-compressed tar beside the skill zip files, and the package carries the asset's name, address and SHA-256. A deterministic tar writer makes the same tree give the same bytes twice. The plugin downloads the asset, or builds the set locally when the download cannot be had.
+Summary: The engine package does not ship the built shader modules, 684 MiB in 1,353 files: each release publishes them as one Brotli-compressed tar. A deterministic tar writer gives the same bytes for the same tree, and the package carries the asset's name, address and SHA-256. The plugin downloads the asset, or builds the set locally when the download cannot be had.
 
 ## Question
 
@@ -42,6 +42,5 @@ The engine package's `files` list removes the built shader JavaScript: `shaders*
 
 - `tools/lib/packages.ts` requires a declaration for each generated TypeScript module instead of a JavaScript file, and refuses a tarball that holds a built shader module.
 - The pack keeps `lib/shader-artifact.json` across the compile step, which rebuilds `lib/`.
-- The release job's time limit rises to 90 minutes, because the compression alone takes about a quarter of an hour.
-- The engine's source and the shader build do not change.
-- The project needs the null3D Vite plugin to resolve the engine's generated imports, because the package no longer carries the shader modules. A project without the plugin cannot draw.
+- The release job's time limit is 90 minutes, because the compression alone takes about a quarter of an hour.
+- The project needs the null3D Vite plugin to resolve the engine's generated imports, because the package does not carry the shader modules. A project without the plugin cannot draw.

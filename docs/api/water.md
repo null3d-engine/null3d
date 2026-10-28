@@ -157,8 +157,8 @@ window overhead, and turns the light back past that window's edge.
 - **Transmission.** The surface lets light through, so the engine copies the scene's colors in the
   frame that the water draws. The water draws both faces.
 - **Nothing before its first use.** A page that never creates water downloads none of the add-on.
-- **One place per feature.** This package owns all water. A scene makes water with it, not with a
-  hand-written custom material, so there is one way to make water.
+- **One way to make water.** Use this package rather than a hand-written custom material, so a
+  scene's water has one owner.
 - **One water a page.** The add-on registers one water feature, so a page makes its water with one
   `createWater` call. Give that call every body that shares the surface and the reflection.
 

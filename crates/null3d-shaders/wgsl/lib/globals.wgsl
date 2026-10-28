@@ -41,9 +41,10 @@ struct Frame {
     /// The distances of the camera's near and far planes, then the change in normalized device
     /// coordinates across one CSS pixel of the canvas, along x and along y.
     camera_range: vec4f,
-    /// Ambient occlusion's strength, 0 when the view draws none, the scene target's height in
-    /// pixels, and the texels of its texture per pixel of the scene, across and down (see
-    /// null3d::gtao).
+    /// Ambient occlusion's strength, 0 when the view draws none, the view's target height in
+    /// pixels, which custom materials turn their pixel rows by on WebGL2 and the vignette measures
+    /// its distance from, and the texels of its texture per pixel of the scene, across and down
+    /// (see null3d::gtao).
     occlusion: vec4f,
     /// The scene's environment, which null3d::ibl reads.
     environment: EnvironmentLight,
@@ -181,11 +182,16 @@ struct MaterialRow {
     /// each group of shared slots holds (two bits each: 0 for the light map's slot, 2 for the
     /// specular intensity map's and 4 for the specular color map's; 0 is the clear coat's and the
     /// sheen's, 1 iridescence's and the anisotropy's, and 2 the transmission and thickness maps'),
-    /// and a spare.
+    /// and the volume's dispersion.
     anisotropy: vec4f,
     /// The scale of a light map's texture coordinates along u and v, then their offset along u
     /// and v. The identity leaves the coordinates as the mesh gives them.
     light_map_uv: vec4f,
+    /// The transforms of the maps of the slots from the second up, two `vec4f`s each: the 2 x 3
+    /// matrix's row that gives u, then the row that gives v. The base color map's two rows are
+    /// `Material::uv_u` and `Material::uv_v`, in the values that every shader reads. A map whose
+    /// transform is the identity reads the coordinates as the mesh gives them.
+    map_uv: array<vec4f, 14>,
 }
 
 /// The values of a material that lets light through: its row's `transmission` and `attenuation`.
