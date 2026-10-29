@@ -1055,11 +1055,15 @@ jobs:
     # of the full run take the same condition.
     if: &full-run "github.event_name != 'push' || github.ref == 'refs/heads/main'"
     runs-on: ubuntu-latest
-    # A shard's tests take about 6.5 minutes, with the median times that the weights come from, and
-    # its setup about 1. A shard that meets a slow machine runs its tests up to twice as slowly as
-    # the median, so the limit leaves room for that rather than for a hang. In run 39306888159 a
-    # shard modelled at 11 minutes ran 71 of its 74 tests in 19.6.
-    timeout-minutes: 25
+    # The weights fill each shard to about the same time: on the three full runs that measured the
+    # split they make, the slowest shard models 12.5 minutes of tests and its setup about a minute.
+    # The limit is twice that 13.5, which is the room a shard needs when a slow machine runs its
+    # tests twice as slowly, rather than for a hang.
+    # The model reads low. The first run on these weights measured its heaviest shard at 16.4
+    # minutes of job time where the model said 11.5, so the limit leaves about ten minutes over
+    # anything yet seen. If that gap moves again, the model's absolute reading is what to revisit,
+    # not the split. In run 39306888159 a shard modelled at 11 minutes ran 71 of its 74 tests in 19.6.
+    timeout-minutes: 27
     strategy:
       fail-fast: false
       matrix:
