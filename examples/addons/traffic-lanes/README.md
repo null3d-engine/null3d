@@ -32,6 +32,12 @@ const traffic = createTrafficLanes(ctx, {
 traffic.update(eye, time.now);
 ```
 
+- A plan can list its lanes one by one instead: `plan: { from, to, lanes }`, where each lane gives
+  its heading (0 along +X, 1 along -X, 2 along +Z, 3 along -Z), its line across the way, its height
+  and its speed. Every vehicle of a listed lane flies at the lane's speed, so the gaps between them
+  hold and none flies through the one ahead. Use a list for traffic that keeps to its own side of
+  the street, or for crossing streets at other heights. Skyway builds its list in
+  `examples/showcase/skyway/layout.ts`.
 - `fit(preset)` draws the preset's count. `setCount(n)` picks any count. Both thin every lane alike,
   because the rows were shuffled once.
 - `update(eye, time)` moves the real lights to the vehicles nearest the camera, four times a second.
@@ -73,8 +79,10 @@ traffic.update(eye, time.now);
   phone expectation, are in the [examples guide](../../../.dev/examples.md#skyway-m3-c1).
 - The lanes are straight and axis-aligned. A curved lane needs a route the vertex shader can
   evaluate, which this add-on does not build.
-- The vehicles keep clear of each other only by their start offsets. Two lanes at one height may
-  overlap when a lane's span differs from its neighbour's.
+- The vehicles keep clear of each other only by their start offsets. In the grid plan, each
+  vehicle takes a speed of its own, so a fast one can pass through a slow one in the same lane, and
+  the two headings of a street share their lanes. A listed lane has neither fault. Two lanes at one
+  height may overlap when a lane's span differs from its neighbour's.
 - The real lights cost a point light each, which a surface pays for as any point light. Six is a
   good look for a road near the camera; a hundred is not.
 

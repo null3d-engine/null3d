@@ -9,32 +9,28 @@ import {
 	type TrafficLanes,
 } from '../../addons/traffic-lanes/index';
 import { EFFECT_LAYER } from '../../lib/layers';
-import {
-	BLOCKS,
-	LANE_HIGH,
-	LANE_LOW,
-	LANE_OFFSET,
-	LANE_SPAN,
-	LANES_PER_STREET,
-	streetLine,
-} from './layout';
+import { LANE_SPAN, skyLanes } from './layout';
 
-/** How many cars each preset draws. */
+/**
+ * How many cars each preset draws. A count spreads over every lane of the plan, about half of which
+ * runs past the city into the haze. At High a car in the city follows the one ahead by about 90 m,
+ * the gap of a busy road at the lanes' speeds.
+ */
 export const CARS: Record<QualityPreset, number> = {
-	low: 30_000,
-	medium: 50_000,
-	high: 75_000,
-	ultra: 100_000,
+	low: 6_000,
+	medium: 9_000,
+	high: 12_000,
+	ultra: 16_000,
 };
 
 /** The vehicle's half width, height and half length, which the hull and the material's lights share. */
 const VEHICLE = { halfWidth: 0.96, height: 1.1, halfLength: 2.0 };
 
-/** The streets of the plan, as the centre lines that carry lanes. */
-const LINES = Array.from({ length: BLOCKS + 1 }, (_, k) => streetLine(k));
+/** The lanes of every street. */
+const LANES = skyLanes();
 
 /**
- * The hull each preset draws. Low is the preset that phones run, where a lane of 30,000 cars is the
+ * The hull each preset draws. Low is the preset that phones run, where the lanes' cars are the
  * largest cost of the frame, so it takes the light hull: the same silhouette and lights from a third
  * of the vertices. The presets above keep the full hull, whose faceted panels the close pictures
  * show.
@@ -51,15 +47,7 @@ export function createTraffic(ctx: SketchContext): TrafficLanes {
 	function build(context: SketchContext, mesh: MeshGeometry): TrafficLanes {
 		return createTrafficLanes(context, {
 			mesh,
-			plan: {
-				lines: LINES,
-				from: -LANE_SPAN / 2,
-				to: LANE_SPAN / 2,
-				low: LANE_LOW,
-				high: LANE_HIGH,
-				levels: LANES_PER_STREET,
-				offset: LANE_OFFSET,
-			},
+			plan: { from: -LANE_SPAN / 2, to: LANE_SPAN / 2, lanes: LANES },
 			counts: CARS,
 			look: {
 				body: '#20242c',

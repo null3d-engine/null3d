@@ -65,6 +65,13 @@ The stage leaves the scene alone once every eased value has reached its target, 
 
 The engine's `Bloom.blend` default is `Mix`, which moves each pixel toward the glow by the intensity. At a typical intensity that crushes every pixel that is not glowing, so bloom looks as if it darkens the scene: in the night town the surrounding snow and trees go dark. The showcase scenes set `blend: 'add'` explicitly, which adds the glow as three.js does, and the HUD's bloom toggle does the same. The engine default stays `Mix` for Bevy parity (D-21 owns bloom). Whether it should change to `Add` is the owner's question.
 
+## Skyway drives its car
+
+In Skyway's Manual mode the user drives the hero car, so W, A, S and D fly the car there and pan
+the camera in the other showcases. V switches the view from behind the car to its seat. C and H
+keep their jobs. The demos page shows each demo's keys as key caps beside its caption
+([D-277](D-277-skyway-driving-and-traffic.md)).
+
 ## Options rejected
 
 - One card per group in a grid. It stacks or wraps and grows tall on a phone, so the owner chose tabs, which show fewer rows and less height and still scroll.

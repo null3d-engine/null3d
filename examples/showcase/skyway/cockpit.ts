@@ -1,8 +1,9 @@
-// The hero car's own displays, from the screens add-on (M3-B3): the two deck panels that show the
-// speed and the altitude, and the cockpit's navigation panel between them. Each panel is a canvas
-// that refreshes at its own rate, and only the rectangles that its reading changed upload. The
-// panels use the LCD look, so their sub-pixels and dead texels show when the camera comes close in
-// Manual. They sit on the body, which carries the car's scale.
+// The hero car's own displays, from the screens add-on (M3-B3): the two panels that show the speed
+// and the altitude, and the navigation panel between them. Each panel is a canvas that refreshes at
+// its own rate, and only the rectangles that its reading changed upload. The panels use the LCD
+// look, so their sub-pixels and dead texels show when the camera comes close. They sit on the body,
+// which carries the car's scale: on the rear deck, turned up toward a camera behind the car, or on
+// the dashboard in front of the driver's seat for the view from inside.
 import type { Object3D, QuatLike, SketchContext } from '@null3d/engine';
 import { createScreen, type Screen } from '../../addons/screens';
 import { EFFECT_LAYER } from '../../lib/layers';
@@ -154,7 +155,7 @@ function deckPanel(
 		},
 	});
 	screen.mesh.setParent(body);
-	screen.mesh.setPosition(x, 0.99, -1.28);
+	screen.mesh.setPosition(x * DECK_PLACE.step, DECK_PLACE.y, DECK_PLACE.z);
 	screen.mesh.setRotation(tilt[0] ?? 0, tilt[1] ?? 0, tilt[2] ?? 0, tilt[3] ?? 1);
 	screen.mesh.setLayers(EFFECT_LAYER);
 	let shown = 0;
@@ -187,7 +188,7 @@ function navPanel(ctx: SketchContext, body: Object3D, tilt: QuatLike): Screen {
 		},
 	});
 	screen.mesh.setParent(body);
-	screen.mesh.setPosition(0, 0.99, -1.28);
+	screen.mesh.setPosition(0, DECK_PLACE.y, DECK_PLACE.z);
 	screen.mesh.setRotation(tilt[0] ?? 0, tilt[1] ?? 0, tilt[2] ?? 0, tilt[3] ?? 1);
 	screen.mesh.setLayers(EFFECT_LAYER);
 	return screen;
@@ -197,18 +198,46 @@ function navPanel(ctx: SketchContext, body: Object3D, tilt: QuatLike): Screen {
 export interface Cockpit {
 	/** Draws the flight on each panel at its own rate. Call once per frame with the flight's values. */
 	update(t: number, kmh: number, altitude: number): void;
+	/** Puts the panels on the rear deck, for a view from behind, or on the dashboard, for one inside. */
+	place(inside: boolean): void;
 }
 
 /**
- * Builds the car's three panels and returns the call that draws them. The body carries the car's
- * scale, and `tilt` turns the panels up toward the chase camera.
+ * Where the panels sit on the dashboard, in the body's own units: the middle panel's place, the
+ * step between two panels and the panels' scale. The dashboard sits just below the driver's eye
+ * and a little ahead of it, so the three panels fill the lower middle of the view.
+ */
+const DASH = { y: 0.8, z: 0.66, step: 0.2, scale: 0.4 };
+/** Where the panels sit on the rear deck: the middle panel's place and the step between two. */
+const DECK_PLACE = { y: 0.99, z: -1.28, step: 0.5 };
+
+/**
+ * Builds the car's three panels and returns the calls that draw and place them. The body carries
+ * the car's scale, and `tilt` turns the panels up toward the eye that reads them.
  */
 export function createCockpit(ctx: SketchContext, body: Object3D, tilt: QuatLike): Cockpit {
-	const speed = deckPanel(ctx, body, tilt, -0.5, 'VELOCITY', 'km/h');
-	const flight = deckPanel(ctx, body, tilt, 0.5, 'FLIGHT 07', 'ALT');
+	const speed = deckPanel(ctx, body, tilt, -1, 'VELOCITY', 'km/h');
+	const flight = deckPanel(ctx, body, tilt, 1, 'FLIGHT 07', 'ALT');
 	const nav = navPanel(ctx, body, tilt);
+	/** The panels from left to right, by their step from the middle. */
+	const row = [
+		[speed.screen.mesh, -1],
+		[nav.mesh, 0],
+		[flight.screen.mesh, 1],
+	] as const;
 	let mapAt = Number.NEGATIVE_INFINITY;
 	return {
+		place(inside) {
+			for (const [mesh, side] of row) {
+				if (inside) {
+					mesh.setPosition(side * DASH.step, DASH.y, DASH.z);
+					mesh.setScale(DASH.scale, DASH.scale, DASH.scale);
+				} else {
+					mesh.setPosition(side * DECK_PLACE.step, DECK_PLACE.y, DECK_PLACE.z);
+					mesh.setScale(1, 1, 1);
+				}
+			}
+		},
 		update(t: number, kmh: number, altitude: number): void {
 			// The navigation panel's map moves at its own rate, and the reading panels at theirs.
 			if (t - mapAt >= 1 / 8) {

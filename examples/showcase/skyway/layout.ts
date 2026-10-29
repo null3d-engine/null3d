@@ -25,14 +25,62 @@ export const streetLine = (k: number): number => -HALF + k * PITCH;
 /** The coordinate of a block's centre, by its index from the west or the south. */
 export const blockCentre = (i: number): number => streetLine(i) + PITCH / 2;
 
-/** The sky lanes' lowest and highest altitudes, in meters. */
-export const LANE_LOW = 26;
-export const LANE_HIGH = 88;
-/** How many lanes one street carries, and how far either side of its centre they fly, in meters. */
-export const LANES_PER_STREET = 8;
-export const LANE_OFFSET = 7;
+/**
+ * The sky lanes' levels: how many each street carries, the lowest one's height and the climb from
+ * one level to the next, in meters. The streets that run along z fly half a level higher than those
+ * along x, so two crossing streets never share a height.
+ */
+export const LANE_LEVELS = 6;
+export const LANE_LOW = 22;
+export const LANE_STEP = 24;
+/** How many lanes each direction takes on one level, the inner one's distance from the street's
+ * centre line, and the gap between two lanes of one direction, in meters. */
+export const LANES_EACH_WAY = 2;
+export const LANE_INNER = 4.5;
+export const LANE_GAP = 5;
 /** The length of a sky lane, in meters: longer than the city, so cars stream in from the haze. */
 export const LANE_SPAN = 2400;
+
+/** One sky lane: its heading, as the traffic add-on numbers them, its line, height and speed. */
+export interface SkyLane {
+	heading: 0 | 1 | 2 | 3;
+	across: number;
+	altitude: number;
+	speed: number;
+}
+
+/**
+ * The sky lanes of every street. Traffic keeps to the right: each direction flies on its own side
+ * of the centre line, so the two never meet head on. The inner lane of each side is the fast one.
+ * Every lane has one speed, so its cars keep their gaps.
+ */
+export function skyLanes(): SkyLane[] {
+	math.seed(53);
+	const lanes: SkyLane[] = [];
+	// A lane along +x keeps to +z, along -x to -z, along +z to -x and along -z to +x.
+	const headings = [
+		{ heading: 0, side: 1, lift: 0 },
+		{ heading: 1, side: -1, lift: 0 },
+		{ heading: 2, side: -1, lift: LANE_STEP / 2 },
+		{ heading: 3, side: 1, lift: LANE_STEP / 2 },
+	] as const;
+	for (let k = 0; k <= BLOCKS; k++) {
+		const line = streetLine(k);
+		for (const { heading, side, lift } of headings) {
+			for (let level = 0; level < LANE_LEVELS; level++) {
+				for (let lane = 0; lane < LANES_EACH_WAY; lane++) {
+					lanes.push({
+						heading,
+						across: line + side * (LANE_INNER + lane * LANE_GAP),
+						altitude: LANE_LOW + lift + level * LANE_STEP,
+						speed: lane === 0 ? math.randFloat(30, 36) : math.randFloat(21, 27),
+					});
+				}
+			}
+		}
+	}
+	return lanes;
+}
 
 /** One building of the skyline. */
 export interface Building {

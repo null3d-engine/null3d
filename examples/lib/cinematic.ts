@@ -1,6 +1,7 @@
 // A cinematic camera for the showcase scenes. In Auto, the camera follows a route of shots on a loop
 // and shows the scene's best views; in Manual, the user flies the camera with the keyboard and the
-// pointer, or with a finger on a touch screen. The `c` key toggles the two. The current mode and the
+// pointer, or with a finger on a touch screen, or drives the scene's vehicle where the scene has
+// one. The `c` key toggles the two. The current mode and the
 // scene's controls go to the page as a `hud` message, since a sketch runs in a worker and cannot
 // touch the page. The camera group of the controls is a row of buttons, so a touch screen, which has
 // no `c` key, can switch the mode too.
@@ -73,25 +74,42 @@ const KEY = {
 	fall: 'KeyF',
 } as const;
 
-/** The keys that every showcase scene shares: the camera's, then the controls', which the page reads. */
-export const SHOWCASE_KEYS: readonly SceneKey[] = [
-	{ code: KEY.mode, does: 'switch the camera between Auto and Manual' },
+/** The keys of the Manual camera, which a scene that the user drives replaces with its own. */
+const MANUAL_KEYS: readonly SceneKey[] = [
 	{ code: KEY.forward, does: 'pan the Manual camera forward' },
 	{ code: KEY.back, does: 'pan the Manual camera back' },
 	{ code: KEY.left, does: 'pan the Manual camera left' },
 	{ code: KEY.right, does: 'pan the Manual camera right' },
 	{ code: KEY.rise, does: 'raise the Manual camera' },
 	{ code: KEY.fall, does: 'lower the Manual camera' },
+];
+
+/** The keys of the controls, which the page reads. */
+const CONTROLS_KEYS: readonly SceneKey[] = [
 	{ code: 'KeyH', does: 'open and close the controls' },
 	{ code: 'Escape', does: 'close the controls' },
 ];
 
+/** The keys that every showcase scene shares: the camera's, then the controls', which the page reads. */
+export const SHOWCASE_KEYS: readonly SceneKey[] = [
+	{ code: KEY.mode, does: 'switch the camera between Auto and Manual' },
+	...MANUAL_KEYS,
+	...CONTROLS_KEYS,
+];
+
 /**
- * The whole key table of a scene: the shared keys, then the scene's own. Throws when two entries
- * take the same key, and names both.
+ * The whole key table of a scene: the shared keys, then the scene's own. A scene that the user
+ * drives in Manual gives its driving keys, which take the Manual camera's place. Throws when two
+ * entries take the same key, and names both.
  */
-export function keyTable(scene: readonly SceneKey[] = []): readonly SceneKey[] {
-	const table = [...SHOWCASE_KEYS, ...scene];
+export function keyTable(
+	scene: readonly SceneKey[] = [],
+	driving?: readonly SceneKey[],
+): readonly SceneKey[] {
+	const shared = driving
+		? [SHOWCASE_KEYS[0] as SceneKey, ...driving, ...CONTROLS_KEYS]
+		: SHOWCASE_KEYS;
+	const table = [...shared, ...scene];
 	const taken = new Map<string, string>();
 	for (const key of table) {
 		const other = taken.get(key.code);
@@ -222,6 +240,24 @@ export interface CinematicOptions {
 	keys?: readonly SceneAction[];
 	/** Where the Manual camera may go. Without bounds it goes anywhere. */
 	bounds?: CameraBounds;
+	/**
+	 * A scene that the user drives in Manual, such as a vehicle. Its keys take the Manual camera's
+	 * place, the orbit controls stay off, and it moves the camera itself.
+	 */
+	driver?: Driver;
+}
+
+/** What a scene that the user drives gives the cinematic camera. */
+export interface Driver {
+	/** The keys that drive, in the place of the Manual camera's. */
+	keys: readonly SceneKey[];
+	/** Hands the vehicle and the camera to the user, from where the route left them. */
+	take(): void;
+	/**
+	 * Moves the vehicle and places the camera, once per Manual frame. `held` answers whether one of
+	 * the driver's own keys is down, so a scene reads no key outside the table.
+	 */
+	update(dt: number, held: (code: string) => boolean): void;
 }
 
 /**
@@ -387,8 +423,11 @@ export function createCinematic(
 	options: CinematicOptions,
 ): Cinematic {
 	const { input, time, page } = ctx;
-	const { shots, keys = [] } = options;
-	keyTable(keys);
+	const { shots, keys = [], driver } = options;
+	keyTable(keys, driver?.keys);
+	const driving = new Set(driver?.keys.map((key) => key.code));
+	/** Whether one of the driver's keys is down. Any other key reads as up. */
+	const driverKey = (code: string): boolean => driving.has(code) && input.isDown(code);
 	const route = routeTimeline(shots);
 	const { starts, total } = route;
 	// The pose of the route at a phase: camera position, then the point it looks at.
@@ -552,7 +591,9 @@ export function createCinematic(
 			controls.target[2] = pose[5] as number;
 			mode = 'manual';
 			glide = 1;
-			controls.enabled = true;
+			// A scene that the user drives moves the camera itself, so the orbit controls stay off.
+			if (driver) driver.take();
+			else controls.enabled = true;
 		} else {
 			// Auto glides: find the nearest point of the route, then ease onto it. The motion the
 			// controls still carry is dropped, so no fling resumes when the user takes over again.
@@ -599,6 +640,10 @@ export function createCinematic(
 			}
 			if (input.wasPressed(KEY.mode)) toggleMode();
 			for (const key of keys) if (input.wasPressed(key.code)) key.press();
+			if (mode === 'manual' && driver) {
+				driver.update(dt, driverKey);
+				return;
+			}
 			if (mode === 'manual') {
 				// The keys pan: W and S see forward and back, A and D move across, R and F rise and
 				// fall. The controls take screen pixels, so the frame's step scales the speed.
