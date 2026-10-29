@@ -38,6 +38,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	capabilities: 0,
 	maxTextureSize: 0,
 	sharedUploads: true,
+	multiDraw: false,
 	depth: 'reversed',
 	parallelCompile: true,
 	freshShaders: false,
@@ -491,6 +492,14 @@ describe('the permutation bits that a device fixes', () => {
 		expect(coreDevice('webgl2', multiDraw, PLAIN).shaderBits).toBe(PERMUTATION_DRAW_INDEX);
 		expect(coreDevice('webgl2', report({}), PLAIN).shaderBits).toBe(0);
 		expect(coreDevice('webgpu', multiDraw, PLAIN).shaderBits).toBe(0);
+	});
+
+	it('tells the drawing thread whether the device draws many ranges in one call', () => {
+		expect(
+			coreDevice('webgl2', report({ extensions: { WEBGL_multi_draw: true } }), PLAIN).multiDraw,
+		).toBe(true);
+		expect(coreDevice('webgl2', report({}), PLAIN).multiDraw).toBe(false);
+		expect(coreDevice('webgpu', report({}), PLAIN).multiDraw).toBe(false);
 	});
 
 	it('hold tone mapping in the shader on the 8-bit path', () => {
