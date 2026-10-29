@@ -92,7 +92,7 @@ Put the catcher a little above the surface it lies on, so its shadows show over 
 | `attenuationDistance` | Above 0 | `Infinity` | The distance in world units over which light inside the volume takes `attenuationColor` |
 | `diffuseTransmission` | 0 to 1 | 0 | How much of the surface's diffuse light passes through to its other side, for leaves, petals and ears. See "Light through thin surfaces" |
 | `diffuseTransmissionColor` | A [color](#color) | White | Tints the light that passes through to the other side |
-| `subsurfaceRadius` | 0 or more, in metres | 0 | How far light spreads under the surface, for skin, wax, jade and marble. See "Light under the surface" |
+| `subsurfaceRadius` | 0 or more, in meters | 0 | How far light spreads under the surface, for skin, wax, jade and marble. See "Light under the surface" |
 | `subsurfaceColor` | A [color](#color) | White | Each color channel's share of `subsurfaceRadius` |
 | `clearcoat` | 0 to 1 | 0 | How much of a thin, shiny coat covers the surface, as on car paint or varnish. See "Clear coat and sheen" |
 | `clearcoatRoughness` | 0 to 1 | 0 | How rough the coat is |
@@ -210,7 +210,7 @@ Light that enters skin, wax or marble leaves it a little way from where it enter
 
 | Value | Meaning |
 | --- | --- |
-| `subsurfaceRadius` | How far light spreads under the surface, in world units taken as metres. Skin takes about 0.01, wax about 0.02, and marble a few millimetres |
+| `subsurfaceRadius` | How far light spreads under the surface, in world units taken as meters. Skin takes about 0.01, wax about 0.02, and marble a few millimeters |
 | `subsurfaceColor` | How far each channel spreads, as a share of the radius: its linear red, green and blue. Skin's red spreads furthest, about `[1, 0.4, 0.25]`. White spreads every channel as far |
 
 ```ts
@@ -649,7 +649,7 @@ The layer costs nothing until the first weighted surface draws, and its shaders 
 
 ### Moment transparency
 
-The quality setting `momentTransparency` blends the blended surfaces in a second layer that needs no sort. Where the surfaces spread over a metre or more, it is nearer an exact back-to-front blend than the weighted blending is. Where five surfaces sit within a couple of metres of one another, it is slightly farther: the fit's two depths cannot separate them. The engine stores four depth moments of each pixel, then draws the surfaces a second time and weights each fragment's color by the light that the moments say survives in front of it. A last step blends the result over the scene. The fit is exact for one surface and for two, and closest to the exact blend of every method the engine has for overlapping glass, foliage and particles.
+The quality setting `momentTransparency` blends the blended surfaces in a second layer that needs no sort. Where the surfaces spread over a meter or more, it is nearer an exact back-to-front blend than the weighted blending is. Where five surfaces sit within a couple of meters of one another, it is slightly farther: the fit's two depths cannot separate them. The engine stores four depth moments of each pixel, then draws the surfaces a second time and weights each fragment's color by the light that the moments say survives in front of it. A last step blends the result over the scene. The fit is exact for one surface and for two, and closest to the exact blend of every method the engine has for overlapping glass, foliage and particles.
 
 ```ts
 // The page turns the layer on when the engine starts, and every blended material draws in it.
