@@ -622,7 +622,7 @@ export class Textures {
 			sentRight: 0,
 			sentBottom: 0,
 		};
-		this.setData(texture, this.canvasRows(context, 0, 0, width, height), call);
+		this.setData(texture, this.canvasRows(context, 0, 0, width, height), call, true);
 		return texture;
 	}
 
@@ -685,10 +685,8 @@ export class Textures {
 		height: number,
 	): Uint8Array {
 		const image = context.getImageData(x, y, width, height);
-		const row = width * 4;
-		const rows = new Uint8Array(row * height);
+		const rows = new Uint8Array(width * 4 * height);
 		rows.set(image.data);
-		turnRows(rows, 0, row, height);
 		return rows;
 	}
 
@@ -785,7 +783,7 @@ export class Textures {
 		const height = bottom - top;
 		// A whole canvas fills a texture that waits for all its texels too.
 		if (left === 0 && top === 0 && width === source.width && height === source.height) {
-			this.setData(texture, this.canvasRows(source.context, left, top, width, height), call);
+			this.setData(texture, this.canvasRows(source.context, left, top, width, height), call, true);
 			return true;
 		}
 		if (this.setRegion(texture, source, left, top, width, height, call)) {
@@ -815,6 +813,7 @@ export class Textures {
 				texture,
 				this.canvasRows(source.context, 0, 0, source.width, source.height),
 				call,
+				true,
 			);
 		}
 		return true;
@@ -852,8 +851,6 @@ export class Textures {
 		const view = core.heap(Uint8Array);
 		const image = source.context.getImageData(x, top, width, height);
 		view.set(image.data, address);
-		// The turn runs in the core: it is a frame's work over the whole rectangle, and a loop here
-		// would spend the sketch thread's frame on it.
 		core.glue.turnRows(address, row, height);
 		return true;
 	}
@@ -1193,8 +1190,12 @@ export class Textures {
 		this.send(id, image);
 	}
 
-	/** @internal Copies data of the texture's size and format into engine memory for its upload. */
-	setData(texture: Texture, data: TextureDataArray, call: string): void {
+	/**
+	 * @internal Copies data of the texture's size and format into engine memory for its upload.
+	 * `fromCanvas` turns the rows over once they arrive, because a canvas counts them from its top
+	 * and a texture from the bottom; the turn runs in the core, where a frame's work belongs.
+	 */
+	setData(texture: Texture, data: TextureDataArray, call: string, fromCanvas = false): void {
 		const { width, height, depth, format } = texture;
 		const values = width * height * depth * 4;
 		if (DEV) {
@@ -1218,6 +1219,7 @@ export class Textures {
 		if (data instanceof Float32Array) toHalfFloats(data, core.view(Uint16Array, address, values));
 		else if (data instanceof Uint16Array) core.view(Uint16Array, address, values).set(data);
 		else core.view(Uint8Array, address, values).set(data);
+		if (fromCanvas) core.glue.turnRows(address, width * 4, height * depth);
 	}
 
 	/** @internal */
