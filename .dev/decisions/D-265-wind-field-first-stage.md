@@ -1,8 +1,8 @@
 # D-265: The wind field's first stage, before a pass keeps its state
 
-Status: decided. Built: stage one, the analytic field in `@null3d/wind`. Not built yet: stage two,
-the advected core with its forces and fixed step, which waits on M3-V13. By the owner's ruling,
-M3-V15 waits for M3-V13 and stays not done until stage two is built. Task: M3-V15.
+Status: decided. Built: stage one, the analytic field in `@null3d/wind`. Built: stage two, the
+advected core with its forces and its fixed step, on M3-V13's pass that keeps its state. Task:
+M3-V15.
 [D-241](D-241-vegetation-foundation.md) puts the fluid wind in an add-on of its own, and
 [D-173](D-173-addon-hooks.md) makes it the twelfth foundation.
 
@@ -120,6 +120,29 @@ divergence, and the projection removes it.
   and `packages/cli/src/check-addon.test.ts` pins it. In a checkout whose plugin has no built files,
   node cannot load the plugin's TypeScript source: the shader gate fails and sizes skips. Build the
   plugin with `bun tools/build-package.ts vite-plugin`, or run the command with bun.
+
+## Stage two, on the pass that keeps its state
+
+M3-V13 landed, and the field now keeps its state. One history pass holds two states of the grid and
+runs the whole cycle. A cycle is the forces and the advection, twenty Jacobi iterations of the
+pressure, and the projection. Its stage rides in the state's fourth number. A frame sets `steps` to
+the runs the sketch time owes, and the engine swaps the states between them.
+
+The step is fixed at a sixtieth of a second. A frame runs the cycles owed. A held frame runs its
+warm-up in the one frame it draws, so a picture of the field is the same on every run.
+
+Each cycle pulls the air toward the analytic field. That field is the base wind, the swirl and the
+traveling gust of place and time. The pushes and the gust are injected where a page sends them. The
+advection then carries them, so a wake outlives the body that made it. Vorticity confinement keeps
+the eddies, and the pressure solve keeps the air from piling up. The box's edge takes the analytic
+air, so the grid and the far field meet there.
+
+Both GPU paths run it. The WebGL2 fragment form reads the state of the run before through
+`effectColor`, which the engine gives an effect. It therefore reaches a texel's neighbours as the
+compute shader does.
+
+`sample` gives the analytic field and the events, not the solved air. The CPU cannot mirror a solve
+that lives on the GPU, so the call keeps its form for a page's own motion.
 
 ## The round 24 audit's findings
 

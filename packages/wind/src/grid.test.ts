@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { CURL_STEP, GROUND_HEIGHT, PUSH_LIFE } from './analytic';
+import { CYCLE_STEPS, PRESSURE_STEPS } from './wind';
 
 /** The text between two markers of a file, trimmed. */
 function marked(file: URL, name: string): string {
@@ -36,16 +37,27 @@ describe('the shaders of the grid', () => {
 		expect(marked(fallbackFile, 'wind-events')).toBe(marked(gridFile, 'wind-events'));
 	});
 
+	test('the two grid forms hold one solver', () => {
+		// The solver's maths is shared, and each form gives it its own way of reading the state.
+		expect(marked(fallbackFile, 'wind-solver')).toBe(marked(gridFile, 'wind-solver'));
+	});
+
 	test('the shaders’ constants are the TypeScript form’s', () => {
 		const steady = marked(gridFile, 'wind-steady');
 		const constant = (text: string, name: string): number => {
-			const match = new RegExp(`const ${name}: f32 = ([0-9.]+);`).exec(text);
+			const match = new RegExp(`const ${name}: (?:f32|i32) = ([0-9.]+);`).exec(text);
 			expect(match).not.toBeNull();
 			return Number(match?.[1]);
 		};
 		expect(constant(steady, 'WIND_GROUND_HEIGHT')).toBe(GROUND_HEIGHT);
 		expect(constant(steady, 'WIND_CURL_STEP')).toBe(CURL_STEP);
 		expect(constant(marked(gridFile, 'wind-events'), 'WIND_PUSH_LIFE')).toBe(PUSH_LIFE);
+		// The step count of a cycle is the same in the shader and in the add-on that asks for it.
+		const solver = marked(gridFile, 'wind-solver');
+		expect(constant(solver, 'WIND_PRESSURE_STEPS')).toBe(PRESSURE_STEPS);
+		// The cycle adds the advection and the projection to the pressure's iterations.
+		expect(solver).toContain('const WIND_CYCLE: i32 = WIND_PRESSURE_STEPS + 2;');
+		expect(CYCLE_STEPS).toBe(PRESSURE_STEPS + 2);
 	});
 
 	test('both forms write the wind the same way', () => {
@@ -53,11 +65,12 @@ describe('the shaders of the grid', () => {
 		// which a leaf reads to flutter harder in a gust.
 		const compute = readFileSync(gridFile, 'utf8');
 		const fallback = readFileSync(fallbackFile, 'utf8');
-		expect(compute).toContain('vec4f(v.x, v.y, v.z, length(v))');
-		expect(fallback).toContain('vec4f(v.x, v.y, v.z, length(v))');
+		// The texture holds the air across the ground, the pressure and the stage, in that order.
+		for (const form of [compute, fallback])
+			expect(form).toContain('vec4f(next.v.x, next.v.y, next.pressure, f32(next.stage))');
 		// The box arrives in the eighth value vector, and the settings in the three before the slots.
-		expect(compute).toContain('let box = block.u7;');
-		expect(fallback).toContain('let box = uniforms.u7;');
+		expect(compute).toContain('block.u7');
+		expect(fallback).toContain('uniforms.u7');
 	});
 });
 
@@ -77,8 +90,10 @@ describe('the sampling function', () => {
 	test('the copy reads the texture inside the box and the steady field outside it', () => {
 		const canonical = marked(fieldFile, 'wind-sample');
 		// A reader declares the texture and the sampler beside it.
-		expect(readFileSync(fieldFile, 'utf8')).toContain('var wind: texture_2d_array<f32>;');
+		expect(readFileSync(fieldFile, 'utf8')).toContain('var wind: texture_2d<f32>;');
 		expect(canonical).toContain('textureSampleLevel(wind, windSampler');
+		// The grid's state gives the air back: the air across the ground, and its speed.
+		expect(canonical).toContain('return vec4f(state.r, 0.0, state.g, length(state.rg));');
 		// A place outside the box, or a device that keeps no grid, reads the analytic far field.
 		expect(canonical).toContain('if (size > 0.0)');
 		expect(canonical).toContain('wind_steady(air, vec3f(world.x, WIND_FULL_HEIGHT, world.z))');

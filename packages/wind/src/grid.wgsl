@@ -1,14 +1,18 @@
-// The wind's grid: one compute pass fills a texture with the air's velocity over a box of ground
-// that follows the camera. Readers sample that texture instead of evaluating the field at each
-// vertex, so a plant, a flag and a smoke card all read the same air with one texture read.
+// The wind's grid: one pass that keeps its state between runs and steps the air forward by a fixed
+// time. A cycle runs as `WIND_CYCLE` runs of this shader, and each run is one stage: the forces and
+// the advection first, then the pressure's Jacobi iterations, then the projection. The stage is
+// kept in the state, so a frame that owes several cycles runs them back to back with `steps`.
+//
+// The state is one texel of four numbers: the air across the ground, the pressure, and the stage.
+// A reader samples it through `shaders/field.wgsl`, which gives the air's layout back.
 //
 // The grid holds the air at the height of a tree's crown. A reader scales it by its own height's
 // factor, which `wind_profile` gives, and works out the same air beyond the box, which
 // `shaders/field.wgsl` holds.
 //
 // The block between the steady-field markers is byte for byte the same as the one in
-// `grid.fallback.wgsl` and in `shaders/field.wgsl`. A test compares them and fails when one is
-// edited alone.
+// `grid.fallback.wgsl` and in `shaders/field.wgsl`, and so is the solver's. A test compares them
+// and fails when one is edited alone. Each shader reads the state with its own `wind_read`.
 #import null3d::noise::{value3}
 
 /// The block that every compute and full-screen pass receives: the render and canvas sizes, the
@@ -31,6 +35,12 @@ struct ComputeBlock {
 
 @group(0) @binding(0) var<uniform> block: ComputeBlock;
 @group(0) @binding(1) var field: texture_storage_2d_array<rgba16float, write>;
+@group(0) @binding(2) var history: texture_2d_array<f32>;
+
+/// The state of one texel of the run before, in the grid's own rows.
+fn wind_read(at: vec2i) -> vec4f {
+    return textureLoad(history, at, 0, 0);
+}
 
 // <wind-steady>
 /// The height over which the air slows to the ground, in meters.
@@ -165,7 +175,7 @@ fn wind_gust(air: WindAir, slot: vec4f, p: vec3f) -> vec3f {
 }
 
 /// The air's velocity at a world place, in meters a second: the steady field, the three pushes and
-/// the gust.
+/// the gust. The solver pulls the air toward this field and starts each cycle from it.
 fn wind_analytic(
     air: WindAir, pushRadius: f32, slot0: vec4f, slot1: vec4f, slot2: vec4f, gust: vec4f, p: vec3f,
 ) -> vec3f {
@@ -183,17 +193,132 @@ fn wind_analytic(
 }
 // </wind-events>
 
+// <wind-solver>
+/// The Jacobi iterations that one cycle runs before it projects the air.
+const WIND_PRESSURE_STEPS: i32 = 20;
+/// The runs that one cycle takes: the forces and the advection, the pressure's iterations, and the
+/// projection.
+const WIND_CYCLE: i32 = WIND_PRESSURE_STEPS + 2;
+/// How fast the air is pulled toward the analytic field each second. The pull is weak enough that
+/// what the air carried from the frames before stays a while.
+const WIND_PULL: f32 = 0.8;
+/// How hard the vorticity confinement keeps the eddies that advection would smooth away.
+const WIND_VORTICITY: f32 = 0.35;
+
+/// The state of one texel: the air across the ground, the pressure, and the stage of the cycle.
+struct WindState {
+    v: vec2f,
+    pressure: f32,
+    stage: i32,
+}
+
+/// The state of a texel, which one outside the grid reads the nearest texel inside.
+fn wind_state(at: vec2i, size: vec2u) -> WindState {
+    let texel = wind_read(clamp(at, vec2i(0), vec2i(size) - 1));
+    return WindState(vec2f(texel.r, texel.g), texel.b, i32(texel.a + 0.5));
+}
+
+/// The curl of the air about the up axis, in a second, at a texel.
+fn wind_curl(at: vec2i, size: vec2u, cell: f32) -> f32 {
+    let right = wind_state(at + vec2i(1, 0), size).v;
+    let left = wind_state(at - vec2i(1, 0), size).v;
+    let up = wind_state(at + vec2i(0, 1), size).v;
+    let down = wind_state(at - vec2i(0, 1), size).v;
+    return (right.y - left.y) / (2.0 * cell) - (up.x - down.x) / (2.0 * cell);
+}
+
+/// The air's velocity of the next cycle at a texel: the analytic field pulls the air that the
+/// advection carried, the vorticity confinement turns the eddies, and the pressure starts again.
+fn wind_advect(
+    air: WindAir, box: vec4f, dt: f32, slots: array<vec4f, 4>,
+    at: vec2i, size: vec2u, state: WindState,
+) -> WindState {
+    let cell = box.z / f32(size.x);
+    let world = vec2f(box.x, box.y) + (vec2f(at) + 0.5) * cell;
+    let pullTo = wind_analytic(
+        air, box.w, slots[0], slots[1], slots[2], slots[3],
+        vec3f(world.x, WIND_FULL_HEIGHT, world.y),
+    );
+    // The advection: the air here comes from where the velocity a step back points.
+    let source = (world - state.v * dt - vec2f(box.x, box.y)) / cell - vec2f(0.5);
+    let base = vec2i(floor(source));
+    let f = fract(source);
+    let s00 = wind_state(base, size).v;
+    let s10 = wind_state(base + vec2i(1, 0), size).v;
+    let s01 = wind_state(base + vec2i(0, 1), size).v;
+    let s11 = wind_state(base + vec2i(1, 1), size).v;
+    let carried = mix(mix(s00, s10, f.x), mix(s01, s11, f.x), f.y);
+    // The first run starts from an empty state, so it takes the analytic air whole.
+    let seed = length(state.v) == 0.0;
+    let pull = select(1.0 - exp(-WIND_PULL * dt), 1.0, seed);
+    var v = mix(carried, pullTo.xz, pull);
+    // The vorticity confinement: the curl's gradient, crossed with the curl, pushes the eddies.
+    let curl = wind_curl(at, size, cell);
+    let right = wind_curl(at + vec2i(1, 0), size, cell);
+    let left = wind_curl(at - vec2i(1, 0), size, cell);
+    let up = wind_curl(at + vec2i(0, 1), size, cell);
+    let down = wind_curl(at - vec2i(0, 1), size, cell);
+    let gradient = vec2f(right - left, up - down) / (2.0 * cell);
+    let magnitude = max(length(gradient), 1e-6);
+    let n = gradient / magnitude;
+    v += vec2f(n.y, -n.x) * WIND_VORTICITY * cell * curl * dt;
+    // The box's edge keeps the analytic air, so the far field and the grid meet there.
+    if (at.x == 0 || at.y == 0 || at.x == i32(size.x) - 1 || at.y == i32(size.y) - 1) {
+        v = pullTo.xz;
+    }
+    return WindState(v, 0.0, 1);
+}
+
+/// One Jacobi iteration of the pressure, whose right side is the air's divergence.
+fn wind_pressure(
+    box: vec4f, dt: f32, at: vec2i, size: vec2u, state: WindState,
+) -> WindState {
+    let cell = box.z / f32(size.x);
+    let left = wind_state(at - vec2i(1, 0), size);
+    let right = wind_state(at + vec2i(1, 0), size);
+    let down = wind_state(at - vec2i(0, 1), size);
+    let up = wind_state(at + vec2i(0, 1), size);
+    let divergence = ((right.v.x - left.v.x) + (up.v.y - down.v.y)) / (2.0 * cell);
+    let pressure = (left.pressure + right.pressure + up.pressure + down.pressure
+        - cell * cell * divergence / dt) * 0.25;
+    return WindState(state.v, pressure, state.stage + 1);
+}
+
+/// The last stage: the air loses the pressure's slope, and the cycle starts again.
+fn wind_project(box: vec4f, dt: f32, at: vec2i, size: vec2u, state: WindState) -> WindState {
+    let cell = box.z / f32(size.x);
+    let left = wind_state(at - vec2i(1, 0), size).pressure;
+    let right = wind_state(at + vec2i(1, 0), size).pressure;
+    let down = wind_state(at - vec2i(0, 1), size).pressure;
+    let up = wind_state(at + vec2i(0, 1), size).pressure;
+    let slope = vec2f(right - left, up - down) / (2.0 * cell);
+    return WindState(state.v - slope * dt, state.pressure, 0);
+}
+
+/// One run of the solver at a texel: the stage that the state names, as the next state.
+fn wind_step(
+    air: WindAir, box: vec4f, dt: f32, slots: array<vec4f, 4>,
+    at: vec2i, size: vec2u, state: WindState,
+) -> WindState {
+    if (state.stage == 0) { return wind_advect(air, box, dt, slots, at, size, state); }
+    if (state.stage <= WIND_PRESSURE_STEPS) {
+        return wind_pressure(box, dt, at, size, state);
+    }
+    return wind_project(box, dt, at, size, state);
+}
+// </wind-solver>
+
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3u) {
     let size = vec2u(block.drawn.xy);
     if (id.x >= size.x || id.y >= size.y) { return; }
-    let air = wind_air(block.u0, block.u1, block.u2);
-    // The box's near corner across the ground, its size and the push radius, from the eighth vector.
-    let box = block.u7;
-    let uv = (vec2f(id.xy) + 0.5) / vec2f(size);
-    let place = vec3f(box.x + uv.x * box.z, WIND_FULL_HEIGHT, box.y + uv.y * box.z);
-    let v = wind_analytic(air, box.w, block.u3, block.u4, block.u5, block.u6, place);
-    // The texture holds the wind across the ground and, in its fourth channel, how fast the air
-    // moves there, which a leaf reads to flutter harder in a gust.
-    textureStore(field, vec2i(id.xy), 0, vec4f(v.x, v.y, v.z, length(v)));
+    let at = vec2i(id.xy);
+    let before = textureLoad(history, at, id.z, 0);
+    let state = WindState(vec2f(before.r, before.g), before.b, i32(before.a + 0.5));
+    var air = wind_air(block.u0, block.u1, block.u2);
+    air.time = block.clock.x;
+    // The slots arrive in the fourth to seventh vectors; the first three hold the settings.
+    let slots = array<vec4f, 4>(block.u3, block.u4, block.u5, block.u6);
+    let next = wind_step(air, block.u7, block.u0.x, slots, at, size, state);
+    textureStore(field, at, id.z, vec4f(next.v.x, next.v.y, next.pressure, f32(next.stage)));
 }

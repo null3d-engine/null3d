@@ -32,6 +32,7 @@ function context(
 				return pass;
 			},
 			setPassUniforms: () => {},
+			setPassSteps: () => {},
 			removePass: () => {},
 		},
 		textures: {

@@ -20,7 +20,7 @@ flowchart LR
     cpu["sample:<br/>the same field<br/>on the CPU"] --> page["Your sketch's<br/>own motion"]
 ```
 
-`@null3d/wind` makes the air in a scene. One field moves every plant, flag and smoke card that reads it. A gust that crosses a field therefore reaches all of them together. The air is a rule of place and time. A steady wind slows near the ground. A gust travels through it. Swirls turn without piling up. A page can also shove the air at a point, as a body moving through it does.
+`@null3d/wind` makes the air in a scene. One field moves every plant, flag and smoke card that reads it, so a gust that crosses a field reaches all of them together. The air is solved: a grid that follows the camera carries it from frame to frame. A gust therefore bends through the scene, and a body leaves a wake that outlives it. A steady wind slows near the ground, and swirls turn without piling up. A page can also shove the air at a point, as a body moving through it does.
 
 ```sh
 bun add @null3d/wind
@@ -63,8 +63,8 @@ Call `update` once in each frame. It places the box about the camera and sends t
 | `setBase(speed, heading)` | The steady wind in meters a second, and the heading it blows toward in radians. |
 | `gust(at, strength)` | Sends a gust from a ground place `[x, z]`. Its wave then travels along the heading, turning the air as it passes. |
 | `push(at, strength)` | Shoves the air about a ground place, as a body moving through it does. A negative strength turns the other way. |
-| `sample(x, y, z, out)` | The air at a world place, in meters a second, from the same rule that the GPU draws. It writes `[x, y, z]` into `out`. |
-| `update()` | Places the box about the camera and sends the values. Call it once in each frame. |
+| `sample(x, y, z, out)` | The analytic air at a world place, in meters a second: the field that the solver pulls toward, with the pushes and the gust it injects. It writes `[x, y, z]` into `out`. The solved air is on the GPU. |
+| `update()` | Places the box about the camera, runs the steps that the sketch time owes and sends the values. Call it once in each frame. |
 | `destroy()` | Removes the pass and its texture. |
 | `field` | The texture, its box and the steady settings that a reader works the air out from beyond the box. |
 
@@ -77,7 +77,7 @@ A material reads the field with one texture. `field.texture` holds the air over 
 ```wgsl
 #import null3d::noise::{value3}
 
-var wind: texture_2d_array<f32>;
+var wind: texture_2d<f32>;
 
 // <wind-steady>
 /// The height over which the air slows to the ground, in meters.
@@ -202,14 +202,17 @@ fn wind_reading(base: vec4f, gust: vec4f, swirl: vec4f, time: f32) -> WindAir {
 }
 
 /// The air at a world place: the wind across the ground in red and blue, the wind's rise in green,
-/// and its speed in alpha, at the height the field's texture holds it. Inside the box the texture
-/// gives it, with one read. Outside the box, and on a device that keeps no grid, the steady field
-/// gives it, so the air carries on past the box instead of holding the box's edge.
+/// and its speed in alpha, at the height the field's texture holds it. Inside the box the grid's
+/// state gives it, with one read. Outside the box, and on a device that keeps no grid, the steady
+/// field gives it, so the air carries on past the box instead of holding the box's edge.
 fn wind_sample(world: vec3f, origin: vec2f, size: f32, air: WindAir) -> vec4f {
     if (size > 0.0) {
         let uv = (vec2f(world.x, world.z) - origin) / size;
         if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
-            return textureSampleLevel(wind, windSampler, uv, 0, 0.0);
+            // The grid keeps the air across the ground in red and green, the pressure in blue and
+            // the step of its cycle in alpha.
+            let state = textureSampleLevel(wind, windSampler, uv, 0.0);
+            return vec4f(state.r, 0.0, state.g, length(state.rg));
         }
     }
     let v = wind_steady(air, vec3f(world.x, WIND_FULL_HEIGHT, world.z));
@@ -254,17 +257,24 @@ The box follows the camera, so update the material's `origin` values in each fra
 
 A vertex offset that reads the field orders the pass before every pass that draws the material. The shadows and the motion vectors therefore move with the plant.
 
-## What the field is, and what it cannot do yet
+## What the field is
 
-The air is a rule of place and time, so a held frame draws the same picture on every run and GPU. It keeps no state between frames. A gust sent with `gust` travels along the heading, but no gust grows or spreads by itself. A wake lasts only as long as the pushes that made it.
+The field keeps its state between frames. One pass holds two states and steps the air forward by a fixed sixtieth of a second at a time. It runs as many steps as the sketch time owes.
 
-The field is incompressible: its swirl is the curl of one stream function, and a push is a vortex. So the air never piles up at a point.
+Each cycle pulls the air toward an analytic field of place and time. It injects the pushes and the gust, and keeps the eddies with vorticity confinement. It solves the pressure, and takes the pressure's slope out of the air, so the air never piles up. A wake therefore lasts after the body that made it has gone, and a gust sent upwind crosses the scene.
 
-Beyond its box the field carries on. The box sets the detail, not the field's extent. So a plant past the box reads the air at its own place, not the box's edge.
+A held frame steps the same field in the one frame it draws. A picture of it is therefore the same on every run and on every GPU.
+
+Beyond its box the field carries on. The box sets the detail, not the field's extent. So a plant past the box reads the air at its own place.
+
+The far field is the analytic field, at the height that the grid samples at, so the two meet at the box's edge.
+
+The field cannot yet take a preset's settings without a reseed. A frame runs one cycle however slow it is. On a device that holds fewer than sixty frames a second, the field therefore runs slower than the sketch's clock.
 
 ## Costs and limits
 
-- The pass fills one `rgba16float` texture of `grid` by `grid` texels, once in each frame. A reader spends one texture slot on it.
+- The pass fills one `rgba16float` texture of `grid` by `grid` texels, and holds two states of it. A reader spends one texture slot on it.
+- One cycle takes 22 runs of the pass, and the add-on runs one cycle for each sixtieth of a second of sketch time. A page at sixty frames a second therefore runs one cycle a frame.
 - A vertex inside the box costs one texture read. A vertex outside it costs the steady field's arithmetic instead: four reads of the engine's value noise, with a few trigonometric and exponential calls.
 - A device without float render targets cannot hold the grid, so it keeps no pass. There `field.size` is zero and a reader's samples are the steady field worked out, so a plant still moves. The texture it declares holds a single black texel that it never reaches.
 - A point far from the camera loses the grid's detail and reads the steady wind alone. That is the base wind, the swirl and the field's own traveling gust. A body's pushes and a sent gust are gone there.
