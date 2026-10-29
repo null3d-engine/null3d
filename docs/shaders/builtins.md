@@ -110,6 +110,7 @@ The values above that a material does not read cost it nothing. A few inputs cos
 | `uv1` | One more vertex attribute, the mesh's second texture coordinates |
 | `instance`, `object.id` | A search per vertex in a small table of the scene's batches, which the engine keeps while a material reads them |
 | `object.worldMatrix`, `object.normalMatrix` | Three more values from the vertex stage to the fragment stage, in materials whose surface function runs |
+| `vertexRecord` | The mesh's four-number vertex record, one more vertex attribute, which a vertex offset reads |
 
 The pixel's position, the camera's values and `object.position` cost nothing.
 

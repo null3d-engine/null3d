@@ -899,6 +899,10 @@ struct VertexIn {
 #ifdef MORPH
     @location(8) morph: vec2f,
 #endif
+#ifdef CUSTOM_TARGET
+    /// The four-number record of a generated mesh, which a vertex offset reads.
+    @location(8) vertex_record: vec4f,
+#endif
 }
 
 struct VertexOut {
@@ -994,6 +998,11 @@ struct VertexInput {
 #ifdef OBJECT_IDS
     /// The instance's index in its batch: 0 for an object of the scene.
     instance: u32,
+#endif
+#ifdef CUSTOM_TARGET
+    /// The mesh's four-number vertex record: a generated shape writes the position that the vertex
+    /// takes at a coarser level of detail and that level's error, or whatever the shape needs.
+    vertexRecord: vec4f,
 #endif
 }
 #endif
@@ -1574,6 +1583,9 @@ fn vertex_input(v: VertexIn, position: vec3f, normal: vec3f, ids: vec2u) -> Vert
 #endif
 #ifdef OBJECT_IDS
     input.instance = ids.x;
+#endif
+#ifdef CUSTOM_TARGET
+    input.vertexRecord = v.vertex_record;
 #endif
     return input;
 }

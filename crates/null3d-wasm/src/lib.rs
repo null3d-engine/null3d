@@ -2273,8 +2273,9 @@ fn staged_arrays(
         (has(mesh_arrays::TANGENTS), 4, 4),
         (has(mesh_arrays::JOINTS), 6, 4),
         (has(mesh_arrays::WEIGHTS), 7, 4),
+        (has(mesh_arrays::TARGETS), 8, 4),
     ];
-    let mut arrays = [None; 8];
+    let mut arrays = [None; 9];
     let mut at = 0;
     for (array, &(present, location, per_vertex)) in arrays.iter_mut().zip(&staged) {
         if !present {
@@ -2305,6 +2306,7 @@ fn staged_arrays(
         tangents,
         joints,
         weights,
+        targets,
     ] = arrays;
     Some(MeshArrays {
         positions: positions?,
@@ -2316,6 +2318,7 @@ fn staged_arrays(
         tangents,
         joints,
         weights,
+        targets,
         indices: has(mesh_arrays::INDICES).then(|| &words[at..]),
         compute_normals: has(mesh_arrays::COMPUTE_NORMALS),
         compute_tangents: has(mesh_arrays::COMPUTE_TANGENTS),

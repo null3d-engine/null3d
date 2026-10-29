@@ -316,6 +316,7 @@ const mesh = geometry.fromArrays({
   uvs, uvs1, colors,        // 2, 2, and 3 or 4 per vertex; colors are linear
   tangents,                 // 4 per vertex, or computeTangents: true (needs uvs)
   joints, weights,          // (0.2) 4 per vertex each, together, for skinning
+  targets,                  // (0.3) 4 per vertex for a generated shape's level morph, which a custom material's vertex offset reads as input.vertexRecord; not with morphTargets
   indices,                  // Uint16Array, Uint32Array or number[]; omit for one triangle per 3 vertices
   morphTargets: { positions: [smile, blink], normals, names: ['Smile', 'Blink'] },  // (0.2) deltas, 3 per vertex per target
   // morphTargets.colors: color deltas, as many per vertex as colors; morphed colors clamp to 0..1

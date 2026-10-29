@@ -282,7 +282,7 @@ impl Triangles for MeshTriangles<'_> {
 }
 
 /// The last vertex shader location whose attribute takes updates: the colors. Joints, weights and
-/// the morph attribute follow it.
+/// the record follow it.
 const LAST_UPDATABLE: usize = 5;
 
 /// A vertex that the part being built does not use yet.
@@ -415,7 +415,7 @@ impl MeshStorage {
         }
         let attribute = vertex::ATTRIBUTES
             .get(location)
-            .filter(|_| location <= LAST_UPDATABLE)
+            .filter(|_| location <= LAST_UPDATABLE || location == MORPH_LOCATION)
             .ok_or(UpdateError::NoAttribute)?;
         let ty = vertex::type_of(mesh.format, location).ok_or(UpdateError::NoAttribute)?;
         let offset = vertex::offset(mesh.format, location).ok_or(UpdateError::NoAttribute)?;
@@ -2290,6 +2290,24 @@ mod tests {
             page.vertices[at + 12..at + 16],
             mesh.vertices[at + 12..at + 16]
         );
+    }
+
+    #[test]
+    fn the_record_of_a_generated_mesh_takes_updates() {
+        let mesh = grid(1, 1, vertex::MORPH);
+        let mut storage = MeshStorage::new(Packing::SharedBuffers);
+        let id = storage.add(&mesh).unwrap();
+        let record: Vec<f32> = (0..16).map(|k| k as f32 * 0.125).collect();
+        let bytes = float_bytes(&record);
+        assert_eq!(storage.update_vertices(id, 8, 4, 0, 4, &bytes), Ok(true));
+        // Every vertex keeps its four values, one whole word each.
+        let stride = mesh.stride();
+        let page = &storage.pages()[0];
+        let at = vertex::offset(mesh.format, 8).unwrap() as usize;
+        for v in 0..4 {
+            let start = v * stride + at;
+            assert_eq!(page.vertices[start..start + 16], bytes[v * 16..v * 16 + 16]);
+        }
     }
 
     #[test]
