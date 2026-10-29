@@ -92,6 +92,7 @@ export function isShaderModule(name: string): boolean {
 	return (
 		name === 'shaders.ts' ||
 		name === 'shader-features.ts' ||
+		name === 'shader-permutations.ts' ||
 		/^shaders-[a-z0-9-]+-(wgsl|glsl)\.ts$/.test(name) ||
 		// A target's table of builds that need several features, one file for each family and each
 		// value of the half-precision bit: `shaders-wgsl-combos-bump` and

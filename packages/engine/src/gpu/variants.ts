@@ -3,7 +3,8 @@
 // backend builds a render pipeline from the variant that the pipeline's permutation word names.
 
 import { PERMUTATION_DRAW_INDEX, PERMUTATION_HALF, PERMUTATION_TONE_MAP } from '../generated/gpu';
-import { LISTED_PERMUTATIONS, type ShaderVariant, type ShaderVariants } from '../generated/shaders';
+import { LISTED_PERMUTATIONS } from '../generated/shader-permutations';
+import type { ShaderVariant, ShaderVariants } from '../generated/shaders';
 
 /** The variant built with exactly the bits of `permutation`, with output for `target`. */
 function exactly<Pipeline extends string>(

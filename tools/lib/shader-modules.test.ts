@@ -131,6 +131,7 @@ describe('the shader modules', () => {
 		expect(isShaderModule('shaders-glsl-combos-half.ts')).toBe(true);
 		expect(isShaderModule('shaders-glsl-draw-index.ts')).toBe(false);
 		expect(isShaderModule('shader-features.ts')).toBe(true);
+		expect(isShaderModule('shader-permutations.ts')).toBe(true);
 		expect(isShaderModule('shaders-environment-wgsl.ts')).toBe(true);
 		// A target's table of shared paragraphs is plain JavaScript beside the device modules. Its
 		// name carries no `shaders-` prefix, so the offline file list reads it as no feature.
