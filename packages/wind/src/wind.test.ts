@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { Camera, SketchContext } from '@null3d/engine';
 import ts from 'typescript';
-import { createWind, holdsField } from './wind';
+import { CYCLE_STEPS, createWind, holdsField, STEP_SECONDS } from './wind';
 
 /** A camera that stands at the world's origin. */
 const camera = {
@@ -21,18 +21,23 @@ function context(
 	tier = 'webgpu',
 	features: string[] = [],
 	passes?: { count: number },
+	steps?: number[],
+	options?: unknown[],
 ): SketchContext {
 	const pass = { enabled: true, live: true };
 	return {
 		time: { now: 1 },
 		engine: { capabilities: { tier, features } },
 		render: {
-			addPass: () => {
+			addPass: (given: unknown) => {
 				if (passes) passes.count++;
+				options?.push(given);
 				return pass;
 			},
 			setPassUniforms: () => {},
-			setPassSteps: () => {},
+			setPassSteps: (_pass: unknown, count: number) => {
+				steps?.push(count);
+			},
 			removePass: () => {},
 		},
 		textures: {
@@ -69,6 +74,29 @@ describe('the field that a reader samples', () => {
 		expect(passes.count).toBe(0);
 		expect(wind.field.size).toBe(0);
 		expect(wind.field.air.base).toEqual([4, 0, 0.65, 0]);
+	});
+
+	test('the pass keeps its state and runs the steps that the sketch time owes', () => {
+		const steps: number[] = [];
+		const options: unknown[] = [];
+		const ctx = context('webgpu', [], undefined, steps, options);
+		const wind = createWind(ctx, { camera, grid: 8 });
+		// The stub's clock starts at one second, so the first frame runs a sixtieth of a second's
+		// cycles from the start of the sketch.
+		expect(options[0]).toMatchObject({
+			kind: 'compute',
+			history: true,
+			format: 'rgba16float',
+			steps: CYCLE_STEPS,
+		});
+		expect(steps[0]).toBe(60 * CYCLE_STEPS);
+		// A frame that adds a sixtieth of a second owes one cycle, and a frame that adds nothing
+		// owes none.
+		(ctx.time as { now: number }).now = 1 + STEP_SECONDS;
+		wind.update();
+		expect(steps[1]).toBe(CYCLE_STEPS);
+		wind.update();
+		expect(steps[2]).toBe(0);
 	});
 
 	test('a box of no width keeps no grid either, so every sample is the steady field', () => {
