@@ -109,6 +109,12 @@ export const CYCLE_STEPS = PRESSURE_STEPS + 2;
 export const STEP_SECONDS = 1 / 60;
 /** The most cycles that one frame runs, which a held frame's warm-up asks for. */
 const MAX_CYCLES = 600;
+/**
+ * The cycles that the field is warmed up by when a page makes it, in sixtieths of a second. A held
+ * frame draws one frame and runs none of the sketch's code, so the field must be developed before
+ * that frame draws.
+ */
+export const WARMUP_CYCLES = 60;
 
 /** How strong a gust is when the page names no strength. */
 const GUST = 7;
@@ -147,7 +153,9 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	// The solver runs one fixed step per cycle. A frame sets the runs that the sketch time owes,
 	// so the air keeps the same pace whatever the frame rate, and a held frame runs its warm-up in
 	// the one frame it draws.
-	let solved = 0;
+	// The warm-up stands in for the second of air before the first frame, so the steps that the
+	// sketch time owes start after it.
+	let solved = WARMUP_CYCLES * STEP_SECONDS;
 	const owedSteps = (): number => {
 		// The sketch time is a sum of frame times, so a frame that owes exactly one step can read a
 		// hair under it.
@@ -227,10 +235,14 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		air: createReading(air),
 	};
 	// The box follows the camera and the pushes fade, so the values go up in every frame.
+	let warm = true;
 	const apply = (): void => {
 		write();
 		if (pass) {
-			ctx.render.setPassSteps(pass, owedSteps());
+			// The first frame warms the field up, and every frame after it runs the cycles owed.
+			const steps = warm ? WARMUP_CYCLES * CYCLE_STEPS : owedSteps();
+			warm = false;
+			ctx.render.setPassSteps(pass, steps);
 			ctx.render.setPassUniforms(pass, values);
 		}
 		field.origin[0] = values[28] as number;

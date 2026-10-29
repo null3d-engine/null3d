@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { Camera, SketchContext } from '@null3d/engine';
 import ts from 'typescript';
-import { CYCLE_STEPS, createWind, holdsField, STEP_SECONDS } from './wind';
+import { CYCLE_STEPS, createWind, holdsField, STEP_SECONDS, WARMUP_CYCLES } from './wind';
 
 /** A camera that stands at the world's origin. */
 const camera = {
@@ -81,15 +81,14 @@ describe('the field that a reader samples', () => {
 		const options: unknown[] = [];
 		const ctx = context('webgpu', [], undefined, steps, options);
 		const wind = createWind(ctx, { camera, grid: 8 });
-		// The stub's clock starts at one second, so the first frame runs a sixtieth of a second's
-		// cycles from the start of the sketch.
+		// The first frame runs the warm-up, whatever the sketch time, and then the cycles owed.
 		expect(options[0]).toMatchObject({
 			kind: 'compute',
 			history: true,
 			format: 'rgba16float',
 			steps: CYCLE_STEPS,
 		});
-		expect(steps[0]).toBe(60 * CYCLE_STEPS);
+		expect(steps[0]).toBe(WARMUP_CYCLES * CYCLE_STEPS);
 		// A frame that adds a sixtieth of a second owes one cycle, and a frame that adds nothing
 		// owes none.
 		(ctx.time as { now: number }).now = 1 + STEP_SECONDS;
