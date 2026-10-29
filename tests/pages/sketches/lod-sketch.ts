@@ -10,7 +10,9 @@
 // draws white and the picture shows the fault, `?shadows` draws one
 // large copy in front of a wall, whose shadow draws a coarser level than the copy itself, `?hide`
 // raises the threshold and places copies around the hide distance, and `?range` gives every copy a
-// distance band, with rows of copies around its start and its end.
+// distance band, with rows of copies around its start and its end. With `?batch` the copies are the
+// rows of one batch, and with `?rows` each row takes its band through the batch's own range array,
+// with no batch-wide call, so the picture holds only when the engine reads every row's two floats.
 import { defineSketch, type MeshArrays, type Vec3 } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -169,6 +171,19 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 				onRay(sign < 0 ? side * edge : edge / side, (k - 1) * 0.7, row === 0 ? 0.3 : -0.3),
 			),
 		);
+		if (params.has('rows')) {
+			// Every row's band goes into the array alone, with no batch-wide range: the engine reads
+			// each row's two floats when it rebuilds its draw tables.
+			const batch = scene.createInstances(base, spots.length, { material, ranges: true });
+			batch.positions.set(spots.flat());
+			batch.markDirty();
+			const ranges = batch.ranges as Float32Array;
+			for (let row = 0; row < spots.length; row++) {
+				ranges[row * 2] = BAND[0];
+				ranges[row * 2 + 1] = BAND[1];
+			}
+			return;
+		}
 		if (params.has('batch')) {
 			const batch = scene.createInstances(base, spots.length, { material });
 			batch.positions.set(spots.flat());

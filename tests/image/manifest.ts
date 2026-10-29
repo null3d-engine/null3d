@@ -2536,6 +2536,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'lod-range',
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// Each row's band goes into the batch's own range array, with no batch-wide call, so the image
+	// holds only when the engine reads every row's two floats.
+	{
+		name: 'lod-range-rows',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?range&rows',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod-range',
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// A bound that covers fewer pixels than the threshold draws nothing: the last level holds no
 	// geometry. Three copies stand at 95%, 103% and 109% of that distance, the second inside the
 	// band that thins the last level out with the dither. Every GPU path must draw the first's
@@ -3260,6 +3270,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: `${CAR_PAINT_SKETCH}?weave=on`,
 		hold: 0,
 		timeoutSeconds: 120,
+	},
+	// The paint lit by a spot where its point light stood. The spot's lobe must light the body and
+	// its flakes as the point light's does, so the image is the first test's within a step.
+	{
+		name: 'car-paint-spot',
+		sketch: `${CAR_PAINT_SKETCH}?spot=on`,
+		hold: 0,
+		timeoutSeconds: 120,
+		reference: 'car-paint',
+		tolerance: { maxDiffRatio: 0.005 },
 	},
 	// Weighted blending: crossing panes of glass and overlapping puffs blend in any order in the
 	// camera's weighted layer, over a pane of normal blending.

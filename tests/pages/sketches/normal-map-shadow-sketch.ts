@@ -9,6 +9,11 @@
 // does not reach. ?sun=off gives the sun no light, so the frame keeps only the ambient light, the
 // floor that a fully shadowed texel shows. ?mapSize= sets the shadow map's texels on each side, and
 // ?tilt= the normal map's steepest slope.
+//
+// ?light=point or ?light=spot stands a light above the box in the sun's place, so the receiver
+// plane of a point or spot shadow meets the normal map too. ?power=off gives that light no light,
+// the floor, and ?bump=off leaves the normal map out, so a run of it draws the shadow that the
+// ground's own plane casts. The spec reads the true shadow from that pair.
 import { defineSketch } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -20,6 +25,12 @@ const TILT = Number(params.get('tilt') ?? 2);
 const SHADOWS_VIEW = params.get('view') === 'shadows';
 /** True when the sketch module's ?sun=off switch leaves the sun out. */
 const NO_SUN = params.get('sun') === 'off';
+/** The light above the box: 'point' or 'spot', from the sketch module's ?light switch. */
+const LIGHT = params.get('light');
+/** False when the sketch module's ?power=off switch gives the light no light. */
+const POWER = params.get('power') !== 'off';
+/** True when the sketch module's ?bump=off switch leaves the normal map out. */
+const NO_BUMP = params.get('bump') === 'off';
 
 /** The texels on each side of the normal map. */
 const TEXELS = 64;
@@ -63,28 +74,47 @@ export default defineSketch(({ scene, materials, geometry, textures, quality, de
 			far: 120,
 		}),
 	);
-	scene.createDirectionalLight({
-		direction: SUN,
+	if (LIGHT === null)
+		scene.createDirectionalLight({
+			direction: SUN,
+			color: '#ffffff',
+			intensity: NO_SUN ? 0 : 3,
+			castShadows: true,
+			shadow: { cascades: 2, mapSize: MAP_SIZE, distance: 40 },
+		});
+	// The light of the ?light switch stands straight above the box, so the box's own footprint is
+	// the shadow that the ground's plane casts.
+	const above = {
+		position: [0, 8, 0] as const,
 		color: '#ffffff',
-		intensity: NO_SUN ? 0 : 3,
+		intensity: POWER ? 200 : 0,
+		range: 30,
 		castShadows: true,
-		shadow: { cascades: 2, mapSize: MAP_SIZE, distance: 40 },
-	});
-	scene.createAmbientLight({ color: '#ffffff', intensity: 0.4 });
+	};
+	if (LIGHT === 'point') scene.createPointLight(above);
+	else if (LIGHT === 'spot')
+		scene.createSpotLight({ ...above, direction: [0, -1, 0], angle: 1, penumbra: 0 });
+	// The light paths keep a lower ambient floor than the sun's, so a texel that the light does not
+	// reach stands out from one that it does.
+	scene.createAmbientLight({ color: '#ffffff', intensity: LIGHT === null ? 0.4 : 0.12 });
 	scene.createMesh({
 		mesh: geometry.plane({ width: 60, height: 60 }),
 		material: materials.standard({
 			color: '#b0a898',
 			roughness: 0.9,
-			normalMap: textures.fromData({
-				width: TEXELS,
-				height: TEXELS,
-				data: domeTexels(),
-				colorSpace: 'linear',
-				wrap: 'repeat',
-				mipmaps: false,
-			}),
-			uvTransform: { repeat: [8, 8] },
+			...(NO_BUMP
+				? {}
+				: {
+						normalMap: textures.fromData({
+							width: TEXELS,
+							height: TEXELS,
+							data: domeTexels(),
+							colorSpace: 'linear',
+							wrap: 'repeat',
+							mipmaps: false,
+						}),
+						uvTransform: { repeat: [8, 8] },
+					}),
 		}),
 		rotation: FLAT,
 		receiveShadows: true,
