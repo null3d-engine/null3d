@@ -145,15 +145,18 @@ fn the_compute_pass_and_the_walk_share_one_level_rule() {
         "the shader's parent test moved"
     );
     // The walk draws while the error is under the distance, and not when the two are equal, as
-    // the shader's `>=` refuses.
+    // the shader's `>=` refuses. A patch that has a child compares its own error; the child below
+    // it has no child of its own, so it draws at every distance in place of the patches that have
+    // not arrived.
     let tree = PatchTree::new(
-        vec![0, 1, 2],
-        vec![[0.0, 0.0, 0.0, 1.0]],
-        vec![[0, 3, 0, 0.1f32.to_bits()]],
+        vec![0, 1, 2, 0, 1, 2],
+        vec![[0.0, 0.0, 0.0, 1.0]; 2],
+        vec![[0, 3, 0, 0.1f32.to_bits()], [3, 3, 1, 0.0f32.to_bits()]],
         0,
         3,
     )
     .unwrap();
     assert!(!tree.draws(0, 100.0, 1.0, 10.0), "the boundary is open");
     assert!(tree.draws(0, 100.0, 1.0, 10.001));
+    assert!(tree.draws(1, 100.0, 1.0, 10.0), "the frontier draws");
 }
