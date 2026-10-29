@@ -47,10 +47,11 @@ The overlay lists the frame's steps in the card's order. The work bars come firs
 
 ## Consequences
 
-- The water add-on declares its reflection pass as its GPU scope. The overlay shows the pass's time on the water row. The add-on's memory figure counts its mesh arrays, its foam texture and its reflection target.
+- The water add-on declares its reflection pass as its GPU scope. The overlay shows the pass's time on the water row. The add-on's memory figure counts the mesh arrays and the foam texture that it made; the reflection target is the render graph's.
 - Each feature host sends its add-on's name with its figures, and the page keeps one list for each add-on. Two add-ons on one page show side by side, and an add-on that stops keeps the other's rows.
 - A feature reads its figures afresh when the add-on calls `refresh` on its handle. Use it for a memory figure that changes after the link is made, such as the splats batch's row count.
 - The splats add-on draws inside the transparent pass and reports no GPU time. The subsection above states what each path allows for a timestamp inside that pass. WebGL2 could widen its timer to time the draw. WebGPU cannot without the optional feature, which this Mac's Chrome lacks.
 - `FeatureStats.scope` and `FrameStats.gpuSteps` are public. The `place` of each is internal and the docs leave it out.
+- `tests/image/water-stats.spec.ts` draws a small lake with the water add-on and reads its overlay row on WebGPU and WebGL2. It checks the Medium cadence and budget, the memory, and the reflection pass's GPU time where the device times passes. It then switches to Low and checks that the cadence follows.
 - The GPU check's prepared pages carry a stamp of the commit and the working tree. Every commit makes them stale, so its four minutes of timing come after a full page build.
 - `docs/api/features.md`, `docs/api/debug.md` and `docs/guides/debugging.md` describe the scope, the steps and the limit of seven passes.

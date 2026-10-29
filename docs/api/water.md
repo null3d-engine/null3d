@@ -152,9 +152,9 @@ window overhead, and turns the light back past that window's edge.
   Medium, so it costs half as much on average there, and every frame on High and Ultra. When frames
   take too long, the frame-budget governor doubles the wait, up to every 16th frame. The stats
   overlay shows the cadence as `reflectionEvery`. It shows the pass's GPU time and its share of a
-  frame as the water row's budget. It also shows the memory of the reflection target, the mesh
-  arrays and the foam texture that the add-on made. `reflectionEvery` replaces the preset's
-  cadence. The pass costs no pipeline of its own, and its texture goes with `destroy`.
+  frame as the water row's budget. It also shows the memory of the mesh arrays and the foam texture
+  that the add-on made. The reflection target is the render graph's. `reflectionEvery` replaces the
+  preset's cadence. The pass costs no pipeline of its own, and its texture goes with `destroy`.
 - **Transmission.** The surface lets light through, so the engine copies the scene's colors in the
   frame that the water draws. The water draws both faces.
 - **Nothing before its first use.** A page that never creates water downloads none of the add-on.
