@@ -75,12 +75,15 @@ impl Layout {
         }
     }
 
-    /// True when a bucket of the layout draws `mesh` at some level: a source of the mesh exists in
-    /// the scene, whatever the view shows.
+    /// True when a bucket of the layout draws `mesh` at some level or draws its tree of cluster
+    /// patches: a source of the mesh exists in the scene, whatever the view shows. A staged band's
+    /// warm-up counts the frames that drew the tree, as a staged level's counts those that drew
+    /// the level.
     fn draws_mesh(&self, mesh: u32) -> bool {
         self.level_buckets
             .iter()
             .any(|&bucket| key_level(self.buckets[bucket as usize].mesh_key).0 == mesh)
+            || self.clusters.iter().any(|cluster| cluster.mesh == mesh)
     }
 
     /// Counts the copies that `views` place in each bucket, and gives each bucket a slice of that
