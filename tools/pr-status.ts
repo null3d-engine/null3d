@@ -43,14 +43,12 @@ const INCOMPLETE = new Set([
 	'M3-V4',
 	'M3-F2',
 	'M3-K9',
-	'M3-E4',
 	'M3-V6',
 	'M3-E8',
 	'M3-R22',
 	'M3-L4',
 	'M3-V5',
 	'M3-R19',
-	'M3-V1',
 	'M3-E1',
 	'M3-F14',
 	'M3-K3',
@@ -125,14 +123,10 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"three tracked records of 27 October time the 78-variant generator on the Mac (65.2 to 77.7 ms), the owner's iPad (79.6 to 94.8) and the S25 (137.9 to 163.0), each with its memory, and the entry's 50 ms figure is an older 24-variant run. What is owed is the iPad budget, a check-addon run, and proof on both GPU paths",
 	'M3-F2':
 		"the cloud that arrives as 100,000 splats used to become one chunk and could not stream; `chunks.ts` now cuts it into up to eight, which landed in `dcbacc193`. The streaming test's last recorded CI failure predates that change and no pass has been recorded since, so the fix is in the tree and unproved",
-	'M3-E4':
-		'the owner ruled that the combined hook stands as approved, so the table answers hard rule 8 in its own favour; what is left is the proof run with the depth input removed',
 	'M3-V6':
 		'the same placement is shown on two Android phones in Chrome and on an iPad in Safari 26.6.1, so a second JavaScript engine has placed the same points (`.dev/tested-devices/ipad-pro-13-safari/20261027-000756-vegetation-scatter.md`, two passed, both paths); the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
 	'M3-V5':
 		"every vegetation picture passes in both reference sets on both GPUs and the crowns keep their coverage at three distances, and the leaf cells now hold a spray of lobed, veined, damaged leaves instead of one smooth shape. Its author's verdict is that the atlas is at least as good as Creek's as a texture, and that the crown is still paler and flatter because the material lights it with one uniform light while Creek's texture carries painted shadowing, which belongs to M3-V7. The task's line asks the owner to judge the two side by side, and the paint time per device is owed too",
-	'M3-V1':
-		"Creek's WebGPU figure is in the S25's vegetation run but not yet in D-241's data, which still says there is none; D-241 budgets Low and Medium only, so High and Ultra, and the later V tasks' own budgets per preset, are owed",
 };
 
 /** The plan's groups, by the first letter of a task's part, in the plan's order. */
