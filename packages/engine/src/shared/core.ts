@@ -161,6 +161,12 @@ export interface CoreGlue extends CoreErrors {
 	 * frame, where the path culls on the CPU, or `CORE_NOT_COUNTED` where the GPU culls.
 	 */
 	occludedEntries(frame: number): number;
+	/**
+	 * The ranges of cluster-tree patches that a recorded frame's camera view draws, where the path
+	 * walks the trees, or `CORE_NOT_COUNTED` where the GPU picks the patches itself. Zero where
+	 * the view draws the trees' whole levels.
+	 */
+	patchRanges(frame: number): number;
 	/** True when the last recorded frame rebuilt its draw tables after a structure change. */
 	drawTablesRebuilt(): boolean;
 	/** True when the last recorded frame's still view has accumulated enough frames to rest. */
@@ -1287,6 +1293,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'recordFrame',
 	'visibleEntries',
 	'occludedEntries',
+	'patchRanges',
 	'drawTablesRebuilt',
 	'resetGpu',
 	'drawListAddress',

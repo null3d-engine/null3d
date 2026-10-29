@@ -27,6 +27,7 @@ import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import {
 	ANTIALIAS_MSAA,
+	CORE_NOT_COUNTED,
 	LIGHT_VALUE_HERO_SIZE,
 	LIGHT_VALUE_SHADOW_CASCADES,
 	LIGHT_VALUE_SHADOW_MAP_SIZE,
@@ -1773,6 +1774,11 @@ export class SketchRunner {
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		this.record.count(Counter.OccludedEntries, glue.occludedEntries(frame));
+		// The path that the frame's cluster trees took, for a page that reports which one a held
+		// frame drew: the ranges the walk chose, or none where the device draws whole levels.
+		const ranges = glue.patchRanges(frame);
+		Atomics.store(slots, Slot.ClusterPatches, ranges === CORE_NOT_COUNTED ? -1 : ranges);
+		Atomics.store(slots, Slot.ClusterPatchFrame, frame);
 		// A frame whose update threw still presents, so its record marks it: the figure that counts
 		// completed updates leaves it out.
 		this.record.count(Counter.UpdateErrors, this.updateFailed ? 1 : 0);

@@ -147,6 +147,13 @@ export interface HeldFrame {
 	 * and draws each one directly. False otherwise, as on WebGL2, which always draws directly.
 	 */
 	directDraws: boolean;
+	/**
+	 * True when the frame drew a cluster tree's patches as ranges on the job workers, and false
+	 * when it drew the tree's whole levels. Null where the GPU path picks the patches itself, as
+	 * WebGPU does, or where the count belongs to another frame. The engine reads it from the frame
+	 * builder's culling, not from the switches.
+	 */
+	clusterPatches: boolean | null;
 	/** The frame's width in pixels. */
 	width: number;
 	/** The frame's height in pixels. */
