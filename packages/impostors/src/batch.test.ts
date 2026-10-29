@@ -11,6 +11,7 @@ function fakeBatch(count: number) {
 		count,
 		positions: new Float32Array(count * 3),
 		scales: new Float32Array(count * 3),
+		values: new Float32Array(count * 4),
 		marks,
 		markDirty(start = 0, rows = count - start) {
 			marks.push([start, rows]);
@@ -49,7 +50,11 @@ function fakeContext(count: number) {
 const ATLAS: OctahedralAtlas = { columns: 3, rows: 3 };
 
 /** An impostor batch over a stand-in context, with the cards at `positions`. */
-function cardsOf(positions: readonly number[], atlas: OctahedralAtlas = ATLAS) {
+function cardsOf(
+	positions: readonly number[],
+	atlas: OctahedralAtlas = ATLAS,
+	turn?: readonly number[],
+) {
 	const { ctx, batch, seen } = fakeContext(positions.length / 3);
 	const cards = createImpostors(ctx, {
 		color: {} as Texture,
@@ -57,6 +62,7 @@ function cardsOf(positions: readonly number[], atlas: OctahedralAtlas = ATLAS) {
 		atlas,
 		positions,
 		size: [2, 3],
+		...(turn !== undefined && { turn }),
 	});
 	return { cards, batch, seen };
 }
@@ -104,6 +110,25 @@ describe('createImpostors', () => {
 		const options = { color: {} as Texture, surface: {} as Texture, atlas: ATLAS };
 		expect(() => createImpostors(ctx, { ...options, positions: [0, 0] })).toThrow(RangeError);
 		expect(() => createImpostors(ctx, { ...options, positions: [] })).toThrow(RangeError);
+	});
+
+	test('writes each card its turn to the row values, and 0 where none is given', () => {
+		const { batch } = cardsOf([0, 0, 0, 1, 0, 0, 2, 0, 0], ATLAS, [0.5, 0, 0]);
+		// The shader reads each row's first value as the card's turn.
+		expect(Array.from(batch.values)).toEqual([0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+	});
+
+	test('refuses a turn count that does not match the cards', () => {
+		const { ctx } = fakeContext(1);
+		expect(() =>
+			createImpostors(ctx, {
+				color: {} as Texture,
+				surface: {} as Texture,
+				atlas: ATLAS,
+				positions: [0, 0, 0],
+				turn: [1, 2],
+			}),
+		).toThrow(RangeError);
 	});
 
 	test('marks the cards that a change names dirty', () => {

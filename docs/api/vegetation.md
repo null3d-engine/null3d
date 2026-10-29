@@ -8,7 +8,7 @@ summary: "Trees, conifers, shrubs, ferns, hostas and grass grown from a species 
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass, the far-tree impostors and the leaf and bark materials of the vegetation pipeline. This page covers the species generator, the scatter, and the bark and leaf atlases that the browser paints at first use. It also covers the material that draws a plant from them.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass. This page covers the species generator, the scatter, the bark and leaf atlases that the browser paints at first use, the material that draws a plant from them, and the far tree that a card draws.
 
 ```mermaid
 flowchart LR
@@ -228,6 +228,37 @@ const leaves = plantMaterial(ctx, {
 - **The engine makes each texture's mip levels.** A masked material fades its cut edges with alpha to coverage, so a leaf card that shrinks keeps the share of the picture that its leaves cover, and a crown far away stays as dense as it is up close.
 - **The four textures take about 4.6 MB of texture memory.** They are painted once, in the setup, and kept for the visit.
 
+
+## Far trees
+
+A tree past the distance where its triangles matter draws as one card. `bakeFarTree` bakes the plant's most detailed level into the two atlases that an impostor card draws, at its first use. The bake reads the same leaf and bark atlases and the same tint as the near material, so the card's color matches the mesh at the hand-over. It runs on the CPU, so every device gets the same atlases.
+
+```ts
+import { createImpostors } from '@null3d/impostors';
+import { bakeFarTree, handOverToCards } from '@null3d/vegetation';
+
+const atlases = bakePlantAtlases(ctx);
+const far = bakeFarTree(ctx, { asset, atlases, views: 25, texels: 64 });
+const cards = createImpostors(
+  { scene, materials, geometry },
+  {
+    color: far.color,
+    surface: far.surface,
+    atlas: far.atlas,
+    positions: farTrees.flatMap((tree) => [tree.position[0], tree.position[1] + far.base, tree.position[2]]),
+    turn: farTrees.map((tree) => tree.turn),
+    size: far.size,
+    alphaMode: 'mask',
+  },
+);
+handOverToCards(nearTrees, cards.batch, 240);
+```
+
+`bakeFarTree` returns the two textures, the grid and the card's `size`. The bake draws level 0, or the level that the plant's `impostorSource` names, and the plant's tint multiplies both the mesh and the bake. A second call for the same plant, grid and cell size reuses the baked pixels.
+
+`handOverToCards(meshes, cards, switchDistance)` sets the distance bands. The meshes draw up to the switch, and the cards draw from just before it. The engine fades each edge over its own band, so one fades out as the other fades in, with no pop. The meshes and the cards stand at the same trees, so a tree draws as its mesh near the camera and as its card far from it.
+
+A card's rows need their turn, so a turned tree's crown matches its card. The plant's `impostorSource.bounds` gives the largest bound over its levels, which the bake uses for the card's size and for its lowest point.
 
 ## Compared with three.js
 

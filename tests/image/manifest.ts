@@ -2879,6 +2879,22 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/impostors-sketch.ts',
 		hold: 0,
 	},
+	// A turned pine beside its own card, three times: the near mesh and the card that a bake made
+	// from it, turned by the same angle. The two must show the same side of the crown and the same
+	// light, which is the card's turn and its normal's frame working. The second test moves the sun
+	// behind the row, so a lit pair turns dark, which a card baked with its own light could not do.
+	{
+		name: 'impostor-turn',
+		sketch: 'tests/pages/sketches/impostor-turn-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'impostor-turn-sun-back',
+		sketch: 'tests/pages/sketches/impostor-turn-sketch.ts?sun=back',
+		hold: 0,
+		size: [480, 270],
+	},
 	// A sprite batch with an origin: eight cards, one per frame of a four column, two row atlas of
 	// flat colors, standing around an origin far from the world's. Each card must draw its own cell,
 	// so the picture holds eight cell colors in order. The second test draws the same cards at their

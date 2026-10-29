@@ -1,11 +1,12 @@
 // Impostors and merged far geometry: a pine forest on rolling hills at golden hour, drawn three
 // ways by distance. The nearest trees are level-of-detail meshes in one instance batch. The middle
 // band is the same pine at its coarsest level, merged into one mesh per grid cell, so a whole cell
-// draws in one call. The far band is one sprite batch of impostor cards, each showing the stored
-// view nearest the camera from an octahedral atlas drawn in code. Press L to draw the far band as
-// detail meshes instead, and compare the stats.
+// draws in one call. The far band is one batch of impostor cards, baked from the pine's own mesh,
+// and the far trees hand over from their meshes to their cards through a shared distance band.
+// Press L to draw the far band as detail meshes instead, and compare the stats.
 import { defineSketch, timeOfDay } from '@null3d/engine';
 import { createImpostors, farCellGroups, mergeFarGeometry } from '@null3d/impostors';
+import { handOverToCards } from '@null3d/vegetation';
 import { interact } from '../lib/interact';
 import {
 	bands,
@@ -101,18 +102,21 @@ export default defineSketch(async (ctx) => {
 			surface,
 			atlas: picture.atlas,
 			positions: far.flatMap((tree) => [tree.x, tree.y, tree.z]),
+			turn: far.map((tree) => tree.turn),
 			alphaMode: 'mask',
 		},
 	);
-	far.forEach((tree, k) => {
-		cards.batch.scales.set([tree.scale * 0.9, tree.scale, 1], k * 3);
-	});
+	for (const [k, tree] of far.entries())
+		cards.batch.scales.set([tree.scale * picture.size[0], tree.scale * picture.size[1], 1], k * 3);
 	cards.markDirty(0, far.length);
 
 	// L swaps the far band between the cards and a batch of detail meshes, for comparison.
 	const detail = scene.createInstances(pineWithLevels(geometry), far.length, { material: wood });
 	fillTrees(detail, far);
-	detail.setActiveCount(0);
+	// The hand-over: the meshes draw the far trees up to the switch, and the cards draw them from
+	// just before it, so the fade of each edge hides the swap.
+	const SWITCH = CARD_EDGE + 60;
+	handOverToCards(detail, cards.batch, SWITCH);
 	let cardsOn = true;
 	// T sweeps the sun across the sky, so the cards' light follows the meshes' light: the bake holds
 	// no sun at all.
@@ -130,8 +134,14 @@ export default defineSketch(async (ctx) => {
 			}
 			if (input.wasPressed('KeyL')) {
 				cardsOn = !cardsOn;
-				cards.batch.setActiveCount(cardsOn ? far.length : 0);
-				detail.setActiveCount(cardsOn ? 0 : far.length);
+				if (cardsOn) {
+					cards.batch.setActiveCount(far.length);
+					handOverToCards(detail, cards.batch, SWITCH);
+				} else {
+					// Every far tree draws as its mesh, past the switch too.
+					cards.batch.setActiveCount(0);
+					detail.setDrawRange(0, 1e9);
+				}
 			}
 			// A slow flight around the middle, looking out over the three bands.
 			if (!view.userCamera) {
