@@ -69,7 +69,8 @@ The engine's `Bloom.blend` default is `Mix`, which moves each pixel toward the g
 
 In Skyway's Manual mode the user drives the hero car, so W, A, S and D fly the car there and pan
 the camera in the other showcases. V switches the view from behind the car to its seat. C and H
-keep their jobs. The demos page shows each demo's keys as key caps beside its caption
+keep their jobs. A touch screen drives with an on-screen pad. The demos page shows each demo's keys
+as key caps under its caption
 ([D-277](D-277-skyway-driving-and-traffic.md)).
 
 ## Options rejected

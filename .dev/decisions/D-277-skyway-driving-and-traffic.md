@@ -81,11 +81,21 @@ instead of a band of cars over the low streets. The owner judges the final look.
   turns with the car. The three panels move to a dashboard in front of the seat, and the speed blur
   keeps a quarter of its strength, so the dashboard stays readable. V and the View buttons switch
   the two, in Auto too: there the car carries the camera along the route.
+- **The pointer while driving.** A drag swings the chase camera round the car, and the wheel or a
+  pinch zooms it from 6 m to 70 m. In the seat a drag turns the driver's head. After 1.5 s with no
+  press, while the car moves, the camera eases back behind the car or straight ahead. A user may
+  look round a car that hovers.
+- **The driving pad.** A touch screen has no keys, so the page shows a pad while the user drives,
+  where a finger is the main pointer: a thumb stick at the bottom left that speeds up, brakes and
+  turns, and Climb, Sink and View buttons at the bottom right (`examples/lib/drive-pad.ts`). The
+  scene asks for the pad with a `drive-pad` message. The pad sends its stick and buttons as one
+  `drive` message, only when they change, in steps of a twentieth. The keys add to the pad.
 - **Auto.** The car flies 26 m ahead of the route's camera and 5.2 m below it, in the middle of the
-  frame.
+  frame. A switch back to Auto glides the camera onto the nearest point of the route at 40 m/s,
+  and never faster than the shared glide of 1.5 s. The car eases after the camera, so it flies
+  back onto the route rather than jumps (`CinematicOptions.glideSpeed`).
 - **The key help.** `controls` in `examples/demos.ts` lists each key or pointer action with what it
-  does. The demos page draws the list as key caps in a glass panel beside the caption, and under it
-  on a narrow screen.
+  does. The demos page draws the list as key caps in a glass panel under the caption.
 
 Options rejected:
 
@@ -95,7 +105,9 @@ Options rejected:
 - A speed for each car in the listed lanes. The cars of a lane would fly through each other, as
   they did in the grid.
 - Driving with the arrow keys too. W, A, S and D are what the owner named, and the arrows stay free.
-- Keeping the key text in the caption. The owner asked for it beside the caption.
+- Keeping the key text in the caption. The owner asked for a panel of its own, under the caption.
+- Turning the orbit controls on while the user drives. They turn the camera round a fixed point,
+  and the car moves away from it. The scene's own drag follows the car.
 
 ## Consequences
 

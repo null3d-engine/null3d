@@ -241,6 +241,12 @@ export interface CinematicOptions {
 	/** Where the Manual camera may go. Without bounds it goes anywhere. */
 	bounds?: CameraBounds;
 	/**
+	 * How fast the camera glides back onto the route after a switch to Auto, in meters per second.
+	 * Without it the glide always takes a second and a half. With it a glide from far off takes as
+	 * long as that speed needs, so a vehicle that leads the camera flies back rather than jumps.
+	 */
+	glideSpeed?: number;
+	/**
 	 * A scene that the user drives in Manual, such as a vehicle. Its keys take the Manual camera's
 	 * place, the orbit controls stay off, and it moves the camera itself.
 	 */
@@ -443,6 +449,8 @@ export function createCinematic(
 	let glide = 1;
 	/** The phase that a glide resumes from. */
 	let glideFrom = 0;
+	/** How long the glide lasts, in seconds. */
+	let glideSeconds = GLIDE;
 	let announced = false;
 
 	// The manual camera: the engine's orbit controls. A left drag or one finger turns the camera
@@ -606,6 +614,14 @@ export function createCinematic(
 			from[4] = options.target[1];
 			from[5] = options.target[2];
 			glideFrom = nearestPhase(from);
+			// A glide from far off takes as long as the scene's glide speed needs.
+			routePose(glideFrom, sample);
+			const away = Math.hypot(
+				(sample[0] as number) - (from[0] as number),
+				(sample[1] as number) - (from[1] as number),
+				(sample[2] as number) - (from[2] as number),
+			);
+			glideSeconds = options.glideSpeed ? Math.max(GLIDE, away / options.glideSpeed) : GLIDE;
 			// The glide measures the route from the moment it starts, so it lands on the moving route
 			// and takes its speed, rather than setting off from a standstill.
 			glideStart = time.now;
@@ -680,7 +696,7 @@ export function createCinematic(
 			if (glide < 1) {
 				// Ease from the user's pose onto the route, which carries on while the glide runs: the
 				// blend reaches the route's own pose at the route's own speed.
-				glide = Math.min(1, glide + dt / GLIDE);
+				glide = Math.min(1, glide + dt / glideSeconds);
 				const b = smooth(glide);
 				routePose(glideFrom + (time.now - glideStart), sample);
 				for (let c = 0; c < 6; c++)
