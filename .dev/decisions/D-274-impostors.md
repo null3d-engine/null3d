@@ -1,9 +1,10 @@
 # D-274: The far vegetation impostors
 
-Status: proposed, for the owner's ruling. Built: the cards' three-view blend and their relight from
-stored normals (`3a75764e5`), the two atlases and `encodeImpostorSurface`, the per-copy turn with the
-card's upright frame, the CPU bake that fills both atlases, and the hand-over band. This record's
-card work is built. The shadow method is M3-V9's, as decision 7 and the consequences say. Task: M3-L4.
+Status: proposed, for the owner's ruling. Built for this record: the cards' three-view blend and
+their relight from stored normals (`3a75764e5`), the two atlases and `encodeImpostorSurface`, the
+per-copy turn with the card's upright frame, and the bake helper that fills both atlases. Built by
+the far-tree task beside it: the per-variant bake and the hand-over band, in the vegetation add-on.
+The shadow method stays with M3-V9, as decision 9 says. Task: M3-L4.
 
 Summary: A far tree draws as a card from two octahedral atlases: color, and a linear surface of
 normal, depth and coverage. The card stands upright, turns to the eye, blends the three cells
@@ -89,8 +90,8 @@ against its atlas.
    continuous across a cell boundary. A single view would hop, and the blend removes the hop. The
    sprite path that picked one frame is no longer the card's path.
 4. `createImpostors` takes a turn for each card, through the batch's row values. The shader turns the
-   direction before it picks the cells, and it turns the stored normal by the same value. This is the
-   far-tree task's per-copy turn, with the light kept in step.
+   direction before it picks the cells, and it turns the stored normal by the same value. The turn is
+   this record's card work, with the light kept in step.
 5. Ownership: the impostors add-on owns the card, the two atlases, the blend, the normal's frame, the
    depth's meaning, the turn, and the bake helper that fills the two atlases. The vegetation add-on
    owns the bake of each variant at first use and the hand-over band. The plant's `impostorSource`
@@ -112,9 +113,10 @@ against its atlas.
 9. The card's shadow method stays with M3-V9. Decision 7 rules: "The cards take no shadows. They
    draw past the shadow's reach, where the mesh they replace draws nothing either. A card inside the
    reach is the far-tree task's cast-only caster, which faces the light and leaves the far cascades
-   cached." The consequences below say that the far-tree task builds the bake, the turn's API and the
-   shadow method. The caster needs a capability that the engine does not have: a custom material's
-   caster build draws its whole quad and tests no coverage. M3-V9 builds that with the caster.
+   cached." The consequences below say that the far-tree task builds the per-variant bake, the
+   hand-over band and the shadow method, while this record's add-on builds the turn and the bake
+   helper. The caster needs a capability that the engine does not have: a custom material's caster
+   build draws its whole quad and tests no coverage. M3-V9 builds that with the caster.
 
 ## Ruled out
 
@@ -166,7 +168,8 @@ against its atlas.
 - Tests: `impostor-turn` and `impostor-turn-sun-back` draw a turned tree beside its card, and
   `impostor-plant` draws a grown plant beside its card. The impostor and demo pictures are redrawn
   for the upright frame and the bake. The hand-over picture is the far-tree task's.
-- The far-tree task builds the bake, the turn's API and the shadow method. This record's card work is
-  built, and the two tasks do not split the same work twice. The shadow method is M3-V9's, and it
-  needs an engine capability that this record does not add: a custom material's caster build draws
-  its whole quad and tests no coverage.
+- The far-tree task builds the per-variant bake, the hand-over band and the shadow method. This
+  record builds the card, the blend, the normal's frame, the turn and the bake helper, and the two
+  tasks do not split the same work twice. The shadow method is M3-V9's, and it needs an engine
+  capability that this record does not add: a custom material's caster build draws its whole quad
+  and tests no coverage.
