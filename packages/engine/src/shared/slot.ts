@@ -135,6 +135,14 @@ export const FrameRest1 = 34;
  */
 export const StillOff = 57;
 /**
+ * The ranges of cluster-tree patches that the camera view drew in the frame the sketch recorded
+ * last, 0 where it drew the trees' whole levels, or a negative value where the GPU path picks the
+ * patches itself. The sketch thread writes it, for a page that reports which path a frame took.
+ */
+export const ClusterPatches = 58;
+/** The frame that `ClusterPatches` belongs to. The sketch thread writes it with the count. */
+export const ClusterPatchFrame = 59;
+/**
  * The programs that may still be compiling in the background on WebGL2, as the thread that draws
  * found them at its last frame, for the development probe of the two-step pass.
  */

@@ -1227,6 +1227,17 @@ pub fn occluded_entries(frame: u32) -> u32 {
     })
 }
 
+/// The ranges of cluster-tree patches that a recorded frame's camera view draws, or `NOT_COUNTED`
+/// where the GPU path picks the patches itself.
+#[wasm_bindgen(js_name = patchRanges)]
+pub fn patch_ranges(frame: u32) -> u32 {
+    value_with_engine(|e| {
+        Ok(e.renderer
+            .patch_ranges(frame)
+            .unwrap_or(constants::NOT_COUNTED))
+    })
+}
+
 /// True when the last recorded frame rebuilt its draw tables after a structure change.
 #[wasm_bindgen(js_name = drawTablesRebuilt)]
 pub fn draw_tables_rebuilt() -> bool {

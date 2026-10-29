@@ -3216,6 +3216,10 @@ impl FrameBuilder for CpuCulledRenderer {
         Some(self.culling.occluded_entries(frame))
     }
 
+    fn patch_ranges(&self, frame: u32) -> Option<u32> {
+        Some(self.culling.patch_ranges(frame))
+    }
+
     fn set_software_occlusion(&mut self, on: bool) {
         self.occluders.set_on(on);
     }

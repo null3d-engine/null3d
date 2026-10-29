@@ -176,6 +176,7 @@ The engine reads these switches from the page's address in development builds, o
 | `?direct=on`, `?direct=off` | On WebGPU, force the direct or the indirect draw path, in place of the start-up probe's measured choice, to compare GPU time. `engine.capabilities.directDraws` says which path the engine took ([Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames)) |
 | `?depth=reversed`, `?depth=reversed-gl`, `?depth=standard` | Force a WebGL2 depth mode. `reversed-gl` draws as browsers without the `EXT_clip_control` extension do, such as Firefox |
 | `?uploads=copy` | On WebGL2, upload a copy of the data, as browsers that refuse to read shared memory need |
+| `?multidraw=off` | On WebGL2, draw as a browser without the `WEBGL_multi_draw` extension does: the engine probes none and draws the whole levels of a cluster tree in place of its patches ([Levels of detail](../concepts/lod.md#cluster-levels)) |
 | `?compile=wait` | On WebGL2, wait for each shader program's compile at its first draw, as browsers without the `KHR_parallel_shader_compile` extension do |
 | `?check=fresh` | Measure the quality preset again, as on a first visit, instead of taking the stored result of an earlier [preset check](../concepts/quality-presets.md#repeat-visits) |
 | `?compression=bc`, `?compression=astc,etc2`, `?compression=none` | Keep KTX2 textures to the compressed formats that the list names, of those the device has, as on a device with only those. `none` gives every KTX2 texture `rgba8unorm` |

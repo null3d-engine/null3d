@@ -403,6 +403,18 @@ impl Culling {
             .sum()
     }
 
+    /// The ranges of cluster-tree patches that the views chose in a frame, or 0 for a frame that
+    /// did not cull or views that draw whole levels.
+    pub(super) fn patch_ranges(&self, frame: u32) -> u32 {
+        if self.culled != frame {
+            return 0;
+        }
+        self.views
+            .iter()
+            .map(|view| view.patch_runs[(frame & 1) as usize].len() as u32)
+            .sum()
+    }
+
     /// The index list entries that a frame draws over all its views, or 0 for a frame that did
     /// not cull, whose parity's output is still an older frame's.
     pub(super) fn visible_entries(&self, frame: u32) -> u32 {

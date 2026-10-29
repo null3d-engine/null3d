@@ -2162,7 +2162,10 @@ async function startEngine(
 		parkWorker(options.canvas, canvasHold, canvasWorker.handle, canvasHold.movedTo);
 	};
 	try {
-		const report = await abortable(probeCapabilities(powerPreference, presetRequest.hints), signal);
+		const report = await abortable(
+			probeCapabilities(powerPreference, presetRequest.hints, switches.multiDraw),
+			signal,
+		);
 		const probeMs = performance.now() - startedAt;
 		const requested = switches.gpu !== 'auto' ? switches.gpu : (options.gpu ?? 'auto');
 		// After starts that crashed on WebGPU, WebGL2 comes first, unless the page names a GPU path.
@@ -2842,13 +2845,20 @@ async function startEngine(
 		}
 		if (DEV && switches.twoStep) logTwoStep(slots, true);
 		const { summarizeFrames } = await loadFrameStats();
+		const frame = Atomics.load(slots, Slot.FramesTaken);
+		const patchFrame = Atomics.load(slots, Slot.ClusterPatchFrame);
+		const patchRanges = Atomics.load(slots, Slot.ClusterPatches);
 		publishHold({
 			ok: true,
 			time: hold ?? replayResult?.seconds ?? 0,
 			...held,
-			frame: Atomics.load(slots, Slot.FramesTaken),
+			frame,
 			tier,
 			directDraws: device.directDraws,
+			// What the frame builder recorded: the patch ranges that its tree walk chose, or none
+			// where it drew the trees' whole levels. A negative count is a path that picks the
+			// patches on the GPU, and a count from another frame tells nothing about this one.
+			clusterPatches: patchFrame === frame && patchRanges >= 0 ? patchRanges > 0 : null,
 			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
 			...(scriptResult !== undefined && { script: scriptResult }),
 			...(replayResult !== undefined && { replay: replayResult }),
