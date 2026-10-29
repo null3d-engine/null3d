@@ -63,7 +63,7 @@
 		"test": "demo-impostors",
 		"tier": "compat",
 		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
 	},
 	"chromium-swiftshader/compat/demo-terrain.png": {
 		"test": "demo-terrain",
@@ -173,6 +173,12 @@
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
 	},
+	"chromium-swiftshader/compat/water-bounds.png": {
+		"test": "water-bounds",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
+	},
 	"chromium-swiftshader/compat/wind-cards-later.png": {
 		"test": "wind-cards-later",
 		"tier": "compat",
@@ -255,7 +261,7 @@
 		"test": "demo-impostors",
 		"tier": "webgl2",
 		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
 	},
 	"chromium-swiftshader/webgl2/demo-terrain.png": {
 		"test": "demo-terrain",
@@ -359,6 +365,12 @@
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
 	},
+	"chromium-swiftshader/webgl2/water-bounds.png": {
+		"test": "water-bounds",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
+	},
 	"chromium-swiftshader/webgl2/wind-cards-later.png": {
 		"test": "wind-cards-later",
 		"tier": "webgl2",
@@ -441,7 +453,7 @@
 		"test": "demo-impostors",
 		"tier": "webgpu",
 		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
 	},
 	"chromium-swiftshader/webgpu/demo-terrain.png": {
 		"test": "demo-terrain",
@@ -550,6 +562,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgpu/water-bounds.png": {
+		"test": "water-bounds",
+		"tier": "webgpu",
+		"date": "2026-10-29",
+		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
 	},
 	"chromium-swiftshader/webgpu/wind-cards-later.png": {
 		"test": "wind-cards-later",

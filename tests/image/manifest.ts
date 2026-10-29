@@ -1439,6 +1439,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// a field of foam flecks. A material that reads the copy of the opaque scene's depth takes a maps'
 	// group with one slot fewer, so both the copy and the textures fit the fragment stage. Every GPU
 	// tier must bind all three groups, so a tier that drops one shows a different shore.
+	// The same shore, with the water add-on's bounds view on: the view draws each body's outline and
+	// its shore width over the water it describes. The view is a debug view that the add-on adds, and
+	// nothing but a unit test has ever turned it on, so this picture is the only thing that draws it.
+	// The boxes are the picture: the test keeps references of its own, because its image is the
+	// shore's with the bodies' bounds drawn over it.
+	{
+		name: 'water-bounds',
+		sketch: 'tests/pages/sketches/water-stats-sketch.ts',
+		hold: 0,
+		switches: ['view=water-bounds'],
+		modes: ALL_MODES,
+	},
 	{
 		name: 'depth-textures',
 		sketch: 'tests/pages/sketches/depth-textures-sketch.ts',

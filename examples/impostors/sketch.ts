@@ -9,6 +9,7 @@ import { createImpostors, farCellGroups, mergeFarGeometry } from '@null3d/impost
 import { handOverToCards } from '@null3d/vegetation';
 import { interact } from '../lib/interact';
 import {
+	BAND_OVERLAP,
 	bands,
 	CARD_EDGE,
 	CELL,
@@ -16,6 +17,7 @@ import {
 	fly,
 	hills,
 	impostorAtlases,
+	NEAR_EDGE,
 	pineArrays,
 	pineWithLevels,
 	place,
@@ -63,16 +65,22 @@ export default defineSketch(async (ctx) => {
 		receiveShadows: true,
 	});
 	fillTrees(pines, near);
+	// The near band hands over to the merged cells the same way the cards take over from the detail
+	// meshes: the two ranges overlap by `BAND_OVERLAP` and each fades through the other's edge, so no
+	// line shows where one stops and the other starts.
+	pines.setDrawRange(0, NEAR_EDGE + BAND_OVERLAP);
 
 	// The middle band: the coarsest level of the same pine, merged into one mesh per grid cell.
 	const coarsest = pineArrays(3);
 	const centers = middle.map((tree) => [tree.x, tree.y, tree.z] as const);
 	for (const group of farCellGroups(centers, CELL)) {
 		const parts = group.map((k) => ({ arrays: coarsest, transform: place(middle[k] as Tree) }));
-		scene.createMesh({
-			mesh: geometry.fromArrays({ ...mergeFarGeometry(parts), computeNormals: true }),
-			material: wood,
-		});
+		scene
+			.createMesh({
+				mesh: geometry.fromArrays({ ...mergeFarGeometry(parts), computeNormals: true }),
+				material: wood,
+			})
+			.setDrawRange(NEAR_EDGE - BAND_OVERLAP, CARD_EDGE);
 	}
 
 	// The far band: one batch of cards. Each blends the three atlas views nearest the camera and is
