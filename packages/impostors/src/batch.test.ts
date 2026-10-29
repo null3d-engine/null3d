@@ -74,6 +74,7 @@ function cardsOf(
 	positions: readonly number[],
 	atlas: OctahedralAtlas = ATLAS,
 	turn?: readonly number[],
+	castsStill?: boolean,
 ) {
 	const { ctx, batch, seen } = fakeContext(positions.length / 3);
 	const cards = createImpostors(ctx, {
@@ -83,6 +84,7 @@ function cardsOf(
 		positions,
 		size: [2, 3],
 		...(turn !== undefined && { turn }),
+		...(castsStill !== undefined && { castsStill }),
 	});
 	return { cards, batch, seen };
 }
@@ -107,6 +109,11 @@ describe('createImpostors', () => {
 		// A card is one flat quad: a single-sided one would be culled whole by the shadow pass,
 		// whose casters draw with front faces culled.
 		expect(seen.doubleSided).toBe(true);
+	});
+
+	test('lets a scene withdraw the still-caster claim for cards it turns itself', () => {
+		const { seen } = cardsOf([0, 0, 0], ATLAS, undefined, false);
+		expect(seen.castsStill).toBe(false);
 	});
 
 	test('draws the nearest view alone when a sketch asks for one', () => {

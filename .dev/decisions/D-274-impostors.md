@@ -182,7 +182,9 @@ that darkens itself.
    the shadow depth template's casters name `CASTER` and never a mask, and the cut-out templates
    test the mask and name no `CASTER` bit. So no standard material's caster gains a coverage stage,
    and a WebGPU caster asks for a fragment stage only where its material declares a coverage
-   function. A card draws both faces: the shadow pass culls the front faces of single-sided
+   function. A development build refuses a coverage function on a material that is not masked,
+   since the caster would test no cutoff and cast the whole shape. A card draws both faces: the
+   shadow pass culls the front faces of single-sided
    geometry, so a flat card drawn from one side would be culled whole and cast nothing, and the
    card's own material is double-sided to leave its back face to the caster. The flag is the
    material's, so both faces draw in every pass: the main pass costs the same, because a card that
@@ -190,9 +192,12 @@ that darkens itself.
    seen from behind, which now draws instead of vanishing. Nothing meets that today, but an add-on
    that turned a card toward one eye and drew it from another would. A card inside the
    reach draws as a second batch with `castShadows: true` on a layer that the sun draws and no
-   camera does, so the camera pays nothing for it. The card's material
-   declares `castsStill: true`, so its vertex offset turns the caster toward the light without
-   marking the batch a moving caster, and a far cascade keeps its layer while the sun stands still. The caster reads the coverage from the direction toward the light,
+   camera does, so the camera pays nothing for it. The card's material declares `castsStill: true`,
+   so its vertex offset turns the caster toward the light without marking the batch a moving
+   caster, and a far cascade keeps its layer while the sun stands still. A scene that turns its
+   cards itself, frame after frame, moves the caster while the light stands still, and the far
+   cascades then keep a stale shadow: the add-on's `castsStill` option, true by default, lets that
+   scene withdraw the claim. The caster reads the coverage from the direction toward the light,
    from the same three cells that the card blends, so the shadow does not step as the sun turns. A
    card that receives shadows (`receiveShadows: true`) moves its sun lookup to the surface that the
    surface atlas's stored depth shows, along the view, scaled by the card's depth, so the card does

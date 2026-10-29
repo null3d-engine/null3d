@@ -1549,6 +1549,22 @@ describe('materials.shader', () => {
 		expect(shadings).toEqual([]);
 	});
 
+	test('refuses a coverage function without the mask whose cutoff its caster tests', () => {
+		const { shadings, materials } = fakeCore();
+		const covered = { ...compiledMaterial(), functions: ['surface', 'coverage'] as string[] };
+		const unmasked = thrown(() => materials.shader({ wgsl: covered }));
+		expect(unmasked.code).toBe('E1217');
+		expect(unmasked.message).toStartWith(
+			'E1217: materials.shader() declared fn coverage but got no alpha mode;',
+		);
+		const blended = thrown(() => materials.shader({ wgsl: covered, alphaMode: 'blend' }));
+		expect(blended.message).toStartWith(
+			"E1217: materials.shader() declared fn coverage but got the alpha mode 'blend';",
+		);
+		expect(shadings).toEqual([]);
+		materials.shader({ wgsl: covered, alphaMode: 'mask' });
+	});
+
 	test('lets light through to the other side only where its WGSL names the diffuse transmission', () => {
 		const { features, materials } = fakeCore();
 		const plain = thrown(() =>

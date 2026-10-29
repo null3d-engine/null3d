@@ -3866,6 +3866,11 @@ export class Materials {
 			);
 		const compiled = this.compiledMaterial(options.wgsl, call);
 		const sceneDepth = compiled.sceneDepth === true;
+		if (DEV && compiled.functions.includes('coverage') && options.alphaMode !== 'mask')
+			throw new EngineError(
+				'E1217',
+				`${call}() declared fn coverage but got ${options.alphaMode === undefined ? 'no alpha mode' : `the alpha mode '${options.alphaMode}'`}; its caster tests that coverage under a mask, so give it alphaMode: 'mask' and its alphaCutoff.`,
+			);
 		if (DEV)
 			checkSceneInputs(options.sceneInputs ?? [], sceneDepth, compiled.textures.length, call);
 		if (DEV && options.transmission !== undefined && !lets(compiled))
