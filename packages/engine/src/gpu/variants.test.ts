@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { recordPermutations, stopRecordingPermutations, variantFor } from './variants';
+import {
+	missingVariant,
+	recordPermutations,
+	stopRecordingPermutations,
+	variantFor,
+} from './variants';
 
 /** A shader's variants: the word without bits, a device-fixed bit, and the vertex color bit. */
 const variants = {
@@ -26,5 +31,23 @@ describe('variantFor', () => {
 	it('records nothing when no recording runs', () => {
 		variantFor(variants, 0, 'wgsl');
 		expect(stopRecordingPermutations()).toEqual([]);
+	});
+
+	it('leaves a miss to the caller that waited for every module', () => {
+		// A build that loads on first use is absent until its module arrives, so the lookup reports
+		// the miss rather than throwing while another module may still hold the build.
+		expect(variantFor(variants, 8, 'wgsl')).toBeUndefined();
+	});
+});
+
+describe('missingVariant', () => {
+	it('names the word that a full set has no build for', () => {
+		expect(missingVariant(8, false)).toContain('0x8');
+		expect(missingVariant(8, false)).toContain('has no variant');
+	});
+
+	it('names the word to record for a set narrowed to a list', () => {
+		expect(missingVariant(8, true)).toContain('0x8');
+		expect(missingVariant(8, true)).toContain('Record the scene again');
 	});
 });

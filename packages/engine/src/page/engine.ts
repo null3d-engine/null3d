@@ -2265,8 +2265,9 @@ async function startEngine(
 				: undefined;
 		if (recording) for (const worker of allWorkers(threads)) worker.recording = recording;
 		/**
-		 * Ends the recording and lets the drawing thread answer with its words. It runs once the
-		 * held frame has drawn the scene's pipelines, or after a live page's first frames.
+		 * Ends the recording and lets the drawing thread answer with its words. A held page runs it
+		 * once its frame has drawn the scene's pipelines, and a live page when the tool that records
+		 * has driven the page through its states.
 		 */
 		const stopRecording = () => {
 			if (!recording) return;
@@ -2277,6 +2278,10 @@ async function startEngine(
 			const worker = renderThread === 'render-worker' ? threads?.render : threads?.sketch;
 			worker?.send({ type: 'stop-recording' } satisfies RendererRequest);
 		};
+		// A live page has no held frame to end its recording, so the tool that records calls the
+		// page's stop once the page has shown every state that it offers.
+		if (recording && hold === undefined)
+			(globalThis as { __null3dStopRecording?: () => void }).__null3dStopRecording = stopRecording;
 		if (recording && renderThread === 'main') recordPermutations();
 		// What the thread that draws needs besides its canvas, whichever thread that is.
 		const rendererSetup: Omit<RendererSetup, 'canvas'> = {
@@ -2822,7 +2827,6 @@ async function startEngine(
 				if (options.stats) statsSwitch.show(options.stats);
 				if (switches.stats) statsSwitch.show(switches.stats);
 			}
-			recording?.live(stopRecording);
 			return engine;
 		}
 		try {

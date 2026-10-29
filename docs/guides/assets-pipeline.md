@@ -456,28 +456,30 @@ The list belongs to one set of pages. A project that adds a scene records again,
 
 A word leaves out the bits that a device fixes when it starts: the draw index, tone mapping in the shader and half precision. One list then serves every device module. A build compiles each word's builds for every value of those bits. Record both GPU paths, because a path's variants list a few bits of their own. WebGL2 has the morph targets, and WebGPU has the instance index.
 
-Record the list from a run of your pages. Each page draws in hold mode, and the engine collects the permutation words that its pipelines asked for while it drew the held frame:
+Record the list from a run of your pages. The recorder loads each page in hold mode at the low and high presets, because the words a preset turns on differ, and it loads each page live too. A live page advances the scene, and a showcase scene offers its controls: the recorder presses every button of its controls HUD, so the words that those states ask for reach the list.
 
 ```sh
-bun run examples:build
+NULL3D_SHADER_PERMUTATIONS= bun run examples:build
 bun run examples:preview
-bun tools/shader-permutations.ts --base http://localhost:5173 --pages demos --out shader-permutations.txt
+bun tools/shader-permutations.ts --base http://localhost:5173 --pages demos
 ```
 
-The recorder runs from a checkout of this repository, because it drives a browser through the repository's own page list and browser launcher. A project outside the repository runs it from such a checkout and names its pages with one `--page <path>` for each, instead of `--pages demos`.
+The empty variable makes a full set, because the recording reads every word that the pages ask for. Without it, the build narrows to the list that a recorded run wrote.
+
+The recorder writes `examples/shader-permutations.txt`, and `bun run examples:build` reads it. The recorder runs from a checkout of this repository, because it drives a browser through the repository's own page list and browser launcher. A project outside the repository runs it from such a checkout and names its pages with one `--page <path>` for each, instead of `--pages demos`.
 
 Build with the list:
 
 ```sh
-NULL3D_SHADER_PERMUTATIONS=shader-permutations.txt bun run build
+NULL3D_SHADER_PERMUTATIONS=examples/shader-permutations.txt bun run build
 ```
 
 Without the variable, the build compiles every permutation, as before. With it, the build's cache keys and its input hash include the list, so a changed list builds again.
 
-Record again after a scene gains a feature that turns on a new permutation bit. The build then lacks that word. The engine throws an error that names the word the first time a pipeline asks for it, instead of drawing nothing. A path that a recording cannot reach, such as a feature that a visitor turns on later, goes into the list by hand:
+Record again after a scene gains a feature that turns on a new permutation bit. The build then lacks that word. The engine fails with an error that names the word the first time a pipeline needs it, instead of drawing nothing. A path that a recording cannot reach, such as a feature that a visitor turns on later, goes into the list by hand:
 
 ```sh
-bun tools/shader-permutations.ts --base http://localhost:5173 --pages demos --extra 0x00000010 --out shader-permutations.txt
+bun tools/shader-permutations.ts --base http://localhost:5173 --pages demos --extra 0x00000010
 ```
 
 A word that the recording cannot reach is written without the device bits, as the recorded words are. `0x00000010` is the alpha mask bit, for a masked material that a visitor's action shows.

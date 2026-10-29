@@ -91,7 +91,7 @@ import {
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
 import { PARTICLE_RECORDS } from '../particle-records';
-import { variantFor } from '../variants';
+import { missingVariant, variantFor } from '../variants';
 import type { DepthSetup } from './depth';
 
 declare const __NULL3D_DEV__: boolean | undefined;
@@ -443,8 +443,7 @@ export function createProgram(
 	const shading = variantFor(template.shader, build, 'glsl')?.glsl?.[template.pipeline];
 	const source =
 		shading && build !== permutation ? { ...shading, fragment: PREPASS_FRAGMENT } : shading;
-	if (!source)
-		throw new Error(`this render pipeline template has no variant for permutation ${permutation}`);
+	if (!source) throw new Error(`a render pipeline template: ${missingVariant(permutation)}`);
 	const { program, shaders } = link(gl, source, '');
 	return {
 		program,

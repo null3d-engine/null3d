@@ -187,7 +187,14 @@ export function permutationListFile(): string | undefined {
 /** The bytes of the permutation list, or empty bytes when the build makes every word. */
 function permutationListText(): Buffer {
 	const file = permutationListFile();
-	return file === undefined ? Buffer.alloc(0) : readFileSync(file);
+	if (file === undefined) return Buffer.alloc(0);
+	try {
+		return readFileSync(file);
+	} catch (error) {
+		throw new Error(
+			`NULL3D_SHADER_PERMUTATIONS names ${file}, which cannot be read: ${(error as Error).message}. Record the list with bun tools/shader-permutations.ts, or leave the variable unset for a full build.`,
+		);
+	}
 }
 
 /**
