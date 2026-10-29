@@ -14,7 +14,7 @@ import {
 	createReading,
 	defaultFieldState,
 	type FieldState,
-	PUSH_LIFE,
+	type Push,
 	RING_SLOTS,
 	type WindReading,
 	writeReading,
@@ -145,13 +145,14 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		values[9] = air.swirlScale;
 		values[10] = air.swirlDrift;
 		values[11] = air.seed;
+		// The ring is made once, so every slot is there to read.
 		for (let i = 0; i < RING_SLOTS; i++) {
-			const push = pushes.slots[i];
+			const slot = pushes.slots[i] as Push;
 			const at = 12 + i * 4;
-			values[at] = push?.x ?? 0;
-			values[at + 1] = push?.z ?? 0;
-			values[at + 2] = push?.strength ?? 0;
-			values[at + 3] = push?.born ?? -PUSH_LIFE;
+			values[at] = slot.x;
+			values[at + 1] = slot.z;
+			values[at + 2] = slot.strength;
+			values[at + 3] = slot.born;
 		}
 		camera.getPosition(place);
 		values[28] = (place[0] as number) - box / 2;

@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import type { Camera, SketchContext } from '@null3d/engine';
+import ts from 'typescript';
 import { createWind, holdsField } from './wind';
 
 /** A camera that stands at the world's origin. */
@@ -128,5 +130,61 @@ describe('the calls that a frame makes', () => {
 		(live.time as { now: number }).now = 2;
 		blowing.sample(3, 4, -2, later);
 		expect(later).not.toEqual(first);
+	});
+});
+
+/** The forms that make an object, a closure or an iterator in a function that runs each frame. */
+const ALLOCATING: readonly (readonly [string, (node: ts.Node) => boolean])[] = [
+	['an object literal', ts.isObjectLiteralExpression],
+	['an array literal', ts.isArrayLiteralExpression],
+	['a function expression', (node) => ts.isFunctionExpression(node) || ts.isArrowFunction(node)],
+	['a for-of', ts.isForOfStatement],
+	['a new expression', ts.isNewExpression],
+];
+
+/** The forms that allocate, anywhere in the functions of `wind.ts` that a frame calls. */
+function allocatingForms(): string[] {
+	const source = readFileSync(new URL('./wind.ts', import.meta.url), 'utf8');
+	const file = ts.createSourceFile('wind.ts', source, ts.ScriptTarget.ESNext, true);
+	const wanted = new Set(['write', 'apply', 'turn', 'sample']);
+	const found: string[] = [];
+	const walk = (node: ts.Node, name: string): void => {
+		for (const [what, matches] of ALLOCATING)
+			if (matches(node)) found.push(`${name}: ${what} at ${node.getText(file).slice(0, 40)}`);
+		node.forEachChild((child) => walk(child, name));
+	};
+	// The functions are the constants of `createWind`'s body, so the walk goes anywhere in the file.
+	const visit = (node: ts.Node): void => {
+		if (
+			ts.isVariableDeclaration(node) &&
+			ts.isIdentifier(node.name) &&
+			wanted.has(node.name.text)
+		) {
+			const name = node.name.text;
+			const init = node.initializer;
+			const body =
+				init !== undefined && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))
+					? init.body
+					: undefined;
+			expect(body, `${name} is a function`).toBeDefined();
+			if (body !== undefined) {
+				wanted.delete(name);
+				walk(body, name);
+			}
+		}
+		node.forEachChild(visit);
+	};
+	visit(file);
+	// A renamed or removed function would otherwise leave its rule unchecked.
+	expect([...wanted]).toEqual([]);
+	return found;
+}
+
+describe('the functions that a frame calls', () => {
+	test('hold none of the forms that allocate', () => {
+		// The field's step writes the air's numbers into the pass's values and reads the camera's
+		// place, and the sample walks the ring. The allocator makes each object these forms make, so
+		// the step keeps its own arrays and its own functions, made once in `createWind`.
+		expect(allocatingForms()).toEqual([]);
 	});
 });
