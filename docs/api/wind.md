@@ -266,13 +266,15 @@ The field keeps its state between frames. One pass holds two states and steps th
 
 Each cycle pulls the air toward an analytic field of place and time. It injects the pushes and the gust, and keeps the eddies with vorticity confinement. It solves the pressure, and takes the pressure's slope out of the air, so the air never piles up. A wake therefore lasts after the body that made it has gone, and a gust sent upwind crosses the scene.
 
-The add-on warms the field up by a second of cycles when it makes it, so the first frame draws developed air. A held frame runs that same warm-up in the one frame it draws. A picture of the field is therefore the same on every run and on every GPU.
+The air starts when a page makes the wind, so a field made late in a sketch runs no air from before it.
+
+A held page runs its sketch's updates without drawing, and the pass advances only in a frame that draws. Its one drawn frame solves one cycle from the analytic field, and holds that air. A picture of a developed field therefore comes from a live page.
 
 Beyond its box the field carries on. The box sets the detail, not the field's extent. So a plant past the box reads the air at its own place.
 
 The far field is the analytic field, at the height that the grid samples at, so the two meet at the box's edge.
 
-The field cannot yet take a preset's settings without a reseed. A frame runs one cycle however slow it is. On a device that holds fewer than sixty frames a second, the field therefore runs slower than the sketch's clock.
+The field cannot yet take a preset's settings without a reseed. A frame runs every cycle that the sketch time owes, so the air keeps the sketch's pace however slow the frame is. One frame runs at most ten seconds of air, and a longer stall in a page skips the air that it missed.
 
 ## Costs and limits
 

@@ -2,6 +2,7 @@
 // cards must move them between two held times, and the same page with the gust and the swirl taken
 // out must leave them where they were. The second pair gives the first its teeth. A card material
 // that ignored the field would fail the first pair, and a field frozen by a fault would fail it too.
+// Both pages stop the body at the same second and hold the camera, so only the air moves.
 import { expect, type Page, test } from '@playwright/test';
 import type { ImageRun } from '../lib/images.ts';
 import { pageResult } from '../lib/page-result.ts';
@@ -50,14 +51,19 @@ function pair(name: string, run: ImageRun): ImageRun {
 }
 
 /**
- * The same page as `run`, held at another time and, when asked, with the field frozen. The sketch
- * reads its switches from its own address, so the page's sketch switch takes them after a query
- * mark that the switch value encodes. A sketch that already has one takes the mark for a second.
+ * The same page as `run`, held at another time. The body stops a second in and the camera holds, so
+ * the air is the only thing that can move the picture between the two times. When asked, the page
+ * takes the gust and the swirl out too. The sketch reads its switches from its own address, so the
+ * page's sketch switch takes them after a query mark that the switch value encodes. A sketch that
+ * already has one takes the mark for a second.
  */
 function variant(run: ImageRun, hold: number, frozen: boolean): string {
 	const timed = run.path.replace(/hold=[0-9.]+/, `hold=${hold}`);
-	if (!frozen) return timed;
-	return timed.replace(/sketch=([^&]+)/, (_match, sketch: string) =>
+	const moving = timed.replace(/sketch=([^&]+)/, (_match, sketch: string) =>
+		sketch.includes('%3F') ? `sketch=${sketch}%26still%3D1` : `sketch=${sketch}%3Fstill%3D1`,
+	);
+	if (!frozen) return moving;
+	return moving.replace(/sketch=([^&]+)/, (_match, sketch: string) =>
 		sketch.includes('%3F') ? `sketch=${sketch}%26frozen%3D1` : `sketch=${sketch}%3Ffrozen%3D1`,
 	);
 }
@@ -68,8 +74,8 @@ test('wind-field: a gust moves the cards, and a frozen field does not', async ({
 	test.setTimeout(runs.length * PAGES_PER_RUN * PAGE_MS);
 	for (const run of runs) {
 		const moved = changed(
-			await imageOf(page, run.path),
-			await imageOf(page, pair('wind-cards-later', run).path),
+			await imageOf(page, variant(run, 1, false)),
+			await imageOf(page, variant(pair('wind-cards-later', run), 1.6, false)),
 			8 / 255,
 		);
 		const frozen = changed(
@@ -78,12 +84,11 @@ test('wind-field: a gust moves the cards, and a frozen field does not', async ({
 			8 / 255,
 		);
 		console.log(`${run.id}: moved ${moved.toFixed(5)} frozen ${frozen.toFixed(5)}`);
-		// A gust that crosses the field moves a fair share of the cards, while the frozen page
-		// holds its camera and its body still and cannot move one. The moving pair must change far
-		// more than the frozen pair, so a field that stopped moving between the two times fails
+		// A gust that crosses the field moves a fair share of the cards, while the frozen page holds
+		// every other thing still and cannot move one. Both pages stop the body at the same second
+		// and hold the camera, so the air alone can account for the difference. The moving pair must
+		// change far more than the frozen pair, so a field that stopped between the two times fails
 		// here even if some pixels changed for another reason.
-		// The three tiers measure 0.11657, 0.11450 and 0.11235 of the channels changed, against 0
-		// on the frozen pair, so the floor is under half of the smallest.
 		expect.soft(moved, `${run.id}: the gust moves the cards`).toBeGreaterThan(0.05);
 		expect.soft(frozen, `${run.id}: a frozen field leaves the cards`).toBeLessThan(0.005);
 		expect
