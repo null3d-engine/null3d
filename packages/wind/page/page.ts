@@ -8,24 +8,30 @@
 import { createEngine } from '@null3d/engine';
 
 /** The sketch, with the page's own switches, so a page address can ask the sketch for a mode. */
-const sketch = new URL(`./sketch.ts${location.search}`, import.meta.url);
+const sketch = new URL('./sketch.ts', import.meta.url);
+// The switches come after the module is named, because the bundler resolves a module's address
+// from the literal that `new URL` is given. It cannot resolve one that a template builds.
+sketch.search = location.search;
 const canvas = document.querySelector('canvas');
 if (!canvas) throw new Error('the page has no canvas');
 const capture = new URL(location.href).searchParams.has('capture');
 /** Asks the page to capture the frame that the sketch has just drawn. */
-let captureNow: (() => void) | undefined;
+let captureNow: ((data: unknown) => void) | undefined;
 const engine = await createEngine({
 	canvas,
 	sketch,
-	onSketchMessage: (name) => {
-		if (name === 'capture') captureNow?.();
+	onSketchMessage: (name, data) => {
+		if (name === 'capture') captureNow?.(data);
 	},
 });
 if (capture) {
 	/** The frame that the engine read back, once the sketch has reached the capture time. */
 	type Frame = Awaited<ReturnType<typeof engine.captureFrame>>;
+	/** What the sketch said about the picture it asked for, such as whether it holds a grid. */
+	let debug: unknown;
 	const frame = await new Promise<Frame>((resolve) => {
-		captureNow = () => {
+		captureNow = (data) => {
+			debug = data;
 			void engine.captureFrame().then(resolve);
 		};
 	});
@@ -37,5 +43,6 @@ if (capture) {
 		width: frame.width,
 		height: frame.height,
 		pixels: btoa(binary),
+		debug,
 	};
 }
