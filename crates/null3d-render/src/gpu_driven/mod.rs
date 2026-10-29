@@ -3123,6 +3123,14 @@ impl GpuDrivenRenderer {
         let feature_table = self.settings.feature_instances();
         let feature_radii = input.scene.world(parity).radii();
         let feature_rows = &self.feature_rows;
+        // The scene group that each view's blended draws bind for a custom material that reads the
+        // scene's depth: the copy of the camera's opaque depth in the camera's view, and the blank
+        // texel in another view. The graph chooses it, as the CPU-culled builder asks it to, so the
+        // two builders share one rule.
+        let mut scene_groups = [0u32; MAX_VIEWS];
+        for (index, group) in scene_groups.iter_mut().enumerate() {
+            *group = self.graph.material_scene_group(ViewId::from_index(index));
+        }
         self.graph.record(
             list,
             |view| settings.clear_color_of(view),
@@ -3216,8 +3224,8 @@ impl GpuDrivenRenderer {
                     };
                     let frame = ids::frame_group(view);
                     // The camera's transparent pass draws after the copy of its opaque depth; a
-                    // scene pass's view has no copy and binds the blank texel.
-                    let scene = ids::MATERIAL_SCENE_GROUPS + u32::from(view == ViewId::CAMERA);
+                    // scene pass's view has no copy, so the graph gives it the blank texel.
+                    let scene = scene_groups.get(view.index()).copied().unwrap_or(0);
                     transparent.record(
                         list, view, rows, sorted, skinning, settings, meshes, frame, 0, scene,
                         particles,
