@@ -129,7 +129,6 @@ export interface CustomShader {
 	 */
 	readonly sceneDepth?: boolean;
 	/**
-	/**
 	 * True for a custom material that declares the opacity its shadow caster tests, so its caster
 	 * builds draw a fragment stage that discards the pixels that its cutoff leaves out.
 	 */

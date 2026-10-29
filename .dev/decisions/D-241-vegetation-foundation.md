@@ -277,9 +277,12 @@ are the choices the task left open, and the reasons for them.
   a material's tokens. Only such a material builds alpha to coverage, the alpha hash, their sample
   mask, and a shadow caster that runs the surface's alpha. A material with a vertex offset gains a
   motion build that runs it too; one without an offset has no motion build, so the motion pass cuts
-  no holes of its own. A material whose WGSL never names the alpha keeps the builds it had, plus the
-  fading level of detail's. The engine refuses `alphaToCoverage` and the `hash` mode for such a
-  material with E1217, and a production build falls back to the cutoff. This mirrors the rule for
+  no holes of its own. A coverage-only material that moves by its object's transform therefore
+  writes motion in its holes: the generic motion build tests no coverage function, since the motion
+  pass has no light to give it. A material whose WGSL never names the alpha keeps the builds it had,
+  plus the fading level of detail's. A development build refuses `alphaToCoverage` and the `hash`
+  mode for such a material with E1217; a production build does not, and draws it at the cutoff,
+  with the `hash` mode as the mask mode and no alpha to coverage. This mirrors the rule for
   `transmission`, whose builds only WGSL that sets it has.
 - **A coverage function stays the caster's own hook.** A material that declares `fn coverage` casts
   that function's shape, which reads the light's view. The two hooks agree: the feature that marks
