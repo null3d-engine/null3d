@@ -7,6 +7,7 @@
 // engine on the same canvas starts it again.
 
 import { messageOf } from '../errors/message';
+import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
 import { type DrawModule, loadDrawModule, preloadDeviceFiles } from '../render/load-draw';
 import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
@@ -121,6 +122,9 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			let tier: Tier | undefined;
 			if (message.renderer && drawModule) {
 				draw = await drawModule;
+				// This thread draws in low-latency mode, so a recording here lists the words that its
+				// pipelines ask for. The page stops it once the held frame has drawn them.
+				if (message.renderer.recordPermutations) recordPermutations();
 				step('renderer loaded');
 				const drawing = await host.start(
 					draw.startDrawing({
@@ -185,6 +189,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 	} else if (message.type === 'capture' && draw && host.drawing && controlSlots) {
 		const capture = message.image ? draw.captureImage : draw.captureFrame;
 		await replyWithCapture(capture(host.drawing, controlSlots));
+	} else if (message.type === 'stop-recording') {
+		replyToPage({ type: 'recorded', role: 'sketch', permutations: stopRecordingPermutations() });
 	} else if (message.type === 'lose-gpu') {
 		host.drawing?.simulateLoss();
 	} else if (message.type === 'stop-drawing') {
