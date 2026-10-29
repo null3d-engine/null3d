@@ -38,7 +38,7 @@ layout serve whole levels and the cluster patch groups without a second format?
 | The time from navigation to the first draw | not measured | the staged load run below |
 | A cluster band's bytes | the file 805,500 bytes, five bands of 12,900 to 204,828 bytes, 397,012 in all, 33.0% of the download | `bun packages/cli/src/assets/cluster-fixture.ts` |
 | The staged cluster test, first band against the last | more than 1% of the pixels differ, and the file's first band covers more than 40% | the `staged-levels` browser test, `?clusters` |
-| A real model's split into stages | Creek's cave, 86,724 bytes in two stages, 31.3% of the 284,190 bytes downloaded; Kenney's building-i, 22,614 bytes in two stages, 37.4% | `bunx @null3d/cli assets optimize <model> <folder> --lod --stages` |
+| A real model's split into stages | Creek's cave, 195,376 bytes in the file and 88,816 in two stages, 31.3% of the 284,192 bytes downloaded; Kenney's building-i, 38,788 bytes in the file and 23,136 in two stages, 37.4% of 61,924 | `bunx @null3d/cli assets optimize <model> <folder> --lod --stages` |
 
 How the data was produced: `bun packages/cli/src/assets/staged-fixture.ts` and
 `bun packages/cli/src/assets/cluster-fixture.ts` print each file's size. The browser test
