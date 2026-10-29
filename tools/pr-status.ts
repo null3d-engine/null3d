@@ -48,7 +48,6 @@ const INCOMPLETE = new Set([
 	'M3-E6',
 	'M3-E8',
 	'M3-L3',
-	'M3-R12',
 	'M3-R22',
 	'M3-L4',
 	'M3-V5',
@@ -78,8 +77,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"dropped with the temporal resolve it needs (D-206); M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F9':
 		"the simulation, the material and the older path's fragment form are on the local branch `feat/m3-f9-fft-ocean`, thirteen commits ahead of the milestone and not pushed, so a reader cannot find them; the engine buffer-id fault it found has landed separately. The older path's cost is found and fixed on that branch: its 833 ms frame against 158 without was not the ocean's draws but the add-on switching the pass off and on every other frame, which made the engine compile its plan every frame; a pass that carries its cadence without being switched holds 60 frames a second. What remains is the quiet-window figure and the merge. The demo entry is held because its picture on that path would record a flat sea. No cost per preset is stated: two runs of identical work differed by more than the effect, so the frame-difference method cannot resolve a sub-millisecond chain",
-	'M3-R12':
-		'the narrowing is not on the branch at all. It exists only on an unlanded branch from 23 October, and there it stops recording before the scene builds its own pipelines, strips the device bits the build compares, and drops the empty word that compute and full-screen passes need. Whatever the list then holds is not the set the pages draw with, so a narrowed build fails at the first pipeline it lacks rather than compiling the wrong thing quietly. A helper is proving each fault, and no time or size figure exists yet',
 	'M3-A11':
 		'measured on both paths at every preset; it does not beat the presets, so it stays behind the internal setting and does not ship (D-206). Its black-capture and bind-group faults are fixed, its shader file still loads on first use, and that first-use case is now tested on both paths',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
