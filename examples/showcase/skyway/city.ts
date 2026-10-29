@@ -2,16 +2,21 @@
 //
 // The ground is one plane with one material. Its streets and markings come from the city plan in
 // world units, and puddles roughen it from noise, so screen-space reflections smear the lamps and
-// the lit windows down the road where it is wet. The lamps are a pool of point lights along the
+// the lit windows down the road where it is wet. The hero car has a reflection of its own, drawn by
+// a camera under the road, which the wet road reads under the car, since screen-space reflections
+// never see its underside. The lamps are a pool of point lights along the
 // streets, drawn as glowing heads in one batch; the searchlights are spot lights that sweep the
 // haze above the towers; and the signs are canvases drawn in code, refreshed through a scanline and
 // a slow flicker.
-import { math, type QualityPreset, quat, type SketchContext } from '@null3d/engine';
+import { math, type QualityPreset, quat, type SketchContext, type Texture } from '@null3d/engine';
 import { EFFECT_LAYER } from '../../lib/layers';
 import { HALF, PITCH, STREET, streetLine } from './layout';
 
 /** How much ground the plane covers, in meters: past the outer streets into the haze. */
 const GROUND = 4200;
+/** The share of the hero car's mirror image that the wet road shows, and the least of it that a
+ * steep view keeps. */
+const CAR_REFLECTION = { share: 0.7, steep: 0.35 };
 /** The colours of the street lamps, as linear RGB. */
 const LAMP_COLOURS = [
 	[1.0, 0.5, 0.16],
@@ -35,7 +40,9 @@ const BEAM_INTENSITY = 90_000;
 const groundWgsl = /* wgsl */ `
 #import null3d::noise::{fbm2}
 
-struct Uniforms { pitch: f32, street: f32 }
+var carMirror: texture_2d<f32>;
+
+struct Uniforms { pitch: f32, street: f32, reflect: f32, steep: f32 }
 
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
@@ -70,6 +77,17 @@ fn surface(input: SurfaceInput) -> Surface {
     s.metalness = 0.0;
     // The kerb catches a little of the city's light.
     s.emissive = kerb * vec3f(0.012, 0.013, 0.016);
+
+    // The hero car's own reflection, which screen-space reflections cannot show, since its
+    // underside never comes on screen. A camera under the road draws the car alone, mirrored, and
+    // the wet road reads it by the pixel's place. That camera keeps the mirrored view's sides but
+    // turns its up over, so the image stands upside down: the height turns about its middle. A road
+    // shows what stands on it most at the angles a driver looks along it, and dry paving none of it.
+    let carClip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+    let carUv = vec2f(0.5 + 0.5 * (carClip.x / carClip.w), 0.5 - 0.5 * (carClip.y / carClip.w));
+    let car = textureSampleLevel(carMirror, carMirrorSampler, carUv, 0.0).rgb;
+    let grazing = 1.0 - abs(dot(input.normal, input.viewDirection));
+    s.emissive += car * wet * (1.0 - pave) * material.reflect * mix(material.steep, 1.0, grazing);
     return s;
 }
 `;
@@ -144,8 +162,11 @@ function paintSign(
 	return { canvas, context };
 }
 
-/** Builds the ground, the lamps, the searchlights and the signs. */
-export function createCity(ctx: SketchContext): City {
+/**
+ * Builds the ground, the lamps, the searchlights and the signs. `carMirror` is the hero car's
+ * reflection, which the wet road reads under the car.
+ */
+export function createCity(ctx: SketchContext, carMirror: Texture): City {
 	const { scene, geometry, materials, textures } = ctx;
 	math.seed(5);
 
@@ -153,7 +174,13 @@ export function createCity(ctx: SketchContext): City {
 		mesh: geometry.plane({ width: GROUND, height: GROUND }),
 		material: materials.shader({
 			wgsl: groundWgsl,
-			uniforms: { pitch: PITCH, street: STREET },
+			uniforms: {
+				pitch: PITCH,
+				street: STREET,
+				reflect: CAR_REFLECTION.share,
+				steep: CAR_REFLECTION.steep,
+			},
+			textures: { carMirror },
 			color: '#ffffff',
 			roughness: 0.4,
 		}),

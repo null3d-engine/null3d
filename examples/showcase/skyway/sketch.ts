@@ -25,6 +25,7 @@ import { createFacades } from './facades';
 import { createHero, DRIVE_KEYS, type View } from './hero';
 import { HALF } from './layout';
 import { createRain } from './rain';
+import { createReflection } from './reflection';
 import { createRoamers } from './roamers';
 import { CAR_LOOK, CARS, createTraffic } from './traffic';
 
@@ -199,7 +200,9 @@ export default defineSketch(async (ctx) => {
 
 	page.post('loading', 'Raising the towers');
 	const facades = createFacades(ctx);
-	const city = createCity(ctx);
+	// The hero car's own reflection, which the wet road reads under it.
+	const reflection = createReflection(ctx, camera);
+	const city = createCity(ctx, reflection.mirror);
 	page.post('loading', 'Streaming the lanes');
 	const traffic = createTraffic(ctx);
 	// The roaming cars turn, change height and stop at the kerb, among the lanes' straight flow.
@@ -379,6 +382,8 @@ export default defineSketch(async (ctx) => {
 			film.update(dt);
 			city.update(t);
 			hero.update(dt, t, film.mode === 'auto');
+			// The road's mirror follows the camera, once the camera has moved.
+			reflection.update();
 			rain.follow(camera);
 			// The rain keeps out of the hero car's glass bubble, so none falls in the cockpit.
 			hero.canopy(shelter);

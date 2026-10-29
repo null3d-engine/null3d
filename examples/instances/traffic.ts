@@ -5,6 +5,7 @@ import type { QualityPreset, SketchContext } from '@null3d/engine';
 import {
 	createTrafficLanes,
 	createVehicleHull,
+	type Lane,
 	type TrafficLanes,
 } from '../addons/traffic-lanes/index';
 
@@ -20,20 +21,38 @@ export const CARS: Record<QualityPreset, number> = {
 const LINES = [-75, -55, -35, 35, 55, 75];
 const SIZE = { halfWidth: 0.7, height: 0.38, halfLength: 1.2 };
 
+/** How far a lane sits from its line, so the two directions keep to their own side. */
+const SIDE = 2;
+/** How many levels each line carries. */
+const LEVELS = 4;
+
+/**
+ * The lanes of the field's sky, listed one by one: each line carries two directions at each of
+ * `LEVELS` heights, each direction keeping to its own side, and each lane has one speed so its
+ * cars keep their gaps.
+ */
+function laneList(): Lane[] {
+	const lanes: Lane[] = [];
+	for (const [i, line] of LINES.entries()) {
+		const inner = 1 - i / Math.max(1, LINES.length - 1);
+		for (let level = 0; level < LEVELS; level++) {
+			const altitude = 16 + (level * (34 - 16)) / (LEVELS - 1);
+			const speed = 26 + inner * 8 - level * 1.5;
+			lanes.push({ heading: 0, across: line - SIDE, altitude, speed });
+			lanes.push({ heading: 1, across: line + SIDE, altitude, speed });
+		}
+	}
+	return lanes;
+}
+
 /** Builds the traffic of the field's sky. */
 export function createTraffic(ctx: SketchContext): TrafficLanes {
 	return createTrafficLanes(ctx, {
 		mesh: createVehicleHull(ctx, SIZE),
-		plan: {
-			lines: LINES,
-			// The lanes run on past the field, so the cars stream in from the haze.
-			from: -1300,
-			to: 1300,
-			low: 16,
-			high: 34,
-			levels: 4,
-			offset: 4,
-		},
+		// The lanes are listed rather than laid out as a grid, so each keeps to its own side of a
+		// line and carries one speed: the inner lines run faster, and each line's level above the
+		// field is a little slower than the one below it.
+		plan: { from: -1300, to: 1300, lanes: laneList() },
 		counts: CARS,
 		look: {
 			body: '#2c3a52',
