@@ -17,6 +17,11 @@ import { COCKPIT, CONSOLE, createCanopy, createShell, FITTINGS } from './body';
 import { createCockpit } from './cockpit';
 import { createConsole } from './console';
 import { cityTowers, type Flight, fly, keepOut, type Stick } from './drive';
+import { HERO_LAYER } from './layout';
+
+/** The layers of the car's own meshes: the effect layer, as the rest of what flies, and the layer
+ * that the road's mirror camera draws on its own. */
+const BODY_LAYERS = EFFECT_LAYER | HERO_LAYER;
 
 /** How far ahead of the Auto camera the car flies, and how far below, in meters. */
 const [AHEAD, BELOW] = [26, 5.2];
@@ -168,7 +173,7 @@ export function createHero(
 		clearcoat: 1,
 		clearcoatRoughness: 0.12,
 	});
-	scene.createMesh({ mesh: createShell(ctx), material: paint, parent: body, layers: EFFECT_LAYER });
+	scene.createMesh({ mesh: createShell(ctx), material: paint, parent: body, layers: BODY_LAYERS });
 	// The cockpit's seat, yoke and dashboard. The car's own lamps sit a meter from them, so they
 	// would light them far brighter than the city does: they take no light, and keep a dark shade.
 	const fittings = materials.unlit({ color: '#0c1118' });
@@ -182,7 +187,7 @@ export function createHero(
 			material: fittings,
 			position: [fitting.at[0], fitting.at[1], fitting.at[2]],
 			parent: body,
-			layers: EFFECT_LAYER,
+			layers: BODY_LAYERS,
 			castShadows: false,
 		});
 	}
@@ -198,7 +203,7 @@ export function createHero(
 			doubleSided: true,
 		}),
 		parent: body,
-		layers: EFFECT_LAYER,
+		layers: BODY_LAYERS,
 		castShadows: false,
 	});
 
@@ -211,7 +216,7 @@ export function createHero(
 			position: [side * 0.34, 0.36, -2.0],
 			scale: [1, 1, 0.6],
 			parent: body,
-			layers: EFFECT_LAYER,
+			layers: BODY_LAYERS,
 			castShadows: false,
 		});
 	}
@@ -221,7 +226,7 @@ export function createHero(
 		intensity: 70,
 		range: 12,
 		parent: body,
-		layers: EFFECT_LAYER,
+		layers: BODY_LAYERS,
 	});
 
 	// The screens on the dashboard, turned up toward the driver's eye.

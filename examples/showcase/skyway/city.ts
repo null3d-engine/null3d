@@ -2,17 +2,22 @@
 //
 // The ground is one plane with one material. Its streets and markings come from the city plan in
 // world units, and the weather add-on's water covers the road, so screen-space reflections smear
-// the lamps and the lit windows down it where it is wet. The lamps are a pool of point lights along
-// the streets, drawn as glowing heads in one batch; the searchlights are spot lights that sweep the
-// haze above the towers; and the signs are canvases drawn in code, refreshed through a scanline and
-// a slow flicker.
-import { math, type QualityPreset, quat, type SketchContext } from '@null3d/engine';
+// the lamps and the lit windows down it where it is wet. The hero car has a reflection of its own,
+// drawn by a camera under the road, which the wet road reads under the car, since screen-space
+// reflections never see its underside. The lamps are a pool of point lights along the streets,
+// drawn as glowing heads in one batch; the searchlights are spot lights that sweep the haze above
+// the towers; and the signs are canvases drawn in code, refreshed through a scanline and a slow
+// flicker.
+import { math, type QualityPreset, quat, type SketchContext, type Texture } from '@null3d/engine';
 import { createWetSurface, type WetSurface } from '../../addons/weather/index';
 import { EFFECT_LAYER } from '../../lib/layers';
 import { HALF, PITCH, STREET, streetLine } from './layout';
 
 /** How much ground the plane covers, in meters: past the outer streets into the haze. */
 const GROUND = 4200;
+/** The share of the hero car's mirror image that the wet road shows, and the least of it that a
+ * steep view keeps. */
+const CAR_REFLECTION = { share: 0.7, steep: 0.35 };
 /** The colours of the street lamps, as linear RGB. */
 const LAMP_COLOURS = [
 	[1.0, 0.5, 0.16],
@@ -40,12 +45,15 @@ const groundWgsl = /* wgsl */ `
 struct Uniforms {
     pitch: f32,
     street: f32,
+    reflect: f32,
+    steep: f32,
     wet0: vec4f,
     wet1: vec4f,
     wet2: vec4f,
 }
 
 var wetMirror: texture_2d<f32>;
+var carMirror: texture_2d<f32>;
 
 // <wet-surface>
 /// The water depth at a place from two octaves of value noise, for a scene with no puddle map. The
@@ -156,6 +164,20 @@ fn surface(input: SurfaceInput) -> Surface {
     s.emissive = kerb * vec3f(0.012, 0.013, 0.016);
     // Water covers the road and leaves the pavement mostly dry.
     let depth = wet_noise_depth(p, 16.0) * (1.0 - pave);
+
+    // The hero car's own reflection, which screen-space reflections cannot show, since its
+    // underside never comes on screen. A camera under the road draws the car alone, mirrored, and
+    // the wet road reads it by the pixel's place. That camera keeps the mirrored view's sides but
+    // turns its up over, so the image stands upside down: the height turns about its middle. A road
+    // shows what stands on it most at the angles a driver looks along it, and dry paving none of it.
+    let wetEdge = 1.0 - material.wet0.x;
+    let water = smoothstep(wetEdge, wetEdge + max(material.wet0.y, 1e-4), depth)
+        * clamp(material.wet2.y, 0.0, 1.0);
+    let carClip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+    let carUv = vec2f(0.5 + 0.5 * (carClip.x / carClip.w), 0.5 - 0.5 * (carClip.y / carClip.w));
+    let car = textureSampleLevel(carMirror, carMirrorSampler, carUv, 0.0).rgb;
+    let grazing = 1.0 - abs(dot(input.normal, input.viewDirection));
+    s.emissive += car * water * material.reflect * mix(material.steep, 1.0, grazing);
     return wet_surface(s, input, depth, material.wet0, material.wet1, material.wet2);
 }
 `;
@@ -232,8 +254,11 @@ function paintSign(
 	return { canvas, context };
 }
 
-/** Builds the ground, the lamps, the searchlights and the signs. */
-export function createCity(ctx: SketchContext): City {
+/**
+ * Builds the ground, the lamps, the searchlights and the signs. `carMirror` is the hero car's
+ * reflection, which the wet road reads under the car.
+ */
+export function createCity(ctx: SketchContext, carMirror: Texture): City {
 	const { scene, geometry, materials, textures } = ctx;
 	math.seed(5);
 
@@ -255,8 +280,14 @@ export function createCity(ctx: SketchContext): City {
 	});
 	const groundMaterial = materials.shader({
 		wgsl: groundWgsl,
-		uniforms: { pitch: PITCH, street: STREET, ...wet.uniforms },
-		textures: { wetMirror: wet.textures.wetMirror },
+		uniforms: {
+			pitch: PITCH,
+			street: STREET,
+			reflect: CAR_REFLECTION.share,
+			steep: CAR_REFLECTION.steep,
+			...wet.uniforms,
+		},
+		textures: { wetMirror: wet.textures.wetMirror, carMirror },
 		color: '#ffffff',
 		roughness: 0.4,
 	});

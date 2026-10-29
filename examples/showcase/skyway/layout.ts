@@ -16,6 +16,11 @@ export const STREET = 34;
 export const HALF = (BLOCKS * PITCH) / 2;
 /** The ground that a block offers its buildings, in meters. */
 export const BLOCK = PITCH - STREET;
+/** The height of the roads, in meters, which the hero car's reflection turns about. */
+export const ROAD = 0;
+/** The layer of the hero car alone, which the wet ground's mirror camera draws. The car keeps the
+ * effect layer too, so the scene's camera draws it as it draws every effect. */
+export const HERO_LAYER = 1 << 2;
 /** The height of the landmark tower over the middle of the city, in meters. */
 export const TOWER_HEIGHT = 268;
 
