@@ -92,7 +92,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-F4':
 		"unticked by its check at 652fd235b on `feat/m3-f4-lightmap-evidence`: the captured frame is one side of the comparison rather than the comparison itself, D-258 claims more than that frame settles, not every figure has a recorded run. The evidence entry is written now and names what is owed rather than claiming it: the engine-to-viewer comparison does not exist, and the picture's failure without the direction is unrecorded. The same branch's ae46e947d states the viewer-side limit in D-258 lines 78 to 82 instead of closing it, so the owner has not ruled whether an engine-to-viewer comparison is owed",
 	'M3-L4':
-		'the three studies are proposed, awaiting the owner ruling (D-273 vertex morphing, D-274 impostors, D-275 staged loading), and the work each leaves to build has not started; the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
+		'the owner ruled the three studies run in order, staged loading first, and that one is built: whole levels and cluster bands arrive as stages, a band appends to the tree as it lands, and `maxLevels` with the pick-driven holdback serves both. Its load run shows the stages add no delay before the first picture, not that the first picture comes sooner, and its 29.3 per cent after the first picture is a lower bound. The impostors are being built now, starting with the turn the record rules; the vertex morphing follows them, and no iPad, phone or GPU-time figure exists for either',
 	'M3-V2':
 		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
 	'M3-R19':
