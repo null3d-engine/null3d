@@ -129,10 +129,11 @@ two, which waits on M3-V13; V13 has since landed, and it is its own task.
 
 - **The gust now travels.** `gust` writes a slot of its own, after the three push slots, so a
   page's pushes never push its gust out. Before, both shared one ring of four, and a page that
-  pushed four times in a second lost its gust. A gust's wave center then moves along the heading at
-  the gust's speed, so a gust sent where the air enters the scene crosses it. One test holds the
-  gust in its slot under a page's pushes, and another holds a gust's center advancing where a
-  push's stays.
+  pushed four times in a second lost its gust. The add-on's own CPU field moved no card of the
+  page's between the two held times. The same simulation moves 35 more cards now than the page
+  without the gust. A gust's wave center then moves along the heading at the gust's speed, so a
+  gust sent where the air enters the scene crosses it. One test holds the gust in its slot under a
+  page's pushes, and another holds a gust's center advancing where a push's stays.
 - **A place outside the box reads the analytic field.** The sampling function clamped to the box's
   edge, which smeared the edge's local detail to the horizon. It now works the air out from the
   steady field at the height that the grid samples at. The reader gives it three vectors: the base
@@ -142,11 +143,6 @@ two, which waits on M3-V13; V13 has since landed, and it is its own task.
 - **The sampling file ships.** `shaders/field.wgsl` is in the package's `files` and in the pack
   check's required list, so a reader copies it from the installed package. The page's material and
   the docs page carry copies, and one test keeps every copy equal.
-- **The gust had no slot of its own.** The audit said that the page's gust was dropped from the
-  ring by the body's fourth push. The add-on's own CPU field agreed: with four shared slots, the
-  sent gust moved no card between the held times. The gust has a slot of its own now, after the
-  three push slots. The same simulation moves 35 more cards between the holds than the page
-  without the gust does.
 - **The noise hash made objects.** The wind's allocation run showed the hash that the field's noise
   reads at 196 bytes a frame, against a budget of 4. Read as an unsigned 32-bit number, about half
   of its values pass 2147483647. That is the largest whole number that Chrome keeps in the value
