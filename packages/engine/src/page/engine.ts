@@ -38,7 +38,7 @@ import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
 import { URL_SWITCHES } from '../shared/dev';
-import { FEATURE_STATS_MESSAGE } from '../shared/feature-stats';
+import { FEATURE_STATS_MESSAGE, mergeFeatureStats } from '../shared/feature-stats';
 import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
@@ -1740,14 +1740,16 @@ async function startEngine(
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
 	if (options.onSketchMessage) messageHandlers.add(options.onSketchMessage);
-	// The add-on features' figures, which the stats overlay shows beside the engine's own.
+	// The add-on features' figures, which the stats overlay shows beside the engine's own. Each
+	// add-on keeps its list, so two add-ons show side by side and one that stops leaves the other's.
+	const featureLists = new Map<string, readonly FeatureStats[]>();
 	let features: readonly FeatureStats[] = [];
 	// Messages sent before the page listens wait for the first handler. The newest are kept when a
 	// sketch sends many.
 	let earlyMessages: [string, unknown][] | undefined = options.onSketchMessage ? undefined : [];
 	const onSketchMessage = (name: string, data: unknown) => {
 		if (name === FEATURE_STATS_MESSAGE) {
-			features = data as readonly FeatureStats[];
+			features = mergeFeatureStats(featureLists, data);
 			return;
 		}
 		if (name === VIDEO_FOLLOW) {
