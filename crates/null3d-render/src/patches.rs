@@ -61,6 +61,9 @@ pub struct PatchTree {
     /// The first patch of each band, in the order the bands arrived. The first entry is the root's
     /// band, which the tree was made with.
     bands: Vec<u32>,
+    /// The number of each patch's children that the tree holds. A patch with none draws wherever
+    /// the camera is close, so a tree whose bands have not all arrived has no holes.
+    children: Vec<u32>,
 }
 
 impl PatchTree {
@@ -74,7 +77,8 @@ impl PatchTree {
         root: u32,
         vertices: u32,
     ) -> Result<Self, PatchError> {
-        let tree = Self {
+        let mut tree = Self {
+            children: vec![0; records.len()],
             indices,
             bounds,
             records,
@@ -82,6 +86,11 @@ impl PatchTree {
             bands: vec![0],
         };
         tree.check(vertices)?;
+        for k in 0..tree.records.len() {
+            if let Some(parent) = tree.records[k][2].checked_sub(1) {
+                tree.children[parent as usize] += 1;
+            }
+        }
         Ok(tree)
     }
 
@@ -137,6 +146,12 @@ impl PatchTree {
                 .map(|&[first, count, parent, error]| [first + base, count, parent, error]),
         );
         self.indices.extend_from_slice(indices);
+        self.children.resize(self.records.len(), 0);
+        for record in &self.records[total as usize..] {
+            if let Some(parent) = record[2].checked_sub(1) {
+                self.children[parent as usize] += 1;
+            }
+        }
         Ok(())
     }
 
@@ -159,7 +174,7 @@ impl PatchTree {
             {
                 return Err(PatchError::Record);
             }
-            if parent as usize == k + 1 {
+            if parent as usize == k + 1 || parent as usize > self.records.len() {
                 return Err(PatchError::Parent);
             }
         }
@@ -233,6 +248,17 @@ impl PatchTree {
             .map_or(0.0, |record| f32::from_bits(record[3]))
     }
 
+    /// The error that the view's rule compares for patch `patch`: a value below 0 for a patch whose
+    /// children the tree does not hold, which therefore draws wherever the camera is close, so a
+    /// tree whose bands have not all arrived has no holes. Every other patch gives its own error.
+    pub fn rule_error(&self, patch: u32) -> f32 {
+        if self.children.get(patch as usize).copied().unwrap_or(0) == 0 {
+            -1.0
+        } else {
+            self.error(patch)
+        }
+    }
+
     /// The patch above `patch`, or `None` for the root.
     pub fn parent(&self, patch: u32) -> Option<u32> {
         match self.records.get(patch as usize)?[2] {
@@ -243,13 +269,14 @@ impl PatchTree {
 
     /// True when patch `patch` draws at `distance` from the view's camera, with a world scale of
     /// `scale` and the rule's factor of `factor`: its own error passes, and its parent's, which
-    /// would otherwise draw in its place, does not.
+    /// would otherwise draw in its place, does not. A patch whose children the tree does not hold
+    /// passes at every distance, so it draws in place of the patches below it.
     pub fn draws(&self, patch: u32, factor: f32, scale: f32, distance: f32) -> bool {
         let reach = scale * factor;
-        let fits = self.error(patch) * reach < distance;
+        let fits = self.rule_error(patch) * reach < distance;
         let parent_fits = self
             .parent(patch)
-            .is_some_and(|parent| self.error(parent) * reach < distance);
+            .is_some_and(|parent| self.rule_error(parent) * reach < distance);
         fits && !parent_fits
     }
 
@@ -508,6 +535,46 @@ mod tests {
         assert_eq!(tree.run(4), Some((18, 3)));
         assert_eq!(tree.parent(4), Some(1));
         assert_eq!(tree.parent(5), Some(3));
+    }
+
+    /// A tree whose root is above two children, with no band below them yet.
+    fn partial() -> PatchTree {
+        let bits = |value: f32| value.to_bits();
+        PatchTree::new(
+            vec![0, 1, 2, 3, 4, 5, 0, 1, 2, 6, 7, 8],
+            vec![[0.0; 4]; 3],
+            vec![
+                [0, 3, 0, bits(10.0)],
+                [3, 3, 1, bits(5.0)],
+                [6, 6, 1, bits(5.0)],
+            ],
+            0,
+            9,
+        )
+        .expect("tree")
+    }
+
+    #[test]
+    fn a_patch_whose_children_have_not_arrived_draws_where_the_camera_is_close() {
+        let mut tree = partial();
+        // Close in, both the root and its children err past the threshold, so only the frontier
+        // rule covers the surface: the children draw instead of leaving a hole.
+        assert_eq!(tree.cut(100.0, 1.0, 1.0), 2);
+        assert_eq!(tree.rule_error(1), -1.0);
+        assert_eq!(tree.rule_error(0), 10.0);
+        // A band below them arrives, so the children keep their own errors and the new patches
+        // become the frontier.
+        tree.append(
+            &[[0.0; 4]; 4],
+            &[[0, 3, 2, 0], [3, 3, 2, 0], [6, 3, 3, 0], [9, 3, 3, 0]],
+            &[0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 2],
+            9,
+        )
+        .expect("the band fits");
+        assert_eq!(tree.rule_error(1), 5.0);
+        assert_eq!(tree.rule_error(3), -1.0);
+        // Close in, the four patches below the root draw, and the root does not.
+        assert_eq!(tree.cut(100.0, 1.0, 1.0), 4);
     }
 
     #[test]
