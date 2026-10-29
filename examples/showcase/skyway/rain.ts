@@ -11,11 +11,11 @@ const STREAKS = 4800;
 const [REACH, HEIGHT] = [62, 58];
 /** The length of one streak, in meters. */
 const LENGTH = 0.62;
-/** How far round the camera the air stays clear of drops, in meters, unless the scene asks for more. */
-const CLEAR = 1.5;
+/** How far round the camera the air stays clear of drops, in meters. */
+const CLEAR = 0.8;
 
 const falling = /* wgsl */ `
-struct Uniforms { strength: f32, clear: f32 }
+struct Uniforms { strength: f32, clear: f32, shelter: vec4f, reach: vec3f }
 
 fn vertexOffset(input: VertexInput) -> vec3f {
     let span = 58.0; // the box's height, as HEIGHT above
@@ -33,8 +33,15 @@ fn surface(input: SurfaceInput) -> Surface {
     s.metalness = 0.0;
     s.emissive = vec3f(0.34, 0.42, 0.55) * (0.5 + 0.7 * input.uv.x) * material.strength;
     // A drop that falls past the lens would draw as a bright bar across the view, so the rain
-    // fades out near the camera.
-    let near = smoothstep(material.clear, material.clear * 2.0, length(input.relativePosition));
+    // fades out near the camera. It also keeps out of the hover car's glass bubble: an ellipsoid at
+    // the shelter's place, turned by its heading, with the reach of its half axes.
+    let d = input.worldPosition - material.shelter.xyz;
+    let c = cos(material.shelter.w);
+    let sn = sin(material.shelter.w);
+    let local = vec3f(d.x * c - d.z * sn, d.y, d.x * sn + d.z * c) / material.reach;
+    let inside = 1.0 - smoothstep(1.0, 1.25, dot(local, local));
+    let near = smoothstep(material.clear, material.clear * 2.0, length(input.relativePosition))
+        * (1.0 - inside);
     s.alpha = min(1.0, sin(input.uv.y * 3.14159) * (0.16 + 0.28 * input.uv.x)) * material.strength * near;
     s.emissive *= near;
     return s;
@@ -50,10 +57,11 @@ export interface Rain {
 	/** Makes the rain denser or fainter, from 1 for the ordinary fall. */
 	setStrength(value: number): void;
 	/**
-	 * Keeps the air clear of drops within `meters` of the camera, fading them in over as far again:
-	 * a little behind the car, and the whole cockpit from its seat.
+	 * Keeps the rain out of a shelter, such as a glass canopy: an ellipsoid whose middle and heading
+	 * `at` holds as x, y, z and yaw, with the half axes that `reach` gives. Call it once per frame
+	 * while the shelter moves.
 	 */
-	setClear(meters: number): void;
+	shelter(at: Float32Array, reach: readonly [number, number, number]): void;
 }
 
 /** Builds the rain. */
@@ -89,7 +97,12 @@ export function createRain(ctx: SketchContext): Rain {
 	}
 	const material = materials.shader({
 		wgsl: falling,
-		uniforms: { strength: 1, clear: CLEAR },
+		uniforms: {
+			strength: 1,
+			clear: CLEAR,
+			shelter: [0, -1000, 0, 0],
+			reach: [1, 1, 1],
+		},
 		doubleSided: true,
 		alphaMode: 'blend',
 		blending: 'additive',
@@ -111,7 +124,11 @@ export function createRain(ctx: SketchContext): Rain {
 	// The rain fills the air, so it casts no shadows and the camera's clearance guard ignores it.
 	mesh.setCastShadows(false);
 	const eye = vec3.create();
-	let clear = CLEAR;
+	/** The shelter's values, kept in one object so a frame's update makes none. */
+	const sheltered: {
+		shelter: [number, number, number, number];
+		reach: readonly [number, number, number];
+	} = { shelter: [0, -1000, 0, 0], reach: [1, 1, 1] };
 	return {
 		follow(camera) {
 			camera.getWorldPosition(eye);
@@ -123,10 +140,14 @@ export function createRain(ctx: SketchContext): Rain {
 		setStrength(value) {
 			material.set({ strength: value });
 		},
-		setClear(meters) {
-			if (meters === clear) return;
-			clear = meters;
-			material.set({ clear: meters });
+		shelter(at, reach) {
+			const place = sheltered.shelter;
+			place[0] = at[0] as number;
+			place[1] = at[1] as number;
+			place[2] = at[2] as number;
+			place[3] = at[3] as number;
+			sheltered.reach = reach;
+			material.set(sheltered);
 		},
 	};
 }
