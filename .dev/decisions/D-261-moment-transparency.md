@@ -4,8 +4,9 @@ Status: decided, and neither the look nor the accuracy supports it yet. Built on
 and the layer has drawn on all three GPU paths: WebGL2, WebGPU and its compatibility mode drew the
 four image tests at 480 by 270 on the tree of `e1fbc77f9`. The acceptance spec on the same tree,
 `moment-transparency.spec.ts -g "nearer"`, fails on both paths: the moment image is farther from
-the exact one than the weighted blending's. The picture references are held back, the patches at
-overlapping edges stay under the Look section, and the run on a phone is owed. Task: M3-F13.
+the exact one than the weighted blending's. The picture references are held back and the patches at
+overlapping edges stay under the Look section. The layer drew on a phone and a tablet on 29 October
+2026, and the phone's cost figure is owed. Task: M3-F13.
 
 Summary: Order-independent transparency from a store of four depth moments. Its accuracy is an
 envelope: where the surfaces spread over a few meters or more, it is about two and a half times
@@ -258,6 +259,25 @@ farther. Both scenes stay in the manifest and the spec, and the close scene's fa
 Two more tests guard the property that gives the feature its name. The same panes added in the
 opposite order draw the same picture, and both draw nearer the exact image than the weighted
 blending does.
+
+The same property held on real hardware. On 29 October 2026, at `b73dea690`, the four image pages
+ran on a Galaxy S25 (SM-S931B) in Chrome 152 on Android 15 and on an iPad Pro 13 in Safari 26.6.1 on
+iOS 26. Each ran on both tiers, WebGPU and WebGL2, with the panes in the forward order and in the
+reverse order:
+
+| Device | Tier | Forward and reverse |
+| --- | --- | --- |
+| Galaxy S25, Chrome 152, Android 15 | WebGPU | drawn, byte-identical |
+| Galaxy S25, Chrome 152, Android 15 | WebGL2 | drawn, byte-identical |
+| iPad Pro 13, Safari 26.6.1, iOS 26 | WebGPU | drawn, byte-identical |
+| iPad Pro 13, Safari 26.6.1, iOS 26 | WebGL2 | drawn, byte-identical |
+
+Every picture shows each pane in its true color through the ones in front of it. On each tier the
+two orders hash the same, so the phone and the tablet prove the order independence that the two
+tests prove on this computer. The runner marked all four checks failed only because they have no
+reference image yet. A red run therefore does not mean that the layer refused; the pictures are in
+`target/runs/20261029-085721-checks`, and the records under `.dev/tested-devices/` name the
+sessions.
 
 The frame graph's test holds the passes, their order, their bind groups and the tables' first use.
 It also holds that an unused layer declares and records nothing.
