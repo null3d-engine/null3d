@@ -13,9 +13,13 @@
 // production build has ended, the project also builds a page of its own layout around a copy of
 // this repository's examples folder, as a website that holds the repository as a submodule does.
 // That build runs beside the production build's start checks. Two demos, and a comparison in each
-// engine, must start from it. Run `bun run build` first, for the WebAssembly files. Run from the
-// repository root:
+// engine, must start from it. Run `bun run build` first, for the WebAssembly files, and
+// `bun run shaders`, for the modules that a step's build uses instead of compiling the engine's
+// shaders. A checkout without those modules still passes, but each build then compiles them from
+// source, which takes much longer. Run from the repository root:
 //   bun run test:packages [--keep]    --keep leaves the project's folder in place after a pass
+// `NULL3D_FRESH_PROJECT_SHADERS_FROM_SOURCE=1` leaves the checkout's modules unused, so every build
+// compiles the shaders from source and a run still proves that path.
 import { spawn, spawnSync } from 'node:child_process';
 import {
 	closeSync,
@@ -34,6 +38,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
+import { ENGINE_SHADERS_ENV } from '../packages/vite-plugin/src/engine-shaders.ts';
 import {
 	FILES_LIST,
 	ISOLATION_HEADERS,
@@ -45,6 +50,7 @@ import { cacheDir, cacheOff, pruneCacheLocked, secondsSince } from '../tools/lib
 import { DEFAULT_PACK_DIR, packPackages } from '../tools/lib/pack.ts';
 import { PACKAGES, type PackedPackage } from '../tools/lib/packages.ts';
 import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
+import { MODULE_DIR } from '../tools/lib/shader-modules.ts';
 import { ASSET_SCENE } from './lib/asset-scene.ts';
 import { STRICT_POLICY } from './lib/content-security-policy.ts';
 
@@ -105,6 +111,32 @@ export function projectManifest(
 	};
 }
 
+/** The checkout's folder of built shader modules, which the shader build writes. */
+const SHADER_MODULES = join(ROOT, MODULE_DIR);
+
+/** Turns off the checkout's built shader modules, so each step's build compiles them from source. */
+export const SHADERS_FROM_SOURCE_ENV = 'NULL3D_FRESH_PROJECT_SHADERS_FROM_SOURCE';
+
+/**
+ * The shader setting that a step's command needs. A folder that the caller names is left as it is.
+ * Otherwise the checkout's built modules are passed when their main module exists, so the step
+ * compiles none, and the opt-out variable passes nothing so that the plugin builds the modules from
+ * the engine's sources.
+ */
+export function engineShaderEnvironment(
+	environment: NodeJS.ProcessEnv,
+	folder: string,
+): Record<string, string> {
+	if (environment[ENGINE_SHADERS_ENV]) return {};
+	if (environment[SHADERS_FROM_SOURCE_ENV]) return {};
+	return existsSync(join(folder, 'shaders.ts')) ? { [ENGINE_SHADERS_ENV]: folder } : {};
+}
+
+/** The environment of a step's command: this process's, the shader setting, and the step's own. */
+function stepEnvironment(env: Record<string, string>): NodeJS.ProcessEnv {
+	return { ...process.env, ...engineShaderEnvironment(process.env, SHADER_MODULES), ...env };
+}
+
 /** Runs a command in the project's folder with its output shown, and fails when it fails. */
 function step(
 	title: string,
@@ -117,7 +149,7 @@ function step(
 	const result = spawnSync(command, args, {
 		cwd,
 		stdio: 'inherit',
-		env: { ...process.env, ...env },
+		env: stepEnvironment(env),
 	});
 	if (result.status !== 0)
 		throw new Error(`${title} failed with ${result.error?.message ?? `status ${result.status}`}`);
@@ -152,7 +184,7 @@ function stepInBackground(
 	const child = spawn(command, args, {
 		cwd,
 		stdio: ['ignore', output, output],
-		env: { ...process.env, ...env },
+		env: stepEnvironment(env),
 	});
 	closeSync(output);
 	let shown = false;
