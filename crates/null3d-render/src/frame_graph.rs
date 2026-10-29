@@ -187,6 +187,7 @@ use crate::graph::{
     CANVAS, GraphError, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph,
     RenderScale, ResourceId, Size, Step, StepKind, StoreOp, Surface, Target,
 };
+use crate::moment::{self, MomentIds, MomentLayer};
 use crate::motion::{self, MotionFrame, MotionIds, MotionView};
 use crate::outline::{self, Outline};
 use crate::output::{Antialias, Output, SceneColor};
@@ -201,7 +202,6 @@ use crate::taa::{self, TaaFrame, TaaIds, TaaPass, TaaSources};
 use crate::transmission::{TransmissionCopy, TransmissionIds};
 use crate::view::{CanvasRect, Compute, Fullscreen, PassSource, View, ViewId, ViewNames};
 use crate::view_copy::{ViewCopies, ViewCopyIds};
-use crate::moment::{self, MomentIds, MomentLayer};
 use crate::weighted::{self, WeightedIds, WeightedLayer};
 
 /// A texture of the plan as the draw lists made it: its plan, the size it was made at, and for a
@@ -4492,7 +4492,9 @@ impl FrameGraph {
         );
         let moment_built = self.moment_wanted && {
             let format = self.scene_color.format();
-            let composite = self.moment.request_composite(pipelines, format, self.samples);
+            let composite = self
+                .moment
+                .request_composite(pipelines, format, self.samples);
             let (edges, blend, resolve) = self.moment.request_aliasing(pipelines, format);
             let depth = self
                 .moment_copies_depth()
@@ -6929,8 +6931,8 @@ mod tests {
         },
         weighted: WeightedIds { first_group: 140 },
         moment: MomentIds {
-            first_group: 160,
-            sampler: 9,
+            first_group: 260,
+            sampler: 152,
             area: 913,
             search: 914,
         },
@@ -7122,6 +7124,18 @@ mod tests {
             1,
         ));
         groups.push(("the motion view's step".to_string(), IDS.motion.group, 1));
+        samplers.push((
+            "the moment layer's sampler".to_string(),
+            IDS.moment.sampler,
+            1,
+        ));
+        textures.push(("the moment area table".to_string(), IDS.moment.area, 1));
+        textures.push(("the moment search table".to_string(), IDS.moment.search, 1));
+        groups.push((
+            "the moment layer's groups".to_string(),
+            IDS.moment.first_group,
+            MomentIds::GROUPS,
+        ));
         // The graph takes its own textures from `first_texture` on: one for each texture of its
         // plan and one view for each of their layers, each run at most [`LAYER_VIEWS`] long.
         textures.push((
@@ -9626,7 +9640,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn the_moment_layer_draws_its_two_passes_then_the_composite_and_the_anti_aliasing() {
         let canvas = (320, 180);
@@ -9708,7 +9721,8 @@ mod tests {
                 .iter()
                 .map(|group| (group[0], group[1]))
                 .filter(|&(id, _)| {
-                    id >= IDS.moment.first_group && id < IDS.moment.first_group + MomentIds::GROUPS
+                    (IDS.moment.first_group..IDS.moment.first_group + MomentIds::GROUPS)
+                        .contains(&id)
                 })
                 .collect();
             let mut expected = vec![(IDS.moment.first_group, bind_layout::MOMENT_COMPOSITE)];

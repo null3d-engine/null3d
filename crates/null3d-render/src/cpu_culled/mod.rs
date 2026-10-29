@@ -134,6 +134,7 @@ use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{LightGrid, LightGrids, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshMoves, MeshStorage, Packing};
+use crate::moment::MomentIds;
 use crate::motion::MotionIds;
 use crate::occlusion::Occluders;
 use crate::output::{Antialias, SceneColor};
@@ -151,7 +152,6 @@ use crate::taa::TaaIds;
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
-use crate::moment::MomentIds;
 use crate::weighted::WeightedIds;
 use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices, write_row_values};
@@ -169,12 +169,12 @@ mod ids {
     use crate::bloom::STEPS;
     use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
+    use crate::moment::MomentIds;
     use crate::particles::ParticleIds;
     use crate::subsurface::STEPS as SUBSURFACE_STEPS;
     use crate::taa::STEPS as TAA_STEPS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
-    use crate::moment::MomentIds;
-use crate::weighted::WeightedIds;
+    use crate::weighted::WeightedIds;
 
     /// Each view's buffers: its ring of frame uniforms, then its draw records, from
     /// `VIEW_BUFFERS + 2 * view`.
@@ -1999,10 +1999,7 @@ impl CpuCulledRenderer {
         // The group is made for the store that the plan holds, once; a frame that draws the layer
         // after its pipelines were built needs it even when the frame groups keep theirs.
         let make_moment = moment_store.is_some_and(|store| {
-            self.moment_frame != store
-                || textures_made
-                || probes_remade
-                || lights_remade & 1 != 0
+            self.moment_frame != store || textures_made || probes_remade || lights_remade & 1 != 0
         });
         for index in 0..self.opaque.views() {
             if index >= first_new

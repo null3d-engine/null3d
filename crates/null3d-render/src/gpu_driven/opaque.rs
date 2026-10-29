@@ -106,7 +106,15 @@ pub(super) fn bind_frame(
     parallax: bool,
 ) -> Result<(), RecordError> {
     let group = ids::frame_group(view);
-    push_frame_group(list, group, bind_layout::FRAME, view, inputs, |_| true, None)?;
+    push_frame_group(
+        list,
+        group,
+        bind_layout::FRAME,
+        view,
+        inputs,
+        |_| true,
+        None,
+    )?;
     if parallax {
         let group = ids::frame_parallax_group(view);
         let layout = bind_layout::FRAME_PARALLAX;
@@ -176,11 +184,7 @@ fn push_frame_group(
         match store {
             // The moment frame group reads the moment store where the frame group reads the copy
             // of the opaque color, which no moment build reads.
-            Some(store) => entry(
-                crate::moment::STORE_BINDING,
-                resource_kind::TEXTURE,
-                store,
-            ),
+            Some(store) => entry(crate::moment::STORE_BINDING, resource_kind::TEXTURE, store),
             None => entry(
                 transmission::BINDING,
                 resource_kind::TEXTURE,
@@ -227,7 +231,15 @@ pub(super) fn bind_moment_frame(
 ) -> Result<(), RecordError> {
     let group = ids::moment_frame_group(ViewId::CAMERA);
     let layout = bind_layout::MOMENT_FRAME;
-    push_frame_group(list, group, layout, ViewId::CAMERA, inputs, |_| true, Some(store))
+    push_frame_group(
+        list,
+        group,
+        layout,
+        ViewId::CAMERA,
+        inputs,
+        |_| true,
+        Some(store),
+    )
 }
 
 /// Uploads a view's list of reflection probes into its slot.

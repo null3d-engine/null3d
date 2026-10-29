@@ -172,6 +172,12 @@ export const LAYOUT_PARTICLE_SCENE_DEPTH = 33;
 export const LAYOUT_PARTICLE_DEPTH_MS = 35;
 export const LAYOUT_ATMOSPHERE = 39;
 export const LAYOUT_EXPOSURE = 40;
+export const LAYOUT_MOMENT_COMPOSITE = 62;
+export const LAYOUT_MOMENT_DEPTH_MS = 63;
+export const LAYOUT_MOMENT_FRAME = 65;
+export const LAYOUT_MOMENT_SMAA_EDGES = 66;
+export const LAYOUT_MOMENT_SMAA_BLEND = 67;
+export const LAYOUT_MOMENT_SMAA_RESOLVE = 68;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;

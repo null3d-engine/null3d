@@ -385,7 +385,7 @@ export const QUALITY_SETTINGS = {
 	// colour sum, in any order, and a composite blends them over the scene. It is nearer an exact
 	// back-to-front blend than the weighted blending is, and it draws those surfaces twice. Off on
 	// every preset: it costs twice the weighted layer's bytes a frame and three full-screen steps
-	// of anti-aliasing, so a scene that wants it turns it on and pays for it (D-260).
+	// of anti-aliasing, so a scene that wants it turns it on and pays for it (D-261).
 	momentTransparency: {
 		presets: [false, false, false, false],
 		changes: 'start',
@@ -654,6 +654,13 @@ export interface QualitySettings {
 	 * take it.
 	 */
 	antialias: 'none' | 'fxaa' | 'msaa';
+	/**
+	 * True to blend the camera's blended surfaces in the moment transparency layer, which needs no
+	 * sort and is nearer an exact back-to-front blend than `blending: 'weighted'` is, and which
+	 * draws those surfaces twice. The mode is fixed when the engine starts: the page's
+	 * `momentTransparency` option of `createEngine` sets it, and `set` does not take it.
+	 */
+	momentTransparency: boolean;
 	/**
 	 * The cascades of a directional light's shadows, a whole number from 1 to 4, for each light whose
 	 * `shadow` options name none. More cascades keep shadows sharp further from the camera, and each

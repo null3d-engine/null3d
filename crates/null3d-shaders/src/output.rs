@@ -224,10 +224,7 @@ mod tests {
         );
         // A bit without a list still counts for every template, as before.
         first_use.bits.insert(MORPH, "morphing".to_owned());
-        assert_eq!(
-            first_use.file_of("lit", MORPH).as_deref(),
-            Some("morphing")
-        );
+        assert_eq!(first_use.file_of("lit", MORPH).as_deref(), Some("morphing"));
     }
 
     #[test]

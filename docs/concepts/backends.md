@@ -65,6 +65,8 @@ The anti-aliasing mode smooths the jagged edges of objects. The quality preset p
 | `fxaa` | The opaque pass draws one sample per pixel. The final pass finds edges by their contrast, and blends each pixel on an edge with its neighbors along the edge. It needs less memory and bandwidth than MSAA, and blurs thin lines a little. |
 | `none` | The opaque pass draws one sample per pixel, and nothing smooths the edges. |
 
+The moment transparency layer draws its surfaces at one sample per pixel, whatever the mode. While a sketch turns `momentTransparency` on, SMAA 1x smooths the layer's edges under the share that its moments cover, and MSAA's samples keep smoothing the opaque geometry around them. SMAA reads the color, so it works on every tier and replaces no other mode. It runs only under that share, so it does not soften edges that MSAA already smoothed.
+
 The scene's color target differs from tier to tier:
 
 | Tier | Scene color | How it reaches the canvas |

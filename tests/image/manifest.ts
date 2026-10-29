@@ -3059,18 +3059,30 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'moment-sorted',
 		sketch: `${MOMENT_SKETCH}?mode=sorted`,
+		switches: ['antialias=none'],
 		hold: 0,
 		size: [480, 270],
 	},
 	{
 		name: 'moment-weighted',
 		sketch: `${MOMENT_SKETCH}?mode=weighted`,
+		switches: ['antialias=none'],
 		hold: 0,
 		size: [480, 270],
 	},
 	{
 		name: 'moment-layer',
 		sketch: `${MOMENT_SKETCH}?mode=moment`,
+		switches: ['antialias=none', 'moments=on'],
+		hold: 0,
+		size: [480, 270],
+	},
+	// The same layer with the panes added in the opposite order: the moment layer's draws depend on
+	// no order, so the two images agree.
+	{
+		name: 'moment-layer-reverse',
+		sketch: `${MOMENT_SKETCH}?mode=moment&order=reverse`,
+		switches: ['antialias=none', 'moments=on'],
 		hold: 0,
 		size: [480, 270],
 	},

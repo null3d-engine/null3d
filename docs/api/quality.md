@@ -59,7 +59,7 @@ Most settings change during play. The preset tables' "Changes" column names the 
 
 ### Moment transparency
 
-`momentTransparency` blends the blended surfaces in a layer that needs no sort, and it keeps more of each surface's own color than `blending: 'weighted'` does. The setting is fixed at the start, and every preset leaves it off. Its row in [Quality preset tables](../concepts/quality-preset-tables.md#settings-of-each-preset) gives what it costs. [Moment transparency](materials.md#moment-transparency) describes the layer and the surfaces that it draws.
+`momentTransparency` blends the blended surfaces in a layer that needs no sort, and it keeps more of each surface's own color than `blending: 'weighted'` does. The setting is fixed at the start, so it goes in `createEngine`'s options or in the `?moments=` switch. Every preset leaves it off. Its cost is in [Quality presets](../concepts/quality-presets.md#moment-transparency). [Moment transparency](materials.md#moment-transparency) describes the layer and the surfaces that it draws.
 
 [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) compares the anti-aliasing modes on each GPU path.
 

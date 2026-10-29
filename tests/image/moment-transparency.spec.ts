@@ -76,3 +76,18 @@ for (const tier of ['webgpu', 'webgl2'] as const)
 		// A margin, so a layer that draws the weighted blending's own image fails.
 		expect(momentError).toBeLessThan(weightedError * 0.9);
 	});
+
+for (const tier of ['webgpu', 'webgl2'] as const)
+	test(`the moment layer draws the same image whatever order the panes add in, on ${tier}`, async ({
+		page,
+	}) => {
+		test.setTimeout(180_000);
+		const forward = await imageOf(page, runOf('moment-layer', tier).path);
+		const reverse = await imageOf(page, runOf('moment-layer-reverse', tier).path);
+		const difference = meanError(forward, reverse);
+		console.log(`${tier}: the two draw orders differ by ${difference.toFixed(3)}`);
+		// The store adds floats, whose sums can round in a different order, so a step of one
+		// channel here and there is allowed; a layer that mixed its surfaces in the draw order
+		// would differ by many times this.
+		expect(difference).toBeLessThan(0.5);
+	});

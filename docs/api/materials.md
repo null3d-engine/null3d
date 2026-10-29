@@ -652,16 +652,14 @@ The layer costs nothing until the first weighted surface draws, and its shaders 
 The quality setting `momentTransparency` blends the blended surfaces in a second, better layer. It needs no sort either, and it keeps more of each surface's own color than the weighted blending does. The engine stores four depth moments of each pixel, then draws the surfaces a second time and weights each fragment's color by the light that the moments say survives in front of it. A last step blends the result over the scene. The fit is exact for one surface and for two, and closest to the exact blend of every method the engine has for overlapping glass, foliage and particles.
 
 ```ts
-// The sketch turns the layer on when the engine starts, and every blended material draws in it.
-export default defineSketch(({ materials, quality }) => {
-  quality.set({ momentTransparency: true });
-  const glass = materials.standard({ color: '#a8d8ff', opacity: 0.3, roughness: 0.1, alphaMode: 'blend' });
-});
+// The page turns the layer on when the engine starts, and every blended material draws in it.
+const engine = await createEngine({ canvas, sketch, momentTransparency: true });
+// Or the engine's own switch does: ?moments=on
 ```
 
 - The setting covers the standard, basic and sprite materials whose blending is normal or weighted. A surface with another feature that the layer has no shader for, such as `transmission`, a custom material, a line or a masked surface, keeps the transparent pass's sort.
 - The layer draws at one sample per pixel, so MSAA does not smooth its surfaces' edges. SMAA 1x smooths them under the share that the layer covers, and the opaque edges keep MSAA's samples.
-- It costs more than the weighted blending: two draws of the surfaces, 16 bytes per pixel written twice at the render size, one more full-screen pass, and SMAA's three steps. It is off on every preset, and its row in [Quality preset tables](../concepts/quality-preset-tables.md#settings-of-each-preset) gives its cost there.
+- It costs more than the weighted blending: two draws of the surfaces, 16 bytes per pixel written a frame at the render size, one more full-screen pass, and SMAA's three steps. It is off on every preset, and [Quality presets](../concepts/quality-presets.md#moment-transparency) gives its cost.
 - A page without the setting draws exactly as it does today. Views other than the camera's, and devices that cannot draw into 16-bit float targets, draw blended surfaces farthest first, as `'normal'` ones.
 
 ## Depth bias

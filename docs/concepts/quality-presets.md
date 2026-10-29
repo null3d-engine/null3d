@@ -189,6 +189,12 @@ Low smooths edges with FXAA, and the other presets with MSAA. MSAA draws 4 sampl
 
 The engine makes its memory while it tests the GPU paths. So the memory maximum follows the starting preset and the crashed starts, and the GPU path does not cap it. The `memory` option of `createEngine` replaces it: [Page API](../api/engine.md#memory).
 
+### Moment transparency
+
+The `momentTransparency` option of `createEngine`, or the `?moments=on` or `?moments=off` switch, blends the camera's blended surfaces in the moment transparency layer, which needs no sort. [Moment transparency](../api/materials.md#moment-transparency) describes the layer and the materials that it draws. Every preset leaves it off, because it draws those surfaces twice, and the setting stays fixed while the engine runs.
+
+The layer's moment store and color sum take 8 bytes per pixel each at the render size, and its surfaces write both: 16 bytes per pixel a frame, which is 33 MB at 1920 x 1080. The composite reads both and writes the scene color, and SMAA 1x's two 8-bit steps take 8 bytes per pixel more. The weighted blending writes 10 bytes per pixel into its two sums. SMAA smooths the layer's edges under the share that its moments cover, and the opaque geometry keeps MSAA's samples.
+
 ### The depth prepass
 
 With the depth prepass, the engine first draws the depth of the opaque objects, with no color. The opaque pass then shades each pixel once, for its nearest surface. Without the prepass, a pixel can be shaded for several surfaces before the nearest one covers them. The prepass costs a second pass over the objects' vertices. So it saves GPU time where objects hide many others and their shading costs much, such as in a lit street of buildings. It costs time where a scene has many vertices and little overdraw.

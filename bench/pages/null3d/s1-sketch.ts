@@ -61,7 +61,10 @@
 // The `weighted` switch puts a column of smoke over the swarm's middle: puffs of the weighted
 // blending in a sprite batch that rise and swell in every frame, for the allocation sample and the
 // cost of the camera's weighted layer. `weighted=sorted` gives the same smoke the normal blending,
-// which the transparent pass sorts, for the cost of one against the other.
+// which the transparent pass sorts, for the cost of one against the other. The page's `moments=on`
+// draws that smoke in the camera's moment layer instead, for the cost of the layer against the
+// weighted one: the same surfaces, drawn by the better layer.
+
 // The `decals` switch puts a ground under the swarm with a batch of decals on it, which turn every
 // frame, for the cost of the decal pass and the allocation sample of its rows. The tall boxes of
 // the decals reach the lowest boxes of the swarm too. `decals=off` puts the ground alone, the

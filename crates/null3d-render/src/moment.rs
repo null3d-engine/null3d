@@ -1,4 +1,4 @@
-//! Order-independent transparency from a store of four depth moments (decision record D-260), the
+//! Order-independent transparency from a store of four depth moments (decision record D-261), the
 //! layer that blends the surfaces whose material blends whatever order they draw in.
 //!
 //! # The passes
@@ -33,7 +33,7 @@ use null3d_gpu::drawlist::{
     template, texture_usage, view,
 };
 
-use crate::frame::{RecordError, UploadArena, clamp_sampler, LINEAR_LEVEL};
+use crate::frame::{LINEAR_LEVEL, RecordError, UploadArena, clamp_sampler};
 
 pub(crate) mod tables;
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
@@ -41,7 +41,7 @@ use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 /// The binding of the moment store in the frame group of the colour builds. It is free in the
 /// frame's bindings, where the copy of the opaque color sits at 15. The shader composer keeps every
 /// module's globals, so the refraction module's own texture holds 15 in every build, and a moment
-/// build that used 15 would collide with it (decision record D-260).
+/// build that used 15 would collide with it (decision record D-261).
 pub(crate) const STORE_BINDING: u32 = 19;
 /// The format of the moment store: four 16-bit floats, which add.
 pub(crate) const STORE_FORMAT: u32 = format::RGBA16_FLOAT;
@@ -163,7 +163,11 @@ impl MomentLayer {
 
     /// Asks `pipelines` for the anti-aliasing's three steps, and returns whether all their
     /// pipelines are built. The last step writes a target of `color_format`.
-    pub(crate) fn request_aliasing(&mut self, pipelines: &mut PipelineCache, color_format: u32) -> (u32, u32, u32) {
+    pub(crate) fn request_aliasing(
+        &mut self,
+        pipelines: &mut PipelineCache,
+        color_format: u32,
+    ) -> (u32, u32, u32) {
         let edges = PipelineKey {
             template: template::MOMENT_SMAA_EDGES,
             permutation: 0,

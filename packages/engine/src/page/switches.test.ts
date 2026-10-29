@@ -23,6 +23,7 @@ describe('parseSwitches', () => {
 			half: undefined,
 			cells: true,
 			prepass: undefined,
+			moments: undefined,
 			occlusion: undefined,
 			occlusionBuffer: undefined,
 			skinning: 'vertex',
@@ -100,6 +101,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?prepass=on').prepass).toBe(true);
 		expect(parseSwitches('?prepass=off').prepass).toBe(false);
 		expect(parseSwitches('?prepass=yes').prepass).toBeUndefined();
+	});
+
+	it('turns moment transparency on or off with ?moments=, and leaves it to the page otherwise', () => {
+		expect(parseSwitches('?moments=on').moments).toBe(true);
+		expect(parseSwitches('?moments=off').moments).toBe(false);
+		expect(parseSwitches('?moments=yes').moments).toBeUndefined();
 	});
 
 	it('turns GPU occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {
