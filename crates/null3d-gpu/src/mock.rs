@@ -1067,16 +1067,16 @@ impl MockBackend {
             }
         };
         let (color, resolve, depth) = (optional(o[0])?, optional(o[1])?, optional(o[2])?);
-        // The second color target, the pass's label and its scope follow the flags. A list that a
-        // test makes by hand may name fewer of them, and one that names only a label puts it
-        // where the target would be.
+        // The second color target's word, the pass's label and its scope follow the flags. A pass
+        // without a second target leaves its word out, and a list that a test makes by hand may
+        // name even fewer.
         check(
             o.len() <= 12,
             op,
             "a render pass names its targets, its label and its scope",
         )?;
         let second = match o.len() {
-            0..=10 => None,
+            0..=11 => None,
             _ => match o[9] {
                 NO_TARGET => None,
                 id => Some(self.target(op, id)?),
