@@ -90,6 +90,11 @@ directions stay as they were, measured in the current's frame, so the crests kee
 between them. The current carries the whole set, so the pattern keeps its cross-hatch and every
 crest drifts downstream. The caustics and the foam flecks drift along the same current.
 
+A block match on the close view at three moments moves the near band's median -73, -80 and -99
+degrees, against the -90 of straight downstream, and its spread falls by more than half. The far
+band has only eight blocks, so its angle is coarse: that limits the precision of the figure, not the
+direction, and every far block points downstream.
+
 The add-on still lets each wave run along a direction fixed in the world, so its crests cross the
 stream. The Creek therefore draws its own water. M3-F5's migration of the Creek to the add-on waits
 until the add-on follows the current in the same way. A close picture of the stream's surface guards
