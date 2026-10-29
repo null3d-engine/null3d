@@ -5,8 +5,8 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { WATER } from './land';
-import { surfaceHeight } from './water';
+import { streamSlope, WATER } from './land';
+import { FLOW, surfaceHeight } from './water';
 
 const read = (name: string) => readFileSync(join(import.meta.dirname, name), 'utf8');
 
@@ -27,28 +27,53 @@ describe('the creek’s water', () => {
 	it('works out the same long waves on the CPU as its vertex shader moves', () => {
 		const source = read('water.ts');
 		const waves = wgslFunction(source, 'waves');
-		for (const wave of ['0.14, 2.3, 0.9, 0.0', '-0.31, 3.7, 0.7, 0.0', '0.35, 5.9, 0.5, 0.0'])
+		for (const wave of ['1.0, 0.15, 2.3, 0.9', '0.8, -0.6, 3.7, 0.7', '0.6, 0.8, 5.9, 0.5'])
 			expect(waves).toContain(`vec4f(${wave})`);
-		expect(source).toContain('[0.14, 2.3, 0.9],\n\t[-0.31, 3.7, 0.7],\n\t[0.35, 5.9, 0.5],');
+		expect(source).toContain(
+			'[1.0, 0.15, 2.3, 0.9],\n\t[0.8, -0.6, 3.7, 0.7],\n\t[0.6, 0.8, 5.9, 0.5],',
+		);
 		// The view from under the water finds the waterline from the same waves, per pixel.
 		const under = wgslFunction(read('underwater.ts'), 'surface_height');
-		for (const wave of ['0.14, 2.3, 0.9, 0.0', '-0.31, 3.7, 0.7, 0.0', '0.35, 5.9, 0.5, 0.0'])
+		for (const wave of ['1.0, 0.15, 2.3, 0.9', '0.8, -0.6, 3.7, 0.7', '0.6, 0.8, 5.9, 0.5'])
 			expect(under).toContain(`vec4f(${wave})`);
 	});
 
-	it('turns every wave within a fifth of a right angle of the stream', () => {
-		// The owner's ruling: all visible motion follows the river. A wave travels along its own
-		// direction, so every tilt from the current must stay small or its crests cross the stream.
+	it('keeps the waves crossing at the angles they had', () => {
+		// The owner's ruling: the current changes which way the crests travel, not whether they
+		// cross. The six directions stay as they were, so the set keeps its cross-hatch.
 		const waves = wgslFunction(read('water.ts'), 'waves');
-		const tilts = [...waves.matchAll(/vec4f\((-?[\d.]+),/g)].map((match) => Number(match[1]));
-		expect(tilts).toHaveLength(6);
-		for (const tilt of tilts)
-			expect(Math.abs(tilt), `the wave tilts ${tilt} radians from the current`).toBeLessThanOrEqual(
-				0.36,
-			);
-		const under = wgslFunction(read('underwater.ts'), 'surface_height');
-		for (const match of under.matchAll(/vec4f\((-?[\d.]+),/g))
-			expect(Math.abs(Number(match[1]))).toBeLessThanOrEqual(0.36);
+		const angles = [...waves.matchAll(/vec4f\((-?[\d.]+), (-?[\d.]+),/g)]
+			.map((match) => {
+				const x = Number(match[1]);
+				const z = Number(match[2]);
+				return (Math.atan2(z, x) * 180) / Math.PI;
+			})
+			.sort((a, b) => a - b);
+		expect(angles).toHaveLength(6);
+		// No two crest lines lie on one direction, and the set spans more than a right angle.
+		let least = 360;
+		for (let i = 0; i < angles.length; i++) {
+			const next = angles[(i + 1) % angles.length] as number;
+			const gap = ((next - (angles[i] as number) + 540) % 360) - 180;
+			least = Math.min(least, Math.abs(gap));
+		}
+		expect(least).toBeGreaterThan(10);
+		expect((angles[5] as number) - (angles[0] as number)).toBeGreaterThan(90);
+	});
+
+	it('drifts its whole pattern downstream with the current', () => {
+		// The phase is measured in the current's frame, so the surface at a later time is the older
+		// surface moved downstream. A wave that ran along its own direction in the world would fail.
+		const x = 2.1;
+		const z = 0.4;
+		const t = 1.3;
+		const dt = 0.1;
+		const slope = streamSlope(x);
+		const length = Math.hypot(1, slope);
+		const vx = FLOW / length;
+		const vz = (FLOW * slope) / length;
+		const along = surfaceHeight(x - vx * dt, z - vz * dt, t);
+		expect(surfaceHeight(x, z, t + dt)).toBeCloseTo(along, 4);
 	});
 
 	it('moves its surface a few centimeters about the water level', () => {

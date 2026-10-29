@@ -28,31 +28,34 @@ export const FLOW = 0.35;
 /** How tall the water's waves stand, as a factor of their base height. */
 const RIPPLE = 1;
 /**
- * The long waves that move the water's vertices, each as its tilt from the current in radians, its
- * wave number, and how fast it runs against the current. Every tilt stays within a fifth of a right
- * angle, so each wave's crests travel downstream along the stream. The WGSL's `waves` holds the
- * same three first in its list.
+ * The long waves that move the water's vertices: each one's direction in the current's frame, its
+ * wave number, and the speed it ran at in the world. The current carries the whole set, so the
+ * directions keep the angles between them and every crest drifts downstream. The WGSL's `waves`
+ * holds the same three first in its list.
  */
 const LONG_WAVES = [
-	[0.14, 2.3, 0.9],
-	[-0.31, 3.7, 0.7],
-	[0.35, 5.9, 0.5],
+	[1.0, 0.15, 2.3, 0.9],
+	[0.8, -0.6, 3.7, 0.7],
+	[0.6, 0.8, 5.9, 0.5],
 ] as const;
 
 /** The height of the water's surface at a point and sketch time, as its long waves move it. */
 export function surfaceHeight(x: number, z: number, t: number): number {
 	let h = WATER;
-	// The current follows the stream's middle line, so the waves turn with its bends.
+	// The current follows the stream's middle line, so the whole set turns with its bends.
 	const slope = streamSlope(x);
 	const length = Math.hypot(1, slope);
 	const cx = 1 / length;
 	const cz = slope / length;
-	for (const [tilt, k, speed] of LONG_WAVES) {
-		const cos = Math.cos(tilt);
-		const sin = Math.sin(tilt);
-		const dx = cx * cos - cz * sin;
-		const dz = cx * sin + cz * cos;
-		const phase = k * (dx * x + dz * z - FLOW * t * (cx * dx + cz * dz)) - speed * t;
+	for (const [ownX, ownZ, k] of LONG_WAVES) {
+		const spread = Math.hypot(ownX, ownZ);
+		const along = ownX / spread;
+		const across = ownZ / spread;
+		// The wave's direction in the world, turned from the current's frame.
+		const dx = cx * along - cz * across;
+		const dz = cz * along + cx * across;
+		// The current carries the pattern, so the whole set drifts downstream.
+		const phase = k * (dx * x + dz * z - FLOW * t * (dx * cx + dz * cz));
 		h += ((RIPPLE * 0.05) / k) * Math.sin(phase);
 	}
 	return h;
@@ -90,30 +93,31 @@ fn caustics(p: vec2f, t: f32, current: vec3f) -> f32 {
 /// past it the surface turns every ray back down, as total internal reflection does.
 const WINDOW: f32 = 0.66;
 
-/// The water's height at a point, and its slopes along x and z: long waves that run along the
-/// current, and with fine set, shorter ripples beside them.
+/// The water's height at a point, and its slopes along x and z: long waves that the current carries,
+/// and with fine set, shorter ripples beside them. The directions are relative to the current, so
+/// the set keeps its cross-hatch and the whole pattern drifts downstream.
 fn waves(p: vec2f, t: f32, current: vec3f, fine: bool) -> vec3f {
-    // Each wave: its tilt from the current in radians, its wave number, and how fast it runs.
+    // Each wave: its direction in the current's frame, its wave number, and the speed it ran at in
+    // the world. The current now carries the set, so that speed no longer moves a crest.
     let list = array<vec4f, 6>(
-        vec4f(0.14, 2.3, 0.9, 0.0),
-        vec4f(-0.31, 3.7, 0.7, 0.0),
-        vec4f(0.35, 5.9, 0.5, 0.0),
-        vec4f(-0.14, 11.0, 1.2, 0.0),
-        vec4f(0.25, 17.0, 0.6, 0.0),
-        vec4f(-0.35, 29.0, 1.6, 0.0),
+        vec4f(1.0, 0.15, 2.3, 0.9),
+        vec4f(0.8, -0.6, 3.7, 0.7),
+        vec4f(0.6, 0.8, 5.9, 0.5),
+        vec4f(1.0, -0.25, 11.0, 1.2),
+        vec4f(-0.3, 1.0, 17.0, 0.6),
+        vec4f(0.9, 0.45, 29.0, 1.6),
     );
     var h = 0.0;
     var slope = vec2f(0.0);
     let count = select(3u, 6u, fine);
     for (var k = 0u; k < count; k++) {
         let w = list[k];
-        let c = cos(w.x);
-        let s = sin(w.x);
-        let dir = vec2f(current.x * c - current.y * s, current.x * s + current.y * c);
-        let amplitude = material.ripple * 0.05 / w.y;
-        let phase = w.y * (dot(dir, p) - current.z * t * dot(current.xy, dir)) - w.z * t;
+        let own = normalize(w.xy);
+        let dir = vec2f(current.x * own.x - current.y * own.y, current.y * own.x + current.x * own.y);
+        let amplitude = material.ripple * 0.05 / w.z;
+        let phase = w.z * (dot(dir, p) - current.z * t * dot(current.xy, dir));
         h += amplitude * sin(phase);
-        slope += dir * (amplitude * w.y * cos(phase));
+        slope += dir * (amplitude * w.z * cos(phase));
     }
     return vec3f(h, slope);
 }

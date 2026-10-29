@@ -53,19 +53,18 @@ fn caustics(p: vec2f, t: f32, current: vec3f) -> f32 {
 /// vertices. The water's surface shader holds the same three waves first in its list.
 fn surface_height(p: vec2f, t: f32) -> f32 {
     let list = array<vec4f, 3>(
-        vec4f(0.14, 2.3, 0.9, 0.0),
-        vec4f(-0.31, 3.7, 0.7, 0.0),
-        vec4f(0.35, 5.9, 0.5, 0.0),
+        vec4f(1.0, 0.15, 2.3, 0.9),
+        vec4f(0.8, -0.6, 3.7, 0.7),
+        vec4f(0.6, 0.8, 5.9, 0.5),
     );
     let current = current_of(p);
     var h = uniforms.level;
     for (var k = 0u; k < 3u; k++) {
         let w = list[k];
-        let c = cos(w.x);
-        let s = sin(w.x);
-        let dir = vec2f(current.x * c - current.y * s, current.x * s + current.y * c);
-        let phase = w.y * (dot(dir, p) - current.z * t * dot(current.xy, dir)) - w.z * t;
-        h += 0.05 / w.y * sin(phase);
+        let own = normalize(w.xy);
+        let dir = vec2f(current.x * own.x - current.y * own.y, current.y * own.x + current.x * own.y);
+        let phase = w.z * (dot(dir, p) - current.z * t * dot(current.xy, dir));
+        h += 0.05 / w.z * sin(phase);
     }
     return h;
 }
