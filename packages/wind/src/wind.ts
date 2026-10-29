@@ -107,14 +107,11 @@ export const PRESSURE_STEPS = 20;
 export const CYCLE_STEPS = PRESSURE_STEPS + 2;
 /** The fixed time that one cycle steps the air by, in seconds. */
 export const STEP_SECONDS = 1 / 60;
-/** The most cycles that one frame runs, which a held frame's warm-up asks for. */
-const MAX_CYCLES = 600;
 /**
- * The cycles that the field is warmed up by when a page makes it, in sixtieths of a second. A held
- * frame draws one frame and runs none of the sketch's code, so the field must be developed before
- * that frame draws.
+ * The most cycles that one frame runs, which is ten seconds of air. A longer stall in a page skips
+ * the air that it missed rather than spends one frame solving it.
  */
-export const WARMUP_CYCLES = 60;
+const MAX_CYCLES = 600;
 
 /** How strong a gust is when the page names no strength. */
 const GUST = 7;
@@ -153,10 +150,10 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	// the settings, the ring of pushes and gusts, and the box. A frame sets the runs that the sketch
 	// time owes, so the air keeps the same pace whatever the frame rate.
 	//
-	// The warm-up stands in for the second of air before the first frame, so the steps that the
-	// sketch time owes start after it. Hold mode draws one frame and runs none of the sketch's code,
-	// so that warm-up is what gives a held frame developed air.
-	let solved = WARMUP_CYCLES * STEP_SECONDS;
+	// The air starts when a page makes the wind. A held page runs its updates without drawing, and
+	// the pass advances only when a frame draws, so a held frame solves one cycle from the analytic
+	// field and holds it there.
+	let solved = now();
 	const owedSteps = (): number => {
 		// The sketch time is a sum of frame times, so a frame that owes exactly one step can read a
 		// hair under it.
@@ -236,14 +233,10 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		air: createReading(air),
 	};
 	// The box follows the camera and the pushes fade, so the values go up in every frame.
-	let warm = true;
 	const apply = (): void => {
 		write();
 		if (pass) {
-			// The first frame warms the field up, and every frame after it runs the cycles owed.
-			const steps = warm ? WARMUP_CYCLES * CYCLE_STEPS : owedSteps();
-			warm = false;
-			ctx.render.setPassSteps(pass, steps);
+			ctx.render.setPassSteps(pass, owedSteps());
 			ctx.render.setPassUniforms(pass, values);
 		}
 		field.origin[0] = values[28] as number;

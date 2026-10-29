@@ -3,9 +3,10 @@
 // off is the control: it draws the same body in the same place, and its cards lean only with the
 // ambient air. The pair gives the first its teeth.
 //
-// A held frame cannot show this. Hold mode draws one frame and never runs a sketch's update, so the
-// body never moves and never pushes. The page therefore runs live to the capture time, and the
-// engine reads its frame back through `captureFrame`.
+// A held frame cannot show this. Hold mode runs the sketch's updates up to the held time, but it
+// draws one frame, and the field advances only in a frame that draws: a held picture has one cycle
+// of solved air and no trail. The page therefore runs live to the capture time, and the engine
+// reads its frame back through `captureFrame`.
 import { expect, type Page, test } from '@playwright/test';
 import type { ImageRun } from '../lib/images.ts';
 import { pageResult } from '../lib/page-result.ts';

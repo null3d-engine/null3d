@@ -128,9 +128,10 @@ runs the whole cycle. A cycle is the forces and the advection, twenty Jacobi ite
 pressure, and the projection. Its stage rides in the state's fourth number. A frame sets `steps` to
 the runs the sketch time owes, and the engine swaps the states between them.
 
-The step is fixed at a sixtieth of a second. A frame runs the cycles owed, and the add-on warms the
-field up by a second of cycles when it makes it. A held frame runs none of a sketch's code, so that
-warm-up is what gives it developed air. A picture of the field is the same on every run.
+The step is fixed at a sixtieth of a second. A frame runs the cycles that the sketch time owes,
+counted from the start of that time. A held page runs its sketch's updates without drawing, and the
+pass advances only in a frame that draws. Its one drawn frame therefore solves one cycle from the
+analytic field. A live page shows the developed field, and its picture is the measure of it.
 
 Each cycle pulls the air toward the analytic field. That field is the base wind, the swirl and the
 traveling gust of place and time. The pushes and the gust are injected where a page sends them. The

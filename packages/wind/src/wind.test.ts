@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { Camera, SketchContext } from '@null3d/engine';
 import ts from 'typescript';
-import { CYCLE_STEPS, createWind, holdsField, STEP_SECONDS, WARMUP_CYCLES } from './wind';
+import { CYCLE_STEPS, createWind, holdsField, STEP_SECONDS } from './wind';
 
 /** A camera that stands at the world's origin. */
 const camera = {
@@ -81,14 +81,14 @@ describe('the field that a reader samples', () => {
 		const options: unknown[] = [];
 		const ctx = context('webgpu', [], undefined, steps, options);
 		const wind = createWind(ctx, { camera, grid: 8 });
-		// The first frame runs the warm-up, whatever the sketch time, and then the cycles owed.
+		// The field starts when the page makes it, so the first frame owes the cycles since then.
 		expect(options[0]).toMatchObject({
 			kind: 'compute',
 			history: true,
 			format: 'rgba16float',
 			steps: CYCLE_STEPS,
 		});
-		expect(steps[0]).toBe(WARMUP_CYCLES * CYCLE_STEPS);
+		expect(steps[0]).toBe(0);
 		// A frame that adds a sixtieth of a second owes one cycle, and a frame that adds nothing
 		// owes none.
 		(ctx.time as { now: number }).now = 1 + STEP_SECONDS;
@@ -96,6 +96,21 @@ describe('the field that a reader samples', () => {
 		expect(steps[1]).toBe(CYCLE_STEPS);
 		wind.update();
 		expect(steps[2]).toBe(0);
+	});
+
+	test('a held page solves one cycle in its one drawn frame', () => {
+		const steps: number[] = [];
+		const ctx = context('webgpu', [], undefined, steps);
+		// Hold mode runs the sketch's updates without drawing, from the first step to the hold time,
+		// and draws once at the end. The pass advances only in that drawn frame, so the steps that
+		// the last update sets are the ones that run.
+		(ctx.time as { now: number }).now = 0;
+		const wind = createWind(ctx, { camera, grid: 8 });
+		for (let step = 0; step <= 60; step++) {
+			(ctx.time as { now: number }).now = step * STEP_SECONDS;
+			wind.update();
+		}
+		expect(steps.at(-1)).toBe(CYCLE_STEPS);
 	});
 
 	test('a box of no width keeps no grid either, so every sample is the steady field', () => {
