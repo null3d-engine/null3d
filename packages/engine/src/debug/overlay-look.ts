@@ -268,7 +268,7 @@ button {
 	gap: 8px;
 	margin-bottom: 7px;
 }
-.label {
+.sect-label {
 	font: 600 8.5px/1 ${FONT};
 	letter-spacing: 0.13em;
 	text-transform: uppercase;
@@ -1475,7 +1475,7 @@ export class StatsCard {
 /** A section's head: its label and its note on the right, whose text the caller fills. */
 function sectionHead(parent: Node, label: string): { element: HTMLElement; text: Text } {
 	const head = element('div', 'sect-head', parent);
-	element('span', 'label', head).append(label);
+	element('span', 'sect-label', head).append(label);
 	const meta = element('span', 'meta', head);
 	const text = document.createTextNode('');
 	meta.append(text);
