@@ -12,11 +12,6 @@ const params = new URLSearchParams(location.search);
 /** True for the model whose tree of cluster patches streams its bands. */
 const CLUSTERS = params.has('clusters');
 
-/** The model, as the sketch loads it. */
-const MODEL = CLUSTERS
-	? 'assets/models/cluster-staged-terrain.glb'
-	: 'assets/models/staged-terrain.glb';
-
 /** How long the page waits for the last download before it answers. */
 const SETTLE_MS = 60_000;
 
@@ -25,26 +20,6 @@ const QUIET_MS = 2_000;
 
 /** How often the page asks the server what it sent. */
 const POLL_MS = 250;
-
-/** The bytes of the stage files that a model names, read from its own JSON. */
-async function stageBytes(url: string): Promise<number> {
-	const bytes = await (await fetch(url)).arrayBuffer();
-	const length = new DataView(bytes).getUint32(12, true);
-	const json = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes, 20, length))) as {
-		nodes?: {
-			extras?: {
-				NULL3D_stages?: { levels?: { bytes?: number }[]; bands?: { bytes?: number }[] };
-			};
-		}[];
-	};
-	let total = 0;
-	for (const node of json.nodes ?? []) {
-		const staged = node.extras?.NULL3D_stages;
-		for (const stage of [...(staged?.levels ?? []), ...(staged?.bands ?? [])])
-			total += stage.bytes ?? 0;
-	}
-	return total;
-}
 
 run('staged-start', async () => {
 	const canvas = document.querySelector('canvas');
@@ -64,7 +39,6 @@ run('staged-start', async () => {
 		const { requests, bytes, files } = (await response.json()) as Downloads;
 		return { requests, bytes, files };
 	};
-	const stages = await stageBytes(MODEL);
 	const engine = await createEngine({ canvas, sketch });
 	await engine.firstFrame;
 	const firstFrameMs = performance.now();
@@ -85,7 +59,6 @@ run('staged-start', async () => {
 	return {
 		tier: engine.capabilities.tier,
 		firstFrameMs,
-		stageBytes: stages,
 		before,
 		total,
 		max,
