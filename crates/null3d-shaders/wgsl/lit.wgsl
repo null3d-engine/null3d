@@ -686,9 +686,11 @@ fn sceneDistance(uv: vec2f) -> f32 {
     return -orthographic_depth_to_view_z(depth, near, far);
 }
 #else ifdef SCENE_DEPTH_STUB
-// A custom material's functions join every build of this template, and its shadow caster, motion
-// and pick builds read no surface and bind no depth. These stand-ins let the functions build there;
-// the builds that shade a surface bind the copy and get the functions above.
+// A custom material's functions join every build of this template. A masked caster and a motion
+// build run a surface but bind no copy of the camera's depth, where the builds that shade one do,
+// and a pick build carries the functions without running them. These stand-ins let such a surface
+// build there; they give 0 and the far plane, so a surface whose alpha reads the depth cuts another
+// shape in those passes than it does where it shades.
 fn sceneDepth(uv: vec2f) -> f32 {
     return 0.0;
 }
@@ -1501,15 +1503,16 @@ fn normal_frame(input: SurfaceInput) -> mat3x3f {
 
 #ifdef CUSTOM
 /// The surface input of a pixel whose point relative to the camera is `relative`, whose mesh
-/// normal is `normal`, and whose triangle faces the camera when `front` is true: the values that
-/// every build which reads a surface takes from the vertex stage. A build adds its texture
-/// coordinates, its vertex color, its ids and its pixel position.
+/// normal is `normal`, and whose triangle faces the camera when `front` is true: the values that a
+/// mask's test reads, without its texture coordinates, its vertex color or its pixel position. The
+/// masked builds of a custom material's shadow and motion call it.
 fn surface_place(relative: vec3f, normal: vec3f, front: bool) -> SurfaceInput {
     var input: SurfaceInput;
     input.relativePosition = relative;
     // Toward the camera: from the point for a perspective camera, and one direction for an
-    // orthographic camera, whose view rays are parallel.
-    let eye = engine_frame.camera_position;
+    // orthographic camera, whose view rays are parallel. A light's view holds the camera's place
+    // here, since its own is the light's.
+    let eye = engine_frame.camera_eye;
     input.viewDirection = normalize(eye.xyz - relative * eye.w);
     // A face's normal comes from how the position changes between pixels. The two GPU paths count
     // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
@@ -1739,7 +1742,8 @@ fn vs(v: VertexIn, i: InstanceIn, l: LastIn) -> MotionOut {
 #ifdef ALPHA_MASK
     out.material = found.material;
     out.relative = now;
-    out.normal = v.normal;
+    // The surface function reads a normal in the world's space, as it does where it shades.
+    out.normal = world_normal(found, v.normal);
 #ifdef CUSTOM_UV1
     out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));
 #else
@@ -1794,7 +1798,24 @@ fn fs(in: MotionOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef ALPHA_HASH
     hash_place = in.mesh_place;
 #endif
-    var input = surface_place(in.relative, in.normal, front);
+    var input: SurfaceInput;
+    input.relativePosition = in.relative;
+    // Toward the camera: from the point for a perspective camera, and one direction for an
+    // orthographic camera, whose view rays are parallel. A light's view holds the camera's place
+    // here, since its own is the light's.
+    let eye = engine_frame.camera_eye;
+    input.viewDirection = normalize(eye.xyz - in.relative * eye.w);
+    // A face's normal comes from how the position changes between pixels. The two GPU paths count
+    // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
+    // flat normals face it.
+    let face = normalize(cross(dpdx(in.relative), dpdy(in.relative)));
+    let face_normal = select(-face, face, dot(face, input.viewDirection) >= 0.0);
+    // Back faces draw only for double-sided materials, and light as front faces do.
+    let smooth_normal = normalize(in.normal) * select(-1.0, 1.0, front);
+    let flat_shading = (u32(material_row.strengths.z) & FLAT_SHADING) != 0u;
+    input.normal = select(smooth_normal, face_normal, flat_shading);
+    input.frontFacing = front;
+    input.vertexColor = vec4f(1.0);
 #ifdef VERTEX_COLOR
     input.vertexColor = in.vertex_color;
 #endif
@@ -2724,11 +2745,15 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) {
 #else
     input.uv = in.uv;
 #endif
-    var coord = in.clip.xyz;
-#ifdef WEBGL2
-    coord.y = engine_frame.target_size.y - coord.y;
-#endif
-    input.fragCoord = coord;
+    // A surface sees the camera's pixel here, as it does where it shades. This pass draws from the
+    // light, so the position that its fragment stage receives is a texel of the shadow map. The
+    // frame's camera values place the point in the camera's view instead.
+    let camera_clip = engine_frame.camera_view_proj * vec4f(in.relative, 1.0);
+    let camera_ndc = camera_clip.xyz / camera_clip.w;
+    input.fragCoord = vec3f(
+        (camera_ndc.xy * vec2f(0.5, -0.5) + 0.5) * engine_frame.camera_target.xy,
+        camera_ndc.z,
+    );
 #ifdef OBJECT_IDS
     input.instance = in.ids.x;
 #endif

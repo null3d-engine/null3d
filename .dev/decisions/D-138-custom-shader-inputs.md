@@ -52,7 +52,7 @@ A mesh without a second set offers its first set at location 3 ([vertex formats]
 | B: only the view's rotation, with the projection worked out in the shader | Rejected. It saves 64 bytes per view, and costs a matrix product in every stage that reads it |
 | C: a block of their own | Rejected. Another binding in every frame group for 128 bytes |
 
-Both work relative to the camera, as every engine position does: `camera.view` is the camera's rotation alone, and `camera.projection * camera.view == camera.viewProjection`. The projection keeps the engine's reversed depth. The two matrices add 128 bytes per view to the block. The views of lights leave both matrices at zero, as they leave the fog and the lights.
+Both work relative to the camera, as every engine position does: `camera.view` is the camera's rotation alone, and `camera.projection * camera.view == camera.viewProjection`. The projection keeps the engine's reversed depth. The two matrices add 128 bytes per view to the block. The views of lights leave both matrices at zero, as they leave the fog and the lights. Since M3-V2 they hold the scene camera's instead, which a masked custom material's surface reads where its caster runs ([D-241](D-241-vegetation-foundation.md#addendum-how-custom-materials-cut-their-shape)).
 
 ### The object's matrices
 
