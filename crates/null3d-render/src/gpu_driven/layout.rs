@@ -1256,6 +1256,8 @@ impl Layout {
                 let base = self.cluster_indices.len() as u32;
                 for (k, record) in tree.records().iter().enumerate() {
                     let sphere = tree.bounds()[k];
+                    // A patch whose children have not arrived carries a rule error below 0, so the
+                    // pass draws it wherever the camera is close instead of leaving a hole.
                     self.cluster_patches.push([
                         sphere[0].to_bits(),
                         sphere[1].to_bits(),
@@ -1264,7 +1266,7 @@ impl Layout {
                         record[0] + base,
                         record[1],
                         record[2],
-                        record[3],
+                        tree.rule_error(k as u32).to_bits(),
                     ]);
                 }
                 self.cluster_indices.extend_from_slice(tree.indices());
