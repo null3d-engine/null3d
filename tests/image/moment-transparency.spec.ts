@@ -56,26 +56,43 @@ function runOf(name: string, tier: Tier) {
 	return run;
 }
 
-for (const tier of ['webgpu', 'webgl2'] as const)
-	test(`the moment layer is nearer the sorted image than the weighted blending is, on ${tier}`, async ({
-		page,
-	}) => {
-		test.setTimeout(180_000);
-		// The sketch must be in the manifest for its runs to exist.
-		expect(MOMENT_SKETCH).toContain('moment-sketch');
-		const exact = await imageOf(page, runOf('moment-sorted', tier).path);
-		const weighted = await imageOf(page, runOf('moment-weighted', tier).path);
-		const moment = await imageOf(page, runOf('moment-layer', tier).path);
-		const weightedError = meanError(weighted, exact);
-		const momentError = meanError(moment, exact);
-		console.log(
-			`${tier}: weighted ${weightedError.toFixed(3)} against sorted, moment ${momentError.toFixed(3)}`,
-		);
-		expect(weightedError).toBeGreaterThan(0.5);
-		expect(momentError).toBeLessThan(weightedError);
-		// A margin, so a layer that draws the weighted blending's own image fails.
-		expect(momentError).toBeLessThan(weightedError * 0.9);
-	});
+/** The acceptance comparison of one scene: its three manifest tests and a name for the report. */
+const scenes = [
+	{
+		label: 'the panes at similar depth',
+		sorted: 'moment-sorted',
+		weighted: 'moment-weighted',
+		moment: 'moment-layer',
+	},
+	{
+		label: 'the panes spread from one to thirty metres',
+		sorted: 'moment-spread-sorted',
+		weighted: 'moment-spread-weighted',
+		moment: 'moment-spread-layer',
+	},
+] as const;
+
+for (const scene of scenes)
+	for (const tier of ['webgpu', 'webgl2'] as const)
+		test(`the moment layer is nearer the sorted image than the weighted blending is, with ${scene.label}, on ${tier}`, async ({
+			page,
+		}) => {
+			test.setTimeout(180_000);
+			// The sketch must be in the manifest for its runs to exist.
+			expect(MOMENT_SKETCH).toContain('moment-sketch');
+			const exact = await imageOf(page, runOf(scene.sorted, tier).path);
+			const weighted = await imageOf(page, runOf(scene.weighted, tier).path);
+			const moment = await imageOf(page, runOf(scene.moment, tier).path);
+			const weightedError = meanError(weighted, exact);
+			const momentError = meanError(moment, exact);
+			console.log(
+				`${tier}, ${scene.label}: weighted ${weightedError.toFixed(3)} against sorted, moment ${momentError.toFixed(3)}`,
+			);
+			expect(weightedError).toBeGreaterThan(0.5);
+			expect(momentError).toBeLessThan(weightedError);
+			// A margin, so a layer that draws the weighted blending's own image fails.
+			expect(momentError).toBeLessThan(weightedError * 0.9);
+		});
 
 for (const tier of ['webgpu', 'webgl2'] as const)
 	test(`the moment layer draws the same image whatever order the panes add in, on ${tier}`, async ({

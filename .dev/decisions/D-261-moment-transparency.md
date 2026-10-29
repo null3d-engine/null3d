@@ -1,15 +1,17 @@
 # D-261: Moment transparency, and what it beats
 
-Status: decided. Built on both GPU paths, and the layer has drawn on all three GPU paths: WebGL2,
-WebGPU and its compatibility mode drew the four image tests at 480 by 270. The picture references
-are held back until the owner rules on the patches at overlapping edges that the Look section
-describes. The cost measurement on this computer's GPU and the run on a phone are owed.
-Task: M3-F13.
+Status: decided, and neither the look nor the accuracy supports it yet. Built on both GPU paths,
+and the layer has drawn on all three GPU paths: WebGL2, WebGPU and its compatibility mode drew the
+four image tests at 480 by 270 on the tree of `e1fbc77f9`. The acceptance spec on the same tree,
+`moment-transparency.spec.ts -g "nearer"`, fails on both paths: the moment image is farther from
+the exact one than the weighted blending's. The picture references are held back, the patches at
+overlapping edges stay under the Look section, and the run on a phone is owed. Task: M3-F13.
 
-Summary: Order-independent transparency from a store of four depth moments beats the weighted
-blending's own weight, in a model of the composite and in the image test. It is nearer the exact
-result in most stacks. The layer draws the transparent surfaces twice, so it costs more than the
-weighted blending, and it is off on every preset.
+Summary: Order-independent transparency from a store of four depth moments. Its accuracy is an
+envelope: where the surfaces spread over a few metres or more, it is about two and a half times
+nearer the exact image than the weighted blending; where five surfaces sit within a couple of
+metres of one another, it is slightly farther. It is built on both GPU paths, costs 0.58 ms of GPU
+time on the S1 benchmark at High on this computer, and is off on every preset.
 
 ## Question
 
@@ -49,8 +51,10 @@ about 11 meters. Within a room it therefore weighs every surface alike. What is 
 average of the surfaces' colors, with no term for which one is in front.
 
 The image test that settles the choice draws five panes of glass at different depths, and compares
-each approximation with the exact sorted image. The moment layer's mean channel error is nearer the
-exact image than the weighted blending's is, on WebGL2 and on WebGPU.
+each approximation with the exact sorted image. On the 1280 plates its mean channel error is 1.683
+for the moment layer and 1.432 for the weighted blending, and the layer is 1.983 from the blend. The
+model's 78% does not hold on this scene: five panes at similar depth put the fit's two atoms close
+together, and the renormalized average then keeps too much of the nearest pane's colour.
 
 A first attempt fitted the moments with a two-point Gaussian. It placed the atoms at the mean plus
 and minus one standard deviation. It did not beat weighted blending. That is why the store holds
@@ -167,17 +171,34 @@ once a frame, so the layer writes 16 bytes per pixel, or 33 MB at 1920 by 1080. 
 reads the store, so the traffic is about 50 MB a frame. The weighted blending writes 10 bytes a
 pixel. The composite writes the scene color, and SMAA's two 8-bit steps take 8 bytes per pixel more.
 
-The S1 benchmark page with its smoke switch measures the layer against the weighted blending on
-this computer's GPU, at High. That figure and the run on a phone are still owed.
+The S1 benchmark page with its smoke switch measured the layer against the weighted blending on
+this computer's GPU, at High, on the tree of `e1fbc77f9`, in two runs taken back to back under the
+same load (7.25 to 4.52 for the weighted side, 4.52 to 4.21 for the moment side; medians of three
+runs of ten seconds):
+
+| Path | Weighted, CPU | Moments, CPU | Weighted, GPU | Moments, GPU |
+| --- | ---: | ---: | ---: | ---: |
+| WebGPU | 3.16 ms | 3.21 ms | 3.61 ms | 4.19 ms |
+| WebGL2 | 3.34 ms | 3.34 ms | 5.63 ms | 6.75 ms |
+
+The layer is free on the processor: five hundredths of a millisecond on WebGPU and nothing on
+WebGL2. Its cost is GPU time: 0.58 ms more on WebGPU, about sixteen per cent of that scene's GPU
+frame, and 1.12 ms more on WebGL2, whose figure is the frame total from its timer extension rather
+than a per-pass figure.
+
+That is a desktop GPU with a fraction of a phone's fill rate. The phone's figure decides the
+preset, and it is owed. The desktop figure does not settle Ultra.
 
 The layer also copies its two SMAA lookup tables, 362,496 bytes, into the upload arena at its first
 frame. No other frame copies them, and no frame without the setting copies anything.
 
 ## Look
 
-The layer keeps a near pane's color where the weighted blending washes it toward what lies behind.
-The panes in the image test each draw their own color over the wall behind them. The moment image
-is nearer the exact sorted image than the weighted one.
+The layer keeps a near pane's color where the weighted blending washes it toward what lies behind,
+and on the test scene it keeps too much of it: the front pane reads as though it were opaque, and
+in the close-pane scene the image is 0.25 to 0.30 steps farther from the exact one than the
+blend's, and in the spread scene it is two and a half times nearer. The edge patches below are the
+close-pane error at overlaps.
 
 The layer has an edge of its own where several panes overlap: rectangular patches about a tenth of
 the picture's width show the panes behind mixed into the pane's own color. They come from the
@@ -220,6 +241,19 @@ The image test draws the scene twice, with moment transparency on and with today
 the same scene a third time with the weighted blending. The test measures each image's distance
 from the sorted one, as the mean of every color channel over the whole picture. It passes when the
 moment image is nearer than the weighted image.
+
+On the tree of `e1fbc77f9`, with two scenes drawn at 480 by 270:
+
+| Scene | Path | Weighted | Moments |
+| --- | --- | ---: | ---: |
+| five panes within about five meters | WebGPU | 1.427 | 1.680 |
+| five panes within about five meters | WebGL2 | 1.385 | 1.684 |
+| five panes spread over one to thirty meters | WebGPU | 4.007 | 1.602 |
+| five panes spread over one to thirty meters | WebGL2 | 3.949 | 1.562 |
+
+The spread scene is the model's range, and there the moment layer is nearer by about two and a half
+times. The close scene is the hard case for a two-atom fit, and there it is 0.25 to 0.30 steps
+farther. Both scenes stay in the manifest and the spec, and the close scene's failure stands.
 
 Two more tests guard the property that gives the feature its name. The same panes added in the
 opposite order draw the same picture, and both draw nearer the exact image than the weighted

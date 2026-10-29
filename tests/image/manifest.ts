@@ -3077,6 +3077,29 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// The model's range: the same five panes spread from one to thirty metres from the camera, each
+	// sized to keep its place on screen.
+	{
+		name: 'moment-spread-sorted',
+		sketch: `${MOMENT_SKETCH}?mode=sorted&spread=1`,
+		switches: ['antialias=none'],
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'moment-spread-weighted',
+		sketch: `${MOMENT_SKETCH}?mode=weighted&spread=1`,
+		switches: ['antialias=none'],
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'moment-spread-layer',
+		sketch: `${MOMENT_SKETCH}?mode=moment&spread=1`,
+		switches: ['antialias=none', 'moments=on'],
+		hold: 0,
+		size: [480, 270],
+	},
 	// The same layer with the panes added in the opposite order: the moment layer's draws depend on
 	// no order, so the two images agree.
 	{

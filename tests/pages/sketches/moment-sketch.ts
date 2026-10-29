@@ -19,9 +19,27 @@ const PANES = [
 	['#c030c0', [0.2, 1.05, -2.4], [2.2, 1.5]],
 ] as const;
 
+// `?spread=1` places the five panes across the model's range of one to thirty metres from the
+// camera, each sized to keep its place on screen, with the wall far behind them. The default
+// scene keeps them within a few metres, the hard case for a two-atom fit.
+const spread = params.get('spread') === '1';
+const cameraAt: readonly [number, number, number] = [0, 1.2, 6.5];
+const depths = [1, 8, 15, 22, 29] as const;
+/** A pane: its color, its place, and its size. */
+type Pane = readonly [string, readonly [number, number, number], readonly [number, number]];
+
 /** The panes in the order that the sketch adds them: near to far, or the reverse. */
-const panes: readonly (typeof PANES)[number][] =
-	params.get('order') === 'reverse' ? [...PANES].reverse() : PANES;
+const panes: readonly Pane[] = (() => {
+	const list = spread
+		? PANES.map(([color], i) => {
+				const d = depths[i] as number;
+				const position = [((i % 2) * 2 - 1) * 0.15 * d, 1.1, cameraAt[2] - d] as const;
+				const size = [0.6 + 0.55 * d, 0.45 + 0.4 * d] as const;
+				return [color, position, size] as const;
+			})
+		: PANES;
+	return params.get('order') === 'reverse' ? [...list].reverse() : list;
+})();
 
 export default defineSketch(({ scene, materials, geometry }) => {
 	// The page starts the engine without anti-aliasing, so MSAA does not smooth the panes
@@ -30,13 +48,13 @@ export default defineSketch(({ scene, materials, geometry }) => {
 	scene.createDirectionalLight({ direction: [-0.6, -2, -1.4], intensity: 3 });
 	scene.createAmbientLight({ intensity: 0.8 });
 	scene.setActiveCamera(
-		scene.createPerspectiveCamera({ fov: 45, position: [0, 1.2, 6.5], target: [0, 1.1, 0] }),
+		scene.createPerspectiveCamera({ fov: 45, position: cameraAt, target: [0, 1.1, 0] }),
 	);
 	// An opaque wall behind the panes, so what shows through them has a colour of its own.
 	scene.createMesh({
-		mesh: geometry.plane({ width: 14, height: 6 }),
+		mesh: geometry.plane({ width: spread ? 120 : 14, height: spread ? 120 : 6 }),
 		material: materials.standard({ color: '#6b7480', roughness: 0.9 }),
-		position: [0, 1.1, -6],
+		position: [0, 1.1, spread ? -40 : -6],
 	});
 	// The panes: drawn in their list's order, which the sorted pass then orders back to front.
 	for (const [color, position, [width, height]] of panes) {
