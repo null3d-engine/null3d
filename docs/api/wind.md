@@ -267,7 +267,7 @@ Beyond its box the field carries on. The box sets the detail, not the field's ex
 - The pass fills one `rgba16float` texture of `grid` by `grid` texels, once in each frame. A reader spends one texture slot on it.
 - A vertex inside the box costs one texture read. A vertex outside it costs the steady field's arithmetic instead: four reads of the engine's value noise, with a few trigonometric and exponential calls.
 - A device without float render targets cannot hold the grid, so it keeps no pass. There `field.size` is zero and a reader's samples are the steady field worked out, so a plant still moves. The texture it declares holds a single black texel that it never reaches.
-- A point far from the camera loses the grid's detail and reads the steady wind alone: the swirl and the gust that travel through it. A body's pushes are gone there.
+- A point far from the camera loses the grid's detail and reads the steady wind alone. That is the base wind, the swirl and the field's own traveling gust. A body's pushes and a sent gust are gone there.
 - The add-on allocates nothing in a frame, and its texture exists only while something reads it.
 
 [The API reference](reference/wind.md) lists every export of this page with its type and
