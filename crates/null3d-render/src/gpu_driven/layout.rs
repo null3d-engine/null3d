@@ -391,6 +391,8 @@ struct BatchRows {
 /// copy in a view's compacted instances, the first of its indirect draws, and its base vertex.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct ClusterMesh {
+    /// The engine mesh whose tree the pass picks, which a staged band's watch reads.
+    pub(super) mesh: u32,
     pub(super) first_patch: u32,
     pub(super) patch_count: u32,
     pub(super) slot: u32,
@@ -1242,6 +1244,7 @@ impl Layout {
             let cluster = tree.map(|tree| {
                 let index = self.clusters.len() as u32;
                 self.clusters.push(ClusterMesh {
+                    mesh,
                     first_patch: self.cluster_patches.len() as u32,
                     patch_count: tree.len() as u32,
                     slot: slot_base,
