@@ -158,6 +158,101 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 		expect(result.fineDrawn).toBeGreaterThan(0.4);
 	});
 
+/** The glob of the files that a staged tree's bands download. */
+const BAND_FILE = /\.band\d+\.bin$/;
+
+/**
+ * Asserts a staged tree's run: every band file arrived, the first picture is the band that the
+ * file holds, and the bands that arrived refined it over a real share of the image.
+ */
+function expectBands(result: StagedResult, asked: number) {
+	expect(result.failures).toEqual([]);
+	expect(result.loaded).toEqual({ levels: 0, staged: true });
+	expect(result.expected).toBeGreaterThan(1);
+	expect(asked).toBe(result.expected);
+	// Both pictures draw the ground, and the bands changed a real share of the pixels.
+	expect(result.drawn).toBeGreaterThan(0.4);
+	expect(result.changed).toBeGreaterThan(0.01);
+	// The bands refine a tree, so they add no level to the mesh that draws it.
+	expect(result.levels).toBe(0);
+}
+
+for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
+	test(`staged-bands draw the file's band first and refine the tree as bands arrive, on ${gpu}`, async ({
+		page,
+	}) => {
+		test.setTimeout(240_000);
+		/** The band files that the page asked for. */
+		const asked = new Set<string>();
+		page.on('request', (request) => {
+			if (BAND_FILE.test(request.url())) asked.add(request.url());
+		});
+		/** The band files' answers, which wait for the coarse picture. */
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		await page.route(BAND_FILE, async (route) => {
+			await gate;
+			await route.continue();
+		});
+		await page.goto(`staged-levels.html?gpu=${gpu}&clusters&direct=off`);
+		await page.waitForFunction(() => (globalThis as { __stagedCoarse?: boolean }).__stagedCoarse);
+		release?.();
+		const result = await pageResult<StagedResult>(page, 180_000);
+		expectBands(result, asked.size);
+	});
+
+for (const gpu of ['webgpu', 'webgl2'] as const)
+	test(`staged-bands hold the bands that the camera never draws, on ${gpu}`, async ({ page }) => {
+		test.setTimeout(240_000);
+		/** The band files that the page asked for. */
+		const asked = new Set<string>();
+		page.on('request', (request) => {
+			if (BAND_FILE.test(request.url())) asked.add(request.url());
+		});
+		/** The band files' answers, which wait for the coarse picture. */
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		await page.route(BAND_FILE, async (route) => {
+			await gate;
+			await route.continue();
+		});
+		await page.goto(`staged-levels.html?gpu=${gpu}&clusters&far&direct=off`);
+		await page.waitForFunction(() => (globalThis as { __stagedCoarse?: boolean }).__stagedCoarse);
+		release?.();
+		const far = await pageResult<StagedResult>(page, 180_000);
+		expect(far.failures).toEqual([]);
+		expect(far.expected).toBeGreaterThan(2);
+		// The band after the file's own always arrives. Its patches never draw at this camera, so
+		// the loader holds the band after it, and every later one, without asking for their files.
+		expect(asked.size).toBe(1);
+		// The patches that arrived draw nothing at this camera, so both pictures show the file's band.
+		expect(differing(far.coarsePixels, far.finePixels)).toBeLessThan(0.001);
+	});
+
+test("staged-bands draw the file's band first, and a band limit downloads none", async ({
+	page,
+}) => {
+	test.setTimeout(240_000);
+	/** The band files that the page asked for. */
+	const asked = new Set<string>();
+	page.on('request', (request) => {
+		if (BAND_FILE.test(request.url())) asked.add(request.url());
+	});
+	await page.goto('staged-levels.html?gpu=webgpu&clusters&max=1&direct=off');
+	await page.waitForFunction(() => (globalThis as { __stagedCoarse?: boolean }).__stagedCoarse);
+	const limited = await pageResult<StagedResult>(page, 120_000);
+	expect(limited.failures).toEqual([]);
+	expect(limited.loaded).toEqual({ levels: 0, staged: false });
+	expect(limited.expected).toBeGreaterThan(1);
+	expect(asked.size).toBe(0);
+	expect(limited.drawn).toBeGreaterThan(0.4);
+	expect(limited.changed).toBeLessThan(0.001);
+});
+
 test("staged-levels draws the file's own level first, and a level limit downloads no stage", async ({
 	page,
 }) => {

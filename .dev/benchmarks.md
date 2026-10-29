@@ -558,6 +558,13 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 - The shader file of the device's GPU path and fixed bits downloads with the core. The page starts it right after the GPU probe, as [D-13](decisions/D-13-shader-variants.md#the-download-after-the-core-t-28) says. A request after the core would come one round trip later.
 - The MacBook Pro also ran Slow 4G and WebGL2 in Chrome 154, while other work loaded it. A cold load took 4.20 to 4.26 s in each thread mode, and a warm one 0.68 to 0.71 s. Each figure is a median of 10 loads. With the file asked for after the core, a cold load took 4.76 to 4.83 s, and a warm one 0.68 to 0.77 s. In those loads the core was 249.4 KB after Brotli, and a cold load downloaded 363 to 371 KB.
 
+## Staged loads
+
+- `bun run bench:staged-load` times the first draw of a page that loads a staged model: the model file draws at once, and the finer levels or the tree's bands download after it. It compares a load with every stage against one with the loader's level limit of 1, which downloads no stage. Each load is cold, in a fresh Chrome profile, on Slow 4G.
+- The page reports the time from navigation to the first draw, and asks the load server for what it sent up to that moment, then keeps asking until the downloads stop. The report gives the bytes before the first draw, the whole download, the share that arrived after it, and the stage files' own bytes.
+- `--runs` sets the loads of each kind, `--gpu` picks the path, `--network` picks the connection, and `--clusters` loads the model whose tree of patches streams its bands.
+- It is a timing run, so it needs a quiet window: start it through the job queue with `QUIET_OK=1`, as [Benchmarks](#what-a-report-measures) says of the tools that time.
+
 ## Soak
 
 - `bun run bench:soak` runs the production build, and samples every 30 seconds. Before each sample, the page, the sketch worker and the render worker collect their garbage, so a sample counts only what they keep.

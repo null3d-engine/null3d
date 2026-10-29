@@ -1436,6 +1436,38 @@ impl GpuDrivenRenderer {
         Ok(())
     }
 
+    /// Notes the bands of each watched mesh's tree of cluster patches that the camera's view drew
+    /// this frame, so a loader holds a band until the band above it drew. A frame with no loader
+    /// waiting pays nothing.
+    fn note_stage_band_picks(&mut self, input: &FrameInput<'_>, parity: usize) {
+        if !self.settings.watches_stages() {
+            return;
+        }
+        let Some(frame) = self
+            .frames
+            .first()
+            .and_then(|frame| frame.as_ref())
+            .copied()
+        else {
+            return;
+        };
+        let rule = self.settings.level_view(ViewId::CAMERA, input.canvas);
+        self.copy_offsets.update(input.scene, &frame.camera);
+        let layout = &self.layout;
+        let drawn = |mesh: u32| layout.clusters.iter().any(|cluster| cluster.mesh == mesh);
+        self.settings.note_stage_bands(
+            input.scene,
+            parity,
+            &crate::patches::BandView {
+                view: &frame,
+                rule,
+                offsets: self.copy_offsets.as_slice(),
+                frame: u64::from(input.frame),
+            },
+            drawn,
+        );
+    }
+
     /// True when a layout that a culling role draws holds a tree of cluster patches, so the frame
     /// dispatches the cluster pass and needs its pipeline.
     fn draws_cluster_trees(&self) -> bool {
@@ -2256,6 +2288,7 @@ impl GpuDrivenRenderer {
         // for every source. It comes before the layouts are applied and the views' bundles are
         // recorded: both name the slices' bases in commands that the frame keeps.
         self.fit_level_copies(input, parity)?;
+        self.note_stage_band_picks(input, parity);
         let (shared_recreated, casters_recreated) = if upload_everything {
             let shared = self.layout.apply(list, arena, binding_bytes)?;
             let casters = shadows && self.casters.apply(list, arena, binding_bytes)?;
