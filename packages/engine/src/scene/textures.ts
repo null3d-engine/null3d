@@ -1219,7 +1219,8 @@ export class Textures {
 		if (data instanceof Float32Array) toHalfFloats(data, core.view(Uint16Array, address, values));
 		else if (data instanceof Uint16Array) core.view(Uint16Array, address, values).set(data);
 		else core.view(Uint8Array, address, values).set(data);
-		if (fromCanvas) core.glue.turnRows(address, width * 4, height * depth);
+		// A canvas has one layer, so its depth is 1 and the rows are its height alone.
+		if (fromCanvas) core.glue.turnRows(address, width * 4, height);
 	}
 
 	/** @internal */
@@ -1427,23 +1428,6 @@ function invalid(call: string, detail: string): EngineError {
 }
 
 const quote = (value: unknown) => (typeof value === 'string' ? `'${value}'` : String(value));
-
-/**
- * Turns the rows of a rectangle over in place, so that its last row comes first. A canvas counts
- * rows from its top, and a texture counts them from v = 0, the bottom of a plane. The rectangle
- * starts `offset` bytes into `rows`, which may be a view of the whole memory.
- */
-function turnRows(rows: Uint8Array, offset: number, row: number, height: number): void {
-	for (let top = 0, bottom = height - 1; top < bottom; top++, bottom--) {
-		const a = offset + top * row;
-		const b = offset + bottom * row;
-		for (let k = 0; k < row; k++) {
-			const texel = rows[a + k] as number;
-			rows[a + k] = rows[b + k] as number;
-			rows[b + k] = texel;
-		}
-	}
-}
 
 /**
  * Throws E1208 unless the image holds pixels: a closed image, or one sent away already, has none.
