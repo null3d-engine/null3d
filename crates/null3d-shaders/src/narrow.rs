@@ -16,6 +16,7 @@ pub fn narrowed(inputs: &Inputs, names: &[&str]) -> Inputs {
     let mut inputs = Inputs {
         manifest: inputs.manifest.clone(),
         files: inputs.files.clone(),
+        only: inputs.only.clone(),
         parts: inputs
             .parts
             .iter()

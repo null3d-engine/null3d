@@ -40,3 +40,4 @@ The list goes in `asset.extras.NULL3D_shaders` as `{ "permutations": [...], "fea
 - The loader asks for the recorded features in `packages/engine/src/scene/gltf.ts`; `parseGltf` reads the field.
 - A unit test checks that every name the tool writes exists in `crates/null3d-gpu/src/drawlist.rs` and `crates/null3d-shaders/shaders.toml`, and that the tool's preset budgets equal the engine's.
 - `guides/assets-pipeline`, `guides/loading-screens` and the develop skill describe the list.
+

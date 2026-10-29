@@ -4,6 +4,10 @@
 //! also runs through the shader compiler, the WebAssembly module that build tools load, and its
 //! result must be the native build's. The module must be built first, with `bun run build`.
 
+// Each test binary compiles this module into itself, so a test uses only the helpers it needs; the
+// rest are alive for their own binary and must not fail this one.
+#![allow(dead_code)]
+
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -46,6 +50,7 @@ pub fn project(source: &str, variants: &[(&str, &str)], library: &[(&str, &str)]
         manifest,
         files,
         parts: BTreeMap::new(),
+        only: Default::default(),
     }
 }
 
