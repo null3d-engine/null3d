@@ -36,6 +36,7 @@ import type { FeatureStats } from '../scene/features';
 import { type Level, rateLevel, workLevel } from './frame-target';
 import {
 	count,
+	type FeatureFact,
 	featureFacts,
 	featureGpu,
 	type StatsFigures,
@@ -402,7 +403,7 @@ button {
 	background: var(--amber);
 	vertical-align: 1px;
 }
-.feature-list { display: grid; flex: none; gap: 12px; }
+.feature-list { display: grid; flex: 1; align-content: space-between; gap: 12px; min-height: 0; }
 .feature { display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: 8px; }
 .feature .fname { font: 500 10.5px/1.3 ${FONT}; color: #cbd4e2; }
 .feature .fgpu {
@@ -416,13 +417,12 @@ button {
 .feature .fgpu.none { font: 400 9px/1.3 ${FONT}; color: var(--faint); }
 .feature .fdetails {
 	grid-column: 1 / -1;
-	display: grid;
-	grid-auto-flow: column;
-	justify-content: start;
+	display: flex;
+	flex-wrap: wrap;
 	gap: 2px 20px;
 	margin-top: 3px;
 }
-.fcell { display: grid; gap: 1px; }
+.fcell { display: grid; gap: 1px; min-width: 0; }
 .flabel { font: 400 8.5px/1.2 ${MONO}; letter-spacing: 0.01em; color: var(--faint); white-space: nowrap; }
 .fvalue { font: 500 10px/1.2 ${MONO}; color: #d5deea; white-space: nowrap; }
 .gsteps { display: grid; flex: 1; grid-auto-rows: minmax(20px, 1fr); min-height: 0; }
@@ -1027,28 +1027,28 @@ class FeatureRow {
 		gpuText: string,
 		level: Level | undefined,
 		unmeasured: boolean,
-		facts: readonly (readonly [string, string])[],
+		facts: readonly FeatureFact[],
 	): void {
 		setText(this.gpuText, gpuText);
 		this.gpu.classList.toggle('none', unmeasured);
 		setLevel(this.gpu, level);
 		const seen = new Set<string>();
-		for (const [label, value] of facts) {
-			seen.add(label);
-			let cell = this.cells.get(label);
+		for (const fact of facts) {
+			seen.add(fact.key);
+			let cell = this.cells.get(fact.key);
 			if (!cell) {
 				const box = element('span', 'fcell', this.details);
-				element('span', 'flabel', box).append(label, ' ');
+				element('span', 'flabel', box).append(fact.label, ' ');
 				const text = document.createTextNode('');
 				element('span', 'fvalue', box).append(text, ' ');
 				cell = { box, value: text };
-				this.cells.set(label, cell);
+				this.cells.set(fact.key, cell);
 			}
-			setText(cell.value, value);
+			setText(cell.value, fact.value);
 			cell.box.hidden = false;
 		}
-		for (const [label, cell] of this.cells) {
-			if (!seen.has(label)) cell.box.hidden = true;
+		for (const [key, cell] of this.cells) {
+			if (!seen.has(key)) cell.box.hidden = true;
 		}
 		this.details.hidden = facts.length === 0;
 	}
@@ -1209,7 +1209,7 @@ export class StatsCard {
 		note.append(this.wholePage.text);
 
 		const steps = this.pane('steps');
-		const features = element('div', 'block', steps);
+		const features = element('div', 'block grow', steps);
 		sectionHead(features, 'Add-ons');
 		this.featureList = element('div', 'feature-list', features);
 		this.featureSection = features;
