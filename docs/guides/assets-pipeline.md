@@ -54,7 +54,7 @@ scene.instantiate(ship);
 | Option | Effect | Without it |
 | --- | --- | --- |
 | `--lod` | Adds levels of detail to each mesh of 64 triangles or more | No levels |
-| `--stages` | With `--lod`, writes each mesh's levels as separate files beside the model, for a model that draws its coarse level first | Levels in the file |
+| `--stages` | With `--lod` or `--clusters`, writes finer levels and cluster bands as separate files beside the model. The page then draws a coarse first picture | Levels and bands in the file |
 | `--simplify <share>` | Keeps this share of each mesh's triangles, from 0 to 1, as far as `--simplify-error` allows | 1: every triangle |
 | `--simplify-error <share>` | The most that `--simplify` may move a mesh's surface, as a share of the mesh's size | 0.01 |
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
@@ -200,6 +200,8 @@ The loader sets aside a stage that the camera never shows. The stage after the f
 
 The loader's `maxLevels` option stops the downloads after that many levels, the file's own counted first. A page whose camera never comes close enough to show the finest level sets it to 1, or to the number of levels that show. Other glTF readers draw the coarsest level, since the finer ones are not in the file.
 
+The same stage file layout carries a cluster tree's bands. A kind 1 stage holds one band: its header, the patch count, each patch's sphere, run, parent and error, and the band's indices. The model file holds the tree's first band, and that band draws the first picture. Each later band appends its patches below the patches that arrived before it. Parents come before children across the file and its bands. So the patches that a page holds always form a whole tree from the root. A patch whose children have not arrived draws where the camera is close, so the first picture is coarse. The first picture still covers the whole surface. `maxLevels` counts a band as it counts a level, and the loader holds a band until a view draws a patch of the band above it.
+
 ### Cluster levels
 
 `--clusters` stores a tree of small patches for each large static mesh: a scan, a cliff, a building or a CAD model. Every patch holds about 128 triangles, and the patches above it replace groups of patches below. One mesh can then draw fine triangles near the camera and coarse triangles far from it. The whole levels draw one detail for the whole object instead.
@@ -214,8 +216,11 @@ The tree holds about twice the mesh's triangles. Every patch's indices name the 
 
 A mesh gets no tree in four cases. It has fewer than 20,000 triangles, or a skin or a morph target bends it. It also gets none when its material blends or masks, or more than four copies draw it. Those meshes keep whole levels.
 
+A tree streams when the command takes `--stages` as well: each band below the one that the file holds becomes a file of its own, and each node names its bands in `NULL3D_stages`. The tree then refines as the bands arrive. The whole levels that the tree cuts into stay in the file, for the readers and the paths that draw the mesh whole.
+
 ```sh
 bunx @null3d/cli assets optimize models/ public/models/ --lod --clusters
+bunx @null3d/cli assets optimize models/ public/models/ --clusters --stages
 ```
 
 ### Fewer triangles in the full mesh
@@ -233,6 +238,7 @@ The default limit, a hundredth of each mesh's size, changes little that a viewer
 | `size` | The scene's size in its own units, from the meshes' bounds |
 | `levels of detail` | The meshes that got levels, and their triangles at each level, the full meshes first |
 | `cluster trees` | The meshes that got a tree of patches, the patches, the leaf patches, the tree's triangles against the full meshes', and the bytes the trees take |
+| `after the first picture` | The stage files that the model downloads after itself, their bytes, and their share of the model's whole download. Each file follows with its bytes and whether it holds a level or a band |
 | `merged copies` | The meshes, materials, textures and vertex data that merged into an equal copy |
 | Textures | Each group of textures that share a size, a format and a color space |
 | `texture memory` | The textures' GPU memory with every mip level: where the GPU takes ETC2 and ASTC, as phones, tablets and Macs do; where it takes only BC7, as most Windows PCs do; and with no compressed format |
@@ -280,7 +286,7 @@ The plugin uses the tool of `@null3d/cli`, so add the command-line tool to your 
 bun add -d @null3d/cli
 ```
 
-The first import of a model encodes it. The plugin keeps the result in `node_modules/.cache/null3d-assets`, keyed by the model's files, the tool's version and the options. Later starts and builds take it from there, until one of those changes. A production build writes the files into its assets folder. The plugin's `assets` option takes the command's options: `lod`, `stages` (the levels as separate downloads, with `lod`), `simplify`, `simplifyError`, `maxTextureSize`, `textureQuality`, `roughnessBake` (false for `--no-roughness-bake`), `meshopt` (false for `--compression none`), `blockers` (false for `--no-blockers`) and `bvh`:
+The first import of a model encodes it. The plugin keeps the result in `node_modules/.cache/null3d-assets`, keyed by the model's files, the tool's version and the options. Later starts and builds take it from there, until one of those changes. A production build writes the files into its assets folder. The plugin's `assets` option takes the command's options: `lod`, `clusters`, `stages` (the levels and bands as separate downloads, with `lod` or `clusters`), `simplify`, `simplifyError`, `maxTextureSize`, `textureQuality`, `roughnessBake` (false for `--no-roughness-bake`), `meshopt` (false for `--compression none`), `blockers` (false for `--no-blockers`) and `bvh`:
 
 ```ts
 // vite.config.ts
