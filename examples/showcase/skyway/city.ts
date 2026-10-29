@@ -22,6 +22,11 @@ const LAMP_COLOURS = [
 /** How many lamps stand along each street of the plan, and how far apart, in meters. */
 const LAMPS_PER_STREET = 9;
 const LAMP_HEIGHT = 9;
+/**
+ * A lamp post: how far from the street's centre line it stands, on the kerb, how far its arm
+ * reaches over the road, and the thickness of its pole and its arm, in meters.
+ */
+const POST = { across: STREET / 2 + 0.8, reach: 3.6, pole: 0.26, arm: 0.16 };
 const LAMP_RANGE = 64;
 /** The strength of one lamp's light, and of a searchlight, when the city's lights burn fully. */
 const LAMP_INTENSITY = 2200;
@@ -156,20 +161,28 @@ export function createCity(ctx: SketchContext): City {
 		receiveShadows: false,
 	});
 
-	// The lamps: a point light at each head, and one batch of glowing heads for them all.
+	// The lamps: posts on the kerbs, on either side of the street in turn, each with an arm that
+	// reaches over the road. A point light sits at each head, and one batch each draws the poles,
+	// the arms and the glowing heads.
 	const heads: { x: number; y: number; z: number; colour: readonly number[] }[] = [];
+	const poles: { x: number; z: number }[] = [];
+	const arms: { x: number; z: number; alongX: boolean }[] = [];
 	for (const axis of ['x', 'z'] as const) {
 		for (let street = 1; street < 10; street++) {
 			for (let lamp = 0; lamp < LAMPS_PER_STREET; lamp++) {
 				const line = streetLine(street);
 				const at = -HALF + ((lamp + 0.5) / LAMPS_PER_STREET) * HALF * 2;
 				const colour = LAMP_COLOURS[(street + lamp) % LAMP_COLOURS.length] as readonly number[];
-				heads.push({
-					x: axis === 'x' ? at : line,
-					y: LAMP_HEIGHT,
-					z: axis === 'x' ? line : at,
-					colour,
-				});
+				const side = lamp % 2 === 0 ? 1 : -1;
+				const post = line + side * POST.across;
+				const head = line + side * (POST.across - POST.reach);
+				const middle = line + side * (POST.across - POST.reach / 2);
+				// A street along x runs its lamps along x, and stands them on its z side.
+				const place = (across: number) =>
+					axis === 'x' ? { x: at, z: across } : { x: across, z: at };
+				heads.push({ ...place(head), y: LAMP_HEIGHT, colour });
+				poles.push(place(post));
+				arms.push({ ...place(middle), alongX: axis !== 'x' });
 			}
 		}
 	}
@@ -207,6 +220,31 @@ fn surface(input: SurfaceInput) -> Surface {
 		glowBatch.scales.set([0.9, 0.22, 0.9], k * 3);
 	}
 	glowBatch.markDirty(0, heads.length);
+	const steel = materials.standard({ color: '#1c2026', roughness: 0.45, metalness: 0.8 });
+	const poleBatch = scene.createInstances(geometry.box(), poles.length, {
+		material: steel,
+		castShadows: false,
+	});
+	for (let k = 0; k < poles.length; k++) {
+		const pole = poles[k] as (typeof poles)[number];
+		poleBatch.positions.set([pole.x, LAMP_HEIGHT / 2, pole.z], k * 3);
+		poleBatch.scales.set([POST.pole, LAMP_HEIGHT + 0.2, POST.pole], k * 3);
+	}
+	poleBatch.markDirty(0, poles.length);
+	const armBatch = scene.createInstances(geometry.box(), arms.length, {
+		material: steel,
+		castShadows: false,
+	});
+	for (let k = 0; k < arms.length; k++) {
+		const arm = arms[k] as (typeof arms)[number];
+		armBatch.positions.set([arm.x, LAMP_HEIGHT + 0.16, arm.z], k * 3);
+		const long = POST.reach + POST.pole;
+		armBatch.scales.set(
+			arm.alongX ? [long, POST.arm, POST.arm] : [POST.arm, POST.arm, long],
+			k * 3,
+		);
+	}
+	armBatch.markDirty(0, arms.length);
 
 	// Three searchlights over the city, sweeping the rain.
 	const beams = [
