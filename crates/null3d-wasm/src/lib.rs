@@ -2478,6 +2478,40 @@ pub fn mesh_radius(mesh: u32) -> f32 {
     mesh_value(mesh, |slot| slot.radius)
 }
 
+/// Turns a rectangle's rows over in place, so that its last row comes first, which a canvas needs:
+/// it counts rows from its top, and a texture counts them from the bottom.
+///
+/// The rectangle starts at `address` in the engine's memory, each row is `row_bytes` long, and
+/// there are `height` rows. The caller writes the rectangle there first, and gives a length that it
+/// really wrote: this function trusts the three numbers and turns exactly that many bytes.
+#[wasm_bindgen(js_name = turnRows)]
+pub fn turn_rows(address: u32, row_bytes: u32, height: u32) {
+    let row = row_bytes as usize;
+    let rows = height as usize;
+    if row == 0 || rows < 2 {
+        return;
+    }
+    // SAFETY: the caller passes the address and size of a rectangle that it wrote in this memory,
+    // as every other function here trusts the addresses that TypeScript hands it.
+    let bytes = unsafe { std::slice::from_raw_parts_mut(address as *mut u8, row * rows) };
+    turn_rows_bytes(bytes, row);
+}
+
+/// Turns `row`-byte rows over in place, so that the last comes first. A call with fewer than two
+/// rows or an empty row leaves the bytes as they are, which the export's checks also give.
+fn turn_rows_bytes(bytes: &mut [u8], row: usize) {
+    if row == 0 {
+        return;
+    }
+    let rows = bytes.len() / row;
+    for top in 0..rows / 2 {
+        let (first, last) = (top * row, (rows - 1 - top) * row);
+        for k in 0..row {
+            bytes.swap(first + k, last + k);
+        }
+    }
+}
+
 /// A mesh's vertex count, or 0 for an unknown mesh.
 #[wasm_bindgen(js_name = meshVertexCount)]
 pub fn mesh_vertex_count(mesh: u32) -> u32 {
@@ -6064,6 +6098,20 @@ pub fn overlap(kind: u32, layers: u32) -> u32 {
 mod tests {
     use super::*;
     use null3d_core::animation::NO_PARENT;
+
+    #[test]
+    fn a_rectangles_rows_turn_over_in_place() {
+        let mut three = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        turn_rows_bytes(&mut three, 4);
+        assert_eq!(three, [9, 10, 11, 12, 5, 6, 7, 8, 1, 2, 3, 4]);
+        // An even count turns every row, and fewer than two rows turns none.
+        let mut two = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        turn_rows_bytes(&mut two, 4);
+        assert_eq!(two, [5, 6, 7, 8, 1, 2, 3, 4]);
+        let mut one = [1u8, 2, 3, 4];
+        turn_rows_bytes(&mut one, 4);
+        assert_eq!(one, [1, 2, 3, 4]);
+    }
 
     #[test]
     fn a_reflections_share_of_the_render_size_becomes_halvings() {

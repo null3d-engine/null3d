@@ -852,7 +852,9 @@ export class Textures {
 		const view = core.heap(Uint8Array);
 		const image = source.context.getImageData(x, top, width, height);
 		view.set(image.data, address);
-		turnRows(view, address, row, height);
+		// The turn runs in the core: it is a frame's work over the whole rectangle, and a loop here
+		// would spend the sketch thread's frame on it.
+		core.glue.turnRows(address, row, height);
 		return true;
 	}
 
