@@ -59,6 +59,7 @@ const INCOMPLETE = new Set([
 	'M3-V3',
 	'M3-R40',
 	'M3-K2',
+	'M3-D2',
 ]);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
@@ -91,6 +92,8 @@ const NOTES: Readonly<Record<string, string>> = {
 		'unticked under the same policy: the physics guide sample that the task corrected has never run, because the skill and cookbook check compiles without executing it and no example, test or bench uses the library it calls',
 	'M3-K2':
 		'unticked under the same policy: drag controls are exported and reached by no unit test, browser test, picture or example, because the gizmos picture and its spec reach only the transform controls',
+	'M3-D2':
+		'unticked by the 29 October audit: its done-when names a page that fails with the error for a mismatched add-on version, and no such page exists. The only caller constructs the check directly in a unit test, so the witness its own clause names has never run',
 	'M3-F3':
 		"dropped with the temporal resolve it waited on (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F10':
