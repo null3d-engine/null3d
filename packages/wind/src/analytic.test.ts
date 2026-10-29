@@ -9,7 +9,6 @@ import {
 	type FieldState,
 	GUST_SLOT,
 	PUSH_LIFE,
-	PUSH_SLOTS,
 	type Push,
 	profile,
 	RING_SLOTS,
