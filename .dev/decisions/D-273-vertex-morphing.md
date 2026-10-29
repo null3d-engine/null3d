@@ -170,6 +170,12 @@ no target.
 
 ## Consequences
 
+- The judged GPU check passed against the branch's own base: `028abe3f8..25e0bd6bd`, s4 medium
+  2.76 to 2.54 ms (-7.4 per cent, noise 0.3), s6 medium 3.90 to 3.88 (+0.2, noise 3.4), s4 high
+  3.45 to 3.55 (+3.2, noise 0.6) and s6 high 5.80 to 5.63 (-1.4, noise 2.0), every page "same". A
+  page fails only above 25 per cent, above 0.3 ms and above twice its noise, so the 0.3 ms floor is
+  what holds two rows that are many times their noise at "same": the four changes are 0.22, 0.02,
+  0.10 and 0.17 ms.
 - Code: `packages/terrain/src/chunk.ts`, `terrain.ts`, `material.ts` and `terrain.wgsl` gain the
   parent heights, the height box, the record and the offset. `packages/vegetation/src/levels.ts`,
   `generate.ts`, `builder.ts`, `leaves.ts`, `atlas.ts` and the new `plant-cards.wgsl` gain the
