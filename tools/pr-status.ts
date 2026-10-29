@@ -58,8 +58,6 @@ const INCOMPLETE = new Set([
 	'M3-V3',
 	'M3-K2',
 	'M3-L3',
-	'M3-A6',
-	'M3-L5',
 	'M3-E10',
 	'M3-V9',
 ]);
@@ -94,10 +92,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"held open although its work has landed, for two reasons. Its cost is not measured: the card-field figures on the record predate the coverage function, the shadow offset and the both-faces change, so the phone cost run and the frame-time check are owed and the entry quotes no cost. And its own first clause names a witness that does not exist: it asks that Creek's far slopes show impostor trees matching the near ones at the hand-off, and no Creek page draws impostors, because the call is made only by the impostors demo and the impostor sketches. The hand-over picture that exists is the demo's; the Creek half belongs with M3-V11, which dresses Creek through the add-on. Either the clause should name the demo or the plan should hand that half to V11",
 	'M3-L3':
 		'unticked under the policy the owner kept: its whole-levels fallback, where a device cannot draw many ranges, is taken by no automated run, because every cluster picture and cost run forces the extension on in Chromium and no switch withholds it. Only a Firefox hand run ever draws it. The close is a switch that leaves `WEBGL_multi_draw` out and one manifest entry of the existing cluster picture sharing its reference',
-	'M3-A6':
-		"unticked under the policy the owner kept: a batch row's own distance band is public API that no sketch, example or page switch sets. The close is a `?rows` mode on the existing level-of-detail sketch that sets one row's band, sharing the range picture's reference",
-	'M3-L5':
-		"unticked under the policy the owner kept, for two witnesses: the water add-on's bounds view is turned on by one unit test and by no page or example, and its culling-spheres view is called by a unit test against a fake scene and by nothing else, so the traversal and the core hand-off never run. The closes are one manifest entry of an existing water sketch with the bounds view, sharing its reference, and a browser test or an example that turns the spheres on for a page with level meshes",
 	'M3-E10':
 		"unticked under the policy the owner kept: the scene-pass leg of a sky layer is drawn by no page, and the tests that name it check graph order or an error's shape. The close is a sky-layer sketch with a water surface under the layer, sharing a reference it already has",
 	'M3-F3':
