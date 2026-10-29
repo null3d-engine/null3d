@@ -11,9 +11,11 @@ const STREAKS = 4800;
 const [REACH, HEIGHT] = [62, 58];
 /** The length of one streak, in meters. */
 const LENGTH = 0.62;
+/** How far round the camera the air stays clear of drops, in meters, unless the scene asks for more. */
+const CLEAR = 1.5;
 
 const falling = /* wgsl */ `
-struct Uniforms { strength: f32 }
+struct Uniforms { strength: f32, clear: f32 }
 
 fn vertexOffset(input: VertexInput) -> vec3f {
     let span = 58.0; // the box's height, as HEIGHT above
@@ -30,7 +32,11 @@ fn surface(input: SurfaceInput) -> Surface {
     s.roughness = 0.2;
     s.metalness = 0.0;
     s.emissive = vec3f(0.34, 0.42, 0.55) * (0.5 + 0.7 * input.uv.x) * material.strength;
-    s.alpha = min(1.0, sin(input.uv.y * 3.14159) * (0.16 + 0.28 * input.uv.x)) * material.strength;
+    // A drop that falls past the lens would draw as a bright bar across the view, so the rain
+    // fades out near the camera.
+    let near = smoothstep(material.clear, material.clear * 2.0, length(input.relativePosition));
+    s.alpha = min(1.0, sin(input.uv.y * 3.14159) * (0.16 + 0.28 * input.uv.x)) * material.strength * near;
+    s.emissive *= near;
     return s;
 }
 `;
@@ -43,6 +49,11 @@ export interface Rain {
 	setVisible(on: boolean): void;
 	/** Makes the rain denser or fainter, from 1 for the ordinary fall. */
 	setStrength(value: number): void;
+	/**
+	 * Keeps the air clear of drops within `meters` of the camera, fading them in over as far again:
+	 * a little behind the car, and the whole cockpit from its seat.
+	 */
+	setClear(meters: number): void;
 }
 
 /** Builds the rain. */
@@ -78,7 +89,7 @@ export function createRain(ctx: SketchContext): Rain {
 	}
 	const material = materials.shader({
 		wgsl: falling,
-		uniforms: { strength: 1 },
+		uniforms: { strength: 1, clear: CLEAR },
 		doubleSided: true,
 		alphaMode: 'blend',
 		blending: 'additive',
@@ -100,6 +111,7 @@ export function createRain(ctx: SketchContext): Rain {
 	// The rain fills the air, so it casts no shadows and the camera's clearance guard ignores it.
 	mesh.setCastShadows(false);
 	const eye = vec3.create();
+	let clear = CLEAR;
 	return {
 		follow(camera) {
 			camera.getWorldPosition(eye);
@@ -110,6 +122,11 @@ export function createRain(ctx: SketchContext): Rain {
 		},
 		setStrength(value) {
 			material.set({ strength: value });
+		},
+		setClear(meters) {
+			if (meters === clear) return;
+			clear = meters;
+			material.set({ clear: meters });
 		},
 	};
 }

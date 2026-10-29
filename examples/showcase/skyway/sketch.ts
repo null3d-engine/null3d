@@ -372,6 +372,8 @@ export default defineSketch(async (ctx) => {
 			city.update(t);
 			hero.update(dt, t, film.mode === 'auto');
 			rain.follow(camera);
+			// From the seat, the rain keeps out of the cockpit and off the inside of the canopy.
+			rain.setClear(hero.view === 'cockpit' ? 3.5 : 1.5);
 			camera.getWorldPosition(eye);
 			traffic.update(eye, t);
 			if (controls.on.dof) post.set(lensSettings);
