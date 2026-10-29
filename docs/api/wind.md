@@ -77,7 +77,7 @@ A material reads the field with one texture. `field.texture` holds the air over 
 ```wgsl
 #import null3d::noise::{value3}
 
-var wind: texture_2d<f32>;
+var wind: texture_2d_array<f32>;
 
 // <wind-steady>
 /// The height over which the air slows to the ground, in meters.
@@ -205,13 +205,13 @@ fn wind_reading(base: vec4f, gust: vec4f, swirl: vec4f, time: f32) -> WindAir {
 /// and its speed in alpha, at the height the field's texture holds it. Inside the box the grid's
 /// state gives it, with one read. Outside the box, and on a device that keeps no grid, the steady
 /// field gives it, so the air carries on past the box instead of holding the box's edge.
-fn wind_sample(world: vec3f, origin: vec2f, size: f32, air: WindAir) -> vec4f {
+fn wind_sample(world: vec3f, origin: vec2f, size: f32, layer: i32, air: WindAir) -> vec4f {
     if (size > 0.0) {
         let uv = (vec2f(world.x, world.z) - origin) / size;
         if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
             // The grid keeps the air across the ground in red and green, the pressure in blue and
             // the step of its cycle in alpha.
-            let state = textureSampleLevel(wind, windSampler, uv, 0.0);
+            let state = textureSampleLevel(wind, windSampler, uv, layer, 0.0);
             return vec4f(state.r, 0.0, state.g, length(state.rg));
         }
     }
@@ -230,6 +230,7 @@ const leaf = ctx.materials.shader({
   uniforms: {
     origin: wind.field.origin,
     size: wind.field.size,
+    layer: wind.field.texture.layer,
     base: wind.field.air.base,
     gust: wind.field.air.gust,
     swirl: wind.field.air.swirl,
@@ -239,6 +240,8 @@ const leaf = ctx.materials.shader({
 
 The three vectors hold the air's steady settings. They hold the base wind's speed, heading, ground sink and seed, the gust's strength, radius, wave number and speed, and the swirl's shape. A material takes them once, and again after `setBase` or a change to the air.
 
+The pass keeps two states, so the texture is an array. `layer` names the first layer of the newest state, which `field.texture.layer` gives. Give it to the material once and again in each frame, through `setUniform`. That call takes one number and allocates nothing.
+
 A vertex offset reads the air at the vertex's own place and moves the vertex with it:
 
 ```wgsl
@@ -246,7 +249,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     let place = object.position + input.position;
     // The settings come from the material's three vectors, and the time from the engine's frame.
     let air = wind_reading(material.base, material.gust, material.swirl, frame.time);
-    let air_at_place = wind_sample(place, material.origin, material.size, air);
+    let air_at_place = wind_sample(place, material.origin, material.size, material.layer, air);
     // A plant's top leans more than its foot. The share is meters of lean for each meter a second
     // of air: a steady wind of 4 leans the top of a 1 meter plant by about 0.3 meters.
     return vec3f(air_at_place.r, 0.0, air_at_place.b) * (0.08 * input.uv.y);

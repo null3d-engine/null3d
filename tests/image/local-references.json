@@ -197,12 +197,6 @@
 		"date": "2026-10-25",
 		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
 	},
-	"chromium-swiftshader/compat/wind-wake.png": {
-		"test": "wind-wake",
-		"tier": "compat",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
-	},
 	"chromium-swiftshader/webgl2/asset-bent-grid.png": {
 		"test": "asset-bent-grid",
 		"tier": "webgl2",
@@ -391,12 +385,6 @@
 	},
 	"chromium-swiftshader/webgl2/wind-cards.png": {
 		"test": "wind-cards",
-		"tier": "webgl2",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
-	},
-	"chromium-swiftshader/webgl2/wind-wake.png": {
-		"test": "wind-wake",
 		"tier": "webgl2",
 		"date": "2026-10-25",
 		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"

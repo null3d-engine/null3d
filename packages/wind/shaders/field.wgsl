@@ -3,9 +3,10 @@
 // file. The shader build resolves only the engine's library, so a shader cannot import another
 // shader of the add-on; a test compares each copy with this one and fails when one is edited alone.
 //
-// A reader declares the field's texture, and the engine declares its sampler beside it. The texture
-// keeps what the grid's last run wrote, and the engine gives a reader that state:
-var wind: texture_2d<f32>;
+// A reader declares the field's texture, and the engine declares its sampler beside it. The pass
+// keeps two states, so the texture is an array: `layer` names the first layer of the state that the
+// last run wrote, which `field.texture.layer` gives each frame.
+var wind: texture_2d_array<f32>;
 
 // <wind-steady>
 /// The height over which the air slows to the ground, in meters.
@@ -131,13 +132,13 @@ fn wind_reading(base: vec4f, gust: vec4f, swirl: vec4f, time: f32) -> WindAir {
 /// and its speed in alpha, at the height the field's texture holds it. Inside the box the grid's
 /// state gives it, with one read. Outside the box, and on a device that keeps no grid, the steady
 /// field gives it, so the air carries on past the box instead of holding the box's edge.
-fn wind_sample(world: vec3f, origin: vec2f, size: f32, air: WindAir) -> vec4f {
+fn wind_sample(world: vec3f, origin: vec2f, size: f32, layer: i32, air: WindAir) -> vec4f {
     if (size > 0.0) {
         let uv = (vec2f(world.x, world.z) - origin) / size;
         if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
             // The grid keeps the air across the ground in red and green, the pressure in blue and
             // the step of its cycle in alpha.
-            let state = textureSampleLevel(wind, windSampler, uv, 0.0);
+            let state = textureSampleLevel(wind, windSampler, uv, layer, 0.0);
             return vec4f(state.r, 0.0, state.g, length(state.rg));
         }
     }

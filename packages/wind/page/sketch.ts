@@ -6,7 +6,9 @@
 // moves between two times. `?still=1` stops the body after a second, so its wake stays where it
 // made it. `?camera=still` holds the camera, so the air alone moves the picture. `?box=0` gives the
 // reader no grid, which is what a device without float targets gets, so every card works its air
-// out from the steady field.
+// out from the steady field. `?push=0` stops the body from shoving the air, which gives a picture
+// its control. `?capture=<seconds>` makes the sketch ask the page for the frame once it reaches
+// that time.
 import { defineSketch, type SketchContext } from '@null3d/engine';
 import { createWind } from '../src/index.ts';
 
@@ -17,6 +19,10 @@ const STILL = params.get('still') === '1';
 const STILL_CAMERA = params.get('camera') === 'still';
 /** The box's width across the ground, which zero turns off so that the reader works out the air. */
 const BOX = Number(params.get('box') ?? 96);
+/** True while the body shoves the air, which a control's page turns off. */
+const PUSHES = params.get('push') !== '0';
+/** The time at which the page captures its frame, or none. */
+const CAPTURE = params.get('capture');
 
 /** The cards: how many, and how far they stand from the middle. */
 const CARDS = 3_000;
@@ -37,7 +43,7 @@ const PUSH_AT: [number, number] = [0, 0];
 const card = /* wgsl */ `
 #import null3d::noise::{value3}
 
-var wind: texture_2d<f32>;
+var wind: texture_2d_array<f32>;
 
 struct Uniforms {
     // The field's box: its near corner across the ground, its width, and how much the cards lean.
@@ -50,6 +56,8 @@ struct Uniforms {
     base: vec4f,
     gust: vec4f,
     swirl: vec4f,
+    // The first layer of the state that the grid's last run wrote.
+    layer: i32,
 }
 
 // <wind-steady>
@@ -176,13 +184,13 @@ fn wind_reading(base: vec4f, gust: vec4f, swirl: vec4f, time: f32) -> WindAir {
 /// and its speed in alpha, at the height the field's texture holds it. Inside the box the grid's
 /// state gives it, with one read. Outside the box, and on a device that keeps no grid, the steady
 /// field gives it, so the air carries on past the box instead of holding the box's edge.
-fn wind_sample(world: vec3f, origin: vec2f, size: f32, air: WindAir) -> vec4f {
+fn wind_sample(world: vec3f, origin: vec2f, size: f32, layer: i32, air: WindAir) -> vec4f {
     if (size > 0.0) {
         let uv = (vec2f(world.x, world.z) - origin) / size;
         if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
             // The grid keeps the air across the ground in red and green, the pressure in blue and
             // the step of its cycle in alpha.
-            let state = textureSampleLevel(wind, windSampler, uv, 0.0);
+            let state = textureSampleLevel(wind, windSampler, uv, layer, 0.0);
             return vec4f(state.r, 0.0, state.g, length(state.rg));
         }
     }
@@ -194,7 +202,7 @@ fn wind_sample(world: vec3f, origin: vec2f, size: f32, air: WindAir) -> vec4f {
 fn vertexOffset(input: VertexInput) -> vec3f {
     let place = object.position + input.position;
     let air = wind_reading(material.base, material.gust, material.swirl, frame.time);
-    let air_at_place = wind_sample(place, material.origin, material.size, air);
+    let air_at_place = wind_sample(place, material.origin, material.size, material.layer, air);
     // The air slows near the ground, and a card's top leans more than its foot.
     let height = 1.0 - material.ground * exp(-max(place.y, 0.0) / WIND_GROUND_HEIGHT);
     return vec3f(air_at_place.r, 0.0, air_at_place.b) * (material.sway * height * input.uv.y);
@@ -246,6 +254,7 @@ export default defineSketch((ctx: SketchContext) => {
 			base: wind.field.air.base,
 			gust: wind.field.air.gust,
 			swirl: wind.field.air.swirl,
+			layer: wind.field.texture.layer,
 		},
 	});
 	const cards = scene.createInstances(
@@ -276,6 +285,7 @@ export default defineSketch((ctx: SketchContext) => {
 	});
 	let pushed = 0;
 	let sent = false;
+	let captured = false;
 	let elapsed = 0;
 
 	return {
@@ -290,7 +300,7 @@ export default defineSketch((ctx: SketchContext) => {
 			const z = Math.sin(turn) * 9;
 			body.setPosition(x, 1.4, z);
 			// The body shoves the air as it goes, so the wake trails behind it.
-			if (moving && time.now - pushed > BODY_PUSH_MS / 1000) {
+			if (PUSHES && moving && time.now - pushed > BODY_PUSH_MS / 1000) {
 				PUSH_AT[0] = x;
 				PUSH_AT[1] = z;
 				wind.push(PUSH_AT, 4);
@@ -305,10 +315,16 @@ export default defineSketch((ctx: SketchContext) => {
 			cardValues.origin[0] = wind.field.origin[0];
 			cardValues.origin[1] = wind.field.origin[1];
 			cardMaterial.set(cardValues);
+			// The pass keeps two states, and the newest one moves between them as the cycles run.
+			cardMaterial.setUniform('layer', wind.field.texture.layer);
 			// The camera circles slowly, so the cost gate measures frames that change.
 			const view = START + (FROZEN || STILL_CAMERA ? 0 : 0.12 * elapsed);
 			camera.setPosition(Math.cos(view) * 22, 6.5, Math.sin(view) * 22);
 			camera.lookAt(0, 1.2, 0);
+			if (CAPTURE !== null && !captured && time.now >= Number(CAPTURE)) {
+				captured = true;
+				ctx.page.post('capture');
+			}
 		},
 	};
 });
