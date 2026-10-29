@@ -4,8 +4,12 @@
 mod common;
 
 use std::collections::BTreeSet;
+use std::path::Path;
 
-use null3d_shaders::build_names;
+use null3d_shaders::{Inputs, build_names};
+
+/// The list that the showcases' production build reads, recorded from their pages.
+const SHOWCASES: &str = "examples/shader-permutations.txt";
 
 /// The vertex color bit, as `permutation::VERTEX_COLOR` gives it.
 const VERTEX_COLOR: u32 = 4;
@@ -65,4 +69,39 @@ fn the_word_without_any_bit_names_a_build() {
     inputs.only = BTreeSet::from([0]);
     let listed = build_names(&inputs).expect("the listed manifest");
     assert_eq!(listed["shader"], vec!["v"]);
+}
+
+#[test]
+fn the_showcases_list_builds_fewer_words_than_the_whole_manifest() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut inputs = Inputs::read(&root).expect("the repository's shaders");
+    let count = |names: &std::collections::BTreeMap<String, Vec<String>>| -> usize {
+        names.values().map(Vec::len).sum()
+    };
+    let full = count(&build_names(&inputs).expect("the whole manifest"));
+    let text = std::fs::read_to_string(root.join(SHOWCASES)).expect("the showcases' recorded list");
+    for (number, line) in text.lines().enumerate() {
+        let word = line.split('#').next().unwrap_or("").trim();
+        if word.is_empty() {
+            continue;
+        }
+        let hex = word.strip_prefix("0x").unwrap_or(word);
+        let value = u32::from_str_radix(hex, 16)
+            .unwrap_or_else(|_| panic!("{SHOWCASES} line {}: `{word}` is not a word", number + 1));
+        inputs.only.insert(value);
+    }
+    assert!(
+        inputs.only.contains(&0),
+        "the list holds no word without a bit, which the compute and full-screen passes ask for"
+    );
+    let listed = count(&build_names(&inputs).expect("the listed manifest"));
+    println!("the whole manifest builds {full}, and the showcases' list builds {listed}");
+    assert!(
+        listed < full,
+        "the showcases' list builds {listed} of {full}, so it narrows nothing"
+    );
+    assert!(
+        listed < full / 2,
+        "the showcases' list builds {listed} of {full}, which is no meaningful narrowing"
+    );
 }

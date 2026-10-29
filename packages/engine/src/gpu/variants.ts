@@ -64,14 +64,18 @@ export function variantFor<Pipeline extends string>(
 	// A recording lists the words that the scene draws with, so a narrowed build builds them. The
 	// bits a device fixes are left out, so one list holds the words of every device module.
 	if (found !== undefined) recorded?.add((permutation & ~DEVICE_BITS) >>> 0);
-	// A narrowed build made only the words that a recording listed. A pipeline that asks for
-	// another one draws nothing in silence, so the miss is named here, where a test or a run that
-	// takes the path catches it.
-	if (found === undefined && LISTED_PERMUTATIONS !== null) {
-		const word = `0x${(permutation >>> 0).toString(16)}`;
-		throw new Error(
-			`the shader set was built for the permutation words that its recording listed, and this pipeline asks for ${word}, which it lacks. Record the scene again so that the word reaches the list, or add the word to the file by hand.`,
-		);
-	}
 	return found;
+}
+
+/**
+ * The message for a pipeline whose variant no loaded module holds. A variant that loads on first
+ * use is absent until its module arrives, so only a caller that has waited for every module calls
+ * this. A set narrowed to a recorded list names the word to add, and a full set names the word
+ * that its manifest cannot make.
+ */
+export function missingVariant(permutation: number, listed = LISTED_PERMUTATIONS !== null): string {
+	const word = `0x${(permutation >>> 0).toString(16)}`;
+	return listed
+		? `the shader set holds only the permutation words that its recording listed, and this pipeline asks for ${word}, which it lacks. Record the scene again so that the word reaches the list, or add the word to the file by hand.`
+		: `the shader set has no variant for the permutation word ${word}.`;
 }
