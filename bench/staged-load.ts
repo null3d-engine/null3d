@@ -15,6 +15,8 @@
 //   --gpu <path>      webgpu or webgl2: webgpu
 //   --network <name>  slow-4g or full: slow-4g
 //   --clusters        load the staged model of a cluster tree instead of a mesh's levels
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { launchChromium } from '../packages/cli/src/browser.js';
 import { refuseBackgroundPriority } from '../tests/lib/app-window.ts';
 import { type Downloads, type Load, loadPath } from '../tests/lib/load-routes.ts';
@@ -60,8 +62,6 @@ interface StagedStart {
 	tier: string;
 	/** Time from navigation start to the first drawn frame, in milliseconds. */
 	firstFrameMs: number;
-	/** The bytes of the stage files that the model names. */
-	stageBytes: number;
 	/** What the server sent up to the first draw. */
 	before: Downloads;
 	/** What the server sent up to the last download the page saw. */
@@ -116,6 +116,39 @@ function parseArgs(args: readonly string[]): Options {
 			`--network takes ${Object.keys(NETWORKS).join(' or ')}, not ${options.network}`,
 		);
 	return options;
+}
+
+/** The model that a kind of run loads, in the build that the load server serves. */
+function modelOf(clusters: boolean): string {
+	return `tests/pages/assets/models/${
+		clusters ? 'cluster-staged-terrain.glb' : 'staged-terrain.glb'
+	}`;
+}
+
+/**
+ * The bytes of the stage files that the model names, read from its own JSON in the build. A model
+ * of the tool's makes each file's bytes part of what it names, so no download is needed for this.
+ */
+function stageBytesOf(clusters: boolean): number {
+	const file = readFileSync(join(STARTUP_PAGES_DIR, modelOf(clusters)));
+	const bytes = new Uint8Array(file.buffer, file.byteOffset, file.byteLength);
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	const json = JSON.parse(
+		new TextDecoder().decode(bytes.subarray(20, 20 + view.getUint32(12, true))),
+	) as {
+		nodes?: {
+			extras?: {
+				NULL3D_stages?: { levels?: { bytes?: number }[]; bands?: { bytes?: number }[] };
+			};
+		}[];
+	};
+	let total = 0;
+	for (const node of json.nodes ?? []) {
+		const staged = node.extras?.NULL3D_stages;
+		for (const stage of [...(staged?.levels ?? []), ...(staged?.bands ?? [])])
+			total += stage.bytes ?? 0;
+	}
+	return total;
 }
 
 /** A cold load's address: its own key, so no cache holds any of its files. */
@@ -201,12 +234,12 @@ function laterShare(sample: StagedStart): number {
 function rowLine(row: Row): string {
 	const name = row.kind === 'limited' ? 'level limit 1' : 'every stage';
 	if (!row.sample) return `FAIL  ${name}, run ${row.run}: ${row.problem ?? 'no result'}`;
-	const { firstFrameMs, before, total, stageBytes } = row.sample;
-	return `${name}, run ${row.run}: first draw at ${firstFrameMs.toFixed(0)} ms, ${kb(before.bytes)} before it, ${kb(total.bytes)} in all, ${(laterShare(row.sample) * 100).toFixed(1)}% after it, stage files ${kb(stageBytes)} (${((100 * stageBytes) / Math.max(1, total.bytes)).toFixed(1)}% of the download)`;
+	const { firstFrameMs, before, total } = row.sample;
+	return `${name}, run ${row.run}: first draw at ${firstFrameMs.toFixed(0)} ms, ${kb(before.bytes)} before it, ${kb(total.bytes)} in all, ${(laterShare(row.sample) * 100).toFixed(1)}% after it`;
 }
 
 /** The medians of each kind's samples. */
-function summary(rows: readonly Row[]): string[] {
+function summary(rows: readonly Row[], options: Options): string[] {
 	const lines: string[] = [];
 	for (const kind of KINDS) {
 		const samples = rows
@@ -215,7 +248,7 @@ function summary(rows: readonly Row[]): string[] {
 		if (samples.length === 0) continue;
 		const name = kind === 'limited' ? 'level limit 1' : 'every stage';
 		lines.push(
-			`${name}: first draw at ${median(samples.map((s) => s.firstFrameMs)).toFixed(0)} ms, ${kb(median(samples.map((s) => s.before.bytes)))} before it, ${kb(median(samples.map((s) => s.total.bytes)))} in all, ${median(samples.map((s) => laterShare(s) * 100)).toFixed(1)}% after it, stage files ${kb(samples[0]?.stageBytes ?? 0)}, of ${samples.length} loads`,
+			`${name}: first draw at ${median(samples.map((s) => s.firstFrameMs)).toFixed(0)} ms, ${kb(median(samples.map((s) => s.before.bytes)))} before it, ${kb(median(samples.map((s) => s.total.bytes)))} in all, ${median(samples.map((s) => laterShare(s) * 100)).toFixed(1)}% after it, stage files ${kb(stageBytesOf(options.clusters))}, of ${samples.length} loads`,
 		);
 	}
 	return lines;
@@ -246,7 +279,7 @@ async function main(): Promise<void> {
 				console.log(rowLine(rows[rows.length - 1] as Row));
 			}
 		console.log('');
-		for (const line of summary(rows)) console.log(line);
+		for (const line of summary(rows, options)) console.log(line);
 		const failed = rows.filter((row) => !row.sample).length;
 		if (failed > 0) {
 			console.error(`${failed} of ${rows.length} loads failed`);
