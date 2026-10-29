@@ -56,7 +56,11 @@ export function instanceFloors(added: StatsInstances): { buffers: number; textur
 
 /** What the page reads from the overlay. */
 export interface OverlayView {
-	/** The text of each figure that shows, by its name. A hidden figure is left out. */
+	/**
+	 * The text of each figure that shows, by its name. A figure that the overlay hides for want of a
+	 * value is left out; a figure in a tab that does not show is included, since the tabs hold the
+	 * same figures and the overlay keeps them current.
+	 */
 	figures: Record<string, string>;
 	/** The header button's `aria-expanded`. */
 	expanded: string | null;
@@ -64,6 +68,12 @@ export interface OverlayView {
 	offset: [number, number];
 	/** The pointer events of the overlay's element. */
 	pointerEvents: string;
+	/** The tab labels, in reading order. */
+	tabs: string[];
+	/** The label of the tab that shows, or null. */
+	tab: string | null;
+	/** The card's size in CSS pixels, or null. */
+	card: { width: number; height: number } | null;
 }
 
 type Box = { left: number; top: number; right: number; bottom: number };
@@ -180,6 +190,9 @@ export function statsProblems(result: StatsResult): string[] {
 		);
 	if (overlay.pointerEvents !== 'none') problems.push('the overlay takes pointer events');
 	if (overlay.expanded !== 'true') problems.push('the overlay does not start with its card open');
+	if (overlay.tabs.join(',') !== 'Frame,Memory,Steps,Systems')
+		problems.push(`the overlay shows the tabs ${overlay.tabs.join(', ') || 'none'}`);
+	if (overlay.tab !== 'Frame') problems.push('the overlay does not start on the frame tab');
 	const shown = overlay.figures;
 	const expect = (name: string, pattern: RegExp) => {
 		const text = shown[name];

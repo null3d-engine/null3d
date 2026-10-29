@@ -70,7 +70,8 @@ const SWITCH_GROUP: Readonly<Record<string, string>> = {
 function overlayFigure(name: string): string | null {
 	const root = document.querySelector<HTMLElement>('[data-null3d-stats]')?.shadowRoot;
 	const node = root?.querySelector<HTMLElement>(`[data-figure="${name}"]`);
-	if (!node || node.closest('[hidden]')) return null;
+	// A tab that does not show still holds its figures; only a hidden figure is absent.
+	if (!node || node.closest('[hidden]:not(.pane)')) return null;
 	const text = node.textContent?.trim() ?? '';
 	return text.length > 0 ? text : null;
 }
