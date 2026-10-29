@@ -404,6 +404,12 @@ pub trait FrameBuilder {
     fn occluded_entries(&self, _frame: u32) -> Option<u32> {
         None
     }
+    /// The ranges of cluster-tree patches that a recorded frame's camera view draws, where the
+    /// builder walks the trees. Zero where the view draws the trees' whole levels. `None` where the
+    /// GPU path picks the patches itself.
+    fn patch_ranges(&self, _frame: u32) -> Option<u32> {
+        None
+    }
     /// Turns software occlusion culling on or off from the next frame on, where the builder culls
     /// on the CPU. Elsewhere it does nothing.
     fn set_software_occlusion(&mut self, _on: bool) {}

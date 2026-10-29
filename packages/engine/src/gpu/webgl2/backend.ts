@@ -612,7 +612,8 @@ export class WebGL2Backend {
 	 * `images` holds the images that uploads read, which the thread that draws keeps across GPU
 	 * devices; by default the backend has its own. `parallelCompile` lets programs compile in the
 	 * background where the context has `KHR_parallel_shader_compile`. `canvasAlpha` says whether
-	 * the canvas's context has alpha.
+	 * the canvas's context has alpha. `multiDraw` says whether the device draws many ranges in one
+	 * call, and defaults to the context's own answer.
 	 */
 	constructor(
 		private readonly gl: WebGL2RenderingContext,
@@ -623,6 +624,7 @@ export class WebGL2Backend {
 		images?: ImageTable,
 		parallelCompile = true,
 		canvasAlpha = false,
+		multiDraw = gl.getExtension('WEBGL_multi_draw') !== null,
 	) {
 		this.templates = engineTemplates(shaders);
 		this.mipTemplate = mipmapTemplate(shaders, 'main');
@@ -630,7 +632,7 @@ export class WebGL2Backend {
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
 		this.joins = new JoinedBuilds(this.images.shaders);
-		this.multiDraw = gl.getExtension('WEBGL_multi_draw');
+		this.multiDraw = multiDraw ? gl.getExtension('WEBGL_multi_draw') : null;
 		this.parallel = parallelCompile ? gl.getExtension('KHR_parallel_shader_compile') : null;
 		// Float render targets, for HDR color, where the device draws them: WebGL turns them on only
 		// when the extensions are asked for by name.

@@ -1,5 +1,5 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
+// ?sketch-thread=main, ?latency=, ?uploads=copy, ?multidraw=off, ?depth=, ?compile=wait, ?shaders=fresh,
 // ?check=fresh, ?wake=message, ?hdr=off, ?scene-format=, ?half= and ?compression=. Twelve more
 // set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count,
 // ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on the GPU,
@@ -110,6 +110,12 @@ export interface Switches {
 	latency: LatencyMode | undefined;
 	/** True when ?uploads=copy makes the WebGL2 path copy uploads out of shared memory first. */
 	copyUploads: boolean;
+	/**
+	 * False when ?multidraw=off hides `WEBGL_multi_draw` from the WebGL2 path, as a device without
+	 * the extension is, so the path draws the whole levels of a cluster tree instead of its patches.
+	 * The engine probes and draws as if the browser never offered it.
+	 */
+	multiDraw: boolean;
 	/**
 	 * The depth mode that ?depth= asks the WebGL2 path to draw with, or undefined for the device's
 	 * own. A device without `EXT_clip_control` cannot draw `reversed`, and draws its own instead.
@@ -391,6 +397,7 @@ export function parseSwitches(search: string): Switches {
 		sketchThread: oneOf(params.get('sketch-thread'), ['worker', 'main'] as const),
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
 		copyUploads: params.get('uploads') === 'copy',
+		multiDraw: params.get('multidraw') !== 'off',
 		depth: oneOf(params.get('depth'), ['reversed', 'reversed-gl', 'standard'] as const),
 		compression: params
 			.get('compression')

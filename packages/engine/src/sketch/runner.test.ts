@@ -272,6 +272,7 @@ async function start(
 				capabilities: 0,
 				maxTextureSize: 4096,
 				sharedUploads: false,
+				multiDraw: false,
 				depth: 'reversed',
 				parallelCompile: true,
 				freshShaders: false,
