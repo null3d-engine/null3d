@@ -787,6 +787,7 @@ Swap these in when a device of a tier is busy, or to widen the cover from one mi
 5. Add the run files that the runner prints to [the record of tested devices](tested-devices.md). A new folder's Where fact says BrowserStack Automate.
 
 - `--tier B` or `--tier A,B` picks other tiers. `--only bsiphone17-safari,bspixel10-chrome` picks runners from any tier.
+- A fresh worktree holds no built engine package. Its pages then stop with E1406, because the browser cannot download the engine's WebAssembly. Copy the engine's build from a built checkout at the same commit, or run `bun run build` there, before the run.
 - `--part 2/3` runs only the second of three parts of the picked devices, in the list's order. Each part is a run of its own, with its own build on the dashboard. With one session at a time, tier A's 10 devices take about 2 hours, so run them as `--part 1/3`, `--part 2/3` and `--part 3/3`. The three parts take about 25, 18 and 47 minutes.
 - `--plan` picks the plan, which is `smoke` by default. `--parallel 2` opens at most two sessions at once.
 - Options after `--` go to the device runner as they are. For example, `bun run devices:cloud --only bspixel10-chrome -- --only capabilities` runs one page on one device.
