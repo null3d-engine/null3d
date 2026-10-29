@@ -68,6 +68,13 @@ describe('the field that a reader samples', () => {
 		expect(wind.field.air.base).toEqual([4, 0, 0.65, 0]);
 	});
 
+	test('a box of no width keeps no grid either, so every sample is the steady field', () => {
+		const passes = { count: 0 };
+		const wind = createWind(context('webgpu', [], passes), { camera, box: 0, grid: 8 });
+		expect(passes.count).toBe(0);
+		expect(wind.field.size).toBe(0);
+	});
+
 	test('a device that holds the field takes its box, and each reader reads the settings', () => {
 		const passes = { count: 0 };
 		const wind = createWind(context('webgpu', [], passes), { camera, box: 96, grid: 8 });

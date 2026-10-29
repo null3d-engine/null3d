@@ -109,7 +109,8 @@ interface PushSlot {
 
 /** The pushes that a page made, which the field reads in place. */
 export interface PushRing {
-	/** The slots, which the field reads. A slot whose strength is 0 turns nothing. */
+	/** The slots, which the field reads: the pushes first, then the newest gust. A slot that holds no
+	 * strength turns nothing. */
 	readonly slots: readonly Push[];
 	/**
 	 * Writes a push or a gust sent at the time `born`. A push takes the oldest push slot, so the
