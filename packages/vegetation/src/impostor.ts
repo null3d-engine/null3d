@@ -101,7 +101,6 @@ function bakePlant(
 	const bark = atlases.bark.pixels;
 	const leaf = atlases.leaf.pixels;
 	const cell = LEAF_CELLS_BY_KIND[leafCellFor(asset.species)];
-	const tint = source.tint;
 	const parts = level.parts.map((part) => {
 		const wood = part.name === 'wood';
 		return {
@@ -109,7 +108,8 @@ function bakePlant(
 			normals: part.arrays.normals,
 			uvs: part.arrays.uvs,
 			indices: part.arrays.indices,
-			tint,
+			// Each part takes the colour that its material multiplies the atlas by.
+			tint: wood ? asset.species.color.bark : source.tint,
 			// The foliage material draws both sides, and a solid trunk's back face is behind its
 			// front, so both sides keep the nearest surface right.
 			doubleSided: true,
