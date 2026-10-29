@@ -173,7 +173,9 @@ reads the store, so the traffic is about 50 MB a frame. The weighted blending wr
 pixel. The composite writes the scene color, and SMAA's two 8-bit steps take 8 bytes per pixel more.
 
 The S1 benchmark page with its smoke switch measured the layer against the weighted blending in
-Chrome 156 on this computer's GPU, at High, on the tree of `e1fbc77f9`, in two runs taken back to
+Chrome 156 on this computer's GPU, at High, on the tree of `e1fbc77f9`. Its `moments=on` switch
+draws the smoke in the camera's moment layer instead, so the page measures the same surfaces drawn
+by each layer. The reading came from two runs taken back to
 back under the same load (7.25 to 4.52 for the weighted side, 4.52 to 4.21 for the moment side;
 medians of three runs of ten seconds):
 
