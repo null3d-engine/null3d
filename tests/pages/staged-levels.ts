@@ -78,10 +78,10 @@ run('staged-levels', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const clusters = params.has('clusters');
-	const sketch = new URL(
-		clusters ? './sketches/cluster-staged-sketch.ts' : './sketches/staged-levels-sketch.ts',
-		import.meta.url,
-	);
+	// Each address is a literal, so a production build emits both sketches.
+	const sketch = clusters
+		? new URL('./sketches/cluster-staged-sketch.ts', import.meta.url)
+		: new URL('./sketches/staged-levels-sketch.ts', import.meta.url);
 	const far = params.has('far');
 	const near = params.has('near');
 	if (params.has('max')) sketch.search = `?max=${params.get('max')}`;
