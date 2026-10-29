@@ -4,7 +4,9 @@
 //
 // Switches: `?frozen=1` takes the gust and the swirl out, so the air is a steady wind and nothing
 // moves between two times. `?still=1` stops the body after a second, so its wake stays where it
-// made it. `?camera=still` holds the camera, so the air alone moves the picture.
+// made it. `?camera=still` holds the camera, so the air alone moves the picture. `?box=0` gives the
+// reader no grid, which is what a device without float targets gets, so every card works its air
+// out from the steady field.
 import { defineSketch, type SketchContext } from '@null3d/engine';
 import { createWind } from '../src/index.ts';
 
@@ -13,6 +15,8 @@ const FROZEN = params.get('frozen') === '1';
 const STILL = params.get('still') === '1';
 /** A still camera leaves the field as the only thing that can move the picture. */
 const STILL_CAMERA = params.get('camera') === 'still';
+/** The box's width across the ground, which zero turns off so that the reader works out the air. */
+const BOX = Number(params.get('box') ?? 96);
 
 /** The cards: how many, and how far they stand from the middle. */
 const CARDS = 3_000;
@@ -31,6 +35,8 @@ const PUSH_AT: [number, number] = [0, 0];
 
 /** The card's material: a plane whose top leans with the air at its foot. */
 const card = /* wgsl */ `
+#import null3d::noise::{value3}
+
 var wind: texture_2d_array<f32>;
 
 struct Uniforms {
@@ -40,24 +46,155 @@ struct Uniforms {
     sway: f32,
     // How much slower the air is at the ground.
     ground: f32,
+    // The steady settings that the sampling function works the air out from beyond the box.
+    base: vec4f,
+    gust: vec4f,
+    swirl: vec4f,
 }
 
+// <wind-steady>
+/// The height over which the air slows to the ground, in meters.
+const WIND_GROUND_HEIGHT: f32 = 2.0;
+/// The distance over which the noise's curl is measured, in noise cells.
+const WIND_CURL_STEP: f32 = 0.02;
+/// The height that the grid samples at, where the air moves at its full speed. The grid stores the
+/// air at this height, and a reader outside the grid's box works it out at the same height, so the
+/// two meet at the box's edge.
+const WIND_FULL_HEIGHT: f32 = 100.0;
+
+/// The air's steady settings: its rule of place and time, without the pushes and gusts that a page
+/// sends. The grid takes them from a pass's first three value vectors, and a reader from its own
+/// uniforms.
+struct WindAir {
+    /// The time in seconds, the wind's speed and its heading in radians, and how much slower the
+    /// air is at the ground.
+    time: f32,
+    speed: f32,
+    heading: f32,
+    ground: f32,
+    /// The gust's strength, its radius in meters, its wave number and how fast it travels.
+    gustStrength: f32,
+    gustRadius: f32,
+    gustWave: f32,
+    gustSpeed: f32,
+    /// The swirl's strength, its size, how fast its pattern drifts and its seed.
+    swirl: f32,
+    swirlScale: f32,
+    swirlDrift: f32,
+    seed: f32,
+}
+
+/// The field's settings read from three value vectors: the air, the gust and the swirl.
+fn wind_air(v0: vec4f, v1: vec4f, v2: vec4f) -> WindAir {
+    var air: WindAir;
+    air.time = v0.x;
+    air.speed = v0.y;
+    air.heading = v0.z;
+    air.ground = v0.w;
+    air.gustStrength = v1.x;
+    air.gustRadius = v1.y;
+    air.gustWave = v1.z;
+    air.gustSpeed = v1.w;
+    air.swirl = v2.x;
+    air.swirlScale = v2.y;
+    air.swirlDrift = v2.z;
+    air.seed = v2.w;
+    return air;
+}
+
+/// The height's factor of the wind: one at the top, and one less the ground's share at the ground.
+fn wind_profile(air: WindAir, y: f32) -> f32 {
+    return 1.0 - air.ground * exp(-max(y, 0.0) / WIND_GROUND_HEIGHT);
+}
+
+/// The stream function of the swirl, in noise cells, at a place and a time.
+fn wind_stream(air: WindAir, p: vec3f) -> f32 {
+    let drift = air.swirlDrift * air.time;
+    let q = vec3f(
+        p.x * air.swirlScale + drift + air.seed,
+        p.y * air.swirlScale,
+        p.z * air.swirlScale + drift * 0.5,
+    );
+    return value3(q);
+}
+
+/// The wind's steady velocity at a world place, in meters a second: the base wind, the gust that
+/// travels through it and the swirl, without the pushes and gusts that a page sends.
+fn wind_steady(air: WindAir, p: vec3f) -> vec3f {
+    let height = wind_profile(air, p.y);
+    let cosHeading = cos(air.heading);
+    let sinHeading = sin(air.heading);
+    var v = vec3f(cosHeading * air.speed * height, 0.0, sinHeading * air.speed * height);
+
+    // The gust: a wave of turns that travels along the heading. The turns are rings about the
+    // gust's center and depend only on the distance to it, so a ring of air turns without piling up.
+    let travel = air.gustSpeed * air.time;
+    let g = vec2f(p.x - cosHeading * travel, p.z - sinHeading * travel);
+    let distance = length(g) / air.gustRadius;
+    let reach = distance * distance;
+    if (reach < 9.0) {
+        let envelope = exp(-reach) * cos(distance * air.gustWave) * air.gustStrength * height;
+        v.x += (g.y / air.gustRadius) * envelope;
+        v.z -= (g.x / air.gustRadius) * envelope;
+    }
+
+    // The swirl: the curl of one stream function in the ground plane. The function varies slowly,
+    // so a short step measures the slope.
+    let step = WIND_CURL_STEP / air.swirlScale;
+    let front = wind_stream(air, p + vec3f(0.0, 0.0, step));
+    let back = wind_stream(air, p - vec3f(0.0, 0.0, step));
+    let right = wind_stream(air, p + vec3f(step, 0.0, 0.0));
+    let left = wind_stream(air, p - vec3f(step, 0.0, 0.0));
+    let scale = air.swirl * height / (2.0 * step);
+    v.x += (front - back) * scale;
+    v.z -= (right - left) * scale;
+    return v;
+}
+// </wind-steady>
+
 // <wind-sample>
-/// The air at a world place, as the texture holds it: the wind across the ground in red and blue,
-/// the wind's rise in green, and its speed in alpha. The box's near corner and width place the
-/// world. A place outside the box reads the box's edge.
-fn wind_sample(world: vec3f, origin: vec2f, size: f32) -> vec4f {
-    let uv = clamp((vec2f(world.x, world.z) - origin) / size, vec2f(0.0), vec2f(1.0));
-    return textureSampleLevel(wind, windSampler, uv, 0, 0.0);
+/// The air's steady settings as a reader holds them: the base wind in the first vector, the gust in
+/// the second and the swirl in the third, with the time that the reader's own frame gives.
+fn wind_reading(base: vec4f, gust: vec4f, swirl: vec4f, time: f32) -> WindAir {
+    var air: WindAir;
+    air.time = time;
+    air.speed = base.x;
+    air.heading = base.y;
+    air.ground = base.z;
+    air.seed = base.w;
+    air.gustStrength = gust.x;
+    air.gustRadius = gust.y;
+    air.gustWave = gust.z;
+    air.gustSpeed = gust.w;
+    air.swirl = swirl.x;
+    air.swirlScale = swirl.y;
+    air.swirlDrift = swirl.z;
+    return air;
+}
+
+/// The air at a world place: the wind across the ground in red and blue, the wind's rise in green,
+/// and its speed in alpha, at the height the field's texture holds it. Inside the box the texture
+/// gives it, with one read. Outside the box, and on a device that keeps no grid, the steady field
+/// gives it, so the air carries on past the box instead of holding the box's edge.
+fn wind_sample(world: vec3f, origin: vec2f, size: f32, air: WindAir) -> vec4f {
+    if (size > 0.0) {
+        let uv = (vec2f(world.x, world.z) - origin) / size;
+        if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
+            return textureSampleLevel(wind, windSampler, uv, 0, 0.0);
+        }
+    }
+    let v = wind_steady(air, vec3f(world.x, WIND_FULL_HEIGHT, world.z));
+    return vec4f(v, length(v));
 }
 // </wind-sample>
 
 fn vertexOffset(input: VertexInput) -> vec3f {
     let place = object.position + input.position;
-    let air = wind_sample(place, material.origin, material.size);
+    let air = wind_reading(material.base, material.gust, material.swirl, frame.time);
+    let air_at_place = wind_sample(place, material.origin, material.size, air);
     // The air slows near the ground, and a card's top leans more than its foot.
-    let height = 1.0 - material.ground * exp(-max(place.y, 0.0) / 2.0);
-    return vec3f(air.r, 0.0, air.b) * (material.sway * height * input.uv.y);
+    let height = 1.0 - material.ground * exp(-max(place.y, 0.0) / WIND_GROUND_HEIGHT);
+    return vec3f(air_at_place.r, 0.0, air_at_place.b) * (material.sway * height * input.uv.y);
 }
 `;
 
@@ -77,7 +214,7 @@ export default defineSketch((ctx: SketchContext) => {
 
 	const wind = createWind(ctx, {
 		camera,
-		box: 96,
+		box: BOX,
 		grid: 64,
 		air: FROZEN ? { gustStrength: 0, swirl: 0 } : { gustSpeed: 16 },
 	});
@@ -90,7 +227,8 @@ export default defineSketch((ctx: SketchContext) => {
 	});
 
 	// The box follows the camera, so the cards' uniforms follow the box. One object and one pair
-	// of numbers hold them, and the material copies what `set` gives it.
+	// of numbers hold them, and the material copies what `set` gives it. The steady settings do not
+	// change in this page, so the material takes them once.
 	const cardValues = { origin: [wind.field.origin[0], wind.field.origin[1]] as [number, number] };
 	const cardMaterial = ctx.materials.shader({
 		wgsl: card,
@@ -102,6 +240,9 @@ export default defineSketch((ctx: SketchContext) => {
 			size: wind.field.size,
 			sway: 0.12,
 			ground: FROZEN ? 0 : 0.5,
+			base: wind.field.air.base,
+			gust: wind.field.air.gust,
+			swirl: wind.field.air.swirl,
 		},
 	});
 	const cards = scene.createInstances(

@@ -11,13 +11,27 @@ const camera = {
 	},
 } as unknown as Camera;
 
-/** A sketch's context around a clock, with the render and texture calls stubbed out. */
-function context(): SketchContext {
+/**
+ * A sketch's context around a clock, with the render and texture calls stubbed out. `passes`
+ * counts the passes that the add-on adds, so a test can tell a device that keeps no grid.
+ */
+function context(
+	tier = 'webgpu',
+	features: string[] = [],
+	passes?: { count: number },
+): SketchContext {
 	const pass = { enabled: true, live: true };
 	return {
 		time: { now: 1 },
-		engine: { capabilities: { tier: 'webgpu', features: [] } },
-		render: { addPass: () => pass, setPassUniforms: () => {}, removePass: () => {} },
+		engine: { capabilities: { tier, features } },
+		render: {
+			addPass: () => {
+				if (passes) passes.count++;
+				return pass;
+			},
+			setPassUniforms: () => {},
+			removePass: () => {},
+		},
 		textures: {
 			fromPass: () => ({ destroy: () => {} }),
 			fromData: () => ({ destroy: () => {} }),
@@ -37,6 +51,32 @@ describe('the device that holds the field', () => {
 		// Without either, the pass cannot keep an image, so the add-on costs no pass there.
 		expect(holdsField({ tier: 'webgl2', features: ['OES_texture_float_linear'] })).toBe(false);
 		expect(holdsField({ tier: 'webgl2', features: [] })).toBe(false);
+	});
+});
+
+describe('the field that a reader samples', () => {
+	test('a device without float targets keeps no grid and gives readers the steady field', () => {
+		const passes = { count: 0 };
+		const wind = createWind(context('webgl2', ['OES_texture_float_linear'], passes), {
+			camera,
+			grid: 8,
+		});
+		// No pass costs the device nothing, and a box of no width sends every sample to the steady
+		// field that the sampling function works out, so a plant there still moves.
+		expect(passes.count).toBe(0);
+		expect(wind.field.size).toBe(0);
+		expect(wind.field.air.base).toEqual([4, 0, 0.65, 0]);
+	});
+
+	test('a device that holds the field takes its box, and each reader reads the settings', () => {
+		const passes = { count: 0 };
+		const wind = createWind(context('webgpu', [], passes), { camera, box: 96, grid: 8 });
+		expect(passes.count).toBe(1);
+		expect(wind.field.size).toBe(96);
+		// The reading follows the steady wind, so a reader that works out the far field keeps step.
+		wind.setBase(9, 0.5);
+		expect(wind.field.air.base[0]).toBe(9);
+		expect(wind.field.air.base[1]).toBe(0.5);
 	});
 });
 
