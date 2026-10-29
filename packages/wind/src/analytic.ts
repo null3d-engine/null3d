@@ -83,13 +83,19 @@ export function value3(px: number, py: number, pz: number): number {
 	return near;
 }
 
-/** A push that a page made: a vortex at a place, which fades as it ages. */
+/**
+ * One slot of the ring: a push or a gust, each of which turns the air about a center. A push turns
+ * about the place it names and fades over its life. A gust turns as a wave about a center that
+ * travels along the heading from that place, for as long as the wave's reach holds it. A gust's
+ * birth time is stored negative and a second late, so the sign of `born` tells the two apart and a
+ * gust sent at time zero cannot read as a push.
+ */
 export interface Push {
 	readonly x: number;
 	readonly z: number;
 	/** How hard the body shoved the air: a positive number turns it one way, a negative the other. */
 	readonly strength: number;
-	/** The sketch time of the push, in seconds. */
+	/** A push's sketch time in seconds, or a gust's as `-(time + 1)`. */
 	readonly born: number;
 }
 
@@ -106,32 +112,74 @@ export interface PushRing {
 	/** The slots, which the field reads. A slot whose strength is 0 turns nothing. */
 	readonly slots: readonly Push[];
 	/**
-	 * Writes a push into the oldest slot. It replaces that slot's numbers, so a page may call it in
-	 * every frame and the call allocates nothing.
+	 * Writes a push or a gust sent at the time `born`. A push takes the oldest push slot, so the
+	 * newest three pushes turn the air. A gust takes the gust's own slot, so a page's pushes never
+	 * push its gust out. A call replaces the slot's numbers, so a page may call it in every frame
+	 * and the call allocates nothing.
 	 */
-	add(x: number, z: number, strength: number, born: number): void;
+	add(x: number, z: number, strength: number, born: number, gust: boolean): void;
 }
 
 /** Makes the empty ring that a page's pushes go into. The slots are made once, here. */
 export function createPushRing(): PushRing {
-	const slots: PushSlot[] = Array.from({ length: PUSH_SLOTS }, () => ({
+	const slots: PushSlot[] = Array.from({ length: RING_SLOTS }, () => ({
 		x: 0,
 		z: 0,
 		strength: 0,
-		born: -PUSH_LIFE,
+		born: 0,
 	}));
 	let next = 0;
 	return {
 		slots,
-		add(x, z, strength, born) {
-			const slot = slots[next] as PushSlot;
+		add(x, z, strength, born, gust) {
+			const slot = slots[gust ? GUST_SLOT : next] as PushSlot;
 			slot.x = x;
 			slot.z = z;
 			slot.strength = strength;
 			slot.born = born;
-			next = (next + 1) % PUSH_SLOTS;
+			if (!gust) next = (next + 1) % PUSH_SLOTS;
 		},
 	};
+}
+
+/**
+ * The steady settings that a reader works out beyond the box, as the three vectors that its shader
+ * takes: the base wind, the gust and the swirl. A page gives them to a material once, and again
+ * when `setBase` or one of the air's settings changes; a frame changes nothing here.
+ *
+ * @category api/wind
+ */
+export interface WindReading {
+	/** The speed, the heading in radians, how much slower the air is at the ground, and the seed. */
+	readonly base: [number, number, number, number];
+	/** The gust's strength, its radius in meters, its wave number and how fast it travels. */
+	readonly gust: [number, number, number, number];
+	/** The swirl's strength, its size, how fast its pattern drifts, and a number it does not use. */
+	readonly swirl: [number, number, number, number];
+}
+
+/** Makes the three vectors of a reading from the field's settings. */
+export function createReading(state: FieldState): WindReading {
+	return {
+		base: [state.speed, state.heading, state.ground, state.seed],
+		gust: [state.gustStrength, state.gustRadius, state.gustWave, state.gustSpeed],
+		swirl: [state.swirl, state.swirlScale, state.swirlDrift, 0],
+	};
+}
+
+/** Writes the field's settings into a reading's vectors, in place, so a reader re-reads them. */
+export function writeReading(state: FieldState, reading: WindReading): void {
+	reading.base[0] = state.speed;
+	reading.base[1] = state.heading;
+	reading.base[2] = state.ground;
+	reading.base[3] = state.seed;
+	reading.gust[0] = state.gustStrength;
+	reading.gust[1] = state.gustRadius;
+	reading.gust[2] = state.gustWave;
+	reading.gust[3] = state.gustSpeed;
+	reading.swirl[0] = state.swirl;
+	reading.swirl[1] = state.swirlScale;
+	reading.swirl[2] = state.swirlDrift;
 }
 
 /**
@@ -171,7 +219,11 @@ export const GROUND_HEIGHT = 2;
 /** How long a push lasts before it has faded away, in seconds. */
 export const PUSH_LIFE = 3;
 /** The pushes that the field holds: the newest replaces the oldest. */
-export const PUSH_SLOTS = 4;
+export const PUSH_SLOTS = 3;
+/** The slot that holds the newest gust, after the pushes, so a page's pushes never push it out. */
+export const GUST_SLOT = PUSH_SLOTS;
+/** The slots of the ring: the pushes, then the gust. */
+export const RING_SLOTS = PUSH_SLOTS + 1;
 /** The distance over which the noise's curl is measured, in noise cells. */
 export const CURL_STEP = 0.02;
 
@@ -256,21 +308,38 @@ export function analyticVelocity(
 	vx += ((front - back) / (2 * step)) * state.swirl * height;
 	vz -= ((right - left) / (2 * step)) * state.swirl * height;
 
-	// The pushes: a vortex around each, turning more slowly as it ages away. An index walks the ring,
-	// as every per-frame loop over a small array does here: a `for … of` makes an iterator per call.
+	// The pushes and the gust: a vortex around each push, which fades as it ages, or a wave about a
+	// center that travels along the heading for the gust. An index walks the ring, as every
+	// per-frame loop over a small array does here: a `for … of` makes an iterator per call.
 	for (let i = 0; i < pushes.length; i++) {
-		const push = pushes[i];
-		if (!push || push.strength === 0) continue;
-		const age = t - push.born;
-		if (age < 0 || age > PUSH_LIFE) continue;
-		const fadeOut = 1 - age / PUSH_LIFE;
-		const dx = x - push.x;
-		const dz = z - push.z;
-		const reach = state.pushRadius * state.pushRadius;
-		const turn = Math.exp(-(dx * dx + dz * dz) / reach);
-		const strength = push.strength * fadeOut * turn * height;
-		vx += (dz / state.pushRadius) * strength;
-		vz -= (dx / state.pushRadius) * strength;
+		const slot = pushes[i];
+		if (!slot || slot.strength === 0) continue;
+		let dx = x - slot.x;
+		let dz = z - slot.z;
+		let radius = state.pushRadius;
+		let turn = 0;
+		if (i === GUST_SLOT) {
+			// A gust: its wave's center has traveled along the heading since it was sent.
+			const age = t - slot.born;
+			const travel = state.gustSpeed * age;
+			dx -= cos * travel;
+			dz -= sin * travel;
+			radius = state.gustRadius;
+			const distance = Math.sqrt(dx * dx + dz * dz) / radius;
+			const reach = distance * distance;
+			if (reach < 9) turn = Math.exp(-reach) * Math.cos(distance * state.gustWave);
+		} else {
+			const age = t - slot.born;
+			if (age >= 0 && age <= PUSH_LIFE) {
+				const fadeOut = 1 - age / PUSH_LIFE;
+				const reach = radius * radius;
+				turn = Math.exp(-(dx * dx + dz * dz) / reach) * fadeOut;
+			}
+		}
+		if (turn === 0) continue;
+		const strength = slot.strength * turn * height;
+		vx += (dz / radius) * strength;
+		vz -= (dx / radius) * strength;
 	}
 
 	out[0] = vx;

@@ -11,10 +11,13 @@ import {
 import {
 	analyticVelocity,
 	createPushRing,
+	createReading,
 	defaultFieldState,
 	type FieldState,
 	PUSH_LIFE,
-	PUSH_SLOTS,
+	RING_SLOTS,
+	type WindReading,
+	writeReading,
 } from './analytic';
 import fallbackShader from './grid.fallback.wgsl';
 import gridShader from './grid.wgsl';
@@ -49,8 +52,17 @@ export interface WindField {
 	readonly texture: Texture;
 	/** The box's near corner across the ground, in meters: x and z. */
 	readonly origin: [number, number];
-	/** The box's width across the ground, in meters. */
+	/**
+	 * The box's width across the ground, in meters, or zero on a device that keeps no grid. A
+	 * reader that is given zero works out the air from `air` everywhere, which is the same field
+	 * the texture holds where a device can keep one.
+	 */
 	readonly size: number;
+	/**
+	 * The steady settings that a reader works out beyond the box. Give them to a material with the
+	 * sampling function's three vectors, and give them again when `setBase` or the air changes.
+	 */
+	readonly air: WindReading;
 }
 
 /**
@@ -63,7 +75,10 @@ export interface Wind {
 	readonly field: WindField;
 	/** Sets the steady wind: its speed in meters a second and its heading in radians. */
 	setBase(speed: number, heading: number): void;
-	/** Sends a gust of `strength` at a ground place, which turns the air about it as it fades. */
+	/**
+	 * Sends a gust of `strength` from a ground place, whose wave then travels along the heading, so
+	 * the air turns as it passes over the scene.
+	 */
 	gust(at: readonly [number, number], strength?: number): void;
 	/** Pushes the air about a ground place, as a body moving through it does. */
 	push(at: readonly [number, number], strength?: number): void;
@@ -84,9 +99,9 @@ const GUST = 7;
 const PUSH = 2.5;
 
 /**
- * True when the device draws into a 16-bit float texture, which the field needs. Every WebGPU path
- * does. A WebGL2 device without either extension cannot hold the field, and its readers read the
- * texture's neutral black instead.
+ * True when the device draws into a 16-bit float texture, which the grid needs. Every WebGPU path
+ * does. A WebGL2 device without either extension keeps no grid, and its readers work the air out
+ * from the steady field instead, so a plant still moves there.
  */
 export function holdsField(capabilities: Pick<EngineCapabilities, 'tier' | 'features'>): boolean {
 	const { tier, features } = capabilities;
@@ -111,7 +126,7 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	const pushes = createPushRing();
 	const now = (): number => ctx.time.now;
 
-	// The pass takes eight value vectors: the settings, the pushes' ring and the box.
+	// The pass takes eight value vectors: the settings, the ring of pushes and gusts, and the box.
 	const values = new Array<number>(32).fill(0);
 	const place: number[] = [0, 0, 0];
 	const write = (): void => {
@@ -127,7 +142,7 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		values[9] = air.swirlScale;
 		values[10] = air.swirlDrift;
 		values[11] = air.seed;
-		for (let i = 0; i < PUSH_SLOTS; i++) {
+		for (let i = 0; i < RING_SLOTS; i++) {
 			const push = pushes.slots[i];
 			const at = 12 + i * 4;
 			values[at] = push?.x ?? 0;
@@ -143,8 +158,10 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	};
 
 	// A device without float targets keeps no grid, so it costs no pass. A reader still samples a
-	// texture, which holds the field's neutral black, and `sample` still gives it the air.
-	const pass = holdsField(ctx.engine.capabilities)
+	// texture, which holds the field's neutral black, but its box has no width, so every sample is
+	// the steady field that `shaders/field.wgsl` works out.
+	const holds = holdsField(ctx.engine.capabilities);
+	const pass = holds
 		? ctx.render.addPass({
 				kind: 'compute',
 				description: defineFeature({
@@ -171,7 +188,8 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 					data: new Float32Array(4),
 				}),
 		origin: [0, 0],
-		size: box,
+		size: holds ? box : 0,
+		air: createReading(air),
 	};
 	// The box follows the camera and the pushes fade, so the values go up in every frame.
 	const apply = (): void => {
@@ -189,10 +207,11 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		out: [number, number, number],
 	): [number, number, number] => analyticVelocity(air, pushes.slots, x, y, z, now(), out);
 
-	// A gust and a push are one turn of the air, and the newest replaces the oldest. The ring
-	// writes its own slots, so neither call allocates anything.
-	const turn = (at: readonly [number, number], strength: number): void => {
-		pushes.add(at[0], at[1], strength, now());
+	// A gust and a push each write one slot of the ring, and the newest replaces the oldest. A gust
+	// travels from where it was sent, and a push stays there. The ring writes its own slots, so
+	// neither call allocates anything.
+	const turn = (at: readonly [number, number], strength: number, gust: boolean): void => {
+		pushes.add(at[0], at[1], strength, now(), gust);
 	};
 
 	return {
@@ -200,12 +219,13 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		setBase(speed, heading) {
 			air.speed = speed;
 			air.heading = heading;
+			writeReading(air, field.air);
 		},
 		gust(at, strength = GUST) {
-			turn(at, strength);
+			turn(at, strength, true);
 		},
 		push(at, strength = PUSH) {
-			turn(at, strength);
+			turn(at, strength, false);
 		},
 		sample,
 		update: apply,

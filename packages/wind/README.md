@@ -22,7 +22,13 @@ export default defineSketch((ctx) => {
   const leaf = ctx.materials.shader({
     wgsl: leafShader,
     textures: { wind: wind.field.texture },
-    uniforms: { origin: wind.field.origin, size: wind.field.size },
+    uniforms: {
+      origin: wind.field.origin,
+      size: wind.field.size,
+      base: wind.field.air.base,
+      gust: wind.field.air.gust,
+      swirl: wind.field.air.swirl,
+    },
   });
 
   let nextGust = 0;
@@ -48,8 +54,9 @@ blue channels hold the wind across the ground. Its green channel holds the wind'
 zero while the field is flat. Its alpha holds how fast the air moves there.
 
 A reader samples it with one texture read at each vertex. The shader build resolves only the
-engine's library, so a reader's WGSL holds a copy of the sampling function. The add-on's docs page,
-`api/wind`, shows the copy to take, and a test keeps the add-on's own copy equal to it.
+engine's library, so a reader's WGSL holds copies of two blocks: the steady field and the sampling
+function. They are in `shaders/field.wgsl` and on the `api/wind` docs page. A test keeps those two
+copies equal to the page's own copy.
 
 `sample(x, y, z, out)` gives the same air on the CPU, from the same rule, for a page's own motion.
 
@@ -57,11 +64,12 @@ engine's library, so a reader's WGSL holds a copy of the sampling function. The 
 
 - The pass fills one texture of `grid` by `grid` texels in each frame, and a reader spends one
   texture slot on it.
-- The field carries no state between frames yet. A gust therefore does not spread by itself, and a
-  wake lasts only as long as the pushes that made it. The engine's pass history adds both later,
-  and the API stays the same.
-- A device without float render targets draws no field, and a reader reads its neutral black.
-- A place outside the box reads the box's edge. Keep the box wide enough for the scene.
+- The field carries no state between frames. A gust therefore does not spread by itself, and a
+  wake lasts only as long as the pushes that made it.
+- A device without float render targets keeps no grid. There `field.size` is zero, so a reader
+  works the air out from the steady field and a plant still moves.
+- A place outside the box reads the steady field at its own place, at the height that the texture
+  holds. So the air carries on past the box, instead of holding the box's edge.
 
 `@null3d/wind` owns the wind. A scene makes its air with it, not with a hand-written field of its
 own, so there is one wind for every reader.

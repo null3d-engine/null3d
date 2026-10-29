@@ -87,12 +87,11 @@ divergence, and the projection removes it.
   shader cannot import another of the same add-on. The copies exist for that alone. A test holds
   them byte for byte equal, and a build that received an add-on's own modules would remove them.
 - **What stage one cannot do:** a gust does not spread by itself, and a wake does not outlive the
-  body. The pushes' trail stands in for the wake until M3-V13 lands. A place outside the grid's box
-  reads the box's edge, so the air is smooth rather than exact there.
+  body. The pushes' trail stands in for the wake until M3-V13 lands.
 - **A device that cannot hold the field:** a WebGL2 device without a float render target keeps no
-  pass, so the add-on costs it nothing. Its readers sample a one-texel texture of the output's
-  neutral black, and `sample` still gives the air. The add-on reads the device's extensions to
-  decide, and a test covers both answers.
+  pass, so the add-on costs it nothing. Its box has no width, so every sample of every reader is
+  the steady field worked out from the air's settings, and a plant there still moves. The add-on
+  reads the device's extensions to decide, and a test covers both answers.
 - **The tier table waits:** the pressure steps, the field steps a second and the mixed states of the
   plan's table belong to stage two. M3-V14 measures the field that exists, and its rows are replaced
   when the core changes.
@@ -121,3 +120,30 @@ divergence, and the projection removes it.
   and `packages/cli/src/check-addon.test.ts` pins it. In a checkout whose plugin has no built files,
   node cannot load the plugin's TypeScript source: the shader gate fails and sizes skips. Build the
   plugin with `bun tools/build-package.ts vite-plugin`, or run the command with bun.
+
+## The round 24 audit's findings
+
+The round 24 audit left M3-V15 unticked with findings whose fixes belong to this task. The four
+that are code are fixed here. The fifth is the solver, the forces and the fixed step. That is stage
+two, which waits on M3-V13; V13 has since landed, and it is its own task.
+
+- **The gust now travels.** `gust` writes a slot of its own, after the three push slots, so a
+  page's pushes never push its gust out. Before, both shared one ring of four, and a page that
+  pushed four times in a second lost its gust. A gust's wave center then moves along the heading at
+  the gust's speed, so a gust sent where the air enters the scene crosses it. One test holds the
+  gust in its slot under a page's pushes, and another holds a gust's center advancing where a
+  push's stays.
+- **A place outside the box reads the analytic field.** The sampling function clamped to the box's
+  edge, which smeared the edge's local detail to the horizon. It now works the air out from the
+  steady field at the height that the grid samples at. The reader gives it three vectors: the base
+  wind, the gust and the swirl. The two agree at the box's edge, so there is no seam.
+- **A device without float targets reads the field too.** Its box has no width, so every sample is
+  the steady field, and a plant there moves. The device still keeps no pass, so it costs nothing.
+- **The sampling file ships.** `shaders/field.wgsl` is in the package's `files` and in the pack
+  check's required list, so a reader copies it from the installed package. The page's material and
+  the docs page carry copies, and one test keeps every copy equal.
+- **The namespace part still waits.** D-224's addendum says the shader build resolves only the
+  engine's `null3d::` prefix. No add-on can import another add-on's WGSL module yet. The plan's
+  RedGPU study line therefore accepts the copies for this task. It gives the add-on's own namespace
+  to WGSL library modules from add-ons (the study's RES-1), which is not a task yet. This record
+  keeps that reason, as hard rule 39 asks, rather than leaving the finding open without one.

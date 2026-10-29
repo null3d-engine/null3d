@@ -112,7 +112,12 @@ import {
 import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { BACKGROUND, S1_BOB_HEIGHT, S1_EXTENT, s1Camera, VIEW_LIGHTS } from '../../scenes/spec';
-import { createImpostorField, createSplatCloud, createTerrainGround } from './addons';
+import {
+	createImpostorField,
+	createSplatCloud,
+	createTerrainGround,
+	createWindAir,
+} from './addons';
 import { createAnimatedCrowd, readAnimated } from './crowd';
 import { createMorphedRow, readMorphed } from './morphed';
 import { followPath, frameCount, readCount, readShadows, setUpView } from './sketch-common';
@@ -144,6 +149,7 @@ export default defineSketch(async (context) => {
 		switches.has('inertial'),
 	);
 	const followTerrain = switches.has('terrain') ? createTerrainGround(context) : undefined;
+	const blowWind = switches.has('wind') ? createWindAir(context, camera) : undefined;
 	if (switches.has('impostors')) await createImpostorField(context);
 	const followSplats = switches.has('splats')
 		? await createSplatCloud(context, Number(switches.get('splats')) || undefined)
@@ -262,6 +268,7 @@ export default defineSketch(async (context) => {
 		now[0] = t;
 		poseSwarm(t);
 		moveCamera(t);
+		blowWind?.(t);
 		animate(t);
 		morph(t);
 		moveCasters?.(t);

@@ -3,10 +3,11 @@
 // cards, which pick the view each one shows from the camera in every frame, and a cloud of the
 // splats add-on's Gaussians, whose chunks a job worker selects for each camera position. Each step
 // takes the camera's position in a typed array, as a game passes its camera's position.
-import type { SketchContext } from '@null3d/engine';
+import type { Camera, SketchContext } from '@null3d/engine';
 import { createImpostors, encodeImpostorSurface, octahedralAtlas } from '@null3d/impostors';
 import { createSplats, type SplatData } from '@null3d/splats';
 import { createTerrain, terrainTextures } from '@null3d/terrain';
+import { createWind } from '@null3d/wind';
 import { S1_BOB_HEIGHT, S1_EXTENT, S1_ORBIT } from '../../scenes/spec';
 
 /** The top of the add-ons' ground, below the lowest boxes of the swarm and their bobbing. */
@@ -171,6 +172,35 @@ function splatCloud(count: number): SplatData {
 		colors[i * 4 + 3] = 0.5;
 	}
 	return { count, positions, scales, rotations, colors };
+}
+
+/** The wind's box across the ground, and how often its step sends a gust, in seconds. */
+const WIND_BOX = 128;
+const WIND_GUST_SECONDS = 2;
+
+/**
+ * Adds the wind add-on's field about the swarm, and returns the step that sets its base wind, sends
+ * a gust, pushes the air where a body passes, samples it and places its box. The places and the
+ * result are made once, here, so the step allocates nothing, as a page's own frame does not.
+ */
+export function createWindAir(context: SketchContext, camera: Camera): (t: number) => void {
+	const wind = createWind(context, { camera, box: WIND_BOX, grid: 64 });
+	const gustAt: [number, number] = [-S1_EXTENT, 0];
+	const pushAt: [number, number] = [0, 0];
+	const air: [number, number, number] = [0, 0, 0];
+	let nextGust = 0;
+	return (t) => {
+		if (t >= nextGust) {
+			wind.gust(gustAt);
+			nextGust = t + WIND_GUST_SECONDS;
+		}
+		pushAt[0] = Math.cos(t) * S1_EXTENT;
+		pushAt[1] = Math.sin(t) * S1_EXTENT;
+		wind.push(pushAt);
+		wind.sample(pushAt[0], 1, pushAt[1], air);
+		wind.setBase(4, Math.sin(t * 0.1));
+		wind.update();
+	};
 }
 
 /**

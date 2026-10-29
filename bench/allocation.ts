@@ -643,6 +643,7 @@ interface PageSwitch {
  * - `--transmission`: the pass that copies the opaque color, with the passes of its mip levels;
  * - `--ssr`: the depth prepass, the depth copy, the six levels of the depth pyramid, the trace and
  *   the copy of the opaque colors, with the passes of the copy's mip levels;
+ * - `--wind`: the wind add-on's field, one compute pass that fills its grid;
  * - `--particles`: the pass that copies the opaque depth for the soft particles;
  * - `--decals`: the decal pass;
  * - `--splats`: the pass that copies the opaque depth, which the splats' soft mix with meshes reads.
@@ -711,6 +712,8 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--terrain', query: '&terrain' },
 	{ flag: '--impostors', query: '&impostors' },
 	{ flag: '--splats', query: '&splats', swiftShaderQuery: '&splats=12000', passes: 1 },
+	// The wind's field: one compute pass that fills its grid.
+	{ flag: '--wind', query: '&wind', passes: 1 },
 	{ flag: '--inertial', query: '&inertial' },
 	{ flag: '--calls', query: '&calls', budgets: CALLS_BUDGETS },
 	{ flag: '--time-of-day', query: '&timeOfDay', budgets: DAY_BUDGETS },
