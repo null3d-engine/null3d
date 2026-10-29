@@ -268,7 +268,7 @@ Beyond its box the field carries on. The box sets the detail, not the field's ex
 - A vertex inside the box costs one texture read. A vertex outside it costs the steady field's arithmetic instead: four reads of the engine's value noise, with a few trigonometric and exponential calls.
 - A device without float render targets cannot hold the grid, so it keeps no pass. There `field.size` is zero and a reader's samples are the steady field worked out, so a plant still moves. The texture it declares holds a single black texel that it never reaches.
 - A point far from the camera loses the grid's detail and reads the steady wind alone. That is the base wind, the swirl and the field's own traveling gust. A body's pushes and a sent gust are gone there.
-- The add-on allocates nothing in a frame, and its texture exists only while something reads it.
+- The add-on makes no object of its own in a frame, and its texture exists only while something reads it. Until the browser has optimized the add-on's functions, a fraction that crosses one of its calls becomes an object. The engine's own steps carry the same cost, which `bun run bench:allocation --wind` measures.
 
 [The API reference](reference/wind.md) lists every export of this page with its type and
 description. The engine's doc comments make it.

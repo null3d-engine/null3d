@@ -45,7 +45,7 @@ export default defineSketch((ctx) => {
 });
 ```
 
-Call `update` once in each frame. The add-on's calls allocate nothing; a sketch that pushes every frame keeps one two-number array for the place.
+Call `update` once in each frame. The add-on makes no object of its own; a sketch that pushes every frame keeps one two-number array for the place. Until the browser has optimized the add-on's functions, a fraction that crosses one of its calls becomes an object, as in the engine's own steps.
 
 ## The field
 

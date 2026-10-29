@@ -149,6 +149,14 @@ two, which waits on M3-V13; V13 has since landed, and it is its own task.
   itself, so it made an object of each. The same 32 bits read as signed are the same hash. The top
   24 bits that the noise reads come out the same, so each step wraps with `| 0`. A test holds 2,000
   hashes inside the range. The reference test still matches the engine's integer hash.
+- **The sample path boxes fractions.** `bun run bench:allocation --wind` on the development pages
+  names the add-on's own functions as places that allocate. The hash, the value noise, the field
+  sample and the benchmark's step read some 50 to 200 bytes a frame in the check's warm-up. Chrome
+  makes an object of each fraction that crosses a call it keeps out of its top tier. The engine
+  answers that with a budget and a reason at S1's camera step and elsewhere. The hash's unsigned
+  values were the largest part, and they are fixed. The zero-bytes line is not met until this path
+  is budgeted that way or stops passing fractions between the add-on's functions. The docs no
+  longer promise that a call allocates nothing without that caveat.
 - **The namespace part still waits.** D-224's addendum says the shader build resolves only the
   engine's `null3d::` prefix. No add-on can import another add-on's WGSL module yet. The plan's
   RedGPU study line therefore accepts the copies for this task. It gives the add-on's own namespace
