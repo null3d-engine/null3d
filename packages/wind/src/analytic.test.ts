@@ -8,6 +8,7 @@ import {
 	divergence,
 	type FieldState,
 	GUST_SLOT,
+	lattice,
 	PUSH_LIFE,
 	type Push,
 	profile,
@@ -37,12 +38,6 @@ const at = (
  */
 function referenceValue3(px: number, py: number, pz: number): number {
 	const U = 0xffffffffn;
-	const pcg = (v: bigint): bigint => {
-		const state = (v * 747796405n + 2891336453n) & U;
-		const shift = (state >> 28n) + 4n;
-		const word = (((state >> shift) ^ state) * 277803737n) & U;
-		return ((word >> 22n) ^ word) & U;
-	};
 	const pcg3d = (x: bigint, y: bigint, z: bigint): bigint[] => {
 		let [p, q, r] = [x, y, z].map((v) => (v * 1664525n + 1013904223n) & U) as [
 			bigint,
@@ -85,6 +80,17 @@ describe('the noise the field is built from', () => {
 		for (let i = 0; i < 40; i++) {
 			const p = [i * 0.713 - 4, i * 0.291 + 1, i * 0.517 - 2] as const;
 			expect(value3(...p)).toBeCloseTo(referenceValue3(...p), 12);
+		}
+	});
+
+	test('keeps its hash inside the whole numbers that the browser holds itself', () => {
+		// A number past 2147483647 is an object to the browser, and one field sample reads 32 of
+		// these hashes. The hash is the same 32 bits read as signed, and the top 24 come out the same.
+		for (let i = 0; i < 2000; i++) {
+			const hash = lattice(i * 7919 - 3000, i * 104729 + 5, i * 37);
+			expect(hash).toBeGreaterThanOrEqual(-2147483648);
+			expect(hash).toBeLessThanOrEqual(2147483647);
+			expect(Number.isInteger(hash)).toBe(true);
 		}
 	});
 

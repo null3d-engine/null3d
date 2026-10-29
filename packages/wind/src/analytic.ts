@@ -11,31 +11,28 @@
 // mirror the engine's `null3d::noise`, so both forms give the same numbers. A test reads the two
 // shader copies and fails when they drift apart or when a constant here changes without them.
 
-/** The whole-number hash of `null3d::noise`'s `pcg`, which gives the same bits on every GPU. */
-function pcg(v: number): number {
-	const state = (Math.imul(v, 747796405) + 2891336453) >>> 0;
-	const word = Math.imul((state >>> ((state >>> 28) + 4)) ^ state, 277803737) >>> 0;
-	return ((word >>> 22) ^ word) >>> 0;
-}
-
 /**
- * The first value of `null3d::noise`'s `pcg3d` hash. The library returns three, but value noise
- * reads only the first, and this form makes no tuple and no closure, so a field sample allocates
- * nothing.
+ * The first value of `null3d::noise`'s `pcg3d` hash, as a signed whole number. The library returns
+ * three, but value noise reads only the first, and this form makes no tuple and no closure.
+ *
+ * Each step keeps its number in the 32 bits that a whole number holds. The hash is the same 32 bits
+ * either way, and the top 24 come out the same. Read as unsigned, about half of them pass the
+ * largest number that the browser keeps in the value itself, and it makes an object of each such
+ * number it returns. So the steps wrap with `| 0` rather than `>>> 0`.
  */
-function lattice(x: number, y: number, z: number): number {
-	let px = (Math.imul(x, 1664525) + 1013904223) >>> 0;
-	let py = (Math.imul(y, 1664525) + 1013904223) >>> 0;
-	let pz = (Math.imul(z, 1664525) + 1013904223) >>> 0;
-	px = (px + Math.imul(py, pz)) >>> 0;
-	py = (py + Math.imul(pz, px)) >>> 0;
-	pz = (pz + Math.imul(px, py)) >>> 0;
-	px = (px ^ (px >>> 16)) >>> 0;
-	py = (py ^ (py >>> 16)) >>> 0;
-	pz = (pz ^ (pz >>> 16)) >>> 0;
-	px = (px + Math.imul(py, pz)) >>> 0;
-	py = (py + Math.imul(pz, px)) >>> 0;
-	pz = (pz + Math.imul(px, py)) >>> 0;
+export function lattice(x: number, y: number, z: number): number {
+	let px = (Math.imul(x, 1664525) + 1013904223) | 0;
+	let py = (Math.imul(y, 1664525) + 1013904223) | 0;
+	let pz = (Math.imul(z, 1664525) + 1013904223) | 0;
+	px = (px + Math.imul(py, pz)) | 0;
+	py = (py + Math.imul(pz, px)) | 0;
+	pz = (pz + Math.imul(px, py)) | 0;
+	px = (px ^ (px >>> 16)) | 0;
+	py = (py ^ (py >>> 16)) | 0;
+	pz = (pz ^ (pz >>> 16)) | 0;
+	px = (px + Math.imul(py, pz)) | 0;
+	py = (py + Math.imul(pz, px)) | 0;
+	pz = (pz + Math.imul(px, py)) | 0;
 	return px;
 }
 
