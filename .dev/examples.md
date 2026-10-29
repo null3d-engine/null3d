@@ -111,7 +111,7 @@ The depth-only demo shows the use. Its page is a `'world'` label, and a plane of
 
 ## Always-on interaction
 
-Every demo runs by itself, and takes the user's input at any moment. There is no switch between a tour and free control. `interact(ctx, camera, options)` from `examples/lib/interact.ts` holds the shared code. It gives the demo's camera orbit controls, and it gives a demo with something to lead a point that the pointer steers. Each demo's `controls` text in `examples/demos.ts` names the keys that it reads and what each one does. It also names the pointer's part where the pointer does more than turn the camera. The demos page draws the text under the demo's title. A demo that posts its keys on the controls HUD does not repeat them there. A demo with neither has no `controls` text.
+Every demo runs by itself, and takes the user's input at any moment. There is no switch between a tour and free control. `interact(ctx, camera, options)` from `examples/lib/interact.ts` holds the shared code. It gives the demo's camera orbit controls, and it gives a demo with something to lead a point that the pointer steers. Each demo's `controls` list in `examples/demos.ts` names the keys that it reads and what each one does. It also names the pointer's part where the pointer does more than turn the camera. The demos page draws the list as key caps in a panel beside the caption, and under it on a narrow screen ([D-277](decisions/D-277-skyway-driving-and-traffic.md)). A demo with neither has no `controls` list.
 
 The rules:
 
@@ -212,8 +212,8 @@ The rules that these demos follow, and why:
   search compares squared distances and takes one square root per light at the end, which makes it
   2.5 to 3 times cheaper. At a Mac load near 55, one search took about 0.3 ms at 30,000 rows and 1.1
   ms at 100,000 rows. The medians were 0.6 and 2.5 ms. The instances demo pays the 100,000-row
-  figure at Ultra, because all of its lanes are in range. Skyway pays 0.25 to 0.5 ms, because its
-  camera sees one or two of its ten streets. A search lands whole in one frame, so the cost is a
+  figure at Ultra, because all of its lanes are in range. Skyway's camera sees one or two of its ten
+  streets, and its lanes hold at most 16,000 rows, so it pays less. A search lands whole in one frame, so the cost is a
   spike every quarter second. The row count sets it, not the light count.
   `examples/addons/traffic-lanes/lights.test.ts` compares the search with a full search at 30,000
   and 100,000 rows. It checks that the nearest car has a light. It also checks the cadence, the
@@ -619,8 +619,8 @@ Night town draws its window panes through the facades example add-on
 ### Skyway (M3-C1)
 
 Skyway is the third showcase scene. It flies a hover car through a rainy night city. The scene
-shows the engine at scale. It draws 30,000 to 100,000 hover cars on the sky lanes, on one instanced
-batch of towers whose windows light one by one. It adds 180 street lamps, three searchlights, rain,
+shows the engine at scale. It draws 6,000 to 16,000 hover cars on 480 sky lanes at 12 heights.
+Its towers are one instanced batch, whose windows light one by one. It adds 180 street lamps, three searchlights, rain,
 and a hero car with two screens.
 
 - **The lanes cost nothing per frame.** Each car is a row of one of four instance batches, one for
@@ -629,6 +629,11 @@ and a hero car with two screens.
   A preset draws fewer cars by lowering the active row count. The rows are shuffled once, so a
   thinner preset thins every lane alike. The traffic-lanes example add-on owns this
   (`examples/addons/traffic-lanes/`), and Skyway uses it.
+- **The lanes keep to the right, at 12 heights.** `skyLanes()` in `layout.ts` lists every lane.
+  Each heading flies on its right of the street's center line, in two lanes. The streets along z
+  fly half a level above those along x, so crossing streets never share a height. Every car of a
+  lane flies at the lane's speed, so the cars keep their gaps. At High a lane carries a car about
+  every 96 m ([D-277](decisions/D-277-skyway-driving-and-traffic.md)).
 - **A hull's vertices are what a lane pays for.** Every face of the vehicle hull carries its own
   four vertices, so a car is 72 vertices for 36 triangles, and each pass that draws the lanes pays
   for them, the reflections' depth prepass among them. `createVehicleHull` therefore takes a detail
@@ -672,7 +677,13 @@ and a hero car with two screens.
 - **The camera.** The route is a circuit of four street canyons. It climbs from the south entrance
   to the tower tops, and dives back down. It follows the street center lines of the plan, so it
   never enters a block. `route.test.ts` samples the whole loop through the player's own
-  interpolation. It fails on a sample inside a building.
+  interpolation. It fails on a sample inside a building. In Auto the hero car flies ahead of the
+  camera, in the middle of the frame.
+- **The user drives the car in Manual.** W and S speed it up and slow it down, A and D turn it, and
+  R and F climb and sink. The towers are boxes that the car slides along or lands on.
+  `drive.test.ts` flies it frame by frame. V and the View buttons put the camera behind the car or
+  in its seat, where the panels move to a dashboard
+  ([D-277](decisions/D-277-skyway-driving-and-traffic.md)).
 - **No ring of mountains.** The fog's reach is about 240 m, and the ground plane reaches 2.1 km.
   The view therefore never sees the ground's edge or the plain background. A ring would stand in
   the fog and add nothing.
@@ -705,8 +716,10 @@ and a hero car with two screens.
   value. Dawn, Midday, Golden, Dusk and Storm have been drawn and reviewed by eye. Midday reads as
   an overcast city that the fog still layers. Golden warms the towers and the sky, and Storm drives
   the rain through a city of visible lamps.
-- **Figures.** A run in Chrome on the Mac measured these. It used the shared stage, the
-  traffic-lanes add-on and its six real lights, and the lens kit in the scene. The Mac has an Apple
+- **Figures.** A run in Chrome on the Mac measured these, with the grid plan's counts of 30,000 to
+  100,000 cars. The listed plan draws a sixth of them, so the table is an upper bound for the
+  traffic. The run used the shared stage, the traffic-lanes add-on and its six real lights, and the
+  lens kit in the scene. The Mac has an Apple
   M5 Max and a 120 Hz display. The frame-budget governor was on, and the window was parked past the
   screen's edge. The machine carried a shared build load of about 18 at the time:
 
@@ -720,7 +733,7 @@ and a hero car with two screens.
   The GPU time barely rises from Low to Ultra. The same pixels shade the same towers, and the count
   changes the vertices alone. The scene's updates threw no error at any preset. On WebGL2 the
   settings stop at Medium, but the demo's counts follow the preset that the page asked for. So
-  `preset=high` there draws 75,000 cars at Medium settings.
+  `preset=high` there draws High's cars at Medium settings.
 
   These rows draw the full hull, which the demo keeps at Medium and above. At Low it draws the light
   hull, measured on the same Mac at a canvas of 618 x 1372 device pixels, the size that a cloud
