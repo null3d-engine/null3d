@@ -133,8 +133,11 @@ no target.
   selection measures, so the block over-morphs at its own split and the switch still shows. Measured
   on the split page.
 - The second texture coordinates for the terrain's parent height and size. They cost 8 bytes a
-  vertex and cannot carry the block's height box, which the exact distance needs. The four-number
-  record costs 16 bytes a vertex and carries all of it.
+  vertex, 2,824 bytes a block, and cannot carry the block's height box, which the exact distance
+  needs, so a design that added them would still need more data. The four-number record costs 16
+  bytes a vertex, 5,648 bytes a block, and carries everything. The terrain therefore adds one array
+  and not two, and the 2,824 bytes a block that a second coordinate set would have taken are not
+  spent.
 - An engine morph for whole levels. D-91 found no change wider than a pixel at 502 of 518 measured
   switches ([D-211](D-211-lod-fade-and-distance-bands.md)). A morph would add vertex data, shader
   builds and work to every mesh, and hide nothing.
@@ -147,14 +150,21 @@ no target.
 - A second WGSL file's surface, drawn for the morph, on a trunk or a flower. A material's shader
   declares the record for every mesh that draws with it, so the card-tree leaves have their own
   material, and the plain material draws the bark, the fronds and the flowers.
+- A shared library module for the plant surface. A custom material's `#import` reaches only the
+  engine's `null3d::` modules, a package cannot add one, and the compiler refuses a shader built by
+  joining two files; the guide says so and prescribes the copy with a test that reads both files.
+  The card material therefore holds the surface copy, `packages/vegetation/src/atlas.test.ts` fails
+  when the two surfaces differ, and the two materials differ by the vertex offset alone. A
+  vegetation module inside the engine's library would put an add-on's surface into the engine, which
+  the design rule against it forbids.
 
 ## What a machine run would settle
 
 - The split pages are measured on the Mac's three GPU paths; a SwiftShader run and a filmstrip
   across the switch at High and Low would still show the look at the other end of the range.
-- A GPU-time and allocation run of `examples/terrain` settles the vertex cost, and the moving
-  casters' cost on both GPU paths. `bench:gpu-check` times the benchmark scenes, and none draws
-  terrain.
+- The block morph's cost is measured on the Mac, but a phone's narrower memory bandwidth is where
+  its 16 extra bytes a vertex would show: the terrain plan's device run settles that. A shadow view
+  that a morphing caster touches draws again, and no run has timed that yet.
 - A GPU-time run of the leaf material on the Mac and an S24-class phone settles its cost.
 - The leaf vertex count and bytes per preset, from the generator's stats.
 
