@@ -266,7 +266,7 @@ The field keeps its state between frames. One pass holds two states and steps th
 
 Each cycle pulls the air toward an analytic field of place and time. It injects the pushes and the gust, and keeps the eddies with vorticity confinement. It solves the pressure, and takes the pressure's slope out of the air, so the air never piles up. A wake therefore lasts after the body that made it has gone, and a gust sent upwind crosses the scene.
 
-The add-on warms the field up by a second of cycles when it makes it, so the first frame draws developed air. A held frame runs that same warm-up in the one frame it draws, and a picture of the field is therefore the same on every run and on every GPU.
+The add-on warms the field up by a second of cycles when it makes it, so the first frame draws developed air. A held frame runs that same warm-up in the one frame it draws. A picture of the field is therefore the same on every run and on every GPU.
 
 Beyond its box the field carries on. The box sets the detail, not the field's extent. So a plant past the box reads the air at its own place.
 
