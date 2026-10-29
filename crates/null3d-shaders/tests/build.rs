@@ -1440,6 +1440,10 @@ fn every_module_kind(modules: &BTreeMap<String, String>) -> Result<(), String> {
     let kinds = [
         ("the main module", names.contains(&"shaders.ts")),
         ("the features module", names.contains(&"shader-features.ts")),
+        (
+            "the permutations module",
+            names.contains(&"shader-permutations.ts"),
+        ),
         ("a device module", has("shaders-", ".js")),
         ("a shared-paragraph table", has("shader-paragraphs-", ".js")),
         (

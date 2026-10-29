@@ -33,6 +33,7 @@ export {
 export { probeCapabilities } from './page/capabilities';
 export { loadCore } from './page/loader';
 export { stopJobWorkersAt } from './page/stop-jobs';
+export { activateAddonDebugView, hasAddonDebugView } from './scene/addon-debug-views';
 export type { RigClip, RigData, RigJoint, RigTrack } from './scene/animation';
 export {
 	AnimationRig,

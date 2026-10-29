@@ -535,7 +535,7 @@ async function compile(
 	const generated = relative(join(dir, 'src'), join(root, MODULE_DIR));
 	const generatedJs = new Set(
 		copied.filter(
-			(path) => posix.dirname(path) === generated && isShaderModule(posix.basename(path)),
+			(path) => posix.dirname(path) === generated && isUnshippedShaderModule(posix.basename(path)),
 		),
 	);
 	for (const path of copied) {
@@ -743,14 +743,26 @@ export function shaderDeclarationFiles(root: string): string[] {
 }
 
 /**
- * The built shader JavaScript, which the package does not ship: the plugin downloads the set or
- * builds it locally. The engine's generated constants (`core.js` and `gpu.js`) are code of the
- * engine itself, not shader modules, and they stay in the tarball.
+ * The generated modules that a published package carries even though the shader build writes them.
+ * The permutation list is one: the engine imports it at run time to name a word that a narrowed set
+ * lacks, so a project that installs the package runs code that reads it. It is engine code, as the
+ * generated constants are, and not shader JavaScript.
  */
+const SHIPPED_MODULES: ReadonlySet<string> = new Set(['shader-permutations.ts']);
+
+/**
+ * True for a generated module whose built JavaScript the package does not ship: the plugin
+ * downloads the shader set or builds it locally. The engine's generated constants (`core.js` and
+ * `gpu.js`) are code of the engine itself, not shader modules, and they stay in the tarball, and so
+ * does the permutation list, which the engine reads.
+ */
+const isUnshippedShaderModule = (name: string) =>
+	isShaderModule(name) && !SHIPPED_MODULES.has(name);
+
 export function shaderModuleJsFiles(root: string): string[] {
 	const folder = MODULE_DIR.replace(/^packages\/engine\/src\//, `${LIB_DIR}/`);
 	return readdirSync(join(root, MODULE_DIR))
-		.filter(isShaderModule)
+		.filter(isUnshippedShaderModule)
 		.map((name) => `${folder}/${name.replace(/\.ts$/, '.js')}`)
 		.sort();
 }

@@ -3,8 +3,9 @@
 // its own: NULL3D_TAA_COST=1 bun run test:browser -- taa-quality.spec.ts --workers=1. The quality
 // runs draw 16 consecutive frames at 960 x 540 for each preset and camera, resolve off and on, and
 // compare them with the same frames drawn at 3840 x 2160 with MSAA 4x, which is 64 samples per pixel.
-// The cost runs play each scene at 1920 x 1080 with the resolve off and on in turns. Each result is
-// written under test-results/taa-quality/ for the decision record.
+// The cost runs play each scene at 1920 x 1080 with the resolve off and on in turns, and
+// NULL3D_TAA_PHONE=1 also times the resolve's cheaper phone path. Each result is written under
+// test-results/taa-quality/ for the decision record.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { costTimeout, loadNow, sideLine, waitForQuiet } from '../lib/effect-cost.ts';
@@ -47,6 +48,7 @@ interface CostResult {
 	error?: string;
 	mode: string;
 	scene: string;
+	phone: boolean;
 	tier: string;
 	preset: string;
 	off: CostSide;
@@ -89,29 +91,34 @@ for (const gpu of paths)
 			expect(result.cases).toHaveLength(presets.length * cameras.length * 2);
 		});
 
+const phoneCost = process.env.NULL3D_TAA_PHONE === '1';
+
 for (const gpu of paths)
 	for (const scene of scenes)
 		for (const preset of presets)
-			test(`${scene} cost on ${gpu} at ${preset}`, async ({ page }) => {
-				test.skip(!process.env.NULL3D_TAA_COST, 'set NULL3D_TAA_COST to time the resolve');
-				test.setTimeout(costTimeout(300_000));
-				const loadBefore = await waitForQuiet();
-				await page.goto(
-					`taa-quality.html?gpu=${gpu}&scene=${scene}&mode=cost&preset=${preset}&size=1920x1080`,
-				);
-				const result = await pageResult<CostResult>(page, 400_000);
-				expect(result.error).toBeUndefined();
-				expect(result.failures).toEqual([]);
-				const delta =
-					result.off.gpuMs === null || result.on.gpuMs === null
-						? 'none'
-						: (result.on.gpuMs - result.off.gpuMs).toFixed(3);
-				console.log(
-					[
-						`TAADCOST ${scene} ${result.tier} at ${preset} (drawn at ${result.preset}), load ${loadBefore} before and ${loadNow()} after, resolve adds ${delta} ms`,
-						sideLine('off', result.off, 3),
-						sideLine('on', result.on, 3),
-					].join('\n'),
-				);
-				save(`${scene}-${gpu}-${preset}-cost`, result);
-			});
+			for (const phone of phoneCost ? [false, true] : [false])
+				test(`${scene} cost on ${gpu} at ${preset}${phone ? ' on the phone path' : ''}`, async ({
+					page,
+				}) => {
+					test.skip(!process.env.NULL3D_TAA_COST, 'set NULL3D_TAA_COST to time the resolve');
+					test.setTimeout(costTimeout(300_000));
+					const loadBefore = await waitForQuiet();
+					await page.goto(
+						`taa-quality.html?gpu=${gpu}&scene=${scene}&mode=cost&preset=${preset}&size=1920x1080${phone ? '&phone=1' : ''}`,
+					);
+					const result = await pageResult<CostResult>(page, 400_000);
+					expect(result.error).toBeUndefined();
+					expect(result.failures).toEqual([]);
+					const delta =
+						result.off.gpuMs === null || result.on.gpuMs === null
+							? 'none'
+							: (result.on.gpuMs - result.off.gpuMs).toFixed(3);
+					console.log(
+						[
+							`TAADCOST ${scene} ${result.tier} at ${preset} (drawn at ${result.preset})${result.phone ? ' on the phone path' : ''}, load ${loadBefore} before and ${loadNow()} after, resolve adds ${delta} ms`,
+							sideLine('off', result.off, 3),
+							sideLine('on', result.on, 3),
+						].join('\n'),
+					);
+					save(`${scene}-${gpu}-${preset}${phone ? '-phone' : ''}-cost`, result);
+				});

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { Plugin, ResolvedConfig, Rollup, UserConfig } from 'vite';
+import { build } from 'vite';
 import { DRACO_RELEASE } from '../../../tools/lib/draco-vendor';
 import { fixture } from '../../../tools/lib/fixture';
 import null3d, {
@@ -14,6 +15,13 @@ import null3d, {
 	NOTICES_FILE,
 	thirdPartyNotices,
 } from './index';
+
+/** The main null3D plugin, which the streamed shader plugin accompanies. */
+function enginePlugin(options: Parameters<typeof null3d>[0] = {}): Plugin {
+	const plugin = null3d(options).find((entry) => entry.name === 'null3d');
+	if (plugin === undefined) throw new Error('the null3D plugin is missing');
+	return plugin;
+}
 
 /** A project with the engine package installed, holding the given core files. */
 function project(files: readonly string[]): string {
@@ -48,7 +56,7 @@ describe('missingCoreFiles', () => {
 describe('the HTTPS server', () => {
 	it('serves HTTP/1.1 only, with the certificate from the certificate folder', () => {
 		const root = fixture({ 'cert/cert.pem': 'CERT', 'cert/key.pem': 'KEY' });
-		const plugin = null3d({ https: true, certDir: 'cert' });
+		const plugin = enginePlugin({ https: true, certDir: 'cert' });
 		const config = (plugin.config as (c: object, e: object) => UserConfig)(
 			{ root },
 			{ mode: 'development', command: 'serve' },
@@ -149,7 +157,7 @@ function resolvedPlugin(
 	command: 'build' | 'serve',
 	format: 'es' | 'iife' = 'es',
 	bundle: Rollup.OutputBundle = {},
-	plugin = null3d(),
+	plugin = enginePlugin(),
 ) {
 	const warnings: string[] = [];
 	const config = {
@@ -224,12 +232,14 @@ describe('the list of files for offline play', () => {
 			'package.json': '{}',
 			'node_modules/@null3d/engine/package.json': '{"name":"@null3d/engine"}',
 		});
-		const plugin = null3d();
+		const plugin = enginePlugin();
 		const config = (plugin.config as (c: object, e: object) => UserConfig)(
 			{ root },
 			{ mode: 'production', command: 'build' },
 		);
-		const [workerFiles] = (config.worker as { plugins: () => Plugin[] }).plugins();
+		const workerFiles = (config.worker as { plugins: () => Plugin[] })
+			.plugins()
+			.find((plugin) => plugin.name === 'null3d:worker-files') as Plugin;
 		const ktx2 = `${root}/node_modules/@null3d/engine/lib/scene/ktx2.js`;
 		((workerFiles as Plugin).generateBundle as (o: object, b: object) => void)(
 			{},
@@ -292,7 +302,7 @@ describe('the worker format', () => {
 
 describe('the test switches in the address', () => {
 	const define = (options: Parameters<typeof null3d>[0], mode: string) =>
-		(null3d(options).config as (c: object, e: object) => UserConfig)(
+		(enginePlugin(options).config as (c: object, e: object) => UserConfig)(
 			{ root: fixture({ 'package.json': '{}' }) },
 			{ mode, command: 'build' },
 		).define;
@@ -343,5 +353,118 @@ describe('inlineLimit', () => {
 		expect(
 			(inlineLimit(undefined) as Limit)(join(root, 'app/src/icon.png'), small),
 		).toBeUndefined();
+	});
+});
+
+describe('the streamed shader files', () => {
+	/**
+	 * A project whose page and worker each load a generated shader file, which imports a table of
+	 * shared paragraphs. The file names and the address are the shapes the shader build writes.
+	 */
+	function streamedProject(): string {
+		return fixture({
+			'package.json': '{"name":"demo","private":true}',
+			'index.html': '<script type="module" src="/main.js"></script>',
+			'shaders.ts': "export const glsl = () => new URL('./shaders-glsl.js', import.meta.url);\n",
+			'shaders-glsl.js':
+				"import { TABLE } from './shader-paragraphs-glsl.js';\nexport const value = TABLE;\n",
+			'shader-paragraphs-glsl.js': 'export const TABLE = 1;\n',
+			'worker.ts': "import { glsl } from './shaders.ts';\nconsole.log(glsl());\n",
+			'main.js':
+				"import { glsl } from './shaders.ts';\nnew Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });\nconsole.log(glsl());\n",
+		});
+	}
+
+	/** Every file under a folder, by its path. */
+	function filesIn(folder: string): string[] {
+		return readdirSync(folder, { withFileTypes: true }).flatMap((entry) => {
+			const path = join(folder, entry.name);
+			return entry.isDirectory() ? filesIn(path) : [path];
+		});
+	}
+
+	it('keeps every shader address pointing at its copy, whatever folder the chunks land in', async () => {
+		const root = streamedProject();
+		await build({
+			root,
+			logLevel: 'silent',
+			configFile: false,
+			build: {
+				rollupOptions: {
+					output: {
+						entryFileNames: 'js/[name]-[hash].js',
+						chunkFileNames: 'js/[name]-[hash].js',
+					},
+				},
+			},
+			plugins: [null3d()],
+		});
+		const out = join(root, 'dist');
+		const copy = readdirSync(join(out, 'assets')).find((name) =>
+			/^shaders-glsl-[0-9a-f]{8}\.js$/.test(name),
+		);
+		expect(copy).toBeDefined();
+		expect(readdirSync(join(out, 'assets'))).toContain('shader-paragraphs-glsl.js');
+		const scripts = filesIn(out).filter((path) => path.endsWith('.js'));
+		const naming = scripts
+			.filter((path) => readFileSync(path, 'utf8').includes(copy as string))
+			.flatMap((path) =>
+				[...readFileSync(path, 'utf8').matchAll(/['"`](\.[^'"`]+\.js)['"`]/g)].map(
+					(match) => [path, match[1] as string] as const,
+				),
+			);
+		expect(naming.length).toBeGreaterThanOrEqual(2);
+		for (const [path, address] of naming) {
+			expect([relative(root, path), address, existsSync(resolve(dirname(path), address))]).toEqual([
+				relative(root, path),
+				address,
+				true,
+			]);
+		}
+		const list = JSON.parse(readFileSync(join(out, FILES_LIST), 'utf8')) as {
+			start: string[];
+			features: Record<string, string[]>;
+		};
+		const listed = [...list.start, ...Object.values(list.features).flat()];
+		expect(listed).toContain(`assets/${copy as string}`);
+		expect(listed).toContain('assets/shader-paragraphs-glsl.js');
+	});
+
+	it('writes the copies and their tables in a library build, at an address that resolves', async () => {
+		const root = streamedProject();
+		await build({
+			root,
+			logLevel: 'silent',
+			configFile: false,
+			build: { lib: { entry: 'shaders.ts', formats: ['es'], fileName: 'lib' } },
+			plugins: [null3d()],
+		});
+		const out = join(root, 'dist');
+		const assets = readdirSync(join(out, 'assets'));
+		const copy = assets.find((name) => /^shaders-glsl-[0-9a-f]{8}\.js$/.test(name)) as string;
+		expect(copy).toBeDefined();
+		expect(assets).toContain('shader-paragraphs-glsl.js');
+		const chunk = filesIn(out).find(
+			(path) => /\.m?js$/.test(path) && !path.includes(`${sep}assets${sep}`),
+		) as string;
+		const text = readFileSync(chunk, 'utf8');
+		expect(text).toContain(copy);
+		for (const match of text.matchAll(/['"`](\.[^'"`]+\.js)['"`]/g))
+			expect([match[1], existsSync(resolve(dirname(chunk), match[1] as string))]).toEqual([
+				match[1],
+				true,
+			]);
+	});
+
+	it('runs in the worker builds, which name the copies they load', () => {
+		const plugin = enginePlugin();
+		const config = (plugin.config as (c: object, e: object) => UserConfig)(
+			{ root: fixture({ 'package.json': '{}' }) },
+			{ mode: 'production', command: 'build' },
+		);
+		const names = (config.worker as { plugins: () => Plugin[] })
+			.plugins()
+			.map((plugin) => plugin.name);
+		expect(names).toContain('null3d:streamed-shader-assets');
 	});
 });

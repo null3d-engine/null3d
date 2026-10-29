@@ -30,7 +30,9 @@ interface SceneResult {
 
 /** Opens the scene page with `switches` and returns its result, which must have no error. */
 async function openScene(page: Page, switches: string): Promise<SceneResult> {
-	await page.goto(`scene.html?${switches}`);
+	// Two seconds of frames give the GPU timer several sampled frames, so a pass that the engine
+	// builds in its first frames reaches the parts.
+	await page.goto(`scene.html?seconds=2&${switches}`);
 	const result = await pageResult<SceneResult>(page, 30_000);
 	expect(result.error).toBeUndefined();
 	expect(result.failures).toEqual([]);
@@ -59,9 +61,9 @@ function expectFrames(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
 	// HDR color, and the time between them.
 	if (tier === 'webgpu' && result.capabilities.features.includes('timestamp-query')) {
 		const parts = stats.gpuPassMs ?? [];
-		const renders = result.capabilities.hdr ? ['render 1', 'render 2'] : ['render 1'];
+		const renders = result.capabilities.hdr ? ['opaque', 'final'] : ['opaque'];
 		expect(parts.map((part) => part.name).sort()).toEqual(
-			['between passes', 'compute 1', 'copies', ...renders].sort(),
+			['between passes', 'compute', 'copies', ...renders].sort(),
 		);
 		for (const part of parts) expect(part.ms.count).toBeGreaterThan(0);
 	} else if (tier === 'webgl2' && stats.gpuMs) {

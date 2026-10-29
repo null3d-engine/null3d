@@ -51,6 +51,6 @@ runPort({
 			elements.push(element);
 		}
 		renderer.render(scene, camera);
-		return elements;
+		return { elements };
 	},
 });

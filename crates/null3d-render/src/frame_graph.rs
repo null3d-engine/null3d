@@ -166,6 +166,7 @@ use null3d_gpu::drawlist::{
     DrawList, NO_TARGET, Op, format, layout as bind_layout, pass_flags, permutation, resource_kind,
     texture_usage, view,
 };
+use null3d_gpu::pass_role::{self, PassRole};
 
 use crate::accumulate::{self, AccumulateIds, AccumulatePass};
 use crate::ao::{self, Ao, AoIds, AoPass, Contact, StepSources};
@@ -394,8 +395,13 @@ const FOG_SUM_PASS: &str = "FogSum";
 const FOG_SUMMED: &str = "fogSummed";
 const FOG_APPLY_PASS: &str = "FogApply";
 const FOG_COLOR: &str = "fogColor";
-/// The resolve's step and the copy into each of the two histories.
-const TAA_PASSES: [&str; taa::STEPS + 1] = ["TaaResolve", "TaaCopy0", "TaaCopy1"];
+/// The copy of the scene's color after the opaque pass, which the resolve compares with the
+/// composited color to find where a blended surface drew.
+const TAA_OPAQUE_PASS: &str = "TaaOpaque";
+const TAA_OPAQUE: &str = "taaOpaqueColor";
+/// The resolve's step, and the copy into each of the two histories.
+const TAA_RESOLVE_PASS: &str = "TaaResolve";
+const TAA_COPY_PASSES: [&str; 2] = ["TaaCopy0", "TaaCopy1"];
 /// The resolve's target, which the chain after it reads in place of the scene color.
 const TAA_COLOR: &str = "taaColor";
 /// The kept targets that hold the resolved color of the last frame of each parity.
@@ -562,6 +568,8 @@ impl ShadowPasses {
 pub(crate) struct TilePasses {
     pub(crate) tiles: u32,
     pub(crate) size: u32,
+    /// The atlas's last tile while the sun names a hero, whose pass labels itself as the hero's.
+    pub(crate) hero: Option<u32>,
 }
 
 /// The pass targets that the objects of the shadow, motion and pick passes sample, each as a mask
@@ -1044,6 +1052,9 @@ pub(crate) struct FrameGraph {
     /// True once temporal anti-aliasing's pipelines draw: built, after the frame whose list
     /// created them.
     taa_built: bool,
+    /// True while the declared passes hold the copy of the scene's color after the opaque pass,
+    /// which the resolve compares with the composited color.
+    taa_opaque_declared: bool,
     /// True when the declared passes hold temporal anti-aliasing's steps.
     taa_declared: bool,
     /// The textures that its steps read, found once for each compile of the graph.
@@ -1334,6 +1345,7 @@ impl FrameGraph {
             taa_ids: ids.taa,
             taa: None,
             taa_built: false,
+            taa_opaque_declared: false,
             taa_declared: false,
             taa_textures: CompileCache::default(),
             ao_pass: None,
@@ -1695,7 +1707,8 @@ impl FrameGraph {
     /// draws no tiles.
     pub(crate) fn set_tiles(&mut self, tiles: Option<TilePasses>) {
         let tiles = tiles.filter(|t| self.shadow_map && t.tiles > 0);
-        if tiles != self.tiles {
+        let shape = |tiles: Option<TilePasses>| tiles.map(|t| (t.tiles, t.size));
+        if shape(tiles) != shape(self.tiles) {
             self.declared = false;
         }
         self.tiles = tiles;
@@ -2525,6 +2538,9 @@ impl FrameGraph {
     /// Switches the views' transparent passes on while some object blends or lets light through,
     /// and off otherwise. The graph compiles again only when that changes.
     pub(crate) fn set_transparent(&mut self, on: bool) {
+        if self.transparent_on == on {
+            return;
+        }
         self.transparent_on = on;
         self.enable_views();
     }
@@ -3139,6 +3155,19 @@ impl FrameGraph {
         let lines = self.add(lines, Role::DebugLines);
         self.graph.set_enabled(lines, false);
         self.debug_lines = Some(lines);
+        // The copy holds the color that the opaque pass and the debug lines leave, before a
+        // blended surface draws over it, so the resolve can tell where this frame blended. It
+        // reads the scene color so far, which places it between the two passes. It draws whenever
+        // the resolve does, so the bind group that reads it is always the copy.
+        self.taa_opaque_declared = self.taa_draws() && !views.is_empty();
+        if self.taa_opaque_declared {
+            let size = view_size(&views[ViewId::CAMERA.index()]);
+            let copy = Pass::new(TAA_OPAQUE_PASS, PassKind::Fullscreen)
+                .size(size)
+                .reads_so_far(SCENE_COLOR)
+                .creates(TAA_OPAQUE, Target::color(taa::FORMAT));
+            self.add(copy, Role::Taa(taa::OPAQUE_STEP as u8));
+        }
         self.transmission_declared =
             (self.transmission_draws() || self.ssr_draws()) && !views.is_empty();
         if self.transmission_declared {
@@ -3745,19 +3774,24 @@ impl FrameGraph {
             self.graph
                 .keep(name, Target::color(taa::FORMAT), Size::Full);
         }
-        let resolve = Pass::new(TAA_PASSES[0], PassKind::Fullscreen)
+        let resolve = Pass::new(TAA_RESOLVE_PASS, PassKind::Fullscreen)
             .reads(input)
             .reads(SCENE_DEPTH)
             .reads(MOTION_TARGET)
             .reads_so_far(TAA_HISTORIES[0])
             .reads_so_far(TAA_HISTORIES[1])
             .creates(TAA_COLOR, Target::color(taa::FORMAT));
-        self.add(resolve, Role::Taa(0));
+        let resolve = if self.taa_opaque_declared {
+            resolve.reads(TAA_OPAQUE)
+        } else {
+            resolve
+        };
+        self.add(resolve, Role::Taa(taa::RESOLVE_STEP as u8));
         for (index, name) in TAA_HISTORIES.into_iter().enumerate() {
-            let copy = Pass::new(TAA_PASSES[1 + index], PassKind::Fullscreen)
+            let copy = Pass::new(TAA_COPY_PASSES[index], PassKind::Fullscreen)
                 .reads(TAA_COLOR)
                 .writes(name);
-            self.add(copy, Role::Taa(1 + index as u8));
+            self.add(copy, Role::Taa(taa::COPY_STEPS[index] as u8));
         }
     }
 
@@ -5166,6 +5200,8 @@ impl FrameGraph {
                 motion: id(MOTION_TARGET),
                 histories: TAA_HISTORIES.map(id),
                 resolved: id(TAA_COLOR),
+                scene: id(SCENE_COLOR),
+                opaque: id(TAA_OPAQUE),
             }
         });
         self.taa_textures = found;
@@ -5607,6 +5643,7 @@ impl FrameGraph {
                         continue;
                     }
                     let start = list.len();
+                    let label = self.step_label(plan, step, false);
                     let mut began = false;
                     let mut wrote = false;
                     for &pass in plan.passes(step) {
@@ -5617,7 +5654,7 @@ impl FrameGraph {
                                 let place = view.index();
                                 if let Some(pass) = self.declared_views[place].compute_pass() {
                                     if !began {
-                                        list.push(Op::BeginComputePass, &[])?;
+                                        list.push(Op::BeginComputePass, &[label])?;
                                         began = true;
                                     }
                                     let before = list.len();
@@ -5641,7 +5678,7 @@ impl FrameGraph {
                             }
                             role => {
                                 if !began {
-                                    list.push(Op::BeginComputePass, &[])?;
+                                    list.push(Op::BeginComputePass, &[label])?;
                                     began = true;
                                 }
                                 let before = list.len();
@@ -5803,8 +5840,7 @@ impl FrameGraph {
                                 .taa_pass
                                 .as_ref()
                                 .expect("temporal anti-aliasing's steps run once they are declared")
-                                // The resolve is step 0; either history's copy is step 1.
-                                .record(list, usize::from(step).min(1))?,
+                                .record(list, usize::from(step))?,
                             Role::ViewCopy(view) => {
                                 if let Some(copies) = self.view_copies.as_ref() {
                                     copies.record(list, view.index())?;
@@ -5862,9 +5898,90 @@ impl FrameGraph {
                 .as_ref()
                 .is_some_and(|fog| fog.parity() == usize::from(parity)),
             // A frame draws only the copy into the history of its own parity.
-            (Role::Taa(step @ 1..), _) => self.taa.is_some_and(|f| f.parity + 1 == step),
+            (Role::Taa(step @ 2..), _) => self.taa.is_some_and(|f| f.parity + 2 == step),
             _ => true,
         }
+    }
+
+    /// What the frame records for a declared pass: the pass's role and its place among the passes
+    /// of that role, packed into the label that the draw list carries.
+    fn role_label(&self, role: Role) -> u32 {
+        use PassRole as P;
+        let view = |view: ViewId| view.index() as u32;
+        let (code, place) = match role {
+            Role::LightClusters => (P::LightClusters, 0),
+            Role::Skin => (P::Skin, 0),
+            Role::Cull(view_id) => (P::Cull, view(view_id)),
+            Role::Prepass(view_id) => (P::Prepass, view(view_id)),
+            Role::Opaque(view_id) => (P::Opaque, view(view_id)),
+            Role::Occluders(view_id) => (P::Occluders, view(view_id)),
+            Role::Pyramid(view_id) => (P::Pyramid, view(view_id)),
+            Role::LateCull(view_id) => (P::LateCull, view(view_id)),
+            Role::Shadow(view_id) => match view_id.cascade_index() {
+                Some(cascade) => (P::ShadowCascade, cascade as u32),
+                None => {
+                    let tile = view_id.tile_index().unwrap_or_default() as u32;
+                    let hero = self.tiles.and_then(|tiles| tiles.hero);
+                    if hero == Some(tile) {
+                        (P::ShadowHero, 0)
+                    } else {
+                        (P::ShadowTile, tile)
+                    }
+                }
+            },
+            Role::DebugLines => (P::DebugLines, 0),
+            Role::Transparent(view_id) => (P::Transparent, view(view_id)),
+            Role::Decals => (P::Decals, 0),
+            Role::DecalRedraw => (P::DecalRedraw, 0),
+            Role::Pick => (P::Pick, 0),
+            Role::PickResolve => (P::PickResolve, 0),
+            Role::Resolve => (P::Resolve, 0),
+            Role::Bloom(step) => (P::Bloom, u32::from(step)),
+            Role::OutlineMask => (P::OutlineMask, 0),
+            Role::SkinLight => (P::SkinLight, 0),
+            Role::Subsurface(step) => (P::Subsurface, u32::from(step)),
+            Role::Ao(step) => (P::Ao, u32::from(step)),
+            Role::Ssr(step) => (P::Ssr, u32::from(step)),
+            Role::Effect(step) => (P::Effect, u32::from(step)),
+            Role::Dof(step) => (P::Dof, u32::from(step)),
+            Role::FogLight(parity) => (P::FogLight, u32::from(parity)),
+            Role::FogBlock => (P::FogBlock, 0),
+            Role::FogSum => (P::FogSum, 0),
+            Role::FogApply => (P::FogApply, 0),
+            Role::Taa(step) => (P::Taa, u32::from(step)),
+            Role::ViewCopy(view_id) => (P::ViewCopy, view(view_id)),
+            Role::Fullscreen(view_id) => (P::Fullscreen, view(view_id)),
+            Role::Compute(view_id) => (P::Compute, view(view_id)),
+            Role::TransmissionCopy => (P::TransmissionCopy, 0),
+            Role::Motion => (P::Motion, 0),
+            Role::MotionView => (P::MotionView, 0),
+            Role::Weighted => (P::Weighted, 0),
+            Role::WeightedComposite => (P::WeightedComposite, 0),
+            Role::ParticleDepthCopy => (P::ParticleDepthCopy, 0),
+            Role::Accumulate => (P::Accumulate, 0),
+            Role::Final => (P::Final, 0),
+            Role::FinalStill => (P::FinalStill, 0),
+            Role::FinalBloom => (P::FinalBloom, 0),
+            Role::Output => (P::Output, 0),
+            Role::OutputBloom => (P::OutputBloom, 0),
+        };
+        pass_role::label(code, place)
+    }
+
+    /// The label of a GPU pass: a render pass draws for the first of its declared passes, and a
+    /// compute pass takes the role that all of its dispatches share, or [`PassRole::Compute`] when
+    /// they differ, since one pass times them together.
+    fn step_label(&self, plan: &Plan, step: &Step, render: bool) -> u32 {
+        let mut label = 0;
+        for (index, &pass) in plan.passes(step).iter().enumerate() {
+            let each = self.role_label(self.roles[pass.index()]);
+            if index == 0 {
+                label = each;
+            } else if !render && each != label {
+                return pass_role::label(PassRole::Compute, 0);
+            }
+        }
+        label
     }
 
     /// Begins a render pass with the step's attachments and their load and store operations.
@@ -5907,7 +6024,7 @@ impl FrameGraph {
             }
         }
         let [r, g, b, a] = clear;
-        let operands = [
+        let mut operands = [
             color,
             resolve,
             depth,
@@ -5918,8 +6035,16 @@ impl FrameGraph {
             0f32.to_bits(),
             flags,
             second,
+            self.step_label(plan, step, true),
         ];
-        let count = if second == NO_TARGET { 9 } else { 10 };
+        // The label follows the optional second color target, and takes its place when the pass
+        // has none.
+        let count = if second == NO_TARGET {
+            operands[9] = operands[10];
+            10
+        } else {
+            11
+        };
         list.push(Op::BeginRenderPass, &operands[..count])?;
         Ok(())
     }
@@ -6965,6 +7090,101 @@ mod tests {
         steps(frames)
             .iter()
             .position(|step| step.iter().any(|pass| pass == name))
+    }
+
+    #[test]
+    fn a_pass_label_names_the_hero_tile_apart_from_the_cascades() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.bind_shadow_map(CascadeDepth::Unorm16);
+        frames.set_shadows(Some(ShadowPasses {
+            cascades: 1,
+            map_size: 8,
+            layers: 1,
+        }));
+        frames.set_tiles(Some(TilePasses {
+            tiles: 2,
+            size: 8,
+            hero: Some(1),
+        }));
+        assert_eq!(
+            frames.role_label(Role::Shadow(ViewId::cascade(0))),
+            pass_role::label(PassRole::ShadowCascade, 0)
+        );
+        assert_eq!(
+            frames.role_label(Role::Shadow(ViewId::tile(0))),
+            pass_role::label(PassRole::ShadowTile, 0)
+        );
+        assert_eq!(
+            frames.role_label(Role::Shadow(ViewId::tile(1))),
+            pass_role::label(PassRole::ShadowHero, 0),
+            "the atlas's last tile holds the hero while the sun names one"
+        );
+    }
+
+    #[test]
+    fn a_recorded_frame_gives_each_pass_the_label_of_what_it_draws_for() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.bind_shadow_map(CascadeDepth::Unorm16);
+        frames.set_shadows(Some(ShadowPasses {
+            cascades: 1,
+            map_size: 8,
+            layers: 1,
+        }));
+        frames.set_tiles(Some(TilePasses {
+            tiles: 2,
+            size: 8,
+            hero: Some(1),
+        }));
+        frames.sync(&[View::default()]);
+        let mut list = DrawList::with_capacity(8192);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 1);
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        pipelines.create_new(&mut list, 2).unwrap();
+        frames.request_pipelines(&mut pipelines, 2);
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        list.clear();
+        frames
+            .record(
+                &mut list,
+                |_| [0.0; 4],
+                |_| false,
+                |list, role| {
+                    // A compute pass that records nothing is left out, so the frame's compute
+                    // work takes a dispatch of its own.
+                    if matches!(role, Role::LightClusters | Role::Cull(_)) {
+                        list.push(Op::Dispatch, &[1, 1, 1])?;
+                    }
+                    Ok(())
+                },
+                |_| Ok(()),
+                |_| Ok(()),
+                |_| Ok(()),
+            )
+            .unwrap();
+        let labels: Vec<u32> = operands(&list, Op::BeginRenderPass)
+            .iter()
+            .map(|pass| *pass.last().unwrap())
+            .collect();
+        assert!(labels.iter().all(|&label| label != 0));
+        assert!(
+            labels.contains(&pass_role::label(PassRole::ShadowCascade, 0)),
+            "{labels:?}"
+        );
+        assert!(labels.contains(&pass_role::label(PassRole::ShadowHero, 0)));
+        let computes = operands(&list, Op::BeginComputePass);
+        assert!(computes.iter().all(|pass| pass.len() == 1 && pass[0] != 0));
+        assert!(
+            computes
+                .iter()
+                .any(|pass| pass[0] == pass_role::label(PassRole::Compute, 0)),
+            "a step of unlike compute passes takes the compute role: {computes:?} {:?}",
+            steps(&frames)
+        );
     }
 
     #[test]
@@ -8419,6 +8639,74 @@ mod tests {
     }
 
     #[test]
+    fn the_resolve_copies_the_opaque_color_before_a_blend_draws() {
+        let canvas = (1280, 720);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        frames.set_transparent(true);
+        let mut list = DrawList::with_capacity(8192);
+        let mut pipelines = PipelineCache::default();
+        let mut identity = [0.0; 16];
+        for k in 0..4 {
+            identity[k * 5] = 1.0;
+        }
+        frames.set_taa(Some(TaaFrame {
+            taa: taa::Taa::default(),
+            size: canvas,
+            projection: identity,
+            jitter: [0.0; 2],
+            last_jitter: [0.0; 2],
+            reproject: identity,
+            exposure_ratio: 1.0,
+            reset: true,
+            parity: 1,
+        }));
+        let list_pipelines = |frames: &mut FrameGraph, pipelines: &mut PipelineCache| {
+            frames.request_pipelines(pipelines, 1);
+            pipelines
+                .create_new(&mut DrawList::with_capacity(8192), 2)
+                .unwrap();
+            frames.request_pipelines(pipelines, 2);
+        };
+        list_pipelines(&mut frames, &mut pipelines);
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
+        assert!(
+            names.iter().any(|name| name == TAA_OPAQUE_PASS),
+            "{names:?}"
+        );
+        let place = |name: &str| names.iter().position(|n| n == name).unwrap();
+        assert!(place(TAA_OPAQUE_PASS) < place("Transparent"), "{names:?}");
+        assert!(
+            place(TAA_OPAQUE_PASS) < place(TAA_RESOLVE_PASS),
+            "{names:?}"
+        );
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
+            .iter()
+            .filter(|group| (140..143).contains(&group[0]))
+            .map(|group| group[1])
+            .collect();
+        let resolve = if true {
+            bind_layout::TAA_MS
+        } else {
+            bind_layout::TAA
+        };
+        assert_eq!(
+            layouts,
+            [resolve, bind_layout::VIEW_COPY, bind_layout::VIEW_COPY]
+        );
+    }
+
+    #[test]
     fn temporal_anti_aliasing_resolves_before_the_effects_and_keeps_its_history() {
         let canvas = (1280, 720);
         for gpu_culling in [true, false] {
@@ -8445,6 +8733,7 @@ mod tests {
                 jitter: [0.0; 2],
                 last_jitter: [0.0; 2],
                 reproject: identity,
+                exposure_ratio: 1.0,
                 reset: true,
                 parity: 1,
             }));
@@ -8459,10 +8748,19 @@ mod tests {
                 .unwrap();
             let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
             let place = |name: &str| names.iter().position(|n| n == name).unwrap();
-            assert!(place(TAA_PASSES[0]) < place(TAA_PASSES[1]), "{names:?}");
-            assert!(place(TAA_PASSES[0]) < place(TAA_PASSES[2]), "{names:?}");
-            assert!(place(TAA_PASSES[2]) < place("Final"), "{names:?}");
-            assert!(place(TAA_PASSES[0]) < place(EFFECT_PASSES[0]), "{names:?}");
+            assert!(
+                place(TAA_RESOLVE_PASS) < place(TAA_COPY_PASSES[0]),
+                "{names:?}"
+            );
+            assert!(
+                place(TAA_RESOLVE_PASS) < place(TAA_COPY_PASSES[1]),
+                "{names:?}"
+            );
+            assert!(place(TAA_COPY_PASSES[1]) < place("Final"), "{names:?}");
+            assert!(
+                place(TAA_RESOLVE_PASS) < place(EFFECT_PASSES[0]),
+                "{names:?}"
+            );
             assert_eq!(frames.scene_output(), TAA_COLOR);
             let mut arena = UploadArena::default();
             arena.reset(frames.upload_bound());
@@ -8482,7 +8780,7 @@ mod tests {
             };
             assert_eq!(layouts, [resolve, bind_layout::VIEW_COPY]);
             // A frame of parity 1 draws only the copy into the second history.
-            assert!(!frames.draws(Role::Taa(1)) && frames.draws(Role::Taa(2)));
+            assert!(!frames.draws(Role::Taa(2)) && frames.draws(Role::Taa(3)));
         }
     }
 
@@ -10012,7 +10310,7 @@ mod tests {
                 .unwrap();
             let pairs: Vec<_> = operands(&list, Op::BeginRenderPass)
                 .into_iter()
-                .filter(|pass| pass.len() == 10)
+                .filter(|pass| pass.len() == 11)
                 .collect();
             assert_eq!(
                 pairs.len(),

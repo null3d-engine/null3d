@@ -2006,6 +2006,92 @@ describe("the asset tool's staged levels", () => {
 		const hull = parse(wrong.glb()).nodes.find((node) => node.name === 'Hull');
 		expect(hull?.stages).toBeUndefined();
 	});
+
+	test('reads the bands of each cluster tree, by the primitive that each extends', () => {
+		const builder = shipBuilder();
+		builder.json.nodes[0].extras = {
+			NULL3D_stages: {
+				bands: [
+					{ primitive: 0, url: 'ship.m0.p0.band1.bin', bytes: 120 },
+					{ primitive: 0, url: 'ship.m0.p0.band2.bin', bytes: 60 },
+					{ primitive: 1, url: 'ship.m0.p1.band1.bin', bytes: 40 },
+				],
+			},
+		};
+		const hull = parse(builder.glb()).nodes.find((node) => node.name === 'Hull');
+		expect(hull?.stages).toEqual({
+			levels: [],
+			bands: [
+				{ primitive: 0, url: 'ship.m0.p0.band1.bin', bytes: 120 },
+				{ primitive: 0, url: 'ship.m0.p0.band2.bin', bytes: 60 },
+				{ primitive: 1, url: 'ship.m0.p1.band1.bin', bytes: 40 },
+			],
+		});
+	});
+
+	test('stops at a band of a primitive that holds no address, and keeps the others', () => {
+		const builder = shipBuilder();
+		builder.json.nodes[0].extras = {
+			NULL3D_stages: {
+				bands: [
+					{ primitive: 0, url: 'a.bin', bytes: 120 },
+					{ primitive: 0, url: '', bytes: 60 },
+					{ primitive: 0, url: 'c.bin', bytes: 30 },
+					{ primitive: 1, url: 'd.bin', bytes: 20 },
+				],
+			},
+		};
+		const hull = parse(builder.glb()).nodes.find((node) => node.name === 'Hull');
+		expect(hull?.stages?.bands).toEqual([
+			{ primitive: 0, url: 'a.bin', bytes: 120 },
+			{ primitive: 1, url: 'd.bin', bytes: 20 },
+		]);
+	});
+});
+
+describe("a node's levels of detail", () => {
+	/** A file whose one node holds two lower levels, with `extras` on the node. */
+	function lodFile(extras: GltfJson): GltfData {
+		const b = new GltfBuilder().uses('MSFT_lod');
+		const base = b.mesh([boxPrimitive(b)], 'crown');
+		const ids = ['coarse', 'coarser'].map((name) =>
+			b.node({ name, mesh: b.mesh([boxPrimitive(b)], name) }, true),
+		);
+		b.node({ name: 'Crown', mesh: base, extensions: { MSFT_lod: { ids } }, extras });
+		return parse(b.glb());
+	}
+
+	/** The two level meshes that the file's node names, whatever else it holds. */
+	const LEVEL_MESHES = [1, 2];
+
+	test('reads the coverage that comes beside the errors, not only instead of them', () => {
+		// The asset tool writes both lists, and the loader tells a measured error by the coverage that
+		// comes with it. Reading the coverage only where the errors are absent would lose that mark.
+		const measured = lodFile({
+			NULL3D_lod_error: [0.02, 0.04],
+			MSFT_screencoverage: [0.0165, 0.0082],
+		});
+		const both = measured.nodes[0]?.levels;
+		expect([both?.meshes, both?.errors, both?.coverage]).toEqual([
+			LEVEL_MESHES,
+			[0.02, 0.04],
+			[0.0165, 0.0082],
+		]);
+		// A hand-set error comes alone, so its level fades.
+		const handSet = lodFile({ NULL3D_lod_error: [0.02, 0.04] }).nodes[0]?.levels;
+		expect([handSet?.meshes, handSet?.errors, handSet?.coverage]).toEqual([
+			LEVEL_MESHES,
+			[0.02, 0.04],
+			undefined,
+		]);
+		// A file may give the coverage alone.
+		const covered = lodFile({ MSFT_screencoverage: [0.0165, 0.0082] }).nodes[0]?.levels;
+		expect([covered?.meshes, covered?.errors, covered?.coverage]).toEqual([
+			LEVEL_MESHES,
+			undefined,
+			[0.0165, 0.0082],
+		]);
+	});
 });
 
 describe('the Needle light maps', () => {

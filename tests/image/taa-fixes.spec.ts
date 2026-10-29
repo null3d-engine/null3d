@@ -1,0 +1,233 @@
+// The temporal resolve's study fixes (task M3-A11, D-206): a history that follows a change of the
+// exposure, the transparency mask over a transparent canvas and over an opaque surface, and the
+// phone path against the full one. It also records what the resolve does to the two jittered
+// effects that need it, thin rain and the volumetric fog. tests/pages/taa-fixes.ts draws each case
+// and reports the figures in 8-bit levels; each run sees the same seeded scene.
+import { expect, test } from '@playwright/test';
+import { pageResult } from '../lib/page-result.ts';
+
+interface ExposureResult {
+	case: string;
+	gpu: string;
+	resolved: number;
+	reference: number;
+	error: number;
+	offResolved: number;
+	offReference: number;
+	offError: number;
+	overlap: number;
+	consecutive: boolean;
+}
+
+interface GhostResult {
+	case: string;
+	gpu: string;
+	reactive: string;
+	error: number;
+	level: number;
+	frameArrived: number;
+	frameLeft: number;
+	frameRight: number;
+	referenceArrived: number;
+	referenceRight: number;
+}
+
+interface PhoneResult {
+	case: string;
+	gpu: string;
+	distance: number;
+	signal: number;
+	skip: number;
+	mean: number;
+	overlap: number;
+	consecutive: boolean;
+}
+
+interface EffectResult {
+	case: string;
+	gpu: string;
+	off: number;
+	on: number;
+	onNoMask: number;
+	jitter: number;
+	offMean: number;
+	onMean: number;
+	onNoMaskMean: number;
+	steps: number;
+	skipped: number;
+	captures: number;
+	consecutive: boolean;
+}
+
+const GPUS = ['webgpu', 'webgl2'] as const;
+/**
+ * How many times over a software run captures its frames. A software GPU draws slower than the page
+ * asks, so its captures skip frames and two runs line up on fewer sketch frames; twice the captures
+ * gives back the lined-up pairs the checks count. A Mac's GPU keeps the page's rate and needs one.
+ */
+const capturesOn = (projectName: string) => (projectName === 'chromium-swiftshader' ? 2 : 1);
+
+/** True on the software tier, where a capture can span more than one frame of the page's own rate. */
+const softwareOn = (projectName: string) => projectName === 'chromium-swiftshader';
+
+for (const gpu of GPUS) {
+	test(`a history follows a change of the exposure on ${gpu}`, async ({ page }, testInfo) => {
+		test.setTimeout(600_000);
+		const captures = capturesOn(testInfo.project.name);
+		await page.goto(`taa-fixes.html?case=exposure&gpu=${gpu}&fps=4&step=8&captures=${captures}`);
+		const result = await pageResult<ExposureResult>(page, 180_000);
+		expect(result.case).toBe('exposure');
+		expect(result.consecutive, 'a capture did not advance').toBe(true);
+		expect(result.overlap, `only ${result.overlap} frames lined up`).toBeGreaterThanOrEqual(8);
+		// The resolved frame holds the scene at the new exposure, within the noise's own blend.
+		console.log(
+			`TAAFIX exposure on ${result.gpu}: resolved mean ${result.resolved.toFixed(1)} against ${result.reference.toFixed(1)}, error ${result.error.toFixed(1)} levels; with the ratio off, ${result.offResolved.toFixed(1)} against ${result.offReference.toFixed(1)}, error ${result.offError.toFixed(1)}`,
+		);
+		// The exposure doubles at a frame of the sequence in every run, so the frames line up. The
+		// frame's distance from the reference moves with the noise's own smoothing, so the ratio's
+		// own effect is the difference of the two means: without the ratio the history holds the
+		// exposure of the frame before, and the resolved frame falls below the corrected one.
+		expect(
+			Math.abs(result.error),
+			`resolved ${result.resolved.toFixed(1)} against ${result.reference.toFixed(1)}, error ${result.error.toFixed(1)}`,
+		).toBeLessThan(45);
+		expect(result.resolved).toBeGreaterThan(result.reference * 0.6);
+		const lift = result.resolved - result.offResolved;
+		expect(
+			lift,
+			`the ratio lifted the frame by ${lift.toFixed(1)} levels: ${result.resolved.toFixed(1)} against ${result.reference.toFixed(1)} with it, and ${result.offResolved.toFixed(1)} against ${result.offReference.toFixed(1)} without`,
+		).toBeGreaterThan(5);
+	});
+}
+
+for (const gpu of GPUS) {
+	test(`the scene's alpha lowers the history on ${gpu}`, async ({ page }, testInfo) => {
+		const captures = capturesOn(testInfo.project.name);
+		test.setTimeout(600_000);
+		const off = await ghost(page, gpu, 'alpha', 'off', captures);
+		const on = await ghost(page, gpu, 'alpha', 'alpha', captures);
+		console.log(
+			`TAAFIX alpha on ${gpu}: error ${on.error.toFixed(1)} levels with the mask, ${off.error.toFixed(1)} without; captured ${on.frameLeft.toFixed(1)} left and ${on.frameRight.toFixed(1)} right, reference ${on.referenceArrived.toFixed(1)} arrived and ${on.referenceRight.toFixed(1)} right`,
+		);
+		expect(off.level, 'the square drew nothing').toBeGreaterThan(4);
+		expect(
+			on.error,
+			`the mask left ${on.error.toFixed(1)} levels of the background against ${off.error.toFixed(1)}`,
+		).toBeLessThan(Math.max(1.5, off.error * 0.8));
+	});
+
+	test(`the opaque-only copy lowers the history on ${gpu}`, async ({ page }, testInfo) => {
+		const captures = capturesOn(testInfo.project.name);
+		test.setTimeout(600_000);
+		// The square is blended over an opaque wall, so the scene's alpha stays at one and only the
+		// opaque-only copy can find the surface that moved.
+		const off = await ghost(page, gpu, 'opaque', 'off', captures);
+		const on = await ghost(page, gpu, 'opaque', 'opaque', captures);
+		console.log(
+			`TAAFIX opaque on ${gpu}: error ${on.error.toFixed(1)} levels with the mask, ${off.error.toFixed(1)} without; captured ${on.frameLeft.toFixed(1)} left and ${on.frameRight.toFixed(1)} right, reference ${on.referenceArrived.toFixed(1)} arrived and ${on.referenceRight.toFixed(1)} right`,
+		);
+		expect(off.level, 'the square drew nothing').toBeGreaterThan(4);
+		// The copy holds the wall where the square arrived, and this frame's color holds the square,
+		// so the comparison drops that history. Without the signal the wall stays in the square's
+		// history, which the figure shows.
+		expect(
+			on.error,
+			`the mask left ${on.error.toFixed(1)} levels of the wall against ${off.error.toFixed(1)}`,
+		).toBeLessThan(Math.max(1.5, off.error * 0.8));
+	});
+
+	test(`the phone path draws the full path's picture on ${gpu}`, async ({ page }, testInfo) => {
+		test.setTimeout(600_000);
+		const captures = capturesOn(testInfo.project.name);
+		await page.goto(`taa-fixes.html?case=phone&gpu=${gpu}&fps=4&captures=${captures}`);
+		const result = await pageResult<PhoneResult>(page, 180_000);
+		console.log(
+			`TAAFIX phone on ${result.gpu}: the two paths differ by ${result.distance.toFixed(2)} levels; the mask changes the full path by ${result.signal.toFixed(2)} levels and the phone path by ${result.skip.toFixed(2)}, mean ${result.mean.toFixed(1)}`,
+		);
+		expect(result.consecutive, 'a capture did not advance').toBe(true);
+		expect(result.overlap, `only ${result.overlap} frames lined up`).toBeGreaterThanOrEqual(12);
+		expect(result.mean, 'the phone path drew nothing').toBeGreaterThan(4);
+		expect(
+			result.distance,
+			`the two paths differ by ${result.distance.toFixed(2)} levels`,
+		).toBeLessThan(8);
+		// The scene changes when the full path reads the alpha signal, so the skip below measures
+		// something. The phone path reads no transparency signal, so the same setting draws the
+		// same picture.
+		expect(
+			result.signal,
+			`the alpha signal changed the full path by ${result.signal.toFixed(2)} levels`,
+		).toBeGreaterThan(1);
+		expect(
+			result.skip,
+			`the mask changed the phone path by ${result.skip.toFixed(2)} levels`,
+		).toBeLessThan(0.5);
+	});
+
+	for (const effect of ['rain', 'fog'] as const) {
+		test(`the resolve over ${effect} on ${gpu}`, async ({ page }, testInfo) => {
+			test.setTimeout(900_000);
+			const captures = capturesOn(testInfo.project.name);
+			// The figures are the ones this page draws at four frames a second, and each is a mean
+			// over the frames all four runs hold, so a machine whose captures skip frames has fewer
+			// of them to compare. A capture on a software GPU takes longer than the 250 ms a frame
+			// then lasts: the last CI run there skipped 20 of 128 captures on rain and 47 of 128 on
+			// fog, and the shared sets came to 11 and 2 frames against the 12 the check needs. A
+			// slower page would give the pairs and measure a different rate than the record holds,
+			// so these cases run where the rate holds.
+			test.skip(
+				softwareOn(testInfo.project.name),
+				'a software GPU skips frames, so too few shared frames remain to mean the figures over',
+			);
+			await page.goto(`taa-fixes.html?case=${effect}&gpu=${gpu}&fps=4&captures=${captures}`);
+			// A loaded runner draws the fog slowly, and the page runs four fog scenes in turn. A slower
+			// shard took over four minutes on the WebGPU path, so the wait leaves it room.
+			const result = await pageResult<EffectResult>(page, 480_000);
+			// The figures go into the decision record, which says what each effect did.
+			console.log(
+				`TAAFIX ${effect} on ${result.gpu}: frame-to-frame change ${result.off.toFixed(3)} without the resolve, ${result.on.toFixed(3)} with it, and ${result.onNoMask.toFixed(3)} with its transparency signals off; the offset request alone moves it by ${result.jitter.toFixed(3)}; ${result.skipped} of ${result.captures} captures skipped a frame`,
+			);
+			// Both runs drew the effect, so the change figures mean something.
+			expect(result.consecutive, 'a capture did not advance').toBe(true);
+			expect(result.offMean, `the ${effect} drew nothing`).toBeGreaterThan(1);
+			expect(result.onMean, `the ${effect} drew nothing with the resolve`).toBeGreaterThan(1);
+			expect(
+				result.onNoMaskMean,
+				`the ${effect} drew nothing with the resolve's signals off`,
+			).toBeGreaterThan(1);
+			expect(Number.isFinite(result.off) && result.off >= 0).toBe(true);
+			expect(Number.isFinite(result.on) && result.on >= 0).toBe(true);
+			expect(result.steps, `only ${result.steps} steps lined up`).toBeGreaterThanOrEqual(12);
+			// The offset request draws nothing while the resolve is off, so the scene's change figure
+			// stays the same.
+			expect(
+				result.jitter,
+				`the offset request alone changed the figure by ${result.jitter.toFixed(3)}`,
+			).toBeLessThan(Math.max(0.1, result.off * 0.05));
+			// Neither effect is a surface that the motion target carries: the rain is a blended draw
+			// with no motion, and the fog draws after the resolve. The resolve does not clean either
+			// up, so its change stays near the unresolved figure. A later technique that fixes one
+			// fails this and the record is revisited.
+			expect(
+				result.on,
+				`the resolve lowered the ${effect}'s change from ${result.off.toFixed(3)} to ${result.on.toFixed(3)}`,
+			).toBeGreaterThan(result.off * 0.9);
+		});
+	}
+}
+
+/** One ghost figure: the square's new place with `reactive` naming the mask. */
+async function ghost(
+	page: import('@playwright/test').Page,
+	gpu: string,
+	kind: 'alpha' | 'opaque',
+	reactive: string,
+	captures: number,
+): Promise<GhostResult> {
+	await page.goto(
+		`taa-fixes.html?case=${kind}&gpu=${gpu}&reactive=${reactive}&captures=${captures}`,
+	);
+	const result = await pageResult<GhostResult>(page, 180_000);
+	expect(result.reactive).toBe(reactive);
+	return result;
+}

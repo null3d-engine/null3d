@@ -210,8 +210,8 @@ export interface MeshLevel {
 	 * True to hand over between two levels in a short band past each switch distance, where a
 	 * dither pattern shares the pixels between them, so a switch does not pop. False to switch at
 	 * once. The default is `fade` in the options. A level with a measured error changes the picture
-	 * by under a pixel at its switch, so its band only costs; the glTF reader switches those at
-	 * once.
+	 * by under a pixel at its switch, so its band only costs. The glTF reader switches a file's
+	 * measured error at once and fades an error that comes alone, which its author set by hand.
 	 */
 	fade?: boolean;
 	/**

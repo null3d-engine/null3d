@@ -3,7 +3,7 @@ id: concepts/lod
 title: Levels of detail
 status: experimental
 since: "0.2"
-summary: "LOD groups; generated LODs; per-instance selection; small-object hiding."
+summary: "LOD groups; generated LODs; cluster patches; staged downloads; per-instance selection; small-object hiding."
 ---
 
 # Levels of detail
@@ -80,7 +80,9 @@ The loader also holds back a level that the camera never shows. It fetches the s
 
 `assets.loadGltf` takes `maxLevels` to stop after that many levels, counting the file's own: a page whose objects never come close enough to show the finest level sets 1, and downloads less. [The asset pipeline](../guides/assets-pipeline.md#levels-as-separate-downloads) has the detail.
 
-Each level has about half the triangles of the level above, and shares the mesh's vertices. The loader stores each level over the base mesh's own vertices, so the level costs the GPU its indices alone. The tool orders the vertices coarsest level first, so a coarse level reads a stretch at the start of the vertex buffer. Some levels keep a copy of their vertices instead. A level of cards brings positions of its own, and a level whose base mesh the engine had to split into parts cannot share them. Each level stores its error in the units of the mesh's own positions. The tool stores the levels with the `MSFT_lod` glTF extension. Each node with levels keeps their errors in its extras, as `NULL3D_lod_error`. `assets.loadGltf` gives each mesh its levels. So a model's copies and its instance batches pick their levels with no code. Other glTF loaders draw the full mesh. Another tool may store screen coverage alone, in `MSFT_screencoverage`. The loader gives each level that coverage, so its switch stays at the same distance on every screen height. A measured error changes the picture by less than a pixel at its switch, so those levels switch at once. A coverage given by hand keeps a fading band. A file may bring its own levels, such as levels made in Blender, with errors in the units of the mesh's positions. `assets optimize` keeps them. It stores each level's positions in its base mesh's integer steps and converts the errors to those steps.
+Each level has about half the triangles of the level above, and shares the mesh's vertices. The loader stores each level over the base mesh's own vertices, so the level costs the GPU its indices alone. The tool orders the vertices coarsest level first, so a coarse level reads a stretch at the start of the vertex buffer. Some levels keep a copy of their vertices instead. A level of cards brings positions of its own, and a level whose base mesh the engine had to split into parts cannot share them. Each level stores its error in the units of the mesh's own positions. The tool stores the levels with the `MSFT_lod` glTF extension. Each node with levels keeps its errors in its extras, as `NULL3D_lod_error`. It also writes the screen coverage that each error implies, in `MSFT_screencoverage`, for a screen 1,080 pixels high. The loader reads the coverage that comes beside an error to tell a measured error from a hand-set one, and reads the coverage alone as the measure for a file that holds no errors. `assets.loadGltf` gives each mesh its levels. So a model's copies and its instance batches pick their levels with no code. Other glTF loaders draw the full mesh.
+
+A measured error changes the picture by less than a pixel at its switch. Such a level switches at once. The loader reads an error as measured only where the file also gives the coverage that the tool writes beside it. A file that gives errors alone holds switch distances that its author set by hand. Those levels fade, as levels given by a distance or a coverage do. A file may bring its own levels, such as levels made in Blender, with errors in the units of the mesh's positions. `assets optimize` keeps them. It stores each level's positions in its base mesh's integer steps, and converts their errors to those steps.
 
 ## Cluster levels
 
@@ -88,11 +90,15 @@ A level covers the whole mesh at one detail. A mesh that is close at one end and
 
 The asset tool builds the tree with `--clusters`, as [the asset pipeline](../guides/assets-pipeline.md#cluster-levels) explains. It splits a large static mesh into patches, then simplifies groups of patches into the patches above them. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. It costs about twice the mesh's indices.
 
-A view draws a patch while the patch's own error passes its threshold and the error of the patch above it does not. A patch that fails the threshold is too coarse for that distance, so the walk descends into its children. The patches that draw then cover the mesh once, and the patches of one group switch together, so no gap opens.
+A view draws a patch while the patch's own error passes its threshold and the error of the patch above it does not. A patch that fails the threshold is too coarse for that distance, so the walk descends into its children. The chosen patches are the frontier of that one rule. Their errors rise along every chain, so the patches cover the mesh once, and neighbours of different detail meet at their edges with no gap.
 
-The engine draws a tree's patches on WebGPU. A compute pass picks the patches that a view draws, copies their indices into a list of the view's own, and the view draws them in one draw. A view that sees none of a mesh's patches draws none of it. The pass runs three dispatches: one to test each patch, one to add the counts up, and one to copy the indices that draw. The list takes about four bytes an index.
+The engine draws a tree's patches on both GPU paths. On WebGPU, a compute pass picks the patches that a view draws, copies their indices into a list of the view's own, and the view draws them in one draw. A view that sees none of a mesh's patches draws none of it. The pass runs three dispatches: one to test each patch, one to add the counts up, and one to copy the indices that draw. The list takes about four bytes an index.
 
-The patch path draws a mesh that one copy draws, and the file may still hold a tree for a mesh with more copies. A mesh that draws several copies at once keeps its whole triangle list, because the pass picks the patches of one copy. The patch pass belongs to the path that culls on the GPU, so a mesh also draws whole where the engine draws its objects directly: on WebGL2 always, and on WebGPU when its start-up probe measures that path faster. The shadow maps draw it whole on both paths. Whole levels remain the fallback for those cases. Meshes that a skin or a morph target bends, and meshes whose material blends or masks, keep whole levels too.
+On WebGL2, the job workers walk the tree for each view with the same rule, where the device has `WEBGL_multi_draw` (Chrome and Safari). Each chosen patch is a range of the mesh's tree in one multi-draw call, so a frame uploads ranges and no triangles. Ranges that are neighbours in the tree's index list merge, so a frame makes fewer calls. A WebGL2 browser without `WEBGL_multi_draw`, such as Firefox, draws the whole levels that the tool cuts from the tree. They are the same levels that other glTF viewers draw.
+
+A tree can stream as a model loads, with `--clusters --stages`. The model file then holds the tree's first band, and that band draws the first picture. Each later band downloads from a file of its own. A band appends its patches below the patches that already arrived, so the tree refines as the bands come and no new object appears. The patches that a page holds always form a whole tree from the root. A patch whose children have not arrived draws where the camera is close, so the first picture is coarse and still covers the whole surface. The loader holds a band until a view draws a patch of the band above it. `maxLevels` counts a band as it counts a level. [The asset pipeline](../guides/assets-pipeline.md#levels-as-separate-downloads) has the detail.
+
+The patch path draws a mesh that one copy draws, and the file may still hold a tree for a mesh with more copies. A mesh that draws several copies at once keeps its whole triangle list, because the walk picks the patches of one copy. The WebGPU path that draws objects directly also draws the whole levels, because it has no cluster pass. The shadow maps draw the whole levels. Meshes that a skin or a morph target bends, and meshes whose material blends or masks, keep whole levels too.
 
 ## How the engine picks a level
 
@@ -128,7 +134,7 @@ The same factor moves the distance at which the object hides. A detailed hero ob
 
 A level that switches in at once can pop. The engine fades only where a switch would show:
 
-- A level with a measured error, which the asset tool writes, changes the picture by under a pixel at its switch. It switches at once, so it pays for no second draw.
+- A level with a measured error, which the asset tool writes, changes the picture by under a pixel at its switch. It switches at once, so it pays for no second draw. A file's error counts as measured only where the file also gives the coverage that the tool writes beside it.
 - A level given by a distance, by a coverage or by a hand-set error changes the picture more. It fades.
 
 A fading level hands over in a short band past its switch distance. The band is 8% of the distance long, and the old level and the new one both draw in it. A 4 × 4 dither pattern gives each pixel to one of them, and the share of the new level grows across the band. Each copy shifts the pattern by a phase from a hash of the copy, so neighboring copies do not line up into one grid. The two levels of a band take the same phase, so no pixel draws twice. Nothing sorts.
@@ -168,6 +174,12 @@ grass.setDrawRange(0, 60); // a far edge only
 ```
 
 The mesh draws only while the camera's distance to its nearest point lies inside the band. Each edge fades inside the range over an 8% band, through the same dither. A stone then fades in as it comes near and out as it passes. A mesh that lies outside its band costs no draw on either GPU path. The `lodFade` quality setting turns these edges off on Low, where the dither costs tile GPUs their hidden-surface removal. A row's own range, in the array that `ranges: true` makes for a batch, overrides the batch's.
+
+## See the levels
+
+The development build draws a levels view: `debug.view('levels')` from the sketch, or `?view=levels` in a page's address. Each draw takes a color for its level, from blue for the base mesh to gray for the coarsest. Where two levels hand over in a fading band, the view dithers the two colors, so the band shows. A source that the size rule or a draw range hid draws at its base level in a striped magenta marker, at the place it would have drawn. The view then shows what the culling dropped, rather than a hole.
+
+The view reads the level that the culling picks, so it needs no shader for each material. `debug.cullingSpheres(true)` draws the bounding sphere that culling tests for each object whose mesh has levels, so a sphere that hid by its size shows where it lies. It draws in a development build only. An add-on registers a view of its own through the `debugViews` field of its [feature description](../api/features.md#the-fields).
 
 ## Shadows
 

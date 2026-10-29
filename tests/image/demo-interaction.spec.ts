@@ -16,6 +16,20 @@ import type { DemoProbe } from '../pages/lib/demo-probe.ts';
 
 /** How long a wait on sketch time or on a condition may take, in milliseconds of page time. */
 const PATIENCE = 60_000;
+/**
+ * How long the engine's first frame may take to arrive during the swap test. The page takes its
+ * loading overlay away on that frame, and a picture read before it is an empty canvas, so the read
+ * would pay the frame loop's whole wait for a frame that is not coming. A software GPU builds every
+ * pipeline before its first frame, and that took over three minutes on a busy runner.
+ */
+const FIRST_FRAME_MS = 300_000;
+/**
+ * How long a key's change of the blend may take to show in the canvas. A switch costs the page work
+ * and a frame read costs the frame loop a whole frame, so on a software GPU one read can take many
+ * seconds and a few of them fill a minute before the change is in a frame. The showcase HUD tests
+ * allow their switches three minutes for the same reason.
+ */
+const CHANGE_MS = 180_000;
 
 /** Opens a demo on the probe page, and collects the page's errors. */
 async function open(page: Page, demo: string): Promise<string[]> {
@@ -45,8 +59,10 @@ const apart = (a: number[], b: number[]) =>
 	Math.hypot(...a.map((value, k) => value - (b[k] as number)));
 
 // Each test waits several times, for the page's start and then for each probe, so it may take
-// longer than the default limit on a slow GPU.
-test.describe.configure({ timeout: 240_000 });
+// longer than the default limit on a slow GPU. The swap test also waits for the engine's first
+// frame, which on a busy software renderer can take minutes past the page's own start, so the limit
+// covers the worst case of every wait in it rather than the common one.
+test.describe.configure({ timeout: 780_000 });
 
 /** The probe of the first frame at or after the sketch time `time`. */
 async function probeAt(page: Page, time: number): Promise<DemoProbe> {
@@ -202,6 +218,9 @@ test('a key swaps the weighted demo between its two blends, as the HUD does, and
 	// The label over the brazier names the blend on show.
 	const label = page.locator('.label');
 	await expect(label).toHaveText('Weighted blending', { timeout: PATIENCE });
+	// The page takes its loading overlay away on the engine's first frame, and a read before that
+	// one waits on a frame that is not coming, so the checks start from that frame.
+	await expect(page.locator('.loader')).toHaveCount(0, { timeout: FIRST_FRAME_MS });
 	// The scene's own drift over the gap that the key's change is measured over.
 	const before = await readFrame(page);
 	await page.waitForTimeout(400);
@@ -226,7 +245,7 @@ test('a key swaps the weighted demo between its two blends, as the HUD does, and
 				change = frameDifference(await readFrame(page), parked);
 				return change;
 			},
-			{ timeout: PATIENCE },
+			{ timeout: CHANGE_MS },
 		)
 		.toBeGreaterThan(Math.max(2, drift * 3));
 	// A second press gives the weighted blending back.

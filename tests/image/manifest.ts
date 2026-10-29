@@ -2421,10 +2421,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	})),
 	// Cluster levels: a heightfield of 32,768 triangles that the asset tool cut into a tree of
 	// patches. The camera looks along the ground, so the near edge draws fine patches and the far
-	// edge coarse ones, in one draw for the whole mesh. The second test stands farther back, where
-	// every patch that draws is coarser. The patch pass runs on the indirect path, so the tests
-	// force it: the start-up probe may pick the direct path, which draws the whole mesh, and the
-	// picture then depends on which path the probe measured.
+	// edge coarse ones. The second test stands farther back, where every patch that draws is
+	// coarser. The cluster pass runs on WebGPU's indirect path, so the tests force it: the start-up
+	// probe may pick the direct path, which draws the whole levels, and the picture then depends on
+	// which path the probe measured. WebGL2 picks the patches on the job workers, where the device
+	// has `WEBGL_multi_draw`.
 	{
 		name: 'cluster',
 		sketch: 'tests/pages/sketches/cluster-sketch.ts',
@@ -2441,13 +2442,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	{
 		// A threshold of 16 pixels draws patches far coarser than the mesh, so the picture shows
-		// the near ground fine and the far ground simplified. The WebGL2 path draws the whole mesh
-		// and so draws no difference from the plain test, so this one takes the WebGPU tiers.
+		// the near ground fine and the far ground simplified.
 		name: 'cluster-coarse',
 		sketch: 'tests/pages/sketches/cluster-sketch.ts?coarse',
 		hold: 0,
 		size: [480, 270] as const,
-		tiers: ['webgpu', 'compat'] as const,
 		switches: ['direct=off'],
 	},
 	// Levels of detail: copies of a sphere whose levels each take a color, just before and just past
@@ -2547,6 +2546,38 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The levels view: each copy draws its level in the level's color, at the same places as the
+	// first test's copies. A crisp level switches at once, so the picture holds on every path.
+	{
+		name: 'lod-levels',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp',
+		hold: 0,
+		size: [480, 270],
+		switches: ['view=levels', 'compile=wait'],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The fade band dithers two level colors, and the dither's phase follows each copy, which each
+	// GPU path numbers its own way, so every path keeps a picture of its own, as `lod-fade` does.
+	{
+		name: 'lod-levels-fade',
+		sketch: 'tests/pages/sketches/lod-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		switches: ['view=levels', 'compile=wait'],
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// A copy that the size rule hides draws at its base level in the view's striped marker color,
+	// so the picture shows what the rule dropped rather than a hole. The marker's squares follow
+	// the pixel position, which each path numbers its own way, so every path keeps its own picture.
+	{
+		name: 'lod-levels-hide',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?hide',
+		hold: 0,
+		size: [480, 270],
+		switches: ['view=levels', 'compile=wait'],
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	// The built-in values of custom materials, at a held time: frame, camera and object, and the

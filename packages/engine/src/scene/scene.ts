@@ -187,7 +187,11 @@ export interface NodeOptions {
 	name?: string;
 	/** The position relative to the parent. The default is (0, 0, 0). */
 	position?: Vec3;
-	/** The rotation relative to the parent, as a quaternion (x, y, z, w). The default is none. */
+	/**
+	 * The rotation relative to the parent, as a quaternion (x, y, z, w). The default is none. The
+	 * engine scales a rotation more than one per cent off unit length, so a mistyped quaternion
+	 * still only turns the object and never stretches or shears it.
+	 */
 	rotation?: Quat;
 	/** The scale on each axis. The default is (1, 1, 1). */
 	scale?: Vec3;
@@ -3985,6 +3989,20 @@ export class Scene implements ViewHolder {
 		if (known === undefined) this.names.set(name, object);
 		else if (known instanceof Set) known.add(object);
 		else this.names.set(name, new Set([known, object]));
+	}
+
+	/**
+	 * @internal Visits each live object whose mesh has lower levels of detail, until `visit`
+	 * returns false. The debug view of levels draws their culling spheres, so it reads the objects
+	 * that have such a sphere of their own.
+	 */
+	forEachLevelMesh(visit: (object: Mesh) => boolean): void {
+		for (const object of this.objectSlots) {
+			if (object === undefined || object.destroyedFrame !== -1) continue;
+			if (!(object instanceof Mesh) || object.mesh === undefined) continue;
+			if (object.mesh.levels.length === 0) continue;
+			if (!visit(object)) return;
+		}
 	}
 
 	/** Adds a new batch to the index that queries read, by the slot of each of its core batches. */

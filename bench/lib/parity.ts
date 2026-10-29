@@ -123,6 +123,9 @@ export const SPECULAR_AA_LIMITS = {
 	'gltf-specular': 0.16,
 	'gltf-ior': 0.21,
 	'gltf-iridescence': 0.3,
+	'gltf-iridescence-dielectric': 0.6,
+	'gltf-iridescence-metallic': 2.7,
+	'gltf-iridescence-suzanne': 0.4,
 	'gltf-anisotropy': 0.6,
 	// The Khronos grid of the stretched lobe, whose highlights cross more of the anti-aliasing
 	// kernels than a round one.
@@ -447,6 +450,9 @@ const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	specular: SPECULAR_AA_LIMITS['gltf-specular'],
 	ior: SPECULAR_AA_LIMITS['gltf-ior'],
 	iridescence: SPECULAR_AA_LIMITS['gltf-iridescence'],
+	'iridescence-dielectric': SPECULAR_AA_LIMITS['gltf-iridescence-dielectric'],
+	'iridescence-metallic': SPECULAR_AA_LIMITS['gltf-iridescence-metallic'],
+	'iridescence-suzanne': SPECULAR_AA_LIMITS['gltf-iridescence-suzanne'],
 	anisotropy: SPECULAR_AA_LIMITS['gltf-anisotropy'],
 	'anisotropy-strength': SPECULAR_AA_LIMITS['gltf-anisotropy-strength'],
 	'toy-car': SPECULAR_AA_LIMITS['gltf-toy-car'],
@@ -470,11 +476,13 @@ const MODEL_COMPAT_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>>
  * the reference on every tier. In the Khronos meshopt test, it draws the column of cubes with 16-bit
  * attributes black, and its WebGLRenderer draws them as null3D does. It also leaves out color morph
  * targets: r186 packs them into its morph texture, but its vertex stage adds only the positions'
- * and the normals' deltas.
+ * and the normals' deltas. On the Khronos metal iridescence grid it draws the film as no colour,
+ * and its two renderers then differ in 5.929% of the pixels on the Mac.
  */
 const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set([
 	'meshopt-khr',
 	'morph-colors',
+	'iridescence-metallic',
 ]);
 
 /**

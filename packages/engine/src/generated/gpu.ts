@@ -199,6 +199,7 @@ export const PERMUTATION_UPSCALE = 16384;
 export const PERMUTATION_BLOOM = 32768;
 export const PERMUTATION_PICK = 32768;
 export const PERMUTATION_OUTLINE_VISIBLE = 65536;
+export const PERMUTATION_DEBUG_VIEW_LEVELS = 65536;
 export const PERMUTATION_INSTANCE_INDEX = 131072;
 export const PERMUTATION_DEPTH_MULTISAMPLED = 262144;
 export const PERMUTATION_LOD_FADE = 524288;
@@ -356,7 +357,7 @@ export const SIZE_FRAME_UNIFORM_BYTES = 992;
 export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;
-export const SIZE_BUCKET_WORDS = 15;
+export const SIZE_BUCKET_WORDS = 16;
 export const SIZE_MATRIX_TEXELS = 3;
 export const SIZE_MATRICES_PER_TEXTURE_ROW = 512;
 export const SIZE_INDICES_PER_TEXTURE_ROW = 2048;
@@ -387,3 +388,11 @@ export const FORMAT_BLOCK_SIZE: readonly number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 
 export const VERTEX_TYPES: readonly (readonly [bytes: number, max: number, normalized: boolean])[] = [[4, 1, false], [1, 255, true], [1, 127, true], [2, 65535, true], [2, 32767, true], [1, 255, false], [1, 127, false], [2, 65535, false], [2, 32767, false]];
 /** Each vertex attribute in vertex order, which is also its shader location: its format bit (0 for one every format has), its values per vertex, the first bit of its type field, its types by the field's value, and whether shaders read whole numbers. */
 export const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, components: number, shift: number, types: readonly number[], integer: boolean])[] = [[0, 3, 6, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [0, 3, 10, [0, 2, 4], false], [1, 2, 12, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [2, 2, 16, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [4, 4, 20, [0, 2, 4], false], [8, 4, 22, [0, 1, 3], false], [16, 4, 24, [5, 7], true], [32, 4, 25, [0, 1, 3], false], [134217728, 2, 27, [0], false]];
+/** The name of each pass role by code. */
+export const PASS_ROLE_NAMES: readonly string[] = ["", "background", "light clusters", "skin", "cull", "prepass", "opaque", "occluders", "depth pyramid", "late cull", "shadow cascade", "shadow tile", "shadow hero", "debug lines", "transparent", "decals", "decal redraw", "pick", "pick resolve", "resolve", "bloom", "outline mask", "skin light", "subsurface blur", "ambient occlusion", "screen reflections", "effect", "depth of field", "fog light", "fog block", "fog sum", "fog apply", "temporal anti-aliasing", "view copy", "full-screen", "compute", "transmission copy", "motion", "motion view", "weighted layer", "weighted composite", "particle depth copy", "accumulate", "final", "final still", "final with bloom", "output", "output with bloom", "exposure histogram", "exposure downsample", "exposure adapt", "feature rows", "sky"];
+/** Whether each pass role prints its place: 0 never, 1 always, 2 when the place is not 0. */
+export const PASS_ROLE_PLACES: readonly number[] = [0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 1, 1, 0, 0, 2, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+/** The bits of a pass label that hold the pass's place. */
+export const PASS_ROLE_PLACE_SHIFT = 16;
+/** The role code of the background pass, which the page's renderer records itself. */
+export const PASS_ROLE_BACKGROUND = 1;
