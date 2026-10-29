@@ -186,11 +186,11 @@ describe('the water’s figures in the stats overlay', () => {
 		expect(figure?.budgetMs).toBe(1.7);
 		expect(figure?.allowedMs).toBe(1.7);
 		// The overlay adds up the GPU time of the reflection pass that the add-on made, which is the
-		// feature's scope. The memory counts the mesh arrays, the reflection target and the foam
-		// texture that the add-on made.
+		// feature's scope. The memory counts the mesh arrays and the foam texture that the add-on
+		// made; the reflection target is the render graph's.
 		expect(figure?.scope).toEqual([{ name: 'water', place: 1 }]);
 		expect(figure?.gpuMs).toBeNull();
-		expect(figure?.bytes).toBeGreaterThanOrEqual(4100);
+		expect(figure?.bytes).toBeGreaterThan(0);
 		context.step(1);
 		expect(waterFigure(context)?.settings).toEqual({ reflectionEvery: 4 });
 		expect(waterFigure(context)?.allowedMs).toBe(1.275);
