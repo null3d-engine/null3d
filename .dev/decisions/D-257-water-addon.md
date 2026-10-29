@@ -1,8 +1,9 @@
 # D-257: The water add-on
 
-Status: decided. Built: the `@null3d/water` add-on, its demo, and the reflection's cadence through
-the feature host. Owed: the cost per preset, and the Creek's migration to the add-on, which waits
-until the add-on follows the current as the Creek does. Tasks: M3-F5, M3-E6.
+Status: decided. Built: the `@null3d/water` add-on, its demo, the reflection's cadence through
+the feature host, and one owner for each point where bodies meet. Owed: the cost per preset, and
+the Creek's migration to the add-on, which waits until the add-on follows the current as the Creek
+does. Tasks: M3-F5, M3-E6.
 
 Summary: `@null3d/water` draws a river and a lake from one shape, with waves, ripples, caustics,
 foam, soft shores, a reflection and an underwater view. The surface reads the copy of the scene's
@@ -129,9 +130,51 @@ code, and the water row goes when the water is destroyed. `packages/water/src/ca
 the preset moves the cadence and the overlay figure, the governor's steps double it, a caller's row
 is stepped too, and a page with no water has no row.
 
+### Where bodies meet
+
+Each body draws its own mesh at the water's level, and the meshes overlap where a river runs into a
+lake. In the Water demo, the river's strip runs 2 m past the lake's shore and reaches 1.36 half
+widths to each side. The lake's grid reaches past its shore too. Without a rule, the overlap
+holds two coplanar surfaces. The water writes depth, so the mesh that drew first took each pixel.
+The patch showed hard edges, straight from the river's strip and stepped from the lake's grid. The
+river's flowing waves also met the lake's still ones on a line.
+
+A lake's grid reaches two cells past its shore, 4 m at the default cell. A scene's own ground seldom
+meets the water on the outline: in the Water demo, the waterline lies 0.6 to 1.2 m past it. A grid
+of only the cells with a corner inside the shore stopped short of the waterline in places. The
+water then ended there on the grid's stepped edge. Past the band, the scene's ground meets the
+water, which fades against it by the soft shore. The cells over dry ground lie under the ground and
+draw nothing.
+
+The fix gives each point to one body, through a junction map that `junction.ts` builds with the
+meshes. Its texels are 0.25 m, and it covers each overlap with a margin of about 9 m.
+
+- A lake owns the water inside its shore, and a river the water outside every lake. Elsewhere in an
+  overlap, the body whose mesh covers the whole texel draws. Where no mesh covers a texel whole,
+  each mesh draws its part, which a unit test holds under 1% of the points.
+- The other mesh discards the pixel. A pixel left at alpha 0 still writes depth, and the drawing
+  body's pixel then fails the depth test: that left holes in the surface.
+- The river's waves give way to still water's over 3 m on each side of the meeting. The surface
+  mixes the two sets of waves and their caustics. Each wave's phase moves by the current times the
+  time. So a current that slows across the band would carry the phases apart more every second.
+- Near the meeting, both meshes carry the river's current there, one value for every vertex, so
+  their waves match on each pixel. The surface also lies flat within 3.5 m of the overlap and rises
+  back over 2 m. The two meshes then lie in one plane, so they agree on the texel of each pixel.
+- The vertices take the flatness in their first texture coordinate, beside the body's number, so
+  the vertex stage reads no texture. With the map read in the vertex stage too, the largest WebGL2
+  shader build was 56.1 KB after Brotli, past the 56 KB budget. Without it, the build is 55.9 KB,
+  against 54.9 KB before the junction.
+- `surfaceHeight` and `currentAt` follow the same owner, the same mix and the same flat band.
+
+`packages/water/src/junction.test.ts` lays out the demo's river and lake. It proves that each point
+draws once with no hole, and that the lake and the river own their sides. The share runs smoothly
+from 1 to 0. The surface lies flat at the meeting, and both meshes carry one current there. The six `demo-water` pictures match their references, since the held frame
+shows the mouth only from far away.
+
 ## Consequences
 
-- The add-on's material sets are 53.3 KB after Brotli, so D-14's first-use shader budget is 56 KB.
+- The add-on's largest material set is 55.9 KB after Brotli, within D-14's first-use shader budget
+  of 56 KB, which leaves 0.1 KB.
 - A custom effect that draws its own pass keeps no pieces in its module, because they never reach a
   host. The underwater effect's pieces would be 93 KB of the add-on's entry. D-225 gives the rule.
 - The Creek's pictures draw its own water, and the add-on's demo draws the add-on. A change to one
@@ -147,3 +190,15 @@ is stepped too, and a page with no water has no row.
   map and the size gates. The demo `examples/water` draws both bodies and the view from below. The
   package's own page (`packages/water/page`, which the tarball leaves out) gives the listing check's
   page, cost and allocation gates a scene to measure.
+- The demo's tour is one loop of shots through the route of `examples/lib/cinematic.ts`, as a
+  function of the time. It drifts down the river along the bank and dives under the lake for about
+  24 s. It then rises, turns to face back over the scene, and circles the valley back to its first
+  shot. A tour that dipped beside the river went into the bank for 26% of its flight. One that ran
+  past the lake jumped back to the river's source. `examples/water/route.test.ts` keeps the loop at
+  least 0.5 m above the ground and 3 m from every boulder, whose foam map shows its texels as blocks
+  from closer. It also keeps the dive in the lake and the turn under 30 degrees a second.
+- The demo's channel runs the whole valley. So the river starts near the ground's west edge, and a
+  second stream leaves the lake's east shore for the east edge. The channel holds water from end to
+  end. The lake meets a stream at both ends, which the junction map handles as two meetings.
+- The held frame shows the tour at 1 s, so the six `demo-water` pictures change. The Mac's set is
+  drawn again, and the software set comes from a CI run that draws it.

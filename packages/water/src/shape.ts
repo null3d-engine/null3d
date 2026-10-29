@@ -321,7 +321,7 @@ function riverBody(shape: RiverShape): WaterBody {
 }
 
 /** The distance from a point to the nearest edge of an outline. */
-function fromShore(shore: readonly WaterPoint[], x: number, z: number): number {
+export function fromShore(shore: readonly WaterPoint[], x: number, z: number): number {
 	let best = Number.POSITIVE_INFINITY;
 	for (let i = 0; i < shore.length; i++) {
 		const [ax, az] = shore[i] as WaterPoint;
