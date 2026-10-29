@@ -50,7 +50,7 @@ A word leaves out the bits that a device fixes: the draw index, tone mapping in 
 
 The list comes from a recording run of the pages. `?permutations=record` makes the drawing thread record the word of every variant that a pipeline asks for. The recorder loads each page in hold mode at the low and high presets on both GPU paths, because a preset sets a few of the bits and a path lists bits that the other does not. It also loads every page live, and presses every button of a showcase's controls HUD, because a held frame never turns those on. It writes the union to `examples/shader-permutations.txt`.
 
-The examples' production build reads that file. The engine's release asset is built without a list, because it serves every project rather than one project's pages.
+The examples' production build reads that file. The engine's release asset is built without a list, because it serves every project rather than one project's pages. D-188's 684 MiB release asset does not change. A list made from one project's pages would leave another project's pipeline without a shader. The figure that falls is the set that a production build of the showcases writes and ships, because those pages are known. The set at this tree is larger than D-188's, at 3.48 GB, as more features joined the manifest since that record.
 
 The variants that load on a feature's first use stay in modules of their own. The narrowing removes a build from its module; it never moves a build into the start's modules, so a page downloads the same files for the same features.
 
