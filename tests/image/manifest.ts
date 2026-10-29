@@ -794,6 +794,32 @@ function reflectionTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the sky layer scene pass test: a green layer over a lake, drawn in two views. */
+export const SKY_LAYER_SCENE_PASS_SKETCH = 'tests/pages/sketches/sky-layer-scene-pass-sketch.ts';
+
+/**
+ * A sky layer in the main view, in a scene pass and in a reflection, on every tier. A green layer
+ * covers the sky over a lake. The main camera shows the layer in the sky and in the water, which a
+ * reflection pass mirrors it into. A second camera looks across the same water from the left, and
+ * a scene pass draws its view into a texture that a screen on the right of the main view shows. So
+ * one frame holds the layer three times, and the screen's sky is the layer only because the scene
+ * pass draws the scene's background. ?layer=off is the control, where the core sky and its own
+ * reflection stand in the layer's place, so the screen's sky falls away with the layer.
+ */
+function skyLayerScenePassTests(): ImageTest[] {
+	return [
+		{
+			name: 'sky-layer-scene-pass',
+			sketch: SKY_LAYER_SCENE_PASS_SKETCH,
+			size: [640, 360],
+			hold: 0,
+			// A reflection pass and a scene pass, each drawing the scene again, take longer on a
+			// software GPU than one view does.
+			timeoutSeconds: 120,
+		},
+	];
+}
+
 /** The sketch of the screen-space reflection tests: boxes, a ball and a lamp on a shiny floor. */
 export const SSR_SKETCH = 'tests/pages/sketches/ssr-sketch.ts';
 
@@ -1593,6 +1619,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...outlineTests(),
 	...minimapTests(),
 	...reflectionTests(),
+	...skyLayerScenePassTests(),
 	...ssrTests(),
 	...probeTests(),
 	...fullscreenTests(),
