@@ -2,8 +2,8 @@
 
 Status: proposed, for the owner's ruling. Built: the cards' three-view blend and their relight from
 stored normals (`3a75764e5`), the two atlases and `encodeImpostorSurface`, the per-copy turn with the
-card's upright frame, the CPU bake that fills both atlases, and the hand-over band. Not built: the
-impostor shadow method, which needs a custom material's caster to test its own coverage. Task: M3-L4.
+card's upright frame, the CPU bake that fills both atlases, and the hand-over band. This record's
+card work is built. The shadow method is M3-V9's, as decision 7 and the consequences say. Task: M3-L4.
 
 Summary: A far tree draws as a card from two octahedral atlases: color, and a linear surface of
 normal, depth and coverage. The card stands upright, turns to the eye, blends the three cells
@@ -35,17 +35,21 @@ add-on own them? What do the three-view blend and the relight still need?
 | The card's texture reads | 6 a fragment: the color and surface atlases at each of three cells | `cards.wgsl` |
 | The card's normal decodes | 3, one for each cell | `cards.wgsl` |
 | The test atlas | 4 by 4 cells of 32 texels, 128 by 128 texels each, two textures | `impostors-sketch.ts` |
-| The demo atlas | 4 by 4 cells of 70 texels, 280 by 280 texels each | `forest.ts` |
-| The demo atlas's bytes | 313,600 bytes a texture in RGBA8, 627,200 for the two | the size above, four bytes a texel |
+| The demo atlas | 4 by 4 cells of 64 texels, 256 by 256 texels each | `forest.ts` |
+| The demo atlas's bytes | 262,144 bytes a texture in RGBA8, 524,288 for the two | the size above, four bytes a texel |
 | The preset atlases that the far-tree task names | 5 by 5 at about 1.6 MB, up to 12 by 12 at about 9 MB | the far-tree task's estimate, not a measurement |
 | The card against the mesh at the switch | not measured | the image test `impostor-turn` |
-| The blend's cost against one view | not measured | the timing run below |
 | The bake's time at 25 views and 64 texels | 28 to 90 ms a plant on the Mac, the first time | `bakeFarTree` of three species, 3,667 to 5,968 triangles |
 | The bake's memory at 25 views and 64 texels | 0.73 to 0.78 MiB, both atlases | the same run, the atlases' bytes |
 | A turned copy's light | matches its mesh within the atlas's resolution | `impostor-turn`, `impostor-turn-sun-back` |
+| The card field's GPU cost, 152 cards at 1600 x 900 on the Mac | WebGPU 0.77 ms, compatibility mode 0.96 ms, WebGL2 0.55 ms a frame | `NULL3D_IMPOSTOR_COST=1 bun run test:browser -- impostor-cost.spec.ts` through the heavy queue |
+| The whole frame with the cards, the same run | 1.11 to 1.92 ms of GPU time against 0.15 to 1.37 ms with them hidden; 16.67 ms interval, 0.1 ms CPU | the same |
+| The blend's cost against one view | not measured | needs a switch that draws one cell in place of the three |
 
-How the data was produced: read from the add-on's code and from the demo. The atlas bytes are
-arithmetic. No run was made.
+How the data was produced: the shader's texture reads and normal decodes are read from its code, and
+the atlas sizes from the code that makes them. The bake's times and memory were measured on the Mac
+with a script over three species. The card field's cost was measured on the Mac's GPU in a quiet
+window, in the heavy queue. The pictures are the image tests that this record names.
 
 ## Look
 
@@ -98,6 +102,19 @@ against its atlas.
 7. The cards take no shadows. They draw past the shadow's reach, where the mesh they replace draws
    nothing either. A card inside the reach is the far-tree task's cast-only caster, which faces the
    light and leaves the far cascades cached.
+8. The bake draws on the CPU, not with the engine's scene passes as the plan's design expects. The
+   atlases must come out identical on WebGPU and WebGL2, because the same scene then draws the same
+   card and one reference can hold both paths. A scene pass draws the scene's sun, fog and
+   environment into the atlas, so each path would bake a different picture, and a bake that wants no
+   light must undo them. This record stores the colour unlit and relights in the card's shader, so
+   the bake needs no scene light at all. The work runs once at first use, which hard rule 42 leaves
+   in TypeScript because it is not a frame loop.
+9. The card's shadow method stays with M3-V9. Decision 7 rules: "The cards take no shadows. They
+   draw past the shadow's reach, where the mesh they replace draws nothing either. A card inside the
+   reach is the far-tree task's cast-only caster, which faces the light and leaves the far cascades
+   cached." The consequences below say that the far-tree task builds the bake, the turn's API and the
+   shadow method. The caster needs a capability that the engine does not have: a custom material's
+   caster build draws its whole quad and tests no coverage. M3-V9 builds that with the caster.
 
 ## Ruled out
 
@@ -123,8 +140,11 @@ against its atlas.
 - The image test `impostor-plant` draws a grown birch as its level-0 mesh beside the card that
   `bakeFarTree` makes from it. The two crowns match in colour, which settles the bake, the leaf
   coverage and the per-part tints.
-- A test page switch that draws one view in place of the three, timed on the Mac, an iPad and an
-  S24-class phone. The card's cost per pixel settles the blend's price. Not measured yet.
+- The `impostor-cost` page draws a full view of 152 cards with the whole batch hidden and shown in
+  turns, so the difference is the card batch's frame cost. On the Mac's GPU the field costs 0.55 to
+  0.96 ms a frame, and the whole frame runs 1.11 to 1.92 ms of GPU time with the cards against 0.15
+  to 1.37 ms without. The blend's own cost against one view is still owed: it needs a switch that
+  draws one cell in place of the three.
 - The bake's time and memory at each preset on the same three devices. The Mac's figures are in the
   table above, and a phone's are still owed.
 - A filmstrip of a moving camera through the hand-over, and of the sun's sweep. A still cannot show a
@@ -147,5 +167,6 @@ against its atlas.
   `impostor-plant` draws a grown plant beside its card. The impostor and demo pictures are redrawn
   for the upright frame and the bake. The hand-over picture is the far-tree task's.
 - The far-tree task builds the bake, the turn's API and the shadow method. This record's card work is
-  built, and the two tasks do not split the same work twice. The shadow method waits on an engine
-  capability: a custom material's caster build draws its whole quad and tests no coverage.
+  built, and the two tasks do not split the same work twice. The shadow method is M3-V9's, and it
+  needs an engine capability that this record does not add: a custom material's caster build draws
+  its whole quad and tests no coverage.

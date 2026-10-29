@@ -1124,6 +1124,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'texture-cache',
 	'reflection',
 	'alpha-mask-cost',
+	'impostor-cost',
 	'canvas-cost',
 	'cluster-cost',
 	'lod-cost',
