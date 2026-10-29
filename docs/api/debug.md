@@ -212,7 +212,7 @@ The header stays in the corner when the card opens, and the card opens under it,
 
 ### The card
 
-The card is 360 by 396 pixels and keeps that size on every tab, so a long list never moves the panel. A tab's rows share the card's height, so a tab with few rows spreads them. Four tabs show one section at a time: `Frame`, `Memory`, `Steps` and `Systems`. A click on a tab shows it, the arrow keys move between tabs, and Home and End go to the first and last. The card's own header keeps these figures in view on every tab: the mode's symbol, the display's symbol, the display's refresh rate and the target with its interval, such as `120 Hz ≥60 fps · 16.7 ms` (or `60 fps · 16.7 ms` where the target is the display's full rate).
+The card is 360 pixels wide and takes its height from the tab that shows, so a short tab leaves no empty card. Switching tabs can therefore make the card taller or shorter. Four tabs show one section at a time: `Frame`, `Memory`, `Steps` and `Systems`. A click on a tab shows it, the arrow keys move between tabs, and Home and End go to the first and last. The card's own header keeps these figures in view on every tab: the mode's symbol, the display's symbol, the display's refresh rate and the target with its interval, such as `120 Hz ≥60 fps · 16.7 ms` (or `60 fps · 16.7 ms` where the target is the display's full rate).
 
 | Tab | What it shows |
 | --- | --- |
