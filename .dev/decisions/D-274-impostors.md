@@ -83,6 +83,22 @@ around the row. Every card there sees the eye far from the world's forward, so a
 its stored normal by the card's own frame lights a different side of its crown than its mesh does,
 and the pair no longer matches.
 
+The references that this change redraws moved for one reason, and the earlier commit's message
+described it wrongly; this paragraph corrects that description. A card's stored normal used to turn
+with the camera's bearing as well as the tree's, so a card whose eye lay off the world's forward,
+or whose tree was turned, lit a different side than its mesh did. The pictures that moved are those
+whose cards are large on screen and see the eye off that forward: the card grid, which sets no turn
+at all, moved by 1.002 to 1.012 per cent of its pixels, and the single plant by 0.207 to 0.269. The
+two turned rows moved less, from 0.146 to 0.356 per cent, and the demo, which turns every tree and
+draws its cards far and small, stayed under the 0.100 per cent line. The earlier message said that
+the turned scenes moved and that the demo's cards were why one did not; the runs show the reverse
+of its first half, and the grid it did not name is the picture that moved most.
+
+Drawing both faces was reasoned rather than measured: a camera-facing card shows its front face,
+whose shading path the change does not touch, so the picture that a camera draws cannot change. The
+earlier message called that a measured comparison, and no run in the tree holds one, so this line
+withdraws the claim.
+
 The image reference `impostor-handover` shows a row of pines at the hand-over distance: each draws
 as its mesh and as its card at one place, the mesh's pixels dither out over the card's full crown,
 and no background shows through a crown. A card that faded as well would drop the pixels that its
@@ -168,7 +184,11 @@ that darkens itself.
    and a WebGPU caster asks for a fragment stage only where its material declares a coverage
    function. A card draws both faces: the shadow pass culls the front faces of single-sided
    geometry, so a flat card drawn from one side would be culled whole and cast nothing, and the
-   card's own material is double-sided to leave its back face to the caster. A card inside the
+   card's own material is double-sided to leave its back face to the caster. The flag is the
+   material's, so both faces draw in every pass: the main pass costs the same, because a card that
+   turns toward the eye has every triangle facing it, and the one behaviour that changes is a card
+   seen from behind, which now draws instead of vanishing. Nothing meets that today, but an add-on
+   that turned a card toward one eye and drew it from another would. A card inside the
    reach draws as a second batch with `castShadows: true` on a layer that the sun draws and no
    camera does, so the camera pays nothing for it. The card's material
    declares `castsStill: true`, so its vertex offset turns the caster toward the light without
@@ -236,7 +256,9 @@ that darkens itself.
   is the display's cap and not the cards' cost. The Galaxy S25's own cost is still owed: its WebGPU
   path has a GPU timer, and its display ran at 30 Hz in its timed runs, so a run there decides
   whether a phone gives a usable figure at all. The blend's own cost against one view is still
-  owed: the switch that draws one cell is built, and the run is queued.
+  owed: the switch that draws one cell is built, and the run is queued. The Mac's and the iPad's
+  card-field figures predate the card material's coverage function, its shadow offset and its drawn
+  back face, so the same run re-measures them.
 - A filmstrip of a moving camera through the hand-over, and of the sun's sweep. A still cannot show a
   hop, a shimmer or the light changing. The demo runs it, and no picture holds it yet.
 

@@ -35,7 +35,7 @@ bun add @null3d/engine @null3d/impostors
 
 ## Create the cards
 
-`createImpostors` makes one instance batch: one quad per position, drawn by the package's material. Each quad stands upright, turns about the world's up toward the eye, and the material blends the three atlas views nearest the direction from the card toward the eye. The cards cull and draw as any batch does, on WebGPU and WebGL2.
+`createImpostors` makes one instance batch: one quad per position, drawn by the package's material. Each quad stands upright, turns about the world's up toward the eye, and the material blends the three atlas views nearest the direction from the card toward the eye. The cards draw both faces, so a card seen from either side draws: a flat card culled from one side would cast no shadow, because the shadow pass draws casters with their front faces culled. The batch otherwise draws as any batch does, on WebGPU and WebGL2.
 
 ```ts
 import { createImpostors, octahedralAtlas } from '@null3d/impostors';
