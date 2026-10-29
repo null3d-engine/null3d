@@ -24,9 +24,6 @@ import {
 	turnSun,
 } from './forest';
 
-/** The sun's direction, from the sky to the ground: low, and to the left of the opening view. */
-const SUN = [0.55, -0.32, 0.77] as const;
-
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, input, time } = ctx;
 	const day = timeOfDay('goldenHour', { heading: 2.2 });
@@ -43,7 +40,8 @@ export default defineSketch(async (ctx) => {
 	const view = interact(ctx, camera, { target: [0, 10, 0], groundY: 0 });
 	const sun = scene.createDirectionalLight({
 		...day.light,
-		direction: SUN,
+		// From the sky to the ground, low, and to the left of the opening view.
+		direction: [0.55, -0.32, 0.77],
 		castShadows: true,
 		shadow: { distance: 120 },
 	});
@@ -104,6 +102,7 @@ export default defineSketch(async (ctx) => {
 			atlas: picture.atlas,
 			positions: far.flatMap((tree) => [tree.x, tree.y, tree.z]),
 			turn: far.map((tree) => tree.turn),
+			depth: picture.depth,
 			alphaMode: 'mask',
 		},
 	);

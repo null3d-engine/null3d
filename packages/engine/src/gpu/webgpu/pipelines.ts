@@ -698,8 +698,10 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_DEPTH, 'depth', [
 			...frameEntries,
 			{
+				// A custom material's caster reads its row of values in the vertex stage, and its
+				// fragment stage, where it declares a coverage function, reads that row too.
 				binding: 2,
-				visibility: GPUShaderStage.VERTEX,
+				visibility: GPUShaderStage.VERTEX | fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},
 			rowValues,
@@ -1710,6 +1712,9 @@ export class Pipelines {
 			shader: shader.variants,
 			pipeline: 'main',
 			layouts: [...(shader.textures > 0 ? [LAYOUT_FRAME, maps] : [LAYOUT_FRAME]), ...scene],
+			// A material that declares its shadow caster's coverage draws its casters' depth with a
+			// fragment stage, which drops the pixels that its cutoff leaves out.
+			depthFragment: shader.coverage === true,
 			...(shader.meshless === true
 				? { vertexBuffers: [] }
 				: {

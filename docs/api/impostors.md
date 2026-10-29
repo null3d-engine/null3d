@@ -21,7 +21,7 @@ flowchart LR
     copies["Many copies of a mesh,<br/>a far level of detail"] --> merge["mergeFarGeometry:<br/>one mesh per far grid cell"]
 ```
 
-A far object covers few pixels, so its triangles cost work that no one sees. A level of detail cuts the triangles but keeps one draw per object. An impostor goes further. A bake draws the object from many directions into atlases ahead of time. Far away, the object draws as one card that stands upright and turns to the eye. The card blends the three stored views nearest the camera, and the light falls on it from the normals the bake stored, so a card follows the scene's sun. A card's turn about the world's up turns its views and its light by the same angle, so a turned tree hands over to a card whose crown matches it. Many cards draw in one instance batch.
+A far object covers few pixels, so its triangles cost work that no one sees. A level of detail cuts the triangles but keeps one draw per object. An impostor goes further. A bake draws the object from many directions into atlases ahead of time. Far away, the object draws as one card that stands upright and turns to the eye. The card blends the three stored views nearest the camera, and the light falls on it from the normals the bake stored, so a card follows the scene's sun. A card's turn about the world's up turns its views and its light by the same angle, so a turned tree hands over to a card whose crown matches it. The light stays on the tree's side as the camera moves: the card faces the eye, but its stored normal does not turn with the camera. Many cards draw in one instance batch.
 
 `@null3d/impostors` holds the cards and a second tool for far geometry. `mergeFarGeometry` writes many copies of a mesh into the arrays of one mesh. A whole grid cell of a forest or a skyline then draws in one draw.
 
@@ -66,9 +66,13 @@ The cards need no per-frame call. The material reads the eye from the frame's ca
 
 The cards are a static batch. After you change cards' positions, sizes, turns or colors through `trees.batch`, call `trees.markDirty(start, count)` for those cards. The batch uploads them, and the next frame draws them where they now stand. A card's turn is the row's first value, in radians about the world's up.
 
+`trees.setViews(1)` draws each card from its nearest view alone. That reads each atlas once instead of three times, and it hops from view to view as the eye turns. The default, `setViews(3)`, blends the three nearest views. A field of cards far away saves its blend's cost with one view, where a seam between views shows little.
+
+The `depth` option is the object's depth along a view, in world units: the distance that the surface atlas's stored depth spans. A card that receives shadows reads that depth to place its shadow lookup at the surface it shows. The default is the card's width, which holds the object's widest horizontal reach.
+
 A card's light comes from the scene's lights, as a mesh's does. The surface atlas holds each view's normal, so the sun lights the side of the tree that it would light on the mesh. `roughness` and `metalness` set how the cards light, as the standard material's options do.
 
-The cards cast no shadow. A shadow far enough out to reach them is past the meshes' own shadow range, and a custom material's caster draws its whole quad without the atlas's coverage.
+The cards cast a shadow only if you ask. Give a batch `castShadows: true` and a layer that the sun draws and no camera does, and the card casts the crown's shape rather than its quad, because the material tests the coverage that the bake stored. A batch with `receiveShadows: true` takes the shadows of other objects at the surface that the stored depth shows, not at its own plane, so a card does not darken itself. A card takes the shadow map's shadows alone: the contact shadows' march takes a flat card for a solid wall, as it takes a leaf card. A card turns toward the view that draws it, so its shadow holds still while the sun does, and the far shadow cascades stay cached.
 
 ## The atlas and its cells
 
@@ -106,7 +110,7 @@ The `@null3d/vegetation` add-on bakes a plant's most detailed level at first use
 
 The second atlas holds what the card's light needs, in the cells of the first: red and green are the octahedral code of the point's normal, blue is the point's depth from the view's front, 0, to its back, 1, and alpha is its coverage. The normal lies in the object's own frame, so a turned copy lights correctly and the cell's own view does not enter it.
 
-`encodeImpostorSurface(normal, depth, coverage, out)` writes those four bytes. `bakeImpostorAtlas` calls it for each texel of each cell. Nothing reads the depth yet: the far-tree shadow method will use it.
+`encodeImpostorSurface(normal, depth, coverage, out)` writes those four bytes. `bakeImpostorAtlas` calls it for each texel of each cell. The card reads the depth to place its shadow lookup at the surface it shows. The bake also returns `depth`, the object's widest horizontal extent, which scales that stored depth.
 
 The demo's bake in `examples/impostors/forest.ts` shows the whole loop.
 

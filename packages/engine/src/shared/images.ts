@@ -129,6 +129,11 @@ export interface CustomShader {
 	 */
 	readonly sceneDepth?: boolean;
 	/**
+	 * True for a custom material that declares the opacity its shadow caster tests, so its caster
+	 * builds draw a fragment stage that discards the pixels that its cutoff leaves out.
+	 */
+	readonly coverage?: boolean;
+	/**
 	 * True for a custom shader whose builds load on first use, in sets that the sketch thread
 	 * sends: its variants hold the sets that arrived.
 	 */

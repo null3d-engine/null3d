@@ -138,7 +138,9 @@
 # of alpha to coverage write their coverage of the pixel's samples themselves, for a multisampled
 # WebGPU target without alpha, which cannot turn alpha into coverage. A bit builds only beside the
 # bits it needs, and ALPHA_COVERAGE and ALPHA_HASH never build together (drawlist.rs, NEEDS and
-# APART). Custom materials build none of the three.
+# APART). Custom materials build none of the three. Their caster builds, which material.rs makes
+# beside these, keep ALPHA_MASK where their WGSL declares `fn coverage`, and their fragment stage
+# drops each shadow texel under the material's cutoff.
 # RECEIVE_SHADOWS reads the main directional light's shadow maps. TRANSMISSION lets light through
 # the surface from the copy of the camera's opaque color (null3d::refraction); it builds without a
 # mask or index-read instances, and loads on first use. Custom materials build this template, with

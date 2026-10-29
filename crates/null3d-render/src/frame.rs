@@ -3497,7 +3497,7 @@ impl SceneSettings {
         let materials = &self.materials;
         self.moving_casters
             .update(scene, input.batches, input.structure_changed, |material| {
-                sways(materials, material)
+                sways(materials, material) && !casts_still(materials, material)
             });
         let moving = &self.moving_casters;
         // A still view has no moving caster for a far cascade to follow, so every cascade draws in
@@ -3548,12 +3548,13 @@ impl SceneSettings {
     /// moves what the camera sees, so the caster draws without it. A masked material of the
     /// engine's mesh templates cuts the holes of its mask, alpha to coverage or alpha hash into its
     /// shadow, with the alpha of its vertex colors and its base color map where it has them. A
-    /// custom material's alpha comes from its own WGSL, so it casts its mesh's whole shape. A
-    /// custom material with a vertex offset casts with its own template's caster builds
-    /// ([`permutation::CASTER`]), which move each vertex by the offset, read the rows' values where
-    /// the pair reads them, and bind the material's textures. A displaced standard material casts
-    /// the same way, moving each vertex by its displacement map, with its whole shape. A wireframe
-    /// material casts its lines.
+    /// custom material's alpha comes from its own WGSL, so it casts its mesh's whole shape, unless
+    /// its WGSL declares the coverage that its shadow caster tests. A custom material with a vertex
+    /// offset or a coverage function casts with its own template's caster builds
+    /// ([`permutation::CASTER`]), which move each vertex by the offset, cut the shape that the
+    /// coverage leaves, read the rows' values where the pair reads them, and bind the material's
+    /// textures. A displaced standard material casts the same way, moving each vertex by its
+    /// displacement map, with its whole shape. A wireframe material casts its lines.
     pub fn caster_of(&self, pipeline: DrawKey, material: u32) -> (DrawKey, u32) {
         let (faces, mut permutation) = if pipeline.state & state_flags::CULL_NONE != 0 {
             (state_flags::CULL_NONE, 0)
@@ -3567,12 +3568,22 @@ impl SceneSettings {
         } else {
             0
         };
-        if self.sways(material) && pipeline.template >= template::CUSTOM_FIRST {
+        if self.casts_its_own_way(material) && pipeline.template >= template::CUSTOM_FIRST {
+            // A material that declares its caster's coverage tests it in the caster's fragment
+            // stage, which a masked material's pixels reach.
+            let masked = if pipeline.permutation & permutation::ALPHA_MASK != 0
+                && self.cuts_its_shadow(material)
+            {
+                permutation::ALPHA_MASK
+            } else {
+                0
+            };
             let key = DrawKey {
                 template: pipeline.template,
                 permutation: permutation
                     | permutation::CASTER
-                    | (pipeline.permutation & permutation::ROW_VALUES),
+                    | (pipeline.permutation & permutation::ROW_VALUES)
+                    | masked,
                 vertex_format: pipeline.vertex_format,
                 state: faces | lines,
                 bias: DepthBias::NONE,
@@ -3652,6 +3663,25 @@ impl SceneSettings {
     /// casters do.
     pub fn sways(&self, material: u32) -> bool {
         sways(&self.materials, material)
+    }
+
+    /// True when the material, by engine id, casts with its own caster builds: a custom material
+    /// with a vertex offset or a coverage function.
+    pub fn casts_its_own_way(&self, material: u32) -> bool {
+        casts_its_own_way(&self.materials, material)
+    }
+
+    /// True when the material, by engine id, holds its casters still while the light does: its
+    /// vertex offset follows the view that draws it, so a caster that only shadow passes draw casts
+    /// the shadow that its layer holds, and a far cascade stays cached.
+    pub fn casts_still(&self, material: u32) -> bool {
+        casts_still(&self.materials, material)
+    }
+
+    /// True when the material, by engine id, tests the coverage that its WGSL names, so its caster
+    /// cuts the shape of its shadow at the material's cutoff.
+    pub fn cuts_its_shadow(&self, material: u32) -> bool {
+        cuts_its_shadow(&self.materials, material)
     }
 
     /// The pipeline that draws an object with `pipeline` where it receives shadows: the same one,
@@ -4028,10 +4058,28 @@ fn write_layers(textures: &TextureStore, maps: &EffectMaps, values: &mut [f32]) 
 /// True when the material of `materials` with engine id `material` moves its vertices by a vertex
 /// offset of its own WGSL, which its shadows follow.
 fn sways(materials: &MaterialTable, material: u32) -> bool {
+    material != NO_MATERIAL && materials.features(material - 1) & feature::MOVING_VERTICES != 0
+}
+
+/// True when the material, by engine id, casts with its own caster builds: a custom material with a
+/// vertex offset or a coverage function.
+fn casts_its_own_way(materials: &MaterialTable, material: u32) -> bool {
     material != NO_MATERIAL
         && materials
             .shading(material - 1)
             .is_ok_and(Shading::casts_its_own_way)
+}
+
+/// True when the material, by engine id, holds its casters still while the light does, so far
+/// shadow cascades stay cached while a caster of it touches them.
+fn casts_still(materials: &MaterialTable, material: u32) -> bool {
+    material != NO_MATERIAL && materials.features(material - 1) & feature::STILL_CASTER != 0
+}
+
+/// True when the material, by engine id, tests the opacity that its WGSL names, so its caster cuts
+/// the shape of its shadow at the material's cutoff.
+fn cuts_its_shadow(materials: &MaterialTable, material: u32) -> bool {
+    material != NO_MATERIAL && materials.features(material - 1) & feature::CASTER_COVERAGE != 0
 }
 
 /// What makes a bucket of a layout, the same key that [`crate::levels`] names, so both frame
@@ -4397,6 +4445,51 @@ mod tests {
             grown_size_within(large + 1, large),
             Err(RecordError::BufferFull { bytes: large })
         );
+    }
+
+    /// A custom material with its own shadow caster builds, as a card's WGSL gives it.
+    fn card_shading() -> Shading {
+        Shading::Custom(crate::materials::CustomShading {
+            template: template::CUSTOM_FIRST,
+            attributes: vertex::UV0,
+            base_color: true,
+            textures: 0,
+            transmission: false,
+            row_values: true,
+            caster: true,
+            object_ids: false,
+        })
+    }
+
+    #[test]
+    fn a_still_caster_holds_the_far_cascades_while_a_moving_one_keeps_them_drawing() {
+        let mut table = MaterialTable::with_capacity(4);
+        let moving = table
+            .create(card_shading(), feature::MOVING_VERTICES, [1.0; 4])
+            .expect("a moving card")
+            + 1;
+        let still = table
+            .create(
+                card_shading(),
+                feature::MOVING_VERTICES | feature::STILL_CASTER,
+                [1.0; 4],
+            )
+            .expect("a still card")
+            + 1;
+        // A card that declares no vertex offset moves no vertex, so nothing draws a far cascade
+        // again for it, whatever the light does.
+        let fixed = table
+            .create(card_shading(), feature::STILL_CASTER, [1.0; 4])
+            .expect("a fixed card")
+            + 1;
+        assert!(sways(&table, moving) && !casts_still(&table, moving));
+        assert!(sways(&table, still) && casts_still(&table, still));
+        assert!(!sways(&table, fixed) && casts_still(&table, fixed));
+        // Each of them casts with its own builds, which test the coverage that its WGSL declares.
+        assert!(casts_its_own_way(&table, moving));
+        assert!(casts_its_own_way(&table, still));
+        assert!(casts_its_own_way(&table, fixed));
+        assert!(!sways(&table, 0) && !casts_still(&table, 0));
     }
 
     /// A pair of drawings that differ only in their template: a textured mesh keeps its maps'
