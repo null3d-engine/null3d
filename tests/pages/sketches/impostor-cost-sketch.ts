@@ -1,7 +1,8 @@
 // The field of impostor cards for the page that measures their frame cost: cards on a plane fill
 // the view, so every pixel that a card covers runs the card material's three-view blend and its
-// normal decodes. The page's messages hide the whole batch and show it again, so the two sides
-// differ by the card batch alone. The governor stays off, so the render scale holds.
+// normal decodes. The page's messages hide the whole batch, show it again, and draw its nearest
+// view alone, so the sides differ by the card batch and by the blend. The governor stays off, so
+// the render scale holds.
 import { defineSketch } from '@null3d/engine';
 import { bakeImpostorAtlas, createImpostors, octahedralAtlas } from '@null3d/impostors';
 
@@ -81,8 +82,10 @@ export default defineSketch(({ scene, materials, geometry, textures, quality, pa
 	const count = cards.count;
 
 	page.onMessage((message) => {
-		if (message !== 'cards' && message !== 'cards-off') return;
-		cards.batch.setActiveCount(message === 'cards' ? count : 0);
+		if (message === 'cards') cards.setViews(3);
+		else if (message === 'cards-one') cards.setViews(1);
+		else if (message !== 'cards-off') return;
+		cards.batch.setActiveCount(message === 'cards-off' ? 0 : count);
 		void scene.warmUp().then(() => page.post('settled', { cards: count }));
 	});
 });

@@ -45,12 +45,14 @@ import {
 	MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
 	MATERIAL_FEATURE_ANISOTROPY,
 	MATERIAL_FEATURE_BLEND,
+	MATERIAL_FEATURE_CASTER_COVERAGE,
 	MATERIAL_FEATURE_COAT_SHEEN,
 	MATERIAL_FEATURE_DECAL,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_IRIDESCENCE,
 	MATERIAL_FEATURE_LIGHT_MAP_RGBM,
+	MATERIAL_FEATURE_MOVING_VERTICES,
 	MATERIAL_FEATURE_MULTIPLY,
 	MATERIAL_FEATURE_NO_COLOR_WRITE,
 	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
@@ -62,6 +64,7 @@ import {
 	MATERIAL_FEATURE_SCENE_DEPTH,
 	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
+	MATERIAL_FEATURE_STILL_CASTER,
 	MATERIAL_FEATURE_SUBSURFACE,
 	MATERIAL_FEATURE_TRANSLUCENCY,
 	MATERIAL_FEATURE_TRANSMISSION,
@@ -135,6 +138,7 @@ import {
 import {
 	PERMUTATION_CASTER,
 	PERMUTATION_COAT_SHEEN,
+	PERMUTATION_MOTION,
 	PERMUTATION_ROW_VALUES,
 	PERMUTATION_TRANSLUCENCY,
 	PERMUTATION_TRANSMISSION,
@@ -1780,6 +1784,14 @@ export interface ShaderOptions<Wgsl extends string | CompiledWgsl = string | Com
 	 * sampled textures. The engine checks that the declaration and the WGSL agree.
 	 */
 	sceneInputs?: readonly SceneInput[];
+	/**
+	 * True when the vertex offset follows the view that draws the object and nothing else moves it,
+	 * as a card that turns toward the camera does. A caster that only shadow passes draw then holds
+	 * the shadow that the light's layer drew until the light turns, so the far shadow cascades stay
+	 * cached. Leave it out for an offset that moves with time, such as wind: the shadow of such a
+	 * caster follows it in every frame, and a far cascade must draw again for each one.
+	 */
+	castsStill?: boolean;
 }
 
 /** A uniform of a custom material: its type, and the float of the row of custom values it starts at. */
@@ -1810,6 +1822,8 @@ interface CompiledMaterial extends CompiledWgsl {
 	readonly objectIds?: boolean;
 	/** True when the WGSL reads the copy of the scene's depth through `sceneDepth`. */
 	readonly sceneDepth?: boolean;
+	/** The functions that the WGSL declares for the engine to call, such as `surface`. */
+	readonly functions: readonly string[];
 	readonly uniforms: readonly CompiledUniform[];
 	/** The textures that the WGSL declares, in the order of their map slots. */
 	readonly textures: readonly {
@@ -1832,6 +1846,7 @@ function customShader(compiled: CompiledMaterial): CustomShader {
 		textures: compiled.textures.length,
 		...(compiled.meshless === true && { meshless: true }),
 		...(compiled.sceneDepth === true && { sceneDepth: true }),
+		...(compiled.functions.includes('coverage') && { coverage: true }),
 		...(compiled.builds && { builds: true }),
 	};
 }
@@ -3903,7 +3918,10 @@ export class Materials {
 			{ ...options, alphaToCoverage: false, diffuseTransmission, subsurfaceRadius: undefined },
 			call,
 			layered,
-			sceneDepth ? MATERIAL_FEATURE_SCENE_DEPTH : 0,
+			(sceneDepth ? MATERIAL_FEATURE_SCENE_DEPTH : 0) |
+				(builds(compiled, PERMUTATION_MOTION) ? MATERIAL_FEATURE_MOVING_VERTICES : 0) |
+				(compiled.functions.includes('coverage') ? MATERIAL_FEATURE_CASTER_COVERAGE : 0) |
+				(options.castsStill ? MATERIAL_FEATURE_STILL_CASTER : 0),
 		);
 		// The copy of the opaque depth draws with the particle depth shaders, so the file loads
 		// with the material, before its first frame.

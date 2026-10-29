@@ -58,7 +58,7 @@ describe('bakeFarTree', () => {
 });
 
 describe('handOverToCards', () => {
-	test('sets a shared band so the meshes and the cards fade through each other', () => {
+	test('draws the cards from just before the mesh fades, so no pixel drops out of both', () => {
 		const ranges: [number, number][] = [];
 		const batch = {
 			setDrawRange(start: number, end: number) {
@@ -67,7 +67,8 @@ describe('handOverToCards', () => {
 		} as never;
 		handOverToCards(batch, batch, 100);
 		expect(ranges[0]).toEqual([0, 100]);
-		// The cards start a fade band before the switch, which is the engine's 8% share.
+		// The cards stand from a fade band before the switch, which is before the engine's dither
+		// starts to thin the mesh out, so every pixel the mesh drops shows its card.
 		expect(ranges[1]?.[0]).toBeCloseTo(92);
 		expect(ranges[1]?.[1]).toBeGreaterThanOrEqual(1e9 - 1);
 	});

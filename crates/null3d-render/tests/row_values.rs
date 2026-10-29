@@ -185,10 +185,22 @@ fn batch_pipelines_read_values_where_the_shading_has_such_builds() {
 
 #[test]
 fn custom_materials_with_a_vertex_offset_cast_with_their_own_builds() {
+    use null3d_render::materials::feature;
     let mut world = World::new();
     let table = world.renderer.settings_mut().materials_mut();
-    let sways = table.create(swaying(), 0, [1.0; 4]).unwrap() + 1;
+    let sways = table
+        .create(swaying(), feature::MOVING_VERTICES, [1.0; 4])
+        .unwrap()
+        + 1;
     let still = table.create(Shading::Lit, 0, [1.0; 4]).unwrap() + 1;
+    let covered = table
+        .create(
+            swaying(),
+            feature::MOVING_VERTICES | feature::CASTER_COVERAGE,
+            [1.0; 4],
+        )
+        .unwrap()
+        + 1;
     let settings = world.renderer.settings();
     let pipeline = DrawKey {
         template: template::CUSTOM_FIRST,
@@ -213,6 +225,25 @@ fn custom_materials_with_a_vertex_offset_cast_with_their_own_builds() {
     assert_eq!(
         key.permutation,
         permutation::CASTER | permutation::ROW_VALUES
+    );
+    // A masked card's caster keeps the mask bit, whose cutoff its coverage function tests.
+    let masked = DrawKey {
+        permutation: permutation::ALPHA_MASK | permutation::ROW_VALUES,
+        ..pipeline
+    };
+    let (key, _) = settings.caster_of(masked, sways);
+    assert_eq!(
+        key.permutation & permutation::ALPHA_MASK,
+        0,
+        "a material that names no coverage casts its whole shape"
+    );
+    let (key, _) = settings.caster_of(masked, covered);
+    assert_eq!(
+        key.permutation,
+        permutation::CASTER
+            | permutation::CASTER_OFFSET
+            | permutation::ALPHA_MASK
+            | permutation::ROW_VALUES
     );
     assert!(settings.sways(sways) && !settings.sways(still) && !settings.sways(0));
 }

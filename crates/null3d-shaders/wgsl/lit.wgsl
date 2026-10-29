@@ -51,10 +51,12 @@ enable draw_index;
 // The ROW_VALUES builds draw the rows of instance batches with row values (null3d::mesh): the row's
 // color multiplies the vertex color, so it tints the base color and the alpha as three.js's
 // instance colors do, and custom materials read the row's own values as `object.values` in both
-// stages. The CASTER builds, which only custom materials with a vertex offset have, draw a shadow
-// caster's depth: the vertex shader moves each vertex by the offset, then places it as the shadow
-// depth template places a caster's, flattened onto the near face of the light's box. Their
-// pipelines have no fragment stage on WebGPU, and on WebGL2 their fragment shader writes nothing
+// stages. The CASTER builds, which only custom materials with a vertex offset or a coverage
+// function have, draw a shadow caster's depth: the vertex shader moves each vertex by the offset,
+// then places it as the shadow depth template places a caster's, flattened onto the near face of
+// the light's box. A material whose WGSL declares `fn coverage` also tests it here, against the
+// material's cutoff, so a card cuts its own shape out of its shadow. Their pipelines have no
+// fragment stage on WebGPU without that test, and on WebGL2 their fragment shader writes nothing
 // that the pass keeps. The PICK builds, which also only custom materials with a vertex offset have,
 // draw such an object into GPU picking's id target: the vertex shader moves and places each vertex
 // as the shading builds do, and the fragment shader writes the instance's ids as the pick template
@@ -1072,6 +1074,11 @@ struct Surface {
     /// Four values for the material's own lobe function, which the engine passes to `fn lobe`.
     /// `defaultSurface` leaves them zero, and a material that declares no lobe reads none.
     lobe: vec4f,
+    /// Where the sun's shadow lookup reads, relative to the surface and in world space: zero by
+    /// default, so the lookup reads the surface itself. A stand-in card that shows a surface at a
+    /// stored depth sets it to that depth along the view, so the card takes the shadow that falls
+    /// on the surface it shows rather than on its own plane.
+    shadowOffset: vec3f,
     /// How much of the light behind the surface passes through it, from 0 to 1, in place of that
     /// share of its diffuse light, where the material lets light through.
     transmission: f32,
@@ -1479,6 +1486,7 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
 #ifdef CUSTOM
     s.reflection = vec4f(0.0);
     s.lobe = vec4f(0.0);
+    s.shadowOffset = vec3f(0.0);
 #endif
 #ifdef TRANSMISSION
     s.transmission = transmission_row.values.x;
@@ -1909,8 +1917,10 @@ fn clustered_lobed_light(
 /// the mesh's own normal, `vertex_normal`, before a normal map bends it, and the sun compares each
 /// stored depth with the plane of the mesh's triangle, `face_normal`, turned toward the sun.
 /// `contact` is the share of the sun's light that the sun's contact shadows let through. `relative`
-/// is the surface's position relative to the camera, `to_view` points from the surface toward the
-/// camera, and `dfg` holds the split-sum terms at the surface's roughness and view angle.
+/// is the surface's position relative to the camera, and `shadow_offset` a distance from it that
+/// the sun's shadow reads instead, which a surface names with `Surface.shadowOffset`. `to_view`
+/// points from the surface toward the camera, and `dfg` holds the split-sum terms at the surface's
+/// roughness and view angle.
 /// `reflection` holds light from the mirror direction and its share, from screen-space
 /// reflections and a custom material's planar reflection, which takes the place of that share of
 /// the reflection probes' and the environment's reflection, with or without either. `lobe_values`
@@ -1921,6 +1931,7 @@ fn clustered_lobed_light(
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
+    shadow_offset: vec3f,
     normal: vec3f,
     vertex_normal: vec3f,
     face_normal: vec3f,
@@ -1934,6 +1945,9 @@ fn light_surface(
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
     let to_sun = -engine_frame.sun_direction.xyz;
+    // The sun's shadow reads the point that the surface names, which a card moves to the surface
+    // that it shows. Every other light and probe reads the point itself.
+    let shadow_point = relative + shadow_offset;
     var sun_color = engine_frame.sun_color.rgb;
 #ifdef RECEIVE_SHADOWS
 #ifdef TRANSLUCENCY
@@ -1941,7 +1955,7 @@ fn light_surface(
     // runs, from the side that the sun falls on. Contact shadows march from the side the camera
     // sees, so only a surface that faces the sun takes them: from the back, the march would find
     // the surface itself in its way.
-    let seen = relative + engine_frame.shadow_origin.xyz;
+    let seen = shadow_point + engine_frame.shadow_origin.xyz;
     let facing = dot(normal, to_sun) > 0.0;
     sun_color *= sun_shadow(seen, lit_side(vertex_normal, to_sun), face_normal, to_sun) * select(1.0, contact, facing);
 #else
@@ -1955,7 +1969,7 @@ fn light_surface(
     let facing = dot(normal, to_sun);
 #endif
     if facing > 0.0 {
-        sun_color *= sun_shadow(relative + engine_frame.shadow_origin.xyz, vertex_normal, face_normal, to_sun) * contact;
+        sun_color *= sun_shadow(shadow_point + engine_frame.shadow_origin.xyz, vertex_normal, face_normal, to_sun) * contact;
     }
 #endif
 #endif
@@ -2231,14 +2245,19 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let takes_contact = (u32(material_row.strengths.z) & NO_CONTACT_SHADOWS_FLAG) == 0u;
     let contact = select(1.0, screen.values.w, toward_sun && takes_contact);
 #ifdef CUSTOM
-    // The material's own values for its lobe, or zeros where it has none.
+    // The material's own values for its lobe, or zeros where it has none, and the point that the
+    // sun's shadow reads: a card moves it to the surface that it shows, so its own cast does not
+    // fall on it.
     let lobe_values = s.lobe;
+    let shadow_offset = s.shadowOffset;
 #else
     let lobe_values = vec4f(0.0);
+    let shadow_offset = vec3f(0.0);
 #endif
     let reflected = light_surface(
         pbr,
         input.relativePosition,
+        shadow_offset,
         normal,
         input.normal,
         plane_normal,
@@ -2385,6 +2404,100 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 }
 
 #ifndef DECAL
+/// What a surface function knows of the point that the fragment shows, from the values that the
+/// vertex stage passed on and the materials that the fragment stage loaded.
+fn surface_input(in: VertexOut, front: bool) -> SurfaceInput {
+    var input: SurfaceInput;
+    input.relativePosition = in.relative;
+    // Toward the camera: from the point for a perspective camera, and one direction for an
+    // orthographic camera, whose view rays are parallel.
+    let eye = engine_frame.camera_position;
+    input.viewDirection = normalize(eye.xyz - in.relative * eye.w);
+    // A face's normal comes from how the position changes between pixels. The two GPU paths count
+    // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
+    // flat normals face it.
+    let face = normalize(cross(dpdx(in.relative), dpdy(in.relative)));
+    let face_normal = select(-face, face, dot(face, input.viewDirection) >= 0.0);
+    // Back faces draw only for double-sided materials, and light as front faces do.
+    let smooth_normal = normalize(in.normal) * select(-1.0, 1.0, front);
+    let flat_shading = (u32(material_row.strengths.z) & FLAT_SHADING) != 0u;
+    input.normal = select(smooth_normal, face_normal, flat_shading);
+    input.vertexColor = vec4f(1.0);
+#ifdef VERTEX_COLOR
+    input.vertexColor = in.vertex_color;
+#endif
+#ifdef ROW_VALUES
+    input.vertexColor *= in.row_color;
+#endif
+#ifdef CUSTOM
+    input.worldPosition = in.relative + engine_frame.camera_world.xyz;
+#endif
+#ifdef MAPS
+    input.uv = in.uv.xy;
+    input.uv1 = in.uv.zw;
+#else ifdef CUSTOM_UV1
+    input.uv = in.uv.xy;
+    input.uv1 = in.uv.zw;
+#else ifdef UV0
+    input.uv = in.uv;
+#endif
+#ifdef VERTEX_TANGENT
+    input.tangent = in.tangent;
+    input.bitangent = in.bitangent;
+#endif
+    input.frontFacing = front;
+#ifdef CUSTOM
+    // Pixel rows count upward on WebGL2, so its rows turn to count from the top, as on WebGPU.
+    // The target keeps the canvas's height at every render scale, while the frame's render size
+    // may be smaller, so the turn counts from the target's height rather than the render size's.
+    var coord = in.clip.xyz;
+#ifdef WEBGL2
+    coord.y = engine_frame.occlusion.y - coord.y;
+#endif
+    input.fragCoord = coord;
+#endif
+#ifdef OBJECT_IDS
+    input.instance = in.ids.x;
+#endif
+    return input;
+}
+
+#ifdef CASTER
+/// A caster writes no color: a masked material's caster drops the pixels that its coverage leaves
+/// out, and the pass keeps the depth alone.
+@fragment
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) {
+#ifdef CUSTOM_COVERAGE
+#ifdef ALPHA_MASK
+    // The caster tests the material's coverage of the light's view, as a masked surface cuts its
+    // shadow: a card that shows a tree casts the tree's shape, not its whole quad.
+    material_row = material_of(in.material);
+#ifdef CUSTOM
+    fill_builtins(in.origin);
+#ifdef ROW_VALUES
+    object.values = in.row_values;
+#endif
+#ifdef OBJECT_IDS
+    object.id = in.ids.y;
+#endif
+#ifdef OBJECT_MATRICES
+    object.worldMatrix = affine_matrix(in.world_x, in.world_y, in.world_z);
+    object.normalMatrix = affine_normal_matrix(in.world_x, in.world_y, in.world_z);
+#endif
+#endif
+#ifdef CUSTOM_UNIFORMS
+    material = load_material_uniforms(in.material);
+#endif
+#ifdef CUSTOM_TEXTURES
+    load_custom_texture_layers(in.material);
+#endif
+    if (coverage(surface_input(in, front)) < material_row.emissive.w) {
+        discard;
+    }
+#endif
+#endif
+}
+#else
 @fragment
 #ifdef SAMPLE_MASK
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
@@ -2395,9 +2508,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
-#ifdef CASTER
-    return vec4f(0.0);
-#else ifdef PICK
+#ifdef PICK
     return pick_color(in.key);
 #else
     material_row = material_of(in.material);
@@ -2464,58 +2575,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef CUSTOM_TEXTURES
     load_custom_texture_layers(in.material);
 #endif
-    var input: SurfaceInput;
-    input.relativePosition = in.relative;
-    // Toward the camera: from the point for a perspective camera, and one direction for an
-    // orthographic camera, whose view rays are parallel.
-    let eye = engine_frame.camera_position;
-    input.viewDirection = normalize(eye.xyz - in.relative * eye.w);
-    // A face's normal comes from how the position changes between pixels. The two GPU paths count
-    // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
-    // flat normals face it.
-    let face = normalize(cross(dpdx(in.relative), dpdy(in.relative)));
-    let face_normal = select(-face, face, dot(face, input.viewDirection) >= 0.0);
-    // Back faces draw only for double-sided materials, and light as front faces do.
-    let smooth_normal = normalize(in.normal) * select(-1.0, 1.0, front);
-    let flat_shading = (u32(material_row.strengths.z) & FLAT_SHADING) != 0u;
-    input.normal = select(smooth_normal, face_normal, flat_shading);
-    input.vertexColor = vec4f(1.0);
-#ifdef VERTEX_COLOR
-    input.vertexColor = in.vertex_color;
-#endif
-#ifdef ROW_VALUES
-    input.vertexColor *= in.row_color;
-#endif
-#ifdef CUSTOM
-    input.worldPosition = in.relative + engine_frame.camera_world.xyz;
-#endif
-#ifdef MAPS
-    input.uv = in.uv.xy;
-    input.uv1 = in.uv.zw;
-#else ifdef CUSTOM_UV1
-    input.uv = in.uv.xy;
-    input.uv1 = in.uv.zw;
-#else ifdef UV0
-    input.uv = in.uv;
-#endif
-#ifdef VERTEX_TANGENT
-    input.tangent = in.tangent;
-    input.bitangent = in.bitangent;
-#endif
-    input.frontFacing = front;
-#ifdef CUSTOM
-    // Pixel rows count upward on WebGL2, so its rows turn to count from the top, as on WebGPU.
-    // The target keeps the canvas's height at every render scale, while the frame's render size
-    // may be smaller, so the turn counts from the target's height rather than the render size's.
-    var coord = in.clip.xyz;
-#ifdef WEBGL2
-    coord.y = engine_frame.occlusion.y - coord.y;
-#endif
-    input.fragCoord = coord;
-#endif
-#ifdef OBJECT_IDS
-    input.instance = in.ids.x;
-#endif
+    let input = surface_input(in, front);
 #ifdef CUSTOM_SURFACE
     let s = surface(input);
 #else
@@ -2530,6 +2590,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #endif
 }
+#endif
 #else
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {

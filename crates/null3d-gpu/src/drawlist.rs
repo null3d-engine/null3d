@@ -1201,7 +1201,9 @@ pub mod permutation {
     /// values come from instance batches, which neither skin nor morph, read their instances from
     /// the culling shader's copies, and test a mask against its cutoff; a surface that lets light
     /// through draws its rows without their values.
-    /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
+    /// A caster's build writes depth alone, so it has none of the bits that shade or tone map. A
+    /// custom material's caster may keep its mask, whose coverage its fragment stage tests, so the
+    /// two bits build together.
     /// Displacement and bump builds load on first use, so the test switch's builds do without them.
     /// A bump map takes the normal map's slot, so its builds never read the mesh's tangents.
     /// Parallax draws only opaque and masked surfaces, never one that lets light through. A
@@ -1221,7 +1223,7 @@ pub mod permutation {
     /// no light through and never fades, and it draws in the sorted pass's rows, which never read
     /// instances by index. The final pass's upscale draws only in the two-step pass's second step,
     /// with neither FXAA nor bloom.
-    pub const APART: [(u32, u32); 56] = [
+    pub const APART: [(u32, u32); 55] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (TRANSMISSION, ALPHA_HASH),
         (SKIN, INSTANCE_INDEX),
@@ -1234,7 +1236,6 @@ pub mod permutation {
         (ROW_VALUES, TRANSMISSION),
         (CASTER, TONE_MAP),
         (CASTER, VERTEX_COLOR),
-        (CASTER, ALPHA_MASK),
         (CASTER, RECEIVE_SHADOWS),
         (CASTER, TRANSMISSION),
         (CASTER, PREPASS),
@@ -3123,6 +3124,163 @@ mod tests {
         }
         assert_eq!(seen, permutation::ALL);
         assert_eq!(permutation::bit("SHINY"), None);
+    }
+
+    #[test]
+    fn a_custom_material_caster_keeps_its_mask_and_every_other_pair_stays_apart() {
+        use permutation::*;
+
+        // A standard material's caster writes depth alone, and its build reaches no coverage test,
+        // so a mask bit would do nothing there. Only a custom material's caster keeps the mask: its
+        // fragment stage calls the material's coverage function, whose cutoff drops each shadow
+        // texel. The pair therefore builds, and no standard-material caster gains a coverage stage.
+        assert!(permutation::buildable(CASTER | ALPHA_MASK));
+        assert!(!permutation::APART.contains(&(CASTER, ALPHA_MASK)));
+        assert!(!permutation::APART.contains(&(ALPHA_MASK, CASTER)));
+
+        // The rest of the table, written as the rule that holds each pair. A build that loses one
+        // of these refusals fails here as well as in the table.
+        let rule: &[(u32, &[u32])] = &[
+            // A mask tests its alpha one way, by coverage or by the hash.
+            (ALPHA_HASH, &[ALPHA_COVERAGE]),
+            // A mesh that WebGPU skins in the vertex shader reads the culling shader's copies, so
+            // the builds that read instances by index never skin.
+            (SKIN, &[INSTANCE_INDEX]),
+            // A surface that lets light through keeps its mask but takes no hash, and it draws in
+            // the transparent pass, which reads no instances by index, no rows, no parallax, no
+            // light through a thin surface, no motion and no level fade, and blends without
+            // weighted blending.
+            (
+                TRANSMISSION,
+                &[
+                    ALPHA_HASH,
+                    INSTANCE_INDEX,
+                    ROW_VALUES,
+                    PARALLAX,
+                    TRANSLUCENCY,
+                    MOTION,
+                    LOD_FADE,
+                    WEIGHTED,
+                ],
+            ),
+            // Row values come from instance batches, which neither skin nor morph, read their
+            // instances from the culling shader's copies, and test a mask against its cutoff.
+            (
+                ROW_VALUES,
+                &[SKIN, MORPH, INSTANCE_INDEX, ALPHA_COVERAGE, ALPHA_HASH],
+            ),
+            // A caster's build writes depth alone, so it has none of the bits that shade or tone
+            // map. The mask is the one bit a caster may keep, which the assertions above allow.
+            (
+                CASTER,
+                &[
+                    TONE_MAP,
+                    VERTEX_COLOR,
+                    RECEIVE_SHADOWS,
+                    TRANSMISSION,
+                    PREPASS,
+                    INSTANCE_INDEX,
+                    AREA_LIGHTS,
+                ],
+            ),
+            // Displacement and bump builds load on first use, so the test switch's builds do
+            // without them.
+            (DISPLACEMENT, &[INSTANCE_INDEX]),
+            // A bump map takes the normal map's slot, so its builds never read the mesh's tangents.
+            (BUMP, &[INSTANCE_INDEX, VERTEX_TANGENT]),
+            // Parallax draws only opaque and masked surfaces, never one that lets light through.
+            (PARALLAX, &[TRANSLUCENCY]),
+            // Light through a thin surface takes no caster, and its maps take the slots that a
+            // clear coat's would. Only the test switch reads instances by index, which no build of
+            // such a surface needs, and a weighted surface lets no light through it either.
+            (
+                TRANSLUCENCY,
+                &[CASTER, INSTANCE_INDEX, COAT_SHEEN, WEIGHTED],
+            ),
+            // A motion build writes motion alone: it has none of those bits either, and it never
+            // fades.
+            (
+                MOTION,
+                &[
+                    TONE_MAP,
+                    VERTEX_COLOR,
+                    ALPHA_MASK,
+                    RECEIVE_SHADOWS,
+                    SKIN,
+                    MORPH,
+                    PREPASS,
+                    INSTANCE_INDEX,
+                    CASTER,
+                    LOD_FADE,
+                ],
+            ),
+            // A fading level's builds dither its pixels after the mask's own test: skinned,
+            // morphed and index-read instances never fade. A mask that tests its alpha by the
+            // hash switches its levels at once, and a displaced level of detail switches at once.
+            (
+                LOD_FADE,
+                &[SKIN, MORPH, INSTANCE_INDEX, ALPHA_HASH, DISPLACEMENT],
+            ),
+            // The layers shade, so casters never have them, and only the test switch reads
+            // instances by index, which no layered build needs.
+            (COAT_SHEEN, &[INSTANCE_INDEX, CASTER]),
+            // A weighted surface blends, so it tests no mask, takes no prepass, casts no shadow and
+            // never fades, and it draws in the sorted pass's rows, which never read instances by
+            // index or show the outline.
+            (
+                WEIGHTED,
+                &[
+                    ALPHA_MASK,
+                    INSTANCE_INDEX,
+                    PREPASS,
+                    CASTER,
+                    OUTLINE_VISIBLE,
+                    LOD_FADE,
+                ],
+            ),
+            // The final pass's upscale draws only in the two-step pass's second step, with neither
+            // FXAA nor bloom.
+            (UPSCALE, &[FXAA, BLOOM]),
+        ];
+
+        let name = |bit: u32| {
+            permutation::NAMES
+                .iter()
+                .find(|(_, b)| *b == bit)
+                .map_or("an unnamed bit", |(name, _)| *name)
+        };
+        let mut pairs = 0;
+        for &(bit, others) in rule {
+            for &other in others {
+                pairs += 1;
+                assert!(
+                    !permutation::buildable(bit | other),
+                    "{} builds beside {}",
+                    name(bit),
+                    name(other)
+                );
+                assert!(
+                    permutation::APART.contains(&(bit, other))
+                        || permutation::APART.contains(&(other, bit)),
+                    "{} and {} are not kept apart",
+                    name(bit),
+                    name(other)
+                );
+            }
+        }
+        // Every pair of the table is one that the rule above names, so a pair that leaves the
+        // table without this list losing it fails on the count.
+        assert_eq!(pairs, permutation::APART.len());
+        for &(a, b) in permutation::APART.iter() {
+            assert!(
+                rule.iter().any(|&(bit, others)| {
+                    (bit == a && others.contains(&b)) || (bit == b && others.contains(&a))
+                }),
+                "{} and {} are kept apart with no rule in this test",
+                name(a),
+                name(b)
+            );
+        }
     }
 
     #[test]

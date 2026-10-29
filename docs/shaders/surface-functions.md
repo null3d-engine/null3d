@@ -3,12 +3,12 @@ id: shaders/surface-functions
 title: Surface functions
 status: experimental
 since: "0.1"
-summary: "The surface record; uniforms and textures; reflections; transmission; light through thin surfaces; clear coat and sheen; vertex-offset functions; a material's own lobe; values per row of a batch; second texture coordinates, pixel position and instance index."
+summary: "The surface record; uniforms and textures; reflections; transmission; light through thin surfaces; clear coat and sheen; vertex-offset functions; the coverage of a shadow caster and where its lookup reads; a material's own lobe; values per row of a batch; second texture coordinates, pixel position and instance index."
 ---
 
 # Surface functions
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, textures, values per row of a batch, the diffuse transmission fields, the clear coat and sheen fields, the second texture coordinates, the pixel's position and the instance's index. Step 0.3 adds a material's own specular lobe. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, textures, values per row of a batch, the diffuse transmission fields, the clear coat and sheen fields, the second texture coordinates, the pixel's position and the instance's index. Step 0.3 adds a material's own specular lobe, the coverage that a shadow caster tests, and the surface's shadow offset. The API is experimental, so it can still change between versions.
 
 A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights and shadows, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
 
@@ -38,7 +38,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 `materials.shader(options)` makes a custom material. Its `wgsl` option holds the WGSL. Its `uniforms` and `textures` options give the values of the WGSL's [uniforms](#uniforms) and [textures](#textures). Its other options are those of `materials.standard`, but the texture maps, which a custom material samples as textures of its own. [Materials](../api/materials.md) lists them.
 
 - Write the WGSL in a template literal right after a `/* wgsl */` comment, or in a `.wgsl` file that your sketch imports. The plugin compiles it while Vite serves or builds the project. [Custom shaders](../guides/custom-shaders.md) says how.
-- The WGSL declares `fn surface(input: SurfaceInput) -> Surface`, `fn vertexOffset(input: VertexInput) -> vec3f` ([vertex offsets](#vertex-offsets)), `fn lobe(input: LobeInput) -> vec3f` ([a material's own lobe](#a-materials-own-lobe)), or some of them, and no `@vertex` or `@fragment` entry point. For a look that the engine's lighting cannot give, write a [full shader](../guides/custom-shaders.md#full-shaders) instead.
+- The WGSL declares `fn surface(input: SurfaceInput) -> Surface`, `fn vertexOffset(input: VertexInput) -> vec3f` ([vertex offsets](#vertex-offsets)), `fn lobe(input: LobeInput) -> vec3f` ([a material's own lobe](#a-materials-own-lobe)), `fn coverage(input: SurfaceInput) -> f32` ([shadows](#shadows)), or some of them, and no `@vertex` or `@fragment` entry point. For a look that the engine's lighting cannot give, write a [full shader](../guides/custom-shaders.md#full-shaders) instead.
 - `set()` changes the standard values, such as `color` and `roughness`, as it does for a standard material. The surface function sees them through `defaultSurface`.
 - Materials made from the same WGSL share one shader. Make one material for each look, as you do for standard materials.
 - A mesh needs texture coordinates to draw with a custom material. The geometry generators give every mesh texture coordinates. For a mesh from `geometry.fromArrays`, pass `uvs`.
@@ -79,6 +79,7 @@ A `Surface` holds the values that the engine lights. Colors are linear, as the e
 | `occlusion` | `f32` | How much of the ambient light and the irradiance reaches the point, from 0 to 1 |
 | `irradiance` | `vec3f` | Baked light that reaches the point, such as a light map's, added to the ambient light |
 | `lobe` | `vec4f` | Four values for the material's own lobe function ([A material's own lobe](#a-materials-own-lobe)) |
+| `shadowOffset` | `vec3f` | Where the sun's shadow lookup reads, relative to the point and in world space: zero by default, so the lookup reads the point itself ([Shadows](#shadows)) |
 | `reflection` | `vec4f` | Light from the mirror direction in `rgb`, such as a reflection pass's color, and in `a` how much of it takes the place of the environment's reflection, from 0 to 1 ([Reflections](#reflections)) |
 | `transmission` | `f32` | How much of the light behind the point passes through it, from 0 to 1, in a material that lets light through ([Transmission](#transmission)) |
 | `thickness` | `f32` | The thickness of the volume under the point, in the mesh's own units, which bends the light that passes through |
@@ -452,7 +453,29 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 - One WGSL can hold a vertex offset and a surface function. They share the uniforms, and functions of your own that both call.
 - The engine keeps the mesh's normals, so a moved surface lights as the unmoved one did. Give the material `flatShading: true` to light each face by its moved position, or bend `s.normal` in a surface function.
 - Culling tests the mesh's bounding sphere. Vertices that move out of it can make the object vanish at the edge of the view. Give the object a sphere that holds them with `setBounds(center, radius)`, at setup, as [Objects and transforms](../api/objects.md) describes.
-- Shadows follow the moved vertices. The material's shadow casters run the vertex offset too, with the same `frame`, `object` and `material` values, so a swaying surface casts a swaying shadow. Such casters draw again in every frame that a shadow map draws, as moving objects do.
+- Shadows follow the moved vertices. The material's shadow casters run the vertex offset too, with the same `frame`, `object` and `material` values, so a swaying surface casts a swaying shadow. Such casters draw again in every frame that a shadow map draws, as moving objects do. A material whose offset follows only the view that draws the object declares `castsStill: true`: its casters hold their shadow while the light stands still, so the far shadow cascades stay cached.
+
+## Shadows
+
+A masked custom material cuts its shadow only where its WGSL says how much of each point draws. Declare `fn coverage(input: SurfaceInput) -> f32` beside the surface function, and return the opacity of the point. The engine calls it in the material's shadow caster builds, which bind the material's uniforms, textures and row values, and drops each shadow texel under the material's `alphaCutoff`. A card that shows a baked crown therefore casts the crown's shape rather than its quad:
+
+```ts
+const card = materials.shader({
+  wgsl: /* wgsl */ `
+    var colour: texture_2d<f32>;
+
+    fn coverage(input: SurfaceInput) -> f32 {
+      return textureSample(colour, colourSampler, input.uv).a;
+    }`,
+  textures: { colour },
+  alphaMode: 'mask',
+  alphaCutoff: 0.5,
+});
+```
+
+- The caster reads the coverage in the light's view, so a card that turns toward the light cuts its shadow from the side that the light sees.
+- WGSL that declares a coverage function gets the caster builds, with a fragment stage on both GPU paths. A material that declares neither a vertex offset nor a coverage function casts its whole shape through the engine's own depth template.
+- A surface function moves where the sun's shadow lookup reads by setting `s.shadowOffset`, in world space relative to the point. A stand-in card sets it to the surface that the stored depth shows, so the card takes the shadow that falls on the surface it shows rather than on its own plane, and its own cast does not darken it. `defaultSurface` leaves it zero.
 
 ## Built-in values
 

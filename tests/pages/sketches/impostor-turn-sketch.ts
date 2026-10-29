@@ -1,8 +1,10 @@
 // A turned tree beside its own card, on one sun: the near mesh of the shared pine turned by an
 // angle, and the card baked from that same mesh and turned by the same angle. The two must show
 // the same side of the crown and the same light, which proves that the card picks its views and
-// lights its normals in the tree's own frame. The `?sun=back` switch puts the sun behind the row,
-// so the pair that showed a lit side in the first picture shows a dark side in the second.
+// lights its normals in the tree's own frame, not the camera's. The `?sun=back` switch puts the
+// sun behind the row, so the pair that showed a lit side in the first picture shows a dark side in
+// the second. `?azimuth=<degrees>` moves the camera around the row, which a card that turned its
+// light with the camera would show as a different side of the crown.
 import { defineSketch, type MeshArrays } from '@null3d/engine';
 import { bakeImpostorAtlas, createImpostors, octahedralAtlas } from '@null3d/impostors';
 import { pineArrays } from '../../../examples/lib/pines';
@@ -31,15 +33,22 @@ export default defineSketch(async (ctx) => {
 	const { scene, materials, geometry, textures } = ctx;
 	const arrays = pineArrays(0);
 	scene.setBackground('#20262f');
-	const behind = new URL(import.meta.url).searchParams.get('sun') === 'back';
+	const params = new URL(import.meta.url).searchParams;
+	const behind = params.get('sun') === 'back';
+	const azimuth = (Number(params.get('azimuth') ?? 0) * Math.PI) / 180;
+	// `?sunYaw=<degrees>` turns the sun about the world's up, which the sun sweep's filmstrip walks.
+	const sunYaw = (Number(params.get('sunYaw') ?? 0) * Math.PI) / 180;
+	const base: [number, number, number] = behind ? [0.6, -0.45, 0.8] : [-0.7, -0.45, -0.5];
+	const cos = Math.cos(sunYaw);
+	const sin = Math.sin(sunYaw);
 	scene.createDirectionalLight({
-		direction: behind ? [0.6, -0.45, 0.8] : [-0.7, -0.45, -0.5],
+		direction: [cos * base[0] + sin * base[2], base[1], -sin * base[0] + cos * base[2]],
 		intensity: 3,
 	});
 	scene.createAmbientLight({ intensity: 0.45 });
 	const camera = scene.createPerspectiveCamera({
 		fov: 42,
-		position: [0, 4.5, 24],
+		position: [Math.sin(azimuth) * 24, 4.5, Math.cos(azimuth) * 24],
 		target: [0, 2.2, 0],
 	});
 	scene.setActiveCamera(camera);

@@ -12,16 +12,24 @@
 // with the light's view, so the card turns toward the light there.
 //
 // A card's turn, about the world's up, is the tree's own turn. The shader turns the direction
-// toward the eye before it picks the cells, and it turns the stored normal by the same angle
-// before it lights it. The surface atlas stores each normal in the tree's local frame, so a
-// turned copy lights as its mesh does.
+// toward the eye by that turn before it picks the cells, and it turns the stored normal by the
+// same angle before it lights it. Both read the tree's frame alone: the card's quad faces the eye,
+// but the light does not, so a camera that moves around a tree leaves the tree's light where the
+// sun puts it. The surface atlas stores each normal in the tree's local frame, so a turned copy
+// lights as its mesh does from every camera.
+//
+// The card's shadow caster tests the coverage at the direction toward the light, from the same
+// three cells, so the shadow has the crown's shape rather than the quad's. A card that receives
+// shadows reads them where the stored depth puts the surface that it shows, so its own cast does
+// not fall on it.
 
 var impostorColor: texture_2d<f32>;
 var impostorSurface: texture_2d<f32>;
 
 struct Uniforms {
-    // x and y: the cells of the atlas across and down. z: the share of the cell that the cell's
-    // centre moves a view, 0 for none. w: unused.
+    // x and y: the cells of the atlas across and down. z: 1 draws the nearest view alone, 0 blends
+    // the three nearest. w: the world distance that the surface atlas's stored depth spans, or 0
+    // to read the card's own plane for the shadow lookup.
     cells: vec4f,
 }
 
@@ -49,18 +57,22 @@ fn cellAt(cell: vec2f, cells: vec2f, uv: vec2f) -> vec2f {
 
 /// The colour of a cell at the card's point, as the atlas holds it. A direction at the edge of the
 /// octahedron's square names a cell past the grid, which reads the nearest cell's picture: the
-/// folds on the square's outer edge name a direction that a cell on the edge holds.
-fn colorOf(cell: vec2f, cells: vec2f, uv: vec2f) -> vec4f {
+/// folds on the square's outer edge name a direction that a cell on the edge holds. The gradients
+/// of the card's texture coordinates arrive from the caller, so the read is legal in the branch
+/// that draws one view.
+fn colorOf(cell: vec2f, uv: vec2f, gx: vec2f, gy: vec2f) -> vec4f {
+    let cells = material.cells.xy;
     let inside = clamp(cell, vec2f(0.0), max(cells - vec2f(1.0), vec2f(0.0)));
-    return textureSample(impostorColor, impostorColorSampler, cellAt(inside, cells, uv));
+    return textureSampleGrad(impostorColor, impostorColorSampler, cellAt(inside, cells, uv), gx / cells, gy / cells);
 }
 
 /// The stored surface of a cell at the card's point: the octahedral code of its normal in red and
 /// green, its depth in blue and its coverage in alpha. A cell past the grid reads the nearest one,
 /// as the colour does.
-fn surfaceOf(cell: vec2f, cells: vec2f, uv: vec2f) -> vec4f {
+fn surfaceOf(cell: vec2f, uv: vec2f, gx: vec2f, gy: vec2f) -> vec4f {
+    let cells = material.cells.xy;
     let inside = clamp(cell, vec2f(0.0), max(cells - vec2f(1.0), vec2f(0.0)));
-    return textureSample(impostorSurface, impostorSurfaceSampler, cellAt(inside, cells, uv));
+    return textureSampleGrad(impostorSurface, impostorSurfaceSampler, cellAt(inside, cells, uv), gx / cells, gy / cells);
 }
 
 /// The unit direction that an octahedral code names, the inverse of the fold.
@@ -96,15 +108,21 @@ fn cardFrame(eye: vec3f) -> CardFrame {
     return frame;
 }
 
+/// The unit direction from the card toward the frame's camera. A shadow pass draws the card from
+/// the light, and its cascades see the light from one direction, as an orthographic camera does.
+fn eyeDirection(at: vec3f) -> vec3f {
+    let eye = engine_frame.camera_position;
+    return normalize(eye.xyz - at * eye.w);
+}
+
 fn vertexOffset(input: VertexInput) -> vec3f {
     let m = object.worldMatrix;
     let columnX = m[0].xyz;
     let columnY = m[1].xyz;
     let scaleX = max(length(columnX), 1e-6);
     let scaleY = max(length(columnY), 1e-6);
-    // The camera sits at the origin of positions relative to it, so the direction from the card
-    // toward the eye is the opposite of the instance's origin.
-    let frame = cardFrame(-m[3].xyz);
+    // The direction from the card toward the eye, which the frame's camera gives.
+    let frame = cardFrame(eyeDirection(m[3].xyz));
     // The corner's place across the card and up it, in the world. The instance's transform turns
     // it into the local move that lands the corner there, which is its inverse applied to the
     // wanted offset.
@@ -118,72 +136,137 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     ) - input.position;
 }
 
+/// The three cells of the atlas nearest the direction toward the eye, and the weights of the
+/// square's triangle that holds the direction. One view draws the nearest cell alone.
+struct Cells {
+    a: vec2f,
+    b: vec2f,
+    c: vec2f,
+    wa: f32,
+    wb: f32,
+    wc: f32,
+}
+
+fn cellsOf(at: vec2f) -> Cells {
+    let base = floor(at);
+    let f = at - base;
+    var out: Cells;
+    // The two triangles of the square between four cell centres, with the weights of its corners.
+    if (f.x + f.y <= 1.0) {
+        out.a = base + vec2f(0.0, 0.0);
+        out.b = base + vec2f(1.0, 0.0);
+        out.c = base + vec2f(0.0, 1.0);
+        out.wa = 1.0 - f.x - f.y;
+        out.wb = f.x;
+        out.wc = f.y;
+    } else {
+        out.a = base + vec2f(1.0, 0.0);
+        out.b = base + vec2f(0.0, 1.0);
+        out.c = base + vec2f(1.0, 1.0);
+        out.wa = 1.0 - f.y;
+        out.wb = 1.0 - f.x;
+        out.wc = f.x + f.y - 1.0;
+    }
+    return out;
+}
+
+/// The cells nearest the direction toward the eye, in the tree's frame, and the weights of each.
+fn cellsAt(eye: vec3f) -> Cells {
+    let cells = material.cells.xy;
+    let code = octahedralCode(directionOf(eye));
+    // Where the direction falls among the cells' centres, counted from the top left.
+    let at = vec2f((code.x * 0.5 + 0.5) * cells.x - 0.5, (code.y * 0.5 + 0.5) * cells.y - 0.5);
+    if (material.cells.z > 0.5) {
+        let nearest = clamp(round(at), vec2f(0.0), max(cells - vec2f(1.0), vec2f(0.0)));
+        var one: Cells;
+        one.a = nearest;
+        one.b = nearest;
+        one.c = nearest;
+        one.wa = 1.0;
+        one.wb = 0.0;
+        one.wc = 0.0;
+        return one;
+    }
+    return cellsOf(at);
+}
+
+/// The direction toward the eye in the tree's own frame: the world direction turned by the tree's
+/// turn. The cell pick and the light read the tree's frame, never the card's, so a camera that
+/// moves around a tree does not turn the tree's light with it.
+fn directionOf(eye: vec3f) -> vec3f {
+    let turn = object.values.x;
+    return vec3f(
+        cos(turn) * eye.x - sin(turn) * eye.z,
+        eye.y,
+        sin(turn) * eye.x + cos(turn) * eye.z,
+    );
+}
+
+/// The colour of the card at a point, from the cells nearest the direction toward the eye. One
+/// view reads its cell alone, so the blend costs three reads a point and one costs one.
+fn cardColor(inside: Cells, uv: vec2f, gx: vec2f, gy: vec2f) -> vec4f {
+    if (material.cells.z > 0.5) {
+        return colorOf(inside.a, uv, gx, gy);
+    }
+    return colorOf(inside.a, uv, gx, gy) * inside.wa
+        + colorOf(inside.b, uv, gx, gy) * inside.wb
+        + colorOf(inside.c, uv, gx, gy) * inside.wc;
+}
+
+/// The stored surfaces of the cells nearest the direction toward the eye. One view reads its cell
+/// alone, and the three carry it.
+fn cardSurfaces(inside: Cells, uv: vec2f, gx: vec2f, gy: vec2f) -> array<vec4f, 3> {
+    if (material.cells.z > 0.5) {
+        let stored = surfaceOf(inside.a, uv, gx, gy);
+        return array<vec4f, 3>(stored, stored, stored);
+    }
+    return array<vec4f, 3>(
+        surfaceOf(inside.a, uv, gx, gy),
+        surfaceOf(inside.b, uv, gx, gy),
+        surfaceOf(inside.c, uv, gx, gy),
+    );
+}
+
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
-    let cells = material.cells.xy;
     let turn = object.values.x;
     let cosTurn = cos(turn);
     let sinTurn = sin(turn);
-    // The direction from the card toward the eye, in the card's own frame and then in the tree's,
-    // which the tree's turn takes from the card's.
-    let eye = normalize(-input.relativePosition);
-    let frame = cardFrame(eye);
-    let inCard = vec3f(dot(eye, frame.right), dot(eye, frame.up), dot(eye, frame.forward));
-    let direction = vec3f(
-        cosTurn * inCard.x - sinTurn * inCard.z,
-        inCard.y,
-        sinTurn * inCard.x + cosTurn * inCard.z,
-    );
-    let code = octahedralCode(direction);
-    // Where the direction falls among the cells' centres, counted from the top left.
-    let at = vec2f((code.x * 0.5 + 0.5) * cells.x - 0.5, (code.y * 0.5 + 0.5) * cells.y - 0.5);
-    let base = floor(at);
-    let f = at - base;
-    // The two triangles of the square between four cell centres, with the weights of its corners.
-    var cell0: vec2f;
-    var cell1: vec2f;
-    var cell2: vec2f;
-    var w0: f32;
-    var w1: f32;
-    var w2: f32;
-    if (f.x + f.y <= 1.0) {
-        cell0 = base + vec2f(0.0, 0.0);
-        cell1 = base + vec2f(1.0, 0.0);
-        cell2 = base + vec2f(0.0, 1.0);
-        w0 = 1.0 - f.x - f.y;
-        w1 = f.x;
-        w2 = f.y;
-    } else {
-        cell0 = base + vec2f(1.0, 0.0);
-        cell1 = base + vec2f(0.0, 1.0);
-        cell2 = base + vec2f(1.0, 1.0);
-        w0 = 1.0 - f.y;
-        w1 = 1.0 - f.x;
-        w2 = f.x + f.y - 1.0;
-    }
-    let uv = input.uv;
-    let color = colorOf(cell0, cells, uv) * w0 + colorOf(cell1, cells, uv) * w1
-        + colorOf(cell2, cells, uv) * w2;
+    let eye = input.viewDirection;
+    let inside = cellsAt(eye);
+    let gx = dpdx(input.uv);
+    let gy = dpdy(input.uv);
+    let color = cardColor(inside, input.uv, gx, gy);
     s.baseColor = color.rgb;
     s.alpha = color.a;
     // Each stored normal is decoded in the tree's local frame, whose x and y lie across and up the
-    // picture and whose z points along the tree. The blend of the three is the tree's normal, and
-    // the tree's turn and the card's frame take it to the world. The surface's blue holds the
-    // depth of the view, which nothing reads yet.
-    let stored0 = surfaceOf(cell0, cells, uv);
-    let stored1 = surfaceOf(cell1, cells, uv);
-    let stored2 = surfaceOf(cell2, cells, uv);
+    // tree and whose z points along it. The blend of the three is the tree's normal, and the tree's
+    // turn takes it to the world. The card's quad faces the eye, but the normal does not: a light
+    // that stands still lights the same side of a tree from every camera.
+    let stored = cardSurfaces(inside, input.uv, gx, gy);
     // The atlas holds each code as a byte from 0 to 1, so it reads back into -1 to 1 first.
-    let normal = octahedralDirection(stored0.xy * 2.0 - vec2f(1.0)) * w0
-        + octahedralDirection(stored1.xy * 2.0 - vec2f(1.0)) * w1
-        + octahedralDirection(stored2.xy * 2.0 - vec2f(1.0)) * w2;
-    let turned = vec3f(
+    let normal = octahedralDirection(stored[0].xy * 2.0 - vec2f(1.0)) * inside.wa
+        + octahedralDirection(stored[1].xy * 2.0 - vec2f(1.0)) * inside.wb
+        + octahedralDirection(stored[2].xy * 2.0 - vec2f(1.0)) * inside.wc;
+    s.normal = normalize(vec3f(
         cosTurn * normal.x + sinTurn * normal.z,
         normal.y,
         -sinTurn * normal.x + cosTurn * normal.z,
-    );
-    s.normal = normalize(
-        frame.right * turned.x + frame.up * turned.y + frame.forward * turned.z,
-    );
+    ));
+    // The card shows a surface that stands along the view from its own plane. The shadow lookup
+    // reads that surface, not the plane, so the card's own cast does not fall on it.
+    let depth = stored[0].z * inside.wa + stored[1].z * inside.wb + stored[2].z * inside.wc;
+    if (material.cells.w > 0.0) {
+        s.shadowOffset = eye * (material.cells.w * (0.5 - depth));
+    }
     return s;
+}
+
+/// The opacity of the card at a point, which the card's shadow caster tests: the blended coverage
+/// of the three cells nearest the direction toward the light. A shadow pass draws the card toward
+/// the light, so its caster cuts the crown's shape out of the shadow.
+fn coverage(input: SurfaceInput) -> f32 {
+    let gx = dpdx(input.uv);
+    let gy = dpdy(input.uv);
+    return cardColor(cellsAt(input.viewDirection), input.uv, gx, gy).a;
 }
