@@ -61,6 +61,8 @@ traffic.update(eye, time.now);
 - The rows take four values each, which the shader reads as `object.values`: the start offset, the
   speed, the lane's length and the tint. Use one material for the same heading; the add-on makes
   four, one for each.
+- `look.windows` tints the canopy's glass: it then draws as dark, smooth glass with a faint glow
+  from the cabin. Without it the canopy takes the body's paint.
 - Put the rows on the effect layer when a showcase scene's route guard must not treat a moving
   vehicle as a wall.
 

@@ -1,26 +1,33 @@
-// The hero car of Skyway: a courier's hover car. In Auto it leads the camera through the city: it
-// flies ahead of the shot and just below it, in the middle of the frame, so its tail lights and
-// engine glow carry the eye down the street. In Manual the user drives it, and the camera follows
-// it from behind or rides in the driver's seat (see drive.ts for the flight).
+// The hero car of Skyway: a courier's hover car with a cockpit (see body.ts). In Auto it leads the
+// camera through the city: it flies ahead of the shot and just below it, in the middle of the
+// frame, so its tail lights and engine glow carry the eye down the street. In Manual the user drives
+// it (see drive.ts for the flight). The camera follows it from behind or sits in the driver's seat,
+// and a switch between the two flies the camera over the canopy and down into the seat, or back.
 //
-// Its paint is a clear coat over a deep blue, with amber running lights down its flanks. Three
-// panels carry screens from the screens add-on: the speed, the altitude and the navigation map.
-// They sit on the rear deck for the view from behind, and on the dashboard for the view from the
-// seat. Each refreshes at its own rate, and only the part of its picture that changed uploads, so a
-// number, a bar and a moving dot cost no frame work. Two spot lights at the nose light the rain
-// ahead, and a lamp under the belly spills the car's colour on the air below it.
+// Its paint is a clear coat over a deep blue, with amber running lights down its flanks, and the
+// cockpit's trim is dark and matte. A tinted glass canopy closes the cockpit. Three screens from the
+// screens add-on stand on the dashboard: the speed, the altitude and the navigation map. Each
+// refreshes at its own rate, and only the part of its picture that changed uploads, so a number, a
+// bar and a moving dot cost no frame work. Two spot lights at the nose light the rain ahead, and a
+// lamp under the belly spills the car's colour on the air below it.
 import { math, type PerspectiveCamera, quat, type SketchContext, vec3 } from '@null3d/engine';
-import { createVehicleHull } from '../../addons/traffic-lanes/index';
+import type { HudGroup } from '../../lib/controls';
 import { EFFECT_LAYER } from '../../lib/layers';
+import { CONSOLE, createCanopy, createShell, FITTINGS, WELL } from './body';
 import { createCockpit } from './cockpit';
+import { createConsole } from './console';
 import { cityTowers, type Flight, fly, keepOut, type Stick } from './drive';
 
 /** How far ahead of the Auto camera the car flies, and how far below, in meters. */
 const [AHEAD, BELOW] = [26, 5.2];
 /** The scale of the hull, so the car is a little under five meters long. */
 const SCALE = 2.2;
-/** The driver's eye, in the body's own units: low under the canopy, just behind its windshield. */
-const SEAT = [0, 0.93, 0.18] as const;
+/** The driver's eye, in the body's own units: over the seat, under the canopy's ridge. */
+const SEAT = [0, 0.96, -0.3] as const;
+/** How long the camera takes to fly into the seat or back out behind the car, in seconds. */
+const TRANSITION = 0.9;
+/** How high the camera's path rises over the canopy on its way in or out, in meters. */
+const ARC = 1.2;
 /** The chase camera's place behind the car and above it, and how far ahead of the car it looks. */
 const CHASE = { behind: 13, above: 4.4, ahead: 22, lift: 1.4 };
 /** How quickly the chase camera follows the car's place and its look, per second. */
@@ -55,20 +62,22 @@ export const DRIVE_KEYS = [
 export type View = 'chase' | 'cockpit';
 
 const paintWgsl = /* wgsl */ `
-struct Uniforms { scale: f32, glow: f32 }
+struct Uniforms { glow: f32, well: f32, wellZ: f32 }
 
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
-    let d = (input.worldPosition - object.position) / material.scale;
-    // The canopy is glass: dark, smooth and quick to mirror the street.
-    let canopy = step(0.85, d.y) * step(abs(d.z), 1.1);
+    // The body's own place, which its texture coordinates carry, so the paint turns with the car.
+    let d = vec3f(input.uv.x, input.uv.y, input.uv1.x);
+    // The cockpit's trim: the well's walls and floor, dark and matte.
+    let trim = step(abs(d.x), material.well + 0.005) * step(abs(d.z), material.wellZ + 0.005)
+        * step(d.y, 0.86);
     // The flanks carry a strip of amber running lights.
     let strip = step(0.86, abs(d.x)) * step(abs(d.z), 1.7) * step(0.3, d.y) * step(d.y, 0.46);
 
-    s.baseColor = mix(vec3f(0.035, 0.05, 0.075), vec3f(0.01, 0.014, 0.02), canopy);
-    s.metalness = mix(0.55, 0.95, canopy);
-    s.roughness = mix(0.24, 0.04, canopy);
-    s.clearcoat = mix(1.0, 0.0, canopy);
+    s.baseColor = mix(vec3f(0.035, 0.05, 0.075), vec3f(0.004, 0.005, 0.007), trim);
+    s.metalness = mix(0.55, 0.0, trim);
+    s.roughness = mix(0.24, 0.95, trim);
+    s.clearcoat = 1.0 - trim;
     s.clearcoatRoughness = 0.12;
     s.emissive = vec3f(1.0, 0.35, 0.06) * strip * 2.6;
     // A thin cold line under the belly, and the engine's light at the tail.
@@ -99,6 +108,8 @@ export interface Hero {
 	readonly view: View;
 	/** Puts the camera behind the car or in its seat. */
 	setView(view: View): void;
+	/** Shows the scene's controls on the console, as the page's panel shows them. */
+	showControls(groups: readonly HudGroup[]): void;
 	/**
 	 * Takes the on-screen pad's wishes, each from -1 to 1: the throttle, the steer to the left and
 	 * the lift. The keys add to them.
@@ -137,24 +148,44 @@ export function createHero(
 
 	const paint = materials.shader({
 		wgsl: paintWgsl,
-		uniforms: { scale: SCALE, glow: 1 },
+		uniforms: { glow: 1, well: WELL.half, wellZ: WELL.front },
 		color: '#1a2536',
 		roughness: 0.24,
 		metalness: 0.55,
 		clearcoat: 1,
 		clearcoatRoughness: 0.12,
+		// The cockpit's walls face in, so both faces of the shell draw.
+		doubleSided: true,
 	});
+	scene.createMesh({ mesh: createShell(ctx), material: paint, parent: body, layers: EFFECT_LAYER });
+	// The cockpit's seat, yoke and dashboard. The car's own lamps sit a meter from them, so they
+	// would light them far brighter than the city does: they take no light, and keep a dark shade.
+	const fittings = materials.unlit({ color: '#0c1118' });
+	for (const fitting of FITTINGS) {
+		scene.createMesh({
+			mesh: geometry.box({
+				width: fitting.size[0],
+				height: fitting.size[1],
+				depth: fitting.size[2],
+			}),
+			material: fittings,
+			position: [fitting.at[0], fitting.at[1], fitting.at[2]],
+			parent: body,
+			layers: EFFECT_LAYER,
+			castShadows: false,
+		});
+	}
+	// The canopy: tinted glass, which shows the lit cockpit dimly from outside and the city from in.
 	scene.createMesh({
-		mesh: createVehicleHull(ctx),
-		material: paint,
-		parent: body,
-		layers: EFFECT_LAYER,
-	});
-	// The dashboard under the panels, inside the hull: only the view from the seat sees it.
-	scene.createMesh({
-		mesh: geometry.box({ width: 1.3, height: 0.08, depth: 0.34 }),
-		material: materials.standard({ color: '#0b1018', roughness: 0.6, metalness: 0.3 }),
-		position: [0, 0.71, 0.72],
+		mesh: createCanopy(ctx),
+		material: materials.standard({
+			color: '#0a1620',
+			roughness: 0.05,
+			metalness: 0,
+			opacity: 0.3,
+			alphaMode: 'blend',
+			doubleSided: true,
+		}),
 		parent: body,
 		layers: EFFECT_LAYER,
 		castShadows: false,
@@ -182,10 +213,14 @@ export function createHero(
 		layers: EFFECT_LAYER,
 	});
 
-	// The panels, turned up toward the eye that reads them.
+	// The screens on the dashboard, turned up toward the driver's eye.
 	const tilt = quat.create();
-	quat.fromEuler(tilt, -0.42, Math.PI, 0, 'YXZ');
+	quat.fromEuler(tilt, -0.5, Math.PI, 0, 'YXZ');
 	const cockpit = createCockpit(ctx, body, tilt);
+	// The console on the dashboard's face, which repeats the scene's controls for the driver.
+	const lean = quat.create();
+	quat.fromEuler(lean, -CONSOLE.lean, Math.PI, 0, 'YXZ');
+	const touchscreen = createConsole(ctx, body, lean, CONSOLE.at, CONSOLE.size);
 
 	// The nose lamps light the rain and the street ahead, and a lamp under the belly spills the
 	// car's own colour on the air below it.
@@ -203,7 +238,7 @@ export function createHero(
 		});
 	}
 	scene.createPointLight({
-		position: [0, 0.12, -0.3],
+		position: [0, -0.2, -0.3],
 		color: '#3fa8ff',
 		intensity: 160,
 		range: 16,
@@ -226,8 +261,16 @@ export function createHero(
 	let roll = 0;
 	let speed = 0;
 	let view: View = 'chase';
+	/** How far the camera is on its way into the seat: 0 behind the car, 1 in the seat. */
+	let inside = 0;
 	/** True while the user drives, until the next frame in Auto. */
 	let driving = false;
+	/** The car's place and yaw as it trails the Auto camera, which the seat view blends away from. */
+	const trail = vec3.create();
+	let trailYaw = 0;
+	/** The point that the seat looks at, and the camera's place on its way in or out. */
+	const sight = vec3.create();
+	const path = vec3.create();
 
 	const towers = cityTowers();
 	const flight: Flight = { x: 0, y: 0, z: 0, yaw: 0, speed: 0, climb: 0, turning: 0 };
@@ -252,10 +295,9 @@ export function createHero(
 	const steerCamera = (dt: number): void => {
 		const { pointer } = input;
 		orbit.idle = pointer.buttons !== 0 ? 0 : orbit.idle + dt;
-		const inside = view === 'cockpit';
 		orbit.turn -= pointer.dragDx * ORBIT.turn;
 		orbit.tilt += pointer.dragDy * ORBIT.tilt;
-		if (inside) {
+		if (view === 'cockpit') {
 			orbit.turn = math.clamp(orbit.turn, -ORBIT.head, ORBIT.head);
 			orbit.tilt = math.clamp(orbit.tilt, -ORBIT.nod, ORBIT.nod);
 		} else {
@@ -298,6 +340,49 @@ export function createHero(
 		camera.setRotation(turn[0] as number, turn[1] as number, turn[2] as number, turn[3] as number);
 	};
 
+	/** Moves the camera's way in or out of the seat on by a frame, toward the view chosen. */
+	const travel = (dt: number): void => {
+		const step = dt / TRANSITION;
+		inside = view === 'cockpit' ? Math.min(1, inside + step) : Math.max(0, inside - step);
+	};
+
+	/**
+	 * Flies the camera between `from`, the place behind the car, looking at `toward`, and the seat.
+	 * The path rises over the canopy and comes down through it, and the look turns from the car's
+	 * way ahead to the seat's.
+	 */
+	const between = (
+		share: number,
+		fromX: number,
+		fromY: number,
+		fromZ: number,
+		toward: Float32Array | number[],
+	): void => {
+		const e = share * share * (3 - 2 * share);
+		seatPlace();
+		const sx = Math.sin(yaw);
+		const sz = Math.cos(yaw);
+		vec3.set(
+			sight,
+			(seat[0] as number) + sx * CHASE.ahead,
+			seat[1] as number,
+			(seat[2] as number) + sz * CHASE.ahead,
+		);
+		const rise = Math.sin(Math.PI * e) * ARC;
+		vec3.set(
+			path,
+			fromX + ((seat[0] as number) - fromX) * e,
+			fromY + ((seat[1] as number) - fromY) * e + rise,
+			fromZ + ((seat[2] as number) - fromZ) * e,
+		);
+		camera.setPosition(path[0] as number, path[1] as number, path[2] as number);
+		camera.lookAt(
+			(toward[0] as number) + ((sight[0] as number) - (toward[0] as number)) * e,
+			(toward[1] as number) + ((sight[1] as number) - (toward[1] as number)) * e,
+			(toward[2] as number) + ((sight[2] as number) - (toward[2] as number)) * e,
+		);
+	};
+
 	/**
 	 * Puts the camera behind the car, or where a drag turned it round the car, easing after it. It
 	 * looks down the car's way from behind, and at the car itself once a drag turns it away.
@@ -324,8 +409,15 @@ export function createHero(
 		);
 		for (let c = 0; c < 3; c++)
 			look[c] = (look[c] as number) + ((goal[c] as number) - (look[c] as number)) * k;
-		camera.setPosition(chase.x, chase.y, chase.z);
-		camera.lookAt(look[0] as number, look[1] as number, look[2] as number);
+	};
+
+	/** Places the camera behind the car, in its seat, or on the way between, as `inside` says. */
+	const place = (): void => {
+		if (inside >= 1) ride();
+		else if (inside <= 0) {
+			camera.setPosition(chase.x, chase.y, chase.z);
+			camera.lookAt(look[0] as number, look[1] as number, look[2] as number);
+		} else between(inside, chase.x, chase.y, chase.z, look);
 	};
 
 	/** Puts the car where the opening shot looks, so the first frame shows it in place. */
@@ -336,7 +428,9 @@ export function createHero(
 		vec3.normalize(ahead, ahead);
 		vec3.set(at, px + ahead[0] * AHEAD, py + ahead[1] * AHEAD - BELOW, pz + ahead[2] * AHEAD);
 		vec3.copy(goal, at);
+		vec3.copy(trail, at);
 		yaw = Math.atan2(ahead[0], ahead[2]);
+		trailYaw = yaw;
 		pose();
 		vec3.copy(before, at);
 	};
@@ -349,12 +443,13 @@ export function createHero(
 		setView(next) {
 			if (next === view) return;
 			view = next;
-			cockpit.place(view === 'cockpit');
-			// Each view starts from its own rest: behind the car, or looking straight ahead.
+			// Each view starts from its own rest: behind the car, or looking straight ahead. The camera
+			// then flies from one to the other.
 			orbit.turn = 0;
 			orbit.tilt = 0;
-			// The chase camera starts where it belongs, so the switch never sweeps through the city.
-			if (driving && view === 'chase') follow(0, true);
+		},
+		showControls(groups) {
+			touchscreen.show(groups);
 		},
 		setPad(throttle, steer, lift) {
 			pad.throttle = throttle;
@@ -392,8 +487,9 @@ export function createHero(
 			speed = Math.abs(flight.speed);
 			pose();
 			steerCamera(dt);
-			if (view === 'cockpit') ride();
-			else follow(dt, false);
+			travel(dt);
+			follow(dt, false);
+			place();
 			focus[0] = at[0] as number;
 			focus[1] = at[1] as number;
 			focus[2] = at[2] as number;
@@ -408,48 +504,67 @@ export function createHero(
 					pad.steer = 0;
 					pad.lift = 0;
 					pitch = 0;
+					vec3.copy(trail, at);
+					trailYaw = yaw;
 					orbit.turn = 0;
 					orbit.tilt = 0;
 					orbit.distance = CHASE_DISTANCE;
 				}
+				travel(dt);
 				camera.getWorldPosition(eye);
 				camera.getRotation(turn);
 				vec3.transformQuat(ahead, [0, 0, -1], turn);
-				if (view === 'cockpit') {
-					// The car carries the camera in its seat, turned the way the route looks.
-					yaw = Math.atan2(ahead[0], ahead[2]);
-					roll = 0;
+				// The car trails the shot, ahead of it and in the middle of the frame, easing after
+				// it, and turns to its own travel, so a turn of the route banks it.
+				const was = [trail[0] as number, trail[2] as number];
+				vec3.set(
+					goal,
+					(eye[0] as number) + ahead[0] * AHEAD,
+					(eye[1] as number) + ahead[1] * AHEAD - BELOW,
+					(eye[2] as number) + ahead[2] * AHEAD,
+				);
+				for (let k = 0; k < 3; k++)
+					trail[k] = math.damp(trail[k] as number, goal[k] as number, 5.5, dt);
+				const tx = (trail[0] as number) - (was[0] as number);
+				const tz = (trail[2] as number) - (was[1] as number);
+				let banking = 0;
+				if (Math.hypot(tx, tz) > dt * 0.6) {
+					let gap = Math.atan2(tx, tz) - trailYaw;
+					gap = Math.atan2(Math.sin(gap), Math.cos(gap));
+					const next = gap * (1 - Math.exp(-6 * dt));
+					trailYaw += next;
+					banking = math.clamp((-next / Math.max(dt, 1e-3)) * 0.06, -0.4, 0.4);
+				}
+				if (inside <= 0) {
+					vec3.copy(at, trail);
+					yaw = trailYaw;
+					roll = math.damp(roll, banking, 7, dt);
+				} else {
+					// In the seat view the car carries the camera, turned the way the route looks. On
+					// the way in, the car eases back from its trail to meet the camera, which flies
+					// into the seat; on the way out the two part again.
+					const e = inside * inside * (3 - 2 * inside);
+					const routeYaw = Math.atan2(ahead[0], ahead[2]);
+					let gap = routeYaw - trailYaw;
+					gap = Math.atan2(Math.sin(gap), Math.cos(gap));
+					yaw = trailYaw + gap * e;
+					roll = math.damp(roll, banking * (1 - e), 7, dt);
 					quat.fromEuler(spin, 0, yaw, 0, 'YXZ');
 					vec3.set(seat, SEAT[0] * SCALE, SEAT[1] * SCALE, SEAT[2] * SCALE);
 					vec3.transformQuat(seat, seat, spin);
-					vec3.sub(at, eye, seat);
-					vec3.copy(goal, at);
-				} else {
-					// The car keeps its place ahead of the shot, in the middle of the frame, easing
-					// after it.
-					vec3.set(
-						goal,
-						(eye[0] as number) + ahead[0] * AHEAD,
-						(eye[1] as number) + ahead[1] * AHEAD - BELOW,
-						(eye[2] as number) + ahead[2] * AHEAD,
-					);
 					for (let k = 0; k < 3; k++)
-						at[k] = math.damp(at[k] as number, goal[k] as number, 5.5, dt);
-					// The car turns to its own travel, so a turn of the route banks it.
-					const dx = (at[0] as number) - (before[0] as number);
-					const dz = (at[2] as number) - (before[2] as number);
-					if (Math.hypot(dx, dz) > dt * 0.6) {
-						const wanted = Math.atan2(dx, dz);
-						let gap = wanted - yaw;
-						gap = Math.atan2(Math.sin(gap), Math.cos(gap));
-						const next = gap * (1 - Math.exp(-6 * dt));
-						yaw += next;
-						roll = math.damp(
-							roll,
-							math.clamp((-next / Math.max(dt, 1e-3)) * 0.06, -0.4, 0.4),
-							7,
-							dt,
+						at[k] =
+							(trail[k] as number) +
+							((eye[k] as number) - (seat[k] as number) - (trail[k] as number)) * e;
+					if (inside < 1) {
+						pose();
+						vec3.set(
+							goal,
+							(eye[0] as number) + ahead[0] * CHASE.ahead,
+							(eye[1] as number) + ahead[1] * CHASE.ahead,
+							(eye[2] as number) + ahead[2] * CHASE.ahead,
 						);
+						between(inside, eye[0] as number, eye[1] as number, eye[2] as number, goal);
 					}
 				}
 				const dx = (at[0] as number) - (before[0] as number);
@@ -462,6 +577,7 @@ export function createHero(
 			engineLight.setIntensity(130 + Math.sin(t * 17) * 26);
 			// The panels read out the flight at their own rates.
 			cockpit.update(t, speed * 3.6, at[1] as number);
+			touchscreen.update();
 		},
 	};
 }

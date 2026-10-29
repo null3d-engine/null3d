@@ -1,14 +1,14 @@
 // The hero car's own displays, from the screens add-on (M3-B3): the two panels that show the speed
 // and the altitude, and the navigation panel between them. Each panel is a canvas that refreshes at
 // its own rate, and only the rectangles that its reading changed upload. The panels use the LCD
-// look, so their sub-pixels and dead texels show when the camera comes close. They sit on the body,
-// which carries the car's scale: on the rear deck, turned up toward a camera behind the car, or on
-// the dashboard in front of the driver's seat for the view from inside.
+// look, so their sub-pixels and dead texels show when the camera comes close. They stand on the
+// dashboard in front of the driver's seat, inside the cockpit, on the body, which carries the car's
+// scale.
 import type { Object3D, QuatLike, SketchContext } from '@null3d/engine';
 import { createScreen, type Screen } from '../../addons/screens';
 import { EFFECT_LAYER } from '../../lib/layers';
 
-/** The deck panel's canvas in texels, and the rectangles that its reading repaints. */
+/** The reading panel's canvas in texels, and the rectangles that its reading repaints. */
 const DECK = { width: 512, height: 256 };
 const READING = { x: 20, y: 46, width: 466, height: 146 };
 const BAR = { x: 26, y: 208, width: 460, height: 20 };
@@ -18,7 +18,7 @@ const NAV = { width: 256, height: 128 };
 const MAP = { x: 8, y: 26, width: 240, height: 82 };
 const NAV_VALUES = { x: 8, y: 108, width: 240, height: 14 };
 
-/** The deck panel's fixed frame, drawn before the first upload. */
+/** The reading panel's fixed frame, drawn before the first upload. */
 function paintDeckFrame(context: OffscreenCanvasRenderingContext2D, title: string): void {
 	context.fillStyle = '#050b12';
 	context.fillRect(0, 0, DECK.width, DECK.height);
@@ -126,14 +126,14 @@ function paintNavValues(
 	context.fillRect(224, 109, 16, 5);
 }
 
-/** One deck panel, with the call that draws its reading. */
+/** One reading panel, with the call that draws its reading. */
 interface DeckPanel {
 	readonly screen: Screen;
 	/** Draws the whole number when it changes, and sends a mark that a rate held back. */
 	paint(whole: number): void;
 }
 
-/** Makes a deck panel: its frame and first reading, its rate, and its reading's rectangles. */
+/** Makes a reading panel: its frame and first reading, its rate, and its reading's rectangles. */
 function deckPanel(
 	ctx: SketchContext,
 	body: Object3D,
@@ -155,7 +155,8 @@ function deckPanel(
 		},
 	});
 	screen.mesh.setParent(body);
-	screen.mesh.setPosition(x * DECK_PLACE.step, DECK_PLACE.y, DECK_PLACE.z);
+	screen.mesh.setPosition(x * DASH.step, DASH.y, DASH.z);
+	screen.mesh.setScale(DASH.scale, DASH.scale, DASH.scale);
 	screen.mesh.setRotation(tilt[0] ?? 0, tilt[1] ?? 0, tilt[2] ?? 0, tilt[3] ?? 1);
 	screen.mesh.setLayers(EFFECT_LAYER);
 	let shown = 0;
@@ -173,7 +174,7 @@ function deckPanel(
 	};
 }
 
-/** Makes the cockpit's navigation panel, between the two deck panels. */
+/** Makes the cockpit's navigation panel, between the two reading panels. */
 function navPanel(ctx: SketchContext, body: Object3D, tilt: QuatLike): Screen {
 	const screen = createScreen(ctx, {
 		width: NAV.width,
@@ -188,7 +189,8 @@ function navPanel(ctx: SketchContext, body: Object3D, tilt: QuatLike): Screen {
 		},
 	});
 	screen.mesh.setParent(body);
-	screen.mesh.setPosition(0, DECK_PLACE.y, DECK_PLACE.z);
+	screen.mesh.setPosition(0, DASH.y, DASH.z);
+	screen.mesh.setScale(DASH.scale, DASH.scale, DASH.scale);
 	screen.mesh.setRotation(tilt[0] ?? 0, tilt[1] ?? 0, tilt[2] ?? 0, tilt[3] ?? 1);
 	screen.mesh.setLayers(EFFECT_LAYER);
 	return screen;
@@ -198,18 +200,14 @@ function navPanel(ctx: SketchContext, body: Object3D, tilt: QuatLike): Screen {
 export interface Cockpit {
 	/** Draws the flight on each panel at its own rate. Call once per frame with the flight's values. */
 	update(t: number, kmh: number, altitude: number): void;
-	/** Puts the panels on the rear deck, for a view from behind, or on the dashboard, for one inside. */
-	place(inside: boolean): void;
 }
 
 /**
- * Where the panels sit on the dashboard, in the body's own units: the middle panel's place, the
- * step between two panels and the panels' scale. The dashboard sits just below the driver's eye
- * and a little ahead of it, so the three panels fill the lower middle of the view.
+ * Where the panels stand on the dashboard, in the body's own units: the middle panel's place, the
+ * step between two panels and the panels' scale. The dashboard sits below the driver's eye and
+ * ahead of it, so the three panels fill the lower middle of the view from the seat.
  */
-const DASH = { y: 0.8, z: 0.66, step: 0.2, scale: 0.4 };
-/** Where the panels sit on the rear deck: the middle panel's place and the step between two. */
-const DECK_PLACE = { y: 0.99, z: -1.28, step: 0.5 };
+const DASH = { y: 0.82, z: 0.66, step: 0.25, scale: 0.5 };
 
 /**
  * Builds the car's three panels and returns the calls that draw and place them. The body carries
@@ -219,25 +217,8 @@ export function createCockpit(ctx: SketchContext, body: Object3D, tilt: QuatLike
 	const speed = deckPanel(ctx, body, tilt, -1, 'VELOCITY', 'km/h');
 	const flight = deckPanel(ctx, body, tilt, 1, 'FLIGHT 07', 'ALT');
 	const nav = navPanel(ctx, body, tilt);
-	/** The panels from left to right, by their step from the middle. */
-	const row = [
-		[speed.screen.mesh, -1],
-		[nav.mesh, 0],
-		[flight.screen.mesh, 1],
-	] as const;
 	let mapAt = Number.NEGATIVE_INFINITY;
 	return {
-		place(inside) {
-			for (const [mesh, side] of row) {
-				if (inside) {
-					mesh.setPosition(side * DASH.step, DASH.y, DASH.z);
-					mesh.setScale(DASH.scale, DASH.scale, DASH.scale);
-				} else {
-					mesh.setPosition(side * DECK_PLACE.step, DECK_PLACE.y, DECK_PLACE.z);
-					mesh.setScale(1, 1, 1);
-				}
-			}
-		},
 		update(t: number, kmh: number, altitude: number): void {
 			// The navigation panel's map moves at its own rate, and the reading panels at theirs.
 			if (t - mapAt >= 1 / 8) {

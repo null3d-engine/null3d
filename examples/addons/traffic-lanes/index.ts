@@ -271,6 +271,11 @@ export interface VehicleLook {
 	glow?: number;
 	/** The hull's half width, its height and its half length, in meters, for the light areas. */
 	size?: readonly [number, number, number];
+	/**
+	 * The tint of tinted windows: the canopy draws as dark, smooth glass with a faint glow from the
+	 * cabin. Without it the canopy takes the body's paint.
+	 */
+	windows?: ColorInput;
 }
 
 /** How the add-on is called. */
@@ -355,6 +360,8 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 				tail: look.tail ?? '#ff3a12',
 				nose: look.nose ?? '#cfe6ff',
 				skirt: look.skirt ?? '#22c8ff',
+				windows: look.windows ?? '#000000',
+				glass: look.windows === undefined ? 0 : 1,
 			},
 			color: '#20242c',
 			roughness: 0.34,

@@ -56,6 +56,8 @@ export function createTraffic(ctx: SketchContext): TrafficLanes {
 				skirt: '#22c8ff',
 				glow: 2.2,
 				size: [0.96, 1.1, 2.0],
+				// Tinted windows, a deep teal, over each car's lit cabin.
+				windows: '#2a5a70',
 			},
 			layers: EFFECT_LAYER,
 			// Six of the nearest cars carry a real light, so the road around the camera catches them.
