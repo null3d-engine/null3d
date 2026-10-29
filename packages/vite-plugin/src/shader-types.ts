@@ -175,6 +175,11 @@ export interface CompiledMaterial<
 	/** True when the WGSL reads the copy of the scene's depth through `sceneDepth`. */
 	readonly sceneDepth: boolean;
 	/**
+	 * True when the WGSL sets or reads the surface's alpha, so the material has the builds that cut
+	 * its own shape: alpha to coverage, the alpha hash, and a masked shadow caster and motion.
+	 */
+	readonly alpha: boolean;
+	/**
 	 * On the dev server, the key that the plugin sends this WGSL's hot updates under. The engine
 	 * swaps the shader of each material made from it when an update comes.
 	 */

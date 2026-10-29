@@ -170,9 +170,19 @@ pub(crate) fn motion_key(pipeline: DrawKey, masked: bool, sways: bool) -> Option
     let state = faces | state_flags::NO_DEPTH_WRITE | state_flags::DEPTH_OR_EQUAL;
     let deforms = pipeline.permutation & (permutation::SKIN | permutation::MORPH);
     if sways && pipeline.template >= template::CUSTOM_FIRST && deforms == 0 {
+        // A material whose WGSL sets the surface's alpha cuts its motion's holes as its caster
+        // cuts its shadow's, at the cutoff or by the alpha hash.
+        let mask = if masked {
+            pipeline.permutation
+                & (permutation::ALPHA_MASK | permutation::VERTEX_COLOR | permutation::ALPHA_HASH)
+        } else {
+            0
+        };
         return Some(DrawKey {
             template: pipeline.template,
-            permutation: permutation::MOTION | (pipeline.permutation & permutation::ROW_VALUES),
+            permutation: permutation::MOTION
+                | (pipeline.permutation & permutation::ROW_VALUES)
+                | mask,
             vertex_format: pipeline.vertex_format,
             state,
             bias: MOTION_BIAS,
