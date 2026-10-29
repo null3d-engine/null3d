@@ -8,6 +8,11 @@
 // stages that would never draw up, so one stage arrives and the finer ones are never asked for.
 // `?near` starts at that camera and comes close after the loader gave them up: the stages that the
 // camera then needs must arrive, within the wait that this page gives them.
+//
+// `?clusters` loads a model whose tree of cluster patches comes with its first band
+// (sketches/cluster-staged-sketch.ts). It has the same four cameras and limits, and its stages are
+// the tree's bands: the page captures the file's band, waits for the bands to refine the tree
+// until the picture stops changing, and captures it again.
 import { createEngine } from '@null3d/engine';
 import { run, toBase64 } from './lib/result';
 
@@ -18,24 +23,38 @@ declare global {
 	}
 }
 
-/** The model, as the sketch loads it. */
+/** The model of the staged levels, as the sketch loads it. */
 const MODEL = 'assets/models/staged-terrain.glb';
+/** The model of the staged bands, as the sketch loads it. */
+const CLUSTER_MODEL = 'assets/models/cluster-staged-terrain.glb';
 
 /** How long the near page waits for the stages that its close camera brings back. */
 const NEAR_WAIT_MS = 30_000;
 
+/** How long the cluster page waits for its bands to stop refining the picture. */
+const SETTLE_WAIT_MS = 30_000;
+
 /**
- * How many stages the model names, read from its own JSON, so the page knows when every level has
- * arrived.
+ * How many stages the model names, read from its own JSON, so the page knows when every level or
+ * band has arrived: the levels that replace the mesh's triangles and the bands that refine its
+ * tree.
  */
-async function stageCount(url: string): Promise<number> {
+async function stageCount(url: string): Promise<{ levels: number; bands: number }> {
 	const bytes = await (await fetch(url)).arrayBuffer();
 	const length = new DataView(bytes).getUint32(12, true);
 	const json = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes, 20, length))) as {
-		nodes?: { extras?: { NULL3D_stages?: { levels: unknown[] } } }[];
+		nodes?: {
+			extras?: { NULL3D_stages?: { levels?: unknown[]; bands?: unknown[] } };
+		}[];
 	};
-	const node = json.nodes?.find((n) => n.extras?.NULL3D_stages);
-	return node?.extras?.NULL3D_stages?.levels.length ?? 0;
+	let levels = 0;
+	let bands = 0;
+	for (const node of json.nodes ?? []) {
+		const staged = node.extras?.NULL3D_stages;
+		levels += staged?.levels?.length ?? 0;
+		bands += staged?.bands?.length ?? 0;
+	}
+	return { levels, bands };
 }
 
 /**
@@ -58,13 +77,18 @@ run('staged-levels', async () => {
 	const params = new URLSearchParams(location.search);
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
-	const sketch = new URL('./sketches/staged-levels-sketch.ts', import.meta.url);
+	const clusters = params.has('clusters');
+	const sketch = new URL(
+		clusters ? './sketches/cluster-staged-sketch.ts' : './sketches/staged-levels-sketch.ts',
+		import.meta.url,
+	);
 	const far = params.has('far');
 	const near = params.has('near');
 	if (params.has('max')) sketch.search = `?max=${params.get('max')}`;
 	else if (far) sketch.search = '?far=1';
 	else if (near) sketch.search = '?near=1';
-	const expected = await stageCount(MODEL);
+	const counts = await stageCount(clusters ? CLUSTER_MODEL : MODEL);
+	const expected = clusters ? counts.bands : counts.levels;
 	const engine = await createEngine({ canvas, sketch });
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
@@ -128,45 +152,77 @@ run('staged-levels', async () => {
 	const staged = !params.has('max') && expected > 0;
 	const arriving = far ? 1 : expected;
 	let levels = loaded.levels;
-	if (near && staged) {
-		// The first stage arrives at once. The sketch waits out the warm-up that follows it, then
-		// moves the camera close and says so.
-		while (levels < 1) {
-			const next = (await message('levels')) as { levels: number };
-			levels = next.levels;
+	/** Captures frames until two in a row agree and one differs from the coarse picture, or `ms` passes. */
+	const settle = async (ms: number) => {
+		const until = performance.now() + ms;
+		let last = await engine.captureFrame();
+		while (performance.now() < until) {
+			await new Promise((resolve) => setTimeout(resolve, 600));
+			const next = await engine.captureFrame();
+			if (
+				changed(last.pixels, next.pixels).changed < 0.0005 &&
+				changed(coarse.pixels, next.pixels).changed > 0.01
+			)
+				return next;
+			last = next;
 		}
-		await message('near');
-		const until = performance.now() + NEAR_WAIT_MS;
-		while (levels < arriving && performance.now() < until) {
-			const next = (await message('levels', 500)) as { levels: number } | undefined;
-			if (next) levels = next.levels;
+		return last;
+	};
+	let fine = coarse;
+	if (clusters) {
+		// A band of a tree appends to the patches that already draw, so the page cannot count the
+		// bands that arrived. It waits for the picture to stop changing instead: every band that the
+		// close camera draws has then arrived and drawn.
+		if (near && staged) await message('near');
+		if (staged && !far) fine = await settle(SETTLE_WAIT_MS);
+		else {
+			// A band that the camera would wrongly pick is asked for within a frame or two of the
+			// band before it. Wait a few seconds, so the test would see that request. The far and
+			// limited pages draw the same picture before and after the bands that arrive.
+			await new Promise((resolve) => setTimeout(resolve, 5_000));
+			fine = await engine.captureFrame();
 		}
 	} else {
-		while (staged && levels < arriving) {
-			const next = (await message('levels')) as { levels: number };
-			levels = next.levels;
+		if (near && staged) {
+			// The first stage arrives at once. The sketch waits out the warm-up that follows it, then
+			// moves the camera close and says so.
+			while (levels < 1) {
+				const next = (await message('levels')) as { levels: number };
+				levels = next.levels;
+			}
+			await message('near');
+			const until = performance.now() + NEAR_WAIT_MS;
+			while (levels < arriving && performance.now() < until) {
+				const next = (await message('levels', 500)) as { levels: number } | undefined;
+				if (next) levels = next.levels;
+			}
+		} else {
+			while (staged && levels < arriving) {
+				const next = (await message('levels')) as { levels: number };
+				levels = next.levels;
+			}
 		}
-	}
-	if (far) {
-		// A stage that the camera would wrongly pick is asked for within a frame or two of the
-		// first stage's arrival. Wait a few seconds, so the test would see that request.
-		await new Promise((resolve) => setTimeout(resolve, 3_000));
-	}
-	// The thread that draws keeps frames queued ahead of a change, so its capture can answer with the
-	// frame it drew before the stage's upload landed. The picture after the stages is therefore the
-	// first frame that differs from the coarse one: only a frame the renderer drew after the change
-	// can differ, and a page on a slow runner waits as long as the drawing takes.
-	const waitStart = performance.now();
-	let fine = await engine.captureFrame();
-	// The far camera draws the same level before and after the stage that arrives, so its pictures
-	// never differ where the others' must.
-	while (staged && !far && changed(coarse.pixels, fine.pixels).changed === 0) {
-		if (performance.now() - waitStart > 10_000)
-			throw new Error(
-				'no frame drawn after the stages arrived differs from the picture before them',
-			);
-		await new Promise((resolve) => requestAnimationFrame(resolve));
+		if (far) {
+			// A stage that the camera would wrongly pick is asked for within a frame or two of the
+			// first stage's arrival. Wait a few seconds, so the test would see that request.
+			await new Promise((resolve) => setTimeout(resolve, 3_000));
+		}
+		// The thread that draws keeps frames queued ahead of a change, so its capture can answer with
+		// the frame it drew before the stage's upload landed. The picture after the stages is the
+		// first frame that differs from the coarse one: only a frame the renderer drew after the
+		// change can differ, and a page on a slow runner waits as long as the drawing takes.
+		const waitStart = performance.now();
 		fine = await engine.captureFrame();
+		// The far camera draws the same level before and after the stage that arrives, so its
+		// pictures never differ where the others' must.
+		while (staged && !far && changed(coarse.pixels, fine.pixels).changed === 0) {
+			if (performance.now() - waitStart > 10_000)
+				throw new Error(
+					'no frame drawn after the stages arrived differs from the picture before them',
+				);
+			await new Promise((resolve) => requestAnimationFrame(resolve));
+			fine = await engine.captureFrame();
+		}
 	}
 	const picture = changed(coarse.pixels, fine.pixels);
 	await engine.destroy();
