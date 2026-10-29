@@ -105,7 +105,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-F2':
 		"the cloud that arrives as 100,000 splats used to become one chunk and could not stream; `chunks.ts` now cuts it into up to eight, which landed in `dcbacc193`. The streaming test's last recorded CI failure predates that change and no pass has been recorded since, so the fix is in the tree and unproved",
 	'M3-E4':
-		"whether the approved hook table stands against hard rule 8 is the owner's to decide, and the tick waits on that",
+		'the owner ruled that the combined hook stands as approved, so the table answers hard rule 8 in its own favour; what is left is the proof run with the depth input removed',
 	'M3-V6':
 		'the same placement is shown on two Android phones in Chrome and on an iPad in Safari 26.6.1, so a second JavaScript engine has placed the same points (`.dev/tested-devices/ipad-pro-13-safari/20261027-000756-vegetation-scatter.md`, two passed, both paths); the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
 	'M3-V5':
