@@ -1,7 +1,7 @@
 // The ground's material: the engine's standard material with a surface function that blends up to
 // four tiled color maps by a splat map. The layer maps are fixed when the material is made, and a
 // layer that the caller leaves out reads white with no weight, so a ground may use one to four.
-import type { Material, SketchContext, Texture } from '@null3d/engine';
+import type { Material, ShaderValues, SketchContext, Texture } from '@null3d/engine';
 import terrainShader from './terrain.wgsl';
 
 /**
@@ -45,12 +45,20 @@ export interface SplatMaterialOptions {
 	 * lights from the mesh's own vertex normals.
 	 */
 	normals?: Texture;
+	/**
+	 * The selection's scale: the screen's pixels per world meter of a block's cell, at which its
+	 * error fills the threshold. The morph reads it to find each block's split distances. 0 turns
+	 * the morph off.
+	 */
+	scale: number;
+	/** The faces along each side of a block's grid, which turn the block's size into a cell. */
+	quads: number;
 }
 
 /** A ground material, with the texture that the function made for a missing layer. */
 export interface SplatMaterial {
 	/** The material to give every block of the ground. */
-	material: Material;
+	material: Material<ShaderValues<typeof terrainShader>>;
 	/** The white texel for a layer that the caller left out, which the caller destroys with the ground. */
 	white: Texture | undefined;
 }
@@ -148,6 +156,7 @@ export function splatMaterial(
 			ground,
 			layerContrast: contrast,
 			layerAlpha: alpha,
+			selection: [options.scale, options.quads],
 		},
 		roughness: 1,
 		doubleSided: true,

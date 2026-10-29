@@ -6,6 +6,8 @@ import { createTerrain, type TerrainOptions } from './terrain';
 interface FakeMesh {
 	side: number;
 	destroyed: boolean;
+	/** The four-number vertex record that the mesh was made with. */
+	targets?: Float32Array;
 	destroy(): void;
 	updateVertices(name: string, values: Float32Array): void;
 }
@@ -36,17 +38,25 @@ function sideOf(positions: Float32Array): number {
 /** A sketch context with just what a terrain calls, which logs every block it makes. */
 function fakeContext() {
 	const blocks: FakeBlock[] = [];
+	const selections: { selection: [number, number] }[] = [];
 	const texture = () => ({ destroy: () => {} }) as unknown as Texture;
 	const context = {
 		textures: { fromData: texture },
-		materials: { shader: () => ({ destroy: () => {} }) },
+		materials: {
+			shader: () => ({
+				destroy: () => {},
+				set: (values: { selection: [number, number] }) => {
+					selections.push({ selection: [values.selection[0], values.selection[1]] });
+				},
+			}),
+		},
 		// The ground picks blocks from the drawing buffer's height and the preset's detail.
 		engine: { viewport: { width: 1920, height: 1080, pixelRatio: 1 } },
 		quality: { settings: { lodThreshold: 1, maxRenderScale: 1 } },
 		geometry: {
 			// The ground writes a block's vertices into whichever mesh it holds, so the mesh's side
 			// follows the ground it now carries.
-			fromArrays: (arrays: { positions: Float32Array }) => {
+			fromArrays: (arrays: { positions: Float32Array; targets?: Float32Array }) => {
 				const kept = arrays.positions.slice();
 				const mesh: FakeMesh = {
 					side: sideOf(arrays.positions),
@@ -56,8 +66,10 @@ function fakeContext() {
 					},
 					updateVertices(name: string, values: Float32Array) {
 						if (name === 'positions') this.side = sideOf(values);
+						if (name === 'targets') this.targets = values.slice();
 					},
 				};
+				if (arrays.targets) mesh.targets = arrays.targets.slice();
 				(mesh as FakeMesh & { positions: Float32Array }).positions = kept;
 				return mesh;
 			},
@@ -93,7 +105,7 @@ function fakeContext() {
 	} as unknown as SketchContext;
 	const visible = () => blocks.filter((b) => b.visible && !b.destroyed);
 	const area = () => visible().reduce((sum, b) => sum + b.mesh.side * b.mesh.side, 0);
-	return { context, blocks, visible, area };
+	return { context, blocks, selections, visible, area };
 }
 
 const SIZE = 1024;
@@ -313,6 +325,55 @@ describe('terrain block spheres', () => {
 		// selection covers more than one level.
 		expect(levelRadii.size).toBeGreaterThan(1);
 		for (const level of levelRadii.values()) expect(level.blocks).toBeGreaterThan(1);
+	});
+
+	test('writes each block its parent surface and its height box for the morph', () => {
+		const t = terrain();
+		settle(t, 10, 10);
+		const morphed = t.visible();
+		expect(morphed.length).toBeGreaterThan(1);
+		const sizes = new Set<number>();
+		for (const block of morphed) {
+			const record = block.mesh.targets as Float32Array;
+			const vertices = block.positions.length / 3;
+			expect(record.length).toBe(vertices * 4);
+			// The size, the low and the high are the same at every vertex of a block.
+			const size = record[1] as number;
+			const low = record[2] as number;
+			const high = record[3] as number;
+			expect(size).toBeGreaterThan(0);
+			expect(low).toBeLessThanOrEqual(high);
+			sizes.add(size);
+			for (let v = 0; v < vertices; v++) {
+				expect(record[v * 4 + 1]).toBe(size);
+				expect(record[v * 4 + 2]).toBe(low);
+				expect(record[v * 4 + 3]).toBe(high);
+				expect(Number.isFinite(record[v * 4] as number)).toBe(true);
+			}
+		}
+		// The selection holds more than one level, so the blocks differ in size.
+		expect(sizes.size).toBeGreaterThan(1);
+	});
+
+	test('moves the selection scale with setMorph', () => {
+		const t = terrain();
+		settle(t, 10, 10);
+		const before = (t.selections.at(-1) as { selection: [number, number] }).selection[0];
+		expect(before).toBeGreaterThan(0);
+		t.ground.setMorph(false);
+		expect((t.selections.at(-1) as { selection: [number, number] }).selection[0]).toBe(0);
+		t.ground.setMorph(true);
+		expect((t.selections.at(-1) as { selection: [number, number] }).selection[0]).toBeCloseTo(
+			before,
+			9,
+		);
+	});
+
+	test('writes the record with the morph off too, which moves nothing', () => {
+		const t = terrain({ morph: false });
+		settle(t, 10, 10);
+		for (const block of t.visible())
+			expect((block.mesh.targets as Float32Array).length).toBe((block.positions.length / 3) * 4);
 	});
 
 	test('a cell crossing gives no block that already draws new bounds', () => {

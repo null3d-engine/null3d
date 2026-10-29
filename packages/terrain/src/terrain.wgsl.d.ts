@@ -9,6 +9,7 @@ declare const shader: CompiledMaterial<
 		readonly ground: 'vec4f';
 		readonly layerContrast: 'vec4f';
 		readonly layerAlpha: 'vec4f';
+		readonly selection: 'vec2f';
 	},
 	'splatMap' | 'layerZero' | 'layerOne' | 'layerTwo' | 'layerThree' | 'normalMap'
 >;
