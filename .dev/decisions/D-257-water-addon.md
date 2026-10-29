@@ -118,6 +118,14 @@ pass on the S25, halved on the presets whose cadence draws every other frame: 1.
 Medium and 3.4 ms on High and Ultra. These figures come from D-120, not from a run of the add-on.
 The budget's `min` is 0.25, so the governor stops at every 16th frame.
 
+The owner accepted that last step as the cap, on these figures. With the cadence forced to every 16th
+frame on every preset, the water changed on a beat of about 135 to 140 ms. That page drew at 115 to
+120 frames a second, so on a 60 Hz screen the beat is about 0.27 s. The reflections visibly jerked.
+The step stays because four doublings separate it from the preset's cadence. It therefore appears
+under sustained pressure rather than in passing, and a scene that never reaches it never pays for
+it. The alternative was to stop the ladder at 8 and let the render scale take the remaining steps.
+The owner was offered it and did not take it: it trades a softer image for steadier reflections.
+
 The stats overlay gives the feature a row named `water`, which shows its cadence and its budget:
 `water  gpu not measured  reflectionEvery 2  budget 1.7 of 1.7 ms`. The engine measures no GPU scope
 for the feature, because the water records through the reflection pass kind, and the add-on owns no
