@@ -859,6 +859,9 @@ describe('the checks plan', () => {
 				expanded: 'true',
 				offset: [0, 0],
 				pointerEvents: 'none',
+				tabs: ['Frame', 'Memory', 'Steps', 'Systems'],
+				tab: 'Frame',
+				card: { width: 360, height: 396 },
 			},
 			figures: {
 				frames: 30,
