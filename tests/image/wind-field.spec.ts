@@ -89,7 +89,9 @@ test('wind-field: a gust moves the cards, and a frozen field does not', async ({
 		// and hold the camera, so the air alone can account for the difference. The moving pair must
 		// change far more than the frozen pair, so a field that stopped between the two times fails
 		// here even if some pixels changed for another reason.
-		expect.soft(moved, `${run.id}: the gust moves the cards`).toBeGreaterThan(0.05);
+		// The three paths measure 0.05618, 0.05585 and 0.05102 of the channels changed on this Mac's
+		// software GPU, against 0 on the frozen pair, so the floor sits under half of the smallest.
+		expect.soft(moved, `${run.id}: the gust moves the cards`).toBeGreaterThan(0.02);
 		expect.soft(frozen, `${run.id}: a frozen field leaves the cards`).toBeLessThan(0.005);
 		expect
 			.soft(moved, `${run.id}: the gust moves far more than a frozen field`)

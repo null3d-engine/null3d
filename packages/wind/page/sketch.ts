@@ -323,7 +323,9 @@ export default defineSketch((ctx: SketchContext) => {
 			camera.lookAt(0, 1.2, 0);
 			if (CAPTURE !== null && !captured && time.now >= Number(CAPTURE)) {
 				captured = true;
-				ctx.page.post('capture');
+				// A device that keeps no grid turns the air out from the steady field, which has no
+				// pushes, so the page says which of the two pictures it drew.
+				ctx.page.post('capture', { grid: wind.field.size });
 			}
 		},
 	};
