@@ -327,7 +327,9 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 				},
 			},
 			budget: { presets: REFLECT_MS, min: 0.25 },
-			memory: () => meshBytes + mirror.bytes + (ownFoam ? foamMap.bytes : 0),
+			// The reflection target is the render graph's, so the figure counts the arrays and the
+			// foam texture that the add-on made.
+			memory: () => meshBytes + (ownFoam ? foamMap.bytes : 0),
 			quality: (_preset, _settings, own) => {
 				every = own.settings.reflectionEvery as number;
 			},
