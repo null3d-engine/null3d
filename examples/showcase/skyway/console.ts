@@ -84,6 +84,21 @@ export function createConsole(
 
 	let shown: readonly HudGroup[] = [];
 	let tab = 0;
+	/** What the console shows now, as text: it draws again only when this changes. */
+	let drawn = '';
+
+	/**
+	 * What the console would show for `groups`: the tabs, the open tab, its hour to the minute and
+	 * which of its buttons are lit. The model comes several times a second while Auto runs, and
+	 * most of those change nothing that the console shows.
+	 */
+	const sightOf = (groups: readonly HudGroup[]): string => {
+		const open = groups[tab];
+		const hour = open?.slider ? Math.floor(open.slider.value * 60) : -1;
+		const lit = (buttons: readonly HudButton[] | undefined) =>
+			(buttons ?? []).map((button) => `${button.label}${button.active ? '+' : '-'}`).join();
+		return `${tab}|${groups.map((group) => group.title).join()}|${hour}|${lit(open?.buttons)}|${lit(open?.extras)}`;
+	};
 	const targets: Target[] = [];
 
 	/** Draws a rounded box, filled or outlined. */
@@ -219,6 +234,7 @@ export function createConsole(
 				continue;
 			if (target.tab >= 0) {
 				tab = target.tab;
+				drawn = sightOf(shown);
 				draw();
 			} else if (target.min !== undefined && target.max !== undefined) {
 				const share = Math.min(1, Math.max(0, (point.x - target.x) / target.width));
@@ -233,6 +249,9 @@ export function createConsole(
 		show(groups) {
 			shown = groups;
 			tab = Math.min(tab, Math.max(0, groups.length - 1));
+			const sight = sightOf(groups);
+			if (sight === drawn) return;
+			drawn = sight;
 			draw();
 		},
 		update() {
