@@ -27,7 +27,7 @@ import {
 	widthStep,
 } from './overlay-look';
 import { type FrameStats, FrameStatsWindow, STATS_WINDOW_MS } from './stats';
-import { statsText } from './stats-text';
+import { featureFacts, featureLine, statsText } from './stats-text';
 
 /** The threads of a pipelined engine with two job workers, as `engine.measure` names them. */
 const THREADS: [string, number[]][] = [
@@ -230,6 +230,40 @@ type FrameStatsThreads = [
 
 /** The page's own figures where the browser gives none. */
 const NO_PAGE_FIGURES: PageFigures = { jsHeapBytes: null, page: null };
+
+describe('a feature’s labelled figures', () => {
+	const feature = (over: Partial<FeatureStats> = {}): FeatureStats => ({
+		name: 'test-glow',
+		gpuMs: 0.5,
+		settings: { samples: 22, budget: 1 },
+		scope: [],
+		budgetMs: 4,
+		allowedMs: 2,
+		bytes: 1024 * 1024,
+		...over,
+	});
+
+	it('gives each setting its own cell, even where a setting shares a reserved name', () => {
+		const facts = featureFacts(feature());
+		expect(facts.map((fact) => fact.label)).toEqual(['samples', 'budget', 'budget', 'memory']);
+		expect(new Set(facts.map((fact) => fact.key)).size).toBe(4);
+		expect(facts.map((fact) => fact.value)).toEqual(['22', '1', '2.0 of 4.0 ms', '1.0 MiB']);
+	});
+
+	it('leaves out the figures that the feature does not report', () => {
+		const facts = featureFacts(
+			feature({ settings: {}, budgetMs: null, allowedMs: null, bytes: null }),
+		);
+		expect(facts).toEqual([]);
+	});
+
+	it('writes the same figures as one line for the text form', () => {
+		expect(featureLine(feature())).toBe(
+			'test-glow  gpu 0.50 ms  samples 22 · budget 1 · budget 2.0 of 4.0 ms · memory 1.0 MiB',
+		);
+		expect(featureLine(feature({ gpuMs: null }))).toContain('gpu not measured');
+	});
+});
 
 describe('the overlay’s figures of a feature’s GPU scope', () => {
 	/** A window's figures with two GPU steps: the camera's opaque pass and a sketch pass. */

@@ -241,17 +241,31 @@ export function featureGpu(feature: FeatureStats): string {
 	return feature.gpuMs === null ? 'gpu not measured' : `gpu ${ms(feature.gpuMs)}`;
 }
 
+/** One labelled figure that a feature reports. */
+export interface FeatureFact {
+	/** Names the cell, so a setting called `budget` keeps a cell of its own beside the budget's. */
+	readonly key: string;
+	/** The words above the value. */
+	readonly label: string;
+	readonly value: string;
+}
+
 /**
  * One feature's labelled figures: each of its settings by name, its budget and the memory that it
  * reports, in reading order.
  */
-export function featureFacts(feature: FeatureStats): [label: string, value: string][] {
-	const facts: [string, string][] = [];
+export function featureFacts(feature: FeatureStats): FeatureFact[] {
+	const facts: FeatureFact[] = [];
 	for (const name of Object.keys(feature.settings))
-		facts.push([name, String(feature.settings[name])]);
+		facts.push({ key: `setting:${name}`, label: name, value: String(feature.settings[name]) });
 	if (feature.allowedMs !== null && feature.budgetMs !== null)
-		facts.push(['budget', `${feature.allowedMs.toFixed(1)} of ${feature.budgetMs.toFixed(1)} ms`]);
-	if (feature.bytes !== null) facts.push(['memory', mib(feature.bytes)]);
+		facts.push({
+			key: 'budget',
+			label: 'budget',
+			value: `${feature.allowedMs.toFixed(1)} of ${feature.budgetMs.toFixed(1)} ms`,
+		});
+	if (feature.bytes !== null)
+		facts.push({ key: 'memory', label: 'memory', value: mib(feature.bytes) });
 	return facts;
 }
 
@@ -260,7 +274,7 @@ export function featureFacts(feature: FeatureStats): [label: string, value: stri
  */
 export function featureDetails(feature: FeatureStats): string {
 	return featureFacts(feature)
-		.map(([label, value]) => `${label} ${value}`)
+		.map(({ label, value }) => `${label} ${value}`)
 		.join(' · ');
 }
 
