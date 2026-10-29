@@ -1,9 +1,8 @@
 // Impostors and merged far geometry: a pine forest on rolling hills at golden hour, drawn three
 // ways by distance. The nearest trees are level-of-detail meshes in one instance batch. The middle
 // band is the same pine at its coarsest level, merged into one mesh per grid cell, so a whole cell
-// draws in one call. The far band is one batch of impostor cards, baked from the pine's own mesh,
-// and the far trees hand over from their meshes to their cards through a shared distance band.
-// Press L to draw the far band as detail meshes instead, and compare the stats.
+// draws in one call. The far band is one batch of impostor cards baked from the pine's own mesh,
+// handing over from meshes to cards through a shared band. Press L for detail meshes instead.
 import { defineSketch, timeOfDay } from '@null3d/engine';
 import { createImpostors, farCellGroups, mergeFarGeometry } from '@null3d/impostors';
 import { handOverToCards } from '@null3d/vegetation';
@@ -65,9 +64,7 @@ export default defineSketch(async (ctx) => {
 		receiveShadows: true,
 	});
 	fillTrees(pines, near);
-	// The near band hands over to the merged cells the same way the cards take over from the detail
-	// meshes: the two ranges overlap by `BAND_OVERLAP` and each fades through the other's edge, so no
-	// line shows where one stops and the other starts.
+	// The near band and the merged cells overlap by one band, each fading through the other's edge.
 	pines.setDrawRange(0, NEAR_EDGE + BAND_OVERLAP);
 
 	// The middle band: the coarsest level of the same pine, merged into one mesh per grid cell.
@@ -75,12 +72,8 @@ export default defineSketch(async (ctx) => {
 	const centers = middle.map((tree) => [tree.x, tree.y, tree.z] as const);
 	for (const group of farCellGroups(centers, CELL)) {
 		const parts = group.map((k) => ({ arrays: coarsest, transform: place(middle[k] as Tree) }));
-		scene
-			.createMesh({
-				mesh: geometry.fromArrays({ ...mergeFarGeometry(parts), computeNormals: true }),
-				material: wood,
-			})
-			.setDrawRange(NEAR_EDGE - BAND_OVERLAP, CARD_EDGE);
+		const mesh = geometry.fromArrays({ ...mergeFarGeometry(parts), computeNormals: true });
+		scene.createMesh({ mesh, material: wood }).setDrawRange(NEAR_EDGE - BAND_OVERLAP, CARD_EDGE);
 	}
 
 	// The far band: one batch of cards. Each blends the three atlas views nearest the camera and is
@@ -126,10 +119,9 @@ export default defineSketch(async (ctx) => {
 	const SWITCH = CARD_EDGE + 60;
 	handOverToCards(detail, cards.batch, SWITCH);
 	let cardsOn = true;
-	// T sweeps the sun across the sky, so the cards' light follows the meshes' light: the bake holds
-	// no sun at all.
-	let sweeping = false;
-	let hour = 0.35;
+	// T sweeps the sun, and the cards' light follows it: the bake holds no sun at all.
+	let sweeping = false,
+		hour = 0.35;
 
 	return {
 		onUpdate(dt) {
