@@ -142,6 +142,17 @@ two, which waits on M3-V13; V13 has since landed, and it is its own task.
 - **The sampling file ships.** `shaders/field.wgsl` is in the package's `files` and in the pack
   check's required list, so a reader copies it from the installed package. The page's material and
   the docs page carry copies, and one test keeps every copy equal.
+- **The gust had no slot of its own.** The audit said that the page's gust was dropped from the
+  ring by the body's fourth push. The add-on's own CPU field agreed: with four shared slots, the
+  sent gust moved no card between the held times. The gust has a slot of its own now, after the
+  three push slots. The same simulation moves 35 more cards between the holds than the page
+  without the gust does.
+- **The noise hash made objects.** The wind's allocation run showed the hash that the field's noise
+  reads at 196 bytes a frame, against a budget of 4. Read as an unsigned 32-bit number, about half
+  of its values pass 2147483647. That is the largest whole number that Chrome keeps in the value
+  itself, so it made an object of each. The same 32 bits read as signed are the same hash. The top
+  24 bits that the noise reads come out the same, so each step wraps with `| 0`. A test holds 2,000
+  hashes inside the range. The reference test still matches the engine's integer hash.
 - **The namespace part still waits.** D-224's addendum says the shader build resolves only the
   engine's `null3d::` prefix. No add-on can import another add-on's WGSL module yet. The plan's
   RedGPU study line therefore accepts the copies for this task. It gives the add-on's own namespace
