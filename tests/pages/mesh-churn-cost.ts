@@ -1,10 +1,11 @@
-// Measures what a frame costs when a model's mesh leaves the scene, and when one arrives, on this
-// computer's GPU: the models of tests/pages/sketches/mesh-churn-cost-sketch.ts fill the view, and
-// the page measures an idle window, a window that removes one model a frame, and a window that
-// adds one a frame, in turns, three times each. A removal that closes a hole in its mesh page moves
-// every mesh after it in that page, which the GPU uploads again, so the render worker's CPU time
-// and the frame's upload bytes show the cost. It prints its figures for D-247.
-// Open it with ?gpu= for each path, and read it with mesh-churn-cost.spec.ts.
+// Measures what one frame of steady mesh churn costs on this computer's GPU: the 240 models of
+// tests/pages/sketches/mesh-churn-cost-sketch.ts fill the view, and the page measures a window that
+// changes nothing, a window that replaces the oldest model each frame, and a window that replaces
+// the newest one, in turns, three times each. A removal that closes a hole in its mesh page moves
+// every mesh after it in that page, which the GPU uploads again; a removal that cuts the page's end
+// moves nothing. An offset allocator frees a range where it lies, so the second window is the frame
+// that its removal would cost. It prints its figures for D-247. Open it with ?gpu= for each path,
+// and read it with mesh-churn-cost.spec.ts.
 import { createEngine, type FrameMetrics } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -17,7 +18,7 @@ interface Side {
 	frames: number;
 	intervalMs: number;
 	renderWorkerMs: number;
-	/** The sketch worker's own code: where a removal or an addition runs. */
+	/** The sketch worker's own code: where a removal and an addition run. */
 	sketchMs: number | null;
 	uploadBytes: number;
 	gpuMs: number | null;
@@ -51,19 +52,18 @@ run('mesh-churn-cost', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
-	const phase = async (name: 'idle' | 'destroy' | 'create') => {
+	const phase = async (name: 'idle' | 'repack' | 'tail') => {
 		engine.postToSketch(name, null);
 		return side(await engine.measure(WINDOW));
 	};
 	const idle: Side[] = [];
-	const destroy: Side[] = [];
-	const create: Side[] = [];
+	const repack: Side[] = [];
+	const tail: Side[] = [];
 	for (let trial = 0; trial < TRIALS; trial++) {
-		// A window that changes nothing, so the churn's extra time shows against it.
+		// A window that changes nothing, so each churn's extra time shows against it.
 		idle.push(await phase('idle'));
-		destroy.push(await phase('destroy'));
-		create.push(await phase('create'));
-		// The next trial measures an idle window again once the models are back.
+		repack.push(await phase('repack'));
+		tail.push(await phase('tail'));
 	}
 	engine.postToSketch('idle', null);
 	const mode = engine.mode;
@@ -76,8 +76,8 @@ run('mesh-churn-cost', async () => {
 		models: 240,
 		trialSeconds: WINDOW,
 		idle,
-		destroy,
-		create,
+		repack,
+		tail,
 		failures,
 	};
 });

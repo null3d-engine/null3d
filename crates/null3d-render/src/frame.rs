@@ -432,6 +432,20 @@ pub trait FrameBuilder {
         self.settings_mut().patches_mut().set(mesh, tree);
         Ok(())
     }
+    /// Appends one band, whose runs start at the band's own first index, to the tree of `mesh`, or
+    /// answers `None` for a mesh without a tree.
+    fn append_mesh_patches(
+        &mut self,
+        mesh: u32,
+        bounds: &[[f32; 4]],
+        records: &[[u32; 4]],
+        indices: &[u32],
+        vertices: u32,
+    ) -> Option<Result<(), crate::patches::PatchError>> {
+        self.settings_mut()
+            .patches_mut()
+            .append(mesh, bounds, records, indices, vertices)
+    }
     /// True when point or spot lights cast shadows into the shadow atlas in the frame recorded
     /// last.
     fn casts_tile_shadows(&self) -> bool {
@@ -1061,6 +1075,8 @@ pub struct SceneSettings {
     /// The frames that temporal anti-aliasing has resolved since it turned on, which keep its
     /// history out of the frame until both halves hold a frame.
     taa_frames: u32,
+    /// The exposure that the last frame that temporal anti-aliasing drew resolved at.
+    taa_exposure: f32,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
     /// The built-in grading table's texture while the sketch sets grading values. A job worker
@@ -1247,6 +1263,7 @@ impl SceneSettings {
             taa_last: None,
             taa_jitter: [0.0; 2],
             taa_frames: 0,
+            taa_exposure: 1.0,
             lut: None,
             grade: None,
             vignette: None,
@@ -1924,6 +1941,7 @@ impl SceneSettings {
             self.taa_last = None;
             self.taa_jitter = [0.0; 2];
             self.taa_frames = 0;
+            self.taa_exposure = 1.0;
         }
         self.taa = taa;
     }
@@ -1943,6 +1961,7 @@ impl SceneSettings {
             self.taa_last = None;
             self.taa_jitter = [0.0; 2];
             self.taa_frames = 0;
+            self.taa_exposure = 1.0;
             return None;
         };
         let view = self.views.first()?;
@@ -1964,6 +1983,16 @@ impl SceneSettings {
         // either is trusted.
         let reset = previous.is_none() || self.taa_frames < 2;
         self.taa_frames = self.taa_frames.saturating_add(1);
+        // The history holds the colors that the frame before wrote, under the exposure it drew
+        // with. A frame that changes the exposure scales the history into its own before blending.
+        let exposure = self.drawn_output().exposure;
+        let last_exposure = std::mem::replace(&mut self.taa_exposure, exposure);
+        let exposure_ratio =
+            if reset || !settings.exposure || last_exposure <= 0.0 || exposure <= 0.0 {
+                1.0
+            } else {
+                exposure / last_exposure
+            };
         let mut identity = [0.0; 16];
         for k in 0..4 {
             identity[k * 5] = 1.0;
@@ -1988,6 +2017,7 @@ impl SceneSettings {
             reproject: previous
                 .and_then(|last| taa::reprojection(&camera.view_proj, at, &last))
                 .unwrap_or(identity),
+            exposure_ratio,
             reset,
             parity: (self.clock[2].to_bits() & 1) as u8,
         })
@@ -2390,6 +2420,32 @@ impl SceneSettings {
     /// mesh itself. 0 for a mesh that no loader watches.
     pub fn stage_level_picks(&self, mesh: u32) -> u32 {
         self.stage_watches.picks(mesh)
+    }
+
+    /// The bands of `mesh`'s tree of cluster patches that a view drew since its watch began, one
+    /// bit each, bit 0 for the band that the file holds. 0 for a mesh that no loader watches.
+    pub fn stage_band_picks(&self, mesh: u32) -> u32 {
+        self.stage_watches.bands(mesh)
+    }
+
+    /// Notes the bands of each watched mesh's tree that the camera's view drew this frame, so a
+    /// loader holds a band until the band above it drew. A frame with no loader waiting pays
+    /// nothing.
+    pub(crate) fn note_stage_bands(
+        &mut self,
+        scene: &null3d_core::scene::SceneStorage,
+        parity: usize,
+        view: &crate::patches::BandView<'_>,
+        draws_tree: impl Fn(u32) -> bool,
+    ) {
+        crate::patches::note_stage_bands(
+            scene,
+            parity,
+            view,
+            &self.patches,
+            &mut self.stage_watches,
+            draws_tree,
+        );
     }
 
     /// Stops watching the levels that the views pick for `mesh`, so the frames that follow pay

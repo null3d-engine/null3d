@@ -1,8 +1,10 @@
 # D-213: Cluster levels in the asset tool and their file
 
-Status: decided. Built: the asset tool's tree, its file, and the WebGPU pass that draws the patches. Not built: the tree's cut into whole levels and the WebGL2 routes, which [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md) decides. Task: M3-L3.
+Status: decided and built. Built: the asset tool's tree, its file, the tree's cut into whole
+levels, and the paths that draw the tree on WebGPU and on WebGL2. [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)
+holds the WebGL2 routes. Task: M3-L3.
 
-Summary: A large static mesh becomes a tree of patches of about 128 triangles, which the asset tool builds and stores in `NULL3D_clusters`. The tool builds the tree in its own code with meshoptimizer's simplifier, not with `clusterlod.h` compiled to WebAssembly, because the tool runs in Node and has no C toolchain. Every patch's indices name the mesh's own vertices. A sphere of 32,768 triangles builds a tree of just over 500 patches that holds about 1.5 times its triangles.
+Summary: A large static mesh becomes a tree of patches of about 128 triangles, which the asset tool builds and stores in `NULL3D_clusters`. The tool builds the tree in its own code with meshoptimizer's simplifier, not with `clusterlod.h` compiled to WebAssembly, because the tool runs in Node and has no C toolchain. Every patch's indices name the mesh's own vertices. A sphere of 32,768 triangles builds a tree of just over 500 patches that holds about 1.5 times its triangles. The same build cuts the tree into whole levels, which a viewer that draws no patches draws.
 
 ## Question
 
@@ -36,12 +38,13 @@ How the data was produced: `bun test packages/cli/src/assets/clusters.test.ts` a
 2. A patch's error is the largest of its children's errors plus the error of its own simplification, and at least 1.5 times the largest. Errors therefore rise strictly along every chain, which the draw rule needs. A step above the root that cannot lose a triangle ends the chain, so a patch never repeats its child's triangles.
 3. The tree is stored in `NULL3D_clusters` on the primitive, in three accessors: the indices of every patch one after another, four floats of each patch's sphere, and four integers of each patch's run, its parent and its error. The extension is not required, so other loaders draw the whole mesh.
 4. A mesh gets a tree when it has 20,000 triangles or more, no skin and no morph targets, a material that neither blends nor masks, and at most four copies. A mesh that bends has no fixed patch bounds, and many copies pay about twice their indices for no saving, so those meshes keep whole levels.
-5. The engine stores the tree against the mesh's id and checks it against the mesh's vertices. The WebGPU path draws the chosen patches ([Drawing on WebGPU](#drawing-on-webgpu)), and every other path draws the whole mesh. [D-231](D-231-cluster-levels-cost.md) records what the pass costs.
+5. The engine stores the tree against the mesh's id and checks it against the mesh's vertices. The WebGPU path draws the chosen patches ([Drawing on WebGPU](#drawing-on-webgpu)), and the WebGL2 path draws them on the job workers where the device has `WEBGL_multi_draw`. Every other path draws the whole levels cut from the tree ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)). [D-231](D-231-cluster-levels-cost.md) records what the pass costs.
 
 ## Consequences
 
-- `--clusters` adds about twice a mesh's indices to its file, so a page that does not draw patches pays that size.
-- Whole levels stay in the file as well, so WebGL2 and other viewers keep their fallback. The plan cuts the same tree into whole levels, in place of the separate simplification pass for these meshes. That cut is not built, so `--lod` makes a mesh's whole levels separately.
+- `--clusters` adds about twice a mesh's indices to its file, and the whole levels that the tree
+  cuts into add their own indices, so a page that draws no patches pays that size.
+- Whole levels stay in the file as well, so WebGL2 and other viewers keep their fallback. The build cuts the same tree into whole levels, in place of the separate simplification pass for these meshes. The levels share the mesh's vertices and the tool orders them coarsest level first, as it does for a mesh without a tree.
 - The build needs no `partitionClusters`, so the tool keeps the meshoptimizer version that the engine pins.
 
 ## Drawing on WebGPU
@@ -106,14 +109,16 @@ it per frame, as M3-L2 sizes the copy lists, is the trim it owes.
 paths and each quality preset, and prints the figures. [D-231](D-231-cluster-levels-cost.md) holds
 them.
 
-### What is not built
+### What is not drawn from the tree
 
-- The WebGL2 multi-draw path and Firefox's whole-level fallback draw the whole triangle list. The
-  tree's cut into whole levels, which the Consequences above name, is also not built; `--lod` makes
-  a mesh's whole levels separately. [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)
-  decides what a WebGL2 page draws and what each route still needs.
 - The direct-draw path, which a WebGPU device takes when its start-up probe measures it faster,
-  records no cluster pass, so a cluster mesh draws whole there too. The image tests force the
-  indirect path with `?direct=off`, and so does the cost page, because the probe's choice moves
+  records no cluster pass, so a cluster mesh draws its whole levels there. The image tests force
+  the indirect path with `?direct=off`, and so does the cost page, because the probe's choice moves
   with the machine and with it the picture.
-- The shadow maps draw a cluster mesh whole on both paths, as the concept page says.
+- The shadow maps draw a cluster mesh's whole levels on both paths, as the concept page says.
+  The plan asks for a cut per cascade or tile view, with `lodShadowFactor` on the threshold. That
+  cut is not built, so the deviation is for the owner to accept
+  ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)).
+- A mesh that several copies draw, and a one-row instance batch, draw whole levels on both paths.
+  [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md) gives the WebGL2 routes and their
+  figures.

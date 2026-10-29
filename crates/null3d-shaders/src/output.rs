@@ -69,6 +69,11 @@ pub struct Output {
     /// target, which the feature's code imports.
     #[serde(skip)]
     pub first_use_shaders: BTreeSet<String>,
+    /// The permutation words that a narrowed build made, or empty when it made every word. The
+    /// module names them so that a page can say which word its build lacks, rather than draw
+    /// nothing.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub listed: BTreeSet<u32>,
 }
 
 /// The features whose builds load on first use: the feature of each shader whose builds all belong

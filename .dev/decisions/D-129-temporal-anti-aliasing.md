@@ -1,6 +1,6 @@
 # D-129: Temporal anti-aliasing
 
-Status: decided by the owner: TAA does not ship, and the anti-aliasing presets stay. Per-object motion vectors are built ([D-140](D-140-motion-vectors.md), task M2-EX25). [D-179](D-179-technique-rulings.md) left TAA to M3-A11, whose second look ([D-206](D-206-temporal-resolve.md)) refused it, so TAA is dropped. The prototype stays on the branch `proto/m2-ex18-taa`, which does not merge. Task: M2-EX18.
+Status: decided by the owner: TAA does not ship, and the anti-aliasing presets stay. Per-object motion vectors are built ([D-140](D-140-motion-vectors.md), task M2-EX25). [D-179](D-179-technique-rulings.md) left TAA to M3-A11, whose second look ([D-206](D-206-temporal-resolve.md)) refused it, so TAA is dropped. The prototype stays behind the internal setting, off on every preset. Task: M2-EX18.
 
 Summary: The engine ships no temporal anti-aliasing (TAA): FXAA stays on Low and MSAA 4x from Medium up. A prototype cut the far grass's shimmer by 92%, but drew at 0.55 to 0.75 of a reference's sharpness and smeared swaying grass. It cost 1 to 2 ms in a light scene on the Mac with WebGPU, and 7.5 ms in the Creek with WebGL2.
 
@@ -200,7 +200,7 @@ The owner ruled:
 
 ## Consequences
 
-- The engine, its presets and its docs carry no TAA. `post.set({ taa })` and `post.set({ msaaFxaa })` exist only on the prototype branch, with its capture page, thin scene, analysis and fixed-step clock.
+- The engine, its presets and its docs carry no TAA. The prototype of the temporal resolve stays behind the internal `post.set({ taa })` setting, off on every preset, with its measurement and capture pages ([D-206](D-206-temporal-resolve.md)).
 - The three.js mapping says that TAA is not planned.
 - Screen-space reflections have no temporal pass, so they blur by roughness ([D-134](D-134-screen-space-reflections.md)).
 - The Creek's grass draws with MSAA and alpha to coverage, and its far bank shimmers. A look task can thin or soften the far grass if the owner finds the shimmer too strong.

@@ -925,8 +925,10 @@ export interface NodeData {
 /**
  * The lower levels of detail of a node's mesh, as `MSFT_lod` names them: the mesh of each lower
  * level's node, from the most detailed down, and each level's error from the asset tool's
- * `NULL3D_lod_error`, or else the screen coverage of each level from `MSFT_screencoverage`, the
- * node's own first.
+ * `NULL3D_lod_error` beside the screen coverage of each level from `MSFT_screencoverage`, the
+ * node's own first. The tool writes the coverage that its measured error implies beside the error;
+ * a file that holds the errors alone holds levels whose author set the switch, and the loader
+ * fades those.
  */
 export interface NodeLevels {
 	meshes: number[];
@@ -940,11 +942,17 @@ export interface NodeLevels {
  * file, its length in bytes and the error of the level it holds, in the units of the mesh's
  * positions. The stages run from the level after the file's own down to the finest, and each
  * replaces the triangles of the mesh that the stage before left.
+ *
+ * A tree of cluster patches streams its bands through the same list: `bands` names each band's
+ * file by the primitive whose tree it extends, and each band appends its patches below the ones
+ * that arrived before it.
  */
 export interface NodeStages {
-	/** The error of the level that the file's own triangles measure. */
-	error: number;
+	/** The error of the level that the file's own triangles measure, for staged levels. */
+	error?: number;
 	levels: { url: string; bytes: number; error: number }[];
+	/** The bands of each cluster tree, in the order they extend the tree that the file holds. */
+	bands?: { primitive: number; url: string; bytes: number }[];
 }
 
 /** An image: its bytes when the file holds it, or its address when the file names it. */
@@ -2376,8 +2384,8 @@ function parseNodes(
 /**
  * A node's levels of detail from its `MSFT_lod` extension: the meshes of the level nodes it names,
  * which need not be in the scene, and their errors or screen coverage from the node's extras. A
- * level node without a mesh ends the list there. Errors or coverage of the wrong length are left
- * out, and the loader then gives the mesh no levels.
+ * level node without a mesh ends the list there. An error or a coverage list of the wrong length is
+ * left out, and a node that then gives neither gives the mesh no levels.
  */
 function parseLevels(
 	lod: Entry,
@@ -2399,7 +2407,7 @@ function parseLevels(
 			? (value.slice(0, length) as number[])
 			: undefined;
 	const errors = read(extras.NULL3D_lod_error, meshes.length);
-	const coverage = errors ? undefined : read(extras.MSFT_screencoverage, meshes.length);
+	const coverage = read(extras.MSFT_screencoverage, meshes.length);
 	return { meshes, errors, coverage };
 }
 
@@ -2407,34 +2415,67 @@ function parseLevels(
 const MAX_STAGE_URL = 2048;
 
 /**
- * A node's staged levels from its extras' `NULL3D_stages`: the error of the level that the file
- * holds, then each stage's address, its length in bytes and the error of the level it holds. A
- * stage without an address, a whole length or a real error is left out, and the stages after it go
- * with it, since each one replaces the triangles that the stage before left. The last stage holds
- * the mesh itself, whose error is 0.
+ * A node's staged levels and cluster bands from its extras' `NULL3D_stages`: the error of the
+ * level that the file holds, then each stage's address, its length in bytes and the error of the
+ * level it holds, then each band's primitive, address and length. A stage without an address, a
+ * whole length or a real error is left out, and the stages after it go with it, since each one
+ * replaces the triangles that the stage before left. A band without an address, a whole length or
+ * a primitive is left out alone, and the bands after it of that primitive go with it, since each
+ * one appends below the band before it.
  */
 function parseStages(value: unknown): NodeStages | undefined {
 	if (value === null || typeof value !== 'object') return undefined;
-	const { error, levels: given } = value as Entry;
-	if (typeof error !== 'number' || !(error > 0) || !Number.isFinite(error)) return undefined;
-	if (!Array.isArray(given)) return undefined;
+	const { error: given, levels: listed, bands: banded } = value as Entry;
+	const error =
+		typeof given === 'number' && given > 0 && Number.isFinite(given) ? given : undefined;
 	const levels: NodeStages['levels'] = [];
-	for (const entry of given) {
-		const { url, bytes, error: levelError } = (entry ?? {}) as Entry;
-		if (
-			typeof url !== 'string' ||
-			url.length === 0 ||
-			url.length > MAX_STAGE_URL ||
-			!Number.isInteger(bytes) ||
-			(bytes as number) <= 0 ||
-			typeof levelError !== 'number' ||
-			!(levelError >= 0) ||
-			!Number.isFinite(levelError)
-		)
-			break;
-		levels.push({ url, bytes: bytes as number, error: levelError });
-	}
-	return levels.length > 0 ? { error, levels } : undefined;
+	if (error !== undefined && Array.isArray(listed))
+		for (const entry of listed) {
+			const { url, bytes, error: levelError } = (entry ?? {}) as Entry;
+			if (
+				typeof url !== 'string' ||
+				url.length === 0 ||
+				url.length > MAX_STAGE_URL ||
+				!Number.isInteger(bytes) ||
+				(bytes as number) <= 0 ||
+				typeof levelError !== 'number' ||
+				!(levelError >= 0) ||
+				!Number.isFinite(levelError)
+			)
+				break;
+			levels.push({ url, bytes: bytes as number, error: levelError });
+		}
+	const bands: NodeStages['bands'] = [];
+	/** Each primitive whose band list a bad entry cut off, whose later entries are left out. */
+	const broken = new Set<number>();
+	if (Array.isArray(banded))
+		for (const entry of banded) {
+			const { primitive, url, bytes } = (entry ?? {}) as Entry;
+			if (
+				typeof primitive !== 'number' ||
+				!Number.isInteger(primitive) ||
+				primitive < 0 ||
+				broken.has(primitive)
+			)
+				continue;
+			if (
+				typeof url !== 'string' ||
+				url.length === 0 ||
+				url.length > MAX_STAGE_URL ||
+				!Number.isInteger(bytes) ||
+				(bytes as number) <= 0
+			) {
+				broken.add(primitive);
+				continue;
+			}
+			bands.push({ primitive, url, bytes: bytes as number });
+		}
+	if (levels.length === 0 && bands.length === 0) return undefined;
+	return {
+		...(error !== undefined && { error }),
+		levels,
+		...(bands.length > 0 && { bands }),
+	};
 }
 
 /** A node's position, rotation and scale, from its matrix or its own values. */

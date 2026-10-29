@@ -433,7 +433,7 @@ const FIRST_USE_LIVE: ReadonlySet<ShaderFeature> = new Set(['picking']);
  * null where the path has no file for it: WebGPU morphs in the skinning pass, only WebGPU reads
  * index-only instance data and culls by occlusion on the GPU, only WebGPU copies a view's
  * image, where WebGL2 draws the view into its target directly, and only WebGPU builds the pass
- * that picks a mesh's cluster patches, where WebGL2 draws the mesh whole.
+ * that picks a mesh's cluster patches, where WebGL2 picks them on the job workers instead.
  */
 const FEATURE_FILE_OWNERS: Partial<
 	Record<ShaderFeature, Partial<Record<'webgpu' | 'webgl2', ShaderFeature | null>>>

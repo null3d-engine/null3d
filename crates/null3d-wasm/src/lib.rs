@@ -2166,14 +2166,79 @@ pub fn set_mesh_patches(mesh: u32, patches: u32, indices: u32, root: u32) -> u32
                     })
                 })
             }
-            Some(Err(error)) => Ok(match error {
-                PatchError::Empty => 2,
-                PatchError::Root => 3,
-                PatchError::Record => 4,
-                PatchError::Parent => 5,
-                PatchError::Vertex => 6,
-                PatchError::Bounds => 7,
-            }),
+            Some(Err(error)) => Ok(patch_failure(error)),
+            None => Ok(0),
+        }
+    })
+}
+
+/// The code that a tree that the engine refused answers with: 2 for a tree without patches, 3 for
+/// a root that names none, 4 for a patch's run, 5 for a parent, 6 for an index and 7 for a sphere.
+fn patch_failure(error: PatchError) -> u32 {
+    match error {
+        PatchError::Empty => 2,
+        PatchError::Root => 3,
+        PatchError::Record => 4,
+        PatchError::Parent => 5,
+        PatchError::Vertex => 6,
+        PatchError::Bounds => 7,
+    }
+}
+
+/// Appends one band to the tree of cluster patches of the mesh `mesh`: `patches` records of eight
+/// words each, four floats of its bounding sphere and then four integers of its run, its parent and
+/// its error, followed by `indices` indices, in the staging words. A run's first index counts from
+/// the band's own indices, and a parent names a patch that the tree already holds. Returns 1 when
+/// the mesh takes the band, 0 when it has no tree, and the code of the rule that refused it
+/// otherwise (see [`set_mesh_patches`]).
+#[wasm_bindgen(js_name = appendMeshPatches)]
+pub fn append_mesh_patches(mesh: u32, patches: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let vertices = e
+            .renderer
+            .settings()
+            .meshes()
+            .mesh(mesh.checked_sub(1).unwrap_or(u32::MAX))
+            .map_or(0, |slot| slot.vertex_count);
+        let records = patches as usize;
+        let enough = vertices > 0 && staging.len() >= records * 8 + indices as usize;
+        let band = enough.then(|| {
+            let bounds: Vec<[f32; 4]> = (0..records)
+                .map(|k| {
+                    let at = k * 8;
+                    [0, 1, 2, 3].map(|c| f32::from_bits(staging[at + c]))
+                })
+                .collect();
+            let runs: Vec<[u32; 4]> = (0..records)
+                .map(|k| {
+                    let at = k * 8 + 4;
+                    [
+                        staging[at],
+                        staging[at + 1],
+                        staging[at + 2],
+                        staging[at + 3],
+                    ]
+                })
+                .collect();
+            let first = records * 8;
+            (
+                bounds,
+                runs,
+                staging[first..first + indices as usize].to_vec(),
+            )
+        });
+        let appended = band.and_then(|(bounds, runs, list)| {
+            e.renderer
+                .append_mesh_patches(mesh, &bounds, &runs, &list, vertices)
+        });
+        drop(staging);
+        match appended {
+            Some(Ok(())) => {
+                e.structure_changed = true;
+                Ok(1)
+            }
+            Some(Err(error)) => Ok(patch_failure(error)),
             None => Ok(0),
         }
     })
@@ -3928,6 +3993,14 @@ pub fn stage_level_picks(mesh: u32) -> u32 {
     value_with_engine(|e| Ok(e.renderer.settings().stage_level_picks(mesh)))
 }
 
+/// The bands of the tree of cluster patches of the mesh `mesh` that a view drew since its watch
+/// began, one bit each, bit 0 for the band that the file holds. 0 for a mesh that no loader
+/// watches.
+#[wasm_bindgen(js_name = stageBandPicks)]
+pub fn stage_band_picks(mesh: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.settings().stage_band_picks(mesh)))
+}
+
 /// Stops watching the levels that the views pick for the mesh `mesh`, so the frames that follow pay
 /// nothing while no loader waits on it. The loader of a model with staged levels releases a watch
 /// that it has no more use for, and watches the mesh again when the camera could want its next
@@ -4263,14 +4336,19 @@ pub fn set_auto_exposure(on: bool) -> u32 {
 }
 
 /// Turns temporal anti-aliasing on, a prototype, or off with a `feedback` of 0, from the next
-/// frame on. `feedback` is the history's share in thousandths, and `jitter` moves the camera by
-/// the sequence's sub-pixel offsets.
+/// frame on. `feedback` is the history's share in thousandths, `jitter` moves the camera by the
+/// sequence's sub-pixel offsets, `phone` picks the path whose reads cost less per pixel,
+/// `reactive` names the transparency signals that lower the history, as bits, and `exposure`
+/// scales the history by the frame's exposure ratio.
 #[wasm_bindgen(js_name = setTaa)]
-pub fn set_taa(feedback: u32, jitter: bool) -> u32 {
+pub fn set_taa(feedback: u32, jitter: bool, phone: bool, reactive: u32, exposure: bool) -> u32 {
     with_engine(|e| {
         let taa = (feedback > 0).then(|| null3d_render::taa::Taa {
             feedback: feedback.min(990) as f32 / 1000.0,
             jitter,
+            phone,
+            reactive: null3d_render::taa::Reactive(reactive as u8),
+            exposure,
         });
         e.renderer.settings_mut().set_taa(taa);
         0

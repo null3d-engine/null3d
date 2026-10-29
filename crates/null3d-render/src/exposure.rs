@@ -29,6 +29,7 @@ use null3d_gpu::drawlist::{
     DrawList, NO_TARGET, Op, address, buffer_usage as usage, compare, format,
     layout as bind_layout, pass_flags, resource_kind, state_flags, template, texture_usage, view,
 };
+use null3d_gpu::pass_role::{self, PassRole};
 
 use crate::bloom::{Area, CornerMap, bytes_of};
 use crate::frame::{LINEAR_LEVEL, RecordError, UploadArena, clamp_sampler};
@@ -525,7 +526,10 @@ impl ExposurePass {
         let ids = self.ids;
         match (meter, ids.compute) {
             (Meter::Histogram, Some(compute)) => {
-                list.push(Op::BeginComputePass, &[])?;
+                list.push(
+                    Op::BeginComputePass,
+                    &[pass_role::label(PassRole::ExposureHistogram, 0)],
+                )?;
                 list.push(Op::SetComputePipeline, &[compute.pipelines[0]])?;
                 list.push(Op::SetBindGroup, &[0, ids.first_group + 2, 0])?;
                 list.push(
@@ -540,9 +544,15 @@ impl ExposurePass {
                 let [downsample, adapt] = self
                     .pipelines
                     .expect("the downsample asks for its pipelines before it records");
-                for (target, pipeline, group) in [
-                    (ids.cells, downsample, ids.first_group),
-                    (ids.texel, adapt, ids.first_group + 1),
+                for (role, (target, pipeline, group)) in [
+                    (
+                        PassRole::ExposureDownsample,
+                        (ids.cells, downsample, ids.first_group),
+                    ),
+                    (
+                        PassRole::ExposureAdapt,
+                        (ids.texel, adapt, ids.first_group + 1),
+                    ),
                 ] {
                     list.push(
                         Op::BeginRenderPass,
@@ -556,6 +566,7 @@ impl ExposurePass {
                             0,
                             0f32.to_bits(),
                             pass_flags::STORE_COLOR,
+                            pass_role::label(role, 0),
                         ],
                     )?;
                     list.push(Op::SetPipeline, &[pipeline])?;

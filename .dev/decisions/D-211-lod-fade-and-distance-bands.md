@@ -15,7 +15,7 @@ This record makes three changes to D-137's design:
 ## Rule
 
 - A level's fade is a property of the level. The frame builders make a fade bucket only for a level that fades, and a switch fades only when the level and the one before it both have one.
-- A level with a measured error switches at once. The asset tool's `NULL3D_lod_error` is a measured error, and the glTF reader switches those levels at once. A level given by `distance`, by `coverage` or by a hand-set `error` fades.
+- A level with a measured error switches at once. The asset tool's `NULL3D_lod_error` is a measured error, and the glTF reader switches those levels at once. The reader knows the error is measured by the `MSFT_screencoverage` beside it, which the tool derives from the error. A file that gives errors alone, as the Creek trees' levels do, holds switch distances its author set by hand, so those levels fade. A level given by `distance`, by `coverage` or by a hand-set `error` fades.
 - A level's switch is one of three measures: `error` in the mesh's units, `distance` in meters at scale 1, or `coverage` as a share of the render's height. A distance and a coverage do not read the render height.
 - A source draws inside a distance band, `[start, end]`, both edges open by default. The band's fade lies inside the range and covers 8% of the edge's distance, the same band that a level switch uses. A row's own range overrides its batch's.
 - `lodFade` gates the distance bands alone. It does not gate a level's own fade, so a hand-set level fades on Low too.
@@ -46,3 +46,28 @@ across, while the bright dots of four pixels would stay.
 
 The s1 picture group passes in both reference sets on both paths, 7 of 7 each, so the rule keeps
 the s1 dots on every path.
+
+## How a file's error is read
+
+The Creek's trees bring their own levels from `tools/samples/blender/creek.py`, which sets each
+level's switch error by hand: 0.02 m and 0.04 m, meant to switch about 25 m and 50 m away. The tool
+keeps those levels and rewrites the errors in each level's quantized steps, but nothing in the file
+says that its author chose them rather than measured them. The loader read every file error as
+measured, so the trees' levels took `fade: false` and a crown swapped in one frame.
+
+The data that tells the two apart is already in the file. `assets optimize` writes the screen
+coverage that each measured error implies, in `MSFT_screencoverage`, beside `NULL3D_lod_error`. A
+file whose levels are hand-made holds the error alone. The loader now reads an error as measured
+only where the coverage comes with it, and fades an error that comes alone. The tool's own files
+hold both arrays; the pinned sample content's only level extras are the Creek trees', and they hold
+the errors alone.
+
+The image test `creek-lod` holds the camera still. It sweeps the level bias across the `oak-leaves`
+crown's first switch. Before the change, the frame at the crossing changed 29.8% as one block of
+52,182 pixels, and no later step changed anything. With the change, the band's frames change about
+1.9% each in single dither pixels, and the crown stays drawn across the band (48.9% of the frame
+before it, 55.0% after). The test runs on WebGPU and WebGL2, and the run with the level of detail
+off changes nothing.
+
+`asset-scene-lod` and `asset-scene-lod-copied` draw a tool file, which holds both arrays, and keep
+their references. So does `skinned-lod`, whose camera stands past its level's band.

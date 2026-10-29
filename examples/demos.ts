@@ -230,7 +230,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Aurora',
 		scene: 'A frozen lake at night',
 		summary:
-			"Curtains of green and violet light over a still night, drawn by the aurora example add-on through the sky-layer hook: one WGSL function over the core sky, under the moon and the stars, with the sky's thin clouds hiding it where they thicken. The ice holds the light and the pines stand dark against it.",
+			"Curtains of green and violet light over a still night, drawn by the aurora example add-on through the sky-layer hook: one WGSL function over the core sky, under the moon and the stars, with the sky's thin clouds hiding it where they thicken. The pines stand dark against the light, and the frozen lake mirrors them.",
 		hold: 1.5,
 		timeoutSeconds: 60,
 	},

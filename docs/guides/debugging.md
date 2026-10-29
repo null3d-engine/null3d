@@ -117,7 +117,7 @@ debug.arrow(muzzle, aim, 10);                        // where a shot goes, from 
 
 Only development builds draw the lines. [Debug drawing and stats](../api/debug.md) lists every call.
 
-To check normals, depth, overdraw, triangle edges or shadows, draw the whole scene with a debug view. In the sketch, `debug.view('wireframe')` draws every triangle's edges, and `debug.view('lit')` draws the materials again. [Debug views](../api/debug.md#debug-views) lists the views. To see whether shadow edges crawl as the camera moves, draw `'shadows'` from a still camera. Then let `debug.shadowCamera` place the cascades from the moving one ([Watch the shadow cascades from elsewhere](../api/debug.md#watch-the-shadow-cascades-from-elsewhere)).
+To check normals, depth, overdraw, triangle edges, shadows or levels of detail, draw the whole scene with a debug view. In the sketch, `debug.view('wireframe')` draws every triangle's edges, and `debug.view('lit')` draws the materials again. `?view=levels` in the page's address shows a demo's levels with no code change. [Debug views](../api/debug.md#debug-views) lists the views. To see whether shadow edges crawl as the camera moves, draw `'shadows'` from a still camera. Then let `debug.shadowCamera` place the cascades from the moving one ([Watch the shadow cascades from elsewhere](../api/debug.md#watch-the-shadow-cascades-from-elsewhere)).
 
 ## Reproduce a frame
 

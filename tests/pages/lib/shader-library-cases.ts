@@ -1910,6 +1910,87 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		],
 		expected: (i) => floats(halfVector(xyz(i.f(0)), xyz(i.f(1)))),
 	},
+	// null3d::motion
+	{
+		name: 'motion_math::surface_motion',
+		cases: (random) => [
+			// A still surface gives this frame's place less the same place of the last frame, which
+			// is exactly zero.
+			...Array.from({ length: SAMPLES }, () => {
+				const still = values(random, 4, -3, 3);
+				still[3] = between(random, 0.25, 4);
+				return new Inputs().setF(0, still).setF(1, still);
+			}),
+			// A surface that moved a known part of the image.
+			new Inputs().setF(0, [0.5, 0.5, 0.5, 1]).setF(1, [-0.5, -0.5, 0.5, 1]),
+			// A point at or behind the last camera's plane has no motion.
+			new Inputs().setF(0, [0.5, 0.5, 0.5, 1]).setF(1, [0.25, -0.25, 0.5, 0]),
+		],
+		expected: (i) => {
+			const still = i.f(0);
+			const last = i.f(1);
+			if (still[3]! <= 1e-6 || last[3]! <= 1e-6) return floats([0, 0, 0, 0]);
+			const place = (c: V4): V2 => [(c[0]! / c[3]!) * 0.5 + 0.5, 0.5 - (c[1]! / c[3]!) * 0.5];
+			const now = place(still);
+			const then = place(last);
+			return floats([now[0]! - then[0]!, now[1]! - then[1]!, 0, 0]);
+		},
+		// A still surface's two places are the same values, so the difference is zero. A GPU may
+		// contract one evaluation into a fused multiply and add and not the other, which leaves a
+		// residue far below a pixel: the engine's target clears to zero and still objects draw
+		// nothing, which is where the exact zero comes from.
+		tolerance: 1e-6,
+	},
+	// null3d::temporal
+	{
+		name: 'temporal::temporal_ycocg',
+		cases: uniform(3, -2, 2),
+		expected: (i) => {
+			const [r, g, b] = xyz(i.f(0));
+			return floats([
+				0.25 * r! + 0.5 * g! + 0.25 * b!,
+				0.5 * r! - 0.5 * b!,
+				-0.25 * r! + 0.5 * g! - 0.25 * b!,
+				0,
+			]);
+		},
+	},
+	{
+		name: 'temporal::temporal_rgb',
+		cases: uniform(3, -2, 2),
+		expected: (i) => {
+			const [x, y, z] = xyz(i.f(0));
+			return floats([x! - z! + y!, x! + z!, x! - z! - y!, 0]);
+		},
+	},
+	{
+		name: 'temporal::temporal_widen',
+		cases: samples((random) =>
+			new Inputs()
+				.setF(0, values(random, 3, 0, 0.4))
+				.setF(1, values(random, 3, 0.6, 1))
+				.setF(2, values(random, 3, -1, 2)),
+		),
+		expected: (i) => {
+			const low = xyz(i.f(0));
+			const high = xyz(i.f(1));
+			const centre = xyz(i.f(2));
+			const wideLow = low.map((v, k) => Math.min(v, centre[k]!));
+			const wideHigh = high.map((v, k) => Math.max(v, centre[k]!));
+			return floats([...wideLow, 0], [...wideHigh, 0]);
+		},
+		tolerance: HALF_TOLERANCE,
+	},
+	{
+		name: 'temporal::temporal_weight',
+		cases: samples((random) =>
+			new Inputs().setF(0, [between(random, 0, 1), between(random, 0, 1), between(random, 0, 3)]),
+		),
+		expected: (i) => {
+			const [base, reactive, change] = i.f(0);
+			return scalar(saturate(base!) * (1 - saturate(reactive!)) * (1 - smooth(0.5, 2.0, change!)));
+		},
+	},
 ];
 
 /** three.js's sky: its Rayleigh coefficients per metre, and its Mie constant. */

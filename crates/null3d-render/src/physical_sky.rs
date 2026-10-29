@@ -26,6 +26,7 @@ use null3d_gpu::drawlist::{
     DrawList, NO_TARGET, Op, address, buffer_usage as usage, compare, format,
     layout as bind_layout, pass_flags, resource_kind, state_flags, template, texture_usage, view,
 };
+use null3d_gpu::pass_role::{self, PassRole};
 
 use crate::bloom::bytes_of;
 use crate::frame::{LINEAR_LEVEL, RecordError, SceneSettings, UploadArena, clamp_sampler};
@@ -531,6 +532,7 @@ impl PhysicalSkyPass {
                 zero,
                 zero,
                 pass_flags::STORE_COLOR,
+                pass_role::label(PassRole::Sky, index),
             ],
         )?;
         list.push(Op::SetPipeline, &[pipeline])?;

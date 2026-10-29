@@ -138,3 +138,87 @@ owner may delete the whole design if the display table stands.
 
 The figure comes from a local build of the branch. CI's `wasm-checks` job measures the same files, and
 a later rise should quote its figure.
+
+## Addendum: the Khronos iridescence models in the image tests
+
+Status: decided by the helper of M3-G2, for the owner's review. Task: M3-G2.
+
+The in-code scene compares the film's values. It reads no file that Khronos publishes. Three scenes
+now load Khronos iridescence files. Two are sphere grids. The first varies the base index of refraction, the film's
+thickness and the film's index. The second replaces the base index with the base color. A neutral
+studio lights the dielectric grid at 0.35 of full intensity. The metal grid takes 0.15, because it
+has no diffuse term and its reflections show the film at less light. The third is Khronos's Suzanne
+model, three heads under the file's own lights and the same studio at 0.35. Its third head carries
+a thickness texture, a transmission factor of 1 and a volume thickness of 2, so the film varies over
+it and the light behind shows. All three draw with no tone mapping, as every model scene does. The
+camera frames each sphere grid at a radius of 9, so the spheres fill the picture, and Suzanne at 3.2.
+
+| Scene | GPU set | webgpu | compat | webgl2 |
+| --- | --- | --- | --- | --- |
+| dielectric | The Mac's GPU | 0.519% | 0.527% | 0.076% |
+| dielectric | SwiftShader | 0.519% | 0.518% | 0.087% |
+| metallic | The Mac's GPU | 2.248% | 2.485% | 2.071% |
+| metallic | SwiftShader | 2.274% | 2.556% | 2.112% |
+| Suzanne | The Mac's GPU | 0.366% | 0.367% | 0.352% |
+| Suzanne | SwiftShader | 0.340% | 0.346% | 0.341% |
+
+three.js's two renderers differ by 0.369% on the dielectric scene on the Mac. On the metal grid they
+differ by 5.929% on the Mac and 5.954% under SwiftShader, because r186's WebGPURenderer draws the
+film without its colors. The measurement removes the scene's `webglOnly` flag, because that flag
+makes `twinPath` draw both pages of a pair run with WebGLRenderer. The metal scene therefore takes
+WebGLRenderer's frame as the reference on every tier, as `WEBGL_ONLY_MODELS` lists. On the Suzanne
+scene the two renderers differ by 0.067% on the Mac and 0.050% under SwiftShader, so that scene
+keeps three.js's WebGPU frame on the WebGPU and compatibility tiers.
+
+The dielectric scene takes a limit of 0.6%. Its largest share is 0.527%, and the early frame at a
+wider radius measured 0.157%, which took 0.17% before the camera moved closer. The family's practice
+puts each limit just above the largest measured share. The anisotropy scene's 0.6% sits above
+0.561%, and the metal-rough scene's 0.34% above 0.316%. The metal scene takes 2.7%, above its
+largest share of 2.556%. Its highlights are large and thin, so the two specular anti-aliasing
+kernels cross more pixels there than on any other scene. The Suzanne scene takes 0.4%, above its
+largest share of 0.367%, on compatibility mode on the Mac.
+
+CI's run 40226184684 drew the two grid scenes' tests on its Linux SwiftShader and passed. Its
+browser shard 7 ran all 141 of its tests green, with the six images that this machine drew. The two
+drawings are therefore equal.
+
+The Suzanne scene keeps six pictures, three tiers in each set. Its three Mac pictures and its three
+SwiftShader pictures pass against those files. CI's run 40442817152 drew its SwiftShader pictures on
+its Linux machines, in browser shard 7 of 28, which passed all 141 of its tests. The two drawings are
+therefore equal. That run's other red jobs are other work: the aurora's E1408, `sky-layer-light`,
+`program-units`, and a video texture that sent no frame. None of them runs an iridescence test.
+
+The earlier run's other red jobs belong to other work. The aurora's E1408 and `sky-layer-light` are
+the sky-layer branch's, and the landing range holds the fix. `program-units` is
+`fix/m3-program-units`'s. The canvas allocation check is `ci/allocation-canvas`'s. Two Firefox
+picture differences have no
+branch yet: `demo-skyway` misses its tolerance by 0.081 points and `demo-canvas-screen` by 0.115.
+The CLI replay drew five frames where the test asks for more than five, and no branch owns that
+either.
+
+A run that dropped `KHR_materials_iridescence` in the loader changed 0.914% of the dielectric
+scene's pixels on each tier. It changed 7.55% to 7.77% of the metal scene's. Both are above the
+picture test's 0.1% tolerance, so the tests fail when the film goes.
+
+The loader needs no change for the texture units. D-215's slot sharing gives the iridescence maps
+the light map's and the specular maps' places, so no stage takes a new unit. The sphere grids use no
+iridescence map, so these runs drop none. Suzanne's thickness texture takes the specular intensity
+map's place, and the loader drops no map for it.
+
+Each model is a temporary fixture in the engine repository, under
+`tests/pages/assets/models/sources/khronos/`. Their durable home is the sample content, which keeps
+each file with its licence and SHA-256. The sample-assets repository's branch
+`add-iridescence-sphere-models` adds all three models, which are CC0, and pull request 6 holds it
+with a passing check. Suzanne's bytes equal that branch's file and Khronos's published file; the two grids hold the same content as Khronos's files in a GLB of their own, so their bytes differ while what they draw does not.
+When the pull request merges, these fixtures are deleted and the three addresses in
+`bench/scenes/gltf-models.ts` name the samples. The pin bump follows the merge.
+
+The fourth Khronos iridescence sample stays out. CompareIridescence shows the Khronos logo, which
+its licence covers as a Khronos trademark. The sample rules accept only CC0 and CC BY, so the engine
+cannot carry it.
+
+The three fixtures are one binary glTF each, of 225 KB for the dielectric model, 216 KB for the
+metal model and 508 KB for Suzanne. The sphere grids pack the Khronos glTF variant's JSON, its
+buffer and its guides texture. Suzanne is Khronos's binary file as published. The JSON objects, the
+buffer bytes and the texture bytes are identical to the source's. One file avoids three committed
+files with relative addresses, which a build renames.

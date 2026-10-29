@@ -56,6 +56,7 @@
 		"bench:allocation": "bun bench/allocation.ts",
 		"bench:profile": "bun bench/profile.ts",
 		"bench:startup": "bun bench/startup.ts",
+		"bench:staged-load": "bun bench/staged-load.ts",
 		"bench:soak": "bun bench/soak.ts",
 		"bench:archive": "bun bench/archive.ts",
 		"gate": "bun bench/gate.ts",

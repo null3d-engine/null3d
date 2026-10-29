@@ -437,7 +437,7 @@ A run folder holds every page's full result, with frames and images, and stays o
 ## A tree of cluster patches
 
 - The `cluster-cost` page draws `tests/pages/assets/models/cluster-terrain.glb`, a heightfield of 32,768 triangles that the asset tool cut into a tree of 511 patches, with one directional light and one ambient light. It stands the camera 12, 30 and 80 meters from the middle of the ground and times two seconds at each distance after two seconds of warm-up, so the near patches draw at full detail and the far ones coarser ([D-231](decisions/D-231-cluster-levels-cost.md)).
-- The page reports the median GPU time of a frame where the device has a GPU timer, and the median frame interval and CPU time everywhere. `direct=off` keeps the start-up probe from choosing the path that draws the mesh whole: without it the figures describe another drawing.
+- The page reports the median GPU time of a frame where the device has a GPU timer, and the median frame interval, CPU time and busiest job worker's time everywhere. `direct=off` keeps the start-up probe from choosing the path that draws the whole levels: without it the figures describe another drawing.
 - Run it on a phone or a tablet with the plan: `bun run devices:cloud --only bsgalaxys25-chrome --plan cluster-cost`, or in Safari on the iPad with `bun tests/real-browsers.ts --plan cluster-cost --lan ipad-safari`. The plan is timed, so the runner measures the display's refresh rate before each page.
 - Run it on the Mac in a quiet lane: `NULL3D_CLUSTER_COST=1 bun run test:browser -- cluster-cost.spec.ts`. `NULL3D_CLUSTER_PRESETS` narrows the presets, as a list.
 - The frame's GPU time falls as the camera draws back, which is the saving that coarser patches make: by about a quarter on the phone and on the tablet's compatibility mode, and by a tenth on the tablet's core WebGPU path, where the fill of its many pixels weighs more. [D-231](decisions/D-231-cluster-levels-cost.md) gives each device's figures.
@@ -558,6 +558,13 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 - The shader file of the device's GPU path and fixed bits downloads with the core. The page starts it right after the GPU probe, as [D-13](decisions/D-13-shader-variants.md#the-download-after-the-core-t-28) says. A request after the core would come one round trip later.
 - The MacBook Pro also ran Slow 4G and WebGL2 in Chrome 154, while other work loaded it. A cold load took 4.20 to 4.26 s in each thread mode, and a warm one 0.68 to 0.71 s. Each figure is a median of 10 loads. With the file asked for after the core, a cold load took 4.76 to 4.83 s, and a warm one 0.68 to 0.77 s. In those loads the core was 249.4 KB after Brotli, and a cold load downloaded 363 to 371 KB.
 
+## Staged loads
+
+- `bun run bench:staged-load` times the first draw of a page that loads a staged model: the model file draws at once, and the finer levels or the tree's bands download after it. It compares a load with every stage against one with the loader's level limit of 1, which downloads no stage. Each load is cold, in a fresh Chrome profile, on Slow 4G.
+- The page reports the time from navigation to the first draw, and asks the load server for what it sent up to that moment, then keeps asking until the downloads stop. The report gives the bytes before the first draw, the whole download, the share that arrived after it, and the stage files' own bytes.
+- `--runs` sets the loads of each kind, `--gpu` picks the path, `--network` picks the connection, and `--clusters` loads the model whose tree of patches streams its bands.
+- It is a timing run, so it needs a quiet window: start it through the job queue with `QUIET_OK=1`, as [Benchmarks](#what-a-report-measures) says of the tools that time.
+
 ## Soak
 
 - `bun run bench:soak` runs the production build, and samples every 30 seconds. Before each sample, the page, the sketch worker and the render worker collect their garbage, so a sample counts only what they keep.
@@ -651,6 +658,7 @@ The page kinds that end in `-timed` start null3D on WebGL2 with `?gl-timing`. Th
 ## GPU time per pass
 
 - On WebGPU, `measure` returns `gpuPassMs` beside `gpuMs`: the copies before the frame's first pass, each pass, and the time between passes. The bench plan's results keep it in each result's stats.
+- Each pass is named by what it draws for: the frame graph labels a pass with its role and its place among the passes of that role, such as `shadow cascade 1` or `shadow hero`, and the timer records the label with the time. So a figure belongs to a named pass, whatever passes ran before it. A pass with no label keeps its kind and its place, such as `render 1` ([D-272](decisions/D-272-pass-labels.md)).
 - In Chrome, the time between the culling pass and the main pass is Chrome's own check of the indirect draws. At 240,000 boxes it takes about 0.1 to 0.3 ms.
 - WebKit checks each indexed indirect draw that uses vertex buffers inside its render pass. The check adds two pipeline switches and two vertex to vertex barriers. It also runs an indirect point draw over the draw's whole index count, and it makes two scratch allocations. An empty draw costs almost as much as a drawn one. A raw-WebGPU probe measured about 2.8 us per draw on the iPhone 17, 4.3 on the iPad 10 and 7.3 on the Mac. Every arm of the probe held the same 131 k triangles. The same draws made directly cost 0.06 to 0.5 ms in the whole frame. The cost grows with the passes too: on the Mac in Safari the same 1,024 draws cost 9.8 ms with one pass and 27.0 ms with three, while direct draws stayed near 1.1 ms ([D-174](decisions/D-174-apple-gpu-direct-draws.md)).
 - The timer copies a frame's timestamps out only after the GPU has finished the frame, in a submit of its own. Firefox writes them late, so a copy in the frame's own commands read an earlier frame's values ([implementation notes](implementation-notes.md#browser-faults)). A pass without timestamps is left out of `gpuPassMs`, and its frame keeps its other parts.

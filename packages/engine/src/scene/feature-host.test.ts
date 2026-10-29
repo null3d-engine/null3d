@@ -7,6 +7,7 @@ import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { presetSettings, type QualityPreset, type QualitySettings } from '../quality/presets';
 import { SketchQuality } from '../sketch/quality';
+import { activateAddonDebugView, hasAddonDebugView } from './addon-debug-views';
 import { FeatureHost, type FeatureHostOptions } from './feature-host';
 import { defineFeature, type FeatureDescription, type FeatureStats } from './features';
 import { AddonNamespaces } from './namespaces';
@@ -309,6 +310,54 @@ describe('names that two add-ons cannot share', () => {
 		rock.remove();
 		expect(waves.budgetScale).toBe(0.75);
 		expect(quality.budgets.steps).toBe(4);
+		terrain.destroy();
+		water.destroy();
+	});
+});
+
+describe('the debug views that features add', () => {
+	it('starts a view when the page or the sketch picks it, and stops it when another replaces it', () => {
+		const host = hostOn({ quality: qualityOn() });
+		const calls: boolean[] = [];
+		host.add(
+			glow({
+				name: 'terrain',
+				debugViews: [{ name: 'test-terrain-blocks', set: (active) => calls.push(active) }],
+			}),
+		);
+		expect(hasAddonDebugView('test-terrain-blocks')).toBe(true);
+		expect(activateAddonDebugView('test-terrain-blocks')).toBe(true);
+		expect(calls).toEqual([true]);
+		expect(activateAddonDebugView('lit')).toBe(false);
+		expect(calls).toEqual([true, false]);
+		expect(activateAddonDebugView(undefined)).toBe(true);
+		host.destroy();
+		expect(hasAddonDebugView('test-terrain-blocks')).toBe(false);
+	});
+
+	it('starts a view that the page asked for before the feature registered it', () => {
+		const host = hostOn({ quality: qualityOn() });
+		expect(activateAddonDebugView('test-late')).toBe(false);
+		const calls: boolean[] = [];
+		host.add(
+			glow({
+				name: 'terrain',
+				debugViews: [{ name: 'test-late', set: (active) => calls.push(active) }],
+			}),
+		);
+		expect(calls).toEqual([true]);
+		host.destroy();
+		activateAddonDebugView(undefined);
+	});
+
+	it('refuses a view name that another add-on adds, and a name of the engine’s own', () => {
+		const { water, terrain } = twoHosts();
+		const view = (name: string) => [{ name, set: () => {} }];
+		water.add(glow({ name: 'waves', debugViews: view('test-blocks') }));
+		expect(() => terrain.add(glow({ name: 'rock', debugViews: view('test-blocks') }))).toThrow(
+			/E1225/,
+		);
+		expect(() => terrain.add(glow({ name: 'rock', debugViews: view('levels') }))).toThrow(/E1223/);
 		terrain.destroy();
 		water.destroy();
 	});

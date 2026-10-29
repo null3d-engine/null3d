@@ -30,6 +30,7 @@ use null3d_gpu::drawlist::{DrawList, Op, permutation, sizes, state_flags, templa
 use super::data::{TextureRows, write_rows};
 use super::ids;
 use super::skin::Skins;
+use crate::debug_view::DebugView;
 use crate::frame::{
     FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, bucket_of,
     collect_bucket_keys, put_u32,
@@ -138,6 +139,22 @@ pub(super) struct Draw {
     /// True for a draw whose surface writes no color. These draws come first, so the depth they
     /// write holds back the color of the surfaces behind them.
     pub(super) holdout: bool,
+    /// The place of the cluster bucket whose tree of patches this draw draws, or `None` for a draw
+    /// of a whole mesh.
+    pub(super) cluster: Option<u32>,
+}
+
+/// A bucket whose mesh draws its tree of cluster patches: one source, one triangle list, on a
+/// device that draws many ranges in one call. The level rule picks the patches that a view draws,
+/// and each chosen patch is a range of the tree's own index list.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ClusterBucket {
+    /// The bucket whose single draw the patches replace.
+    pub(super) bucket: u32,
+    /// The mesh whose tree the bucket draws.
+    pub(super) mesh: u32,
+    /// The scene object that draws the bucket, whose matrix moves each patch's sphere.
+    pub(super) object: u32,
 }
 
 /// A batch's place in the layout: its data texture, its first row there, whether its rows have
@@ -214,9 +231,17 @@ pub(super) struct Layout {
     /// Each bucket's level of detail: its level's error, the bucket of rows of the next coarser
     /// level and its fade bucket, or none for a bucket without levels.
     pub(super) level_links: Vec<LevelLink>,
+    /// The level of each bucket, by bucket, which the levels debug view writes beside each entry.
+    pub(super) bucket_levels: Vec<u32>,
     /// Every bucket that a level's rows draw in, or that a distance band's fade draws in, in bucket
     /// order: the buckets whose entries the staged levels' watches read.
     pub(super) level_buckets: Vec<u32>,
+    /// The buckets whose mesh a view draws from its tree of cluster patches, with the object that
+    /// draws each.
+    pub(super) cluster_buckets: Vec<ClusterBucket>,
+    /// True while the levels debug view draws: each entry pairs with its level's code, and a source
+    /// that the size rule or a draw range hid draws at its base level, marked.
+    pub(super) codes: bool,
     /// Each scene slot's bucket, with 0 for the slots that draw in the transparent pass: the rows
     /// whose matrices the resident texture needs.
     pub(super) drawn_slots: Vec<u32>,
@@ -250,6 +275,7 @@ impl Layout {
             vec_bytes(&self.scene_buckets),
             vec_bytes(&self.level_links),
             vec_bytes(&self.level_buckets),
+            vec_bytes(&self.cluster_buckets),
             vec_bytes(&self.drawn_slots),
             vec_bytes(&self.waiting),
         ] {
@@ -288,6 +314,7 @@ impl Layout {
         self.scene_buckets.clear();
         self.level_links.clear();
         self.level_buckets.clear();
+        self.cluster_buckets.clear();
         self.batches.clear();
         self.waiting.clear();
         self.room = CullRoom::default();
@@ -334,12 +361,18 @@ impl Layout {
         }
     }
 
-    /// True when a bucket of the layout draws `mesh` at some level: a source of the mesh exists in
-    /// the scene, whatever the view shows.
+    /// True when a bucket of the layout draws `mesh` at some level or draws its tree of cluster
+    /// patches: a source of the mesh exists in the scene, whatever the view shows. A staged band's
+    /// warm-up counts the frames that drew the tree, as a staged level's counts those that drew
+    /// the level.
     fn draws_mesh(&self, mesh: u32) -> bool {
         self.level_buckets
             .iter()
             .any(|&bucket| key_level(self.buckets[bucket as usize].mesh_key).0 == mesh)
+            || self
+                .cluster_buckets
+                .iter()
+                .any(|cluster| cluster.mesh == mesh)
     }
 
     /// Assigns every source to a data texture and a bucket, from the frame's world state, with
@@ -373,6 +406,7 @@ impl Layout {
     ) -> Result<(), RecordError> {
         let (scene, batches) = (input.scene, input.batches);
         self.scene_rows = scene.capacity() + 1;
+        self.codes = self.drawn == Drawn::Scene && settings.debug_view() == DebugView::Levels;
         self.batches.clear();
         let (mut resident, mut streamed, mut clusters) = (self.scene_rows, 0u32, 0u32);
         let mut largest_static = 0;
@@ -554,7 +588,42 @@ impl Layout {
         // object may pick one when every level of its set draws the base mesh's own vertices, which
         // the skin moves and the level then names from indices of its own.
         let levels = settings.levels();
-        let eligible = |key: &BucketKey| levels.may_pick(key.3, key.0.permutation);
+        // A mesh draws its tree of cluster patches in a camera's view, where its vertices fill one
+        // part and one copy draws the bucket: the device draws many ranges in one call, and the
+        // tree's walk needs a single world matrix. Such a bucket draws no whole level, because its
+        // patches already cover the mesh at the view's threshold. Elsewhere the whole levels cut
+        // from the tree draw.
+        let patches = settings.patches();
+        let mut treed_keys: Vec<(BucketKey, u32)> = Vec::new();
+        if multi_draw && drawn == Drawn::Scene {
+            for slot in 0..scene.capacity() as usize + 1 {
+                let Some(key) = scene_key(slot) else {
+                    continue;
+                };
+                let single = key_counts
+                    .binary_search_by_key(&key, |&(key, _)| key)
+                    .is_ok_and(|at| key_counts[at].1 == 1);
+                if !single || patches.of(key.3).is_none() {
+                    continue;
+                }
+                let Some(slot_mesh) = meshes.mesh(key.3.wrapping_sub(1)) else {
+                    continue;
+                };
+                let lines = key.0.state & state_flags::LINE_LIST != 0;
+                if meshes.parts(slot_mesh, lines).len() != 1 {
+                    continue;
+                }
+                treed_keys.push((key, slot as u32));
+            }
+            treed_keys.sort_unstable_by_key(|&(key, _)| key);
+            treed_keys.dedup_by_key(|pair| pair.0);
+        }
+        let treed = |key: &BucketKey| {
+            treed_keys
+                .binary_search_by_key(key, |&(key, _)| key)
+                .is_ok()
+        };
+        let eligible = |key: &BucketKey| !treed(key) && levels.may_pick(key.3, key.0.permutation);
         // A level may name a material of its own, so its bucket key comes from the level's mesh and
         // material, while it keeps the fields of the bucket that names it: its group, and the
         // object's receive-shadows bit, which the base key's pipeline holds.
@@ -608,7 +677,15 @@ impl Layout {
             ranged_keys.dedup();
         }
         let ranged = |key: &BucketKey| ranged_keys.binary_search(key).is_ok();
-        expand_level_keys(key_counts, levels, fades, ranged, eligible, &level_bucket);
+        expand_level_keys(
+            key_counts,
+            levels,
+            fades,
+            self.codes,
+            ranged,
+            eligible,
+            &level_bucket,
+        );
         self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
@@ -640,7 +717,9 @@ impl Layout {
         self.draws.clear();
         self.second_draws.clear();
         self.level_links.clear();
+        self.bucket_levels.clear();
         self.level_buckets.clear();
+        self.cluster_buckets.clear();
         self.material_views = 0;
         self.pick_views = 0;
         for &(key, _) in key_counts.iter() {
@@ -677,7 +756,16 @@ impl Layout {
             let (first, prepass) = pipelines_of(pipelines, pipeline);
             let pairs = is_fade_key(&key);
             // Each key's bucket of rows is at twice its place in the keys.
-            let links = links_of(key, &*key_counts, levels, eligible, &level_bucket);
+            let bands = |key: &BucketKey| fades && ranged(key);
+            let links = links_of(
+                key,
+                &*key_counts,
+                levels,
+                self.codes,
+                bands,
+                eligible,
+                &level_bucket,
+            );
             self.level_links.push(LevelLink {
                 value: links.value,
                 switch: links.switch,
@@ -693,6 +781,10 @@ impl Layout {
             let holdout =
                 drawn == Drawn::Scene && pipeline.state & state_flags::NO_COLOR_WRITE != 0;
             let pipeline = first;
+            let cluster_object = treed_keys
+                .binary_search_by_key(&key, |&(key, _)| key)
+                .ok()
+                .map(|at| treed_keys[at].1);
             for shift in [0, CLUSTER_SHIFT] {
                 let bucket = self.buckets.len() as u32;
                 self.buckets.push(Bucket {
@@ -702,6 +794,19 @@ impl Layout {
                     shift,
                     moves,
                 });
+                // Only the bucket of rows draws a tree: its patches name the mesh's triangles, not
+                // clusters of the sources.
+                let mut cluster = None;
+                let sole = if shift == 0 { cluster_object } else { None };
+                if let Some(object) = sole {
+                    cluster = Some(self.cluster_buckets.len() as u32);
+                    self.cluster_buckets.push(ClusterBucket {
+                        bucket,
+                        mesh: key.3,
+                        object,
+                    });
+                }
+                self.bucket_levels.push(key_level(key.3).1 as u32);
                 // The pass targets that this key's material samples, so a pass that draws it waits
                 // for the pass that writes them.
                 if textures != 0 {
@@ -728,6 +833,7 @@ impl Layout {
                         pick,
                         pick_textures,
                         holdout,
+                        cluster,
                     };
                     self.draws.push(draw);
                     if let Some(second) = second {
@@ -779,7 +885,10 @@ impl Layout {
         });
         // Rows that fade list two pairs of words in place of one entry, and a row inside a
         // distance band's edge lists its entry and a fade value.
-        let mut fading_rows = if picks_any(&self.scene_buckets, links) || scene_ranges {
+        // A levels debug view pairs every source with its level code, so every run lists pairs,
+        // while a band and a hidden mark take the same room as a fade.
+        let mut fading_rows = if self.codes || picks_any(&self.scene_buckets, links) || scene_ranges
+        {
             self.scene_rows
         } else {
             0
@@ -788,7 +897,7 @@ impl Layout {
             slot.bucket = bucket_of(batch_key(batch));
             let picked = picks(slot.bucket);
             let ranged = !batch_ranges(batches, batch).is_none();
-            slot.levels = picked || ranged;
+            slot.levels = picked || ranged || self.codes;
             if slot.bucket != NO_BUCKET {
                 let chunks = batch.capacity().div_ceil(CULL_CHUNK);
                 runs += chunks;
@@ -810,6 +919,14 @@ impl Layout {
                 let run = run_end(&self.draws, start) - start;
                 calls += (run as u32).div_ceil(sizes::MULTI_DRAW_RECORDS);
                 start += run;
+            }
+            // A tree's draw takes a call for each block of its chosen ranges, which a view's walk
+            // fills. Every patch of the tree is the most that a walk chooses, so its blocks bound
+            // the calls that the view's records need. A tree that shares its run with another draw
+            // splits that run, which costs one call more.
+            for cluster in &self.cluster_buckets {
+                let patches = patches.of(cluster.mesh).map_or(0, |tree| tree.len() as u32);
+                calls += patches.div_ceil(sizes::MULTI_DRAW_RECORDS) + 1;
             }
             calls.max(1) * MULTI_DRAW_BLOCK_BYTES
         } else {
