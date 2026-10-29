@@ -1,8 +1,8 @@
 # D-275: Staged loading for whole levels and cluster bands
 
-Status: accepted. Built: the whole-level stages that D-228 decides, their reader and writer,
-`maxLevels`, and the pick-driven holdback. Built: the cluster band stage, its writer, and the call
-that appends a band to a tree. Task: M3-L4.
+Status: proposed, for the owner's ruling. Built: the whole-level stages that D-228 decides, their
+reader and writer, `maxLevels`, and the pick-driven holdback. Built: the cluster band stage, its
+writer, and the call that appends a band to a tree. Task: M3-L4.
 
 Summary: D-228's layout stands. A model holds its full vertex stream and its coarsest level. Each
 finer level is a stage file of indices, and it refines copies in place. This record adds a second kind
