@@ -4,22 +4,31 @@
 // afresh, so the engine of the last demo stops with its workers and memory; the sidebar keeps its
 // scroll position across that load. Without ?demo=, the
 // panel shows a short welcome. In a narrow window, the sidebar is a drawer that the menu button
-// opens. The engine reads its own switches from the address: ?hold=2 draws the frame at 2 seconds
-// that the demo's image test holds, and ?gpu=webgl2 forces a GPU path. The page's links are
+// opens. In a development build the engine also reads its own switches from the address: ?hold=2
+// draws the frame at 2 seconds that the demo's image test holds, and ?gpu=webgl2 forces a GPU path.
+// A production build reads no switches, so this page reads ?preset= itself and gives it to the
+// demo's engine, and keeps it in the sidebar's links. The page's links are
 // relative, so it runs under any address prefix. It is one layout of the demos: another page can
 // show them its own way with the list and startDemo.
 
+import type { QualityPreset } from '@null3d/engine';
 import { COMPARE_GROUP, COMPARISONS } from './compare/comparisons';
 import { runComparison } from './compare-page';
 import { DEMO_GROUPS, DEMOS, type Demo } from './demos';
 import { startDemo } from './lib/run';
 import { sourceUrl } from './lib/source';
 
+/** The quality presets that `?preset=` may name, from the lightest. A production build reads no
+ * URL switches, so this page reads the preset itself and gives it to each demo's engine. */
+const PRESETS: readonly QualityPreset[] = ['low', 'medium', 'high', 'ultra'];
+
 const params = new URLSearchParams(location.search);
 const name = params.get('demo');
 const current = DEMOS.find((demo) => demo.name === name);
 const compareName = params.get('compare');
 const comparison = COMPARISONS.find((entry) => entry.name === compareName);
+const wanted = params.get('preset');
+const preset = PRESETS.find((entry) => entry === wanted);
 
 const nav = document.querySelector('nav') as HTMLElement;
 const menu = document.querySelector('.menu') as HTMLButtonElement;
@@ -36,8 +45,9 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, text = '', href?
 	return node;
 }
 
-/** The address of a demo's page. */
-const demoLink = (demo: Demo) => `?demo=${demo.name}`;
+/** The address of a demo's page, keeping the preset that the address named. */
+const demoLink = (demo: Demo) =>
+	preset === undefined ? `?demo=${demo.name}` : `?demo=${demo.name}&preset=${preset}`;
 
 /**
  * The sidebar's place in this tab. Each link loads the page afresh, which is what stops the last
@@ -215,7 +225,7 @@ async function runDemo(demo: Demo): Promise<void> {
 		stage.append(hud);
 	}
 	try {
-		await startDemo({ canvas, demo, labels, choices, hud });
+		await startDemo({ canvas, demo, labels, choices, hud, preset });
 	} catch (error) {
 		const message = element('p', error instanceof Error ? error.message : String(error));
 		message.className = 'error';

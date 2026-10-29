@@ -92,7 +92,7 @@ The pixel ratio cap often decides GPU time on a phone, because the GPU shades ea
 
 Measure at the presets that your users get. `engine.mode.preset` names the preset that runs, and the `?preset=low` switch fixes one for a test.
 
-When frames take too long during play, the frame-budget governor lowers the render scale first. Then it lowers the live shadow settings, bloom's base and the size of ambient occlusion ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). It hides some of a slow scene's cost. To measure the scene's own cost, turn it off with `quality.set({ governor: false })`, so every run draws the same frames.
+When frames take too long during play, the frame-budget governor lowers a sketch's budgets and the render scale in turn, a budget's step first, and then the live shadow settings, bloom's base and the size of ambient occlusion ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). It hides some of a slow scene's cost. To measure the scene's own cost, turn it off with `quality.set({ governor: false })`, so every run draws the same frames.
 
 ## Write per-frame code that allocates nothing
 

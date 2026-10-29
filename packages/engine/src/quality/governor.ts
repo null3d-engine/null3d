@@ -1,9 +1,11 @@
 // The frame-budget governor. When frames take too long, it lowers the live settings one step at a
-// time, in a fixed order: the render scale first, then the threshold of the levels of detail, then
-// how often far shadow cascades draw, then the shadow filter, then bloom's base, then ambient
-// occlusion's scale, then the steps of the sun's contact shadows, then the update interval of far
-// characters' poses, then the volumetric fog's slices. When the frames have time to spare again, it
-// raises them in the reverse order. It never changes a setting that is fixed while a preset runs.
+// time, in a fixed order: a step of a sketch's budgets and a step of the render scale in turn, a
+// budget's step first, then the threshold of the levels of detail, then how often far shadow
+// cascades draw, then the shadow filter, then bloom's base, then ambient occlusion's scale, then the
+// steps of the sun's contact shadows, then the update interval of far characters' poses, then the
+// volumetric fog's slices. Once the render scale is at its floor, the budgets' remaining steps come
+// before the threshold's. When the frames have time to spare again, it raises them in the reverse
+// order. It never changes a setting that is fixed while a preset runs.
 //
 // A detail step happens only while the scene draws a mesh with levels of detail: each doubles the
 // threshold in pixels under which a coarser level draws, up to four times the setting's. A level's
