@@ -6035,7 +6035,7 @@ impl FrameGraph {
             .passes(step)
             .first()
             .map_or(scope::NONE, |&pass| role_scope(self.roles[pass.index()]));
-        let operands = [
+        let mut operands = [
             color,
             resolve,
             depth,
@@ -6049,7 +6049,16 @@ impl FrameGraph {
             label,
             code,
         ];
-        list.push(Op::BeginRenderPass, &operands)?;
+        // The second color target's word is left out when the pass has none, so no reader takes a
+        // sentinel there. The command's length names the form.
+        let count = if second == NO_TARGET {
+            operands[9] = label;
+            operands[10] = code;
+            11
+        } else {
+            12
+        };
+        list.push(Op::BeginRenderPass, &operands[..count])?;
         Ok(())
     }
 
@@ -7224,7 +7233,7 @@ mod tests {
             .unwrap();
         let labels: Vec<u32> = operands(&list, Op::BeginRenderPass)
             .iter()
-            .map(|pass| pass[10])
+            .map(|pass| if pass.len() == 12 { pass[10] } else { pass[9] })
             .collect();
         assert!(labels.iter().all(|&label| label != 0));
         assert!(
@@ -10432,10 +10441,7 @@ mod tests {
                 .unwrap();
             let pairs: Vec<_> = operands(&list, Op::BeginRenderPass)
                 .into_iter()
-                .filter(|pass| {
-                    pass.get(9)
-                        .is_some_and(|&id| id != null3d_gpu::drawlist::NO_TARGET)
-                })
+                .filter(|pass| pass.len() == 12)
                 .collect();
             assert_eq!(
                 pairs.len(),

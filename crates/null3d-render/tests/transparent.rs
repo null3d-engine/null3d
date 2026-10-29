@@ -358,7 +358,7 @@ fn each_pass_names_the_step_that_it_records() {
     let render: Vec<u32> = commands
         .iter()
         .filter(|(op, _)| *op == Op::BeginRenderPass)
-        .map(|(_, o)| o[11])
+        .map(|(_, o)| if o.len() == 12 { o[11] } else { o[10] })
         .collect();
     // The scene's opaque and blended objects share one GPU render pass, which is the opaque step.
     assert!(
