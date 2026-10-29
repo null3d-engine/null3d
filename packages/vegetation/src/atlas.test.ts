@@ -3,6 +3,7 @@
 // make an atlas a material can use. Every pixel comes from integer hashes, so a test can compare two
 // paintings of one atlas byte for byte.
 import { describe, expect, it } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { LEAF_CELLS_BY_KIND, leafCellFor } from './atlas';
 import {
 	BARK_SIZE,
@@ -208,5 +209,18 @@ describe('the painted bark', () => {
 			if (Math.abs(nx) > 0.02) bent += 1;
 		}
 		expect(bent / total).toBeGreaterThan(0.3);
+	});
+});
+
+describe('the plant shaders', () => {
+	it('draw one surface function in both files', () => {
+		// The card-tree material adds the vertex offset to the plain plant shader's surface. The
+		// shader compiler joins a file whole, so the surface is a copy, and this test holds the two
+		// copies equal.
+		const read = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8');
+		const from = 'fn surface(input: SurfaceInput) -> Surface {';
+		const surface = (source: string) => source.slice(source.indexOf(from));
+		expect(surface(read('./plant-cards.wgsl'))).toContain(from);
+		expect(surface(read('./plant-cards.wgsl'))).toBe(surface(read('./plant.wgsl')));
 	});
 });

@@ -30,6 +30,38 @@ struct Uniforms {
     layerContrast: vec4f,
     // 1 where a layer's height comes from its map's alpha channel, and 0 for its brightness.
     layerAlpha: vec4f,
+    // x: the selection's scale, in screen pixels per world meter of a block's cell, or 0 to leave
+    // every block where it is; y: the faces along each side of a block's grid.
+    selection: vec2f,
+}
+
+// Each block morphs toward its parent block's surface as the camera pulls away, so a block that
+// hands over to a coarser one does not pop. The block's vertex record holds the parent grid's
+// height at the vertex, the block's size in meters, and the lowest and highest height of the
+// block's ground. The size gives the block's cell, which the selection's scale turns into the
+// distance at which the block splits; the parent's split lies twice as far. The distance is the
+// one that the selection measured: to the nearest point of the block's footprint and its height
+// box, so a block's own split leaves it at its own surface and a parent's split leaves it at the
+// parent's.
+fn vertexOffset(input: VertexInput) -> vec3f {
+    let scale = material.selection.x;
+    let block = input.vertexRecord.y;
+    if (scale <= 0.0 || block <= 0.0) {
+        return vec3f(0.0);
+    }
+    let half = block * 0.5;
+    let centerX = object.position.x + half;
+    let centerZ = object.position.z + half;
+    let dx = max(abs(camera.position.x - centerX) - half, 0.0);
+    let dz = max(abs(camera.position.z - centerZ) - half, 0.0);
+    let low = input.vertexRecord.z;
+    let high = input.vertexRecord.w;
+    let dy = max(max(low - camera.position.y, camera.position.y - high), 0.0);
+    let away = sqrt(dx * dx + dy * dy + dz * dz);
+    let own = (block / material.selection.y) * scale;
+    let parent = own * 2.0;
+    let t = clamp((away - own) / max(parent - own, 0.0001), 0.0, 1.0);
+    return vec3f(0.0, (input.vertexRecord.x - input.position.y) * t, 0.0);
 }
 
 fn surface(input: SurfaceInput) -> Surface {

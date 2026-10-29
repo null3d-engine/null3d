@@ -1,0 +1,94 @@
+// The surface of a plant drawn from the generated atlases: a trunk's bark or a crown's leaves. The
+// colour map multiplies the species' colour, the surface map bends the light with its normal, and
+// the leaf's coverage cuts its outline. The engine's mip levels keep a card sharp where it covers
+// many texels and keep its leaves' coverage where it covers few.
+
+var barkColor: texture_2d<f32>;
+var barkSurface: texture_2d<f32>;
+var leafColor: texture_2d<f32>;
+var leafSurface: texture_2d<f32>;
+
+struct Uniforms {
+    /// The leaf atlas's cells across and down.
+    cells: vec2f,
+    /// The leaf cell that this material draws: its column and row.
+    cell: vec2f,
+    /// 0 draws a trunk's bark and 1 a crown's leaves.
+    part: f32,
+    /// How many times the bark tiles across the mesh's texture coordinates.
+    tiles: f32,
+    /// The radius of the plant's bounding sphere about its origin, in the plant's own units,
+    /// which the sketch also gives the object or batch that draws the plant.
+    crownRadius: f32,
+    /// The level-of-detail threshold, in screen pixels: the engine's error under which a
+    /// coarser level draws.
+    lodThreshold: f32,
+    /// The linear colour that multiplies the atlas's own, such as a species' colour.
+    tint: vec3f,
+}
+
+// A leaf-card level morphs into the level after it before the engine switches, so a card that
+// the next level keeps grows and one that it drops shrinks to its middle. Each vertex's record
+// holds its place at the next level, then that level's error. The switch distance is the error
+// times the copy's world scale and the engine's factor: the render height times the projection's
+// [1][1], over twice the threshold. The distance is to the nearest point of the plant's bounding
+// sphere, as the engine measures it, and the mix runs over the last 8% of the switch distance,
+// the band that a level fade covers.
+fn vertexOffset(input: VertexInput) -> vec3f {
+    let error = input.vertexRecord.w;
+    if (error <= 0.0) {
+        return vec3f(0.0);
+    }
+    let factor = frame.resolution.y * abs(camera.projection[1][1]) / (2.0 * material.lodThreshold);
+    let scale = max(
+        length(object.worldMatrix[0].xyz),
+        max(length(object.worldMatrix[1].xyz), length(object.worldMatrix[2].xyz)),
+    );
+    let handover = error * scale * factor;
+    let radius = material.crownRadius * scale;
+    let away = max(length(camera.position - object.position) - radius, 0.001);
+    let band = handover * 0.08;
+    let t = clamp((away - (handover - band)) / max(band, 0.0001), 0.0, 1.0);
+    return (input.vertexRecord.xyz - input.position) * t;
+}
+
+
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let leafPart = material.part > 0.5;
+
+    // A texture sample belongs to uniform control flow, so every map is read and the part picks one
+    // afterwards. A leaf's card reads its own cell of the atlas, and the bark tiles.
+    let leafPlace = (material.cell + clamp(input.uv, vec2f(0.0), vec2f(1.0))) / material.cells;
+    let barkPlace = input.uv * material.tiles;
+    let leafColorSample = textureSample(leafColor, leafColorSampler, leafPlace);
+    let leafSurfaceSample = textureSample(leafSurface, leafSurfaceSampler, leafPlace);
+    let barkColorSample = textureSample(barkColor, barkColorSampler, barkPlace);
+    let barkSurfaceSample = textureSample(barkSurface, barkSurfaceSampler, barkPlace);
+    let color = select(barkColorSample, leafColorSample, leafPart);
+    let surfaceMap = select(barkSurfaceSample, leafSurfaceSample, leafPart);
+
+    // The normal's x and y come from the surface map, and its z from the unit length it must keep.
+    let flat = surfaceMap.xy * 2.0 - vec2f(1.0);
+    let nz = sqrt(max(0.0, 1.0 - dot(flat, flat)));
+    // A frame from the mesh's own normal: its up is the world's up, or the world's z for a surface
+    // that faces the sky. A card carries no tangent, and a leaf's markings need none to read.
+    let normal = normalize(input.normal);
+    let up = select(vec3f(0.0, 0.0, 1.0), vec3f(0.0, 1.0, 0.0), abs(normal.y) < 0.95);
+    let across = normalize(cross(up, normal));
+    let along = cross(normal, across);
+    s.normal = normalize(across * flat.x + along * flat.y + normal * nz);
+    s.baseColor = color.rgb * material.tint;
+    s.metalness = 0.0;
+    if (leafPart) {
+        // The surface map's blue holds the leaf's coverage, and its alpha the leaf's thickness.
+        s.alpha = surfaceMap.b;
+        s.roughness = 0.62;
+        // How much of the light behind the leaf passes through it, for the material that lights it.
+        s.thickness = surfaceMap.a * 0.35;
+    } else {
+        s.roughness = surfaceMap.b;
+    }
+    return s;
+}

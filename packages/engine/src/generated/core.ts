@@ -577,6 +577,7 @@ export const MESH_ARRAYS_COMPUTE_NORMALS = 128;
 export const MESH_ARRAYS_COMPUTE_TANGENTS = 256;
 export const MESH_ARRAYS_JOINTS = 512;
 export const MESH_ARRAYS_WEIGHTS = 1024;
+export const MESH_ARRAYS_TARGETS = 2048;
 
 export const MORPH_POSITIONS = 1;
 export const MORPH_NORMALS = 2;
@@ -596,6 +597,7 @@ export const ARRAY_TANGENTS = 5;
 export const ARRAY_INDICES = 6;
 export const ARRAY_JOINTS = 7;
 export const ARRAY_WEIGHTS = 8;
+export const ARRAY_TARGETS = 9;
 
 export const ANIMATION_FIELD_SLOT_CLIPS = 0;
 export const ANIMATION_FIELD_SLOT_TIMES = 1;

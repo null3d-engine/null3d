@@ -59,6 +59,12 @@
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
 	},
+	"chromium-swiftshader/compat/demo-impostors.png": {
+		"test": "demo-impostors",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
 	"chromium-swiftshader/compat/demo-terrain.png": {
 		"test": "demo-terrain",
 		"tier": "compat",
@@ -76,6 +82,24 @@
 		"tier": "compat",
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/gltf-iridescence-dielectric.png": {
+		"test": "gltf-iridescence-dielectric",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all its tests against these files in run 40226184684, so the two drawings are equal"
+	},
+	"chromium-swiftshader/compat/gltf-iridescence-metallic.png": {
+		"test": "gltf-iridescence-metallic",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all its tests against these files in run 40226184684, so the two drawings are equal"
+	},
+	"chromium-swiftshader/compat/gltf-iridescence-suzanne.png": {
+		"test": "gltf-iridescence-suzanne",
+		"tier": "compat",
+		"date": "2026-10-27",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all 141 of its tests against these files in run 40442817152, so the two drawings are equal"
 	},
 	"chromium-swiftshader/compat/gltf-sheen-chair.png": {
 		"test": "gltf-sheen-chair",
@@ -101,11 +125,35 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},
+	"chromium-swiftshader/compat/impostor-plant.png": {
+		"test": "impostor-plant",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/compat/impostor-turn-sun-back.png": {
+		"test": "impostor-turn-sun-back",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/compat/impostor-turn.png": {
+		"test": "impostor-turn",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/compat/impostors.png": {
+		"test": "impostors",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
 	"chromium-swiftshader/compat/terrain.png": {
 		"test": "terrain",
 		"tier": "compat",
-		"date": "2026-10-27",
-		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+		"date": "2026-10-29",
+		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
 	},
 	"chromium-swiftshader/compat/wind-cards-later.png": {
 		"test": "wind-cards-later",
@@ -185,6 +233,12 @@
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
 	},
+	"chromium-swiftshader/webgl2/demo-impostors.png": {
+		"test": "demo-impostors",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
 	"chromium-swiftshader/webgl2/demo-terrain.png": {
 		"test": "demo-terrain",
 		"tier": "webgl2",
@@ -196,6 +250,24 @@
 		"tier": "webgl2",
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/gltf-iridescence-dielectric.png": {
+		"test": "gltf-iridescence-dielectric",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all its tests against these files in run 40226184684, so the two drawings are equal"
+	},
+	"chromium-swiftshader/webgl2/gltf-iridescence-metallic.png": {
+		"test": "gltf-iridescence-metallic",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all its tests against these files in run 40226184684, so the two drawings are equal"
+	},
+	"chromium-swiftshader/webgl2/gltf-iridescence-suzanne.png": {
+		"test": "gltf-iridescence-suzanne",
+		"tier": "webgl2",
+		"date": "2026-10-27",
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all 141 of its tests against these files in run 40442817152, so the two drawings are equal"
 	},
 	"chromium-swiftshader/webgl2/gltf-sheen-chair.png": {
 		"test": "gltf-sheen-chair",
@@ -221,11 +293,35 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},
+	"chromium-swiftshader/webgl2/impostor-plant.png": {
+		"test": "impostor-plant",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/webgl2/impostor-turn-sun-back.png": {
+		"test": "impostor-turn-sun-back",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/webgl2/impostor-turn.png": {
+		"test": "impostor-turn",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/webgl2/impostors.png": {
+		"test": "impostors",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
 	"chromium-swiftshader/webgl2/terrain.png": {
 		"test": "terrain",
 		"tier": "webgl2",
-		"date": "2026-10-27",
-		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+		"date": "2026-10-29",
+		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
 	},
 	"chromium-swiftshader/webgl2/wind-cards-later.png": {
 		"test": "wind-cards-later",
@@ -305,6 +401,12 @@
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
 	},
+	"chromium-swiftshader/webgpu/demo-impostors.png": {
+		"test": "demo-impostors",
+		"tier": "webgpu",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
 	"chromium-swiftshader/webgpu/demo-terrain.png": {
 		"test": "demo-terrain",
 		"tier": "webgpu",
@@ -322,84 +424,6 @@
 		"tier": "webgpu",
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
-	},
-	"chromium-swiftshader/webgpu/gltf-sheen-chair.png": {
-		"test": "gltf-sheen-chair",
-		"tier": "webgpu",
-		"date": "2026-10-25",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
-	},
-	"chromium-swiftshader/webgpu/gltf-sheen-cloth.png": {
-		"test": "gltf-sheen-cloth",
-		"tier": "webgpu",
-		"date": "2026-10-25",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
-	},
-	"chromium-swiftshader/webgpu/gltf-texture-transform.png": {
-		"test": "gltf-texture-transform",
-		"tier": "webgpu",
-		"date": "2026-10-25",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
-	},
-	"chromium-swiftshader/webgpu/skinning-shadows.png": {
-		"test": "skinning-shadows",
-		"tier": "webgpu",
-		"date": "2026-10-27",
-		"reason": "drawn on this Mac's SwiftShader from the branch that redrew the skinning-shadow picture; the branch was not pushed when the set was drawn"
-	},
-	"chromium-swiftshader/webgpu/terrain.png": {
-		"test": "terrain",
-		"tier": "webgpu",
-		"date": "2026-10-27",
-		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
-	},
-	"chromium-swiftshader/webgpu/wind-cards-later.png": {
-		"test": "wind-cards-later",
-		"tier": "webgpu",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
-	},
-	"chromium-swiftshader/webgpu/wind-cards.png": {
-		"test": "wind-cards",
-		"tier": "webgpu",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
-	},
-	"chromium-swiftshader/compat/gltf-iridescence-dielectric.png": {
-		"test": "gltf-iridescence-dielectric",
-		"tier": "compat",
-		"date": "2026-10-25",
-		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all its tests against these files in run 40226184684, so the two drawings are equal"
-	},
-	"chromium-swiftshader/compat/gltf-iridescence-metallic.png": {
-		"test": "gltf-iridescence-metallic",
-		"tier": "compat",
-		"date": "2026-10-25",
-		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all its tests against these files in run 40226184684, so the two drawings are equal"
-	},
-	"chromium-swiftshader/compat/gltf-iridescence-suzanne.png": {
-		"test": "gltf-iridescence-suzanne",
-		"tier": "compat",
-		"date": "2026-10-27",
-		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all 141 of its tests against these files in run 40442817152, so the two drawings are equal"
-	},
-	"chromium-swiftshader/webgl2/gltf-iridescence-dielectric.png": {
-		"test": "gltf-iridescence-dielectric",
-		"tier": "webgl2",
-		"date": "2026-10-25",
-		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all its tests against these files in run 40226184684, so the two drawings are equal"
-	},
-	"chromium-swiftshader/webgl2/gltf-iridescence-metallic.png": {
-		"test": "gltf-iridescence-metallic",
-		"tier": "webgl2",
-		"date": "2026-10-25",
-		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all its tests against these files in run 40226184684, so the two drawings are equal"
-	},
-	"chromium-swiftshader/webgl2/gltf-iridescence-suzanne.png": {
-		"test": "gltf-iridescence-suzanne",
-		"tier": "webgl2",
-		"date": "2026-10-27",
-		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all 141 of its tests against these files in run 40442817152, so the two drawings are equal"
 	},
 	"chromium-swiftshader/webgpu/gltf-iridescence-dielectric.png": {
 		"test": "gltf-iridescence-dielectric",
@@ -419,20 +443,26 @@
 		"date": "2026-10-27",
 		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all 141 of its tests against these files in run 40442817152, so the two drawings are equal"
 	},
-	"chromium-swiftshader/webgpu/impostors.png": {
-		"test": "impostors",
+	"chromium-swiftshader/webgpu/gltf-sheen-chair.png": {
+		"test": "gltf-sheen-chair",
 		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},
-	"chromium-swiftshader/webgpu/demo-impostors.png": {
-		"test": "demo-impostors",
+	"chromium-swiftshader/webgpu/gltf-sheen-cloth.png": {
+		"test": "gltf-sheen-cloth",
 		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},
-	"chromium-swiftshader/webgpu/impostor-turn.png": {
-		"test": "impostor-turn",
+	"chromium-swiftshader/webgpu/gltf-texture-transform.png": {
+		"test": "gltf-texture-transform",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/impostor-plant.png": {
+		"test": "impostor-plant",
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
@@ -443,70 +473,40 @@
 		"date": "2026-10-29",
 		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
 	},
-	"chromium-swiftshader/compat/impostors.png": {
-		"test": "impostors",
-		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
-	},
-	"chromium-swiftshader/compat/demo-impostors.png": {
-		"test": "demo-impostors",
-		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
-	},
-	"chromium-swiftshader/compat/impostor-turn.png": {
+	"chromium-swiftshader/webgpu/impostor-turn.png": {
 		"test": "impostor-turn",
-		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
-	},
-	"chromium-swiftshader/compat/impostor-turn-sun-back.png": {
-		"test": "impostor-turn-sun-back",
-		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
-	},
-	"chromium-swiftshader/webgl2/impostors.png": {
-		"test": "impostors",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
-	},
-	"chromium-swiftshader/webgl2/demo-impostors.png": {
-		"test": "demo-impostors",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
-	},
-	"chromium-swiftshader/webgl2/impostor-turn.png": {
-		"test": "impostor-turn",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
-	},
-	"chromium-swiftshader/webgl2/impostor-turn-sun-back.png": {
-		"test": "impostor-turn-sun-back",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
-	},
-	"chromium-swiftshader/webgpu/impostor-plant.png": {
-		"test": "impostor-plant",
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
 	},
-	"chromium-swiftshader/compat/impostor-plant.png": {
-		"test": "impostor-plant",
-		"tier": "compat",
+	"chromium-swiftshader/webgpu/impostors.png": {
+		"test": "impostors",
+		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
 	},
-	"chromium-swiftshader/webgl2/impostor-plant.png": {
-		"test": "impostor-plant",
-		"tier": "webgl2",
+	"chromium-swiftshader/webgpu/skinning-shadows.png": {
+		"test": "skinning-shadows",
+		"tier": "webgpu",
+		"date": "2026-10-27",
+		"reason": "drawn on this Mac's SwiftShader from the branch that redrew the skinning-shadow picture; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgpu/terrain.png": {
+		"test": "terrain",
+		"tier": "webgpu",
 		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgpu/wind-cards-later.png": {
+		"test": "wind-cards-later",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgpu/wind-cards.png": {
+		"test": "wind-cards",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
 	}
 }

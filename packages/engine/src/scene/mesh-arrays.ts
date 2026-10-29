@@ -12,6 +12,7 @@ import {
 	ARRAY_NORMALS,
 	ARRAY_POSITIONS,
 	ARRAY_TANGENTS,
+	ARRAY_TARGETS,
 	ARRAY_UVS,
 	ARRAY_UVS1,
 	ARRAY_WEIGHTS,
@@ -30,6 +31,7 @@ import {
 	MESH_ARRAYS_JOINTS,
 	MESH_ARRAYS_NORMALS,
 	MESH_ARRAYS_TANGENTS,
+	MESH_ARRAYS_TARGETS,
 	MESH_ARRAYS_UVS,
 	MESH_ARRAYS_UVS1,
 	MESH_ARRAYS_WEIGHTS,
@@ -87,7 +89,8 @@ type ArrayName =
 	| 'colors'
 	| 'tangents'
 	| 'joints'
-	| 'weights';
+	| 'weights'
+	| 'targets';
 
 /** How an attribute reads integers: as fractions, as whole numbers, or as its array says. */
 type Reading = 'normalized' | 'plain' | 'either';
@@ -171,6 +174,14 @@ const ARRAYS: readonly ArraySpec[] = [
 		location: 7,
 		perVertex: 4,
 		reading: 'normalized',
+	},
+	{
+		name: 'targets',
+		code: ARRAY_TARGETS,
+		bit: MESH_ARRAYS_TARGETS,
+		location: 8,
+		perVertex: 4,
+		reading: 'either',
 	},
 ];
 
@@ -377,6 +388,8 @@ export function arraysProblem(arrays: MeshArrays): string | undefined {
 	if (computeTangents && !arrays.uvs) return 'got computeTangents: true but no uvs.';
 	if (arrays.joints && !arrays.weights) return 'got joints but no weights.';
 	if (arrays.weights && !arrays.joints) return 'got weights but no joints.';
+	if (arrays.targets && arrays.morphTargets)
+		return 'got targets and morphTargets; a vertex holds either its morph data or a generated target record, not both.';
 	if (arrays.morphTargets)
 		return morphProblem(arrays.morphTargets, vertices, colorValues(arrays, vertices));
 	return undefined;
@@ -566,14 +579,18 @@ export function replaceMeshIndices(
 
 /** The last vertex shader location whose attribute takes updates: the colors. */
 const LAST_UPDATABLE = 5;
+/** The location of the four-number vertex record, which also takes updates. */
+const RECORD_LOCATION = 8;
 
-/** The format bits of the attributes that make a mesh refuse updates: joints and morph targets. */
-const POSED_BITS = (VERTEX_ATTRIBUTES[6]?.[0] ?? 0) | (VERTEX_ATTRIBUTES[8]?.[0] ?? 0);
+/** The format bit of the attribute that makes a mesh refuse updates: the joints. */
+const POSED_BITS = VERTEX_ATTRIBUTES[6]?.[0] ?? 0;
 
 /** A mesh's vertex count and vertex format, as updates of its vertices read them. */
 export interface VertexLayout {
 	readonly count: number;
 	readonly format: number;
+	/** True for a mesh with morph targets, whose morph attribute takes no updates. */
+	readonly posed?: boolean;
 }
 
 /** The typed array class that holds values of a vertex type, as `INTEGER_ARRAYS` names them. */
@@ -597,9 +614,9 @@ function updateProblem(
 	out: { spec?: ArraySpec; type: number; components: number },
 ): string | undefined {
 	const spec = SPEC_BY_NAME.get(name);
-	if (!spec || spec.location > LAST_UPDATABLE)
-		return `got ${String(name)}; updates take positions, normals, uvs, uvs1, colors or tangents.`;
-	if (layout.format & POSED_BITS)
+	if (!spec || (spec.location > LAST_UPDATABLE && spec.location !== RECORD_LOCATION))
+		return `got ${String(name)}; updates take positions, normals, uvs, uvs1, colors, tangents or targets.`;
+	if (layout.posed || layout.format & POSED_BITS)
 		return 'got a mesh with joints or morph targets, whose vertices take no updates.';
 	const attributes = VERTEX_ATTRIBUTES[spec.location];
 	const bit = attributes?.[0] ?? 0;

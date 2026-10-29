@@ -494,6 +494,8 @@ pub mod mesh_arrays {
     pub const COMPUTE_TANGENTS: u32 = 256;
     pub const JOINTS: u32 = 512;
     pub const WEIGHTS: u32 = 1024;
+    /// The four-number vertex record of a generated mesh, which a material's vertex offset reads.
+    pub const TARGETS: u32 = 2048;
 }
 
 /// The morph target arrays that `createMeshFromArrays` finds in the staging words after the
@@ -1588,6 +1590,7 @@ pub fn typescript() -> String {
                 ("COMPUTE_TANGENTS", mesh_arrays::COMPUTE_TANGENTS),
                 ("JOINTS", mesh_arrays::JOINTS),
                 ("WEIGHTS", mesh_arrays::WEIGHTS),
+                ("TARGETS", mesh_arrays::TARGETS),
             ],
         ),
         // The morph target arrays of `createMeshFromArrays`, the morph weight table, and the bytes of
@@ -1617,6 +1620,7 @@ pub fn typescript() -> String {
                 ("INDICES", ArrayName::Indices as u32),
                 ("JOINTS", ArrayName::Joints as u32),
                 ("WEIGHTS", ArrayName::Weights as u32),
+                ("TARGETS", ArrayName::Targets as u32),
             ],
         ),
         (

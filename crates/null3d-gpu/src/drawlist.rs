@@ -1391,8 +1391,9 @@ pub mod vertex {
     pub const JOINTS: u32 = 16;
     /// How much each of the four joints moves a skinned vertex.
     pub const WEIGHTS: u32 = 32;
-    /// Where a morphed vertex's morph target deltas start, and how many there are: two whole
-    /// numbers as floats.
+    /// The vertex record of a posed mesh, four floats: a morphed vertex's first morph-target texel
+    /// and the count and attributes of its deltas, or a generated mesh's morph data, which the
+    /// material's vertex offset reads. A mesh has one meaning or the other, never both.
     pub const MORPH: u32 = 1 << 27;
     /// Every optional attribute's bit.
     pub const ALL: u32 = UV0 | UV1 | TANGENT | COLOR | JOINTS | WEIGHTS | MORPH;
@@ -1615,7 +1616,7 @@ pub mod vertex {
         },
         Attribute {
             bit: MORPH,
-            components: 2,
+            components: 4,
             location: 8,
             shift: 27,
             types: FLOAT,
@@ -3129,7 +3130,7 @@ mod tests {
     fn vertex_formats_place_each_attribute_after_the_ones_before_it() {
         use vertex::ATTRIBUTES;
         assert_eq!(vertex::stride(0), 24);
-        assert_eq!(vertex::stride(vertex::ALL), 100);
+        assert_eq!(vertex::stride(vertex::ALL), 108);
         assert_eq!(vertex::offset(vertex::UV0, 2), Some(24));
         assert_eq!(vertex::offset(vertex::UV1, 3), Some(24));
         assert_eq!(vertex::offset(vertex::UV0 | vertex::TANGENT, 4), Some(32));

@@ -331,9 +331,10 @@ export class MeshGeometry {
 	 * vertices `start` to `start + count - 1` change, which the next frame uploads. The defaults
 	 * update every vertex. Colors take three or four values per vertex: three keep each vertex's
 	 * alpha. The mesh keeps the bounding sphere it was made with, so give objects that draw
-	 * vertices outside it bounds with `setBounds`. Joints, weights, and a mesh with joints or morph
-	 * targets take no updates. A level that draws its base mesh's vertices writes them, so the base
-	 * and every level of it draw the new values. Throws E1206 for values that do not fit the mesh,
+	 * vertices outside it bounds with `setBounds`. The four-number vertex record takes updates as
+	 * `targets`. Joints, weights, and a mesh with joints or morph targets take no updates. A level
+	 * that draws its base mesh's vertices writes them, so the base and every level of it draw the
+	 * new values. Throws E1206 for values that do not fit the mesh,
 	 * and E1101 for a destroyed mesh. Allocates nothing, so a call in every frame makes no garbage.
 	 */
 	updateVertices(
@@ -347,7 +348,11 @@ export class MeshGeometry {
 		let layout = this.layout;
 		if (layout === undefined) {
 			const { glue } = this.core;
-			layout = { count: glue.meshVertexCount(id), format: glue.meshFormat(id) };
+			layout = {
+				count: glue.meshVertexCount(id),
+				format: glue.meshFormat(id),
+				posed: this.morphTargets > 0,
+			};
 			this.layout = layout;
 		}
 		const vertices = count ?? layout.count - start;
@@ -767,7 +772,14 @@ const RING: Required<RingOptions> = {
  *
  * @category api/geometry
  */
-export type UpdatableAttribute = 'positions' | 'normals' | 'uvs' | 'uvs1' | 'colors' | 'tangents';
+export type UpdatableAttribute =
+	| 'positions'
+	| 'normals'
+	| 'uvs'
+	| 'uvs1'
+	| 'colors'
+	| 'tangents'
+	| 'targets';
 
 /**
  * The integer typed arrays that vertex attributes take: 8-bit and 16-bit, signed and unsigned.
@@ -892,6 +904,14 @@ export interface MeshArrays {
 	 * whose integers read as fractions from 0 to 1.
 	 */
 	weights?: VertexValues;
+	/**
+	 * Four numbers per vertex for a shape that a custom material moves between levels of detail:
+	 * the position that the vertex takes at the next coarser level, and that level's error in
+	 * meters. The material's `vertexOffset` reads them as `input.vertexRecord`. Takes floats. The
+	 * vertex record also holds a morphed mesh's morph data, so a mesh takes `targets` or
+	 * `morphTargets`, never both.
+	 */
+	targets?: VertexValues;
 	/**
 	 * Three vertex indices per triangle, counter-clockwise when you look at its front. 16-bit and
 	 * 32-bit indices both work. Without indices, each three vertices in a row make a triangle.
