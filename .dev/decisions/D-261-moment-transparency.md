@@ -171,10 +171,10 @@ once a frame, so the layer writes 16 bytes per pixel, or 33 MB at 1920 by 1080. 
 reads the store, so the traffic is about 50 MB a frame. The weighted blending writes 10 bytes a
 pixel. The composite writes the scene color, and SMAA's two 8-bit steps take 8 bytes per pixel more.
 
-The S1 benchmark page with its smoke switch measured the layer against the weighted blending on
-this computer's GPU, at High, on the tree of `e1fbc77f9`, in two runs taken back to back under the
-same load (7.25 to 4.52 for the weighted side, 4.52 to 4.21 for the moment side; medians of three
-runs of ten seconds):
+The S1 benchmark page with its smoke switch measured the layer against the weighted blending in
+Chrome 156 on this computer's GPU, at High, on the tree of `e1fbc77f9`, in two runs taken back to
+back under the same load (7.25 to 4.52 for the weighted side, 4.52 to 4.21 for the moment side;
+medians of three runs of ten seconds):
 
 | Path | Weighted, CPU | Moments, CPU | Weighted, GPU | Moments, GPU |
 | --- | ---: | ---: | ---: | ---: |
@@ -183,8 +183,8 @@ runs of ten seconds):
 
 The layer is free on the processor: five hundredths of a millisecond on WebGPU and nothing on
 WebGL2. Its cost is GPU time: 0.58 ms more on WebGPU, about sixteen per cent of that scene's GPU
-frame, and 1.12 ms more on WebGL2, whose figure is the frame total from its timer extension rather
-than a per-pass figure.
+frame, and 1.12 ms more on WebGL2, about twenty per cent. The WebGL2 figure is the frame total from
+its timer extension rather than a per-pass figure.
 
 That is a desktop GPU with a fraction of a phone's fill rate. The phone's figure decides the
 preset, and it is owed. The desktop figure does not settle Ultra.

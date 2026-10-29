@@ -195,7 +195,7 @@ The `momentTransparency` option of `createEngine`, or the `?moments=on` or `?mom
 
 The layer's moment store and color sum take 8 bytes per pixel each at the render size, and its surfaces write both: 16 bytes per pixel a frame, which is 33 MB at 1920 x 1080. The composite reads both and writes the scene color, and SMAA 1x's two 8-bit steps take 8 bytes per pixel more. The weighted blending writes 10 bytes per pixel into its two sums. SMAA smooths the layer's edges under the share that its moments cover, and the opaque geometry keeps MSAA's samples.
 
-In the S1 benchmark with its smoke switch, at High on this computer's GPU, the layer added about 0.05 ms of processor time and 0.58 ms of GPU time a frame on WebGPU, and about 1.12 ms of GPU time on WebGL2. A phone's figure is owed, and a desktop GPU's fill rate is not a phone's.
+In the S1 benchmark with its smoke switch, at High on this computer's GPU in Chrome 156, the layer added about 0.05 ms of processor time and 0.58 ms of GPU time a frame on WebGPU, about sixteen per cent of that scene's GPU frame, and about 1.12 ms on WebGL2, about twenty per cent. A phone's figure is owed, and a desktop GPU's fill rate is not a phone's.
 
 ### The depth prepass
 
