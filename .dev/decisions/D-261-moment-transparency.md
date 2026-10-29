@@ -1,8 +1,9 @@
 # D-261: Moment transparency, and what it beats
 
 Status: decided. Built on both GPU paths, and the layer has drawn on all three GPU paths: WebGL2,
-WebGPU and its compatibility mode drew the four image tests at 480 by 270, and their Mac references
-are in this change. The cost measurement on this computer's GPU and the run on a phone are owed.
+WebGPU and its compatibility mode drew the four image tests at 480 by 270. The picture references
+are held back until the owner rules on the patches at overlapping edges that the Look section
+describes. The cost measurement on this computer's GPU and the run on a phone are owed.
 Task: M3-F13.
 
 Summary: Order-independent transparency from a store of four depth moments beats the weighted
@@ -177,6 +178,16 @@ frame. No other frame copies them, and no frame without the setting copies anyth
 The layer keeps a near pane's color where the weighted blending washes it toward what lies behind.
 The panes in the image test each draw their own color over the wall behind them. The moment image
 is nearer the exact sorted image than the weighted one.
+
+The layer has an edge of its own where several panes overlap: rectangular patches about a tenth of
+the picture's width show the panes behind mixed into the pane's own color. They come from the
+reconstruction, not from the anti-alias step or any target's size. The moment store's coverage is
+smooth across the same edge, and the color sum's weights step in the same rectangles: the fit's two
+atoms hold the transmittance constant between their depths, and where the panes' edges succeed one
+another the average takes a different weight in each rectangle. The patches scale with the picture
+because they are the panes' own overlaps. The weighted blending has no such patches and washes the
+near pane's color instead. Which look is better is the owner's ruling (hard rule 40): the mean
+error favors the moments, and the patches are the price of them at close, overlapping depths.
 
 ## Consequences
 
