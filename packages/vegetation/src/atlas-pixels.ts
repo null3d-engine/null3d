@@ -10,7 +10,10 @@
 // and a surface map that holds the normal, the bark's roughness or the leaf's coverage, and the
 // leaf's thickness.
 
-/** A painted map: its size in texels and four bytes per texel, rows from the top. */
+/** A painted map: its size in texels and four bytes per texel, rows from the top.
+ *
+ * @category api/vegetation
+ */
 export interface AtlasPixels {
 	/** Texels across. */
 	readonly width: number;
@@ -705,7 +708,10 @@ function encodeLinear(r: number, g: number, b: number): [number, number, number,
 	];
 }
 
-/** The two maps of one atlas: its colour map and its surface map. */
+/** The two maps of one atlas: its colour map and its surface map.
+ *
+ * @category api/vegetation
+ */
 export interface PaintedAtlas {
 	/** The colour map, in sRGB. */
 	readonly color: AtlasPixels;

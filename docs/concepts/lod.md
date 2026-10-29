@@ -189,11 +189,11 @@ Far shadow cascades and the shadow tiles of point and spot lights keep their dep
 
 ## Cards beyond the levels
 
-A level of detail keeps one draw and one mesh per object. Far past the last level, an object can draw as a card instead: a quad that faces the screen and shows a picture of the object. The `@null3d/impostors` add-on draws those cards, and a distance band on the meshes hands the object over to them.
+A level of detail keeps one draw and one mesh per object. Far past the last level, an object can draw as a card instead: a quad that stands upright, turns to the eye, and shows a picture of the object. The `@null3d/impostors` add-on draws those cards, and a distance band on the meshes hands the object over to them.
 
-A bake stores the object from many directions, folded onto an octahedral grid, in a color atlas and a surface atlas of normals and depths. Each card blends the three stored views nearest the direction from the card toward the eye, so the picture changes smoothly as the camera moves rather than jumping between views. The card's light comes from the scene, through the stored normal, so a sun that moves relights the cards exactly as it relights the meshes.
+A bake stores the object from many directions, folded onto an octahedral grid, in a color atlas and a surface atlas of normals and depths. Each card blends the three stored views nearest the direction from the card toward the eye, so the picture changes smoothly as the camera moves rather than jumping between views. The card's light comes from the scene, through the stored normal, so a sun that moves relights the cards exactly as it relights the meshes. A copy's turn about the world's up turns its views and its light too, so a turned tree hands over to a card whose crown matches it.
 
-`setDrawRange` fades a band's edges with the dither, so the hand-over from a mesh to its cards need not pop. [Impostors](../api/impostors.md) gives the calls, and the demo `examples/impostors` draws a forest three ways by distance.
+`setDrawRange` fades a band's edges with the dither, so the hand-over from a mesh to its cards need not pop. The vegetation add-on's `handOverToCards` sets the two bands for a row of plants. [Impostors](../api/impostors.md) gives the calls, and the demo `examples/impostors` draws a forest three ways by distance.
 
 ## From three.js
 

@@ -40,8 +40,8 @@ export interface ImpostorOptions {
 	readonly color: Texture;
 	/**
 	 * The surface of every view, in the same cells as `color`: red and green hold the octahedral
-	 * code of the view's normal, blue its depth from the view's front to its back, and alpha its
-	 * coverage. `impostorSurfaceAtlas` builds one from a bake.
+	 * code of the normal in the object's frame, blue its depth from the view's front to its back,
+	 * and alpha its coverage. `bakeImpostorAtlas` writes one.
 	 */
 	readonly surface: Texture;
 	/** The cells of the atlases: the frames across and down. */
@@ -52,12 +52,22 @@ export interface ImpostorOptions {
 	 */
 	readonly positions: ArrayLike<number>;
 	/**
+	 * The turn of each card about the world's up, in radians, one number a card. A bake draws each
+	 * view in the tree's local frame, so a turned copy picks the views its turned mesh would show
+	 * and lights from the normal that the turn gives it. The default turns every card by 0.
+	 */
+	readonly turn?: ArrayLike<number>;
+	/**
 	 * The width and height of every card, in world units. One number makes a square card. The
 	 * default is the atlas's cells, one unit each, which suits a bake at one unit per cell.
 	 */
 	readonly size?: number | readonly [number, number];
-	/** A color that multiplies every card's view, which `setTint` changes at any time. */
+	/** A color that multiplies every card's view. */
 	readonly tint?: ColorInput;
+	/** The roughness that the cards light with, as the standard material's. */
+	readonly roughness?: number;
+	/** The metalness that the cards light with, as the standard material's. */
+	readonly metalness?: number;
 	/** How the cards use their alpha: `mask` by default, since a bake cuts its object out. */
 	readonly alphaMode?: 'opaque' | 'blend' | 'mask';
 	/** The alpha under which a masked card draws nothing. The default is 0.5. */
@@ -69,7 +79,7 @@ export interface ImpostorOptions {
 /**
  * A batch of impostor cards, which `createImpostors` makes. The cards need no per-frame work: the
  * material reads the eye from the frame's camera and picks each card's views itself. Write the
- * cards' positions, sizes or colors through `batch`, then call `markDirty` for those cards.
+ * cards' positions, sizes, turns or colors through `batch`, then call `markDirty` for those cards.
  *
  * @category api/impostors
  */
@@ -111,7 +121,9 @@ const QUAD: MeshArrays = {
 /**
  * Makes a batch of impostor cards: one card per position, drawn from the three atlas views nearest
  * the direction from the card toward the eye, and lit by the scene's lights. The cards need no
- * `update` call: the material reads the eye from the frame's camera.
+ * `update` call: the material reads the eye from the frame's camera. A card's turn, in `turn`,
+ * turns its views and its light by the same angle about the world's up, so a turned tree hands
+ * over to a card whose crown matches it.
  *
  * @category api/impostors
  */
@@ -130,6 +142,10 @@ export function createImpostors(ctx: ImpostorContext, options: ImpostorOptions):
 	const count = positions.length / 3;
 	if (count === 0)
 		throw new RangeError('createImpostors() got no positions. Give at least one card.');
+	if (options.turn !== undefined && options.turn.length !== count)
+		throw new RangeError(
+			`createImpostors() got ${options.turn.length} turns for ${count} cards. Give one turn a card.`,
+		);
 	const [width, height] =
 		typeof options.size === 'number'
 			? [options.size, options.size]
@@ -141,14 +157,21 @@ export function createImpostors(ctx: ImpostorContext, options: ImpostorOptions):
 		alphaMode: options.alphaMode ?? 'mask',
 		...(options.alphaCutoff !== undefined && { alphaCutoff: options.alphaCutoff }),
 		...(options.tint !== undefined && { color: options.tint }),
+		...(options.roughness !== undefined && { roughness: options.roughness }),
+		...(options.metalness !== undefined && { metalness: options.metalness }),
 		...(options.layers !== undefined && { layers: options.layers }),
 	});
-	const batch = ctx.scene.createInstances(ctx.geometry.fromArrays(QUAD), count, { material });
+	const batch = ctx.scene.createInstances(ctx.geometry.fromArrays(QUAD), count, {
+		material,
+		values: true,
+	});
 	batch.positions.set(positions);
+	const values = batch.values as Float32Array;
 	for (let i = 0; i < count; i++) {
 		batch.scales[i * 3] = width;
 		batch.scales[i * 3 + 1] = height;
 		batch.scales[i * 3 + 2] = 1;
+		values[i * 4] = options.turn?.[i] ?? 0;
 	}
 	batch.markDirty();
 	return new ImpostorBatch(batch);
