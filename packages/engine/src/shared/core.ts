@@ -419,6 +419,12 @@ export interface CoreGlue extends CoreErrors {
 	/** A mesh's vertex format: its attribute bits and type fields, or 0 for an unknown mesh. */
 	meshFormat(mesh: number): number;
 	/**
+	 * Turns a rectangle's rows over in place, so that its last row comes first, at `address` in the
+	 * engine's memory: a canvas counts rows from its top, and a texture from the bottom. Each row is
+	 * `rowBytes` long and there are `height` of them. The caller writes the rectangle first.
+	 */
+	turnRows(address: number, rowBytes: number, height: number): void;
+	/**
 	 * Writes new values of the attribute at vertex shader `location` into vertices `start` to
 	 * `start + count` of a mesh, from `meshArrays`'s words: `components` values per vertex in the
 	 * attribute's own type. The next frame uploads the bytes that changed. Returns the status.
@@ -1332,6 +1338,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'meshRadius',
 	'meshVertexCount',
 	'meshFormat',
+	'turnRows',
 	'updateVertices',
 	'destroyMeshes',
 	'setMeshLevels',
