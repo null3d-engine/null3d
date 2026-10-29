@@ -293,7 +293,7 @@ function gpuStepsOf(gpu: RingSums): readonly FrameStatsStep[] {
 	if (copies > 0)
 		steps.push({
 			name: 'copies',
-			ms: (gpu.sums[SUM_PHASES] as number) / copies,
+			ms: (gpu.phaseSums[0] as number) / copies,
 			place: 0,
 		});
 	const passes = Math.min(gpu.last[GpuCounter.Passes] as number, GPU_TIMED_PASSES);
@@ -306,7 +306,7 @@ function gpuStepsOf(gpu: RingSums): readonly FrameStatsStep[] {
 		const name = scopeName(id);
 		steps.push({
 			name: rest && pass === GPU_TIMED_PASSES - 1 ? `${name} and later` : name,
-			ms: (gpu.sums[SUM_PHASES + 1 + pass] as number) / timed,
+			ms: (gpu.phaseSums[1 + pass] as number) / timed,
 			place: scopePlace(id),
 		});
 	}

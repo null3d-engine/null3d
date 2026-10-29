@@ -90,7 +90,7 @@ console.log(quality.renderScale); // 0.75
 
 ## The frame-budget governor
 
-When frames take too long, the engine lowers the render scale first. Then it lowers the levels of detail, the live shadow settings, bloom's size, ambient occlusion's scale and the scale of screen-space reflections. Then it lowers the steps of contact shadows and the far characters' update interval. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order of the steps and the rules that drive them. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now. [`QualityGovernor`](reference/quality.md#qualitygovernor) lists each of its members with the step that changes it.
+When frames take too long, the engine lowers a sketch's budgets and the render scale in turn, a budget's step first, until the render scale reaches its lowest. Then it lowers the levels of detail, the live shadow settings, bloom's size, ambient occlusion's scale and the scale of screen-space reflections. Then it lowers the steps of contact shadows and the far characters' update interval. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order of the steps and the rules that drive them. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now. [`QualityGovernor`](reference/quality.md#qualitygovernor) lists each of its members with the step that changes it.
 
 The `quality.onChange` handlers run after each of these steps. So a sketch can lighten its own work with the engine's:
 

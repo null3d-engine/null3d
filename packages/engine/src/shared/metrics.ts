@@ -628,6 +628,11 @@ export class RingSums {
 	 * GPU record did not time adds nothing to its phase's mean.
 	 */
 	readonly phaseRecords = new Float64Array(PHASE_NAMES.length);
+	/**
+	 * The window's sums of the phase slots that held a time above 0, by phase index. The sums leave
+	 * out a slot's untimed figure, so a pass that some records did not time still reads its mean.
+	 */
+	readonly phaseSums = new Float64Array(PHASE_NAMES.length);
 	private readonly views: MetricsViews;
 	private next: number;
 	/** The greatest common divisor of `stepCounter`'s values over the records added, or 0. */
@@ -684,9 +689,13 @@ export class RingSums {
 			if (keep) {
 				for (let c = 0; c < COUNTER_NAMES.length; c++)
 					this.last[c] = words[at + COUNTERS + c] as number;
-				for (let p = 0; p < PHASE_NAMES.length; p++)
-					if ((floats[at + PHASES + p] as number) > 0)
+				for (let p = 0; p < PHASE_NAMES.length; p++) {
+					const ms = floats[at + PHASES + p] as number;
+					if (ms > 0) {
 						this.phaseRecords[p] = (this.phaseRecords[p] as number) + 1;
+						this.phaseSums[p] = (this.phaseSums[p] as number) + ms;
+					}
+				}
 			}
 			sums[SUM_RECORDS] = (sums[SUM_RECORDS] as number) + 1;
 			sums[SUM_BUSY_MS] = (sums[SUM_BUSY_MS] as number) + busy;
@@ -703,6 +712,7 @@ export class RingSums {
 	clear(): void {
 		this.sums.fill(0);
 		this.phaseRecords.fill(0);
+		this.phaseSums.fill(0);
 		this.last.fill(0);
 		this.step = 0;
 	}

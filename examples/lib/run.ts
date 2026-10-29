@@ -1,7 +1,7 @@
 // Starts a demo on a canvas. The examples page uses it, and so can any page that shows the demos
 // in a layout of its own, such as the website's: the page owns the canvas, the text and the
 // styles, and this module owns how a demo starts.
-import { createEngine, type Engine, type StartupStage } from '@null3d/engine';
+import { createEngine, type Engine, type QualityPreset, type StartupStage } from '@null3d/engine';
 import type { Demo } from '../demos';
 import type { HudGroup } from './controls';
 import { createHud } from './hud';
@@ -43,6 +43,12 @@ export interface StartOptions {
 	 */
 	stats?: boolean;
 	/**
+	 * The quality preset that the page's address names. A production build reads no URL switches,
+	 * so the page reads `?preset=` itself and passes it here. `createEngine`'s own switch wins in a
+	 * development build.
+	 */
+	preset?: QualityPreset;
+	/**
 	 * The element that holds the buttons of the demo's choices, such as a time of day, for a demo
 	 * that has some. Without it, the demo runs with its own first options.
 	 */
@@ -69,6 +75,7 @@ export async function startDemo({
 	demo,
 	labels,
 	stats = true,
+	preset,
 	choices,
 	hud,
 	signal,
@@ -118,13 +125,15 @@ export async function startDemo({
 	};
 	let engine: Engine;
 	try {
-		// No preset: the engine's start-up check picks one that the device holds at its frame rate.
+		// Without a preset: the engine's start-up check picks one that the device holds at its frame
+		// rate. A production build reads no URL switches, so the page passes the address's preset.
 		engine = await createEngine({
 			canvas,
 			sketch: demo.sketch,
 			largeWorld: demo.largeWorld,
 			hdr: demo.hdr,
 			transparent: behind,
+			preset,
 			// Collapsed, the overlay stays small until clicked.
 			stats: stats && { collapsed: true },
 			onProgress: (stage) => {
