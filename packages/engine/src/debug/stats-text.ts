@@ -236,19 +236,54 @@ export function statsText(figures: StatsFigures): string {
 	return lines.join('\n');
 }
 
+/** One feature's GPU figure: the time that it measured, or that it measures none. */
+export function featureGpu(feature: FeatureStats): string {
+	return feature.gpuMs === null ? 'gpu not measured' : `gpu ${ms(feature.gpuMs)}`;
+}
+
+/** One labelled figure that a feature reports. */
+export interface FeatureFact {
+	/** Names the cell, so a setting called `budget` keeps a cell of its own beside the budget's. */
+	readonly key: string;
+	/** The words above the value. */
+	readonly label: string;
+	readonly value: string;
+}
+
 /**
- * One feature's figures as one line: its name and GPU time, its settings by name, its budget and
- * the memory that it reports.
+ * One feature's labelled figures: each of its settings by name, its budget and the memory that it
+ * reports, in reading order.
+ */
+export function featureFacts(feature: FeatureStats): FeatureFact[] {
+	const facts: FeatureFact[] = [];
+	for (const name of Object.keys(feature.settings))
+		facts.push({ key: `setting:${name}`, label: name, value: String(feature.settings[name]) });
+	if (feature.allowedMs !== null && feature.budgetMs !== null)
+		facts.push({
+			key: 'budget',
+			label: 'budget',
+			value: `${feature.allowedMs.toFixed(1)} of ${feature.budgetMs.toFixed(1)} ms`,
+		});
+	if (feature.bytes !== null)
+		facts.push({ key: 'memory', label: 'memory', value: mib(feature.bytes) });
+	return facts;
+}
+
+/**
+ * One feature's labelled figures as one line, or an empty string where it reports none of them.
+ */
+export function featureDetails(feature: FeatureStats): string {
+	return featureFacts(feature)
+		.map(({ label, value }) => `${label} ${value}`)
+		.join(' · ');
+}
+
+/**
+ * One feature's figures as one line: its name and GPU time, then its details where it reports any.
  */
 export function featureLine(feature: FeatureStats): string {
-	const gpu = feature.gpuMs === null ? 'gpu not measured' : `gpu ${ms(feature.gpuMs)}`;
-	const parts = [feature.name, gpu];
-	for (const name of Object.keys(feature.settings))
-		parts.push(`${name} ${String(feature.settings[name])}`);
-	if (feature.allowedMs !== null && feature.budgetMs !== null)
-		parts.push(`budget ${feature.allowedMs.toFixed(1)} of ${feature.budgetMs.toFixed(1)} ms`);
-	if (feature.bytes !== null) parts.push(`memory ${mib(feature.bytes)}`);
-	return parts.join('  ');
+	const details = featureDetails(feature);
+	return `${feature.name}  ${featureGpu(feature)}${details === '' ? '' : `  ${details}`}`;
 }
 
 /** The main thread line: its long tasks and its longest input delay over the last few seconds. */

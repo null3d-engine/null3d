@@ -11,11 +11,22 @@ import {
 	Role,
 	UNTIMED,
 } from '../shared/metrics';
-import { rateLevel, workLevel } from './frame-target';
+import { featureLevel, rateLevel, workLevel } from './frame-target';
 import { overlayFigures, type PageFigures } from './overlay';
-import { codeMs, drawingMs, targetTip, tenthsOfMib, WorkThreads, widthStep } from './overlay-look';
+import {
+	codeMs,
+	drawingMs,
+	STATS_PANEL_WIDTH,
+	STATS_TABS,
+	TAB_LABELS,
+	TabSelection,
+	targetTip,
+	tenthsOfMib,
+	WorkThreads,
+	widthStep,
+} from './overlay-look';
 import { type FrameStats, FrameStatsWindow, STATS_WINDOW_MS } from './stats';
-import { statsText } from './stats-text';
+import { featureFacts, featureLine, statsText } from './stats-text';
 
 /** The threads of a pipelined engine with two job workers, as `engine.measure` names them. */
 const THREADS: [string, number[]][] = [
@@ -218,6 +229,56 @@ type FrameStatsThreads = [
 
 /** The page's own figures where the browser gives none. */
 const NO_PAGE_FIGURES: PageFigures = { jsHeapBytes: null, page: null };
+
+describe('a feature’s labelled figures', () => {
+	const feature = (over: Partial<FeatureStats> = {}): FeatureStats => ({
+		name: 'test-glow',
+		gpuMs: 0.5,
+		settings: { samples: 22, budget: 1 },
+		scope: [],
+		budgetMs: 4,
+		allowedMs: 2,
+		bytes: 1024 * 1024,
+		...over,
+	});
+
+	it('gives each setting its own cell, even where a setting shares a reserved name', () => {
+		const facts = featureFacts(feature());
+		expect(facts.map((fact) => fact.label)).toEqual(['samples', 'budget', 'budget', 'memory']);
+		expect(new Set(facts.map((fact) => fact.key)).size).toBe(4);
+		expect(facts.map((fact) => fact.value)).toEqual(['22', '1', '2.0 of 4.0 ms', '1.0 MiB']);
+	});
+
+	it('leaves out the figures that the feature does not report', () => {
+		const facts = featureFacts(
+			feature({ settings: {}, budgetMs: null, allowedMs: null, bytes: null }),
+		);
+		expect(facts).toEqual([]);
+	});
+
+	it('writes the same figures as one line for the text form', () => {
+		expect(featureLine(feature())).toBe(
+			'test-glow  gpu 0.50 ms  samples 22 · budget 1 · budget 2.0 of 4.0 ms · memory 1.0 MiB',
+		);
+		expect(featureLine(feature({ gpuMs: null }))).toContain('gpu not measured');
+	});
+});
+
+describe('a feature’s level', () => {
+	it('is green inside four fifths of its allowance, amber up to the allowance, and red past it', () => {
+		expect(featureLevel(0.8, 1)).toBe('ok');
+		expect(featureLevel(0.81, 1)).toBe('warn');
+		expect(featureLevel(1, 1)).toBe('warn');
+		expect(featureLevel(1.01, 1)).toBe('bad');
+		expect(featureLevel(1.6, 2)).toBe('ok');
+	});
+
+	it('is unset where the feature reports no time, or declares no allowance', () => {
+		expect(featureLevel(null, 1)).toBeUndefined();
+		expect(featureLevel(1, null)).toBeUndefined();
+		expect(featureLevel(null, null)).toBeUndefined();
+	});
+});
 
 describe('the overlay’s figures of a feature’s GPU scope', () => {
 	/** A window's figures with two GPU steps: the camera's opaque pass and a sketch pass. */
@@ -634,5 +695,44 @@ describe('the overlay target and colors', () => {
 		expect(threads.heldBackBy(25, 24)).toBe('outside the engine');
 		threads.update([{ name: 'main', busyMs: 30 }], 'main');
 		expect(threads.heldBackBy(16.7, null)).toBe('Sketch + drawing');
+	});
+});
+
+describe('the overlay tabs', () => {
+	it('names four sections in reading order', () => {
+		expect(STATS_TABS).toEqual(['frame', 'memory', 'steps', 'systems']);
+		expect(STATS_TABS.map((tab) => TAB_LABELS[tab])).toEqual([
+			'Frame',
+			'Memory',
+			'Steps',
+			'Systems',
+		]);
+	});
+
+	it('shows one section at a time, and leaves the others hidden', () => {
+		const tabs = new TabSelection();
+		const shown = () => STATS_TABS.filter((tab) => tabs.visible(tab));
+		expect(shown()).toEqual(['frame']);
+		expect(tabs.select('memory')).toBe(true);
+		expect(shown()).toEqual(['memory']);
+		// The chosen tab stays chosen when it is chosen again.
+		expect(tabs.select('memory')).toBe(false);
+		expect(tabs.tab).toBe('memory');
+		expect(tabs.select('systems')).toBe(true);
+		expect(shown()).toEqual(['systems']);
+	});
+
+	it('moves with the arrow keys and wraps at the ends', () => {
+		const tabs = new TabSelection();
+		expect(tabs.move(1)).toBe('memory');
+		expect(tabs.move(-1)).toBe('frame');
+		expect(tabs.move(-1)).toBe('systems');
+		expect(tabs.move(1)).toBe('frame');
+	});
+
+	it('keeps one panel width for every tab, and sets no height of its own', () => {
+		// The card's height is its tab's content, which the browser test measures; this pins the
+		// width that the style sheet sets.
+		expect(STATS_PANEL_WIDTH).toBe(360);
 	});
 });

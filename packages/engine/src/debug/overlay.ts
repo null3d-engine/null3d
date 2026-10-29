@@ -2,13 +2,14 @@
 // the top-right corner of the canvas, which the page updates from the metrics buffer a few times a
 // second. The page owns the overlay's element, and the engine's threads write the figures it reads
 // as they always do. The panel's header is a button with the frame rate, which shows and hides a
-// card of the other figures under it. The figures are judged against the engine's target frame
-// rate (frame-target.ts). While the card shows, the engine samples the costly figures: GPU time,
+// tabbed card of the other figures under it. The card's four tabs show one group at a time: the
+// frame's work and counts, the parts of memory, the add-ons and GPU steps, or the memory register.
+// The figures are judged against the engine's target frame rate (frame-target.ts). While the card shows, the engine samples the costly figures: GPU time,
 // the counts of the draws that the GPU culls, and the memory figures that the engine's threads
 // publish. Collapsed to its header, the overlay turns that sampling off and formats none of the
 // card's figures. The page adds what only it can measure, where the browser offers it: its
-// JavaScript heap and the whole page's memory. Only the header button takes the pointer, so drags
-// on the rest of the panel still reach the canvas.
+// JavaScript heap and the whole page's memory. Only the header button, the card's two symbols and
+// its tabs take the pointer, so drags on the rest of the panel still reach the canvas.
 // stats-panel.ts holds the panel on the page, which a three.js page shows too, and overlay-look.ts
 // holds its look.
 

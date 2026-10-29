@@ -240,7 +240,7 @@ The `quality` callback runs once when the feature is added, and again whenever t
 
 ## Stats
 
-The stats overlay shows a row for each feature, under the engine's own figures. A row names the feature, its GPU time, its settings, its budget and the memory that it reports, such as `water  gpu 0.42 ms  reflectionEvery 1  budget 1.7 of 1.7 ms`.
+The stats overlay shows a row for each feature in its Steps tab. The row's first line names the feature and shows its GPU time beside that name, such as `water` and `gpu 0.42 ms`. Its second line holds the feature's settings, its budget and the memory that it reports, such as `reflectionEvery 1 · budget 1.7 of 1.7 ms · memory 0.6 MiB`. A feature that reports none of them shows no second line.
 
 A feature has one GPU timing scope. Its `gpu` option names the render passes that carry its work, and the overlay shows their GPU time added up as the feature's own. A pass comes from `render.addPass`, such as the reflection pass that draws a mirrored scene:
 
@@ -258,7 +258,7 @@ features.add(
 
 A feature whose work records inside a pass of the engine's own, such as a draw among the transparent objects, names no scope, and its row reads `gpu not measured`. The engine times one frame in eleven and at most seven passes in it. A pass after them adds its time to the last one's, whose name then ends in `and later`. A pass that draws in some frames only keeps the figure of the window that last timed it, so its row does not blank between them. On WebGL2 the engine times the whole frame alone, so no feature has a figure there.
 
-The overlay also lists the GPU time of each step of the frame that the GPU timed, under `GPU steps`. A step is one of the engine's own passes, by its name, or a sketch's pass, by the feature that declares it.
+The overlay also lists the GPU time of each step of the frame that the GPU timed, under `GPU steps` in the same tab. A step is one of the engine's own passes, by its name, or a sketch's pass, by the feature that declares it.
 
 `FeatureStats` holds the same figures. `FeatureHost.stats` gives them to the sketch, for tests and logs. The host sends them to the page, which the overlay reads, whenever one changes. The sketch's copy of a feature's `gpuMs` stays null, because the page is what reads the frame's GPU timings. Each add-on sends its own list. Two add-ons on one page show side by side, and an add-on that stops keeps the other's rows.
 
