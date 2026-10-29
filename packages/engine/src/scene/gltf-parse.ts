@@ -2446,7 +2446,7 @@ function parseStages(value: unknown): NodeStages | undefined {
 			levels.push({ url, bytes: bytes as number, error: levelError });
 		}
 	const bands: NodeStages['bands'] = [];
-	/** The primitive whose band list a bad entry cuts off, or -1 for none. */
+	/** Each primitive whose band list a bad entry cut off, whose later entries are left out. */
 	const broken = new Set<number>();
 	if (Array.isArray(banded))
 		for (const entry of banded) {
