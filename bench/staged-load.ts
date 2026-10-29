@@ -15,7 +15,7 @@
 //   --gpu <path>      webgpu or webgl2: webgpu
 //   --network <name>  slow-4g or full: slow-4g
 //   --clusters        load the staged model of a cluster tree instead of a mesh's levels
-import { copyFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { launchChromium } from '../packages/cli/src/browser.js';
 import { refuseBackgroundPriority } from '../tests/lib/app-window.ts';
@@ -125,18 +125,44 @@ function modelOf(clusters: boolean): string {
 	}`;
 }
 
+/** A stage file that a model names: its address beside the model and the bytes that it takes. */
+interface NamedStage {
+	url: string;
+	bytes: number;
+}
+
+/** The stage files that the model at `path` names, from its own JSON. */
+function stagesOf(path: string): NamedStage[] {
+	const file = readFileSync(path);
+	const bytes = new Uint8Array(file.buffer, file.byteOffset, file.byteLength);
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	const json = JSON.parse(
+		new TextDecoder().decode(bytes.subarray(20, 20 + view.getUint32(12, true))),
+	) as {
+		nodes?: { extras?: { NULL3D_stages?: { levels?: NamedStage[]; bands?: NamedStage[] } } }[];
+	};
+	const stages: NamedStage[] = [];
+	for (const node of json.nodes ?? []) {
+		const staged = node.extras?.NULL3D_stages;
+		stages.push(...(staged?.levels ?? []), ...(staged?.bands ?? []));
+	}
+	return stages;
+}
+
 /**
- * Copies the staged models and their stage files into the build, which a page names by address and
- * Vite does not copy. The server compresses a file when a load first asks for it, so a copy is
- * served as any other file of the build.
+ * Copies the staged models and the stage files that they name into the build, which a page names by
+ * address and Vite does not copy. The server compresses a file when a load first asks for it, so a
+ * copy is served as any other file of the build.
  */
 function copyStagedModels(): void {
-	const model = /^(?:cluster-)?staged-terrain\.(?:glb|m\d+\.(?:lod|p\d+\.band)\d+\.bin)$/;
 	const from = join(REPO_ROOT, 'tests/pages/assets/models');
 	const to = join(STARTUP_PAGES_DIR, 'tests/pages/assets/models');
 	mkdirSync(to, { recursive: true });
-	for (const name of readdirSync(from))
-		if (model.test(name)) copyFileSync(join(from, name), join(to, name));
+	for (const name of ['staged-terrain.glb', 'cluster-staged-terrain.glb']) {
+		copyFileSync(join(from, name), join(to, name));
+		for (const stage of stagesOf(join(from, name)))
+			copyFileSync(join(from, stage.url), join(to, stage.url));
+	}
 }
 
 /**
@@ -144,25 +170,10 @@ function copyStagedModels(): void {
  * of the tool's makes each file's bytes part of what it names, so no download is needed for this.
  */
 function stageBytesOf(clusters: boolean): number {
-	const file = readFileSync(join(STARTUP_PAGES_DIR, modelOf(clusters)));
-	const bytes = new Uint8Array(file.buffer, file.byteOffset, file.byteLength);
-	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-	const json = JSON.parse(
-		new TextDecoder().decode(bytes.subarray(20, 20 + view.getUint32(12, true))),
-	) as {
-		nodes?: {
-			extras?: {
-				NULL3D_stages?: { levels?: { bytes?: number }[]; bands?: { bytes?: number }[] };
-			};
-		}[];
-	};
-	let total = 0;
-	for (const node of json.nodes ?? []) {
-		const staged = node.extras?.NULL3D_stages;
-		for (const stage of [...(staged?.levels ?? []), ...(staged?.bands ?? [])])
-			total += stage.bytes ?? 0;
-	}
-	return total;
+	return stagesOf(join(STARTUP_PAGES_DIR, modelOf(clusters))).reduce(
+		(sum, stage) => sum + stage.bytes,
+		0,
+	);
 }
 
 /** A cold load's address: its own key, so no cache holds any of its files. */
