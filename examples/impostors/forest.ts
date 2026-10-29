@@ -15,6 +15,11 @@ export const SIDE = 1600;
 export const RADIUS = 620;
 /** Where the near band ends and the merged band begins, and where the cards begin. */
 export const NEAR_EDGE = 140;
+/**
+ * How far the near band and the merged far cells reach past each other's edge, so the two bands
+ * overlap and each fades through the other's edge rather than meeting on a line.
+ */
+export const BAND_OVERLAP = 40;
 export const CARD_EDGE = 360;
 /** The trees in each band. */
 const COUNT = { near: 3600, middle: 5400, far: 3000 } as const;
@@ -59,8 +64,8 @@ function ring(count: number, from: number, to: number): Tree[] {
 export function bands(): Bands {
 	math.seed(17);
 	return {
-		near: ring(COUNT.near, 0, NEAR_EDGE),
-		middle: ring(COUNT.middle, NEAR_EDGE, CARD_EDGE),
+		near: ring(COUNT.near, 0, NEAR_EDGE + BAND_OVERLAP),
+		middle: ring(COUNT.middle, NEAR_EDGE - BAND_OVERLAP, CARD_EDGE),
 		far: ring(COUNT.far, CARD_EDGE, RADIUS),
 	};
 }
