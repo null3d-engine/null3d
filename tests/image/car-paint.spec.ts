@@ -148,3 +148,30 @@ test('car-paint: the flakes glint under a point light', async ({ page }) => {
 			.toBeGreaterThan(0.0079);
 	}
 });
+
+/**
+ * The paint's flakes answer the spot light too, through the spot's own lobe. The run leaves the sun
+ * out and puts a spot where the point light stood, so the spot alone lights the body: its flakes
+ * must still change the image. A lobe that answered point lights alone measures no difference.
+ */
+test('car-paint: the flakes glint under a spot light', async ({ page }) => {
+	const runs = IMAGE_RUNS.filter((run) => run.test === 'car-paint');
+	expect(runs.length).toBe(3);
+	test.setTimeout(runs.length * 2 * PAGE_MS);
+	for (const run of runs) {
+		const glints = await imageOf(page, variant(run.path, '?sun=off&spot=on'));
+		const smooth = await imageOf(page, variant(run.path, '?sun=off&spot=on&flakes=off'));
+		const mean = difference(glints, smooth);
+		const share = changed(glints, smooth, 8 / 255);
+		console.log(`${run.id}: spot-light flakes mean ${mean.toFixed(5)} changed ${share.toFixed(5)}`);
+		// The point light measures a mean channel difference of 0.00264 and 0.01583 of the channels
+		// changed by more than 8 steps on every tier. The spot stands in the same place, with a
+		// cone wide enough that its falloff plays no part, so its floors are half of those.
+		expect
+			.soft(mean, `${run.id}: the spot light's flakes change the image`)
+			.toBeGreaterThan(0.0013);
+		expect
+			.soft(share, `${run.id}: the spot light's flakes change many pixels`)
+			.toBeGreaterThan(0.0079);
+	}
+});
