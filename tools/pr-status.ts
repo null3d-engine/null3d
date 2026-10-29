@@ -51,6 +51,14 @@ const INCOMPLETE = new Set([
 	'M3-V5',
 	'M3-R19',
 	'M3-V1',
+	'M3-L1',
+	'M3-R31',
+	'M3-E1',
+	'M3-F14',
+	'M3-K3',
+	'M3-V3',
+	'M3-R40',
+	'M3-K2',
 ]);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
@@ -67,12 +75,28 @@ const NOTES: Readonly<Record<string, string>> = {
 		"the compute pass and its WebGL2 fragment form are built and tested, and the wind add-on fills its field through the hook with a compute pass. The owner's 25 October ruling adds M3-V13's history to the hook, and the first-user outcome the plan names still waits on M3-F9's ocean",
 	'M3-R22':
 		"the shader cache on the branch is D-248's change, not this task's: it reuses every entry when a compiler change leaves the compiled program identical, 0 compiled and 79 reused in 19 s, where the same change cost an hour. The task's own change, three entries instead of four for every module kind, is on `feat/m3-r22-entry-set` and not on this branch, and the determinism list here still holds `lit`; the two checks' CI times remain unmeasured",
+	'M3-L1':
+		'unticked by the 29 October audit: two of its own items are unmet. The coverage switch its item 6 builds is reached only by unit tests, because every level picture sets its levels by a measured error, so a wrong coverage measure would pass every other check; and the far-cell hand-over its item 5 names has no first user, since the impostors demo draws its rings as disjoint batches with no band on the near batch or the merged cells. Both are being built',
+	'M3-R31':
+		'unticked by the 29 October audit: its own done-when names an image test for the look, and the only normal-map shadow picture draws the sun, while the shader change covers point and spot lights too. The point and spot half is a look no picture draws',
+	'M3-E1':
+		"unticked by the 29 October audit: the entry gained a rule-42 bullet that the tick never covered. The particles add-on's birth records are still written one per birth per frame on the sketch thread, and the engine's particle buffer gives them a Rust home",
+	'M3-F14':
+		"unticked by the 29 October audit: the entry gained a rule-42 bullet that the tick never covered. The per-frame terrain work, the quadtree select and the block build, is still in TypeScript and there is no terrain crate; that work is also what M3-R39's new bullet hands here by name, so R39 stands and this carries it",
+	'M3-K3':
+		"unticked by the 29 October audit: the owner's 26 October ruling is that cookies take any texture and larger sizes, and the head still resamples to 128 by 128 and takes pixels only",
+	'M3-V3':
+		'unticked under the policy this branch now states rather than by its own clause: no public behaviour may be reachable by nobody. The pick build of a compute-driven vertex offset is in its What bullet, and nothing takes it: no unit test, no browser test and no example. The owner may reverse this one without touching the others',
+	'M3-R40':
+		'unticked under the same policy: the physics guide sample that the task corrected has never run, because the skill and cookbook check compiles without executing it and no example, test or bench uses the library it calls',
+	'M3-K2':
+		'unticked under the same policy: drag controls are exported and reached by no unit test, browser test, picture or example, because the gizmos picture and its spec reach only the transform controls',
 	'M3-F3':
-		"dropped with the temporal resolve it waited on (D-206); M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
+		"dropped with the temporal resolve it waited on (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F10':
-		"dropped with the temporal resolve it needs (D-206); M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
+		"dropped with the temporal resolve it needs (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F9':
-		"the simulation, the material and the older path's fragment form are on the local branch `feat/m3-f9-fft-ocean`, thirteen commits ahead of the milestone and not pushed, so a reader cannot find them; the engine buffer-id fault it found has landed separately. The older path's cost is found and fixed on that branch: its 833 ms frame against 158 without was not the ocean's draws but the add-on switching the pass off and on every other frame, which made the engine compile its plan every frame; a pass that carries its cadence without being switched holds 60 frames a second. What remains is the quiet-window figure and the merge. The demo entry is held because its picture on that path would record a flat sea. No cost per preset is stated: two runs of identical work differed by more than the effect, so the frame-difference method cannot resolve a sub-millisecond chain",
+		"the simulation, the material and the older path's fragment form are on the local branch `feat/m3-f9-fft-ocean`, thirteen commits ahead of the milestone and pushed, so a reader can find them; the engine buffer-id fault it found has landed separately. The older path's cost is found and fixed on that branch: its 833 ms frame against 158 without was not the ocean's draws but the add-on switching the pass off and on every other frame, which made the engine compile its plan every frame; a pass that carries its cadence without being switched holds 60 frames a second. What remains is the quiet-window figure and the merge. The demo entry is held because its picture on that path would record a flat sea. No cost per preset is stated: two runs of identical work differed by more than the effect, so the frame-difference method cannot resolve a sub-millisecond chain",
 	'M3-A11':
 		'measured on both paths at every preset; it does not beat the presets, so it stays behind the internal setting and does not ship (D-206). Its black-capture and bind-group faults are fixed, its shader file still loads on first use, and that first-use case is now tested on both paths',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
