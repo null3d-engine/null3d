@@ -149,12 +149,13 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	const pushes = createPushRing();
 	const now = (): number => ctx.time.now;
 
-	// The pass takes eight value vectors: the settings, the ring of pushes and gusts, and the box.
-	// The solver runs one fixed step per cycle. A frame sets the runs that the sketch time owes,
-	// so the air keeps the same pace whatever the frame rate, and a held frame runs its warm-up in
-	// the one frame it draws.
+	// The solver runs one fixed step per cycle, and the pass takes eight value vectors: the step and
+	// the settings, the ring of pushes and gusts, and the box. A frame sets the runs that the sketch
+	// time owes, so the air keeps the same pace whatever the frame rate.
+	//
 	// The warm-up stands in for the second of air before the first frame, so the steps that the
-	// sketch time owes start after it.
+	// sketch time owes start after it. Hold mode draws one frame and runs none of the sketch's code,
+	// so that warm-up is what gives a held frame developed air.
 	let solved = WARMUP_CYCLES * STEP_SECONDS;
 	const owedSteps = (): number => {
 		// The sketch time is a sum of frame times, so a frame that owes exactly one step can read a
