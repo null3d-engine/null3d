@@ -217,8 +217,9 @@ const OBJECT_IDS_DEF: &str = "OBJECT_IDS";
 
 /// The inputs that cost something: the second texture coordinates, a vertex attribute; the
 /// instance's index and the object's id, which the vertex shader finds in the table of object
-/// ranges; and the object's matrices, which pass to the fragment shader as three more values.
-const INPUTS: [Input; 3] = [
+/// ranges; the object's matrices, which pass to the fragment shader as three more values; and the
+/// four-number vertex record, a vertex attribute that a generated shape's vertex offset reads.
+const INPUTS: [Input; 4] = [
     Input {
         def: "CUSTOM_UV1",
         fields: &[(None, "uv1")],
@@ -233,6 +234,10 @@ const INPUTS: [Input; 3] = [
             (Some("object"), "worldMatrix"),
             (Some("object"), "normalMatrix"),
         ],
+    },
+    Input {
+        def: "CUSTOM_TARGET",
+        fields: &[(None, "vertexRecord")],
     },
 ];
 

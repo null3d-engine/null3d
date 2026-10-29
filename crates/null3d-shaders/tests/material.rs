@@ -5,7 +5,7 @@ mod precision;
 
 use std::path::Path;
 
-use null3d_gpu::drawlist::permutation;
+use null3d_gpu::drawlist::{permutation, vertex};
 use null3d_shaders::{
     BuildError, Compiler, Inputs, Manifest, MaterialOutput, MaterialSource, MaterialTemplate,
     Problem, Share,
@@ -354,6 +354,25 @@ fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
     let both = compile(&format!("{STRIPES}\n{WAVE}"))
         .expect("a vertex offset and a surface function build together");
     assert_eq!(both.functions, ["surface", "vertexOffset"]);
+}
+
+/// A vertex offset that moves each vertex by its mesh's four-number record.
+const RECORD: &str = "fn vertexOffset(input: VertexInput) -> vec3f {
+    return vec3f(0.0, input.vertexRecord.y - input.position.y, 0.0);
+}
+";
+
+#[test]
+fn a_vertex_offset_that_reads_the_record_takes_the_record_attribute() {
+    let built = compile(RECORD).expect("the record builds");
+    assert_eq!(built.functions, ["vertexOffset"]);
+    // The record is the vertex attribute at location 8, which a mesh with the record carries.
+    assert_eq!(built.attributes & vertex::MORPH, vertex::MORPH);
+    assert!(built.locations.contains(&8), "{:?}", built.locations);
+    // A material that reads none of the record pays nothing for it.
+    let plain = compile(WAVE).expect("the wave builds");
+    assert_eq!(plain.attributes & vertex::MORPH, 0);
+    assert!(!plain.locations.contains(&8), "{:?}", plain.locations);
 }
 
 #[test]
