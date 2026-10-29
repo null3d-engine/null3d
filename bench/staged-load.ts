@@ -15,13 +15,13 @@
 //   --gpu <path>      webgpu or webgl2: webgpu
 //   --network <name>  slow-4g or full: slow-4g
 //   --clusters        load the staged model of a cluster tree instead of a mesh's levels
-import { readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { launchChromium } from '../packages/cli/src/browser.js';
 import { refuseBackgroundPriority } from '../tests/lib/app-window.ts';
 import { type Downloads, type Load, loadPath } from '../tests/lib/load-routes.ts';
 import { buildStartupPages, prepareLoads, STARTUP_PAGES_DIR } from '../tests/lib/load-server.ts';
-import { DEBUG_PORT, PREVIEW_PORT, startPreview } from '../tests/lib/server.ts';
+import { DEBUG_PORT, PREVIEW_PORT, REPO_ROOT, startPreview } from '../tests/lib/server.ts';
 import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { DevTools, limitWorkerNetworks, pageResultOf } from './lib/devtools';
 import { median } from './lib/report';
@@ -123,6 +123,20 @@ function modelOf(clusters: boolean): string {
 	return `tests/pages/assets/models/${
 		clusters ? 'cluster-staged-terrain.glb' : 'staged-terrain.glb'
 	}`;
+}
+
+/**
+ * Copies the staged models and their stage files into the build, which a page names by address and
+ * Vite does not copy. The server compresses a file when a load first asks for it, so a copy is
+ * served as any other file of the build.
+ */
+function copyStagedModels(): void {
+	const model = /^(?:cluster-)?staged-terrain\.(?:glb|m\d+\.(?:lod|p\d+\.band)\d+\.bin)$/;
+	const from = join(REPO_ROOT, 'tests/pages/assets/models');
+	const to = join(STARTUP_PAGES_DIR, 'tests/pages/assets/models');
+	mkdirSync(to, { recursive: true });
+	for (const name of readdirSync(from))
+		if (model.test(name)) copyFileSync(join(from, name), join(to, name));
 }
 
 /**
@@ -258,6 +272,7 @@ async function main(): Promise<void> {
 	refuseInQuietWindow('The staged load run');
 	const options = parseArgs(process.argv.slice(2));
 	buildStartupPages();
+	copyStagedModels();
 	const preview = await startPreview(STARTUP_PAGES_DIR, PREVIEW_PORT, `/${PAGE}`);
 	const base = preview.url;
 	try {
