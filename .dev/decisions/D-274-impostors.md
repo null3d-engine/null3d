@@ -1,6 +1,7 @@
 # D-274: The far vegetation impostors
 
-Status: proposed, for the owner's ruling. Built for this record: the cards' three-view blend and
+Status: decided. The owner ruled the record stands, on the auditor's reading that its split of
+responsibility is the right one. Built for this record: the cards' three-view blend and
 their relight from stored normals (`3a75764e5`), the two atlases and `encodeImpostorSurface`, the
 per-copy turn with the card's upright frame, and the bake helper that fills both atlases. Built by
 the far-tree task beside it: the per-variant bake and the hand-over band, in the vegetation add-on.
@@ -165,6 +166,10 @@ against its atlas.
   the card is lit by the scene's sun. The three.js mapping gains nothing, because three.js has no
   impostor counterpart.
 - Skills: the develop skill's impostor and vegetation notes.
+- Two things to keep the split honest as it grows. A second add-on that wants the same distance
+  hand-over moves the band into the impostors add-on then, rather than copying it. And the bake
+  helper's public shape stays plant-neutral. The four `impostorSource` fields are the guard that
+  keeps a caller from passing a plant's own nouns through it.
 - Tests: `impostor-turn` and `impostor-turn-sun-back` draw a turned tree beside its card, and
   `impostor-plant` draws a grown plant beside its card. The impostor and demo pictures are redrawn
   for the upright frame and the bake. The hand-over picture is the far-tree task's.
