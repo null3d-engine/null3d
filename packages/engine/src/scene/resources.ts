@@ -1524,7 +1524,7 @@ export interface MaterialFeatures {
 	 * `alphaToCoverage` does: the alpha fades over about one pixel above `alphaCutoff`, and covers
 	 * that share of the pixel. Without MSAA the mask cuts as without it. False gives three.js's hard
 	 * cut edges of `alphaTest`. A custom material takes it where its WGSL sets or reads the
-	 * surface's `alpha`, and throws E1217 otherwise. The default is true.
+	 * surface's `alpha`, and a development build throws E1217 otherwise. The default is true.
 	 */
 	alphaToCoverage?: boolean;
 	/**
@@ -3865,11 +3865,11 @@ export class Materials {
 	 * function, and the attributes that a full shader reads. Throws E1215 for WGSL that the null3D
 	 * Vite plugin did not compile, and for a whole shader whose `@vertex` entry point takes no
 	 * `InstanceIn`. Throws E1216 for a uniform or a texture that the WGSL does not declare, for a
-	 * value of the wrong kind, and for a uniform named as a standard value, such as `color`. Throws
-	 * E1217 for the `hash` alpha mode and for `alphaToCoverage` where the WGSL never sets or reads
-	 * the surface's `alpha`: only WGSL that does has the builds that cut the material's shape, and
-	 * its shadow caster and motion build test that alpha. Throws E1217 for
-	 * `transmission` where the WGSL never sets the surface's `transmission`, and for
+	 * value of the wrong kind, and for a uniform named as a standard value, such as `color`. A
+	 * development build throws E1217 for the `hash` alpha mode and for `alphaToCoverage` where the
+	 * WGSL never sets or reads the surface's `alpha`: only WGSL that does has the builds that cut
+	 * the material's shape, and its shadow caster and motion build test that alpha. It also throws
+	 * E1217 for `transmission` where the WGSL never sets the surface's `transmission`, and for
 	 * `diffuseTransmission` where it never names the surface's `diffuseTransmission` or
 	 * `diffuseTransmissionColor`: only WGSL that does has the builds that let light through.
 	 * When

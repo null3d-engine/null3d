@@ -1335,3 +1335,190 @@ fn a_material_that_sets_the_surface_alpha_cuts_its_shape_its_shadow_and_its_moti
         "{names:?}"
     );
 }
+
+/// A material that sets its diffuse transmission and reads the instance's index: a fading level
+/// then carries the diffuse transmission, the object ids and the level fade in one build, which
+/// used to write the object's scale and the fade value at the same vertex location.
+const TRANSLUCENT_INSTANCES: &str = "fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.diffuseTransmission = 0.5;
+    s.baseColor.r += f32(input.instance) * 0.0;
+    return s;
+}
+";
+
+#[test]
+fn a_translucent_material_that_reads_its_instance_builds_its_fading_levels() {
+    let built = compile(TRANSLUCENT_INSTANCES).expect("the translucent material builds");
+    let fades = built
+        .variants
+        .iter()
+        .filter(|(_, variant)| variant.permutation & permutation::LOD_FADE != 0)
+        .count();
+    assert!(fades > 0, "a custom material's builds fade their levels");
+    // The one build that holds the diffuse transmission, the object ids and the fade.
+    let both: Vec<&String> = built
+        .variants
+        .iter()
+        .filter(|(_, variant)| {
+            let bits = variant.permutation;
+            bits & permutation::TRANSLUCENCY != 0 && bits & permutation::LOD_FADE != 0
+        })
+        .map(|(name, _)| name)
+        .collect();
+    assert!(!both.is_empty(), "the translucent fading build is made");
+}
+
+/// A material that declares both shadow hooks: the coverage function that the caster tests, and the
+/// surface alpha that the motion build tests.
+const BOTH_HOOKS: &str = "fn coverage(input: SurfaceInput) -> f32 {
+    return 1.0;
+}
+
+fn vertexOffset(input: VertexInput) -> vec3f {
+    return vec3f(0.0);
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.alpha = 0.5;
+    return s;
+}
+";
+
+#[test]
+fn a_material_with_both_hooks_cuts_its_shadow_by_coverage_and_its_motion_by_alpha() {
+    let built = compile(BOTH_HOOKS).expect("the material with both hooks builds");
+    let masked = |prefix: &str| {
+        built
+            .variants
+            .iter()
+            .find(|(name, variant)| {
+                name.starts_with(prefix)
+                    && name.contains("alpha_mask")
+                    && variant.permutation & permutation::ALPHA_MASK != 0
+            })
+            .map(|(name, _)| name.clone())
+            .unwrap_or_else(|| panic!("no masked {prefix} build among {:?}", built.variants.keys()))
+    };
+    let source = |name: &str| {
+        built.variants[name]
+            .wgsl
+            .as_ref()
+            .expect("WGSL")
+            .source
+            .clone()
+    };
+    // The caster cuts by the coverage function, which reads the light's view, and not by the
+    // surface's alpha. A call reads `= coverage(args)` in the compiled module; the definition alone
+    // is `fn coverage(`.
+    let caster = source(&masked("webgpu_shadow"));
+    assert!(caster.contains("= coverage("), "{caster}");
+    assert!(!caster.contains("surface("), "{caster}");
+    // The motion build cuts by the surface's alpha, since the motion pass has no light to give a
+    // coverage function.
+    let motion = source(&masked("webgpu_motion"));
+    assert!(motion.contains("surface("), "{motion}");
+    assert!(!motion.contains("coverage("), "{motion}");
+}
+
+/// A material that declares every hook and every input, so the compiler makes every permutation of
+/// the custom template that its filters keep, including the ones that carry object matrices, ids and
+/// the level fade together.
+const EVERY_HOOK: &str = "fn vertexOffset(input: VertexInput) -> vec3f {
+    let n = f32(input.instance) + input.colors.r + input.uv1.x + input.vertexRecord.x;
+    return vec3f(0.0, n * 0.0, 0.0);
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor += object.worldMatrix[3].xyz * 0.0;
+    s.baseColor.r += f32(object.id) * 0.0 + f32(input.instance) * 0.0;
+    s.alpha = 1.0;
+    s.transmission = 0.0;
+    s.thickness = 0.0;
+    s.diffuseTransmission = 0.0;
+    s.diffuseTransmissionColor = vec3f(0.0);
+    s.clearcoat = 0.0;
+    s.sheenColor = vec3f(0.0);
+    return s;
+}
+";
+
+#[test]
+fn every_buildable_permutation_of_a_full_custom_material_builds() {
+    use std::collections::BTreeSet;
+
+    // A full material compiles every build that the template offers and the compiler keeps. A
+    // collision of two vertex outputs fails this, whichever features cause it.
+    let built = compile(EVERY_HOOK).expect("the full custom material builds every variant");
+    let words: BTreeSet<u32> = built.variants.values().map(|v| v.permutation).collect();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let inputs = Inputs::read(&root).expect("the repository's shaders");
+    let manifest = Manifest::parse(&inputs.manifest).expect("the shader manifest");
+    let template = manifest
+        .shaders
+        .values()
+        .find(|shader| shader.custom_materials)
+        .expect("the template that custom materials build with");
+    let bit = |name: &str| {
+        permutation::NAMES
+            .iter()
+            .find(|(known, _)| *known == name)
+            .map(|(_, bit)| *bit)
+            .unwrap_or_else(|| panic!("the manifest names {name}, which is no permutation bit"))
+    };
+    // The bits the compiler leaves out of every custom material's builds.
+    let left_out: u32 = ["HALF", "MORPH", "INSTANCE_INDEX", "WEIGHTED", "AREA_LIGHTS"]
+        .iter()
+        .fold(0, |word, name| word | bit(name));
+    let mut expected = 0usize;
+    let mut not_builds = 0usize;
+    for (name, variant) in &template.variants {
+        // The compiler drops the left-out bits from the variant's list before it expands the rest,
+        // so the free bits are the list without them.
+        let free: Vec<u32> = variant
+            .permutations
+            .iter()
+            .map(|name| bit(name))
+            .filter(|bit| left_out & bit == 0)
+            .collect();
+        let required: u32 = variant
+            .required
+            .iter()
+            .fold(0, |word, name| word | bit(name));
+        for combination in 0..(1u32 << free.len()) {
+            let mut word = required;
+            for (k, bit) in free.iter().enumerate() {
+                if combination & (1 << k) != 0 {
+                    word |= bit;
+                }
+            }
+            if !permutation::buildable(word) {
+                not_builds += 1;
+                continue;
+            }
+            expected += 1;
+            assert!(
+                words.contains(&word),
+                "{name}: the buildable permutation {word:#x} is not built. The built permutations are {words:#x?}"
+            );
+        }
+    }
+    assert!(expected > 0, "the template offers no buildable permutation");
+    // The left-out bits are stated rather than skipped: the template offers them, and no build
+    // carries one.
+    let offered_left_out = template
+        .variants
+        .values()
+        .flat_map(|variant| variant.permutations.iter())
+        .any(|name| left_out & bit(name) != 0);
+    assert!(
+        offered_left_out,
+        "the template offers no bit that a custom material leaves out"
+    );
+    assert!(
+        not_builds > 0,
+        "the template expands no combination that is no build"
+    );
+}

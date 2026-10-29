@@ -63,7 +63,7 @@ The engine fills a `SurfaceInput` for each pixel. Positions and directions are i
 
 `fragCoord` counts from the top left on every GPU path, in the pixels of `frame.resolution`. GLSL's `gl_FragCoord` counts from the bottom left, so a port that reads `gl_FragCoord.y` reads `frame.resolution.y - input.fragCoord.y`.
 
-The plugin gives a material the inputs that cost something only where its WGSL reads them: `uv1`, `instance`, and the object's matrices and id. [Built-in shader inputs](builtins.md#what-the-inputs-cost) lists their costs.
+The plugin gives a material the inputs that cost something only where its WGSL reads them: `uv1`, `colors`, `instance`, and the object's matrices and id. [Built-in shader inputs](builtins.md#what-the-inputs-cost) lists their costs.
 
 ## The surface
 
@@ -439,6 +439,7 @@ The engine calls the function once for each vertex, with a `VertexInput`:
 | `normal` | `vec3f` | The vertex's unit normal, in the mesh's own space |
 | `uv` | `vec2f` | The vertex's first texture coordinates |
 | `uv1` | `vec2f` | The vertex's second texture coordinates, or its first on a mesh with one set |
+| `colors` | `vec4f` | The mesh's vertex color, which a vertex offset reads as data, such as a branch index and a phase for wind. A material whose WGSL reads it draws only a mesh with vertex colors: a mesh without them draws nothing with it |
 | `instance` | `u32` | The instance's row in its batch, from 0. It is 0 for an object of the scene |
 
 The row lets a vertex offset lay out a batch by itself, with no values from the sketch. This one lines up a batch's rows in a ring of 64, each lifted by a wave:
@@ -496,7 +497,7 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 ```
 
-`alphaToCoverage` smooths the cut edges over about a pixel, as it does for a standard material. `alphaMode: 'hash'` draws a share of the points that the alpha sets. Only WGSL that sets or reads the surface's `alpha` has these builds. A material whose WGSL never names the alpha throws E1217 for both.
+`alphaToCoverage` smooths the cut edges over about a pixel, as it does for a standard material. `alphaMode: 'hash'` draws a share of the points that the alpha sets. Only WGSL that sets or reads the surface's `alpha` has these builds. A development build throws E1217 for both; a production build draws the material at its cutoff, and the `hash` mode as a mask.
 
 Such a material runs its surface function as it shades and as it casts a shadow. A material that also declares a vertex offset runs it a third time, as it writes its motion. A material without a vertex offset has no motion build, so the motion pass cuts no holes of its own. A material that declares [`fn coverage`](#shadows) casts that function's shape instead, in the light's view.
 

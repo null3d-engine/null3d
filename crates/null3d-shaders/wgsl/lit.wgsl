@@ -976,10 +976,15 @@ struct VertexOut {
 #endif
 #ifdef LOD_FADE
     /// The fade value of the instance's level of detail, and the phase of its dither. A custom
-    /// material's object ids take the other slot, since their builds that fade carry no object
-    /// ids, and the scale slot is free in a build that fades.
+    /// material's object ids take the scale slot, which a build that fades leaves free, unless its
+    /// diffuse transmission fills that slot: then the lod takes the hash's other slot, which a
+    /// fading build leaves free.
 #ifdef OBJECT_IDS
+#ifdef TRANSLUCENCY
+    @location(13) @interpolate(flat, either) lod: vec2f,
+#else
     @location(9) @interpolate(flat, either) lod: vec2f,
+#endif
 #else
     @location(12) @interpolate(flat, either) lod: vec2f,
 #endif
