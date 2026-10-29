@@ -475,6 +475,7 @@ const card = materials.shader({
 
 - The caster reads the coverage in the light's view, so a card that turns toward the light cuts its shadow from the side that the light sees.
 - WGSL that declares a coverage function gets the caster builds, with a fragment stage on both GPU paths. A material that declares neither a vertex offset nor a coverage function casts its whole shape through the engine's own depth template.
+- A caster of flat geometry draws both faces. The shadow pass culls the front faces of single-sided geometry, so a flat single-sided caster is culled whole and casts nothing; such a material sets `doubleSided: true`.
 - A surface function moves where the sun's shadow lookup reads by setting `s.shadowOffset`, in world space relative to the point. A stand-in card sets it to the surface that the stored depth shows, so the card takes the shadow that falls on the surface it shows rather than on its own plane, and its own cast does not darken it. `defaultSurface` leaves it zero.
 
 ## Built-in values

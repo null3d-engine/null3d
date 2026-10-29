@@ -28,6 +28,7 @@ function fakeContext(count: number) {
 		uniformCells?: readonly number[];
 		alphaMode?: string;
 		castsStill?: boolean;
+		doubleSided?: boolean;
 		instances?: Record<string, unknown>;
 		setCells?: readonly number[];
 	} = {};
@@ -43,10 +44,12 @@ function fakeContext(count: number) {
 				uniforms?: { cells?: readonly number[] };
 				alphaMode?: string;
 				castsStill?: boolean;
+				doubleSided?: boolean;
 			}) => {
 				seen.uniformCells = options.uniforms?.cells;
 				seen.alphaMode = options.alphaMode;
 				seen.castsStill = options.castsStill;
+				seen.doubleSided = options.doubleSided;
 				return {
 					setUniform: (_name: string, value: readonly number[]) => {
 						seen.setCells = value;
@@ -101,6 +104,9 @@ describe('createImpostors', () => {
 		expect(seen.uniformCells).toEqual([3, 3, 0, 2]);
 		expect(seen.alphaMode).toBe('mask');
 		expect(seen.castsStill).toBe(true);
+		// A card is one flat quad: a single-sided one would be culled whole by the shadow pass,
+		// whose casters draw with front faces culled.
+		expect(seen.doubleSided).toBe(true);
 	});
 
 	test('draws the nearest view alone when a sketch asks for one', () => {
