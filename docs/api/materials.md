@@ -649,7 +649,7 @@ The layer costs nothing until the first weighted surface draws, and its shaders 
 
 ### Moment transparency
 
-The quality setting `momentTransparency` blends the blended surfaces in a second, better layer. It needs no sort either, and it keeps more of each surface's own color than the weighted blending does. The engine stores four depth moments of each pixel, then draws the surfaces a second time and weights each fragment's color by the light that the moments say survives in front of it. A last step blends the result over the scene. The fit is exact for one surface and for two, and closest to the exact blend of every method the engine has for overlapping glass, foliage and particles.
+The quality setting `momentTransparency` blends the blended surfaces in a second layer that needs no sort. Where the surfaces spread over a metre or more, it is nearer an exact back-to-front blend than the weighted blending is. Where five surfaces sit within a couple of metres of one another, it is slightly farther: the fit's two depths cannot separate them. The engine stores four depth moments of each pixel, then draws the surfaces a second time and weights each fragment's color by the light that the moments say survives in front of it. A last step blends the result over the scene. The fit is exact for one surface and for two, and closest to the exact blend of every method the engine has for overlapping glass, foliage and particles.
 
 ```ts
 // The page turns the layer on when the engine starts, and every blended material draws in it.
