@@ -2162,7 +2162,10 @@ async function startEngine(
 		parkWorker(options.canvas, canvasHold, canvasWorker.handle, canvasHold.movedTo);
 	};
 	try {
-		const report = await abortable(probeCapabilities(powerPreference, presetRequest.hints), signal);
+		const report = await abortable(
+			probeCapabilities(powerPreference, presetRequest.hints, switches.multiDraw),
+			signal,
+		);
 		const probeMs = performance.now() - startedAt;
 		const requested = switches.gpu !== 'auto' ? switches.gpu : (options.gpu ?? 'auto');
 		// After starts that crashed on WebGPU, WebGL2 comes first, unless the page names a GPU path.

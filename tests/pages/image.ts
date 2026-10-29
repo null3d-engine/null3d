@@ -60,6 +60,9 @@ run('image', async () => {
 		tier: engine.capabilities.tier,
 		hdr: engine.capabilities.hdr,
 		halfPrecision: engine.capabilities.halfPrecision,
+		// Whether the engine probed the extension that draws many ranges in one call, which a
+		// picture of the whole-level fallback expects it to lack.
+		multiDraw: engine.capabilities.features.includes('WEBGL_multi_draw'),
 		mode: engine.mode,
 		...depthFacts(engine),
 		width: frame.width,
