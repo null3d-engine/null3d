@@ -176,8 +176,10 @@ meshes. Its texels are 0.25 m, and it covers each overlap with a margin of about
 
 `packages/water/src/junction.test.ts` lays out the demo's river and lake. It proves that each point
 draws once with no hole, and that the lake and the river own their sides. The share runs smoothly
-from 1 to 0. The surface lies flat at the meeting, and both meshes carry one current there. The six `demo-water` pictures match their references, since the held frame
-shows the mouth only from far away.
+from 1 to 0. The surface lies flat at the meeting, and both meshes carry one current there. The Mac's three `demo-water` pictures are drawn again, and the held frame
+shows the mouth only from far away. The other three, the software set, still show the previous tour:
+a frame of the loop differs from them in most of its pixels, so a software image run of this branch
+is red until a CI run draws them and `images:review` takes them from it.
 
 ## Consequences
 
@@ -209,4 +211,6 @@ shows the mouth only from far away.
   second stream leaves the lake's east shore for the east edge. The channel holds water from end to
   end. The lake meets a stream at both ends, which the junction map handles as two meetings.
 - The held frame shows the tour at 1 s, so the six `demo-water` pictures change. The Mac's set is
-  drawn again, and the software set comes from a CI run that draws it.
+  drawn again at 3.003, 1.021 and 1.149 per cent of their pixels moved. The software set is owed.
+  Those three pictures show the previous tour until a CI run of this range draws them, so a software
+  image run is red until then.
