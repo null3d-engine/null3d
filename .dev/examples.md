@@ -111,7 +111,7 @@ The depth-only demo shows the use. Its page is a `'world'` label, and a plane of
 
 ## Always-on interaction
 
-Every demo runs by itself, and takes the user's input at any moment. There is no switch between a tour and free control. `interact(ctx, camera, options)` from `examples/lib/interact.ts` holds the shared code. It gives the demo's camera orbit controls, and it gives a demo with something to lead a point that the pointer steers. Each demo's `controls` list in `examples/demos.ts` names the keys that it reads and what each one does. It also names the pointer's part where the pointer does more than turn the camera. The demos page draws the list as key caps in a panel beside the caption, and under it on a narrow screen ([D-277](decisions/D-277-skyway-driving-and-traffic.md)). A demo with neither has no `controls` list.
+Every demo runs by itself, and takes the user's input at any moment. There is no switch between a tour and free control. `interact(ctx, camera, options)` from `examples/lib/interact.ts` holds the shared code. It gives the demo's camera orbit controls, and it gives a demo with something to lead a point that the pointer steers. Each demo's `controls` list in `examples/demos.ts` names the keys that it reads and what each one does. It also names the pointer's part where the pointer does more than turn the camera. The demos page draws the list as key caps in a panel under the caption ([D-277](decisions/D-277-skyway-driving-and-traffic.md)). A demo with neither has no `controls` list.
 
 The rules:
 
@@ -681,7 +681,8 @@ and a hero car with two screens.
   camera, in the middle of the frame.
 - **The user drives the car in Manual.** W and S speed it up and slow it down, A and D turn it, and
   R and F climb and sink. The towers are boxes that the car slides along or lands on.
-  `drive.test.ts` flies it frame by frame. V and the View buttons put the camera behind the car or
+  `drive.test.ts` flies it frame by frame. A drag swings the camera round the car, and a touch
+  screen drives with an on-screen pad. V and the View buttons put the camera behind the car or
   in its seat, where the panels move to a dashboard
   ([D-277](decisions/D-277-skyway-driving-and-traffic.md)).
 - **No ring of mountains.** The fog's reach is about 240 m, and the ground plane reaches 2.1 km.

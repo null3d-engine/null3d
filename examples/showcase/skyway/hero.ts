@@ -25,6 +25,21 @@ const SEAT = [0, 0.93, 0.18] as const;
 const CHASE = { behind: 13, above: 4.4, ahead: 22, lift: 1.4 };
 /** How quickly the chase camera follows the car's place and its look, per second. */
 const CHASE_FOLLOW = 7;
+/** The chase camera's tilt above the car, and its distance from it. */
+const CHASE_TILT = Math.atan2(CHASE.above, CHASE.behind);
+const CHASE_DISTANCE = Math.hypot(CHASE.behind, CHASE.above);
+/**
+ * How a drag and the wheel move the camera while the user drives: radians of turn and of tilt per
+ * CSS pixel of drag, the zoom per pixel of scroll, and the nearest and farthest the chase camera
+ * sits. In the seat a drag turns the driver's head, as far as `head` and `nod` allow.
+ */
+const ORBIT = { turn: 0.006, tilt: 0.004, zoom: 0.0015, near: 6, far: 70, head: 1.9, nod: 0.9 };
+/**
+ * How long the camera waits after the last drag before it eases back behind the car or straight
+ * ahead, in seconds, and how quickly it eases, per second. It eases only while the car moves, so a
+ * user may look round a car that hovers.
+ */
+const SETTLE = { wait: 1.5, rate: 1.6, speed: 2 };
 
 /** The keys that drive the car, as the cinematic camera's table lists them. */
 export const DRIVE_KEYS = [
@@ -84,6 +99,11 @@ export interface Hero {
 	readonly view: View;
 	/** Puts the camera behind the car or in its seat. */
 	setView(view: View): void;
+	/**
+	 * Takes the on-screen pad's wishes, each from -1 to 1: the throttle, the steer to the left and
+	 * the lift. The keys add to them.
+	 */
+	setPad(throttle: number, steer: number, lift: number): void;
 	/** Hands the car to the user from where Auto left it, at the speed it flew. */
 	take(): void;
 	/** Flies the car on the user's keys and places the camera after it. Call once per Manual frame. */
@@ -111,7 +131,7 @@ export function createHero(
 	start: HeroStart,
 	focus: [number, number, number],
 ): Hero {
-	const { scene, geometry, materials } = ctx;
+	const { scene, geometry, materials, page, input } = ctx;
 	const group = scene.createGroup({ name: 'hero' });
 	const body = scene.createGroup({ parent: group, scale: [SCALE, SCALE, SCALE] });
 
@@ -212,8 +232,48 @@ export function createHero(
 	const towers = cityTowers();
 	const flight: Flight = { x: 0, y: 0, z: 0, yaw: 0, speed: 0, climb: 0, turning: 0 };
 	const stick: Stick = { throttle: 0, steer: 0, lift: 0 };
+	/** The on-screen pad's wishes, which a touch screen drives with. */
+	const pad: Stick = { throttle: 0, steer: 0, lift: 0 };
+	/** Adds a key pair's wish to the pad's, within -1 to 1. */
+	const wish = (plus: boolean, minus: boolean, touch: number): number =>
+		math.clamp((plus ? 1 : 0) - (minus ? 1 : 0) + touch, -1, 1);
 	/** The chase camera's place, which keeps out of the towers as the car does. */
 	const chase: Flight = { x: 0, y: 0, z: 0, yaw: 0, speed: 0, climb: 0, turning: 0 };
+	/**
+	 * How far a drag has turned the camera from behind the car, or the driver's head from straight
+	 * ahead, the chase camera's distance, and the seconds since the last press.
+	 */
+	const orbit = { turn: 0, tilt: 0, distance: CHASE_DISTANCE, idle: SETTLE.wait };
+
+	/**
+	 * Turns the camera with a drag of the pointer or a finger, and zooms the chase camera with the
+	 * wheel or a pinch. After a while with no press, while the car moves, the camera eases back.
+	 */
+	const steerCamera = (dt: number): void => {
+		const { pointer } = input;
+		orbit.idle = pointer.buttons !== 0 ? 0 : orbit.idle + dt;
+		const inside = view === 'cockpit';
+		orbit.turn -= pointer.dragDx * ORBIT.turn;
+		orbit.tilt += pointer.dragDy * ORBIT.tilt;
+		if (inside) {
+			orbit.turn = math.clamp(orbit.turn, -ORBIT.head, ORBIT.head);
+			orbit.tilt = math.clamp(orbit.tilt, -ORBIT.nod, ORBIT.nod);
+		} else {
+			orbit.turn = Math.atan2(Math.sin(orbit.turn), Math.cos(orbit.turn));
+			orbit.tilt = math.clamp(orbit.tilt, -0.15 - CHASE_TILT, 1.3 - CHASE_TILT);
+			if (pointer.wheel !== 0)
+				orbit.distance = math.clamp(
+					orbit.distance * Math.exp(pointer.wheel * ORBIT.zoom),
+					ORBIT.near,
+					ORBIT.far,
+				);
+		}
+		if (orbit.idle > SETTLE.wait && speed > SETTLE.speed) {
+			const k = 1 - Math.exp(-SETTLE.rate * dt);
+			orbit.turn -= orbit.turn * k;
+			orbit.tilt -= orbit.tilt * k;
+		}
+	};
 
 	/** Turns the car to its yaw, pitch and roll, and puts it at `at`. */
 	const pose = (): void => {
@@ -233,26 +293,34 @@ export function createHero(
 		seatPlace();
 		camera.setPosition(seat[0] as number, seat[1] as number, seat[2] as number);
 		// The camera looks along its own -Z, so it turns half a turn more than the nose, and its pitch
-		// and roll mirror the car's.
-		quat.fromEuler(turn, -pitch, yaw + Math.PI, -roll, 'YXZ');
+		// and roll mirror the car's. A drag turns the driver's head from there.
+		quat.fromEuler(turn, -pitch - orbit.tilt, yaw + Math.PI + orbit.turn, -roll, 'YXZ');
 		camera.setRotation(turn[0] as number, turn[1] as number, turn[2] as number, turn[3] as number);
 	};
 
-	/** Puts the camera behind the car, easing after it, and looks down the car's way. */
+	/**
+	 * Puts the camera behind the car, or where a drag turned it round the car, easing after it. It
+	 * looks down the car's way from behind, and at the car itself once a drag turns it away.
+	 */
 	const follow = (dt: number, snap: boolean): void => {
 		const sx = Math.sin(yaw);
 		const sz = Math.cos(yaw);
 		const k = snap ? 1 : 1 - Math.exp(-CHASE_FOLLOW * dt);
-		chase.x += ((at[0] as number) - sx * CHASE.behind - chase.x) * k;
-		chase.y += ((at[1] as number) + CHASE.above - chase.y) * k;
-		chase.z += ((at[2] as number) - sz * CHASE.behind - chase.z) * k;
+		const around = yaw + Math.PI + orbit.turn;
+		const tilt = CHASE_TILT + orbit.tilt;
+		const level = Math.cos(tilt) * orbit.distance;
+		chase.x += ((at[0] as number) + Math.sin(around) * level - chase.x) * k;
+		chase.y += ((at[1] as number) + Math.sin(tilt) * orbit.distance - chase.y) * k;
+		chase.z += ((at[2] as number) + Math.cos(around) * level - chase.z) * k;
 		// The camera never sits inside a tower, though the car may hug one.
 		keepOut(chase, towers);
+		const lead =
+			CHASE.ahead * math.clamp(1 - (Math.abs(orbit.turn) + Math.abs(orbit.tilt)) / 0.6, 0, 1);
 		vec3.set(
 			goal,
-			(at[0] as number) + sx * CHASE.ahead,
+			(at[0] as number) + sx * lead,
 			(at[1] as number) + CHASE.lift,
-			(at[2] as number) + sz * CHASE.ahead,
+			(at[2] as number) + sz * lead,
 		);
 		for (let c = 0; c < 3; c++)
 			look[c] = (look[c] as number) + ((goal[c] as number) - (look[c] as number)) * k;
@@ -282,11 +350,21 @@ export function createHero(
 			if (next === view) return;
 			view = next;
 			cockpit.place(view === 'cockpit');
+			// Each view starts from its own rest: behind the car, or looking straight ahead.
+			orbit.turn = 0;
+			orbit.tilt = 0;
 			// The chase camera starts where it belongs, so the switch never sweeps through the city.
 			if (driving && view === 'chase') follow(0, true);
 		},
+		setPad(throttle, steer, lift) {
+			pad.throttle = throttle;
+			pad.steer = steer;
+			pad.lift = lift;
+		},
 		take() {
 			driving = true;
+			// A touch screen has no keys, so the page shows its driving pad while the user drives.
+			page.post('drive-pad', { visible: true });
 			flight.x = at[0] as number;
 			flight.y = at[1] as number;
 			flight.z = at[2] as number;
@@ -302,9 +380,9 @@ export function createHero(
 		},
 		drive(dt, held) {
 			driving = true;
-			stick.throttle = (held('KeyW') ? 1 : 0) - (held('KeyS') ? 1 : 0);
-			stick.steer = (held('KeyA') ? 1 : 0) - (held('KeyD') ? 1 : 0);
-			stick.lift = (held('KeyR') ? 1 : 0) - (held('KeyF') ? 1 : 0);
+			stick.throttle = wish(held('KeyW'), held('KeyS'), pad.throttle);
+			stick.steer = wish(held('KeyA'), held('KeyD'), pad.steer);
+			stick.lift = wish(held('KeyR'), held('KeyF'), pad.lift);
 			fly(flight, stick, dt, towers);
 			vec3.set(at, flight.x, flight.y, flight.z);
 			yaw = flight.yaw;
@@ -313,6 +391,7 @@ export function createHero(
 			pitch = math.damp(pitch, math.clamp(-flight.climb * 0.012, -0.18, 0.18), 6, dt);
 			speed = Math.abs(flight.speed);
 			pose();
+			steerCamera(dt);
 			if (view === 'cockpit') ride();
 			else follow(dt, false);
 			focus[0] = at[0] as number;
@@ -324,7 +403,14 @@ export function createHero(
 				if (driving) {
 					// Back in Auto, the car levels out as it eases after the route again.
 					driving = false;
+					page.post('drive-pad', { visible: false });
+					pad.throttle = 0;
+					pad.steer = 0;
+					pad.lift = 0;
 					pitch = 0;
+					orbit.turn = 0;
+					orbit.tilt = 0;
+					orbit.distance = CHASE_DISTANCE;
 				}
 				camera.getWorldPosition(eye);
 				camera.getRotation(turn);

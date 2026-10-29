@@ -85,20 +85,77 @@
 				border: 1px solid rgb(255 255 255 / 0.18);
 				box-shadow: 0 0 30px rgb(0 0 0 / 0.45);
 			}
-			/* The demo's caption, with its key help beside it. */
+			/* The demo's caption, with its key help under it. */
 			.corner {
 				position: absolute;
 				top: 0.75rem;
 				left: 0.75rem;
 				display: flex;
+				flex-direction: column;
 				align-items: flex-start;
 				gap: 0.5rem;
 				/* Room at the right for the stats overlay, collapsed to its frame rate. */
-				max-width: calc(100% - 10rem);
+				max-width: min(24rem, calc(100% - 10rem));
 				pointer-events: none;
 			}
 			.corner > * { pointer-events: auto; }
-			.corner > .caption { position: static; flex: 0 1 24rem; max-width: 24rem; }
+			.corner > .caption { position: static; max-width: 100%; }
+			/* The on-screen driving pad: a thumb stick at the bottom left, buttons at the bottom right. */
+			.pad { position: absolute; inset: 0; pointer-events: none; }
+			.pad[hidden] { display: none; }
+			.pad__stick,
+			.pad__btn {
+				pointer-events: auto;
+				touch-action: none;
+				-webkit-user-select: none;
+				user-select: none;
+				background: linear-gradient(180deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0.03)), rgb(14 18 27 / 0.42);
+				-webkit-backdrop-filter: blur(10px) saturate(140%);
+				backdrop-filter: blur(10px) saturate(140%);
+				border: 1px solid rgb(255 255 255 / 0.3);
+				box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 4px 18px rgb(0 0 0 / 0.35);
+			}
+			.pad__stick {
+				position: absolute;
+				left: max(18px, env(safe-area-inset-left));
+				bottom: max(22px, env(safe-area-inset-bottom));
+				width: 136px;
+				height: 136px;
+				border-radius: 50%;
+			}
+			.pad__knob {
+				position: absolute;
+				left: 50%;
+				top: 50%;
+				width: 56px;
+				height: 56px;
+				margin: -28px 0 0 -28px;
+				border-radius: 50%;
+				background: linear-gradient(180deg, rgb(151 219 255 / 0.85), rgb(127 209 255 / 0.55));
+				border: 1px solid rgb(255 255 255 / 0.55);
+				transition: transform 140ms ease-out;
+			}
+			.pad__stick--held .pad__knob { transition: none; }
+			.pad__buttons {
+				position: absolute;
+				right: max(18px, env(safe-area-inset-right));
+				bottom: max(22px, env(safe-area-inset-bottom));
+				display: grid;
+				justify-items: center;
+				gap: 10px;
+			}
+			.pad__btn {
+				width: 66px;
+				height: 66px;
+				border-radius: 50%;
+				font: 600 13px/1 system-ui, sans-serif;
+				color: #eef2f7;
+			}
+			.pad__btn--small { width: 52px; height: 36px; border-radius: 999px; font-size: 12px; }
+			.pad__btn--held {
+				background: linear-gradient(180deg, rgb(151 219 255 / 0.96), rgb(127 209 255 / 0.74));
+				color: #06202e;
+			}
 			.keys {
 				display: grid;
 				grid-template-columns: auto auto;
@@ -789,9 +846,6 @@
 			.welcome h1 { font-size: 1.4rem; margin: 0 0 0.75rem; }
 			.error { color: #ff8a80; white-space: pre-wrap; }
 			@media (max-width: 767.98px) {
-				/* A narrow panel has no room beside the caption, so the key help goes under it. */
-				.corner { flex-direction: column; }
-				.corner > .caption { flex: none; max-width: 100%; }
 				body { grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--bar) minmax(0, 1fr); }
 				.bar {
 					display: flex;
