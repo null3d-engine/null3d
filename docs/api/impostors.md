@@ -8,20 +8,20 @@ summary: "createImpostors: far objects as camera-facing cards that blend the thr
 
 # Impostors
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: a bake helper that draws the views with the engine's scene passes, and an `assets impostor` command. Coding agents must not use these yet.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: an `assets impostor` command that writes the atlases from a file. Coding agents must not use it yet.
 
-The demo "Impostors" in `examples/impostors` draws a pine forest three ways by distance. Level-of-detail meshes stand near, one merged mesh stands per grid cell in the middle, and cards of a code-made atlas stand far out. Press L there to draw the far band as meshes instead, and compare.
+The demo "Impostors" in `examples/impostors` draws a pine forest three ways by distance. Level-of-detail meshes stand near, one merged mesh stands per grid cell in the middle, and cards baked from the pine stand far out. Press L there to draw the far band as meshes instead, and compare. The near meshes and the cards share the hand-over band.
 
 ```mermaid
 flowchart LR
-    views["A bake draws the object<br/>from each cell's direction"] --> atlas["Two atlases: the octahedral<br/>grid of colors, and the grid<br/>of normals and depths"]
-    atlas --> cards["createImpostors:<br/>one instance batch of cards<br/>that face the screen"]
-    eye["The frame's camera"] --> blend["The card's material blends<br/>the three nearest views<br/>and lights them"]
+    views["bakeImpostorAtlas draws<br/>the mesh from each cell's direction"] --> atlas["Two atlases: the octahedral<br/>grid of colors, and the grid<br/>of normals and depths"]
+    atlas --> cards["createImpostors:<br/>one instance batch of cards<br/>that stand upright and<br/>turn to the eye"]
+    eye["The frame's camera"] --> blend["The card's material blends<br/>the three nearest views,<br/>turns them by the copy's turn<br/>and lights them"]
     blend --> cards
-    copies["Many copies of a mesh,<br/>a far level of detail"] --> merge["mergeFarGeometry:<br/>one mesh per grid cell"]
+    copies["Many copies of a mesh,<br/>a far level of detail"] --> merge["mergeFarGeometry:<br/>one mesh per far grid cell"]
 ```
 
-A far object covers few pixels, so its triangles cost work that no one sees. A level of detail cuts the triangles but keeps one draw per object. An impostor goes further. A bake draws the object from many directions into atlases ahead of time. Far away, the object draws as one card that faces the screen. The card blends the three stored views nearest the camera, and the light falls on it from the normals the bake stored, so a card follows the scene's sun. Many cards draw in one instance batch.
+A far object covers few pixels, so its triangles cost work that no one sees. A level of detail cuts the triangles but keeps one draw per object. An impostor goes further. A bake draws the object from many directions into atlases ahead of time. Far away, the object draws as one card that stands upright and turns to the eye. The card blends the three stored views nearest the camera, and the light falls on it from the normals the bake stored, so a card follows the scene's sun. A card's turn about the world's up turns its views and its light by the same angle, so a turned tree hands over to a card whose crown matches it. Many cards draw in one instance batch.
 
 `@null3d/impostors` holds the cards and a second tool for far geometry. `mergeFarGeometry` writes many copies of a mesh into the arrays of one mesh. A whole grid cell of a forest or a skyline then draws in one draw.
 
@@ -35,7 +35,7 @@ bun add @null3d/engine @null3d/impostors
 
 ## Create the cards
 
-`createImpostors` makes one instance batch: one quad per position, drawn by the package's material. Each quad faces the screen, and the material blends the three atlas views nearest the direction from the card toward the eye. The cards cull and draw as any batch does, on WebGPU and WebGL2.
+`createImpostors` makes one instance batch: one quad per position, drawn by the package's material. Each quad stands upright, turns about the world's up toward the eye, and the material blends the three atlas views nearest the direction from the card toward the eye. The cards cull and draw as any batch does, on WebGPU and WebGL2.
 
 ```ts
 import { createImpostors, octahedralAtlas } from '@null3d/impostors';
@@ -45,26 +45,30 @@ export default defineSketch(({ scene, materials, geometry, assets }) => {
   const camera = scene.createPerspectiveCamera({ position: [0, 8, 30], target: [0, 3, 0] });
   scene.setActiveCamera(camera);
 
-  // The atlases hold the object's views. A bake makes them, or a tool writes them.
+  // The atlases hold the object's views. `bakeImpostorAtlas` makes them, or a tool writes them.
   const atlas = octahedralAtlas(8);
   const color = await assets.loadTexture('forest-tree-impostor.png');
   const surface = await assets.loadTexture('forest-tree-impostor-surface.png');
   const positions = new Float32Array(20_000 * 3);
+  const turns = new Float32Array(20_000);
   for (let i = 0; i < 20_000; i++) {
     positions.set([(i % 100) * 2 - 100, 0, Math.floor(i / 100) * 2 - 100], i * 3);
+    turns[i] = (i % 8) * 0.25;
   }
   const trees = createImpostors(
     { scene, materials, geometry },
-    { color, surface, atlas, positions, size: 6, alphaMode: 'mask' },
+    { color, surface, atlas, positions, turn: turns, size: 6, alphaMode: 'mask' },
   );
 });
 ```
 
 The cards need no per-frame call. The material reads the eye from the frame's camera, so a camera that flies through the forest changes what every card shows with nothing written on the CPU. That is also why the cards take world positions: the engine draws everything relative to the camera, so a forest far from the world's origin keeps the precision of 32-bit floats.
 
-The cards are a static batch. After you change cards' positions or sizes through `trees.batch`, call `trees.markDirty(start, count)` for those cards. The batch uploads them, and the next frame draws them where they now stand.
+The cards are a static batch. After you change cards' positions, sizes, turns or colors through `trees.batch`, call `trees.markDirty(start, count)` for those cards. The batch uploads them, and the next frame draws them where they now stand. A card's turn is the row's first value, in radians about the world's up.
 
-A card's light comes from the scene's lights, as a mesh's does. The surface atlas holds each view's normal, so the sun lights the side of the tree that it would light on the mesh.
+A card's light comes from the scene's lights, as a mesh's does. The surface atlas holds each view's normal, so the sun lights the side of the tree that it would light on the mesh. `roughness` and `metalness` set how the cards light, as the standard material's options do.
+
+The cards cast no shadow. A shadow far enough out to reach them is past the meshes' own shadow range, and a custom material's caster draws its whole quad without the atlas's coverage.
 
 ## The atlas and its cells
 
@@ -72,13 +76,37 @@ A card's light comes from the scene's lights, as a mesh's does. The surface atla
 
 `frameDirection(frame, atlas)` gives the direction a cell's view is drawn from. `impostorFrame(direction, atlas)` gives the cell a direction shows. A bake walks `frameDirection` over every frame. The cards pick their cells as `impostorFrame` does. The two agree on every cell, because they are inverses. `encodeOctahedral` and `decodeOctahedral` fold the directions onto one square. The front half of the sphere fills the square's middle diamond, and the back half fills its four corners. So a grid covers both poles too. The back pole, straight behind, lands on the corner at the bottom right.
 
-A bake needs the direction of each cell and one camera per cell, looking from that direction at a distance that frames the object. The engine's [`render.addPass`](../concepts/render-graph.md) draws a camera's view into a texture. So a sketch can bake the views at run time and copy them into one atlas.
+A bake needs the direction of each cell and one view per cell, looking from that direction at the object. `bakeImpostorAtlas` draws them all on the CPU, so every GPU path gets the same two atlases.
+
+## Bake the atlases
+
+`bakeImpostorAtlas(options)` draws a mesh from every cell's direction into the color and surface atlases. It takes the grid, the texels on each side of a cell, the parts that make the object, and the object's bounds in its own frame. A part gives its positions, normals, texture coordinates and indices, and its color: either vertex colors or a color map, with an optional coverage map. A part that draws leaves names the leaf atlas's cell and draws both sides.
+
+```ts
+import { bakeImpostorAtlas, octahedralAtlas } from '@null3d/impostors';
+
+const bake = bakeImpostorAtlas({
+  atlas: octahedralAtlas(25),
+  texels: 64,
+  parts: [{ positions, normals, uvs, indices, color: { width, height, data } }],
+  min: [-1.2, 0, -1.1],
+  max: [1.1, 7.4, 1.3],
+});
+const color = textures.fromData({ ...bake.color, colorSpace: 'srgb', mipmaps: false });
+const surface = textures.fromData({ ...bake.surface, colorSpace: 'linear', mipmaps: false });
+```
+
+The bake is arithmetic over the arrays. It gives the same pixels on every device, and it needs no GPU pass, so a scene's fog and lights never color the picture. It returns the card's `size`: the width that holds the object's widest horizontal reach, and its full height. A card at scale 1 stands on the object's lowest point.
+
+The bake stores each point's normal in the object's own frame. At draw time the card turns that normal by the copy's turn and lights it, so a turned copy lights as its turned mesh does. The bake reads the mesh's own normals, and makes them where the part gives none.
+
+The `@null3d/vegetation` add-on bakes a plant's most detailed level at first use with `bakeFarTree`, and hands the near meshes over to the cards with `handOverToCards` ([Vegetation](vegetation.md)).
 
 ## The surface atlas
 
-The second atlas holds what the card's light needs, in the cells of the first: red and green are the octahedral code of the view's normal, blue is the point's depth from the view's front, 0, to its back, 1, and alpha is its coverage. The normal lies in the view's space, where x and y run across and up the picture and z points at the viewer, so the bake stores the surface itself and never its light.
+The second atlas holds what the card's light needs, in the cells of the first: red and green are the octahedral code of the point's normal, blue is the point's depth from the view's front, 0, to its back, 1, and alpha is its coverage. The normal lies in the object's own frame, so a turned copy lights correctly and the cell's own view does not enter it.
 
-`encodeImpostorSurface(normal, depth, coverage, out)` writes those four bytes. A bake calls it for each texel of each cell, after `frameDirection` gives the cell's direction. Nothing reads the depth yet: the hand-over from a card to the mesh beside it will use it.
+`encodeImpostorSurface(normal, depth, coverage, out)` writes those four bytes. `bakeImpostorAtlas` calls it for each texel of each cell. Nothing reads the depth yet: the far-tree shadow method will use it.
 
 The demo's bake in `examples/impostors/forest.ts` shows the whole loop.
 
