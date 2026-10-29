@@ -26,6 +26,7 @@ export default defineSketch((ctx) => {
     uniforms: {
       origin: wind.field.origin,
       size: wind.field.size,
+      layer: wind.field.texture.layer,
       base: wind.field.air.base,
       gust: wind.field.air.gust,
       swirl: wind.field.air.swirl,

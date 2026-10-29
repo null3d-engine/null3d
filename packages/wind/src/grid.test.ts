@@ -90,7 +90,7 @@ describe('the sampling function', () => {
 	test('the copy reads the texture inside the box and the steady field outside it', () => {
 		const canonical = marked(fieldFile, 'wind-sample');
 		// A reader declares the texture and the sampler beside it.
-		expect(readFileSync(fieldFile, 'utf8')).toContain('var wind: texture_2d<f32>;');
+		expect(readFileSync(fieldFile, 'utf8')).toContain('var wind: texture_2d_array<f32>;');
 		expect(canonical).toContain('textureSampleLevel(wind, windSampler');
 		// The grid's state gives the air back: the air across the ground, and its speed.
 		expect(canonical).toContain('return vec4f(state.r, 0.0, state.g, length(state.rg));');
