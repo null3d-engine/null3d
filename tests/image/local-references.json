@@ -167,6 +167,12 @@
 		"date": "2026-10-29",
 		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
 	},
+	"chromium-swiftshader/compat/sky-layer-scene-pass.png": {
+		"test": "sky-layer-scene-pass",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed, so no CI run could draw it"
+	},
 	"chromium-swiftshader/compat/terrain.png": {
 		"test": "terrain",
 		"tier": "compat",
@@ -358,6 +364,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
+	},
+	"chromium-swiftshader/webgl2/sky-layer-scene-pass.png": {
+		"test": "sky-layer-scene-pass",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed, so no CI run could draw it"
 	},
 	"chromium-swiftshader/webgl2/terrain.png": {
 		"test": "terrain",
@@ -556,6 +568,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader from the branch that redrew the skinning-shadow picture; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgpu/sky-layer-scene-pass.png": {
+		"test": "sky-layer-scene-pass",
+		"tier": "webgpu",
+		"date": "2026-10-29",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed, so no CI run could draw it"
 	},
 	"chromium-swiftshader/webgpu/terrain.png": {
 		"test": "terrain",
