@@ -30,7 +30,7 @@ const PARTIAL: Readonly<Record<string, string>> = {
 };
 
 /** Tasks whose work is on a helper branch, whether or not part of it has reached this branch. */
-const ON_BRANCH = new Set(['M3-V2', 'M3-F9']);
+const ON_BRANCH = new Set(['M3-F9']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 // The branch's audits read every ticked task against its own "Done when" and its section's rule.
@@ -108,8 +108,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"unticked by its check at 652fd235b on `feat/m3-f4-lightmap-evidence`: the captured frame is one side of the comparison rather than the comparison itself, D-258 claims more than that frame settles, not every figure has a recorded run. The evidence entry is written now and names what is owed rather than claiming it: the engine-to-viewer comparison does not exist, and the picture's failure without the direction is unrecorded. The same branch's ae46e947d states the viewer-side limit in D-258 lines 78 to 82 instead of closing it, so the owner has not ruled whether an engine-to-viewer comparison is owed",
 	'M3-L4':
 		"the owner ruled the three studies run in order, and all three are on the branch, two of them complete. Staged loading came first: whole levels and cluster bands arrive as stages, a band appends to the tree as it lands, and `maxLevels` with the pick-driven holdback serves both. Its load run shows the stages add no delay before the first picture, not that the first picture comes sooner, and its 29.3 per cent after the first picture is a lower bound. The impostors are in, with the card, the two atlases, the three-view blend, the per-copy turn, the bake helper and the vegetation bake with its hand-over band; an iPad Pro 13 costs 7.0 ms a frame for 152 cards, and a Galaxy S24 gave no figure because its path times no pass alone and its display ran at 30 Hz. The audit then found two faults in that work, and the far-tree task M3-V9 fixes both: a turned copy's light turns with the camera's azimuth as well as with the tree's, and the hand-over's two dither phases do not complement, so about a quarter of the band's pixels drop. The vertex morphing is in too: the terrain's pop falls from 0.026 to 0.000 per cent of the frame and the leaves' from 0.634 to 0.036, its judged GPU line reads the same on all four pages, and nine of nine pages pass on an iPad Pro 13 in Safari 26.6.1 and on a Galaxy S25 in Chrome 152, whose 30 Hz display is why its interval is not a cost",
-	'M3-V2':
-		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
 	'M3-R19':
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
 	'M3-B1':
