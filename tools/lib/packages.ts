@@ -58,8 +58,6 @@ export interface PackageBuild {
 	readonly shaders: boolean;
 	/** Copy the repository's `docs/` into the package. */
 	readonly docs: boolean;
-	/** The packages whose built declarations this one's build reads, which it builds first. */
-	readonly needs: readonly string[];
 	/**
 	 * Files that the packed tarball must hold besides the targets of its `exports` and `bin`: the
 	 * files that the code loads by address, which no entry point names.
@@ -73,13 +71,15 @@ export interface PackageBuild {
 	readonly repositoryOnly?: readonly string[];
 }
 
+/** The prefix of a workspace package's name, as a manifest gives it. */
+const WORKSPACE_PREFIX = '@null3d/';
+
 /** Each package in `packages/` by folder name. */
 export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 	engine: {
 		compile: true,
 		shaders: true,
 		docs: true,
-		needs: [],
 		required: [
 			...CORE_FILES.map((file) => `dist/wasm/${file}`),
 			'lib/workers/sketch-worker.js',
@@ -102,29 +102,25 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		compile: true,
 		shaders: false,
 		docs: false,
-		needs: [],
 		required: ['dist/shader-compiler.wasm', 'lib/client.d.ts', 'THIRD-PARTY-NOTICES.txt'],
 	},
 	controls: {
 		compile: true,
 		shaders: false,
 		docs: false,
-		needs: ['engine'],
 		required: ['THIRD-PARTY-NOTICES.txt'],
 	},
 	impostors: {
 		compile: true,
 		shaders: false,
 		docs: false,
-		needs: ['engine', 'vite-plugin'],
 		required: [],
 	},
-	particles: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	particles: { compile: true, shaders: false, docs: false, required: [] },
 	geometry: {
 		compile: true,
 		shaders: false,
 		docs: false,
-		needs: ['engine'],
 		required: ['THIRD-PARTY-NOTICES.txt'],
 	},
 	// The surface function lives in a .wgsl file, which the pack compiles into a module of its own.
@@ -132,14 +128,12 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		compile: true,
 		shaders: false,
 		docs: false,
-		needs: ['engine', 'vite-plugin'],
 		required: [],
 	},
 	vegetation: {
 		compile: true,
 		shaders: false,
 		docs: false,
-		needs: ['engine', 'impostors', 'vite-plugin', 'wind'],
 		required: [],
 	},
 	// Its tone curves and outline passes compile from .wgsl files into modules of their own.
@@ -147,7 +141,6 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		compile: true,
 		shaders: false,
 		docs: false,
-		needs: ['engine', 'vite-plugin'],
 		required: ['THIRD-PARTY-NOTICES.txt'],
 	},
 	// Its task module is built as the JavaScript that the job workers import, and its two shaders
@@ -156,7 +149,6 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		compile: true,
 		shaders: false,
 		docs: false,
-		needs: ['engine', 'vite-plugin'],
 		required: [],
 	},
 	// Its surface and underwater WGSL compile into modules of their own.
@@ -164,7 +156,6 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		compile: true,
 		shaders: false,
 		docs: false,
-		needs: ['engine', 'vite-plugin'],
 		required: [],
 	},
 	// Its analytic field, grid and projection WGSL compile into modules of their own.
@@ -172,14 +163,12 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		compile: true,
 		shaders: false,
 		docs: false,
-		needs: ['engine', 'vite-plugin'],
 		required: [],
 	},
 	cli: {
 		compile: false,
 		shaders: false,
 		docs: false,
-		needs: [],
 		required: [
 			'dist/assets.wasm',
 			'src/assets/encode-worker.js',
@@ -201,6 +190,44 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 };
 
 /** A package's build, or an error that lists the packages. */
+/**
+ * Extra build-order edges that a package's manifest cannot express, by folder name. The order
+ * itself is derived from the manifests, so an edge belongs here only when no dependency field
+ * names it. Keep it empty unless something genuinely cannot be declared.
+ */
+const NEEDS_OVERRIDES: Readonly<Record<string, readonly string[]>> = {};
+
+/** The package.json of a package in `packages/`, parsed. */
+function manifestOf(
+	root: string,
+	name: string,
+): {
+	dependencies?: Record<string, string>;
+	peerDependencies?: Record<string, string>;
+	devDependencies?: Record<string, string>;
+} {
+	return JSON.parse(readFileSync(join(root, 'packages', name, 'package.json'), 'utf8'));
+}
+
+/**
+ * The packages that `name`'s build waits for: every workspace package its manifest names in a
+ * dependency field that this table compiles, since only those write declarations to wait for,
+ * plus any edge in `NEEDS_OVERRIDES`. A package that the table does not compile, such as the
+ * command-line tool, writes nothing for another build to read.
+ */
+export function packageNeeds(root: string, name: string): readonly string[] {
+	const manifest = manifestOf(root, name);
+	const needs = new Set<string>(NEEDS_OVERRIDES[name] ?? []);
+	for (const field of ['dependencies', 'peerDependencies', 'devDependencies'] as const) {
+		for (const dependency of Object.keys(manifest[field] ?? {})) {
+			if (!dependency.startsWith(WORKSPACE_PREFIX)) continue;
+			const other = dependency.slice(WORKSPACE_PREFIX.length);
+			if (other !== name && PACKAGES[other]?.compile === true) needs.add(other);
+		}
+	}
+	return [...needs].sort();
+}
+
 export function packageBuild(name: string): PackageBuild {
 	const build = PACKAGES[name];
 	if (!build)
@@ -610,7 +637,7 @@ export async function buildPackageLibraries(
 			built = (async () => {
 				// Every build that this one needs settles before this one starts or fails, so a failed
 				// need never leaves another still writing into its `lib/`.
-				const needs = await Promise.allSettled(packageBuild(name).needs.map(library));
+				const needs = await Promise.allSettled(packageNeeds(root, name).map(library));
 				const failed = needs.find((need) => need.status === 'rejected');
 				if (failed) throw failed.reason;
 				const started = performance.now();
