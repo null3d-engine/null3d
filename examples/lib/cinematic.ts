@@ -241,6 +241,11 @@ export interface CinematicOptions {
 	/** Where the Manual camera may go. Without bounds it goes anywhere. */
 	bounds?: CameraBounds;
 	/**
+	 * Hears the controls model each time the camera sends it to the page, for a scene that shows the
+	 * controls in the world too, such as on a vehicle's console.
+	 */
+	onControls?: (groups: readonly HudGroup[]) => void;
+	/**
 	 * How fast the camera glides back onto the route after a switch to Auto, in meters per second.
 	 * Without it the glide always takes a second and a half. With it a glide from far off takes as
 	 * long as that speed needs, so a vehicle that leads the camera flies back rather than jumps.
@@ -573,6 +578,7 @@ export function createCinematic(
 			...(options.groups?.() ?? []),
 		];
 		page.post('hud', { groups, visible: true });
+		options.onControls?.(groups);
 	};
 
 	/** Switches the camera between the route and the user, as the `c` key and the button do. */

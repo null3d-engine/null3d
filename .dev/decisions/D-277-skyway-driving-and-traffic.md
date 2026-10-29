@@ -76,11 +76,27 @@ instead of a band of cars over the low streets. The owner judges the final look.
   12 m/s, and with no key the car coasts to a hover. A and D turn it, slowly while it hovers. R and
   F climb and sink. The towers are boxes: a car that flies into one slides along its face or lands
   on its roof. The street, a ceiling at 260 m and the city's edge bound it too.
+- **The cockpit.** The hero car has a body of its own (`body.ts`): the lane hull's loft with a
+  well cut into its roof, closed by a tinted glass canopy. Inside sit a floor, a seat, a yoke and a
+  dashboard. The three screens stand on the dashboard, so from outside they show only dimly
+  through the glass. The fittings take no light: the car's own lamps sit a meter from them and
+  would light them far brighter than the city does. The body's texture coordinates carry each
+  vertex's place in its own space, so the paint, the running lights and the cockpit's trim turn
+  with the car.
 - **The views.** Behind: the camera eases to 13 m behind the car and 4.4 m above it. It looks 22 m
-  ahead, and keeps out of the towers as the car does. Inside: the camera sits in the driver's seat and
-  turns with the car. The three panels move to a dashboard in front of the seat, and the speed blur
-  keeps a quarter of its strength, so the dashboard stays readable. V and the View buttons switch
-  the two, in Auto too: there the car carries the camera along the route.
+  ahead, and keeps out of the towers as the car does. Inside: the camera sits in the driver's seat
+  and turns with the car, and the speed blur keeps a quarter of its strength, so the dashboard
+  stays readable. V and the View buttons switch the two, in Auto too: there the car carries the
+  camera along the route. A switch flies the camera over 0.9 s along a path that rises 1.2 m over
+  the canopy and comes down through it into the seat, or back out.
+- **The console.** A touchscreen on the dashboard's face repeats the scene's controls, one tab at
+  a time, with the hour as a bar (`console.ts`). The cinematic camera hands it the controls model
+  each time it sends the model to the page (`CinematicOptions.onControls`). A press posts
+  `hud-press` to the page, which sends it on to the sketch as its own panel's button would. Both
+  panels then show the change.
+- **The other cars' windows.** The traffic-lanes add-on takes `look.windows`, a tint that draws each
+  car's canopy as dark, smooth glass with a faint glow from the cabin. Skyway tints them teal. The
+  instances demo sets none, so its pictures do not move.
 - **The pointer while driving.** A drag swings the chase camera round the car, and the wheel or a
   pinch zooms it from 6 m to 70 m. In the seat a drag turns the driver's head. After 1.5 s with no
   press, while the car moves, the camera eases back behind the car or straight ahead. A user may
