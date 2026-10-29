@@ -3,7 +3,7 @@
 // one instance batch, the middle band as one merged mesh per grid cell, and the farthest as cards
 // of the octahedral atlas. The atlases are baked here from the pine's own mesh, so the cards show
 // the tree's colour and normals and a moving sun lights them as it lights the mesh.
-import { math } from '@null3d/engine';
+import { type DirectionalLight, math, type PerspectiveCamera } from '@null3d/engine';
 import { bakeImpostorAtlas, type OctahedralAtlas, octahedralAtlas } from '@null3d/impostors';
 import { ground, pineArrays } from '../lib/pines';
 
@@ -153,4 +153,18 @@ function boundsOf(positions: readonly number[]): {
 			if (value > (max[axis] as number)) max[axis] = value;
 		}
 	return { min, max };
+}
+
+/** Turns the sun to the hour's angle, about the world's z axis. */
+export function turnSun(sun: DirectionalLight, hour: number): void {
+	const turn = hour * Math.PI;
+	sun.setRotation(0, 0, Math.sin(turn / 2), Math.cos(turn / 2));
+}
+
+/** Flies the camera slowly round the middle, looking out over the three bands. */
+export function fly(camera: PerspectiveCamera, time: number): void {
+	const t = time * 0.05;
+	const [x, z] = [Math.sin(t) * 60, Math.cos(t) * 60];
+	camera.setPosition(x, ground(x, z) + 32, z);
+	camera.lookAt(Math.sin(t + 0.7) * CARD_EDGE * 1.6, 6, Math.cos(t + 0.7) * CARD_EDGE * 1.6);
 }
