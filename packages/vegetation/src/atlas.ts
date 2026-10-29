@@ -13,6 +13,7 @@ import type {
 } from '@null3d/engine';
 import { type AtlasPixels, paintBark, paintLeaf } from './atlas-pixels';
 import plantShader from './plant.wgsl';
+import plantCardsShader from './plant-cards.wgsl';
 import type { LeafKind, Species } from './species';
 
 /**
@@ -200,6 +201,28 @@ export interface PlantMaterialOptions {
 	readonly alphaCutoff?: number;
 	/** How many times the bark tiles across the mesh's texture coordinates. The default is 3. */
 	readonly barkTiles?: number;
+	/**
+	 * Gives the material the leaf-card morph: a crown's cards move to their next level's places
+	 * before the engine switches, so a card that the level drops shrinks and a kept one grows. It
+	 * applies to the leaves alone. Give the object or batch that draws the plant the same
+	 * `crownRadius`, so the engine measures the distance that the morph ends at.
+	 */
+	readonly morph?: PlantMorph;
+}
+
+/**
+ * The leaf-card morph's settings: the plant's bounding sphere about its origin, and the threshold
+ * that the engine's levels use.
+ * @category api/vegetation
+ */
+export interface PlantMorph {
+	/**
+	 * The radius of the plant's bounding sphere about its origin, in the plant's own units. A
+	 * value that holds every vertex works: give the crown's radius plus the reach of its middle.
+	 */
+	readonly crownRadius: number;
+	/** The level-of-detail threshold in screen pixels, the quality preset's. The default is 1. */
+	readonly threshold?: number;
 }
 
 /**
@@ -222,25 +245,42 @@ export function plantMaterial(
 ): Material {
 	const { atlases, part } = options;
 	const cell = LEAF_CELLS_BY_KIND[options.cell ?? 'cluster-a'];
-	return ctx.materials.shader({
-		wgsl: plantShader,
+	const look = {
 		textures: {
 			barkColor: atlases.bark.color.texture,
 			barkSurface: atlases.bark.surface.texture,
 			leafColor: atlases.leaf.color.texture,
 			leafSurface: atlases.leaf.surface.texture,
 		},
-		uniforms: {
-			cells: [atlases.leaf.cells[0], atlases.leaf.cells[1]],
-			cell: [cell[0], cell[1]],
-			part: part === 'leaves' ? 1 : 0,
-			tiles: options.barkTiles ?? 3,
-			tint: options.color ?? [1, 1, 1],
-		},
-		alphaMode: part === 'leaves' ? 'mask' : 'opaque',
+		alphaMode: (part === 'leaves' ? 'mask' : 'opaque') as 'mask' | 'opaque',
 		alphaCutoff: options.alphaCutoff ?? 0.35,
 		doubleSided: part === 'leaves',
 		roughness: 1,
 		metalness: 0,
-	});
+	};
+	const fields = {
+		cells: [atlases.leaf.cells[0], atlases.leaf.cells[1]] as [number, number],
+		cell: [cell[0], cell[1]] as [number, number],
+		part: part === 'leaves' ? 1 : 0,
+		tiles: options.barkTiles ?? 3,
+		tint: (options.color ?? [1, 1, 1]) as [number, number, number],
+	};
+	if (options.morph) {
+		if (part !== 'leaves')
+			throw new Error(
+				`plantMaterial() got morph settings for the ${part} part, but only a plant's leaves morph.`,
+			);
+		// The card material reads the leaf levels' target records and moves them toward the next
+		// level, so every leaf mesh must carry the record that the generator writes.
+		return ctx.materials.shader({
+			wgsl: plantCardsShader,
+			...look,
+			uniforms: {
+				...fields,
+				crownRadius: options.morph.crownRadius,
+				lodThreshold: options.morph.threshold ?? 1,
+			},
+		});
+	}
+	return ctx.materials.shader({ wgsl: plantShader, ...look, uniforms: fields });
 }

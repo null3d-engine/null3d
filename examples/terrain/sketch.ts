@@ -1,7 +1,9 @@
 // Terrain: a 1.2 km valley drawn by the terrain add-on. The height field is a function of the
 // place, and the ground near the camera draws at about a meter of detail while the hills far away
-// draw coarser blocks, each with a skirt that hides the seam where two levels meet. Every pixel
-// takes its normal from a map baked over the whole ground, so the far hills keep their relief.
+// draw coarser blocks. Each block moves its vertices to its parent block's surface as the camera
+// pulls away, so the ground does not pop as blocks split and merge, and a skirt covers the seam
+// where two neighbours differ by more than one level. Every pixel takes its normal from a map
+// baked over the whole ground, so the far hills keep their relief.
 // Four tiled layers, grass, soil, rock and snow, blend by a splat map that the add-on fills from
 // the height and the slope, and each layer's own height shows it through its neighbours where two
 // meet. Boulders made in code stand on the ground, placed with `terrain.heightAt`, and the camera

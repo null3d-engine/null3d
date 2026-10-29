@@ -38,6 +38,7 @@ export type {
 	PlantAtlases,
 	PlantMaterialOptions,
 	PlantMaterialPart,
+	PlantMorph,
 } from './atlas';
 export {
 	bakePlantAtlases,

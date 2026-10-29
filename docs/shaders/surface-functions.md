@@ -438,6 +438,7 @@ The engine calls the function once for each vertex, with a `VertexInput`:
 | `uv` | `vec2f` | The vertex's first texture coordinates |
 | `uv1` | `vec2f` | The vertex's second texture coordinates, or its first on a mesh with one set |
 | `instance` | `u32` | The instance's row in its batch, from 0. It is 0 for an object of the scene |
+| `vertexRecord` | `vec4f` | The mesh's four-number vertex record, for a generated shape: the position that the vertex takes at a coarser level of detail and that level's error, or whatever the shape writes |
 
 The row lets a vertex offset lay out a batch by itself, with no values from the sketch. This one lines up a batch's rows in a ring of 64, each lifted by a wave:
 
@@ -453,6 +454,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 - The engine keeps the mesh's normals, so a moved surface lights as the unmoved one did. Give the material `flatShading: true` to light each face by its moved position, or bend `s.normal` in a surface function.
 - Culling tests the mesh's bounding sphere. Vertices that move out of it can make the object vanish at the edge of the view. Give the object a sphere that holds them with `setBounds(center, radius)`, at setup, as [Objects and transforms](../api/objects.md) describes.
 - Shadows follow the moved vertices. The material's shadow casters run the vertex offset too, with the same `frame`, `object` and `material` values, so a swaying surface casts a swaying shadow. Such casters draw again in every frame that a shadow map draws, as moving objects do.
+- A mesh's vertex record reaches the vertex offset as `input.vertexRecord` only where the WGSL reads it, and the mesh must then carry it, with `geometry.fromArrays({ targets })`. The record holds either the shape's four numbers or a morphed mesh's morph data, never both.
 
 ## Built-in values
 
