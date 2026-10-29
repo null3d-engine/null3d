@@ -30,7 +30,10 @@ import gridShader from './grid.wgsl';
 export interface WindOptions {
 	/** The camera whose ground place the box follows. The field is centered on it in every frame. */
 	camera: Camera;
-	/** The box's width across the ground, in meters. */
+	/**
+	 * The box's width across the ground, in meters. Zero keeps no grid, so every reader works the
+	 * air out from the steady field.
+	 */
 	box?: number;
 	/** The grid's texels across each way. */
 	grid?: number;
@@ -159,8 +162,8 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 
 	// A device without float targets keeps no grid, so it costs no pass. A reader still samples a
 	// texture, which holds the field's neutral black, but its box has no width, so every sample is
-	// the steady field that `shaders/field.wgsl` works out.
-	const holds = holdsField(ctx.engine.capabilities);
+	// the steady field that `shaders/field.wgsl` works out. A box of no width asks for the same.
+	const holds = box > 0 && holdsField(ctx.engine.capabilities);
 	const pass = holds
 		? ctx.render.addPass({
 				kind: 'compute',
