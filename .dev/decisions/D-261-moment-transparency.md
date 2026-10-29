@@ -8,9 +8,9 @@ the exact one than the weighted blending's. The picture references are held back
 overlapping edges stay under the Look section, and the run on a phone is owed. Task: M3-F13.
 
 Summary: Order-independent transparency from a store of four depth moments. Its accuracy is an
-envelope: where the surfaces spread over a few metres or more, it is about two and a half times
+envelope: where the surfaces spread over a few meters or more, it is about two and a half times
 nearer the exact image than the weighted blending; where five surfaces sit within a couple of
-metres of one another, it is slightly farther. It is built on both GPU paths, costs 0.58 ms of GPU
+meters of one another, it is slightly farther. It is built on both GPU paths, costs 0.58 ms of GPU
 time on the S1 benchmark at High on this computer, and is off on every preset.
 
 ## Question
@@ -54,7 +54,7 @@ The image test that settles the choice draws five panes of glass at different de
 each approximation with the exact sorted image. On the 1280 plates its mean channel error is 1.683
 for the moment layer and 1.432 for the weighted blending, and the layer is 1.983 from the blend. The
 model's 78% does not hold on this scene: five panes at similar depth put the fit's two atoms close
-together, and the renormalized average then keeps too much of the nearest pane's colour.
+together, and the renormalized average then keeps too much of the nearest pane's color.
 
 A first attempt fitted the moments with a two-point Gaussian. It placed the atoms at the mean plus
 and minus one standard deviation. It did not beat weighted blending. That is why the store holds
