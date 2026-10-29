@@ -259,6 +259,8 @@ export type Check =
 	| { kind: 'grass'; tier: Tier }
 	/** The alpha-mask cost page: masked lit quads opaque and masked in turns, with and without MSAA. */
 	| { kind: 'alpha-mask'; tier: Tier; antialias: 'msaa' | 'none' }
+	/** The impostor cost page: a full view of cards hidden and shown in turns. */
+	| { kind: 'impostor-cost'; tier: Tier }
 	/** The cluster cost page: a tree of cluster patches timed at three distances. */
 	| { kind: 'cluster'; tier: Tier }
 	/** The level-of-detail cost page: 40,000 pines timed with every tree at its base mesh and at its level. */
@@ -1462,6 +1464,42 @@ export function alphaMaskPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * What a far-tree impostor bake costs on the device, at each preset's atlas grid: the bake page
+ * bakes a conifer, a birch and an oak at every grid and reports each bake's time on the sketch
+ * thread and the bytes that its two atlases hold. The bake runs on the CPU, so one run gives every
+ * GPU path the same figures. D-274 records them.
+ */
+export function impostorBakePlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'impostor-bake',
+			'impostor-bake',
+			{ kind: 'probe', tier: 'webgl2' },
+			{ timeoutSeconds: 180 },
+		),
+	];
+}
+
+/**
+ * What the impostor cards cost per frame on each GPU path: a field of 152 cards fills the window,
+ * and the page draws it with the whole batch hidden and shown again, in turns, and with its three
+ * nearest views and its nearest view alone. D-274 records the results.
+ */
+export function impostorCostPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const [path, tier] of ALPHA_MASK_PATHS)
+		items.push(
+			pageItem(
+				`impostor-cost-${path}`,
+				'impostor-cost',
+				{ kind: 'impostor-cost', tier },
+				{ switches: [`gpu=${path}`], timeoutSeconds: EFFECT_TIMEOUT_SECONDS },
+			),
+		);
+	return items;
+}
+
+/**
  * A canvas screen's refresh cost on each GPU path: a 1024 x 1024 OffscreenCanvas whose 256 x 256
  * rectangle refreshes at 30 Hz. The page times the refresh in the sketch and reports the frame's
  * GPU and CPU time with refreshes and without them. D-204 records the figures.
@@ -2390,6 +2428,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'environment-load': environmentLoadPlan,
 	grass: grassPlan,
 	'alpha-mask-cost': alphaMaskPlan,
+	'impostor-bake': impostorBakePlan,
+	'impostor-cost': impostorCostPlan,
 	'cluster-cost': clusterCostPlan,
 	'history-cost': historyCostPlan,
 	'lod-cost': lodCostPlan,
@@ -3311,7 +3351,8 @@ export function judge(
 		case 'effect':
 		case 'environment':
 		case 'grass':
-		case 'alpha-mask': {
+		case 'alpha-mask':
+		case 'impostor-cost': {
 			const cost = result as ItemResult & { failures?: string[]; on?: { intervalMs?: number } };
 			const feature =
 				check.kind === 'effect'
@@ -3320,7 +3361,9 @@ export function judge(
 						? 'the grass swaying'
 						: check.kind === 'alpha-mask'
 							? 'the mask on'
-							: 'the environment';
+							: check.kind === 'impostor-cost'
+								? 'the cards on'
+								: 'the environment';
 			return [
 				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
 				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),

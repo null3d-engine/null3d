@@ -503,8 +503,9 @@ impl ShadowTiles {
     /// Plans the tiles of the frame `input`, with `settings` and the shadow filter's square of
     /// `filter` texels, for the camera's view `camera`, or for no camera: then no tile draws.
     /// `meshes` says which meshes' vertices changed. `sways` says whether a material, by engine id,
-    /// moves its vertices by a vertex offset, which its casters' shadows follow in every frame.
-    /// `hero` is the sun's hero object, which draws into the atlas's last tile.
+    /// moves its vertices by a vertex offset, which its casters' shadows follow in every frame; a
+    /// material that holds its casters still leaves its tiles alone. `hero` is the sun's hero
+    /// object, which draws into the atlas's last tile.
     /// Allocates only when more lights cast shadows, or the scene holds more objects, than in any
     /// frame before.
     ///

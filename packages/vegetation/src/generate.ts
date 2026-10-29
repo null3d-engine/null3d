@@ -5,7 +5,7 @@ import type { PlantAsset, PlantLevel, PlantPart, WindData } from './asset';
 import { type PartArrays, partBytes } from './builder';
 import { boundsOf, type CrownData, type CrownField } from './crown';
 import { buildLeaves, leafCards } from './leaves';
-import { cardLevel, cardOrder, woodDetail } from './levels';
+import { type CardLevel, cardLevel, cardOrder, woodDetail } from './levels';
 import { buildFlowers, buildRosette, rosetteLeaves, rosetteLevel } from './rosette';
 import { growSkeleton, type Skeleton } from './skeleton';
 import { checkSpecies, type Species } from './species';
@@ -178,22 +178,31 @@ export function generatePlant(species: Species, options: GenerateOptions): Plant
 	const rosetteLeavesList = rosettePlant ? rosetteLeaves(species, seed, variant, field) : undefined;
 	const cards = rosettePlant ? undefined : leafCards(species, skeleton, seed, variant, field);
 	const order = cards ? cardOrder(cards) : [];
-	const built: PlantLevel[] = [];
-	let previousError = 0;
+	// A card level names the cards that the level keeps and their growth, and the next level reads
+	// them for its morph targets.
+	const cardLevels: CardLevel[] = cards
+		? Array.from({ length: levels }, (_, level) => cardLevel(cards, level, order))
+		: [];
+	// Build what no other level's error moves, and find each level's own error first: a level's
+	// targets mix toward the level after it, so its error must be known before the leaves are built.
+	const localErrors: number[] = new Array(levels).fill(0);
+	const rosetteParts: (PlantPart[] | undefined)[] = new Array(levels);
+	const woodParts: (PartArrays | undefined)[] = new Array(levels);
 	for (let level = 0; level < levels; level++) {
-		const parts: PlantPart[] = [];
-		let error = 0;
 		if (rosetteLeavesList && species.rosette) {
 			const thinned = rosetteLevel(rosetteLeavesList, level);
 			const segments = Math.max(2, Math.round(species.rosette.segments * (1 - 0.2 * level)));
-			parts.push({
-				name: species.rosette.shape === 'frond' ? 'frond' : 'blade',
-				arrays: buildRosette(species, thinned.leaves, thinned.grow, segments),
-			});
-			error = Math.max(error, thinned.error);
+			const parts: PlantPart[] = [
+				{
+					name: species.rosette.shape === 'frond' ? 'frond' : 'blade',
+					arrays: buildRosette(species, thinned.leaves, thinned.grow, segments),
+				},
+			];
 			// Each level holds arrays of its own, so a worker's transfer list names none twice.
 			const flowers = buildFlowers(species, seed, variant);
 			if (flowers) parts.push({ name: 'flower', arrays: flowers });
+			rosetteParts[level] = parts;
+			localErrors[level] = thinned.error;
 		} else if (cards) {
 			const wood = buildWood(
 				species,
@@ -202,17 +211,42 @@ export function generatePlant(species: Species, options: GenerateOptions): Plant
 				field,
 				Math.max(1, skeleton.branches.length),
 			);
-			parts.push({ name: 'wood', arrays: wood.part });
-			error = Math.max(error, wood.error);
-			const thinned = cardLevel(cards, level, order);
-			if (thinned.cards.length > 0)
-				parts.push({ name: 'leaves', arrays: buildLeaves(thinned.cards, thinned.grow) });
-			error = Math.max(error, thinned.error);
+			woodParts[level] = wood.part;
+			localErrors[level] = Math.max(wood.error, (cardLevels[level] as CardLevel).error);
 		}
-		if (level > 0) error = Math.max(error, previousError * 1.5 + 0.02);
-		else error = 0;
-		previousError = error;
-		built.push(levelOf(parts, error));
+	}
+	const errors: number[] = new Array(levels);
+	for (let level = 0; level < levels; level++)
+		errors[level] =
+			level === 0
+				? 0
+				: Math.max(localErrors[level] as number, (errors[level - 1] as number) * 1.5 + 0.02);
+	const built: PlantLevel[] = [];
+	for (let level = 0; level < levels; level++) {
+		const parts: PlantPart[] = [];
+		const rosette = rosetteParts[level];
+		if (rosette) parts.push(...rosette);
+		else if (cards) {
+			const thinned = cardLevels[level] as CardLevel;
+			parts.push({ name: 'wood', arrays: woodParts[level] as PartArrays });
+			if (thinned.cards.length > 0) {
+				// The next level's kept cards and error, or none for the coarsest level that draws.
+				const following = cardLevels[level + 1];
+				parts.push({
+					name: 'leaves',
+					arrays: buildLeaves(
+						thinned.cards,
+						thinned.grow,
+						following && {
+							keep: new Set(following.cards),
+							grow: following.grow,
+							error: errors[level + 1] as number,
+						},
+					),
+				});
+			}
+		}
+		built.push(levelOf(parts, errors[level] as number));
 	}
 
 	// The crown's bounds hold every level, so a switch never moves the bounds that culling reads.
@@ -271,6 +305,7 @@ export function partBuffers(arrays: PartArrays): ArrayBuffer[] {
 		arrays.normals.buffer as ArrayBuffer,
 		arrays.uvs.buffer as ArrayBuffer,
 		arrays.colors.buffer as ArrayBuffer,
+		...(arrays.targets ? [arrays.targets.buffer as ArrayBuffer] : []),
 		arrays.indices.buffer as ArrayBuffer,
 	];
 }

@@ -5,17 +5,10 @@
 // ground, so a coarse block keeps the hills' relief. The material blends up to four tiled layers
 // over all the blocks, and each layer's own height shows it through its neighbours at a boundary.
 // The terrain has no collision: a game reads `heightAt` and `normalAt` to place what stands on it.
-import type {
-	Material,
-	Mesh,
-	MeshGeometry,
-	SketchContext,
-	Texture,
-	Vec3Like,
-} from '@null3d/engine';
-import { type ChunkShape, chunkShape, writeChunkVertices } from './chunk';
+import type { Mesh, MeshGeometry, SketchContext, Texture, Vec3Like } from '@null3d/engine';
+import { type ChunkShape, chunkShape, writeChunkVertices, writeParentHeights } from './chunk';
 import { createHeightfield, type Heightfield } from './heightfield';
-import { splatMaterial, type TerrainLayer } from './material';
+import { type SplatMaterial, splatMaterial, type TerrainLayer } from './material';
 import { Quadtree } from './quadtree';
 import { defaultSplat, type SplatFunction, splatTexture } from './splat';
 
@@ -73,6 +66,12 @@ export interface TerrainOptions {
 	 * cells, which closes the seam against a neighbour up to a level or two coarser.
 	 */
 	skirt?: number;
+	/**
+	 * True moves each block toward its parent block's surface as the camera pulls away, so a block
+	 * that hands over to a coarser one does not pop. The default is true. False switches each block
+	 * at once and keeps the block's vertices as they are.
+	 */
+	morph?: boolean;
 	/** How much the ground acts like a metal, from 0 to 1. The default is 0. */
 	metalness?: number;
 	/** True makes the ground cast the sun's shadows. The default is true. */
@@ -132,7 +131,7 @@ export class Terrain {
 	private readonly context: SketchContext;
 	private readonly field: Heightfield;
 	private readonly tree: Quadtree;
-	private readonly material: Material;
+	private readonly material: SplatMaterial['material'];
 	private readonly splatTexture: Texture;
 	private readonly normalTexture: Texture | undefined;
 	private readonly white: Texture | undefined;
@@ -159,6 +158,15 @@ export class Terrain {
 	/** The vertices of the block being written, which every block writes into in turn. */
 	private readonly positions: Float32Array;
 	private readonly normals: Float32Array;
+	/** The parent grid's height at each vertex of the block being written. */
+	private readonly parentHeights: Float32Array;
+	/** The block's four-number record: its parent height, its size, and its low and high heights. */
+	private readonly record: Float32Array;
+	/** True moves each block toward its parent's surface. */
+	private morph: boolean;
+	/** The selection's scale that the material's morph reads, and the one it last got. */
+	private readonly selection: { selection: [number, number] } = { selection: [0, 0] };
+	private lastScale = Number.NaN;
 	/**
 	 * The sphere of each level's blocks: centred on the block's middle and reaching its farthest
 	 * vertex, so one level's bounds hold every block of that level and a reused block keeps them.
@@ -240,6 +248,7 @@ export class Terrain {
 			);
 		this.context = context;
 		this.fixedSkirt = options.skirt;
+		this.morph = options.morph ?? true;
 		this.cast = options.castShadows ?? true;
 		this.receive = options.receiveShadows ?? true;
 		if (options.error !== undefined && !(options.error >= 0 && Number.isFinite(options.error)))
@@ -261,6 +270,9 @@ export class Terrain {
 		this.shape = chunkShape(chunkQuads);
 		this.positions = new Float32Array(this.shape.vertices * 3);
 		this.normals = new Float32Array(this.shape.vertices * 3);
+		this.parentHeights = new Float32Array(this.shape.vertices);
+		this.record = new Float32Array(this.shape.vertices * 4);
+		this.selection.selection[1] = chunkQuads;
 		const splat = options.splat ?? defaultSplat(this.field);
 		this.splatTexture = splatTexture(
 			context.textures,
@@ -277,6 +289,8 @@ export class Terrain {
 			size,
 			metalness: options.metalness,
 			normals: this.normalTexture,
+			scale: 0,
+			quads: chunkQuads,
 		});
 		this.material = built.material;
 		this.white = built.white;
@@ -383,6 +397,7 @@ export class Terrain {
 			this.lastScreen = screen;
 			this.lastError = error;
 			this.tree.select(eye, fov, screen, error);
+			this.applyMorphScale(fov, screen, error);
 			this.stamp++;
 			this.pending = true;
 		} else if (!this.pending) return;
@@ -408,6 +423,31 @@ export class Terrain {
 		}
 		this.pending = !complete;
 		if (complete) this.retire();
+	}
+
+	/**
+	 * Turns the block morph on or off, from the next frame. The ground reads the selection's scale
+	 * again with the last view, so a page that compares the look or measures the cost needs no new
+	 * selection.
+	 */
+	setMorph(enabled: boolean): void {
+		if (enabled === this.morph) return;
+		this.morph = enabled;
+		if (!Number.isNaN(this.lastFov))
+			this.applyMorphScale(this.lastFov, this.lastScreen, this.lastError);
+	}
+
+	/**
+	 * Applies the selection's scale to the material's morph, so a block hands over where the
+	 * selection switches it. 0 keeps every block where it is.
+	 */
+	private applyMorphScale(fov: number, screen: number, error: number): void {
+		const half = Math.tan((Math.min(Math.max(fov, 0.01), 179.99) * Math.PI) / 360);
+		const scale = this.morph && error > 0 ? screen / (2 * half * error) : 0;
+		if (scale === this.lastScale) return;
+		this.lastScale = scale;
+		this.selection.selection[0] = scale;
+		this.material.set(this.selection);
 	}
 
 	/** Shows or hides the whole ground, for a camera high above it. */
@@ -479,18 +519,46 @@ export class Terrain {
 			this.positions,
 			this.normals,
 		);
+		// The parent is the quadrant of the level above that holds this block, or the block itself
+		// at the coarsest level.
+		const parentLevel = level > 0 ? level - 1 : 0;
+		const parentColumn = level > 0 ? column >> 1 : 0;
+		const parentRow = level > 0 ? row >> 1 : 0;
+		writeParentHeights(
+			this.field,
+			shape,
+			blockSize,
+			originX,
+			originZ,
+			skirt,
+			tree.blockSize(parentLevel),
+			tree.blockX(parentLevel, parentColumn),
+			tree.blockZ(parentLevel, parentRow),
+			this.parentHeights,
+		);
+		const vertices = shape.vertices;
+		const low = tree.lowAt(level, column, row);
+		const high = tree.highAt(level, column, row);
+		for (let v = 0; v < vertices; v++) {
+			this.record[v * 4] = this.parentHeights[v] as number;
+			this.record[v * 4 + 1] = blockSize;
+			this.record[v * 4 + 2] = low;
+			this.record[v * 4 + 3] = high;
+		}
 		let block = this.takeBlock(level);
 		if (block) {
 			// The mesh is the level's own, so it already carries that level's sphere: a crossing
 			// gives the object a new place and leaves the bounds, and the draw table, alone.
 			block.mesh.updateVertices('positions', this.positions);
 			block.mesh.updateVertices('normals', this.normals);
+			block.mesh.updateVertices('targets', this.record);
 			block.object.setPosition(originX, 0, originZ);
 		} else {
 			const mesh = this.context.geometry.fromArrays({
 				positions: this.positions,
 				normals: this.normals,
 				uvs: shape.uvs,
+				targets: this.record,
 				indices: shape.indices,
 			});
 			const object = this.context.scene.createMesh({

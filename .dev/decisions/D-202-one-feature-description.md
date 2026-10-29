@@ -148,7 +148,7 @@ A million numbers separate the bands, as the study's `BUILTIN` and `BUILTIN_POST
 | H7, scene inputs | `reads` covers depth, normals, motion and history | The depth behind a custom material is a material input, not a frame read. The custom-material field `sceneInputs` gives it ([below](#scene-inputs-h7)). |
 | H8, sky layers | `frame: 'background'`, `provides: ['sky', 'ambient']`, and outputs with neutral defaults | The CPU sky light is not a declared resource, so the adapter at the background point must include it. The shape does not name it. |
 | H9, glTF extension handlers | Not a frame feature | A loader handler registers an extension name and a parse function. The shape has no field for it. |
-| Preset and stats links | The `quality` callback and the feature `name`, which names its GPU scope | One GPU timing scope per feature is the adapter's job, in M3-E6. |
+| Preset and stats links | The `quality` callback and the feature `name`, which names its GPU scope | The passes that carry a feature's work are the add-on's to declare, in `gpu.passes` ([D-267](D-267-gpu-timing-scopes.md)). |
 | Texture units, namespaces, interface version | Not frame features | The registry's unique names help, but unit allocation, name ranges and the version range are separate platform work (M3-D6 to M3-D8). |
 
 The shape therefore holds the render hooks H1, H2, H3, H7 and H8, and the preset and stats link. It holds the data parts of H5 and H6. H4, H9 and the platform items need their own hooks, and the record says so rather than bending the shape around them.
@@ -198,7 +198,7 @@ The stats have the same gap without the link. `FrameStats` reports the engine's 
 - The `quality` callback gets a third argument: the feature's resolved settings and its budget's share and time. The callback runs when the feature is added and again when a change moves one of those values.
 - `FeatureStats` holds the feature's name, settings, GPU time, memory, budget at full quality and budget now. The host sends them to the page as a `null3d:feature-stats` sketch message whenever a figure changes, and the page's overlay shows one row per feature.
 - A feature's `memory` callback returns the GPU bytes that its own objects hold. The engine calls it when a figure changes, never in a frame.
-- A feature has one GPU timing scope, named by the feature's `name`. The engine does not fill it yet: the host sets no GPU time for any feature (`gpuMs: null` in `scene/feature-host.ts`), so every add-on row reads `gpu not measured`.
+- A feature has one GPU timing scope, named by the feature's `name`. Its `gpu.passes` names the render passes that carry its work, and the overlay adds up their time. A feature whose work records inside a pass of the engine's own gives no scope, and its row reads `gpu not measured` ([D-267](D-267-gpu-timing-scopes.md)).
 
 ### Options rejected
 

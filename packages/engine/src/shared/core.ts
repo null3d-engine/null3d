@@ -405,11 +405,25 @@ export interface CoreGlue extends CoreErrors {
 	 * cover the mesh's vertices.
 	 */
 	setMeshPatches(mesh: number, patches: number, indices: number, root: number): number;
+	/**
+	 * Appends one band to a mesh's tree of cluster patches: `patches` records of eight words each,
+	 * four floats of a bounding sphere and four integers of a run of indices, a parent and an
+	 * error, then `indices` indices, at `meshArrays`'s address. A run's first index counts from the
+	 * band's own indices, and a parent names a patch that the tree already holds. 1 when the mesh
+	 * takes the band, 0 when it has no tree, and the code of the rule that refused it otherwise.
+	 */
+	appendMeshPatches(mesh: number, patches: number, indices: number): number;
 	meshRadius(mesh: number): number;
 	/** A mesh's vertex count, or 0 for an unknown mesh. */
 	meshVertexCount(mesh: number): number;
 	/** A mesh's vertex format: its attribute bits and type fields, or 0 for an unknown mesh. */
 	meshFormat(mesh: number): number;
+	/**
+	 * Turns a rectangle's rows over in place, so that its last row comes first, at `address` in the
+	 * engine's memory: a canvas counts rows from its top, and a texture from the bottom. Each row is
+	 * `rowBytes` long and there are `height` of them. The caller writes the rectangle first.
+	 */
+	turnRows(address: number, rowBytes: number, height: number): void;
 	/**
 	 * Writes new values of the attribute at vertex shader `location` into vertices `start` to
 	 * `start + count` of a mesh, from `meshArrays`'s words: `components` values per vertex in the
@@ -445,6 +459,12 @@ export interface CoreGlue extends CoreErrors {
 	 * for the mesh itself. 0 for a mesh that no loader watches.
 	 */
 	stageLevelPicks(base: number): number;
+	/**
+	 * The bands of the mesh `base`'s tree of cluster patches that a view drew since its watch
+	 * began, one bit each, bit 0 for the band that the file holds. 0 for a mesh that no loader
+	 * watches.
+	 */
+	stageBandPicks(base: number): number;
 	/** The frames that drew the mesh `base` since its watch began, 0 for a mesh that no watch has. */
 	stageFrames(base: number): number;
 	/**
@@ -873,10 +893,17 @@ export interface CoreGlue extends CoreErrors {
 	/** The taps of each step of the subsurface blur, from the next frame on: 0 draws none. */
 	setSubsurfaceTaps(taps: number): number;
 	/**
-	 * Temporal anti-aliasing, a prototype: the history's share in thousandths, 0 for off, and
-	 * whether the camera takes its sub-pixel offsets.
+	 * Temporal anti-aliasing, a prototype: the history's share in thousandths, 0 for off, whether
+	 * the camera takes its sub-pixel offsets, whether the cheaper path draws, the bits of the
+	 * transparency signals that lower the history, and whether the history follows the exposure.
 	 */
-	setTaa(feedback: number, jitter: boolean): number;
+	setTaa(
+		feedback: number,
+		jitter: boolean,
+		phone: boolean,
+		reactive: number,
+		exposure: boolean,
+	): number;
 	/** Turns automatic exposure on with the post-processing values' settings, or off. */
 	setAutoExposure(on: boolean): number;
 	/** The meter of automatic exposure, from the next frame on: 0 the downsample, 1 the histogram. */
@@ -1307,14 +1334,17 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMeshBvh',
 	'setMeshBlocker',
 	'setMeshPatches',
+	'appendMeshPatches',
 	'meshRadius',
 	'meshVertexCount',
 	'meshFormat',
+	'turnRows',
 	'updateVertices',
 	'destroyMeshes',
 	'setMeshLevels',
 	'watchStageLevels',
 	'stageLevelPicks',
+	'stageBandPicks',
 	'stageFrames',
 	'unwatchStageLevels',
 	'meshMemoryBytes',

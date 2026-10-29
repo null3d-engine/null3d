@@ -4,8 +4,25 @@
 import type { Page } from '@playwright/test';
 import { decodePngRgba } from '../../packages/cli/src/png.js';
 
-/** How long a read waits for the canvas to hold pixels, for a page still finding its size. */
-const EMPTY_READ_MS = 10_000;
+/**
+ * How long a read keeps asking for a canvas that holds still, for a page still finding its size. A
+ * page on a software GPU can take most of a minute to draw its first frame, and until it does the
+ * canvas keeps the browser's default size, so a read before that frame finds nothing to take. One
+ * showcase page measured its first frame at 55 seconds on CI's software GPU.
+ */
+const SETTLE_READ_MS = 90_000;
+/**
+ * How old the last laid-out frame may be when a read gives up on a size that holds. The engine hands
+ * back the frame it drew last when no new one comes, so a page that stopped and one that keeps
+ * drawing look alike here; what this bounds is the read's own staleness, so a canvas that has held
+ * nothing the page laid out for the last part of the budget is refused rather than read.
+ */
+const STALE_FRAME_MS = 2_000;
+/**
+ * The canvas a browser makes when a page has not sized one. A read that gets this size has caught a
+ * page before its layout, whatever pixels it holds, so the read keeps waiting.
+ */
+const DEFAULT_CANVAS = { width: 300, height: 150 };
 
 /** One frame of the canvas: its size and its RGBA pixels, top row first. */
 export interface Frame {
@@ -27,12 +44,20 @@ export interface Frame {
  * comes: measured here, one read took 17 ms where the screenshots ran the test out.
  *
  * A page that has not sized its canvas yet captures nothing, or captures the browser's default
- * canvas, so the read waits until two captures in a row report the same size. A page still laying
- * out changes its canvas between reads; a settled one does not.
+ * canvas, so the read waits for a frame of the page's own size. It prefers one that holds that size
+ * across two reads, since a page still laying out changes its canvas between them, but a page that
+ * keeps changing its size still draws frames: the read then gives the last of them, and a picture
+ * compared against a frame of another size names the two sizes rather than failing on the read.
  */
 export async function readFrame(page: Page): Promise<Frame> {
-	const deadline = Date.now() + EMPTY_READ_MS;
+	const deadline = Date.now() + SETTLE_READ_MS;
 	let previous: Frame | null = null;
+	/** The last frame the page had laid out, in case it never holds one size. */
+	let drawn: Frame | null = null;
+	/** When that frame was read, so a page that stopped drawing is not read as one that moves. */
+	let drawnAt = 0;
+	/** The sizes read, for a read that finds none it can use. */
+	const seen: string[] = [];
 	for (;;) {
 		const base64 = await page.evaluate(async () => {
 			const engine = (globalThis as { __null3dEngine?: { capture(): Promise<Blob> } })
@@ -47,22 +72,41 @@ export async function readFrame(page: Page): Promise<Frame> {
 			return btoa(text);
 		});
 		const frame = decodePngRgba(Buffer.from(base64, 'base64'), 'the canvas');
+		seen.push(frame.data.length === 0 ? 'no pixels' : `${frame.width} by ${frame.height}`);
+		if (seen.length > 8) seen.shift();
 		// A fractional layout rounds the canvas's height differently from read to read, so a page
 		// that has settled can still move by a pixel; the read waits for the size to hold within one.
-		if (
+		const laidOut =
 			frame.data.length > 0 &&
-			previous !== null &&
-			Math.abs(previous.width - frame.width) <= 1 &&
-			Math.abs(previous.height - frame.height) <= 1
-		)
-			return frame;
-		if (Date.now() >= deadline)
+			!(frame.width === DEFAULT_CANVAS.width && frame.height === DEFAULT_CANVAS.height);
+		if (laidOut) {
+			if (
+				previous !== null &&
+				Math.abs(previous.width - frame.width) <= 1 &&
+				Math.abs(previous.height - frame.height) <= 1
+			)
+				return frame;
+			previous = frame;
+			drawn = frame;
+			drawnAt = Date.now();
+		}
+		if (Date.now() >= deadline) {
+			// A page whose canvas changes size keeps drawing frames all the same. Hand back the last
+			// one, since a picture compared against a frame of another size names the two sizes,
+			// which tells a reader more than a read that gave up. A frame the recent reads never
+			// laid out is not that: it would put an old picture behind a canvas that is moving.
+			if (drawn !== null && Date.now() - drawnAt <= STALE_FRAME_MS) {
+				console.log(
+					`canvas read for ${SETTLE_READ_MS} ms without a size that held, so it gives a frame read ${Date.now() - drawnAt} ms ago: ${seen.join(', ')}`,
+				);
+				return drawn;
+			}
 			throw new Error(
-				frame.data.length === 0
-					? `the canvas held no pixels for ${EMPTY_READ_MS} ms`
-					: `the canvas kept changing size for ${EMPTY_READ_MS} ms, last ${frame.width} by ${frame.height}`,
+				`the canvas held no frame the page had laid out in ${SETTLE_READ_MS} ms: ${seen.join(', ')}`,
 			);
-		previous = frame;
+		}
+		// A read of the browser's default canvas says nothing about the page's size, and a page still
+		// laying out changes it, so the read keeps asking.
 		await page.waitForTimeout(50);
 	}
 }

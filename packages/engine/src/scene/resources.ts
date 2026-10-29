@@ -45,12 +45,14 @@ import {
 	MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
 	MATERIAL_FEATURE_ANISOTROPY,
 	MATERIAL_FEATURE_BLEND,
+	MATERIAL_FEATURE_CASTER_COVERAGE,
 	MATERIAL_FEATURE_COAT_SHEEN,
 	MATERIAL_FEATURE_DECAL,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_IRIDESCENCE,
 	MATERIAL_FEATURE_LIGHT_MAP_RGBM,
+	MATERIAL_FEATURE_MOVING_VERTICES,
 	MATERIAL_FEATURE_MULTIPLY,
 	MATERIAL_FEATURE_NO_COLOR_WRITE,
 	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
@@ -62,6 +64,7 @@ import {
 	MATERIAL_FEATURE_SCENE_DEPTH,
 	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
+	MATERIAL_FEATURE_STILL_CASTER,
 	MATERIAL_FEATURE_SUBSURFACE,
 	MATERIAL_FEATURE_TRANSLUCENCY,
 	MATERIAL_FEATURE_TRANSMISSION,
@@ -135,6 +138,7 @@ import {
 import {
 	PERMUTATION_CASTER,
 	PERMUTATION_COAT_SHEEN,
+	PERMUTATION_MOTION,
 	PERMUTATION_ROW_VALUES,
 	PERMUTATION_TRANSLUCENCY,
 	PERMUTATION_TRANSMISSION,
@@ -331,9 +335,10 @@ export class MeshGeometry {
 	 * vertices `start` to `start + count - 1` change, which the next frame uploads. The defaults
 	 * update every vertex. Colors take three or four values per vertex: three keep each vertex's
 	 * alpha. The mesh keeps the bounding sphere it was made with, so give objects that draw
-	 * vertices outside it bounds with `setBounds`. Joints, weights, and a mesh with joints or morph
-	 * targets take no updates. A level that draws its base mesh's vertices writes them, so the base
-	 * and every level of it draw the new values. Throws E1206 for values that do not fit the mesh,
+	 * vertices outside it bounds with `setBounds`. The four-number vertex record takes updates as
+	 * `targets`. Joints, weights, and a mesh with joints or morph targets take no updates. A level
+	 * that draws its base mesh's vertices writes them, so the base and every level of it draw the
+	 * new values. Throws E1206 for values that do not fit the mesh,
 	 * and E1101 for a destroyed mesh. Allocates nothing, so a call in every frame makes no garbage.
 	 */
 	updateVertices(
@@ -347,7 +352,11 @@ export class MeshGeometry {
 		let layout = this.layout;
 		if (layout === undefined) {
 			const { glue } = this.core;
-			layout = { count: glue.meshVertexCount(id), format: glue.meshFormat(id) };
+			layout = {
+				count: glue.meshVertexCount(id),
+				format: glue.meshFormat(id),
+				posed: this.morphTargets > 0,
+			};
 			this.layout = layout;
 		}
 		const vertices = count ?? layout.count - start;
@@ -767,7 +776,14 @@ const RING: Required<RingOptions> = {
  *
  * @category api/geometry
  */
-export type UpdatableAttribute = 'positions' | 'normals' | 'uvs' | 'uvs1' | 'colors' | 'tangents';
+export type UpdatableAttribute =
+	| 'positions'
+	| 'normals'
+	| 'uvs'
+	| 'uvs1'
+	| 'colors'
+	| 'tangents'
+	| 'targets';
 
 /**
  * The integer typed arrays that vertex attributes take: 8-bit and 16-bit, signed and unsigned.
@@ -892,6 +908,14 @@ export interface MeshArrays {
 	 * whose integers read as fractions from 0 to 1.
 	 */
 	weights?: VertexValues;
+	/**
+	 * Four numbers per vertex for a shape that a custom material moves between levels of detail:
+	 * the position that the vertex takes at the next coarser level, and that level's error in
+	 * meters. The material's `vertexOffset` reads them as `input.vertexRecord`. Takes floats. The
+	 * vertex record also holds a morphed mesh's morph data, so a mesh takes `targets` or
+	 * `morphTargets`, never both.
+	 */
+	targets?: VertexValues;
 	/**
 	 * Three vertex indices per triangle, counter-clockwise when you look at its front. 16-bit and
 	 * 32-bit indices both work. Without indices, each three vertices in a row make a triangle.
@@ -1780,6 +1804,14 @@ export interface ShaderOptions<Wgsl extends string | CompiledWgsl = string | Com
 	 * sampled textures. The engine checks that the declaration and the WGSL agree.
 	 */
 	sceneInputs?: readonly SceneInput[];
+	/**
+	 * True when the vertex offset follows the view that draws the object and nothing else moves it,
+	 * as a card that turns toward the camera does. A caster that only shadow passes draw then holds
+	 * the shadow that the light's layer drew until the light turns, so the far shadow cascades stay
+	 * cached. Leave it out for an offset that moves with time, such as wind: the shadow of such a
+	 * caster follows it in every frame, and a far cascade must draw again for each one.
+	 */
+	castsStill?: boolean;
 }
 
 /** A uniform of a custom material: its type, and the float of the row of custom values it starts at. */
@@ -1810,6 +1842,8 @@ interface CompiledMaterial extends CompiledWgsl {
 	readonly objectIds?: boolean;
 	/** True when the WGSL reads the copy of the scene's depth through `sceneDepth`. */
 	readonly sceneDepth?: boolean;
+	/** The functions that the WGSL declares for the engine to call, such as `surface`. */
+	readonly functions: readonly string[];
 	readonly uniforms: readonly CompiledUniform[];
 	/** The textures that the WGSL declares, in the order of their map slots. */
 	readonly textures: readonly {
@@ -1832,6 +1866,7 @@ function customShader(compiled: CompiledMaterial): CustomShader {
 		textures: compiled.textures.length,
 		...(compiled.meshless === true && { meshless: true }),
 		...(compiled.sceneDepth === true && { sceneDepth: true }),
+		...(compiled.functions.includes('coverage') && { coverage: true }),
 		...(compiled.builds && { builds: true }),
 	};
 }
@@ -3851,6 +3886,11 @@ export class Materials {
 			);
 		const compiled = this.compiledMaterial(options.wgsl, call);
 		const sceneDepth = compiled.sceneDepth === true;
+		if (DEV && compiled.functions.includes('coverage') && options.alphaMode !== 'mask')
+			throw new EngineError(
+				'E1217',
+				`${call}() declared fn coverage but got ${options.alphaMode === undefined ? 'no alpha mode' : `the alpha mode '${options.alphaMode}'`}; its caster tests that coverage under a mask, so give it alphaMode: 'mask' and its alphaCutoff.`,
+			);
 		if (DEV)
 			checkSceneInputs(options.sceneInputs ?? [], sceneDepth, compiled.textures.length, call);
 		if (DEV && options.transmission !== undefined && !lets(compiled))
@@ -3903,7 +3943,10 @@ export class Materials {
 			{ ...options, alphaToCoverage: false, diffuseTransmission, subsurfaceRadius: undefined },
 			call,
 			layered,
-			sceneDepth ? MATERIAL_FEATURE_SCENE_DEPTH : 0,
+			(sceneDepth ? MATERIAL_FEATURE_SCENE_DEPTH : 0) |
+				(builds(compiled, PERMUTATION_MOTION) ? MATERIAL_FEATURE_MOVING_VERTICES : 0) |
+				(compiled.functions.includes('coverage') ? MATERIAL_FEATURE_CASTER_COVERAGE : 0) |
+				(options.castsStill ? MATERIAL_FEATURE_STILL_CASTER : 0),
 		);
 		// The copy of the opaque depth draws with the particle depth shaders, so the file loads
 		// with the material, before its first frame.

@@ -201,7 +201,7 @@ import {
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
 import { PARTICLE_RECORDS } from '../particle-records';
-import { variantFor } from '../variants';
+import { missingVariant, variantFor } from '../variants';
 import {
 	plainScale,
 	type VertexAttribute,
@@ -698,8 +698,10 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_DEPTH, 'depth', [
 			...frameEntries,
 			{
+				// A custom material's caster reads its row of values in the vertex stage, and its
+				// fragment stage, where it declares a coverage function, reads that row too.
 				binding: 2,
-				visibility: GPUShaderStage.VERTEX,
+				visibility: GPUShaderStage.VERTEX | fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},
 			rowValues,
@@ -1170,6 +1172,7 @@ export class Pipelines {
 			{ binding: 4, visibility: fragment, texture: {} },
 			{ binding: 5, visibility: fragment, texture: {} },
 			{ binding: 6, visibility: fragment, sampler: {} },
+			{ binding: 7, visibility: fragment, texture: {} },
 		];
 		this.defineLayout(LAYOUT_TAA, 'taa', taa(false));
 		this.defineLayout(LAYOUT_TAA_MS, 'taa ms', taa(true));
@@ -1709,6 +1712,9 @@ export class Pipelines {
 			shader: shader.variants,
 			pipeline: 'main',
 			layouts: [...(shader.textures > 0 ? [LAYOUT_FRAME, maps] : [LAYOUT_FRAME]), ...scene],
+			// A material that declares its shadow caster's coverage draws its casters' depth with a
+			// fragment stage, which drops the pixels that its cutoff leaves out.
+			depthFragment: shader.coverage === true,
 			...(shader.meshless === true
 				? { vertexBuffers: [] }
 				: {
@@ -1827,8 +1833,7 @@ export class Pipelines {
 		const ownPrepass = places && (permutation & PERMUTATION_PREPASS) !== 0;
 		const build = ownPrepass ? (permutation & ~PERMUTATION_PREPASS) >>> 0 : permutation;
 		const shader = variantFor(t.shader, build, 'wgsl')?.wgsl;
-		if (!shader)
-			throw new Error(`render template ${template} has no variant for permutation ${permutation}`);
+		if (!shader) throw new Error(`render template ${template}: ${missingVariant(permutation)}`);
 		const module = this.module(t.label, shader);
 		const entryPoints = shader.pipelines[t.pipeline];
 		const skins = (permutation & PERMUTATION_SKIN) !== 0;

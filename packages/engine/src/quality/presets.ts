@@ -625,16 +625,17 @@ export interface QualitySettings {
 	 */
 	physicalSky: boolean;
 	/**
-	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
-	 * toward `minRenderScale`. Then it raises `lodThreshold` up to four times while a mesh has
-	 * levels of detail. Then it lowers how often far shadow cascades draw, the shadow filter,
-	 * bloom's size while bloom is on, ambient occlusion's scale while it draws, the scale of
-	 * screen-space reflections while they draw, the steps of contact shadows, how often far
-	 * characters' poses update, and the volumetric fog's slices while it draws. It raises them
-	 * again, in the reverse order, once frames have time to spare. `quality.governor`
-	 * reports its steps. False keeps the render scale at
-	 * `maxRenderScale` and the other settings as set, as benchmarks and captures need. It changes
-	 * during play.
+	 * Whether the frame-budget governor runs. When frames take too long, it lowers the settings one
+	 * step at a time: a sketch's budget and the render scale in turn, a budget's step first, so a
+	 * sketch's system scales down before the render scale reaches `minRenderScale`; once the scale
+	 * is at its floor, the budgets' remaining steps come first. Then it raises `lodThreshold` up to
+	 * four times while a mesh has levels of detail. Then it lowers how often far shadow cascades
+	 * draw, the shadow filter, bloom's size while bloom is on, ambient occlusion's scale while it
+	 * draws, the scale of screen-space reflections while they draw, the steps of contact shadows,
+	 * how often far characters' poses update, and the volumetric fog's slices while it draws. It
+	 * raises them again, in the reverse order, once frames have time to spare.
+	 * `quality.governor` reports its steps. False keeps the render scale at `maxRenderScale` and the
+	 * other settings as set, as benchmarks and captures need. It changes during play.
 	 */
 	governor: boolean;
 	/**

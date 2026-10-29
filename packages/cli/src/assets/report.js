@@ -35,6 +35,9 @@ import { BLOCK } from './images.js';
  * @property {ClusterSummary} clusters The trees of cluster patches: the meshes, the patches, the
  *   leaf patches, the triangles that every patch adds up to against the base mesh's, and the
  *   bytes that the trees take.
+ * @property {{ name: string, bytes: number, kind: 'level' | 'band' }[]} stages The files that the
+ *   model downloads after itself, each with the bytes it takes and whether it holds a level of
+ *   detail or a band of a cluster tree.
  * @property {DedupReport} merged The parts that merged into an equal part.
  * @property {SpatialReport} spatial Blockers and stored trees.
  * @property {{ min: number[], max: number[] }} bounds The scene's box in its own space.
@@ -396,7 +399,7 @@ function levelTriangles(levels) {
  * The report's figures for a model, from its document after every step.
  *
  * @param {Document} doc
- * @param {{ name: string, inputBytes: number, modelBytes: number, textures: TextureRecord[], unbaked: BakeSkip[], files: Map<string, Uint8Array>, levels: MeshLevels[], clusters: ClusterSummary, merged: DedupReport, spatial: SpatialReport, shaders: ShaderList, ms: number }} facts
+ * @param {{ name: string, inputBytes: number, modelBytes: number, textures: TextureRecord[], unbaked: BakeSkip[], files: Map<string, Uint8Array>, stages?: Map<string, Uint8Array>, levels: MeshLevels[], clusters: ClusterSummary, merged: DedupReport, spatial: SpatialReport, shaders: ShaderList, ms: number }} facts
  * @returns {ModelReport}
  */
 export function modelReport(
@@ -408,6 +411,7 @@ export function modelReport(
 		textures,
 		unbaked,
 		files,
+		stages = new Map(),
 		levels,
 		clusters,
 		merged,
@@ -436,6 +440,11 @@ export function modelReport(
 		lodMeshes: levels.length,
 		lodTriangles: levelTriangles(levels),
 		clusters,
+		stages: [...stages].map(([name, bytes]) => ({
+			name,
+			bytes: bytes.byteLength,
+			kind: /** @type {'band' | 'level'} */ (/\.band\d+\.bin$/.test(name) ? 'band' : 'level'),
+		})),
 		merged,
 		spatial,
 		textures,
@@ -523,6 +532,30 @@ function textureNotes({ textures, unbaked, partialBlocks }) {
 	return lines;
 }
 
+/** The most stage files whose bytes the terminal lists. */
+const LISTED_STAGES = 12;
+
+/**
+ * The report's lines for the files that the model downloads after itself: how many there are, the
+ * bytes they take, their share of the model's whole download after the first picture, and each
+ * file's own bytes.
+ *
+ * @param {ModelReport} report
+ * @returns {string[]}
+ */
+function stageLines({ stages, modelBytes }) {
+	if (stages.length === 0) return [];
+	const total = stages.reduce((sum, stage) => sum + stage.bytes, 0);
+	const share = (100 * total) / (modelBytes + total);
+	const lines = [
+		`  after the first picture: ${counted(stages.length, 'stage file')} of ${shownBytes(total)}, ${share.toFixed(1)}% of the model's ${shownBytes(modelBytes + total)} download`,
+	];
+	for (const stage of stages.slice(0, LISTED_STAGES))
+		lines.push(`    ${stage.name}: ${shownBytes(stage.bytes)} (${stage.kind})`);
+	if (stages.length > LISTED_STAGES) lines.push(`    and ${stages.length - LISTED_STAGES} more`);
+	return lines;
+}
+
 /**
  * The report's lines for the shader list, the pipeline keys and the preset budgets that the
  * model's textures pass.
@@ -590,6 +623,7 @@ export function reportLines(report) {
 		);
 	}
 	lines.push(...textureNotes(report));
+	lines.push(...stageLines(report));
 	lines.push(...shaderLines(report));
 	return lines;
 }

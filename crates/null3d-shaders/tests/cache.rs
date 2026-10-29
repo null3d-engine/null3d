@@ -49,6 +49,7 @@ variants.plain = { targets = ["wgsl"] }
         manifest: manifest.to_owned(),
         files,
         parts: BTreeMap::new(),
+        only: Default::default(),
     }
 }
 

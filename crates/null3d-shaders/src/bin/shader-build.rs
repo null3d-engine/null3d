@@ -12,6 +12,10 @@
 //! table and the library modules it imports are unchanged. `--no-cache`, or setting
 //! `NULL3D_NO_SHADER_CACHE=1`, compiles every entry again.
 //!
+//! `--permutations <file>` builds only the permutation words that the file lists, one hexadecimal
+//! word on each line, with `#` starting a comment. A word that a variant cannot make builds
+//! nothing there, so one list serves every template. A build with no list builds every word.
+//!
 //! `--entries-shard i/n` compiles only shard `i` of `n`, counted from 0, of the manifest's
 //! entries, split by estimated build cost (`ShardPlan::by_build`), into the cache, and writes no
 //! module. An entry that costs more than an even share goes to the shards in parts, and the cache
@@ -28,7 +32,7 @@ use null3d_shaders::{
     BuildError, COMMAND, Cache, CacheStats, Inputs, OUTPUT_DIR, Shard, ShardPlan, Written,
 };
 
-const USAGE: &str = "usage: shader-build [--root <repository root>] [--cache <folder> [--stamp <stamp>]] [--no-cache] [--entries-shard <i>/<n>]";
+const USAGE: &str = "usage: shader-build [--root <repository root>] [--cache <folder> [--stamp <stamp>]] [--no-cache] [--entries-shard <i>/<n>] [--permutations <file>]";
 
 /// The environment variable that turns the cache off, as the Vite plugin's cache names it.
 const NO_CACHE_ENV: &str = "NULL3D_NO_SHADER_CACHE";
@@ -39,6 +43,7 @@ fn main() -> ExitCode {
     let mut stamp = String::new();
     let mut no_cache = cache_off();
     let mut entries_shard: Option<Shard> = None;
+    let mut permutations: Option<PathBuf> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -55,6 +60,10 @@ fn main() -> ExitCode {
                 None => return usage("--stamp needs a value"),
             },
             "--no-cache" => no_cache = true,
+            "--permutations" => match args.next() {
+                Some(path) => permutations = Some(PathBuf::from(path)),
+                None => return usage("--permutations needs a file"),
+            },
             "--entries-shard" => match args.next().as_deref().map(Shard::parse) {
                 Some(Some(shard)) => entries_shard = Some(shard),
                 _ => {
@@ -83,9 +92,14 @@ fn main() -> ExitCode {
     }
 
     // The progress line ends before the result is printed, so the result starts on its own line.
+    let inputs = match listed_inputs(&root, permutations.as_deref()) {
+        Ok(inputs) => inputs,
+        Err(problem) => return usage(&problem),
+    };
+    // The progress line ends before the result is printed, so the result starts on its own line.
     let outcome = {
         let progress = Progress::new();
-        null3d_shaders::write_cached_reporting(&root, &cache, &|done, total| {
+        null3d_shaders::write_cached_reporting_inputs(&root, &inputs, &cache, &|done, total| {
             progress.report(done, total)
         })
     };
@@ -101,6 +115,42 @@ fn main() -> ExitCode {
         Err(error) => return failed(&error),
     }
     ExitCode::SUCCESS
+}
+
+/// The build's inputs, with the words that `file` lists when it names one: one hexadecimal word on
+/// each line, with `#` starting a comment.
+fn listed_inputs(root: &std::path::Path, file: Option<&std::path::Path>) -> Result<Inputs, String> {
+    let mut inputs = Inputs::read(root).map_err(|error| format!("{error}"))?;
+    let Some(file) = file else { return Ok(inputs) };
+    let text = std::fs::read_to_string(file)
+        .map_err(|e| format!("cannot read {}: {e}", file.display()))?;
+    for (line, raw) in text.lines().enumerate() {
+        let word = raw.split('#').next().unwrap_or("").trim();
+        if word.is_empty() {
+            continue;
+        }
+        let value = word
+            .strip_prefix("0x")
+            .or_else(|| word.strip_prefix("0X"))
+            .map(|hex| u32::from_str_radix(hex, 16))
+            .unwrap_or_else(|| word.parse::<u32>());
+        match value {
+            Ok(value) => {
+                inputs.only.insert(value);
+            }
+            Err(_) => {
+                return Err(format!(
+                    "{} line {}: `{word}` is not a permutation word",
+                    file.display(),
+                    line + 1
+                ));
+            }
+        }
+    }
+    if inputs.only.is_empty() {
+        return Err(format!("{} lists no permutation word", file.display()));
+    }
+    Ok(inputs)
 }
 
 /// Compiles the entries of one shard into the cache, and writes no module.

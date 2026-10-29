@@ -29,7 +29,7 @@ Custom materials with surface functions, uniforms, vertex offsets, the built-in 
 
 Choose the first row that works. Surface functions keep working when the engine's lighting, shadows or backends change. The docs pages' status says what is built: `shaders/surface-functions`, `shaders/builtins`, `guides/custom-shaders`.
 
-A custom material takes one `wgsl` option: WGSL that the Vite plugin compiled, from a template literal right after a `/* wgsl */` comment or from a `.wgsl` import. That one WGSL holds every function of the material (`fn surface`, `fn vertexOffset`, `fn lobe` or some of them), because the plugin compiles each literal on its own at build time. WGSL as plain text throws E1215.
+A custom material takes one `wgsl` option: WGSL that the Vite plugin compiled, from a template literal right after a `/* wgsl */` comment or from a `.wgsl` import. That one WGSL holds every function of the material (`fn surface`, `fn vertexOffset`, `fn lobe`, `fn coverage` or some of them), because the plugin compiles each literal on its own at build time. WGSL as plain text throws E1215.
 
 The tagged literal has three traps:
 
@@ -62,6 +62,7 @@ struct Surface {
   occlusion: f32,          // ambient occlusion, 0 to 1; darkens the ambient light and irradiance
   irradiance: vec3f,       // baked light added to the ambient light, zero by default
   reflection: vec4f,       // (0.2) light from the mirror direction in rgb, its share of the environment's reflection in a
+  shadowOffset: vec3f,     // (0.3) where the sun's shadow lookup reads, relative to the point and in world space; zero reads the point itself
   transmission: f32,       // (0.2) share of the light behind that passes through; WGSL that sets it builds the see-through shaders
   thickness: f32,          // (0.2) depth of the volume under the point, in the mesh's own units
   diffuseTransmission: f32,      // (0.2) share of the diffuse light that passes to the other side; WGSL that names it builds the shaders that light the back
@@ -230,8 +231,14 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 
 - Exactly this signature; the build rejects another.
 - Normals stay the mesh's own. Use `flatShading: true` to light faces by their moved positions, or bend `s.normal` in the surface function.
-- Shadows follow the moved vertices, and draw again in every frame.
+- Shadows follow the moved vertices, and draw again in every frame. A material whose offset follows only the view that draws the object, such as a card that turns toward the camera, takes `castsStill: true`: its casters then hold their shadow while the light stands still, and far shadow cascades stay cached.
 - Vertices that move outside the mesh's bounding sphere can be culled wrongly. Give the object a sphere that holds them with `mesh.setBounds(center, radius)`, at setup, because the call rebuilds the draw tables.
+
+### Shadows of a custom material (0.3)
+
+A masked custom material cuts its shadow where its WGSL declares `fn coverage(input: SurfaceInput) -> f32`. Return the opacity of the point; the engine calls it in the material's caster builds, binds the same uniforms and textures, and drops the shadow texels under the material's `alphaCutoff`. A card that shows a baked tree then casts the crown's shape, not its quad. WGSL that declares a coverage function gets the caster builds, with a fragment stage on both GPU paths; a material with neither a vertex offset nor a coverage function casts its whole shape. A flat caster draws both faces: the shadow pass culls the front faces of single-sided geometry, so a single-sided quad casts nothing. Set `doubleSided: true` for one. The coverage is tested under the material's `alphaCutoff`, so the material takes the `mask` alpha mode; a development build refuses coverage without one.
+
+A surface function moves where the sun's shadow lookup reads with `s.shadowOffset`, a world-space offset from the point. A stand-in card sets it to the surface that its stored depth shows, so its own cast does not fall on it. `defaultSurface` leaves it zero.
 
 A full shader is WGSL with one `@vertex` entry point that takes an `InstanceIn`, and one `@fragment` entry point:
 

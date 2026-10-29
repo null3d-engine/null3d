@@ -57,6 +57,11 @@ pub(crate) const MAIN_MODULE: &str = "shaders";
 /// extension. The page imports it alone, so it holds no shader text.
 pub(crate) const FEATURES_MODULE: &str = "shader-features";
 
+/// The file name of the module that names the permutation words a narrowed build made, without its
+/// extension. The engine's shader lookup imports it with the main module's types, so the page and
+/// each worker keep the start shader data out of their bundles.
+pub(crate) const PERMUTATIONS_MODULE: &str = "shader-permutations";
+
 /// The extension of each device module's file: plain JavaScript, which the main module imports by
 /// address, so that a bundler copies it as it is.
 pub(crate) const DEVICE_MODULE_EXTENSION: &str = "js";
@@ -730,6 +735,8 @@ enum ModuleKind<'a> {
     Main,
     /// The module that names the features that load on first use.
     Features,
+    /// The module that names the permutation words of a narrowed build.
+    Permutations,
     /// A device module, by its name and the builds it holds.
     Device(DeviceModule),
     /// One table of shared paragraphs: a target, one value of the device's bits, and the table's
@@ -751,6 +758,10 @@ impl<'a> ModuleSet<'a> {
         let mut plan = BTreeMap::from([
             (format!("{MAIN_MODULE}.ts"), ModuleKind::Main),
             (format!("{FEATURES_MODULE}.ts"), ModuleKind::Features),
+            (
+                format!("{PERMUTATIONS_MODULE}.ts"),
+                ModuleKind::Permutations,
+            ),
         ]);
         for module in devices.keys() {
             plan.insert(
@@ -800,6 +811,7 @@ impl<'a> ModuleSet<'a> {
         match self.plan.get(name)? {
             ModuleKind::Main => Some(main_module(self.output, &self.devices)),
             ModuleKind::Features => Some(features_module(self.output)),
+            ModuleKind::Permutations => Some(permutations_module(self.output)),
             ModuleKind::Device(module) => {
                 // A module of the start keeps its own paragraphs and names no table: a page
                 // downloads one of them before its first frame, and the table belongs to the
@@ -1062,6 +1074,32 @@ fn combined_module(target: Target, files: &BTreeMap<&str, (u32, Vec<&DeviceModul
         "export const FILES: Readonly<Record<string, FirstUseFiles>> =",
         files,
     );
+    ts.out
+}
+
+/// The module that names the permutation words that a narrowed build made, or null when it made
+/// every word. It holds no shader text, so the shader lookup that reads it adds no data to a page's
+/// bundle.
+fn permutations_module(output: &Output) -> String {
+    let mut ts = Writer::default();
+    ts.out.push_str(HEADER);
+    ts.line("");
+    ts.line("/**");
+    ts.line(" * The permutation words that this build made, or null when it made every word. A pipeline");
+    ts.line(
+        " * that asks for a word that is missing here draws a shader that this set lacks, so the",
+    );
+    ts.line(" * engine names the word and the list that must carry it.");
+    ts.line(" */");
+    if output.listed.is_empty() {
+        ts.line("export const LISTED_PERMUTATIONS: readonly number[] | null = null;");
+    } else {
+        let words: Vec<String> = output.listed.iter().map(|word| word.to_string()).collect();
+        ts.line(&format!(
+            "export const LISTED_PERMUTATIONS: readonly number[] | null = [{}];",
+            words.join(", ")
+        ));
+    }
     ts.out
 }
 
@@ -1935,9 +1973,26 @@ mod tests {
     }
 
     #[test]
+    fn the_permutations_module_names_the_words_and_keeps_the_main_module_free_of_them() {
+        let mut narrowed = output();
+        narrowed.listed = BTreeSet::from([0, 4]);
+        let rendered = modules(&narrowed);
+        assert!(
+            rendered["shader-permutations.ts"]
+                .contains("export const LISTED_PERMUTATIONS: readonly number[] | null = [0, 4];")
+        );
+        assert!(!rendered["shaders.ts"].contains("LISTED_PERMUTATIONS"));
+        // A build without a list keeps the same module shape, so the engine import never breaks.
+        assert!(
+            modules(&output())["shader-permutations.ts"]
+                .contains("export const LISTED_PERMUTATIONS: readonly number[] | null = null;")
+        );
+    }
+
+    #[test]
     fn the_main_module_loads_each_device_module_and_holds_none_of_their_shaders() {
         let modules = modules(&output());
-        assert_eq!(modules.len(), 8);
+        assert_eq!(modules.len(), 9);
         let main = &modules["shaders.ts"];
         assert!(main.contains("\treadonly cull: ShaderVariants<never>;\n"));
         assert!(main.contains("\t3: () => importShaders(new URL('./shaders-glsl-draw-index-tone-map.js', import.meta.url)),\n"));
@@ -2176,7 +2231,7 @@ mod tests {
     #[test]
     fn the_main_module_finds_and_loads_the_modules_of_each_feature() {
         let modules = modules(&output_with_features());
-        assert_eq!(modules.len(), 14);
+        assert_eq!(modules.len(), 15);
         assert!(
             modules["shader-features.ts"]
                 .contains("export const SHADER_FEATURES = ['bloom', 'sprites'] as const;")

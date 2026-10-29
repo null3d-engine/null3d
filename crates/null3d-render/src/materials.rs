@@ -110,8 +110,8 @@ pub struct CustomShading {
     /// True when it has the builds that draw the rows of instance batches with row values: a
     /// material built from the standard material's template, not a whole shader of the sketch's.
     pub row_values: bool,
-    /// True when it has the builds of a shadow caster that moves by its vertex offset, which its
-    /// shadows draw with.
+    /// True when it has the builds of a shadow caster of its own: a vertex offset that moves each
+    /// vertex, a coverage function that cuts the shape out of the shadow, or both.
     pub caster: bool,
     /// True when its WGSL reads an instance's index or an object's id, which its vertex shader
     /// finds in the table of object ranges.
@@ -230,8 +230,9 @@ impl Shading {
         matches!(self, Shading::Custom(custom) if !custom.row_values)
     }
 
-    /// True when its shadows draw with its own caster builds, which move each vertex by its
-    /// vertex offset: a custom material's whose WGSL has one.
+    /// True when its shadows draw with its own caster builds: a custom material's whose WGSL
+    /// declares a vertex offset, which moves each vertex, or a coverage function, which cuts the
+    /// shape out of its shadow.
     pub const fn casts_its_own_way(self) -> bool {
         matches!(self, Shading::Custom(custom) if custom.caster)
     }
@@ -380,6 +381,16 @@ pub mod feature {
     /// [`ALPHA_MASK`] the parts below the cutoff write nothing at all, so the surface cuts a shape
     /// out of the depth it holds.
     pub const NO_COLOR_WRITE: u32 = 1 << 28;
+    /// The material's WGSL moves its vertices by a vertex offset of its own, so its surface moves
+    /// in every frame that the offset changes and its shadow follows it.
+    pub const MOVING_VERTICES: u32 = 1 << 29;
+    /// The material's casters hold their place while the light stands still: its vertex offset
+    /// follows the view that draws it, and nothing else moves it, so a caster that only shadow
+    /// passes draw casts the shadow that the light's layer holds. Its far cascades stay cached.
+    pub const STILL_CASTER: u32 = 1 << 30;
+    /// The material's WGSL names the opacity that its shadow caster tests, so its caster builds
+    /// keep the mask bit and cut the shape of its shadow at the cutoff.
+    pub const CASTER_COVERAGE: u32 = 1 << 31;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -409,7 +420,10 @@ pub mod feature {
         | IRIDESCENCE
         | ANISOTROPY
         | LIGHT_MAP_RGBM
-        | NO_COLOR_WRITE;
+        | NO_COLOR_WRITE
+        | MOVING_VERTICES
+        | STILL_CASTER
+        | CASTER_COVERAGE;
 
     /// The features whose material lights layers above its base: a clear coat, a sheen,
     /// iridescence or anisotropy. Each takes the shader builds that [`COAT_SHEEN`] names, whose
@@ -2115,10 +2129,10 @@ mod tests {
     #[test]
     fn features_are_kept_and_flat_shading_and_no_fog_are_flags_in_the_row() {
         let mut table = MaterialTable::with_capacity(4);
+        // Every bit of the word names a feature, so a material keeps the bits it gives.
+        assert_eq!(feature::ALL, u32::MAX);
         let flat = feature::FLAT_SHADING | feature::DOUBLE_SIDED;
-        table
-            .create(Shading::Lit, flat | 1 << 30, [1.0; 4])
-            .unwrap();
+        table.create(Shading::Lit, flat, [1.0; 4]).unwrap();
         table
             .create(Shading::Unlit, feature::VERTEX_COLORS, [1.0; 4])
             .unwrap();
@@ -2132,7 +2146,7 @@ mod tests {
                 [1.0; 4],
             )
             .unwrap();
-        assert_eq!(table.features(0), flat, "unknown bits are dropped");
+        assert_eq!(table.features(0), flat);
         assert_eq!(table.features(1), feature::VERTEX_COLORS);
         assert_eq!(table.features(2), feature::NO_FOG);
         assert_eq!(table.features(9), 0);

@@ -8,7 +8,7 @@ summary: "Trees, conifers, shrubs, ferns, hostas and grass grown from a species 
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass, the far-tree impostors and the leaf and bark materials of the vegetation pipeline. This page covers the species generator, the scatter, and the bark and leaf atlases that the browser paints at first use. It also covers the material that draws a plant from them.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass. This page covers the species generator, the scatter, the bark and leaf atlases that the browser paints at first use, the material that draws a plant from them, and the far tree that a card draws.
 
 ```mermaid
 flowchart LR
@@ -107,6 +107,27 @@ A record holds only numbers and short strings. This table shows the parts that a
 ## Detail levels
 
 A plant gets one to three whole levels, most detailed first. Each level holds the plant's parts and the largest distance that its surface lies from the base level's, in meters. Pass the lower levels to `mesh.setLevels`. The engine then picks one by distance. [Levels of detail](../concepts/lod.md) explains the rule that the engine applies.
+
+A tree's leaf cards morph before the switch, as SpeedTree's do. Each leaf vertex carries its place at the next level, and the leaf material's vertex offset moves it there over the last part of the approach: a card that the next level keeps grows, and one that it drops shrinks to its middle. At the switch the two levels show the same crown, so no card pops. The coarser level's cards grow by the square root of the step, so the crown keeps the ground it covers.
+
+Give the leaf material `morph: { crownRadius }` to turn the morph on, and give the same radius to the object or batch that draws the plant:
+
+```ts
+const crownRadius = Math.hypot(...asset.crown.center) + asset.crown.radius;
+const leaves = plantMaterial(ctx, {
+  atlases,
+  part: 'leaves',
+  cell: leafCellFor(oak),
+  color: oak.color.leaf,
+  morph: { crownRadius, threshold: ctx.quality.settings.lodThreshold },
+});
+const leafPart = asset.levels[0]?.parts.find((part) => part.name === 'leaves');
+const mesh = geometry.fromArrays(leafPart.arrays);
+const tree = scene.createMesh({ mesh, material: leaves });
+tree.setBounds([0, 0, 0], crownRadius);
+```
+
+The radius may hold every vertex rather than fit the crown tightly: the engine measures the distance to the sphere, and the morph ends at the same distance when both read the same sphere. One material serves plants of one crown size, and a variant with a larger crown needs its own material or the largest radius of the set. The morph reads the level's switch distance from the error that the generator measured, the plant's world scale, the render height, the projection and the threshold that the material holds. The frame-budget governor raises the level threshold in private when frames run long: under its pressure the engine switches before the mix ends, so a card can pop, and `material.set({ lodThreshold })` with the raised value is the way to follow it. Hold mode takes no governor step, so a capture or a picture draws the mix as set. A level bias on the plant moves the engine's switches but not the material's mix, so leave the bias at 1 on a tree that morphs. A plant whose level the engine marks `fade: false`, as a measured error should, then changes only through the morph.
 
 A coarser level keeps every second or fourth card in a space-filling order through the crown. It grows each kept card about its middle by the square root of that step. The same rule thins trees that the asset tool converts from files, so a generated tree and a converted one switch alike. A plant keeps whole levels, never cluster levels, because every card is a separate piece with open edges.
 
@@ -226,8 +247,42 @@ const leaves = plantMaterial(ctx, {
 - **The leaf block holds eight cells**: four leaf clusters, a needle spray, a frond, a blade and a broad leaf. `leafCellFor` picks one from a species record.
 - **The colour map multiplies the species' colour.** It holds the veins, the shade of each leaf and the lift of its ridges, so two species that share a cell still differ.
 - **The engine makes each texture's mip levels.** A masked material fades its cut edges with alpha to coverage, so a leaf card that shrinks keeps the share of the picture that its leaves cover, and a crown far away stays as dense as it is up close.
+- **The card material morphs, and the plain one does not.** `plantMaterial` takes `morph` only for a plant's leaves: its WGSL adds a vertex offset that reads each leaf vertex's target record. A trunk, a frond or a flower drawn with the plain material needs no record.
 - **The four textures take about 4.6 MB of texture memory.** They are painted once, in the setup, and kept for the visit.
 
+
+## Far trees
+
+A tree past the distance where its triangles matter draws as one card. `bakeFarTree` bakes the plant's most detailed level into the two atlases that an impostor card draws, at its first use. The bake reads the same leaf and bark atlases and the same colours as the near material: the bark colour tints the wood, and the leaf colour the leaves, in both. So the card's color matches the mesh at the hand-over. It runs on the CPU, so every device gets the same atlases.
+
+```ts
+import { createImpostors } from '@null3d/impostors';
+import { bakeFarTree, handOverToCards } from '@null3d/vegetation';
+
+const atlases = bakePlantAtlases(ctx);
+const far = bakeFarTree(ctx, { asset, atlases, views: 25, texels: 64 });
+const cards = createImpostors(
+  { scene, materials, geometry },
+  {
+    color: far.color,
+    surface: far.surface,
+    atlas: far.atlas,
+    positions: farTrees.flatMap((tree) => [tree.position[0], tree.position[1] + far.base, tree.position[2]]),
+    turn: farTrees.map((tree) => tree.turn),
+    size: far.size,
+    depth: far.depth,
+    alphaMode: 'mask',
+    receiveShadows: true,
+  },
+);
+handOverToCards(nearTrees, cards.batch, 240);
+```
+
+`bakeFarTree` returns the two textures, the grid, the card's `size` and the plant's `depth`, which scales the stored depth that places a card's own shadow lookup. A far card casts the crown's shape through a second batch with `castShadows: true`, on a layer that the sun draws and no camera does, and takes the shadows of other objects with `receiveShadows: true` ([Impostors](impostors.md)). The bake draws level 0, or the level that the plant's `impostorSource` names. The bark colour tints the wood and the leaf colour the leaves, as the plant's materials do. A second call for the same plant, grid and cell size reuses the baked pixels.
+
+`handOverToCards(meshes, cards, switchDistance)` sets the distance bands. The meshes draw up to the switch, and over the last eighth of that range the engine dithers their pixels out. The cards draw from just before that band and stand at full coverage behind the meshes, so each pixel that a mesh's dither drops shows its card, and no pixel ever drops out of both. The cards take no fading build, which every custom material lacks: a batch that dithered as well would leave the background showing through the crown. The meshes and the cards stand at the same trees, so a tree draws as its mesh near the camera and as its card far from it.
+
+A card's rows need their turn, so a turned tree's crown matches its card. The plant's `impostorSource.bounds` gives the largest bound over its levels, which the bake uses for the card's size and for its lowest point.
 
 ## Compared with three.js
 

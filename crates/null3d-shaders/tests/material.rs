@@ -5,7 +5,7 @@ mod precision;
 
 use std::path::Path;
 
-use null3d_gpu::drawlist::permutation;
+use null3d_gpu::drawlist::{permutation, vertex};
 use null3d_shaders::{
     BuildError, Compiler, Inputs, Manifest, MaterialOutput, MaterialSource, MaterialTemplate,
     Problem, Share,
@@ -356,6 +356,25 @@ fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
     assert_eq!(both.functions, ["surface", "vertexOffset"]);
 }
 
+/// A vertex offset that moves each vertex by its mesh's four-number record.
+const RECORD: &str = "fn vertexOffset(input: VertexInput) -> vec3f {
+    return vec3f(0.0, input.vertexRecord.y - input.position.y, 0.0);
+}
+";
+
+#[test]
+fn a_vertex_offset_that_reads_the_record_takes_the_record_attribute() {
+    let built = compile(RECORD).expect("the record builds");
+    assert_eq!(built.functions, ["vertexOffset"]);
+    // The record is the vertex attribute at location 8, which a mesh with the record carries.
+    assert_eq!(built.attributes & vertex::MORPH, vertex::MORPH);
+    assert!(built.locations.contains(&8), "{:?}", built.locations);
+    // A material that reads none of the record pays nothing for it.
+    let plain = compile(WAVE).expect("the wave builds");
+    assert_eq!(plain.attributes & vertex::MORPH, 0);
+    assert!(!plain.locations.contains(&8), "{:?}", plain.locations);
+}
+
 #[test]
 fn a_vertex_offset_with_another_signature_is_refused_at_its_name() {
     let problem = only_problem(&WAVE.replace("-> vec3f", "-> vec4f"));
@@ -363,6 +382,69 @@ fn a_vertex_offset_with_another_signature_is_refused_at_its_name() {
     assert_eq!(
         problem.message,
         "`vertexOffset` does not have the signature that the engine calls. Declare it as `fn vertexOffset(input: VertexInput) -> vec3f`."
+    );
+}
+
+/// A coverage function that the material's shadow caster tests, without a vertex offset.
+const CARD: &str = "fn coverage(input: SurfaceInput) -> f32 {
+    return 1.0 - input.uv.x;
+}
+";
+
+#[test]
+fn a_coverage_function_builds_its_shadow_casters_and_no_motion_or_pick_builds() {
+    let built = compile(CARD).expect("the coverage function builds");
+    assert_eq!(built.functions, ["coverage"]);
+    // The caster draws a fragment stage that tests the coverage, in the twins that a masked
+    // material picks and in the plain builds that another material does.
+    let shadows: Vec<&String> = built
+        .variants
+        .keys()
+        .filter(|name| name.contains("_shadow") && name.ends_with("_caster"))
+        .collect();
+    assert!(!shadows.is_empty(), "{:?}", built.variants.keys());
+    assert!(
+        shadows.iter().any(|name| name.contains("_alpha_mask")),
+        "{shadows:?}"
+    );
+    assert!(
+        !built
+            .variants
+            .keys()
+            .any(|name| name.contains("_motion") || name.contains("_pick")),
+        "a coverage function moves no vertex, so it has no motion or pick builds"
+    );
+    for name in &shadows {
+        let variant = &built.variants[*name];
+        // Only a masked material's caster tests its coverage, and only that build drops a pixel;
+        // the other builds keep neither, so the appended function leaves their module.
+        let tests = name.contains("_alpha_mask");
+        if let Some(wgsl) = &variant.wgsl {
+            assert_eq!(wgsl.source.contains("coverage("), tests, "{name}");
+            assert_eq!(wgsl.source.contains("discard"), tests, "{name}");
+        } else {
+            // A WebGL2 build holds its programs, whose fragment stage carries the test.
+            let programs = variant.glsl.as_ref().expect("a build of one path");
+            for (pipeline, program) in programs {
+                let fragment = &program.fragment.source;
+                assert_eq!(fragment.contains("coverage("), tests, "{name} {pipeline}");
+                assert_eq!(fragment.contains("discard"), tests, "{name} {pipeline}");
+            }
+        }
+    }
+    // The shading builds keep no test, so a card pays nothing for its shadow's shape where it
+    // shades its surface.
+    let shading = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
+    assert!(!shading.contains("if coverage("), "{shading}");
+}
+
+#[test]
+fn a_coverage_function_with_the_wrong_signature_is_refused() {
+    let source = "fn coverage(input: SurfaceInput) -> vec3f {\n    return vec3f(0.0);\n}\n";
+    let problem = only_problem(source);
+    assert_eq!(
+        problem.message,
+        "`coverage` does not have the signature that the engine calls. Declare it as `fn coverage(input: SurfaceInput) -> f32`."
     );
 }
 

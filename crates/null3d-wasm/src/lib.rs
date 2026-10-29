@@ -2166,14 +2166,79 @@ pub fn set_mesh_patches(mesh: u32, patches: u32, indices: u32, root: u32) -> u32
                     })
                 })
             }
-            Some(Err(error)) => Ok(match error {
-                PatchError::Empty => 2,
-                PatchError::Root => 3,
-                PatchError::Record => 4,
-                PatchError::Parent => 5,
-                PatchError::Vertex => 6,
-                PatchError::Bounds => 7,
-            }),
+            Some(Err(error)) => Ok(patch_failure(error)),
+            None => Ok(0),
+        }
+    })
+}
+
+/// The code that a tree that the engine refused answers with: 2 for a tree without patches, 3 for
+/// a root that names none, 4 for a patch's run, 5 for a parent, 6 for an index and 7 for a sphere.
+fn patch_failure(error: PatchError) -> u32 {
+    match error {
+        PatchError::Empty => 2,
+        PatchError::Root => 3,
+        PatchError::Record => 4,
+        PatchError::Parent => 5,
+        PatchError::Vertex => 6,
+        PatchError::Bounds => 7,
+    }
+}
+
+/// Appends one band to the tree of cluster patches of the mesh `mesh`: `patches` records of eight
+/// words each, four floats of its bounding sphere and then four integers of its run, its parent and
+/// its error, followed by `indices` indices, in the staging words. A run's first index counts from
+/// the band's own indices, and a parent names a patch that the tree already holds. Returns 1 when
+/// the mesh takes the band, 0 when it has no tree, and the code of the rule that refused it
+/// otherwise (see [`set_mesh_patches`]).
+#[wasm_bindgen(js_name = appendMeshPatches)]
+pub fn append_mesh_patches(mesh: u32, patches: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let vertices = e
+            .renderer
+            .settings()
+            .meshes()
+            .mesh(mesh.checked_sub(1).unwrap_or(u32::MAX))
+            .map_or(0, |slot| slot.vertex_count);
+        let records = patches as usize;
+        let enough = vertices > 0 && staging.len() >= records * 8 + indices as usize;
+        let band = enough.then(|| {
+            let bounds: Vec<[f32; 4]> = (0..records)
+                .map(|k| {
+                    let at = k * 8;
+                    [0, 1, 2, 3].map(|c| f32::from_bits(staging[at + c]))
+                })
+                .collect();
+            let runs: Vec<[u32; 4]> = (0..records)
+                .map(|k| {
+                    let at = k * 8 + 4;
+                    [
+                        staging[at],
+                        staging[at + 1],
+                        staging[at + 2],
+                        staging[at + 3],
+                    ]
+                })
+                .collect();
+            let first = records * 8;
+            (
+                bounds,
+                runs,
+                staging[first..first + indices as usize].to_vec(),
+            )
+        });
+        let appended = band.and_then(|(bounds, runs, list)| {
+            e.renderer
+                .append_mesh_patches(mesh, &bounds, &runs, &list, vertices)
+        });
+        drop(staging);
+        match appended {
+            Some(Ok(())) => {
+                e.structure_changed = true;
+                Ok(1)
+            }
+            Some(Err(error)) => Ok(patch_failure(error)),
             None => Ok(0),
         }
     })
@@ -2208,8 +2273,9 @@ fn staged_arrays(
         (has(mesh_arrays::TANGENTS), 4, 4),
         (has(mesh_arrays::JOINTS), 6, 4),
         (has(mesh_arrays::WEIGHTS), 7, 4),
+        (has(mesh_arrays::TARGETS), 8, 4),
     ];
-    let mut arrays = [None; 8];
+    let mut arrays = [None; 9];
     let mut at = 0;
     for (array, &(present, location, per_vertex)) in arrays.iter_mut().zip(&staged) {
         if !present {
@@ -2240,6 +2306,7 @@ fn staged_arrays(
         tangents,
         joints,
         weights,
+        targets,
     ] = arrays;
     Some(MeshArrays {
         positions: positions?,
@@ -2251,6 +2318,7 @@ fn staged_arrays(
         tangents,
         joints,
         weights,
+        targets,
         indices: has(mesh_arrays::INDICES).then(|| &words[at..]),
         compute_normals: has(mesh_arrays::COMPUTE_NORMALS),
         compute_tangents: has(mesh_arrays::COMPUTE_TANGENTS),
@@ -2408,6 +2476,40 @@ fn mesh_value<T: Default>(mesh: u32, value: impl FnOnce(&MeshSlot) -> T) -> T {
 #[wasm_bindgen(js_name = meshRadius)]
 pub fn mesh_radius(mesh: u32) -> f32 {
     mesh_value(mesh, |slot| slot.radius)
+}
+
+/// Turns a rectangle's rows over in place, so that its last row comes first, which a canvas needs:
+/// it counts rows from its top, and a texture counts them from the bottom.
+///
+/// The rectangle starts at `address` in the engine's memory, each row is `row_bytes` long, and
+/// there are `height` rows. The caller writes the rectangle there first, and gives a length that it
+/// really wrote: this function trusts the three numbers and turns exactly that many bytes.
+#[wasm_bindgen(js_name = turnRows)]
+pub fn turn_rows(address: u32, row_bytes: u32, height: u32) {
+    let row = row_bytes as usize;
+    let rows = height as usize;
+    if row == 0 || rows < 2 {
+        return;
+    }
+    // SAFETY: the caller passes the address and size of a rectangle that it wrote in this memory,
+    // as every other function here trusts the addresses that TypeScript hands it.
+    let bytes = unsafe { std::slice::from_raw_parts_mut(address as *mut u8, row * rows) };
+    turn_rows_bytes(bytes, row);
+}
+
+/// Turns `row`-byte rows over in place, so that the last comes first. A call with fewer than two
+/// rows or an empty row leaves the bytes as they are, which the export's checks also give.
+fn turn_rows_bytes(bytes: &mut [u8], row: usize) {
+    if row == 0 {
+        return;
+    }
+    let rows = bytes.len() / row;
+    for top in 0..rows / 2 {
+        let (first, last) = (top * row, (rows - 1 - top) * row);
+        for k in 0..row {
+            bytes.swap(first + k, last + k);
+        }
+    }
 }
 
 /// A mesh's vertex count, or 0 for an unknown mesh.
@@ -3928,6 +4030,14 @@ pub fn stage_level_picks(mesh: u32) -> u32 {
     value_with_engine(|e| Ok(e.renderer.settings().stage_level_picks(mesh)))
 }
 
+/// The bands of the tree of cluster patches of the mesh `mesh` that a view drew since its watch
+/// began, one bit each, bit 0 for the band that the file holds. 0 for a mesh that no loader
+/// watches.
+#[wasm_bindgen(js_name = stageBandPicks)]
+pub fn stage_band_picks(mesh: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.settings().stage_band_picks(mesh)))
+}
+
 /// Stops watching the levels that the views pick for the mesh `mesh`, so the frames that follow pay
 /// nothing while no loader waits on it. The loader of a model with staged levels releases a watch
 /// that it has no more use for, and watches the mesh again when the camera could want its next
@@ -4263,14 +4373,19 @@ pub fn set_auto_exposure(on: bool) -> u32 {
 }
 
 /// Turns temporal anti-aliasing on, a prototype, or off with a `feedback` of 0, from the next
-/// frame on. `feedback` is the history's share in thousandths, and `jitter` moves the camera by
-/// the sequence's sub-pixel offsets.
+/// frame on. `feedback` is the history's share in thousandths, `jitter` moves the camera by the
+/// sequence's sub-pixel offsets, `phone` picks the path whose reads cost less per pixel,
+/// `reactive` names the transparency signals that lower the history, as bits, and `exposure`
+/// scales the history by the frame's exposure ratio.
 #[wasm_bindgen(js_name = setTaa)]
-pub fn set_taa(feedback: u32, jitter: bool) -> u32 {
+pub fn set_taa(feedback: u32, jitter: bool, phone: bool, reactive: u32, exposure: bool) -> u32 {
     with_engine(|e| {
         let taa = (feedback > 0).then(|| null3d_render::taa::Taa {
             feedback: feedback.min(990) as f32 / 1000.0,
             jitter,
+            phone,
+            reactive: null3d_render::taa::Reactive(reactive as u8),
+            exposure,
         });
         e.renderer.settings_mut().set_taa(taa);
         0
@@ -5983,6 +6098,20 @@ pub fn overlap(kind: u32, layers: u32) -> u32 {
 mod tests {
     use super::*;
     use null3d_core::animation::NO_PARENT;
+
+    #[test]
+    fn a_rectangles_rows_turn_over_in_place() {
+        let mut three = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        turn_rows_bytes(&mut three, 4);
+        assert_eq!(three, [9, 10, 11, 12, 5, 6, 7, 8, 1, 2, 3, 4]);
+        // An even count turns every row, and fewer than two rows turns none.
+        let mut two = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        turn_rows_bytes(&mut two, 4);
+        assert_eq!(two, [5, 6, 7, 8, 1, 2, 3, 4]);
+        let mut one = [1u8, 2, 3, 4];
+        turn_rows_bytes(&mut one, 4);
+        assert_eq!(one, [1, 2, 3, 4]);
+    }
 
     #[test]
     fn a_reflections_share_of_the_render_size_becomes_halvings() {

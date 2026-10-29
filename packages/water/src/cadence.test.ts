@@ -17,7 +17,7 @@ function fakeContext(start: QualityPreset = 'medium') {
 	/** The governor's steps of the budgets' scale that the budgets follow now. */
 	let level = 0;
 	const budgets = new Map<string, { min: number; onScale: OnScale | undefined; scale: number }>();
-	const posted: (readonly FeatureStats[] | undefined)[] = [];
+	const posted: unknown[] = [];
 	/** The boxes that the add-on's debug view draws. */
 	const boxes: [readonly number[], readonly number[], string][] = [];
 	const quality = {
@@ -56,17 +56,21 @@ function fakeContext(start: QualityPreset = 'medium') {
 		engine: { capabilities: { tier: 'webgpu' } },
 		page: {
 			post(_type: string, data?: unknown) {
-				posted.push(data as readonly FeatureStats[] | undefined);
+				posted.push(data);
 			},
 		},
 		scene: { createMesh: () => ({ destroy() {} }) },
 		geometry: { fromArrays: (arrays: unknown) => arrays },
 		materials: { shader: () => ({ set() {}, destroy() {} }) },
 		textures: {
-			fromPass: () => ({ destroy() {} }),
-			fromData: () => ({ destroy() {} }),
+			fromPass: () => ({ bytes: 4096, destroy() {} }),
+			fromData: () => ({ bytes: 4, destroy() {} }),
 		},
-		render: { addPass: () => ({}), setPassEnabled() {}, removePass() {} },
+		render: {
+			addPass: () => ({ name: 'water', writes: 'water', place: 1 }),
+			setPassEnabled() {},
+			removePass() {},
+		},
 		debug: {
 			box(min: readonly number[], max: readonly number[], color: string) {
 				boxes.push([min, max, color]);
@@ -76,7 +80,7 @@ function fakeContext(start: QualityPreset = 'medium') {
 	return {
 		ctx: ctx as unknown as SketchContext & { quality: typeof quality },
 		/** The last figures that the page was told. */
-		figures: () => posted.at(-1),
+		figures: () => (posted.at(-1) as { features?: readonly FeatureStats[] } | undefined)?.features,
 		posted,
 		/** The boxes that the add-on's debug view drew: each one's low and high corners, and its color. */
 		boxes,
@@ -181,10 +185,12 @@ describe('the water’s figures in the stats overlay', () => {
 		expect(figure?.settings).toEqual({ reflectionEvery: 2 });
 		expect(figure?.budgetMs).toBe(1.7);
 		expect(figure?.allowedMs).toBe(1.7);
-		// The pass draws through the engine's own reflection kind, so the engine times no scope of
-		// the feature, and the add-on owns no buffer or texture of its own to report.
+		// The overlay adds up the GPU time of the reflection pass that the add-on made, which is the
+		// feature's scope. The memory counts the mesh arrays and the foam texture that the add-on
+		// made; the reflection target is the render graph's.
+		expect(figure?.scope).toEqual([{ name: 'water', place: 1 }]);
 		expect(figure?.gpuMs).toBeNull();
-		expect(figure?.bytes).toBeNull();
+		expect(figure?.bytes).toBeGreaterThan(0);
 		context.step(1);
 		expect(waterFigure(context)?.settings).toEqual({ reflectionEvery: 4 });
 		expect(waterFigure(context)?.allowedMs).toBe(1.275);

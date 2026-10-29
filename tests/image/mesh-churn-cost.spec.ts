@@ -1,10 +1,11 @@
-// What a frame costs on the Mac's GPU when a model's mesh leaves the scene, and when one arrives:
-// the 240 independent meshes of the mesh-churn-cost page, in a window that changes nothing, a
-// window that removes one mesh a frame, and a window that adds one a frame, three times each. The
-// difference between the churn windows and the idle one is the render worker's cost of a removal,
-// which closes a hole in its mesh page by moving every mesh after it and uploading their bytes
-// again, and of an addition, which appends. It prints the medians of each side for D-247. It runs
-// only with NULL3D_MESH_CHURN_COST set, in a quiet window on a computer with a GPU of its own:
+// What one frame of steady mesh churn costs on the Mac's GPU, with the removal taken from each end
+// of a mesh page: the 240 models of the mesh-churn-cost page, in a window that changes nothing, a
+// window that replaces the oldest model each frame, and a window that replaces the newest one,
+// three times each. A hole-closing removal moves every model after it in its page and uploads those
+// bytes again; a removal at the page's end moves nothing. The difference between those two windows
+// is the frame cost of the copy, which an offset allocator does not pay. It prints the medians of
+// each side for D-247. It runs only with NULL3D_MESH_CHURN_COST set, in a quiet window on a
+// computer with a GPU of its own:
 // NULL3D_MESH_CHURN_COST=1 bun run test:browser -- mesh-churn-cost.spec.ts.
 import { expect, test } from '@playwright/test';
 import { COST_PAGE_MS, COST_TEST_MS, load, waitForQuietLoad } from '../lib/cost-runs.ts';
@@ -34,8 +35,8 @@ interface ChurnResult {
 	models: number;
 	trialSeconds: number;
 	idle: Side[];
-	destroy: Side[];
-	create: Side[];
+	repack: Side[];
+	tail: Side[];
 	failures: string[];
 }
 
@@ -57,7 +58,9 @@ const line = (name: string, sides: Side[]): string =>
 	`${median(sides.map((s) => s.frames))} frames`;
 
 for (const gpu of gpus)
-	test(`a mesh's removal and its addition, on ${gpu}`, async ({ page }) => {
+	test(`a churn frame's hole-closing removal beside its tail removal, on ${gpu}`, async ({
+		page,
+	}) => {
 		test.setTimeout(COST_TEST_MS);
 		await waitForQuietLoad();
 		const loadBefore = load();
@@ -66,16 +69,19 @@ for (const gpu of gpus)
 		const result = await pageResult<ChurnResult>(page, COST_PAGE_MS);
 		expect(result.error).toBeUndefined();
 		expect(result.failures).toEqual([]);
-		const idle = sketch(result.idle);
-		const destroy = sketch(result.destroy);
-		const create = sketch(result.create);
+		const idle = result.idle;
+		const repack = result.repack;
+		const tail = result.tail;
 		console.log(
 			[
 				`${result.tier} on ${result.threads}, load ${loadBefore} before and ${load()} after`,
-				line('idle', result.idle),
-				line('remove', result.destroy),
-				line('add', result.create),
-				`a removal costs ${(destroy - idle).toFixed(3)} ms of the sketch worker's own code, an addition ${(create - idle).toFixed(3)} ms`,
+				line('idle', idle),
+				line('replace oldest', repack),
+				line('replace newest', tail),
+				`a hole-closing frame costs ` +
+					`${(median(repack.map((s) => s.renderWorkerMs)) - median(tail.map((s) => s.renderWorkerMs))).toFixed(3)} ms more of the render worker, ` +
+					`${(sketch(repack) - sketch(tail)).toFixed(3)} ms more of the sketch worker's own code, ` +
+					`and ${Math.round(median(repack.map((s) => s.uploadBytes)) - median(tail.map((s) => s.uploadBytes)))} more bytes of upload than a frame that cuts the page's end`,
 			].join('\n'),
 		);
 	});

@@ -2879,6 +2879,59 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/impostors-sketch.ts',
 		hold: 0,
 	},
+	// A turned pine beside its own card, three times: the near mesh and the card that a bake made
+	// from it, turned by the same angle. The two must show the same side of the crown and the same
+	// light, which is the card's turn and its normal's frame working. The second test moves the sun
+	// behind the row, so a lit pair turns dark, which a card baked with its own light could not do.
+	{
+		name: 'impostor-turn',
+		sketch: 'tests/pages/sketches/impostor-turn-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'impostor-turn-sun-back',
+		sketch: 'tests/pages/sketches/impostor-turn-sketch.ts?sun=back',
+		hold: 0,
+		size: [480, 270],
+	},
+	// The same pairs with the camera on a ring 65 degrees around the row, so every card sees the eye
+	// far from the world's forward. A card that turned its stored normal and its view by the
+	// camera's frame would light a different side of the crown here than its own mesh does.
+	{
+		name: 'impostor-turn-azimuth',
+		sketch: 'tests/pages/sketches/impostor-turn-sketch.ts?azimuth=65',
+		hold: 0,
+		size: [480, 270],
+	},
+	// A grown birch beside the card that `bakeFarTree` makes from it. The mesh draws level 0 with the
+	// bark and leaf materials, and the card draws the same level baked with the same atlases and the
+	// same colours, so the two crowns match in colour at the hand-over.
+	{
+		name: 'impostor-plant',
+		sketch: 'tests/pages/sketches/impostor-plant-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	// A row of pines inside the hand-over band: each draws as its mesh and as its card at the same
+	// place, the mesh's pixels dither out over the card's full crown, and the background must not
+	// show through the crown where both could drop a pixel.
+	{
+		name: 'impostor-handover',
+		sketch: 'tests/pages/sketches/impostor-handover-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	// A row of cards beside their shadows: the cards stand on a ground plane and cast the sun's
+	// shadow through a batch that only the light draws. The shadow has the crown's shape, and each
+	// card is lit where the sun reaches it, because its shadow lookup reads the surface that its
+	// stored depth shows rather than its own plane.
+	{
+		name: 'impostor-shadow',
+		sketch: 'tests/pages/sketches/impostor-shadow-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// A sprite batch with an origin: eight cards, one per frame of a four column, two row atlas of
 	// flat colors, standing around an origin far from the world's. Each card must draw its own cell,
 	// so the picture holds eight cell colors in order. The second test draws the same cards at their

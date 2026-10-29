@@ -30,6 +30,9 @@
 #ifdef MATH
 #import null3d::math
 #endif
+#ifdef MOTION_MATH
+#import null3d::motion_math
+#endif
 #ifdef NOISE
 #import null3d::noise
 #endif
@@ -38,6 +41,9 @@
 #endif
 #ifdef SDF
 #import null3d::sdf
+#endif
+#ifdef TEMPORAL
+#import null3d::temporal
 #endif
 #ifdef VERTEX
 #import null3d::vertex
@@ -345,6 +351,27 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
 #endif
 #ifdef MATH
         case 114u: { return triple(null3d::math::half_vector(f[0].xyz, f[1].xyz)); }
+#endif
+#ifdef MOTION_MATH
+        case 115u: {
+            // A still surface writes this frame's place less the same place of the last frame,
+            // which is exactly zero bit for bit.
+            return floats(null3d::motion_math::surface_motion(f[0], f[1]), vec4f(0.0), vec4f(0.0), vec4f(0.0));
+        }
+#endif
+#ifdef TEMPORAL
+        case 116u: { return triple(null3d::temporal::temporal_ycocg(f[0].xyz)); }
+        case 117u: { return triple(null3d::temporal::temporal_rgb(f[0].xyz)); }
+        case 118u: {
+            let box = null3d::temporal::temporal_widen(
+                null3d::temporal::TemporalBox(f[0].xyz, f[1].xyz),
+                f[2].xyz,
+            );
+            return triples(box.low, box.high);
+        }
+        case 119u: {
+            return scalar(null3d::temporal::temporal_weight(f[0].x, f[0].y, f[0].z));
+        }
 #endif
         // Any other number gives back its first input texel. The page's probe draws such a row,
         // so whole numbers take the same way to the target as the library's results.

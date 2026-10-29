@@ -1,18 +1,19 @@
 // Impostors and merged far geometry: a pine forest on rolling hills at golden hour, drawn three
 // ways by distance. The nearest trees are level-of-detail meshes in one instance batch. The middle
 // band is the same pine at its coarsest level, merged into one mesh per grid cell, so a whole cell
-// draws in one call. The far band is one sprite batch of impostor cards, each showing the stored
-// view nearest the camera from an octahedral atlas drawn in code. Press L to draw the far band as
-// detail meshes instead, and compare the stats.
+// draws in one call. The far band is one batch of impostor cards, baked from the pine's own mesh,
+// and the far trees hand over from their meshes to their cards through a shared distance band.
+// Press L to draw the far band as detail meshes instead, and compare the stats.
 import { defineSketch, timeOfDay } from '@null3d/engine';
 import { createImpostors, farCellGroups, mergeFarGeometry } from '@null3d/impostors';
+import { handOverToCards } from '@null3d/vegetation';
 import { interact } from '../lib/interact';
 import {
 	bands,
 	CARD_EDGE,
 	CELL,
 	fillTrees,
-	ground,
+	fly,
 	hills,
 	impostorAtlases,
 	pineArrays,
@@ -20,10 +21,8 @@ import {
 	place,
 	SIDE,
 	type Tree,
+	turnSun,
 } from './forest';
-
-/** The sun's direction, from the sky to the ground: low, and to the left of the opening view. */
-const SUN = [0.55, -0.32, 0.77] as const;
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, input, time } = ctx;
@@ -41,7 +40,8 @@ export default defineSketch(async (ctx) => {
 	const view = interact(ctx, camera, { target: [0, 10, 0], groundY: 0 });
 	const sun = scene.createDirectionalLight({
 		...day.light,
-		direction: SUN,
+		// From the sky to the ground, low, and to the left of the opening view.
+		direction: [0.55, -0.32, 0.77],
 		castShadows: true,
 		shadow: { distance: 120 },
 	});
@@ -101,18 +101,22 @@ export default defineSketch(async (ctx) => {
 			surface,
 			atlas: picture.atlas,
 			positions: far.flatMap((tree) => [tree.x, tree.y, tree.z]),
+			turn: far.map((tree) => tree.turn),
+			depth: picture.depth,
 			alphaMode: 'mask',
 		},
 	);
-	far.forEach((tree, k) => {
-		cards.batch.scales.set([tree.scale * 0.9, tree.scale, 1], k * 3);
-	});
+	for (const [k, tree] of far.entries())
+		cards.batch.scales.set([tree.scale * picture.size[0], tree.scale * picture.size[1], 1], k * 3);
 	cards.markDirty(0, far.length);
 
 	// L swaps the far band between the cards and a batch of detail meshes, for comparison.
 	const detail = scene.createInstances(pineWithLevels(geometry), far.length, { material: wood });
 	fillTrees(detail, far);
-	detail.setActiveCount(0);
+	// The hand-over: the meshes draw the far trees up to the switch, and the cards draw them from
+	// just before it, so the fade of each edge hides the swap.
+	const SWITCH = CARD_EDGE + 60;
+	handOverToCards(detail, cards.batch, SWITCH);
 	let cardsOn = true;
 	// T sweeps the sun across the sky, so the cards' light follows the meshes' light: the bake holds
 	// no sun at all.
@@ -124,22 +128,20 @@ export default defineSketch(async (ctx) => {
 			if (input.wasPressed('KeyT')) sweeping = !sweeping;
 			if (sweeping) {
 				hour = (hour + dt * 0.03) % 1;
-				// The sun rises on one side and sets on the other, about the world's z axis.
-				const turn = hour * Math.PI;
-				sun.setRotation(0, 0, Math.sin(turn / 2), Math.cos(turn / 2));
+				turnSun(sun, hour);
 			}
 			if (input.wasPressed('KeyL')) {
 				cardsOn = !cardsOn;
-				cards.batch.setActiveCount(cardsOn ? far.length : 0);
-				detail.setActiveCount(cardsOn ? 0 : far.length);
+				if (cardsOn) {
+					cards.batch.setActiveCount(far.length);
+					handOverToCards(detail, cards.batch, SWITCH);
+				} else {
+					// Every far tree draws as its mesh, past the switch too.
+					cards.batch.setActiveCount(0);
+					detail.setDrawRange(0, 1e9);
+				}
 			}
-			// A slow flight around the middle, looking out over the three bands.
-			if (!view.userCamera) {
-				const t = time.now * 0.05;
-				const [x, z] = [Math.sin(t) * 60, Math.cos(t) * 60];
-				camera.setPosition(x, ground(x, z) + 32, z);
-				camera.lookAt(Math.sin(t + 0.7) * CARD_EDGE * 1.6, 6, Math.cos(t + 0.7) * CARD_EDGE * 1.6);
-			}
+			if (!view.userCamera) fly(camera, time.now);
 			view.update(dt);
 		},
 	};

@@ -494,6 +494,8 @@ pub mod mesh_arrays {
     pub const COMPUTE_TANGENTS: u32 = 256;
     pub const JOINTS: u32 = 512;
     pub const WEIGHTS: u32 = 1024;
+    /// The four-number vertex record of a generated mesh, which a material's vertex offset reads.
+    pub const TARGETS: u32 = 2048;
 }
 
 /// The morph target arrays that `createMeshFromArrays` finds in the staging words after the
@@ -1107,6 +1109,9 @@ pub fn typescript() -> String {
                 ("IRIDESCENCE", feature::IRIDESCENCE),
                 ("ANISOTROPY", feature::ANISOTROPY),
                 ("LIGHT_MAP_RGBM", feature::LIGHT_MAP_RGBM),
+                ("MOVING_VERTICES", feature::MOVING_VERTICES),
+                ("STILL_CASTER", feature::STILL_CASTER),
+                ("CASTER_COVERAGE", feature::CASTER_COVERAGE),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -1462,6 +1467,65 @@ pub fn typescript() -> String {
                 ("TILES", shadow_casters::TILES),
             ],
         ),
+        // The scopes of a GPU pass, which the page names in the stats overlay and which a feature
+        // adds up to report its own GPU time. A scope's index, where it has one, is in the high 16
+        // bits.
+        (
+            "SCOPE",
+            &[
+                ("NONE", null3d_render::scope::NONE),
+                ("LIGHT_CLUSTERS", null3d_render::scope::LIGHT_CLUSTERS),
+                ("SKIN", null3d_render::scope::SKIN),
+                ("CULL", null3d_render::scope::CULL),
+                ("PREPASS", null3d_render::scope::PREPASS),
+                ("OPAQUE", null3d_render::scope::OPAQUE),
+                ("OCCLUDERS", null3d_render::scope::OCCLUDERS),
+                ("PYRAMID", null3d_render::scope::PYRAMID),
+                ("LATE_CULL", null3d_render::scope::LATE_CULL),
+                ("SHADOW", null3d_render::scope::SHADOW),
+                ("DEBUG_LINES", null3d_render::scope::DEBUG_LINES),
+                ("TRANSPARENT", null3d_render::scope::TRANSPARENT),
+                ("DECALS", null3d_render::scope::DECALS),
+                ("DECAL_REDRAW", null3d_render::scope::DECAL_REDRAW),
+                ("PICK", null3d_render::scope::PICK),
+                ("PICK_RESOLVE", null3d_render::scope::PICK_RESOLVE),
+                ("RESOLVE", null3d_render::scope::RESOLVE),
+                ("BLOOM", null3d_render::scope::BLOOM),
+                ("OUTLINE_MASK", null3d_render::scope::OUTLINE_MASK),
+                ("SKIN_LIGHT", null3d_render::scope::SKIN_LIGHT),
+                ("SUBSURFACE", null3d_render::scope::SUBSURFACE),
+                ("AO", null3d_render::scope::AO),
+                ("SSR", null3d_render::scope::SSR),
+                ("EFFECT", null3d_render::scope::EFFECT),
+                ("DOF", null3d_render::scope::DOF),
+                ("FOG_LIGHT", null3d_render::scope::FOG_LIGHT),
+                ("FOG_BLOCK", null3d_render::scope::FOG_BLOCK),
+                ("FOG_SUM", null3d_render::scope::FOG_SUM),
+                ("FOG_APPLY", null3d_render::scope::FOG_APPLY),
+                ("TAA", null3d_render::scope::TAA),
+                ("VIEW_COPY", null3d_render::scope::VIEW_COPY),
+                ("FULLSCREEN", null3d_render::scope::FULLSCREEN),
+                ("COMPUTE", null3d_render::scope::COMPUTE),
+                ("TRANSMISSION_COPY", null3d_render::scope::TRANSMISSION_COPY),
+                ("MOTION", null3d_render::scope::MOTION),
+                ("MOTION_VIEW", null3d_render::scope::MOTION_VIEW),
+                ("WEIGHTED", null3d_render::scope::WEIGHTED),
+                (
+                    "WEIGHTED_COMPOSITE",
+                    null3d_render::scope::WEIGHTED_COMPOSITE,
+                ),
+                (
+                    "PARTICLE_DEPTH_COPY",
+                    null3d_render::scope::PARTICLE_DEPTH_COPY,
+                ),
+                ("ACCUMULATE", null3d_render::scope::ACCUMULATE),
+                ("FINAL", null3d_render::scope::FINAL),
+                ("FINAL_STILL", null3d_render::scope::FINAL_STILL),
+                ("FINAL_BLOOM", null3d_render::scope::FINAL_BLOOM),
+                ("OUTPUT", null3d_render::scope::OUTPUT),
+                ("OUTPUT_BLOOM", null3d_render::scope::OUTPUT_BLOOM),
+            ],
+        ),
         // The draw list's codes that `createTexture` takes, so the sketch thread needs no import of
         // the GPU layer's constants, which the bundler would put in a file of their own.
         (
@@ -1529,6 +1593,7 @@ pub fn typescript() -> String {
                 ("COMPUTE_TANGENTS", mesh_arrays::COMPUTE_TANGENTS),
                 ("JOINTS", mesh_arrays::JOINTS),
                 ("WEIGHTS", mesh_arrays::WEIGHTS),
+                ("TARGETS", mesh_arrays::TARGETS),
             ],
         ),
         // The morph target arrays of `createMeshFromArrays`, the morph weight table, and the bytes of
@@ -1558,6 +1623,7 @@ pub fn typescript() -> String {
                 ("INDICES", ArrayName::Indices as u32),
                 ("JOINTS", ArrayName::Joints as u32),
                 ("WEIGHTS", ArrayName::Weights as u32),
+                ("TARGETS", ArrayName::Targets as u32),
             ],
         ),
         (

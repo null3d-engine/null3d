@@ -3,7 +3,7 @@ id: concepts/lod
 title: Levels of detail
 status: experimental
 since: "0.2"
-summary: "LOD groups; generated LODs; per-instance selection; small-object hiding."
+summary: "LOD groups; generated LODs; cluster patches; staged downloads; per-instance selection; small-object hiding."
 ---
 
 # Levels of detail
@@ -96,6 +96,8 @@ The engine draws a tree's patches on both GPU paths. On WebGPU, a compute pass p
 
 On WebGL2, the job workers walk the tree for each view with the same rule, where the device has `WEBGL_multi_draw` (Chrome and Safari). Each chosen patch is a range of the mesh's tree in one multi-draw call, so a frame uploads ranges and no triangles. Ranges that are neighbours in the tree's index list merge, so a frame makes fewer calls. A WebGL2 browser without `WEBGL_multi_draw`, such as Firefox, draws the whole levels that the tool cuts from the tree. They are the same levels that other glTF viewers draw.
 
+A tree can stream as a model loads, with `--clusters --stages`. The model file then holds the tree's first band, and that band draws the first picture. Each later band downloads from a file of its own. A band appends its patches below the patches that already arrived, so the tree refines as the bands come and no new object appears. The patches that a page holds always form a whole tree from the root. A patch whose children have not arrived draws where the camera is close, so the first picture is coarse and still covers the whole surface. The loader holds a band until a view draws a patch of the band above it. `maxLevels` counts a band as it counts a level. [The asset pipeline](../guides/assets-pipeline.md#levels-as-separate-downloads) has the detail.
+
 The patch path draws a mesh that one copy draws, and the file may still hold a tree for a mesh with more copies. A mesh that draws several copies at once keeps its whole triangle list, because the walk picks the patches of one copy. The WebGPU path that draws objects directly also draws the whole levels, because it has no cluster pass. The shadow maps draw the whole levels. Meshes that a skin or a morph target bends, and meshes whose material blends or masks, keep whole levels too.
 
 ## How the engine picks a level
@@ -146,6 +148,8 @@ mesh.setLevels([{ mesh: low, distance: 80, fade: false }]);
 
 The fragments that the dither drops cost a tile GPU, such as a phone's or an Apple GPU's, its hidden-surface removal. So only the objects inside a band draw with the dither. The shader builds of the bands download with the first mesh whose levels fade. These builds follow the level, whatever the `lodFade` quality setting, because a hand-set level pops without them.
 
+Two add-ons morph a level instead of fading it. The terrain add-on moves each block's vertices toward its parent block's surface over the last part of the approach, so the block matches its parent when the selection hands over. The vegetation add-on moves a tree's leaf cards toward the next level before the switch: the cards that the level drops shrink and the kept ones grow. Both write the target in the mesh's four-number vertex record, which their own custom material's `vertexOffset` reads. Neither adds a draw, and neither writes a vertex in a frame. File meshes keep the dither: the asset tool's simplifier records no mapping between one level's vertices and the next.
+
 ## Small objects
 
 An object far away can cover less than a pixel. Its levels then save vertex work, but the object still draws a fragment or two that no one sees. The engine hides it: the mesh's last level holds no geometry. Only a mesh with levels has that last level, so a mesh without levels draws at every distance.
@@ -187,11 +191,11 @@ Far shadow cascades and the shadow tiles of point and spot lights keep their dep
 
 ## Cards beyond the levels
 
-A level of detail keeps one draw and one mesh per object. Far past the last level, an object can draw as a card instead: a quad that faces the screen and shows a picture of the object. The `@null3d/impostors` add-on draws those cards, and a distance band on the meshes hands the object over to them.
+A level of detail keeps one draw and one mesh per object. Far past the last level, an object can draw as a card instead: a quad that stands upright, turns to the eye, and shows a picture of the object. The `@null3d/impostors` add-on draws those cards, and a distance band on the meshes hands the object over to them.
 
-A bake stores the object from many directions, folded onto an octahedral grid, in a color atlas and a surface atlas of normals and depths. Each card blends the three stored views nearest the direction from the card toward the eye, so the picture changes smoothly as the camera moves rather than jumping between views. The card's light comes from the scene, through the stored normal, so a sun that moves relights the cards exactly as it relights the meshes.
+A bake stores the object from many directions, folded onto an octahedral grid, in a color atlas and a surface atlas of normals and depths. Each card blends the three stored views nearest the direction from the card toward the eye, so the picture changes smoothly as the camera moves rather than jumping between views. The card's light comes from the scene, through the stored normal, so a sun that moves relights the cards exactly as it relights the meshes. A copy's turn about the world's up turns its views and its light too, so a turned tree hands over to a card whose crown matches it. A camera that moves around the tree does not turn its light: the card turns to the eye, and the stored normal turns only with the tree. A card casts the crown's shape, and takes the shadows that fall on the surface it shows, when the sketch asks for it.
 
-`setDrawRange` fades a band's edges with the dither, so the hand-over from a mesh to its cards need not pop. [Impostors](../api/impostors.md) gives the calls, and the demo `examples/impostors` draws a forest three ways by distance.
+`setDrawRange` fades a band's edges with the dither, so the hand-over from a mesh to its cards need not pop. The vegetation add-on's `handOverToCards` sets the two bands for a row of plants. [Impostors](../api/impostors.md) gives the calls, and the demo `examples/impostors` draws a forest three ways by distance.
 
 ## From three.js
 
