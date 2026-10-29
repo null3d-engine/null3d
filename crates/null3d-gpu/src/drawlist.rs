@@ -92,16 +92,19 @@ pub enum Op {
     GenerateMipmaps = 15,
     /// [color target texture id or 0 for the canvas or `NO_TARGET`, resolve target texture id or
     /// 0 for the canvas or `NO_TARGET`, depth texture id or `NO_TARGET`, clear red, green, blue,
-    /// alpha (f32), clear depth (f32), pass flags, second color target texture id or `NO_TARGET`,
-    /// the pass's label, the pass's scope]. A target is a texture of one layer and one mip level,
-    /// or a view of one. A pass without a color target draws depth only. A second color target has
-    /// one sample, no resolve, and the first target's clear color and flags; its pipelines are
-    /// those with `permutation::WEIGHTED`. The label says what the pass draws for, from
-    /// [`crate::pass_role`], so a frame's GPU time names the pass rather than its slot. The scope
-    /// names the step that the pass records, from the render graph's scope codes, or 0 for a step
-    /// that no scope names; the engine times each pass's GPU work by it. A list that names a scope
-    /// must also give the second color target's word, as `NO_TARGET` when the pass has none:
-    /// without it the label reads as the target and the scope as the label.
+    /// alpha (f32), clear depth (f32), pass flags, then the second color target's texture id when
+    /// the pass has one, then the pass's label, then the pass's scope]. A target is a texture of
+    /// one layer and one mip level, or a view of one. A pass without a color target draws depth
+    /// only. A second color target has one sample, no resolve, and the first target's clear color
+    /// and flags; its pipelines are those with `permutation::WEIGHTED`. The label says what the
+    /// pass draws for, from [`crate::pass_role`], so a frame's GPU time names the pass rather than
+    /// its slot. The scope names the step that the pass records, from the render graph's scope
+    /// codes, or 0 for a step that no scope names; the engine times each pass's GPU work by it.
+    /// The form follows the command's length: twelve operands carry the second color target, the
+    /// label and the scope; eleven carry the label and the scope and name no second target; ten
+    /// carry the label alone; nine stop after the flags. A list without a second target puts the
+    /// label where the target would have been, and the absent target is named by the length and
+    /// by nothing else.
     BeginRenderPass = 16,
     /// [render pipeline id]
     SetPipeline = 17,
