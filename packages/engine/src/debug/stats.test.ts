@@ -9,6 +9,7 @@ import {
 	MemoryFigure,
 	Phase,
 	Role,
+	UNTIMED,
 } from '../shared/metrics';
 import { rateLevel, workLevel } from './frame-target';
 import { overlayFigures, type PageFigures } from './overlay';
@@ -475,6 +476,28 @@ describe('FrameStatsWindow GPU time', () => {
 		expect(times.slice(1)).toEqual([2, 1, 3]);
 		// The opaque pass of the camera's view is place 0.
 		expect(window.stats.gpuSteps[1]?.place).toBe(0);
+	});
+
+	it('leaves an untimed pass out of its step’s mean, so a step never reads negative', () => {
+		const { buffer, recorders, window } = setUp();
+		const gpu = new FrameRecorder(buffer, Role.Gpu);
+		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
+		// Two records left the pass untimed and one timed it at 1 ms. The untimed figures add
+		// nothing to the mean, so the step reads 1 ms rather than a negative sum over one record.
+		for (const [frame, ms] of [
+			[10, UNTIMED],
+			[11, UNTIMED],
+			[12, 1],
+		] as const) {
+			gpu.begin(frame);
+			gpu.gpuPasses(1, 0b1);
+			gpu.gpuTime(1, ms);
+			gpu.gpuScope(0, SCOPE_OPAQUE);
+			gpu.commit(4);
+		}
+		window.update();
+		const step = window.stats.gpuSteps.find((figure) => figure.name === 'opaque');
+		expect(step?.ms).toBe(1);
 	});
 
 	it('keeps the GPU time of the last window that held a timed frame', () => {
