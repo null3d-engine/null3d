@@ -636,7 +636,9 @@ and a hero car with two screens.
   Each heading flies on its right of the street's center line, in two lanes. The streets along z
   fly half a level above those along x, so crossing streets never share a height. Every car of a
   lane flies at the lane's speed, so the cars keep their gaps. At High a lane carries a car about
-  every 96 m ([D-277](decisions/D-277-skyway-driving-and-traffic.md)).
+  every 96 m. Beside them, a few dozen roaming cars fly routes of their own down the streets'
+  middles: they turn at junctions, change height and stop at the kerb now and then
+  ([D-277](decisions/D-277-skyway-driving-and-traffic.md)).
 - **A hull's vertices are what a lane pays for.** Every face of the vehicle hull carries its own
   four vertices, so a car is 72 vertices for 36 triangles, and each pass that draws the lanes pays
   for them, the reflections' depth prepass among them. `createVehicleHull` therefore takes a detail

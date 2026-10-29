@@ -66,6 +66,17 @@ instead of a band of cars over the low streets. The owner judges the final look.
   its height and its speed (`plan: { from, to, lanes }`). Skyway builds the list in `skyLanes()`.
   The grid plan stays for the instances demo, which shows the count rather than a street, so its
   pictures do not move.
+- **Roaming cars.** Beside the lanes, 16 to 56 cars (40 at High) fly routes of their own
+  (`roamers.ts`). A roamer cruises down a street's middle line, where no lane runs. At each
+  junction it flies on, or in two cases of five takes a quarter turn of 12 m radius onto the cross
+  street, and at the city's edge it always turns back in. At a quarter of the junctions it picks a
+  new height, from 16 m to 125 m. In about one block of eight it slides to the kerb, sets down
+  1.4 m over the street, waits 3 s to 8 s and takes off again. It never stops in a block that ends
+  at the edge, so it is back in the street's middle before it must turn there. The scene flies
+  them on the CPU and writes their rows of one batch each frame; their surface paints the
+  traffic's lights from each car's own place, which the hull's texture coordinates carry, since a
+  roamer turns any way. `roamers.test.ts` flies 40 of them for two minutes and checks that they
+  stay on the streets, inside the city and out of the towers, and that they turn, climb and park.
 - **The counts.** 6,000 cars at Low, 9,000 at Medium, 12,000 at High and 16,000 at Ultra. The
   Traffic buttons offer Light, Busy and Rush hour, at the Low, High and Ultra counts.
 - **Driving.** In Manual the cinematic camera hands the frame to a driver (`CinematicOptions.driver`)

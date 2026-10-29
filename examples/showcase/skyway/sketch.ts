@@ -25,7 +25,8 @@ import { createFacades } from './facades';
 import { createHero, DRIVE_KEYS, type View } from './hero';
 import { HALF } from './layout';
 import { createRain } from './rain';
-import { CARS, createTraffic } from './traffic';
+import { createRoamers } from './roamers';
+import { CAR_LOOK, CARS, createTraffic } from './traffic';
 
 /** The camera's vertical field of view in degrees. */
 const FOV = 58;
@@ -201,6 +202,8 @@ export default defineSketch(async (ctx) => {
 	const city = createCity(ctx);
 	page.post('loading', 'Streaming the lanes');
 	const traffic = createTraffic(ctx);
+	// The roaming cars turn, change height and stop at the kerb, among the lanes' straight flow.
+	const roamers = createRoamers(ctx, CAR_LOOK);
 	const rain = createRain(ctx);
 	/** The camera's place, which the real lights follow. */
 	const eye = vec3.create();
@@ -216,6 +219,7 @@ export default defineSketch(async (ctx) => {
 	const fit = (): void => {
 		facades.fit(quality.preset);
 		traffic.fit(quality.preset);
+		roamers.fit(quality.preset);
 	};
 	fit();
 	quality.onChange(fit);
@@ -381,6 +385,7 @@ export default defineSketch(async (ctx) => {
 			rain.shelter(shelter, CANOPY_REACH);
 			camera.getWorldPosition(eye);
 			traffic.update(eye, t);
+			roamers.update(dt);
 			if (controls.on.dof) post.set(lensSettings);
 			controls.update(t);
 		},
