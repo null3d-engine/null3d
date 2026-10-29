@@ -48,9 +48,10 @@ export interface WindOptions {
  */
 export interface WindField {
 	/**
-	 * The texture. A reader declares it as `var wind: texture_2d_array<f32>;` and samples layer 0.
-	 * Its red and blue channels hold the wind across the ground, and its green channel holds the
-	 * wind's rise, which is zero while the field is flat. Its alpha holds how fast the air moves.
+	 * The texture. A reader declares it as `var wind: texture_2d<f32>;` and samples it through the
+	 * sampling function, which gives the air back: the wind across the ground, the wind's rise,
+	 * which is zero while the field is flat, and how fast the air moves. The grid keeps its state
+	 * in the texture's own numbers, so a reader does not decode them itself.
 	 */
 	readonly texture: Texture;
 	/** The box's near corner across the ground, in meters: x and z. */
@@ -86,15 +87,28 @@ export interface Wind {
 	/** Pushes the air about a ground place, as a body moving through it does. */
 	push(at: readonly [number, number], strength?: number): void;
 	/**
-	 * The air at a world place, in meters a second, written into `out`. The CPU form of the same
-	 * field that the GPU fills, for a page's own motion and for a test.
+	 * The air at a world place, in meters a second, written into `out`, from the analytic field that
+	 * the solver pulls the air toward and the pushes and the gust it injects. The solved air itself
+	 * is on the GPU, so a page's own motion follows the forces rather than the wakes.
 	 */
 	sample(x: number, y: number, z: number, out: [number, number, number]): [number, number, number];
-	/** Places the box about the camera and sends the values to the GPU. Call once in each frame. */
+	/**
+	 * Places the box about the camera, runs the steps that the sketch time owes and sends the
+	 * values to the GPU. Call once in each frame.
+	 */
 	update(): void;
 	/** Removes the pass and its texture. */
 	destroy(): void;
 }
+
+/** The Jacobi iterations that one cycle of the solver runs, as its shaders hold them. */
+export const PRESSURE_STEPS = 20;
+/** The runs that one cycle takes: the forces and the advection, the pressure, the projection. */
+export const CYCLE_STEPS = PRESSURE_STEPS + 2;
+/** The fixed time that one cycle steps the air by, in seconds. */
+export const STEP_SECONDS = 1 / 60;
+/** The most cycles that one frame runs, which a held frame's warm-up asks for. */
+const MAX_CYCLES = 600;
 
 /** How strong a gust is when the page names no strength. */
 const GUST = 7;
@@ -130,10 +144,22 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	const now = (): number => ctx.time.now;
 
 	// The pass takes eight value vectors: the settings, the ring of pushes and gusts, and the box.
+	// The solver runs one fixed step per cycle. A frame sets the runs that the sketch time owes,
+	// so the air keeps the same pace whatever the frame rate, and a held frame runs its warm-up in
+	// the one frame it draws.
+	let solved = 0;
+	const owedSteps = (): number => {
+		const cycles = Math.min(Math.floor((now() - solved) / STEP_SECONDS), MAX_CYCLES);
+		if (cycles <= 0) return 0;
+		solved += cycles * STEP_SECONDS;
+		return cycles * CYCLE_STEPS;
+	};
+
 	const values = new Array<number>(32).fill(0);
 	const place: number[] = [0, 0, 0];
 	const write = (): void => {
-		values[0] = now();
+		// The first vector holds the solver's step, then the air's settings.
+		values[0] = STEP_SECONDS;
 		values[1] = air.speed;
 		values[2] = air.heading;
 		values[3] = air.ground;
@@ -178,6 +204,8 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 				fallback: { wgsl: fallbackShader },
 				format: 'rgba16float',
 				size: [grid, grid],
+				history: true,
+				steps: CYCLE_STEPS,
 				values,
 				name: 'wind-field',
 			})
@@ -198,7 +226,10 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	// The box follows the camera and the pushes fade, so the values go up in every frame.
 	const apply = (): void => {
 		write();
-		if (pass) ctx.render.setPassUniforms(pass, values);
+		if (pass) {
+			ctx.render.setPassSteps(pass, owedSteps());
+			ctx.render.setPassUniforms(pass, values);
+		}
 		field.origin[0] = values[28] as number;
 		field.origin[1] = values[29] as number;
 	};
