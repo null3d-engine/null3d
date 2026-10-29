@@ -2,8 +2,8 @@
 // of a hundred thousand cars costs a frame no CPU work at all. Every row carries its lane's start
 // offset, its speed and the lane's length, and the vertex offset wraps it at the far end.
 //
-// The surface paints a vehicle from its own coordinates: tail bars, a nose lamp and a glowing skirt
-// under the belly. It reads the hull's size, so any vehicle mesh with its nose along local +Z takes
+// The surface paints a vehicle from its own coordinates: tail bars, a nose lamp and a neon band round
+// the body's lower edge. It reads the hull's size, so any vehicle mesh with its nose along local +Z takes
 // the same lights. The rows are batched by heading, because a row's heading turns the lights and
 // the movement together.
 //
@@ -206,6 +206,169 @@ export function vehicleCanopy(
 	return geometry.fromArrays({
 		positions: new Float32Array(positions),
 		uvs: new Float32Array(uvs),
+/** One section of a lofted hull: where it stands along the length, its half width, its belly and its top. */
+export interface HullSection {
+	z: number;
+	half: number;
+	bottom: number;
+	top: number;
+}
+
+/** One lofted part of a hull: its sections from the tail to the nose, and where it sits across. */
+export interface HullPart {
+	sections: readonly HullSection[];
+	/** How far the part sits from the hull's middle across, in its own units. The default is 0. */
+	x?: number;
+	/** The points round each section: more give a rounder part. */
+	ring: number;
+	/** How square each section is: 2 is an ellipse, and higher values square it off. */
+	squareness: number;
+	/** True closes the tail with a flat face, where tail lights sit; false closes it to a point. */
+	flatTail: boolean;
+}
+
+/** The places and the triangles of lofted parts, and each place's own coordinates. */
+export interface Loft {
+	positions: number[];
+	indices: number[];
+}
+
+/**
+ * Lofts `parts` into one list of places and triangles. Each section is a rounded rectangle from
+ * its belly to its top, and the rings between sections share their places, so the skin shades
+ * smoothly. A flat tail has places of its own, so it shades as a flat face; the nose closes to a
+ * point.
+ */
+export function loftHull(parts: readonly HullPart[]): Loft {
+	const positions: number[] = [];
+	const indices: number[] = [];
+	for (const part of parts) {
+		const { sections, ring, squareness } = part;
+		const across = part.x ?? 0;
+		const power = 2 / squareness;
+		const shape = (v: number) => Math.sign(v) * Math.abs(v) ** power;
+		const point = (section: HullSection, k: number): [number, number, number] => {
+			const angle = (k / ring) * Math.PI * 2;
+			const middle = (section.top + section.bottom) / 2;
+			const rise = (section.top - section.bottom) / 2;
+			return [
+				across + section.half * shape(Math.cos(angle)),
+				middle + rise * shape(Math.sin(angle)),
+				section.z,
+			];
+		};
+		const first = positions.length / 3;
+		for (const section of sections) {
+			for (let k = 0; k < ring; k++) positions.push(...point(section, k));
+		}
+		for (let r = 0; r < sections.length - 1; r++) {
+			for (let k = 0; k < ring; k++) {
+				const a = first + r * ring + k;
+				const b = first + r * ring + ((k + 1) % ring);
+				const c = b + ring;
+				const d = a + ring;
+				// Each ring runs anticlockwise seen from the nose, so this winding faces out.
+				indices.push(a, b, c, a, c, d);
+			}
+		}
+		// The tail: a flat face with places of its own, or a point.
+		const tail = sections[0] as HullSection;
+		const tailMiddle = positions.length / 3;
+		positions.push(across, (tail.top + tail.bottom) / 2, tail.z - (part.flatTail ? 0 : 0.05));
+		const tailRing = positions.length / 3;
+		if (part.flatTail) for (let k = 0; k < ring; k++) positions.push(...point(tail, k));
+		for (let k = 0; k < ring; k++) {
+			const a = part.flatTail ? tailRing + k : first + k;
+			const b = part.flatTail ? tailRing + ((k + 1) % ring) : first + ((k + 1) % ring);
+			indices.push(tailMiddle, b, a);
+		}
+		// The nose closes to a point just ahead of its last section.
+		const nose = sections[sections.length - 1] as HullSection;
+		const tip = positions.length / 3;
+		positions.push(across, (nose.top + nose.bottom) / 2, nose.z + 0.08);
+		const last = first + (sections.length - 1) * ring;
+		for (let k = 0; k < ring; k++) indices.push(tip, last + k, last + ((k + 1) % ring));
+	}
+	return { positions, indices };
+}
+
+/**
+ * The sections of a flying car's body in the lane hull's units: a cut-off tail, where the tail
+ * lights sit, a long waist and a nose that tapers to a point. The beltline sits at 0.66.
+ */
+export const FLYING_CAR_BODY: readonly HullSection[] = [
+	{ z: -2.0, half: 0.62, bottom: 0.22, top: 0.5 },
+	{ z: -1.75, half: 0.86, bottom: 0.14, top: 0.62 },
+	{ z: -1.1, half: 0.97, bottom: 0.1, top: 0.66 },
+	{ z: -0.2, half: 0.97, bottom: 0.1, top: 0.66 },
+	{ z: 0.8, half: 0.9, bottom: 0.12, top: 0.6 },
+	{ z: 1.5, half: 0.7, bottom: 0.16, top: 0.48 },
+	{ z: 1.85, half: 0.45, bottom: 0.2, top: 0.38 },
+	{ z: 2.0, half: 0.2, bottom: 0.25, top: 0.31 },
+];
+
+/** The sections of a flying car's canopy: a bubble on the beltline, from behind the waist to the bonnet. */
+export const FLYING_CAR_CANOPY: readonly HullSection[] = [
+	{ z: -1.05, half: 0.25, bottom: 0.6, top: 0.68 },
+	{ z: -0.75, half: 0.48, bottom: 0.6, top: 0.94 },
+	{ z: -0.2, half: 0.55, bottom: 0.6, top: 1.08 },
+	{ z: 0.35, half: 0.52, bottom: 0.6, top: 1.04 },
+	{ z: 0.8, half: 0.4, bottom: 0.6, top: 0.86 },
+	{ z: 1.05, half: 0.22, bottom: 0.6, top: 0.66 },
+];
+
+/** The sections of one of a flying car's hover pods, slim and long, along each flank. */
+export const FLYING_CAR_POD: readonly HullSection[] = [
+	{ z: -1.95, half: 0.1, bottom: 0.2, top: 0.36 },
+	{ z: -1.6, half: 0.16, bottom: 0.14, top: 0.42 },
+	{ z: 0.2, half: 0.15, bottom: 0.15, top: 0.41 },
+	{ z: 0.75, half: 0.06, bottom: 0.24, top: 0.32 },
+];
+/** How far each hover pod sits from the middle, in the lane hull's units. */
+export const FLYING_CAR_POD_X = 0.9;
+
+/**
+ * Builds a flying car for the lanes: a smooth body with a cut-off tail and a pointed nose, a
+ * bubble canopy and, at `full` detail, two hover pods along its flanks. It keeps the lane hull's
+ * space and size, so the add-on's surface finds its tail lights, its nose lamps, its canopy and
+ * its lower edge where it finds the lane hull's. `light` takes fewer points round each section and
+ * leaves out the pods, for the preset that phones run.
+ */
+export function createFlyingCarHull(
+	ctx: SketchContext,
+	size: VehicleSize = DEFAULT_VEHICLE,
+	detail: HullDetail = 'full',
+): MeshGeometry {
+	const full = detail === 'full';
+	const parts: HullPart[] = [
+		{ sections: FLYING_CAR_BODY, ring: full ? 14 : 8, squareness: 2.6, flatTail: true },
+		{ sections: FLYING_CAR_CANOPY, ring: full ? 10 : 6, squareness: 2.2, flatTail: false },
+	];
+	if (full) {
+		for (const side of [-1, 1])
+			parts.push({
+				sections: FLYING_CAR_POD,
+				x: side * FLYING_CAR_POD_X,
+				ring: 8,
+				squareness: 2,
+				flatTail: false,
+			});
+	}
+	const { positions, indices } = loftHull(parts);
+	const sx = size.halfWidth / DEFAULT_VEHICLE.halfWidth;
+	const sy = size.height / DEFAULT_VEHICLE.height;
+	const sz = size.halfLength / DEFAULT_VEHICLE.halfLength;
+	const uvs = new Float32Array((positions.length / 3) * 2);
+	for (let k = 0; k < positions.length; k += 3) {
+		positions[k] = (positions[k] as number) * sx;
+		positions[k + 1] = (positions[k + 1] as number) * sy;
+		positions[k + 2] = (positions[k + 2] as number) * sz;
+		uvs[(k / 3) * 2] = ((positions[k] as number) + 1) * 0.5;
+		uvs[(k / 3) * 2 + 1] = positions[k + 1] as number;
+	}
+	return ctx.geometry.fromArrays({
+		positions: new Float32Array(positions),
+		uvs,
 		indices: new Uint32Array(indices),
 		computeNormals: true,
 	});
@@ -265,9 +428,12 @@ export interface VehicleLook {
 	tail?: ColorInput;
 	/** The colour of the nose lamps. */
 	nose?: ColorInput;
-	/** The colour of the glow under the belly, which a row's tint shifts toward the tail's colour. */
+	/**
+	 * The colour of the neon band round the body's lower edge, which a row's tint shifts toward the
+	 * tail's colour.
+	 */
 	skirt?: ColorInput;
-	/** How brightly the skirt glows. */
+	/** How brightly the neon band glows. */
 	glow?: number;
 	/** The hull's half width, its height and its half length, in meters, for the light areas. */
 	size?: readonly [number, number, number];

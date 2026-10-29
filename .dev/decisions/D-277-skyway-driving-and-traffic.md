@@ -102,6 +102,19 @@ instead of a band of cars over the low streets. The owner judges the final look.
   new picture each time made its tab row flicker. A press posts
   `hud-press` to the page, which sends it on to the sketch as its own panel's button would. Both
   panels then show the change.
+- **The cars' bodies.** The traffic and the hero car are flying cars (`createFlyingCarHull` and
+  `loftHull` in the traffic-lanes add-on): a smooth body lofted through eight rounded sections,
+  with a cut-off tail where the tail lights sit and a nose that tapers to a point, a bubble
+  canopy, and two hover pods along the flanks. The box-section lane hull read as blocky. At
+  `full` detail a car has 258 vertices and 472 triangles; at `light`, which Low draws, 112 and
+  200, with no pods. A car costs about four times the box hull's vertices, and the lanes draw a
+  sixth of the cars they drew, so High's lanes draw 3.1 million vertices against 5.4 million, and
+  Low's about 0.67 million against 0.72 million.
+- **The cars' lights.** The tail bars glow at about a third of their brightness. The glow that
+  filled each car's underside, and the hero car's lamp under its belly, gave way to a neon band
+  round the body's lower edge, on the faces that look outward: the edge of the field that holds
+  the car up. The hero car's engine nozzles are smaller and dimmer. The instances demo shares the
+  add-on's surface, so its traffic shows the dimmer tails and the band too.
 - **The other cars' windows.** The traffic-lanes add-on takes `look.windows`, a tint that draws each
   car's canopy as dark, smooth glass with a faint glow from the cabin. Skyway tints them teal. The
   instances demo sets none, so its pictures do not move.

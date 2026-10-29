@@ -207,7 +207,7 @@ export interface Cockpit {
  * step between two panels and the panels' scale. The dashboard sits below the driver's eye and
  * ahead of it, so the three panels fill the lower middle of the view from the seat.
  */
-const DASH = { y: 0.82, z: 0.66, step: 0.25, scale: 0.5 };
+const DASH = { y: 0.94, z: 0.7, step: 0.2, scale: 0.42 };
 
 /**
  * Builds the car's three panels and returns the calls that draw and place them. The body carries

@@ -55,16 +55,17 @@ fn surface(input: SurfaceInput) -> Surface {
     let rear = 1.0 - step(-half.z * 0.86, lz);
     let bars = rear * step(half.y * 0.18, ly) * step(ly, half.y * 0.4)
         * step(half.x * 0.17, abs(lx)) * step(abs(lx), half.x * 0.62);
-    s.emissive += material.tail * bars * 6.0;
+    s.emissive += material.tail * bars * 2.2;
     let strip = rear * step(half.y * 0.42, ly) * step(ly, half.y * 0.5)
         * step(abs(lx), half.x * 0.75);
-    s.emissive += material.tail * strip * 4.0;
+    s.emissive += material.tail * strip * 1.4;
     // Nose lamps.
     let front = step(half.z * 0.84, lz) * step(half.y * 0.16, ly) * step(ly, half.y * 0.34)
         * step(half.x * 0.1, abs(lx)) * step(abs(lx), half.x * 0.52);
     s.emissive += material.nose * front * 4.5;
-    // The hover skirt glows under the belly, in the vehicle's own tint.
-    let skirt = step(ly, half.y * 0.15) * step(half.y * 0.02, ly);
-    s.emissive += mix(material.skirt, material.tail, tint * 0.5) * skirt * material.glow;
+    // A neon band runs round the lower edge of the body, in the vehicle's own tint: the edge of the
+    // field that holds it up. It lights the faces that look outward, not the belly.
+    let band = step(half.y * 0.12, ly) * step(ly, half.y * 0.21) * step(abs(input.normal.y), 0.8);
+    s.emissive += mix(material.skirt, material.tail, tint * 0.5) * band * material.glow;
     return s;
 }

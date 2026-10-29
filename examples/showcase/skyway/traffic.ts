@@ -3,8 +3,8 @@
 // city's plan, how many cars each preset draws, and the demo's car colours.
 import type { MeshGeometry, QualityPreset, SketchContext, Vec3Like } from '@null3d/engine';
 import {
+	createFlyingCarHull,
 	createTrafficLanes,
-	createVehicleHull,
 	type HullDetail,
 	type TrafficLanes,
 } from '../../addons/traffic-lanes/index';
@@ -40,7 +40,7 @@ const detailOf = (preset: QualityPreset): HullDetail => (preset === 'low' ? 'lig
 /** Builds the traffic of the sky lanes, with the hull that its preset asks for. */
 export function createTraffic(ctx: SketchContext): TrafficLanes {
 	let detail = detailOf(ctx.quality.preset);
-	let hull = createVehicleHull(ctx, VEHICLE, detail);
+	let hull = createFlyingCarHull(ctx, VEHICLE, detail);
 	let lanes = build(ctx, hull);
 
 	/** Builds one set of lanes around `mesh`. */
@@ -73,7 +73,7 @@ export function createTraffic(ctx: SketchContext): TrafficLanes {
 				lanes.dispose();
 				hull.destroy();
 				detail = wanted;
-				hull = createVehicleHull(ctx, VEHICLE, wanted);
+				hull = createFlyingCarHull(ctx, VEHICLE, wanted);
 				lanes = build(ctx, hull);
 			}
 			lanes.fit(preset);

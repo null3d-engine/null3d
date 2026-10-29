@@ -4,7 +4,7 @@ An example add-on that draws tens of thousands of vehicles moving along straight
 cost per frame. The lanes are cut in the vertex shader: each row carries its lane's start offset,
 its speed and the lane's length, and the vertex offset wraps it at the far end.
 
-It also draws the vehicles' own lights, tail bars, a nose lamp and a glowing skirt under the belly,
+It also draws the vehicles' own lights, tail bars, a nose lamp and a neon band round the body's lower edge,
 from each row's place in its own hull. Every lane's rows are one instance batch per heading, so four
 draws carry a whole sky of traffic. The add-on gives each batch a bounding radius that covers its
 lane, so culling keeps the rows a shader moves away from their origins.
@@ -49,7 +49,7 @@ traffic.update(eye, time.now);
   hull at another preset builds the lanes again around it, and drops the old ones with this call.
 - `createVehicleHull(ctx, size)` builds a vehicle that fits the surface: its nose along local +Z,
   its belly just above y = 0. `look.size` gives its half width, its height and its half length,
-  which place the tail bars, the nose lamps and the skirt. A hull of your own may replace it, as
+  which place the tail bars, the nose lamps and the neon band. A hull of your own may replace it, as
   long as it keeps that space.
 - The hull takes a detail as its third argument. `full`, the default, gives every face its own
   vertices, so the body reads as faceted panels: 72 vertices and 36 triangles. `light` shares each
@@ -61,6 +61,11 @@ traffic.update(eye, time.now);
 - The rows take four values each, which the shader reads as `object.values`: the start offset, the
   speed, the lane's length and the tint. Use one material for the same heading; the add-on makes
   four, one for each.
+- `createFlyingCarHull(ctx, size, detail)` builds a smooth flying car in the same space: a body
+  with a cut-off tail and a pointed nose, a bubble canopy and, at `full` detail, two hover pods
+  along its flanks. `light` takes fewer points round each section and leaves out the pods.
+  `loftHull` lofts such parts from their sections, for a vehicle of your own. Skyway's traffic
+  and its hero car use them.
 - `look.windows` tints the canopy's glass: it then draws as dark, smooth glass with a faint glow
   from the cabin. Without it the canopy takes the body's paint.
 - Put the rows on the effect layer when a showcase scene's route guard must not treat a moving
