@@ -364,7 +364,7 @@ measured through `compileWgsl`, 5 runs after a warm-up:
 | a surface function that never names the alpha | 4,071 ms, 144 builds | 6,531 ms, 240 builds |
 | a leaf: vertex offset, surface with alpha (and the vertex color after) | 4,999 ms, 177 builds | 18,178 ms, 625 builds |
 
-The build counts do not depend on the machine's load. Two things raise a material's builds. The
+The build counts do not depend on the machine's load: the landing's compiler builds the same 240 and 625 variants. A compile of the same two materials took 9,113 ms and 22,719 ms in a busy window there, so the times follow the load. Two things raise a material's builds. The
 fading level of detail's builds double every material's shading builds, because they load with the
 material's first use. Alpha to coverage, the alpha hash and their sample mask then multiply the
 builds of a material that names the alpha, and its caster and motion gain the mask's test. The
