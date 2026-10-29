@@ -86,7 +86,7 @@ export type CounterName = (typeof COUNTER_NAMES)[number];
  * A pass after them adds its time to the last one's. The count is the GPU record's own: the CPU
  * phases and the GPU passes share the record's phase and counter regions without fixing each other.
  */
-export const GPU_TIMED_PASSES = 7;
+export const GPU_TIMED_PASSES = 11;
 
 /**
  * The phase slots of a record: the CPU phases and the GPU's copies and passes, whichever needs
