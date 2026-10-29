@@ -92,12 +92,16 @@ pub enum Op {
     GenerateMipmaps = 15,
     /// [color target texture id or 0 for the canvas or `NO_TARGET`, resolve target texture id or
     /// 0 for the canvas or `NO_TARGET`, depth texture id or `NO_TARGET`, clear red, green, blue,
-    /// alpha (f32), clear depth (f32), pass flags, then optionally a second color target texture
-    /// id, then the pass's label]. A target is a texture of one layer and one mip level, or a view
-    /// of one. A pass without a color target draws depth only. A second color target has one
-    /// sample, no resolve, and the first target's clear color and flags; its pipelines are those
-    /// with `permutation::WEIGHTED`. The label says what the pass draws for, from
-    /// [`crate::pass_role`], so a frame's GPU time names the pass rather than its slot.
+    /// alpha (f32), clear depth (f32), pass flags, second color target texture id or `NO_TARGET`,
+    /// the pass's label, the pass's scope]. A target is a texture of one layer and one mip level,
+    /// or a view of one. A pass without a color target draws depth only. A second color target has
+    /// one sample, no resolve, and the first target's clear color and flags; its pipelines are
+    /// those with `permutation::WEIGHTED`. The label says what the pass draws for, from
+    /// [`crate::pass_role`], so a frame's GPU time names the pass rather than its slot. The scope
+    /// names the step that the pass records, from the render graph's scope codes, or 0 for a step
+    /// that no scope names; the engine times each pass's GPU work by it. A list that names a scope
+    /// must also give the second color target's word, as `NO_TARGET` when the pass has none:
+    /// without it the label reads as the target and the scope as the label.
     BeginRenderPass = 16,
     /// [render pipeline id]
     SetPipeline = 17,
@@ -132,8 +136,10 @@ pub enum Op {
     BeginBundle = 32,
     /// []
     EndBundle = 33,
-    /// [the pass's label]: what the dispatches in this pass do, from [`crate::pass_role`], so a
-    /// frame's GPU time names the pass rather than its slot.
+    /// [the pass's label, the pass's scope]: what the dispatches in this pass do, from
+    /// [`crate::pass_role`], so a frame's GPU time names the pass rather than its slot, and the
+    /// step that the pass records, from the render graph's scope codes, or 0 for a step that no
+    /// scope names.
     BeginComputePass = 40,
     /// [compute pipeline id]
     SetComputePipeline = 41,
