@@ -80,10 +80,11 @@ export interface LoadGltfOptions {
 	rewriteUrl?: (address: URL) => URL | string | null;
 	/**
 	 * The most levels of detail to load from a file that stores its levels as separate downloads,
-	 * counting the level in the file itself. The default loads every level, and the loader skips a
-	 * level that the camera never draws. A page whose objects never come close enough to show the
-	 * finest level sets 1, or the number of levels that show, and downloads less. A file whose
-	 * levels are all in the file itself ignores the option.
+	 * counting the level in the file itself. A band of a cluster tree counts as a level. The
+	 * default loads every level, and the loader skips a level that the camera never draws. A page
+	 * whose objects never come close enough to show the finest level sets 1, or the number of
+	 * levels that show, and downloads less. A file whose levels are all in the file itself ignores
+	 * the option.
 	 */
 	maxLevels?: number;
 }
