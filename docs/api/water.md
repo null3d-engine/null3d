@@ -97,8 +97,10 @@ holds these values. The add-on makes it once, when it builds the meshes.
 | `depth` | A number from 0, or a function of the point and its distance from the shore | 2 | The depth of the deepest point, in meters below the surface |
 | `shoreWidth` | A number above 0, in meters | 2 | How far from the shore a lake with one depth reaches it |
 
-A lake holds still water. Both kinds answer the same questions through `waterBody(shape)`: where
-the water reaches, the depth of the bed at a point, and the current there.
+A lake holds still water. Its mesh reaches two grid cells past the shore, so the water fades
+against the scene's own ground where that ground meets it, even a little past the outline. Both
+kinds answer the same questions through `waterBody(shape)`: where the water reaches, the depth of
+the bed at a point, and the current there.
 
 ## The options
 

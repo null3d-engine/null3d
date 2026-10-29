@@ -94,10 +94,30 @@ describe('a lake’s mesh', () => {
 		depth: 3,
 	};
 
-	it('covers the cells inside the shore and leaves the others out', () => {
+	it('covers the cells inside the shore and a band of two cells past it', () => {
 		const { indices } = meshOf(shape, 0, { cell: 2 });
-		// 10 cells each way, two triangles each.
-		expect(indices.length / 3).toBe(10 * 10 * 2);
+		// 10 cells each way inside, and 2 more on each side, two triangles each.
+		expect(indices.length / 3).toBe(14 * 14 * 2);
+	});
+
+	it('leaves out the cells past the band', () => {
+		// A triangle's bounds hold a corner 14 m from its long side, far past the band.
+		const triangle: WaterShape = {
+			kind: 'lake',
+			shore: [
+				[-10, -10],
+				[10, -10],
+				[-10, 10],
+			],
+		};
+		const mesh = meshOf(triangle, 0, { cell: 2 });
+		const at = (corner: number) => (mesh.indices[corner] as number) * 3;
+		for (let corner = 0; corner < mesh.indices.length; corner++) {
+			// No drawn vertex lies more than the band and one cell's diagonal past the long side.
+			const x = mesh.positions[at(corner)] as number;
+			const z = mesh.positions[at(corner) + 2] as number;
+			expect((x + z) / Math.SQRT2).toBeLessThan(4 + 2 * Math.SQRT2 + 1e-6);
+		}
 	});
 
 	it('holds still water', () => {
