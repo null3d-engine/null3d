@@ -187,3 +187,28 @@ two above, which waits on M3-V13; V13 landed and the add-on builds on it.
   RedGPU study line therefore accepts the copies for this task. It gives the add-on's own namespace
   to WGSL library modules from add-ons (the study's RES-1), which is not a task yet. This record
   keeps that reason, as hard rule 39 asks, rather than leaving the finding open without one.
+
+## What the checks found when they first ran
+
+The solver changed what a held picture draws, and the checks that measure the field found three
+faults in the add-on's own page and stepping.
+
+- **A held page drew an empty grid.** The warm-up set the pass's runs when the page made the field,
+  and the page's updates then set them again before any frame drew. A held page draws one frame at
+  the end of sixty updates, so the last update's setting won. That one owed no cycle at a hold under
+  a second. A live page ran no air for its first second for the same reason. The field now
+  counts its cycles from the moment the page makes it. The control pair of the field check went
+  from 0.28048 of the channels changed to 0.00000, and its gust pair measures 0.05102 to 0.05618.
+- **A device without a grid could not make the wind at all.** Its stand-in texture was built from a
+  float array. The texture's default format takes bytes, so the add-on threw E1208 while the page
+  started. Such a device now reads the analytic field as this record promises. A test reads
+  the stand-in's shape.
+- **The page's capture mode could not find its sketch.** It built the sketch's address from a
+  template literal inside `new URL`. The bundler resolves such an address from the literal alone,
+  so the lookup missed and the engine asked for a module named `undefined`. The page names the
+  module literally now, and sets the switches on the address afterwards.
+- **The wake check judged the wrong thing.** At eight levels of change a one-pixel lean counts as
+  nothing, so the pushes read as absent. At one level the two WebGPU paths measure 0.04091 and
+  0.02438 of the channels changed with the pushes on, against none with them off. This Mac's
+  software WebGL2 path measures 0.00231, which is near what two captures at other times differ by.
+  The wake on that path is not proven yet.
