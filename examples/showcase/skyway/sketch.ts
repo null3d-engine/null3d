@@ -43,6 +43,10 @@ const STORM_WEATHER = { fog: STORM_FOG, cloud: 1, light: 0.35, sky: 0.5 };
 const CLEAR_WEATHER = { fog: 1, light: 1, sky: 1 };
 /** The lens's vignette, which the lens kit writes. */
 const VIGNETTE = { intensity: 0.55, size: 1.05, falloff: 2.2 };
+/** The half axes of the hero car's glass bubble, in meters, which the rain keeps out of. */
+const CANOPY_REACH = [1.45, 0.85, 2.45] as const;
+/** The bubble's middle and heading, which the hero car writes each frame. */
+const shelter = new Float32Array(4);
 /** The share of the speed blur that the view from the hover car's seat keeps. */
 const INSIDE_BLUR = 0.25;
 /** The point that the lens focuses on, kept up to date by the route or the driven car. */
@@ -372,8 +376,9 @@ export default defineSketch(async (ctx) => {
 			city.update(t);
 			hero.update(dt, t, film.mode === 'auto');
 			rain.follow(camera);
-			// From the seat, the rain keeps out of the cockpit and off the inside of the canopy.
-			rain.setClear(hero.view === 'cockpit' ? 3.5 : 1.5);
+			// The rain keeps out of the hero car's glass bubble, so none falls in the cockpit.
+			hero.canopy(shelter);
+			rain.shelter(shelter, CANOPY_REACH);
 			camera.getWorldPosition(eye);
 			traffic.update(eye, t);
 			if (controls.on.dof) post.set(lensSettings);

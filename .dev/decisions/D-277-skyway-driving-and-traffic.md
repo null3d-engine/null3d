@@ -99,7 +99,15 @@ instead of a band of cars over the low streets. The owner judges the final look.
   a time, with the hour as a bar (`console.ts`). The cinematic camera hands it the controls model
   each time it sends the model to the page (`CinematicOptions.onControls`). It draws again only
   when what it shows changes: the model comes several times a second while Auto runs, and a whole
-  new picture each time made its tab row flicker. A press posts
+  new picture each time made its tab row flicker. The open group's rows share the height under the
+  tabs, so no group leaves the console half empty. The scene finds a press on it in the car's own
+  space, from the driver's eye along the press's direction onto the console's plane. The engine's
+  own hit tests the console where the last update put it, against the ray of the frame on screen.
+  In a moving car the two differ by a frame of travel, which moved presses across the rows. A
+  press that lands in a gap takes the nearest target within 36 texels.
+- **Rain and the canopy.** The rain keeps out of an ellipsoid round the glass bubble, which the
+  car hands the rain each frame, and out of the last 0.8 m before the lens. So none falls inside
+  the cockpit, and the rain streams past just outside the glass. A press posts
   `hud-press` to the page, which sends it on to the sketch as its own panel's button would. Both
   panels then show the change.
 - **The cars' bodies.** The traffic and the hero car are flying cars (`createFlyingCarHull` and

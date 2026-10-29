@@ -86,13 +86,13 @@ export interface Fitting {
 export const FITTINGS: readonly Fitting[] = [
 	{ at: [0, 0.72, -0.35], size: [0.42, 0.1, 0.4] },
 	{ at: [0, 0.9, -0.6], size: [0.42, 0.38, 0.08] },
-	{ at: [0, 0.76, 0.28], size: [0.05, 0.05, 0.24] },
-	{ at: [0, 0.79, 0.17], size: [0.3, 0.04, 0.04] },
-	{ at: [0, 0.8, 0.66], size: [0.72, 0.16, 0.34] },
+	{ at: [0, 0.62, 0.24], size: [0.05, 0.05, 0.22] },
+	{ at: [0, 0.66, 0.14], size: [0.3, 0.04, 0.04] },
+	{ at: [0, 0.8, 0.66], size: [0.92, 0.16, 0.34] },
 ];
 
 /**
  * The console: the touchscreen on the dashboard's face, below the three screens, in the body's
  * units. Its middle, its width and height, and how far it leans back toward the seat, in radians.
  */
-export const CONSOLE = { at: [0, 0.83, 0.46] as const, size: [0.46, 0.17] as const, lean: 0.55 };
+export const CONSOLE = { at: [0, 0.79, 0.38] as const, size: [0.84, 0.238] as const, lean: 0.6 };
