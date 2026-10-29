@@ -26,6 +26,15 @@ export const CARS: Record<QualityPreset, number> = {
 /** The vehicle's half width, height and half length, which the hull and the material's lights share. */
 const VEHICLE = { halfWidth: 0.96, height: 1.1, halfLength: 2.0 };
 
+/** The colours of the traffic's cars, which the roaming cars share. */
+export const CAR_LOOK = {
+	body: '#20242c',
+	tail: '#ff3a12',
+	nose: '#cfe6ff',
+	neon: '#22c8ff',
+	windows: '#2a5a70',
+} as const;
+
 /** The lanes of every street. */
 const LANES = skyLanes();
 
@@ -50,14 +59,14 @@ export function createTraffic(ctx: SketchContext): TrafficLanes {
 			plan: { from: -LANE_SPAN / 2, to: LANE_SPAN / 2, lanes: LANES },
 			counts: CARS,
 			look: {
-				body: '#20242c',
-				tail: '#ff3a12',
-				nose: '#cfe6ff',
-				skirt: '#22c8ff',
+				body: CAR_LOOK.body,
+				tail: CAR_LOOK.tail,
+				nose: CAR_LOOK.nose,
+				skirt: CAR_LOOK.neon,
 				glow: 2.2,
 				size: [0.96, 1.1, 2.0],
 				// Tinted windows, a deep teal, over each car's lit cabin.
-				windows: '#2a5a70',
+				windows: CAR_LOOK.windows,
 			},
 			layers: EFFECT_LAYER,
 			// Six of the nearest cars carry a real light, so the road around the camera catches them.
