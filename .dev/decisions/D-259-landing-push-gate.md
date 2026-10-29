@@ -51,10 +51,11 @@ sends each slow one through the job queue:
 - the whole unit suite, `bun run test`;
 - the heavy checks, `bun run test:heavy`: the tests that hold gigabytes of memory, which the unit
   suite leaves out;
-- the fresh-project test, `bun run test:packages`. It needs `NULL3D_ENGINE_SHADERS` set to the
-  engine's `src/generated` folder. It packs every public package as CI's `packages` job does. A
-  range can pass the other six checks and fail that job, as when the wind add-on's shader library
-  does not compile in the package.
+- the fresh-project test, `bun run test:packages`. It passes the checkout's engine `src/generated`
+  folder to each step's build when that folder holds the shader modules, so a caller need not set
+  `NULL3D_ENGINE_SHADERS`. It packs every public package as CI's `packages` job does. A range can
+  pass the other six checks and fail that job, as when the wind add-on's shader library does not
+  compile in the package.
 
 The CI session runs every unit test and every heavy check, not only the tests of the changed code.
 A test far from a change can pin a figure that the change moves. The add-on check command, the
