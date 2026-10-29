@@ -194,3 +194,51 @@ describe('bodies that do not meet', () => {
 		expect(junctions([river, lake], meshes)).toBeUndefined();
 	});
 });
+
+describe('a lake with a river running in and a stream running out', () => {
+	const shore = Array.from({ length: 72 }, (_, i) => {
+		const angle = (i / 72) * Math.PI * 2;
+		return [LAKE.x + Math.cos(angle) * LAKE.rx, Math.sin(angle) * LAKE.rz] as [number, number];
+	});
+	const line = (from: number, to: number) => {
+		const middle: [number, number][] = [];
+		for (let x = from; x <= to; x += 4) middle.push([x, 0]);
+		return middle;
+	};
+	const shapes: WaterShape[] = [
+		{ kind: 'river', middle: line(-38, RIVER_END), halfWidth: 2.6, speed: 0.6 },
+		{ kind: 'lake', shore, depth: 3.8 },
+		{ kind: 'river', middle: line(85, 140), halfWidth: 2.6, speed: 0.4 },
+	];
+	const bodies = shapes.map((shape) => waterBody(shape));
+	const meshes = shapes.map((shape, index) =>
+		bodyMesh(shape, bodies[index] as WaterBody, 0, {}, index),
+	);
+	const map = junctions(bodies, meshes);
+
+	it('draws each point once at both ends of the lake', () => {
+		if (!map) throw new Error('the bodies should meet');
+		for (const [from, to] of [
+			[16, 25],
+			[83, 92],
+		] as const)
+			for (let x = from; x <= to; x += 0.1)
+				for (let z = -6; z <= 6; z += 0.1) {
+					const shown = meshes.filter((mesh, body) => covers(mesh, x, z) && draws(map, x, z, body));
+					if (meshes.some((mesh) => covers(mesh, x, z)))
+						expect(shown.length).toBeGreaterThanOrEqual(1);
+				}
+		expect(map.ownerAt(86.5, 0)).toBe(1);
+		// Just outside the shore, where the lake's grid still reaches.
+		expect(map.ownerAt(87.9, 2.5)).toBe(2);
+	});
+
+	it('gives each meeting the current of its own stream', () => {
+		if (!map) throw new Error('the bodies should meet');
+		const out: [number, number] = [0, 0];
+		expect(map.currentAt(21.5, 0.5, out)).toBe(true);
+		expect(out[0]).toBeCloseTo(0.6, 5);
+		expect(map.currentAt(87, 0, out)).toBe(true);
+		expect(out[0]).toBeCloseTo(0.4, 5);
+	});
+});

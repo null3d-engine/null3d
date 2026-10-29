@@ -1,38 +1,26 @@
 // Water: a river that winds down a grassy valley and opens into a lake, drawn by @null3d/water. One
 // description gives both bodies, and the add-on draws them with waves the current carries, caustics
 // on the bed, foam around the boulders, a mirror of the banks and the sky, and shores that fade
-// where the bed rises to meet the surface. The camera drifts downstream above the water, then dips
-// under it, where the add-on's underwater view takes over.
-import { defineSketch, math, timeOfDay } from '@null3d/engine';
+// where the bed rises to meet the surface. The camera's tour drifts down the river, dips under the
+// lake, where the add-on's underwater view takes over, and circles the valley back to its start.
+import { defineSketch, timeOfDay } from '@null3d/engine';
 import { createTerrain, terrainTextures } from '@null3d/terrain';
 import { createUnderwater, createWater, foamMap, type WaterShape } from '@null3d/water';
+import { routePosition, routeTimeline } from '../lib/cinematic';
 import { interact } from '../lib/interact';
-
-/** The lake's middle and its two radii, in meters. */
-const LAKE = { x: 54, z: 0, rx: 34, rz: 24 } as const;
-/** Where the river starts and where it meets the lake. */
-const FROM = -150;
-const TO = LAKE.x - LAKE.rx + 3;
-
-/** The z of the river's middle at x, and the half width of its water there. */
-const middleZ = (x: number) => 1.8 * Math.sin(x * 0.07 + 0.4) + 0.6 * Math.sin(x * 0.17);
-const halfWidth = (x: number) => 2.6 + 0.4 * Math.sin(x * 0.11 + 1.2);
-/** How far a point lies from the lake's middle, in radii: 1 at its shore. */
-const fromLake = (x: number, z: number) => Math.hypot((x - LAKE.x) / LAKE.rx, z / LAKE.rz);
-
-/** The height of the ground at a point: a river channel that deepens into a lake basin. */
-function ground(x: number, z: number): number {
-	const across = Math.abs(z - middleZ(x)) / halfWidth(x);
-	const river = 1 - math.smoothstep(across, 0.9, 1.5);
-	const lake = 1 - math.smoothstep(fromLake(x, z), 0.9, 1.1);
-	const basin = Math.max(river, lake);
-	const bed = -1.2 - 2.6 * lake;
-	const bank =
-		0.5 +
-		0.4 * Math.sin(x * 0.045 + 1) * Math.sin(z * 0.05) +
-		0.03 * Math.max(0, Math.abs(z) - 24) ** 1.4;
-	return bank + (bed - bank) * math.smoothstep(basin, 0, 1);
-}
+import {
+	FROM,
+	ground,
+	halfWidth,
+	LAKE,
+	middleZ,
+	OUT_FROM,
+	OUT_TO,
+	ROCKS_FROM,
+	SHOTS,
+	STONES,
+	TO,
+} from './valley';
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, post, time, textures } = ctx;
@@ -51,11 +39,12 @@ export default defineSketch(async (ctx) => {
 		fov: 48,
 		near: 0.05,
 		far: 1200,
-		position: [-42, 2.4, 12],
-		target: [-12, 0, 1],
+		// The tour's first shot: the held frame shows it, and the loop starts and ends there.
+		position: [...SHOTS[0].position],
+		target: [...SHOTS[0].target],
 	});
 	scene.setActiveCamera(camera);
-	const target: [number, number, number] = [-12, 0, 1];
+	const target: [number, number, number] = [...SHOTS[0].target];
 	const view = interact(ctx, camera, { target });
 
 	const layers = terrainTextures(textures, { seed: 5 });
@@ -74,12 +63,7 @@ export default defineSketch(async (ctx) => {
 
 	// Boulders along the river's banks. They break the water, and the add-on's foam map draws the
 	// rings and the trails that the current tears off them.
-	const stones = Array.from({ length: 18 }, (_, i) => {
-		const x = FROM + 12 + (i / 18) * (TO - FROM - 16);
-		const side = i % 2 === 0 ? 1 : -1;
-		return { x, z: middleZ(x) + side * (halfWidth(x) - 0.5), r: 0.55 + (i % 3) * 0.18 };
-	});
-	for (const stone of stones) {
+	for (const stone of STONES) {
 		const rock = scene.createMesh({
 			mesh: geometry.sphere({ radius: stone.r * 1.5, widthSegments: 7, heightSegments: 5 }),
 			material: materials.standard({ color: '#6b675e', roughness: 0.9 }),
@@ -88,27 +72,30 @@ export default defineSketch(async (ctx) => {
 		rock.setRotationEuler(stone.x * 0.7, stone.z * 1.3, 0);
 	}
 
-	const middle: [number, number][] = [];
-	for (let x = FROM; x <= TO; x += 4) middle.push([x, middleZ(x)]);
+	// A stream along the valley's channel, flowing east from `from` to `to`.
+	const stream = (from: number, to: number): WaterShape => {
+		const middle: [number, number][] = [];
+		for (let x = from; x <= to; x += 4) middle.push([x, middleZ(x)]);
+		const widths = middle.map(([x]) => halfWidth(x));
+		const depth = (x: number, z: number) => Math.max(0, -ground(x, z));
+		return { kind: 'river', middle, halfWidth: widths, depth, speed: 0.6 };
+	};
 	const shore = Array.from({ length: 72 }, (_, i) => {
 		const angle = (i / 72) * Math.PI * 2;
 		return [LAKE.x + Math.cos(angle) * LAKE.rx, Math.sin(angle) * LAKE.rz] as [number, number];
 	});
+	// The river runs into the lake, and a stream runs out of its far side, so the channel holds water
+	// along the whole valley.
 	const shapes: WaterShape[] = [
-		{
-			kind: 'river',
-			middle,
-			halfWidth: middle.map(([x]) => halfWidth(x)),
-			depth: (x, z) => Math.max(0, -ground(x, z)),
-			speed: 0.6,
-		},
+		stream(FROM, TO),
 		{ kind: 'lake', shore, depth: 3.8, shoreWidth: 6 },
+		stream(OUT_FROM, OUT_TO),
 	];
 	const water = createWater(ctx, {
 		shapes,
-		foam: foamMap(ctx, stones, {
-			origin: [FROM, -12],
-			size: [TO - FROM + 40, 24],
+		foam: foamMap(ctx, STONES, {
+			origin: [ROCKS_FROM, -12],
+			size: [TO - ROCKS_FROM + 40, 24],
 			width: 2048,
 			height: 256,
 		}),
@@ -118,23 +105,19 @@ export default defineSketch(async (ctx) => {
 	water.setCaustics(caustics);
 	const air: [number, number, number] = [0.72, 0.84, 1];
 	const at = [0, 0, 0] as [number, number, number];
-	let travel = 0;
+	const route = routeTimeline(SHOTS);
+	const pose = new Float32Array(6);
 
 	return {
 		onUpdate(dt) {
 			const t = time.now;
-			// The camera drifts downstream above the water, then dips under the surface and rises.
-			travel += dt * 0.9;
-			if (travel > TO + 40) travel = FROM + 20;
-			const x = travel;
-			target[0] = x;
-			target[2] = middleZ(x);
+			// The tour is one loop with no cut, as a function of the time, until the user takes over.
 			if (!view.userCamera) {
-				// It sinks over the river's middle, so it dips under the water, never into the ground.
-				const height = 1.5 + 1.6 * Math.sin(t * 0.15);
-				const swing = math.smoothstep(height, 0.6, 1.7);
-				const cz = math.lerp(middleZ(x - 26), middleZ(x) + 2.2 * Math.sin(t * 0.11) + 9, swing);
-				camera.setPosition(x - 26, Math.max(height, ground(x - 26, cz) + 0.3), cz);
+				routePosition(route, t, pose);
+				target[0] = pose[3] as number;
+				target[1] = pose[4] as number;
+				target[2] = pose[5] as number;
+				camera.setPosition(pose[0] as number, pose[1] as number, pose[2] as number);
 				camera.lookAt(target[0], target[1], target[2]);
 			}
 			view.update(dt);
