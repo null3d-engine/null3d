@@ -200,7 +200,7 @@ The loader sets aside a stage that the camera never shows. The stage after the f
 
 The loader's `maxLevels` option stops the downloads after that many levels, the file's own counted first. A page whose camera never comes close enough to show the finest level sets it to 1, or to the number of levels that show. Other glTF readers draw the coarsest level, since the finer ones are not in the file.
 
-The same stage file layout carries a cluster tree's bands. A kind 1 stage holds one band: its header, the patch count, each patch's sphere, run, parent and error, and the band's indices. The model file holds the tree's first band, and that band draws the first picture. Each later band appends its patches below the patches that arrived before it. Parents come before children across the file and its bands. So the patches that a page holds always form a whole tree from the root. A patch whose children have not arrived draws where the camera is close, so the first picture is coarse. The first picture still covers the whole surface. `maxLevels` counts a band as it counts a level, and the loader holds a band until a view draws a patch of the band above it.
+The same stage file layout carries a cluster tree's bands. A kind 1 stage holds one band. Its header comes first, then the patch count, each patch's sphere, run, parent and error, and last the band's indices. The model file holds the tree's first band, and that band draws the first picture. Each later band appends its patches below the patches that arrived before it. Parents come before children across the file and its bands. So the patches that a page holds always form a whole tree from the root. A patch whose children have not arrived draws where the camera is close, so the first picture is coarse. The first picture still covers the whole surface. `maxLevels` counts a band as it counts a level. The loader holds a band until a view draws a patch of the band above it.
 
 ### Cluster levels
 
@@ -216,7 +216,7 @@ The tree holds about twice the mesh's triangles. Every patch's indices name the 
 
 A mesh gets no tree in four cases. It has fewer than 20,000 triangles, or a skin or a morph target bends it. It also gets none when its material blends or masks, or more than four copies draw it. Those meshes keep whole levels.
 
-A tree streams when the command takes `--stages` as well: each band below the one that the file holds becomes a file of its own, and each node names its bands in `NULL3D_stages`. The tree then refines as the bands arrive. The whole levels that the tree cuts into stay in the file, for the readers and the paths that draw the mesh whole.
+A tree streams when the command takes `--stages` as well. Each band below the one that the file holds becomes a file of its own, and each node names its bands in `NULL3D_stages`. The tree then refines as the bands arrive. The whole levels that the tree cuts into stay in the file, for the readers and the paths that draw the mesh whole.
 
 ```sh
 bunx @null3d/cli assets optimize models/ public/models/ --lod --clusters
