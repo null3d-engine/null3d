@@ -1,5 +1,5 @@
-// The creek's water. A grid at the water's height moves its vertices with waves that run along the
-// stream's current, each tilted a little from it, so the whole surface travels downstream. Its
+// The creek's water. A grid at the water's height moves its vertices with waves that the current
+// carries, so the crests keep their cross-hatch and the whole surface travels downstream. Its
 // surface function adds finer ripples to the normal, which catch the sun as glints. A reflection
 // pass mirrors the banks and the sky, and the light from the stony bed comes through the water, bent
 // by the ripples and tinted by its depth. Caustics, the sunlight that the ripples focus, play over
