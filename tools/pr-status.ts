@@ -129,6 +129,7 @@ const GROUPS: readonly (readonly [string, string])[] = [
 	['Effects and techniques', 'F'],
 	['glTF and API', 'GK'],
 	['Shipping', 'OT'],
+	['Queue lanes', 'S'],
 	["The study's tasks", 'R'],
 	['Vegetation', 'V'],
 	['Demos', 'X'],
