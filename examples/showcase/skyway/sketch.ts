@@ -330,6 +330,8 @@ export default defineSketch(async (ctx) => {
 				},
 			},
 		],
+		// The hero car's console repeats the controls for a driver in the seat.
+		onControls: (groups) => hero.showControls(groups),
 		// Back in Auto, the camera and the car fly back onto the route at a cruising speed.
 		glideSpeed: 40,
 		// In Manual the user drives the hero car, which places the camera itself.

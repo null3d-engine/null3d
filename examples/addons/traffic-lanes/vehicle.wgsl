@@ -13,6 +13,9 @@ struct Uniforms {
     tail: vec3f,
     nose: vec3f,
     skirt: vec3f,
+    // The tint of the canopy's glass, and how much of the canopy is glass: 0 paints it as the body.
+    windows: vec3f,
+    glass: f32,
 }
 
 // The row's place along its lane, from its start offset and the clock, wrapped at the lane's end.
@@ -39,6 +42,14 @@ fn surface(input: SurfaceInput) -> Surface {
     s.metalness = 0.7;
     s.roughness = 0.34;
     s.emissive = vec3f(0.0);
+
+    // Tinted windows: the canopy over the middle of the roof is dark, smooth glass, with a faint
+    // glow from the cabin behind it.
+    let canopy = step(half.y * 0.76, ly) * step(abs(lz), half.z * 0.5) * material.glass;
+    s.baseColor = mix(s.baseColor, material.windows * 0.25, canopy);
+    s.metalness = mix(s.metalness, 0.0, canopy);
+    s.roughness = mix(s.roughness, 0.04, canopy);
+    s.emissive += material.windows * canopy * 0.18;
 
     // Tail lights: two bars, and a thin strip above them.
     let rear = 1.0 - step(-half.z * 0.86, lz);

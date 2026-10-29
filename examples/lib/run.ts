@@ -147,7 +147,9 @@ export async function startDemo({
 	// scene posts at its start. The same handler carries the loading progress that a scene posts.
 	const readers = [
 		...(labels ? [labelReader(engine, labels)] : []),
-		...(hud ? [hudReader(engine, hud, signal), padReader(engine, hud, signal)] : []),
+		...(hud
+			? [hudReader(engine, hud, signal), padReader(engine, hud, signal), pressReader(engine)]
+			: []),
 	];
 	engine.onSketchMessage((type, data) => {
 		if (type === 'loading') {
@@ -423,6 +425,18 @@ function createBackdrop(): HTMLElement {
 			'radial-gradient(120% 90% at 50% 0%, #ffffff 0%, #f2eee6 38%, #dfe6f0 100%)',
 	});
 	return page;
+}
+
+/**
+ * Sends on a press that a scene's controls took in the world, such as on a vehicle's console, as
+ * the page's own controls panel sends a press: the scene answers both alike.
+ */
+function pressReader(engine: Engine): (type: string, data: unknown) => void {
+	return (type, data) => {
+		if (type !== 'hud-press') return;
+		const { name, value } = data as { name: string; value: string };
+		engine.postToSketch(name, value);
+	};
 }
 
 /**

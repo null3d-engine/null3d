@@ -478,8 +478,10 @@ the plane maps back to the canvas's own coordinates. The design and its measured
   its pages, and the new page uploads as one change. The panel shows its sub-pixels when the camera
   comes close.
 - Skyway's hero car draws its speed and altitude panels, and a navigation panel between them, from
-  the add-on, in `examples/showcase/skyway/cockpit.ts`. The deck panels refresh at 12 Hz and the map
-  at 8 Hz, and each uploads only the rectangles of its canvas that its reading changed.
+  the add-on, in `examples/showcase/skyway/cockpit.ts`. The reading panels on the dashboard
+  refresh at 12 Hz and the map at 8 Hz, and each uploads only the rectangles of its canvas that its
+  reading changed. The console below them (`console.ts`) draws the controls again only when they
+  change, and takes presses through the add-on's `pointOf`.
 - The security camera's monitor keeps its own small LCD look in `monitor.ts`, because its picture
   comes from a render pass rather than a canvas. Its look could move onto the add-on's material if
   the add-on took any texture, and that is a later change.
@@ -638,7 +640,9 @@ and a hero car with two screens.
   R and F climb and sink. The towers are boxes that the car slides along or lands on.
   `drive.test.ts` flies it frame by frame. A drag swings the camera round the car, and a touch
   screen drives with an on-screen pad. V and the View buttons put the camera behind the car or
-  in its seat, where the panels move to a dashboard
+  in its seat. The camera flies over the canopy into the seat and back out. The hero car has a
+  cockpit under a tinted glass canopy, with its screens on the dashboard and a touchscreen console
+  that repeats the controls. The other cars have tinted windows
   ([D-277](decisions/D-277-skyway-driving-and-traffic.md)).
 - **No ring of mountains.** The fog's reach is about 240 m, and the ground plane reaches 2.1 km.
   The view therefore never sees the ground's edge or the plain background. A ring would stand in
