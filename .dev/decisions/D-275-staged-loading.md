@@ -35,7 +35,7 @@ layout serve whole levels and the cluster patch groups without a second format?
 | The finest stage | 196,632 bytes, of which 98,304 indices at 2 bytes | D-228 |
 | The first picture against the level limit of 1 | equal within 0.1% of its pixels | the `staged-levels` browser test |
 | The first picture against the last | more than 1% of the pixels differ, and the ground covers more than 40% | the same test |
-| The time from navigation to the first draw | not measured | the staged load run below |
+| The time from navigation to the first draw | 12,390 ms with every stage and 12,388 ms with the level limit of 1, cold on Slow 4G; the stages add 18.0 KB before the first picture and 29.3% of the download after it | `bun run bench:staged-load --runs 3` |
 | A cluster band's bytes | the file 805,500 bytes, five bands of 12,900 to 204,828 bytes, 397,012 in all, 33.0% of the download | `bun packages/cli/src/assets/cluster-fixture.ts` |
 | The staged cluster test, first band against the last | more than 1% of the pixels differ, and the file's first band covers more than 40% | the `staged-levels` browser test, `?clusters` |
 | A real model's split into stages | Creek's cave, 195,376 bytes in the file and 88,816 in two stages, 31.3% of the 284,192 bytes downloaded; Kenney's building-i, 38,788 bytes in the file and 23,136 in two stages, 37.4% of 61,924 | `bunx @null3d/cli assets optimize <model> <folder> --lod --stages` |
@@ -98,19 +98,23 @@ refinement while a page draws.
 - A device class chosen from a user agent or a GPU name. The camera and the level rule decide.
 - A complete tree in the model file. The page would wait for all of the tree's bytes.
 
-## What a machine run would settle
+## What a machine run settles
 
-- Time the navigation to the first draw on a page that loads the staged model with `maxLevels` 1,
-  and with every stage. The load is cold, on Slow 4G in Chrome. The run reports the bytes that arrive
-  before the first draw and the stage's share. The startup tool times the engine test page today, so
-  the staged page needs a load route.
-- A real model's split. Run `--lod --stages` on a sample model, such as a Kenney kit model or Creek's
-  trees. Print each stage's bytes and the share after the first picture. The tool's report lists no
-  stage bytes today.
-- A staged cluster model, after kind 1 exists. The run gives the band bytes, the first picture, and
-  the refinement as a camera steps across a band's switch.
-- A phone's automatic skip. The far test on a phone's network reports the stage requests and the
-  bytes saved. The far test passes on SwiftShader and the Mac today, with one stage asked for.
+- `bun run bench:staged-load` times the navigation to the first draw on the staged page, cold on
+  Slow 4G in Chrome, on the page's load route. It loads once with `maxLevels` 1 and once with every
+  stage. Over three loads of each, the page with every stage drew its first picture at 12,390 ms.
+  The page with the limit of 1 drew it at 12,388 ms. The staged page downloaded 869.9 KB before its
+  first picture, against 851.9 KB. So 18.0 KB of the stages arrived before it, and 29.3% of its 1,230.0 KB
+  download arrived after it. A stage costs no delay to the first picture, and a page whose camera
+  never shows the finest level saves its 378.1 KB.
+- The tool's report lists each stage file's bytes and the share after the first picture. The Data
+  table holds the cave's and a Kenney kit's split, and the cluster fixture's five bands.
+- The `staged-levels` browser test holds the staged cluster model on WebGPU, compatibility mode and
+  WebGL2. The file's first band covers the surface. Each band appends, and the picture refines over
+  more than 1% of the pixels. A far camera asks for one band file, and a band limit of 1 asks for
+  none.
+- A phone's automatic skip stays open. The far test passes on SwiftShader and the Mac, with one
+  stage asked for. A run on a phone's own network has not reported its stage requests.
 
 ## Consequences
 
