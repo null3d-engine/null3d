@@ -2915,9 +2915,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// The wind add-on's own page: a field of cards that reads the air at each vertex. A gust
 	// crosses the field between the first hold and the second, so the pairs change where the gust
 	// has reached. The part test draws the same page with the gust and the swirl taken out, from the
-	// drawings it makes itself. The wake has no picture here: a held frame runs none of the sketch's
-	// update, so the body never moves and never pushes. `tests/image/wind-wake.spec.ts` measures it
-	// on the live page instead.
+	// drawings it makes itself. The wake has no picture here: a held page draws one frame, and the
+	// field advances only in a frame that draws, so its air has one cycle and no trail.
+	// `tests/image/wind-wake.spec.ts` measures the wake on the live page instead.
 	{
 		name: 'wind-cards',
 		sketch: 'packages/wind/page/sketch.ts?camera=still',
