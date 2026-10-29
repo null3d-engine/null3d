@@ -150,7 +150,7 @@ test("the stats overlay shows an add-on feature's setting, budget, memory and GP
 		gpuMs: null,
 	});
 	expect(feature.before).toBe(
-		'test-glow  gpu not measured  samples 22  budget 4.0 of 4.0 ms  memory 1.0 MiB',
+		'test-glow gpu not measured samples 22 budget 4.0 of 4.0 ms memory 1.0 MiB',
 	);
 	// Low sets the setting's lighter value and the budget's shorter time, and the overlay follows.
 	expect(feature.lowered).toEqual({
@@ -161,7 +161,7 @@ test("the stats overlay shows an add-on feature's setting, budget, memory and GP
 		gpuMs: null,
 	});
 	expect(feature.after).toBe(
-		'test-glow  gpu not measured  samples 0  budget 2.0 of 2.0 ms  memory 1.0 MiB',
+		'test-glow gpu not measured samples 0 budget 2.0 of 2.0 ms memory 1.0 MiB',
 	);
 });
 
@@ -366,10 +366,9 @@ test('the stats overlay shows one tab at a time, and each tab keeps its figures'
 	await expect(tabs).toHaveText(['Frame', 'Memory', 'Steps', 'Systems']);
 	await expect(pane(page, 'frame')).toBeVisible();
 	for (const name of ['memory', 'steps', 'systems']) await expect(pane(page, name)).toBeHidden();
-	// The header keeps the GPU's time in view, whichever tab shows.
-	const gpu = page.locator(`${OVERLAY} [data-figure="gpu"]`);
+	// The frame tab holds the GPU's time and the geometry figures.
+	const gpu = page.locator(`${OVERLAY} #pane-frame [data-figure="gpu"]`);
 	await expect(gpu).toBeVisible();
-	// The frame tab holds the geometry figures.
 	await expect(page.locator(`${OVERLAY} [data-figure="triangles"]`)).toBeVisible();
 	await expect(page.locator(`${OVERLAY} [data-figure="draws"]`)).toBeVisible();
 	// A figure in a tab that does not show is not drawn, though the overlay keeps it current.
@@ -380,7 +379,8 @@ test('the stats overlay shows one tab at a time, and each tab keeps its figures'
 	await expect(pane(page, 'frame')).toBeHidden();
 	await expect(memory).toBeVisible();
 	await expect(memory).toHaveText(/^\d+\.\d MiB$/);
-	await expect(gpu).toBeVisible();
+	// The frame tab's figures keep their values while another tab shows.
+	await expect(gpu).toBeHidden();
 	// The systems tab holds the register, or the note that says this build reports none.
 	await tabs.nth(3).click();
 	await expect(pane(page, 'systems')).toBeVisible();
