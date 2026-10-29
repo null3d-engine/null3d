@@ -83,6 +83,8 @@ export class GpuTimer {
 	private readonly renderMasks = new Uint32Array(SLOTS);
 	/** Per slot, the label of each pass that the timer times alone. */
 	private readonly passLabels = new Uint32Array(SLOTS * GPU_TIMED_PASSES);
+	/** Per slot, the scope of each pass that the frame times one by one. */
+	private readonly scopes = new Uint32Array(SLOTS * GPU_TIMED_PASSES);
 	/** Each timestamp of a frame as read back, in nanoseconds from the beginning of its first pass. */
 	private readonly times = new Float64Array(QUERIES);
 	private slot = -1;
@@ -176,14 +178,17 @@ export class GpuTimer {
 
 	/**
 	 * Timestamp writes for the frame's next pass, a render pass or a compute pass, or undefined when
-	 * the frame is not timed. `label` says what the pass draws for, so the frame's parts name it.
+	 * the frame is not timed. `label` says what the pass draws for, so the frame's parts name it,
+	 * and `scope` names the step that the pass records, which the overlay lists and a feature adds
+	 * up. The record keeps both for each pass that the timer times one by one.
 	 */
-	passWrites(render: boolean, label: number): GPURenderPassTimestampWrites | undefined {
+	passWrites(render: boolean, label = 0, scope = 0): GPURenderPassTimestampWrites | undefined {
 		if (this.slot < 0) return undefined;
 		const pass = this.passes++;
 		if (pass >= GPU_TIMED_PASSES) return this.laterWrites[this.slot];
-		if (render) this.renderMask |= 1 << pass;
 		this.passLabels[this.slot * GPU_TIMED_PASSES + pass] = label;
+		this.scopes[this.slot * GPU_TIMED_PASSES + pass] = scope;
+		if (render) this.renderMask |= 1 << pass;
 		return this.passWriteSets[this.slot]?.[pass];
 	}
 
@@ -267,6 +272,7 @@ export class GpuTimer {
 			const ordered = begin >= 0 && end >= begin;
 			recorder.gpuTime(1 + pass, ordered ? (end - begin) / NS_PER_MS : UNTIMED);
 			recorder.gpuPassRole(pass, this.passLabels[slot * GPU_TIMED_PASSES + pass] as number);
+			recorder.gpuScope(pass, this.scopes[slot * GPU_TIMED_PASSES + pass] as number);
 			if (!ordered) continue;
 			if (begin < earliest) earliest = begin;
 			if (end > latest) latest = end;

@@ -1,11 +1,12 @@
 // The creek's water. A grid at the water's height moves its vertices with waves that the current
-// carries downstream. Its surface function adds finer ripples to the normal, which catch the sun as
-// glints. A reflection pass mirrors the banks and the sky, and the light from the stony bed comes
-// through the water, bent by the ripples and tinted by its depth. Caustics, the sunlight that the
-// ripples focus, play over the bed. The water is clear at its edges, where it is shallow, and foams
-// where it meets the banks and the stones, with a trail of foam downstream of each stone.
+// carries, so the crests keep their cross-hatch and the whole surface travels downstream. Its
+// surface function adds finer ripples to the normal, which catch the sun as glints. A reflection
+// pass mirrors the banks and the sky, and the light from the stony bed comes through the water, bent
+// by the ripples and tinted by its depth. Caustics, the sunlight that the ripples focus, play over
+// the bed. The water is clear at its edges, where it is shallow, and foams where it meets the banks
+// and the stones, with a trail of foam downstream of each stone.
 import type { MeshArrays, QualityPreset, SketchContext, Texture } from '@null3d/engine';
-import { STREAM_REACH, WATER } from './land';
+import { STREAM_REACH, streamSlope, WATER } from './land';
 
 /** A stone where it breaks the water: its middle and its radius at the water's height. */
 export interface Obstacle {
@@ -22,13 +23,15 @@ const FOAM = { x: 30, z: 6.5, width: 1024, height: 224 } as const;
  */
 const REFLECT_EVERY: Record<QualityPreset, number> = { low: 2, medium: 2, high: 1, ultra: 1 };
 
-/** How fast the current carries the ripples and the caustics downstream, toward +x. */
+/** How fast the current carries the waves, the ripples and the caustics along the stream. */
 export const FLOW = 0.35;
 /** How tall the water's waves stand, as a factor of their base height. */
 const RIPPLE = 1;
 /**
- * The long waves that move the water's vertices: each one's direction, wave number, and how fast it
- * runs against the current. The WGSL's `waves` holds the same three first in its list.
+ * The long waves that move the water's vertices: each one's direction in the current's frame, its
+ * wave number, and the speed it ran at in the world. The current carries the whole set, so the
+ * directions keep the angles between them and every crest drifts downstream. The WGSL's `waves`
+ * holds the same three first in its list.
  */
 const LONG_WAVES = [
 	[1.0, 0.15, 2.3, 0.9],
@@ -39,10 +42,20 @@ const LONG_WAVES = [
 /** The height of the water's surface at a point and sketch time, as its long waves move it. */
 export function surfaceHeight(x: number, z: number, t: number): number {
 	let h = WATER;
-	for (const [dx, dz, k, speed] of LONG_WAVES) {
-		const length = Math.hypot(dx, dz);
-		const along = (dx * x + dz * z) / length;
-		const phase = k * (along - FLOW * t * (dx / length)) - speed * t;
+	// The current follows the stream's middle line, so the whole set turns with its bends.
+	const slope = streamSlope(x);
+	const length = Math.hypot(1, slope);
+	const cx = 1 / length;
+	const cz = slope / length;
+	for (const [ownX, ownZ, k] of LONG_WAVES) {
+		const spread = Math.hypot(ownX, ownZ);
+		const along = ownX / spread;
+		const across = ownZ / spread;
+		// The wave's direction in the world, turned from the current's frame.
+		const dx = cx * along - cz * across;
+		const dz = cz * along + cx * across;
+		// The current carries the pattern, so the whole set drifts downstream.
+		const phase = k * (dx * x + dz * z - FLOW * t * (dx * cx + dz * cz));
 		h += ((RIPPLE * 0.05) / k) * Math.sin(phase);
 	}
 	return h;
@@ -57,10 +70,17 @@ struct Uniforms { flow: f32, ripple: f32, caustics: vec3f }
 var mirror: texture_2d<f32>;
 var foamMap: texture_2d<f32>;
 
+/// The current at a point: its direction follows the stream's middle line, and its third component
+/// is its speed.
+fn current_of(p: vec2f) -> vec3f {
+    let slope = 0.154 * cos(p.x * 0.11 + 0.6) + 0.135 * cos(p.x * 0.27);
+    return vec3f(normalize(vec2f(1.0, slope)), material.flow);
+}
+
 /// Caustics: bright, thin ridges where the ripples focus the light, which drift with the current.
 /// The view from under the water draws the same ones, from its own copy of this function.
-fn caustics(p: vec2f, t: f32, flow: f32) -> f32 {
-    let q = p * 4.6 + vec2f(flow * t * 4.0, 0.0);
+fn caustics(p: vec2f, t: f32, current: vec3f) -> f32 {
+    let q = p * 4.6 - current.xy * (current.z * t * 4.0);
     let a = sin(q.x * 3.1 + t * 1.3 + sin(q.y * 2.3 - t));
     let b = sin(q.y * 3.7 - t * 1.1 + sin(q.x * 1.9 + t * 0.7));
     let c = sin((q.x + q.y) * 2.6 + t * 0.9 + sin(q.x * 1.3 - q.y * 0.7));
@@ -73,10 +93,12 @@ fn caustics(p: vec2f, t: f32, flow: f32) -> f32 {
 /// past it the surface turns every ray back down, as total internal reflection does.
 const WINDOW: f32 = 0.66;
 
-/// The water's height at a point, and its slopes along x and z: long waves that the current carries
-/// downstream, and with fine set, shorter ripples across them.
-fn waves(p: vec2f, t: f32, fine: bool) -> vec3f {
-    // Each wave: its direction, its wave number, and how fast it runs against the current.
+/// The water's height at a point, and its slopes along x and z: long waves that the current carries,
+/// and with fine set, shorter ripples beside them. The directions are relative to the current, so
+/// the set keeps its cross-hatch and the whole pattern drifts downstream.
+fn waves(p: vec2f, t: f32, current: vec3f, fine: bool) -> vec3f {
+    // Each wave: its direction in the current's frame, its wave number, and the speed it ran at in
+    // the world. The current now carries the set, so that speed no longer moves a crest.
     let list = array<vec4f, 6>(
         vec4f(1.0, 0.15, 2.3, 0.9),
         vec4f(0.8, -0.6, 3.7, 0.7),
@@ -90,9 +112,10 @@ fn waves(p: vec2f, t: f32, fine: bool) -> vec3f {
     let count = select(3u, 6u, fine);
     for (var k = 0u; k < count; k++) {
         let w = list[k];
-        let dir = normalize(w.xy);
+        let own = normalize(w.xy);
+        let dir = vec2f(current.x * own.x - current.y * own.y, current.y * own.x + current.x * own.y);
         let amplitude = material.ripple * 0.05 / w.z;
-        let phase = w.z * (dot(dir, p) - material.flow * t * dir.x) - w.w * t;
+        let phase = w.z * (dot(dir, p) - current.z * t * dot(current.xy, dir));
         h += amplitude * sin(phase);
         slope += dir * (amplitude * w.z * cos(phase));
     }
@@ -108,13 +131,15 @@ fn depthAt(p: vec2f) -> f32 {
 }
 
 fn vertexOffset(input: VertexInput) -> vec3f {
-    return vec3f(0.0, waves(input.position.xz, frame.time, false).x, 0.0);
+    let p = input.position.xz;
+    return vec3f(0.0, waves(p, frame.time, current_of(p), false).x, 0.0);
 }
 
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let p = input.worldPosition.xz;
-    let w = waves(p, frame.time, true);
+    let current = current_of(p);
+    let w = waves(p, frame.time, current, true);
     s.normal = normalize(vec3f(-w.y, 1.0, -w.z));
     let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
     let uv = reflection_uv(clip, w.yz * 0.08);
@@ -127,7 +152,7 @@ fn surface(input: SurfaceInput) -> Surface {
     // downstream, and moving noise breaks it into flecks that the current carries away.
     // The map covers x from -30 to 30 m and z from -6.5 to 6.5 m.
     let near = textureSampleLevel(foamMap, foamMapSampler, vec2f((p.x + 30.0) / 60.0, (p.y + 6.5) / 13.0), 0.0).r;
-    let drift = p * vec2f(5.0, 9.0) - vec2f(material.flow * frame.time * 6.0, 0.0);
+    let drift = p * vec2f(5.0, 9.0) - current.xy * (current.z * frame.time * 6.0);
     let flecks = 0.6 * value2(drift) + 0.4 * value2(drift * 2.3 + 7.0);
     let stoneFoam = 0.85 * smoothstep(0.45, 0.95, near * (0.3 + 1.0 * flecks));
     let foam = max(edgeFoam, stoneFoam);
@@ -150,7 +175,7 @@ fn surface(input: SurfaceInput) -> Surface {
         s.baseColor = mix(vec3f(0.08, 0.16, 0.15), s.baseColor, window);
         return s;
     }
-    s.emissive += material.caustics * caustics(bed, frame.time, material.flow) * reach;
+    s.emissive += material.caustics * caustics(bed, frame.time, current) * reach;
     s.transmission = 1.0 - 0.7 * foam;
     return s;
 }

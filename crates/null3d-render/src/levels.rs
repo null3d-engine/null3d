@@ -708,6 +708,9 @@ struct StageWatch {
     mesh: u32,
     /// One bit for each level picked since the watch began: bit 0 is the mesh itself.
     picked: u32,
+    /// One bit for each band of a patch tree that a view drew since the watch began: bit 0 is the
+    /// band that the file holds.
+    bands: u32,
     /// The frame that the watch began, in the frame input's own count.
     since: u64,
 }
@@ -717,11 +720,13 @@ impl StageWatches {
     pub fn watch(&mut self, mesh: u32, frame: u64) {
         if let Some(watch) = self.watches.iter_mut().find(|watch| watch.mesh == mesh) {
             watch.picked = 0;
+            watch.bands = 0;
             watch.since = frame;
         } else {
             self.watches.push(StageWatch {
                 mesh,
                 picked: 0,
+                bands: 0,
                 since: frame,
             });
         }
@@ -766,6 +771,33 @@ impl StageWatches {
     pub fn picked(&mut self, mesh: u32, level: usize) {
         if let Some(watch) = self.watches.iter_mut().find(|watch| watch.mesh == mesh) {
             watch.picked |= 1 << level;
+        }
+    }
+
+    /// The bands of the tree of `mesh` that a view drew since the watch began, one bit each, bit 0
+    /// for the band that the file holds. 0 for a mesh that nothing watches.
+    pub fn bands(&self, mesh: u32) -> u32 {
+        self.watches
+            .iter()
+            .find(|watch| watch.mesh == mesh)
+            .map_or(0, |watch| watch.bands)
+    }
+
+    /// The number of watches, which the pick count reads one at a time.
+    pub fn len(&self) -> usize {
+        self.watches.len()
+    }
+
+    /// The mesh of the watch at `index`.
+    pub fn mesh_at(&self, index: usize) -> u32 {
+        self.watches[index].mesh
+    }
+
+    /// Adds the bands of the watch at `index` that a view drew this frame to the bands that a view
+    /// drew since the watch began. A pick between two polls stays, as a level's pick does.
+    pub fn note_bands(&mut self, index: usize, bands: u32) {
+        if let Some(watch) = self.watches.get_mut(index) {
+            watch.bands |= bands;
         }
     }
 
@@ -872,6 +904,23 @@ mod stage_watch_tests {
         assert_eq!(watches.frames(1, 260), 60);
         watches.picked(1, 0);
         assert_eq!(watches.picks(1), 1);
+    }
+
+    #[test]
+    fn a_watch_counts_bands_and_a_new_watch_clears_them() {
+        let mut watches = StageWatches::default();
+        watches.watch(7, 20);
+        assert_eq!(watches.bands(7), 0);
+        // A pick stays after a frame that drew none of its band, as a level's pick does.
+        watches.note_bands(0, 0b101);
+        watches.note_bands(0, 0b010);
+        assert_eq!(watches.bands(7), 0b111);
+        assert_eq!(watches.bands(8), 0);
+        assert_eq!((watches.len(), watches.mesh_at(0)), (1, 7));
+        // A second watch starts the count again.
+        watches.watch(7, 40);
+        assert_eq!(watches.bands(7), 0);
+        assert_eq!(watches.frames(7, 60), 20);
     }
 
     #[test]

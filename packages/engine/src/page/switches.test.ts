@@ -45,6 +45,7 @@ describe('parseSwitches', () => {
 			bench: false,
 			view: undefined,
 			stats: undefined,
+			permutations: undefined,
 			glTiming: undefined,
 			replayDelay: undefined,
 		});

@@ -8,7 +8,7 @@ export type {
 	DebugView,
 	DebugViewName,
 } from './debug/debug';
-export type { FrameStats, FrameStatsThread } from './debug/stats';
+export type { FrameStats, FrameStatsStep, FrameStatsThread } from './debug/stats';
 export type { StatsOverlayOptions } from './debug/stats-options';
 export type { EngineDebugView } from './debug/view-names';
 export { EngineError } from './errors/engine-error';
@@ -158,6 +158,8 @@ export type {
 	FeatureDescription,
 	FeatureFrame,
 	FeatureGovernor,
+	FeatureGpu,
+	FeatureGpuPass,
 	FeatureKind,
 	FeatureNeutral,
 	FeatureOutput,

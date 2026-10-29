@@ -12,6 +12,7 @@ dist/
 packages/engine/src/generated/shaders*.ts
 packages/engine/src/generated/shaders-*.js
 packages/engine/src/generated/shader-features.ts
+packages/engine/src/generated/shader-permutations.ts
 # Each GPU path's shared table of shader paragraphs, which the device modules import by name.
 packages/engine/src/generated/shader-paragraphs-*.js
 

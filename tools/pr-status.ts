@@ -45,10 +45,7 @@ const INCOMPLETE = new Set([
 	'M3-K9',
 	'M3-E4',
 	'M3-V6',
-	'M3-E6',
 	'M3-E8',
-	'M3-L3',
-	'M3-R12',
 	'M3-R22',
 	'M3-L4',
 	'M3-V5',
@@ -59,17 +56,15 @@ const INCOMPLETE = new Set([
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
 	'M3-F5':
-		"the owner rejected the look and withdrew the earlier approval: the water has sideways lines interspersed with the flow, and the Creek should match what it had before the add-on. The add-on moved the phase, the foam drift and the caustics onto a current vector read from the river mesh's texture coordinates instead of the old fixed flow, took the thickness from the screen-space depth copy instead of the analytic bed, and made the shore a soft alpha ramp. The unchanged-reference clause was never proved either: the Creek references were redrawn two days after the add-on replaced its water, and the shipped pictures are 320 by 180 bank views where the stream is a few dozen pixels wide, which cannot see this. Creek's own water is being restored and the migration waits until the add-on reproduces the old look",
+		"the owner rejected the look and withdrew the earlier approval, because the water showed sideways lines amid the flow, and the Creek now draws its own water again, flowing with the river: each wave direction turns by the stream's local angle, the crests are kept, and the phase is carried in the moving frame. The close 640 by 360 picture is what guards that look, since the 320-wide bank views draw the stream as a ribbon a few dozen pixels across. The migration waits until the add-on follows the current the same way. The add-on moved the phase, the foam drift and the caustics onto a current vector read from the river mesh's texture coordinates instead of the old fixed flow, took the thickness from the screen-space depth copy instead of the analytic bed, and made the shore a soft alpha ramp",
 	'M3-K9':
 		'the budget raise it needed is landed and its shader build now passes, but the task itself is not in: its branch is not merged with the head, it has no judged speed line over the final tree, and its Done-when asks for the cost per extra light on an iPad and an S24-class phone, which no device row covers yet',
 	'M3-A8':
 		"the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, over the prototype's one-step tolerance. The owner accepted that cost and ruled that the display table stays and the light table comes out",
 	'M3-E6':
-		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame. The overlay part of the task is not built: D-199's decision 4 asks for one GPU timing scope per built-in step and per add-on feature, and D-173 for each add-on's GPU time, while the add-on rows hold no GPU time and the overlay shows one frame total",
+		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame. The overlay now lists the GPU time of each step of the frame and fills an add-on's row from the render passes that its description names, which the water add-on uses for its reflection pass; a feature whose work records inside the engine's own pass reads gpu not measured, as splats does on every path (D-267)",
 	'M3-E8':
 		"the compute pass and its WebGL2 fragment form are built and tested, and the wind add-on fills its field through the hook with a compute pass. The owner's 25 October ruling adds M3-V13's history to the hook, and the first-user outcome the plan names still waits on M3-F9's ocean",
-	'M3-L3':
-		'both paths draw the patches, the WebGPU compute pass and the WebGL2 multi-draw walk, with the whole-level fallback for a browser without multi-draw, which Firefox runs on this Mac at three distances with the extension absent; what holds the tick is two runs of the multi-draw path, one on the iPad and one on the phone, since the device rows of 23 October predate that walk and measure the whole-level path',
 	'M3-R22':
 		"the shader cache on the branch is D-248's change, not this task's: it reuses every entry when a compiler change leaves the compiled program identical, 0 compiled and 79 reused in 19 s, where the same change cost an hour. The task's own change, three entries instead of four for every module kind, is on `feat/m3-r22-entry-set` and not on this branch, and the determinism list here still holds `lit`; the two checks' CI times remain unmeasured",
 	'M3-F3':
@@ -78,8 +73,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"dropped with the temporal resolve it needs (D-206); M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F9':
 		"the simulation, the material and the older path's fragment form are on the local branch `feat/m3-f9-fft-ocean`, thirteen commits ahead of the milestone and not pushed, so a reader cannot find them; the engine buffer-id fault it found has landed separately. The older path's cost is found and fixed on that branch: its 833 ms frame against 158 without was not the ocean's draws but the add-on switching the pass off and on every other frame, which made the engine compile its plan every frame; a pass that carries its cadence without being switched holds 60 frames a second. What remains is the quiet-window figure and the merge. The demo entry is held because its picture on that path would record a flat sea. No cost per preset is stated: two runs of identical work differed by more than the effect, so the frame-difference method cannot resolve a sub-millisecond chain",
-	'M3-R12':
-		'the narrowing is not on the branch at all. It exists only on an unlanded branch from 23 October, and there it stops recording before the scene builds its own pipelines, strips the device bits the build compares, and drops the empty word that compute and full-screen passes need. Whatever the list then holds is not the set the pages draw with, so a narrowed build fails at the first pipeline it lacks rather than compiling the wrong thing quietly. A helper is proving each fault, and no time or size figure exists yet',
 	'M3-A11':
 		'measured on both paths at every preset; it does not beat the presets, so it stays behind the internal setting and does not ship (D-206). Its black-capture and bind-group faults are fixed, its shader file still loads on first use, and that first-use case is now tested on both paths',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
@@ -98,7 +91,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-F4':
 		"unticked by its check at 652fd235b on `feat/m3-f4-lightmap-evidence`: the captured frame is one side of the comparison rather than the comparison itself, D-258 claims more than that frame settles, not every figure has a recorded run. The evidence entry is written now and names what is owed rather than claiming it: the engine-to-viewer comparison does not exist, and the picture's failure without the direction is unrecorded. The same branch's ae46e947d states the viewer-side limit in D-258 lines 78 to 82 instead of closing it, so the owner has not ruled whether an engine-to-viewer comparison is owed",
 	'M3-L4':
-		'the three studies are proposed, awaiting the owner ruling (D-273 vertex morphing, D-274 impostors, D-275 staged loading), and the work each leaves to build has not started; the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
+		'the owner ruled the three studies run in order, staged loading first, and that one is built: whole levels and cluster bands arrive as stages, a band appends to the tree as it lands, and `maxLevels` with the pick-driven holdback serves both. Its load run shows the stages add no delay before the first picture, not that the first picture comes sooner, and its 29.3 per cent after the first picture is a lower bound. The impostors are being built now, starting with the turn the record rules; the vertex morphing follows them, and no iPad, phone or GPU-time figure exists for either',
 	'M3-V2':
 		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
 	'M3-R19':
@@ -129,6 +122,7 @@ const GROUPS: readonly (readonly [string, string])[] = [
 	['Effects and techniques', 'F'],
 	['glTF and API', 'GK'],
 	['Shipping', 'OT'],
+	['Queue lanes', 'S'],
 	["The study's tasks", 'R'],
 	['Vegetation', 'V'],
 	['Demos', 'X'],

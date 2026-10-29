@@ -294,6 +294,7 @@ describe('the shader module checks', () => {
 	for (const name of [
 		'shaders.ts',
 		'shader-features.ts',
+		'shader-permutations.ts',
 		'shaders-ao-wgsl.ts',
 		'shaders-sky-glsl.js',
 		'core.ts',
@@ -307,12 +308,15 @@ describe('the shader module checks', () => {
 			'lib/generated/core.d.ts',
 			'lib/generated/gpu.d.ts',
 			'lib/generated/shader-features.d.ts',
+			'lib/generated/shader-permutations.d.ts',
 			'lib/generated/shaders-ao-wgsl.d.ts',
 			'lib/generated/shaders.d.ts',
 		]);
 	});
 
-	it('names the built shader JavaScript, and leaves the generated constants alone', () => {
+	it('names the built shader JavaScript, and leaves the generated constants and the list alone', () => {
+		// The engine reads the permutation list at run time, so a published package carries it, as
+		// it carries `core.js` and `gpu.js`. The shader JavaScript is the plugin's to supply.
 		expect(shaderModuleJsFiles(root)).toEqual([
 			'lib/generated/shader-features.js',
 			'lib/generated/shaders-ao-wgsl.js',

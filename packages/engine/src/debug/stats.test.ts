@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { SCOPE_BLOOM, SCOPE_FINAL, SCOPE_OPAQUE } from '../generated/core';
+import type { FeatureStats } from '../scene/features';
 import { MEMORY_AREA_COUNT, MEMORY_AREA_NAMES, MEMORY_AREA_VALUES } from '../shared/memory-area';
 import {
 	Counter,
@@ -216,6 +218,79 @@ type FrameStatsThreads = [
 /** The page's own figures where the browser gives none. */
 const NO_PAGE_FIGURES: PageFigures = { jsHeapBytes: null, page: null };
 
+describe('the overlay’s figures of a feature’s GPU scope', () => {
+	/** A window's figures with two GPU steps: the camera's opaque pass and a sketch pass. */
+	function stepFigures(): FrameStats {
+		return {
+			frames: 30,
+			seconds: 0.5,
+			presentedFps: 60,
+			completedFps: 60,
+			updateErrors: 0,
+			cpuMs: 2,
+			threads: [],
+			gpuMs: 4,
+			gpuStepMs: null,
+			gpuSteps: [
+				{ name: 'opaque', ms: 2, place: 0 },
+				{ name: 'opaque 3', ms: 1, place: 3 },
+			],
+			drawCalls: 12,
+			triangles: 0,
+			objects: 0,
+			uploadBytes: 0,
+			tier: 'webgpu',
+			preset: 'high',
+			renderScale: 1,
+			wasmBytes: 0,
+			textureBytes: 0,
+			textureBudgetBytes: 0,
+			droppedLevels: 0,
+			meshBytes: 0,
+			gpuTextureBytes: 0,
+			gpuBufferBytes: 0,
+			memoryAreas: [],
+		};
+	}
+
+	/** A feature with the scope of a pass at `place`, and the rest of its figures empty. */
+	function featureOn(place: number): FeatureStats {
+		return {
+			name: 'water',
+			settings: {},
+			gpuMs: null,
+			scope: [{ name: 'water', place }],
+			bytes: null,
+			budgetMs: null,
+			allowedMs: null,
+		};
+	}
+
+	it('adds up the steps that draw into a feature’s passes, and names those steps after it', () => {
+		const figures = overlayFigures(stepFigures(), NO_PAGE_FIGURES, [featureOn(3)]);
+		expect(figures.features?.[0]?.gpuMs).toBe(1);
+		expect(figures.gpuSteps).toEqual([
+			{ name: 'opaque', ms: 2 },
+			{ name: 'water', ms: 1 },
+		]);
+	});
+
+	it('leaves a feature’s GPU time unknown without a step of its own', () => {
+		const figures = overlayFigures(stepFigures(), NO_PAGE_FIGURES, [featureOn(5)]);
+		expect(figures.features?.[0]?.gpuMs).toBeNull();
+	});
+
+	it('keeps the figure of the window that last timed the feature’s pass', () => {
+		const known = new Map<string, number>();
+		overlayFigures(stepFigures(), NO_PAGE_FIGURES, [featureOn(3)], known);
+		expect(known.get('water')).toBe(1);
+		// A window whose timed frame left the pass out keeps the figure.
+		const quiet = { ...stepFigures(), gpuSteps: [{ name: 'opaque', ms: 2, place: 0 }] };
+		const figures = overlayFigures(quiet, NO_PAGE_FIGURES, [featureOn(3)], known);
+		expect(figures.features?.[0]?.gpuMs).toBe(1);
+	});
+});
+
 describe('statsText', () => {
 	it('waits for the first window', () => {
 		const { window } = setUp();
@@ -328,6 +403,7 @@ describe('statsText', () => {
 			cpuMs: 4,
 			threads: [{ name: 'main', busyMs: 4 }],
 			gpuMs: 3.25,
+			gpuSteps: [],
 			drawCalls: 120,
 			uploadBytes: null,
 			triangles: 2_345_678,
@@ -370,6 +446,37 @@ describe('FrameStatsWindow counts', () => {
 });
 
 describe('FrameStatsWindow GPU time', () => {
+	it('names each timed pass by its scope, over the frames that timed it', () => {
+		const { buffer, recorders, window } = setUp();
+		const gpu = new FrameRecorder(buffer, Role.Gpu);
+		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
+		gpu.begin(11);
+		gpu.gpuPasses(4, 0b1110);
+		gpu.gpuTick(1);
+		// Copies, then three passes: the opaque pass, bloom's second step, and the final pass. The
+		// frame's fourth pass left no time, and stays out of the list.
+		gpu.gpuTime(0, 0.2);
+		gpu.gpuTime(1, 2);
+		gpu.gpuScope(0, SCOPE_OPAQUE);
+		gpu.gpuTime(2, 1);
+		gpu.gpuScope(1, SCOPE_BLOOM | (1 << 16));
+		gpu.gpuTime(3, 3);
+		gpu.gpuScope(2, SCOPE_FINAL);
+		gpu.commit(4);
+		window.update();
+		expect(window.stats.gpuSteps.map((step) => step.name)).toEqual([
+			'copies',
+			'opaque',
+			'bloom 2',
+			'final',
+		]);
+		const times = window.stats.gpuSteps.map((step) => step.ms);
+		expect(times[0]).toBeCloseTo(0.2, 6);
+		expect(times.slice(1)).toEqual([2, 1, 3]);
+		// The opaque pass of the camera's view is place 0.
+		expect(window.stats.gpuSteps[1]?.place).toBe(0);
+	});
+
 	it('keeps the GPU time of the last window that held a timed frame', () => {
 		const { buffer, recorders, window } = setUp();
 		const gpu = new FrameRecorder(buffer, Role.Gpu);

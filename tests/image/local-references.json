@@ -32,26 +32,26 @@
 	"chromium-swiftshader/compat/creek-render-scale-opening.png": {
 		"test": "creek-render-scale-opening",
 		"tier": "compat",
-		"date": "2026-10-28",
-		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
 	},
 	"chromium-swiftshader/compat/creek-render-scale-route.png": {
 		"test": "creek-render-scale-route",
 		"tier": "compat",
-		"date": "2026-10-28",
-		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
 	},
 	"chromium-swiftshader/compat/creek-water-close.png": {
 		"test": "creek-water-close",
 		"tier": "compat",
-		"date": "2026-10-28",
-		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
 	},
 	"chromium-swiftshader/compat/demo-creek.png": {
 		"test": "demo-creek",
 		"tier": "compat",
-		"date": "2026-10-28",
-		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
 	},
 	"chromium-swiftshader/compat/demo-depth-only.png": {
 		"test": "demo-depth-only",
@@ -158,26 +158,26 @@
 	"chromium-swiftshader/webgl2/creek-render-scale-opening.png": {
 		"test": "creek-render-scale-opening",
 		"tier": "webgl2",
-		"date": "2026-10-28",
-		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
 	},
 	"chromium-swiftshader/webgl2/creek-render-scale-route.png": {
 		"test": "creek-render-scale-route",
 		"tier": "webgl2",
-		"date": "2026-10-28",
-		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
 	},
 	"chromium-swiftshader/webgl2/creek-water-close.png": {
 		"test": "creek-water-close",
 		"tier": "webgl2",
-		"date": "2026-10-28",
-		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
 	},
 	"chromium-swiftshader/webgl2/demo-creek.png": {
 		"test": "demo-creek",
 		"tier": "webgl2",
-		"date": "2026-10-28",
-		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
 	},
 	"chromium-swiftshader/webgl2/demo-depth-only.png": {
 		"test": "demo-depth-only",
@@ -278,26 +278,26 @@
 	"chromium-swiftshader/webgpu/creek-render-scale-opening.png": {
 		"test": "creek-render-scale-opening",
 		"tier": "webgpu",
-		"date": "2026-10-28",
-		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
 	},
 	"chromium-swiftshader/webgpu/creek-render-scale-route.png": {
 		"test": "creek-render-scale-route",
 		"tier": "webgpu",
-		"date": "2026-10-28",
-		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
 	},
 	"chromium-swiftshader/webgpu/creek-water-close.png": {
 		"test": "creek-water-close",
 		"tier": "webgpu",
-		"date": "2026-10-28",
-		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
 	},
 	"chromium-swiftshader/webgpu/demo-creek.png": {
 		"test": "demo-creek",
 		"tier": "webgpu",
-		"date": "2026-10-28",
-		"reason": "the Creek's own water returned on the owner's rejection of the add-on's look; this branch is not pushed, so the software set is this Mac's CI=1 drawing"
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
 	},
 	"chromium-swiftshader/webgpu/demo-depth-only.png": {
 		"test": "demo-depth-only",
