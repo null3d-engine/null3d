@@ -97,10 +97,11 @@ direction, and every far block points downstream.
 
 The add-on still lets each wave run along a direction fixed in the world, so its crests cross the
 stream. The Creek therefore draws its own water. M3-F5's migration of the Creek to the add-on waits
-until the add-on follows the current in the same way. A close picture of the stream's surface guards
-the look, as the bank views draw the stream only a few dozen pixels wide. The unit tests keep the
-wave copies equal, check that no two directions collapse, and check that the pattern drifts
-downstream with the current.
+until the add-on follows the current in the same way. The close picture at 640 by 360 guards the
+carried set, because its frame fills with the surface. The three bank views are 320 wide and draw
+the stream as a ribbon a few dozen pixels across, so no crest pattern reads there; their reference
+changes are incidental. The unit tests keep the wave copies equal, check that no two directions
+collapse, and check that the pattern drifts downstream with the current.
 
 ### The cadence through the feature host
 
