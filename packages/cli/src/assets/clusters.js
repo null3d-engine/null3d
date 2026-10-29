@@ -587,9 +587,18 @@ export function splitTree(plan) {
 	/** @type {number[]} */
 	let run = [];
 	let first = true;
+	/**
+	 * Appends the patches of one list to another, which a tree of many leaves may fill.
+	 *
+	 * @param {number[]} to
+	 * @param {number[]} ids
+	 */
+	const add = (to, ids) => {
+		for (const id of ids) to.push(id);
+	};
 	for (const ids of byDepth) {
 		if (!ids) continue;
-		run.push(...ids);
+		add(run, ids);
 		if (first && run.length >= BAND_MIN_PATCHES) {
 			bands.push(run);
 			run = [];
@@ -603,12 +612,12 @@ export function splitTree(plan) {
 		if (bands.length === 0) {
 			bands.push(run);
 		} else {
-			/** @type {number[]} */ (bands[bands.length - 1]).push(...run);
+			add(/** @type {number[]} */ (bands[bands.length - 1]), run);
 		}
 	}
 	while (bands.length > BAND_MAX) {
 		const last = /** @type {number[]} */ (bands.pop());
-		/** @type {number[]} */ (bands[bands.length - 1]).push(...last);
+		add(/** @type {number[]} */ (bands[bands.length - 1]), last);
 	}
 	return bands;
 }
