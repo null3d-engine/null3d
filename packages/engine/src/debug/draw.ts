@@ -229,6 +229,10 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 		this.cullingSpheresWanted = show;
 	}
 
+	cullingSpheresDrawn(): number {
+		return this.spheresDrawn;
+	}
+
 	line(from: Vec3Like, to: Vec3Like, color?: ColorInput): void {
 		const c = color === undefined ? YELLOW : packedColor(color, 'debug.line');
 		if (!this.room(2)) return;
