@@ -1,15 +1,16 @@
 # D-273: Vertex morphing for generated shapes
 
-Status: proposed, for the owner's ruling. Not built: the terrain morph and the leaf-card morph.
-Built: the terrain draws each block with a skirt, and a plant's levels switch with no morph. Task:
+Status: decided by the helper of M3-L4, for the owner's review. Built: the terrain morphs each
+block toward its parent's surface, and a tree's leaf cards morph toward the next level. Task:
 M3-L4.
 
-Summary: The terrain add-on morphs each block toward its parent's heights through a custom vertex
-offset. The parent height and the block size travel in the second texture coordinates, so one
-material and one pipeline serve every block. The vegetation add-on morphs leaf-card levels by storing
-each leaf vertex's target position at the next level. The engine gains one public vertex input for
-that record and no morph of its own. Skirts stay, because the quadtree lets neighbors differ by
-more than one level.
+Summary: Both add-ons write a four-number vertex record and read it in their own custom material's
+vertex offset. The terrain stores the parent grid's height, the block's size and the block's height
+box, and reproduces the selection's exact distance, so a block has its parent's surface at the
+switch. The vegetation add-on stores each leaf vertex's place at the next level and that level's
+error, so the cards the next level drops shrink and the kept ones grow before the switch. The record
+fills the vertex slot that morph targets use, so the engine gains one public input and no vertex
+location. Skirts stay, because the quadtree lets neighbours differ by more than one level.
 
 ## Question
 
@@ -32,65 +33,108 @@ band? Which kinds of shape should morph, in which layer, and what is out of scop
 | --- | --- | --- |
 | Terrain at High | 208 blocks and 133,120 triangles over 1,200 m | D-152 |
 | Vertices of one block | 353: a 17 by 17 grid and a 64-vertex skirt | `chunk.ts`, a grid of 16 faces |
-| A block's vertex bytes now | 11,296: positions, normals and one texture coordinate | 32 bytes a vertex |
-| The second texture coordinates | 2,824 bytes a block, 587,392 bytes over 208 blocks | 2 floats, 8 bytes a vertex |
-| The second set's share | 25% more vertex bytes for the ground | the two rows above |
-| The morph's per-frame allocation | none | the heights are written when a block is built or reused |
-| A leaf-card level's growth | the square root of the step, so 1.41 for every second card | `cardLevel` |
-| A leaf vertex's target record | 16 bytes: the target position and the level's error | the proposed input, four floats |
-| A block's switch in a picture | not measured | the image test below |
-| A leaf-card level's switch in a picture | not measured | the image test below |
-| The terrain casters' cost | not measured | D-127 makes a caster with a vertex offset a moving caster |
+| A block's vertex bytes without the record | 11,296: positions, normals and one texture coordinate | 32 bytes a vertex |
+| A block's vertex record | 5,648 bytes a block, 50% more vertex bytes for the ground | 16 bytes a vertex, four floats |
+| A leaf vertex's target record | 16 bytes: the target position and the level's error | four floats |
+| The built-in vegetation set's arrays | 26,899,530 bytes, 5,995,680 of them target records | `generateVariantSet`, 374,730 leaf vertices |
+| A block's switch in a picture | morph off moves 0.026% of the frame, morph on 0.000%, on WebGPU and compatibility mode; 0.035% against 0.000% on WebGL2 | `tests/image/terrain-morph.spec.ts` on the Mac's GPU, three GPU paths |
+| A leaf-card level's switch in a picture | morph off moves 0.634% of the frame, morph on 0.036%: the morph removes 94% of the change | `tests/image/leaf-switch.spec.ts` on the Mac's GPU |
+| The leaf morph on the other paths | 0.321% to 0.023% on compatibility mode, 0.528% to 0.030% on WebGL2 | the same test |
+| The block morph's frame cost | no difference that this method resolves: WebGPU 2.99 against 3.30 ms of GPU time, compatibility 2.68 against 2.36, WebGL2 4.17 against 4.45, with both signs across three runs; the same build's frame read 2.7 to 4.3 ms from one run to the next, and the frame interval stayed at the display's 16.67 ms | the cost page in a quiet window, below |
 
-How the data was produced: arithmetic from the add-on's code and from D-152's selection figures. The
-byte counts are the arrays that the add-on writes, not a measurement. No run was made.
+How the data was produced: the byte counts are arithmetic from the add-on's arrays. Both switch
+figures come from the split pages, which hold the camera still and move the level switch across it,
+so the only change between two frames is the hand-over: the terrain's by its allowed error, the
+leaves' by the level threshold. The corner distance first measured 0.469% against 0.495%, worse with
+the morph on, because it over-morphs the block at its own split; that run is what showed the record
+slot must carry the block's height box. The frame figures come from
+`QUIET_OK=1 zsh heavy.sh env NULL3D_TERRAIN_MORPH_COST=1 NULL3D_PORT=6182 NULL3D_PRODUCTION_PAGES=skip
+bun run test:browser -- terrain-morph-cost.spec.ts --workers=1` on this Mac's GPU, the third of
+three such runs. The page measures both sides on the same blocks, the same triangles and the same
+draws, and swaps the sides each round so a drift in the machine does not favour one. The offset's
+own work is a few vertex instructions, and the runs cannot separate it from the machine's noise: two
+of the three put the morph side lower and one higher. What is fixed is the vertex data, 16 bytes a
+vertex more, and the same draws and triangles.
 
 ## Look
 
-The terrain image reference, `terrain`, shows a 1,200 m ground from a high camera, with grass, rock
-and snow. No seam or skirt sliver shows at 320 by 180 pixels. The demo reference, `demo-terrain`,
-shows the same ground in a valley at dusk. No seam shows there either. Neither picture is a pair
-around a switch. The demo's camera circles and crosses splits, so a filmstrip would show the pop.
+The terrain split page frames one hill whose block changes level between 34 and 37 pixels of
+allowed error from a still camera. With the morph off, the block's own surface gives way to the
+coarser surface at once. With the morph on, the block's vertices move to the parent grid's heights
+over the last part of the approach, and the two frames match: the hill does not move at all. The
+leaf switch page holds the camera still and moves the level threshold either side of the switch,
+with the dither off: the cards that the next level drops shrink to their middles and the kept ones
+grow, so the crown's silhouette holds across the switch.
 
-No picture compares a plant level with and without a morph. The leaf-card switch has not been captured.
+The terrain image reference draws the ground at a camera where some blocks are partly morphed: it
+moved by 0.215 to 0.292 per cent of its pixels, and both sets were redrawn. The `demo-terrain`
+picture did not move, because its camera leaves every block outside its band. The vegetation
+pictures stay as they are, because a plant drawn at its base level draws no coarser level and writes
+no target.
 
 ## Decision
 
 1. The terrain morph lives in `@null3d/terrain`, in a custom vertex offset in `terrain.wgsl`. When a
-   block is built or reused, the add-on writes the parent grid's height at each vertex into the
-   second texture coordinates (`uvs1.x`). It writes the block's size into `uvs1.y`. The material
-   carries the selection's scale and the grid's face count as uniforms. The offset moves each vertex
-   toward the parent height. The factor runs from 0 at the block's own split distance to 1 at its
-   parent's split distance. The parent height follows the parent grid's triangulation, so a block at
-   the end of its band has the parent block's surface.
-2. D-152's reason for rejecting the morph no longer holds. It rejected the morph because each block
-   would need its own material or its own uniform write. A material per block would cost a pipeline
-   state change per block. The second texture coordinates now carry the per-vertex parent
-   height and the per-block size. The distance comes from `camera.position` and `object.position`,
-   which cost nothing. The scale is one uniform for every block. One material and one pipeline serve
-   every block, as they do now.
-3. Skirts stay. The selection does not restrict neighbors, so two blocks that meet can differ by
-   more than one level. A morph that ends on a block's own parent cannot match a coarser neighbor.
-   Removing the skirt needs a neighbor-restricted selection, which moves every switch, or a target
+   block is built or reused, the add-on writes a four-number record at each vertex: the parent
+   grid's height there, the block's size in meters, and the lowest and highest height of the
+   block's ground. The material carries the selection's scale and the grid's face count. The offset
+   moves each vertex toward the parent height by a factor that runs from 0 at the block's own split
+   distance to 1 at its parent's split distance. The parent height follows the parent grid's
+   triangulation, so a block at the end of its band has the parent block's surface.
+
+2. The distance is the one the selection measures: the 3D distance from the eye to the nearest point
+   of the block's footprint and its height box. The shader rebuilds it from `camera.position`,
+   `object.position`, the block's size and the record's low and high heights. A distance to the
+   block's corner instead was measured and rejected: it over-morphs a block at its own split, where
+   its children replace it, and the switch still shows. D-152's reason for rejecting the morph no
+   longer holds: one material and one pipeline serve every block.
+
+3. Skirts stay. The selection does not restrict neighbours, so two blocks that meet can differ by
+   more than one level. A morph that ends on a block's own parent cannot match a coarser neighbour.
+   Removing the skirt needs a neighbour-restricted selection, which moves every switch, or a target
    for each edge in every frame. Neither is worth its cost now.
-4. The leaf-card morph lives in `@null3d/vegetation`. `cardLevel` keeps every second card from one order.
-   So the generator knows which cards the next level drops, and how far each kept card grows. For each
-   leaf vertex it writes the position that the vertex takes at the next coarser level, and the
-   level's error. The leaf material's vertex offset mixes the vertex toward that position over the
-   same 8% band that a level fade uses. The add-on passes the engine's factor, which is the render height
-   times the projection's `P[1][1]`, over twice the threshold. The switch distance is the level's
-   error times the copy's world scale and that factor, as `levels.rs` computes it. The shader measures
-   the distance to the crown's bounding sphere, as the engine does. So the morph ends where the
-   engine switches.
-5. The engine gains one public input: a four-number vertex record that `VertexInput` reads as the
-   target position and the level's error. It ships with the vegetation add-on, and the terrain does
-   not use it. That input is the only engine change.
+
+4. The leaf-card morph lives in `@null3d/vegetation`. `cardLevel` keeps every second card from one
+   order, so the generator knows which cards the next level drops and how far each kept card grows.
+   For each leaf vertex it writes the position that the vertex takes at the next coarser level, then
+   that level's error. The card material's vertex offset moves the vertex toward that position over
+   the last 8% of the switch distance, which is the band that a level fade covers. The switch
+   distance is the level's error times the copy's world scale times the engine's factor: the render
+   height times the projection's `P[1][1]`, over twice the threshold, as `levels.rs` computes it.
+   The shader reads the render height and the projection from the frame, the threshold and the
+   crown's radius from the material, and the plant's world position from the object. The distance is
+   to the nearest point of the plant's bounding sphere about its origin, as the engine measures it,
+   so the add-on gives the object or batch the same radius. A plant's leaves alone morph.
+
+5. The engine gains one public input: a four-number vertex record that `VertexInput` reads as
+   `vertexRecord`. It fills the vertex slot that a morphed mesh uses for its morph data, so a mesh takes
+   one meaning or the other, never both, and no vertex location is added. WebGPU's 16 attribute
+   locations hold: the record is the last vertex attribute, before the instance attributes and the
+   motion pass's last-frame rows. The record grows from two to four floats, so a morphed mesh pays
+   8 more bytes a vertex. `geometry.fromArrays` gains `targets`, and a material whose WGSL reads
+   `input.vertexRecord` gets the `CUSTOM_TARGET` def and the attribute. A material that reads none pays
+   nothing.
+
 6. File meshes keep `setLevels` and the dither. The simplifier makes each level on its own and
-   records no mapping. The tool's leaf-card step has a mapping for a part of separate cards, but no file
-   needs the morph yet.
+   records no mapping. The tool's leaf-card step has a mapping for a part of separate cards, but no
+   file needs the morph yet.
+
+7. The engine's own threshold is private. The frame-budget governor multiplies the level threshold
+   when frames run long, and the core applies the raised value while a material holds the one it was
+   given. Under that pressure the engine switches before the mix ends, so a leaf card can pop; a page
+   that lets the governor step calls `material.set({ lodThreshold })` with the raised value. Hold
+   mode, which the pictures and the cost runs use, takes no such step, so the measured mixing is the
+   material's own. The terrain does not have this gap: its morph reads the selection's scale from the
+   add-on, which the add-on computes from the error it was given.
 
 ## Ruled out
 
+- A distance to the block's corner, or to its center, for the terrain. It is not the distance the
+  selection measures, so the block over-morphs at its own split and the switch still shows. Measured
+  on the split page.
+- The second texture coordinates for the terrain's parent height and size. They cost 8 bytes a
+  vertex and cannot carry the block's height box, which the exact distance needs. The four-number
+  record costs 16 bytes a vertex and carries all of it.
 - An engine morph for whole levels. D-91 found no change wider than a pixel at 502 of 518 measured
   switches ([D-211](D-211-lod-fade-and-distance-bands.md)). A morph would add vertex data, shader
   builds and work to every mesh, and hide nothing.
@@ -98,40 +142,40 @@ No picture compares a plant level with and without a morph. The leaf-card switch
   one level names a vertex on the next.
 - Live simplification. It costs CPU time and an upload every frame.
 - Removing the skirt in this task.
-- A material for each block. The second texture coordinates and one shared scale remove the need.
-- A uniform write for each block in each frame. The built-in positions give the distance.
+- A material for each block, and a uniform write for each block in each frame. The record and the
+  built-in positions remove both.
+- A second WGSL file's surface, drawn for the morph, on a trunk or a flower. A material's shader
+  declares the record for every mesh that draws with it, so the card-tree leaves have their own
+  material, and the plain material draws the bark, the fronds and the flowers.
 
 ## What a machine run would settle
 
-- A test page steps the camera across a known split. It captures the frames just before and just
-  after the split, with the morph on and off, at High and Low. The Mac and SwiftShader run it first,
-  then the iPad and an S24-class phone. The pixel difference across the split, and a filmstrip, settle
-  the pop. The same page with the skirt on and off shows the seam.
-- A GPU-time and allocation run of `examples/terrain` settles the vertex cost. The same run on both
-  GPU paths settles the moving casters' cost. `bench:gpu-check` times the benchmark scenes, and none
-  draws terrain.
-- Whether the per-vertex factor leaves a jump at the split. If it does, a factor for the whole block
-  needs the block's height box in the vertex data, which costs a second four-number record.
-- The leaf vertex count and the bytes that the target record adds, per preset, from the generator's
-  stats.
-- A picture of a crown at the leaf-card switch, with the morph on and off, settles the look. A GPU-time
-  run of the leaf material on the Mac and an S24-class phone settles the cost.
+- The split pages are measured on the Mac's three GPU paths; a SwiftShader run and a filmstrip
+  across the switch at High and Low would still show the look at the other end of the range.
+- A GPU-time and allocation run of `examples/terrain` settles the vertex cost, and the moving
+  casters' cost on both GPU paths. `bench:gpu-check` times the benchmark scenes, and none draws
+  terrain.
+- A GPU-time run of the leaf material on the Mac and an S24-class phone settles its cost.
+- The leaf vertex count and bytes per preset, from the generator's stats.
 
 ## Consequences
 
 - Code: `packages/terrain/src/chunk.ts`, `terrain.ts`, `material.ts` and `terrain.wgsl` gain the
-  parent heights, the second coordinates and the offset. `packages/vegetation/src/levels.ts`,
-  `generate.ts`, `builder.ts` and `plant.wgsl` gain the target positions and the mix. The engine's
-  vertex format and the shader compiler gain the four-number record and its def.
+  parent heights, the height box, the record and the offset. `packages/vegetation/src/levels.ts`,
+  `generate.ts`, `builder.ts`, `leaves.ts`, `atlas.ts` and the new `plant-cards.wgsl` gain the
+  target records, the card material and the mix; `plant.wgsl` itself is unchanged, and a test holds
+  the two surfaces equal. The engine's vertex record, its array staging, the shader compiler's def
+  and `VertexInput` gain the input.
 - The terrain's casters become moving casters, so a shadow view that a caster touches draws again.
   The cost is unmeasured, and the run above names it.
-- Docs: `docs/api/terrain.md` states the morph. `docs/concepts/lod.md` states which shapes morph and
-  which switch. `docs/shaders/builtins.md` and the vertex format table gain the record.
-  `docs/api/vegetation.md` states the leaf-card morph.
-- Skills: the develop skill's terrain and vegetation notes, and the porting skill where a port has a
-  card tree.
-- Tests: the terrain image test at a split on all three GPU paths. A leaf-card-switch picture with the
-  morph on and off. The reference sets that both move. The terrain test's camera is held still today,
-  so the split test is a new page.
-- A custom material that reads the new record gains a shader def and a vertex attribute. A material
-  that reads none pays nothing, as D-138's defs do.
+- Docs: `docs/api/terrain.md` states the morph and its option. `docs/api/vegetation.md` states the
+  leaf-card morph and the material's settings. `docs/concepts/lod.md` states which shapes morph and
+  which switch. `docs/shaders/surface-functions.md`, `docs/shaders/builtins.md` and
+  `docs/api/geometry.md` state the record and its cost.
+- Skills: the develop skill's terrain recipe and API quick reference state the terrain morph and
+  the `targets` array. The porting skill needs no change: a ported scene has no generated terrain
+  or generated plant to morph.
+- Tests: the terrain split page and the leaf switch page on all three GPU paths, and the `terrain`
+  reference in both sets, which the morph moved.
+- A custom material that reads the record gains a shader def and a vertex attribute. A material that
+  reads none pays nothing, as D-138's defs do.
