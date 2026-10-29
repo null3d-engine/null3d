@@ -163,8 +163,10 @@ no target.
 - The split pages are measured on the Mac's three GPU paths; a SwiftShader run and a filmstrip
   across the switch at High and Low would still show the look at the other end of the range.
 - The block morph's cost is measured on the Mac, but a phone's narrower memory bandwidth is where
-  its 16 extra bytes a vertex would show: the terrain plan's device run settles that. A shadow view
-  that a morphing caster touches draws again, and no run has timed that yet.
+  its 16 extra bytes a vertex would show, and no run measures it. The terrain plan draws every page
+  with the morph on, so it has no page without the morph to compare. A morph-off page, or a second
+  terrain plan with the morph off, settles that. A shadow view that a morphing caster touches draws
+  again, and no run has timed that yet.
 - A GPU-time run of the leaf material on the Mac and an S24-class phone settles its cost.
 - The leaf vertex count and bytes per preset, from the generator's stats.
 
