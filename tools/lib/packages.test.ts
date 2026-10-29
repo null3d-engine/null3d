@@ -20,6 +20,7 @@ import {
 	internalConstructorClasses,
 	type Manifest,
 	PACKAGES,
+	packageNeeds,
 	packageProblems,
 	protectedConstructors,
 	repositoryOnlyFiles,
@@ -55,27 +56,25 @@ const BUILT = new Set([
 const exists = (path: string) => BUILT.has(path);
 
 describe('the build order', () => {
-	// The pool builds packages in parallel and starts each once its `needs` are built, so a
-	// workspace dependency that the table does not name lets one package import another's
-	// declarations before they exist. The table is written by hand; this holds it to the manifests.
-	it('names every workspace package that each package imports', () => {
-		const missing: string[] = [];
-		for (const [name, build] of Object.entries(PACKAGES)) {
+	// The pool builds packages in parallel and starts each once its needs are built, so a package
+	// that imports another must build after it. The order is derived from each manifest, and this
+	// holds the derivation to what the packages actually declare.
+	it('waits for every compiled package that a manifest names', () => {
+		for (const name of Object.keys(PACKAGES)) {
 			const manifest = JSON.parse(
 				readFileSync(join(ROOT, 'packages', name, 'package.json'), 'utf8'),
 			) as Record<string, Record<string, string> | undefined>;
-			for (const field of ['dependencies', 'peerDependencies'] as const) {
+			const needs = packageNeeds(ROOT, name);
+			for (const field of ['dependencies', 'peerDependencies', 'devDependencies'] as const) {
 				for (const dependency of Object.keys(manifest[field] ?? {})) {
 					if (!dependency.startsWith('@null3d/')) continue;
-					const short = dependency.slice('@null3d/'.length);
-					if (short === name) continue;
-					// A package the table does not compile writes no declarations, so nothing waits for it.
-					if (PACKAGES[short]?.compile !== true) continue;
-					if (!build.needs.includes(short)) missing.push(`${name} imports ${dependency}`);
+					const other = dependency.slice('@null3d/'.length);
+					if (other === name || PACKAGES[other]?.compile !== true) continue;
+					expect({ name, needs: needs.includes(other) }).toEqual({ name, needs: true });
 				}
 			}
+			expect(needs.includes(name)).toBe(false);
 		}
-		expect(missing).toEqual([]);
 	});
 });
 

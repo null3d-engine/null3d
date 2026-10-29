@@ -47,6 +47,7 @@
 	},
 	"devDependencies": {
 		"@null3d/engine": "workspace:*",
+		"@null3d/vite-plugin": "workspace:*",
 		"@webgpu/types": "0.1.74"
 	}
 }
