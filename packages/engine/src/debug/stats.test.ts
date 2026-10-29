@@ -16,7 +16,6 @@ import { overlayFigures, type PageFigures } from './overlay';
 import {
 	codeMs,
 	drawingMs,
-	STATS_PANEL_HEIGHT,
 	STATS_PANEL_WIDTH,
 	STATS_TABS,
 	TAB_LABELS,
@@ -715,9 +714,9 @@ describe('the overlay tabs', () => {
 		expect(tabs.move(1)).toBe('frame');
 	});
 
-	it('keeps one panel size for every tab, however many rows a tab holds', () => {
-		// The browser tests check the rendered height; this pins the size that the style sheet uses.
+	it('keeps one panel width for every tab, and sets no height of its own', () => {
+		// The card's height is its tab's content, which the browser test measures; this pins the
+		// width that the style sheet sets.
 		expect(STATS_PANEL_WIDTH).toBe(360);
-		expect(STATS_PANEL_HEIGHT).toBe(396);
 	});
 });

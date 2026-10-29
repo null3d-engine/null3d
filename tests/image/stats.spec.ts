@@ -395,23 +395,26 @@ test('the stats overlay shows one tab at a time, and each tab keeps its figures'
 	await expect(gpu).toHaveText(/^\d+\.\d ms$|^not measured$/);
 });
 
-test('the stats overlay keeps the card size on every tab', async ({ page }) => {
+test('the stats overlay keeps the card width and takes its height from the tab', async ({
+	page,
+}) => {
 	const result = await openStats(page, 'gpu=webgl2');
 	const card = page.locator(`${OVERLAY} .card`);
-	const first = await card.boundingBox();
-	if (!first) throw new Error('the card has no box');
-	// The card is 360 by 396 pixels, whatever the tab holds: the steps tab holds the passes and the
-	// systems tab holds a row for each area. A development build reports ten areas, more rows than
-	// the frame tab holds bars.
-	expect(first.width).toBeCloseTo(360, 0);
-	expect(first.height).toBeCloseTo(396, 0);
-	if (result.register)
-		expect(await page.locator(`${OVERLAY} #pane-systems .area`).count()).toBe(10);
 	const tabs = page.locator(TABS);
-	for (const index of [1, 2, 3, 0]) {
+	const heights: number[] = [];
+	for (const index of [0, 1, 2, 3]) {
 		await tabs.nth(index).click();
-		const each = await card.boundingBox();
-		expect(each?.width).toBeCloseTo(first.width, 0);
-		expect(each?.height).toBeCloseTo(first.height, 0);
+		const box = await card.boundingBox();
+		if (!box) throw new Error('the card has no box');
+		// The card is 360 pixels wide whatever the tab holds, and its height is the tab's content,
+		// so no tab leaves an empty card below its figures.
+		expect(box.width).toBeCloseTo(360, 0);
+		heights.push(box.height);
 	}
+	if (result.register) {
+		await tabs.nth(3).click();
+		expect(await page.locator(`${OVERLAY} #pane-systems .area`).count()).toBe(10);
+	}
+	// The tabs hold different amounts, so a card that followed its content changes height.
+	expect(Math.max(...heights) - Math.min(...heights)).toBeGreaterThan(20);
 });
