@@ -149,7 +149,10 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	// the one frame it draws.
 	let solved = 0;
 	const owedSteps = (): number => {
-		const cycles = Math.min(Math.floor((now() - solved) / STEP_SECONDS), MAX_CYCLES);
+		// The sketch time is a sum of frame times, so a frame that owes exactly one step can read a
+		// hair under it.
+		const owed = (now() - solved) / STEP_SECONDS + 1e-6;
+		const cycles = Math.min(Math.floor(owed), MAX_CYCLES);
 		if (cycles <= 0) return 0;
 		solved += cycles * STEP_SECONDS;
 		return cycles * CYCLE_STEPS;
