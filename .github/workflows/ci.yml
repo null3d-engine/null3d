@@ -1057,10 +1057,11 @@ jobs:
     runs-on: ubuntu-latest
     # The weights fill each shard to about the same time: on the three full runs that measured the
     # split they make, the slowest shard models 12.5 minutes of tests and its setup about a minute.
-    # The limit is twice that 13.5, which is the room a shard needs when a slow machine runs its
-    # tests twice as slowly, rather than for a hang.
-    # The model reads low. The first run on these weights measured its heaviest shard at 16.4
-    # minutes of job time where the model said 11.5, so the limit leaves about ten minutes over
+    # A slow machine runs the tests twice as slowly but pays the setup once, so the room a shard
+    # needs is 26 minutes; the limit rounds that up rather than doubling the setup as well. It is
+    # room for a slow machine, not for a hang.
+    # The model reads low. The first run on these weights measured its heaviest shard at about 15.4
+    # minutes of tests where the model said 11.5, so the limit leaves about ten minutes over
     # anything yet seen. If that gap moves again, the model's absolute reading is what to revisit,
     # not the split. In run 39306888159 a shard modelled at 11 minutes ran 71 of its 74 tests in 19.6.
     timeout-minutes: 27
