@@ -32,7 +32,7 @@
 // Policy without 'unsafe-inline'. Browsers without one get a style element instead.
 
 import type { FeatureStats } from '../scene/features';
-import { type Level, rateLevel, workLevel } from './frame-target';
+import { featureLevel, type Level, rateLevel, workLevel } from './frame-target';
 import {
 	count,
 	type FeatureFact,
@@ -1408,9 +1408,8 @@ export class StatsCard {
 				this.featureRows.set(feature.name, row);
 			}
 			// The figure is green while the feature stays inside its allowance, and warmer past it.
-			const { gpuMs, allowedMs } = feature;
-			const level = gpuMs === null || allowedMs === null ? undefined : workLevel(gpuMs, allowedMs);
-			row.set(featureGpu(feature), level, gpuMs === null, featureFacts(feature));
+			const level = featureLevel(feature.gpuMs, feature.allowedMs);
+			row.set(featureGpu(feature), level, feature.gpuMs === null, featureFacts(feature));
 		}
 		for (const [name, row] of this.featureRows) {
 			if (seen.has(name)) continue;

@@ -11,7 +11,7 @@ import {
 	Role,
 	UNTIMED,
 } from '../shared/metrics';
-import { rateLevel, workLevel } from './frame-target';
+import { featureLevel, rateLevel, workLevel } from './frame-target';
 import { overlayFigures, type PageFigures } from './overlay';
 import {
 	codeMs,
@@ -261,6 +261,22 @@ describe('a feature’s labelled figures', () => {
 			'test-glow  gpu 0.50 ms  samples 22 · budget 1 · budget 2.0 of 4.0 ms · memory 1.0 MiB',
 		);
 		expect(featureLine(feature({ gpuMs: null }))).toContain('gpu not measured');
+	});
+});
+
+describe('a feature’s level', () => {
+	it('is green inside four fifths of its allowance, amber up to the allowance, and red past it', () => {
+		expect(featureLevel(0.8, 1)).toBe('ok');
+		expect(featureLevel(0.81, 1)).toBe('warn');
+		expect(featureLevel(1, 1)).toBe('warn');
+		expect(featureLevel(1.01, 1)).toBe('bad');
+		expect(featureLevel(1.6, 2)).toBe('ok');
+	});
+
+	it('is unset where the feature reports no time, or declares no allowance', () => {
+		expect(featureLevel(null, 1)).toBeUndefined();
+		expect(featureLevel(1, null)).toBeUndefined();
+		expect(featureLevel(null, null)).toBeUndefined();
 	});
 });
 
