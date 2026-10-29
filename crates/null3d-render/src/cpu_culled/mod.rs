@@ -3160,7 +3160,8 @@ impl FrameBuilder for CpuCulledRenderer {
                 None,
             )
             .map_err(|_| out_of_memory(&self.tone))?;
-        // The staged levels' watches read the levels that the camera's view picked.
+        // The staged levels' watches read the levels that the camera's view picked, and the staged
+        // bands' watches read the bands of patches that it drew.
         if self.settings.watches_stages() {
             let cull = self.culling.culled_in(input.frame, ViewId::CAMERA);
             self.layout.note_stage_picks(
@@ -3168,6 +3169,29 @@ impl FrameBuilder for CpuCulledRenderer {
                 self.settings.stage_watches_mut(),
                 u64::from(input.frame),
             );
+            let frame = self.culling.frame(ViewId::CAMERA);
+            let rule = self.settings.level_view(ViewId::CAMERA, canvas);
+            let offsets = self.culling.offsets(ViewId::CAMERA);
+            let layout = &self.layout;
+            let drawn = |mesh: u32| {
+                layout
+                    .cluster_buckets
+                    .iter()
+                    .any(|cluster| cluster.mesh == mesh)
+            };
+            if let Some(frame) = frame {
+                self.settings.note_stage_bands(
+                    input.scene,
+                    parity,
+                    &crate::patches::BandView {
+                        view: frame,
+                        rule,
+                        offsets: offsets.as_slice(),
+                        frame: u64::from(input.frame),
+                    },
+                    drawn,
+                );
+            }
         }
         Ok(())
     }

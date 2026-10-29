@@ -11,6 +11,23 @@
 //!
 //! Every patch's indices name the mesh's own vertices, so a tree adds no vertex and every patch
 //! draws with the mesh's pipelines as they are.
+//!
+//! # Bands
+//!
+//! A tree that a model streams arrives in bands: the file holds the patches nearest the root and
+//! each band appends the patches below them ([`PatchTree::append`]). Parents come before children
+//! across the file and its bands, so the loaded patches always form an ancestor-closed tree. A
+//! patch whose children have not arrived draws where the camera is close, which makes the first
+//! picture coarse and still covers the whole surface. The band that a patch belongs to says how
+//! deep it lies, and the loader holds a band until a view draws a patch of the band above it.
+
+use null3d_core::levels::LevelRule;
+use null3d_core::math::{max_axis_scale, world_sphere_at};
+use null3d_core::scene::SceneStorage;
+use null3d_core::world::MATRIX_FLOATS;
+
+use crate::levels::StageWatches;
+use crate::view::ViewFrame;
 
 /// Why a tree was refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +58,12 @@ pub struct PatchTree {
     records: Vec<[u32; 4]>,
     /// The patch that the walk starts at.
     root: u32,
+    /// The first patch of each band, in the order the bands arrived. The first entry is the root's
+    /// band, which the tree was made with.
+    bands: Vec<u32>,
+    /// The number of each patch's children that the tree holds. A patch with none draws wherever
+    /// the camera is close, so a tree whose bands have not all arrived has no holes.
+    children: Vec<u32>,
 }
 
 impl PatchTree {
@@ -54,14 +77,82 @@ impl PatchTree {
         root: u32,
         vertices: u32,
     ) -> Result<Self, PatchError> {
-        let tree = Self {
+        let mut tree = Self {
+            children: vec![0; records.len()],
             indices,
             bounds,
             records,
             root,
+            bands: vec![0],
         };
         tree.check(vertices)?;
+        for k in 0..tree.records.len() {
+            if let Some(parent) = tree.records[k][2].checked_sub(1) {
+                tree.children[parent as usize] += 1;
+            }
+        }
         Ok(tree)
+    }
+
+    /// Appends the patches of one band: its spheres, its records and its indices, whose runs start
+    /// at the band's own first index. A record's parent names a patch that the tree or an earlier
+    /// band holds, so the patches that landed keep an ancestor-closed tree. The vertices count is
+    /// the mesh's, which no index may reach. Returns why the band cannot be appended, and leaves
+    /// the tree as it was.
+    pub fn append(
+        &mut self,
+        bounds: &[[f32; 4]],
+        records: &[[u32; 4]],
+        indices: &[u32],
+        vertices: u32,
+    ) -> Result<(), PatchError> {
+        if records.is_empty() || records.len() != bounds.len() {
+            return Err(PatchError::Empty);
+        }
+        let base = self.indices.len() as u32;
+        let total = self.records.len() as u32;
+        if total + records.len() as u32 > u32::MAX / 2 {
+            return Err(PatchError::Record);
+        }
+        for (k, record) in records.iter().enumerate() {
+            let [first, count, parent, _] = *record;
+            if count == 0
+                || !count.is_multiple_of(3)
+                || first.saturating_add(count) as usize > indices.len()
+            {
+                return Err(PatchError::Record);
+            }
+            // A parent names a patch that landed before this one, as the file and its bands promise.
+            if parent != 0 && parent as usize > total as usize + k {
+                return Err(PatchError::Parent);
+            }
+        }
+        if indices.iter().any(|&index| index >= vertices) {
+            return Err(PatchError::Vertex);
+        }
+        for sphere in bounds {
+            if sphere[..3].iter().any(|value| !value.is_finite())
+                || !sphere[3].is_finite()
+                || sphere[3] < 0.0
+            {
+                return Err(PatchError::Bounds);
+            }
+        }
+        self.bands.push(total);
+        self.bounds.extend_from_slice(bounds);
+        self.records.extend(
+            records
+                .iter()
+                .map(|&[first, count, parent, error]| [first + base, count, parent, error]),
+        );
+        self.indices.extend_from_slice(indices);
+        self.children.resize(self.records.len(), 0);
+        for record in &self.records[total as usize..] {
+            if let Some(parent) = record[2].checked_sub(1) {
+                self.children[parent as usize] += 1;
+            }
+        }
+        Ok(())
     }
 
     /// Checks the tree against a mesh of `vertices` vertices.
@@ -83,7 +174,7 @@ impl PatchTree {
             {
                 return Err(PatchError::Record);
             }
-            if parent as usize == k + 1 {
+            if parent as usize == k + 1 || parent as usize > self.records.len() {
                 return Err(PatchError::Parent);
             }
         }
@@ -116,6 +207,19 @@ impl PatchTree {
         self.root
     }
 
+    /// The number of bands that the tree holds, the root's band counted.
+    pub fn band_count(&self) -> u32 {
+        self.bands.len() as u32
+    }
+
+    /// The band that patch `patch` belongs to, from 0 for the root's band. The bands arrive in
+    /// depth order, so a deeper patch lies in a later band.
+    pub fn band(&self, patch: u32) -> u32 {
+        self.bands
+            .partition_point(|&first| first <= patch)
+            .saturating_sub(1) as u32
+    }
+
     /// Every patch's indices, one patch after another.
     pub fn indices(&self) -> &[u32] {
         &self.indices
@@ -144,6 +248,17 @@ impl PatchTree {
             .map_or(0.0, |record| f32::from_bits(record[3]))
     }
 
+    /// The error that the view's rule compares for patch `patch`: a value below 0 for a patch whose
+    /// children the tree does not hold, which therefore draws wherever the camera is close, so a
+    /// tree whose bands have not all arrived has no holes. Every other patch gives its own error.
+    pub fn rule_error(&self, patch: u32) -> f32 {
+        if self.children.get(patch as usize).copied().unwrap_or(0) == 0 {
+            -1.0
+        } else {
+            self.error(patch)
+        }
+    }
+
     /// The patch above `patch`, or `None` for the root.
     pub fn parent(&self, patch: u32) -> Option<u32> {
         match self.records.get(patch as usize)?[2] {
@@ -154,13 +269,14 @@ impl PatchTree {
 
     /// True when patch `patch` draws at `distance` from the view's camera, with a world scale of
     /// `scale` and the rule's factor of `factor`: its own error passes, and its parent's, which
-    /// would otherwise draw in its place, does not.
+    /// would otherwise draw in its place, does not. A patch whose children the tree does not hold
+    /// passes at every distance, so it draws in place of the patches below it.
     pub fn draws(&self, patch: u32, factor: f32, scale: f32, distance: f32) -> bool {
         let reach = scale * factor;
-        let fits = self.error(patch) * reach < distance;
+        let fits = self.rule_error(patch) * reach < distance;
         let parent_fits = self
             .parent(patch)
-            .is_some_and(|parent| self.error(parent) * reach < distance);
+            .is_some_and(|parent| self.rule_error(parent) * reach < distance);
         fits && !parent_fits
     }
 
@@ -203,6 +319,22 @@ impl PatchStorage {
         self.trees.get(mesh.checked_sub(1)? as usize)?.as_ref()
     }
 
+    /// Appends one band to the tree of mesh `mesh`, which a model streams after the file drew its
+    /// root patches. `None` when the mesh has no tree: a band refines the tree that the file holds,
+    /// so a mesh without one keeps nothing.
+    pub fn append(
+        &mut self,
+        mesh: u32,
+        bounds: &[[f32; 4]],
+        records: &[[u32; 4]],
+        indices: &[u32],
+        vertices: u32,
+    ) -> Option<Result<(), PatchError>> {
+        let index = mesh.checked_sub(1)? as usize;
+        let tree = self.trees.get_mut(index)?.as_mut()?;
+        Some(tree.append(bounds, records, indices, vertices))
+    }
+
     /// True while some mesh has a tree.
     pub fn any(&self) -> bool {
         self.trees.iter().any(Option::is_some)
@@ -224,6 +356,85 @@ impl PatchStorage {
                 *tree = None;
             }
         }
+    }
+}
+
+/// What the pick count of a band needs of a view: the view's frame, the rule that picks its levels
+/// and patches, the offsets of the scene's cells from the view's camera, and the frame's number.
+pub(crate) struct BandView<'a> {
+    pub view: &'a ViewFrame,
+    pub rule: LevelRule,
+    pub offsets: &'a [[f32; 4]],
+    pub frame: u64,
+}
+
+/// Notes, for each mesh that a loader watches, the bands whose patches a view draws this frame, so
+/// that the loader holds a band until the band above it drew. A mesh that the scene holds no
+/// source of restarts its warm-up, as a level does, so a page that loads a model before it
+/// instantiates it keeps its bands.
+///
+/// A patch whose sphere lies in the view's frustum and whose own error passes the view's threshold,
+/// while its parent's does not, is a pick, as the walk that fills the view's patch runs reads the
+/// rule. The count reads the tree of each watched mesh alone, and a frame with no loader waiting
+/// pays nothing. A mesh whose tree the path does not draw picks no band, so its bands wait.
+pub(crate) fn note_stage_bands(
+    scene: &SceneStorage,
+    parity: usize,
+    view: &BandView<'_>,
+    patches: &PatchStorage,
+    watches: &mut StageWatches,
+    draws_tree: impl Fn(u32) -> bool,
+) {
+    if watches.is_empty() {
+        return;
+    }
+    let mut slots = scene.slots().high_water() as usize;
+    slots = slots.min(scene.meshes().len());
+    let meshes = &scene.meshes()[..slots];
+    watches.hold(view.frame, |mesh| meshes.contains(&mesh));
+    let placed = view.offsets;
+    let world = scene.world(parity);
+    let matrices = world.matrices();
+    let cells = scene.cells();
+    for index in 0..watches.len() {
+        let mesh = watches.mesh_at(index);
+        let Some(tree) = patches.of(mesh) else {
+            continue;
+        };
+        // A path that draws the mesh whole draws no patch, so a band it could not draw waits.
+        if !draws_tree(mesh) {
+            watches.note_bands(index, 0);
+            continue;
+        }
+        let mut picked = 0u32;
+        for (slot, &slot_mesh) in meshes.iter().enumerate() {
+            if slot_mesh != mesh {
+                continue;
+            }
+            let cell = cells.get(slot).copied().unwrap_or(0);
+            let offset = placed.get(cell as usize).copied().unwrap_or([0.0; 4]);
+            let Some(matrix) = matrices
+                .get(slot * MATRIX_FLOATS..(slot + 1) * MATRIX_FLOATS)
+                .and_then(|values| values.try_into().ok())
+            else {
+                continue;
+            };
+            let matrix: &null3d_core::math::Affine = matrix;
+            let scale = max_axis_scale(matrix);
+            for (k, sphere) in tree.bounds().iter().enumerate() {
+                let [x, y, z, radius] =
+                    world_sphere_at(matrix, [sphere[0], sphere[1], sphere[2]], sphere[3]);
+                let (x, y, z) = (x + offset[0], y + offset[1], z + offset[2]);
+                if !view.view.frustum.contains_sphere(x, y, z, radius) {
+                    continue;
+                }
+                let distance = view.rule.distance([x, y, z], radius);
+                if tree.draws(k as u32, view.rule.factor, scale, distance) {
+                    picked |= 1 << tree.band(k as u32).min(31);
+                }
+            }
+        }
+        watches.note_bands(index, picked);
     }
 }
 
@@ -306,6 +517,117 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_band_appends_below_the_tree_and_names_the_parents_it_finds() {
+        let mut tree = tree();
+        assert_eq!(tree.band_count(), 1);
+        // Two patches whose parents are patches 1 and 3, at the tree's own indices' end.
+        let bounds = vec![[0.0; 4]; 2];
+        let records = vec![[0, 3, 2, 0], [3, 3, 4, 0]];
+        tree.append(&bounds, &records, &[0, 1, 2, 3, 4, 5], 9)
+            .expect("the band fits");
+        assert_eq!(tree.len(), 6);
+        assert_eq!(tree.band_count(), 2);
+        assert_eq!((tree.band(0), tree.band(3), tree.band(4)), (0, 0, 1));
+        // A run's first index counts from the band's own indices, so the tree's indices just grew.
+        assert_eq!(tree.run(4), Some((18, 3)));
+        assert_eq!(tree.parent(4), Some(1));
+        assert_eq!(tree.parent(5), Some(3));
+    }
+
+    /// A tree whose root is above two children, with no band below them yet.
+    fn partial() -> PatchTree {
+        let bits = |value: f32| value.to_bits();
+        PatchTree::new(
+            vec![0, 1, 2, 3, 4, 5, 0, 1, 2, 6, 7, 8],
+            vec![[0.0; 4]; 3],
+            vec![
+                [0, 3, 0, bits(10.0)],
+                [3, 3, 1, bits(5.0)],
+                [6, 6, 1, bits(5.0)],
+            ],
+            0,
+            9,
+        )
+        .expect("tree")
+    }
+
+    #[test]
+    fn a_patch_whose_children_have_not_arrived_draws_where_the_camera_is_close() {
+        let mut tree = partial();
+        // Close in, both the root and its children err past the threshold, so only the frontier
+        // rule covers the surface: the children draw instead of leaving a hole.
+        assert_eq!(tree.cut(100.0, 1.0, 1.0), 2);
+        assert_eq!(tree.rule_error(1), -1.0);
+        assert_eq!(tree.rule_error(0), 10.0);
+        // A band below them arrives, so the children keep their own errors and the new patches
+        // become the frontier.
+        tree.append(
+            &[[0.0; 4]; 4],
+            &[[0, 3, 2, 0], [3, 3, 2, 0], [6, 3, 3, 0], [9, 3, 3, 0]],
+            &[0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 2],
+            9,
+        )
+        .expect("the band fits");
+        assert_eq!(tree.rule_error(1), 5.0);
+        assert_eq!(tree.rule_error(3), -1.0);
+        // Close in, the four patches below the root draw, and the root does not.
+        assert_eq!(tree.cut(100.0, 1.0, 1.0), 4);
+    }
+
+    #[test]
+    fn a_band_that_names_a_later_patch_or_another_mesh_leaves_the_tree_as_it_was() {
+        let mut tree = tree();
+        let before = tree.clone();
+        let bounds = vec![[0.0; 4]; 2];
+        // The second patch names its own place as its parent, which the tree does not hold yet.
+        let later = vec![[0, 3, 0, 0], [3, 3, 6, 0]];
+        assert_eq!(
+            tree.append(&bounds, &later, &[0, 1, 2, 3, 4, 5], 9),
+            Err(PatchError::Parent)
+        );
+        // A patch names itself.
+        assert_eq!(
+            tree.append(
+                &bounds,
+                &[[0, 3, 6, 0], [3, 3, 0, 0]],
+                &[0, 1, 2, 3, 4, 5],
+                9
+            ),
+            Err(PatchError::Parent)
+        );
+        // A run past the band's own indices, and an index past the mesh's vertices.
+        assert_eq!(
+            tree.append(
+                &bounds,
+                &[[0, 9, 2, 0], [3, 3, 4, 0]],
+                &[0, 1, 2, 3, 4, 5],
+                9
+            ),
+            Err(PatchError::Record)
+        );
+        assert_eq!(
+            tree.append(
+                &bounds,
+                &[[0, 3, 2, 0], [3, 3, 4, 0]],
+                &[0, 1, 10, 3, 4, 5],
+                9
+            ),
+            Err(PatchError::Vertex)
+        );
+        assert_eq!(
+            tree.append(
+                &bounds,
+                &[[0, 3, 2, 0], [3, 3, 4, 0]],
+                &[0, 1, 2, 3, 4, 5],
+                5
+            ),
+            Err(PatchError::Vertex)
+        );
+        assert_eq!(tree.append(&[], &[], &[], 9), Err(PatchError::Empty));
+        assert_eq!(tree, before);
     }
 
     #[test]

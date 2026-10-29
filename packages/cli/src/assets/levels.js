@@ -1002,7 +1002,9 @@ export const STAGE_MAGIC = 0x5344334e;
 export const STAGE_VERSION = 1;
 /** The kind of a stage that holds a level's triangles, one list for each of a mesh's primitives. */
 export const STAGE_LEVELS = 0;
-/** The words of a stage file's header: its magic number, its version, its kind and its list count. */
+/** The kind of a stage that holds one band of a tree of cluster patches. */
+export const STAGE_BAND = 1;
+/** The words of a stage file's header: its magic number, its version, its kind and a count. */
 export const STAGE_HEADER_SIZE = 4;
 
 /**
@@ -1034,6 +1036,51 @@ export function stageFile(lists) {
 		out.set(new Uint8Array(array.buffer), at + 8);
 		at += 8 + bytes;
 	}
+	return out;
+}
+
+/**
+ * A stage file of one band of a tree of cluster patches: the header with the band's kind and its
+ * count of 1, then the patch count, then each patch's sphere and record, then the band's indices as
+ * kind 0 frames a list. A record's first index counts from the band's own indices, and its parent
+ * names a patch that the model file or an earlier band holds. Every number counts little-endian,
+ * as the engine reads it.
+ *
+ * @param {Float32Array} bounds Each patch's centre and radius, as four floats.
+ * @param {Uint32Array} records Each patch's first index, index count, parent's place plus one, and
+ *   error's bits, as four integers.
+ * @param {Uint32Array} indices The band's indices.
+ * @returns {Uint8Array}
+ */
+export function bandFile(bounds, records, indices) {
+	const patches = records.length / 4;
+	const size = indices.some((index) => index > 0xffff) ? 4 : 2;
+	const bytes = Math.ceil((indices.length * size) / 4) * 4;
+	const length = (STAGE_HEADER_SIZE + 1) * 4 + patches * 32 + 8 + bytes;
+	const out = new Uint8Array(length);
+	const view = new DataView(out.buffer);
+	view.setUint32(0, STAGE_MAGIC, true);
+	view.setUint32(4, STAGE_VERSION, true);
+	view.setUint32(8, STAGE_BAND, true);
+	view.setUint32(12, 1, true);
+	view.setUint32(16, patches, true);
+	let at = (STAGE_HEADER_SIZE + 1) * 4;
+	// Eight words a patch: its sphere's four floats, then its record's four integers.
+	for (let k = 0; k < patches; k++) {
+		for (let c = 0; c < 4; c++) {
+			view.setFloat32(at, /** @type {number} */ (bounds[k * 4 + c]), true);
+			at += 4;
+		}
+		for (let c = 0; c < 4; c++) {
+			view.setUint32(at, /** @type {number} */ (records[k * 4 + c]), true);
+			at += 4;
+		}
+	}
+	view.setUint32(at, indices.length, true);
+	view.setUint32(at + 4, size, true);
+	const array = size === 2 ? new Uint16Array(bytes / 2) : new Uint32Array(bytes / 4);
+	array.set(indices);
+	out.set(new Uint8Array(array.buffer), at + 8);
 	return out;
 }
 
@@ -1073,21 +1120,28 @@ function levelIndices(level) {
  *
  * A mesh whose levels hold positions of their own, such as a level of cards, cannot share its
  * vertices with a stage, so its levels stay in the file as `MSFT_lod` gives them. A mesh with one
- * level has nothing to stream, and keeps its levels in the file too.
+ * level has nothing to stream, and keeps its levels in the file too. A mesh with a tree of cluster
+ * patches keeps its whole levels in the file as well: the tree's bands are what stream, and the
+ * levels draw the mesh whole on the paths that draw no patches.
  *
  * @param {Document} doc
  * @param {Map<Mesh, MeshLevels>} plans
  * @param {Map<string, Uint8Array>} stages The stage files by their address beside the model.
  * @param {string} prefix The model's name, which the stages' names start with.
+ * @param {Map<Primitive, ClusterPlan>} [trees] The trees that the mesh's primitives draw.
  * @returns {{ meshes: number, files: number, bytes: number, levels: number }} The staged meshes.
  */
-export function storeStages(doc, plans, stages, prefix) {
+export function storeStages(doc, plans, stages, prefix, trees = new Map()) {
 	const extension = doc.createExtension(MSFTLod);
 	const buffer = doc.getRoot().listBuffers()[0] ?? doc.createBuffer();
 	const summary = { meshes: 0, files: 0, bytes: 0, levels: 0 };
 	const meshes = doc.getRoot().listMeshes();
 	plans.forEach((plan, mesh) => {
 		const { prims, levels } = plan;
+		if (prims.some((prim) => trees.has(prim))) {
+			storeLevels(doc, new Map([[mesh, plan]]), extension);
+			return;
+		}
 		const shared = levels.every((level) => level.positions.every((p) => p === undefined));
 		if (!shared || levels.length < 2) {
 			storeLevels(doc, new Map([[mesh, plan]]), extension);
