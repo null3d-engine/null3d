@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { SHADOW_CASTERS_TILES } from '../generated/core';
 import { FramePacer } from '../render/pacer';
 import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
@@ -1149,5 +1150,24 @@ describe("replays of the iPad's S4 runs at Low", () => {
 			expect(stay).toBeGreaterThanOrEqual(Math.min(2 * (full[k] as number) - 2, 80));
 		});
 		expect(Math.min(...full.slice(-3))).toBeGreaterThanOrEqual(LONGEST_RAISE_AFTER_MS / 1000);
+	});
+});
+
+describe("the governor's documented order", () => {
+	/**
+	 * The governor's own description, and the preset field that a page's reader sees. The behavior
+	 * test above pins the order: the budgets take a step before each step of the render scale. These
+	 * two descriptions must say the same, or a reader plans around the wrong order.
+	 */
+	const sources = [
+		readFileSync(new URL('./governor.ts', import.meta.url), 'utf8'),
+		readFileSync(new URL('./presets.ts', import.meta.url), 'utf8'),
+	];
+
+	it("says that a budget's step comes before the render scale's, as lower() does", () => {
+		for (const text of sources) {
+			expect(text).toContain("a budget's step first");
+			expect(text).not.toContain('the render scale first, then');
+		}
 	});
 });

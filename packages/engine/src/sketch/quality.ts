@@ -72,9 +72,9 @@ export interface QualityUpdate {
 export type ApplyQuality = (update: QualityUpdate, changed: readonly QualitySettingName[]) => void;
 
 /**
- * What the frame-budget governor has lowered, in `quality.governor`. It lowers the render scale
- * first, which `quality.renderScale` reports. Then it lowers the settings here, and last the
- * volumetric fog's slices, which have no member here.
+ * What the frame-budget governor has lowered, in `quality.governor`. It lowers a sketch's budgets
+ * and the render scale in turn, a budget's step first, which `quality.renderScale` reports, then
+ * the settings here, and last the volumetric fog's slices, which have no member here.
  *
  * @category api/quality
  */
