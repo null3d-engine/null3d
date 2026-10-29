@@ -139,7 +139,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		compile: true,
 		shaders: false,
 		docs: false,
-		needs: ['engine', 'vite-plugin'],
+		needs: ['engine', 'impostors', 'vite-plugin', 'wind'],
 		required: [],
 	},
 	// Its tone curves and outline passes compile from .wgsl files into modules of their own.

@@ -1,5 +1,13 @@
 import { afterAll, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -11,6 +19,7 @@ import {
 	exportTargets,
 	internalConstructorClasses,
 	type Manifest,
+	PACKAGES,
 	packageProblems,
 	protectedConstructors,
 	repositoryOnlyFiles,
@@ -20,6 +29,9 @@ import {
 	shaderModuleJsFiles,
 } from './packages';
 import { MODULE_DIR } from './shader-modules';
+
+/** The repository root, three levels above this file. */
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** True when the shader compiler's build is present, which the pack tests need. */
 const COMPILES = existsSync(fileURLToPath(SHADER_COMPILER_URL));
@@ -41,6 +53,31 @@ const BUILT = new Set([
 	'shared/index.js',
 ]);
 const exists = (path: string) => BUILT.has(path);
+
+describe('the build order', () => {
+	// The pool builds packages in parallel and starts each once its `needs` are built, so a
+	// workspace dependency that the table does not name lets one package import another's
+	// declarations before they exist. The table is written by hand; this holds it to the manifests.
+	it('names every workspace package that each package imports', () => {
+		const missing: string[] = [];
+		for (const [name, build] of Object.entries(PACKAGES)) {
+			const manifest = JSON.parse(
+				readFileSync(join(ROOT, 'packages', name, 'package.json'), 'utf8'),
+			) as Record<string, Record<string, string> | undefined>;
+			for (const field of ['dependencies', 'peerDependencies'] as const) {
+				for (const dependency of Object.keys(manifest[field] ?? {})) {
+					if (!dependency.startsWith('@null3d/')) continue;
+					const short = dependency.slice('@null3d/'.length);
+					if (short === name) continue;
+					// A package the table does not compile writes no declarations, so nothing waits for it.
+					if (PACKAGES[short]?.compile !== true) continue;
+					if (!build.needs.includes(short)) missing.push(`${name} imports ${dependency}`);
+				}
+			}
+		}
+		expect(missing).toEqual([]);
+	});
+});
 
 describe('builtAddress', () => {
 	it('gives the built file of an address with .ts, without an extension, or of a folder', () => {
