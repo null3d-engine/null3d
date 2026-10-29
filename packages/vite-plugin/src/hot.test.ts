@@ -27,6 +27,7 @@ function material(uniforms: CompiledMaterial['uniforms'] = []): CompiledMaterial
 		baseColor: true,
 		objectIds: false,
 		sceneDepth: false,
+		alpha: false,
 	};
 }
 

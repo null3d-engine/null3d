@@ -281,16 +281,17 @@ const NO_FADE: u32 = permutation::SKIN
     | permutation::DISPLACEMENT;
 
 /// True when a pipeline has builds of a fading level: the engine's standard and unlit templates,
-/// opaque or with a mask tested by its cutoff or by coverage. Custom materials, masks tested by the
-/// hash and the debug views switch levels at once.
+/// opaque or with a mask tested by its cutoff or by coverage, and a custom material's. Masks tested
+/// by the hash and the debug views switch levels at once.
 pub(crate) fn fades_its_way(key: DrawKey) -> bool {
-    matches!(
+    (matches!(
         key.template,
         template::INSTANCED_LIT
             | template::INSTANCED_STANDARD_MAPS
             | template::INSTANCED_UNLIT
             | template::INSTANCED_UNLIT_MAP
-    ) && key.permutation & NO_FADE == 0
+    ) || key.template >= template::CUSTOM_FIRST)
+        && key.permutation & NO_FADE == 0
 }
 
 /// True when a bucket key draws with the fading build, which lists the fade value or, in a levels

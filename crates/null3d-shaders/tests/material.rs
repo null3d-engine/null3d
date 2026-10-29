@@ -110,11 +110,19 @@ fn a_surface_function_builds_into_every_variant_of_the_template() {
     let skinned = plain.iter().map(|name| format!("{name}_skin"));
     // Rows with row values never skin, so the builds that read them have no twin that skins.
     let rows = plain.iter().map(|name| format!("{name}_row_values"));
+    // Every build that does not skin has a twin that fades its level of detail. A fading build
+    // names its fade before the row values, in bit order.
+    let fades = plain.iter().map(|name| format!("{name}_lod_fade"));
+    let faded_rows = plain
+        .iter()
+        .map(|name| format!("{name}_lod_fade_row_values"));
     let mut expected: Vec<String> = plain
         .iter()
         .map(|&name| name.to_owned())
         .chain(skinned)
         .chain(rows)
+        .chain(fades)
+        .chain(faded_rows)
         .collect();
     expected.sort();
     let names: Vec<&String> = built.variants.keys().collect();
@@ -149,7 +157,7 @@ fn a_problem_in_the_wgsl_names_its_own_line_and_column() {
     let line = broken.lines().nth(4).expect("the broken line");
     let column = line.find("2.0;").expect("the extra value") as u32 + 1;
     assert_eq!((problem.line, problem.column), (Some(5), Some(column)));
-    assert_eq!(problem.variants.len(), 144, "{problem}");
+    assert_eq!(problem.variants.len(), 240, "{problem}");
 }
 
 #[test]
@@ -287,13 +295,13 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
     let built = compile(WAVE).expect("the vertex offset builds");
     assert_eq!(built.functions, ["vertexOffset"]);
-    // 16 WebGPU builds and 32 WebGL2 builds, each with a twin that reads row values and one that
-    // skins. Then the shadow caster's builds: with and without the caster offset, each plain, with
-    // row values or skinned, and on WebGL2 with and without the draw index. Then the motion builds,
-    // with and without row values: one on WebGPU, and on WebGL2 with and without the draw index.
-    // Then the pick builds, each plain, with row values or skinned, and on WebGL2 with and without
-    // the draw index.
-    assert_eq!(built.variants.len(), 144 + 6 + 12 + 6 + 3 + 6);
+    // 16 WebGPU builds and 32 WebGL2 builds, each with a twin that reads row values, one that
+    // skins and, where it does not skin, one that fades its level of detail. Then the shadow
+    // caster's builds: with and without the caster offset, each plain, with row values or skinned,
+    // and on WebGL2 with and without the draw index. Then the motion builds, with and without row
+    // values: one on WebGPU, and on WebGL2 with and without the draw index. Then the pick builds,
+    // each plain, with row values or skinned, and on WebGL2 with and without the draw index.
+    assert_eq!(built.variants.len(), 240 + 6 + 12 + 6 + 3 + 6);
     // A pick build moves each vertex by the offset, finds the instance's ids and writes them.
     let pick = &built.variants["webgpu_pick_pick"]
         .wgsl
@@ -1042,6 +1050,20 @@ fn lobe(input: LobeInput) -> vec3f {
 }
 ";
 
+/// A leaf card: a vertex offset that reads the mesh's vertex color as wind data, and a surface that
+/// cuts a leaf from the card's middle.
+const LEAF: &str = "fn vertexOffset(input: VertexInput) -> vec3f {
+    let sway = sin(frame.time * 2.0 + input.colors.g * 6.2831853) * input.colors.r;
+    return vec3f(sway * 0.2, 0.0, 0.0);
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.alpha = step(length(input.uv - vec2f(0.5)), 0.5);
+    return s;
+}
+";
+
 #[test]
 fn a_lobe_function_builds_into_every_variant_with_the_surface_values() {
     let built = compile(SPARKLE).expect("the material with a lobe builds");
@@ -1249,4 +1271,67 @@ fn a_custom_material_leaves_out_the_instance_index_build() {
              takes no build that reads them by index"
         );
     }
+}
+
+#[test]
+fn a_material_that_sets_the_surface_alpha_cuts_its_shape_its_shadow_and_its_motion() {
+    let built = compile(LEAF).expect("the masked leaf builds");
+    assert!(built.alpha);
+    // The vertex offset reads the mesh's vertex color, so the material needs that attribute.
+    assert!(built.locations.contains(&5), "{:?}", built.locations);
+    let names: Vec<&String> = built.variants.keys().collect();
+    let has = |needle: &str| names.iter().any(|name| name.contains(needle));
+    // The builds that cut the material's own shape, which load with the material.
+    assert!(has("alpha_coverage"), "{names:?}");
+    assert!(has("sample_mask"), "{names:?}");
+    assert!(has("alpha_hash"), "{names:?}");
+    assert!(has("lod_fade"), "{names:?}");
+    // Its shadow caster and its motion build test that alpha in a fragment stage.
+    let caster = names
+        .iter()
+        .find(|name| {
+            name.starts_with("webgpu_shadow")
+                && name.contains("alpha_mask")
+                && name.ends_with("caster")
+        })
+        .copied()
+        .unwrap_or_else(|| panic!("no masked caster among {names:?}"));
+    let caster = built.variants[caster]
+        .wgsl
+        .as_ref()
+        .expect("WGSL")
+        .source
+        .clone();
+    assert!(caster.contains("fn surface("), "{caster}");
+    assert!(caster.contains("discard"), "{caster}");
+    let motion = names
+        .iter()
+        .find(|name| name.starts_with("webgpu_motion") && name.contains("alpha_mask"))
+        .copied()
+        .unwrap_or_else(|| panic!("no masked motion among {names:?}"));
+    let motion = built.variants[motion]
+        .wgsl
+        .as_ref()
+        .expect("WGSL")
+        .source
+        .clone();
+    assert!(motion.contains("fn surface("), "{motion}");
+    assert!(motion.contains("discard"), "{motion}");
+    // WGSL that never names the alpha keeps its builds as few as before: no coverage and no hash,
+    // and a caster that writes its whole shape.
+    let plain = compile(STRIPES).expect("the plain surface builds");
+    assert!(!plain.alpha);
+    let names: Vec<&String> = plain.variants.keys().collect();
+    assert!(
+        !names.iter().any(|name| name.contains("alpha_coverage")),
+        "{names:?}"
+    );
+    assert!(
+        !names.iter().any(|name| name.contains("alpha_hash")),
+        "{names:?}"
+    );
+    assert!(
+        names.iter().any(|name| name.contains("lod_fade")),
+        "{names:?}"
+    );
 }

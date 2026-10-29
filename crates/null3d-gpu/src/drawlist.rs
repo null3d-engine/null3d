@@ -1199,11 +1199,12 @@ pub mod permutation {
     /// the cutoff or by coverage, and their light comes from behind. It takes no hash, which three.js
     /// has no counterpart for, so the glTF files that ask for both draw with the plain mask. Row
     /// values come from instance batches, which neither skin nor morph, read their instances from
-    /// the culling shader's copies, and test a mask against its cutoff; a surface that lets light
-    /// through draws its rows without their values.
-    /// A caster's build writes depth alone, so it has none of the bits that shade or tone map. A
-    /// custom material's caster may keep its mask, whose coverage its fragment stage tests, so the
-    /// two bits build together.
+    /// the culling shader's copies, and test a mask as the shading does, by its cutoff, by coverage
+    /// or by the alpha hash; a surface that lets light through draws its rows without their values.
+    /// A caster's build writes depth alone, so it has none of the bits that shade or tone map, and
+    /// it tests a mask's alpha in its fragment stage where the mask cuts its shadow. A custom
+    /// material's caster may keep its mask, whose coverage or surface alpha its fragment stage
+    /// tests, so the two bits build together.
     /// Displacement and bump builds load on first use, so the test switch's builds do without them.
     /// A bump map takes the normal map's slot, so its builds never read the mesh's tangents.
     /// Parallax draws only opaque and masked surfaces, never one that lets light through. A
@@ -1212,9 +1213,8 @@ pub mod permutation {
     /// switch reads instances by index, which no build of such a surface needs. Layers win over
     /// light through a thin surface, whose maps would take their slots, and a weighted surface lets
     /// no light through a thin surface either, so neither doubles the builds of the other.
-    /// A motion build writes motion alone: it has none of those bits either, and a skinned or
-    /// morphed custom material draws its motion through the motion template, without its vertex
-    /// offset.
+    /// A motion build writes motion alone: it has none of the shading bits that a motion cannot
+    /// show, and it tests a mask's alpha in its fragment stage where the mask cuts its motion.
     /// A fading level's builds dither its pixels after the mask's own test, by its cutoff or by
     /// coverage: skinned, morphed, transmissive and index-read instances never fade, and a mask
     /// that tests its alpha by the hash switches its levels at once. A motion build never fades.
@@ -1223,7 +1223,7 @@ pub mod permutation {
     /// no light through and never fades, and it draws in the sorted pass's rows, which never read
     /// instances by index. The final pass's upscale draws only in the two-step pass's second step,
     /// with neither FXAA nor bloom.
-    pub const APART: [(u32, u32); 55] = [
+    pub const APART: [(u32, u32); 50] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (TRANSMISSION, ALPHA_HASH),
         (SKIN, INSTANCE_INDEX),
@@ -1231,11 +1231,8 @@ pub mod permutation {
         (ROW_VALUES, SKIN),
         (ROW_VALUES, MORPH),
         (ROW_VALUES, INSTANCE_INDEX),
-        (ROW_VALUES, ALPHA_COVERAGE),
-        (ROW_VALUES, ALPHA_HASH),
         (ROW_VALUES, TRANSMISSION),
         (CASTER, TONE_MAP),
-        (CASTER, VERTEX_COLOR),
         (CASTER, RECEIVE_SHADOWS),
         (CASTER, TRANSMISSION),
         (CASTER, PREPASS),
@@ -1252,8 +1249,6 @@ pub mod permutation {
         (TRANSLUCENCY, COAT_SHEEN),
         (TRANSLUCENCY, WEIGHTED),
         (MOTION, TONE_MAP),
-        (MOTION, VERTEX_COLOR),
-        (MOTION, ALPHA_MASK),
         (MOTION, RECEIVE_SHADOWS),
         (MOTION, SKIN),
         (MOTION, MORPH),
