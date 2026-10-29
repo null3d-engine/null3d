@@ -81,11 +81,25 @@ export const COUNTER_NAMES = [
 export type CounterName = (typeof COUNTER_NAMES)[number];
 
 /**
- * Passes that a GPU record times one by one. A GPU record's phase slots hold the time before the
- * frame's first pass, which the copies recorded there take, then the time of each of these passes
- * in order. A pass after them adds its time to the last one's.
+ * Passes that a GPU record times one by one. A GPU record's slots hold the time before the frame's
+ * first pass, which the copies recorded there take, then the time of each of these passes in order.
+ * A pass after them adds its time to the last one's. The count is the GPU record's own: the CPU
+ * phases and the GPU passes share the record's phase and counter regions without fixing each other.
  */
-export const GPU_TIMED_PASSES = PHASE_NAMES.length - 1;
+export const GPU_TIMED_PASSES = 7;
+
+/**
+ * The phase slots of a record: the CPU phases and the GPU's copies and passes, whichever needs
+ * more. A CPU record writes its phases, and the GPU record writes its times, at the start.
+ */
+export const PHASE_SLOTS = Math.max(PHASE_NAMES.length, 1 + GPU_TIMED_PASSES);
+
+/**
+ * The counter slots of a record: the CPU counters and the GPU's copies, passes and scopes,
+ * whichever needs more. The GPU's scopes follow its three counters of passes, render passes and
+ * the timestamp step.
+ */
+export const COUNTER_SLOTS = Math.max(COUNTER_NAMES.length, GpuCounter.Scope + GPU_TIMED_PASSES);
 
 /** A GPU record's time for a part of the frame that the browser gave no timestamps for. */
 export const UNTIMED = -1;
@@ -109,8 +123,14 @@ const FRAME = 1;
 const BUSY = 2;
 const INTERVAL = 3;
 const PHASES = 4;
-const COUNTERS = PHASES + PHASE_NAMES.length;
+const COUNTERS = PHASES + PHASE_SLOTS;
 const RECORD_WORDS = 32;
+// The record's regions hold the CPU phases and counters and the GPU's times and scopes at once.
+// A count of GPU passes that outgrows them stops the module rather than writing past a record.
+if (COUNTERS + COUNTER_SLOTS > RECORD_WORDS)
+	throw new Error(
+		`the frame record holds ${RECORD_WORDS} words, and its phases and counters with ${GPU_TIMED_PASSES} GPU passes need ${COUNTERS + COUNTER_SLOTS}`,
+	);
 
 // Int32 words of the header, then one written count per ring.
 const CAPACITY = 0;
@@ -434,7 +454,7 @@ function emptyRecords(): RingRecords {
 		frames: [],
 		busy: [],
 		intervals: [],
-		phases: PHASE_NAMES.map(() => []),
+		phases: Array.from({ length: PHASE_SLOTS }, () => []),
 		counters: COUNTER_NAMES.map(() => []),
 	};
 }
@@ -529,7 +549,7 @@ export class MetricsReader {
 				out.frames.push(words[at + FRAME] as number);
 				out.busy.push(floats[at + BUSY] as number);
 				out.intervals.push(floats[at + INTERVAL] as number);
-				for (let p = 0; p < PHASE_NAMES.length; p++)
+				for (let p = 0; p < PHASE_SLOTS; p++)
 					out.phases[p]?.push(floats[at + PHASES + p] as number);
 				for (let c = 0; c < COUNTER_NAMES.length; c++)
 					out.counters[c]?.push(words[at + COUNTERS + c] as number);
@@ -561,9 +581,9 @@ export const SUM_INTERVAL_MS = 3;
 /** With detail: each phase's time, summed, in the order of `PHASE_NAMES`. */
 export const SUM_PHASES = 4;
 /** With detail: each counter's values, summed, in the order of `COUNTER_NAMES`. */
-export const SUM_COUNTERS = SUM_PHASES + PHASE_NAMES.length;
+export const SUM_COUNTERS = SUM_PHASES + PHASE_SLOTS;
 /** The values of a record that the detail sums add up: its phases, then its counters. */
-const DETAIL_VALUES = PHASE_NAMES.length + COUNTER_NAMES.length;
+const DETAIL_VALUES = PHASE_SLOTS + COUNTER_SLOTS;
 
 /**
  * The display's refresh rate that the thread that draws measured, for code on any thread that
@@ -599,12 +619,12 @@ export class RingSums {
 	 * The last record's counters, by counter index. A reader that asks for them keeps them, and they
 	 * are 0 until one such record comes.
 	 */
-	readonly last = new Float64Array(COUNTER_NAMES.length);
+	readonly last = new Float64Array(COUNTER_SLOTS);
 	/**
 	 * The records of the window whose phase slot held a time above 0, by phase index. A pass that a
 	 * GPU record did not time adds nothing to its phase's mean.
 	 */
-	readonly phaseRecords = new Float64Array(PHASE_NAMES.length);
+	readonly phaseRecords = new Float64Array(PHASE_SLOTS);
 	private readonly views: MetricsViews;
 	private next: number;
 	/** The greatest common divisor of `stepCounter`'s values over the records added, or 0. */
@@ -629,7 +649,7 @@ export class RingSums {
 	) {
 		this.views = new MetricsViews(buffer);
 		this.next = Atomics.load(this.views.header, WRITTEN + ring);
-		this.sums = new Float64Array(detail ? SUM_COUNTERS + COUNTER_NAMES.length : SUM_PHASES);
+		this.sums = new Float64Array(detail ? SUM_COUNTERS + COUNTER_SLOTS : SUM_PHASES);
 		this.detail = detail ? new Float64Array(DETAIL_VALUES) : undefined;
 		this.stepCounter = stepCounter;
 	}
@@ -652,16 +672,15 @@ export class RingSums {
 			const interval = floats[at + INTERVAL] as number;
 			const step = stepCounter >= 0 ? (words[at + COUNTERS + stepCounter] as number) : 0;
 			if (detail) {
-				for (let p = 0; p < PHASE_NAMES.length; p++) detail[p] = floats[at + PHASES + p] as number;
-				for (let c = 0; c < COUNTER_NAMES.length; c++)
-					detail[PHASE_NAMES.length + c] = words[at + COUNTERS + c] as number;
+				for (let p = 0; p < PHASE_SLOTS; p++) detail[p] = floats[at + PHASES + p] as number;
+				for (let c = 0; c < COUNTER_SLOTS; c++)
+					detail[PHASE_SLOTS + c] = words[at + COUNTERS + c] as number;
 			}
 			if (!views.holds(at, sequence)) continue;
 			if (step > 0) this.step = gcd(this.step, step);
 			if (keep) {
-				for (let c = 0; c < COUNTER_NAMES.length; c++)
-					this.last[c] = words[at + COUNTERS + c] as number;
-				for (let p = 0; p < PHASE_NAMES.length; p++)
+				for (let c = 0; c < COUNTER_SLOTS; c++) this.last[c] = words[at + COUNTERS + c] as number;
+				for (let p = 0; p < PHASE_SLOTS; p++)
 					if ((floats[at + PHASES + p] as number) > 0)
 						this.phaseRecords[p] = (this.phaseRecords[p] as number) + 1;
 			}

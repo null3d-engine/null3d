@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'bun:test';
 import { SCOPE_BLOOM, SCOPE_NONE, SCOPE_OPAQUE, SCOPE_TRANSPARENT } from '../generated/core';
 import { scopeIndex, scopeKind, scopeName, scopePlace } from './gpu-scope';
-import { COUNTER_NAMES, GPU_TIMED_PASSES, GpuCounter } from './metrics';
+import { COUNTER_NAMES, COUNTER_SLOTS, GPU_TIMED_PASSES, GpuCounter } from './metrics';
 
 /** A scope of `kind` for the step at `index`. */
 const at = (kind: number, index: number) => kind | (index << 16);
@@ -34,6 +34,8 @@ describe('the scope of a GPU pass', () => {
 	});
 
 	it('keeps the scope of each timed pass in a counter slot of the frame record', () => {
-		expect(GpuCounter.Scope + GPU_TIMED_PASSES).toBeLessThanOrEqual(COUNTER_NAMES.length);
+		// The GPU's scopes take the counter slots after its own three, whichever the larger of the
+		// CPU's counters and the scopes needs.
+		expect(COUNTER_SLOTS).toBe(Math.max(COUNTER_NAMES.length, GpuCounter.Scope + GPU_TIMED_PASSES));
 	});
 });
