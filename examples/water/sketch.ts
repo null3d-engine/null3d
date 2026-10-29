@@ -130,8 +130,11 @@ export default defineSketch(async (ctx) => {
 			target[0] = x;
 			target[2] = middleZ(x);
 			if (!view.userCamera) {
-				const z = middleZ(x) + 2.2 * Math.sin(t * 0.11);
-				camera.setPosition(x - 26, 1.5 + 1.6 * Math.sin(t * 0.15), z + 9);
+				// It sinks over the river's middle, so it dips under the water, never into the ground.
+				const height = 1.5 + 1.6 * Math.sin(t * 0.15);
+				const swing = math.smoothstep(height, 0.6, 1.7);
+				const cz = math.lerp(middleZ(x - 26), middleZ(x) + 2.2 * Math.sin(t * 0.11) + 9, swing);
+				camera.setPosition(x - 26, Math.max(height, ground(x - 26, cz) + 0.3), cz);
 				camera.lookAt(target[0], target[1], target[2]);
 			}
 			view.update(dt);
