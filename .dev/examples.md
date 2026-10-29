@@ -620,7 +620,8 @@ Night town draws its window panes through the facades example add-on
 
 Skyway is the third showcase scene. It flies a hover car through a rainy night city. The scene
 shows the engine at scale. It draws 6,000 to 16,000 hover cars on 480 sky lanes at 12 heights.
-Its towers are one instanced batch, whose windows light one by one. It adds 180 street lamps, three searchlights, rain,
+Its towers are one instanced batch, whose windows light one by one. It adds 180 street lamps on
+posts at the kerbs, each with an arm over the road, three searchlights, rain,
 and a hero car with two screens.
 
 - **The lanes cost nothing per frame.** Each car is a row of one of four instance batches, one for
@@ -694,8 +695,9 @@ and a hero car with two screens.
 - **Time of day.** The scene takes its full time of day from the shared stage, as the other
   showcases do. It offers the same hour dial, with Auto and Studio, over the whole day. The physical
   sky draws the real sun by day and the moon at night, and Auto moves them across the sky. The scene
-  sets the stage's three scales for a scene lit by its own lamps. The exposure is 4.5, the
-  environment light 2.2 and the sky's brightness 2.6. It lowers the cloud cover to 0.45. The scales
+  sets the stage's scales for a scene lit by its own lamps. The exposure is 4.5, the
+  environment light 2.2 and the sky's brightness 2.6. The stars take 0.12 of their brightness,
+  because a lit city in the rain hides all but the brightest. It lowers the cloud cover to 0.45. The scales
   hold through the whole day, because the physical model's own exposure already falls by day and
   rises at night. Scaling them again by the hour would make midday darker than dawn. The stage
   writes the scene's lit fog with every hour, through its `volumetric` option.

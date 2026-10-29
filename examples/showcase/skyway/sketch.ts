@@ -150,6 +150,8 @@ export default defineSketch(async (ctx) => {
 		exposureScale: 4.5,
 		environmentScale: 2.2,
 		skyScale: 2.6,
+		// The city's glow and the rain hide all but the brightest stars.
+		starScale: 0.12,
 	});
 	const params = new URL(import.meta.url).searchParams;
 	const start = params.get('mood');
