@@ -134,15 +134,15 @@ is stepped too, and a page with no water has no row.
 
 Each body draws its own mesh at the water's level, and the meshes overlap where a river runs into a
 lake. In the Water demo, the river's strip runs 2 m past the lake's shore and reaches 1.36 half
-widths to each side, and the lake's grid reaches past its shore too. Without a rule, the overlap
+widths to each side. The lake's grid reaches past its shore too. Without a rule, the overlap
 holds two coplanar surfaces. The water writes depth, so the mesh that drew first took each pixel.
 The patch showed hard edges, straight from the river's strip and stepped from the lake's grid. The
 river's flowing waves also met the lake's still ones on a line.
 
 A lake's grid reaches two cells past its shore, 4 m at the default cell. A scene's own ground seldom
 meets the water on the outline: in the Water demo, the waterline lies 0.6 to 1.2 m past it. A grid
-that drew only the cells with a corner inside the shore stopped short of the waterline in places,
-and the water ended there on the grid's stepped edge. Past the band, the scene's ground meets the
+of only the cells with a corner inside the shore stopped short of the waterline in places. The
+water then ended there on the grid's stepped edge. Past the band, the scene's ground meets the
 water, which fades against it by the soft shore. The cells over dry ground lie under the ground and
 draw nothing.
 
@@ -191,14 +191,14 @@ shows the mouth only from far away.
   package's own page (`packages/water/page`, which the tarball leaves out) gives the listing check's
   page, cost and allocation gates a scene to measure.
 - The demo's tour is one loop of shots through the route of `examples/lib/cinematic.ts`, as a
-  function of the time. It drifts down the river along the bank, dives under the lake for about
-  24 s, rises, turns to face back over the scene, and circles the valley back to its first shot. A
-  tour that dipped beside the river went into the bank for 26% of its flight, and one that ran past
-  the lake jumped back to the river's source. `examples/water/route.test.ts` keeps the loop at
+  function of the time. It drifts down the river along the bank and dives under the lake for about
+  24 s. It then rises, turns to face back over the scene, and circles the valley back to its first
+  shot. A tour that dipped beside the river went into the bank for 26% of its flight. One that ran
+  past the lake jumped back to the river's source. `examples/water/route.test.ts` keeps the loop at
   least 0.5 m above the ground and 3 m from every boulder, whose foam map shows its texels as blocks
   from closer. It also keeps the dive in the lake and the turn under 30 degrees a second.
-- The demo's channel runs the whole valley, so the river starts near the ground's west edge and a
+- The demo's channel runs the whole valley. So the river starts near the ground's west edge, and a
   second stream leaves the lake's east shore for the east edge. The channel holds water from end to
-  end, and the lake meets a stream at both ends, which the junction map handles as two meetings.
-- The held frame shows the tour at 1 s, with the streams at both ends and the lake's band, so the
-  six `demo-water` pictures are drawn again.
+  end. The lake meets a stream at both ends, which the junction map handles as two meetings.
+- The held frame shows the tour at 1 s, so the six `demo-water` pictures change. The Mac's set is
+  drawn again, and the software set comes from a CI run that draws it.
