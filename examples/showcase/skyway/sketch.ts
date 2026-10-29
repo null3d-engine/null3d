@@ -296,8 +296,18 @@ export default defineSketch(async (ctx) => {
 	if (storm) controls.set('storm', true);
 	// The View and Traffic buttons are the scene's own, so they answer here; the shared controls own
 	// the rest.
+	// The driving pad of a touch screen sends its stick and buttons as three numbers, and its View
+	// button toggles the view.
 	page.onMessage((name, value) => {
-		if (name === 'view') hero.setView(value as View);
+		if (name === 'drive') {
+			const [throttle = 0, steer = 0, lift = 0] = String(value).split(' ').map(Number);
+			hero.setPad(throttle, steer, lift);
+			return;
+		}
+		if (name === 'view')
+			hero.setView(
+				value === 'toggle' ? (hero.view === 'chase' ? 'cockpit' : 'chase') : (value as View),
+			);
 		else if (name === 'traffic') traffic.setCount(Number(value));
 		else return;
 		film.refresh();
@@ -318,6 +328,8 @@ export default defineSketch(async (ctx) => {
 				},
 			},
 		],
+		// Back in Auto, the camera and the car fly back onto the route at a cruising speed.
+		glideSpeed: 40,
 		// In Manual the user drives the hero car, which places the camera itself.
 		driver: {
 			keys: DRIVE_KEYS,
