@@ -1,7 +1,9 @@
 # D-261: Moment transparency, and what it beats
 
-Status: decided. Built on both GPU paths and measured on this computer's GPU on 29 October 2026.
-The owner's review is pending, and the run on a phone is owed. Task: M3-F13.
+Status: decided. Built on both GPU paths, and the layer has drawn on all three GPU paths: WebGL2,
+WebGPU and its compatibility mode drew the four image tests at 480 by 270, and their Mac references
+are in this change. The cost measurement on this computer's GPU and the run on a phone are owed.
+Task: M3-F13.
 
 Summary: Order-independent transparency from a store of four depth moments beats the weighted
 blending's own weight, in a model of the composite and in the image test. It is nearer the exact
@@ -47,7 +49,7 @@ average of the surfaces' colors, with no term for which one is in front.
 
 The image test that settles the choice draws five panes of glass at different depths, and compares
 each approximation with the exact sorted image. The moment layer's mean channel error is nearer the
-exact image than the weighted blending's is, on WebGPU and on WebGL2.
+exact image than the weighted blending's is, on WebGL2 and on WebGPU.
 
 A first attempt fitted the moments with a two-point Gaussian. It placed the atoms at the mean plus
 and minus one standard deviation. It did not beat weighted blending. That is why the store holds
@@ -116,6 +118,46 @@ from two lookup tables, and mixes each pixel with the neighbour that its weights
 The share comes from the moment store's total optical depth, so no separate mask target is needed.
 A pixel that the layer does not cover marks no edge. The three steps take 8 bytes per pixel for
 their two 8-bit targets, plus the final color target they write.
+
+## Faults that only a drawn picture found
+
+The color builds read the moment store in the frame's bind group. The frame group already carries
+the view's copy of the opaque color at binding 15, and every lit build declares that binding,
+because the lit shader imports the screen-space reflection module, which reads the copy: the chain
+`lit` to `ssr` to the copy is not conditional on a material. The moment store therefore takes
+binding 19, and the layout has to be one entry smaller somewhere else to stay within WebGPU's 16
+sampled textures in the fragment stage.
+
+The first attempt removed binding 15 and gave it to the store. WebGPU refused the first draw with
+E1408: a layout may not leave out a binding that its shader declares, read or not. WebGL2 binds by
+name and drew, so only the WebGPU picture tests saw it.
+
+The second attempt moved the copy into a module of its own, which only the transmission builds
+were to import. It did not answer the fault: the copy came in through `ssr` as well, so every lit
+build still declared it. That is the point to read the composed shader rather than the module list:
+the composed text for the color build named binding 15 and no light probe grid.
+
+The fix drops the light probe grid from the moment frame layout and from its bind groups. The color
+builds declare no probe grid, so their fragment stage counts 16 sampled textures with the store:
+nine sampled entries of the frame layout, the six of a material's maps, and the store. The build's
+bind group and both backends' recorders omit the entry, and the pipeline test that sums each
+stage's textures guards it.
+
+Four more faults followed, and each was invisible until a picture drew:
+
+1. The moment frame group replaced binding 15 with the store instead of adding the store, so its
+   entry count was one short of the layout's. WebGPU refused the group.
+2. The anti-aliasing's two bind groups named binding 1 for every entry. WebGPU refused the repeated
+   binding; the blend group binds 0, 1, 2 and 3, and the resolve group binds 0, 1 and 2.
+3. The anti-aliasing's lookup tables were created for sampling alone and then written, which WebGPU
+   refuses: their usage includes `COPY_DST`.
+4. The groups were recorded before the `CreateTexture` of the tables they bind, so the backend met
+   the ids before the textures existed. The tables are made first.
+
+One fault came from the fix itself: the WebGL2 frame group copied the environment's entries into
+the words that remained after the other entries, which once the probe grid was present was longer
+than the environment's ten words. The copy panicked, and the wasm trapped at the first frame. It now
+copies exactly the environment's words. The WebGL2 builder's tests catch it.
 
 ## Cost
 

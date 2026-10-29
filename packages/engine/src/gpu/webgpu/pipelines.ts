@@ -1040,11 +1040,12 @@ export class Pipelines {
 			visibility: fragment,
 			texture: { sampleType: 'unfilterable-float', multisampled },
 		});
-		// The moment layer's colour builds read the moment store where the frame group reads the
-		// copy of the opaque color, which no moment build reads, so their fragment stage stays
-		// within the default count of sampled textures.
+		// The moment layer's colour builds keep the frame's copy of the opaque color at binding 15,
+		// which every lit build declares through the reflection code, and add the moment store at
+		// 19. They declare no light probe grid, so that entry leaves the layout: their maps' group
+		// already takes the fragment stage to the count of 16 without it.
 		this.defineLayout(LAYOUT_MOMENT_FRAME, 'moment frame', [
-			...frame.filter((entry) => entry !== transmission),
+			...frame.filter((entry) => entry !== probeGrid),
 			{
 				binding: 19,
 				visibility: fragment,

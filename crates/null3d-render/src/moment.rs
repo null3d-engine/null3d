@@ -38,10 +38,10 @@ use crate::frame::{LINEAR_LEVEL, RecordError, UploadArena, clamp_sampler};
 pub(crate) mod tables;
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
-/// The binding of the moment store in the frame group of the colour builds. It is free in the
-/// frame's bindings, where the copy of the opaque color sits at 15. The shader composer keeps every
-/// module's globals, so the refraction module's own texture holds 15 in every build, and a moment
-/// build that used 15 would collide with it (decision record D-261).
+/// The binding of the moment store in the frame group of the colour builds. It comes after the
+/// frame's own bindings, whose last is the copy of the opaque color at 15: the shader composer
+/// keeps every module's globals, so every lit build declares the refraction module's texture at
+/// 15, and WebGPU rejects a pipeline whose layout lacks it (decision record D-261).
 pub(crate) const STORE_BINDING: u32 = 19;
 /// The format of the moment store: four 16-bit floats, which add.
 pub(crate) const STORE_FORMAT: u32 = format::RGBA16_FLOAT;
@@ -322,12 +322,12 @@ impl MomentLayer {
                 self.ids.area,
                 0,
                 0,
-                1,
+                2,
                 resource_kind::TEXTURE,
                 self.ids.search,
                 0,
                 0,
-                1,
+                3,
                 resource_kind::SAMPLER,
                 self.ids.sampler,
                 0,
@@ -365,7 +365,7 @@ impl MomentLayer {
                 weights,
                 0,
                 0,
-                1,
+                2,
                 resource_kind::SAMPLER,
                 self.ids.sampler,
                 0,
@@ -495,7 +495,7 @@ fn upload(
             height,
             1,
             format::RGBA8_UNORM,
-            texture_usage::TEXTURE_BINDING,
+            texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
             1,
             1,
             view::D2,

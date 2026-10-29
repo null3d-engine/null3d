@@ -223,7 +223,7 @@ fn pick_color(key: u32) -> vec4f {
 #ifdef TRANSMISSION
 #import null3d::globals::{MaterialTransmission}
 #import null3d::mesh::{NO_FOG, layer_maps_kind_of, material_transmission}
-#import null3d::refraction::{transmitted_light}
+#import null3d::transmission::{transmitted_light}
 #ifdef TONE_MAP
 #import null3d::fog::{fog_factor}
 #import null3d::tonemap::{encode, graded_light, tone_map, vignette}

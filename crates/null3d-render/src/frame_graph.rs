@@ -5268,6 +5268,9 @@ impl FrameGraph {
         }
         let textures = self.moment_textures_value();
         let made = self.textures_made;
+        // The anti-aliasing's groups name the two lookup tables, so the first frame makes the
+        // tables before it makes the groups that bind them.
+        self.moment.prepare_tables(list, arena)?;
         self.moment
             .prepare_composite(list, textures.store, textures.colour, made)?;
         if textures.depth != 0 {
@@ -5278,8 +5281,7 @@ impl FrameGraph {
             .prepare_edges(list, textures.scene, textures.store, made)?;
         self.moment.prepare_blend(list, textures.edges, made)?;
         self.moment
-            .prepare_resolve(list, textures.scene, textures.weights, made)?;
-        self.moment.prepare_tables(list, arena)
+            .prepare_resolve(list, textures.scene, textures.weights, made)
     }
 
     /// Binds the composite of the camera's weighted layer to its two sums, and the depth copy to
