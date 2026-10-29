@@ -8,12 +8,12 @@ summary: "createTerrain: a height field drawn as a camera-centered quadtree of b
 
 # Terrain (@null3d/terrain)
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The ground carries no collision, and it closes the seam between two levels with a skirt rather than a vertex morph. Coding agents must not use these parts.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The ground carries no collision. A block morphs toward its parent block's surface before it gives way to it, and a skirt closes the seam between neighbours that differ by more than one level. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
     height["A height field<br/>from a function or a map"] --> tree["A camera-centered quadtree<br/>picks the blocks"]
-    tree --> blocks["Each block a mesh,<br/>with a skirt at its edge"]
+    tree --> blocks["Each block a mesh,<br/>morphed toward its parent"]
     blocks --> splat["One splat-mapped material<br/>blends up to four layers"]
     splat --> screen["The ground"]
 ```
@@ -79,7 +79,9 @@ Each block is one mesh whose vertices carry the heights. The height field never 
 
 Every pixel lights from a normal map that `createTerrain` bakes from the height field's slopes. A far block covers ground in cells larger than the height samples, so its own vertices cannot show the small hills. The normal map keeps that relief at every distance. Set `bakedNormals: false` to light from the mesh's own normals instead.
 
-A skirt hangs from the edge of each block, a little below the ground. Where a fine block meets a coarse one, the two edges do not match, and the skirt covers the gap. The skirt hides the seam without a vertex morph, which is the main difference from Strugar's CDLOD. On a very steep seam a thin sliver of skirt can still show.
+Each block morphs toward its parent block's surface as the camera pulls away. A block hands over to its parent at the distance where the parent's own cell would no longer show the allowed error. Over the last part of the approach, the block's vertices move to the parent grid's heights, so the two surfaces match when the switch comes and the ground does not pop. The parent grid is triangulated the same way, so a block whose morph is complete has exactly the parent's surface. The morph adds no draw and no work in a frame: each block carries the parent's height at each vertex in its own vertex record, written when the block is built or reused. `morph: false` switches each block at once instead.
+
+A skirt hangs from the edge of each block, a little below the ground. The selection does not restrict neighbours, so two blocks that meet can differ by more than one level. The morph ends on a block's own parent, which cannot match a neighbour two levels coarser, so the skirt still covers that seam. On a very steep seam a thin sliver of skirt can still show.
 
 ## Layers and the splat map
 
@@ -109,7 +111,7 @@ three.js has no terrain class. Projects displace a `PlaneGeometry` on the CPU, s
 | A quadtree or a library for levels of detail | The add-on's own camera-centered quadtree |
 | A hand-painted ground or per-vertex colors | A splat map that blends four tiled layers |
 | A physics collider or a height lookup on the mesh | `heightAt` and `normalAt` |
-| A vertex morph between levels | A skirt around each block |
+| A vertex morph between levels | A block morphs toward its parent, and a skirt covers a neighbour more than one level away |
 
 ## Related pages
 

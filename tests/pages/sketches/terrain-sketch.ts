@@ -4,8 +4,9 @@
 // the coarse blocks of the far hills, which light from normals baked over the whole ground. The
 // seed and the height function are fixed, so every run draws the same frame on every GPU path.
 //
-// `normals=vertex` lights from the meshes' own normals instead, and `blend=off` drops the layers'
-// heights, so a test can compare each feature with its absence.
+// `normals=vertex` lights from the meshes' own normals instead, `blend=off` drops the layers'
+// heights, and `morph=off` switches each block at once, so a test can compare each feature with its
+// absence.
 import { defineSketch, math } from '@null3d/engine';
 import { createTerrain, type TerrainLayer, terrainTextures } from '@null3d/terrain';
 
@@ -15,6 +16,8 @@ const bakedNormals = switches.get('normals') !== 'vertex';
 const contrast = switches.get('blend') === 'off' ? 0 : undefined;
 /** A coarse error draws blocks whose cells span the ground's small folds. */
 const coarse = switches.get('coarse') === 'on';
+/** `morph=off` switches each block at once, so a test can compare the morph with its absence. */
+const morph = switches.get('morph') !== 'off';
 
 const hash = (x: number, y: number) => {
 	let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
@@ -96,6 +99,7 @@ export default defineSketch((ctx) => {
 		camera,
 		bakedNormals,
 		...(coarse ? { error: 120 } : {}),
+		morph,
 	});
 	// Place a few stones on the ground with the field's own height, to show the sampler.
 	const heightfield = terrain.heightfield;
