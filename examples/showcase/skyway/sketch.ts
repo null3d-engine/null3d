@@ -1,15 +1,17 @@
-// Skyway: flying a hover car through a rainy megacity. Sky lanes carry tens of thousands of hover
-// cars above the streets, and the towers around them are windows, shop fronts and signs drawn in
-// the shader. The wet roads mirror the light, rain falls through everything, and the hero car leads
-// the camera down the canyons.
+// Skyway: flying a hover car through a rainy megacity. Sky lanes stacked at many heights carry
+// thousands of hover cars above the streets, and the towers around them are windows, shop fronts and
+// signs drawn in the shader. The wet roads mirror the light, rain falls through everything, and the
+// hero car leads the camera down the canyons.
 //
 // The camera runs a cinematic route made for this scene (see SHOTS), the same way the other
-// showcase scenes do: `c` switches between Auto, which flies the route, and Manual, which hands the
-// camera to the user. The time of day runs the full day, as it does in the other showcases: the dial
+// showcase scenes do: `c` switches between Auto, which flies the route, and Manual. In Manual the
+// user drives the hero car: W, A, S and D fly it, and R and F climb and sink, in place of the other
+// showcases' Manual camera. `v` and the View buttons put the camera behind the car or in its seat,
+// in either mode. The time of day runs the full day, as it does in the other showcases: the dial
 // holds any hour, Auto moves the sun and the moon, and Studio opens its own light. The city's own
 // lights follow the hour, so its windows and street lamps go out by day and light it at night. The
-// HUD's Traffic buttons change how many cars fly, and the Quality buttons change the preset. The
-// stats overlay starts collapsed to its frame rate, as every demo's does.
+// HUD's Traffic buttons change how busy the lanes are, and the Quality buttons change the preset.
+// The stats overlay starts collapsed to its frame rate, as every demo's does.
 import { defineSketch, type GradingSettings, vec3 } from '@null3d/engine';
 import { createLensKit } from '../../addons/lens-kit/index';
 import { type CameraBounds, type Cinematic, createCinematic, type Shot } from '../../lib/cinematic';
@@ -20,7 +22,7 @@ import { enableReflections } from '../../lib/ssr';
 import { createMoods, isMood } from '../../lib/stage';
 import { createCity } from './city';
 import { createFacades } from './facades';
-import { createHero } from './hero';
+import { createHero, DRIVE_KEYS, type View } from './hero';
 import { HALF } from './layout';
 import { createRain } from './rain';
 import { CARS, createTraffic } from './traffic';
@@ -41,7 +43,9 @@ const STORM_WEATHER = { fog: STORM_FOG, cloud: 1, light: 0.35, sky: 0.5 };
 const CLEAR_WEATHER = { fog: 1, light: 1, sky: 1 };
 /** The lens's vignette, which the lens kit writes. */
 const VIGNETTE = { intensity: 0.55, size: 1.05, falloff: 2.2 };
-/** The point that the lens focuses on, kept up to date by the route. */
+/** The share of the speed blur that the view from the hover car's seat keeps. */
+const INSIDE_BLUR = 0.25;
+/** The point that the lens focuses on, kept up to date by the route or the driven car. */
 const TARGET: [number, number, number] = [-525, 90, 560];
 
 /** The warm, cool-shadowed grade that a rainy city at every hour keeps. */
@@ -108,9 +112,15 @@ export const BOUNDS: Omit<CameraBounds, 'ground'> = {
 
 /** The counts that the Traffic buttons offer. */
 const TRAFFIC_OPTIONS = [
-	{ id: String(CARS.low), label: '30k', tip: 'Thirty thousand cars: light traffic.' },
-	{ id: String(CARS.high), label: '75k', tip: 'Seventy-five thousand cars: a busy skyway.' },
-	{ id: String(CARS.ultra), label: '100k', tip: 'A hundred thousand cars: the full flow.' },
+	{ id: String(CARS.low), label: 'Light', tip: 'Light traffic, with long gaps between the cars.' },
+	{ id: String(CARS.high), label: 'Busy', tip: 'Busy traffic, a car about every hundred meters.' },
+	{ id: String(CARS.ultra), label: 'Rush hour', tip: 'Rush hour, with every lane close to full.' },
+] as const;
+
+/** The View buttons: the camera behind the hero car, or in its seat. */
+const VIEW_OPTIONS = [
+	{ id: 'chase', label: 'Behind', tip: 'The camera follows the hover car from behind.' },
+	{ id: 'cockpit', label: 'Inside', tip: "The camera rides in the hover car's seat.", key: 'V' },
 ] as const;
 
 export default defineSketch(async (ctx) => {
@@ -188,10 +198,12 @@ export default defineSketch(async (ctx) => {
 	const eye = vec3.create();
 	/** The camera's place, which the lens's speed blur follows. */
 	const eyeForSpeed = vec3.create();
-	const hero = createHero(ctx, camera, {
-		position: (SHOTS[0] as Shot).position,
-		target: TARGET,
-	});
+	const hero = createHero(
+		ctx,
+		camera,
+		{ position: (SHOTS[0] as Shot).position, target: TARGET },
+		TARGET,
+	);
 
 	const fit = (): void => {
 		facades.fit(quality.preset);
@@ -276,15 +288,18 @@ export default defineSketch(async (ctx) => {
 		focalLength: FOV,
 		focus: TARGET,
 		extra: (): readonly HudGroup[] => [
+			radioGroup('view', 'View', VIEW_OPTIONS, hero.view),
 			radioGroup('traffic', 'Traffic', TRAFFIC_OPTIONS, String(traffic.count)),
 		],
 	});
 	// The held frame's storm, which the address asked for, reaches the same switch that the HUD posts.
 	if (storm) controls.set('storm', true);
-	// The Traffic buttons are the scene's own, so they answer here; the shared controls own the rest.
+	// The View and Traffic buttons are the scene's own, so they answer here; the shared controls own
+	// the rest.
 	page.onMessage((name, value) => {
-		if (name !== 'traffic') return;
-		traffic.setCount(Number(value));
+		if (name === 'view') hero.setView(value as View);
+		else if (name === 'traffic') traffic.setCount(Number(value));
+		else return;
 		film.refresh();
 	});
 
@@ -293,6 +308,22 @@ export default defineSketch(async (ctx) => {
 		target: TARGET,
 		groups: controls.groups,
 		bounds: { ...BOUNDS, ground: () => 0 },
+		keys: [
+			{
+				code: 'KeyV',
+				does: 'put the camera behind the hover car or in its seat',
+				press: () => {
+					hero.setView(hero.view === 'chase' ? 'cockpit' : 'chase');
+					film.refresh();
+				},
+			},
+		],
+		// In Manual the user drives the hero car, which places the camera itself.
+		driver: {
+			keys: DRIVE_KEYS,
+			take: () => hero.take(),
+			update: (dt, held) => hero.drive(dt, held),
+		},
 	});
 
 	/** The camera's place a frame ago, for the speed that the lens smears by. */
@@ -317,7 +348,8 @@ export default defineSketch(async (ctx) => {
 				0.12,
 				smear + (travel / Math.max(dt, 1e-3) / 900 - smear) * Math.min(1, dt * 6),
 			);
-			lensKit.set({ speedBlur: smear });
+			// From the seat the dashboard travels with the camera, so the smear stays light there.
+			lensKit.set({ speedBlur: hero.view === 'cockpit' ? smear * INSIDE_BLUR : smear });
 			film.update(dt);
 			city.update(t);
 			hero.update(dt, t, film.mode === 'auto');

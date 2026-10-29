@@ -178,6 +178,33 @@ export interface LanePlan {
 	offset: number;
 }
 
+/** One lane of a plan that lists its lanes one by one. */
+export interface Lane {
+	/** The lane's heading: 0 along +X, 1 along -X, 2 along +Z and 3 along -Z. */
+	heading: 0 | 1 | 2 | 3;
+	/** The lane's line across the way: its z for a lane along x, and its x for a lane along z. */
+	across: number;
+	/** The lane's height above the ground, in meters. */
+	altitude: number;
+	/**
+	 * The speed of every vehicle in the lane, in meters per second. One speed per lane keeps the
+	 * gaps between its vehicles, so no vehicle flies through the one ahead of it.
+	 */
+	speed: number;
+}
+
+/**
+ * A plan that lists its lanes one by one, for a scene that sets each lane's height and speed: for
+ * example, traffic that keeps to its own side of the street, or crossing streets at other heights.
+ */
+export interface LaneList {
+	/** Where each lane starts and ends, in meters along its street, as `LanePlan` has them. */
+	from: number;
+	to: number;
+	/** The lanes. */
+	lanes: readonly Lane[];
+}
+
 /** The colours and the strength of a vehicle's own lights. */
 export interface VehicleLook {
 	/** The hull's paint. */
@@ -198,8 +225,8 @@ export interface VehicleLook {
 export interface TrafficLaneOptions {
 	/** The vehicle mesh. Its nose points along local +Z and its belly sits just above y = 0. */
 	mesh: MeshGeometry;
-	/** The lanes' plan. */
-	plan: LanePlan;
+	/** The lanes' plan: a grid of streets and levels, or a list of lanes. */
+	plan: LanePlan | LaneList;
 	/** The vehicles that draw at each quality preset. */
 	counts: Record<QualityPreset, number>;
 	/** The colours of the vehicles' own lights. */
@@ -251,17 +278,20 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 	const span = plan.to - plan.from;
 	if (!(span > 0))
 		throw new Error('createTrafficLanes() needs a plan whose `to` is past its `from`.');
-	if (!(plan.levels >= 1))
-		throw new Error('createTrafficLanes() needs at least one level of lanes.');
+	const listed = 'lanes' in plan ? plan.lanes : undefined;
+	if (listed ? listed.length === 0 : !((plan as LanePlan).levels >= 1))
+		throw new Error('createTrafficLanes() needs at least one lane, or one level of lanes.');
 	const size = look.size ?? [0.96, 1.1, 2.0];
 	// Every lane of every street and heading, and the rows that fill one lane at the largest count.
-	const laneCount = plan.lines.length * plan.levels * 2 * HEADINGS.length;
+	const laneCount = listed
+		? listed.length
+		: (plan as LanePlan).lines.length * (plan as LanePlan).levels * 2 * HEADINGS.length;
 	const largest = Math.max(...Object.values(counts));
 	const perLane = Math.max(1, Math.ceil(largest / laneCount));
 	const turn = quat.create();
 	math.seed(77);
 
-	const batches = HEADINGS.map((lane) => {
+	const batches = HEADINGS.map((lane, heading) => {
 		quat.setAxisAngle(turn, [0, 1, 0], lane.yaw);
 		const material = materials.shader({
 			wgsl: vehicleShader,
@@ -284,20 +314,39 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 		// A lane's rows start where its heading says: at `from` for +X and +Z, and at `to` for -X
 		// and -Z, so every row travels into the scene rather than out of it.
 		const start = lane.sign > 0 ? plan.from : plan.to;
-		for (const line of plan.lines) {
-			for (let level = 0; level < plan.levels; level++) {
-				const altitude = plan.low + (level * (plan.high - plan.low)) / Math.max(1, plan.levels - 1);
-				for (const side of [-1, 1]) {
-					const across = line + side * plan.offset;
-					for (let slot = 0; slot < perLane; slot++) {
-						rows.push({
-							x: lane.alongX ? start : across,
-							y: altitude + math.randFloat(-0.5, 0.5),
-							z: lane.alongX ? across : start,
-							speed: math.randFloat(19, 43),
-							offset: ((slot + math.randFloatSpread(0.6)) / perLane) * span,
-							tint: math.random(),
-						});
+		if (listed) {
+			// A listed lane's vehicles share its height and its speed, spread along it with uneven gaps.
+			for (const entry of listed) {
+				if (entry.heading !== heading) continue;
+				for (let slot = 0; slot < perLane; slot++) {
+					rows.push({
+						x: lane.alongX ? start : entry.across,
+						y: entry.altitude,
+						z: lane.alongX ? entry.across : start,
+						speed: entry.speed,
+						offset: ((slot + math.randFloatSpread(0.6)) / perLane) * span,
+						tint: math.random(),
+					});
+				}
+			}
+		} else {
+			const grid = plan as LanePlan;
+			for (const line of grid.lines) {
+				for (let level = 0; level < grid.levels; level++) {
+					const altitude =
+						grid.low + (level * (grid.high - grid.low)) / Math.max(1, grid.levels - 1);
+					for (const side of [-1, 1]) {
+						const across = line + side * grid.offset;
+						for (let slot = 0; slot < perLane; slot++) {
+							rows.push({
+								x: lane.alongX ? start : across,
+								y: altitude + math.randFloat(-0.5, 0.5),
+								z: lane.alongX ? across : start,
+								speed: math.randFloat(19, 43),
+								offset: ((slot + math.randFloatSpread(0.6)) / perLane) * span,
+								tint: math.random(),
+							});
+						}
 					}
 				}
 			}
