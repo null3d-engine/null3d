@@ -1,8 +1,10 @@
 // Car paint for its image tests: a long rounded body in candy red under the built-in room's light,
 // a sun and a point light. ?flakes=off leaves the metal flakes out, ?seams=off the panel seams,
 // ?weave=on gives the body a carbon weave whose tows stretch their highlight, and ?sun=off leaves
-// the sun out, so the point light alone lights the body. The paint spec checks that each part
-// changes the image, and that the flakes glint under the point light too.
+// the sun out, so the point light alone lights the body. ?spot=on puts a spot light in the point
+// light's place, aimed at the body, so the spot's own lobe lights the paint and its flakes. The
+// paint spec checks that each part changes the image, and that the flakes glint under the point
+// light and under the spot too.
 import { defineSketch } from '@null3d/engine';
 import { createCarPaint } from '../../../examples/addons/car-paint';
 
@@ -28,12 +30,17 @@ export default defineSketch(async (ctx) => {
 			intensity: 3.2,
 		});
 	}
-	scene.createPointLight({
-		position: [1.6, 1.6, 1.6],
+	const near = {
+		position: [1.6, 1.6, 1.6] as const,
 		color: '#bcd6ff',
 		intensity: 12,
 		range: 8,
-	});
+	};
+	// Both lights stand in the same place and reach the body whole: the spot's cone is wide enough
+	// that its falloff plays no part, so its lobe alone differs.
+	if (params.get('spot') === 'on')
+		scene.createSpotLight({ ...near, target: [0, 0.55, 0], angle: 1, penumbra: 0 });
+	else scene.createPointLight(near);
 	const paint = createCarPaint(ctx, {
 		color: '#9e0b16',
 		metalness: 0.72,

@@ -77,6 +77,9 @@ export class SketchDebug implements Debug {
 	skeleton(_object: Object3D, _color?: ColorInput): void {}
 	view(_view: DebugViewName): void {}
 	cullingSpheres(_show?: boolean): void {}
+	cullingSpheresDrawn(): number {
+		return 0;
+	}
 	shadowCamera(_camera?: Camera): void {}
 
 	stats(show: StatsRequest = true): void {
