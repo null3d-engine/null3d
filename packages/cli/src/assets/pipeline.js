@@ -284,8 +284,8 @@ export async function optimizeModel(path, options, encode) {
 	const stages = new Map();
 	const prefix = basename(path, extname(path));
 	if (options.stages) {
-		// Each tree streams its bands after the one that the file holds, so the file draws the tree's
-		// root patches at once. A mesh's whole levels stay in the file for the paths that draw it whole.
+		// Each tree streams its bands after the one that the file holds, so the file draws that first
+		// band at once. A mesh's whole levels stay in the file for the paths that draw it whole.
 		if (clusters.size > 0) bandClusters(doc, clusters, stages, prefix);
 		if (levels.size > 0) storeStages(doc, levels, stages, prefix, clusters);
 		else storeLevels(doc, levels);
