@@ -84,17 +84,18 @@ and the owner rules those differences wrong for the Creek.
   opaque at the mesh's edge.
 
 The owner rejects the add-on's look in the Creek: the surface shows sideways lines between stretches
-of flow. The owner also ruled that all visible motion follows the river. The Creek's own water
-therefore takes the current from the stream's middle line. Each wave is a tilt of at most a fifth of
-a right angle from that current, so every crest travels downstream. A wave travels along its own
-direction, so a world-fixed direction crosses the stream however the phase is carried. The caustics
-and the foam flecks drift along the same current.
+of flow. The owner also ruled that all visible motion follows the river, and that the crests stay.
+The Creek's own water therefore takes the current from the stream's middle line. The six wave
+directions stay as they were, measured in the current's frame, so the crests keep every angle
+between them. The current carries the whole set, so the pattern keeps its cross-hatch and every
+crest drifts downstream. The caustics and the foam flecks drift along the same current.
 
-The add-on still draws each wave along a direction fixed in the world, so its surface keeps the
-crossing motion. The Creek therefore draws its own water. M3-F5's migration of the Creek to the
-add-on waits until the add-on follows the current in the same way. A close picture of the stream's
-surface guards the look, as the bank views draw the stream only a few dozen pixels wide. The unit
-test that keeps the wave copies equal also refuses a tilt beyond a fifth of a right angle.
+The add-on still lets each wave run along a direction fixed in the world, so its crests cross the
+stream. The Creek therefore draws its own water. M3-F5's migration of the Creek to the add-on waits
+until the add-on follows the current in the same way. A close picture of the stream's surface guards
+the look, as the bank views draw the stream only a few dozen pixels wide. The unit tests keep the
+wave copies equal, check that no two directions collapse, and check that the pattern drifts
+downstream with the current.
 
 ### The cadence through the feature host
 
