@@ -46,6 +46,9 @@ add-on own them? What do the three-view blend and the relight still need?
 | A turned copy's light | matches its mesh within the atlas's resolution | `impostor-turn`, `impostor-turn-sun-back` |
 | The card field's GPU cost, 152 cards at 1600 x 900 on the Mac | WebGPU 0.77 ms, compatibility mode 0.96 ms, WebGL2 0.55 ms a frame | `NULL3D_IMPOSTOR_COST=1 bun run test:browser -- impostor-cost.spec.ts` through the heavy queue |
 | The whole frame with the cards, the same run | 1.11 to 1.92 ms of GPU time against 0.15 to 1.37 ms with them hidden; 16.67 ms interval, 0.1 ms CPU | the same |
+| The cards on a phone and a tablet | the five tests passed on the iPad Pro 13 on WebGPU, compatibility mode and WebGL2, and on the Galaxy S24 on WebGL2; the phone has no WebGPU or compatibility mode | the checks plan, 2026-10-29, runs `20261029-073419-checks` and `20261029-073908-checks` |
+| The card field on the iPad Pro 13, 152 cards | WebGPU 7.0 ms, compatibility mode 5.9 ms a frame at a 1032 by 1264 window with 2x pixels, nearly half of a 60 Hz frame's 16.67 ms; WebGL2 gives no GPU timer | `impostor-cost` plan, run `20261029-091142-impostor-cost` |
+| The card field on the Galaxy S24 | this device gave no usable figure: its WebGL2 path has no GPU timer, and its display ran at 30 Hz, so the 33.3 ms interval is the display's cap and says nothing about the cards | `impostor-cost` plan, run `20261029-091347-impostor-cost` |
 | The blend's cost against one view | not measured | needs a switch that draws one cell in place of the three |
 
 How the data was produced: the shader's texture reads and normal decodes are read from its code, and
@@ -146,8 +149,12 @@ against its atlas.
 - The `impostor-cost` page draws a full view of 152 cards with the whole batch hidden and shown in
   turns, so the difference is the card batch's frame cost. On the Mac's GPU the field costs 0.55 to
   0.96 ms a frame, and the whole frame runs 1.11 to 1.92 ms of GPU time with the cards against 0.15
-  to 1.37 ms without. The blend's own cost against one view is still owed: it needs a switch that
-  draws one cell in place of the three.
+  to 1.37 ms without. The iPad Pro 13 measures 7.0 ms on WebGPU and 5.9 ms in compatibility mode.
+  That is nearly half of the 16.67 ms of a 60 Hz frame, so a scene that draws a field of cards at
+  this size spends almost half its budget on them on that tablet. The Galaxy S24 gave no usable
+  figure: its WebGL2 path has no GPU timer, and its display ran at 30 Hz, so its 33.3 ms interval
+  is the display's cap and not the cards' cost. The blend's own cost against one view is still
+  owed: it needs a switch that draws one cell in place of the three.
 - The bake's time and memory at each preset on the same three devices. The Mac's figures are in the
   table above, and a phone's are still owed.
 - A filmstrip of a moving camera through the hand-over, and of the sun's sweep. A still cannot show a
