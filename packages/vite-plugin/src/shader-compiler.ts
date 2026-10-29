@@ -133,6 +133,8 @@ export interface MaterialBuild {
 	readonly objectIds: boolean;
 	/** True when the WGSL reads the copy of the scene's depth through `sceneDepth`. */
 	readonly sceneDepth: boolean;
+	/** True when the WGSL sets or reads the surface's alpha. */
+	readonly alpha: boolean;
 }
 
 /** The result of a custom material's compile, with its warnings when it succeeds. */

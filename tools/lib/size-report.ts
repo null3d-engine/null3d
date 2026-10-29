@@ -299,8 +299,8 @@ export interface EnginePart {
  * The parts of a thread's drawing code that it loads on demand, named after `prefix`, where
  * `drawing` names the part that holds the thread's frame loops. Each GPU path's renderers load once
  * the thread knows its path, with the code that both paths share beside them. The thread loads the
- * WebGL call timing, the texture generators' steps, the reader of the GPU-culled draws' counts and
- * the joiner of custom effects on first use.
+ * WebGL call timing, the texture generators of both paths, the reader of the GPU-culled draws'
+ * counts and the joiner of custom effects on first use.
  */
 function drawingParts(prefix: string, drawing: string): EnginePart[] {
 	const webgpu = `${prefix}-webgpu.js`;
@@ -311,6 +311,11 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 		{ name: shared, module: 'render/scene-renderer.ts', loadedBy: webgpu },
 		{ name: `${prefix}-call-timing.js`, module: 'gpu/webgl2/call-timing.ts', loadedBy: drawing },
 		{ name: `${prefix}-culled-counts.js`, module: 'gpu/webgpu/culled-counts.ts', loadedBy: webgpu },
+		{
+			name: `${prefix}-environment-maps.js`,
+			module: 'gpu/webgpu/environment.ts',
+			loadedBy: drawing,
+		},
 		{
 			name: `${prefix}-environment-generator.js`,
 			module: 'gpu/environment-steps.ts',

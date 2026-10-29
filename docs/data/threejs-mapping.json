@@ -1088,7 +1088,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "alphaMode: 'mask', alphaCutoff (alphaToCoverage is on by default)",
-      "notes": "The cut edges fade over one pixel above the cutoff and MSAA covers that share of each pixel, as in three.js. null3D turns it on for every mask; alphaToCoverage: false turns it off. Without MSAA it is a plain mask. Without alphaTest, three.js turns raw alpha into coverage: use alphaMode: 'hash' for that look. Fixed when the material is created.",
+      "notes": "The cut edges fade over one pixel above the cutoff and MSAA covers that share of each pixel, as in three.js. null3D turns it on for every mask; alphaToCoverage: false turns it off. Without MSAA it is a plain mask. Without alphaTest, three.js turns raw alpha into coverage: use alphaMode: 'hash' for that look. A custom material takes it too, where its WGSL sets or reads the surface's alpha, and then its shadow caster keeps the mask's holes. Fixed when the material is created.",
       "docs": "api/materials",
       "detect": "\\balphaToCoverage\\s*[:=]"
     },
@@ -1099,7 +1099,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "alphaMode: 'hash'",
-      "notes": "Three.js's cells and threshold on each point's place on the mesh, so the alpha sets the share of the surface that draws. The noise pattern differs: null3D hashes each cell with integer math, so every GPU draws the same pattern, where three.js's sine hash changes from GPU to GPU. alphaCutoff has no effect in this mode. A hashed surface casts a hashed shadow, where three.js casts the whole shape.",
+      "notes": "Three.js's cells and threshold on each point's place on the mesh, so the alpha sets the share of the surface that draws. The noise pattern differs: null3D hashes each cell with integer math, so every GPU draws the same pattern, where three.js's sine hash changes from GPU to GPU. alphaCutoff has no effect in this mode. A hashed surface casts a hashed shadow, where three.js casts the whole shape. A custom material takes the mode where its WGSL sets or reads the surface's alpha, and its shadow and motion keep the same pattern.",
       "docs": "api/materials",
       "detect": "\\balphaHash\\s*[:=]"
     },

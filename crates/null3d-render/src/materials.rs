@@ -283,15 +283,15 @@ pub mod feature {
     pub const MULTIPLY: u32 = 256;
     /// With [`ALPHA_MASK`], the alpha fades from nothing at the cutoff to full over about one
     /// pixel, as three.js's `alphaToCoverage` makes it, and MSAA turns it into the share of each
-    /// pixel's samples that the surface covers. Without MSAA it is a plain alpha test, and so it is
-    /// for custom materials, whose builds stay few.
+    /// pixel's samples that the surface covers. Without MSAA it is a plain alpha test. A custom
+    /// material takes it only where its WGSL names the surface's alpha, which has the builds.
     pub const ALPHA_TO_COVERAGE: u32 = 512;
     /// The scene's fog leaves the material's color as it is.
     pub const NO_FOG: u32 = 1024;
     /// With [`ALPHA_MASK`], each fragment draws when its alpha passes a threshold from a hash of
     /// its place on the mesh, as three.js's `alphaHash` does, so the alpha sets the share of the
-    /// surface that draws. It wins over [`ALPHA_TO_COVERAGE`]. Custom materials have no such
-    /// builds, and test their alpha against the cutoff.
+    /// surface that draws. It wins over [`ALPHA_TO_COVERAGE`]. A custom material takes it only
+    /// where its WGSL names the surface's alpha, which has the builds.
     pub const ALPHA_HASH: u32 = 2048;
     /// The surface draws only the shadows that fall on it, as three.js's `ShadowMaterial`: its own
     /// color where the main directional light's shadows fall, and nothing where the light reaches
@@ -388,8 +388,9 @@ pub mod feature {
     /// follows the view that draws it, and nothing else moves it, so a caster that only shadow
     /// passes draw casts the shadow that the light's layer holds. Its far cascades stay cached.
     pub const STILL_CASTER: u32 = 1 << 30;
-    /// The material's WGSL names the opacity that its shadow caster tests, so its caster builds
-    /// keep the mask bit and cut the shape of its shadow at the cutoff.
+    /// The material's WGSL names the opacity that its caster and motion builds test, so they keep
+    /// the mask bit and cut the shape of its shadow and its motion at the cutoff: a coverage
+    /// function, or the surface's alpha.
     pub const CASTER_COVERAGE: u32 = 1 << 31;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED

@@ -37,6 +37,7 @@ function material(
 		baseColor: true,
 		objectIds: false,
 		sceneDepth: false,
+		alpha: false,
 	};
 }
 

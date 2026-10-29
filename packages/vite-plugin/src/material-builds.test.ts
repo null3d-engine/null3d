@@ -79,6 +79,7 @@ const material = (variants: Record<string, ShaderVariant>): CompiledMaterial => 
 	baseColor: true,
 	objectIds: false,
 	sceneDepth: false,
+	alpha: false,
 });
 
 /** A custom effect with `variants`. */

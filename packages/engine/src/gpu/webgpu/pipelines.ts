@@ -1712,9 +1712,10 @@ export class Pipelines {
 			shader: shader.variants,
 			pipeline: 'main',
 			layouts: [...(shader.textures > 0 ? [LAYOUT_FRAME, maps] : [LAYOUT_FRAME]), ...scene],
-			// A material that declares its shadow caster's coverage draws its casters' depth with a
-			// fragment stage, which drops the pixels that its cutoff leaves out.
-			depthFragment: shader.coverage === true,
+			// A material that declares its shadow caster's coverage, or whose WGSL sets the
+			// surface's alpha, draws its casters' depth with a fragment stage, which drops the
+			// pixels that its cutoff leaves out.
+			depthFragment: shader.coverage === true || shader.alpha === true,
 			...(shader.meshless === true
 				? { vertexBuffers: [] }
 				: {
@@ -1901,7 +1902,7 @@ export class Pipelines {
 						entryPoint: ownPrepass ? 'fs' : entryPoints?.fragment,
 						targets: colorTargets(colorFormat, template, permutation, stateFlags),
 					}
-				: t.depthFragment
+				: t.depthFragment && !ownPrepass
 					? { module, entryPoint: entryPoints?.fragment, targets: [] }
 					: undefined,
 			primitive: {
