@@ -1730,8 +1730,10 @@ pub mod sizes {
     /// shadow lookups, the camera's view and projection matrices, which custom materials read,
     /// screen-space reflections' matrix into the frame before's view and their two vectors, a
     /// still view's jitter, which the scene's vertex shaders add, the physical sky's aerial
-    /// perspective's six vectors, and the vignette that the 8-bit path's fragment shaders apply.
-    pub const FRAME_UNIFORM_BYTES: u32 = 992;
+    /// perspective's six vectors, the vignette that the 8-bit path's fragment shaders apply, and
+    /// the camera's view-projection, target size and eye, which a masked custom material's caster
+    /// reads in a light's view.
+    pub const FRAME_UNIFORM_BYTES: u32 = 1088;
     /// Bytes of the output settings: the exposure, the tone mapping, the flags and the render
     /// size.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
@@ -3128,9 +3130,17 @@ mod tests {
 
         // A standard material's caster writes depth alone, and its build reaches no coverage test,
         // so a mask bit would do nothing there. Only a custom material's caster keeps the mask: its
-        // fragment stage calls the material's coverage function, whose cutoff drops each shadow
-        // texel. The pair therefore builds, and no standard-material caster gains a coverage stage.
+        // fragment stage calls the material's coverage function or its surface's alpha, whose cutoff
+        // drops each shadow texel. The vertex color and the alpha hash come with the mask, since
+        // the surface input reads the color and the hash picks the texels. These pairs therefore
+        // build, and no standard-material caster gains a coverage stage.
         assert!(permutation::buildable(CASTER | ALPHA_MASK));
+        assert!(permutation::buildable(
+            CASTER | ALPHA_MASK | VERTEX_COLOR | ALPHA_HASH
+        ));
+        assert!(permutation::buildable(
+            MOTION | ALPHA_MASK | VERTEX_COLOR | ALPHA_HASH
+        ));
         assert!(!permutation::APART.contains(&(CASTER, ALPHA_MASK)));
         assert!(!permutation::APART.contains(&(ALPHA_MASK, CASTER)));
 
@@ -3160,18 +3170,16 @@ mod tests {
                 ],
             ),
             // Row values come from instance batches, which neither skin nor morph, read their
-            // instances from the culling shader's copies, and test a mask against its cutoff.
-            (
-                ROW_VALUES,
-                &[SKIN, MORPH, INSTANCE_INDEX, ALPHA_COVERAGE, ALPHA_HASH],
-            ),
+            // instances from the culling shader's copies, and test a mask as the shading does: by
+            // the cutoff, by coverage or by the hash.
+            (ROW_VALUES, &[SKIN, MORPH, INSTANCE_INDEX]),
             // A caster's build writes depth alone, so it has none of the bits that shade or tone
-            // map. The mask is the one bit a caster may keep, which the assertions above allow.
+            // map. The mask, the vertex color that carries its alpha, and the alpha hash are the
+            // bits a custom material's caster may keep, which the assertions above allow.
             (
                 CASTER,
                 &[
                     TONE_MAP,
-                    VERTEX_COLOR,
                     RECEIVE_SHADOWS,
                     TRANSMISSION,
                     PREPASS,
@@ -3193,14 +3201,13 @@ mod tests {
                 TRANSLUCENCY,
                 &[CASTER, INSTANCE_INDEX, COAT_SHEEN, WEIGHTED],
             ),
-            // A motion build writes motion alone: it has none of those bits either, and it never
-            // fades.
+            // A motion build writes motion alone: it has none of the shading bits that a motion
+            // cannot show, and it never fades. A custom material's motion keeps its mask, the
+            // vertex color that carries the alpha and the alpha hash, so those three build.
             (
                 MOTION,
                 &[
                     TONE_MAP,
-                    VERTEX_COLOR,
-                    ALPHA_MASK,
                     RECEIVE_SHADOWS,
                     SKIN,
                     MORPH,
