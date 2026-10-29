@@ -27,4 +27,18 @@ describe('the physics guide', () => {
 		expect(text).toMatch(/translation\(readTranslation\)/);
 		expect(text).toMatch(/rotation\(readRotation\)/);
 	});
+
+	it('makes no object inside a frame loop, by any other route', () => {
+		const text = readFileSync(GUIDE, 'utf8');
+		// A frame loop: the body of an `onUpdate` or an `onFixedUpdate`, from its opening brace to
+		// the line that closes it at the indentation of the call. A target passed to a transform
+		// read is one route to an object made per frame; a constructor and an object literal are
+		// the others.
+		const loops = [...text.matchAll(/on(?:Fixed)?Update\(\)\s*\{\n([\s\S]*?)\n[ \t]*\},?\n/g)];
+		expect(loops.length, 'frame loops in the guide').toBeGreaterThan(0);
+		for (const [, body = ''] of loops) {
+			expect(body, 'an object made with a constructor inside a frame loop').not.toMatch(/\bnew\s/);
+			expect(body, 'an object literal inside a frame loop').not.toMatch(/[=(,[]\s*\{/);
+		}
+	});
 });
