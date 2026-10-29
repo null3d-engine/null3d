@@ -381,6 +381,16 @@ export const QUALITY_SETTINGS = {
 		changes: 'start',
 		values: 'flag',
 	},
+	// Moment transparency: the blended surfaces draw into a store of four depth moments and a
+	// colour sum, in any order, and a composite blends them over the scene. It is nearer an exact
+	// back-to-front blend than the weighted blending is, and it draws those surfaces twice. Off on
+	// every preset: it costs twice the weighted layer's bytes a frame and three full-screen steps
+	// of anti-aliasing, so a scene that wants it turns it on and pays for it (D-260).
+	momentTransparency: {
+		presets: [false, false, false, false],
+		changes: 'start',
+		values: 'flag',
+	},
 	// The depth prepass trades a second pass over the opaque objects' vertices for shading each
 	// pixel once. WebGL2 draws it on every preset: on Apple GPUs, WebGL2 shades hidden pixels that
 	// the prepass's early depth rejection skips. The other paths leave it off: there the GPU removes

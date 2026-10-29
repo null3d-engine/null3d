@@ -77,15 +77,21 @@ enum CallKind {
     WeightedSorted,
     /// A weighted bucket's call in the weighted layer.
     Weighted,
+    /// A bucket's call in the moment layer's moment pass.
+    Moment,
+    /// A bucket's call in the moment layer's colour pass.
+    MomentColour,
 }
 
 impl CallKind {
     /// True when a pass that draws `rows` records a call of this kind.
     fn drawn_in(self, rows: SortedRows) -> bool {
         match rows {
-            SortedRows::All => self != CallKind::Weighted,
+            SortedRows::All => !matches!(self, CallKind::Weighted | CallKind::Moment | CallKind::MomentColour),
             SortedRows::Sorted => self == CallKind::Sorted,
             SortedRows::Weighted => self == CallKind::Weighted,
+            SortedRows::Moment => self == CallKind::Moment,
+            SortedRows::MomentColour => self == CallKind::MomentColour,
         }
     }
 }
@@ -220,12 +226,13 @@ impl Transparent {
             // same records.
             let first_call = state.calls.len();
             let weighted = bucket.weighted != 0;
-            let kind = if weighted {
+            let moment = bucket.moment != 0;
+            let kind = if weighted || moment {
                 CallKind::WeightedSorted
             } else {
                 CallKind::Sorted
             };
-            let mut alone = bucket.back != 0 || weighted;
+            let mut alone = bucket.back != 0 || weighted || moment;
             let pipeline = if bucket.back != 0 {
                 bucket.back
             } else {
@@ -289,12 +296,32 @@ impl Transparent {
                 }
             }
             if weighted {
-                for k in own {
+                for k in own.clone() {
                     let first = state.calls[k];
                     state.calls.push(Call {
                         pipeline: bucket.weighted,
                         repeat: true,
                         kind: CallKind::Weighted,
+                        ..first
+                    });
+                }
+            }
+            if moment {
+                for k in own.clone() {
+                    let first = state.calls[k];
+                    state.calls.push(Call {
+                        pipeline: bucket.moment,
+                        repeat: true,
+                        kind: CallKind::Moment,
+                        ..first
+                    });
+                }
+                for k in own {
+                    let first = state.calls[k];
+                    state.calls.push(Call {
+                        pipeline: bucket.moment_colour,
+                        repeat: true,
+                        kind: CallKind::MomentColour,
                         ..first
                     });
                 }

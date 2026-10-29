@@ -53,6 +53,12 @@ pub struct FirstUse {
     /// the feature.
     #[serde(default)]
     pub bits: Vec<String>,
+    /// Permutation bits by name, each with the shaders whose builds the bit may take. A value that
+    /// names one feature in one template can name another in another template, so a bit whose
+    /// value another template lists takes only the builds of the shaders that it names here. A bit
+    /// without an entry takes the builds of every template that lists its name.
+    #[serde(default)]
+    pub bit_shaders: BTreeMap<String, Vec<String>>,
 }
 
 /// One entry shader.
@@ -260,8 +266,8 @@ pub struct BuildCounts {
 /// that adds builds on purpose raises the figure it passes and records why there. The test
 /// `the_manifests_builds_stay_within_the_recorded_figure` refuses a count past it.
 pub const BUILD_BUDGET: BuildCounts = BuildCounts {
-    glsl: 53_762,
-    wgsl: 19_227,
+    glsl: 54_497,
+    wgsl: 19_350,
 };
 
 impl Manifest {
@@ -574,6 +580,33 @@ fn check_first_use(errors: &mut Vec<String>, manifest: &Manifest) {
                 errors.push(format!(
                     "{key}.bits has \"{bit}\", which first_use.{other} names too. A bit's builds load with one feature."
                 ));
+            }
+        }
+        for (bit, shaders) in &first_use.bit_shaders {
+            if !first_use.bits.contains(bit) {
+                errors.push(format!(
+                    "{key}.bit_shaders has \"{bit}\", which `bits` does not list. Add it to `bits`, or name the shaders of a bit that the feature loads."
+                ));
+                continue;
+            }
+            for shader_name in shaders {
+                match manifest.shaders.get(shader_name) {
+                    None => errors.push(format!(
+                        "{key}.bit_shaders.{bit} has \"{shader_name}\", which is not a shader of the manifest."
+                    )),
+                    Some(shader)
+                        if !shader.by_device
+                            || !shader
+                                .variants
+                                .values()
+                                .any(|variant| variant.permutations.contains(bit)) =>
+                    {
+                        errors.push(format!(
+                            "{key}.bit_shaders.{bit} has \"{shader_name}\", which loads no build with that bit. Name only shaders that load by device and list the bit."
+                        ));
+                    }
+                    Some(_) => {}
+                }
             }
         }
     }

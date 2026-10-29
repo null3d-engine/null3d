@@ -1239,6 +1239,14 @@ of the shared paragraph tables landed first, so the extra builds stay out of eve
 The manifest then made 53,762 GLSL builds and 19,227 WGSL builds, and `BUILD_BUDGET` records those
 figures.
 
+On 25 October 2026 the moment transparency layer of M3-F13 joined the manifest: its moment pass is
+a variant of the six mesh templates, and its colour pass is six shader entries of its own, one for
+each of those templates ([D-260](decisions/D-260-moment-transparency.md)). The moment builds carry
+the bits that a blended surface can have, so the six entries add 735 GLSL builds and 123 WGSL
+builds. All of them load on the layer's first use, so no page downloads them at its start. The
+manifest now makes 54,497 GLSL builds and 19,350 WGSL builds, and `BUILD_BUDGET` records those
+figures.
+
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this
 guard refuses.

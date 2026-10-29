@@ -201,6 +201,7 @@ use crate::taa::{self, TaaFrame, TaaIds, TaaPass, TaaSources};
 use crate::transmission::{TransmissionCopy, TransmissionIds};
 use crate::view::{CanvasRect, Compute, Fullscreen, PassSource, View, ViewId, ViewNames};
 use crate::view_copy::{ViewCopies, ViewCopyIds};
+use crate::moment::{self, MomentIds, MomentLayer};
 use crate::weighted::{self, WeightedIds, WeightedLayer};
 
 /// A texture of the plan as the draw lists made it: its plan, the size it was made at, and for a
@@ -250,6 +251,8 @@ pub(crate) struct GraphIds {
     pub(crate) ssr: SsrIds,
     /// The composite and the depth copy of the camera's weighted layer.
     pub(crate) weighted: WeightedIds,
+    /// The steps, the sampler and the lookup tables of the camera's moment layer.
+    pub(crate) moment: MomentIds,
     /// The bind group of the copy of the camera's opaque depth that soft particles read.
     pub(crate) particle_depth: u32,
     /// The first of two bind groups for custom materials that read the scene's depth: the blank
@@ -483,6 +486,26 @@ const WEIGHTED_PASS: &str = "Weighted";
 const WEIGHTED_SUM: &str = "weightedSum";
 const WEIGHTED_COVER: &str = "weightedCover";
 const WEIGHTED_COMPOSITE_PASS: &str = "WeightedComposite";
+/// The camera's moment transparency layer (see [`crate::moment`]): the pass that writes the moment
+/// store, the pass that writes the colour sum, the composite over the scene color, and the three
+/// steps of SMAA that smooth its edges under the share that its moments cover.
+const MOMENT_STORE: &str = "momentStore";
+const MOMENT_COLOUR: &str = "momentColour";
+const MOMENT_DEPTH: &str = "momentDepth";
+const MOMENT_EDGES: &str = "momentEdges";
+const MOMENT_WEIGHTS: &str = "momentWeights";
+const MOMENT_RESOLVED: &str = "momentResolved";
+const MOMENT_PASS: &str = "Moment";
+const MOMENT_COLOUR_PASS: &str = "MomentColour";
+const MOMENT_COMPOSITE_PASS: &str = "MomentComposite";
+const MOMENT_SMAA_EDGES_PASS: &str = "MomentEdges";
+const MOMENT_SMAA_BLEND_PASS: &str = "MomentBlend";
+const MOMENT_SMAA_RESOLVE_PASS: &str = "MomentResolve";
+/// The bytes that the moment layer copies into the upload arena at its first use: its area and
+/// search lookup tables, four bytes a texel.
+const MOMENT_TABLES_BYTES: usize =
+    (moment::tables::AREA_WIDTH * moment::tables::AREA_HEIGHT) as usize * 4
+        + (moment::tables::SEARCH_WIDTH * moment::tables::SEARCH_HEIGHT) as usize * 4;
 /// The pass that draws decals over the camera's opaque objects, from the scene's depth so far.
 const DECALS_PASS: &str = "Decals";
 /// The pass that draws the objects that decals skip again, after the decal pass.
@@ -637,6 +660,19 @@ pub(crate) enum Role {
     Weighted,
     /// Blends the camera's weighted layer over its scene color. The graph records it itself.
     WeightedComposite,
+    /// Writes the camera's blended surfaces into the moment layer's moment store. The builder
+    /// records it, after the graph's copy of a multisampled scene depth.
+    Moment,
+    /// Draws the same surfaces again into the moment layer's colour sum. The builder records it.
+    MomentColour,
+    /// Blends the camera's moment layer over its scene color. The graph records it itself.
+    MomentComposite,
+    /// Marks the moment layer's edges for SMAA. The graph records it itself.
+    MomentSmaaEdges,
+    /// Finds the ends of those edges and their areas. The graph records it itself.
+    MomentSmaaBlend,
+    /// Mixes each pixel with the neighbour that its weights name. The graph records it itself.
+    MomentSmaaResolve,
     /// Copies the camera's opaque depth into the target that soft particles read. The graph
     /// records it itself.
     ParticleDepthCopy,
@@ -741,6 +777,19 @@ impl<T: Copy> CompileCache<T> {
     }
 }
 
+/// The textures that the moment layer's steps read, found for each compile of the graph: the
+/// moment store and the colour sum, the scene depth that the depth copy reads or 0, the scene color
+/// that the anti-aliasing reads, and the edge marks and the blending weights it writes.
+#[derive(Clone, Copy, Debug, Default)]
+struct MomentTextures {
+    store: u32,
+    colour: u32,
+    depth: u32,
+    scene: u32,
+    edges: u32,
+    weights: u32,
+}
+
 /// A group of passes that draws once its pipelines are built. The passes that a group allows
 /// differ between a frame that has them built and one that has not, so a change in that state
 /// declares the frame's passes again.
@@ -753,6 +802,7 @@ enum BuiltGroup {
     Subsurface,
     Transmission,
     Weighted,
+    Moment,
     ParticleDepth,
     Taa,
 }
@@ -1064,6 +1114,20 @@ pub(crate) struct FrameGraph {
     motion_view_built: bool,
     /// True when the declared passes hold the motion debug view's step.
     motion_declared: bool,
+    /// The steps of the camera's moment transparency layer.
+    moment: MomentLayer,
+    /// True when the device draws into the moment layer's targets of 16-bit floats.
+    moment_targets: bool,
+    /// True while some sorted bucket has a pipeline of the moment layer.
+    moment_wanted: bool,
+    /// True once the layer's own pipelines are built.
+    moment_built: bool,
+    /// True when the declared passes hold the moment layer.
+    moment_declared: bool,
+    /// True when the declared passes hold the anti-aliasing steps that follow the layer.
+    moment_smaa_declared: bool,
+    /// The textures that the moment layer's steps read, found once for each compile of the graph.
+    moment_textures: CompileCache<MomentTextures>,
     /// The composite and the depth copy of the camera's weighted layer.
     weighted: WeightedLayer,
     /// True when the device draws into the weighted layer's targets of 16-bit floats.
@@ -1306,6 +1370,13 @@ impl FrameGraph {
             motion_step: MotionView::new(ids.motion),
             motion_view_built: false,
             motion_declared: false,
+            moment: MomentLayer::new(ids.moment),
+            moment_targets: true,
+            moment_wanted: false,
+            moment_built: false,
+            moment_declared: false,
+            moment_smaa_declared: false,
+            moment_textures: CompileCache::default(),
             weighted: WeightedLayer::new(ids.weighted),
             weighted_targets: true,
             weighted_wanted: false,
@@ -1800,6 +1871,12 @@ impl FrameGraph {
         } else {
             0
         };
+        // The moment layer copies its two lookup tables into the arena at its first frame.
+        let moment = if self.moment_declared {
+            MOMENT_TABLES_BYTES
+        } else {
+            0
+        };
         FinalPass::UPLOAD_BYTES
             + still
             + if self.two_step_declared {
@@ -1819,6 +1896,7 @@ impl FrameGraph {
             + compute
             + exposure
             + taa
+            + moment
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -1833,6 +1911,7 @@ impl FrameGraph {
             || self.fullscreen_reads_color
             || self.mask_draws()
             || self.transmission_declared
+            || self.moment_smaa_declared
             || self.particle_depth_declared
     }
 
@@ -2167,7 +2246,9 @@ impl FrameGraph {
     /// target while its steps are declared, or else the custom effects' output. Bloom and the final
     /// pass read it, and the effects that fold into the final pass.
     fn color_output(&self) -> &'static str {
-        if self.dof_declared {
+        if self.moment_smaa_declared {
+            MOMENT_RESOLVED
+        } else if self.dof_declared {
             DOF_TARGETS[dof::STEPS - 1]
         } else {
             self.effects_output()
@@ -2513,7 +2594,35 @@ impl FrameGraph {
         self.weighted_targets = supported;
     }
 
-    /// The targets of the camera's weighted layer, for the pipelines of a pass whose targets are
+    /// Says whether the device draws into one-sample targets of 16-bit floats, which the camera's
+    /// moment layer needs.
+    pub(crate) fn set_moment_targets(&mut self, supported: bool) {
+        self.moment_targets = supported;
+    }
+
+    /// The targets of the camera's moment layer, for the pipelines of a pass whose targets are
+    /// `scene`, or `None` where the device cannot draw the layer.
+    pub(crate) fn moment_targets(&self, scene: PassTargets) -> Option<PassTargets> {
+        self.moment_targets.then_some(PassTargets {
+            color_format: moment::STORE_FORMAT,
+            depth_format: DEPTH_FORMAT,
+            samples: 1,
+            ..scene
+        })
+    }
+
+    /// Turns the camera's moment layer on while some sorted bucket has its pipelines, and off
+    /// otherwise, for the next frames. The passes are declared again only when the layer starts or
+    /// stops drawing. Call it before [`FrameGraph::request_pipelines`].
+    pub(crate) fn set_moment(&mut self, on: bool) {
+        let was = self.moment_draws();
+        self.moment_wanted = on && self.moment_targets;
+        if self.moment_draws() != was {
+            self.declared = false;
+        }
+    }
+
+    /// The textures of the camera's weighted layer, for the pipelines of a pass whose targets are
     /// `scene`, or `None` where the device cannot draw the layer.
     pub(crate) fn weighted_targets(&self, scene: PassTargets) -> Option<PassTargets> {
         self.weighted_targets.then_some(PassTargets {
@@ -2590,6 +2699,60 @@ impl FrameGraph {
             samples: self.samples,
             permutation: 0,
         }
+    }
+
+    /// True while the camera's moment layer draws: some sorted bucket has its pipelines, and the
+    /// layer's own pipelines are built. Until then blended surfaces draw back to front in the
+    /// transparent pass.
+    pub(crate) fn moment_draws(&self) -> bool {
+        self.moment_wanted && self.moment_built
+    }
+
+    /// True when the declared passes hold the camera's moment layer, so the camera's transparent
+    /// pass leaves its buckets to it.
+    pub(crate) fn moment_declared(&self) -> bool {
+        self.moment_declared
+    }
+
+    /// True when the camera's moment layer copies one sample of a multisampled scene depth, which
+    /// both of its passes then test against.
+    fn moment_copies_depth(&self) -> bool {
+        self.samples > 1
+    }
+
+    /// The moment store's texture while the layer is declared, which the colour pass's frame
+    /// groups bind.
+    pub(crate) fn moment_store(&mut self) -> Option<u32> {
+        if !self.moment_declared {
+            return None;
+        }
+        let textures = self.moment_textures_value();
+        Some(textures.store)
+    }
+
+    /// The moment layer's textures, found once for each compile of the graph.
+    fn moment_textures_value(&mut self) -> MomentTextures {
+        let mut found = self.moment_textures;
+        let value = found.get_or(self.graph.compiles(), || {
+            let id = |name: &str| {
+                self.sampled_id(name)
+                    .expect("the moment layer reads planned textures")
+            };
+            MomentTextures {
+                store: id(MOMENT_STORE),
+                colour: id(MOMENT_COLOUR),
+                depth: if self.moment_copies_depth() {
+                    id(SCENE_DEPTH)
+                } else {
+                    0
+                },
+                scene: id(SCENE_COLOR),
+                edges: id(MOMENT_EDGES),
+                weights: id(MOMENT_WEIGHTS),
+            }
+        });
+        self.moment_textures = found;
+        value
     }
 
     /// True while the camera's weighted layer draws: some sorted bucket has its pipeline, and the
@@ -3077,6 +3240,10 @@ impl FrameGraph {
         if self.weighted_declared {
             self.declare_weighted(views, &named);
         }
+        self.moment_declared = self.moment_draws() && !views.is_empty();
+        if self.moment_declared {
+            self.declare_moment(views, &named);
+        }
         if copies {
             for (index, view) in views.iter().enumerate().skip(1) {
                 if (self.fullscreen_views | self.compute_views) & (1 << index) != 0
@@ -3151,6 +3318,13 @@ impl FrameGraph {
             self.declare_dof();
         }
         self.declare_accumulate();
+        // The anti-aliasing steps read the scene's color as the passes before them leave it, so
+        // they take the name of that output before the later passes read their own.
+        let aliased = self.color_output();
+        self.moment_smaa_declared = self.moment_declared;
+        if self.moment_smaa_declared {
+            self.declare_moment_smaa(views, aliased);
+        }
         let resolve = Pass::new("Resolve", PassKind::Resolve)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
@@ -3758,6 +3932,77 @@ impl FrameGraph {
         self.add(composite, Role::WeightedComposite);
     }
 
+    /// Declares the camera's moment transparency layer after its transparent pass (see
+    /// [`crate::moment`]). The moment pass writes the moment store with the scene's depth as its
+    /// depth target, and the colour pass writes the colour sum from it. A scene of one sample
+    /// lends its own depth. A multisampled scene's first pass creates a depth target of one
+    /// sample, and its first draw copies the scene depth into it, as the transparent pass leaves
+    /// it. The composite then blends the colour over the scene color.
+    fn declare_moment(&mut self, views: &[View], named: &[ViewPassNames]) {
+        let camera = &views[ViewId::CAMERA.index()];
+        let size = view_size(camera);
+        let mut layer = Pass::new(MOMENT_PASS, PassKind::Scene)
+            .size(size)
+            .layers(camera.layers())
+            .creates(MOMENT_STORE, Target::color(moment::STORE_FORMAT));
+        layer = if self.moment_copies_depth() {
+            layer
+                .reads_so_far(SCENE_DEPTH)
+                .creates(MOMENT_DEPTH, Target::depth(DEPTH_FORMAT))
+        } else {
+            layer.writes(SCENE_DEPTH)
+        };
+        if self.skins() {
+            layer = layer.reads(SKINNED);
+        }
+        let layer = reads_targets(layer, views, named, ViewId::CAMERA.index());
+        self.add(layer, Role::Moment);
+        let mut colour = Pass::new(MOMENT_COLOUR_PASS, PassKind::Scene)
+            .size(size)
+            .layers(camera.layers())
+            .reads(MOMENT_STORE)
+            .creates(MOMENT_COLOUR, Target::color(moment::COLOUR_FORMAT));
+        colour = if self.moment_copies_depth() {
+            colour.writes(MOMENT_DEPTH)
+        } else {
+            colour.writes(SCENE_DEPTH)
+        };
+        if self.skins() {
+            colour = colour.reads(SKINNED);
+        }
+        let colour = reads_targets(colour, views, named, ViewId::CAMERA.index());
+        self.add(colour, Role::MomentColour);
+        let composite = Pass::new(MOMENT_COMPOSITE_PASS, PassKind::Scene)
+            .size(size)
+            .reads(MOMENT_STORE)
+            .reads(MOMENT_COLOUR)
+            .writes(SCENE_COLOR);
+        self.add(composite, Role::MomentComposite);
+    }
+
+    /// Declares the three steps of SMAA that smooth the moment layer's edges under the share that
+    /// its moments cover, reading `source`, the scene's color as the passes before them leave it.
+    fn declare_moment_smaa(&mut self, views: &[View], source: &'static str) {
+        let size = view_size(&views[ViewId::CAMERA.index()]);
+        let edges = Pass::new(MOMENT_SMAA_EDGES_PASS, PassKind::Fullscreen)
+            .size(size)
+            .reads(source)
+            .reads(MOMENT_STORE)
+            .creates(MOMENT_EDGES, Target::color(moment::EDGES_FORMAT));
+        self.add(edges, Role::MomentSmaaEdges);
+        let blend = Pass::new(MOMENT_SMAA_BLEND_PASS, PassKind::Fullscreen)
+            .size(size)
+            .reads(MOMENT_EDGES)
+            .creates(MOMENT_WEIGHTS, Target::color(moment::WEIGHTS_FORMAT));
+        self.add(blend, Role::MomentSmaaBlend);
+        let resolve = Pass::new(MOMENT_SMAA_RESOLVE_PASS, PassKind::Fullscreen)
+            .size(size)
+            .reads(source)
+            .reads(MOMENT_WEIGHTS)
+            .creates(MOMENT_RESOLVED, Target::color(self.scene_color.format()));
+        self.add(resolve, Role::MomentSmaaResolve);
+    }
+
     /// Screen-space reflections' steps, made when first asked for.
     fn ssr_steps(&mut self) -> &mut SsrPass {
         let ids = self.ssr_ids;
@@ -4031,6 +4276,7 @@ impl FrameGraph {
             BuiltGroup::Subsurface => self.subsurface_built,
             BuiltGroup::Transmission => self.transmission_built,
             BuiltGroup::Weighted => self.weighted_built,
+            BuiltGroup::Moment => self.moment_built,
             BuiltGroup::ParticleDepth => self.particle_depth_built,
             BuiltGroup::Taa => self.taa_built,
         }
@@ -4046,6 +4292,7 @@ impl FrameGraph {
             BuiltGroup::Subsurface => self.subsurface_draws(),
             BuiltGroup::Transmission => self.transmission_draws(),
             BuiltGroup::Weighted => self.weighted_draws(),
+            BuiltGroup::Moment => self.moment_draws(),
             BuiltGroup::ParticleDepth => self.particle_depth_draws(),
             BuiltGroup::Taa => self.taa_draws(),
         }
@@ -4072,6 +4319,7 @@ impl FrameGraph {
             BuiltGroup::Subsurface => self.subsurface_built = built,
             BuiltGroup::Transmission => self.transmission_built = built,
             BuiltGroup::Weighted => self.weighted_built = built,
+            BuiltGroup::Moment => self.moment_built = built,
             BuiltGroup::ParticleDepth => self.particle_depth_built = built,
             BuiltGroup::Taa => self.taa_built = built,
         }
@@ -4242,6 +4490,19 @@ impl FrameGraph {
             weighted_built,
             FrameGraph::declare_again,
         );
+        let moment_built = self.moment_wanted && {
+            let format = self.scene_color.format();
+            let composite = self.moment.request_composite(pipelines, format, self.samples);
+            let (edges, blend, resolve) = self.moment.request_aliasing(pipelines, format);
+            let depth = self
+                .moment_copies_depth()
+                .then(|| self.moment.request_depth(pipelines, DEPTH_FORMAT));
+            [composite, edges, blend, resolve]
+                .into_iter()
+                .all(|id| pipelines.built(id, pipelines_built))
+                && depth.is_none_or(|id| pipelines.built(id, pipelines_built))
+        };
+        self.note_built(BuiltGroup::Moment, moment_built, FrameGraph::declare_again);
         // WebGL2 has no multisampled textures: its backend gives the copy a copy of one sample.
         let samples = if self.gpu_culling { self.samples } else { 1 };
         let particle_depth_built = self.particle_depth_wanted && {
@@ -4352,6 +4613,7 @@ impl FrameGraph {
         self.bind_transmission(list)?;
         self.prepare_motion_view(list, arena)?;
         self.bind_weighted(list)?;
+        self.bind_moment(list, arena)?;
         self.bind_particle_depth(list)?;
         self.bind_material_scene(list)?;
         if !self.final_runs() {
@@ -4990,6 +5252,34 @@ impl FrameGraph {
             .prepare(list, color, depth, self.textures_made)
     }
 
+    /// Binds the moment layer's steps to their textures while the layer is declared: the composite
+    /// to the moment store and the colour sum, the depth copy to the scene depth, and the
+    /// anti-aliasing's three steps to their images. It makes the two lookup tables at the layer's
+    /// first use.
+    fn bind_moment(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        if !self.moment_declared {
+            return Ok(());
+        }
+        let textures = self.moment_textures_value();
+        let made = self.textures_made;
+        self.moment
+            .prepare_composite(list, textures.store, textures.colour, made)?;
+        if textures.depth != 0 {
+            self.moment
+                .prepare_depth(list, textures.depth, self.gpu_culling, made)?;
+        }
+        self.moment
+            .prepare_edges(list, textures.scene, textures.store, made)?;
+        self.moment.prepare_blend(list, textures.edges, made)?;
+        self.moment
+            .prepare_resolve(list, textures.scene, textures.weights, made)?;
+        self.moment.prepare_tables(list, arena)
+    }
+
     /// Binds the composite of the camera's weighted layer to its two sums, and the depth copy to
     /// the scene depth, while the layer is declared. It finds their textures once for each compile
     /// of the graph.
@@ -5409,6 +5699,8 @@ impl FrameGraph {
                                 | Role::SkinLight
                                 | Role::Motion
                                 | Role::Weighted
+                                | Role::Moment
+                                | Role::MomentColour
                                 | Role::Pick
                         )
                     });
@@ -5521,6 +5813,17 @@ impl FrameGraph {
                                 record(list, Role::Weighted)?;
                             }
                             Role::WeightedComposite => self.weighted.record_composite(list)?,
+                            Role::Moment => {
+                                if self.moment_copies_depth() {
+                                    self.moment.record_depth(list)?;
+                                }
+                                record(list, Role::Moment)?;
+                            }
+                            Role::MomentColour => record(list, Role::MomentColour)?,
+                            Role::MomentComposite => self.moment.record_composite(list)?,
+                            Role::MomentSmaaEdges => self.moment.record_edges(list)?,
+                            Role::MomentSmaaBlend => self.moment.record_blend(list)?,
+                            Role::MomentSmaaResolve => self.moment.record_resolve(list)?,
                             Role::ParticleDepthCopy => self.particle_depth.record(list)?,
                             role => record(list, role)?,
                         }
@@ -5794,6 +6097,7 @@ impl FrameGraph {
         self.transmission.reset_gpu();
         self.motion_step.reset_gpu();
         self.weighted.reset_gpu();
+        self.moment.reset_gpu();
         self.particle_depth.reset_gpu();
         // The blank texel and the two groups belong to the device that was lost.
         self.material_scene_has_blank = false;
@@ -6624,6 +6928,12 @@ mod tests {
             first_group: 220,
         },
         weighted: WeightedIds { first_group: 140 },
+        moment: MomentIds {
+            first_group: 160,
+            sampler: 9,
+            area: 913,
+            search: 914,
+        },
         particle_depth: 121,
         material_scene: 122,
         blank_scene_depth: 912,
@@ -9308,6 +9618,123 @@ mod tests {
 
             // Unused again, the layer and its targets are gone.
             frames.set_weighted(false);
+            frames.sync(&[View::default(), shown()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert_eq!(steps(&frames), without);
+        }
+    }
+
+
+    #[test]
+    fn the_moment_layer_draws_its_two_passes_then_the_composite_and_the_anti_aliasing() {
+        let canvas = (320, 180);
+        for (format, antialias) in [
+            (format::RGBA16_FLOAT, Antialias::Msaa),
+            (format::CANVAS, Antialias::Msaa),
+            (format::RGBA16_FLOAT, Antialias::Fxaa),
+        ] {
+            let multisampled = antialias == Antialias::Msaa;
+            let mut frames = frame_graph(format, antialias, true, false);
+            frames.sync(&[View::default(), shown()]);
+            frames.set_transparent(true);
+            let mut list = DrawList::with_capacity(65536);
+            let mut pipelines = PipelineCache::default();
+            frames.request_pipelines(&mut pipelines, 1);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let without = steps(&frames);
+            let keys = pipelines.keys().len();
+
+            // A device without targets of 16-bit floats never draws the layer, and asks for none
+            // of its pipelines.
+            frames.set_moment_targets(false);
+            assert!(frames.moment_targets(frames.scene_targets()).is_none());
+            frames.set_moment(true);
+            frames.request_pipelines(&mut pipelines, 1);
+            assert!(!frames.moment_draws());
+            assert_eq!(pipelines.keys().len(), keys);
+
+            // The layer waits for its pipelines: the composite, the anti-aliasing's three steps,
+            // and the depth copy of a multisampled scene.
+            frames.set_moment_targets(true);
+            frames.set_moment(true);
+            frames.request_pipelines(&mut pipelines, 1);
+            assert!(!frames.moment_draws(), "the layer waits for its pipelines");
+            assert_eq!(
+                pipelines.keys().len(),
+                keys + 4 + usize::from(multisampled),
+                "the layer asks for the depth copy only for a multisampled scene"
+            );
+            pipelines.create_new(&mut list, 2).unwrap();
+            frames.request_pipelines(&mut pipelines, 2);
+            assert!(frames.moment_draws());
+            frames.sync(&[View::default(), shown()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert!(frames.moment_declared());
+            let with: Vec<String> = steps(&frames).into_iter().flatten().collect();
+            let at = |name: &str| with.iter().position(|n| n == name);
+            let transparent = at("Transparent").unwrap();
+            let moment = at(MOMENT_PASS).unwrap();
+            let colour = at(MOMENT_COLOUR_PASS).unwrap();
+            let composite = at(MOMENT_COMPOSITE_PASS).unwrap();
+            let edges = at(MOMENT_SMAA_EDGES_PASS).unwrap();
+            let blend = at(MOMENT_SMAA_BLEND_PASS).unwrap();
+            let resolve = at(MOMENT_SMAA_RESOLVE_PASS).unwrap();
+            assert!(
+                transparent < moment
+                    && moment < colour
+                    && colour < composite
+                    && composite < edges
+                    && edges < blend
+                    && blend < resolve,
+                "the layer's steps run in order: {with:?}"
+            );
+            // The final pass reads the anti-aliased image, and another view keeps its passes.
+            assert!(resolve < at("Final").unwrap());
+            assert!(at("Transparent1").is_some());
+
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound());
+            list.clear();
+            frames
+                .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            let groups: Vec<(u32, u32)> = operands(&list, Op::CreateBindGroup)
+                .iter()
+                .map(|group| (group[0], group[1]))
+                .filter(|&(id, _)| {
+                    id >= IDS.moment.first_group && id < IDS.moment.first_group + MomentIds::GROUPS
+                })
+                .collect();
+            let mut expected = vec![(IDS.moment.first_group, bind_layout::MOMENT_COMPOSITE)];
+            if multisampled {
+                expected.push((IDS.moment.first_group + 1, bind_layout::MOMENT_DEPTH_MS));
+            }
+            expected.push((IDS.moment.first_group + 2, bind_layout::MOMENT_SMAA_EDGES));
+            expected.push((IDS.moment.first_group + 3, bind_layout::MOMENT_SMAA_BLEND));
+            expected.push((IDS.moment.first_group + 4, bind_layout::MOMENT_SMAA_RESOLVE));
+            assert_eq!(groups, expected);
+            // The layer made its two lookup tables and their sampler at its first frame.
+            assert!(
+                operands(&list, Op::CreateTexture)
+                    .iter()
+                    .any(|op| op[0] == IDS.moment.area),
+                "the area table is made"
+            );
+            assert!(
+                operands(&list, Op::CreateTexture)
+                    .iter()
+                    .any(|op| op[0] == IDS.moment.search),
+                "the search table is made"
+            );
+
+            // Unused again, the layer and its targets are gone.
+            frames.set_moment(false);
             frames.sync(&[View::default(), shown()]);
             frames
                 .prepare(&mut list, canvas, RenderScale::FULL)

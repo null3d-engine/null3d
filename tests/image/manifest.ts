@@ -809,6 +809,8 @@ function ssrTests(): ImageTest[] {
 
 /** The sketch of weighted blending's crossing panes and overlapping puffs. */
 const WEIGHTED_SKETCH = 'tests/pages/sketches/weighted-sketch.ts';
+/** The sketch of moment transparency's five panes at different depths (the test `moment-*`). */
+export const MOMENT_SKETCH = 'tests/pages/sketches/moment-sketch.ts';
 /** The sketch of the reflection probe tests: a room of glowing walls over a mirror floor. */
 export const PROBE_SKETCH = 'tests/pages/sketches/probe-sketch.ts';
 
@@ -3050,6 +3052,27 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 		reference: 'weighted',
+	},
+	// Moment transparency: the same five panes at different depths, blended back to front by the
+	// sorted pass, by the weighted blending, and by the moment layer. The spec compares both
+	// approximations with the sorted image.
+	{
+		name: 'moment-sorted',
+		sketch: `${MOMENT_SKETCH}?mode=sorted`,
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'moment-weighted',
+		sketch: `${MOMENT_SKETCH}?mode=weighted`,
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'moment-layer',
+		sketch: `${MOMENT_SKETCH}?mode=moment`,
+		hold: 0,
+		size: [480, 270],
 	},
 	// Decals on a stone yard: a scorch mark, road paint through a ball's shadow, a puddle under a
 	// point light, cracks on a wall, moss that fades up the ball's side, and a batch of mud
