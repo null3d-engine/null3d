@@ -405,6 +405,14 @@ export interface CoreGlue extends CoreErrors {
 	 * cover the mesh's vertices.
 	 */
 	setMeshPatches(mesh: number, patches: number, indices: number, root: number): number;
+	/**
+	 * Appends one band to a mesh's tree of cluster patches: `patches` records of eight words each,
+	 * four floats of a bounding sphere and four integers of a run of indices, a parent and an
+	 * error, then `indices` indices, at `meshArrays`'s address. A run's first index counts from the
+	 * band's own indices, and a parent names a patch that the tree already holds. 1 when the mesh
+	 * takes the band, 0 when it has no tree, and the code of the rule that refused it otherwise.
+	 */
+	appendMeshPatches(mesh: number, patches: number, indices: number): number;
 	meshRadius(mesh: number): number;
 	/** A mesh's vertex count, or 0 for an unknown mesh. */
 	meshVertexCount(mesh: number): number;
@@ -445,6 +453,12 @@ export interface CoreGlue extends CoreErrors {
 	 * for the mesh itself. 0 for a mesh that no loader watches.
 	 */
 	stageLevelPicks(base: number): number;
+	/**
+	 * The bands of the mesh `base`'s tree of cluster patches that a view drew since its watch
+	 * began, one bit each, bit 0 for the band that the file holds. 0 for a mesh that no loader
+	 * watches.
+	 */
+	stageBandPicks(base: number): number;
 	/** The frames that drew the mesh `base` since its watch began, 0 for a mesh that no watch has. */
 	stageFrames(base: number): number;
 	/**
@@ -1314,6 +1328,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMeshBvh',
 	'setMeshBlocker',
 	'setMeshPatches',
+	'appendMeshPatches',
 	'meshRadius',
 	'meshVertexCount',
 	'meshFormat',
@@ -1322,6 +1337,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMeshLevels',
 	'watchStageLevels',
 	'stageLevelPicks',
+	'stageBandPicks',
 	'stageFrames',
 	'unwatchStageLevels',
 	'meshMemoryBytes',

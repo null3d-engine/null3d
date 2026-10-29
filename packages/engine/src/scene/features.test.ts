@@ -134,6 +134,24 @@ describe('defineFeature', () => {
 	});
 });
 
+describe('the GPU scope of a feature', () => {
+	it('names the passes that carry its work, and defaults to none', () => {
+		const feature = minimal({ gpu: { passes: [{ name: 'water', place: 3 }] } });
+		expect(feature.gpu).toEqual({ passes: [{ name: 'water', place: 3 }] });
+		expect(Object.isFrozen(feature.gpu)).toBe(true);
+		expect(minimal().gpu).toEqual({ passes: [] });
+	});
+
+	it('refuses a pass that render.addPass did not return', () => {
+		const refused = (gpu: unknown) => (() => minimal({ gpu: gpu as FeatureDescription['gpu'] }))();
+		expect(() => refused({ passes: [{}] })).toThrow(/name/);
+		expect(() => refused({ passes: [{ name: 'water', place: 0 }] })).toThrow(/render\.addPass/);
+		expect(() => refused({ passes: [{ name: '', place: 1 }] })).toThrow(/name/);
+		expect(() => refused({ passes: {} })).toThrow(/passes/);
+		expect(() => refused({ pass: 'water' })).toThrow(/gpu option/);
+	});
+});
+
 describe('FeatureRegistry', () => {
 	it('gives each feature, output and lighting slot one owner', () => {
 		const registry = new FeatureRegistry();

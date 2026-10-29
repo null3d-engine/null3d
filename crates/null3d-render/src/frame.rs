@@ -432,6 +432,20 @@ pub trait FrameBuilder {
         self.settings_mut().patches_mut().set(mesh, tree);
         Ok(())
     }
+    /// Appends one band, whose runs start at the band's own first index, to the tree of `mesh`, or
+    /// answers `None` for a mesh without a tree.
+    fn append_mesh_patches(
+        &mut self,
+        mesh: u32,
+        bounds: &[[f32; 4]],
+        records: &[[u32; 4]],
+        indices: &[u32],
+        vertices: u32,
+    ) -> Option<Result<(), crate::patches::PatchError>> {
+        self.settings_mut()
+            .patches_mut()
+            .append(mesh, bounds, records, indices, vertices)
+    }
     /// True when point or spot lights cast shadows into the shadow atlas in the frame recorded
     /// last.
     fn casts_tile_shadows(&self) -> bool {
@@ -2406,6 +2420,32 @@ impl SceneSettings {
     /// mesh itself. 0 for a mesh that no loader watches.
     pub fn stage_level_picks(&self, mesh: u32) -> u32 {
         self.stage_watches.picks(mesh)
+    }
+
+    /// The bands of `mesh`'s tree of cluster patches that a view drew since its watch began, one
+    /// bit each, bit 0 for the band that the file holds. 0 for a mesh that no loader watches.
+    pub fn stage_band_picks(&self, mesh: u32) -> u32 {
+        self.stage_watches.bands(mesh)
+    }
+
+    /// Notes the bands of each watched mesh's tree that the camera's view drew this frame, so a
+    /// loader holds a band until the band above it drew. A frame with no loader waiting pays
+    /// nothing.
+    pub(crate) fn note_stage_bands(
+        &mut self,
+        scene: &null3d_core::scene::SceneStorage,
+        parity: usize,
+        view: &crate::patches::BandView<'_>,
+        draws_tree: impl Fn(u32) -> bool,
+    ) {
+        crate::patches::note_stage_bands(
+            scene,
+            parity,
+            view,
+            &self.patches,
+            &mut self.stage_watches,
+            draws_tree,
+        );
     }
 
     /// Stops watching the levels that the views pick for `mesh`, so the frames that follow pay

@@ -9,6 +9,7 @@ import { EngineError, errorFixesReady, errorOfMessage } from '../errors/engine-e
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
+import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
 import { maxTargetFps, type PresetCheck, type TargetFps } from '../quality/check';
 import {
 	choosePreset,
@@ -37,7 +38,7 @@ import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
 import { URL_SWITCHES } from '../shared/dev';
-import { FEATURE_STATS_MESSAGE } from '../shared/feature-stats';
+import { FEATURE_STATS_MESSAGE, mergeFeatureStats } from '../shared/feature-stats';
 import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
@@ -101,6 +102,7 @@ import {
 	takeParkedWorker,
 	takeWhenFree,
 } from './ownership';
+import { PermutationRecording } from './permutation-recording';
 import { type PointerLockOptions, requestPointerLock } from './pointer-lock';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
@@ -883,6 +885,11 @@ export class EngineWorker {
 	private readyPromise: Promise<WorkerReply>;
 	private readonly stoppedPromise: Promise<void>;
 	private worker: Worker;
+	/**
+	 * The recording that gathers the words of each thread that draws, when the page records them.
+	 * Set before the page waits for any worker's ready reply.
+	 */
+	recording?: PermutationRecording;
 	private started = false;
 	/** True once the worker reported that its script, and the files it imports, loaded. */
 	private scriptLoaded = false;
@@ -944,6 +951,11 @@ export class EngineWorker {
 			worker.onmessage = (event: MessageEvent<WorkerReply>) => {
 				const reply = event.data;
 				switch (reply.type) {
+					case 'recorded':
+						// A recording publishes the drawing thread's words, which it gives once the held
+						// frame has built the scene's pipelines.
+						this.recording?.answered(reply.role, reply.permutations);
+						return;
 					case 'sketch-message':
 						events.sketchMessage(reply.name, reply.data);
 						return;
@@ -1728,14 +1740,16 @@ async function startEngine(
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
 	if (options.onSketchMessage) messageHandlers.add(options.onSketchMessage);
-	// The add-on features' figures, which the stats overlay shows beside the engine's own.
+	// The add-on features' figures, which the stats overlay shows beside the engine's own. Each
+	// add-on keeps its list, so two add-ons show side by side and one that stops leaves the other's.
+	const featureLists = new Map<string, readonly FeatureStats[]>();
 	let features: readonly FeatureStats[] = [];
 	// Messages sent before the page listens wait for the first handler. The newest are kept when a
 	// sketch sends many.
 	let earlyMessages: [string, unknown][] | undefined = options.onSketchMessage ? undefined : [];
 	const onSketchMessage = (name: string, data: unknown) => {
 		if (name === FEATURE_STATS_MESSAGE) {
-			features = data as readonly FeatureStats[];
+			features = mergeFeatureStats(featureLists, data);
 			return;
 		}
 		if (name === VIDEO_FOLLOW) {
@@ -2239,6 +2253,38 @@ async function startEngine(
 		};
 		/** Each engine thread's name and the roles it runs, for the frame figures. */
 		engineThreads = [...threadRoles(mode)];
+		// A recording run gathers the words of every thread that draws, and publishes them where the
+		// tool that writes the build's list reads them.
+		const recording =
+			switches.permutations === 'record'
+				? new PermutationRecording(
+						renderThread === 'render-worker'
+							? 'render'
+							: renderThread === 'sketch-worker'
+								? 'sketch'
+								: 'page',
+					)
+				: undefined;
+		if (recording) for (const worker of allWorkers(threads)) worker.recording = recording;
+		/**
+		 * Ends the recording and lets the drawing thread answer with its words. A held page runs it
+		 * once its frame has drawn the scene's pipelines, and a live page when the tool that records
+		 * has driven the page through its states.
+		 */
+		const stopRecording = () => {
+			if (!recording) return;
+			if (renderThread === 'main') {
+				recording.answered('page', stopRecordingPermutations());
+				return;
+			}
+			const worker = renderThread === 'render-worker' ? threads?.render : threads?.sketch;
+			worker?.send({ type: 'stop-recording' } satisfies RendererRequest);
+		};
+		// A live page has no held frame to end its recording, so the tool that records calls the
+		// page's stop once the page has shown every state that it offers.
+		if (recording && hold === undefined)
+			(globalThis as { __null3dStopRecording?: () => void }).__null3dStopRecording = stopRecording;
+		if (recording && renderThread === 'main') recordPermutations();
 		// What the thread that draws needs besides its canvas, whichever thread that is.
 		const rendererSetup: Omit<RendererSetup, 'canvas'> = {
 			tier,
@@ -2250,6 +2296,8 @@ async function startEngine(
 			hold: hold !== undefined,
 			glTiming: switches.glTiming,
 			preload: options.preload,
+			// The recording run lists the words that the scene draws with, for a narrowed build.
+			recordPermutations: switches.permutations === 'record',
 		};
 
 		const device = coreDevice(tier, report, {
@@ -2785,6 +2833,9 @@ async function startEngine(
 		}
 		try {
 			held = await abortable(holdFrame(capture, failureHandlers), signal);
+			// The held frame built every pipeline that the scene draws with, so its words are
+			// complete here, before the page publishes the frame the tool waits on.
+			stopRecording();
 		} catch (error) {
 			await stop();
 			throw error;

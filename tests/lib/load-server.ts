@@ -62,9 +62,10 @@ function viteBuild(root: string, args: readonly string[], env: Record<string, st
 /**
  * The test pages that the startup build holds besides the engine test page, each built on its own
  * so the engine test page stays as the startup benchmark loads it: the texture cache page, which
- * times loads of KTX2 files.
+ * times loads of KTX2 files, and the staged start page, which times the first draw of a staged
+ * model and the bytes before it.
  */
-const STARTUP_EXTRA_PAGES = ['texture-cache'];
+const STARTUP_EXTRA_PAGES = ['texture-cache', 'staged-start'];
 
 /**
  * Builds the engine test page for production with relative addresses, into its own folder, so a

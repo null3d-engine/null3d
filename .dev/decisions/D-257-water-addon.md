@@ -2,12 +2,13 @@
 
 Status: decided. Built: the `@null3d/water` add-on, its demo, and the reflection's cadence through
 the feature host. Owed: the cost per preset, and the Creek's migration to the add-on, which waits
-until the add-on reproduces the old look. Tasks: M3-F5, M3-E6.
+until the add-on follows the current as the Creek does. Tasks: M3-F5, M3-E6.
 
 Summary: `@null3d/water` draws a river and a lake from one shape, with waves, ripples, caustics,
 foam, soft shores, a reflection and an underwater view. The surface reads the copy of the scene's
 depth, so a shore fades against the real bed. The reflection's cadence is a feature setting of the
-preset and the governor. The Creek draws its own water, by the owner's ruling on the look.
+preset and the governor. The Creek draws its own water, by the owner's ruling on the look. Its waves
+run along the stream's current, so the whole surface moves downstream.
 
 ## Question
 
@@ -75,16 +76,32 @@ and the owner rules those differences wrong for the Creek.
 
 - **The current.** The add-on reads it from the river mesh's texture coordinates, so each vertex
   carries a vector. The wave phase, the foam drift and the caustic drift follow that vector. The
-  Creek's water runs the same three along the world's x axis with one speed.
+  Creek's water takes its current from the stream's middle line, and the wave phase, the foam drift
+  and the caustic drift follow it.
 - **The thickness.** The add-on takes it from the screen-space copy of the scene's depth. The
   Creek's water computes an analytic bed. The change moves the caustics and the edge foam.
 - **The shore.** The add-on fades the water's alpha over a soft ramp. The Creek's water ends
   opaque at the mesh's edge.
 
 The owner rejects the add-on's look in the Creek: the surface shows sideways lines between stretches
-of flow. The Creek therefore draws its own water, and M3-F5's migration of the Creek to the add-on
-waits until the add-on reproduces that look. A close picture of the stream's surface guards it, as
-the bank views draw the stream only a few dozen pixels wide.
+of flow. The owner also ruled that all visible motion follows the river, and that the crests stay.
+The Creek's own water therefore takes the current from the stream's middle line. The six wave
+directions stay as they were, measured in the current's frame, so the crests keep every angle
+between them. The current carries the whole set, so the pattern keeps its cross-hatch and every
+crest drifts downstream. The caustics and the foam flecks drift along the same current.
+
+A block match on the close view at three moments moves the near band's median -73, -80 and -99
+degrees, against the -90 of straight downstream, and its spread falls by more than half. The far
+band has only eight blocks, so its angle is coarse: that limits the precision of the figure, not the
+direction, and every far block points downstream.
+
+The add-on still lets each wave run along a direction fixed in the world, so its crests cross the
+stream. The Creek therefore draws its own water. M3-F5's migration of the Creek to the add-on waits
+until the add-on follows the current in the same way. The close picture at 640 by 360 guards the
+carried set, because its frame fills with the surface. The three bank views are 320 wide and draw
+the stream as a ribbon a few dozen pixels across, so no crest pattern reads there; their reference
+changes are incidental. The unit tests keep the wave copies equal, check that no two directions
+collapse, and check that the pattern drifts downstream with the current.
 
 ### The cadence through the feature host
 

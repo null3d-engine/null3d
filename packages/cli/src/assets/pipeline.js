@@ -17,7 +17,7 @@ import { MeshoptDecoder, MeshoptEncoder } from 'meshoptimizer';
 import { VERSION } from '../version.js';
 import { bakeClips, MeshoptWithRotationFilter } from './clips.js';
 import { NULL3D_CLUSTERS, Null3dClusters } from './cluster-extension.js';
-import { clusterSummary, planClusters, storeClusters } from './clusters.js';
+import { bandClusters, clusterSummary, planClusters, storeClusters } from './clusters.js';
 import { dedup, dedupAccessors } from './dedup.js';
 import { quantizeMeshes, reorderMeshes } from './geometry.js';
 import { MAX_TEXTURE_SIDE } from './images.js';
@@ -278,11 +278,18 @@ export async function optimizeModel(path, options, encode) {
 	const levels =
 		options.lod || clusters.size > 0 ? await planLevels(doc, clusters, options.lod) : new Map();
 	if (levels.size > 0) orderLevels(doc, levels, clusters);
+	/** What each tree holds, which the report reads before the bands cut it away. */
+	const trees = clusterSummary([...clusters.values()]);
 	/** @type {Map<string, Uint8Array>} */
 	const stages = new Map();
-	if (options.stages && levels.size > 0)
-		storeStages(doc, levels, stages, basename(path, extname(path)));
-	else storeLevels(doc, levels);
+	const prefix = basename(path, extname(path));
+	if (options.stages) {
+		// Each tree streams its bands after the one that the file holds, so the file draws that first
+		// band at once. A mesh's whole levels stay in the file for the paths that draw it whole.
+		if (clusters.size > 0) bandClusters(doc, clusters, stages, prefix);
+		if (levels.size > 0) storeStages(doc, levels, stages, prefix, clusters);
+		else storeLevels(doc, levels);
+	} else storeLevels(doc, levels);
 	storeClusters(doc, clusters);
 	merged.accessors = dedupAccessors(doc);
 	const spatial = addSpatialData(doc, {
@@ -317,8 +324,9 @@ export async function optimizeModel(path, options, encode) {
 		textures: records,
 		unbaked: skipped,
 		files,
+		stages,
 		levels: [...levels.values()],
-		clusters: clusterSummary([...clusters.values()]),
+		clusters: trees,
 		merged,
 		spatial,
 		shaders,

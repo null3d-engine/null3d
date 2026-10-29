@@ -2,7 +2,10 @@
 
 Status: measured for M3-L3, for the owner's review. Built: both GPU routes, their pictures, the
 plan that times them on phones and tablets, the Mac's figures for both routes, and the GPU check.
-Owed: the WebGL2 rows for the iPad and the phone, which the landing session's device runs make.
+The WebGL2 rows for the iPad and the phone are in, from the device records
+[`20261029-020306-cluster-cost`](../tested-devices/ipad-pro-13-safari/20261029-020306-cluster-cost.md)
+and
+[`20261029-020829-cluster-cost`](../tested-devices/galaxy-s25-sm-s931b-chrome/20261029-020829-cluster-cost.md).
 [D-213](D-213-cluster-levels.md#drawing-on-webgpu) holds the WebGPU drawing method and
 [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md) the WebGL2 one; this record holds what they
 cost. Task: M3-L3.
@@ -69,6 +72,19 @@ The WebGL2 route, on the Mac at Medium in the same quiet window:
 | 30 m | 2.5 ms | 16.7 ms | 0.2 ms | not reported |
 | 80 m | 1.7 ms | 16.7 ms | 0.1 ms | not reported |
 
+The WebGL2 route on the two devices, from the runs at the plan's High preset:
+
+| Device | 12 m | 30 m | 80 m | CPU time | GPU timer |
+| --- | --- | --- | --- | --- | --- |
+| iPad Pro 13 (2025), Safari 26.6.1 | 15.6 ms | 15.5 ms | 15.6 ms | 0.84 to 1.08 ms | none |
+| Galaxy S25 (SM-S931B), Chrome 152 | 33.3 ms | 33.3 ms | 33.3 ms | 0.61 to 0.70 ms | none |
+
+Neither device offers a GPU timer on this path, so the interval and the CPU time are what this
+record's own rule takes instead. The iPad's interval is its display's rate, and the page is not near
+its budget there. The Galaxy S25's run marks its timing unreliable because its display ran at 30 Hz,
+so its interval is the display's period and not the page's cost; its CPU figures are the page's own
+work and do not depend on the display. The two device records hold the runs and say the same.
+
 The WebGL2 route costs more GPU time than WebGPU at every distance, because it draws one range a
 mesh at a time through the driver's multi-draw path, where WebGPU draws one indirect call. The
 saving still reaches the GPU time: at 80 m it takes 1.7 ms against 2.1 ms at 12 m, 19 percent
@@ -120,6 +136,6 @@ WebGL2 draw-record buffer's figures are in
 
 - The page and the plan stay as the way to measure either route again when it changes.
 - A device without a GPU timer reports no GPU figure; its frame interval and CPU time stand in.
-- The WebGL2 rows for the iPad and the phone wait on the landing session's runs, at the High
-  preset.
+- The WebGL2 rows for the iPad and the phone are measured at the High preset, and both devices
+  report no GPU timer on that path, so their interval and CPU time are what stand in.
 - The Mac's figures are one preset's and one window's.

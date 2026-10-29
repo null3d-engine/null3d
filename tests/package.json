@@ -16,6 +16,7 @@
 		"@null3d/vegetation": "workspace:*",
 		"@null3d/three-compat": "workspace:*",
 		"@null3d/vite-plugin": "workspace:*",
+		"@null3d/water": "workspace:*",
 		"@null3d/wind": "workspace:*",
 		"@playwright/test": "1.63.0",
 		"@types/three": "0.186.0",

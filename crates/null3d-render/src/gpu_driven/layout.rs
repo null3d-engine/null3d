@@ -391,6 +391,8 @@ struct BatchRows {
 /// copy in a view's compacted instances, the first of its indirect draws, and its base vertex.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct ClusterMesh {
+    /// The engine mesh whose tree the pass picks, which a staged band's watch reads.
+    pub(super) mesh: u32,
     pub(super) first_patch: u32,
     pub(super) patch_count: u32,
     pub(super) slot: u32,
@@ -1242,6 +1244,7 @@ impl Layout {
             let cluster = tree.map(|tree| {
                 let index = self.clusters.len() as u32;
                 self.clusters.push(ClusterMesh {
+                    mesh,
                     first_patch: self.cluster_patches.len() as u32,
                     patch_count: tree.len() as u32,
                     slot: slot_base,
@@ -1253,6 +1256,8 @@ impl Layout {
                 let base = self.cluster_indices.len() as u32;
                 for (k, record) in tree.records().iter().enumerate() {
                     let sphere = tree.bounds()[k];
+                    // A patch whose children have not arrived carries a rule error below 0, so the
+                    // pass draws it wherever the camera is close instead of leaving a hole.
                     self.cluster_patches.push([
                         sphere[0].to_bits(),
                         sphere[1].to_bits(),
@@ -1261,7 +1266,7 @@ impl Layout {
                         record[0] + base,
                         record[1],
                         record[2],
-                        record[3],
+                        tree.rule_error(k as u32).to_bits(),
                     ]);
                 }
                 self.cluster_indices.extend_from_slice(tree.indices());

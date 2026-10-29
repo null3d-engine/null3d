@@ -57,7 +57,9 @@ Options:
                                level's error for the engine to pick by (MSFT_lod)
   --stages                     With --lod, write each mesh's levels as separate files beside
                                the model, so the engine draws the coarsest level first and
-                               refines it as the others arrive (NULL3D_stages)
+                               refines it as the others arrive. With --clusters, write each
+                               tree's bands after the patches that the file holds, so the tree
+                               refines as its bands arrive (NULL3D_stages)
   --clusters                   Add a tree of cluster patches to each large static mesh of 20,000
                                triangles or more, whose patches draw near the camera at fine
                                detail and far from it at coarse detail (NULL3D_clusters). Also
@@ -133,9 +135,9 @@ export function parseOptimizeArgs(args) {
 	const jobs = values.jobs === undefined ? defaultJobs() : Number(values.jobs);
 	if (!Number.isInteger(jobs) || jobs < 1)
 		throw new UsageError(`--jobs takes a whole number from 1, such as 4, not "${values.jobs}"`);
-	if (values.stages && !values.lod)
+	if (values.stages && !values.lod && !values.clusters)
 		throw new UsageError(
-			'--stages writes the levels of detail that --lod makes, so it needs --lod',
+			'--stages writes the levels that --lod makes and the bands that --clusters makes, so it needs one of them',
 		);
 	if (values.report !== undefined && !/\.json$/i.test(values.report))
 		throw new UsageError(`--report must name a .json file, not "${values.report}"`);

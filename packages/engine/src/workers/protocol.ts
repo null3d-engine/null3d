@@ -66,6 +66,11 @@ export interface RendererSetup extends FramePacing {
 	glTiming?: GlTimingMode;
 	/** The features whose shader files load before the first frame, as `createEngine` lists them. */
 	preload?: readonly string[];
+	/**
+	 * True when the page records the permutation words that its pipelines ask for, as a build of a
+	 * narrowed shader set lists, through the `?permutations=record` switch.
+	 */
+	recordPermutations?: boolean;
 }
 
 export type SketchWorkerInit = CoreHandoff & {
@@ -138,7 +143,9 @@ export type RendererRequest =
 	| { type: 'capture'; image?: boolean }
 	| { type: 'lose-gpu' }
 	| { type: 'stop-drawing' }
-	| { type: 'park' };
+	| { type: 'park' }
+	/** Gives the permutation words that the drawing thread's pipelines asked for while it recorded. */
+	| { type: 'stop-recording' };
 
 /**
  * Sent to the worker that draws as soon as the probe has chosen the GPU path, before the core
@@ -161,6 +168,11 @@ export type WorkerReply =
 			version?: string;
 			tier?: Tier;
 	  }
+	/**
+	 * The drawing thread's answer to a recording's stop: the permutation words that its pipelines
+	 * asked for. A thread that does not draw never answers.
+	 */
+	| { type: 'recorded'; role: 'sketch' | 'render'; permutations: number[] }
 	| { type: 'error'; role: 'sketch' | 'render' | 'job'; message: string }
 	/**
 	 * A thread's loop failed after the start, such as the sketch's frame loop, the render loop or a

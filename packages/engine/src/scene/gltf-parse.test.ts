@@ -2006,6 +2006,47 @@ describe("the asset tool's staged levels", () => {
 		const hull = parse(wrong.glb()).nodes.find((node) => node.name === 'Hull');
 		expect(hull?.stages).toBeUndefined();
 	});
+
+	test('reads the bands of each cluster tree, by the primitive that each extends', () => {
+		const builder = shipBuilder();
+		builder.json.nodes[0].extras = {
+			NULL3D_stages: {
+				bands: [
+					{ primitive: 0, url: 'ship.m0.p0.band1.bin', bytes: 120 },
+					{ primitive: 0, url: 'ship.m0.p0.band2.bin', bytes: 60 },
+					{ primitive: 1, url: 'ship.m0.p1.band1.bin', bytes: 40 },
+				],
+			},
+		};
+		const hull = parse(builder.glb()).nodes.find((node) => node.name === 'Hull');
+		expect(hull?.stages).toEqual({
+			levels: [],
+			bands: [
+				{ primitive: 0, url: 'ship.m0.p0.band1.bin', bytes: 120 },
+				{ primitive: 0, url: 'ship.m0.p0.band2.bin', bytes: 60 },
+				{ primitive: 1, url: 'ship.m0.p1.band1.bin', bytes: 40 },
+			],
+		});
+	});
+
+	test('stops at a band of a primitive that holds no address, and keeps the others', () => {
+		const builder = shipBuilder();
+		builder.json.nodes[0].extras = {
+			NULL3D_stages: {
+				bands: [
+					{ primitive: 0, url: 'a.bin', bytes: 120 },
+					{ primitive: 0, url: '', bytes: 60 },
+					{ primitive: 0, url: 'c.bin', bytes: 30 },
+					{ primitive: 1, url: 'd.bin', bytes: 20 },
+				],
+			},
+		};
+		const hull = parse(builder.glb()).nodes.find((node) => node.name === 'Hull');
+		expect(hull?.stages?.bands).toEqual([
+			{ primitive: 0, url: 'a.bin', bytes: 120 },
+			{ primitive: 1, url: 'd.bin', bytes: 20 },
+		]);
+	});
 });
 
 describe("a node's levels of detail", () => {
