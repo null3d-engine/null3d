@@ -22,6 +22,7 @@ import { buildStartupPages, prepareLoads, STARTUP_PAGES_DIR } from '../tests/lib
 import { DEBUG_PORT, PREVIEW_PORT, startPreview } from '../tests/lib/server.ts';
 import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { DevTools, limitWorkerNetworks, pageResultOf } from './lib/devtools';
+import { median } from './lib/report';
 
 /** The page that loads a staged model and reports its first draw and downloads. */
 const PAGE = 'tests/pages/staged-start.html';
@@ -210,13 +211,11 @@ function summary(rows: readonly Row[]): string[] {
 	for (const kind of KINDS) {
 		const samples = rows
 			.filter((row) => row.kind === kind && row.sample)
-			.map((row) => row.sample as StagedStart)
-			.sort((a, b) => a.firstFrameMs - b.firstFrameMs);
+			.map((row) => row.sample as StagedStart);
 		if (samples.length === 0) continue;
-		const middle = samples[samples.length >> 1] as StagedStart;
 		const name = kind === 'limited' ? 'level limit 1' : 'every stage';
 		lines.push(
-			`${name}: first draw at ${middle.firstFrameMs.toFixed(0)} ms, ${kb(middle.before.bytes)} before it, ${kb(middle.total.bytes)} in all, ${(laterShare(middle) * 100).toFixed(1)}% after it, of ${samples.length} loads`,
+			`${name}: first draw at ${median(samples.map((s) => s.firstFrameMs)).toFixed(0)} ms, ${kb(median(samples.map((s) => s.before.bytes)))} before it, ${kb(median(samples.map((s) => s.total.bytes)))} in all, ${median(samples.map((s) => laterShare(s) * 100)).toFixed(1)}% after it, stage files ${kb(samples[0]?.stageBytes ?? 0)}, of ${samples.length} loads`,
 		);
 	}
 	return lines;
