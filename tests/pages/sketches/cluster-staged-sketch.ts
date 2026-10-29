@@ -20,8 +20,17 @@ const NEAR = params.has('near');
 
 /** The camera close to the ground: the near edge of the cluster pictures. */
 const CLOSE = { near: 0.5, far: 300, position: [0, 7, 26], target: [0, 1, -20.8] } as const;
-/** The camera beyond every switch distance of the tree, where its root band draws alone. */
-const AWAY = { near: 1, far: 12_000, position: [0, 1_000, 3_000], target: [0, 0, 0] } as const;
+/**
+ * The camera beyond every switch distance of the tree, where its root patch draws alone. The root's
+ * error switches it at about 85 km, so the camera stands past that. The ground is smaller than a
+ * pixel there, which the far test expects: it compares two empty pictures, and one band file.
+ */
+const AWAY = {
+	near: 1,
+	far: 2_000_000,
+	position: [0, 100_000, 173_205],
+	target: [0, 0, 0],
+} as const;
 
 /**
  * The frames that the near page draws before it moves the camera close: twice the loader's warm-up,
