@@ -415,6 +415,27 @@ test('the stats overlay keeps the card width and takes its height from the tab',
 		await tabs.nth(3).click();
 		expect(await page.locator(`${OVERLAY} #pane-systems .area`).count()).toBe(10);
 	}
+	// No tab leaves an empty card: the card's lower edge sits within its padding of the lowest
+	// figure the tab draws.
+	for (const index of [0, 1, 2, 3]) {
+		await tabs.nth(index).click();
+		const gap = Number(
+			await page.evaluate(`(() => {
+				const root = document.querySelector('[data-null3d-stats]')?.shadowRoot;
+				const card = root?.querySelector('.card')?.getBoundingClientRect();
+				const pane = root?.querySelector('.pane:not([hidden])');
+				if (!card || !pane) return -1;
+				let lowest = -Infinity;
+				for (const node of pane.querySelectorAll('*')) {
+					const box = node.getBoundingClientRect();
+					if (box.width > 0 && box.height > 0) lowest = Math.max(lowest, box.bottom);
+				}
+				return card.bottom - lowest;
+			})()`),
+		);
+		expect(gap).toBeGreaterThanOrEqual(0);
+		expect(gap).toBeLessThan(16);
+	}
 	// The tabs hold different amounts, so a card that followed its content changes height.
 	expect(Math.max(...heights) - Math.min(...heights)).toBeGreaterThan(20);
 });
