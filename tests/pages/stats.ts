@@ -103,8 +103,13 @@ function readOverlay(canvas: HTMLCanvasElement): OverlayView | null {
 	const root = host?.shadowRoot;
 	if (!host || !root) return null;
 	const figures: Record<string, string> = {};
+	// A tab that does not show still holds its figures, and the overlay keeps them current. Only a
+	// figure that the overlay hides for want of a value, or a lane that the mode does not run, is
+	// left out.
 	for (const node of root.querySelectorAll<HTMLElement>('[data-figure]'))
-		if (!node.closest('[hidden]')) figures[node.dataset.figure as string] = node.textContent ?? '';
+		if (!node.closest('[hidden]:not(.pane)'))
+			figures[node.dataset.figure as string] = node.textContent ?? '';
+	const card = root.querySelector<HTMLElement>('.card')?.getBoundingClientRect();
 	const box = host.getBoundingClientRect();
 	const canvasBox = canvas.getBoundingClientRect();
 	return {
@@ -112,6 +117,9 @@ function readOverlay(canvas: HTMLCanvasElement): OverlayView | null {
 		expanded: root.querySelector('button')?.getAttribute('aria-expanded') ?? null,
 		offset: [canvasBox.right - box.right, box.top - canvasBox.top],
 		pointerEvents: getComputedStyle(host).pointerEvents,
+		tabs: [...root.querySelectorAll<HTMLElement>('[role=tab]')].map((tab) => tab.textContent ?? ''),
+		tab: root.querySelector<HTMLElement>('[role=tab][aria-selected=true]')?.textContent ?? null,
+		card: card ? { width: card.width, height: card.height } : null,
 	};
 }
 

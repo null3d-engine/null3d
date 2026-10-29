@@ -180,12 +180,12 @@ The cascades keep their boxes and their split distances from the other camera's 
 flowchart LR
     threads["Each engine thread writes<br/>a few numbers per frame"] --> buffer["The frame figures buffer"]
     buffer --> header["The overlay's header:<br/>the frame rate"]
-    buffer --> card["The overlay's card:<br/>work, memory, counts"]
+    buffer --> card["The overlay's card:<br/>four tabs of figures"]
     buffer --> sketch["debug.frameStats()<br/>in the sketch"]
     page["The page's own meters:<br/>heap, page memory"] --> card
 ```
 
-The stats overlay sits over the top-right corner of the canvas. Its header is a button with a ring gauge and the frame rate, such as `58 fps`. A click on it, or Enter or Space while it has the focus, opens a card of figures under it and closes the card again. Four calls show the overlay:
+The stats overlay sits over the top-right corner of the canvas. Its header is a button with a ring gauge and the frame rate, such as `58 fps`. A click on it, or Enter or Space while it has the focus, opens a card of figures under it and closes the card again. The card holds four tabs, which show one group of figures at a time. Four calls show the overlay:
 
 - `createEngine({ stats: true })` shows it from the first frame.
 - `engine.stats(true)` on the page shows it, and `engine.stats(false)` hides it.
@@ -208,22 +208,20 @@ const engine = await createEngine({
 
 The page and the sketch show and hide the same overlay, and the last call wins, from either side. So the sketch's `debug.stats(false)` hides an overlay that the page showed, and the page's `engine.stats(false)` hides one that the sketch showed. Options add up: a call changes only the options that it names, and an overlay that shows again keeps them. Each `debug.stats` call sends a message to the page, so call it when the choice changes, not in every frame. The page draws the overlay and updates it four times a second. A held engine for image tests shows no overlay.
 
-The header stays in the corner when the card opens, and the card opens under it, aligned to the right. Only the header button and the card's two symbols take the pointer. Drags anywhere else on the overlay reach the canvas.
+The header stays in the corner when the card opens, and the card opens under it, aligned to the right. Only the header button, the card's two symbols and its tab buttons take the pointer. Drags anywhere else on the overlay reach the canvas.
 
 ### The card
 
-| Part | What it shows |
+The card is 360 by 396 pixels and keeps that size on every tab, so a long list never moves the panel. Four tabs show one section at a time: `Frame`, `Memory`, `Steps` and `Systems`. A click on a tab shows it, the arrow keys move between tabs, and Home and End go to the first and last. The card's own header keeps these figures in view on every tab: the mode's symbol, the display's symbol, the display's refresh rate and the target with its interval, such as `120 Hz ≥60 fps · 16.7 ms` (or `60 fps · 16.7 ms` where the target is the display's full rate), and the GPU's total time.
+
+| Tab | What it shows |
 | --- | --- |
-| `Frame work` | A symbol of the engine's thread mode, then a display symbol. After them come the display's refresh rate and the target with its interval, such as `120 Hz ≥60 fps · 16.7 ms`. Where the target is the display's full rate, the rate shows once, such as `60 fps · 16.7 ms` |
-| Work bars | CPU time per frame of each engine thread, and the GPU's time per frame, against the target |
-| `Held back by` | Below the target frame rate, the part of the frame that holds it back |
-| `Memory` | The engine's memory, the GPU's textures and buffers, and the page's JavaScript heap, as one bar with a legend |
-| `Memory by system` | Development builds only: one row for each engine table and allocator, with the bytes that it uses, reserves and has used at most |
-| Whole page | The memory of the whole page and its workers, as the browser counts it |
-| Counts | Draw calls, triangles and objects per frame |
-| `Add-ons` | One row for each add-on feature that reports figures: its GPU time, its settings, its budget and its memory. The section shows only while a feature reports figures |
-| `GPU steps` | One row for each pass of the frame that the GPU timed, such as `opaque` or `bloom 2`, with its GPU time per frame. The section shows only where the GPU path times passes one by one |
-| Last line | The GPU path, the quality preset and the render scale |
+| `Frame` | One work bar per engine thread and one for the GPU, against the target. Below them, the `Held back by` line below the target rate and the counts of draw calls, triangles and objects per frame. The last line names the GPU path, the quality preset and the render scale |
+| `Memory` | The engine's memory, the GPU's textures and buffers, and the page's JavaScript heap, as one bar with a legend. Under it, the memory of the whole page and its workers, as the browser counts it |
+| `Steps` | One row for each add-on feature that reports figures: its GPU time, its settings, its budget and its memory. Then one row for each pass of the frame that the GPU timed, such as `opaque` or `bloom 2`, with its GPU time per frame |
+| `Systems` | Development builds only: one row for each engine table and allocator, with the bytes that it uses, reserves and has used at most. A build that reports none says so |
+
+The overlay updates every tab on each refresh, so a tab shows current figures the moment it is chosen. It gathers nothing extra for a tab that does not show: the figures come from the frame records that the engine writes anyway and from the same GPU timing pass, whichever tab is open.
 
 **The target.** The overlay judges each frame against the engine's own [target frame rate](../concepts/quality-presets.md#the-target-frame-rate): the one that the preset check and the quality governor defend. It is the display's refresh rate, at most 60 frames a second, unless the page's `targetFps` option asks for more. The `?fps=` switch caps it too. The engine still draws at the display's full rate when the GPU allows it. So on a 120 Hz display the card reads `120 Hz ≥60 fps · 16.7 ms`: the engine draws up to 120 frames per second and defends 60. With `targetFps: 'display'`, the same card reads `120 fps · 8.3 ms`. The display symbol is a button whose tooltip explains the figures, as the mode's symbol does.
 
@@ -243,11 +241,11 @@ A bar stacks parts only where the parts add up to the time beside it. A thread's
 | Low latency | A clock | One thread prepares and then draws each frame. One bar, `Sketch + drawing`, stacks your code, the engine's sketch steps, then the drawing, and must fit the target |
 | Single thread | A clock | Without shared memory, the page's thread prepares and draws each frame. It shows as one `Sketch + drawing` bar too |
 
-**The colors.** A work bar's time is green below 80% of the target's interval, amber up to the interval, and red past it. The ring gauge in the header fills with the frame rate as a share of the target. It is green from 90% of the target, the share that a preset must hold in the preset check. It is amber from 75%, and red below.
+**The colors.** A work bar's parts are blue for your code, purple for the engine's work, and green for the GPU. The memory bar keeps those meanings: purple for the engine's memory, green for the GPU's textures and buffers, and blue for the page's JavaScript heap. The chrome is amber: the active tab's underline, the header's border and the whole-page note's dot mark it. A work bar's time is green below 80% of the target's interval, amber up to the interval, and red past it. The ring gauge in the header fills with the frame rate as a share of the target. It is green from 90% of the target, the share that a preset must hold in the preset check. It is amber from 75%, and red below.
 
 **Held back by.** While the frame rate is below 90% of the target, a line under the GPU bar names the bar furthest past the target's mark: `Held back by: GPU`, `Drawing`, `Sketch`, `Sketch + drawing`, `Jobs` or `Page`. When no bar passes the mark, it reads `Held back by: outside the engine`. The rest of the page's code, or the browser, then holds the frame back.
 
-**The add-ons' rows.** A feature that an add-on declares with `settings`, `budget`, `gpu` or `memory` gets one row under the counts, such as `water  gpu 0.42 ms  reflectionEvery 1  budget 1.7 of 1.7 ms`. The row names the feature, its one GPU timing scope, its own settings, its budget and the memory that it reports. The budget shows now and at full quality. A feature names its GPU scope with the render passes that carry its work, and the overlay adds up their time. A feature whose work records inside a pass of the engine's own reads `gpu not measured`. On WebGL2 no pass is timed alone, so every feature reads that. [Add-on feature descriptions](features.md#stats) explains the figures.
+**The add-ons' rows.** A feature that an add-on declares with `settings`, `budget`, `gpu` or `memory` gets one row in the Steps tab, such as `water  gpu 0.42 ms  reflectionEvery 1  budget 1.7 of 1.7 ms`. The row names the feature, its one GPU timing scope, its own settings, its budget and the memory that it reports. The budget shows now and at full quality. A feature names its GPU scope with the render passes that carry its work, and the overlay adds up their time. A feature whose work records inside a pass of the engine's own reads `gpu not measured`. On WebGL2 no pass is timed alone, so every feature reads that. [Add-on feature descriptions](features.md#stats) explains the figures.
 
 **Figures that the browser gives.** The frame rate, the work bars, the engine's and the GPU's memory and the counts show in every browser that runs the engine. The page's JavaScript heap comes from `performance.memory`, and the whole page's memory from `performance.measureUserAgentSpecificMemory`. Some browsers have neither. Where the browser lacks one, the overlay leaves it out, and the memory total adds up what it lists. Where the GPU path has no timer queries, the GPU bar reads `not measured` and stays empty.
 

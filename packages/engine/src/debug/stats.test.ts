@@ -13,7 +13,19 @@ import {
 } from '../shared/metrics';
 import { rateLevel, workLevel } from './frame-target';
 import { overlayFigures, type PageFigures } from './overlay';
-import { codeMs, drawingMs, targetTip, tenthsOfMib, WorkThreads, widthStep } from './overlay-look';
+import {
+	codeMs,
+	drawingMs,
+	STATS_PANEL_HEIGHT,
+	STATS_PANEL_WIDTH,
+	STATS_TABS,
+	TAB_LABELS,
+	TabSelection,
+	targetTip,
+	tenthsOfMib,
+	WorkThreads,
+	widthStep,
+} from './overlay-look';
 import { type FrameStats, FrameStatsWindow, STATS_WINDOW_MS } from './stats';
 import { statsText } from './stats-text';
 
@@ -634,5 +646,44 @@ describe('the overlay target and colors', () => {
 		expect(threads.heldBackBy(25, 24)).toBe('outside the engine');
 		threads.update([{ name: 'main', busyMs: 30 }], 'main');
 		expect(threads.heldBackBy(16.7, null)).toBe('Sketch + drawing');
+	});
+});
+
+describe('the overlay tabs', () => {
+	it('names four sections in reading order', () => {
+		expect(STATS_TABS).toEqual(['frame', 'memory', 'steps', 'systems']);
+		expect(STATS_TABS.map((tab) => TAB_LABELS[tab])).toEqual([
+			'Frame',
+			'Memory',
+			'Steps',
+			'Systems',
+		]);
+	});
+
+	it('shows one section at a time, and leaves the others hidden', () => {
+		const tabs = new TabSelection();
+		const shown = () => STATS_TABS.filter((tab) => tabs.visible(tab));
+		expect(shown()).toEqual(['frame']);
+		expect(tabs.select('memory')).toBe(true);
+		expect(shown()).toEqual(['memory']);
+		// The chosen tab stays chosen when it is chosen again.
+		expect(tabs.select('memory')).toBe(false);
+		expect(tabs.tab).toBe('memory');
+		expect(tabs.select('systems')).toBe(true);
+		expect(shown()).toEqual(['systems']);
+	});
+
+	it('moves with the arrow keys and wraps at the ends', () => {
+		const tabs = new TabSelection();
+		expect(tabs.move(1)).toBe('memory');
+		expect(tabs.move(-1)).toBe('frame');
+		expect(tabs.move(-1)).toBe('systems');
+		expect(tabs.move(1)).toBe('frame');
+	});
+
+	it('keeps one panel size for every tab, however many rows a tab holds', () => {
+		// The browser tests check the rendered height; this pins the size that the style sheet uses.
+		expect(STATS_PANEL_WIDTH).toBe(360);
+		expect(STATS_PANEL_HEIGHT).toBe(396);
 	});
 });

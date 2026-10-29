@@ -12,7 +12,7 @@ import {
 /** The overlay's element, which the page adds to its body. */
 const OVERLAY = '[data-null3d-stats]';
 /** The overlay's header button, which shows and hides its card. */
-const HEADER = `${OVERLAY} button[aria-controls]`;
+const HEADER = `${OVERLAY} button[aria-controls="card"]`;
 /** The overlay's card of figures. */
 const CARD = `${OVERLAY} .card`;
 /** The button of the frame mode's symbol, and its tooltip. */
@@ -353,3 +353,65 @@ for (const gpu of ['webgpu', 'webgl2'])
 		if (result.gpuTimer && !softwareGpu())
 			expect(open.timerQueries + open.resolves + open.readbacks).toBeGreaterThan(0);
 	});
+
+/** The overlay's tabs, and the pane that each one shows. */
+const TABS = `${OVERLAY} [role=tab]`;
+const pane = (page: Page, name: string) => page.locator(`${OVERLAY} #pane-${name}`);
+
+test('the stats overlay shows one tab at a time, and each tab keeps its figures', async ({
+	page,
+}) => {
+	const result = await openStats(page, 'gpu=webgl2');
+	const tabs = page.locator(TABS);
+	await expect(tabs).toHaveText(['Frame', 'Memory', 'Steps', 'Systems']);
+	await expect(pane(page, 'frame')).toBeVisible();
+	for (const name of ['memory', 'steps', 'systems']) await expect(pane(page, name)).toBeHidden();
+	// The header keeps the GPU's time in view, whichever tab shows.
+	const gpu = page.locator(`${OVERLAY} [data-figure="gpu"]`);
+	await expect(gpu).toBeVisible();
+	// The frame tab holds the geometry figures.
+	await expect(page.locator(`${OVERLAY} [data-figure="triangles"]`)).toBeVisible();
+	await expect(page.locator(`${OVERLAY} [data-figure="draws"]`)).toBeVisible();
+	// A figure in a tab that does not show is not drawn, though the overlay keeps it current.
+	const memory = page.locator(`${OVERLAY} #pane-memory [data-figure="memory"]`);
+	await expect(memory).toBeHidden();
+	await tabs.nth(1).click();
+	await expect(pane(page, 'memory')).toBeVisible();
+	await expect(pane(page, 'frame')).toBeHidden();
+	await expect(memory).toBeVisible();
+	await expect(memory).toHaveText(/^\d+\.\d MiB$/);
+	await expect(gpu).toBeVisible();
+	// The systems tab holds the register, or the note that says this build reports none.
+	await tabs.nth(3).click();
+	await expect(pane(page, 'systems')).toBeVisible();
+	await expect(page.locator(`${OVERLAY} [data-figure="draws"]`)).toBeHidden();
+	if (result.register)
+		await expect(page.locator(`${OVERLAY} [data-figure="area:scene"]`)).toBeVisible();
+	else await expect(page.locator(`${OVERLAY} #pane-systems .empty`)).toBeVisible();
+	// Back on the frame tab, the figures are still correct.
+	await tabs.nth(0).click();
+	await expect(pane(page, 'frame')).toBeVisible();
+	await expect(page.locator(`${OVERLAY} [data-figure="triangles"]`)).toHaveText(/^[1-9]/);
+	await expect(gpu).toHaveText(/^\d+\.\d ms$|^not measured$/);
+});
+
+test('the stats overlay keeps the card size on every tab', async ({ page }) => {
+	const result = await openStats(page, 'gpu=webgl2');
+	const card = page.locator(`${OVERLAY} .card`);
+	const first = await card.boundingBox();
+	if (!first) throw new Error('the card has no box');
+	// The card is 360 by 396 pixels, whatever the tab holds: the steps tab holds the passes and the
+	// systems tab holds a row for each area. A development build reports ten areas, more rows than
+	// the frame tab holds bars.
+	expect(first.width).toBeCloseTo(360, 0);
+	expect(first.height).toBeCloseTo(396, 0);
+	if (result.register)
+		expect(await page.locator(`${OVERLAY} #pane-systems .area`).count()).toBe(10);
+	const tabs = page.locator(TABS);
+	for (const index of [1, 2, 3, 0]) {
+		await tabs.nth(index).click();
+		const each = await card.boundingBox();
+		expect(each?.width).toBeCloseTo(first.width, 0);
+		expect(each?.height).toBeCloseTo(first.height, 0);
+	}
+});
