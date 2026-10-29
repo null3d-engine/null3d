@@ -305,7 +305,7 @@ impl DrawKey {
     /// The permutation bits that the moment layer's builds carry for a pair of `template`, or 0
     /// for a template that has none. A pair whose key holds any other bit keeps the transparent
     /// pass's sort: the moment layer has no build for it, and a shader build cannot be asked for
-    /// one that it does not make (decision record D-260).
+    /// one that it does not make (decision record D-261).
     pub const fn moment_bits(template: u32) -> u32 {
         let lit = permutation::TONE_MAP
             | permutation::VERTEX_COLOR
@@ -367,7 +367,7 @@ impl DrawKey {
 
     /// The key of the pipeline that draws the same pair again into the moment layer's colour sum,
     /// from the moment store's transmittance at the fragment's own depth. Its template is the
-    /// template's own moment colour template, a shader entry of its own (decision record D-260).
+    /// template's own moment colour template, a shader entry of its own (decision record D-261).
     pub const fn moment_colour(self) -> DrawKey {
         DrawKey {
             template: template::moment_colour(self.template),
@@ -640,7 +640,12 @@ mod tests {
         let line = table
             .lines()
             .find(|line| line.starts_with(&format!("variants.{variant} ")))
-            .unwrap_or_else(|| panic!("{shader} has no variant {variant}:\n{}", &table[..table.len().min(800)]));
+            .unwrap_or_else(|| {
+                panic!(
+                    "{shader} has no variant {variant}:\n{}",
+                    &table[..table.len().min(800)]
+                )
+            });
         let list = line.split("permutations = [").nth(1).expect("a list");
         let list = &list[..list.find(']').expect("the list's end")];
         list.split(',')
@@ -742,7 +747,14 @@ mod tests {
                 ("webgpu", permutation::DRAW_INDEX | permutation::MORPH),
                 ("webgl2", 0),
             ] {
-                let names = listed(toml, entry, &format!("moment_{}", if device == "webgpu" { "wgpu" } else { device }));
+                let names = listed(
+                    toml,
+                    entry,
+                    &format!(
+                        "moment_{}",
+                        if device == "webgpu" { "wgpu" } else { device }
+                    ),
+                );
                 assert!(
                     names.iter().any(|name| name == "OUTLINE_VISIBLE"),
                     "{entry}.moment_{device} holds the outline mask's value"

@@ -260,6 +260,7 @@ describe('SketchQuality.lower', () => {
 			textureMemoryMiB: low.textureMemoryMiB,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
 			antialias: MEDIUM.antialias,
+			momentTransparency: MEDIUM.momentTransparency,
 			shadowCascades: MEDIUM.shadowCascades,
 			shadowMapSize: MEDIUM.shadowMapSize,
 			shadowTiles: MEDIUM.shadowTiles,

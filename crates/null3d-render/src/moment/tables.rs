@@ -56,7 +56,6 @@ impl Point {
     fn div(self, divisor: f64) -> Self {
         Self::new(self.x / divisor, self.y / divisor)
     }
-
 }
 
 /// The subsample offsets that the area table's seven slots serve, and the five of the diagonal
@@ -155,11 +154,19 @@ fn ortho_area(p1: Point, p2: Point, x: usize) -> (f64, f64) {
         y1.is_sign_positive() == y2.is_sign_positive() || y1.abs() < 1e-4 || y2.abs() < 1e-4;
     if trapezoid {
         let a = (y1 + y2) / 2.0;
-        return if a < 0.0 { (a.abs(), 0.0) } else { (0.0, a.abs()) };
+        return if a < 0.0 {
+            (a.abs(), 0.0)
+        } else {
+            (0.0, a.abs())
+        };
     }
     let cross = -p1.y * d.x / d.y + p1.x;
     let fraction = cross.fract();
-    let a1 = if cross > p1.x { y1 * fraction / 2.0 } else { 0.0 };
+    let a1 = if cross > p1.x {
+        y1 * fraction / 2.0
+    } else {
+        0.0
+    };
     let a2 = if cross < p2.x {
         y2 * (1.0 - fraction) / 2.0
     } else {
@@ -201,7 +208,10 @@ fn area_ortho(pattern: usize, left: usize, right: usize, offset: f64) -> (f64, f
             }
         }
         3 => {
-            let (a1, a2) = (Point::new(a(left).0, a(left).1), Point::new(b(left).0, b(left).1));
+            let (a1, a2) = (
+                Point::new(a(left).0, a(left).1),
+                Point::new(b(left).0, b(left).1),
+            );
             let (a1, a2) = smooth_area(d, a1, a2);
             (a1.x + a2.x, a1.y + a2.y)
         }
@@ -217,10 +227,7 @@ fn area_ortho(pattern: usize, left: usize, right: usize, offset: f64) -> (f64, f
                 let line = full(Point::new(0.0, o1), Point::new(d, o2), left);
                 let (x, y) = c(left);
                 let (x2, y2) = b(left);
-                (
-                    (line.0 + x + x2) / 2.0,
-                    (line.1 + y + y2) / 2.0,
-                )
+                ((line.0 + x + x2) / 2.0, (line.1 + y + y2) / 2.0)
             } else {
                 full(Point::new(0.0, o1), Point::new(d, o2), left)
             }
@@ -245,7 +252,10 @@ fn area_ortho(pattern: usize, left: usize, right: usize, offset: f64) -> (f64, f
             }
         }
         12 => {
-            let (a1, a2) = (Point::new(c(left).0, c(left).1), Point::new(e(left).0, e(left).1));
+            let (a1, a2) = (
+                Point::new(c(left).0, c(left).1),
+                Point::new(e(left).0, e(left).1),
+            );
             let (a1, a2) = smooth_area(d, a1, a2);
             (a1.x + a2.x, a1.y + a2.y)
         }
@@ -348,7 +358,10 @@ fn area_diag(pattern: usize, left: usize, right: usize, offset: Point) -> (f64, 
             area(Point::new(1.0, 0.0), Point::new(1.0, 0.0).add(far)),
         ),
         12 => area(origin, origin.add(far)),
-        13 => average(area(origin, origin.add(far)), area(Point::new(1.0, 0.0), origin.add(far))),
+        13 => average(
+            area(origin, origin.add(far)),
+            area(Point::new(1.0, 0.0), origin.add(far)),
+        ),
         14 => average(
             area(origin, origin.add(far)),
             area(origin, Point::new(1.0, 0.0).add(far)),
@@ -374,8 +387,7 @@ pub(crate) fn areas() -> Vec<u8> {
         texels[at + 3] = 0;
     };
     for (slot, offset) in ORTHO_OFFSETS.iter().enumerate() {
-        for pattern in 0..16 {
-            let (edge_x, edge_y) = EDGES_ORTHO[pattern];
+        for (pattern, &(edge_x, edge_y)) in EDGES_ORTHO.iter().enumerate() {
             for right in 0..SIZE_ORTHO {
                 for left in 0..SIZE_ORTHO {
                     let value = area_ortho(pattern, left * left, right * right, *offset);
@@ -387,8 +399,7 @@ pub(crate) fn areas() -> Vec<u8> {
         }
     }
     for (slot, offset) in DIAG_OFFSETS.iter().enumerate() {
-        for pattern in 0..16 {
-            let (edge_x, edge_y) = EDGES_DIAG[pattern];
+        for (pattern, &(edge_x, edge_y)) in EDGES_DIAG.iter().enumerate() {
             for right in 0..SIZE_DIAG {
                 for left in 0..SIZE_DIAG {
                     let value = area_diag(pattern, left, right, *offset);
@@ -470,21 +481,20 @@ pub(crate) fn searches() -> Vec<u8> {
     // The reference lays the cases out in 33 by 33 texels, crops them to 64 by 16 from the row
     // below the middle, and flips the rows.
     let mut cases = [[0u8; 66]; 33];
-    for x in 0..33 {
-        for y in 0..33 {
+    for (y, row) in cases.iter_mut().enumerate() {
+        for x in 0..33 {
             let left = edges_of(0.03125 * x as f64);
             let top = edges_of(0.03125 * y as f64);
             if bilinear(left) != 0.03125 * x as f64 || bilinear(top) != 0.03125 * y as f64 {
                 continue;
             }
             let edges = [left, top];
-            cases[y][x] = (127.0 * delta_left(edges[0], edges[1])) as u8;
-            cases[y][33 + x] = (127.0 * delta_right(edges[0], edges[1])) as u8;
+            row[x] = (127.0 * delta_left(edges[0], edges[1])) as u8;
+            row[33 + x] = (127.0 * delta_right(edges[0], edges[1])) as u8;
         }
     }
-    for y in 0..SEARCH_HEIGHT as usize {
-        for x in 0..SEARCH_WIDTH as usize {
-            let value = cases[32 - y][x];
+    for (y, row) in cases.iter().rev().take(SEARCH_HEIGHT as usize).enumerate() {
+        for (x, &value) in row.iter().take(SEARCH_WIDTH as usize).enumerate() {
             let at = 4 * (y * SEARCH_WIDTH as usize + x);
             texels[at] = value;
         }
@@ -501,7 +511,7 @@ mod tests {
         let texels = areas();
         assert_eq!(texels.len(), (AREA_WIDTH * AREA_HEIGHT * 4) as usize);
         // The middle of an unfiltered pattern covers nothing.
-        let at = 4 * ((5 * SIZE_ORTHO + 0) * AREA_WIDTH as usize + 0);
+        let at = 4 * (5 * SIZE_ORTHO * AREA_WIDTH as usize);
         assert_eq!((texels[at], texels[at + 1]), (0, 0));
     }
 

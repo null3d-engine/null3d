@@ -25,6 +25,7 @@ Some null3D packages ship code from other projects, as the original file or as a
 | three.js: the specular table, the ambient occlusion and wide line shaders, and the EXR decoders | MIT | the core, the shader library, `panorama-worker.js` |
 | TinyEXR and OpenEXR, whose code the EXR decoders follow | BSD 3-Clause | `panorama-worker.js` |
 | Linearly transformed cosines, the area light tables | BSD 3-Clause | `vendor/ltc` |
+| SMAA, the subpixel morphological anti-aliasing that smooths the moment transparency layer's edges | MIT | the renderer's moment layer tables and shaders |
 | The Rust crates of the core: the standard library, wasm-bindgen, bumpalo, cfg-if, once_cell and dlmalloc | MIT or Apache License 2.0 | `dist/wasm` |
 
 ## The add-ons

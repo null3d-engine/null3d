@@ -4,6 +4,7 @@
 // set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count,
 // ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on the GPU,
 // ?cells=off for culling without grid cells, ?prepass=on or off for the depth prepass,
+// ?moments=on or off for moment transparency,
 // ?occlusion=on or off for occlusion culling, ?occlusion-buffer= for the size of software occlusion
 // culling's buffer, such as 384x216, ?skinning= for how WebGPU skins (compute for the skinning
 // pass, or full, skip or narrow for the pass with fewer of its savings), ?instances=index for
@@ -191,6 +192,11 @@ export interface Switches {
 	 * undefined to leave it to the page's option and the quality preset.
 	 */
 	prepass: boolean | undefined;
+	/**
+	 * True when ?moments=on turns moment transparency on, false when ?moments=off turns it off, and
+	 * undefined to leave it to the page's option and the quality preset.
+	 */
+	moments: boolean | undefined;
 	/**
 	 * True when ?occlusion=on turns occlusion culling on, false when ?occlusion=off turns it off,
 	 * and undefined to leave it to the page's options and the quality preset. It sets GPU occlusion
@@ -392,6 +398,7 @@ export function parseSwitches(search: string): Switches {
 		join: params.get('join') !== 'off',
 		grading: oneOf(params.get('grading'), ['display', 'hdr'] as const) ?? 'display',
 		prepass: onOff(params.get('prepass')),
+		moments: onOff(params.get('moments')),
 		occlusion: onOff(params.get('occlusion')),
 		occlusionBuffer: pixelsOf(params.get('occlusion-buffer')),
 		skinning:

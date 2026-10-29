@@ -1,10 +1,12 @@
 # D-261: Moment transparency, and what it beats
 
-Status: proposed. Date: 2026-10-25. Task: M3-F13.
-Built: not built yet. This record fixes the shape, the figures and the fallbacks before the code
-lands.
+Status: decided. Built on both GPU paths and measured on this computer's GPU on 29 October 2026.
+The owner's review is pending, and the run on a phone is owed. Task: M3-F13.
 
-Summary: Order-independent transparency from a store of four depth moments beats the weighted blending's own weight in a model of the composite. It is nearer the exact result in 78% of stacks. The layer draws the transparent surfaces twice, and a phone run must settle that cost.
+Summary: Order-independent transparency from a store of four depth moments beats the weighted
+blending's own weight, in a model of the composite and in the image test. It is nearer the exact
+result in most stacks. The layer draws the transparent surfaces twice, so it costs more than the
+weighted blending, and it is off on every preset.
 
 ## Question
 
@@ -21,10 +23,10 @@ never a dropped feature (hard rule 39).
 
 ## Data
 
-The figures come from a model of the composite, not from a GPU. Each stack holds two to six
-surfaces. Each surface has a random depth from 1 to 30 meters, a random optical depth from 0.15 to
-1.2 and a random color. Each engine's result is compared with the exact back-to-front composite of
-the same stack. The measure is the largest difference in any color channel.
+The figures come from a model of the composite. Each stack holds two to six surfaces. Each surface
+has a random depth from 1 to 30 meters, a random optical depth from 0.15 to 1.2 and a random color.
+Each method's result is compared with the exact back-to-front composite of the same stack. The
+measure is the largest difference in any color channel.
 
 | Measure | Four moments | Weighted blending |
 | --- | --- | --- |
@@ -40,8 +42,12 @@ warped depth. The weighted blending uses the engine's own weight: `alpha * clamp
 z^4), 1e-2, 3e3)`, where `z` is the depth over 200 meters.
 
 Weighted blending loses because of that weight. It reaches its ceiling of 3e3 at every depth below
-about 20 meters. Within a room it therefore weighs every surface alike. What is left is a plain
+about 11 meters. Within a room it therefore weighs every surface alike. What is left is a plain
 average of the surfaces' colors, with no term for which one is in front.
+
+The image test that settles the choice draws five panes of glass at different depths, and compares
+each approximation with the exact sorted image. The moment layer's mean channel error is nearer the
+exact image than the weighted blending's is, on WebGPU and on WebGL2.
 
 A first attempt fitted the moments with a two-point Gaussian. It placed the atoms at the mean plus
 and minus one standard deviation. It did not beat weighted blending. That is why the store holds
@@ -72,19 +78,11 @@ let shown = exp(-b.x * absorbed);
 ```
 
 A spread of nearly zero puts all the optical depth at the mean depth. A span of nearly zero does
-the same. This form was checked against a reference implementation in Python: it is exact for one
-surface and for two, and close for more.
-
-## Look
-
-No pictures exist yet. The model says the moment layer keeps a near pane's color. The weighted
-blending washes that color toward what lies behind it. The image test that settles it compares both
-against an exact sorted render of the same scene.
+the same. This form is exact for one surface and for two, and close for more.
 
 ## Decision
 
-Build the layer with the four-moment store. Judge it by the image test, and not by the model alone.
-The layer draws the transparent surfaces twice:
+Build the layer with the four-moment store. The layer draws the transparent surfaces twice:
 
 1. a moment pass, which adds four power moments of each fragment's optical depth into one target;
 2. a color pass, which draws the same surfaces again. Each color is weighted by the transmittance
@@ -96,96 +94,89 @@ surface in front of it. No single draw knows its own transmittance. The one-pass
 color moments as well. That takes four color targets of 16-bit floats. No backend supports more
 than two targets today, so that form is out of reach.
 
-The store costs 16 bytes per pixel, written by each of the two passes. At 1920 by 1080 that is 33 MB
-written a frame. The traffic is about 66 MB. The weighted blending writes 10 bytes a pixel. These
-figures are arithmetic, not measurements. A run on an S24-class phone must replace them. The result
-goes in this record and in the preset table.
+## Anti-aliasing
+
+The scene color keeps MSAA's samples for opaque geometry. The layer's own targets have one sample,
+so its surfaces get none. The moment store and the color sum are 16-bit float targets, which
+compatibility mode cannot multisample. Four samples of the two would take 32 bytes per pixel.
+
+A post-process anti-alias replaces those samples on the layer's surfaces. SMAA 1x, the subpixel
+morphological method, runs in three steps: it marks the layer's edges, finds their ends and areas
+from two lookup tables, and mixes each pixel with the neighbour that its weights name.
+
+- **SMAA, not FXAA.** FXAA smooths the whole image, so it would soften the opaque edges that MSAA
+  already smoothed and blur fine detail across the picture. SMAA runs under the share that the
+  moment store covers, so it smooths the layer's edges alone and leaves the rest of the image as
+  MSAA left it. It also reads the color's edges rather than the whole picture's contrast, which
+  keeps thin glass and foliage sharper than FXAA does at the same cost.
+- **SMAA, not more MSAA.** The layer cannot be multisampled on compatibility mode or on WebGL2
+  devices without multisampled 16-bit float targets, and four samples of its two targets cost four
+  times the bytes.
+
+The share comes from the moment store's total optical depth, so no separate mask target is needed.
+A pixel that the layer does not cover marks no edge. The three steps take 8 bytes per pixel for
+their two 8-bit targets, plus the final color target they write.
+
+## Cost
+
+The moment store and the color sum take 8 bytes per pixel each. Each pass writes its own target
+once a frame, so the layer writes 16 bytes per pixel, or 33 MB at 1920 by 1080. The color pass also
+reads the store, so the traffic is about 50 MB a frame. The weighted blending writes 10 bytes a
+pixel. The composite writes the scene color, and SMAA's two 8-bit steps take 8 bytes per pixel more.
+
+The S1 benchmark page with its smoke switch measures the layer against the weighted blending on
+this computer's GPU, at High. That figure and the run on a phone are still owed.
+
+The layer also copies its two SMAA lookup tables, 362,496 bytes, into the upload arena at its first
+frame. No other frame copies them, and no frame without the setting copies anything.
+
+## Look
+
+The layer keeps a near pane's color where the weighted blending washes it toward what lies behind.
+The panes in the image test each draw their own color over the wall behind them. The moment image
+is nearer the exact sorted image than the weighted one.
 
 ## Consequences
 
-- The setting is one flag on the quality settings. It is fixed at the start, and it is off on every
-  preset. The preset table carries its row and its cost, so a page sees what it pays.
-- The scene color keeps MSAA's samples for opaque geometry. The layer's targets have one sample, so
-  its surfaces get none. The composite writes the share it covers into a mask. SMAA 1x runs under
-  that mask, not over the whole image, so opaque edges keep MSAA's smoothing.
-- SMAA's two lookup tables are made at first use, like the engine's other generated assets. Their
-  build cost goes in this record when it is measured.
-- A masked surface is opaque, so it keeps today's path. The setting covers the blended surfaces
-  only: glass, blended foliage and particles.
-- The permutation word is full, so no value is free for the moment builds. A uniform switch cannot
-  stand in for one either. The moment layer's second target is four-float, and the weighted layer's
-  is one, and a target's format is part of the pipeline rather than of a uniform.
-- The share is legal. The engine lets two names take one value when no template lists both
-  (D-156). The moment pass takes the outline view's value. No mesh template lists that bit, its own
-  template loads by device, and the guard test at the end of `drawlist.rs` refuses any share that
-  is not listed.
+- The setting is one flag on the quality settings, and `createEngine`'s `momentTransparency` option
+  or the `?moments=` switch sets it. It is fixed at the start, and it is off on every preset. The
+  quality presets page gives its row and its cost, so a page sees what it pays.
+- The setting covers every blended surface that a moment build covers, whether its material blends
+  normally or with `'weighted'`, so only one layered pass draws. A material with a feature that the
+  moment builds lack, such as a clear coat, transmission, parallax or a mask, keeps the transparent
+  pass's sort. The moment builds carry vertex colors, skins, morph targets, row values, shadows,
+  area lights, light through a thin surface, displacement and the device's bits.
+- Both paths fall back to today's sort where the device cannot draw into 16-bit float targets.
+- A page without the setting draws exactly as it does today. The frame graph declares and records
+  none of the layer's passes, and the sorted layout asks for none of its pipelines. A unit test
+  compares the frame's steps with and without the setting.
+- The permutation word is full. The moment pass takes the value of the outline view's bit. No mesh
+  template lists that bit, so no other mesh build moves. The outline mask's own builds would move
+  with it, because a first-use bit takes the builds of every template that lists its name. The
+  manifest's first-use table therefore names the six mesh templates that the bit serves, and the
+  outline mask's builds keep their device modules.
 - The color pass cannot share a second value. The shader build names a build's first-use file by
   the names of its bits. A shared value would pull another template's builds into the moment file.
   The color pass becomes six shader entries instead, one for each mesh template with a moment
   build.
-- Both paths fall back to today's sort where the device cannot draw into 16-bit float targets.
-- A page without the setting draws exactly as it does today. No demo changes.
+- The two lookup tables port the SMAA reference implementation, under its MIT notice.
 
-## Why four moments, and what that costs
+## Acceptance and tests
 
-Two color targets of 16-bit floats hold eight values. They carry four power moments in one target,
-and the color sum and its weight in the other. So four moments are the most that fits. Eight values, and every one of them is used. Six
-moments would store a better curve, and they need a third target that neither backend has. The
-limit shows in one place: a stack where one surface carries most of the optical depth is fitted
-with two atoms, and the fit places them around that surface rather than at it. A scene of two
-surfaces is exact, which the acceptance test uses.
+The image test draws the scene twice, with moment transparency on and with today's sort. It draws
+the same scene a third time with the weighted blending. The test measures each image's distance
+from the sorted one, as the mean of every color channel over the whole picture. It passes when the
+moment image is nearer than the weighted image.
 
-## Acceptance
+Two more tests guard the property that gives the feature its name. The same panes added in the
+opposite order draw the same picture, and both draw nearer the exact image than the weighted
+blending does.
 
-The image test draws one scene twice, with moment transparency on and with today's sort. It draws
-the same scene a third time with the weighted blending. The test measures each image's distance from the sorted one, as the mean of every color channel
-over the whole picture. It passes when the moment image is nearer than the weighted image. That is measurable, and it cannot be fudged by a tolerance.
+The frame graph's test holds the passes, their order, their bind groups and the tables' first use.
+It also holds that an unused layer declares and records nothing.
 
-Two more tests guard the property that gives the feature its name. The same surfaces in two draw
-orders must draw the same picture. Overlapping glass must show each layer's own color at chosen
-pixels.
+## Remaining work
 
-## Remaining work, in order
-
-1. The setting end to end, drawing nothing new. Start in `packages/engine/src/quality/presets.ts`:
-   a `momentTransparency` flag, off on all four presets, `changes: 'start'`. Then
-   `packages/engine/src/page/engine.ts` (the option), `packages/engine/src/page/limits.ts` (the
-   device answer), `packages/engine/src/page/switches.ts` (`?moments=on` or `off`),
-   `crates/null3d-wasm/src/lib.rs` (`init_engine`'s argument), and the two renderer configs in
-   `crates/null3d-render/src/gpu_driven/mod.rs` and `cpu_culled/mod.rs`.
-2. The permutation value and its rules, in `crates/null3d-gpu/src/drawlist.rs`: `MOMENTS` takes
-   `OUTLINE_VISIBLE`'s value, with the `SHARED` entry and the `APART` pairs that the weighted layer
-   has. The guard test at the end of that file must pass.
-3. The moment maths, in a new `crates/null3d-shaders/wgsl/lib/moments.wgsl`: the warped depth, the
-   optical depth and the reconstruction above. It also holds the two fragment helpers and the
-   moment store's binding for the color pass. Add the branches to `lit.wgsl`, `unlit.wgsl`, `unlit_map.wgsl` and
-   `sprite.wgsl`.
-4. The shader templates and layouts: `MOMENTS` in the six mesh entries of
-   `crates/null3d-shaders/shaders.toml`, six `moment_*` entries for the color pass with the
-   `MOMENT_COLOR` and `MOMENT_MAPS` defs, the composite entry, and `[first_use.moments]`. The
-   color entries must not carry the caster variants. The template ids and the composite's bind
-   layout go in `drawlist.rs`; the backends' mappings go in
-   `packages/engine/src/gpu/webgpu/pipelines.ts` and `packages/engine/src/gpu/webgl2/programs.ts`.
-   The color pass binds the moment store where a material reads the scene's depth, so those
-   templates take `LAYOUT_MATERIAL_SCENE` after the maps' group.
-5. The pipeline keys and the sorted layout: `crates/null3d-render/src/pipelines.rs` gains
-   `moments()` and `moment_color()`, and `crates/null3d-render/src/sorted.rs` gains the two bucket
-   fields and the two `SortedRows` kinds.
-6. The layer, in a new `crates/null3d-render/src/moments.rs`: the composite and the depth copy,
-   their bind groups, and their tests. It mirrors `crates/null3d-render/src/weighted.rs`.
-7. The frame graph plumbing, in `crates/null3d-render/src/frame_graph.rs`: the two roles, the two
-   declarations, the build group and the recording. Then the draw arms in
-   `crates/null3d-render/src/gpu_driven/mod.rs` and `cpu_culled/mod.rs`.
-8. SMAA 1x under the coverage mask. Its two lookup tables are generated at first use, like the
-   engine's other generated assets. Start in a new `crates/null3d-shaders/wgsl/smaa.wgsl` and the
-   pass declarations beside the moment composite. This is the largest single piece left.
-9. The image tests and their references, in `tests/image/manifest.ts` and a new sketch under
-   `tests/pages/sketches/`. The acceptance test's three entries, the two draw orders, and the
-   overlapping glass read-back.
-10. The docs and the skills: `docs/api/materials.md` (fix the wrong claim at line 642, that FXAA
-    smooths weighted surfaces), `docs/concepts/materials.md`,
-    `docs/concepts/backends.md`, `docs/data/threejs-mapping.json`,
-    `skills/null3d-develop/references/api-quickref.md`, and the porting skill's
-    `references/post-processing.md`.
-11. The cost run on an S24-class phone, which replaces the arithmetic figures above and fills the
-    preset table's row.
+1. The measured cost on this computer's GPU, which the S1 benchmark run fills in.
+2. The run on an S24-class phone, which replaces the phone figure.
+3. The SwiftShader references of the four image tests, which come from a CI run.

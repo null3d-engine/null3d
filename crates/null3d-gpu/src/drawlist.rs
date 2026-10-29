@@ -2158,7 +2158,7 @@ pub mod template {
     /// both basic materials, and sprites with and without a map. Their colour builds are entries of
     /// their own, because the shader build names a first-use file by the names of a build's bits,
     /// and a shared value would pull another template's builds into the moment files (decision
-    /// record D-260).
+    /// record D-261).
     pub const fn moment_colour(template: u32) -> u32 {
         match template {
             INSTANCED_LIT => MOMENT_LIT,
@@ -2360,13 +2360,7 @@ pub mod groups {
     ];
     /// [`MESH`] for the moment layer's colour builds, whose frame group carries the moment store in
     /// place of the copy of the opaque color.
-    const MOMENT_MESH: &[&[u32]] = &[
-        &[layout::MOMENT_FRAME],
-        MESH[1],
-        MESH[2],
-        MESH[3],
-        MESH[4],
-    ];
+    const MOMENT_MESH: &[&[u32]] = &[&[layout::MOMENT_FRAME], MESH[1], MESH[2], MESH[3], MESH[4]];
     /// The groups of the background templates: the frame's group, then a texture and the
     /// background's own group. A cube or sky background binds only the background's own, at the
     /// group after the frame's, and the WebGL2 path binds each view's instances group last.
@@ -2460,19 +2454,10 @@ pub mod groups {
             own!(layout::WEIGHTED_COMPOSITE),
         ),
         (template::WEIGHTED_DEPTH, own!(layout::WEIGHTED_DEPTH_MS)),
-        (
-            template::MOMENT_COMPOSITE,
-            own!(layout::MOMENT_COMPOSITE),
-        ),
+        (template::MOMENT_COMPOSITE, own!(layout::MOMENT_COMPOSITE)),
         (template::MOMENT_DEPTH, own!(layout::MOMENT_DEPTH_MS)),
-        (
-            template::MOMENT_SMAA_EDGES,
-            own!(layout::MOMENT_SMAA_EDGES),
-        ),
-        (
-            template::MOMENT_SMAA_BLEND,
-            own!(layout::MOMENT_SMAA_BLEND),
-        ),
+        (template::MOMENT_SMAA_EDGES, own!(layout::MOMENT_SMAA_EDGES)),
+        (template::MOMENT_SMAA_BLEND, own!(layout::MOMENT_SMAA_BLEND)),
         (
             template::MOMENT_SMAA_RESOLVE,
             own!(layout::MOMENT_SMAA_RESOLVE),
@@ -2750,6 +2735,12 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
     ("ATMOSPHERE", layout::ATMOSPHERE),
     ("EXPOSURE", layout::EXPOSURE),
+    ("MOMENT_COMPOSITE", layout::MOMENT_COMPOSITE),
+    ("MOMENT_DEPTH_MS", layout::MOMENT_DEPTH_MS),
+    ("MOMENT_FRAME", layout::MOMENT_FRAME),
+    ("MOMENT_SMAA_EDGES", layout::MOMENT_SMAA_EDGES),
+    ("MOMENT_SMAA_BLEND", layout::MOMENT_SMAA_BLEND),
+    ("MOMENT_SMAA_RESOLVE", layout::MOMENT_SMAA_RESOLVE),
 ];
 
 /// The TypeScript constants for the replay loop, generated from the definitions above.

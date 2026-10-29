@@ -87,7 +87,10 @@ impl CallKind {
     /// True when a pass that draws `rows` records a call of this kind.
     fn drawn_in(self, rows: SortedRows) -> bool {
         match rows {
-            SortedRows::All => !matches!(self, CallKind::Weighted | CallKind::Moment | CallKind::MomentColour),
+            SortedRows::All => !matches!(
+                self,
+                CallKind::Weighted | CallKind::Moment | CallKind::MomentColour
+            ),
             SortedRows::Sorted => self == CallKind::Sorted,
             SortedRows::Weighted => self == CallKind::Weighted,
             SortedRows::Moment => self == CallKind::Moment,

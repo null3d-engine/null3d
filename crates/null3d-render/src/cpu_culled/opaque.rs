@@ -331,7 +331,14 @@ impl Opaque {
         view: ViewId,
         lit: Option<LitTextures>,
     ) -> Result<(), RecordError> {
-        Self::bind_frame_with(list, view, lit, ids::frame_group(view), bind_layout::FRAME, None)
+        Self::bind_frame_with(
+            list,
+            view,
+            lit,
+            ids::frame_group(view),
+            bind_layout::FRAME,
+            None,
+        )
     }
 
     /// Records the creation of a camera view's frame group that carries the moment layer's moment
@@ -406,8 +413,10 @@ impl Opaque {
             probes,
         }) = lit
         else {
+            // A cascade's, a tile's or another depth-only view's group binds the frame's common
+            // entries alone, in the depth-only layout that its pipeline declares.
             let mut words = [0; 23];
-            words[..3].copy_from_slice(&[group, layout, 4]);
+            words[..3].copy_from_slice(&[group, bind_layout::DEPTH, 4]);
             words[3..].copy_from_slice(&common);
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
@@ -448,13 +457,7 @@ impl Opaque {
                 Some(store) => (crate::moment::STORE_BINDING, store),
                 None => (transmission::BINDING, copy),
             };
-            words[58..63].copy_from_slice(&[
-                binding,
-                resource_kind::TEXTURE,
-                texture,
-                0,
-                0,
-            ]);
+            words[58..63].copy_from_slice(&[binding, resource_kind::TEXTURE, texture, 0, 0]);
             words[63..73].copy_from_slice(&[
                 crate::probes::ARRAY_BINDING,
                 resource_kind::TEXTURE,

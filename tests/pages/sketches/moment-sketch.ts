@@ -1,8 +1,9 @@
 // The moment transparency test's scene: five panes of glass at different depths that overlap on
 // the screen and never cross each other. The engine sorts them, so `?mode=sorted` gives the exact
 // back-to-front image; `?mode=weighted` blends them by the weighted blending, and `?mode=moment`
-// turns the quality setting `momentTransparency` on and blends them by the moment layer. The test
-// compares both approximations with the sorted image.
+// draws them in the moment layer, which the page's `?moments=on` switch turns on. The test compares
+// both approximations with the sorted image. `?order=reverse` adds the panes in the opposite
+// order, so a test can hold the layer to the same picture whatever order the draws take.
 import { defineSketch } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -18,10 +19,13 @@ const PANES = [
 	['#c030c0', [0.2, 1.05, -2.4], [2.2, 1.5]],
 ] as const;
 
-export default defineSketch(({ scene, materials, geometry, quality }) => {
-	// The pane edges are what SMAA smooths, and MSAA would smooth them differently on the three
-	// images, so every mode draws without anti-aliasing.
-	quality.set({ antialias: 'none', momentTransparency: mode === 'moment' });
+/** The panes in the order that the sketch adds them: near to far, or the reverse. */
+const panes: readonly (typeof PANES)[number][] =
+	params.get('order') === 'reverse' ? [...PANES].reverse() : PANES;
+
+export default defineSketch(({ scene, materials, geometry }) => {
+	// The page starts the engine without anti-aliasing, so MSAA does not smooth the panes
+	// differently on the three images, and with `moments=on` for the moment layer's modes.
 	scene.setBackground('#20242c');
 	scene.createDirectionalLight({ direction: [-0.6, -2, -1.4], intensity: 3 });
 	scene.createAmbientLight({ intensity: 0.8 });
@@ -35,7 +39,7 @@ export default defineSketch(({ scene, materials, geometry, quality }) => {
 		position: [0, 1.1, -6],
 	});
 	// The panes: drawn in their list's order, which the sorted pass then orders back to front.
-	for (const [color, position, [width, height]] of PANES) {
+	for (const [color, position, [width, height]] of panes) {
 		scene.createMesh({
 			mesh: geometry.plane({ width, height }),
 			material: materials.standard({
