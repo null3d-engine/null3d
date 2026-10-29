@@ -121,16 +121,18 @@ No source gives phone figures for either method on the web. So M3-V10 builds bra
 ## The four devices' figures, and the budgets they set
 
 M3-V1 measured Creek and the forest demo on four cloud devices. They are the iPhone 17, the iPad
-Pro 13 2025, the Galaxy S24 and the Galaxy Tab A9 Plus. Each page fixed its GPU path and its preset.
+Pro 13 2025, the Galaxy S24 and the Galaxy Tab A9 Plus. The Galaxy S25 measured Creek's WebGPU path
+and the package's generator in runs of their own. Each page fixed its GPU path and its preset.
 It also set the quality governor's target at 1 frame a second, so the render scale stayed at 1. The
-figures are in [tested devices](../tested-devices.md#vegetation-on-four-cloud-devices).
+figures are in [tested devices](../tested-devices.md#vegetation-on-the-five-cloud-devices).
 Three rules shape them.
 
 - WebGL2 and compatibility mode cap the preset at Medium ([the chooser](../../packages/engine/src/quality/chooser.ts)).
   So High and Ultra ran on core WebGPU only.
 - Creek at Low on WebGPU stalls an Apple device's page after its first frame
   ([Driver bug reports](../driver-bugs.md)). Creek therefore has WebGL2 figures on the iPhone and
-  the iPad, and no WebGPU figure there.
+  the iPad, and no WebGPU figure there. The Galaxy S25 draws Creek on core WebGPU at every preset,
+  and the owner ruled that this phone stands in for the S24 class.
 - The Galaxy Tab A9 Plus reports no compatibility mode. Its compatibility pages were skipped.
 
 **Frame time.** The figures below are the frame interval in milliseconds. They are the ceiling that
@@ -148,11 +150,35 @@ every vegetation task must keep the demo within, at the same device, path and pr
 | Forest High, WebGPU | 62.5 | 67.1 | no WebGPU | no WebGPU |
 | Forest Ultra, WebGPU | 99.0 | 71.1 | no WebGPU | no WebGPU |
 
+**Creek on WebGPU.** The Galaxy S25 draws Creek on core WebGPU, which the Apple devices cannot. The
+owner ruled that this phone stands in for the S24 class, whose own device has no WebGPU adapter and
+no WebGL2 GPU timer. The figures come from one run of the plan.
+
+| Preset | Frame ms | GPU ms | Busiest pass | Its ms | Triangles | Draws |
+| --- | --- | --- | --- | --- | --- | --- |
+| Low | 33.3 | 26.28 | opaque | 20.38 | 1,524,500 | 182 |
+| Medium | 166.6 | 149.88 | opaque | 141.16 | 4,387,400 | 174 |
+| High | 208.3 | 213.61 | ambient occlusion 1 | 164.72 | 6,798,700 | 288 |
+| Ultra | 499.8 | 468.19 | ambient occlusion 1 | 279.38 | 11,100,000 | 303 |
+
+The pages ran from a worktree at `6a0a3215f`, and its engine build was made from that commit's
+sources. The engine's start check accepted the build on the device. Chrome on Android reports no
+WebGL2 GPU timer, so this phone gives no WebGL2 figure. Its WebGPU times come from the GPU's timer.
+The display ran at 30 Hz, and every frame interval except Low is longer than that cap. So those
+frames are the device's own. The run files are [the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261029-200013-vegetation.md)
+and, for the earlier whole-frame figures, [its 27 October run](../tested-devices/galaxy-s25-sm-s931b-chrome/20261027-002402-vegetation.md).
+
 **GPU time per pass.** Only the WebGPU path times its passes. Forest Low spends 6.6 to 6.9 ms of
 GPU time on the iPad and the iPhone. That is 7 render passes, and the first is a copy. Forest
 Medium spends 45.4 ms on the iPad, High 58.3 ms and Ultra 63.2 ms. The last render pass takes most
 of it at High and Ultra, because it draws the far cards. WebGL2 on a phone offers no timer, so its
 rows give the CPU time of the busiest thread instead.
+
+Creek on the S25 spends most of each frame in one pass. At Low the opaque pass takes 20.38 ms of the
+whole 26.28, and at Medium 141.16 of 149.88. High and Ultra turn on ambient occlusion, which splits
+the depth prepass from the opaque pass. The prepass takes 45.74 and 182.19 ms there, and the pass
+that draws with ambient occlusion 164.72 and 279.38. The two shadow cascades and the copies stay
+under 3 ms at every preset.
 
 **Triangles.** Forest Low draws 3.5 to 13.8 million triangles, depending on the path. Medium draws
 23 to 111 million, High 61.6 to 297.1 million, and Ultra 29.0 to 107.5 million. Each preset picks
@@ -169,21 +195,45 @@ on the iPhone and the iPad. It took 33 to 47 ms on the S24, and 49 to 94 ms on t
 single variant was an oak at Ultra on the tablet: 5.42 ms for 27,090 triangles. M3-V4's generator
 replaces the stand-in, and the stand-in's figures set the shape of the budget.
 
-**The budgets that M3-V4 to M3-V11 take.**
+The package's own generator ran on the S25, at 78 variants for each preset. The set took 163.0 ms at
+Low, 137.9 at Medium, 156.9 at High and 148.9 at Ultra ([its run](../tested-devices/galaxy-s25-sm-s931b-chrome/20261027-002251-tree-generation.md)).
+Its arrays take 16.7 MB at Low and Medium, and 20.0 MB at High and Ultra. The page draws nothing and
+asks for no GPU path, so these are the JavaScript engine's and the worker's figures, not a GPU's.
+
+**The budgets that every later V task takes, by preset.** The frame and generation figures come
+from measured rows above. The add-on's own GPU time keeps room beside the scene. A later task states
+its budget per preset from this table.
+
+| Preset | Frame ceiling, iPhone 17 and iPad Pro 13 | Frame ceiling, S24 class | Frame ceiling, Tab A9 Plus | The add-on's GPU time, Apple |
+| --- | --- | --- | --- | --- |
+| Low | 15.5 to 30.8 | 33.3 | 1,268.5 | 5 |
+| Medium | 43.9 to 90.8 | 166.6 | 1,820.8 | 12 |
+| High | 62.5 to 67.1 | 208.3 | no row | 49.0 |
+| Ultra | 71.1 to 99.0 | 499.8 | no row | 62.5 |
+
+The S24's own frame interval reads 33.3 ms at Low and Medium, which is its display's cap rather
+than its work. The class's Medium ceiling is the S25's, which is the only real figure there.
+
+Two figures are owed by a device rather than left out by choice. No run gives Creek on WebGPU on
+the iPhone or the iPad, because its Low page stalls there, which is a recorded driver fault
+([Driver bug reports](../driver-bugs.md)). The Galaxy Tab A9 Plus has no High or Ultra row, because
+those presets draw on core WebGPU only, and the tablet offers no WebGPU adapter.
 
 - **Frame time:** the dressed Creek and forest must stay within the frame interval of the same
-  preset, device and path in the table above. A preset that falls to a lower one at the same page
-  fails.
-- **The add-on's own GPU time at Low:** at most 5 ms on the Apple devices. The forest's whole
-  WebGPU draw takes 6.6 to 6.9 ms of a 16.7 ms frame there. At Medium, 12 ms. These leave room for the
-  scene beside the plants.
+  preset, device and path. A preset that falls to a lower one at the same page fails.
+- **The add-on's own GPU time:** at most 5 ms at Low and 12 ms at Medium on the Apple devices. These
+  two are chosen allowances inside the measured draw; the forest's whole WebGPU draw takes 6.6 to
+  6.9 ms at Low and 45.4 to 53.7 at Medium, both above the allowance beside them. At High and Ultra
+  the figure is measured: the far cards' pass takes 43.5 to 49.0 and 49.2 to 62.5 ms, and each
+  budget takes the larger Apple figure.
 - **Generation:** the whole tree variant set at any preset must build in under 200 ms on the
-  slowest measured device. On the iPhone and the iPad it must build in under 60 ms. A set of 54 variants, for the
-  add-on's nine species, is about twice the measured 24, so the tablet's Ultra figure leaves that
-  headroom.
-- **Memory:** the variant arrays may take the measured 7.0 to 22.7 MB. The GPU textures must stay
-  within the measured figures for the same demo and preset, which the add-on shares with the scene.
-  Creek's 3.1 MB of Blender models leave, and the arrays replace them.
+  slowest measured device, and under 150 ms on the iPad. The stand-in's 24 variants took 14 to
+  23 ms on the iPhone and the iPad. The package's 78 variants take 79.6 to 94.8 ms on the iPad and
+  137.9 to 163.0 ms on the S25. The budget leaves the set room to grow.
+- **Memory:** the package's variant arrays take 16.7 MB at Low and Medium and 20.0 MB at High and
+  Ultra, against the stand-in's 7.0 to 22.7 MB. The GPU textures must stay within the measured
+  figures for the same demo and preset, which the add-on shares with the scene. Creek's 3.1 MB of
+  Blender models leave, and the arrays replace them.
 
 ## The generator's shape
 

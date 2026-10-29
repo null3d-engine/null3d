@@ -41,7 +41,7 @@ Where it blocks: the page's own main thread. Its timer never fires, and the engi
 
 Still owed: a capture of the frame on the device. BrowserStack does not offer one, because WebKit's WebGPU inspector needs a Mac with Safari's Develop menu over a cable.
 
-Workaround: none. The [vegetation measurements](tested-devices.md#vegetation-on-four-cloud-devices) report Creek on WebGL2 on Apple devices, and they name the WebGPU rows that this fault keeps from running.
+Workaround: none. The [vegetation measurements](tested-devices.md#vegetation-on-the-five-cloud-devices) report Creek on WebGL2 on Apple devices, and they name the WebGPU rows that this fault keeps from running.
 
 The texture budget is not the mechanism. Creek at Low holds 120.6 MiB of GPU textures on the iPad, against Low's 256 MiB. So Low never fills its budget and never drops a mip level. The budget setting follows the preset only because every quality setting does. The 1024 and 2048 texel shadow map is the one such setting with a plausible mechanism, and pass 8 already excludes it. What remains in the engine is a short list of settings that change with the preset and have no named mechanism.
 
@@ -57,7 +57,7 @@ Status: not reported yet.
 
 - Device: Samsung Galaxy Tab A9+ (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
 - Browser: Chrome 152.0.7977.54, WebGPU through Dawn's Vulkan backend.
-- Seen in: Creek at Low, in compatibility mode, in the vegetation run on four cloud devices ([tested devices](tested-devices.md#vegetation-on-four-cloud-devices), run 20261024-111020).
+- Seen in: Creek at Low, in compatibility mode, in the vegetation run on four cloud devices ([tested devices](tested-devices.md#vegetation-on-the-five-cloud-devices), run 20261024-111020).
 - What happens: the engine's capabilities page reports no compatibility adapter on this device. A page that asked for the mode anyway started, drew no scene, and its render worker lost the device. It reported E1302, `vkQueueSubmit failed with VK_ERROR_DEVICE_LOST` from Dawn. No adapter was left to start another. The engine's frame counter still advanced. So the page reported 3 frames in 5.5 s, and the runner counted a pass.
 - What runs: Creek at Low on WebGL2 draws 0.8 frames a second on the same device.
 - Not tried: whether the loss follows the first draw, a pipeline, or an allocation, and whether any shader triggers it. The engine's own choice never takes the mode there, so the loss comes only from a page that forces it.

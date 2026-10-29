@@ -54,17 +54,19 @@ the gate commit. The engine's own threads use 3.1 ms of a 33 ms frame there, so 
 graphics side.
 The rows were read from `target/runs/20261023-002748-showcase/bsipadpro13-safari` in the gate checkout.
 
-## Vegetation on four cloud devices
+## Vegetation on the five cloud devices
 
 Creek and the forest demo ran for M3-V1 ([D-241](decisions/D-241-vegetation-foundation.md)) on the
-cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet. The runs took one
+cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet. The Galaxy S25 ran Creek
+on core WebGPU, and the package's generator on its own, in a later run. The runs took one
 BrowserStack Automate session at a time. Each page fixed its GPU path and its preset. It also set
 the quality governor's target at 1 frame a second, so the render scale stayed at 1 and each
 preset's own cost shows.
 
 WebGL2 and compatibility mode cap the preset at Medium ([the chooser](../packages/engine/src/quality/chooser.ts)).
 So High and Ultra ran on core WebGPU only. Creek at Low on WebGPU stalls an Apple device's page
-after its first frame ([Driver bug reports](driver-bugs.md)), so Creek has no WebGPU row here.
+after its first frame ([Driver bug reports](driver-bugs.md)), so Creek has no WebGPU row on the
+Apple devices.
 
 The tables give the frames per second and the frame interval. They give the busiest thread's CPU
 time per frame, and the GPU time where the device has a timer. They also give the triangles drawn,
@@ -169,6 +171,8 @@ offer, and no adapter was left to start another.
 
 Three pages passed, three were skipped, and one failed. The device offers no compatibility adapter,
 so the plan skipped its compatibility pages, and it skipped them only after that first one had run.
+It has no High or Ultra row at any path, because those presets draw on core WebGPU only, and the
+tablet offers no WebGPU adapter.
 The page then reported 3 frames in 5.5 s, so the runner counted a pass with no triangles and no
 texture bytes. Its figures are in no table here and must not be read. The device's own fault is in
 [Driver bug reports](driver-bugs.md).
@@ -176,6 +180,55 @@ texture bytes. Its figures are in no table here and must not be read. The device
 Creek at Medium failed: its first frame took 42 s, and then the measure drew no frame in 5.5 s. The
 tablet is the slowest measured device. It draws Creek at Low under one frame a second, and the
 forest at Medium under one frame a second.
+
+### Galaxy S25, Chrome 152, Android 15: Creek on WebGPU
+
+Creek has no WebGPU row on the devices above. Its Low page stalls an Apple device after its first
+frame ([Driver bug reports](driver-bugs.md)). The Galaxy S24 offers no WebGPU adapter. The cloud
+Galaxy S25 draws Creek on core WebGPU at every preset. The owner ruled that this phone stands in for
+the S24 class, and its Adreno 830 is a faster GPU of another make than the S24's Xclipse 940.
+
+| Preset | Path | FPS | Frame ms | CPU ms | GPU ms | Triangles | Draws | Textures MiB | Buffers MiB | wasm MiB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Low | WebGPU | 29.1 | 33.3 | 2.88 | 26.28 | 1,524,500 | 182 | 49.6 | 28.9 | 94.4 |
+| Medium | WebGPU | 5.15 | 166.6 | 3.38 | 149.88 | 4,387,400 | 174 | 105.7 | 46.2 | 116.0 |
+| High | WebGPU | 4.20 | 208.3 | 4.66 | 213.61 | 6,798,700 | 288 | 131.3 | 40.0 | 136.1 |
+| Ultra | WebGPU | 1.95 | 499.8 | 4.47 | 468.19 | 11,100,000 | 303 | 341.1 | 44.2 | 184.8 |
+
+The display ran at 30 Hz. Every frame interval except Low is longer than that cap, so those frames
+are the device's own. The GPU times come from the GPU's timer.
+
+The GPU time of each render pass, as the engine names it and times it. A pass that the preset does
+not run is empty. The engine times one frame in a step. A pass after the last timed one is counted
+there, so read the columns side by side within a row.
+
+| Pass | Low | Medium | High | Ultra |
+| --- | --- | --- | --- | --- |
+| copies | 0.00 | 0.00 | 0.03 | 0.00 |
+| shadow cascade 0 | 0.26 | 0.33 | 0.33 | 0.85 |
+| shadow cascade 1 | 0.79 | 0.85 | 0.98 | 2.16 |
+| opaque 1 | 5.57 | 44.07 | | |
+| prepass 1 | | | 45.74 | 182.19 |
+| view copy 1 | 0.00 | 0.03 | 0.03 | 0.13 |
+| opaque | 20.38 | 141.16 | | |
+| prepass | | | 1.64 | 3.15 |
+| ambient occlusion 0 | | | 0.13 | 0.33 |
+| ambient occlusion 1 | | | 164.72 | 279.38 |
+| transmission copy | 0.13 | 0.26 | | |
+| transparent | 0.82 | 1.18 | | |
+| between passes | 0.20 | 0.20 | 0.00 | 0.00 |
+| bloom 0 | 0.07 | 0.07 | | |
+| bloom 1 | 0.66 | 0.39 | | |
+| Whole frame | 26.28 | 149.88 | 213.61 | 468.19 |
+
+Low and Medium draw with bloom, and the opaque pass carries almost all of the frame. High and Ultra
+turn on ambient occlusion, which splits the depth prepass from the opaque pass. The CPU time stays
+near 3 to 5 ms at every preset, so the cost is the GPU's.
+
+The run: [20261029-200013-vegetation](tested-devices/galaxy-s25-sm-s931b-chrome/20261029-200013-vegetation.md).
+Five pages passed, and none was skipped. The same plan ran on this phone on 27 October
+([that run](tested-devices/galaxy-s25-sm-s931b-chrome/20261027-002402-vegetation.md)), and it holds
+no per-pass figures.
 
 ### Tree generation, all four devices
 
@@ -196,6 +249,24 @@ variant on the tablet was an oak at Ultra: 5.42 ms for 27,090 triangles. The tab
 [20261024-111904-tree-generation](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261024-111904-tree-generation.md).
 The other three are in their folders: the iPhone and the iPad at 20261024-084032, and the S24 at
 20261024-084231.
+
+### Tree generation on the Galaxy S25
+
+The `tree-generation` plan ran again on the cloud Galaxy S25, with the vegetation package's own
+generator instead of the stand-in ([its run](tested-devices/galaxy-s25-sm-s931b-chrome/20261027-002251-tree-generation.md)).
+The page generated every species at each preset's detail in a worker, six seeds each: thirteen
+species, so 78 variants for a preset.
+
+| Preset | Variants | Total (ms) | Per variant (ms) | Triangles | Bytes (MB) |
+| --- | --- | --- | --- | --- | --- |
+| Low | 78 | 163.0 | 2.09 | 337,008 | 16.7 |
+| Medium | 78 | 137.9 | 1.77 | 337,008 | 16.7 |
+| High | 78 | 156.9 | 2.01 | 409,182 | 20.0 |
+| Ultra | 78 | 148.9 | 1.91 | 409,182 | 20.0 |
+
+The phone stands in for the S24 class. D-241's generation budget allows a whole variant set to build
+in 200 ms on the slowest measured device, and every preset sits inside it. The cost per variant is
+about 1.7 times the iPad's, whose run is in that device's folder.
 
 ### The splats add-on at its full count, iPad Pro 13 and Galaxy S24
 
