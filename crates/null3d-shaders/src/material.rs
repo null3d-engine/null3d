@@ -9,12 +9,12 @@
 //! builds with the shader def CUSTOM_TEXTURES, which loads the layers. WGSL that calls
 //! `sceneDepth` or `sceneDistance` builds with SCENE_DEPTH, which binds the copy of the scene's
 //! depth in the shading builds alone: the caster, motion and pick builds use stand-ins, as they
-//! read no surface.
-//!
-//! WGSL with a `@vertex` and a `@fragment` entry point is a full shader instead: the build makes
-//! the variants that the engine's mesh templates need of it on its own, for WebGPU and for WebGL2
-//! with and without the draw index. Either way, the output says which vertex attributes the
-//! vertex stage reads, which a mesh needs to draw with the material.
+//! read no surface. A `fn coverage` declares the opacity that the material's shadow caster tests,
+//! so a card cuts its own shape out of its shadow: its caster builds then keep the mask bit and run
+//! that function in a fragment stage. WGSL with a `@vertex` and a `@fragment` entry point is a full
+//! shader instead: the build makes the variants that the engine's mesh templates need of it on its
+//! own, for WebGPU and for WebGL2 with and without the draw index. Either way, the output says
+//! which vertex attributes the vertex stage reads, which a mesh needs to draw with the material.
 
 use std::collections::BTreeMap;
 
@@ -65,7 +65,7 @@ struct Hook {
 }
 
 /// The functions a custom material's WGSL may declare.
-const HOOKS: [Hook; 3] = [
+const HOOKS: [Hook; 4] = [
     Hook {
         name: "surface",
         def: "CUSTOM_SURFACE",
@@ -87,10 +87,19 @@ const HOOKS: [Hook; 3] = [
         returns: "vec3f",
         signature: "fn lobe(input: LobeInput) -> vec3f",
     },
+    Hook {
+        name: "coverage",
+        def: COVERAGE_DEF,
+        params: &["SurfaceInput"],
+        returns: "f32",
+        signature: "fn coverage(input: SurfaceInput) -> f32",
+    },
 ];
 
 /// The shader def that makes the template call a custom material's vertex offset.
 const VERTEX_OFFSET_DEF: &str = "CUSTOM_VERTEX_OFFSET";
+/// The shader def that makes a custom material's shadow caster test the material's coverage.
+const COVERAGE_DEF: &str = "CUSTOM_COVERAGE";
 
 /// `defs` without the def that binds the scene's depth, which only the shading builds read: a
 /// caster, a motion or a pick build draws no surface function, so it takes no depth group.
@@ -125,18 +134,20 @@ fn without_scene_depth(defs: &[String]) -> Vec<String> {
 }
 
 /// The bits of a custom material's shading builds that its shadow caster builds keep: the draw
-/// index, skins on WebGL2, and row values, which a vertex offset may read.
+/// index, skins on WebGL2, row values, which a vertex offset may read, and the mask whose cutoff the
+/// caster tests where the WGSL declares a coverage function.
 const CASTER_KEEPS: [&str; 3] = ["DRAW_INDEX", "SKIN", "ROW_VALUES"];
 
 /// The variant of a custom material's shadow caster builds beside one of its shading variants:
 /// the same defs and targets, every build with the CASTER bit, and with or without CASTER_OFFSET
 /// for casters that draw their back faces. The material's vertex offset then moves its shadow as it
-/// moves its surface.
-fn caster_variant(shading: &Variant) -> Variant {
+/// moves its surface. A material with a coverage function also keeps the mask bit, whose cutoff its
+/// caster's fragment stage tests.
+fn caster_variant(shading: &Variant, coverage: bool) -> Variant {
     let mut permutations: Vec<String> = shading
         .permutations
         .iter()
-        .filter(|bit| CASTER_KEEPS.contains(&bit.as_str()))
+        .filter(|bit| CASTER_KEEPS.contains(&bit.as_str()) || (coverage && *bit == "ALPHA_MASK"))
         .cloned()
         .collect();
     permutations.extend(["CASTER_OFFSET", "CASTER"].map(str::to_owned));
@@ -658,7 +669,7 @@ impl Compiler {
             problems.push(Problem::at(
                 path,
                 Some(Position { line: 1, column: 1 }),
-                "the WGSL declares no function of a custom material. Declare `fn surface(input: SurfaceInput) -> Surface`, which starts from `defaultSurface(input)`, `fn vertexOffset(input: VertexInput) -> vec3f`, `fn lobe(input: LobeInput) -> vec3f`, or some of them. For a shader of your own, give the WGSL a `@vertex` and a `@fragment` entry point instead.",
+                "the WGSL declares no function of a custom material. Declare `fn surface(input: SurfaceInput) -> Surface`, which starts from `defaultSurface(input)`, `fn vertexOffset(input: VertexInput) -> vec3f`, `fn lobe(input: LobeInput) -> vec3f`, `fn coverage(input: SurfaceInput) -> f32`, or some of them. For a shader of your own, give the WGSL a `@vertex` and a `@fragment` entry point instead.",
             ));
         }
         if !problems.is_empty() {
@@ -669,6 +680,7 @@ impl Compiler {
         let translucent = names_diffuse_transmission(&tokens);
         let layered = names_coat_sheen(&tokens);
         let offsets = declared.iter().any(|hook| hook.def == VERTEX_OFFSET_DEF);
+        let coverage = declared.iter().any(|hook| hook.def == COVERAGE_DEF);
         let inputs = read_inputs(&tokens);
         let scene_depth = calls_scene_depth(&tokens);
         let mut variants: BTreeMap<String, Variant> = template
@@ -752,15 +764,19 @@ impl Compiler {
                 (name.clone(), variant)
             })
             .collect();
-        if offsets {
+        if offsets || coverage {
             let more: Vec<(String, Variant)> = variants
                 .iter()
                 .flat_map(|(name, variant)| {
-                    [
-                        (format!("{name}_shadow"), caster_variant(variant)),
-                        (format!("{name}_motion"), motion_variant(variant)),
-                        (format!("{name}_pick"), pick_variant(variant)),
-                    ]
+                    let mut made =
+                        vec![(format!("{name}_shadow"), caster_variant(variant, coverage))];
+                    // Only a vertex offset moves a surface in the motion and pick passes, so only
+                    // its material has their builds.
+                    if offsets {
+                        made.push((format!("{name}_motion"), motion_variant(variant)));
+                        made.push((format!("{name}_pick"), pick_variant(variant)));
+                    }
+                    made
                 })
                 .collect();
             variants.extend(more);

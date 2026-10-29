@@ -107,6 +107,12 @@ export interface ImpostorBake {
 	 * horizontal reach, and its height. The card stands on the object's lowest point.
 	 */
 	readonly size: readonly [number, number];
+	/**
+	 * The object's depth along a view, in world units: the widest of its horizontal extents. The
+	 * surface atlas stores each point's depth over this distance, and a card that receives shadows
+	 * reads them where the depth puts the surface it shows.
+	 */
+	readonly depth: number;
 }
 
 /** A part ready to draw: its arrays, its normals and its colour's stride. */
@@ -246,6 +252,7 @@ export function bakeImpostorAtlas(options: ImpostorBakeOptions): ImpostorBake {
 		color: { width, height, data: color },
 		surface: { width, height, data: surface },
 		size: [2 * reach, objectHeight],
+		depth: Math.max(max[0] - min[0], max[2] - min[2]),
 	};
 }
 

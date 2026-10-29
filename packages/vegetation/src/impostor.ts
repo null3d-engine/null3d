@@ -44,6 +44,8 @@ export interface FarTree {
 	readonly surface: Texture;
 	/** The width and height of a card at scale 1, in meters. */
 	readonly size: readonly [number, number];
+	/** The plant's depth along a view, in meters, which its stored surface depth spans. */
+	readonly depth: number;
 	/** The plant's lowest height in its own frame, where the card stands. */
 	readonly base: number;
 }
@@ -81,6 +83,7 @@ export function bakeFarTree(
 		color: upload(ctx.textures, bake.color, 'srgb'),
 		surface: upload(ctx.textures, bake.surface, 'linear'),
 		size: bake.size,
+		depth: bake.depth,
 		base: asset.impostorSource.bounds.min[1],
 	};
 }
@@ -167,7 +170,10 @@ function upload(
 	});
 }
 
-/** The share of the switch distance over which a mesh and its cards fade into each other. */
+/**
+ * The share of the switch distance over which a mesh hands over to its cards: the engine's fade
+ * band, over which a mesh's last few per cent of its draw range dithers out.
+ */
 const HAND_OVER_FADE = 0.08;
 
 /** The far edge that a card batch draws to, in meters: farther than any camera's far plane. */
@@ -175,13 +181,16 @@ const FAR = 1e9;
 
 /**
  * Hands a band of trees from their meshes to their cards. The meshes draw up to
- * `switchDistance`, and the cards draw from just before it, so both draw through the band in
- * which the dithered fade of each edge fades one out as the other fades in. The share of the
- * switch distance that the two share is the engine's fade band, so no second mechanism is needed.
- * Write the cards' turns and sizes before this call, and call it at setup.
+ * `switchDistance`, and in the last share of that range the engine dithers their pixels out over
+ * the cards, which stand at full coverage behind them from a little before that band starts. The
+ * cards' material takes no fading build, so each dropped mesh pixel shows its card rather than
+ * the background: one dither moves the tree from its mesh to its card, and no pixel needs the two
+ * fades to line up. Write the cards' turns and sizes before this call, and call it at setup.
  *
  * @param meshes The batch of near meshes, whose rows stand at the same trees.
- * @param cards The card batch, such as `ImpostorBatch.batch`.
+ * @param cards The card batch, such as `ImpostorBatch.batch`. Give it a material that takes no
+ *   fading build, as `createImpostors` makes: a batch that dithers as well would drop the pixels
+ *   that its mesh's dither drops too, and the background would show through the crown.
  * @param switchDistance The distance from the camera at which a tree hands over, in meters.
  * @category api/vegetation
  */

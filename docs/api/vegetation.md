@@ -270,15 +270,17 @@ const cards = createImpostors(
     positions: farTrees.flatMap((tree) => [tree.position[0], tree.position[1] + far.base, tree.position[2]]),
     turn: farTrees.map((tree) => tree.turn),
     size: far.size,
+    depth: far.depth,
     alphaMode: 'mask',
+    receiveShadows: true,
   },
 );
 handOverToCards(nearTrees, cards.batch, 240);
 ```
 
-`bakeFarTree` returns the two textures, the grid and the card's `size`. The bake draws level 0, or the level that the plant's `impostorSource` names. The bark colour tints the wood and the leaf colour the leaves, as the plant's materials do. A second call for the same plant, grid and cell size reuses the baked pixels.
+`bakeFarTree` returns the two textures, the grid, the card's `size` and the plant's `depth`, which scales the stored depth that places a card's own shadow lookup. A far card casts the crown's shape through a second batch with `castShadows: true`, on a layer that the sun draws and no camera does, and takes the shadows of other objects with `receiveShadows: true` ([Impostors](impostors.md)). The bake draws level 0, or the level that the plant's `impostorSource` names. The bark colour tints the wood and the leaf colour the leaves, as the plant's materials do. A second call for the same plant, grid and cell size reuses the baked pixels.
 
-`handOverToCards(meshes, cards, switchDistance)` sets the distance bands. The meshes draw up to the switch, and the cards draw from just before it. The engine fades each edge over its own band, so one fades out as the other fades in, with no pop. The meshes and the cards stand at the same trees, so a tree draws as its mesh near the camera and as its card far from it.
+`handOverToCards(meshes, cards, switchDistance)` sets the distance bands. The meshes draw up to the switch, and over the last eighth of that range the engine dithers their pixels out. The cards draw from just before that band and stand at full coverage behind the meshes, so each pixel that a mesh's dither drops shows its card, and no pixel ever drops out of both. The cards take no fading build, which every custom material lacks: a batch that dithered as well would leave the background showing through the crown. The meshes and the cards stand at the same trees, so a tree draws as its mesh near the camera and as its card far from it.
 
 A card's rows need their turn, so a turned tree's crown matches its card. The plant's `impostorSource.bounds` gives the largest bound over its levels, which the bake uses for the card's size and for its lowest point.
 
