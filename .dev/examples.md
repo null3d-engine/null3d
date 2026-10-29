@@ -680,7 +680,14 @@ and a hero car with two screens.
   volumetric fog is on, so the searchlights draw their shafts through the rain.
 - **The effect layer.** The traffic, the rain, the signs and the hero car sit on `EFFECT_LAYER`
   (`examples/lib/layers.ts`). The Auto route's clearance guard never treats a moving car as a wall.
-  Its ray tests the towers and the ground alone.
+  Its ray tests the towers and the ground alone. The hero car's own meshes also carry `HERO_LAYER`
+  (`layout.ts`), which nothing but the road's mirror camera draws.
+- **The road mirrors the car.** The screen-space reflections never show the hero car, because its
+  underside never comes on screen. A scene pass draws it with a camera under the road, turned about
+  the road's plane, into a texture. The ground reads that texture by the pixel's place. The pass
+  names a clear color, so it draws no background, and the texture holds the car on black. The
+  ground adds it over its own shade where it is wet, and strongest at the angles a driver looks
+  along it. The turn that the mirror takes is held by `reflection.test.ts`.
 - **The camera.** The route is a circuit of four street canyons. It climbs from the south entrance
   to the tower tops, and dives back down. It follows the street center lines of the plan, so it
   never enters a block. `route.test.ts` samples the whole loop through the player's own
