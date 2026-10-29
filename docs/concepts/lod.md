@@ -3,7 +3,7 @@ id: concepts/lod
 title: Levels of detail
 status: experimental
 since: "0.2"
-summary: "LOD groups; generated LODs; per-instance selection; small-object hiding."
+summary: "LOD groups; generated LODs; cluster patches; staged downloads; per-instance selection; small-object hiding."
 ---
 
 # Levels of detail
