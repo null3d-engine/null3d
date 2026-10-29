@@ -1993,8 +1993,8 @@ impl CpuCulledRenderer {
             .light_tables_mut()
             .record(list, array, probe_layers)?;
         let textures_made = self.graph.textures_made();
-        // The colour pass binds the moment store where the frame group carries the copy of the
-        // opaque color, so the camera's moment frame group is made wherever its frame group is.
+        // The colour pass binds the moment store in a frame group of its own, made wherever the
+        // camera's frame group is.
         let moment_store = self.graph.moment_store();
         // The group is made for the store that the plan holds, once; a frame that draws the layer
         // after its pipelines were built needs it even when the frame groups keep theirs.

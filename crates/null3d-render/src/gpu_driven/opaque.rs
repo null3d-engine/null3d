@@ -181,16 +181,11 @@ fn push_frame_group(
         ),
         entry(11, resource_kind::TEXTURE, inputs.occlusion),
         entry(14, resource_kind::SAMPLER, ids::SHADOW_TEXEL_SAMPLER),
-        match store {
-            // The moment frame group reads the moment store where the frame group reads the copy
-            // of the opaque color, which no moment build reads.
-            Some(store) => entry(crate::moment::STORE_BINDING, resource_kind::TEXTURE, store),
-            None => entry(
-                transmission::BINDING,
-                resource_kind::TEXTURE,
-                inputs.transmission,
-            ),
-        },
+        entry(
+            transmission::BINDING,
+            resource_kind::TEXTURE,
+            inputs.transmission,
+        ),
         entry(ROW_VALUES_BINDING, resource_kind::TEXTURE, ids::ROW_VALUES),
         entry(
             OBJECT_RANGES_BINDING,
@@ -209,6 +204,16 @@ fn push_frame_group(
     let mut end = 3;
     for entry in entries.iter().filter(|entry| keeps(entry[0])) {
         words[end..end + 5].copy_from_slice(entry);
+        end += 5;
+    }
+    // A moment group adds the moment store after the frame's own entries. The copy of the opaque
+    // color keeps its binding, which every lit build declares.
+    if let Some(store) = store {
+        words[end..end + 5].copy_from_slice(&entry(
+            crate::moment::STORE_BINDING,
+            resource_kind::TEXTURE,
+            store,
+        ));
         end += 5;
     }
     words[end..end + environment::ENTRY_WORDS].copy_from_slice(&environment::entries(
@@ -231,13 +236,15 @@ pub(super) fn bind_moment_frame(
 ) -> Result<(), RecordError> {
     let group = ids::moment_frame_group(ViewId::CAMERA);
     let layout = bind_layout::MOMENT_FRAME;
+    // The colour builds declare no light probe grid, which leaves its entry out of their layout
+    // and their group; it would otherwise take the fragment stage past its sampled textures.
     push_frame_group(
         list,
         group,
         layout,
         ViewId::CAMERA,
         inputs,
-        |_| true,
+        |binding| binding != probe_grid::MAP_BINDING,
         Some(store),
     )
 }

@@ -338,12 +338,13 @@ impl Opaque {
             ids::frame_group(view),
             bind_layout::FRAME,
             None,
+            true,
         )
     }
 
     /// Records the creation of a camera view's frame group that carries the moment layer's moment
-    /// store where the frame group carries the copy of the opaque color, which no moment build
-    /// reads. The colour builds bind it as their group 0.
+    /// store beside the frame group's own entries. The colour builds bind it as their group 0, and
+    /// they declare no light probe grid, which leaves that entry out.
     pub(super) fn bind_moment_frame(
         list: &mut DrawList,
         view: ViewId,
@@ -357,11 +358,14 @@ impl Opaque {
             ids::moment_frame_group(view),
             bind_layout::MOMENT_FRAME,
             Some(store),
+            false,
         )
     }
 
     /// Records the creation of the frame groups of `view` with `group` as the first, and with
-    /// `layout`, whose binding 15 holds `store` or the copy of the opaque color.
+    /// `layout`: binding 15 holds the copy of the opaque color, `store` adds the moment store, and
+    /// `probe_grid` says whether the group binds the light probe grid.
+    #[allow(clippy::too_many_arguments)]
     fn bind_frame_with(
         list: &mut DrawList,
         view: ViewId,
@@ -369,6 +373,7 @@ impl Opaque {
         group: u32,
         layout: u32,
         store: Option<u32>,
+        probe_grid_entry: bool,
     ) -> Result<(), RecordError> {
         // The frame's slot offset moves the uniform block and the cell offsets together, and
         // the backend gives dynamic offsets to a group's buffers in their order here.
@@ -421,7 +426,7 @@ impl Opaque {
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 73 + environment::ENTRY_WORDS];
+        let mut words = [0; 78 + environment::ENTRY_WORDS];
         words[3..23].copy_from_slice(&common);
         words[23..43].copy_from_slice(&[
             4,
@@ -445,34 +450,55 @@ impl Opaque {
             0,
             0,
         ]);
-        words[43..48].copy_from_slice(&probe_grid::entries(probe_grid));
+        let probes_words = [
+            crate::probes::ARRAY_BINDING,
+            resource_kind::TEXTURE,
+            probes,
+            0,
+            0,
+            crate::probes::LIST_BINDING_WEBGL2,
+            resource_kind::BUFFER,
+            ids::PROBE_LISTS,
+            listed * crate::probes::LIST_STRIDE,
+            crate::probes::LIST_BYTES,
+        ];
         for slot in 0..RING {
-            words[..3].copy_from_slice(&[group + slot, layout, 16]);
-            words[48..53].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
-            words[53..58].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
-            // The moment frame group reads the moment store where the frame group reads the copy
-            // of the opaque color: no moment build reads that copy, and the store keeps the frame
-            // group's other entries as they are.
-            let (binding, texture) = match store {
-                Some(store) => (crate::moment::STORE_BINDING, store),
-                None => (transmission::BINDING, copy),
-            };
-            words[58..63].copy_from_slice(&[binding, resource_kind::TEXTURE, texture, 0, 0]);
-            words[63..73].copy_from_slice(&[
-                crate::probes::ARRAY_BINDING,
+            let mut end = 43;
+            if probe_grid_entry {
+                words[end..end + 5].copy_from_slice(&probe_grid::entries(probe_grid));
+                end += 5;
+            }
+            words[end..end + 5].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
+            end += 5;
+            words[end..end + 5].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
+            end += 5;
+            // Every lit build declares the frame's copy of the opaque color at binding 15, so it
+            // stays bound. A moment group adds the moment store after it, at a binding of its own.
+            words[end..end + 5].copy_from_slice(&[
+                transmission::BINDING,
                 resource_kind::TEXTURE,
-                probes,
+                copy,
                 0,
                 0,
-                crate::probes::LIST_BINDING_WEBGL2,
-                resource_kind::BUFFER,
-                ids::PROBE_LISTS,
-                listed * crate::probes::LIST_STRIDE,
-                crate::probes::LIST_BYTES,
             ]);
-            words[73..]
+            end += 5;
+            if let Some(store) = store {
+                words[end..end + 5].copy_from_slice(&[
+                    crate::moment::STORE_BINDING,
+                    resource_kind::TEXTURE,
+                    store,
+                    0,
+                    0,
+                ]);
+                end += 5;
+            }
+            words[end..end + 10].copy_from_slice(&probes_words);
+            end += 10;
+            words[end..end + environment::ENTRY_WORDS]
                 .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
-            list.push(Op::CreateBindGroup, &words)?;
+            end += environment::ENTRY_WORDS;
+            words[..3].copy_from_slice(&[group + slot, layout, ((end - 3) / 5) as u32]);
+            list.push(Op::CreateBindGroup, &words[..end])?;
         }
         Ok(())
     }

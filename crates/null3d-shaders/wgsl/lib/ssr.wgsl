@@ -1,7 +1,7 @@
 #define_import_path null3d::ssr
 #import null3d::tables::{environment_sampler}
 #import null3d::mesh::{frame}
-#import null3d::refraction::{transmission_map}
+#import null3d::transmission::{transmission_map}
 
 // Screen-space reflections in the camera's opaque pass. The steps before the pass (ssr.wgsl) march
 // each texel's mirror ray through a depth pyramid, and leave the ray's length to its hit or to the
