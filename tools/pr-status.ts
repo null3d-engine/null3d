@@ -65,6 +65,7 @@ const INCOMPLETE = new Set([
 	'M3-L5',
 	'M3-E7',
 	'M3-E10',
+	'M3-V9',
 ]);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
@@ -97,6 +98,8 @@ const NOTES: Readonly<Record<string, string>> = {
 		'unticked under the same policy: the physics guide sample that the task corrected has never run, because the skill and cookbook check compiles without executing it and no example, test or bench uses the library it calls',
 	'M3-K2':
 		'unticked under the same policy: drag controls are exported and reached by no unit test, browser test, picture or example, because the gizmos picture and its spec reach only the transform controls',
+	'M3-V9':
+		"held open although its work has landed, for two reasons. Its cost is not measured: the card-field figures on the record predate the coverage function, the shadow offset and the both-faces change, so the phone cost run and the frame-time check are owed and the entry quotes no cost. And its own first clause names a witness that does not exist: it asks that Creek's far slopes show impostor trees matching the near ones at the hand-off, and no Creek page draws impostors, because the call is made only by the impostors demo and the impostor sketches. The hand-over picture that exists is the demo's; the Creek half belongs with M3-V11, which dresses Creek through the add-on. Either the clause should name the demo or the plan should hand that half to V11",
 	'M3-L3':
 		'unticked under the policy the owner kept: its whole-levels fallback, where a device cannot draw many ranges, is taken by no automated run, because every cluster picture and cost run forces the extension on in Chromium and no switch withholds it. Only a Firefox hand run ever draws it. The close is a switch that leaves `WEBGL_multi_draw` out and one manifest entry of the existing cluster picture sharing its reference',
 	'M3-A6':
