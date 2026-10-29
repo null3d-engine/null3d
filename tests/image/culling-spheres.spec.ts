@@ -29,9 +29,13 @@ interface SpheresResult {
 
 for (const tier of ['webgpu', 'compat', 'webgl2'])
 	test(`the debug switch draws a culling sphere per level mesh on ${tier}`, async ({ page }) => {
-		test.setTimeout(120_000);
+		// The page builds the engine, draws its level meshes, then turns the switch off and draws
+		// again before it reports, and a software GPU beside a heavier neighbour on the runner can
+		// take a minute and a half over that. The wait leaves room for the load; a page that never
+		// reports still fails, with the time it was given.
+		test.setTimeout(240_000);
 		await page.goto(`culling-spheres.html?gpu=${tier}&spheres=on`);
-		const result = await pageResult<SpheresResult>(page, 60_000);
+		const result = await pageResult<SpheresResult>(page, 180_000);
 		expect(result.error).toBeUndefined();
 		expect(result.failures).toEqual([]);
 		expect(result.tier, 'the tier the page drew on').toBe(TIERS[tier]);
