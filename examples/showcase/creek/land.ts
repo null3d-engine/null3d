@@ -21,6 +21,10 @@ const { smoothstep } = math;
 /** The z of the stream's middle at x: two gentle bends. */
 export const streamZ = (x: number) => 1.4 * Math.sin(x * 0.11 + 0.6) + 0.5 * Math.sin(x * 0.27);
 
+/** The slope across the stream of its middle line at x: how far the current turns from +x. */
+export const streamSlope = (x: number) =>
+	0.154 * Math.cos(x * 0.11 + 0.6) + 0.135 * Math.cos(x * 0.27);
+
 /** The half width of the water at x, at its surface. */
 export const streamHalf = (x: number) => 1.9 + 0.45 * Math.sin(x * 0.19 + 1.3);
 

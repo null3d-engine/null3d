@@ -31,10 +31,17 @@ struct Uniforms {
     back: vec3f,
 }
 
+/// The current at a point: its direction follows the stream's middle line, and its third component
+/// is its speed. The water's surface shader holds the same function.
+fn current_of(p: vec2f) -> vec3f {
+    let slope = 0.154 * cos(p.x * 0.11 + 0.6) + 0.135 * cos(p.x * 0.27);
+    return vec3f(normalize(vec2f(1.0, slope)), uniforms.flow);
+}
+
 /// The caustics of the water's surface shader, the same ridges drifting with the current. Each WGSL
 /// string compiles on its own, so this one holds its own copy.
-fn caustics(p: vec2f, t: f32, flow: f32) -> f32 {
-    let q = p * 4.6 + vec2f(flow * t * 4.0, 0.0);
+fn caustics(p: vec2f, t: f32, current: vec3f) -> f32 {
+    let q = p * 4.6 - current.xy * (current.z * t * 4.0);
     let a = sin(q.x * 3.1 + t * 1.3 + sin(q.y * 2.3 - t));
     let b = sin(q.y * 3.7 - t * 1.1 + sin(q.x * 1.9 + t * 0.7));
     let c = sin((q.x + q.y) * 2.6 + t * 0.9 + sin(q.x * 1.3 - q.y * 0.7));
@@ -50,11 +57,13 @@ fn surface_height(p: vec2f, t: f32) -> f32 {
         vec4f(0.8, -0.6, 3.7, 0.7),
         vec4f(0.6, 0.8, 5.9, 0.5),
     );
+    let current = current_of(p);
     var h = uniforms.level;
     for (var k = 0u; k < 3u; k++) {
         let w = list[k];
-        let dir = normalize(w.xy);
-        let phase = w.z * (dot(dir, p) - uniforms.flow * t * dir.x) - w.w * t;
+        let own = normalize(w.xy);
+        let dir = vec2f(current.x * own.x - current.y * own.y, current.y * own.x + current.x * own.y);
+        let phase = w.z * (dot(dir, p) - current.z * t * dot(current.xy, dir));
         h += 0.05 / w.z * sin(phase);
     }
     return h;
@@ -95,7 +104,7 @@ fn effect(input: EffectInput) -> vec4f {
         let world = uniforms.eye + ray * reach;
         let below = uniforms.level - world.y;
         if below > 0.0 {
-            let light = caustics(world.xz, t, uniforms.flow) * exp(-below * 0.8);
+            let light = caustics(world.xz, t, current_of(world.xz)) * exp(-below * 0.8);
             color = vec4f(color.rgb * (vec3f(1.0) + uniforms.caustics * light * 6.0), color.a);
         }
     }
