@@ -1,9 +1,10 @@
 // The shadow of a plate on normal-mapped ground, on every GPU tier. The ground's normal map tilts
 // its normals hard, while the plate floats just above it, so the shadow filter's comparison lies
-// within reach of the plate's near face. The filter compares each stored depth with the receiver's
-// plane, which must follow the flat triangles that the shadow map holds: a plane built from the
-// normal map's bent normal lifts the comparison over the plate and lights ground inside the
-// shadow. The page draws the shadow factor alone through the debug view, which reads the vertex
+// within reach of the plate's near face. The filter compares each stored depth with the surface
+// plane at the receiver, which must follow the flat triangles that the shadow map holds: a plane
+// built from the normal map's bent normal lifts the comparison over the plate and lights ground
+// inside the shadow. The sun's cascades keep one plane for a whole map, while a point or spot
+// light keeps one for each face of its cube or cone; both take the receiver's here. The page draws the shadow factor alone through the debug view, which reads the vertex
 // normal and so shows the shadow of the ground's own plane, and the lit frame with the sun, and
 // with the sun off for the floor that a fully shadowed texel keeps. No texel of the true shadow may
 // leave that floor.

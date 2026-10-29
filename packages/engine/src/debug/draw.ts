@@ -227,6 +227,9 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 
 	cullingSpheres(show = true): void {
 		this.cullingSpheresWanted = show;
+		// With the switch off, no later frame visits a sphere, so the last frame's count would
+		// outlive the switch.
+		if (!show) this.spheresDrawn = 0;
 	}
 
 	cullingSpheresDrawn(): number {
@@ -412,8 +415,11 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 		center[0] = m[3] as number;
 		center[1] = m[7] as number;
 		center[2] = m[11] as number;
+		// Only a sphere whose lines reached the buffer counts, so a full buffer reports none drawn
+		// rather than a count that the frame never wrote.
+		const before = this.points;
 		this.sphere(center, mesh.radius * scale, CULL_SPHERE_COLOR);
-		this.spheresDrawn += 1;
+		if (this.points > before) this.spheresDrawn += 1;
 		return true;
 	}
 
