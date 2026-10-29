@@ -279,6 +279,12 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - The `canvas-cost` plan measures what a canvas texture's refresh costs, for [D-204](decisions/D-204-canvas-textures.md). Its page follows a 1024 x 1024 `OffscreenCanvas` from the sketch and refreshes a 256 x 256 rectangle of it at 30 Hz. It times the refresh in the sketch, then reports the frame's GPU and CPU time with refreshes and without them.
 - The plan runs the page on both GPU paths: 2 pages. Run it on an iPad or a phone with `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys24-chrome --plan canvas-cost`. The Mac times the same page in its installed Chrome, in a quiet window: `NULL3D_CANVAS_COST=1 bun run test:browser -- canvas-texture.spec.ts --workers=1`.
 
+## The impostor cost plan
+
+- The `impostor-cost` plan measures what a field of impostor cards costs, for [D-274](decisions/D-274-impostors.md). Its page (`tests/pages/impostor-cost.html`) fills the view with 152 cards, and draws the whole batch hidden and shown in turns, so the difference is the card batch's frame cost, its three-view blend included.
+- The page measures each side for 2 seconds, three times each, alternating the sides. Where the browser has a GPU timer, it reports the GPU time per frame.
+- The plan runs the page on core WebGPU, compatibility mode and WebGL2: 3 pages. The Mac times it in a quiet window: `NULL3D_IMPOSTOR_COST=1 bun run test:browser -- impostor-cost.spec.ts`. Run it on a phone and an iPad with `bun run devices:cloud --only bsgalaxys24-chrome,bsipadpro13-safari --plan impostor-cost`.
+
 ## The environment load plan
 
 - The `environment-load` plan times an environment that a sketch asks for during play, for [D-19](decisions/D-19-environment-maps.md). Its page (`tests/pages/room-light.html`) draws a metal sphere with no light. The sketch then asks for the built-in room, or with `?source=` loads an HDR file, and sets it with a blue background in the same step.

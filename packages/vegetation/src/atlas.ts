@@ -29,7 +29,8 @@ export interface AtlasMap {
 }
 
 /**
- * A baked atlas: the colour and surface maps that a plant's material samples.
+ * A baked atlas: the colour and surface maps that a plant's material samples, and the pixels
+ * behind them, which an impostor bake reads.
  * @category api/vegetation
  */
 export interface PlantAtlas {
@@ -46,6 +47,8 @@ export interface PlantAtlas {
 	readonly surface: AtlasMap;
 	/** The cells across and down that the map holds. */
 	readonly cells: readonly [number, number];
+	/** The painted pixels behind the two textures. */
+	readonly pixels: { readonly color: AtlasPixels; readonly surface: AtlasPixels };
 }
 
 /**
@@ -83,11 +86,13 @@ export function bakePlantAtlases(ctx: Pick<SketchContext, 'textures'>): PlantAtl
 			color: asTexture(ctx.textures, bark.color, 'srgb', true),
 			surface: asTexture(ctx.textures, bark.surface, 'linear', true),
 			cells: [1, 1],
+			pixels: { color: bark.color, surface: bark.surface },
 		},
 		leaf: {
 			color: asTexture(ctx.textures, leaf.color, 'srgb', false),
 			surface: asTexture(ctx.textures, leaf.surface, 'linear', false),
 			cells: [4, 2],
+			pixels: { color: leaf.color, surface: leaf.surface },
 		},
 	};
 }

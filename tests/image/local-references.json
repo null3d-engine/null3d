@@ -418,5 +418,95 @@
 		"tier": "webgpu",
 		"date": "2026-10-27",
 		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 7 passed all 141 of its tests against these files in run 40442817152, so the two drawings are equal"
+	},
+	"chromium-swiftshader/webgpu/impostors.png": {
+		"test": "impostors",
+		"tier": "webgpu",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/webgpu/demo-impostors.png": {
+		"test": "demo-impostors",
+		"tier": "webgpu",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/webgpu/impostor-turn.png": {
+		"test": "impostor-turn",
+		"tier": "webgpu",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/webgpu/impostor-turn-sun-back.png": {
+		"test": "impostor-turn-sun-back",
+		"tier": "webgpu",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/compat/impostors.png": {
+		"test": "impostors",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/compat/demo-impostors.png": {
+		"test": "demo-impostors",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/compat/impostor-turn.png": {
+		"test": "impostor-turn",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/compat/impostor-turn-sun-back.png": {
+		"test": "impostor-turn-sun-back",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/webgl2/impostors.png": {
+		"test": "impostors",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/webgl2/demo-impostors.png": {
+		"test": "demo-impostors",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/webgl2/impostor-turn.png": {
+		"test": "impostor-turn",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/webgl2/impostor-turn-sun-back.png": {
+		"test": "impostor-turn-sun-back",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/webgpu/impostor-plant.png": {
+		"test": "impostor-plant",
+		"tier": "webgpu",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/compat/impostor-plant.png": {
+		"test": "impostor-plant",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
+	},
+	"chromium-swiftshader/webgl2/impostor-plant.png": {
+		"test": "impostor-plant",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "drawn on this machine's software GPU before the branch was pushed; the landing run's drawings replace these"
 	}
 }

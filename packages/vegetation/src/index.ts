@@ -45,6 +45,7 @@ export {
 	leafCellFor,
 	plantMaterial,
 } from './atlas';
+export type { AtlasPixels, PaintedAtlas } from './atlas-pixels';
 export type { PartArrays } from './builder';
 export {
 	ALL_SPECIES,
@@ -77,6 +78,8 @@ export {
 	groundMaps,
 	maskValue,
 } from './ground';
+export type { FarTree, FarTreeOptions } from './impostor';
+export { bakeFarTree, handOverToCards } from './impostor';
 export {
 	builtinRules,
 	type SpeciesRuleFields,
