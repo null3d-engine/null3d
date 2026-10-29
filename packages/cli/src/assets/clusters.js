@@ -14,7 +14,7 @@
 import { Primitive } from '@gltf-transform/core';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { NULL3D_CLUSTERS, Null3dClusters } from './cluster-extension.js';
-import { weld } from './levels.js';
+import { bandFile, weld } from './levels.js';
 
 /** @import { Accessor, Document, Mesh } from '@gltf-transform/core' */
 
@@ -543,6 +543,175 @@ export function storeClusters(doc, plans) {
 			);
 		prim.setExtension(NULL3D_CLUSTERS, /** @type {any} */ (clusters));
 	}
+}
+
+/** The fewest patches that the model file holds in a tree before its bands start. */
+export const BAND_MIN_PATCHES = 8;
+
+/**
+ * The most bands that one tree splits into, the file's own counted: the engine counts a band's
+ * picks in a 32-bit mask.
+ */
+export const BAND_MAX = 32;
+
+/**
+ * The patches of a tree cut into bands, in the order they stream: the file holds the first band,
+ * which reaches {@link BAND_MIN_PATCHES} patches or the whole tree, and each band after it holds
+ * the patches of one depth, so a patch's parent always lies in an earlier band. A tree with more
+ * depths than {@link BAND_MAX} joins its deepest ones into the last band.
+ *
+ * @param {ClusterPlan} plan
+ * @returns {number[][]} The patches of each band, by their place in the plan.
+ */
+export function splitTree(plan) {
+	const count = plan.patches.length / 4;
+	/** The depth of each patch, which the plan's order gives: parents come before their children. */
+	const depth = new Uint32Array(count);
+	for (let k = 0; k < count; k++) {
+		const parent = /** @type {number} */ (plan.patches[k * 4 + 2]) - 1;
+		depth[k] = parent < 0 ? 0 : /** @type {number} */ (depth[parent]) + 1;
+	}
+	/** @type {number[][]} */
+	const byDepth = [];
+	for (let k = 0; k < count; k++) {
+		const d = /** @type {number} */ (depth[k]);
+		let list = byDepth[d];
+		if (!list) {
+			list = [];
+			byDepth[d] = list;
+		}
+		list.push(k);
+	}
+	/** @type {number[][]} */
+	const bands = [];
+	/** @type {number[]} */
+	let run = [];
+	let first = true;
+	for (const ids of byDepth) {
+		if (!ids) continue;
+		run.push(...ids);
+		if (first && run.length >= BAND_MIN_PATCHES) {
+			bands.push(run);
+			run = [];
+			first = false;
+		} else if (!first) {
+			bands.push(run);
+			run = [];
+		}
+	}
+	if (run.length > 0) {
+		if (bands.length === 0) {
+			bands.push(run);
+		} else {
+			/** @type {number[]} */ (bands[bands.length - 1]).push(...run);
+		}
+	}
+	while (bands.length > BAND_MAX) {
+		const last = /** @type {number[]} */ (bands.pop());
+		/** @type {number[]} */ (bands[bands.length - 1]).push(...last);
+	}
+	return bands;
+}
+
+/**
+ * One band of a tree as the file or a stage file holds it: each patch's sphere and record, and the
+ * band's indices. A record's first index counts from the band's own indices, and its parent names
+ * the patch's place in the whole streamed tree, plus one.
+ *
+ * @param {ClusterPlan} plan
+ * @param {number[]} ids The band's patches, by their place in the plan.
+ * @param {Uint32Array} places Each patch's place in the streamed tree.
+ */
+function bandArrays(plan, ids, places) {
+	const total = ids.reduce((sum, id) => sum + /** @type {number} */ (plan.patches[id * 4 + 1]), 0);
+	const indices = new Uint32Array(total);
+	const bounds = new Float32Array(ids.length * 4);
+	const records = new Uint32Array(ids.length * 4);
+	let at = 0;
+	ids.forEach((id, k) => {
+		const first = /** @type {number} */ (plan.patches[id * 4]);
+		const count = /** @type {number} */ (plan.patches[id * 4 + 1]);
+		const parent = /** @type {number} */ (plan.patches[id * 4 + 2]) - 1;
+		bounds.set(plan.bounds.subarray(id * 4, id * 4 + 4), k * 4);
+		records[k * 4] = at;
+		records[k * 4 + 1] = count;
+		records[k * 4 + 2] = parent < 0 ? 0 : /** @type {number} */ (places[parent]) + 1;
+		records[k * 4 + 3] = /** @type {number} */ (plan.patches[id * 4 + 3]);
+		indices.set(plan.indices.subarray(first, first + count), at);
+		at += count;
+	});
+	return { bounds, records, indices };
+}
+
+/**
+ * Keeps only one band of a tree in its plan, so that the model file stores that band as the tree
+ * that draws the first picture.
+ *
+ * @param {ClusterPlan} plan
+ * @param {number[]} ids
+ * @param {Uint32Array} places
+ */
+function keepBand(plan, ids, places) {
+	const band = bandArrays(plan, ids, places);
+	plan.indices = band.indices;
+	plan.bounds = band.bounds;
+	plan.patches = band.records;
+	plan.root = 0;
+}
+
+/**
+ * Writes the bands of each tree after the one that its model file holds, and names them in the
+ * extras of the nodes that draw the mesh. Only a tree that the engine draws as patches streams: a
+ * mesh with one copy and one part, within the vertices that 16-bit indices reach. Every other tree
+ * stays whole in the file. The plan keeps its first band, which the model file stores.
+ *
+ * @param {Document} doc
+ * @param {Map<Primitive, ClusterPlan>} plans
+ * @param {Map<string, Uint8Array>} stages The stage files by their address beside the model.
+ * @param {string} prefix The model's name, which the stages' names start with.
+ * @returns {{ trees: number, files: number, bytes: number, bands: number, patches: number }}
+ */
+export function bandClusters(doc, plans, stages, prefix) {
+	const summary = { trees: 0, files: 0, bytes: 0, bands: 0, patches: 0 };
+	const meshes = doc.getRoot().listMeshes();
+	for (const [prim, plan] of plans) {
+		const mesh = /** @type {Mesh | undefined} */ (
+			prim.listParents().find((parent) => parent.propertyType === 'Mesh')
+		);
+		if (!mesh) continue;
+		const vertices = prim.getAttribute('POSITION')?.getCount() ?? 0;
+		if (vertices > 0xffff || copiesOf(mesh) !== 1) continue;
+		const bands = splitTree(plan);
+		if (bands.length < 2) continue;
+		const places = new Uint32Array(plan.patches.length / 4);
+		let next = 0;
+		for (const ids of bands) for (const id of ids) places[id] = next++;
+		const meshIndex = meshes.indexOf(mesh);
+		const primIndex = mesh.listPrimitives().indexOf(prim);
+		/** @type {{ primitive: number, url: string, bytes: number }[]} */
+		const names = [];
+		for (let k = 1; k < bands.length; k++) {
+			const band = bandArrays(plan, /** @type {number[]} */ (bands[k]), places);
+			const name = `${prefix}.m${meshIndex}.p${primIndex}.band${k}.bin`;
+			const file = bandFile(band.bounds, band.records, band.indices);
+			stages.set(name, file);
+			summary.files += 1;
+			summary.bytes += file.byteLength;
+			summary.bands += 1;
+			names.push({ primitive: primIndex, url: name, bytes: file.byteLength });
+		}
+		summary.patches += plan.patches.length / 4;
+		summary.trees += 1;
+		keepBand(plan, /** @type {number[]} */ (bands[0]), places);
+		for (const parent of mesh.listParents()) {
+			if (parent.propertyType !== 'Node') continue;
+			const node = /** @type {import('@gltf-transform/core').Node} */ (parent);
+			const extras = node.getExtras();
+			const staged = /** @type {{ bands?: unknown }} */ (extras.NULL3D_stages ?? {});
+			node.setExtras({ ...extras, NULL3D_stages: { ...staged, bands: names } });
+		}
+	}
+	return summary;
 }
 
 /**

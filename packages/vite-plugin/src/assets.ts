@@ -177,20 +177,24 @@ export function fileCodeHash(path: string): string | null {
 const STAGE_FILE = /^[\w.-]+\.bin$/;
 
 /**
- * The stage files that a model names, by their file names beside it: the files of the levels that
- * download after it, from `NULL3D_stages` in each node's extras.
+ * The stage files that a model names, by their file names beside it: the files of the levels and
+ * the bands that download after it, from `NULL3D_stages` in each node's extras.
  */
 function stagesOf(glb: Uint8Array): string[] {
 	const view = new DataView(glb.buffer, glb.byteOffset, glb.byteLength);
 	const json = JSON.parse(
 		new TextDecoder().decode(glb.subarray(20, 20 + view.getUint32(12, true))),
 	) as {
-		nodes?: { extras?: { NULL3D_stages?: { levels?: { url?: unknown }[] } } }[];
+		nodes?: {
+			extras?: { NULL3D_stages?: { levels?: { url?: unknown }[]; bands?: { url?: unknown }[] } };
+		}[];
 	};
 	const out: string[] = [];
-	for (const node of json.nodes ?? [])
-		for (const level of node.extras?.NULL3D_stages?.levels ?? [])
-			if (typeof level.url === 'string' && STAGE_FILE.test(level.url)) out.push(level.url);
+	for (const node of json.nodes ?? []) {
+		const staged = node.extras?.NULL3D_stages;
+		for (const stage of [...(staged?.levels ?? []), ...(staged?.bands ?? [])])
+			if (typeof stage.url === 'string' && STAGE_FILE.test(stage.url)) out.push(stage.url);
+	}
 	return out;
 }
 
