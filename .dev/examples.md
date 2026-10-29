@@ -608,7 +608,9 @@ and a hero car with two screens.
   Medium and above. At Low, at the pixel size of a cloud phone's screen, that cuts the frame from
   3.79 to 3.06 ms of GPU time on WebGPU and from 7.09 to 5.38 ms on WebGL2, and the traffic's own
   share from 1.33 to 0.64 ms and from 2.81 to 1.11 ms
-  ([D-246](decisions/D-246-skyway-vehicle-vertices.md)).
+  ([D-246](decisions/D-246-skyway-vehicle-vertices.md)). Skyway now draws the add-on's flying
+  car, a smooth lofted hull, at the same two details
+  ([D-277](decisions/D-277-skyway-driving-and-traffic.md)).
 - **A moved row needs a larger bounding sphere.** The engine culls each row by its mesh's bounding
   sphere. A vertex offset carries a car up to the lane's length from its row's origin. Each batch
   therefore gives its rows a radius that covers the lane, with `batch.setBoundingRadius(span)`

@@ -5,15 +5,15 @@
 // and a switch between the two flies the camera over the canopy and down into the seat, or back.
 //
 // Its paint is a clear coat over a deep blue, with amber running lights down its flanks, and the
-// cockpit's trim is dark and matte. A tinted glass canopy closes the cockpit. Three screens from the
+// cockpit's floor is dark and matte. A tinted glass canopy closes the cockpit. Three screens from the
 // screens add-on stand on the dashboard: the speed, the altitude and the navigation map. Each
 // refreshes at its own rate, and only the part of its picture that changed uploads, so a number, a
 // bar and a moving dot cost no frame work. Two spot lights at the nose light the rain ahead, and a
-// lamp under the belly spills the car's colour on the air below it.
+// neon band round the body's lower edge marks the field that holds it up.
 import { math, type PerspectiveCamera, quat, type SketchContext, vec3 } from '@null3d/engine';
 import type { HudGroup } from '../../lib/controls';
 import { EFFECT_LAYER } from '../../lib/layers';
-import { CONSOLE, createCanopy, createShell, FITTINGS, WELL } from './body';
+import { COCKPIT, CONSOLE, createCanopy, createShell, FITTINGS } from './body';
 import { createCockpit } from './cockpit';
 import { createConsole } from './console';
 import { cityTowers, type Flight, fly, keepOut, type Stick } from './drive';
@@ -23,7 +23,7 @@ const [AHEAD, BELOW] = [26, 5.2];
 /** The scale of the hull, so the car is a little under five meters long. */
 const SCALE = 2.2;
 /** The driver's eye, in the body's own units: over the seat, under the canopy's ridge. */
-const SEAT = [0, 0.96, -0.3] as const;
+const SEAT = [0, 1.04, -0.28] as const;
 /** How long the camera takes to fly into the seat or back out behind the car, in seconds. */
 const TRANSITION = 0.9;
 /** How high the camera's path rises over the canopy on its way in or out, in meters. */
@@ -62,29 +62,30 @@ export const DRIVE_KEYS = [
 export type View = 'chase' | 'cockpit';
 
 const paintWgsl = /* wgsl */ `
-struct Uniforms { glow: f32, well: f32, wellZ: f32 }
+struct Uniforms { glow: f32, cockpit: f32, cockpitZ: f32, floor: f32 }
 
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     // The body's own place, which its texture coordinates carry, so the paint turns with the car.
     let d = vec3f(input.uv.x, input.uv.y, input.uv1.x);
-    // The cockpit's trim: the well's walls and floor, dark and matte.
-    let trim = step(abs(d.x), material.well + 0.005) * step(abs(d.z), material.wellZ + 0.005)
-        * step(d.y, 0.86);
+    // The cockpit's floor, the body's top under the glass bubble: dark and matte.
+    let trim = step(abs(d.x), material.cockpit) * step(abs(d.z), material.cockpitZ)
+        * step(material.floor - 0.04, d.y);
     // The flanks carry a strip of amber running lights.
-    let strip = step(0.86, abs(d.x)) * step(abs(d.z), 1.7) * step(0.3, d.y) * step(d.y, 0.46);
+    let strip = step(0.86, abs(d.x)) * step(abs(d.z), 1.5) * step(0.5, d.y) * step(d.y, 0.56);
 
     s.baseColor = mix(vec3f(0.035, 0.05, 0.075), vec3f(0.004, 0.005, 0.007), trim);
     s.metalness = mix(0.55, 0.0, trim);
     s.roughness = mix(0.24, 0.95, trim);
     s.clearcoat = 1.0 - trim;
     s.clearcoatRoughness = 0.12;
-    s.emissive = vec3f(1.0, 0.35, 0.06) * strip * 2.6;
-    // A thin cold line under the belly, and the engine's light at the tail.
-    let belly = step(d.y, 0.16) * step(0.02, d.y);
-    s.emissive += vec3f(0.15, 0.6, 1.0) * belly * material.glow;
-    let tail = 1.0 - step(-1.55, d.z);
-    s.emissive += vec3f(0.3, 0.75, 1.0) * tail * material.glow * 0.6;
+    s.emissive = vec3f(1.0, 0.35, 0.06) * strip * 2.0;
+    // A neon band round the body's lower edge and its pods', the edge of the field that holds the
+    // car up, on the faces that look outward; and a faint glow on the tail.
+    let band = step(0.12, d.y) * step(d.y, 0.22) * step(abs(input.normal.y), 0.8);
+    s.emissive += vec3f(0.15, 0.6, 1.0) * band * material.glow * 2.2;
+    let tail = 1.0 - step(-1.9, d.z);
+    s.emissive += vec3f(0.3, 0.75, 1.0) * tail * material.glow * 0.25;
     return s;
 }
 `;
@@ -148,14 +149,17 @@ export function createHero(
 
 	const paint = materials.shader({
 		wgsl: paintWgsl,
-		uniforms: { glow: 1, well: WELL.half, wellZ: WELL.front },
+		uniforms: {
+			glow: 1,
+			cockpit: COCKPIT.half,
+			cockpitZ: COCKPIT.length,
+			floor: COCKPIT.floor,
+		},
 		color: '#1a2536',
 		roughness: 0.24,
 		metalness: 0.55,
 		clearcoat: 1,
 		clearcoatRoughness: 0.12,
-		// The cockpit's walls face in, so both faces of the shell draw.
-		doubleSided: true,
 	});
 	scene.createMesh({ mesh: createShell(ctx), material: paint, parent: body, layers: EFFECT_LAYER });
 	// The cockpit's seat, yoke and dashboard. The car's own lamps sit a meter from them, so they
@@ -192,12 +196,12 @@ export function createHero(
 	});
 
 	// The engine's two nozzles, and the lamp that plays behind them.
-	const engine = materials.shader({ wgsl: glowWgsl, uniforms: { strength: 4 }, fog: false });
+	const engine = materials.shader({ wgsl: glowWgsl, uniforms: { strength: 1.2 }, fog: false });
 	for (const side of [-1, 1]) {
 		scene.createMesh({
-			mesh: geometry.sphere({ radius: 0.17, widthSegments: 14, heightSegments: 10 }),
+			mesh: geometry.sphere({ radius: 0.11, widthSegments: 14, heightSegments: 10 }),
 			material: engine,
-			position: [side * 0.46, 0.52, -2.02],
+			position: [side * 0.34, 0.36, -2.0],
 			scale: [1, 1, 0.6],
 			parent: body,
 			layers: EFFECT_LAYER,
@@ -207,8 +211,8 @@ export function createHero(
 	const engineLight = scene.createPointLight({
 		position: [0, 0.55, -2.6],
 		color: '#4fb8ff',
-		intensity: 220,
-		range: 14,
+		intensity: 70,
+		range: 12,
 		parent: body,
 		layers: EFFECT_LAYER,
 	});
@@ -222,8 +226,7 @@ export function createHero(
 	quat.fromEuler(lean, -CONSOLE.lean, Math.PI, 0, 'YXZ');
 	const touchscreen = createConsole(ctx, body, lean, CONSOLE.at, CONSOLE.size);
 
-	// The nose lamps light the rain and the street ahead, and a lamp under the belly spills the
-	// car's own colour on the air below it.
+	// The nose lamps light the rain and the street ahead.
 	for (const side of [-1, 1]) {
 		scene.createSpotLight({
 			position: [side * 0.55, 0.46, 1.9],
@@ -237,14 +240,6 @@ export function createHero(
 			layers: EFFECT_LAYER,
 		});
 	}
-	scene.createPointLight({
-		position: [0, -0.2, -0.3],
-		color: '#3fa8ff',
-		intensity: 160,
-		range: 16,
-		parent: body,
-		layers: EFFECT_LAYER,
-	});
 
 	// The place now, the place last frame, and the vectors that fly the car and place the camera.
 	const at = vec3.create();
@@ -560,8 +555,8 @@ export function createHero(
 				speed = math.damp(speed, Math.hypot(dx, dz) / Math.max(dt, 1e-3), 5, dt);
 			}
 			vec3.copy(before, at);
-			engine.set({ strength: 2.6 + Math.sin(t * 17) * 0.45 });
-			engineLight.setIntensity(130 + Math.sin(t * 17) * 26);
+			engine.set({ strength: 1.2 + Math.sin(t * 17) * 0.2 });
+			engineLight.setIntensity(60 + Math.sin(t * 17) * 12);
 			// The panels read out the flight at their own rates.
 			cockpit.update(t, speed * 3.6, at[1] as number);
 			touchscreen.update();
