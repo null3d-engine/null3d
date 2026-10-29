@@ -89,6 +89,13 @@ export interface ImpostorOptions {
 	readonly castShadows?: boolean;
 	/** True makes the shadows of other objects fall on the cards. The default is false. */
 	readonly receiveShadows?: boolean;
+	/**
+	 * True keeps the cards' casters in place while the sun stands still, so a far shadow cascade
+	 * stays cached. The default is true, which suits a card that turns to the eye of each pass. A
+	 * scene that turns a card whose batch casts from frame to frame moves its caster while the light
+	 * stands still, and the far cascades then keep a stale shadow: pass false for such a scene.
+	 */
+	readonly castsStill?: boolean;
 }
 
 /**
@@ -193,8 +200,9 @@ export function createImpostors(ctx: ImpostorContext, options: ImpostorOptions):
 		...(options.roughness !== undefined && { roughness: options.roughness }),
 		...(options.metalness !== undefined && { metalness: options.metalness }),
 		// A card turns toward the view that draws it, so its casters hold their place while the
-		// light stands still, and the far shadow cascades stay cached.
-		castsStill: true,
+		// light stands still, and the far shadow cascades stay cached. A scene that turns its cards
+		// every frame moves them, and withdraws the claim.
+		castsStill: options.castsStill ?? true,
 		// The contact shadows' march takes a flat card for a solid wall, as it takes a leaf card,
 		// so the card takes the shadow map's shadows alone.
 		contactShadows: false,
