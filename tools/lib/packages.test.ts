@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 import {
 	existsSync,
 	mkdirSync,
@@ -74,6 +75,48 @@ describe('the build order', () => {
 				}
 			}
 			expect(needs.includes(name)).toBe(false);
+		}
+	});
+});
+
+describe('the declared dependencies', () => {
+	// The build order and a fresh project's install both read the manifests, so a shipped source
+	// file that imports another workspace package needs that package named in its manifest. A
+	// manifest that leaves the import out builds by luck and installs nowhere.
+	//
+	// Test files stay out of the rule: they run in the workspace, where the packages resolve
+	// through one folder, and the engine's own test import of the plugin would make the two
+	// packages each wait for the other.
+	const SOURCE_IMPORT = /(?:from\s*|import\s*\(\s*)['"]@null3d\/([\w.-]+)[/'"]/g;
+
+	it('names every workspace package that a shipped source file imports', () => {
+		for (const name of Object.keys(PACKAGES)) {
+			const manifest = JSON.parse(
+				readFileSync(join(ROOT, 'packages', name, 'package.json'), 'utf8'),
+			) as Record<string, Record<string, string> | undefined>;
+			const declared = new Set<string>();
+			for (const field of ['dependencies', 'peerDependencies', 'devDependencies'] as const)
+				for (const dependency of Object.keys(manifest[field] ?? {})) declared.add(dependency);
+			const imported = new Set<string>();
+			const listed = execFileSync('git', ['ls-files', '-z', '--', `packages/${name}/src`], {
+				cwd: ROOT,
+				encoding: 'utf8',
+			})
+				.split('\0')
+				.filter((path) => path.endsWith('.ts') && !path.endsWith('.test.ts'));
+			for (const path of listed)
+				for (const match of readFileSync(join(ROOT, path), 'utf8').matchAll(SOURCE_IMPORT)) {
+					const other = match[1] as string;
+					if (other !== name) imported.add(other);
+				}
+			for (const other of [...imported].sort()) {
+				const specifier = `@null3d/${other}`;
+				expect({ name, imports: other, declared: declared.has(specifier) }).toEqual({
+					name,
+					imports: other,
+					declared: true,
+				});
+			}
 		}
 	});
 });
