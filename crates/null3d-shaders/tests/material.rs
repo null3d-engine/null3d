@@ -1506,19 +1506,44 @@ fn every_buildable_permutation_of_a_full_custom_material_builds() {
         }
     }
     assert!(expected > 0, "the template offers no buildable permutation");
-    // The left-out bits are stated rather than skipped: the template offers them, and no build
-    // carries one.
-    let offered_left_out = template
-        .variants
-        .values()
-        .flat_map(|variant| variant.permutations.iter())
-        .any(|name| left_out & bit(name) != 0);
-    assert!(
-        offered_left_out,
-        "the template offers no bit that a custom material leaves out"
-    );
     assert!(
         not_builds > 0,
         "the template expands no combination that is no build"
     );
+    // Each bit the compiler leaves out is proven absent from every build. The message says whether
+    // the template offered it: an offered bit tests the compiler's filter, and one the template does
+    // not offer tests the template's own exclusion. A bit the compiler starts to keep would appear
+    // in a build and fail here.
+    for name in ["HALF", "MORPH", "INSTANCE_INDEX", "WEIGHTED", "AREA_LIGHTS"] {
+        let value = bit(name);
+        let offered = template
+            .variants
+            .values()
+            .any(|variant| variant.permutations.iter().any(|known| known == name));
+        assert!(
+            words.iter().all(|word| word & value == 0),
+            "{name} is carried by a build, and the compiler leaves it out of every custom material"
+        );
+        eprintln!("{name}: offered by the template {offered}, carried by a build false");
+    }
+    // The custom template's definitions carry no vertex tangent and no displacement: both come with
+    // MAPS, which a custom material has not. So no custom build writes a tangent at 5 or 6 where
+    // the object matrix's rows sit, and none writes a displacement height at 12 where the instance
+    // ids sit. The map's two other unguarded pairs are therefore unreachable for a custom material,
+    // and this test says so rather than leaving them out.
+    for name in ["VERTEX_TANGENT", "DISPLACEMENT"] {
+        let value = bit(name);
+        let offered = template
+            .variants
+            .values()
+            .any(|variant| variant.permutations.iter().any(|known| known == name));
+        assert!(
+            !offered,
+            "the custom template offers {name}, so a custom build could meet the object matrix rows or the instance ids"
+        );
+        assert!(
+            words.iter().all(|word| word & value == 0),
+            "a custom build carries {name}"
+        );
+    }
 }
