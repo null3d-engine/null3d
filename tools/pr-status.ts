@@ -102,7 +102,7 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-A6':
 		"unticked under the policy the owner kept: a batch row's own distance band is public API that no sketch, example or page switch sets. The close is a `?rows` mode on the existing level-of-detail sketch that sets one row's band, sharing the range picture's reference",
 	'M3-L5':
-		"unticked under the policy the owner kept: the water add-on's bounds view is turned on by one unit test and by no page or example. The close is one manifest entry of an existing water sketch with that view, sharing its reference",
+		"unticked under the policy the owner kept, for two witnesses: the water add-on's bounds view is turned on by one unit test and by no page or example, and its culling-spheres view is called by a unit test against a fake scene and by nothing else, so the traversal and the core hand-off never run. The closes are one manifest entry of an existing water sketch with the bounds view, sharing its reference, and a browser test or an example that turns the spheres on for a page with level meshes",
 	'M3-E7':
 		'unticked under the policy the owner kept: the spot lobe is counted in compiled shader source and never run through a spot light, because both lobe sketches use a sun and a point light. The close is a spot mode on the existing car-paint sketch, sharing its reference',
 	'M3-E10':
