@@ -99,7 +99,9 @@ pub enum Op {
     /// those with `permutation::WEIGHTED`. The label says what the pass draws for, from
     /// [`crate::pass_role`], so a frame's GPU time names the pass rather than its slot. The scope
     /// names the step that the pass records, from the render graph's scope codes, or 0 for a step
-    /// that no scope names; the engine times each pass's GPU work by it.
+    /// that no scope names; the engine times each pass's GPU work by it. A list that names a scope
+    /// must also give the second color target's word, as `NO_TARGET` when the pass has none:
+    /// without it the label reads as the target and the scope as the label.
     BeginRenderPass = 16,
     /// [render pipeline id]
     SetPipeline = 17,
