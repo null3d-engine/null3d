@@ -1,8 +1,8 @@
 # D-275: Staged loading for whole levels and cluster bands
 
-Status: proposed, for the owner's ruling. Built: the whole-level stages that D-228 decides, their
-reader and writer, `maxLevels`, and the pick-driven holdback. Not built: the cluster band stage, its
-writer, and the call that appends a band to a tree. Task: M3-L4.
+Status: accepted. Built: the whole-level stages that D-228 decides, their reader and writer,
+`maxLevels`, and the pick-driven holdback. Built: the cluster band stage, its writer, and the call
+that appends a band to a tree. Task: M3-L4.
 
 Summary: D-228's layout stands. A model holds its full vertex stream and its coarsest level. Each
 finer level is a stage file of indices, and it refines copies in place. This record adds a second kind
@@ -35,13 +35,15 @@ layout serve whole levels and the cluster patch groups without a second format?
 | The finest stage | 196,632 bytes, of which 98,304 indices at 2 bytes | D-228 |
 | The first picture against the level limit of 1 | equal within 0.1% of its pixels | the `staged-levels` browser test |
 | The first picture against the last | more than 1% of the pixels differ, and the ground covers more than 40% | the same test |
-| The time from navigation to the first draw | not measured | the startup run below |
-| A cluster band's bytes | not built | after kind 1 |
-| A real model's split into stages | not measured | the asset run below |
+| The time from navigation to the first draw | not measured | the staged load run below |
+| A cluster band's bytes | the file 805,500 bytes, five bands of 12,900 to 204,828 bytes, 397,012 in all, 33.0% of the download | `bun packages/cli/src/assets/cluster-fixture.ts` |
+| The staged cluster test, first band against the last | more than 1% of the pixels differ, and the file's first band covers more than 40% | the `staged-levels` browser test, `?clusters` |
+| A real model's split into stages | Creek's cave, 86,724 bytes in two stages, 31.3% of the 284,190 bytes downloaded; Kenney's building-i, 22,614 bytes in two stages, 37.4% | `bunx @null3d/cli assets optimize <model> <folder> --lod --stages` |
 
-How the data was produced: `bun packages/cli/src/assets/staged-fixture.ts` prints each file's size.
-The browser test `staged-levels` runs on WebGPU, compatibility mode and WebGL2. D-228 holds the
-test's shares and the model.
+How the data was produced: `bun packages/cli/src/assets/staged-fixture.ts` and
+`bun packages/cli/src/assets/cluster-fixture.ts` print each file's size. The browser test
+`staged-levels` runs on WebGPU, compatibility mode and WebGL2. D-228 holds the staged levels' shares
+and the model; the cluster case holds the tree's.
 
 ## Look
 
