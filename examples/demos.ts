@@ -338,7 +338,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Water',
 		scene: 'River into a lake',
 		summary:
-			'A river winds down a grassy valley into a lake, drawn by @null3d/water from one description of both bodies. Waves and ripples follow the current, caustics play over the bed, boulders trail foam, the banks and the sky mirror in the surface, and the shore fades where the bed rises to meet it. The camera drifts downstream and dips under the water, where the add-on tints, bends and lights the view from below.',
+			'A river winds down a grassy valley into a lake, drawn by @null3d/water from one description of both bodies. Waves and ripples follow the current, caustics play over the bed, boulders trail foam, the banks and the sky mirror in the surface, and the shore fades where the bed rises to meet it. The camera drifts down the river, dives under the lake, where the add-on tints, bends and lights the view from below, and circles the valley back to its start.',
 		hold: 1,
 		timeoutSeconds: 180,
 	},

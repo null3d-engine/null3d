@@ -1,8 +1,15 @@
 // The surface's mesh: a strip along a river's middle line, or a grid over a lake's bounds with the
 // cells outside its shore left out. Both carry the current in their texture coordinates, so the
-// surface shader drifts its ripples and its foam the way the water runs at each point.
+// surface shader drifts its ripples and its foam the way the water runs at each point, and the body
+// that each vertex belongs to, so the shader knows which pixels of a junction the mesh draws.
 import type { MeshArrays } from '@null3d/engine';
-import type { RiverShape, WaterBody, WaterShape } from './shape';
+import {
+	fromShore,
+	type LakeShape,
+	type RiverShape,
+	type WaterBody,
+	type WaterShape,
+} from './shape';
 
 /** The most meters between two cross sections of a river's mesh. */
 const STEP = 2;
@@ -10,6 +17,12 @@ const STEP = 2;
 const ACROSS = 16;
 /** The meters between two lines of a lake's mesh grid. */
 const CELL = 2;
+/**
+ * How far past a lake's shore its mesh reaches, in grid cells. A scene's own ground seldom meets the
+ * water exactly on the outline, so the surface fades against the bed there rather than ending on
+ * the grid's stepped edge.
+ */
+const SHORE_CELLS = 2;
 /** How far past a river's half width its mesh reaches, as a factor, which covers the shore band. */
 const REACH = 1.36;
 
@@ -41,7 +54,10 @@ function builder(): Builder {
 	return { positions: [], normals: [], uvs: [], uvs1: [], indices: [] };
 }
 
-/** Adds one vertex and returns its index. */
+/**
+ * Adds one vertex and returns its index. The first texture coordinate holds the current's speed and
+ * the body's number, counted from 1, which the junction map names as the owner of its texels.
+ */
 function vertex(
 	b: Builder,
 	x: number,
@@ -50,11 +66,12 @@ function vertex(
 	speed: number,
 	dx: number,
 	dz: number,
+	body: number,
 ): number {
 	const index = b.positions.length / 3;
 	b.positions.push(x, y, z);
 	b.normals.push(0, 1, 0);
-	b.uvs.push(speed, 0);
+	b.uvs.push(speed, body + 1);
 	// The current's direction, which the surface function reads from 0 to 1 in each axis.
 	b.uvs1.push(dx * 0.5 + 0.5, dz * 0.5 + 0.5);
 	return index;
@@ -126,6 +143,7 @@ function riverMesh(
 	step: number,
 	across: number,
 	speed: number,
+	body: number,
 ): MeshArrays {
 	const list = sections(shape, step);
 	const rows = across + 1;
@@ -145,6 +163,7 @@ function riverMesh(
 				speed,
 				section.dx,
 				section.dz,
+				body,
 			);
 		}
 	}
@@ -157,34 +176,42 @@ function riverMesh(
 	return arrays(b);
 }
 
-/** The surface's mesh for a lake: a grid over its bounds, with the cells outside its shore left out. */
-function lakeMesh(body: WaterBody, level: number, cell: number): MeshArrays {
-	const { minX, maxX, minZ, maxZ } = body;
-	const nx = Math.max(1, Math.ceil((maxX - minX) / cell));
-	const nz = Math.max(1, Math.ceil((maxZ - minZ) / cell));
-	const dx = (maxX - minX) / nx;
-	const dz = (maxZ - minZ) / nz;
+/**
+ * The surface's mesh for a lake: a grid over its bounds and a band past them, with the cells that lie
+ * outside the band past its shore left out.
+ */
+function lakeMesh(
+	shape: LakeShape,
+	body: WaterBody,
+	level: number,
+	cell: number,
+	index: number,
+): MeshArrays {
+	const reach = SHORE_CELLS * cell;
+	const minX = body.minX - reach;
+	const minZ = body.minZ - reach;
+	const nx = Math.max(1, Math.ceil((body.maxX + reach - minX) / cell));
+	const nz = Math.max(1, Math.ceil((body.maxZ + reach - minZ) / cell));
+	const dx = (body.maxX + reach - minX) / nx;
+	const dz = (body.maxZ + reach - minZ) / nz;
 	const b = builder();
-	// A lake stills its water, so the surface holds no direction, and the shader ignores both.
-	for (let j = 0; j <= nz; j++)
-		for (let i = 0; i <= nx; i++) vertex(b, minX + i * dx, level, minZ + j * dz, 0, 1, 0);
 	const row = nx + 1;
+	// Each grid point that lies over the water, or within the band past the shore.
+	const near = new Uint8Array(row * (nz + 1));
+	for (let j = 0; j <= nz; j++)
+		for (let i = 0; i <= nx; i++) {
+			const x = minX + i * dx;
+			const z = minZ + j * dz;
+			// A lake stills its water, so the surface holds no direction, and the shader ignores both.
+			vertex(b, x, level, z, 0, 1, 0, index);
+			near[j * row + i] = body.contains(x, z) || fromShore(shape.shore, x, z) < reach ? 1 : 0;
+		}
 	for (let j = 0; j < nz; j++)
 		for (let i = 0; i < nx; i++) {
-			// A cell draws when any of its corners lies over the water, so the mesh reaches past the
-			// shore and the surface fades there instead of ending on the grid's line.
-			const x0 = minX + i * dx;
-			const x1 = x0 + dx;
-			const z0 = minZ + j * dz;
-			const z1 = z0 + dz;
-			if (
-				!body.contains(x0, z0) &&
-				!body.contains(x1, z0) &&
-				!body.contains(x0, z1) &&
-				!body.contains(x1, z1)
-			)
-				continue;
+			// A cell draws when any of its corners lies in the band, so the surface fades against the
+			// scene's own bed instead of ending on the grid's line.
 			const a = j * row + i;
+			if (!near[a] && !near[a + 1] && !near[a + row] && !near[a + row + 1]) continue;
 			b.indices.push(a, a + row, a + 1, a + 1, a + row, a + row + 1);
 		}
 	return arrays(b);
@@ -193,17 +220,20 @@ function lakeMesh(body: WaterBody, level: number, cell: number): MeshArrays {
 /**
  * The surface's mesh for one water body, at the height of its surface. A river's mesh follows its
  * middle line and carries the current in its second texture coordinate for the shader to drift
- * with. A lake's mesh is a grid over its bounds, and a still one.
+ * with. A lake's mesh is a grid over its bounds, and a still one. `index` is the body's place in
+ * the water's list of bodies.
  */
 export function bodyMesh(
 	shape: WaterShape,
 	body: WaterBody,
 	level: number,
 	detail: MeshDetail,
+	index = 0,
 ): MeshArrays {
 	const step = detail.step ?? STEP;
 	const across = detail.across ?? ACROSS;
 	const cell = detail.cell ?? CELL;
-	if (shape.kind === 'river') return riverMesh(shape, level, step, across, shape.speed ?? 0.35);
-	return lakeMesh(body, level, cell);
+	if (shape.kind === 'river')
+		return riverMesh(shape, level, step, across, shape.speed ?? 0.35, index);
+	return lakeMesh(shape, body, level, cell, index);
 }
