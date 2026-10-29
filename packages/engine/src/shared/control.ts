@@ -10,7 +10,7 @@ import * as Slot from './slot';
 export { Slot };
 
 /** The Int32 slots at the start of the control block, one for every name in the slot table. */
-export const SLOT_COUNT = 58;
+export const SLOT_COUNT = 60;
 /** Int32 values per input event record. */
 export const INPUT_EVENT_INTS = 8;
 /** Input events the ring holds, a power of two; older unread events are overwritten. */
