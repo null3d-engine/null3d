@@ -51,14 +51,12 @@ const INCOMPLETE = new Set([
 	'M3-V5',
 	'M3-R19',
 	'M3-V1',
-	'M3-L1',
 	'M3-E1',
 	'M3-F14',
 	'M3-K3',
 	'M3-V3',
 	'M3-K2',
 	'M3-L3',
-	'M3-E10',
 	'M3-V9',
 ]);
 
@@ -76,8 +74,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"the compute pass and its WebGL2 fragment form are built and tested, and the wind add-on fills its field through the hook with a compute pass. The owner's 25 October ruling adds M3-V13's history to the hook, and the first-user outcome the plan names still waits on M3-F9's ocean",
 	'M3-R22':
 		"the shader cache on the branch is D-248's change, not this task's: it reuses every entry when a compiler change leaves the compiled program identical, 0 compiled and 79 reused in 19 s, where the same change cost an hour. The task's own change, three entries instead of four for every module kind, is on `feat/m3-r22-entry-set` and not on this branch, and the determinism list here still holds `lit`; the two checks' CI times remain unmeasured",
-	'M3-L1':
-		'unticked by the 29 October audit: two of its own items are unmet. The coverage switch its item 6 builds is reached only by unit tests, because every level picture sets its levels by a measured error, so a wrong coverage measure would pass every other check; and the far-cell hand-over its item 5 names has no first user, since the impostors demo draws its rings as disjoint batches with no band on the near batch or the merged cells. Both are being built',
 	'M3-E1':
 		"unticked by the 29 October audit: the entry gained a rule-42 bullet that the tick never covered. The particles add-on's birth records are still written one per birth per frame on the sketch thread, and the engine's particle buffer gives them a Rust home",
 	'M3-F14':
@@ -92,8 +88,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"held open although its work has landed, for two reasons. Its cost is not measured: the card-field figures on the record predate the coverage function, the shadow offset and the both-faces change, so the phone cost run and the frame-time check are owed and the entry quotes no cost. And its own first clause names a witness that does not exist: it asks that Creek's far slopes show impostor trees matching the near ones at the hand-off, and no Creek page draws impostors, because the call is made only by the impostors demo and the impostor sketches. The hand-over picture that exists is the demo's; the Creek half belongs with M3-V11, which dresses Creek through the add-on. Either the clause should name the demo or the plan should hand that half to V11",
 	'M3-L3':
 		'unticked under the policy the owner kept: its whole-levels fallback, where a device cannot draw many ranges, is taken by no automated run, because every cluster picture and cost run forces the extension on in Chromium and no switch withholds it. Only a Firefox hand run ever draws it. The close is a switch that leaves `WEBGL_multi_draw` out and one manifest entry of the existing cluster picture sharing its reference',
-	'M3-E10':
-		"unticked under the policy the owner kept: the scene-pass leg of a sky layer is drawn by no page, and the tests that name it check graph order or an error's shape. The close is a sky-layer sketch with a water surface under the layer, sharing a reference it already has",
 	'M3-F3':
 		"dropped with the temporal resolve it waited on (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F10':
