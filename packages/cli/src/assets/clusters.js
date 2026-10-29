@@ -716,8 +716,15 @@ export function bandClusters(doc, plans, stages, prefix) {
 			if (parent.propertyType !== 'Node') continue;
 			const node = /** @type {import('@gltf-transform/core').Node} */ (parent);
 			const extras = node.getExtras();
-			const staged = /** @type {{ bands?: unknown }} */ (extras.NULL3D_stages ?? {});
-			node.setExtras({ ...extras, NULL3D_stages: { ...staged, bands: names } });
+			const staged =
+				/** @type {{ bands?: { primitive: number, url: string, bytes: number }[] }} */ (
+					extras.NULL3D_stages ?? {}
+				);
+			// A mesh with several trees names the bands of each, so the earlier ones stay.
+			node.setExtras({
+				...extras,
+				NULL3D_stages: { ...staged, bands: [...(staged.bands ?? []), ...names] },
+			});
 		}
 	}
 	return summary;
