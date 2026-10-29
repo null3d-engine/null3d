@@ -24,6 +24,8 @@ const [AHEAD, BELOW] = [26, 5.2];
 const SCALE = 2.2;
 /** The driver's eye, in the body's own units: over the seat, under the canopy's ridge. */
 const SEAT = [0, 1.04, -0.28] as const;
+/** The middle of the glass bubble, in the body's own units. */
+const BUBBLE_MIDDLE = [0, 0.92, -0.05] as const;
 /** How long the camera takes to fly into the seat or back out behind the car, in seconds. */
 const TRANSITION = 0.9;
 /** How high the camera's path rises over the canopy on its way in or out, in meters. */
@@ -109,6 +111,11 @@ export interface Hero {
 	readonly view: View;
 	/** Puts the camera behind the car or in its seat. */
 	setView(view: View): void;
+	/**
+	 * Writes the middle of the glass bubble into `out` as x, y and z, and the car's yaw after them,
+	 * for the rain to keep out of.
+	 */
+	canopy(out: Float32Array): void;
 	/** Shows the scene's controls on the console, as the page's panel shows them. */
 	showControls(groups: readonly HudGroup[]): void;
 	/**
@@ -224,7 +231,46 @@ export function createHero(
 	// The console on the dashboard's face, which repeats the scene's controls for the driver.
 	const lean = quat.create();
 	quat.fromEuler(lean, -CONSOLE.lean, Math.PI, 0, 'YXZ');
-	const touchscreen = createConsole(ctx, body, lean, CONSOLE.at, CONSOLE.size);
+	// A press on the console, found in the car's own space: from the driver's eye along the press's
+	// direction onto the console's plane. The engine's own hit tests the console where the last
+	// update put it, against the ray of the frame on screen, and in a moving car the two differ by
+	// a frame of travel, which shifts a press across the console's rows.
+	const facing = {
+		normal: vec3.transformQuat(vec3.create(), [0, 0, 1], lean),
+		across: vec3.transformQuat(vec3.create(), [1, 0, 0], lean),
+		up: vec3.transformQuat(vec3.create(), [0, 1, 0], lean),
+	};
+	const unturn = quat.create();
+	const along = vec3.create();
+	const toConsole = vec3.create();
+	const touchscreen = createConsole(
+		ctx,
+		body,
+		lean,
+		CONSOLE.at,
+		CONSOLE.size,
+		(event, width, height) => {
+			if (inside < 1) return null;
+			quat.invert(unturn, spin);
+			vec3.transformQuat(along, event.ray.direction, unturn);
+			const facingDot = vec3.dot(along, facing.normal);
+			if (Math.abs(facingDot) < 1e-6) return null;
+			vec3.set(
+				toConsole,
+				CONSOLE.at[0] - SEAT[0],
+				CONSOLE.at[1] - SEAT[1],
+				CONSOLE.at[2] - SEAT[2],
+			);
+			const distance = vec3.dot(toConsole, facing.normal) / facingDot;
+			if (distance <= 0) return null;
+			// The hit, from the console's middle, along its width and its height.
+			vec3.scaleAndAdd(toConsole, vec3.negate(toConsole, toConsole), along, distance);
+			const u = vec3.dot(toConsole, facing.across) / CONSOLE.size[0] + 0.5;
+			const v = vec3.dot(toConsole, facing.up) / CONSOLE.size[1] + 0.5;
+			if (u < 0 || u > 1 || v < 0 || v > 1) return null;
+			return { x: u * width, y: (1 - v) * height };
+		},
+	);
 
 	// The nose lamps light the rain and the street ahead.
 	for (const side of [-1, 1]) {
@@ -250,6 +296,8 @@ export function createHero(
 	const goal = vec3.create();
 	const spin = quat.create();
 	const look = vec3.create();
+	/** The glass bubble's middle, as the rain's shelter reads it. */
+	const middle = vec3.create();
 	const seat = vec3.create();
 	let yaw = 0;
 	let pitch = 0;
@@ -442,6 +490,19 @@ export function createHero(
 			// then flies from one to the other.
 			orbit.turn = 0;
 			orbit.tilt = 0;
+		},
+		canopy(out) {
+			vec3.set(
+				middle,
+				BUBBLE_MIDDLE[0] * SCALE,
+				BUBBLE_MIDDLE[1] * SCALE,
+				BUBBLE_MIDDLE[2] * SCALE,
+			);
+			vec3.transformQuat(middle, middle, spin);
+			out[0] = (at[0] as number) + (middle[0] as number);
+			out[1] = (at[1] as number) + (middle[1] as number);
+			out[2] = (at[2] as number) + (middle[2] as number);
+			out[3] = yaw;
 		},
 		showControls(groups) {
 			touchscreen.show(groups);

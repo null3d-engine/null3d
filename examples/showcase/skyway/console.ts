@@ -6,20 +6,26 @@
 // sends it on to the sketch as its own panel's button would. The scene's controls then answer it
 // once, whichever panel took the press, and both panels show the change. A press on a tab only
 // turns the console's own page.
-import type { Object3D, QuatLike, SketchContext } from '@null3d/engine';
-import { createScreen } from '../../addons/screens';
+import type { Object3D, ObjectPointerEvent, QuatLike, SketchContext } from '@null3d/engine';
+import { createScreen, type ScreenPoint } from '../../addons/screens';
 import type { HudButton, HudGroup } from '../../lib/controls';
 import { EFFECT_LAYER } from '../../lib/layers';
 
 /** The console's canvas in texels, and the rectangle of the whole of it. */
-const SIZE = { width: 1024, height: 384 };
+const SIZE = { width: 1200, height: 340 };
 const WHOLE = { x: 0, y: 0, width: SIZE.width, height: SIZE.height };
-/** The tab bar's height, the padding round the page, and a button's height and gap, in texels. */
-const TAB = 64;
-const PAD = 22;
-const BUTTON = { height: 66, gap: 16 };
-/** The hour bar's height, in texels, for a group with a slider. */
-const BAR = 46;
+/**
+ * The tab bar's height, the padding round the page and the gap between two rows or two buttons,
+ * in texels. The page's rows share the rest of the height, so a group of one row fills the
+ * console as a group of three does.
+ */
+const TAB = 84;
+const PAD = 18;
+const GAP = 16;
+/** The tallest a row grows, in texels, so a lone row stays a button rather than a block. */
+const ROW = 150;
+/** How far from a target a press may land and still take it, in texels, when it hits none. */
+const SLOP = 36;
 /** The console's colours: its glass, its lines, its text, and a lit button's fill and text. */
 const COLOUR = {
 	glass: '#050b12',
@@ -56,7 +62,8 @@ export interface Console {
 
 /**
  * Builds the console on `body`, at `at` in the body's units, turned by `tilt` toward the seat, and
- * `size` wide and high in the body's units.
+ * `size` wide and high in the body's units. `locate` finds where a press landed on the canvas, from
+ * the press's event; without it the console takes the engine's own hit.
  */
 export function createConsole(
 	ctx: SketchContext,
@@ -64,6 +71,7 @@ export function createConsole(
 	tilt: QuatLike,
 	at: readonly [number, number, number],
 	size: readonly [number, number],
+	locate?: (event: ObjectPointerEvent, width: number, height: number) => ScreenPoint | null,
 ): Console {
 	const { page } = ctx;
 	const screen = createScreen(ctx, {
@@ -122,25 +130,26 @@ export function createConsole(
 		group: HudGroup,
 		buttons: readonly HudButton[],
 		y: number,
+		height: number,
 	): void => {
-		const width = (SIZE.width - PAD * 2 - BUTTON.gap * (buttons.length - 1)) / buttons.length;
+		const width = (SIZE.width - PAD * 2 - GAP * (buttons.length - 1)) / buttons.length;
 		buttons.forEach((button, k) => {
-			const x = PAD + k * (width + BUTTON.gap);
+			const x = PAD + k * (width + GAP);
 			c.fillStyle = button.active ? COLOUR.lit : COLOUR.glass;
 			c.strokeStyle = button.active ? COLOUR.lit : COLOUR.line;
 			c.lineWidth = 3;
-			box(c, x, y, width, BUTTON.height, button.active);
-			if (!button.active) box(c, x, y, width, BUTTON.height, false);
+			box(c, x, y, width, height, button.active);
+			if (!button.active) box(c, x, y, width, height, false);
 			c.fillStyle = button.active ? COLOUR.litText : COLOUR.text;
-			c.font = 'bold 28px sans-serif';
+			c.font = 'bold 36px sans-serif';
 			c.textAlign = 'center';
 			c.textBaseline = 'middle';
-			c.fillText(button.label, x + width / 2, y + BUTTON.height / 2, width - 16);
+			c.fillText(button.label, x + width / 2, y + height / 2, width - 16);
 			targets.push({
 				x,
 				y,
 				width,
-				height: BUTTON.height,
+				height,
 				tab: -1,
 				name: button.name ?? group.name,
 				value: button.id,
@@ -162,7 +171,7 @@ export function createConsole(
 			c.fillStyle = open ? '#0d2633' : COLOUR.glass;
 			c.fillRect(x, 0, across, TAB);
 			c.fillStyle = open ? COLOUR.lit : COLOUR.dim;
-			c.font = 'bold 22px sans-serif';
+			c.font = 'bold 28px sans-serif';
 			c.textAlign = 'center';
 			c.textBaseline = 'middle';
 			c.fillText(group.title, x + across / 2, TAB / 2, across - 10);
@@ -178,16 +187,22 @@ export function createConsole(
 		if (group) {
 			let y = TAB + PAD;
 			const { slider } = group;
+			const rows =
+				(slider ? 1 : 0) + (group.buttons.length ? 1 : 0) + (group.extras?.length ? 1 : 0);
+			// The rows share the page's height, up to a tall button's, and the page centres them.
+			const room = SIZE.height - TAB - PAD * 2 - GAP * (rows - 1);
+			const height = Math.min(ROW, room / Math.max(1, rows));
+			y += (room - height * rows) / 2;
 			if (slider) {
 				// The hour bar: a track with the value's share lit, and a press sets the value there.
 				const width = SIZE.width - PAD * 2;
 				const share = (slider.value - slider.min) / (slider.max - slider.min);
 				c.fillStyle = '#0d2633';
-				box(c, PAD, y, width, BAR, true);
+				box(c, PAD, y, width, height, true);
 				c.fillStyle = COLOUR.lit;
-				box(c, PAD, y, Math.max(BAR, width * share), BAR, true);
+				box(c, PAD, y, Math.max(height, width * share), height, true);
 				c.fillStyle = COLOUR.litText;
-				c.font = 'bold 24px sans-serif';
+				c.font = 'bold 30px sans-serif';
 				c.textAlign = 'left';
 				c.textBaseline = 'middle';
 				const hours = Math.floor(slider.value);
@@ -195,26 +210,26 @@ export function createConsole(
 				c.fillText(
 					`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
 					PAD + 14,
-					y + BAR / 2,
+					y + height / 2,
 				);
 				targets.push({
 					x: PAD,
 					y,
 					width,
-					height: BAR,
+					height,
 					tab: -1,
 					name: group.name,
 					value: '',
 					min: slider.min,
 					max: slider.max,
 				});
-				y += BAR + PAD;
+				y += height + GAP;
 			}
 			if (group.buttons.length) {
-				row(c, group, group.buttons, y);
-				y += BUTTON.height + BUTTON.gap;
+				row(c, group, group.buttons, y, height);
+				y += height + GAP;
 			}
-			if (group.extras?.length) row(c, group, group.extras, y);
+			if (group.extras?.length) row(c, group, group.extras, y, height);
 		}
 		screen.mark(WHOLE);
 		screen.flush();
@@ -222,27 +237,33 @@ export function createConsole(
 
 	// A press on the console: a tab opens its page here, and a button or the hour bar posts.
 	screen.mesh.on('click', (event) => {
-		const point = screen.pointOf(event);
+		const point = locate ? locate(event, SIZE.width, SIZE.height) : screen.pointOf(event);
 		if (!point) return;
+		// The target under the press, or the nearest one within the slop, so a press that lands
+		// in a gap between two targets still takes the one it was meant for.
+		let best: Target | undefined;
+		let bestGap = SLOP;
 		for (const target of targets) {
-			if (
-				point.x < target.x ||
-				point.x > target.x + target.width ||
-				point.y < target.y ||
-				point.y > target.y + target.height
-			)
-				continue;
-			if (target.tab >= 0) {
-				tab = target.tab;
-				drawn = sightOf(shown);
-				draw();
-			} else if (target.min !== undefined && target.max !== undefined) {
-				const share = Math.min(1, Math.max(0, (point.x - target.x) / target.width));
-				const value = target.min + share * (target.max - target.min);
-				page.post('hud-press', { name: target.name, value: String(value) });
-			} else page.post('hud-press', { name: target.name, value: target.value });
-			return;
+			const dx = Math.max(target.x - point.x, 0, point.x - (target.x + target.width));
+			const dy = Math.max(target.y - point.y, 0, point.y - (target.y + target.height));
+			const gap = Math.hypot(dx, dy);
+			if (gap <= bestGap) {
+				best = target;
+				bestGap = gap;
+				if (gap === 0) break;
+			}
 		}
+		const target = best;
+		if (!target) return;
+		if (target.tab >= 0) {
+			tab = target.tab;
+			drawn = sightOf(shown);
+			draw();
+		} else if (target.min !== undefined && target.max !== undefined) {
+			const share = Math.min(1, Math.max(0, (point.x - target.x) / target.width));
+			const value = target.min + share * (target.max - target.min);
+			page.post('hud-press', { name: target.name, value: String(value) });
+		} else page.post('hud-press', { name: target.name, value: target.value });
 	});
 
 	return {
