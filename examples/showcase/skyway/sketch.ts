@@ -69,6 +69,8 @@ export const SHOTS: readonly Shot[] = [
 	// The opening view holds, so a held frame lands on it: high over the south entrance, looking
 	// down the canyon into the haze.
 	{ position: [-525, 170, 520], target: [-525, 90, 200], seconds: 1.2, move: 'hold' },
+	// The same pose, then the glide down the canyon: the repeat avoids a snap at the hold's end.
+	{ position: [-525, 170, 520], target: [-525, 90, 200], seconds: 5 },
 	{ position: [-525, 142, 430], target: [-525, 86, 260], seconds: 7 },
 	{ position: [-525, 112, 300], target: [-525, 80, 150], seconds: 6 },
 	{ position: [-525, 90, 180], target: [-525, 74, 20], seconds: 6 },

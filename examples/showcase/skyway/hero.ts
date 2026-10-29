@@ -265,7 +265,7 @@ export function createHero(
 	let inside = 0;
 	/** True while the user drives, until the next frame in Auto. */
 	let driving = false;
-	/** The car's place and yaw as it trails the Auto camera, which the seat view blends away from. */
+	/** The car's place and yaw as it trails the Auto camera. */
 	const trail = vec3.create();
 	let trailYaw = 0;
 	/** The point that the seat looks at, and the camera's place on its way in or out. */
@@ -467,7 +467,7 @@ export function createHero(
 			flight.speed = speed;
 			flight.climb = 0;
 			// The chase camera starts at the Auto camera's place and eases behind the car.
-			camera.getWorldPosition(eye);
+			camera.getPosition(eye);
 			chase.x = eye[0] as number;
 			chase.y = eye[1] as number;
 			chase.z = eye[2] as number;
@@ -511,12 +511,15 @@ export function createHero(
 					orbit.distance = CHASE_DISTANCE;
 				}
 				travel(dt);
-				camera.getWorldPosition(eye);
+				// The route's place this frame, as the cinematic camera just set it. The world place
+				// is last frame's, which in the seat view is the car's own seat.
+				camera.getPosition(eye);
 				camera.getRotation(turn);
 				vec3.transformQuat(ahead, [0, 0, -1], turn);
 				// The car trails the shot, ahead of it and in the middle of the frame, easing after
 				// it, and turns to its own travel, so a turn of the route banks it.
-				const was = [trail[0] as number, trail[2] as number];
+				const wasX = trail[0] as number;
+				const wasZ = trail[2] as number;
 				vec3.set(
 					goal,
 					(eye[0] as number) + ahead[0] * AHEAD,
@@ -525,8 +528,8 @@ export function createHero(
 				);
 				for (let k = 0; k < 3; k++)
 					trail[k] = math.damp(trail[k] as number, goal[k] as number, 5.5, dt);
-				const tx = (trail[0] as number) - (was[0] as number);
-				const tz = (trail[2] as number) - (was[1] as number);
+				const tx = (trail[0] as number) - wasX;
+				const tz = (trail[2] as number) - wasZ;
 				let banking = 0;
 				if (Math.hypot(tx, tz) > dt * 0.6) {
 					let gap = Math.atan2(tx, tz) - trailYaw;
@@ -535,42 +538,26 @@ export function createHero(
 					trailYaw += next;
 					banking = math.clamp((-next / Math.max(dt, 1e-3)) * 0.06, -0.4, 0.4);
 				}
-				if (inside <= 0) {
-					vec3.copy(at, trail);
-					yaw = trailYaw;
-					roll = math.damp(roll, banking, 7, dt);
-				} else {
-					// In the seat view the car carries the camera, turned the way the route looks. On
-					// the way in, the car eases back from its trail to meet the camera, which flies
-					// into the seat; on the way out the two part again.
-					const e = inside * inside * (3 - 2 * inside);
-					const routeYaw = Math.atan2(ahead[0], ahead[2]);
-					let gap = routeYaw - trailYaw;
-					gap = Math.atan2(Math.sin(gap), Math.cos(gap));
-					yaw = trailYaw + gap * e;
-					roll = math.damp(roll, banking * (1 - e), 7, dt);
-					quat.fromEuler(spin, 0, yaw, 0, 'YXZ');
-					vec3.set(seat, SEAT[0] * SCALE, SEAT[1] * SCALE, SEAT[2] * SCALE);
-					vec3.transformQuat(seat, seat, spin);
-					for (let k = 0; k < 3; k++)
-						at[k] =
-							(trail[k] as number) +
-							((eye[k] as number) - (seat[k] as number) - (trail[k] as number)) * e;
-					if (inside < 1) {
-						pose();
-						vec3.set(
-							goal,
-							(eye[0] as number) + ahead[0] * CHASE.ahead,
-							(eye[1] as number) + ahead[1] * CHASE.ahead,
-							(eye[2] as number) + ahead[2] * CHASE.ahead,
-						);
-						between(inside, eye[0] as number, eye[1] as number, eye[2] as number, goal);
-					}
+				vec3.copy(at, trail);
+				yaw = trailYaw;
+				roll = math.damp(roll, banking, 7, dt);
+				pose();
+				// The car never moves for a view: the seat view puts the camera in its seat as it
+				// flies, and the way in or out flies the camera between the route's place, behind
+				// and above the car, and the seat.
+				if (inside >= 1) ride();
+				else if (inside > 0) {
+					vec3.set(
+						goal,
+						(eye[0] as number) + ahead[0] * CHASE.ahead,
+						(eye[1] as number) + ahead[1] * CHASE.ahead,
+						(eye[2] as number) + ahead[2] * CHASE.ahead,
+					);
+					between(inside, eye[0] as number, eye[1] as number, eye[2] as number, goal);
 				}
 				const dx = (at[0] as number) - (before[0] as number);
 				const dz = (at[2] as number) - (before[2] as number);
 				speed = math.damp(speed, Math.hypot(dx, dz) / Math.max(dt, 1e-3), 5, dt);
-				pose();
 			}
 			vec3.copy(before, at);
 			engine.set({ strength: 2.6 + Math.sin(t * 17) * 0.45 });

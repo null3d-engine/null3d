@@ -88,10 +88,18 @@ instead of a band of cars over the low streets. The owner judges the final look.
   and turns with the car, and the speed blur keeps a quarter of its strength, so the dashboard
   stays readable. V and the View buttons switch the two, in Auto too: there the car carries the
   camera along the route. A switch flies the camera over 0.9 s along a path that rises 1.2 m over
-  the canopy and comes down through it into the seat, or back out.
+  the canopy and comes down through it into the seat, or back out. The car never moves for a view
+  change. In Auto it keeps flying its own path ahead of the route, and the seat view puts the
+  camera in its seat. A car that slid back to meet the camera read as a car that turned round on
+  the way out, and its speed screen counted the slide.
+- **The route's opening.** The route opens on a held shot, then the same pose again, which the
+  camera eases away from. Without the repeat, the end of the hold snaps the camera to the next
+  shot, 90 m away, which reads as the page loading twice.
 - **The console.** A touchscreen on the dashboard's face repeats the scene's controls, one tab at
   a time, with the hour as a bar (`console.ts`). The cinematic camera hands it the controls model
-  each time it sends the model to the page (`CinematicOptions.onControls`). A press posts
+  each time it sends the model to the page (`CinematicOptions.onControls`). It draws again only
+  when what it shows changes: the model comes several times a second while Auto runs, and a whole
+  new picture each time made its tab row flicker. A press posts
   `hud-press` to the page, which sends it on to the sketch as its own panel's button would. Both
   panels then show the change.
 - **The other cars' windows.** The traffic-lanes add-on takes `look.windows`, a tint that draws each
