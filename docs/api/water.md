@@ -68,6 +68,16 @@ export default defineSketch((ctx) => {
 
 `shapes` takes one shape or a list of them. The list shares one material and one reflection, so a river that runs into a lake costs one surface and one mirror.
 
+### Where bodies meet
+
+Each body has a mesh of its own, so where a river runs into a lake the two meshes overlap. There
+each point of the surface belongs to one body. A lake owns the water inside its shore, and a river
+the water outside every lake. The other mesh skips the point, so the water never draws twice there.
+The river's waves give way to the lake's still water over about 3 m on each side of the meeting.
+The surface lies flat within a few meters of it. Both meshes carry the river's current there, so
+their waves agree on every pixel and leave no seam. A small map over each meeting
+holds these values. The add-on makes it once, when it builds the meshes.
+
 ### A river
 
 | Field | Takes | Default | What it sets |
@@ -120,7 +130,8 @@ the water reaches, the depth of the bed at a point, and the current there.
 | `destroy()` | Removes the surface, its reflection pass and its material |
 
 `surfaceHeight` and `currentAt` use the body that the point lies over, so a boat, a leaf or a
-swimmer floats and drifts with the water under it.
+swimmer floats and drifts with the water under it. Where a river meets a lake, `currentAt` gives the
+current of the body that owns the point, and `surfaceHeight` follows the flat, mixed surface there.
 
 ## The view from under the water
 
@@ -144,16 +155,16 @@ window overhead, and turns the light back past that window's edge.
 
 ## Costs and limits
 
-- **The scene's depth.** The surface declares `sceneInputs: ['sceneDepth']` and two textures. The
-  engine gives a depth-reading material room for its own maps; an engine that refuses the pair stops
+- **The scene's depth.** The surface declares `sceneInputs: ['sceneDepth']` and three textures. The
+  engine gives a depth-reading material room for its own maps; an engine that refuses them stops
   the call with E1217. The depth gives the water its depth behind each pixel, so a shore fades
   against the bank.
 - **The reflection.** The pass draws the scene a second time. It draws every other frame on Low and
   Medium, so it costs half as much on average there, and every frame on High and Ultra. When frames
   take too long, the frame-budget governor doubles the wait, up to every 16th frame. The stats
   overlay shows the cadence as `reflectionEvery`. It shows the pass's GPU time and its share of a
-  frame as the water row's budget. It also shows the memory of the mesh arrays and the foam texture
-  that the add-on made. The reflection target is the render graph's. `reflectionEvery` replaces the
+  frame as the water row's budget. It also shows the memory of the mesh arrays, the map of where bodies
+  meet, and the foam texture that the add-on made. The reflection target is the render graph's. `reflectionEvery` replaces the
   preset's cadence. The pass costs no pipeline of its own, and its texture goes with `destroy`.
 - **Transmission.** The surface lets light through, so the engine copies the scene's colors in the
   frame that the water draws. The water draws both faces.

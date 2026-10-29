@@ -1,6 +1,7 @@
 // The surface's mesh: a strip along a river's middle line, or a grid over a lake's bounds with the
 // cells outside its shore left out. Both carry the current in their texture coordinates, so the
-// surface shader drifts its ripples and its foam the way the water runs at each point.
+// surface shader drifts its ripples and its foam the way the water runs at each point, and the body
+// that each vertex belongs to, so the shader knows which pixels of a junction the mesh draws.
 import type { MeshArrays } from '@null3d/engine';
 import type { RiverShape, WaterBody, WaterShape } from './shape';
 
@@ -41,7 +42,10 @@ function builder(): Builder {
 	return { positions: [], normals: [], uvs: [], uvs1: [], indices: [] };
 }
 
-/** Adds one vertex and returns its index. */
+/**
+ * Adds one vertex and returns its index. The first texture coordinate holds the current's speed and
+ * the body's number, counted from 1, which the junction map names as the owner of its texels.
+ */
 function vertex(
 	b: Builder,
 	x: number,
@@ -50,11 +54,12 @@ function vertex(
 	speed: number,
 	dx: number,
 	dz: number,
+	body: number,
 ): number {
 	const index = b.positions.length / 3;
 	b.positions.push(x, y, z);
 	b.normals.push(0, 1, 0);
-	b.uvs.push(speed, 0);
+	b.uvs.push(speed, body + 1);
 	// The current's direction, which the surface function reads from 0 to 1 in each axis.
 	b.uvs1.push(dx * 0.5 + 0.5, dz * 0.5 + 0.5);
 	return index;
@@ -126,6 +131,7 @@ function riverMesh(
 	step: number,
 	across: number,
 	speed: number,
+	body: number,
 ): MeshArrays {
 	const list = sections(shape, step);
 	const rows = across + 1;
@@ -145,6 +151,7 @@ function riverMesh(
 				speed,
 				section.dx,
 				section.dz,
+				body,
 			);
 		}
 	}
@@ -158,7 +165,7 @@ function riverMesh(
 }
 
 /** The surface's mesh for a lake: a grid over its bounds, with the cells outside its shore left out. */
-function lakeMesh(body: WaterBody, level: number, cell: number): MeshArrays {
+function lakeMesh(body: WaterBody, level: number, cell: number, index: number): MeshArrays {
 	const { minX, maxX, minZ, maxZ } = body;
 	const nx = Math.max(1, Math.ceil((maxX - minX) / cell));
 	const nz = Math.max(1, Math.ceil((maxZ - minZ) / cell));
@@ -167,7 +174,7 @@ function lakeMesh(body: WaterBody, level: number, cell: number): MeshArrays {
 	const b = builder();
 	// A lake stills its water, so the surface holds no direction, and the shader ignores both.
 	for (let j = 0; j <= nz; j++)
-		for (let i = 0; i <= nx; i++) vertex(b, minX + i * dx, level, minZ + j * dz, 0, 1, 0);
+		for (let i = 0; i <= nx; i++) vertex(b, minX + i * dx, level, minZ + j * dz, 0, 1, 0, index);
 	const row = nx + 1;
 	for (let j = 0; j < nz; j++)
 		for (let i = 0; i < nx; i++) {
@@ -193,17 +200,20 @@ function lakeMesh(body: WaterBody, level: number, cell: number): MeshArrays {
 /**
  * The surface's mesh for one water body, at the height of its surface. A river's mesh follows its
  * middle line and carries the current in its second texture coordinate for the shader to drift
- * with. A lake's mesh is a grid over its bounds, and a still one.
+ * with. A lake's mesh is a grid over its bounds, and a still one. `index` is the body's place in
+ * the water's list of bodies.
  */
 export function bodyMesh(
 	shape: WaterShape,
 	body: WaterBody,
 	level: number,
 	detail: MeshDetail,
+	index = 0,
 ): MeshArrays {
 	const step = detail.step ?? STEP;
 	const across = detail.across ?? ACROSS;
 	const cell = detail.cell ?? CELL;
-	if (shape.kind === 'river') return riverMesh(shape, level, step, across, shape.speed ?? 0.35);
-	return lakeMesh(body, level, cell);
+	if (shape.kind === 'river')
+		return riverMesh(shape, level, step, across, shape.speed ?? 0.35, index);
+	return lakeMesh(body, level, cell, index);
 }
