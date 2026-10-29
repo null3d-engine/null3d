@@ -60,6 +60,11 @@ const INCOMPLETE = new Set([
 	'M3-R40',
 	'M3-K2',
 	'M3-D2',
+	'M3-L3',
+	'M3-A6',
+	'M3-L5',
+	'M3-E7',
+	'M3-E10',
 ]);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
@@ -92,6 +97,16 @@ const NOTES: Readonly<Record<string, string>> = {
 		'unticked under the same policy: the physics guide sample that the task corrected has never run, because the skill and cookbook check compiles without executing it and no example, test or bench uses the library it calls',
 	'M3-K2':
 		'unticked under the same policy: drag controls are exported and reached by no unit test, browser test, picture or example, because the gizmos picture and its spec reach only the transform controls',
+	'M3-L3':
+		'unticked under the policy the owner kept: its whole-levels fallback, where a device cannot draw many ranges, is taken by no automated run, because every cluster picture and cost run forces the extension on in Chromium and no switch withholds it. Only a Firefox hand run ever draws it. The close is a switch that leaves `WEBGL_multi_draw` out and one manifest entry of the existing cluster picture sharing its reference',
+	'M3-A6':
+		"unticked under the policy the owner kept: a batch row's own distance band is public API that no sketch, example or page switch sets. The close is a `?rows` mode on the existing level-of-detail sketch that sets one row's band, sharing the range picture's reference",
+	'M3-L5':
+		"unticked under the policy the owner kept: the water add-on's bounds view is turned on by one unit test and by no page or example. The close is one manifest entry of an existing water sketch with that view, sharing its reference",
+	'M3-E7':
+		'unticked under the policy the owner kept: the spot lobe is counted in compiled shader source and never run through a spot light, because both lobe sketches use a sun and a point light. The close is a spot mode on the existing car-paint sketch, sharing its reference',
+	'M3-E10':
+		"unticked under the policy the owner kept: the scene-pass leg of a sky layer is drawn by no page, and the tests that name it check graph order or an error's shape. The close is a sky-layer sketch with a water surface under the layer, sharing a reference it already has",
 	'M3-D2':
 		'unticked by the 29 October audit: its done-when names a page that fails with the error for a mismatched add-on version, and no such page exists. The only caller constructs the check directly in a unit test, so the witness its own clause names has never run',
 	'M3-F3':
