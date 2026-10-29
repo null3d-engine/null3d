@@ -108,6 +108,27 @@ A record holds only numbers and short strings. This table shows the parts that a
 
 A plant gets one to three whole levels, most detailed first. Each level holds the plant's parts and the largest distance that its surface lies from the base level's, in meters. Pass the lower levels to `mesh.setLevels`. The engine then picks one by distance. [Levels of detail](../concepts/lod.md) explains the rule that the engine applies.
 
+A tree's leaf cards morph before the switch, as SpeedTree's do. Each leaf vertex carries its place at the next level, and the leaf material's vertex offset moves it there over the last part of the approach: a card that the next level keeps grows, and one that it drops shrinks to its middle. At the switch the two levels show the same crown, so no card pops. The coarser level's cards grow by the square root of the step, so the crown keeps the ground it covers.
+
+Give the leaf material `morph: { crownRadius }` to turn the morph on, and give the same radius to the object or batch that draws the plant:
+
+```ts
+const crownRadius = Math.hypot(...asset.crown.center) + asset.crown.radius;
+const leaves = plantMaterial(ctx, {
+  atlases,
+  part: 'leaves',
+  cell: leafCellFor(oak),
+  color: oak.color.leaf,
+  morph: { crownRadius, threshold: ctx.quality.settings.lodThreshold },
+});
+const leafPart = asset.levels[0]?.parts.find((part) => part.name === 'leaves');
+const mesh = geometry.fromArrays(leafPart.arrays);
+const tree = scene.createMesh({ mesh, material: leaves });
+tree.setBounds([0, 0, 0], crownRadius);
+```
+
+The radius may hold every vertex rather than fit the crown tightly: the engine measures the distance to the sphere, and the morph ends at the same distance when both read the same sphere. One material serves plants of one crown size, and a variant with a larger crown needs its own material or the largest radius of the set. The morph reads the level's switch distance from the error that the generator measured, the plant's world scale, the render height, the projection and the threshold that the material holds. The frame-budget governor raises the level threshold in private when frames run long: under its pressure the engine switches before the mix ends, so a card can pop, and `material.set({ lodThreshold })` with the raised value is the way to follow it. Hold mode takes no governor step, so a capture or a picture draws the mix as set. A level bias on the plant moves the engine's switches but not the material's mix, so leave the bias at 1 on a tree that morphs. A plant whose level the engine marks `fade: false`, as a measured error should, then changes only through the morph.
+
 A coarser level keeps every second or fourth card in a space-filling order through the crown. It grows each kept card about its middle by the square root of that step. The same rule thins trees that the asset tool converts from files, so a generated tree and a converted one switch alike. A plant keeps whole levels, never cluster levels, because every card is a separate piece with open edges.
 
 A rosette thins its leaves the same way, and widens each kept leaf instead of lengthening it, so the clump keeps its size and never grows past its bounds.
@@ -226,6 +247,7 @@ const leaves = plantMaterial(ctx, {
 - **The leaf block holds eight cells**: four leaf clusters, a needle spray, a frond, a blade and a broad leaf. `leafCellFor` picks one from a species record.
 - **The colour map multiplies the species' colour.** It holds the veins, the shade of each leaf and the lift of its ridges, so two species that share a cell still differ.
 - **The engine makes each texture's mip levels.** A masked material fades its cut edges with alpha to coverage, so a leaf card that shrinks keeps the share of the picture that its leaves cover, and a crown far away stays as dense as it is up close.
+- **The card material morphs, and the plain one does not.** `plantMaterial` takes `morph` only for a plant's leaves: its WGSL adds a vertex offset that reads each leaf vertex's target record. A trunk, a frond or a flower drawn with the plain material needs no record.
 - **The four textures take about 4.6 MB of texture memory.** They are painted once, in the setup, and kept for the visit.
 
 

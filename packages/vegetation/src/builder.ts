@@ -16,6 +16,12 @@ export interface PartArrays {
 	readonly uvs: Float32Array;
 	/** The wind data, four bytes per vertex. */
 	readonly colors: Uint8Array;
+	/**
+	 * The next coarser level's place for each leaf vertex, four numbers each: the position that the
+	 * vertex takes there, then that level's error. It is present on leaf parts, so a leaf material's
+	 * vertex offset can morph the level before the switch, and absent on a trunk or a flower.
+	 */
+	readonly targets?: Float32Array;
 	/** The triangles' vertices, three each. */
 	readonly indices: Uint16Array | Uint32Array;
 }
@@ -177,6 +183,7 @@ export function partBytes(part: PartArrays): number {
 		part.normals.byteLength +
 		part.uvs.byteLength +
 		part.colors.byteLength +
+		(part.targets?.byteLength ?? 0) +
 		part.indices.byteLength
 	);
 }
