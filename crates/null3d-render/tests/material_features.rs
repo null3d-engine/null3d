@@ -190,7 +190,8 @@ fn check_custom<B: FrameBuilder>(mut world: World<B>) {
     add(&mut world, &triangle(true), full, colors_and_mask);
     let masked = CustomShading::standard(first + 4);
     add(&mut world, &mapped, masked, feature::ALPHA_MASK);
-    // A custom material has no builds that fade or hash its alpha, so it tests the cutoff.
+    // A custom material tests a mask by coverage or by the hash where the engine gives it those
+    // features, which it does only for WGSL that sets the surface's alpha.
     let mask_ways = feature::ALPHA_TO_COVERAGE | feature::ALPHA_HASH;
     add(
         &mut world,
@@ -220,6 +221,16 @@ fn check_custom<B: FrameBuilder>(mut world: World<B>) {
             (first + 1, tone_map, state_flags::CULL_NONE),
             (first + 3, tone_map, 0),
             (first + 4, tone_map | permutation::ALPHA_MASK, 0),
+            (
+                first + 4,
+                tone_map | permutation::ALPHA_MASK | permutation::ALPHA_COVERAGE,
+                state_flags::ALPHA_TO_COVERAGE,
+            ),
+            (
+                first + 4,
+                tone_map | permutation::ALPHA_MASK | permutation::ALPHA_HASH,
+                0,
+            ),
         ]
     );
 }

@@ -2436,6 +2436,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// Custom materials with cut-out features: a batch of masked leaf cards whose own WGSL cuts each
+	// leaf, sways it from the mesh's vertex colors and its rows' values, casts leaf-shaped shadows
+	// that sway with it, and fades between levels and at the far edge of a distance band. High, the
+	// references' preset, draws them with MSAA, so alpha to coverage smooths the cut edges.
+	{
+		name: 'custom-cutout',
+		sketch: 'tests/pages/sketches/custom-cutout-sketch.ts',
+		hold: 0.4,
+		size: [480, 270],
+	},
+	// The same cards drawn by the motion debug view: each leaf shows its own motion, and the holes
+	// that its alpha cuts show the still scene behind, so the motion build tests the same alpha.
+	{
+		name: 'custom-cutout-motion',
+		sketch: 'tests/pages/sketches/custom-cutout-sketch.ts?motion',
+		hold: 0.4,
+		size: [480, 270],
+	},
 	// Instance batches whose rows bring colors: lit, unlit, mapped, masked and blended rows, from
 	// static and dynamic batches, beside rows of the same pairs without colors.
 	{

@@ -70,8 +70,8 @@ use crate::probe_shading::ProbeShading;
 use crate::probes::{ProbeError, ProbeList, ProbeSettings, Probes};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
-    CascadeDepth, CascadeSchedule, HeroShadow, MovingCasters, ShadowFrame, ShadowQuality,
-    ShadowSettings, fit_cascades,
+    CascadeDepth, CascadeSchedule, HeroShadow, MovingCasters, ShadingCamera, ShadowFrame,
+    ShadowQuality, ShadowSettings, fit_cascades,
 };
 use crate::sky_maps::{MapSky, SkyMaps};
 use crate::ssr::{self, Ssr, TraceFrame};
@@ -3449,6 +3449,15 @@ impl SceneSettings {
     fn fit_shadows(&mut self, input: &FrameInput<'_>) -> Option<ShadowFrame> {
         let (scene, parity, canvas) = (input.scene, input.parity(), input.canvas);
         let shadow = self.lighting.sun_shadow?;
+        // A masked custom material's caster reads the camera's view and target, since its own
+        // belong to the light.
+        let shading = ShadingCamera::of(&self.view_frame(
+            ViewId::CAMERA,
+            scene,
+            parity,
+            canvas,
+            input.render_scale,
+        )?);
         let (camera, lens) = self.views[ViewId::CAMERA.index()].camera()?;
         let slot = scene.resolve(camera).ok()?;
         let (fitter, lens) = self
@@ -3532,6 +3541,7 @@ impl SceneSettings {
             drawn,
             depth: self.cascade_depth,
             clock: self.clock,
+            shading,
             hero: shadow.hero.and_then(|row| {
                 HeroShadow::of(
                     scene,
@@ -3554,13 +3564,14 @@ impl SceneSettings {
     /// moves what the camera sees, so the caster draws without it. A masked material of the
     /// engine's mesh templates cuts the holes of its mask, alpha to coverage or alpha hash into its
     /// shadow, with the alpha of its vertex colors and its base color map where it has them. A
-    /// custom material's alpha comes from its own WGSL, so it casts its mesh's whole shape, unless
-    /// its WGSL declares the coverage that its shadow caster tests. A custom material with a vertex
-    /// offset or a coverage function casts with its own template's caster builds
+    /// custom material's alpha comes from its own WGSL: it casts its mesh's whole shape, unless
+    /// its WGSL names the coverage that its shadow caster tests or sets the surface's alpha, which
+    /// the caster runs in a fragment stage. A custom material with a vertex offset, a coverage
+    /// function or a surface alpha casts with its own template's caster builds
     /// ([`permutation::CASTER`]), which move each vertex by the offset, cut the shape that the
-    /// coverage leaves, read the rows' values where the pair reads them, and bind the material's
-    /// textures. A displaced standard material casts the same way, moving each vertex by its
-    /// displacement map, with its whole shape. A wireframe material casts its lines.
+    /// coverage or the alpha leaves, read the rows' values where the pair reads them, and bind the
+    /// material's textures. A displaced standard material casts the same way, moving each vertex by
+    /// its displacement map, with its whole shape. A wireframe material casts its lines.
     pub fn caster_of(&self, pipeline: DrawKey, material: u32) -> (DrawKey, u32) {
         let (faces, mut permutation) = if pipeline.state & state_flags::CULL_NONE != 0 {
             (state_flags::CULL_NONE, 0)
@@ -3574,13 +3585,15 @@ impl SceneSettings {
         } else {
             0
         };
-        if self.casts_its_own_way(material) && pipeline.template >= template::CUSTOM_FIRST {
-            // A material that declares its caster's coverage tests it in the caster's fragment
-            // stage, which a masked material's pixels reach.
-            let masked = if pipeline.permutation & permutation::ALPHA_MASK != 0
-                && self.cuts_its_shadow(material)
-            {
-                permutation::ALPHA_MASK
+        // A custom material cuts its shadow's holes where its WGSL names the coverage or sets the
+        // surface's alpha, and moves its shadow's vertices where its vertex offset moves them.
+        let custom = pipeline.template >= template::CUSTOM_FIRST;
+        let cuts = custom && self.cuts_its_shadow(material);
+        if custom && (self.casts_its_own_way(material) || cuts) {
+            // The mask's bits come from the shading's, so the caster asks only for the builds that
+            // the material's WGSL has.
+            let mask = if cuts {
+                mask_bits(pipeline.permutation)
             } else {
                 0
             };
@@ -3589,7 +3602,7 @@ impl SceneSettings {
                 permutation: permutation
                     | permutation::CASTER
                     | (pipeline.permutation & permutation::ROW_VALUES)
-                    | masked,
+                    | mask,
                 vertex_format: pipeline.vertex_format,
                 state: faces | lines,
                 bias: DepthBias::NONE,
@@ -3638,12 +3651,17 @@ impl SceneSettings {
     /// picks it: `None` for a pair that draws no motion. A masked material of the engine's mesh
     /// templates tests its alpha as its caster does, with its base color map where the mesh has
     /// texture coordinates and the map has an image. A custom material with a vertex offset draws
-    /// with its own template's motion builds, which bind the material's textures.
+    /// with its own template's motion builds, which bind the material's textures, and tests its
+    /// surface's alpha or the coverage that its WGSL names where it has them.
     pub fn motion_of(&self, pipeline: DrawKey, material: u32) -> Option<(DrawKey, u32)> {
         let mapped_mesh = pipeline.vertex_format & vertex::UV0 != 0;
+        let custom = pipeline.template >= template::CUSTOM_FIRST;
+        // Only a custom material that sways has motion builds of its own, which run its surface's
+        // alpha or the coverage that its WGSL names. Another custom material draws its motion
+        // through the motion template, which tests no surface that the engine cannot call.
+        let cuts = custom && self.sways(material) && self.cuts_its_shadow(material);
         let masked = pipeline.permutation & permutation::ALPHA_MASK != 0
-            && cuts_shadows(pipeline.template)
-            && mapped_mesh;
+            && (cuts || (cuts_shadows(pipeline.template) && mapped_mesh));
         let key = motion::motion_key(pipeline, masked, self.sways(material))?;
         if key.template != template::MOTION {
             return Some((key, self.texture_group(material, pipeline)));
@@ -3684,8 +3702,8 @@ impl SceneSettings {
         casts_still(&self.materials, material)
     }
 
-    /// True when the material, by engine id, tests the coverage that its WGSL names, so its caster
-    /// cuts the shape of its shadow at the material's cutoff.
+    /// True when the material, by engine id, names the opacity that its caster and motion builds
+    /// test, so they cut the shape of its shadow and its motion at the material's cutoff.
     pub fn cuts_its_shadow(&self, material: u32) -> bool {
         cuts_its_shadow(&self.materials, material)
     }
@@ -3785,7 +3803,7 @@ impl SceneSettings {
     /// What the pair of an instance batch asks of the pipeline that draws its rows: as
     /// [`Self::pipeline_of`] for its mesh and material, with the builds that read each row's color
     /// and values ([`permutation::ROW_VALUES`]) where its rows have them and the shading has such
-    /// builds. Those builds test a mask against its cutoff, with neither alpha to coverage nor the
+    /// builds. Those builds test a mask as the shading does, by its cutoff, by coverage or by the
     /// alpha hash, and a pair that lets light through draws its rows without their values.
     pub fn batch_pipeline_of(&self, batch: &InstanceBatch) -> Option<DrawKey> {
         self.rows_pipeline_of(batch.mesh(), batch.material(), batch.has_row_values())
@@ -3842,7 +3860,7 @@ impl SceneSettings {
         let translucent =
             has(feature::TRANSLUCENCY) && shading.translucent() && !transmits && !layers;
         let rows = row_values && shading.reads_row_values() && !transmits;
-        let own_way = masked && tests_alpha_its_way(shading) && !rows;
+        let own_way = masked && tests_alpha_its_way(shading);
         let hashed = own_way && has(feature::ALPHA_HASH);
         let covers = own_way && has(feature::ALPHA_TO_COVERAGE) && !hashed;
         let tangents = shading == Shading::StandardMaps
@@ -3970,6 +3988,11 @@ impl SceneSettings {
             view: camera.view,
             projection: camera.projection,
             camera_position: camera.eye,
+            // The camera that a material's surface reads, which is this view's own camera. A
+            // light's view carries the scene camera in these fields instead.
+            camera_view_proj: view_proj,
+            camera_target: [width, height, 1.0 / width, 1.0 / height],
+            camera_eye: camera.eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
@@ -4082,8 +4105,9 @@ fn casts_still(materials: &MaterialTable, material: u32) -> bool {
     material != NO_MATERIAL && materials.features(material - 1) & feature::STILL_CASTER != 0
 }
 
-/// True when the material, by engine id, tests the opacity that its WGSL names, so its caster cuts
-/// the shape of its shadow at the material's cutoff.
+/// True when the material, by engine id, names the opacity that its caster and motion builds test,
+/// so they cut the shape of its shadow and its motion at the material's cutoff: a coverage function
+/// or the surface's alpha.
 fn cuts_its_shadow(materials: &MaterialTable, material: u32) -> bool {
     material != NO_MATERIAL && materials.features(material - 1) & feature::CASTER_COVERAGE != 0
 }
@@ -4356,13 +4380,20 @@ const fn cuts_shadows(template: u32) -> bool {
 }
 
 /// True for the shadings whose masked builds test alpha by alpha to coverage's fade or by the
-/// alpha hash: the engine's mesh and sprite templates. Custom materials have no such builds, and
-/// test their alpha against the cutoff.
+/// alpha hash: the engine's mesh and sprite templates, and a custom material, whose builds carry
+/// the mask's own test only where its WGSL names the surface's alpha. The engine gives such a
+/// material the feature only when it has those builds.
 pub const fn tests_alpha_its_way(shading: Shading) -> bool {
     !matches!(
         shading,
-        Shading::Custom(_) | Shading::TexCoords | Shading::Line | Shading::LineLit
+        Shading::TexCoords | Shading::Line | Shading::LineLit
     )
+}
+
+/// The bits of a mask's test that a caster or a motion build takes from the shading's permutation:
+/// the mask, the vertex color that can carry its alpha, and the alpha hash.
+pub(crate) const fn mask_bits(permutation: u32) -> u32 {
+    permutation & (permutation::ALPHA_MASK | permutation::VERTEX_COLOR | permutation::ALPHA_HASH)
 }
 
 /// The size to create a buffer at when it must hold `needed` bytes: room to grow, so a slowly
