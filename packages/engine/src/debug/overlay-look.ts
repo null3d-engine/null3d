@@ -4,10 +4,11 @@
 //
 // The header is a dark pill: a ring gauge of the frame rate as a share of the target, the frame
 // rate, and a chevron. Under it, a fixed card of 360 by 396 pixels holds four tabs. The header of
-// the card keeps the target, its interval and the GPU's total time in view on every tab. One tab
-// shows at a time: Frame holds the work bars and the geometry figures, Memory the parts of the
-// memory bar, Steps the add-ons and the GPU's timed passes, and Systems the memory register. The
-// card keeps its height as the lists grow, so a tab that holds more rows scrolls none of the page.
+// the card keeps the target and its interval in view on every tab. One tab shows at a time: Frame
+// holds the work bars and the geometry figures, Memory the parts of the memory bar, Steps the
+// add-ons and the GPU's timed passes, and Systems the memory register. The card keeps its height as
+// the lists grow, so a tab that holds more rows scrolls none of the page, and each tab's rows share
+// the height that they have, so a tab that holds few rows spreads them instead of leaving a gap.
 //
 // The work bars are colored by who did the work: blue for the sketch's own code (its update step),
 // purple for the engine (every other step), and green for the GPU. A bar stacks parts only where
@@ -35,7 +36,8 @@ import type { FeatureStats } from '../scene/features';
 import { type Level, rateLevel, workLevel } from './frame-target';
 import {
 	count,
-	featureLine,
+	featureFacts,
+	featureGpu,
 	type StatsFigures,
 	type StatsGpuStep,
 	type StatsMemoryArea,
@@ -231,10 +233,6 @@ button {
 	opacity: 1;
 	visibility: visible;
 }
-.hgpu { flex: none; font: 500 9.5px/1 ${FONT}; color: var(--faint); white-space: nowrap; }
-.hgpu b { font: 600 11px/1 ${MONO}; color: var(--gpu); }
-.hgpu b[data-level='warn'] { color: var(--warn); }
-.hgpu b[data-level='bad'] { color: var(--bad); }
 .tabs {
 	display: flex;
 	flex: none;
@@ -262,6 +260,9 @@ button {
 .panes { display: flex; flex: 1; min-height: 0; }
 .pane { flex: 1; flex-direction: column; min-height: 0; padding: 12px; overflow: hidden; }
 .pane:not([hidden]) { display: flex; }
+.block { display: flex; flex: none; flex-direction: column; min-height: 0; }
+.block.grow { flex: 1; }
+.block + .block { margin-top: 14px; }
 .sect-head {
 	display: flex;
 	flex: none;
@@ -277,8 +278,15 @@ button {
 	color: var(--faint);
 }
 .meta { font: 500 9px/1 ${MONO}; color: var(--faint); white-space: nowrap; }
-.lanes { display: grid; flex: none; }
-.lane { display: grid; grid-template-columns: 7px 62px 1fr 52px; align-items: center; gap: 8px; height: 26px; }
+.lanes { display: grid; flex: 1; grid-auto-rows: minmax(26px, 1fr); min-height: 0; }
+.lane {
+	display: grid;
+	grid-template-columns: 7px 62px 1fr 52px;
+	align-items: center;
+	gap: 8px;
+	height: 100%;
+	min-height: 26px;
+}
 .dot { width: 6px; height: 6px; border-radius: 2px; flex: none; }
 .dot.code { background: var(--code); }
 .dot.engine { background: var(--engine); }
@@ -327,7 +335,7 @@ button {
 	grid-template-columns: repeat(3, 1fr);
 	flex: none;
 	gap: 8px;
-	margin-top: auto;
+	margin-top: 10px;
 	padding-top: 10px;
 	border-top: 1px solid var(--line-soft);
 }
@@ -362,8 +370,15 @@ button {
 	overflow: hidden;
 	background: rgba(255, 255, 255, 0.05);
 }
-.mlegend { display: grid; flex: none; gap: 1px; margin-top: 8px; }
-.mrow { display: grid; grid-template-columns: 7px 1fr auto auto; align-items: center; gap: 9px; height: 25px; }
+.mlegend { display: grid; flex: 1; gap: 1px; grid-auto-rows: minmax(25px, 1fr); margin-top: 8px; min-height: 0; }
+.mrow {
+	display: grid;
+	grid-template-columns: 7px 1fr auto auto;
+	align-items: center;
+	gap: 9px;
+	height: 100%;
+	min-height: 25px;
+}
 .mrow .name { font: 500 10.5px/1 ${FONT}; color: #cbd4e2; }
 .mrow .share { font: 400 9px/1 ${MONO}; color: var(--faint); min-width: 34px; text-align: right; }
 .mrow .val { min-width: 58px; text-align: right; font: 500 10.5px/1 ${MONO}; color: #e6ecf5; }
@@ -372,7 +387,7 @@ button {
 	display: flex;
 	flex: none;
 	align-items: baseline;
-	margin: auto 0 0;
+	margin: 10px 0 0;
 	padding-top: 9px;
 	border-top: 1px solid var(--line-soft);
 	font: 400 9px/1.4 ${FONT};
@@ -387,15 +402,37 @@ button {
 	background: var(--amber);
 	vertical-align: 1px;
 }
-.feature-list { display: grid; flex: none; gap: 4px; }
-.feature { font: 400 10px/1.35 ${FONT}; color: #b9c3d3; }
-.gsteps { display: grid; flex: none; }
+.feature-list { display: grid; flex: none; gap: 12px; }
+.feature { display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: 8px; }
+.feature .fname { font: 500 10.5px/1.3 ${FONT}; color: #cbd4e2; }
+.feature .fgpu {
+	font: 500 10.5px/1 ${MONO};
+	color: var(--gpu);
+	text-align: right;
+	white-space: nowrap;
+}
+.feature .fgpu[data-level='warn'] { color: var(--warn-text); }
+.feature .fgpu[data-level='bad'] { color: var(--bad-text); }
+.feature .fgpu.none { font: 400 9px/1.3 ${FONT}; color: var(--faint); }
+.feature .fdetails {
+	grid-column: 1 / -1;
+	display: grid;
+	grid-auto-flow: column;
+	justify-content: start;
+	gap: 2px 20px;
+	margin-top: 3px;
+}
+.fcell { display: grid; gap: 1px; }
+.flabel { font: 400 8.5px/1.2 ${MONO}; letter-spacing: 0.01em; color: var(--faint); white-space: nowrap; }
+.fvalue { font: 500 10px/1.2 ${MONO}; color: #d5deea; white-space: nowrap; }
+.gsteps { display: grid; flex: 1; grid-auto-rows: minmax(20px, 1fr); min-height: 0; }
 .gstep {
 	display: grid;
 	grid-template-columns: 16px 1fr auto;
 	align-items: center;
 	gap: 6px;
-	height: 20px;
+	height: 100%;
+	min-height: 20px;
 	border-top: 1px solid var(--line-soft);
 }
 .gstep:first-child { border-top: 0; }
@@ -408,7 +445,7 @@ button {
 	text-overflow: ellipsis;
 }
 .gstep .val { font: 500 10px/1 ${MONO}; color: var(--gpu); white-space: nowrap; }
-.areas { display: grid; flex: none; }
+.areas { display: grid; flex: 1; grid-template-rows: auto; grid-auto-rows: minmax(22px, 1fr); min-height: 0; }
 .areas .head, .areas .area { display: grid; grid-template-columns: 1fr 60px 60px 52px; align-items: center; gap: 6px; }
 .areas .head {
 	padding-bottom: 5px;
@@ -419,7 +456,7 @@ button {
 	color: var(--faint);
 }
 .areas .head span:not(:first-child) { text-align: right; }
-.area { height: 22px; border-bottom: 1px solid var(--line-soft); }
+.area { height: 100%; min-height: 22px; border-bottom: 1px solid var(--line-soft); }
 .area .name {
 	font: 400 10px/1 ${FONT};
 	color: #b9c3d3;
@@ -963,6 +1000,60 @@ class Lane {
 	}
 }
 
+/**
+ * A feature's row in the Steps tab: its name with its GPU time beside it, then a labelled cell for
+ * each figure that the feature reports. A cell that the feature stops reporting hides.
+ */
+class FeatureRow {
+	readonly element: HTMLDivElement;
+	private readonly gpu: HTMLSpanElement;
+	private readonly gpuText: Text;
+	private readonly details: HTMLDivElement;
+	private readonly cells = new Map<string, { box: HTMLSpanElement; value: Text }>();
+
+	constructor(parent: Node, name: string) {
+		const row = element('div', 'feature', parent);
+		row.dataset.figure = `feature:${name}`;
+		element('span', 'fname', row).append(name, ' ');
+		this.gpu = element('span', 'fgpu', row);
+		this.gpuText = document.createTextNode('');
+		this.gpu.append(this.gpuText, ' ');
+		this.details = element('div', 'fdetails', row);
+		this.element = row;
+	}
+
+	/** Shows one update's figures: the GPU time, its level, and each labelled fact. */
+	set(
+		gpuText: string,
+		level: Level | undefined,
+		unmeasured: boolean,
+		facts: readonly (readonly [string, string])[],
+	): void {
+		setText(this.gpuText, gpuText);
+		this.gpu.classList.toggle('none', unmeasured);
+		setLevel(this.gpu, level);
+		const seen = new Set<string>();
+		for (const [label, value] of facts) {
+			seen.add(label);
+			let cell = this.cells.get(label);
+			if (!cell) {
+				const box = element('span', 'fcell', this.details);
+				element('span', 'flabel', box).append(label, ' ');
+				const text = document.createTextNode('');
+				element('span', 'fvalue', box).append(text, ' ');
+				cell = { box, value: text };
+				this.cells.set(label, cell);
+			}
+			setText(cell.value, value);
+			cell.box.hidden = false;
+		}
+		for (const [label, cell] of this.cells) {
+			if (!seen.has(label)) cell.box.hidden = true;
+		}
+		this.details.hidden = facts.length === 0;
+	}
+}
+
 /** A row of the memory legend: a color, a name, its share of the total, and its figure. */
 class MemoryRow {
 	readonly element: HTMLDivElement;
@@ -994,7 +1085,6 @@ export class StatsCard {
 	readonly element: HTMLDivElement;
 	private readonly target: TargetFigures;
 	private readonly mode: ModeNote;
-	private readonly gpuTotal: { element: HTMLElement; text: Text };
 	private readonly tabButtons: HTMLButtonElement[] = [];
 	private readonly panes = new Map<StatsTab, HTMLElement>();
 	private readonly selection = new TabSelection();
@@ -1019,8 +1109,8 @@ export class StatsCard {
 	private readonly heading: Text;
 	private readonly featureSection: HTMLElement;
 	private readonly featureList: HTMLElement;
-	/** The text of each feature's row, by the feature's name. */
-	private readonly featureRows = new Map<string, Text>();
+	/** Each feature's row, by the feature's name. */
+	private readonly featureRows = new Map<string, FeatureRow>();
 	private readonly stepSection: HTMLElement;
 	private readonly stepList: HTMLElement;
 	private readonly stepMeta: Text;
@@ -1046,9 +1136,6 @@ export class StatsCard {
 		this.mode = new ModeNote(sub);
 		this.target = new TargetFigures(sub);
 		element('span', '', sub).append(' budget');
-		const gpuTotal = element('span', 'hgpu', head);
-		gpuTotal.append('GPU ');
-		this.gpuTotal = figure('b', 'gpu', gpuTotal);
 
 		const tabstrip = element('div', 'tabs', card);
 		tabstrip.setAttribute('role', 'tablist');
@@ -1084,7 +1171,7 @@ export class StatsCard {
 		this.drawing = new Lane(lanes, 'drawing', 'Drawing', 'thread', 'engine');
 		this.jobs = new Lane(lanes, 'jobs', 'Jobs', 'jobs', 'jobs');
 		this.page = new Lane(lanes, 'page', 'Page', 'thread', 'code');
-		this.gpu = new Lane(lanes, 'gpu-lane', 'GPU', 'gpu', 'gpu');
+		this.gpu = new Lane(lanes, 'gpu', 'GPU', 'gpu', 'gpu');
 		this.lanes = [this.both, this.sketch, this.drawing, this.jobs, this.page, this.gpu];
 		element('p', 'scale', frame).append(
 			'Bars span twice the target’s interval; the mark is the target.',
@@ -1122,12 +1209,12 @@ export class StatsCard {
 		note.append(this.wholePage.text);
 
 		const steps = this.pane('steps');
-		const features = element('div', '', steps);
+		const features = element('div', 'block', steps);
 		sectionHead(features, 'Add-ons');
 		this.featureList = element('div', 'feature-list', features);
 		this.featureSection = features;
 		features.hidden = true;
-		const stepBox = element('div', '', steps);
+		const stepBox = element('div', 'block grow', steps);
 		const stepHead = sectionHead(stepBox, 'GPU steps');
 		this.stepMeta = stepHead.text;
 		this.stepList = element('div', 'gsteps', stepBox);
@@ -1138,8 +1225,7 @@ export class StatsCard {
 		this.stepsEmpty.hidden = true;
 
 		const systems = this.pane('systems');
-		const registerHead = sectionHead(systems, 'Memory by system');
-		registerHead.text.data = 'used / reserved / peak';
+		sectionHead(systems, 'Memory by system');
 		this.areaList = element('div', 'areas', systems);
 		const headRow = element('div', 'head', this.areaList);
 		for (const label of ['System', 'Used', 'Reserved', 'Peak'])
@@ -1221,8 +1307,6 @@ export class StatsCard {
 		const waiting = figures.frames === 0;
 		const gpuMs = waiting ? null : figures.gpuMs;
 		const gpuText = gpuMs !== null ? ms(gpuMs) : gpuTimer ? 'measuring' : 'not measured';
-		setText(this.gpuTotal.text, gpuText);
-		setLevel(this.gpuTotal.element, gpuMs === null ? undefined : workLevel(gpuMs, targetMs));
 		const { threads } = this;
 		threads.update(figures.threads, bothSteps);
 		this.showThread(this.both, threads.both, waiting, targetMs, scale, true);
@@ -1325,19 +1409,19 @@ export class StatsCard {
 		const seen = new Set<string>();
 		for (const feature of features) {
 			seen.add(feature.name);
-			let text = this.featureRows.get(feature.name);
-			if (!text) {
-				const row = element('div', 'feature', this.featureList);
-				row.dataset.figure = `feature:${feature.name}`;
-				text = document.createTextNode('');
-				row.append(text);
-				this.featureRows.set(feature.name, text);
+			let row = this.featureRows.get(feature.name);
+			if (!row) {
+				row = new FeatureRow(this.featureList, feature.name);
+				this.featureRows.set(feature.name, row);
 			}
-			setText(text, featureLine(feature));
+			// The figure is green while the feature stays inside its allowance, and warmer past it.
+			const { gpuMs, allowedMs } = feature;
+			const level = gpuMs === null || allowedMs === null ? undefined : workLevel(gpuMs, allowedMs);
+			row.set(featureGpu(feature), level, gpuMs === null, featureFacts(feature));
 		}
-		for (const [name, text] of this.featureRows) {
+		for (const [name, row] of this.featureRows) {
 			if (seen.has(name)) continue;
-			text.parentElement?.remove();
+			row.element.remove();
 			this.featureRows.delete(name);
 		}
 	}

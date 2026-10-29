@@ -108,7 +108,7 @@ function readOverlay(canvas: HTMLCanvasElement): OverlayView | null {
 	// left out.
 	for (const node of root.querySelectorAll<HTMLElement>('[data-figure]'))
 		if (!node.closest('[hidden]:not(.pane)'))
-			figures[node.dataset.figure as string] = node.textContent ?? '';
+			figures[node.dataset.figure as string] = (node.textContent ?? '').trim();
 	const card = root.querySelector<HTMLElement>('.card')?.getBoundingClientRect();
 	const box = host.getBoundingClientRect();
 	const canvasBox = canvas.getBoundingClientRect();

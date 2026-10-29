@@ -240,7 +240,7 @@ The `quality` callback runs once when the feature is added, and again whenever t
 
 ## Stats
 
-The stats overlay shows a row for each feature in its Steps tab. A row names the feature, its GPU time, its settings, its budget and the memory that it reports, such as `water  gpu 0.42 ms  reflectionEvery 1  budget 1.7 of 1.7 ms`.
+The stats overlay shows a row for each feature in its Steps tab. The row's first line names the feature and shows its GPU time beside that name, such as `water` and `gpu 0.42 ms`. Its second line holds the feature's settings, its budget and the memory that it reports, such as `reflectionEvery 1 · budget 1.7 of 1.7 ms · memory 0.6 MiB`. A feature that reports none of them shows no second line.
 
 A feature has one GPU timing scope. Its `gpu` option names the render passes that carry its work, and the overlay shows their GPU time added up as the feature's own. A pass comes from `render.addPass`, such as the reflection pass that draws a mirrored scene:
 

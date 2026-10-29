@@ -212,13 +212,13 @@ The header stays in the corner when the card opens, and the card opens under it,
 
 ### The card
 
-The card is 360 by 396 pixels and keeps that size on every tab, so a long list never moves the panel. Four tabs show one section at a time: `Frame`, `Memory`, `Steps` and `Systems`. A click on a tab shows it, the arrow keys move between tabs, and Home and End go to the first and last. The card's own header keeps these figures in view on every tab: the mode's symbol, the display's symbol, the display's refresh rate and the target with its interval, such as `120 Hz ≥60 fps · 16.7 ms` (or `60 fps · 16.7 ms` where the target is the display's full rate), and the GPU's total time.
+The card is 360 by 396 pixels and keeps that size on every tab, so a long list never moves the panel. A tab's rows share the card's height, so a tab with few rows spreads them. Four tabs show one section at a time: `Frame`, `Memory`, `Steps` and `Systems`. A click on a tab shows it, the arrow keys move between tabs, and Home and End go to the first and last. The card's own header keeps these figures in view on every tab: the mode's symbol, the display's symbol, the display's refresh rate and the target with its interval, such as `120 Hz ≥60 fps · 16.7 ms` (or `60 fps · 16.7 ms` where the target is the display's full rate).
 
 | Tab | What it shows |
 | --- | --- |
 | `Frame` | One work bar per engine thread and one for the GPU, against the target. Below them, the `Held back by` line below the target rate and the counts of draw calls, triangles and objects per frame. The last line names the GPU path, the quality preset and the render scale |
 | `Memory` | The engine's memory, the GPU's textures and buffers, and the page's JavaScript heap, as one bar with a legend. Under it, the memory of the whole page and its workers, as the browser counts it |
-| `Steps` | One row for each add-on feature that reports figures: its GPU time, its settings, its budget and its memory. Then one row for each pass of the frame that the GPU timed, such as `opaque` or `bloom 2`, with its GPU time per frame |
+| `Steps` | One row for each add-on feature that reports figures: its name, its GPU time beside it, and under them its settings, its budget and its memory. Then one row for each pass of the frame that the GPU timed, such as `opaque` or `bloom 2`, with its GPU time per frame |
 | `Systems` | Development builds only: one row for each engine table and allocator, with the bytes that it uses, reserves and has used at most. A build that reports none says so |
 
 The overlay updates every tab on each refresh, so a tab shows current figures the moment it is chosen. It gathers nothing extra for a tab that does not show: the figures come from the frame records that the engine writes anyway and from the same GPU timing pass, whichever tab is open.
