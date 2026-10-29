@@ -89,6 +89,15 @@ every compile is idle and the server's own CPU time does not move, stop the serv
 one, and the queued compiles finish. The heavy lane now leaves the wrapper out unless a job asks for
 it with `NULL3D_SCCACHE=1`, because a stalled cache costs more than a shared crate saves.
 
+A queue job runs at normal priority. The clamp to background priority stays for two cases only: while
+the owner uses the Mac, and while a timing run measures. The owner ruled it on 25 October 2026, after
+nine queued jobs sat frozen with seconds of processor time in up to an hour while one shader rebuild
+used thirteen of the machine's eighteen cores at normal priority. A blanket clamp on a Mac set aside
+for the team buys nothing and costs hours. The queue sets a job's priority when it starts, so a job
+that was already waiting keeps the rule it began with: restart it after a change of rule. The
+page-build lock still refuses to be taken at background priority, so a job that lands clamped that
+way says so rather than hanging.
+
 A build compiles the Rust crates for two WebAssembly variants and the build tools, writes the shader
 modules for every feature, and then builds the test page for the size report. It is the longest step
 in a landing, so keep the count down. Every build cache lives under one root, `null3d` under

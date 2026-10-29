@@ -96,6 +96,11 @@ pub(crate) struct SortedBucket {
     /// The id of the pipeline that draws its rows in the camera's weighted layer (see
     /// [`crate::weighted`]), or 0 for a bucket whose material does not take the weighted blending.
     pub(crate) weighted: u32,
+    /// The id of the pipeline that writes its rows into the moment layer's moment store (see
+    /// [`crate::moment`]), or 0 for a bucket that the layer does not draw.
+    pub(crate) moment: u32,
+    /// The id of the pipeline that draws its rows again into the moment layer's colour sum.
+    pub(crate) moment_colour: u32,
     /// True when its material reads the copy of the scene's depth, which its draws bind.
     pub(crate) scene_depth: bool,
 }
@@ -152,6 +157,11 @@ pub(crate) enum SortedRows {
     /// The rows of buckets with a weighted pipeline, with that pipeline: the camera's weighted
     /// pass.
     Weighted,
+    /// The rows of buckets with a moment pipeline, with that pipeline: the camera's moment pass.
+    Moment,
+    /// The rows of buckets with a moment colour pipeline, with that pipeline: the camera's moment
+    /// colour pass.
+    MomentColour,
 }
 
 impl SortedRows {
@@ -159,19 +169,26 @@ impl SortedRows {
     /// none where the pass leaves the bucket out. In the transparent pass, a double-sided material
     /// that blends draws its back faces first, as three.js draws one, and then the bucket's own
     /// pipeline; a material with `forceSinglePass`, or a pair whose faces always face the camera,
-    /// draws once. In the weighted layer every bucket draws once, both faces together.
+    /// draws once. In the weighted or moment layer every bucket draws once, both faces together.
     pub(crate) fn passes(self, bucket: &SortedBucket) -> impl Iterator<Item = u32> + use<> {
         let weighted = bucket.weighted != 0;
-        let (back, front, weighted_pass) = match self {
+        let layered = weighted || bucket.moment != 0;
+        let (back, front, layer) = match self {
             SortedRows::Weighted => (None, None, weighted.then_some(bucket.weighted)),
-            SortedRows::Sorted if weighted => (None, None, None),
+            SortedRows::Moment => (None, None, (bucket.moment != 0).then_some(bucket.moment)),
+            SortedRows::MomentColour => (
+                None,
+                None,
+                (bucket.moment_colour != 0).then_some(bucket.moment_colour),
+            ),
+            SortedRows::Sorted if layered => (None, None, None),
             _ => (
                 (bucket.back != 0).then_some(bucket.back),
                 Some(bucket.pipeline),
                 None,
             ),
         };
-        back.into_iter().chain(front).chain(weighted_pass)
+        back.into_iter().chain(front).chain(layer)
     }
 }
 
@@ -275,6 +292,8 @@ pub(crate) struct SortedLayout {
     transmits: bool,
     /// True when some bucket has a pipeline of the weighted layer.
     weighs: bool,
+    /// True when some bucket has a pipeline of the moment layer.
+    moments: bool,
     /// The pairs that the layout takes.
     kind: SortedKind,
     /// The layers whose objects a redraw layout draws again: those that decals skip.
@@ -372,6 +391,11 @@ impl SortedLayout {
         self.weighs
     }
 
+    /// True when some bucket has a pipeline of the moment layer.
+    pub(crate) fn moments(&self) -> bool {
+        self.moments
+    }
+
     /// The rows that can draw in the transparent pass.
     pub(crate) fn rows(&self) -> u32 {
         self.rows
@@ -401,8 +425,10 @@ impl SortedLayout {
     /// shadow map. `skin` says how each scene object draws by its skinning: a skinned object that
     /// waits gets no bucket, and the layout asks only for its pipeline (see [`Self::waiting`]).
     /// With `weighted`, the targets of the camera's weighted layer, each bucket whose material
-    /// takes the weighted blending gets that layer's pipeline too. The layout then reserves every
-    /// list that a frame's sort takes.
+    /// takes the weighted blending gets that layer's pipeline too. With `moment`, the targets of
+    /// the camera's moment layer, each bucket that the layer draws gets that layer's two
+    /// pipelines: the one that writes the moment store and the one that writes the colour sum.
+    /// The layout then reserves every list that a frame's sort takes.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn rebuild(
         &mut self,
@@ -416,6 +442,7 @@ impl SortedLayout {
         shadows: bool,
         skin: impl Fn(usize, DrawKey) -> SkinnedPipeline,
         weighted: Option<PassTargets>,
+        moment: Option<PassTargets>,
         key_counts: &mut KeyCounts,
     ) -> Result<(), TryReserveError> {
         let meshes = settings.meshes();
@@ -518,6 +545,7 @@ impl SortedLayout {
             .any(|&((pipeline, ..), _)| pipeline.transmits());
         let (mut total, mut largest, mut most_parts) = (0u32, 0u32, 1u32);
         self.weighs = false;
+        self.moments = false;
         for &((pipeline, textures, _, mesh, material, group), count) in key_counts.iter() {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let (back, front) = match faces(pipeline, material) {
@@ -540,9 +568,23 @@ impl SortedLayout {
                 Some(layer) if weighs => pipelines.id(pipeline.weighted().in_pass(layer)),
                 _ => 0,
             };
+            // The moment layer draws every blended pair that has a build of it, whether it blends
+            // by weight or in the sorted order: one layer draws them all.
+            let draws_moment = moment.is_some() && pipeline.moment_drawn();
+            let (moment_pass, moment_colour) = match moment {
+                Some(layer) if draws_moment => (
+                    pipelines.id(pipeline.moment().in_pass(layer)),
+                    pipelines.id(pipeline.moment_colour().in_pass(layer)),
+                ),
+                _ => (0, 0),
+            };
             self.weighs |= weighted != 0;
-            // A weighted bucket draws its runs once more, in the camera's weighted layer.
-            let passes = if back == 0 { 1 } else { 2 } + u32::from(weighted != 0);
+            self.moments |= moment_pass != 0;
+            // A layered bucket draws its runs once more for each layer that draws it.
+            let passes = if back == 0 { 1 } else { 2 }
+                + u32::from(weighted != 0)
+                + u32::from(moment_pass != 0)
+                + u32::from(moment_colour != 0);
             let lines = pipeline.state & state_flags::LINE_LIST != 0;
             most_parts = most_parts.max(meshes.parts(slot, lines).len() as u32 * passes);
             // A particle system's pipeline reads no draw index, so of the pass's bits it takes
@@ -561,6 +603,8 @@ impl SortedLayout {
                 material,
                 group,
                 weighted,
+                moment: moment_pass,
+                moment_colour,
                 // A custom material that reads the scene's depth binds its copy. A particle
                 // system's bucket draws no surface function.
                 scene_depth: group & (SKINNED_GROUP | PARTICLE_GROUP) == 0

@@ -1100,6 +1100,9 @@ pub struct SceneSettings {
     override_material: u32,
     /// True when materials with parallax draw it, as the quality preset says.
     parallax: bool,
+    /// True when the camera draws the blended surfaces in its moment transparency layer, as the
+    /// quality preset says.
+    moment_transparency: bool,
     /// True when a material moved its casters' vertices since the last frame, so every shadow
     /// cascade and tile draws again.
     casters_moved: bool,
@@ -1262,6 +1265,7 @@ impl SceneSettings {
             debug_view: DebugView::Lit,
             override_material: NO_MATERIAL,
             parallax: true,
+            moment_transparency: false,
             casters_moved: false,
             tiles_stale: false,
             shadow_camera: None,
@@ -1386,6 +1390,19 @@ impl SceneSettings {
     /// rebuilds the draw tables.
     pub fn set_parallax(&mut self, on: bool) -> bool {
         std::mem::replace(&mut self.parallax, on) != on
+    }
+
+    /// Draws the blended surfaces in the camera's moment transparency layer, or back to front in
+    /// the transparent pass, from the next frame on. Returns true when the choice changed, so the
+    /// caller declares the frame's passes again. The setting is fixed at the start, so a change
+    /// never happens in a frame loop.
+    pub fn set_moment_transparency(&mut self, on: bool) -> bool {
+        std::mem::replace(&mut self.moment_transparency, on) != on
+    }
+
+    /// True when the camera draws the blended surfaces in its moment transparency layer.
+    pub fn moment_transparency(&self) -> bool {
+        self.moment_transparency
     }
 
     /// True when a material, by id, draws parallax where its mesh has texture coordinates: it asks

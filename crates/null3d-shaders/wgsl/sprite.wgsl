@@ -36,6 +36,17 @@ enable draw_index;
 #ifdef WEIGHTED
 #import null3d::weighted::{WeightedFragment, weighted_fragment}
 #endif
+#ifdef MOMENT
+#import null3d::moment::{moment_fragment}
+#endif
+#ifdef MOMENT_COLOUR
+#import null3d::moment::{moment_colour_fragment}
+
+/// The moment store that the colour pass reads at each fragment's own pixel (decision record
+/// D-260), in the frame's group. Binding 19 is free: the composer keeps every module's globals,
+/// and the refraction module's own texture holds binding 15 in every build.
+@group(0) @binding(19) var moment_store: texture_2d<f32>;
+#endif
 
 #ifdef MAP
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
@@ -126,6 +137,8 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 fn fs(in: VertexOut) -> MaskedFragment {
 #else ifdef WEIGHTED
 fn fs(in: VertexOut) -> WeightedFragment {
+#else ifdef MOMENT_COLOUR
+fn fs(in: VertexOut) -> @location(0) vec4f {
 #else
 fn fs(in: VertexOut) -> @location(0) vec4f {
 #endif
@@ -161,6 +174,14 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     return vec4f(finished.rgb, alpha);
 #else ifdef WEIGHTED
     return weighted_fragment(fragment_color(m, finished.rgb, alpha), in.relative);
+#else ifdef MOMENT
+    return moment_fragment(alpha, in.relative);
+#else ifdef MOMENT_COLOUR
+    return moment_colour_fragment(
+        fragment_color(m, finished.rgb, alpha),
+        in.relative,
+        textureLoad(moment_store, vec2u(in.clip.xy), 0),
+    );
 #else
     return fragment_color(m, finished.rgb, alpha);
 #endif

@@ -771,6 +771,26 @@ pub mod layout {
     /// [`permutation::TRANSMISSION`], so those builds read no copy. Only WebGPU has this layout:
     /// the parallax passes bind it in place of [`FRAME`].
     pub const FRAME_PARALLAX: u32 = 48;
+    /// Group 0 of the moment transparency layer's composite: the moment store and the colour sum,
+    /// both read with `textureLoad` as unfilterable floats.
+    pub const MOMENT_COMPOSITE: u32 = 62;
+    /// The copy of a multisampled scene depth for the moment layer's two passes: the depth, read
+    /// with `textureLoad` as multisampled unfilterable floats. Only WebGPU has it.
+    pub const MOMENT_DEPTH_MS: u32 = 63;
+    /// Group 0 of the moment layer's colour builds: [`FRAME`]'s bindings without the copy of the
+    /// opaque color, which no moment build reads, and the moment store at that binding. A moment
+    /// build with the standard material's maps then reads within WebGPU's default count of
+    /// sampled textures in its fragment stage.
+    pub const MOMENT_FRAME: u32 = 65;
+    /// Group 0 of the moment layer's anti-aliasing first step: the scene color and the moment
+    /// store, both read with `textureLoad` as unfilterable floats.
+    pub const MOMENT_SMAA_EDGES: u32 = 66;
+    /// Group 0 of the anti-aliasing second step: the edges it found, the two lookup tables, and a
+    /// linear sampler that reads them all.
+    pub const MOMENT_SMAA_BLEND: u32 = 67;
+    /// Group 0 of the anti-aliasing last step: the scene color and the blending weights, and a
+    /// linear sampler that reads them.
+    pub const MOMENT_SMAA_RESOLVE: u32 = 68;
     /// Group 0 of depth-only pipelines, such as shadow casters': per-frame constants and the
     /// material table. It has no shadow map, so a pass that draws into the shadow map never binds
     /// it.
@@ -2091,6 +2111,78 @@ pub mod template {
     /// engine's vertex shaders read rows relative to their view's camera, and a page writes world
     /// rows (D-229). WebGPU only.
     pub const FEATURE_ROWS: u32 = 83;
+    /// The moment transparency layer's composite: one triangle that reads the moment store and the
+    /// colour sum, one texel per pixel, works out from the moments the share that shows through,
+    /// and blends the summed colour over the scene color. It binds as
+    /// [`layout::MOMENT_COMPOSITE`](super::layout::MOMENT_COMPOSITE) does.
+    pub const MOMENT_COMPOSITE: u32 = 84;
+    /// The copy of the first sample of a multisampled scene depth into a depth target of one
+    /// sample, which the moment layer's two passes test against: one triangle that writes each
+    /// pixel's depth, first in the moment pass. Its pipeline names that pass's moment target, which
+    /// it does not write. On WebGPU it reads the multisampled depth with the layout
+    /// [`MOMENT_DEPTH_MS`](super::layout::MOMENT_DEPTH_MS); on WebGL2 it reads the copy of one
+    /// sample that the backend keeps.
+    pub const MOMENT_DEPTH: u32 = 85;
+    /// The first step of the moment layer's anti-aliasing: one triangle over the scene color that
+    /// marks the layer's edges with SMAA 1x, under the share that the moments cover, and leaves
+    /// every other pixel unmarked. It binds as
+    /// [`layout::MOMENT_SMAA_EDGES`](super::layout::MOMENT_SMAA_EDGES) does.
+    pub const MOMENT_SMAA_EDGES: u32 = 86;
+    /// The moment layer's colour pass for the standard material, from the lit template's file: it
+    /// writes each fragment's colour and its share, weighted by the transmittance that the moment
+    /// store gives at the fragment's own depth. It binds as [`INSTANCED_LIT`] does, with the moment
+    /// store in its frame group.
+    pub const MOMENT_LIT: u32 = 87;
+    /// [`MOMENT_LIT`] with the standard material's maps.
+    pub const MOMENT_STANDARD_MAPS: u32 = 88;
+    /// The moment layer's colour pass for the basic material, from the unlit template's file.
+    pub const MOMENT_UNLIT: u32 = 89;
+    /// [`MOMENT_UNLIT`] with the material's base color map.
+    pub const MOMENT_UNLIT_MAP: u32 = 90;
+    /// The moment layer's colour pass for sprites, from the sprite template's file.
+    pub const MOMENT_SPRITE: u32 = 91;
+    /// [`MOMENT_SPRITE`] with the material's map.
+    pub const MOMENT_SPRITE_MAP: u32 = 92;
+    /// The second step of the moment layer's anti-aliasing: one triangle that finds the ends of
+    /// each marked edge and the areas at each side, from the two lookup tables, and writes the
+    /// blending weights. It binds as
+    /// [`layout::MOMENT_SMAA_BLEND`](super::layout::MOMENT_SMAA_BLEND) does.
+    pub const MOMENT_SMAA_BLEND: u32 = 93;
+    /// The last step of the moment layer's anti-aliasing: one triangle that mixes each pixel with
+    /// the neighbour that its weights name, over the scene color. It binds as
+    /// [`layout::MOMENT_SMAA_RESOLVE`](super::layout::MOMENT_SMAA_RESOLVE) does.
+    pub const MOMENT_SMAA_RESOLVE: u32 = 94;
+
+    /// The moment layer's colour template for a mesh template, or 0 for one that has no moment
+    /// build. Six mesh templates draw in the layer: the standard material with and without maps,
+    /// both basic materials, and sprites with and without a map. Their colour builds are entries of
+    /// their own, because the shader build names a first-use file by the names of a build's bits,
+    /// and a shared value would pull another template's builds into the moment files (decision
+    /// record D-260).
+    pub const fn moment_colour(template: u32) -> u32 {
+        match template {
+            INSTANCED_LIT => MOMENT_LIT,
+            INSTANCED_STANDARD_MAPS => MOMENT_STANDARD_MAPS,
+            INSTANCED_UNLIT => MOMENT_UNLIT,
+            INSTANCED_UNLIT_MAP => MOMENT_UNLIT_MAP,
+            SPRITE => MOMENT_SPRITE,
+            SPRITE_MAP => MOMENT_SPRITE_MAP,
+            _ => 0,
+        }
+    }
+
+    /// True for the moment layer's colour templates.
+    pub const fn is_moment_colour(template: u32) -> bool {
+        matches!(
+            template,
+            MOMENT_LIT
+                | MOMENT_STANDARD_MAPS
+                | MOMENT_UNLIT
+                | MOMENT_UNLIT_MAP
+                | MOMENT_SPRITE
+                | MOMENT_SPRITE_MAP
+        )
+    }
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2098,7 +2190,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 83] = [
+    pub const NAMES: [(&str, u32); 94] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2181,6 +2273,17 @@ pub mod template {
         ("TAA_RESOLVE_MS", TAA_RESOLVE_MS),
         ("TAA_COPY", TAA_COPY),
         ("FEATURE_ROWS", FEATURE_ROWS),
+        ("MOMENT_COMPOSITE", MOMENT_COMPOSITE),
+        ("MOMENT_DEPTH", MOMENT_DEPTH),
+        ("MOMENT_SMAA_EDGES", MOMENT_SMAA_EDGES),
+        ("MOMENT_LIT", MOMENT_LIT),
+        ("MOMENT_STANDARD_MAPS", MOMENT_STANDARD_MAPS),
+        ("MOMENT_UNLIT", MOMENT_UNLIT),
+        ("MOMENT_UNLIT_MAP", MOMENT_UNLIT_MAP),
+        ("MOMENT_SPRITE", MOMENT_SPRITE),
+        ("MOMENT_SPRITE_MAP", MOMENT_SPRITE_MAP),
+        ("MOMENT_SMAA_BLEND", MOMENT_SMAA_BLEND),
+        ("MOMENT_SMAA_RESOLVE", MOMENT_SMAA_RESOLVE),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2254,6 +2357,15 @@ pub mod groups {
         &[layout::PARTICLE, layout::DRAWS],
         &[layout::PARTICLE_SCENE_DEPTH, layout::INSTANCES],
         &[layout::TEXTURES],
+    ];
+    /// [`MESH`] for the moment layer's colour builds, whose frame group carries the moment store in
+    /// place of the copy of the opaque color.
+    const MOMENT_MESH: &[&[u32]] = &[
+        &[layout::MOMENT_FRAME],
+        MESH[1],
+        MESH[2],
+        MESH[3],
+        MESH[4],
     ];
     /// The groups of the background templates: the frame's group, then a texture and the
     /// background's own group. A cube or sky background binds only the background's own, at the
@@ -2348,6 +2460,29 @@ pub mod groups {
             own!(layout::WEIGHTED_COMPOSITE),
         ),
         (template::WEIGHTED_DEPTH, own!(layout::WEIGHTED_DEPTH_MS)),
+        (
+            template::MOMENT_COMPOSITE,
+            own!(layout::MOMENT_COMPOSITE),
+        ),
+        (template::MOMENT_DEPTH, own!(layout::MOMENT_DEPTH_MS)),
+        (
+            template::MOMENT_SMAA_EDGES,
+            own!(layout::MOMENT_SMAA_EDGES),
+        ),
+        (
+            template::MOMENT_SMAA_BLEND,
+            own!(layout::MOMENT_SMAA_BLEND),
+        ),
+        (
+            template::MOMENT_SMAA_RESOLVE,
+            own!(layout::MOMENT_SMAA_RESOLVE),
+        ),
+        (template::MOMENT_LIT, MOMENT_MESH),
+        (template::MOMENT_STANDARD_MAPS, MOMENT_MESH),
+        (template::MOMENT_UNLIT, MOMENT_MESH),
+        (template::MOMENT_UNLIT_MAP, MOMENT_MESH),
+        (template::MOMENT_SPRITE, MOMENT_MESH),
+        (template::MOMENT_SPRITE_MAP, MOMENT_MESH),
         (template::SUBSURFACE, MESH),
         (template::SUBSURFACE_MAPS, MESH),
         (template::SUBSURFACE_BLUR, own!(layout::SUBSURFACE_BLUR)),

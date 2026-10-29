@@ -331,6 +331,38 @@ impl Opaque {
         view: ViewId,
         lit: Option<LitTextures>,
     ) -> Result<(), RecordError> {
+        Self::bind_frame_with(list, view, lit, ids::frame_group(view), bind_layout::FRAME, None)
+    }
+
+    /// Records the creation of a camera view's frame group that carries the moment layer's moment
+    /// store where the frame group carries the copy of the opaque color, which no moment build
+    /// reads. The colour builds bind it as their group 0.
+    pub(super) fn bind_moment_frame(
+        list: &mut DrawList,
+        view: ViewId,
+        lit: LitTextures,
+        store: u32,
+    ) -> Result<(), RecordError> {
+        Self::bind_frame_with(
+            list,
+            view,
+            Some(lit),
+            ids::moment_frame_group(view),
+            bind_layout::MOMENT_FRAME,
+            Some(store),
+        )
+    }
+
+    /// Records the creation of the frame groups of `view` with `group` as the first, and with
+    /// `layout`, whose binding 15 holds `store` or the copy of the opaque color.
+    fn bind_frame_with(
+        list: &mut DrawList,
+        view: ViewId,
+        lit: Option<LitTextures>,
+        group: u32,
+        layout: u32,
+        store: Option<u32>,
+    ) -> Result<(), RecordError> {
         // The frame's slot offset moves the uniform block and the cell offsets together, and
         // the backend gives dynamic offsets to a group's buffers in their order here.
         let frame = ids::frame(view);
@@ -356,7 +388,6 @@ impl Opaque {
             0,
             sizes::OBJECT_RANGE_BYTES,
         ];
-        let group = ids::frame_group(view);
         // The lists hold a slot for each camera view. The skin pass has none of its own: it reads
         // the camera's list, as it reads the camera's light textures.
         let listed = if view.is_camera() {
@@ -376,7 +407,7 @@ impl Opaque {
         }) = lit
         else {
             let mut words = [0; 23];
-            words[..3].copy_from_slice(&[group, bind_layout::DEPTH, 4]);
+            words[..3].copy_from_slice(&[group, layout, 4]);
             words[3..].copy_from_slice(&common);
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
@@ -407,13 +438,20 @@ impl Opaque {
         ]);
         words[43..48].copy_from_slice(&probe_grid::entries(probe_grid));
         for slot in 0..RING {
-            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 16]);
+            words[..3].copy_from_slice(&[group + slot, layout, 16]);
             words[48..53].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
             words[53..58].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
+            // The moment frame group reads the moment store where the frame group reads the copy
+            // of the opaque color: no moment build reads that copy, and the store keeps the frame
+            // group's other entries as they are.
+            let (binding, texture) = match store {
+                Some(store) => (crate::moment::STORE_BINDING, store),
+                None => (transmission::BINDING, copy),
+            };
             words[58..63].copy_from_slice(&[
-                transmission::BINDING,
+                binding,
                 resource_kind::TEXTURE,
-                copy,
+                texture,
                 0,
                 0,
             ]);
@@ -635,6 +673,23 @@ impl Opaque {
         if scene != 0 {
             list.push(Op::SetBindGroup, &[DECAL_DEPTH_INDEX, scene, 0])?;
         }
+        Ok(())
+    }
+
+    /// Binds a view's groups for the moment layer's colour pass: its frame group that carries the
+    /// moment store at group 0, and its instance textures at group 2.
+    pub(super) fn bind_moment_view(
+        &self,
+        list: &mut DrawList,
+        view: ViewId,
+        light_slot: u32,
+    ) -> Result<(), RecordError> {
+        let slots = self.views[self.slot(view)].slots;
+        let frame_slot = self.frame_slot(view);
+        let group = ids::moment_frame_group(view) + light_slot;
+        list.push(Op::SetBindGroup, &[0, group, 2, frame_slot, frame_slot])?;
+        let instances = ids::instances_group(view) + slots.streamed * RING + slots.listed;
+        list.push(Op::SetBindGroup, &[2, instances, 0])?;
         Ok(())
     }
 

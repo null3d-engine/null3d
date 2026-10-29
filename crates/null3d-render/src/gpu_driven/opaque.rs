@@ -106,13 +106,19 @@ pub(super) fn bind_frame(
     parallax: bool,
 ) -> Result<(), RecordError> {
     let group = ids::frame_group(view);
-    push_frame_group(list, group, bind_layout::FRAME, view, inputs, |_| true)?;
+    push_frame_group(list, group, bind_layout::FRAME, view, inputs, |_| true, None)?;
     if parallax {
         let group = ids::frame_parallax_group(view);
         let layout = bind_layout::FRAME_PARALLAX;
-        push_frame_group(list, group, layout, view, inputs, |binding| {
-            binding != transmission::BINDING
-        })?;
+        push_frame_group(
+            list,
+            group,
+            layout,
+            view,
+            inputs,
+            |binding| binding != transmission::BINDING,
+            None,
+        )?;
     }
     Ok(())
 }
@@ -126,9 +132,15 @@ pub(super) fn bind_decal_frame(
     inputs: &FrameInputs,
 ) -> Result<(), RecordError> {
     let (group, layout) = (ids::DECAL_FRAME_GROUP, bind_layout::DECAL_FRAME);
-    push_frame_group(list, group, layout, ViewId::CAMERA, inputs, |binding| {
-        binding != probe_grid::MAP_BINDING
-    })
+    push_frame_group(
+        list,
+        group,
+        layout,
+        ViewId::CAMERA,
+        inputs,
+        |binding| binding != probe_grid::MAP_BINDING,
+        None,
+    )
 }
 
 /// Records the creation of frame group `group` of `layout` for `view`, with the entries whose
@@ -140,6 +152,7 @@ fn push_frame_group(
     view: ViewId,
     inputs: &FrameInputs,
     keeps: impl Fn(u32) -> bool,
+    store: Option<u32>,
 ) -> Result<(), RecordError> {
     let entry = |binding: u32, kind: u32, id: u32| [binding, kind, id, 0, 0];
     let entries: [[u32; 5]; FRAME_ENTRIES] = [
@@ -160,11 +173,20 @@ fn push_frame_group(
         ),
         entry(11, resource_kind::TEXTURE, inputs.occlusion),
         entry(14, resource_kind::SAMPLER, ids::SHADOW_TEXEL_SAMPLER),
-        entry(
-            transmission::BINDING,
-            resource_kind::TEXTURE,
-            inputs.transmission,
-        ),
+        match store {
+            // The moment frame group reads the moment store where the frame group reads the copy
+            // of the opaque color, which no moment build reads.
+            Some(store) => entry(
+                crate::moment::STORE_BINDING,
+                resource_kind::TEXTURE,
+                store,
+            ),
+            None => entry(
+                transmission::BINDING,
+                resource_kind::TEXTURE,
+                inputs.transmission,
+            ),
+        },
         entry(ROW_VALUES_BINDING, resource_kind::TEXTURE, ids::ROW_VALUES),
         entry(
             OBJECT_RANGES_BINDING,
@@ -194,6 +216,18 @@ fn push_frame_group(
     words[..3].copy_from_slice(&[group, layout, count]);
     list.push(Op::CreateBindGroup, &words[..end])?;
     Ok(())
+}
+
+/// Records the creation of the camera's frame group that carries the moment layer's moment store
+/// where the frame group carries the copy of the opaque color, which no moment build reads.
+pub(super) fn bind_moment_frame(
+    list: &mut DrawList,
+    inputs: &FrameInputs,
+    store: u32,
+) -> Result<(), RecordError> {
+    let group = ids::moment_frame_group(ViewId::CAMERA);
+    let layout = bind_layout::MOMENT_FRAME;
+    push_frame_group(list, group, layout, ViewId::CAMERA, inputs, |_| true, Some(store))
 }
 
 /// Uploads a view's list of reflection probes into its slot.

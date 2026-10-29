@@ -242,8 +242,20 @@ pub fn build_with_cache_reporting(
             let Some(bit) = permutation::bit(name) else {
                 continue;
             };
-            // Only a value that names another feature too needs a per-shader mask: an unshared bit
-            // counts for every template ([`output::shared_bits`], decision record D-156).
+            // A bit whose manifest entry names its shaders counts only for those shaders, and one
+            // that names another feature too counts only for a template that lists its name
+            // ([`output::shared_bits`], decision record D-156).
+            if let Some(shaders) = first_use.bit_shaders.get(name) {
+                output.first_use.limited |= bit;
+                for shader_name in shaders {
+                    *output
+                        .first_use
+                        .listed
+                        .entry(shader_name.clone())
+                        .or_default() |= bit;
+                }
+                continue;
+            }
             if output::shared_bits() & bit == 0 {
                 continue;
             }

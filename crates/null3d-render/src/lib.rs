@@ -99,6 +99,7 @@ pub mod light_tables;
 pub mod materials;
 pub mod meshes;
 pub mod mirror;
+pub mod moment;
 pub mod morph;
 pub mod motion;
 pub mod object_ranges;

@@ -43,6 +43,8 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 		'when a pass first reads the motion. The motion debug view is such a pass, and it exists in development builds only',
 	coat_sheen: 'with the first material with a clear coat, a sheen, iridescence or anisotropy',
 	weighted: "with the first material of the `'weighted'` blending",
+	moment:
+		'when the quality setting `momentTransparency` is on and the first blended surface draws. The surfaces draw sorted until the layer and its anti-aliasing are built',
 	area_lights: 'with the first rectangle or tube light',
 	background: 'with the first texture, environment or cube map background',
 	sky: 'with the first sky background',

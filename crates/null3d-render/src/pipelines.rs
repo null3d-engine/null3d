@@ -302,6 +302,83 @@ impl DrawKey {
         }
     }
 
+    /// The permutation bits that the moment layer's builds carry for a pair of `template`, or 0
+    /// for a template that has none. A pair whose key holds any other bit keeps the transparent
+    /// pass's sort: the moment layer has no build for it, and a shader build cannot be asked for
+    /// one that it does not make (decision record D-260).
+    pub const fn moment_bits(template: u32) -> u32 {
+        let lit = permutation::TONE_MAP
+            | permutation::VERTEX_COLOR
+            | permutation::RECEIVE_SHADOWS
+            | permutation::AREA_LIGHTS
+            | permutation::SKIN
+            | permutation::MORPH
+            | permutation::DRAW_INDEX
+            | permutation::ROW_VALUES
+            | permutation::TRANSLUCENCY;
+        match template {
+            template::INSTANCED_LIT => lit,
+            template::INSTANCED_STANDARD_MAPS => lit | permutation::DISPLACEMENT,
+            template::INSTANCED_UNLIT | template::INSTANCED_UNLIT_MAP => {
+                permutation::TONE_MAP
+                    | permutation::VERTEX_COLOR
+                    | permutation::SKIN
+                    | permutation::MORPH
+                    | permutation::DRAW_INDEX
+                    | permutation::ROW_VALUES
+            }
+            template::SPRITE | template::SPRITE_MAP => {
+                permutation::TONE_MAP | permutation::DRAW_INDEX
+            }
+            _ => 0,
+        }
+    }
+
+    /// True for a pair that the moment layer draws: a blended pair of a template that has moment
+    /// builds, whose key holds only the bits that those builds carry. A double-sided pair draws
+    /// both faces in one draw, and a pair that lets light through, tests no depth or blends
+    /// additively or by multiplication keeps the sort.
+    pub const fn moment_drawn(self) -> bool {
+        let bits = Self::moment_bits(self.template);
+        bits != 0
+            && self.blends()
+            && !self.transmits()
+            && self.permutation & !bits == 0
+            && self.state & state_flags::NO_DEPTH_TEST == 0
+            && self.state & (state_flags::BLEND & !state_flags::BLEND_NORMAL) == 0
+    }
+
+    /// The key of the pipeline that writes a pair of [`Self::moment_drawn`] into the moment layer's
+    /// moment store (see [`crate::moment`]): four power moments of the fragment's optical depth,
+    /// which add into the target, so the order of the draws does not matter. It uses the outline
+    /// mask's permutation value, which no template with a moment build lists otherwise, so its
+    /// builds load with the moment layer alone. It writes no depth, and a double-sided pair draws
+    /// both faces in one draw.
+    pub const fn moment(self) -> DrawKey {
+        DrawKey {
+            permutation: (self.permutation & Self::moment_bits(self.template))
+                | permutation::OUTLINE_VISIBLE,
+            state: (self.state & !state_flags::BLEND)
+                | state_flags::BLEND_ADDITIVE
+                | state_flags::NO_DEPTH_WRITE,
+            ..self
+        }
+    }
+
+    /// The key of the pipeline that draws the same pair again into the moment layer's colour sum,
+    /// from the moment store's transmittance at the fragment's own depth. Its template is the
+    /// template's own moment colour template, a shader entry of its own (decision record D-260).
+    pub const fn moment_colour(self) -> DrawKey {
+        DrawKey {
+            template: template::moment_colour(self.template),
+            permutation: self.permutation & Self::moment_bits(self.template),
+            state: (self.state & !state_flags::BLEND)
+                | state_flags::BLEND_ADDITIVE
+                | state_flags::NO_DEPTH_WRITE,
+            ..self
+        }
+    }
+
     /// True for a pair whose template has WebGPU builds that read each instance by index from
     /// storage buffers ([`permutation::INSTANCE_INDEX`]): the engine's templates that the culling
     /// shader draws, apart from those that only tests and development builds draw. Custom
@@ -553,6 +630,35 @@ mod tests {
         }
     }
 
+    /// The permutation names that a `[shaders.<name>]` table of shaders.toml lists for the variant
+    /// `variant` (see the manifest).
+    fn listed(toml: &str, shader: &str, variant: &str) -> Vec<String> {
+        let table = toml
+            .split(&format!("[shaders.{shader}]\n"))
+            .nth(1)
+            .expect("the shader's table");
+        let line = table
+            .lines()
+            .find(|line| line.starts_with(&format!("variants.{variant} ")))
+            .unwrap_or_else(|| panic!("{shader} has no variant {variant}:\n{}", &table[..table.len().min(800)]));
+        let list = line.split("permutations = [").nth(1).expect("a list");
+        let list = &list[..list.find(']').expect("the list's end")];
+        list.split(',')
+            .map(|name| name.trim().trim_matches('"').to_owned())
+            .filter(|name| !name.is_empty())
+            .collect()
+    }
+
+    /// The bits of a manifest list, apart from a device's half-precision bit, which changes no
+    /// permutation of a draw.
+    fn listed_bits(names: &[String]) -> u32 {
+        names
+            .iter()
+            .filter(|name| name.as_str() != "HALF")
+            .map(|name| permutation::bit(name).expect("a permutation bit"))
+            .fold(0, |all, bit| all | bit)
+    }
+
     /// The operands of each command in a list.
     fn commands(list: &DrawList) -> Vec<(Op, Vec<u32>)> {
         decode(list.words())
@@ -588,6 +694,143 @@ mod tests {
                 1.5f32.to_bits(),
             ]
         );
+    }
+
+    #[test]
+    fn the_manifest_lists_the_bits_that_a_moment_build_carries() {
+        // A pipeline whose bits a shader entry does not list finds no build and draws nothing, so
+        // the renderer's bit mask and the manifest's lists must agree.
+        let toml = include_str!("../../null3d-shaders/shaders.toml");
+        for (entry, template) in [
+            ("moment_lit", template::INSTANCED_LIT),
+            ("moment_standard_maps", template::INSTANCED_STANDARD_MAPS),
+            ("moment_unlit", template::INSTANCED_UNLIT),
+            ("moment_unlit_map", template::INSTANCED_UNLIT_MAP),
+            ("moment_sprite", template::SPRITE),
+            ("moment_sprite_map", template::SPRITE_MAP),
+        ] {
+            for (device, absent) in [
+                // A WebGPU build reads no draw index and morphs in the skinning pass instead.
+                ("webgpu", permutation::DRAW_INDEX | permutation::MORPH),
+                ("webgl2", 0),
+            ] {
+                let bits = listed_bits(&listed(toml, entry, device));
+                let carried = DrawKey::moment_bits(template);
+                assert_eq!(
+                    bits & !carried,
+                    0,
+                    "{entry}.{device} lists a bit that a moment build does not carry"
+                );
+                assert_eq!(
+                    carried & !bits & !absent,
+                    0,
+                    "{entry}.{device} lacks a bit that a moment build needs"
+                );
+            }
+        }
+        // The moment pass's own builds, in the mesh entries, list the same bits and the outline
+        // mask's value.
+        for (entry, template) in [
+            ("lit", template::INSTANCED_LIT),
+            ("standard_maps", template::INSTANCED_STANDARD_MAPS),
+            ("unlit", template::INSTANCED_UNLIT),
+            ("unlit_map", template::INSTANCED_UNLIT_MAP),
+            ("sprite", template::SPRITE),
+            ("sprite_map", template::SPRITE_MAP),
+        ] {
+            for (device, absent) in [
+                ("webgpu", permutation::DRAW_INDEX | permutation::MORPH),
+                ("webgl2", 0),
+            ] {
+                let names = listed(toml, entry, &format!("moment_{}", if device == "webgpu" { "wgpu" } else { device }));
+                assert!(
+                    names.iter().any(|name| name == "OUTLINE_VISIBLE"),
+                    "{entry}.moment_{device} holds the outline mask's value"
+                );
+                let bits = listed_bits(&names) & !permutation::OUTLINE_VISIBLE;
+                let carried = DrawKey::moment_bits(template);
+                assert_eq!(
+                    bits & !carried,
+                    0,
+                    "{entry}.moment_{device} lists a bit that a moment build does not carry"
+                );
+                assert_eq!(
+                    carried & !bits & !absent,
+                    0,
+                    "{entry}.moment_{device} lacks a bit that a moment build needs"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_moment_layer_draws_only_the_pairs_whose_bits_its_builds_carry() {
+        // A blended lit pair with the bits that a moment build has draws in both passes.
+        let pair = DrawKey {
+            state: state_flags::BLEND_NORMAL | state_flags::CULL_NONE,
+            permutation: permutation::TONE_MAP | permutation::VERTEX_COLOR,
+            ..lit(vertex::UV0)
+        };
+        assert!(pair.moment_drawn());
+        let moment = pair.moment();
+        assert_eq!(
+            moment.permutation,
+            permutation::TONE_MAP | permutation::VERTEX_COLOR | permutation::OUTLINE_VISIBLE
+        );
+        assert_eq!(
+            moment.state & state_flags::BLEND,
+            state_flags::BLEND_ADDITIVE
+        );
+        let colour = pair.moment_colour();
+        assert_eq!(colour.template, template::MOMENT_LIT);
+        assert_eq!(
+            colour.permutation,
+            permutation::TONE_MAP | permutation::VERTEX_COLOR
+        );
+        // Each of these keeps the transparent pass's sort.
+        for unsupported in [
+            // A feature that no moment build carries.
+            DrawKey {
+                permutation: permutation::COAT_SHEEN,
+                ..pair
+            },
+            // A pair that lets light through.
+            DrawKey {
+                permutation: permutation::TRANSMISSION,
+                ..pair
+            },
+            // A mask, an additive pair, a pair that skips the depth test, and a template with no
+            // moment build.
+            DrawKey {
+                permutation: permutation::ALPHA_MASK,
+                ..pair
+            },
+            DrawKey {
+                state: state_flags::BLEND_ADDITIVE,
+                ..pair
+            },
+            DrawKey {
+                state: state_flags::BLEND_NORMAL | state_flags::NO_DEPTH_TEST,
+                ..pair
+            },
+            DrawKey {
+                template: template::LINE,
+                ..pair
+            },
+        ] {
+            assert!(!unsupported.moment_drawn(), "{unsupported:?}");
+        }
+        // The bit set of each template that has builds matches its manifest entries.
+        for (template, bits) in [
+            (
+                template::INSTANCED_LIT,
+                permutation::VERTEX_COLOR | permutation::SKIN,
+            ),
+            (template::SPRITE, permutation::TONE_MAP),
+            (template::LINE, 0),
+        ] {
+            assert_eq!(DrawKey::moment_bits(template) & bits, bits);
+        }
     }
 
     #[test]

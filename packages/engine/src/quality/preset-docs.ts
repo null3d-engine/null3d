@@ -62,6 +62,7 @@ export const SETTING_DOCS: {
 		label: 'Anti-aliasing',
 		print: (value) => ({ none: 'none', fxaa: 'FXAA', msaa: 'MSAA 4x' })[value],
 	},
+	momentTransparency: { label: 'Moment transparency', print: yesNo },
 	shadowCascades: { label: 'Shadow cascades' },
 	shadowMapSize: { label: 'Shadow map size in texels' },
 	shadowFilter: { label: 'Shadow filter', print: (value) => `${value} x ${value} texels` },

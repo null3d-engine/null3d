@@ -702,6 +702,7 @@ quality.set({ minRenderScale: 0.5, maxRenderScale: 1 });  // the range dynamic r
 quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // texture sampling cap, upload bytes per frame
 quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at the start; set it with createEngine's option
 quality.settings.depthPrepass;          // true when opaque depth draws first; fixed at the start, as antialias is
+quality.set({ momentTransparency: true });  // (0.3) blend the blended surfaces in the moment layer, without the sort; fixed at the start, off on every preset
 quality.settings.gpuOcclusion;          // true when the GPU skips hidden opaque objects; fixed at the start
 quality.set({ shadowFilter: 5, farCascadeInterval: 1 });  // shadow edge softness, 3 or 5 texels; far cascades every frame
 quality.set({ followMovingCasters: false }); // far cascades keep their turns while dynamic casters move in them (on by default)
