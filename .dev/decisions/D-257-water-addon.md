@@ -147,3 +147,11 @@ is stepped too, and a page with no water has no row.
   map and the size gates. The demo `examples/water` draws both bodies and the view from below. The
   package's own page (`packages/water/page`, which the tarball leaves out) gives the listing check's
   page, cost and allocation gates a scene to measure.
+- The demo's tour dips under the water, never into the bank. While the camera is high, it flies
+  9 m to the side of the stream, over the grass. As it sinks from 1.7 m to 0.6 m, it swings in over
+  the river's middle. So its dip goes under the surface between the boulders. It never comes within
+  0.3 m of the ground below it. A tour that sank at the bank's side was inside the ground for 26% of
+  its flight, and the view showed the terrain from inside. It was under the water for 1.5%. The
+  swing keeps the camera out of the ground and the boulders, at least 0.38 m from a boulder. It is
+  under the water for 11% of the flight. Above 1.7 m the path is unchanged, so the held frame at
+  1 s, where the camera is at 1.74 m, keeps its six pictures.
