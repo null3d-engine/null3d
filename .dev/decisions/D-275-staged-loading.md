@@ -1,7 +1,9 @@
 # D-275: Staged loading for whole levels and cluster bands
 
-Status: proposed, for the owner's ruling. Built: the whole-level stages that D-228 decides, their
-reader and writer, `maxLevels`, and the pick-driven holdback. Built: the cluster band stage, its
+Status: decided by the owner's ruling on the three studies' order: this record runs first, then the
+impostors ([D-274](D-274-impostors.md)) and the vertex morphing ([D-273](D-273-vertex-morphing.md)).
+Built: the whole-level stages that D-228 decides, their reader and writer, `maxLevels`, and the
+pick-driven holdback. Built: the cluster band stage, its
 writer, and the call that appends a band to a tree. Task: M3-L4.
 
 Summary: D-228's layout stands. A model holds its full vertex stream and its coarsest level. Each
@@ -105,10 +107,16 @@ refinement while a page draws.
   stage. Over three loads of each, the page with every stage drew its first picture at 12,390 ms.
   The page with the limit of 1 drew it at 12,388 ms. The staged page downloaded 869.9 KB before its
   first picture, against 851.9 KB. So 18.0 KB of the stages arrived before it, and 29.3% of its 1,230.0 KB
-  download arrived after it. A stage costs no delay to the first picture, and a page whose camera
-  never shows the finest level saves its 378.1 KB.
-- The tool's report lists each stage file's bytes and the share after the first picture. The Data
-  table holds the cave's and a Kenney kit's split, and the cluster fixture's five bands.
+  download arrived after it. Both loads draw the staged file, so the run shows that the stages add no
+  delay before the first picture. It cannot show a first picture sooner than the single file's,
+  because that file is not in its run. The sooner claim rests on the bytes: 69,880 in the staged
+  file against 559,672 with every level in one file. The 29.3% is a lower bound. The before tally is
+  asked at the page's first frame, so a stage that leaves just after the frame counts as arrived
+  before it. A stage costs no delay to the first picture, and a page whose camera never
+  shows the finest level saves its 378.1 KB.
+- The tool's report lists each stage file's bytes and the share after the first picture. That share
+  is a lower bound in the same way as the run's. The Data table holds the cave's and a Kenney kit's
+  split, and the cluster fixture's five bands.
 - The `staged-levels` browser test holds the staged cluster model on WebGPU, compatibility mode and
   WebGL2. The file's first band covers the surface. Each band appends, and the picture refines over
   more than 1% of the pixels. A far camera asks for one band file, and a band limit of 1 asks for
