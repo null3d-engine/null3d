@@ -24,10 +24,10 @@ const POLL_MS = 250;
 run('staged-start', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
-	const sketch = new URL(
-		CLUSTERS ? './sketches/cluster-staged-sketch.ts' : './sketches/staged-levels-sketch.ts',
-		import.meta.url,
-	);
+	// Each address is a literal, so a production build emits both sketches.
+	const sketch = CLUSTERS
+		? new URL('./sketches/cluster-staged-sketch.ts', import.meta.url)
+		: new URL('./sketches/staged-levels-sketch.ts', import.meta.url);
 	const max = Number(params.get('max') ?? 0);
 	if (max > 0) sketch.search = `?max=${max}`;
 	const load = parseLoadPath(location.pathname);
