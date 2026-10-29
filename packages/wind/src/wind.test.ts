@@ -23,6 +23,7 @@ function context(
 	passes?: { count: number },
 	steps?: number[],
 	options?: unknown[],
+	textures: unknown[] = [],
 ): SketchContext {
 	const pass = { enabled: true, live: true };
 	return {
@@ -42,7 +43,10 @@ function context(
 		},
 		textures: {
 			fromPass: () => ({ destroy: () => {} }),
-			fromData: () => ({ destroy: () => {} }),
+			fromData: (given: unknown) => {
+				textures.push(given);
+				return { destroy: () => {} };
+			},
 		},
 	} as unknown as SketchContext;
 }
@@ -65,14 +69,22 @@ describe('the device that holds the field', () => {
 describe('the field that a reader samples', () => {
 	test('a device without float targets keeps no grid and gives readers the steady field', () => {
 		const passes = { count: 0 };
-		const wind = createWind(context('webgl2', ['OES_texture_float_linear'], passes), {
-			camera,
-			grid: 8,
-		});
+		const textures: unknown[] = [];
+		const wind = createWind(
+			context('webgl2', ['OES_texture_float_linear'], passes, [], [], textures),
+			{
+				camera,
+				grid: 8,
+			},
+		);
 		// No pass costs the device nothing, and a box of no width sends every sample to the steady
 		// field that the sampling function works out, so a plant there still moves.
 		expect(passes.count).toBe(0);
 		expect(wind.field.size).toBe(0);
+		// The stand-in texture is never read, since the box has no width, but it must still be a
+		// texture the device takes: four bytes per texel for the default format.
+		expect(textures[0]).toMatchObject({ width: 1, height: 1, depth: 1 });
+		expect((textures[0] as { data: unknown }).data).toBeInstanceOf(Uint8Array);
 		expect(wind.field.air.base).toEqual([4, 0, 0.65, 0]);
 	});
 

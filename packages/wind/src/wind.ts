@@ -226,7 +226,7 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 					width: 1,
 					height: 1,
 					depth: 1,
-					data: new Float32Array(4),
+					data: new Uint8Array(4),
 				}),
 		origin: [0, 0],
 		size: holds ? box : 0,
