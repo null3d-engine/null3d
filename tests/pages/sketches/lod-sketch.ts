@@ -9,10 +9,12 @@
 // material of its own in the level's color and white vertices, so a level that ignores its material
 // draws white and the picture shows the fault, `?shadows` draws one
 // large copy in front of a wall, whose shadow draws a coarser level than the copy itself, `?hide`
-// raises the threshold and places copies around the hide distance, and `?range` gives every copy a
-// distance band, with rows of copies around its start and its end. With `?batch` the copies are the
-// rows of one batch, and with `?rows` each row takes its band through the batch's own range array,
-// with no batch-wide call, so the picture holds only when the engine reads every row's two floats.
+// raises the threshold and places copies around the hide distance, `?range` gives every copy a
+// distance band, with rows of copies around its start and its end, and `?switch=distance` or
+// `?switch=coverage` picks each level by that measure instead of by its error, at the same place.
+// With `?batch` the copies are the rows of one batch, and with `?rows` each row takes its band
+// through the batch's own range array, with no batch-wide call, so the picture holds only when the
+// engine reads every row's two floats.
 import { defineSketch, type MeshArrays, type Vec3 } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -103,10 +105,26 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 	// once, as the asset tool's measured errors do. A level's own material may draw without the
 	// mesh's vertex colors, in the level's color.
 	const levelMaterial = (color: Vec3) => materials.standard({ color, roughness: 0.5 });
+	// The factor of the rule on this canvas: the drawn height in pixels times P[1][1], over twice
+	// the threshold. A copy of scale 1 switches to level j past ERRORS[j - 1] times it.
+	const tan = Math.tan((FOV * Math.PI) / 360);
+	const factor = () =>
+		(engine.viewport.height * engine.viewport.pixelRatio) / (2 * tan * THRESHOLD * BIAS);
+	// `?switch` names the measure that picks the level: the measured error, the distance it works
+	// out to on this canvas, or the share of the screen's height that the same distance covers. All
+	// three pick the same level at the same place, so the pictures must agree.
+	const switchBy = params.get('switch');
+	const height = () => engine.viewport.height * engine.viewport.pixelRatio;
+	const levelSwitch = (k: number) => {
+		if (switchBy === 'distance') return { distance: (ERRORS[k] as number) * factor() };
+		if (switchBy === 'coverage')
+			return { coverage: (2 * THRESHOLD) / ((ERRORS[k] as number) * height()) };
+		return { error: ERRORS[k] as number };
+	};
 	base.setLevels(
 		lower.map((mesh, k) => ({
 			mesh,
-			error: ERRORS[k] as number,
+			...levelSwitch(k),
 			...(params.has('material') && { material: levelMaterial(LEVELS[k + 1]?.[1] as Vec3) }),
 		})),
 		{ fade: !crisp },
@@ -118,11 +136,6 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 		...(params.has('mask') && { alphaMode: 'mask' as const, alphaToCoverage: true }),
 	});
 
-	// The factor of the rule on this canvas: the drawn height in pixels times P[1][1], over twice
-	// the threshold. A copy of scale 1 switches to level j past ERRORS[j - 1] times it.
-	const tan = Math.tan((FOV * Math.PI) / 360);
-	const factor = () =>
-		(engine.viewport.height * engine.viewport.pixelRatio) / (2 * tan * THRESHOLD * BIAS);
 	const aspect = () => engine.viewport.width / engine.viewport.height;
 
 	// A copy whose nearest point lies at `distance` from the camera, with its centre offset from the

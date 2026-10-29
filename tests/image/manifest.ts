@@ -2467,6 +2467,26 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// The same copies and the same levels, with each level picked by its distance on this canvas
+	// rather than by its measured error, and then by the share of the screen its bounds cover. All
+	// three measures work out to the same switch distances here, so all three pictures must match
+	// the base one, and each entry points at it rather than holding a reference of its own.
+	{
+		name: 'lod-switch-distance',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&switch=distance',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod',
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
+		name: 'lod-switch-coverage',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&switch=coverage',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod',
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	{
 		name: 'lod-batch',
 		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&batch',
