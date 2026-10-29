@@ -2895,6 +2895,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// A grown birch beside the card that `bakeFarTree` makes from it. The mesh draws level 0 with the
+	// bark and leaf materials, and the card draws the same level baked with the same atlases and the
+	// same colours, so the two crowns match in colour at the hand-over.
+	{
+		name: 'impostor-plant',
+		sketch: 'tests/pages/sketches/impostor-plant-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// A sprite batch with an origin: eight cards, one per frame of a four column, two row atlas of
 	// flat colors, standing around an origin far from the world's. Each card must draw its own cell,
 	// so the picture holds eight cell colors in order. The second test draws the same cards at their

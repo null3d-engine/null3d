@@ -231,7 +231,7 @@ const leaves = plantMaterial(ctx, {
 
 ## Far trees
 
-A tree past the distance where its triangles matter draws as one card. `bakeFarTree` bakes the plant's most detailed level into the two atlases that an impostor card draws, at its first use. The bake reads the same leaf and bark atlases and the same tint as the near material, so the card's color matches the mesh at the hand-over. It runs on the CPU, so every device gets the same atlases.
+A tree past the distance where its triangles matter draws as one card. `bakeFarTree` bakes the plant's most detailed level into the two atlases that an impostor card draws, at its first use. The bake reads the same leaf and bark atlases and the same colours as the near material: the bark colour tints the wood, and the leaf colour the leaves, in both. So the card's color matches the mesh at the hand-over. It runs on the CPU, so every device gets the same atlases.
 
 ```ts
 import { createImpostors } from '@null3d/impostors';
@@ -254,7 +254,7 @@ const cards = createImpostors(
 handOverToCards(nearTrees, cards.batch, 240);
 ```
 
-`bakeFarTree` returns the two textures, the grid and the card's `size`. The bake draws level 0, or the level that the plant's `impostorSource` names, and the plant's tint multiplies both the mesh and the bake. A second call for the same plant, grid and cell size reuses the baked pixels.
+`bakeFarTree` returns the two textures, the grid and the card's `size`. The bake draws level 0, or the level that the plant's `impostorSource` names. The bark colour tints the wood and the leaf colour the leaves, as the plant's materials do. A second call for the same plant, grid and cell size reuses the baked pixels.
 
 `handOverToCards(meshes, cards, switchDistance)` sets the distance bands. The meshes draw up to the switch, and the cards draw from just before it. The engine fades each edge over its own band, so one fades out as the other fades in, with no pop. The meshes and the cards stand at the same trees, so a tree draws as its mesh near the camera and as its card far from it.
 

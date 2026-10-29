@@ -120,6 +120,9 @@ against its atlas.
   A turned copy's card shows the same side and the same light as its mesh. `impostor-turn-sun-back`
   moves the sun behind the row, and both sources turn dark. The pieces match within the atlas's
   resolution, which the cells' texels set.
+- The image test `impostor-plant` draws a grown birch as its level-0 mesh beside the card that
+  `bakeFarTree` makes from it. The two crowns match in colour, which settles the bake, the leaf
+  coverage and the per-part tints.
 - A test page switch that draws one view in place of the three, timed on the Mac, an iPad and an
   S24-class phone. The card's cost per pixel settles the blend's price. Not measured yet.
 - The bake's time and memory at each preset on the same three devices. The Mac's figures are in the
@@ -140,9 +143,9 @@ against its atlas.
   the card is lit by the scene's sun. The three.js mapping gains nothing, because three.js has no
   impostor counterpart.
 - Skills: the develop skill's impostor and vegetation notes.
-- Tests: `impostor-turn` and `impostor-turn-sun-back` draw a turned tree beside its card, and the
-  impostor and demo pictures are redrawn for the upright frame and the bake. The hand-over picture
-  is the far-tree task's.
+- Tests: `impostor-turn` and `impostor-turn-sun-back` draw a turned tree beside its card, and
+  `impostor-plant` draws a grown plant beside its card. The impostor and demo pictures are redrawn
+  for the upright frame and the bake. The hand-over picture is the far-tree task's.
 - The far-tree task builds the bake, the turn's API and the shadow method. This record's card work is
   built, and the two tasks do not split the same work twice. The shadow method waits on an engine
   capability: a custom material's caster build draws its whole quad and tests no coverage.
