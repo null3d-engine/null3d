@@ -148,8 +148,8 @@ that lives on the GPU, so the call keeps its form for a page's own motion.
 ## The round 24 audit's findings
 
 The round 24 audit left M3-V15 unticked with findings whose fixes belong to this task. The four
-that are code are fixed here. The fifth is the solver, the forces and the fixed step. That is stage
-two, which waits on M3-V13; V13 has since landed, and it is its own task.
+that are code are fixed here. The fifth was the solver, the forces and the fixed step. That is stage
+two above, which waits on M3-V13; V13 landed and the add-on builds on it.
 
 - **The gust now travels.** `gust` writes a slot of its own, after the three push slots, so a
   page's pushes never push its gust out. Before, both shared one ring of four, and a page that
