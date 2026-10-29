@@ -52,18 +52,14 @@ const INCOMPLETE = new Set([
 	'M3-R19',
 	'M3-V1',
 	'M3-L1',
-	'M3-R31',
 	'M3-E1',
 	'M3-F14',
 	'M3-K3',
 	'M3-V3',
-	'M3-R40',
 	'M3-K2',
-	'M3-D2',
 	'M3-L3',
 	'M3-A6',
 	'M3-L5',
-	'M3-E7',
 	'M3-E10',
 	'M3-V9',
 ]);
@@ -84,8 +80,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"the shader cache on the branch is D-248's change, not this task's: it reuses every entry when a compiler change leaves the compiled program identical, 0 compiled and 79 reused in 19 s, where the same change cost an hour. The task's own change, three entries instead of four for every module kind, is on `feat/m3-r22-entry-set` and not on this branch, and the determinism list here still holds `lit`; the two checks' CI times remain unmeasured",
 	'M3-L1':
 		'unticked by the 29 October audit: two of its own items are unmet. The coverage switch its item 6 builds is reached only by unit tests, because every level picture sets its levels by a measured error, so a wrong coverage measure would pass every other check; and the far-cell hand-over its item 5 names has no first user, since the impostors demo draws its rings as disjoint batches with no band on the near batch or the merged cells. Both are being built',
-	'M3-R31':
-		'unticked by the 29 October audit: its own done-when names an image test for the look, and the only normal-map shadow picture draws the sun, while the shader change covers point and spot lights too. The point and spot half is a look no picture draws',
 	'M3-E1':
 		"unticked by the 29 October audit: the entry gained a rule-42 bullet that the tick never covered. The particles add-on's birth records are still written one per birth per frame on the sketch thread, and the engine's particle buffer gives them a Rust home",
 	'M3-F14':
@@ -94,8 +88,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"unticked by the 29 October audit: the owner's 26 October ruling is that cookies take any texture and larger sizes, and the head still resamples to 128 by 128 and takes pixels only",
 	'M3-V3':
 		'unticked under the policy this branch now states rather than by its own clause: no public behaviour may be reachable by nobody. The pick build of a compute-driven vertex offset is in its What bullet, and nothing takes it: no unit test, no browser test and no example. The owner may reverse this one without touching the others',
-	'M3-R40':
-		'unticked under the same policy: the physics guide sample that the task corrected has never run, because the skill and cookbook check compiles without executing it and no example, test or bench uses the library it calls',
 	'M3-K2':
 		'unticked under the same policy: drag controls are exported and reached by no unit test, browser test, picture or example, because the gizmos picture and its spec reach only the transform controls',
 	'M3-V9':
@@ -106,12 +98,8 @@ const NOTES: Readonly<Record<string, string>> = {
 		"unticked under the policy the owner kept: a batch row's own distance band is public API that no sketch, example or page switch sets. The close is a `?rows` mode on the existing level-of-detail sketch that sets one row's band, sharing the range picture's reference",
 	'M3-L5':
 		"unticked under the policy the owner kept, for two witnesses: the water add-on's bounds view is turned on by one unit test and by no page or example, and its culling-spheres view is called by a unit test against a fake scene and by nothing else, so the traversal and the core hand-off never run. The closes are one manifest entry of an existing water sketch with the bounds view, sharing its reference, and a browser test or an example that turns the spheres on for a page with level meshes",
-	'M3-E7':
-		'unticked under the policy the owner kept: the spot lobe is counted in compiled shader source and never run through a spot light, because both lobe sketches use a sun and a point light. The close is a spot mode on the existing car-paint sketch, sharing its reference',
 	'M3-E10':
 		"unticked under the policy the owner kept: the scene-pass leg of a sky layer is drawn by no page, and the tests that name it check graph order or an error's shape. The close is a sky-layer sketch with a water surface under the layer, sharing a reference it already has",
-	'M3-D2':
-		'unticked by the 29 October audit: its done-when names a page that fails with the error for a mismatched add-on version, and no such page exists. The only caller constructs the check directly in a unit test, so the witness its own clause names has never run',
 	'M3-F3':
 		"dropped with the temporal resolve it waited on (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F10':

@@ -173,14 +173,19 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 		);
 		if (params.has('rows')) {
 			// Every row's band goes into the array alone, with no batch-wide range: the engine reads
-			// each row's two floats when it rebuilds its draw tables.
+			// each row's two floats when it rebuilds its draw tables. The rows take pairs of their
+			// own that leave the picture as the range picture draws it: the copies round the band's
+			// start take a band that starts where theirs do, and those round its end one that ends
+			// where theirs do. An engine that read one row's pair for every row, or that swapped
+			// them, would move a copy across an edge and the picture would differ.
 			const batch = scene.createInstances(base, spots.length, { material, ranges: true });
 			batch.positions.set(spots.flat());
 			batch.markDirty();
 			const ranges = batch.ranges as Float32Array;
 			for (let row = 0; row < spots.length; row++) {
-				ranges[row * 2] = BAND[0];
-				ranges[row * 2 + 1] = BAND[1];
+				const start = row < BAND_SIDES.length;
+				ranges[row * 2] = start ? BAND[0] : BAND[0] + 1;
+				ranges[row * 2 + 1] = start ? BAND[0] + 8 : BAND[1];
 			}
 			return;
 		}
