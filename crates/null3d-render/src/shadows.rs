@@ -795,8 +795,10 @@ impl CascadeSchedule {
 /// The casters that move in every frame: each dynamic object, and each object under a dynamic
 /// one, that has a mesh and casts shadows, and each dynamic instance batch that casts shadows. A
 /// caster whose material moves its vertices by a vertex offset of its own counts too, as its
-/// shadow may sway in every frame. The list follows the scene's structure, so it changes only in
-/// frames where the structure changed.
+/// shadow may sway in every frame, unless the material holds its casters still: its offset then
+/// follows the view that draws it, so a caster that only shadow passes draw keeps the layer's
+/// shadow. The list follows the scene's structure, so it changes only in frames where the structure
+/// changed.
 #[derive(Debug, Default)]
 pub struct MovingCasters {
     slots: Vec<u32>,

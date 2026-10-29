@@ -1464,9 +1464,26 @@ export function alphaMaskPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * What a far-tree impostor bake costs on the device, at each preset's atlas grid: the bake page
+ * bakes a conifer, a birch and an oak at every grid and reports each bake's time on the sketch
+ * thread and the bytes that its two atlases hold. The bake runs on the CPU, so one run gives every
+ * GPU path the same figures. D-274 records them.
+ */
+export function impostorBakePlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'impostor-bake',
+			'impostor-bake',
+			{ kind: 'probe', tier: 'webgl2' },
+			{ timeoutSeconds: 180 },
+		),
+	];
+}
+
+/**
  * What the impostor cards cost per frame on each GPU path: a field of 152 cards fills the window,
- * and the page draws it with the whole batch hidden and shown again, in turns. The difference is
- * the card batch's cost, its three-view blend included. D-274 records the results.
+ * and the page draws it with the whole batch hidden and shown again, in turns, and with its three
+ * nearest views and its nearest view alone. D-274 records the results.
  */
 export function impostorCostPlan(): PlanItem<Check>[] {
 	const items: PlanItem<Check>[] = [];
@@ -2411,6 +2428,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'environment-load': environmentLoadPlan,
 	grass: grassPlan,
 	'alpha-mask-cost': alphaMaskPlan,
+	'impostor-bake': impostorBakePlan,
 	'impostor-cost': impostorCostPlan,
 	'cluster-cost': clusterCostPlan,
 	'history-cost': historyCostPlan,

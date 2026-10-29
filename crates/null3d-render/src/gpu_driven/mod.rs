@@ -1519,7 +1519,7 @@ impl GpuDrivenRenderer {
             self.tiles.forget_drawn();
         }
         let settings = &self.settings;
-        let sways = |material| settings.sways(material);
+        let sways = |material| settings.sways(material) && !settings.casts_still(material);
         self.tiles.plan(
             input,
             tile_settings,

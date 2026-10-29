@@ -74,6 +74,28 @@ export interface ImpostorOptions {
 	readonly alphaCutoff?: number;
 	/** The layers every card is on, as a 32-bit mask. The default, 1, is layer 0. */
 	readonly layers?: number;
+	/**
+	 * The object's depth along a view, in world units: the distance that the surface atlas's stored
+	 * depth spans. A card that receives shadows reads them where that depth puts the surface that
+	 * it shows, rather than on its own plane, so its own cast does not fall on it. The default is
+	 * the card's width, the widest horizontal reach that the bake fits into it.
+	 */
+	readonly depth?: number;
+	/**
+	 * True makes the cards cast the sun's shadow, cut to the crown's shape that the bake stored. A
+	 * card batch that only casts draws on a layer that the light sees and no camera does, so it
+	 * costs nothing in the camera's view. The default is false.
+	 */
+	readonly castShadows?: boolean;
+	/** True makes the shadows of other objects fall on the cards. The default is false. */
+	readonly receiveShadows?: boolean;
+	/**
+	 * True keeps the cards' casters in place while the sun stands still, so a far shadow cascade
+	 * stays cached. The default is true, which suits a card that turns to the eye of each pass. A
+	 * scene that turns a card whose batch casts from frame to frame moves its caster while the light
+	 * stands still, and the far cascades then keep a stale shadow: pass false for such a scene.
+	 */
+	readonly castsStill?: boolean;
 }
 
 /**
@@ -88,11 +110,24 @@ export class ImpostorBatch {
 	constructor(
 		/** The instance batch whose rows are the cards. */
 		readonly batch: InstanceBatch,
+		/** Writes the number of views that the material draws each card from into its uniforms. */
+		private readonly writeViews: (views: 1 | 3) => void,
 	) {}
 
 	/** The number of cards. */
 	get count(): number {
 		return this.batch.count;
+	}
+
+	/**
+	 * Sets how many atlas views a card draws: the three nearest it, which blend so no seam shows as
+	 * the eye turns, or its nearest view alone, which is cheaper and hops from view to view. The
+	 * default is three.
+	 */
+	setViews(views: 1 | 3): void {
+		if (views !== 1 && views !== 3)
+			throw new RangeError(`setViews() got ${views}; it takes 1 or 3 views.`);
+		this.writeViews(views);
 	}
 
 	/**
@@ -123,7 +158,8 @@ const QUAD: MeshArrays = {
  * the direction from the card toward the eye, and lit by the scene's lights. The cards need no
  * `update` call: the material reads the eye from the frame's camera. A card's turn, in `turn`,
  * turns its views and its light by the same angle about the world's up, so a turned tree hands
- * over to a card whose crown matches it.
+ * over to a card whose crown matches it. A batch that casts the sun's shadow cuts that shadow to
+ * the crown's shape, and a batch that receives shadows reads them at the surface that it shows.
  *
  * @category api/impostors
  */
@@ -150,20 +186,33 @@ export function createImpostors(ctx: ImpostorContext, options: ImpostorOptions):
 		typeof options.size === 'number'
 			? [options.size, options.size]
 			: (options.size ?? [atlas.columns, atlas.rows]);
+	const depth = options.depth ?? width;
 	const material = ctx.materials.shader({
 		wgsl: cardsShader,
 		textures: { impostorColor: options.color, impostorSurface: options.surface },
-		uniforms: { cells: [atlas.columns, atlas.rows, 0, 0] },
+		uniforms: { cells: [atlas.columns, atlas.rows, 0, depth] },
 		alphaMode: options.alphaMode ?? 'mask',
+		// A card is one flat quad, so a caster must draw it from either side: the shadow pass
+		// culls front faces of single-sided geometry and would drop the card whole.
+		doubleSided: true,
 		...(options.alphaCutoff !== undefined && { alphaCutoff: options.alphaCutoff }),
 		...(options.tint !== undefined && { color: options.tint }),
 		...(options.roughness !== undefined && { roughness: options.roughness }),
 		...(options.metalness !== undefined && { metalness: options.metalness }),
-		...(options.layers !== undefined && { layers: options.layers }),
+		// A card turns toward the view that draws it, so its casters hold their place while the
+		// light stands still, and the far shadow cascades stay cached. A scene that turns its cards
+		// every frame moves them, and withdraws the claim.
+		castsStill: options.castsStill ?? true,
+		// The contact shadows' march takes a flat card for a solid wall, as it takes a leaf card,
+		// so the card takes the shadow map's shadows alone.
+		contactShadows: false,
 	});
 	const batch = ctx.scene.createInstances(ctx.geometry.fromArrays(QUAD), count, {
 		material,
 		values: true,
+		...(options.layers !== undefined && { layers: options.layers }),
+		...(options.castShadows === true && { castShadows: true }),
+		...(options.receiveShadows === true && { receiveShadows: true }),
 	});
 	batch.positions.set(positions);
 	const values = batch.values as Float32Array;
@@ -174,5 +223,11 @@ export function createImpostors(ctx: ImpostorContext, options: ImpostorOptions):
 		values[i * 4] = options.turn?.[i] ?? 0;
 	}
 	batch.markDirty();
-	return new ImpostorBatch(batch);
+	const cellValues = (drawn: 1 | 3): readonly [number, number, number, number] => [
+		atlas.columns,
+		atlas.rows,
+		drawn === 1 ? 1 : 0,
+		depth,
+	];
+	return new ImpostorBatch(batch, (drawn) => material.setUniform('cells', cellValues(drawn)));
 }
