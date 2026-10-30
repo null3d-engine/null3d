@@ -50,7 +50,8 @@ struct Uniforms {
     /// The plant's height in meters, which its trunk's bend follows.
     height: f32,
     /// How much of a leaf's diffuse light passes through it, from its species' record. The name
-    /// avoids the standard value `transmission`, which a custom uniform may not take.
+    /// avoids the standard value `transmission`: a custom uniform of that name is refused with
+    /// E1216, because `set` would not know which value it names.
     throughLeaf: f32,
     /// The distance from the camera out to which the plant sways, in meters: 0 for every distance.
     swayDistance: f32,
