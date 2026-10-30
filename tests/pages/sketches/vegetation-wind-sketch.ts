@@ -58,7 +58,10 @@ export default defineSketch((ctx) => {
 
 	const camera = scene.createPerspectiveCamera({
 		// A long lens keeps the far cascades small across the light, so the near plants that sway
-		// stand outside their boxes and those cascades keep the layers they hold.
+		// stand outside their boxes and those cascades keep the layers they hold. A wide lens makes
+		// each far cascade's box span the whole view across the light: every near plant that sways
+		// then touches every far cascade, all of them redraw, and the two runs of the shadow count
+		// draw the same number. This scene must separate the near plants from the box it measures.
 		fov: 20,
 		near: 0.1,
 		far: 600,
