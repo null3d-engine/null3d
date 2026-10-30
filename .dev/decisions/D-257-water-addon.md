@@ -294,8 +294,14 @@ vertex's world place is the origin with its place in the mesh.
 
 ## Consequences
 
-- The add-on's largest material set is 55.9 KB after Brotli, within D-14's first-use shader budget
-  of 56 KB, which leaves 0.1 KB.
+- The add-on's built material sets are over D-14's first-use shader budget of 56 KB: the water's
+  reach 79.3 KB after Brotli and the ocean's 74.8 KB. The junction's own measurement gave 55.9 KB
+  for the water's largest build. The engine's material template has grown since, and each material
+  carries it; the ocean's surface function adds its own code. A set of the skinning bit stays under
+  56 KB, at 52.4 to 55.3 KB. `bun packages/cli/bin/null3d.js check-addon packages/water
+  --skip-browser` warns on each over-budget file, and passes the public-API, interface and shader
+  gates. Only the owner raises a budget; a smaller engine template or a leaner ocean surface is
+  where a fix would land.
 - A custom effect that draws its own pass keeps no pieces in its module, because they never reach a
   host. The underwater effect's pieces would be 93 KB of the add-on's entry. D-225 gives the rule.
 - The Creek's pictures draw its own water, and the add-on's demo draws the add-on. A change to one
