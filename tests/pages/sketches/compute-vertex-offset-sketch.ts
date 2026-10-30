@@ -5,7 +5,9 @@
 //
 // The image test holds at the time the pass steps from its old value to its held one, so a pass
 // that ran after the shadow pass would leave the box's shadow a metre behind it. ?case=motion
-// draws the motion debug view of a plane that the pass moves at a steady speed.
+// draws the motion debug view of a plane that the pass moves at a steady speed. ?case=pick asks a
+// live engine for the moved box and for the place where the box was authored: only a pick build
+// that samples the pass's texture finds the box at its moved place.
 import { defineFeature, defineSketch } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -77,71 +79,109 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 }
 `;
 
-export default defineSketch(({ scene, materials, geometry, textures, render, debug }) => {
-	const field = render.addPass({
-		kind: 'compute',
-		description: defineFeature({
-			name: 'offsetRows',
-			frame: 'background',
+export default defineSketch(
+	({ scene, materials, geometry, textures, render, debug, page, time }) => {
+		const field = render.addPass({
 			kind: 'compute',
-			outputs: { offsetRows: { default: 'black' } },
-		}),
-		wgsl: FIELD,
-		size: [2, 2],
-		workgroupSize: [2, 2, 1],
-		values: [STEP, CASE === 'motion' ? 0 : 1, HOLD, HELD],
-		fallback: { wgsl: FIELD_FRAGMENTS },
-	});
-	const moving = materials.shader({
-		wgsl: OFFSET,
-		textures: { offsets: textures.fromPass(field) },
-		color: '#d06a3a',
-		doubleSided: true,
-	});
-
-	if (CASE === 'motion') {
-		debug.view('motion');
-		scene.setBackground('#202020');
-		scene.setActiveCamera(
-			scene.createOrthographicCamera({
-				height: 9,
-				near: 0.1,
-				far: 50,
-				position: [0, 0, 10],
-				target: [0, 0, 0],
+			description: defineFeature({
+				name: 'offsetRows',
+				frame: 'background',
+				kind: 'compute',
+				outputs: { offsetRows: { default: 'black' } },
 			}),
-		);
-		// A still wall behind, which shows the camera's motion as none.
-		scene.createMesh({
-			mesh: geometry.box({ width: 40, height: 20, depth: 0.1 }),
-			material: materials.standard({ color: '#808080' }),
-			position: [0, 0, -5],
+			wgsl: FIELD,
+			size: [2, 2],
+			workgroupSize: [2, 2, 1],
+			values: [STEP, CASE === 'motion' ? 0 : 1, HOLD, HELD],
+			fallback: { wgsl: FIELD_FRAGMENTS },
 		});
-		scene.createMesh({ mesh: geometry.plane({ width: 2, height: 2 }), material: moving });
-		return {};
-	}
+		const moving = materials.shader({
+			wgsl: OFFSET,
+			textures: { offsets: textures.fromPass(field) },
+			color: '#d06a3a',
+			doubleSided: true,
+		});
 
-	scene.setBackground('#161b22');
-	scene.setActiveCamera(
-		scene.createPerspectiveCamera({
+		if (CASE === 'motion') {
+			debug.view('motion');
+			scene.setBackground('#202020');
+			scene.setActiveCamera(
+				scene.createOrthographicCamera({
+					height: 9,
+					near: 0.1,
+					far: 50,
+					position: [0, 0, 10],
+					target: [0, 0, 0],
+				}),
+			);
+			// A still wall behind, which shows the camera's motion as none.
+			scene.createMesh({
+				mesh: geometry.box({ width: 40, height: 20, depth: 0.1 }),
+				material: materials.standard({ color: '#808080' }),
+				position: [0, 0, -5],
+			});
+			scene.createMesh({ mesh: geometry.plane({ width: 2, height: 2 }), material: moving });
+			return {};
+		}
+
+		scene.setBackground('#161b22');
+		const camera = scene.createPerspectiveCamera({
 			fov: 45,
 			position: [0, 3.5, 8],
 			target: [0, 1, 0],
-		}),
-	);
-	scene.createDirectionalLight({ direction: [-1, -1, -0.2], intensity: 3, castShadows: true });
-	scene.createAmbientLight({ intensity: 0.4 });
-	scene.createMesh({
-		mesh: geometry.box({ width: 24, height: 0.2, depth: 24 }),
-		material: materials.standard({ color: '#8d949e' }),
-		position: [0, -0.1, 0],
-		receiveShadows: true,
-	});
-	scene.createMesh({
-		mesh: geometry.box({ width: 1.5, height: 2, depth: 1.5 }),
-		material: moving,
-		position: [0, 1, 0],
-		castShadows: true,
-	});
-	return {};
-});
+		});
+		scene.setActiveCamera(camera);
+		scene.createDirectionalLight({ direction: [-1, -1, -0.2], intensity: 3, castShadows: true });
+		scene.createAmbientLight({ intensity: 0.4 });
+		scene.createMesh({
+			mesh: geometry.box({ width: 24, height: 0.2, depth: 24 }),
+			material: materials.standard({ color: '#8d949e' }),
+			position: [0, -0.1, 0],
+			receiveShadows: true,
+		});
+		const box = scene.createMesh({
+			mesh: geometry.box({ width: 1.5, height: 2, depth: 1.5 }),
+			material: moving,
+			position: [0, 1, 0],
+			castShadows: true,
+		});
+		if (CASE !== 'pick') return {};
+
+		// The box moves one metre along x when the pass steps its value. A pick at the moved place must
+		// find the box, and a pick at the place where the box was authored must not: a raycast tests the
+		// mesh's own triangles, which stay where the box was authored.
+		const screen = [0, 0, 0];
+		let asked = false;
+		return {
+			onUpdate() {
+				// The first frames build the picking pipelines, and the pass that moves the box needs a
+				// frame of its own before a pick can read it.
+				if (asked || time.now < HOLD + 0.1) return;
+				asked = true;
+				camera.worldToScreen([1, 1, 0], screen);
+				const moved = scene.pick(screen[0] as number, screen[1] as number);
+				camera.worldToScreen([0, 1, 0], screen);
+				const authored = scene.pick(screen[0] as number, screen[1] as number);
+				void Promise.all([moved, authored]).then(
+					([atMoved, atAuthored]) => {
+						const found = atMoved?.object === box;
+						const stale = atAuthored?.object === box;
+						page.post('picked', {
+							case: 'pick',
+							moved: found,
+							authored: stale,
+							...(found && !stale
+								? {}
+								: {
+										error: `the pick found the box at its moved place: ${found}, at its authored place: ${stale}`,
+									}),
+						});
+					},
+					(error: unknown) => {
+						page.post('picked', { case: 'pick', error: String(error) });
+					},
+				);
+			},
+		};
+	},
+);
