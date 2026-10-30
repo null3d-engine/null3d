@@ -2926,6 +2926,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		// The cards cast shadows that sway with them, and the software GPU takes its time with them.
 		timeoutSeconds: 180,
 	},
+	// The page's look witness: the same cards held at 1.2 s with the body stopped, so they stand
+	// turned along the solved field. It replaces the wake's six pictures, which said nothing without
+	// a control; the wake is measured against its own control instead.
+	{
+		name: 'wind-page',
+		sketch: 'packages/wind/page/sketch.ts?camera=still&still=1',
+		hold: 1.2,
+		size: [480, 270],
+		timeoutSeconds: 180,
+	},
 	{
 		name: 'wind-cards-later',
 		sketch: 'packages/wind/page/sketch.ts?camera=still',

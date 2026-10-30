@@ -268,11 +268,11 @@ Each cycle pulls the air toward an analytic field of place and time. It injects 
 
 The air starts when a page makes the wind, so a field made late in a sketch runs no air from before it.
 
-A held page steps its sketch's updates up to the held time, and the pass runs with each step, so a held picture carries the air that the hold time built. Two held pages at two times therefore differ by the air that moved between them.
+A held page steps its sketch's updates up to the held time. The pass runs with each step, so a held picture carries the air that the hold built. Two held pages at two times therefore differ by the air that moved between them.
 
 Beyond its box the field carries on. The box sets the detail, not the field's extent. So a plant past the box reads the air at its own place.
 
-The far field is the analytic field, at the height that the grid samples at, so the two meet at the box's edge.
+The far field is the analytic field, at the height that the grid samples at. The box's edge takes that air exactly, so a reader just outside and just inside agree there. A cell beside the edge carries advected air, which lags a push. Beside a push, the edge and its neighbour differ by however far the push has travelled. That seam is a limit of this stage.
 
 The field cannot yet take a preset's settings without a reseed. A frame runs every cycle that the sketch time owes, so the air keeps the sketch's pace however slow the frame is. One frame runs at most ten seconds of air, and a longer stall in a page skips the air that it missed.
 

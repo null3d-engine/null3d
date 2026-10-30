@@ -101,12 +101,12 @@ divergence, and the projection removes it.
   those tests. The allocation figure and `check-addon`'s page, cost and allocation gates were barred
   from stage one. Stage two's full run and `WIND_BUDGETS` give them, as "What the checks found when
   they first ran" states.
-- **`sample` and the allocation gate:** the gate reads the add-on's page, and that page never calls
+- **`sample` and the allocation gate.** The gate reads the add-on's page. That page never calls
   `sample`, so the gate cannot see it. The call belongs in the benchmark harness as a switch when
   the gate first runs. It does not belong in the picture page, which would move every picture for a
   measure it does not need. A source test holds the functions that a frame calls to the forms that
   allocate: an object literal, an array literal, a function expression, a for-of and a `new`.
-- **The add-on's own shader data counts against the shader budget:** the WebGL2 fallback effect's
+- **The add-on's own shader data counts against the shader budget.** The WebGL2 fallback effect's
   compiled data is most of the add-on's entry. At head `8d66b64ca`, the command in
   `docs/guides/add-ons.md`, `bunx @null3d/cli check-addon packages/wind --skip-browser`, reports the
   entry at 89.5 KB raw, and 13.8 KB with that import removed. Water's entry is 109.2 KB at that
@@ -131,8 +131,8 @@ pressure, and the projection. Its stage rides in the state's fourth number. A fr
 the runs the sketch time owes, and the engine swaps the states between them.
 
 The step is fixed at a sixtieth of a second. A frame runs the cycles that the sketch time owes,
-counted from the start of that time. A held page steps its sketch's updates up to the held time, and the pass
-runs with each step, so a held picture carries the air that the hold built. A page held at nothing
+counted from the start of that time. A held page steps its sketch's updates up to the held time. The pass runs
+with each step, so a held picture carries the air that the hold built. A page held at nothing
 draws one cycle from the analytic field, and a page held later carries whatever moved since.
 
 Each cycle pulls the air toward the analytic field. That field is the base wind, the swirl and the
@@ -176,10 +176,9 @@ two above, which waits on M3-V13; V13 landed and the add-on builds on it.
   itself, so it made an object of each. The same 32 bits read as signed are the same hash. The top
   24 bits that the noise reads come out the same, so each step wraps with `| 0`. A test holds 2,000
   hashes inside the range. The reference test still matches the engine's integer hash.
-- **The sample path boxes fractions.** `bun run bench:allocation --wind` names six of the add-on's
-  places, and each is the browser boxing a value rather than the add-on making an object. Every one
-  computes, receives or hands on numbers, and the arrays they write belong to their caller and are
-  made once. The run on the production pages measures, at the least sample and at the most:
+- **The sample path boxes fractions.** The run names six places of the add-on's. Each is the
+  browser boxing a value, not the add-on making an object. Every one computes, receives or hands on
+  numbers, and the arrays they write belong to their caller and are made once. The run on the production pages measures, at the least sample and at the most:
 
   | place | bytes a frame | most |
   | --- | --- | --- |
@@ -191,9 +190,8 @@ two above, which waits on M3-V13; V13 landed and the add-on builds on it.
   | `owedSteps src/wind.ts` | 4.0 | 6.2 |
 
   The sketch worker reads 752.7 bytes a frame in all. The engine's own frame path is 544 of them.
-  The engine answers this boxing the same way at its own places. `BUDGETS` in
-  `bench/allocation.ts` gives S1's camera step 48 bytes a frame, and `SETTER_BUDGETS` gives the
-  setters their places. The reason is the same: Chrome boxes a fraction that a function does not
+  The engine answers this boxing the same way at its own places. Its `BUDGETS` table gives S1's
+  camera step 48 bytes a frame. The setters' places come from `SETTER_BUDGETS`. The reason is the same: Chrome boxes a fraction that a function does not
   inline. `WIND_BUDGETS` holds the six above with that reason, and the run passes. The docs do not
   promise that a call allocates nothing without that caveat.
 
@@ -205,8 +203,8 @@ two above, which waits on M3-V13; V13 landed and the add-on builds on it.
 
 ## What the checks found when they first ran
 
-The checks that measure the field found three faults in the add-on's own page and stepping, and a
-fourth in the check that judges the wake.
+The checks that measure the field found three faults in the add-on's own page and stepping. A
+fourth sat in the check that judges the wake.
 
 - **A held page drew an empty grid.** The warm-up set the pass's runs when the page made the field,
   and the page's updates then set them again before any frame drew. A held page draws one frame at
@@ -223,10 +221,25 @@ fourth in the check that judges the wake.
   so the lookup missed and the engine asked for a module named `undefined`. The page names the
   module literally now, and sets the switches on the address afterwards.
 - **The wake check judged the wrong thing.** At eight levels of change a one-pixel lean counts as
-  nothing, so the pushes read as absent. The check now holds two pages at the same time, the one
-  that pushes the air and the one that turns `?push=0`, and compares them at one level. The pair
+  nothing, so the pushes read as absent. The check now holds two pages at the same time: the one
+  that pushes the air, and the one that turns `?push=0`. It compares them at one level. The pair
   measures 0.07940, 0.05505 and 0.07452 of the channels changed on this Mac's card, and 0.07955,
-  0.05506 and 0.07448 on its software GPU. With the pushes off on both pages it measures 0.00000,
-  so the difference is the trail and nothing else, and a held pair is the same on every run.
+  0.05506 and 0.07448 on its software GPU. With the pushes off on both pages it measures 0.00000.
+  The difference is the trail, and a held pair is the same on every run.
   An earlier live pair read 0.002 on the software WebGL2 path. That was the live run's own
   frame-count noise: the held pair reads 0.07448 there, so the WebGL2 push path is sound.
+
+## Rulings on this stage
+
+- **The field's per-frame loop is allowed.** `sample` calls `analyticVelocity`, which walks a ring of
+  four fixed slots. Hard rule 42 names loops over objects, instances, vertices, pixels and draw-list
+  commands. A fixed four-slot ring is none of those. Its work is constant, and the cost gate measures
+  it within budget at all four presets. Moving it to a job worker for tidiness alone would add a task
+  hop that this loop has not earned. The ruling is revisited if the ring stops being a fixed four.
+- **The box's edge meets the analytic field; the cells beside it do not.** Each edge cell is set to
+  the analytic air. A cell beside the edge carries advected air, which lags a push.
+  Beside a push, the two differ by however far the push has travelled in that air. That is a
+  limit of this stage. A blend needs its own measurement, and it is not in this branch.
+- **A stall skips the air that it missed.** A frame that owes more cycles than one frame runs sets the
+  solved time to now. Crediting only the cycles that ran would leave a debt that every later frame
+  pays, which is the fault the fixed step exists to avoid.
