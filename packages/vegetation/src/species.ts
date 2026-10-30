@@ -89,9 +89,9 @@ export interface Leaf {
 	readonly kind: LeafKind;
 	/** Cards on one terminal branch. */
 	readonly cards: number;
-	/** Width of one card, in meters. */
+	/** Half the width of one card, in meters: a card draws two of these across. */
 	readonly width: number;
-	/** Height of one card, in meters. */
+	/** Half the height of one card, in meters: a card draws two of these up. */
 	readonly height: number;
 	/** How many leaves one card stands for, for tint and light through the crown. */
 	readonly perCard: number;

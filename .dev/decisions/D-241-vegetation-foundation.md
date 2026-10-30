@@ -293,10 +293,10 @@ settles four questions that the record leaves to the build.
   under it.
 - **A conifer's needle card stands for a spray of needles.** A card 0.05 m wide and 0.3 m tall is
   less than half a pixel wide at the picture's framing. The tree then reads as a bare trunk with a
-  few specks. The card is 0.35 m wide and 0.7 m tall, with 24 to a twig. The branch record is the
-  same for both sizes, so the crown keeps its taper. The wide cards bring the conifer's asset to
-  627 KB, against 498 KB with the narrow ones. The needle atlas of M3-V5 draws the needles inside
-  the card, and a card too small for its spray could not carry them.
+  few specks. The card is 0.9 m wide and 1.8 m tall, with 20 to a twig, and the needle cell paints
+  72 needles inside it. The branch record is the same for both sizes, so the crown keeps its taper.
+  The wide cards bring the conifer's asset to 627 KB, against 498 KB with the narrow ones, and the
+  denser species' share of it is in the look section of this record.
 - **The asset is one merged mesh for each part at each level, not a set of shared twig modules.**
   The shared-twig idea from the research would need one draw for each module. A scene's 256 batches
   cannot hold the tree variants beside the grass and the impostor cards. The merged parts keep the
@@ -557,8 +557,11 @@ painter should check it on a repeated card as well as on one cell, since one cel
 A unit test holds each cluster cell's cover between 0.35 and 0.8 of its square, which a painter of
 too-wide leaves cannot reach.
 
-**What a cell holds.** A cluster cell carries 20 to 24 leaves, so a card presents leaves over
-most of its square. A family sets each leaf's outline. That outline has a width profile along
+**What a cell holds.** A cluster cell carries 60 to 64 leaves, so a card presents many small leaves
+over most of its square, and the card's outline breaks into leaf edges rather than one smooth lobe.
+The owner's first look at the plants asked for that, and a count is what buys it: the leaves are
+smaller than the card they sit on, so a card of 0.8 meters shows leaves of about 0.2 meters. A
+family sets each leaf's outline. That outline has a width profile along
 the midrib and teeth along the edges. A family may also give the lobes of an oak or a hosta, and the
 veins. Each leaf of a card then draws its own numbers from its seed. These cover its profile and
 aspect, and its tooth count and depth. They also cover its lobe depth, vein count and strength, a bow
@@ -570,16 +573,22 @@ frond of lobed pinnae. The seventh is a clump of eleven grass blades. The eighth
 leaf, with a smaller one behind it.
 
 **The color map.** A leaf runs from darker at its base to lighter at its tip. A slow blotch mottles
-its blade, its veins take a line of shade or light, and its rim darkens by half. That rim lets two
-overlapping leaves read apart, as a painted card's dark edges do. A leaf also darkens where another
-leaf lies over it, as a pile of leaves shades itself. The channels are scaled so that the brightest
+its blade, its veins take a line of shade or light, and its rim darkens a little over its last
+seventh. That rim lets two overlapping leaves read apart, as a painted card's dark edges do. A
+deeper rim was tried first, at more than half, and it turned every edge of a distant crown into a
+dotted black fringe, because at that size a leaf is a few pixels and its rim is most of them. A leaf
+also darkens where another leaf lies over it, as a pile of leaves shades itself. The channels are scaled so that the brightest
 one stays under white. A warm leaf then shows its hue instead of clipping to a pale pink or blue.
-Across a cell, the green channel spreads with a standard deviation of 22 to 26 of 255. The darkest
-leaf lies near 128.
+Across a cell, the green channel spreads with a standard deviation of 21 to 25 of 255. The darkest
+leaf lies near 150, since the shallower rim no longer carries a leaf's cover down to 128.
 
 **What takes no leaf.** A texel that no leaf covers takes its cell's mean leaf color and mean height.
 Mip levels average color without weighting by alpha. A background of its own would therefore pull a
 distant crown's hue toward it. A height of its own would bend the normal at every silhouette.
+
+**A cell fades at its edge.** A leaf that grows past its cell is cut where the cell ends, and a cut
+of that kind is a straight line that a crown shows as a seam along the card's border. The cell's
+coverage falls to nothing over its last two per cent, so a cut leaf tapers instead.
 
 **A card's fill is what closes a crown.** At a fill of 0.34 of a card's square, the
 `vegetation-versus-creek` picture shows cards of leaf with sky between them. A crown then reads as
@@ -591,9 +600,9 @@ a fill of 0.46, with 20 to 24 leaves of their own size in each cell, the same cr
 card's rim make each card read as one huge leaf, which is the same fault at another scale. So the
 fill comes from more leaves, never from longer ones.
 
-**The coverage property holds.** A cluster cell covers 0.45 to 0.48 of its square. The coverage test
-reads 0.490, 0.496 and 0.498 of a card's box at 12, 24 and 48 meters, on all three GPU paths. A card
-therefore keeps its share as it shrinks.
+**The coverage property holds.** A cluster cell covers 0.44 to 0.45 of its square, and the conifer's
+needle cell 0.37. The coverage test reads the share of a card's box at 12, 24 and 48 meters, on all
+three GPU paths, and a card keeps its share as it shrinks.
 
 **The bake's time.** `paintLeaf` takes about 230 ms, and `paintBark` about 160 ms, on an Apple M5 Max
 laptop under load. A check on an Apple M3 Max reads 244 ms for the leaves and 144 ms for the bark,
@@ -601,6 +610,14 @@ laptop under load. A check on an Apple M3 Max reads 244 ms for the leaves and 14
 stays inside the one-second line that keeps an atlas across visits. Each leaf rejects a texel outside
 a box around its outline before it works out the outline. That holds down the cost of a cell of many
 leaves. The figures on the iPad Pro 13 and an S24-class phone are owed.
+
+A cell of twice the leaves would otherwise cost twice the paint. It does not, because the spray
+sorts its leaves into 16 by 16 tiles of the cell and a texel tests the leaves of its own tile alone;
+a leaf's box puts it in the tiles it can reach, and a leaf outside one of them could not be nearer
+than the one already found. With 60 to 64 leaves a cluster cell, and 72 needles the conifer's, the
+M3 Max painted the leaves in 160 to 238 ms over three runs, and the bark in 125 to 133 ms, at a load
+of 30: less than the 244 ms that the 20-to-24-leaf cells took before the tiling, and well inside the
+one-second line.
 
 **What the pictures show.** The `vegetation-atlas` picture's leaf card is a twig of lobed leaves that
 fills its square. The `vegetation-versus-creek` picture shows the generated oak beside Creek's
@@ -621,6 +638,48 @@ texture, and the frame's newest layer takes the row's one spare number. The rese
 normal from the crown's center as a valid crown normal. The second normal itself costs
 no uniform: it is a field of the shader's Surface record, so a material that never names it keeps the
 template's single-normal path.
+
+## The plants' look, after the owner's first review
+
+The owner looked at the demos' plants as M3-V12 moved them to the add-on, and ruled that the species
+looked wrong. A separate reviewer then read the pictures and rejected all three of its tests. Its
+list was the light-shaft frame's light, a crown of many small leaves at varied angles, a conifer that
+tapers to a point, colour kept in the shade, the garden skyline and its foreground plants, no black
+fringe, and bent trunks. The changes below answer that list, and the figures that hold them.
+
+**The boughs attached a tenth of the way up the trunk.** A branch's children start where the
+*child's* level record says, not where the parent's does. The conifer's bough level asked for 0.1, so
+its crown grew from 1.7 meters and its lowest boughs reached the ground. That is what made the light
+shafts demo's wood a dark mass: the crowns filled the frame, so the low sun never reached the air
+between the trunks. The bough level now asks for 0.48 and runs to 1, so the trunk stands bare below
+the crown and the crown carries foliage to its point.
+
+**The conifer is a cone.** Its crown's outline is `conical` with a spread of 0.5, which narrows a
+bough quickly as it climbs, and the boughs now run to the trunk's tip. Its limbs are thick enough to
+carry a tree: the bough, the branchlet and the twig end at 0.03, 0.02 and 0.012 meters, so the trunk
+measures 0.35 meters in radius at its foot, with its flare, rather than reading as a pole. Each
+needle card is 0.9 by 1.8 meters and 20 of them grow along a twig, and the needle cell paints 72
+needles so the card shows a spray rather than a row of teeth. The card's size is what closed the
+crown at the species picture's framing, where a whole tree stands about fifty pixels tall and a card
+of a third that size drew as a wisp: a card's size costs no vertex, and the count does. The crown's
+shade keeps a share of the sky (below), and the trunk's bark color is a pine's pale plate rather
+than near black.
+
+**A crown keeps its shade.** Crown occlusion used to take the ambient light to nothing at the crown's
+axis, and the sun does not reach inside a crown, so the shade side was flat black. The material now
+keeps `CROWN_SHADE`, 0.55, of the ambient at the deepest point and loses it smoothly from the
+surface, so a shaded leaf stays green and the crown shows a fall of tone. The leaves also keep more
+of their own normal in the direct light, `crownBend` at 0.35, so a sunlit crown shows leaves rather
+than one even sheet.
+
+**The trunk bends, and its bark shows plates.** The conifer's trunk curves 12 degrees over its
+length, and the broadleaf's 18, so a trunk leans rather than standing as a pole. A bark plate's tone
+spread wider across the atlas, and the leaf atlas's dark rim fell from more than half to 0.22 over a
+leaf's last seventh.
+
+**What it costs.** The built-in set generates 29.1 MB of arrays against the 30 MB ceiling at High and
+Ultra, with the denser conifer and broadleaf taking the room that the ceiling left. The conifer's
+level 0 takes 4.7 MB of it.
 
 ## Fluid wind is an add-on of its own
 
