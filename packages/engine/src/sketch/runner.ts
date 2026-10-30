@@ -725,7 +725,11 @@ export class SketchRunner {
 	 */
 	async setup(sketch: SketchDefinition): Promise<void> {
 		this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
+		// The setup grows the scene, and a page that stalls here reports the time it spent doing it.
+		this.record.markSetupStart();
+		const growing = performance.now();
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
+		this.record.markSetupDone(performance.now() - growing);
 		const { check } = this.sketch.quality;
 		if (check && !this.holdsFrames) await this.checkPreset();
 		// Warm-ups that the setup started without waiting for them publish their frames first, so
