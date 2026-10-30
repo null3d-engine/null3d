@@ -508,7 +508,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Light shafts and lit fog',
 		scene: 'Pine wood at sunset',
 		summary:
-			"A path through a pine wood in haze. The volumetric fog takes the light of the low sun between the trunks, so rays fall through the gaps and the trunks' shadows cut dark lanes. At dusk the lanterns light up, and each casts a glowing cone into the fog.",
+			"A path through a pine wood in haze, its conifers grown by the vegetation add-on and swaying in the wind add-on's field. The volumetric fog takes the light of the low sun between the trunks, so rays fall through the gaps and the trunks' shadows cut dark lanes. At dusk the lanterns light up, and each casts a glowing cone into the fog.",
 		hold: 2,
 		timeoutSeconds: 60,
 	},
