@@ -95,7 +95,7 @@ const NOTES: Readonly<Record<string, string>> = {
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-E1':
-		"held by its own rule-42 bullet: the engine can now write a frame's birth records in Rust from a parameter block, which is built and proved, but the add-on still fills that block with one loop row per birth on the sketch thread, so the per-birth loop the bullet names is still there. Where that loop's cost goes is M3-E2's question, and until it is answered this task is owed that reach rather than finished",
+		"held by its own rule-42 bullet: the engine can now write a frame's birth records in Rust from a parameter block, which is built and proved, but the add-on still fills that block with one loop row per birth on the sketch thread, so the per-birth loop the bullet names is still there. The bullet stays open until the engine gains a function over the emitter's rate and births, or the plan is amended to put the add-on's own module in its place; either shape needs the per-birth maths to leave the sketch thread, with the emitter's settings passed across",
 	'M3-F4':
 		"unticked by its check at 652fd235b on `feat/m3-f4-lightmap-evidence`: the captured frame is one side of the comparison rather than the comparison itself, D-258 claims more than that frame settles, not every figure has a recorded run. The evidence entry is written now and names what is owed rather than claiming it: the engine-to-viewer comparison does not exist, and the picture's failure without the direction is unrecorded. The same branch's ae46e947d states the viewer-side limit in D-258 lines 78 to 82 instead of closing it, so the owner has not ruled whether an engine-to-viewer comparison is owed",
 	'M3-L4':
