@@ -68,11 +68,12 @@ describe('the milestone branch', () => {
 		expect(pushToMilestone(parsePush(line('refs/heads/work')))).toBeUndefined();
 	});
 
-	it('refuses a helper its push to m3-start, and names the variable for the session that pushes', () => {
+	it('refuses a helper its push to m3-start, names the CI session and points a landing session elsewhere', () => {
 		const message = milestoneRefusal(parsePush(line(MILESTONE_REF)), false);
 		expect(message).toContain(MILESTONE_REF);
 		expect(message).toContain(LANDING_VARIABLE);
-		expect(message).toContain('only the session that checks the landings');
+		expect(message).toContain('only the CI session that gates each landing');
+		expect(message).toContain('A landing session pushes its own range branch');
 	});
 
 	it('allows the same push when the coordinator sets the landing variable', () => {
