@@ -802,7 +802,9 @@ mod tests {
         assert!(texture.size(&mut list, &meshes, true).unwrap());
         let weights = |texture: &mut MorphTexture| {
             let mut arena = UploadArena::default();
-            arena.reset(texture.upload_bound(&meshes));
+            arena
+                .reset(texture.upload_bound(&meshes))
+                .expect("room for the test's uploads");
             let mut list = DrawList::with_capacity(256);
             texture
                 .upload(&mut list, &mut arena, &morphs, None, &meshes)

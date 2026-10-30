@@ -202,3 +202,51 @@ The direct path's instance buffer uses them. So do the blended, decal and redraw
 The storage binding caps the cluster patch table and its indices on every path. Only the cluster pass reads them, and it binds each table whole. The direct path records no cluster pass and binds neither table, so it builds neither and reserves no upload room for them. A direct-path scene whose tree fills more than the binding therefore draws.
 
 Eight tests hold this. One records a frame whose compacted layout passes its binding: `the_direct_path_sizes_its_instance_buffer_past_the_storage_binding` in `crates/null3d-render/tests/gpu_driven.rs`. Another covers both branches of the figure and the sizing within a limit: `a_buffer_that_no_group_binds_grows_to_the_device_s_largest_buffer` in `crates/null3d-render/src/frame.rs`. A third holds the blended rows' buffer at the boundary: `a_sorted_instance_buffer_is_capped_at_the_device_s_largest_buffer` in `crates/null3d-render/src/gpu_driven/transparent.rs`. The fourth holds the line buffer's: `a_line_buffer_is_capped_at_the_largest_buffer_of_its_path` in `crates/null3d-render/src/debug_lines.rs`. The fifth refuses a direct-path layout at the largest buffer: `a_direct_layout_past_the_largest_buffer_is_refused` in `crates/null3d-render/src/gpu_driven/cull.rs`. The sixth holds the cluster tables' cap at their boundary: `a_cluster_table_past_the_binding_is_refused` in `crates/null3d-render/src/gpu_driven/clusters.rs`. The seventh records a direct-path frame whose tree's index table passes the binding, and refuses the same frame on the culled path: `a_direct_path_frame_builds_no_cluster_table` in `crates/null3d-render/tests/gpu_driven.rs`. The eighth is in `packages/engine/src/render/renderer.test.ts`. It ties the figure to the maximum buffer size that the page asks a device for, at the portable binding and at a larger one. A smaller request fails it.
+
+## The frame's uploads follow the engine's memory
+
+The direct path writes each view's visible copies through the frame's upload arena. The arena
+reserves its room once a frame, before any copy. So no copy moves while the list records.
+`GpuDrivenRenderer::upload_bound` gives the most that a frame copies. It counts a copy of the
+casters' layout for each shadow view that draws, and the camera, outlined and scattering layouts'
+copies.
+
+A copy of 2,097,152 rows takes 128 MiB, the portable storage binding. A scene that draws them and
+casts the sun's shadows copies them once for the camera. It copies them again for each cascade
+that draws. The Medium preset allows eight shadow tiles beside the cascades. A bound that counts
+every held row, every cascade and every tile a setting allows reserves 1,727 MiB. The scene copies
+439 MiB, and every preset gives the shared memory 1,024 MiB. Such a bound
+over-reserves every frame, and it reserves for views that no light draws into and rows that the
+page does not draw. The frame counts the views that draw instead. `ShadowFrame::drawn` names the
+cascades and `ShadowTiles::shape` names the tile layers. It counts the sources that can draw too:
+every scene slot, and the active rows of every batch. A row the page holds without drawing uploads
+no copy.
+
+The scene rows and both parities' arenas share the one memory maximum. The arena reserves its room
+with `reserve_len`, a fallible `try_reserve_exact`. A frame that the memory cannot hold returns
+`RecordError::OutOfMemory`, which the engine reports as E1109 with the bytes it needs. An
+infallible reservation aborts the wasm module when the memory cannot grow. The abort reaches the
+page as an `unreachable` trap in `recordFrame`, which it reports as E1405. So a device that
+cannot hold a full load's copies refuses that frame and never traps.
+
+A frame error raised after the frame recorded a command stops the builder. Later frames would draw
+with GPU objects that the dropped commands never made. Every such error halts it, not only this
+one. The builder records again from the start once the page changes the scene. A page that lowers a
+load the engine refused keeps drawing, with no restart. The frame that failed names the
+reason, and the next frame starts the GPU's objects again.
+
+A rebuilt frame creates every object it draws with. `reset_gpu` forgets every object's bookkeeping,
+so the frame records a creation for each one before any draw. The thread that draws replaces an
+object whose id already exists. So the rebuilt list cannot draw with an object that the dropped
+commands never made. The test `a_frame_that_fails_part_way_draws_nothing_and_a_changed_scene_records_again`
+in `crates/null3d-render/tests/capacities.rs` holds both halves: the failed frame publishes no
+command, and a frame whose scene changed records again and replays its whole list.
+
+Four tests hold this in `crates/null3d-render/tests/instance_limit_trap.rs`, with a process
+allocator that refuses a block past the shared maximum. One records a full load that draws none of
+its rows. One records a frame after the page lowers a load that reported E1109.
+`a_first_frame_that_cannot_fit_records_again_once_the_load_drops` reports E1109 on the first frame.
+It records the next one, then replays the recovered list through the mock backend. One records a
+large load with only the shadow views that draw counted. The unit test
+`an_arena_that_cannot_hold_a_frame_reports_the_missing_bytes` holds the arena's failure and its
+reuse by a later frame.

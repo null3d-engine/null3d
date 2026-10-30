@@ -2072,7 +2072,10 @@ impl CpuCulledRenderer {
             Opaque::bind_frame(list, ViewId::SUBSURFACE, Some(lit_for(lit, ViewId::CAMERA)))?;
         }
         let rebuilt = self.layout.built_in == input.frame;
-        arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
+        let bound = self.upload_bound() + LinesPass::upload_bytes(&input.lines);
+        arena
+            .reset(bound)
+            .map_err(|_| crate::frame::uploads_out_of_memory(bound))?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::MATERIALS, MATERIAL_TEXELS)?;
             ao::upload_blank(list, arena, ids::BLANK_AO)?;
@@ -3198,10 +3201,17 @@ impl FrameBuilder for CpuCulledRenderer {
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
         self.settings.set_still(self.lists.still());
-        let (mut list, mut arena) = self.lists.take(input.frame)?;
+        let active = crate::frame::active_sources(input);
+        let mut took = self.lists.take(input.frame);
+        if took.is_err() && self.lists.can_retry(active, input.structure_changed) {
+            self.reset_gpu();
+            took = self.lists.take(input.frame);
+        }
+        let (mut list, mut arena) = took?;
         let result = self.record_into(input, &mut list, &mut arena);
         let marks = StillMarks::of(input, &self.settings, &self.graph, &self.pipelines);
-        self.lists.restore(input.frame, list, arena, marks, result)
+        self.lists
+            .restore(input.frame, list, arena, marks, result, active)
     }
 
     fn still(&self) -> crate::still::Still {
@@ -3504,7 +3514,7 @@ mod patch_tests {
         );
         let mut list = DrawList::with_capacity(64);
         let mut arena = UploadArena::default();
-        arena.reset(1 << 16);
+        arena.reset(1 << 16).expect("room for the test's uploads");
         let mut sizes = Vec::new();
         upload_patches(
             &mut sizes, &patches, &meshes, true, &mut list, &mut arena, true,

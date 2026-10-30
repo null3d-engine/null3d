@@ -11,7 +11,7 @@
 use std::collections::TryReserveError;
 use std::ops::Range;
 
-use null3d_core::alloc::reserve_keeping;
+use null3d_core::alloc::{reserve_keeping, reserve_len};
 use null3d_core::animation::Animations;
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::culling::{CULL_CHUNK, CullRun, Frustum, ROW_CELLS};
@@ -691,18 +691,19 @@ pub(crate) struct UploadArena {
 }
 
 impl UploadArena {
-    /// Empties the arena and makes room for `total` bytes. The list of the frame that last used
-    /// the arena has been replayed, so its copies may move.
-    pub(crate) fn reset(&mut self, total: usize) {
+    /// Empties the arena and makes room for `total` bytes, or fails when memory cannot grow for
+    /// them. The list of the frame that last used the arena has been replayed, so its copies may
+    /// move.
+    pub(crate) fn reset(&mut self, total: usize) -> Result<(), TryReserveError> {
         self.high_water = self.high_water.max(self.bytes.len());
         self.kept.clear();
         self.bytes.clear();
         self.volatile.clear();
-        self.bytes.reserve_exact(total);
+        reserve_len(&mut self.bytes, total)?;
         // Each view's uniform carries the frame's volatile ranges, the clock and a still view's
         // jitter, so the list holds at most two for each view id: reserving them here keeps a
         // frame from growing the list while it records.
-        self.volatile.reserve_exact(2 * crate::view::MAX_VIEW_IDS);
+        reserve_len(&mut self.volatile, 2 * crate::view::MAX_VIEW_IDS)
     }
 
     /// Makes room for `total` bytes ahead of the frame that needs them, or fails when memory
@@ -824,6 +825,8 @@ pub(crate) struct ParityLists {
     still: crate::still::Still,
     /// The error of a frame that failed after it recorded commands.
     halted: Option<RecordError>,
+    /// The sources that could draw the frame that halted the builder.
+    halted_sources: u32,
 }
 
 impl ParityLists {
@@ -838,6 +841,7 @@ impl ParityLists {
             snapshots: Default::default(),
             still: crate::still::Still::default(),
             halted: None,
+            halted_sources: 0,
         }
     }
 
@@ -892,6 +896,8 @@ impl ParityLists {
     /// ago outside its marked parts: the arena's volatile bytes and the list's marked words. The
     /// still count then grows, or falls to zero. A frame that changed while it blended a still view
     /// gets the whole weight, so it shows as it is drawn rather than mixed into the old history.
+    /// `active` is the sources that could draw the frame, which a later frame compares to know
+    /// whether the page lowered the load that failed.
     pub(crate) fn restore(
         &mut self,
         frame: u32,
@@ -899,6 +905,7 @@ impl ParityLists {
         mut arena: UploadArena,
         marks: StillMarks<'_>,
         result: Result<bool, RecordError>,
+        active: u32,
     ) -> Result<bool, RecordError> {
         let parity = (frame & 1) as usize;
         if result.is_ok() {
@@ -927,6 +934,7 @@ impl ParityLists {
         if let Err(error) = result {
             if !list.is_empty() {
                 self.halted = Some(error);
+                self.halted_sources = active;
             }
             list.clear();
         }
@@ -938,6 +946,13 @@ impl ParityLists {
     /// Lets frames record again on a new GPU device, which the builder fills from the start.
     pub(crate) fn reset_gpu(&mut self) {
         self.halted = None;
+    }
+
+    /// True when the builder halted and `active` names a different load than the frame that
+    /// halted it, or the scene changed. The caller then starts the GPU's objects again and
+    /// records the frame, so a page that lowers a load the engine refused keeps drawing.
+    pub(crate) fn can_retry(&self, active: u32, changed: bool) -> bool {
+        self.halted.is_some() && (changed || self.halted_sources != active)
     }
 }
 
@@ -4434,6 +4449,24 @@ pub fn grown_size_within(needed: u32, limit: u32) -> Result<u32, RecordError> {
     grown_size(needed, limit).ok_or(RecordError::BufferFull { bytes: limit })
 }
 
+/// The sources that can draw a frame: every scene slot, and the active rows of every batch. A row
+/// the page holds without drawing uploads no copy and takes no upload room.
+pub(crate) fn active_sources(input: &FrameInput<'_>) -> u32 {
+    let parity = input.parity();
+    let rows = input.batches.iter().fold(0u32, |total, (_, batch)| {
+        total.saturating_add(batch.frame_active_count(parity))
+    });
+    (input.scene.capacity() + 1).saturating_add(rows)
+}
+
+/// The error of a frame whose upload arena the engine's memory could not hold, naming the bytes
+/// that the frame needs.
+pub(crate) fn uploads_out_of_memory(bytes: usize) -> RecordError {
+    RecordError::OutOfMemory {
+        bytes: u32::try_from(bytes).unwrap_or(u32::MAX),
+    }
+}
+
 /// Encodes a linear color channel as sRGB.
 pub fn linear_to_srgb(c: f32) -> f32 {
     if c <= 0.003_130_8 {
@@ -4450,17 +4483,28 @@ mod tests {
     #[test]
     fn the_upload_arenas_register_their_room_and_the_most_a_frame_filled() {
         let mut arena = UploadArena::default();
-        arena.reset(1024);
+        arena.reset(1024).expect("room for the test's uploads");
         arena.push(&[7u8; 300]).expect("room for the first frame");
         let first = arena.memory_use();
         assert!(first.reserved >= 1024, "{} bytes reserved", first.reserved);
         assert_eq!(first.used, 300);
         // The next reset records what the frame before it filled.
-        arena.reset(1024);
+        arena.reset(1024).expect("room for the test's uploads");
         arena.push(&[7u8; 100]).expect("room for the second frame");
         let second = arena.memory_use();
         assert_eq!(second.peak, 300);
         assert_eq!(second.used, 100);
+    }
+
+    /// A frame that asks its arena for more room than the engine's memory holds reports the size
+    /// it needs instead of aborting, so a load the device cannot serve fails with E1109.
+    #[test]
+    fn an_arena_that_cannot_hold_a_frame_reports_the_missing_bytes() {
+        let mut arena = UploadArena::default();
+        assert!(arena.reset(usize::MAX).is_err());
+        // The failure leaves the arena empty, so a later frame of a smaller scene can use it.
+        arena.reset(1024).expect("room for a frame that fits");
+        assert_eq!(arena.push(&[1u8; 16]).expect("room for the bytes").1, 16);
     }
 
     /// A buffer that no bind group reads follows the device's largest buffer: the portable buffer

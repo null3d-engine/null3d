@@ -675,7 +675,9 @@ mod tests {
     fn metered(pass: &mut ExposurePass, meter: Meter) -> Vec<(Op, Vec<u32>)> {
         let mut list = DrawList::with_capacity(512);
         let mut arena = UploadArena::default();
-        arena.reset(ExposurePass::UPLOAD_BYTES);
+        arena
+            .reset(ExposurePass::UPLOAD_BYTES)
+            .expect("room for the test's uploads");
         let mut pipelines = PipelineCache::default();
         pass.request_pipelines(&mut pipelines, meter, 0);
         pass.prepare(
