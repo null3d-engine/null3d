@@ -9,7 +9,16 @@ declare const shader: CompiledMaterial<
 		readonly part: 'f32';
 		readonly tiles: 'f32';
 		readonly tint: 'vec3f';
+		readonly height: 'f32';
+		readonly throughLeaf: 'f32';
+		readonly swayDistance: 'f32';
+		readonly branches: 'f32';
+		readonly windBox: 'f32';
+		readonly windStrength: 'f32';
+		readonly windLayer: 'f32';
+		readonly crownCenter: 'vec3f';
+		readonly crownBend: 'f32';
 	},
-	'barkColor' | 'barkSurface' | 'leafColor' | 'leafSurface'
+	'barkColor' | 'barkSurface' | 'leafColor' | 'leafSurface' | 'pivots' | 'wind'
 >;
 export default shader;

@@ -186,13 +186,21 @@ A surface with `diffuseTransmission` lets the light that reaches its back throug
 // sketch.ts: leaves that glow yellow green against a low sun, and a red lampshade.
 const leaves = materials.standard({
   color: '#3f7a2a', roughness: 0.6, doubleSided: true, alphaMode: 'mask', map: leafTexture,
-  diffuseTransmission: 0.7, diffuseTransmissionColor: '#c8e070',
+  diffuseTransmission: 0.35, diffuseTransmissionColor: '#c8e070',
 });
 const shade = materials.standard({
   color: '#f4e6d0', doubleSided: true,
   diffuseTransmission: 0.5, diffuseTransmissionColor: '#ff9a5c',
 });
 ```
+
+A measured leaf reflects about 7 to 11 per cent of visible light and transmits about 4 to 6 per
+cent of it, and almost all of that comes out diffuse. The share of its diffuse light that passes
+through therefore sits near a third: 0.25 to 0.45. Its gloss is a dielectric's, with a reflectance
+at normal incidence of about 0.03 to 0.04 and a perceptual roughness of 0.35 to 0.6. The
+vegetation add-on's leaf material takes these values from the species record. Petals and paper are
+thinner than leaves and let more through, so the translucency demo keeps its petals at 0.7 and its
+paper lantern at 0.85; the measured range is for leaves.
 
 Give `diffuseTransmission` when you create the material, even as 0, to change it later with `set`. The option picks the shaders that light the back. A material created without it lets no light through to its other side.
 
@@ -816,6 +824,8 @@ const grass = materials.shader({ wgsl: sway, doubleSided: true });
 A batch made with `colors: true` tints each row by its color in every material, as vertex colors do: `defaultSurface` takes it in `input.vertexColor`. [Instances and batching](../concepts/instances.md#per-row-values) shows a whole sketch.
 
 A material with a vertex offset moves its shadows too: its casters draw with the offset, so the shadows of swaying grass sway with it. Such casters draw again in every frame that a shadow map draws, as moving objects do. A material whose offsets follow only the view that draws the object, such as a card that turns toward the camera, declares `castsStill: true`. Its casters then hold the shadow that the light's layer drew until the light turns, and the far shadow cascades stay cached.
+
+An offset that fades out with distance, such as wind, declares `swayDistance`: the distance from the camera out to which the offset moves. The material's WGSL fades its offset to nothing by that distance, and the engine counts a caster of the material as moving only while its bounding sphere reaches within it. A plant past the distance stands still, so a far shadow cascade that only its sway reached keeps the layer it holds. Leave it out for an offset that moves at every distance.
 
 A masked custom material cuts its shadow at its cutoff only when its WGSL declares `fn coverage(input: SurfaceInput) -> f32`. The function returns the opacity of the point, and the engine calls it in the material's shadow caster builds, so a card casts the shape of the object it shows rather than its whole quad. A material that declares neither a coverage function nor a surface alpha casts its mesh's whole shape, whatever its mask. WGSL that declares a vertex offset, a coverage function or the surface's alpha gets the caster builds; a material with none casts through the engine's own depth template. A flat caster draws both faces, or it casts nothing: the shadow pass culls the front faces of single-sided geometry, so a single-sided quad is culled whole. Give a material whose caster is flat geometry `doubleSided: true`. The caster tests the coverage under the material's `alphaCutoff`, so it needs the `mask` alpha mode: a development build refuses a coverage function on a material that is not masked, because its caster would drop no texel and cast the whole shape.
 

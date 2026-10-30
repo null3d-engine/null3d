@@ -43,6 +43,18 @@ describe('the wind data', () => {
 		expect(asset.wind.pivots[4]).toBe(1);
 	});
 
+	test('gives each branch a phase of its own within one turn', () => {
+		const asset = generatePlant(oak, { seed: 8 });
+		const phases = new Set<number>();
+		for (let branch = 0; branch < asset.wind.branches; branch++) {
+			const phase = asset.wind.pivots[branch * WIND_STRIDE + 12] as number;
+			expect(phase).toBeGreaterThanOrEqual(0);
+			expect(phase).toBeLessThan(Math.PI * 2);
+			phases.add(phase);
+		}
+		expect(phases.size).toBe(asset.wind.branches);
+	});
+
 	test('packs a branch index and a stiffness into the vertex colors', () => {
 		for (const id of ['oak', 'conifer', 'shrub', 'fern', 'meadow-grass']) {
 			const species = builtInSpecies(id) as Species;

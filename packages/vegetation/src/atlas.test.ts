@@ -223,4 +223,16 @@ describe('the plant shaders', () => {
 		expect(surface(read('./plant-cards.wgsl'))).toContain(from);
 		expect(surface(read('./plant-cards.wgsl'))).toBe(surface(read('./plant.wgsl')));
 	});
+
+	it('read the wind with one offset in both files', () => {
+		// The card material adds only the level morph to the plant shader, so the branch records, the
+		// turns and the wind offset are copies, and this test holds them equal.
+		const read = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8');
+		const from = '/// One turn,';
+		const to = '/// Moves each vertex by the wind';
+		const shared = (source: string) => source.slice(source.indexOf(from), source.indexOf(to));
+		const plain = shared(read('./plant.wgsl'));
+		expect(plain).toContain('fn wind_offset');
+		expect(shared(read('./plant-cards.wgsl'))).toBe(plain);
+	});
 });
