@@ -1029,6 +1029,7 @@ pub fn typescript() -> String {
             "PARTICLE",
             &[
                 ("RECORD_BYTES", particles::RECORD_BYTES),
+                ("BIRTH_FLOATS", particles::BIRTH_FLOATS as u32),
                 ("PARAM_FLOATS", particles::PARAM_FLOATS as u32),
                 ("FRAME_FLOATS", particles::FRAME_FLOATS as u32),
                 ("MAX_SYSTEMS", particles::MAX_SYSTEMS as u32),

@@ -295,10 +295,11 @@ const NO_UINT32 = new Uint32Array(0);
 /**
  * A particle buffer: a scene object that draws a quad for each live particle record. The
  * particles add-on's emitters write records into it. Write a particle's record once, when it is
- * born, with `write`. The GPU moves it and changes its look as it ages, as the buffer's values
- * say. It stops drawing the particle at the end of its lifetime. Once per frame, write the
- * buffer's time and the records the GPU reads into `frame`, and call `commit`. Every call takes
- * typed arrays and whole numbers, so a frame's calls allocate nothing.
+ * born, with `write`, or write a frame's births in one call with `writeRecords`. The GPU moves it
+ * and changes its look as it ages, as the buffer's values say. It stops drawing the particle at
+ * the end of its lifetime. Once per frame, write the buffer's time and the records the GPU reads
+ * into `frame`, and call `commit`. Every call takes typed arrays and whole numbers, so a frame's
+ * calls allocate nothing.
  *
  * @category api/particles
  */
@@ -308,6 +309,9 @@ export class ParticleBuffer implements ViewHolder {
 	private words!: Uint32Array;
 	private block!: Float32Array;
 	private frameValues!: Float32Array;
+	/** The core's block of births' parameters, and the address it was at. */
+	private birthAddress = 0;
+	private birthView: Float32Array = NO_FLOAT32;
 	/** The records written since the last frame and not yet marked, as a start and an end. */
 	private start = 0;
 	private end = 0;
@@ -339,6 +343,8 @@ export class ParticleBuffer implements ViewHolder {
 		this.words = NO_UINT32;
 		this.block = NO_FLOAT32;
 		this.frameValues = NO_FLOAT32;
+		this.birthView = NO_FLOAT32;
+		this.birthAddress = 0;
 	}
 
 	/** The record and value arrays, made again after the engine's memory grew. */
@@ -353,6 +359,8 @@ export class ParticleBuffer implements ViewHolder {
 		const values = core.glue.particleValues(id);
 		this.block = core.f32(values, C.PARTICLE_PARAM_FLOATS);
 		this.frameValues = core.f32(values + C.PARTICLE_PARAM_FLOATS * 4, C.PARTICLE_FRAME_FLOATS);
+		this.birthView = NO_FLOAT32;
+		this.birthAddress = 0;
 		this.generation = core.generation;
 	}
 
@@ -380,6 +388,46 @@ export class ParticleBuffer implements ViewHolder {
 			this.start = index;
 			this.end = index + 1;
 		}
+	}
+
+	/**
+	 * Writes `count` records from a block of birth parameters, from record `first` on, in one call
+	 * into the core, which packs them and marks the ranges it wrote. The block holds nine numbers
+	 * for each birth, in the order that `write` takes them: the birth place, the birth time, the
+	 * velocity, the lifetime, then the seed. Pass the whole block that the births fill, so the
+	 * core's room for it stays the same from frame to frame.
+	 */
+	writeRecords(block: Float32Array, count: number, first: number): void {
+		if (count <= 0 || block.length < count * C.PARTICLE_BIRTH_FLOATS) return;
+		this.views();
+		// Records that `write` wrote are marked before the core's own range.
+		this.mark();
+		const births = Math.floor(block.length / C.PARTICLE_BIRTH_FLOATS);
+		// The core's room for the block may grow the engine's memory, so the views are made again
+		// from the new buffer before the block is written.
+		const address = this.core.checkGrowth(
+			this.core.glue.particleRecordBlock(births),
+			'writeRecords',
+			'the particle record block',
+		);
+		this.views();
+		if (address !== this.birthAddress || this.birthView.length !== block.length) {
+			this.birthAddress = address;
+			this.birthView = this.core.f32(address, block.length);
+		}
+		this.birthView.set(block);
+		this.core.glue.writeParticleRecords(this.id, count, first);
+	}
+
+	/**
+	 * Takes whole `seconds` off the birth times of records `from` to `to`, which moves the time
+	 * that they count from, and marks them. The GPU takes the shift off the birth times that the
+	 * move has not reached.
+	 */
+	shiftRecords(from: number, to: number, seconds: number): void {
+		if (from >= to) return;
+		this.views();
+		this.core.glue.shiftParticleRecords(this.id, from, to, seconds);
 	}
 
 	/**
