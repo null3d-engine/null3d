@@ -1797,15 +1797,21 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: thirty-two `vec4f`s. The row holds the
+    /// Bytes of one material's row in the material table: thirty-seven `vec4f`s. The row holds the
     /// base values, the transmission's values, the attenuation's, the clear coat's, the sheen's,
     /// the diffuse transmission's, the subsurface scatter's, the iridescence's, the anisotropy's,
-    /// the light map's transform, and the transforms of the maps of the slots from the second up.
-    /// On WebGL2 each row is a row of thirty-two `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 512;
+    /// the light map's transform, the layers of the transmission and thickness maps, and the
+    /// transforms of the maps of the row's slots from the second up. On WebGL2 each row is a row
+    /// of thirty-seven `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 592;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
+    /// The map slots that a material's row keeps a transform and a layer for: the eight of
+    /// [`MAP_SLOTS`], then the transmission and the thickness map. Each of the last two samples
+    /// the texture array of a specular slot at a layer of its own, so it needs a row slot but no
+    /// binding of its own.
+    pub const MAP_ROWS: u32 = MAP_SLOTS + 2;
     /// The units that the standard material's maps share on WebGL2, which gives a shader stage
     /// only 16 texture units: the group's first bindings hold the units' arrays, and the bindings
     /// from [`MAP_SLOTS`] their samplers.
@@ -2886,6 +2892,7 @@ pub fn typescript_constants() -> String {
                 ("MAX_MATERIALS", sizes::MAX_MATERIALS),
                 ("MATERIAL_BYTES", sizes::MATERIAL_BYTES),
                 ("MAP_SLOTS", sizes::MAP_SLOTS),
+                ("MAP_ROWS", sizes::MAP_ROWS),
                 ("SHARED_MAP_UNITS", sizes::SHARED_MAP_UNITS),
                 ("MAX_CELLS", sizes::MAX_CELLS),
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
@@ -3045,10 +3052,11 @@ mod tests {
                 shift(sizes::ROW_VALUES_PER_TEXTURE_ROW)
             ),
             // The texel of a material's row where the maps' own transforms start, one per vec4f:
-            // the last fourteen of the row's texels, two for each of the seven maps.
+            // the last eighteen of the row's texels, two for each of the nine map row slots above
+            // the base color map's.
             format!(
                 "const MATERIAL_MAP_UV_TEXEL: u32 = {}u;",
-                sizes::MATERIAL_BYTES / 16 - 14
+                sizes::MATERIAL_BYTES / 16 - 18
             ),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
             format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
