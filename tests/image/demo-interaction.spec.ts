@@ -62,7 +62,9 @@ const apart = (a: number[], b: number[]) =>
 // longer than the default limit on a slow GPU. The swap test also waits for the engine's first
 // frame, which on a busy software renderer can take minutes past the page's own start, so the limit
 // covers the worst case of every wait in it rather than the common one.
-test.describe.configure({ timeout: 780_000 });
+// Each test opens a demo page of its own, so they run in parallel: as one group they held a shard
+// for as long as all four take, which set the floor under every shard's time.
+test.describe.configure({ mode: 'parallel', timeout: 780_000 });
 
 /** The probe of the first frame at or after the sketch time `time`. */
 async function probeAt(page: Page, time: number): Promise<DemoProbe> {
