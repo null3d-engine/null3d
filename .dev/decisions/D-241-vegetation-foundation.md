@@ -564,11 +564,11 @@ for each tree and crown occlusion.
 
 **The leaf's normals.** M3-V7 lights a leaf's diffuse and ambient light by a normal of its own,
 `s.diffuseNormal`, and keeps the leaf's own normal for its gloss and the light through it. The
-crown's normal is radial from the crown's centre. An ellipsoid normal would bend it by the crown's
+crown's normal is radial from the crown's center. An ellipsoid normal would bend it by the crown's
 shape instead, but it needs two more numbers in the plant material's uniforms. That row holds 26
 numbers with the material's six textures, and the current layout ends at 26 of 26; a repack into six
 four-number groups would fit them at 24. The gain did not pay for the repack, and the research
-report lists a normal from the crown's centre as a valid crown normal. The second normal itself costs
+report lists a normal from the crown's center as a valid crown normal. The second normal itself costs
 no uniform: it is a field of the shader's Surface record, so a material that never names it keeps the
 template's single-normal path.
 
