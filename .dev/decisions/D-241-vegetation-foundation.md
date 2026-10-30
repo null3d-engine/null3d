@@ -665,7 +665,7 @@ of a third that size drew as a wisp: a card's size costs no vertex, and the coun
 shade keeps a share of the sky (below), and the trunk's bark color is a pine's pale plate rather
 than near black.
 
-**The cards are short, and the skyline keeps its skirt.** The pines above the stone garden's wall grow from the garden's own record. Their boughs leave the trunk at a fifth of its height, and the whorls' boughs lengthen toward the foot. The crown tapers to a point, so the part above the wall is a layered spruce skirt. On the Mac at 1280 by 720, that crown widens from 66 pixels at its top to 143 at its base. The built-in record held 81 to 88 throughout. Its top stands six pixels lower, clear of the frame's edge. The light-shafts wood's needle cards are 0.44 by 0.62 meters and 22 to a twig. They were 0.7 by 1 meter and 10 to a twig. The low sun then falls through the crowns as fine dapple, not broad panels. The crown area under 0.18 luminance falls from 34.1 to 24.5 per cent of the upper frame. That wood's sun draws a 1,024-texel map, so a dappled edge blurs over a penumbra instead of reading as the map's cells. Its fog keeps 0.02 density with the volumetric sun at 3, so the ranks of trunks stand apart. The middle band's column means spread from 0.555 to 0.571. A garden pine is 11,657 triangles, against the built-in conifer's 9,620.
+**The cards are short, and the skyline keeps its skirt.** The pines above the stone garden's wall grow from the garden's own record. Their boughs leave the trunk at a fifth of its height, and the whorls' boughs lengthen toward the foot. The crown tapers to a point, so the part above the wall is a layered spruce skirt. On the Mac at 1280 by 720, that crown widens from 66 pixels at its top to 143 at its base. The built-in record held 81 to 88 throughout. Its top stands six pixels lower, clear of the frame's edge. The light-shafts wood's needle cards are 0.44 by 0.62 meters and 22 to a twig. They were 0.7 by 1 meter and 10 to a twig. The low sun then falls through the crowns as fine dapple, not broad panels. The crown area under 0.18 luminance falls from 34.1 to 24.6 per cent of the upper frame. That wood's sun draws a 1,024-texel map, so a dappled edge blurs over a penumbra instead of reading as the map's cells. Its fog keeps 0.02 density with the volumetric sun at 3, so the ranks of trunks stand apart. The middle band's column means spread from 0.555 to 0.572. A garden pine at the demo's seed and variant is 11,657 triangles at level 0, against the built-in conifer's 10,821 at that same seed and variant.
 
 **A crown keeps its shade.** Crown occlusion used to take the ambient light to nothing at the crown's
 axis, and the sun does not reach inside a crown, so the shade side was flat black. The material now
@@ -681,10 +681,12 @@ leaf's last seventh.
 
 **What it costs.** The built-in set generates 29.75 MiB of arrays, 31,192,082 bytes, against the 30 MB ceiling at High
 and Ultra, with the denser conifer and broadleaf taking the room that the ceiling left. The
-conifer's level 0 takes 4.7 MB of it. A conifer is 9,620 triangles, against the hand-built pine's
-6,400.
+conifer's level 0 takes 4.7 MB of it. A conifer is 10,821 triangles at the demo's seed and variant, level 0, against
+the 6,400 of the hand-built pines the demos used to carry.
 
-**The demos' frames.** On this Mac at 1600 by 900 on core WebGPU with the governor on, the stone
+**The demos' frames.** The figures below were measured before this change doubled the wood's needle
+cards and thinned its fog, so they describe the plants before it and a run at this head is owed. On
+this Mac at 1600 by 900 on core WebGPU with the governor on, the stone
 garden holds the display's 16.67 ms at every preset, and the light-shafts wood reads 33.3 ms at
 Low, 50.0 at Medium and High, and 116.7 at Ultra. Its cost is the volumetric fog and the 150 trees'
 shadows, not the plants alone. The run file is
