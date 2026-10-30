@@ -287,6 +287,12 @@
 		"date": "2026-10-29",
 		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
 	},
+	"chromium-swiftshader/compat/weather.png": {
+		"test": "weather",
+		"tier": "compat",
+		"date": "2026-10-30",
+		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
+	},
 	"chromium-swiftshader/webgl2/asset-bent-grid.png": {
 		"test": "asset-bent-grid",
 		"tier": "webgl2",
@@ -563,6 +569,12 @@
 		"date": "2026-10-29",
 		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
 	},
+	"chromium-swiftshader/webgl2/weather.png": {
+		"test": "weather",
+		"tier": "webgl2",
+		"date": "2026-10-30",
+		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
+	},
 	"chromium-swiftshader/webgpu/asset-bent-grid.png": {
 		"test": "asset-bent-grid",
 		"tier": "webgpu",
@@ -838,5 +850,11 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
+	},
+	"chromium-swiftshader/webgpu/weather.png": {
+		"test": "weather",
+		"tier": "webgpu",
+		"date": "2026-10-30",
+		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
 	}
 }
