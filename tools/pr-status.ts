@@ -178,13 +178,7 @@ function planTasks(): { id: string; name: string }[] {
 function description(): string {
 	const tasks = planTasks();
 	const landed = landedTasks();
-	const done = ({ id }: { id: string }) =>
-		landed.has(id) &&
-		!PARTIAL[id] &&
-		!ON_BRANCH.has(id) &&
-		!INCOMPLETE.has(id) &&
-		!(id in AUDIT_GAPS) &&
-		id in TASK_EVIDENCE;
+	const done = ({ id }: { id: string }) => isDone(id, landed);
 	const open = tasks.filter(({ id }) => !landed.has(id) && !PARTIAL[id] && !ON_BRANCH.has(id));
 	const lines = [
 		'One pull request for the whole of the milestone that ships 0.2.0. It is not merged until every task below is done, so the list moves as the work lands.',
@@ -202,13 +196,7 @@ function description(): string {
 			// branch keeps the empty box and says its state in the note; anything else reads as text.
 			// A task whose code sits only on a helper branch is not done: the pull request merges the
 			// branch, so an unmerged task would claim work that a reader cannot find here.
-			const done =
-				landed.has(id) &&
-				!PARTIAL[id] &&
-				!ON_BRANCH.has(id) &&
-				!INCOMPLETE.has(id) &&
-				!(id in AUDIT_GAPS) &&
-				id in TASK_EVIDENCE;
+			const done = isDone(id, landed);
 			const mark = done ? 'x' : ' ';
 			const note = PARTIAL[id]
 				? ` — part landed: ${PARTIAL[id]}`
@@ -240,20 +228,28 @@ function description(): string {
 	return `${lines.join('\n')}\n`;
 }
 
-/** The tasks that count as done: landed, with an evidence entry and nothing that holds them. */
+/**
+ * True for a task that counts as done: landed, with an evidence entry, and nothing that holds it.
+ * The description's marks and the ready list both read this one rule, so a change to it reaches
+ * every place that says whether a task is finished.
+ */
+function isDone(id: string, landed: ReadonlySet<string>): boolean {
+	return (
+		landed.has(id) &&
+		!PARTIAL[id] &&
+		!ON_BRANCH.has(id) &&
+		!INCOMPLETE.has(id) &&
+		!(id in AUDIT_GAPS) &&
+		id in TASK_EVIDENCE
+	);
+}
+
+/** The tasks that count as done, for the ready list. */
 function doneTasks(): Set<string> {
 	const landed = landedTasks();
 	return new Set(
 		planTasks()
-			.filter(
-				({ id }) =>
-					landed.has(id) &&
-					!PARTIAL[id] &&
-					!ON_BRANCH.has(id) &&
-					!INCOMPLETE.has(id) &&
-					!(id in AUDIT_GAPS) &&
-					id in TASK_EVIDENCE,
-			)
+			.filter(({ id }) => isDone(id, landed))
 			.map(({ id }) => id),
 	);
 }
