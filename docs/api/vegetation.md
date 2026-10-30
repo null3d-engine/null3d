@@ -139,7 +139,7 @@ Every vertex's color carries four bytes: the branch's index, the leaf's flutter 
 
 `asset.crown` holds the outline, the bounds, the center and the radius. The bounds hold every level, so a switch never moves them. `asset.impostorSource` names the level, the bounds, the pivot and the tint that a far card bakes from.
 
-`plantWind` turns this data into what a plant's materials read: the branch records in one data texture of half floats, four texels for each branch, and the crown, height and transmission of the plant. Give one `plantWind` to a variant's leaf and bark materials, so both parts read the same table.
+`plantWind` turns this data into what a plant's materials read: the branch records in one data texture of half floats, four texels for each branch, with the wind field's steady settings in the texture's second row, and the crown, height and transmission of the plant. Give one `plantWind` to a variant's leaf and bark materials, so both parts read the same table.
 
 ```ts
 import { createWind } from '@null3d/wind';
@@ -152,6 +152,8 @@ const leaves = plantMaterial(ctx, { atlases, part: 'leaves', wind: field, cell: 
 The offset has three layers. The trunk bends as a cantilever, most at its top. Every branch turns about its pivot, and the turns carry the branches above them, so a twig follows its limb. The leaves flutter across the air from their stored phases. One sampling of the wind field at the vertex's place drives them all, and the shading of the shadow uses the same offset in every pass.
 
 `swayDistance` is the distance from the camera out to which the plant moves. The offset fades to nothing over the last fifth of it, and the engine counts the plant as moving only within it, so the far shadow cascades that only a still plant reaches keep the layers they hold. A plant past it stands still with the shadow its layer holds. Leave the distance out, or give 0, for a plant that moves at every distance.
+
+A page takes the distance from the quality preset rather than choosing one: `swayDistanceFor(preset)` reads `PLANT_SWAY_DISTANCE`, which gives 8, 16, 24 and 32 meters from Low to Ultra, so a heavier preset moves more of the grove and a governor step that lowers the preset shortens the distance with it. The field keeps two states, and its texture names the one that its last run wrote, so call `setWindLayer(materials, wind.field)` in each frame with the leaf and bark materials that read the field; a material that reads the other layer sways by a frame of stale air.
 
 `treeValues(x, z, seed, autumn)` gives a copy's four row values: a tint from an integer hash of the copy's whole-meter place, and the autumn value. Give them to the batch that draws the copies, with `values: true`, so each tree differs and the same place gives the same tree on every device.
 

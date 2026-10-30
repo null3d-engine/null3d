@@ -15,6 +15,7 @@ declare const shader: CompiledMaterial<
 		readonly branches: 'f32';
 		readonly windBox: 'f32';
 		readonly windStrength: 'f32';
+		readonly windLayer: 'f32';
 		readonly crownCenter: 'vec3f';
 		readonly crownBend: 'f32';
 		readonly crownRadius: 'f32';

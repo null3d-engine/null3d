@@ -1,16 +1,20 @@
 // A grove of generated oaks in the scene's one wind field: the leaf and bark materials sway, the
 // leaves flutter, and the sun's shadows follow them. Two held times show the trees move, and
 // ?motion draws the motion view, whose pixels carry the sway's motion. ?still holds the air, for a
-// reference picture. ?sway=<metres> sets how far from the camera the plants move, and ?autumn=<0 to
-// 1> turns their leaves.
+// reference picture. ?sway=<metres> sets how far from the camera the plants move, ?far places every
+// row past the near shadow cascades, which the shadow redraw count reads, and ?autumn=<0 to 1>
+// turns their leaves.
 import { defineSketch } from '@null3d/engine';
 import {
 	bakePlantAtlases,
 	builtInSpecies,
 	generatePlant,
 	leafCellFor,
+	type PlantMaterial,
 	plantMaterial,
 	plantWind,
+	setWindLayer,
+	swayDistanceFor,
 	treeValues,
 } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
@@ -21,8 +25,11 @@ const MOTION = params.has('motion');
 /** True to draw the same grove with still air. */
 const STILL = params.has('still');
 const AUTUMN = Math.min(1, Math.max(0, Number(params.get('autumn') ?? 0)));
-/** How far from the camera the plants sway, in meters: 0 moves them at every distance. */
-const SWAY = Math.max(0, Number(params.get('sway') ?? 16));
+/** How far from the camera the plants sway, in meters, when the page asks: 0 moves them at every
+ * distance. Without it, the preset's distance applies. */
+const SWAY = params.has('sway') ? Math.max(0, Number(params.get('sway'))) : undefined;
+/** True to place every row past the near shadow cascades, where only the far cascades reach them. */
+const FAR = params.has('far');
 /** The scene's seed, which the plants' shapes and their tints come from. */
 const SEED = 12;
 const VARIANTS = 4;
@@ -80,15 +87,19 @@ export default defineSketch((ctx) => {
 	if (!species) throw new Error('the vegetation add-on has no oak');
 	const atlases = bakePlantAtlases(ctx);
 	const cell = leafCellFor(species);
+	const plantMaterials: PlantMaterial[] = [];
 	for (let variant = 0; variant < VARIANTS; variant++) {
 		const asset = generatePlant(species, { seed: SEED, variant, levels: 1 });
-		const field = plantWind(ctx, asset, wind.field, { swayDistance: SWAY });
+		const field = plantWind(ctx, asset, wind.field, {
+			swayDistance: SWAY ?? swayDistanceFor(quality.preset),
+		});
 		const bark = plantMaterial(ctx, {
 			atlases,
 			part: 'wood',
 			color: species.color.bark,
 			wind: field,
 		});
+		plantMaterials.push(bark);
 		const leaves = plantMaterial(ctx, {
 			atlases,
 			part: 'leaves',
@@ -98,6 +109,7 @@ export default defineSketch((ctx) => {
 			wind: field,
 			morph: { crownRadius: asset.crown.radius },
 		});
+		plantMaterials.push(leaves);
 		for (const part of asset.levels[0]?.parts ?? []) {
 			const batch = scene.createInstances(geometry.fromArrays(part.arrays), COPIES, {
 				material: part.name === 'wood' ? bark : leaves,
@@ -110,7 +122,7 @@ export default defineSketch((ctx) => {
 				// The rows stand behind one another along the view, so the near plants are inside
 				// the sway distance and the far ones past it.
 				const x = (variant - (VARIANTS - 1) / 2) * 7 + (row - (COPIES - 1) / 2) * 1.5;
-				const z = -3 - row * 16 - variant * 1.5;
+				const z = -3 - row * 16 - variant * 1.5 - (FAR ? 67 : 0);
 				batch.positions.set([x, 0, z], row * 3);
 				const yaw = (row + variant) * 0.7;
 				batch.rotations.set([0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)], row * 4);
@@ -124,6 +136,8 @@ export default defineSketch((ctx) => {
 		onUpdate() {
 			// The field's box follows the camera, and a gust and a push fade, so it steps every frame.
 			wind.update();
+			// The pass keeps two states, so the plants read the one that this frame's run wrote.
+			setWindLayer(plantMaterials, wind.field);
 		},
 	};
 });

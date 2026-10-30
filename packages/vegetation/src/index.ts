@@ -36,6 +36,7 @@ export type {
 	LeafCell,
 	PlantAtlas,
 	PlantAtlases,
+	PlantMaterial,
 	PlantMaterialOptions,
 	PlantMaterialPart,
 	PlantMorph,
@@ -82,7 +83,7 @@ export {
 export type { FarTree, FarTreeOptions } from './impostor';
 export { bakeFarTree, handOverToCards } from './impostor';
 export type { PlantWind, PlantWindOptions } from './plant';
-export { plantWind, treeValues } from './plant';
+export { plantWind, setWindLayer, treeValues } from './plant';
 export {
 	builtinRules,
 	type SpeciesRuleFields,
@@ -119,6 +120,7 @@ export {
 	speciesProblems,
 } from './species';
 export { type VarianceMaps, type VarianceOptions, varianceMaps } from './variance';
+export { PLANT_SWAY_DISTANCE, swayDistanceFor } from './wind-presets';
 
 /**
  * Grows one plant in a job worker, beside the frames, and resolves with its asset. The work is the

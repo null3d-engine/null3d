@@ -2,8 +2,9 @@
 // one draw for each plant part in every shadow cascade that draws. ?sway=<metres> sets how far from
 // the camera the plants move. With the distance inside the grove, the far trees stand still, so a
 // far cascade that keeps its layer need not draw again; with 0, every tree sways and every far
-// cascade draws in every frame. The camera holds still, so nothing but the plants can redraw a
-// cascade.
+// cascade draws in every frame. ?far places every row past the near cascades, so only the far ones
+// reach the grove, and ?still holds the air. The camera holds still, so nothing but the plants can
+// redraw a cascade.
 import { createEngine, type QualityPreset } from '@null3d/engine';
 import { progress, run } from './lib/result';
 
@@ -18,6 +19,8 @@ run('vegetation-shadow-count', async () => {
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL('./sketches/vegetation-wind-sketch.ts', import.meta.url);
 	sketch.searchParams.set('sway', String(SWAY));
+	if (params.has('far')) sketch.searchParams.set('far', '');
+	if (params.has('still')) sketch.searchParams.set('still', '');
 	const engine = await createEngine({
 		canvas,
 		sketch,
@@ -35,6 +38,8 @@ run('vegetation-shadow-count', async () => {
 	return {
 		...mode,
 		swayDistance: SWAY,
+		far: params.has('far'),
+		still: params.has('still'),
 		frames: stats.frames,
 		drawCalls: stats.drawCalls.median,
 		gpuMs: stats.gpuMs?.median ?? null,

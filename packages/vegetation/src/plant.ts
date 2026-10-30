@@ -5,6 +5,7 @@
 import type { SketchContext, Texture, Textures } from '@null3d/engine';
 import type { WindField } from '@null3d/wind';
 import type { PlantAsset } from './asset';
+import type { PlantMaterial } from './atlas';
 import type { CrownData } from './crown';
 import { WIND_STRIDE } from './generate';
 import { unitAt } from './hash';
@@ -21,7 +22,9 @@ export interface PlantWind {
 	readonly field: WindField;
 	/**
 	 * The plant's branch records, one row of four texels for each branch: the pivot, the axis, the
-	 * parent, the stiffness, the flutter, the branch's level and length, and its sway phase.
+	 * parent, the stiffness, the flutter, the branch's level and length, and its sway phase. A
+	 * second row holds the wind field's steady settings, three texels of four numbers, which the
+	 * vertex offset reads beyond the field's box.
 	 */
 	readonly pivots: Texture;
 	/** The branch records that {@link PlantWind.pivots} holds. */
@@ -71,7 +74,11 @@ export function plantWind(
 ): PlantWind {
 	const { wind } = asset;
 	// A record is 16 floats, four to a texel, so a plant's table is branches times four texels wide.
-	const pivots = halfFloatTexture(ctx.textures, wind.pivots, wind.branches * (WIND_STRIDE / 4));
+	const pivots = halfFloatTexture(ctx.textures, wind.pivots, wind.branches * (WIND_STRIDE / 4), [
+		...field.air.base,
+		...field.air.gust,
+		...field.air.swirl,
+	]);
 	return {
 		field,
 		pivots,
@@ -83,14 +90,40 @@ export function plantWind(
 	};
 }
 
-/** Uploads 32-bit floats as one row of half floats, which an offset reads at their texel. */
-function halfFloatTexture(textures: Textures, data: Float32Array, width: number): Texture {
-	return textures.fromData({
-		width: Math.max(1, width),
-		height: 1,
-		format: 'rgba16float',
-		data: data.length > 0 ? data : new Float32Array(4),
-	});
+/**
+ * Gives the field's newest state to a plant's materials for this frame. The field's pass keeps two
+ * states, and the texture names the one that its last run wrote; a material that read the other
+ * layer would sway by a frame of stale air. Call it in each frame, before the frame draws.
+ *
+ * @param materials The leaf and bark materials that read the field, such as the ones a page makes
+ * for each variant.
+ * @param field The wind field, from `createWind`.
+ * @category api/vegetation
+ */
+export function setWindLayer(materials: readonly PlantMaterial[], field: WindField): void {
+	const layer = field.texture.layer;
+	for (const material of materials) material.setUniform('windLayer', layer);
+}
+
+/**
+ * Uploads 32-bit floats as rows of half floats, which an offset reads at their texel. The first row
+ * holds the plant's branch records. The second holds the field's steady settings, three texels of
+ * four numbers, since a custom material's uniforms and textures have no room for them elsewhere.
+ */
+function halfFloatTexture(
+	textures: Textures,
+	data: Float32Array,
+	width: number,
+	air: readonly number[] = [],
+): Texture {
+	const columns = Math.max(3, width);
+	const records = data.length > 0 ? data : new Float32Array(columns * 4);
+	const packed = new Float32Array(columns * 8);
+	packed.set(records.subarray(0, columns * 4));
+	// The air sits at the start of the second row; the rest of it stays zero.
+	for (let i = 0; i < Math.min(air.length, columns * 4); i++)
+		packed[columns * 4 + i] = air[i] as number;
+	return textures.fromData({ width: columns, height: 2, format: 'rgba16float', data: packed });
 }
 
 /**
