@@ -17,7 +17,7 @@ Without a depth check, dim copies of the near-bank flowers show in the Creek's s
 
 ## What causes it
 
-The Creek's water is a custom material with `transmission: 1` and a thickness of up to 0.62 m (`examples/showcase/creek/water.ts`). The engine follows three.js's `getIBLVolumeRefraction`. It bends the view ray into the volume and follows it for the thickness. It projects the exit point onto the screen, and samples the copy of the opaque color there (`copied_light` in `lib/refraction.wgsl`). That path checks no depth.
+The water add-on's surface, which the Creek draws, is a custom material with `transmission: 1` and a thickness of up to 0.62 m (`packages/water/src/water.wgsl`). The engine follows three.js's `getIBLVolumeRefraction`. It bends the view ray into the volume and follows it for the thickness. It projects the exit point onto the screen, and samples the copy of the opaque color there (`copied_light` in `lib/refraction.wgsl`). That path checks no depth.
 
 Looking across the stream, the bent ray goes down into the water. Its exit point projects lower on the screen than the surface's own pixel. Just past a flower on the near bank, that point lands on the flower. The water then shows the flower's color, in a band as tall as the bend, which moves as the camera turns. three.js draws the same band. A true reflection of the flowers falls under the near bank, out of sight, and the planar reflection pass is not the cause.
 

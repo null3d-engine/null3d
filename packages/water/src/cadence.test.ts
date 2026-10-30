@@ -4,7 +4,7 @@
 // such row, and the figures go when the water goes. The add-on's `water-bounds` debug view draws
 // each body's bounds at the surface, and stops when another view replaces it.
 import { describe, expect, it } from 'bun:test';
-import type { FeatureStats, QualityPreset, SketchContext } from '@null3d/engine';
+import type { FeatureStats, MeshArrays, QualityPreset, SketchContext } from '@null3d/engine';
 import { activateAddonDebugView, hasAddonDebugView } from '@null3d/engine/internal';
 import { createWater, type Water, type WaterOptions } from './water';
 
@@ -20,6 +20,9 @@ function fakeContext(start: QualityPreset = 'medium') {
 	const posted: unknown[] = [];
 	/** The boxes that the add-on's debug view draws. */
 	const boxes: [readonly number[], readonly number[], string][] = [];
+	/** The options that each material was made with, and the arrays of each mesh. */
+	const shaderOptions: Record<string, unknown>[] = [];
+	const meshes: MeshArrays[] = [];
 	const quality = {
 		preset: start,
 		settings: {},
@@ -59,9 +62,19 @@ function fakeContext(start: QualityPreset = 'medium') {
 				posted.push(data);
 			},
 		},
-		scene: { createMesh: () => ({ destroy() {} }) },
+		scene: {
+			createMesh: (options: { mesh: unknown }) => {
+				meshes.push(options.mesh as MeshArrays);
+				return { destroy() {} };
+			},
+		},
 		geometry: { fromArrays: (arrays: unknown) => arrays },
-		materials: { shader: () => ({ set() {}, destroy() {} }) },
+		materials: {
+			shader: (options: Record<string, unknown>) => {
+				shaderOptions.push(options);
+				return { set() {}, destroy() {} };
+			},
+		},
 		textures: {
 			fromPass: () => ({ bytes: 4096, destroy() {} }),
 			fromData: () => ({ bytes: 4, destroy() {} }),
@@ -84,6 +97,9 @@ function fakeContext(start: QualityPreset = 'medium') {
 		posted,
 		/** The boxes that the add-on's debug view drew: each one's low and high corners, and its color. */
 		boxes,
+		/** The options of the material, and the arrays of the meshes, that the last water made. */
+		shaderOptions,
+		meshes,
 		/** Moves the governor's steps, as the frame loop does. */
 		step(next: number) {
 			level = next;
@@ -174,6 +190,43 @@ describe('the reflection cadence', () => {
 		const context = fakeContext('low');
 		expect(() => waterOn(context, { reflectionEvery: { low: 0 } })).toThrow(/1 to 16 frames/);
 		expect(() => waterOn(context, { reflectionEvery: { low: 20 } })).toThrow(/1 to 16 frames/);
+	});
+});
+
+describe('the bed that the water reads', () => {
+	/** A river with a bed of its own, whose depth rises along x. */
+	const BEDDED = {
+		...RIVER,
+		bed: (x: number) => 0.4 + x * 0.01,
+	} as const;
+
+	it('takes the shapes’ own depth and carries it in the mesh’s vertex colors', () => {
+		const context = fakeContext('medium');
+		const water = waterOn(context, { shapes: BEDDED, bed: 'shape' } as Partial<WaterOptions>);
+		const options = context.shaderOptions.at(-1) as {
+			vertexColors?: boolean;
+			uniforms: { bedFromShape: number };
+		};
+		expect(options.vertexColors).toBe(true);
+		expect(options.uniforms.bedFromShape).toBe(1);
+		const colors = context.meshes.at(-1)?.colors as Float32Array;
+		expect(colors).toBeDefined();
+		// The first vertex stands at the river's start, where the bed is 0.4 m deep.
+		expect(colors[3]).toBeCloseTo(0.4, 6);
+		water.destroy();
+	});
+
+	it('leaves the scene’s depth alone by default', () => {
+		const context = fakeContext('medium');
+		const water = waterOn(context, { shapes: BEDDED } as Partial<WaterOptions>);
+		const options = context.shaderOptions.at(-1) as {
+			vertexColors?: boolean;
+			uniforms: { bedFromShape: number };
+		};
+		expect(options.vertexColors).toBeUndefined();
+		expect(options.uniforms.bedFromShape).toBe(0);
+		expect(context.meshes.at(-1)?.colors).toBeUndefined();
+		water.destroy();
 	});
 });
 

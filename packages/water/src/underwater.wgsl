@@ -31,7 +31,7 @@ struct Uniforms {
 /// The caustics of the water's surface shader, the same ridges drifting with the current. Each WGSL
 /// string compiles on its own, so this one holds its own copy.
 fn caustics(p: vec2f, t: f32, current: vec2f) -> f32 {
-    let q = p * 4.6 + current * (t * 4.0);
+    let q = p * 4.6 - current * (t * 4.0);
     let a = sin(q.x * 3.1 + t * 1.3 + sin(q.y * 2.3 - t));
     let b = sin(q.y * 3.7 - t * 1.1 + sin(q.x * 1.9 + t * 0.7));
     let c = sin((q.x + q.y) * 2.6 + t * 0.9 + sin(q.x * 1.3 - q.y * 0.7));
@@ -40,7 +40,8 @@ fn caustics(p: vec2f, t: f32, current: vec2f) -> f32 {
 }
 
 /// The height of the water's surface at a point and time, from the long waves that move its
-/// vertices. The water's surface shader holds the same three waves first in its list.
+/// vertices. The water's surface shader holds the same three waves first in its list, and carries
+/// the set with the current in the same way.
 fn surface_height(p: vec2f, t: f32) -> f32 {
     let list = array<vec4f, 3>(
         vec4f(1.0, 0.15, 2.3, 0.9),
@@ -49,12 +50,15 @@ fn surface_height(p: vec2f, t: f32) -> f32 {
     );
     var h = uniforms.level;
     let speed = length(uniforms.current);
-    let carry = select(vec2f(0.0), uniforms.current / speed, speed > 1e-5);
+    let moving = speed > 1e-5;
+    let carry = select(vec2f(0.0), uniforms.current / max(speed, 1e-5), moving);
     for (var k = 0u; k < 3u; k++) {
         let w = list[k];
-        let dir = normalize(w.xy);
-        let phase = w.z * (dot(dir, p) - speed * t * dot(carry, dir)) - w.w * t;
-        h += 0.05 / w.z * sin(phase);
+        let own = normalize(w.xy);
+        let dir = select(own, vec2f(carry.x * own.x - carry.y * own.y, carry.y * own.x + carry.x * own.y), moving);
+        let still = w.z * dot(own, p) - w.w * t;
+        let carried = w.z * (dot(dir, p) - speed * t * dot(carry, dir));
+        h += 0.05 / w.z * sin(select(still, carried, moving));
     }
     return h;
 }

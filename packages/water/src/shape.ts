@@ -1,7 +1,10 @@
 // The water body's shape: a river that follows a line, or a lake that fills an outline. Both kinds
 // answer the same questions — where the water reaches, how deep the bed lies under a point, and
-// which way the current runs there — so the rest of the add-on draws them with one set of rules.
+// which way the current runs there — so the rest of the add-on draws them with one set of rules. A
+// shape may answer the last two with functions of its own, for a bed or a current that a middle
+// line and a width do not describe.
 import { math } from '@null3d/engine';
+import type { MeshDetail } from './mesh';
 
 /**
  * A point on the ground plane, in meters: its x and its z.
@@ -31,6 +34,22 @@ export type RiverDepth =
 export type LakeDepth = number | ((x: number, z: number, fromShore: number) => number);
 
 /**
+ * The depth of a bed at a point, in meters below the water's surface. A shape gives one where its
+ * bed does not follow the profile that the shape's width and depth describe.
+ *
+ * @category api/water
+ */
+export type BedDepth = (x: number, z: number) => number;
+
+/**
+ * The current at a point, as a velocity in meters a second: its x and z components. A river gives
+ * one where its current does not follow its middle line.
+ *
+ * @category api/water
+ */
+export type FlowAt = (x: number, z: number) => WaterPoint;
+
+/**
  * A river: the water that follows a line, with a width and a depth along it.
  *
  * @category api/water
@@ -55,9 +74,21 @@ export interface RiverShape {
 	depth?: RiverDepth;
 	/**
 	 * How fast the current runs downstream, in meters a second. The ripples and the caustics drift
-	 * with it. It is 0.35 by default, and 0 stills the water.
+	 * with it. It is 0.35 by default, and 0 stills the water. A `current` function replaces it.
 	 */
 	speed?: number;
+	/**
+	 * The current at any point, as a velocity in meters a second, where it does not follow the
+	 * middle line. The surface carries its waves, its foam and its caustics with it.
+	 */
+	current?: FlowAt;
+	/**
+	 * The depth of the bed at any point, in meters, where it does not follow the shape's width and
+	 * depth. The surface reads it as its bed when `createWater` is told `bed: 'shape'`.
+	 */
+	bed?: BedDepth;
+	/** The mesh's detail for this body, in place of the one that `createWater` gives. */
+	mesh?: MeshDetail;
 }
 
 /**
@@ -80,6 +111,13 @@ export interface LakeShape {
 	 * from 0.01. It is 2 by default.
 	 */
 	shoreWidth?: number;
+	/**
+	 * The depth of the bed at any point, in meters, where it does not follow the shore and the shore
+	 * width. The surface reads it as its bed when `createWater` is told `bed: 'shape'`.
+	 */
+	bed?: BedDepth;
+	/** The mesh's detail for this body, in place of the one that `createWater` gives. */
+	mesh?: MeshDetail;
 }
 
 /**
@@ -114,8 +152,9 @@ export interface WaterBody {
 	/** True when the point lies over the water, where its depth is above 0. */
 	contains(x: number, z: number): boolean;
 	/**
-	 * The current at a point, as a direction and a speed in meters a second, written into `out`.
-	 * It is zero for still water. A river carries its current along its middle line.
+	 * The current at a point, as a velocity in meters a second, written into `out`.
+	 * It is zero for still water. A river carries its current along its middle line, or along the
+	 * `current` function that it gives.
 	 */
 	currentAt(x: number, z: number, out: [x: number, z: number]): void;
 }
@@ -283,6 +322,8 @@ function riverBody(shape: RiverShape): WaterBody {
 		maxZ = Math.max(maxZ, (zs[i] as number) + edge);
 	}
 	const found: Nearest = { segment: undefined, distance: 0, share: 0 };
+	const bed = shape.bed;
+	const flow = shape.current;
 	return {
 		kind: 'river',
 		minX,
@@ -290,6 +331,7 @@ function riverBody(shape: RiverShape): WaterBody {
 		minZ,
 		maxZ,
 		depthAt(x, z) {
+			if (bed) return Math.max(0, numberSetting(bed(x, z), 'bed depth'));
 			nearestSegment(segments, x, z, found);
 			const segment = found.segment;
 			if (!segment) return 0;
@@ -307,6 +349,12 @@ function riverBody(shape: RiverShape): WaterBody {
 			return found.distance < half * 1.32;
 		},
 		currentAt(x, z, out) {
+			if (flow) {
+				const [vx, vz] = flow(x, z);
+				out[0] = numberSetting(vx, 'current x');
+				out[1] = numberSetting(vz, 'current z');
+				return;
+			}
 			nearestSegment(segments, x, z, found);
 			const segment = found.segment;
 			if (!segment || speed === 0) {
@@ -375,6 +423,7 @@ function lakeBody(shape: LakeShape): WaterBody {
 	}
 	if (Math.abs(area) < SMALL) throw error('the points around a lake shore must enclose an area');
 	const depth = shape.depth ?? 2;
+	const bed = shape.bed;
 	const shoreWidth = numberSetting(shape.shoreWidth ?? 2, 'shore width');
 	if (shoreWidth < SMALL) throw error('the water shore width must be above 0');
 	if (typeof depth === 'number' && depth < 0) throw error('the water depth must be 0 or more');
@@ -385,6 +434,7 @@ function lakeBody(shape: LakeShape): WaterBody {
 		minZ,
 		maxZ,
 		depthAt(x, z) {
+			if (bed) return Math.max(0, numberSetting(bed(x, z), 'bed depth'));
 			if (!insideOutline(points, x, z)) return 0;
 			const from = fromShore(points, x, z);
 			if (typeof depth === 'function') {

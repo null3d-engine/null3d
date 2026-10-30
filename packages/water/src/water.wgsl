@@ -21,6 +21,9 @@ struct Uniforms {
     // The world point and the size in meters that the junction map covers, and no size without one.
     junctionOrigin: vec2f,
     junctionSize: vec2f,
+    // 1 when the bed comes from the shapes' own depth, in each vertex's color, and 0 when it comes
+    // from the copy of the scene's depth behind the pixel.
+    bedFromShape: f32,
 }
 
 // The mirrored view of the scene above the water, which the reflection pass draws.
@@ -34,7 +37,7 @@ var junctionMap: texture_2d<f32>;
 
 /// Caustics: bright, thin ridges where the ripples focus the light, which drift with the current.
 fn caustics(p: vec2f, t: f32, current: vec2f) -> f32 {
-    let q = p * 4.6 + current * (t * 4.0);
+    let q = p * 4.6 - current * (t * 4.0);
     let a = sin(q.x * 3.1 + t * 1.3 + sin(q.y * 2.3 - t));
     let b = sin(q.y * 3.7 - t * 1.1 + sin(q.x * 1.9 + t * 0.7));
     let c = sin((q.x + q.y) * 2.6 + t * 0.9 + sin(q.x * 1.3 - q.y * 0.7));
@@ -86,10 +89,12 @@ fn junction(p: vec2f, body: f32) -> vec2f {
     return vec2f(draws, textureSampleLevel(junctionMap, junctionMapSampler, at, 0.0).g);
 }
 
-/// The water's height at a point, and its slopes along x and z: long waves that the current carries
-/// downstream, and with `fine` set, shorter ripples across them.
+/// The water's height at a point, and its slopes along x and z: long waves, and with `fine` set,
+/// shorter ripples beside them. A current carries the whole set downstream: each wave's direction
+/// turns into the current's frame, so the crests keep every angle between them and all of them
+/// travel with the water. Still water keeps the authored directions and each wave's own speed.
 fn waves(p: vec2f, t: f32, current: vec3f, fine: bool) -> vec3f {
-    // Each wave: its direction, its wave number, and how fast it runs against the current.
+    // Each wave: its direction, its wave number, and the speed it runs at in still water.
     let list = array<vec4f, 6>(
         vec4f(1.0, 0.15, 2.3, 0.9),
         vec4f(0.8, -0.6, 3.7, 0.7),
@@ -100,12 +105,19 @@ fn waves(p: vec2f, t: f32, current: vec3f, fine: bool) -> vec3f {
     );
     var h = 0.0;
     var slope = vec2f(0.0);
+    let moving = current.z > 1e-5;
     let count = select(3u, 6u, fine);
     for (var k = 0u; k < count; k++) {
         let w = list[k];
-        let dir = normalize(w.xy);
+        let own = normalize(w.xy);
+        // The authored direction turned into the current's frame. A plane wave travels along its
+        // own direction, so a turned set whose phases the current carries drifts all downstream.
+        let dir = select(own, vec2f(current.x * own.x - current.y * own.y, current.y * own.x + current.x * own.y), moving);
         let amplitude = material.ripple * 0.05 / w.z;
-        let phase = w.z * (dot(dir, p) - current.z * t * dot(current.xy, dir)) - w.w * t;
+        // Carried: the current moves the whole pattern. Still: each wave runs at its own speed.
+        let still = w.z * dot(own, p) - w.w * t;
+        let carried = w.z * (dot(dir, p) - current.z * t * dot(current.xy, dir));
+        let phase = select(still, carried, moving);
         h += amplitude * sin(phase);
         slope += dir * (amplitude * w.z * cos(phase));
     }
@@ -161,7 +173,13 @@ fn surface(input: SurfaceInput) -> Surface {
     // measured against the view's slope.
     let place = input.fragCoord.xy / frame.resolution;
     let gap = max(sceneDistance(place) - distance_of(input.fragCoord.z), 0.0);
-    let depth = gap * abs(input.viewDirection.y);
+    // A bed that the shape describes rides in each vertex's color, and the water reads it in place
+    // of the depth behind the pixel. Its alpha is 1 on a surface that takes no vertex colors.
+    let depth = mix(
+        gap * abs(input.viewDirection.y),
+        max(input.vertexColor.a, 0.0),
+        material.bedFromShape,
+    );
     s.thickness = max(depth, 0.02);
     // Shallow water at the edges carries a little foam.
     let edgeFoam = (1.0 - smoothstep(0.0, 0.05, depth)) * smoothstep(0.0, 0.03, w.x + 0.012);
