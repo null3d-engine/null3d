@@ -25,8 +25,6 @@ const BASE = 'origin/main';
 const PARTIAL: Readonly<Record<string, string>> = {
 	'M3-C1':
 		"the scene, its lanes, rain and the hero car are in, and so are the moods (`createMoods` in the skyway sketch) and the instances demo, which is registered and built on the traffic-lanes add-on. What remains is the owner's look approval: the device records are drawn, the iPad Pro 13's in `20261024-081340-skyway.md` and the Galaxy S24's beside it",
-	'M3-B4':
-		"the add-on is built: the wet surface with its puddles and planar mirror, the windshield drops with their wiper, the rain streaks, the storm over any hour, the lamp-following city lights and the particles link, and Skyway and the night town both call it. What remains is the software picture of the weather test, which comes from CI, and the removal of the add-on's extra layer split now that D-278's crash is fixed",
 };
 
 /** Tasks whose work is on a helper branch, whether or not part of it has reached this branch. */
