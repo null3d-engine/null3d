@@ -1799,7 +1799,7 @@ export function terrainPlan(): PlanItem<Check>[] {
 		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
 	];
 	for (const { path, tier, presets } of TERRAIN_PATHS)
-		for (const preset of presets)
+		for (const preset of presets) {
 			items.push(
 				pageItem(
 					`terrain-${preset}-${path}`,
@@ -1817,7 +1817,69 @@ export function terrainPlan(): PlanItem<Check>[] {
 					},
 				),
 			);
+			// The morph's own cost: one pair a preset and path, the same held view with the morph
+			// on and off. The demo's own camera orbits, so a moving pair draws a different
+			// selection on each side: the first S25 pair drew 22% more triangles off only because
+			// its measure began at another point. Both items therefore ask for the held view.
+			for (const side of ['on', 'off'] as const)
+				items.push(
+					pageItem(
+						`terrain-${preset}-${path}-morph-${side}`,
+						'demo-device',
+						{ kind: 'probe', tier },
+						{
+							switches: [
+								`gpu=${path}`,
+								'demo=terrain',
+								`preset=${preset}`,
+								'target-fps=1',
+								'seconds=5',
+								'still',
+								...(side === 'off' ? ['morph=off'] : []),
+							],
+							timeoutSeconds: TERRAIN_TIMEOUT_SECONDS,
+						},
+					),
+				);
+		}
 	return items;
+}
+
+/**
+ * The terrain demo with a still camera, for the shadow redraw that a morphing caster causes: the
+ * pages draw the same ground from the same eye, one with the morph on and one with it off, and a
+ * third that keeps the far cascades to their turns, which is the same casters over a cascade that
+ * stays cached.
+ */
+const TERRAIN_SHADOW_VARIANTS = [
+	{ id: 'morph-on', switches: ['morph=on'] },
+	{ id: 'morph-off', switches: ['morph=off'] },
+	{ id: 'follow-off', switches: ['morph=on', 'follow=off'] },
+] as const;
+
+export function terrainShadowPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...TERRAIN_SHADOW_VARIANTS.map(({ id, switches }) =>
+			pageItem(
+				`terrain-shadow-${id}`,
+				'demo-device',
+				{ kind: 'probe', tier: 'webgpu' },
+				{
+					switches: [
+						'gpu=webgpu',
+						'demo=terrain',
+						'preset=high',
+						'target-fps=1',
+						'seconds=5',
+						'still',
+						...switches,
+					],
+					timeoutSeconds: TERRAIN_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	];
 }
 
 /**
@@ -2523,6 +2585,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	vegetation: vegetationPlan,
 	'vegetation-wind': vegetationWindPlan,
 	terrain: terrainPlan,
+	'terrain-shadow': terrainShadowPlan,
 	'tree-generation': treeGenerationPlan,
 	'vegetation-scatter': vegetationScatterPlan,
 	'canvas-cost': canvasCostPlan,

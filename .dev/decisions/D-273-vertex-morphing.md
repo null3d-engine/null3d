@@ -41,6 +41,10 @@ band? Which kinds of shape should morph, in which layer, and what is out of scop
 | A leaf-card level's switch in a picture | morph off moves 0.634% of the frame, morph on 0.036%: the morph removes 94% of the change | `tests/image/leaf-switch.spec.ts` on the Mac's GPU |
 | The leaf morph on the other paths | 0.321% to 0.023% on compatibility mode, 0.528% to 0.030% on WebGL2 | the same test |
 | The block morph's frame cost | no difference that this method resolves: WebGPU 2.99 against 3.30 ms of GPU time, compatibility 2.68 against 2.36, WebGL2 4.17 against 4.45, with both signs across three runs; the same build's frame read 2.7 to 4.3 ms from one run to the next, and the frame interval stayed at the display's 16.67 ms | the cost page in a quiet window, below |
+| The record's bytes in a frame of the terrain demo | Low: about 134,000 triangles over every pass are about 232 block draws, 82,000 vertices and 1.31 MB of record a frame, 39 MB a second at 30 frames. Medium: about 481,000 triangles are about 834 block draws, 295,000 vertices and 4.71 MB a frame, 141 MB a second | arithmetic from the S25 pairs' triangles, `chunk.ts`'s 576 triangles and 353 vertices a block, and 16 bytes a vertex |
+| The leaf and bark material's frame | Galaxy S25: 27.20 ms of GPU time at Low on WebGPU, 469.70 at Medium, 604.44 at High and 565.97 at Ultra, with 27.13 and 512.62 at Low and Medium on compatibility mode; its display ran at 30 Hz, so the Low frames keep its rate and the rest do not. Galaxy S24, whose WebGL2 has no GPU timer: 66.64 ms at Low and 66.66 at Medium, twice the display's 33.3 ms refresh. MacBook Pro M3 Max at 120 Hz: 5.44, 11.40, 16.71 and 17.10 ms on WebGPU from Low to Ultra, with 7.21 and 15.20 on compatibility mode, and 18.00 and 30.14 ms on WebGL2 at Low and Medium, whose interval reaches 16.82 ms there | the `vegetation-wind` plan, runs `20261030-091921-vegetation-wind`, `20261030-092652-vegetation-wind` and `20261030-094633-vegetation-wind`, with the page from `feat/m3-v7-leaf-bark` at `9a2cd433c` and `559089789`, below |
+| The block morph on the demo, the camera held | MacBook Pro M3 Max at 120 Hz: at every preset and path the pair draws the same calls, triangles and objects on both sides; the GPU times with the morph on against off are 2.62 against 2.69 ms at Low on WebGPU, 2.62 against 2.75 on compatibility mode, 2.97 against 2.60 on WebGL2, 3.41 against 3.87 at Medium on WebGPU, 3.60 against 3.60 on compatibility mode, 6.33 against 6.52 on WebGL2, 4.06 against 3.87 at High and 4.13 against 3.87 at Ultra, with both signs and a timer step of 0.0655 ms, so the offset's cost is under the machine's own difference; every interval is the display's 8.33 ms. Galaxy S25: 10.09 against 10.09 ms at Low and 19.07 against 19.07 at Medium, 311 and 2,067 calls, at the display's 33.3 ms. Galaxy S24: 33.33 ms on both sides at Low and Medium, 176 and 632 calls | the `terrain` plan's morph pair, runs `20261030-114047-terrain`, `20261030-115301-terrain` and `20261030-114759-terrain` |
+| The shadow redraw of the still terrain at High | MacBook Pro M3 Max, WebGPU: the morph on and off draw 2,585 calls and 4.194 ms a frame, with all three cascades in every frame; keeping the far cascades to their turns draws 2,072 calls and reads 3.670 ms, 513 calls fewer, one cascade's casters. Each cascade's pass costs 0.07 to 0.13 ms under the frame's 3.67 ms ambient occlusion pass. Galaxy S25: the morph on and off draw 2,583 calls in 14.61 and 14.55 ms with all three cascades; its follow-off page reads 21.82 ms, which must not be set against them because its timer captured a different pass set | the `terrain-shadow` plan, runs `20261030-114417-terrain-shadow` and `20261030-115037-terrain-shadow` |
 
 How the data was produced: the byte counts are arithmetic from the add-on's arrays. Both switch
 figures come from the split pages, which hold the camera still and move the level switch across it,
@@ -55,6 +59,20 @@ draws, and swaps the sides each round so a drift in the machine does not favour 
 own work is a few vertex instructions, and the runs cannot separate it from the machine's noise: two
 of the three put the morph side lower and one higher. What is fixed is the vertex data, 16 bytes a
 vertex more, and the same draws and triangles.
+
+The demo figures come from the `terrain` plan's morph pair, which draws the demo from a camera held
+at one point of its orbit. The pages spell the held view, the morph and the follow switch on the
+sketch's address, as the split page spells its error, and the demo calls `terrain.setMorph(false)`
+for the off side. A moving camera gives each side a different block selection: the first pair on the
+S25 drew 22% more triangles with the morph off only because its measure began at another point of
+the orbit. Both sides carry the record's 16 bytes a vertex, so the pairs measure the offset's own
+work. The record's byte rate is arithmetic, not a measurement: it comes from the overlay's
+triangles, a block's 576 triangles and 353 vertices. On the S25 the overlay's triangle and
+object estimates differ by up to 7% between the sides while the draw calls and GPU times agree:
+WebGPU returns those counts from its culling sample, not from the timed frames. The leaf figures
+come from the `vegetation-wind` plan on `feat/m3-v7-leaf-bark` at `9a2cd433c`, whose page reports the
+frame's GPU time, per-pass breakdown, interval and CPU time; `559089789` adds the interval and the
+engine's display rate, which the S24 needs in place of a GPU time.
 
 ## Look
 
@@ -162,12 +180,6 @@ no target.
 
 - The split pages are measured on the Mac's three GPU paths; a SwiftShader run and a filmstrip
   across the switch at High and Low would still show the look at the other end of the range.
-- The block morph's cost is measured on the Mac, but a phone's narrower memory bandwidth is where
-  its 16 extra bytes a vertex would show, and no run measures it. The terrain plan draws every page
-  with the morph on, so it has no page without the morph to compare. A morph-off page, or a second
-  terrain plan with the morph off, settles that. A shadow view that a morphing caster touches draws
-  again, and no run has timed that yet.
-- A GPU-time run of the leaf material on the Mac and an S24-class phone settles its cost.
 - The leaf vertex count and bytes per preset, from the generator's stats.
 
 ## Consequences
@@ -184,8 +196,9 @@ no target.
   target records, the card material and the mix; `plant.wgsl` itself is unchanged, and a test holds
   the two surfaces equal. The engine's vertex record, its array staging, the shader compiler's def
   and `VertexInput` gain the input.
-- The terrain's casters become moving casters, so a shadow view that a caster touches draws again.
-  The cost is unmeasured, and the run above names it.
+- The terrain's casters count as moving casters, so a shadow view that a caster touches draws again
+  in every frame, with the morph on or off: three cascades draw a frame at High, each at 0.2 to
+  0.39 ms on the S25, under the frame's ambient occlusion pass.
 - Docs: `docs/api/terrain.md` states the morph and its option. `docs/api/vegetation.md` states the
   leaf-card morph and the material's settings. `docs/concepts/lod.md` states which shapes morph and
   which switch. `docs/shaders/surface-functions.md`, `docs/shaders/builtins.md` and

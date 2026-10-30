@@ -148,6 +148,12 @@ run('demo-device', async () => {
 	if (!demo) throw new Error(`Add ?demo= with the name of a demo, not ${name}.`);
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
+	// A demo spells its own cost switches on its sketch's address, as the split page does, so a
+	// page that compares one change at a time passes them here.
+	const sketch = new URL(demo.sketch);
+	for (const id of ['morph', 'still', 'follow'])
+		if (params.has(id)) sketch.searchParams.set(id, params.get(id) ?? '');
+	const runDemo = { ...demo, sketch };
 	const failures: string[] = [];
 	// No stats overlay: its sampling would take frames that this page measures.
 	note(
@@ -156,12 +162,12 @@ run('demo-device', async () => {
 	// A showcase scene loads its models and builds its shaders in its setup, so the start itself can
 	// hold a slow phone for minutes. The wait ends, so a page that cannot start reports why.
 	const started = KEEP_COPIES
-		? startDemo({ canvas, demo, stats: false })
+		? startDemo({ canvas, demo: runDemo, stats: false })
 		: createEngine({
 				canvas,
-				sketch: demo.sketch,
-				largeWorld: demo.largeWorld,
-				hdr: demo.hdr,
+				sketch: runDemo.sketch,
+				largeWorld: runDemo.largeWorld,
+				hdr: runDemo.hdr,
 				stats: false,
 				keepTextureCopies: false,
 			});
