@@ -10,13 +10,16 @@ import {
 	type SketchContext,
 } from '@null3d/engine';
 import {
+	type BranchLevel,
 	bakePlantAtlases,
+	branchLevel,
 	builtInSpecies,
 	generatePlant,
 	leafCellFor,
 	type PlantMaterial,
 	plantMaterial,
 	plantWind,
+	type Species,
 	setWindLayer,
 	swayDistanceFor,
 	treeValues,
@@ -29,6 +32,53 @@ const [TREES, ROCKS] = [150, 24];
 const NEEDLES = [0.13, 0.07, 0.035];
 const MOSS = [0.045, 0.085, 0.02];
 const EARTH = [0.17, 0.11, 0.06];
+
+/**
+ * The wood's own pine: a tall, sparse conifer, grown from the add-on's record with its boughs opened
+ * out. A wood of the dense evergreen closes its canopy over the path, and the low sun never reaches
+ * the haze between the trunks; this record keeps four rings of two boughs on a trunk that stands
+ * bare to half its height, so the sky comes through and the shafts show.
+ */
+function woodlandPine(base: Species): Species {
+	const [trunk, bough, branchlet, twig] = base.branchLevels as readonly [
+		BranchLevel,
+		BranchLevel,
+		BranchLevel,
+		BranchLevel,
+	];
+	return {
+		...base,
+		id: 'woodland-pine',
+		// Longer and narrower than the dark evergreen, so the crown stands clear of the path.
+		height: 18,
+		crown: { shape: 'conical', start: 0.52, spread: 0.3, pull: 0.02, floor: 0.12 },
+		branchLevels: [
+			branchLevel(trunk, { children: 8, prune: 0.02, length: 18, start: 0.0, end: 1 }),
+			branchLevel(bough, {
+				children: 2,
+				prune: 0.02,
+				length: 18 * 0.15,
+				whorls: 4,
+				start: 0.52,
+				end: 1,
+			}),
+			branchLevel(branchlet, { children: 1, length: 18 * 0.1 }),
+			branchLevel(twig, { children: 0, length: 18 * 0.05 }),
+		],
+		leaf: {
+			kind: 'needle',
+			cards: 10,
+			width: 0.35,
+			height: 0.5,
+			perCard: 40,
+			up: 0.3,
+			out: 1.1,
+			start: 0.05,
+			end: 1,
+		},
+		color: { ...base.color, leaf: [0.1, 0.24, 0.1] },
+	};
+}
 
 const noise = new Noise(7);
 const { smoothstep, lerp, randFloat } = math;
@@ -91,8 +141,9 @@ export function createWood(
 
 	// The pines are the add-on's conifers, at its three levels: one variant, each copy its own
 	// height and turn, in the scene's one wind field. The wood's own crowns and trunks are gone.
-	const species = builtInSpecies('conifer');
-	if (!species) throw new Error('the vegetation add-on has no conifer');
+	const evergreen = builtInSpecies('conifer');
+	if (!evergreen) throw new Error('the vegetation add-on has no conifer');
+	const species = woodlandPine(evergreen);
 	const atlases = bakePlantAtlases(ctx);
 	const wind = createWind(ctx, { camera, box: 32, grid: 64 });
 	const swayDistance = swayDistanceFor(quality.preset);
