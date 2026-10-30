@@ -248,11 +248,19 @@ that darkens itself.
   moves the sun behind the row, and both sources turn dark. The pieces match within the atlas's
   resolution, which the cells' texels set. `impostor-turn-azimuth` draws the same pairs with the
   camera 65 degrees around the row, where the card's light must stay on its mesh's side.
-- The image test `impostor-handover` draws a row of pines inside the hand-over band, where the
-  mesh's dither and its card share the crown. The crown holds no pixel of the background, which
-  settles that one dither moves the tree. The Rust test
+- The image test `impostor-handover` draws a row of turned pines inside the hand-over band, where
+  the mesh's dither and its card share the crown. The crown holds no pixel of the background, which
+  settles that one dither moves the tree, and each card shows the turn that its tree has.
+  `impostor-handover-strip.spec.ts` walks the camera through the band and compares each card with
+  the crown of its mesh: the card that shows the tree's own turn sits closer to the mesh than a card
+  turned 60 degrees further, and the two card pictures differ. The Rust test
   `a_custom_material_never_fades_so_a_handed_over_card_does_not_dither` holds the fact that makes
   it so.
+- The Rust tests `a_still_card_in_a_far_cascade_leaves_its_layer_cached` count the far cascade's
+  draws over eight frames, on the WebGPU builder and on the WebGL2 one. A card that claims to be
+  still draws it exactly as often as a caster that never moves, and a card that does not claim it
+  draws it in every frame. The material test `passes a card's still-caster claim to the core, and
+  its withdrawal` holds that the public `castsStill` option sets the core's still-caster flag.
 - The image test `impostor-plant` draws a grown birch as its level-0 mesh beside the card that
   `bakeFarTree` makes from it. The two crowns match in colour, which settles the bake, the leaf
   coverage and the per-part tints.
@@ -271,8 +279,9 @@ that darkens itself.
   gives it. The Galaxy S25 holds the display at every preset, and D-241 has an S24-class forest row
   only on WebGL2, where Low and Medium hold its 33.3 ms. D-241 has no Mac row. The figures are in the
   table above.
-- A filmstrip of a moving camera through the hand-over, and of the sun's sweep. A still cannot show a
-  hop, a shimmer or the light changing. The demo runs it, and no picture holds it yet.
+- The filmstrip `impostor-handover-strip.spec.ts` walks the camera through the hand-over and moves
+  the sun around a row of turned pairs, which a still cannot show, and compares the band's turned
+  cards with their meshes. Its frames go to `target/filmstrip/` for the owner.
 
 ## Consequences
 
@@ -301,9 +310,12 @@ that darkens itself.
   `impostor-plant` draws a grown plant beside its card, and `impostor-shadow` draws a row of cards
   beside their cut-out shadows. A Rust test holds a coverage material's caster to its own builds and
   a still caster out of the moving list, and the material build's test holds the coverage function's
-  caster builds. The impostor, plant and turn pictures are redrawn for the upright frame, the bake
-  and the shadow offset. The `impostor-frame` plan times the demo that draws the cards at each preset
-  a GPU path draws, so the frame check repeats on each device.
+  caster builds. The impostor, plant, turn and hand-over pictures are redrawn for the upright frame,
+  the bake, the shadow offset and the hand-over's turned trees. The `impostor-frame` plan times the
+  demo that draws the cards at each preset a GPU path draws, so the frame check repeats on each
+  device. The Rust test `a_still_card_in_a_far_cascade_leaves_its_layer_cached` counts the far
+  cascade's draws on both builders, the material test holds the still-caster option's core flag, and
+  the strip's turned-band test runs on a computer with a GPU of its own.
 - The far-tree task builds the per-variant bake, the hand-over band and the shadow method. This
   record builds the card, the blend, the normal's frame, the turn and the bake helper, and the two
   tasks do not split the same work twice. The shadow method is M3-V9's, and this record's decision 9
