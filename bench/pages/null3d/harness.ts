@@ -102,6 +102,7 @@ export interface Null3dPageOptions {
  *   the camera every frame.
  * - `splats` puts a cloud of the splats add-on's Gaussians above S1, whose chunks a job worker
  *   selects for the camera every frame.
+ * - `wind` gives S1 the wind add-on's field, with a gust, a push and a sample in every frame.
  * - `reflectionProbes` places two reflection probes over S1, and `reflectionProbes=always`
  *   captures them again every frame.
  * - `setters` calls each per-frame setter in S1, colors included.
@@ -147,6 +148,7 @@ const SKETCH_SWITCHES = [
 	'terrain',
 	'impostors',
 	'splats',
+	'wind',
 	'batchShadows',
 	'rowValues',
 	'levels',

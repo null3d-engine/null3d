@@ -1,9 +1,10 @@
 # Wind for null3D
 
 `@null3d/wind` makes the air in a null3D scene. One field moves every plant, flag and smoke card
-that reads it. A gust that crosses a field therefore reaches all of them together. The air is a
-rule of place and time. A steady wind slows near the ground. A gust travels through it. Swirls turn
-without piling up.
+that reads it, so a gust that crosses a field reaches all of them together. The air is solved: a
+grid that follows the camera carries it from frame to frame. A gust therefore bends through the
+scene, and a body leaves a wake that outlives it. A steady wind slows near the ground, and swirls
+turn without piling up.
 
 ## Use
 
@@ -22,7 +23,14 @@ export default defineSketch((ctx) => {
   const leaf = ctx.materials.shader({
     wgsl: leafShader,
     textures: { wind: wind.field.texture },
-    uniforms: { origin: wind.field.origin, size: wind.field.size },
+    uniforms: {
+      origin: wind.field.origin,
+      size: wind.field.size,
+      layer: wind.field.texture.layer,
+      base: wind.field.air.base,
+      gust: wind.field.air.gust,
+      swirl: wind.field.air.swirl,
+    },
   });
 
   let nextGust = 0;
@@ -39,29 +47,33 @@ export default defineSketch((ctx) => {
 });
 ```
 
-Call `update` once in each frame. The add-on's calls allocate nothing; a sketch that pushes every frame keeps one two-number array for the place.
+Call `update` once in each frame. The add-on makes no object of its own; a sketch that pushes every frame keeps one two-number array for the place. Until the browser has optimized the add-on's functions, a fraction that crosses one of its calls becomes an object, as in the engine's own steps.
 
 ## The field
 
-The field is one `rgba16float` texture over a box of ground that follows the camera. Its red and
-blue channels hold the wind across the ground. Its green channel holds the wind's rise, which is
-zero while the field is flat. Its alpha holds how fast the air moves there.
+The field is one `rgba16float` texture over a box of ground that follows the camera. One pass keeps
+two states of it: the air of the frame before, and the air it steps toward. The pass steps the air
+by a fixed sixtieth of a second at a time. A wake therefore lasts after the body that made it has
+gone.
 
 A reader samples it with one texture read at each vertex. The shader build resolves only the
-engine's library, so a reader's WGSL holds a copy of the sampling function. The add-on's docs page,
-`api/wind`, shows the copy to take, and a test keeps the add-on's own copy equal to it.
+engine's library, so a reader's WGSL holds copies of two blocks: the steady field and the sampling
+function. They are in `shaders/field.wgsl` and on the `api/wind` docs page. A test keeps those two
+copies equal to the page's own copy.
 
-`sample(x, y, z, out)` gives the same air on the CPU, from the same rule, for a page's own motion.
+`sample(x, y, z, out)` gives the analytic air on the CPU: the field that the solver pulls toward,
+with the pushes and the gust it injects. The solved air is on the GPU.
 
 ## Costs and limits
 
 - The pass fills one texture of `grid` by `grid` texels in each frame, and a reader spends one
   texture slot on it.
-- The field carries no state between frames yet. A gust therefore does not spread by itself, and a
-  wake lasts only as long as the pushes that made it. The engine's pass history adds both later,
-  and the API stays the same.
-- A device without float render targets draws no field, and a reader reads its neutral black.
-- A place outside the box reads the box's edge. Keep the box wide enough for the scene.
+- The pass holds two states, so it costs twice the texture's memory, and one cycle takes 22 runs of
+  it.
+- A device without float render targets keeps no grid. There `field.size` is zero, so a reader
+  works the air out from the steady field and a plant still moves.
+- A place outside the box reads the steady field at its own place, at the height that the texture
+  holds. So the air carries on past the box, instead of holding the box's edge.
 
 `@null3d/wind` owns the wind. A scene makes its air with it, not with a hand-written field of its
 own, so there is one wind for every reader.

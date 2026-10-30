@@ -158,12 +158,13 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		docs: false,
 		required: [],
 	},
-	// Its analytic field, grid and projection WGSL compile into modules of their own.
+	// Its analytic field and grid WGSL compile into modules of their own, and the sampling file
+	// ships as text, which a reader copies.
 	wind: {
 		compile: true,
 		shaders: false,
 		docs: false,
-		required: [],
+		required: ['shaders/field.wgsl'],
 	},
 	cli: {
 		compile: false,

@@ -2949,8 +2949,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// The wind add-on's own page: a field of cards that reads the air at each vertex. A gust
 	// crosses the field between the first hold and the second, so the pairs change where the gust
-	// has reached. The wake test holds one body still, so its trail stays put. The part test draws
-	// the same page with the gust and the swirl taken out, from the drawings it makes itself.
+	// has reached. The part test draws the same page with the gust and the swirl taken out, from the
+	// drawings it makes itself. The wake has no reference picture here: its trail is only meaningful
+	// against a control, so `tests/image/wind-wake.spec.ts` holds two pages at the same time and
+	// compares the one that pushes the air with the one that turns `?push=0`.
 	{
 		name: 'wind-cards',
 		sketch: 'packages/wind/page/sketch.ts?camera=still',
@@ -2959,17 +2961,20 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		// The cards cast shadows that sway with them, and the software GPU takes its time with them.
 		timeoutSeconds: 180,
 	},
+	// The page's look witness: the same cards held at 1.2 s with the body stopped, so they stand
+	// turned along the solved field. It replaces the wake's six pictures, which said nothing without
+	// a control; the wake is measured against its own control instead.
 	{
-		name: 'wind-cards-later',
-		sketch: 'packages/wind/page/sketch.ts?camera=still',
-		hold: 1.6,
+		name: 'wind-page',
+		sketch: 'packages/wind/page/sketch.ts?camera=still&still=1',
+		hold: 1.2,
 		size: [480, 270],
 		timeoutSeconds: 180,
 	},
 	{
-		name: 'wind-wake',
-		sketch: 'packages/wind/page/sketch.ts?still=1',
-		hold: 1.2,
+		name: 'wind-cards-later',
+		sketch: 'packages/wind/page/sketch.ts?camera=still',
+		hold: 1.6,
 		size: [480, 270],
 		timeoutSeconds: 180,
 	},
