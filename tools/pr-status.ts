@@ -73,8 +73,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"unticked by the 29 October audit: the owner's 26 October ruling is that cookies take any texture and larger sizes, and the head still resamples to 128 by 128 and takes pixels only",
 	'M3-V3':
 		'unticked under the policy this branch now states rather than by its own clause: no public behaviour may be reachable by nobody. The pick build of a compute-driven vertex offset is in its What bullet, and nothing takes it: no unit test, no browser test and no example. The owner may reverse this one without touching the others',
-	'M3-K2':
-		'unticked under the same policy: drag controls are exported and reached by no unit test, browser test, picture or example, because the gizmos picture and its spec reach only the transform controls',
 	'M3-F3':
 		"dropped with the temporal resolve it waited on (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F10':
@@ -107,7 +105,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-B5':
 		'the glints draw and are tested in both sets; its cost per preset is owed (D-255), which needs a quiet GPU',
 	'M3-F2':
-		"the cloud that arrives as 100,000 splats used to become one chunk and could not stream; `chunks.ts` now cuts it into up to eight, which landed in `dcbacc193`. The streaming test's last recorded CI failure predates that change and no pass has been recorded since, so the fix is in the tree and unproved",
+		"the cloud that arrives as 100,000 splats used to become one chunk and could not stream; `chunks.ts` now cuts it into up to eight, which landed in `dcbacc193`, and the streaming test passes locally on the software renderer CI uses, in 48 seconds; CI's own run on this head is next. What keeps the task open is its rule-42 debt: the chunk selection and its sort, and the row packing, are still TypeScript",
 	'M3-V6':
 		'the same placement is shown on two Android phones in Chrome and on an iPad in Safari 26.6.1, so a second JavaScript engine has placed the same points (`.dev/tested-devices/ipad-pro-13-safari/20261027-000756-vegetation-scatter.md`, two passed, both paths); the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
 	'M3-V5':
