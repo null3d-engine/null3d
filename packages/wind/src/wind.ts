@@ -150,9 +150,8 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	// the settings, the ring of pushes and gusts, and the box. A frame sets the runs that the sketch
 	// time owes, so the air keeps the same pace whatever the frame rate.
 	//
-	// The air starts when a page makes the wind. A held page runs its updates without drawing, and
-	// the pass advances only when a frame draws, so a held frame solves one cycle from the analytic
-	// field and holds it there.
+	// The air starts when a page makes the wind. A held page steps its updates up to the held time
+	// and the pass runs with each step, so a held picture carries the air that the hold built.
 	let solved = now();
 	const owedSteps = (): number => {
 		// The sketch time is a sum of frame times, so a frame that owes exactly one step can read a

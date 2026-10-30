@@ -3,10 +3,12 @@
 // off is the control: it draws the same body in the same place, and its cards lean only with the
 // ambient air. The pair gives the first its teeth.
 //
-// A held frame cannot show this. Hold mode runs the sketch's updates up to the held time, but it
-// draws one frame, and the field advances only in a frame that draws: a held picture has one cycle
-// of solved air and no trail. The page therefore runs live to the capture time, and the engine
-// reads its frame back through `captureFrame`.
+// Both pages are held at the same sketch time. Hold mode steps the sketch's updates up to that
+// time, and the field's pass runs with them, so the pushed page carries the trail its body made.
+// A held picture keeps the test deterministic: two live pages draw a different number of frames on
+// a busy machine, and a held page draws the same frames every time. Drawn twice with the pushes off
+// on both pages, the three paths differ by 0.00000 of their channels, so the 0.05505 to 0.07955
+// that the pushing pair measures is the trail and nothing else.
 import { expect, type Page, test } from '@playwright/test';
 import type { ImageRun } from '../lib/images.ts';
 import { pageResult, watchPageProblems } from '../lib/page-result.ts';
@@ -15,27 +17,23 @@ import { IMAGE_RUNS } from './manifest.ts';
 test.describe.configure({ mode: 'parallel' });
 
 interface Frame {
-	/** What the sketch reported with the frame: the box's width, which is zero without a grid. */
-	debug?: { grid?: number };
 	error?: string;
 	width: number;
 	height: number;
 	pixels: string;
 }
 
-/** One captured frame: each pixel's red, green and blue from 0 to 1, and the box's width. */
-interface Picture {
-	pixels: Float32Array;
-	grid: number;
-}
-
-/** The longest that one page may take to reach its capture time and draw it. */
+/** The longest that one page may take to draw its held frame. */
 const PAGE_MS = 120_000;
 
-/** The time that each page runs to before it captures, in seconds of sketch time. */
-const CAPTURE_SECONDS = 1.2;
+/** The time that each page holds at, in seconds of sketch time. */
+const HOLD_SECONDS = 1.2;
 
-async function imageOf(page: Page, address: string): Promise<Picture> {
+/** The page's size, as the manifest's wind pictures draw it. */
+const SIZE = '480x270';
+
+/** Each pixel's red, green and blue, from 0 to 1. */
+async function imageOf(page: Page, address: string): Promise<Float32Array> {
 	const problems = watchPageProblems(page);
 	await page.goto(address);
 	const frame = await pageResult<Frame>(page, PAGE_MS).catch((error: unknown) => {
@@ -46,7 +44,7 @@ async function imageOf(page: Page, address: string): Promise<Picture> {
 	const rgb = new Float32Array((pixels.length / 4) * 3);
 	for (let i = 0, j = 0; i < pixels.length; i += 4, j += 3)
 		for (let c = 0; c < 3; c++) rgb[j + c] = (pixels[i + c] ?? 0) / 255;
-	return { pixels: rgb, grid: frame.debug?.grid ?? 0 };
+	return rgb;
 }
 
 /** The share of channels that differ by more than `step`. */
@@ -56,45 +54,41 @@ function changed(a: Float32Array, b: Float32Array, step: number): number {
 	return count / a.length;
 }
 
-/** The add-on's own page at the run's tier and thread mode, live until it captures its frame. */
+/**
+ * The add-on's sketch held at the wake's time, with its body stopped a second in. `push` false asks
+ * for the page that never shoves the air. The sketch reads its own switches from the query that the
+ * page gives it, so they travel inside the page's `sketch` switch.
+ */
 function address(run: ImageRun, push: boolean): string {
 	const query = new URLSearchParams();
 	query.set('gpu', run.tier);
+	query.set('hold', String(HOLD_SECONDS));
 	query.set('preset', 'high');
-	query.set('capture', String(CAPTURE_SECONDS));
-	query.set('still', '1');
-	query.set('camera', 'still');
-	// A live view that holds still would otherwise blend its frames and stop drawing, and the
-	// capture would wait for a frame that never comes.
-	query.set('still-camera', 'off');
-	if (!push) query.set('push', '0');
-	const modes = new URLSearchParams((run.mode?.query ?? '').replace(/^&/, ''));
-	for (const [name, value] of modes) query.set(name, value);
-	return `/packages/wind/page/index.html?${query}`;
+	query.set('size', SIZE);
+	for (const [name, value] of new URLSearchParams((run.mode?.query ?? '').replace(/^&/, '')))
+		query.set(name, value);
+	query.set('sketch', `/packages/wind/page/sketch.ts?camera=still&still=1${push ? '' : '&push=0'}`);
+	return `/tests/pages/image.html?${query}`;
 }
 
 test('wind-wake: the air behind the body keeps the trail its pushes made', async ({ page }) => {
 	const runs = IMAGE_RUNS.filter((run) => run.test === 'wind-cards');
 	expect(runs.length).toBeGreaterThan(0);
-	test.setTimeout(runs.length * 4 * PAGE_MS);
+	test.setTimeout(runs.length * 2 * PAGE_MS);
 	for (const run of runs) {
 		const pushed = await imageOf(page, address(run, true));
 		const control = await imageOf(page, address(run, false));
-		// The pushes live in the grid. A device without float render targets keeps none, and its
-		// readers work the air out from the steady field, which carries no push. That path is the
-		// add-on's documented fallback, so this test does not judge it here.
-		if (pushed.grid === 0 || control.grid === 0) continue;
-		const moved = changed(pushed.pixels, control.pixels, 1 / 255);
+		// A one-step bar counts a card that leans one pixel further, which is what the trail does
+		// to the cards that the body passed.
+		const moved = changed(pushed, control, 1 / 255);
 		console.log(`${run.id}: pushed ${moved.toFixed(5)}`);
 		// The pushes change a share of the picture where the body passed and the air carried the
 		// trail. A page that never pushed, or a flight that never rolled the pushes in, draws the
-		// control's picture. On this Mac's software GPU the two WebGPU paths measure about 0.040 and
-		// 0.026 of the channels changed over two runs. The software WebGL2 path measures about
-		// 0.002, which is close to the difference that two captures at other times make, so this
-		// test does not yet prove a wake on that path; the floor is under its reading rather than
-		// proving it.
+		// control's picture. With the pushes off on both pages the three paths measure 0.00000, and
+		// with them on they measure 0.07940, 0.05505 and 0.07452 on this Mac's card and 0.07955,
+		// 0.05506 and 0.07448 on its software GPU, so the floor sits under half of the smallest.
 		expect
 			.soft(moved, `${run.id}: the pushes leave air that reaches the cards`)
-			.toBeGreaterThan(0.001);
+			.toBeGreaterThan(0.01);
 	}
 });
