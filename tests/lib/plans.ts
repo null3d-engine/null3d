@@ -1767,7 +1767,7 @@ export function terrainPlan(): PlanItem<Check>[] {
 		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
 	];
 	for (const { path, tier, presets } of TERRAIN_PATHS)
-		for (const preset of presets)
+		for (const preset of presets) {
 			items.push(
 				pageItem(
 					`terrain-${preset}-${path}`,
@@ -1785,30 +1785,14 @@ export function terrainPlan(): PlanItem<Check>[] {
 					},
 				),
 			);
-	return items;
-}
-
-/**
- * The morph's own cost at each preset that a GPU path draws: the demo from a camera that holds
- * still, once with the morph on and once with it off, in turns. A moving camera would draw a
- * different selection on each side: the first pair on the S25 drew 22% more triangles with the
- * morph off only because its measure started at another point of the orbit.
- */
-const TERRAIN_MORPH_VARIANTS = [
-	{ id: 'on', switches: [] },
-	{ id: 'off', switches: ['morph=off'] },
-] as const;
-
-export function terrainMorphPlan(): PlanItem<Check>[] {
-	const items: PlanItem<Check>[] = [
-		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
-	];
-	for (const { path, tier, presets } of TERRAIN_PATHS)
-		for (const preset of presets)
-			for (const { id, switches } of TERRAIN_MORPH_VARIANTS)
+			// The morph's own cost: one pair a preset and path, the same held view with the morph
+			// on and off. The demo's own camera orbits, so a moving pair draws a different
+			// selection on each side: the first S25 pair drew 22% more triangles off only because
+			// its measure began at another point. Both items therefore ask for the held view.
+			for (const side of ['on', 'off'] as const)
 				items.push(
 					pageItem(
-						`terrain-morph-${preset}-${path}-${id}`,
+						`terrain-${preset}-${path}-morph-${side}`,
 						'demo-device',
 						{ kind: 'probe', tier },
 						{
@@ -1819,12 +1803,13 @@ export function terrainMorphPlan(): PlanItem<Check>[] {
 								'target-fps=1',
 								'seconds=5',
 								'still',
-								...switches,
+								...(side === 'off' ? ['morph=off'] : []),
 							],
 							timeoutSeconds: TERRAIN_TIMEOUT_SECONDS,
 						},
 					),
 				);
+		}
 	return items;
 }
 
@@ -2567,7 +2552,6 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
 	terrain: terrainPlan,
-	'terrain-morph': terrainMorphPlan,
 	'terrain-shadow': terrainShadowPlan,
 	'tree-generation': treeGenerationPlan,
 	'vegetation-scatter': vegetationScatterPlan,
