@@ -203,6 +203,30 @@
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
 	},
+	"chromium-swiftshader/compat/vegetation-broadleaf.png": {
+		"test": "vegetation-broadleaf",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/compat/vegetation-conifer.png": {
+		"test": "vegetation-conifer",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/compat/vegetation-grass.png": {
+		"test": "vegetation-grass",
+		"tier": "compat",
+		"date": "2026-10-30",
+		"reason": "the first grass picture, drawn on this Mac before a CI run, to judge the shape; replace with CI's software set when the shape is fixed"
+	},
+	"chromium-swiftshader/compat/vegetation-rush.png": {
+		"test": "vegetation-rush",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
 	"chromium-swiftshader/compat/water-bounds.png": {
 		"test": "water-bounds",
 		"tier": "compat",
@@ -442,6 +466,24 @@
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgl2/vegetation-conifer.png": {
+		"test": "vegetation-conifer",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgl2/vegetation-grass.png": {
+		"test": "vegetation-grass",
+		"tier": "webgl2",
+		"date": "2026-10-30",
+		"reason": "the first grass picture, drawn on this Mac before a CI run, to judge the shape; replace with CI's software set when the shape is fixed"
+	},
+	"chromium-swiftshader/webgl2/vegetation-meadow-grass.png": {
+		"test": "vegetation-meadow-grass",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
 	"chromium-swiftshader/webgl2/water-bounds.png": {
 		"test": "water-bounds",
@@ -700,6 +742,18 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgpu/vegetation-conifer.png": {
+		"test": "vegetation-conifer",
+		"tier": "webgpu",
+		"date": "2026-10-29",
+		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgpu/vegetation-grass.png": {
+		"test": "vegetation-grass",
+		"tier": "webgpu",
+		"date": "2026-10-30",
+		"reason": "the first grass picture, drawn on this Mac before a CI run, to judge the shape; replace with CI's software set when the shape is fixed"
 	},
 	"chromium-swiftshader/webgpu/water-bounds.png": {
 		"test": "water-bounds",

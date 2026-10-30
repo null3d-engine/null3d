@@ -234,6 +234,14 @@ A large scene need not place every plant at once. `EcoScatter` takes tiles with 
 
 `varianceMaps` holds three patches at one to two meters. The type picks a species' variant, the color shifts a plant's tint, and the lichen covers a plant or a stone. Each point carries the values at its place in its `tint` and `lichen` fields. Neighboring plants therefore differ a little, and the ground gains patches.
 
+## Grass on the ground
+
+`createGrass(ctx, { height, area, count, seed })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)` and skip ground steeper than `maxSlope`. Their turn, size and tint come from integer hashes, so one seed places the same grass on every device. Each tuft's row values carry its wind phase, its tint and its turn, which its shader reads. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
+
+The CPU tile path draws on WebGPU and WebGL2, with one instance batch for each tuft shape. The compute path, which builds and culls blades on the GPU for the denser presets, is not built yet.
+
+The blades sway in the add-on's shader, and they receive the sun's shadows. The ground's own colour and the blades' root colours should meet at the hill's foot.
+
 ## Speed and memory
 
 The built-in set holds thirteen species and six variants each. Grown in one call, the whole set takes about 50 ms on an Apple M5 Max laptop. The measured budgets are 60 ms for the iPhone and the iPad, and 200 ms for the slowest tablet. A tree takes about 3,000 to 5,500 triangles at full detail, and all of its levels together take about 0.3 to 0.5 MB. The whole set of 78 variants takes about 18 MB of vertex arrays.
