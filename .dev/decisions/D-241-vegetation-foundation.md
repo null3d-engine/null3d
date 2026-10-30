@@ -245,6 +245,35 @@ those presets draw on core WebGPU only, and the tablet offers no WebGPU adapter.
   demo and preset, which the add-on shares with the scene. Creek's 3.1 MB of Blender models leave,
   and the arrays replace them.
 
+### M3-V7's cost per preset, on the Mac
+
+M3-V7's look is a grove of grown oaks in the wind add-on's field, with the leaf and bark materials
+swaying and the sun's shadows following. Its page is `tests/pages/vegetation-cost.html`, run with
+the governor's target at one frame a second so the render scale stays at 1. The Mac's Chrome drew
+it at 1280 by 720 at each preset and path
+([its run](../tested-devices/macbook-pro-m3-max-chrome/20261030-1700-vegetation-wind.md)). The
+machine was shared and the load sat between 4 and 7, so a row within about a millisecond of its
+neighbour is not a separate cost.
+
+| GPU path | Preset drawn | Whole frame (ms) | Shadow cascades (ms) | Ambient occlusion (ms) | Draw calls |
+| --- | --- | --- | --- | --- | --- |
+| WebGPU | Low | 6.29 | 3.21 | 0 | 26 |
+| WebGPU | Medium | 7.37 | 2.82 | 0 | 26 |
+| WebGPU | High | 7.44 | 2.39 | 10.55 | 38 |
+| WebGPU | Ultra | 6.55 | 2.13 | 6.39 | 42 |
+| compatibility | Low | 6.46 | 3.28 | 0 | 26 |
+| compatibility | Medium | 8.22 | 2.88 | 0 | 25 |
+| WebGL2 | Low | 11.48 | no timer | no timer | 53 |
+| WebGL2 | Medium | 15.40 | no timer | no timer | 56 |
+
+These are whole-frame figures: they carry the ground, the sky and the final pass as well as the
+plants. D-241's 5, 12, 49.0 and 62.5 ms are the add-on's own GPU time, which the benchmark isolates
+with `bun run bench:gpu-check`. The frame stays under every preset's ceiling here, and the highest
+reading, WebGL2 at Medium, is 15.4 ms against that preset's 43.9 to 90.8. The sway's distance grows
+with the preset, so a heavier preset draws more of the grove: 26 calls a frame at Low and Medium on
+WebGPU, 38 at High and 42 at Ultra. The number of plants is small next to Creek's valley, so these
+are the look's cost on one screenful, not the dressed valley's.
+
 ## The generator's shape
 
 M3-V4 builds the add-on as `@null3d/vegetation`. The generator follows this record's look and
@@ -575,10 +604,11 @@ for each tree and crown occlusion.
 **The leaf's normals.** M3-V7 lights a leaf's diffuse and ambient light by a normal of its own,
 `s.diffuseNormal`, and keeps the leaf's own normal for its gloss and the light through it. The
 crown's normal is radial from the crown's center. An ellipsoid normal would bend it by the crown's
-shape instead, but it needs two more numbers in the plant material's uniforms. That row holds 26
-numbers with the material's six textures, and the current layout ends at 26 of 26; a repack into six
-four-number groups would fit them at 24. The gain did not pay for the repack, and the research
-report lists a normal from the crown's center as a valid crown normal. The second normal itself costs
+shape instead, but it needs two more numbers in the plant material's uniforms, and that row has no
+room: a custom material holds 32 numbers less one for each of its six textures. The wind field's
+twelve steady numbers do not fit it either, so they travel in the second row of the branch records
+texture, and the frame's newest layer takes the row's one spare number. The research report lists a
+normal from the crown's center as a valid crown normal. The second normal itself costs
 no uniform: it is a field of the shader's Surface record, so a material that never names it keeps the
 template's single-normal path.
 
