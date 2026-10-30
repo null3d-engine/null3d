@@ -164,8 +164,18 @@ function planTasks(): { id: string; name: string }[] {
 	// A plan entry that names a closed investigation rather than work is not a task, and counting
 	// it among the open ones says the milestone has work it does not have.
 	const NOT_TASKS = new Set(['M3-R37']);
-	return [...text.matchAll(/^(M3-[A-Z0-9]+[a-z]?) (.+?)(?: \(P.*)?$/gm)]
-		.filter((match) => !NOT_TASKS.has(match[1] as string))
+	const marks = [...text.matchAll(/^(M3-[A-Z0-9]+[a-z]?) (.+?)(?: \(P.*)?$/gm)];
+	// An entry the owner dropped is not work either: its own line says so, and no ready start makes
+	// it happen.
+	const dropped = new Set<string>();
+	for (let i = 0; i < marks.length; i++) {
+		const start = marks[i]?.index ?? 0;
+		const end = marks[i + 1]?.index ?? text.length;
+		if (/^Dropped by the owner's ruling/m.test(text.slice(start, end)))
+			dropped.add(marks[i]?.[1] as string);
+	}
+	return marks
+		.filter((match) => !NOT_TASKS.has(match[1] as string) && !dropped.has(match[1] as string))
 		.map((match) => ({
 			id: match[1] as string,
 			name: (match[2] as string).trim(),
