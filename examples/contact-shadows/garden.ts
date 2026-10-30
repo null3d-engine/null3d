@@ -210,6 +210,8 @@ export function garden(ctx: SketchContext, camera: Camera): { update(): void } {
 		cell: leafCellFor(conifer),
 		color: conifer.color.leaf,
 		transmission: conifer.color.transmission,
+		// The needle cards carry thin sprays, so a lower cut keeps the crown closed at a distance.
+		alphaCutoff: 0.25,
 		wind: pineField,
 	});
 	plantMaterials.push(pineBark, pineLeaves);
@@ -380,7 +382,7 @@ export function garden(ctx: SketchContext, camera: Camera): { update(): void } {
 	// with the demo's budget, since M3-V8's GPU grass is not built.
 	const grassSpecies = builtInSpecies('meadow-grass');
 	if (!grassSpecies) throw new Error('the vegetation add-on has no meadow grass');
-	const roots = [
+	const roots: (readonly [number, number])[] = [
 		...ROCKS.map(([x, z, r]) => [x + r * 0.9, z + r * 0.5] as const),
 		[LANTERN[0] - 0.3, LANTERN[1] + 0.3] as const,
 	];
@@ -416,7 +418,9 @@ export function garden(ctx: SketchContext, camera: Camera): { update(): void } {
 		});
 		roots.forEach(([x, z], i) => {
 			batch.positions.set([x, 0, z], i * 3);
-			batch.scales.fill(math.randFloat(0.6, 1), i * 3, i * 3 + 3);
+			// A tuft stands about a hand high at the rocks: tall enough to read against the sand at
+			// the camera's distance, and low enough to stay under the pines beyond the wall.
+			batch.scales.fill(math.randFloat(1.1, 1.9), i * 3, i * 3 + 3);
 			const turn = math.randFloat(0, Math.PI * 2);
 			batch.rotations.set([0, Math.sin(turn / 2), 0, Math.cos(turn / 2)], i * 4);
 			batch.values?.set(treeValues(x, z, 5, 0), i * 4);
