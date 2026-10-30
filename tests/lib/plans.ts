@@ -1739,6 +1739,38 @@ export function vegetationPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * What a grove of grown oaks costs at each preset, for M3-V7: the leaf and bark materials sway in
+ * the scene's one wind field, the leaves flutter and the sun's shadows follow them. The page times
+ * the frames at a fixed preset and GPU path, and reports the GPU time per frame and per pass, the
+ * CPU time and the draw calls.
+ */
+const VEGETATION_WIND_PATHS = [
+	['webgpu', 'webgpu'],
+	['compat', 'webgpu'],
+	['webgl2', 'webgl2'],
+] as const;
+/** The presets that the vegetation wind plan runs on each path. */
+const VEGETATION_WIND_PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
+
+export function vegetationWindPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const preset of VEGETATION_WIND_PRESETS)
+		for (const [path, tier] of VEGETATION_WIND_PATHS)
+			items.push(
+				pageItem(
+					`vegetation-wind-${preset}-${path}`,
+					'vegetation-cost',
+					{ kind: 'probe', tier },
+					{
+						switches: [`gpu=${path}`, `preset=${preset}`, 'seconds=5'],
+						timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
+					},
+				),
+			);
+	return items;
+}
+
+/**
  * The GPU paths of the terrain plan's pages, and the presets that each one draws. WebGL2 and
  * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
  * under another name.
@@ -2489,6 +2521,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	demos: demosPlan,
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
+	'vegetation-wind': vegetationWindPlan,
 	terrain: terrainPlan,
 	'tree-generation': treeGenerationPlan,
 	'vegetation-scatter': vegetationScatterPlan,

@@ -260,6 +260,8 @@ The box follows the camera, so update the material's `origin` values in each fra
 
 A vertex offset that reads the field orders the pass before every pass that draws the material. The shadows and the motion vectors therefore move with the plant.
 
+The vegetation add-on reads this field for its plants. `plantWind(ctx, asset, wind.field, { swayDistance })` builds the branch records that a plant's leaf and bark materials read, and their vertex offset samples this field's block at each vertex. Their sway fades to nothing at the material's `swayDistance`, so a plant past it stands still and its far shadow cascades keep their layers. The plant materials take the box's near corner from the camera's own place, since the box follows the camera, so their uniforms do not change in a frame.
+
 ## What the field is
 
 The field keeps its state between frames. One pass holds two states and steps the air forward by a fixed sixtieth of a second at a time. It runs as many steps as the sketch time owes.
