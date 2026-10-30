@@ -19,6 +19,9 @@ const SPACING = 3.4;
 /** The height of each tree, in meters. */
 const HEIGHT = 4.5;
 
+/** The turn of each tree, so the hand-over shows crowns that are actually turned. */
+const TURNS = [0, Math.PI / 3, (2 * Math.PI) / 3] as const;
+
 /** The pine's triangles as a mesh, with its vertex colours and computed normals. */
 function pineMesh(arrays: {
 	positions: number[];
@@ -43,10 +46,15 @@ export default defineSketch((ctx) => {
 	// and half to its card. A tree's distance is to the nearest point of its bounds, so the camera
 	// stands one radius past the band's middle.
 	// `?at=` places the camera at a share of the switch distance instead, which the filmstrip walks
-	// from before the band to past it.
-	const at = Number(new URL(import.meta.url).searchParams.get('at') ?? 0.96);
+	// from before the band to past it. `?only=` hides the meshes, the cards or both, so a test can
+	// compare each against the ground alone, and `?cardTurn=` offsets the cards' turns alone, which
+	// a test uses to show that a wrong turn is visible.
+	const params = new URL(import.meta.url).searchParams;
+	const at = Number(params.get('at') ?? 0.96);
+	const only = params.get('only');
+	const cardTurn = (Number(params.get('cardTurn') ?? 0) * Math.PI) / 180;
 	const camera = scene.createPerspectiveCamera({
-		fov: 42,
+		fov: 22,
 		position: [0, 3.5, SWITCH * at + HEIGHT * sphereRadius(arrays.positions)],
 		target: [0, 2, 0],
 	});
@@ -103,19 +111,24 @@ export default defineSketch((ctx) => {
 			surface,
 			atlas: bake.atlas,
 			positions,
+			turn: TURNS.map((turn) => turn + cardTurn),
 			depth: bake.depth,
 			alphaMode: 'mask',
 			roughness: 0.9,
 		},
 	);
 	for (let k = 0; k < COUNT; k++) {
+		const turn = TURNS[k] ?? 0;
 		trees.positions.set([positions[k * 3] as number, 0, 0], k * 3);
+		trees.rotations.set([0, Math.sin(turn / 2), 0, Math.cos(turn / 2)], k * 4);
 		trees.scales.set([HEIGHT, HEIGHT, HEIGHT], k * 3);
 		cards.batch.scales.set([HEIGHT * cardWidth, HEIGHT * cardHeight, 1], k * 3);
 	}
 	trees.markDirty();
 	cards.markDirty();
 	handOverToCards(trees, cards.batch, SWITCH);
+	if (only === 'mesh' || only === 'none') cards.batch.setActiveCount(0);
+	if (only === 'card' || only === 'none') trees.setActiveCount(0);
 	return {};
 });
 

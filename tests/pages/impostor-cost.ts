@@ -38,9 +38,12 @@ run('impostor-cost', async () => {
 	const views = await featureCost(engine, turn('cards-one', 'cards'), undefined, {
 		alternate: true,
 	});
+	// The engine's own choice of preset is part of the figure, so read it before the engine stops.
+	const preset = engine.mode.preset;
 	await engine.destroy();
 	return {
 		tier: engine.capabilities.tier,
+		preset,
 		cards: 19 * 8,
 		window: [innerWidth, innerHeight],
 		devicePixelRatio,

@@ -3022,9 +3022,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
-	// A row of pines inside the hand-over band: each draws as its mesh and as its card at the same
-	// place, the mesh's pixels dither out over the card's full crown, and the background must not
-	// show through the crown where both could drop a pixel.
+	// A row of turned pines inside the hand-over band: each draws as its mesh and as its card at the
+	// same place, the card shows the turn that its tree has, the mesh's pixels dither out over the
+	// card's full crown, and the background must not show through the crown where both could drop a
+	// pixel.
 	{
 		name: 'impostor-handover',
 		sketch: 'tests/pages/sketches/impostor-handover-sketch.ts',
