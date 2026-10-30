@@ -27,10 +27,10 @@ pass's state between frames?
 - The add-on stays inside the public API (AGENTS.md rule 12). It does not ask for an engine change
   that belongs to another task.
 - A frame allocates nothing (hard rule 1).
-- Hold mode draws the same picture on every run, so the field is a pure function of sketch time and
-  of the pushes that the page made.
-- The API and the WGSL sampling function do not move when the field gains its memory, so readers
-  built on the analytic field keep working.
+- Hold mode draws the same picture on every run. The field there is a pure function of sketch time
+  and of the pushes that the page made.
+- The API and the WGSL sampling function do not move when the field gains its memory. Readers built
+  on the analytic field keep working.
 
 ## Data
 
@@ -53,8 +53,8 @@ timing runs. Every cost figure for the field is owed to M3-V14.
 The field is built in two stages, both under M3-V15.
 
 **Stage one, built.** The analytic wind is incompressible by construction. Its swirl is the curl
-of one stream function in the ground plane, a push is a vortex, and a gust turns in rings about its
-own center. Its base flow is constant along the ground and slower near it. No pressure solve is
+of one stream function in the ground plane. A push is a vortex, and a gust turns in rings about
+its own center. Its base flow is constant along the ground and slower near it. No pressure solve is
 therefore needed to keep the air's volume. The test holds the discrete form's divergence under a
 thousandth of the field's speed, so the air keeps its volume without one.
 
@@ -68,8 +68,8 @@ air at a point. The pushes ring holds the four newest, which fade over three sec
 
 **Stage two, with M3-V13.** V13 is what lets one pass read its own last step and run its dispatch
 several times in a frame. The core then becomes an advected solve in Stam's form, with vorticity
-confinement and the pressure solve that the plan describes. The field keeps two states, a reader
-mixes them by the time between the field's steps, and a wake lasts after the body that made it has
+confinement and the pressure solve that the plan describes. The field keeps two states, and a reader
+mixes them by the time between the field's steps. A wake then lasts after the body that made it has
 gone. The grid, the box, the outputs, the sampling function and every reader stay as they are.
 
 **The pressure projection is left out on purpose.** This field is incompressible by
@@ -90,13 +90,13 @@ divergence, and the projection removes it.
   body. The pushes' trail stands in for the wake until M3-V13 lands.
 - **A device that cannot hold the field:** a WebGL2 device without a float render target keeps no
   pass, so the add-on costs it nothing. Its box has no width, so every sample of every reader is
-  the steady field worked out from the air's settings, and a plant there still moves. The add-on
+  the steady field worked out from the air's settings. A plant there still moves. The add-on
   reads the device's extensions to decide, and a test covers both answers.
 - **The tier table waits:** the pressure steps, the field steps a second and the mixed states of the
   plan's table belong to stage two. M3-V14 measures the field that exists, and its rows are replaced
   when the core changes.
-- **Docs and skills:** the wind page states that the field carries no state yet, and that a page
-  reads it the same way before and after the change.
+- **Docs and skills.** Stage one's page said the field carried no state yet. It said too that a
+  page reads the field the same way before and after the change. Stage two describes the solved field.
 - **Evidence:** the add-on's tests prove the field moves a plant card, and that a frozen field fails
   those tests. The allocation figure and `check-addon`'s page, cost and allocation gates were barred
   from stage one. Stage two's full run and `WIND_BUDGETS` give them, as "What the checks found when
@@ -104,15 +104,14 @@ divergence, and the projection removes it.
 - **`sample` and the allocation gate.** The gate reads the add-on's page. That page never calls
   `sample`, so the gate cannot see it. The call belongs in the benchmark harness as a switch when
   the gate first runs. It does not belong in the picture page, which would move every picture for a
-  measure it does not need. A source test holds the functions that a frame calls to the forms that
-  allocate: an object literal, an array literal, a function expression, a for-of and a `new`.
-- **The add-on's own shader data counts against the shader budget.** The WebGL2 fallback effect's
-  compiled data is most of the add-on's entry. At head `8d66b64ca`, the command in
-  `docs/guides/add-ons.md`, `bunx @null3d/cli check-addon packages/wind --skip-browser`, reports the
-  entry at 89.5 KB raw, and 13.8 KB with that import removed. Water's entry is 109.2 KB at that
+  measure it does not need. A source test holds the functions that a frame calls to the forms that allocate. Those are an
+  object literal, an array literal, a function expression, a for-of and a `new`.
+- **The add-on's own shader data counts against the shader budget.** This is the WebGL2 fallback
+  effect's compiled data, which is most of the add-on's entry. At head `8d66b64ca`, a run of
+  `bunx @null3d/cli check-addon packages/wind --skip-browser` reports the entry at 89.5 KB raw. With that import removed it reports 13.8 KB. Water's entry is 109.2 KB at that
   head. At that head the `sizes` gate failed on each add-on's own entry against the 64 KB code
   budget. M3-R25 counts an entry's inlined shader data in the
-  shader budget, so both entries pass with no budget changed. `--skip-browser` leaves out the page,
+  shader budget, so both entries pass with no budget changed. The switch leaves out the page,
   cost and allocation gates, which the full run in "What the checks found when they first ran"
   takes.
 - **The plugin's manifest, and what the check needs:** the command runs under node, and it finds the
@@ -192,7 +191,7 @@ two above, which waits on M3-V13; V13 landed and the add-on builds on it.
   The sketch worker reads 752.7 bytes a frame in all. The engine's own frame path is 544 of them.
   The engine answers this boxing the same way at its own places. Its `BUDGETS` table gives S1's
   camera step 48 bytes a frame. The setters' places come from `SETTER_BUDGETS`. The reason is the same: Chrome boxes a fraction that a function does not
-  inline. `WIND_BUDGETS` holds the six above with that reason, and the run passes. The docs do not
+  inline. The budget table holds the six above with that reason, and the run passes. The docs do not
   promise that a call allocates nothing without that caveat.
 
 - **The namespace part still waits.** D-224's addendum says the shader build resolves only the
