@@ -27,6 +27,7 @@ const gpus = (process.env.NULL3D_IMPOSTOR_GPUS ?? 'webgpu,compat,webgl2').split(
 
 /** What the page publishes: the shared cost sides, the cards that it drew, and the blend's sides. */
 interface ImpostorCost extends CostResult {
+	readonly preset?: string;
 	readonly cards?: number;
 	readonly blend?: CostResult['off'];
 	readonly one?: CostResult['on'];
@@ -43,7 +44,7 @@ for (const gpu of gpus)
 		expect(result.error).toBeUndefined();
 		console.log(
 			[
-				`${result.tier}, ${result.cards ?? 0} cards, load ${loadBefore} before and ${load()} after`,
+				`${result.tier} at ${result.preset ?? 'its preset'}, ${result.cards ?? 0} cards, load ${loadBefore} before and ${load()} after`,
 				costLine('cards off', result.off),
 				costLine('cards on', result.on),
 				...(result.blend && result.one
