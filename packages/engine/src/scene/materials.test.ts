@@ -194,6 +194,8 @@ function fakeCore() {
 	/** Each map a material got: its material, slot, texture handle and coordinate set. */
 	const maps: number[][] = [];
 	const biases: [number, number][] = [];
+	/** The distance from the camera out to which each material's vertex offset sways, in meters. */
+	const sways: number[] = [];
 	/** The ids of the destroyed materials, in order. */
 	const destroyed: number[] = [];
 	/** Each displacement's material, scale and bias, as the core got them. */
@@ -219,6 +221,7 @@ function fakeCore() {
 			a: number,
 			biasConstant: number,
 			biasSlope: number,
+			sway: number,
 		) => {
 			const row = new Array<number>(SIZE_MATERIAL_BYTES / 4).fill(0);
 			row.splice(0, 4, r, g, b, a);
@@ -237,6 +240,7 @@ function fakeCore() {
 			shadings.push(shading);
 			custom.push(new Array<number>(32).fill(0));
 			biases.push([biasConstant, biasSlope]);
+			sways.push(sway);
 			return table.push(row);
 		},
 		setMaterialValue: (material: number, param: number, x: number, y: number, z: number) =>
@@ -276,6 +280,7 @@ function fakeCore() {
 		maps,
 		destroyed,
 		biases,
+		sways,
 		displacements,
 		materials: new Materials(
 			core,
@@ -518,6 +523,16 @@ describe('Material.set', () => {
 			"E1217: materials.shader() got the 'weighted' blending, which custom materials do not take.",
 		);
 		expect(features).toEqual([]);
+	});
+
+	test('a custom material names the distance out to which its offset sways', () => {
+		const { sways, materials } = fakeCore();
+		materials.shader({ wgsl: compiledMaterial() });
+		materials.shader({ wgsl: compiledMaterial(), swayDistance: 120 });
+		expect(sways).toEqual([0, 120]);
+		const bad = thrown(() => materials.shader({ wgsl: compiledMaterial(), swayDistance: -1 }));
+		expect(bad.code).toBe('E1108');
+		expect(bad.message).toStartWith('E1108: materials.shader() got the swayDistance -1;');
 	});
 
 	test('a light map direction takes its own map, and the map places the bake', () => {

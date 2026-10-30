@@ -1091,6 +1091,10 @@ pub struct MaterialTable {
     margins: Vec<f32>,
     /// Each material's custom values, in id order: zero until a custom material sets them.
     values: Vec<f32>,
+    /// How far from the camera each material's vertex offset sways, in meters: zero for a material
+    /// whose offset moves at every distance. Past it a caster of the material stands still, so a
+    /// far shadow cascade that only its motion reaches need not draw.
+    sway: Vec<f32>,
     /// Each material's depth bias.
     biases: Vec<DepthBias>,
     /// Where each id stands.
@@ -1147,6 +1151,7 @@ impl MaterialTable {
             height_units: Vec::with_capacity(capacity as usize),
             margins: Vec::with_capacity(capacity as usize),
             values: Vec::with_capacity(capacity as usize * MATERIAL_FLOATS),
+            sway: Vec::with_capacity(capacity as usize),
             biases: Vec::with_capacity(capacity as usize),
             states: Vec::with_capacity(capacity as usize),
             free: Vec::new(),
@@ -1183,6 +1188,7 @@ impl MaterialTable {
                 self.height_units.push(0);
                 self.margins.push(0.0);
                 self.values.extend_from_slice(&[0.0; MATERIAL_FLOATS]);
+                self.sway.push(0.0);
                 self.biases.push(DepthBias::NONE);
                 self.states.push(State::Live);
                 self.len() - 1
@@ -1206,6 +1212,7 @@ impl MaterialTable {
         self.directions[at] = Handle::NONE;
         self.height_units[at] = 0;
         self.margins[at] = 0.0;
+        self.sway[at] = 0.0;
         self.biases[at] = DepthBias::NONE;
         self.states[at] = State::Live;
         self.scattering += u32::from(scatters(shading, features));
@@ -1376,6 +1383,24 @@ impl MaterialTable {
             .get(id as usize)
             .copied()
             .unwrap_or(DepthBias::NONE)
+    }
+
+    /// Gives a material the distance from the camera out to which its vertex offset sways, in
+    /// meters, or 0 for an offset that moves at every distance. It is part of what the frame reads
+    /// of the material, so it is set once, next to the features.
+    pub fn set_sway(&mut self, id: u32, distance: f32) -> Result<(), MaterialError> {
+        let slot = self
+            .sway
+            .get_mut(id as usize)
+            .ok_or(MaterialError::Unknown(id))?;
+        *slot = distance.max(0.0);
+        Ok(())
+    }
+
+    /// How far from the camera a material's vertex offset sways, in meters, or 0 for every distance
+    /// and for an id that names no material.
+    pub fn sway(&self, id: u32) -> f32 {
+        self.sway.get(id as usize).copied().unwrap_or(0.0)
     }
 
     /// Changes the value that starts at float `at` of a material's row (`param::*`) and keeps the
@@ -1851,6 +1876,39 @@ mod tests {
         assert!(table.custom_template_unused(first + 1));
         table.destroy(id).unwrap();
         assert!(table.custom_template_unused(first));
+    }
+
+    #[test]
+    fn a_material_keeps_the_distance_its_offset_sways_in() {
+        let mut table = MaterialTable::with_capacity(2);
+        let first = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        let second = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        // A material that names no distance moves at every distance.
+        assert_eq!(table.sway(first), 0.0);
+        table.set_sway(first, 120.0).unwrap();
+        table.set_sway(second, -5.0).unwrap();
+        assert_eq!(table.sway(first), 120.0);
+        assert_eq!(
+            table.sway(second),
+            0.0,
+            "a negative distance means no limit"
+        );
+        assert_eq!(
+            table.sway(99),
+            0.0,
+            "an id that names no material has no limit"
+        );
+        assert_eq!(
+            table.set_sway(99, 1.0),
+            Err(MaterialError::Unknown(99)),
+            "only a material takes a distance"
+        );
+        // A reused id starts again at every distance.
+        table.destroy(first).unwrap();
+        table.release_unused(|_| false);
+        let reused = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        assert_eq!(reused, first);
+        assert_eq!(table.sway(reused), 0.0);
     }
 
     #[test]

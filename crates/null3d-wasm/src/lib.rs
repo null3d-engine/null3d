@@ -2546,7 +2546,10 @@ pub fn mesh_format(mesh: u32) -> u32 {
 /// `shading::CUSTOM_TRANSMISSION` when its WGSL has the builds that let light through. Its features
 /// (`constants::material_feature`) and its depth bias are fixed from now on. The bias takes
 /// three.js's `polygonOffsetUnits` as `bias_constant` and its `polygonOffsetFactor` as
-/// `bias_slope`, whose positive values push the surface away.
+/// `bias_slope`, whose positive values push the surface away. A custom material whose vertex offset
+/// sways gives the distance from the camera out to which it moves, in meters, as `sway_distance`:
+/// past it the material's casters stand still, so far shadow cascades keep their layers. Zero sways
+/// at every distance.
 #[wasm_bindgen(js_name = createMaterial)]
 #[allow(clippy::too_many_arguments)]
 pub fn create_material(
@@ -2558,6 +2561,7 @@ pub fn create_material(
     a: f32,
     bias_constant: f32,
     bias_slope: f32,
+    sway_distance: f32,
 ) -> u32 {
     let shading = match shading {
         shading::UNLIT => Shading::Unlit,
@@ -2587,6 +2591,9 @@ pub fn create_material(
             .create(shading, features, [r, g, b, a])
             .map_err(material_failure)?;
         table.set_depth_bias(id, bias).map_err(material_failure)?;
+        table
+            .set_sway(id, sway_distance)
+            .map_err(material_failure)?;
         // A wireframe draws each part's edge list, which the meshes keep from the first one on.
         if features & materials::feature::WIREFRAME != 0 {
             settings.meshes_mut().keep_edges();

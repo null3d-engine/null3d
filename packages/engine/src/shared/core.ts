@@ -484,7 +484,8 @@ export interface CoreGlue extends CoreErrors {
 	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
 	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on, as is the depth bias: three.js's
-	 * polygon offset units and factor.
+	 * polygon offset units and factor. `swayDistance` is the distance from the camera out to which a
+	 * custom material's vertex offset moves, in meters, or 0 for every distance.
 	 */
 	createMaterial(
 		shading: number,
@@ -495,6 +496,7 @@ export interface CoreGlue extends CoreErrors {
 		a: number,
 		biasConstant: number,
 		biasSlope: number,
+		swayDistance: number,
 	): number;
 	/**
 	 * Changes one value of a material, `param` (a `MATERIAL_PARAM_*` code), and keeps the others.
