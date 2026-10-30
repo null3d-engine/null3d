@@ -124,8 +124,8 @@ use crate::exposure::ExposureIds;
 use crate::final_pass::FinalIds;
 use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
-    CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
-    RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows,
+    CanvasOutput, FrameBuilder, FrameInput, HaltFigures, KeyCounts, MaterialStorage, MeshBuffers,
+    ParityLists, RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows,
     indices_as_bytes, joined_rows, settled, unbound_buffer_bytes,
 };
 use crate::frame_graph::{
@@ -3209,16 +3209,38 @@ impl FrameBuilder for CpuCulledRenderer {
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
         self.settings.set_still(self.lists.still());
         let forecast = self.upload_bound() + LinesPass::upload_bytes(&input.lines);
+        let active = crate::frame::active_sources(input);
         let mut took = self.lists.take(input.frame);
-        if took.is_err() && self.lists.can_retry(forecast, input.structure_changed) {
+        if took.is_err()
+            && self
+                .lists
+                .can_retry(forecast, active, input.structure_changed)
+        {
             self.reset_gpu();
             took = self.lists.take(input.frame);
         }
         let (mut list, mut arena) = took?;
         let result = self.record_into(input, &mut list, &mut arena);
+        // A failed frame stores the forecast of the state it leaves, which is the state the next
+        // frame forecasts from.
+        let halted_forecast = if result.is_err() {
+            self.upload_bound() + LinesPass::upload_bytes(&input.lines)
+        } else {
+            forecast
+        };
         let marks = StillMarks::of(input, &self.settings, &self.graph, &self.pipelines);
-        self.lists
-            .restore(input.frame, list, arena, marks, result, self.frame_bound)
+        self.lists.restore(
+            input.frame,
+            list,
+            arena,
+            marks,
+            result,
+            HaltFigures {
+                bound: self.frame_bound,
+                forecast: halted_forecast,
+                active,
+            },
+        )
     }
 
     fn still(&self) -> crate::still::Still {
