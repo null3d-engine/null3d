@@ -49,8 +49,8 @@ pushed away keeps the image that a material samples. Both pass on all three GPU 
 
 The setter column was taken while the one-minute load was 15 and rising to 21 through another
 session's graphics check. The page held vsync, which a chip at 1.2 frames a second cannot do, so the
-figure is a ceiling. The cadence run on the rebuilt engine, where the skip records four runs in
-eight frames and the page draws half as often, follows and replaces it if it differs.
+figure is a ceiling. The column also predates the recording skip, so its page drew the reflection
+every frame. The rate of that page with the skip is not measured; `compute-state` proves the skip.
 
 The draw thread is busy 847.7 ms a frame with the simulation and 154.1 ms without. Every WebGL call
 it makes totals 2.5 ms a frame, so the cost is engine compute on that thread. The engine made and

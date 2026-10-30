@@ -8,7 +8,7 @@ summary: "createWater: a river and a lake from one shape, with waves, ripples, c
 
 # Water (@null3d/water)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The ocean's WebGL2 path is not ready. Its heights differ from the other paths, and its transform costs about 675 ms a frame at 1920 by 1080 on the Low preset. Draw the ocean on WebGPU or in compatibility mode.
 
 ```mermaid
 flowchart LR
