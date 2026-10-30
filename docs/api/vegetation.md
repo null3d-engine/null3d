@@ -104,6 +104,10 @@ A record holds only numbers and short strings. This table shows the parts that a
 
 `speciesProblems(record)` lists every field that cannot grow, and `checkSpecies` throws one message with all of them. A themed species pack is a list of these records. It needs no code.
 
+**A level's `start` and `end` place its children, not itself.** The trunk's record says where its boughs attach, and a bough's record says where its branchlets attach. So a conifer whose bough level asks for 0.1 grows boughs from a tenth of the trunk and its crown reaches the ground, while 0.48 leaves the lower trunk bare. A trunk level's own `start` is never read, because a trunk has no parent.
+
+**A leaf's `width` and `height` are half a card.** A card draws two of each. Many cards cost vertex memory and a few large ones do not, so a crown closes by making its cards larger rather than more numerous: a leaf cell carries sixty small leaves, and a bigger card shows more of them at the same size on the screen. The generated arrays of the whole built-in set are measured against the memory budget that D-241 records.
+
 ## Detail levels
 
 A plant gets one to three whole levels, most detailed first. Each level holds the plant's parts and the largest distance that its surface lies from the base level's, in meters. Pass the lower levels to `mesh.setLevels`. The engine then picks one by distance. [Levels of detail](../concepts/lod.md) explains the rule that the engine applies.
