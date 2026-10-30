@@ -9,6 +9,7 @@ import {
 	clearTestRunning,
 	neighbourNote,
 	noteTestRunning,
+	runningTest,
 } from './running-tests.ts';
 
 // The records go to a folder of their own, so this test never reads or clears those of a test run
@@ -33,9 +34,9 @@ describe('the record of running tests', () => {
 		);
 	});
 
-	it('says nothing when the worker ran alone', () => {
+	it('says that no other worker ran when the worker ran alone', () => {
 		noteTestRunning(1, 's4 on high');
-		expect(neighbourNote(1)).toBe('');
+		expect(neighbourNote(1)).toBe('; no other worker was running');
 	});
 
 	it('names the tests of several other workers', () => {
@@ -52,7 +53,14 @@ describe('the record of running tests', () => {
 		noteTestRunning(1, 'this one');
 		noteTestRunning(2, 'done');
 		clearTestRunning(2);
-		expect(neighbourNote(1)).toBe('');
+		expect(neighbourNote(1)).toBe('; no other worker was running');
+	});
+
+	it('reads back the record a worker keeps', () => {
+		noteTestRunning(2, 'a test');
+		expect(runningTest(2)?.name).toBe('a test');
+		clearTestRunning(2);
+		expect(runningTest(2)).toBeUndefined();
 	});
 
 	it('says nothing outside a Playwright worker', () => {
@@ -68,6 +76,6 @@ describe('the reporter', () => {
 		reporter.onTestBegin({ title: 's4 on high' } as TestCase, { workerIndex: 3 } as TestResult);
 		expect(neighbourNote(4)).toContain('"s4 on high"');
 		reporter.onTestEnd({} as TestCase, { workerIndex: 3 } as TestResult);
-		expect(neighbourNote(4)).toBe('');
+		expect(neighbourNote(4)).toBe('; no other worker was running');
 	});
 });
