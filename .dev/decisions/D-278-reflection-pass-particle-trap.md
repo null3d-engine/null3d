@@ -1,15 +1,18 @@
 # D-278: A particle system and a blended mesh stop a reflection pass on WebGL2
 
 Status: decided. The weather add-on keeps its particle systems on a layer its planar reflection
-pass leaves out, and that workaround is built. The engine fault is open: on WebGL2 a reflection
-pass whose view draws a particle buffer beside a blended mesh stops the frame with a core
-`unreachable` trap. The smallest scene is named below. Found by task M3-B4; the fault itself has no
-task yet.
+pass leaves out, and that workaround is built. The engine fault is closed: on WebGL2 the
+transparent pass sized a view's draw records from its last call alone, so a particle buffer beside
+a blended mesh stopped the frame with a core `unreachable` trap when the particle call sorted last.
+The smallest scene is named below, and the guard that holds the fix is its regression test,
+`crates/null3d-render/tests/reflection_particle_trap.rs`, which the CI `rust-tests` job runs with
+`cargo nextest run --workspace`. Found by task M3-B4.
 
 Summary: On WebGL2, a reflection pass that draws a particle system and a blended mesh in the same
-view stops the frame with an `unreachable` trap in the step after culling. Either draw alone draws,
-and the same scene without the pass draws. The add-on gives its particles a layer that the pass
-leaves out until the engine fault is fixed.
+view stopped the frame with an `unreachable` trap in the step after culling. Either draw alone drew,
+and the same scene without the pass drew. The transparent pass sized a view's draw records from its
+last call alone, and a call that writes none, as a particle system's does, left the buffer empty.
+The add-on's layer split may go, at its author's decision.
 
 ## Question
 
@@ -31,7 +34,7 @@ M3 Max, at `gpu=webgl2`, `hold=1`, `preset=high` and a size of 640 by 360. The s
 
 | Scene | WebGL2 |
 | --- | --- |
-| a reflection pass, a blended mesh and one particle system | stops, `E1408` with `unreachable (past its cull phase)` |
+| a reflection pass, a blended mesh and one particle system | stopped without the fix, `E1408` with `unreachable (past its cull phase)` |
 | the pass and the particle system | draws |
 | the pass and the blended mesh | draws |
 | the pass alone | draws |
@@ -42,20 +45,27 @@ alone drew, and so did the pass with the five posts and the point light, with th
 overlay alone, and with the splashes and steam alone. The pass with the overlay and the particle
 systems together stopped. The WebGPU and compatibility tiers drew the same scenes.
 
-The engine reports the fault at the frame after the last timed phase, which is the cull, so the
-trap is in the record step. The render worker reports no panic message or stack. No hook can
-report one either: the wasm build takes the release profile's `panic = "abort"` (`-Z
-build-std=panic_abort,std`), so a panic is a trap to JavaScript and the hook never runs. The shader
-tool's module states the same limit for a failed request: it aborts the module and never reaches
-the panic hook (`crates/null3d-shaders-wasm/src/lib.rs`).
+The trap fell in the record step, the phase after the cull. The render worker had no panic message
+or stack: the wasm build takes the release profile's `panic = "abort"` (`-Z
+build-std=panic_abort,std`), so a panic is a trap to JavaScript and no hook runs. The shader tool's
+module states the same limit for a failed request (`crates/null3d-shaders-wasm/src/lib.rs`). The
+record step also compiles natively, so its frame-builder test runs the same code and prints a
+panic's message and source line.
 
-## First move
+## The cause
 
-The fault needs a name before a fix. The simplest way to get one keeps the current wasm build:
-write a line for each draw of the record step to a buffer that the page reads back. The last line
-then names the pass and the draw that trapped. A message from the panic itself needs a build of
-the render module that keeps unwinding, as `[profile.shader]` does for the shader tool
-(`Cargo.toml`). That is a build change of its own, and it is the second move rather than the first.
+The transparent pass writes one aligned block of draw records for each call that draws meshes. The
+builder advanced the block only when it opened a mesh call, and sized the block from the last call
+alone. A particle system's call and a vertex-count draw's call write no records, so a view whose
+such a call sorted last sized the block to zero while an earlier mesh call still wrote into it, and
+the record write ran past the empty buffer. A mesh call that followed a particle call also reused
+the previous mesh run's records. Only a mirror view sorts the blended mesh before the particle
+system, which is why the fault needs the pass. The fix keeps the offset after the last call as the
+calls are made, and the view holds the total that its record block takes. The test builds the
+scene below on the WebGL2 frame builder, with and without `WEBGL_multi_draw`, and its second scene
+checks that each blended run of a view takes a record block of its own. A change that drops the
+running offset fails that check, and one that sizes the block from the last call again traps in the
+first scene.
 
 ## Look
 
@@ -89,6 +99,6 @@ The options rejected:
   add-on's README states the limit and points here.
 - The weather cost page and its picture test use the layer split, and so does any scene that adds a
   planar pass beside the add-on's particles.
-- The engine fault stays open, and this record is its home until the owner places it in a task. A
-  fix would let a reflection pass draw soft particle systems with blended meshes, and the add-on's
-  layer split could then go.
+- The engine fault is fixed, and its test draws the scene below. A reflection pass now draws
+  particle systems beside blended meshes, so the add-on's layer split may go, at its author's
+  decision.
