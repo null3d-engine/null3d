@@ -3,7 +3,7 @@ id: api/water
 title: "Water (@null3d/water)"
 status: experimental
 since: "0.3"
-summary: "createWater: a river and a lake from one shape, with waves, ripples, caustics, foam, soft shores that read the scene's depth, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface."
+summary: "createWater: a river and a lake from one shape, with waves that the current carries, ripples, caustics, foam, a soft shore that reads the scene's depth or the shape's bed, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface."
 ---
 
 # Water (@null3d/water)
@@ -16,7 +16,7 @@ flowchart LR
     body --> mesh["A surface mesh,<br/>with the current in it"]
     body --> material["One water material:<br/>waves, caustics, foam"]
     mirror["A reflection pass"] --> material
-    bed["The scene's depth<br/>behind each pixel"] --> material
+    bed["The scene's depth,<br/>or the shape's bed"] --> material
     material --> screen["The water"]
     preset["The quality preset"] --> mirror
     camera["A camera under the surface"] --> under["createUnderwater"]
@@ -86,7 +86,10 @@ holds these values. The add-on makes it once, when it builds the meshes.
 | `middle` | At least two points as `[x, z]` in meters | Required | The middle line, from the source to the mouth. The current runs in the direction that the points give |
 | `halfWidth` | A number, or one for each middle point, above 0 | Required | The half width at each point, in meters. The bed rises to the surface a third of the half width beyond it |
 | `depth` | A number, one for each point, or a function of the point and the distance along the river | 1 | The depth under the middle line, in meters below the surface |
-| `speed` | A number from 0, in meters a second | 0.35 | How fast the current runs downstream. 0 stills the water |
+| `speed` | A number from 0, in meters a second | 0.35 | How fast the current runs downstream. 0 stills the water. A `current` function replaces it |
+| `current` | A function of `x` and `z` that returns a velocity `[x, z]` in meters a second | None | The current at any point, where it does not follow the middle line. The surface carries its waves with it |
+| `bed` | A function of `x` and `z` that returns a depth in meters | None | The depth of the bed at any point, where it does not follow the width and the depth. The surface reads it when the call is given `bed: 'shape'` |
+| `mesh` | `{ step, across, reach }` | The call's `mesh` | This body's mesh detail, in place of the call's |
 
 ### A lake
 
@@ -96,6 +99,8 @@ holds these values. The add-on makes it once, when it builds the meshes.
 | `shore` | At least three points as `[x, z]` in meters, in order around the lake | Required | The shore's outline |
 | `depth` | A number from 0, or a function of the point and its distance from the shore | 2 | The depth of the deepest point, in meters below the surface |
 | `shoreWidth` | A number above 0, in meters | 2 | How far from the shore a lake with one depth reaches it |
+| `bed` | A function of `x` and `z` that returns a depth in meters | None | The depth of the bed at any point, where it does not follow the shore and the shore width. The surface reads it when the call is given `bed: 'shape'` |
+| `mesh` | `{ cell }` | The call's `mesh` | This body's mesh detail, in place of the call's |
 
 A lake holds still water. Its mesh reaches two grid cells past the shore. So the water fades
 against the scene's own ground where that ground meets it, even a little past the outline. Both
@@ -114,7 +119,8 @@ the bed at a point, and the current there.
 | `reflectionEvery` | A frame count from 1 to 16 for each preset | 2 on Low and Medium, 1 on High and Ultra | The frames between two draws of the reflection. The frame-budget governor doubles it while frames take too long |
 | `layers` | A 32-bit mask | The camera's layers | The layers that the reflection draws. Leave out what lies on or under the water |
 | `reflectionScale` | `1`, `0.5` or `0.25` | 1 | The reflection's size as a share of the render size each way |
-| `mesh` | `{ step, across, cell }` | 2, 16 and 2 | The meters between two cross sections along a river, the sections across it, and a lake's grid cell |
+| `mesh` | `{ step, across, cell, reach }` | 2, 16, 2 and 1.36 | The meters between two cross sections along a river, the sections across it, a lake's grid cell, and how far past a river's half width its mesh reaches as a factor |
+| `bed` | `'scene'` or `'shape'` | `'scene'` | Where the surface reads the depth of the bed: the copy of the scene's depth behind each pixel, or the depth that each shape describes |
 | `material` | The standard material values | None | The surface's material, such as its volume's tint and its thickness |
 
 ## The water object
@@ -126,7 +132,7 @@ the bed at a point, and the current there.
 | `update()` | Draws the reflection in its turn. Call it once in each frame, after the camera moves |
 | `reflectionEvery` | The frames between two draws of the reflection now |
 | `surfaceHeight(x, z, t)` | The height of the surface at a point and a sketch time, in meters, from its long waves |
-| `currentAt(x, z, out)` | The current at a point, as a direction and a speed in meters a second, written into `out` |
+| `currentAt(x, z, out)` | The current at a point, as a velocity in meters a second, written into `out` |
 | `setCaustics(light)` | Sets the light that the ripples focus on the bed, as a linear color |
 | `bodies` | The resolved bodies: their bounds, `depthAt`, `contains` and `currentAt` |
 | `destroy()` | Removes the surface, its reflection pass and its material |
@@ -157,10 +163,11 @@ window overhead, and turns the light back past that window's edge.
 
 ## Costs and limits
 
-- **The scene's depth.** The surface declares `sceneInputs: ['sceneDepth']` and three textures. The
+- **The scene's depth.** The surface declares `sceneInputs: ['sceneDepth']` and its textures. The
   engine gives a depth-reading material room for its own maps; an engine that refuses them stops
   the call with E1217. The depth gives the water its depth behind each pixel, so a shore fades
-  against the bank.
+  against the bank. With `bed: 'shape'`, the mesh carries each vertex's bed depth in its vertex
+  colors and the surface reads that instead, for a bed that the scene states rather than draws.
 - **The reflection.** The pass draws the scene a second time. It draws every other frame on Low and
   Medium, so it costs half as much on average there, and every frame on High and Ultra. When frames
   take too long, the frame-budget governor doubles the wait, up to every 16th frame. The stats

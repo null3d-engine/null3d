@@ -4,7 +4,9 @@
 or a lake that fills an outline. The surface has waves and ripples that the current carries, and
 caustics on the bed. It foams around what breaks the surface, and its shore fades against the bank.
 It mirrors the banks and the sky, as often as the quality preset affords. A camera that dips under
-the surface keeps it, and a second effect tints, bends and lights the view from below.
+the surface keeps it, and a second effect tints, bends and lights the view from below. A shape may
+give the bed and the current as functions of any point, and may give its own mesh detail, for water
+that a middle line and a width do not describe.
 
 ## Use
 
@@ -66,14 +68,21 @@ depth where the bed is drawn, so a shore ends against the real bank.
 
 A depth may be one number, one for each point of a middle line, or a function of the point. A river
 may also take it as a function of the distance along the river. A lake may take it as a function of
-the distance from its shore.
+the distance from its shore. A shape whose bed or current a middle line and a width do not describe
+may give `bed(x, z)` and, for a river, `current(x, z)` as functions of any point. The surface then
+reads that bed when the call is told `bed: 'shape'`, and carries its waves with that current.
+
+A current moves the whole wave set: each wave's direction turns into the current's frame, so the
+crests keep every angle between them and all of them travel downstream. Still water keeps the
+authored directions and each wave's own speed.
 
 ## Costs and limits
 
-- The surface is a custom material that declares `sceneInputs: ['sceneDepth']` and two textures, the
-  mirror and the foam map. The engine's depth input gives the water its depth behind each pixel. The
-  engine refuses the pair when the build has no room for both. So a page needs an engine that takes
-  a depth-reading material with textures.
+- The surface is a custom material that declares `sceneInputs: ['sceneDepth']` and its textures,
+  among them the mirror and the foam map. The engine's depth input gives the water its depth behind
+  each pixel, unless the call is told `bed: 'shape'` and reads the depth that each shape describes
+  instead. The engine refuses the bindings when the build has no room for them. So a page needs an
+  engine that takes a depth-reading material with textures.
 - The reflection pass draws the scene a second time. Its cadence is every other frame on Low and
   Medium, and every frame on High and Ultra; `reflectionEvery` gives a cadence of the caller's own.
   The pass follows the preset as it changes.

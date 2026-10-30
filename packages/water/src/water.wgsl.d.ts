@@ -11,6 +11,7 @@ declare const shader: CompiledMaterial<
 		readonly foamSize: 'vec2f';
 		readonly junctionOrigin: 'vec2f';
 		readonly junctionSize: 'vec2f';
+		readonly bedFromShape: 'f32';
 	},
 	'mirror' | 'foamMap' | 'junctionMap'
 >;

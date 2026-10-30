@@ -38,6 +38,12 @@ export interface MeshDetail {
 	across?: number;
 	/** The meters between two lines of a lake's grid. It is 2 by default. */
 	cell?: number;
+	/**
+	 * How far past a river's half width its mesh reaches, as a factor, from 1. It is 1.36 by
+	 * default, which covers the band where the shore fades. A bed that the water reads itself ends
+	 * the surface, so a sheet of exactly the half width takes 1.
+	 */
+	reach?: number;
 }
 
 /** A mesh's vertices and indices, built into arrays that the add-on fills once. */
@@ -46,17 +52,27 @@ interface Builder {
 	normals: number[];
 	uvs: number[];
 	uvs1: number[];
+	/** White with the bed's depth in its alpha, or undefined when the surface reads the scene's depth. */
+	colors?: number[];
 	indices: number[];
 }
 
 /** A builder with nothing in it. */
-function builder(): Builder {
-	return { positions: [], normals: [], uvs: [], uvs1: [], indices: [] };
+function builder(bed: boolean): Builder {
+	return {
+		positions: [],
+		normals: [],
+		uvs: [],
+		uvs1: [],
+		...(bed && { colors: [] }),
+		indices: [],
+	};
 }
 
 /**
  * Adds one vertex and returns its index. The first texture coordinate holds the current's speed and
- * the body's number, counted from 1, which the junction map names as the owner of its texels.
+ * the body's number, counted from 1, which the junction map names as the owner of its texels. With
+ * `bed`, the vertex color holds the bed's depth, in its alpha, for the surface to read.
  */
 function vertex(
 	b: Builder,
@@ -67,6 +83,7 @@ function vertex(
 	dx: number,
 	dz: number,
 	body: number,
+	depth = 0,
 ): number {
 	const index = b.positions.length / 3;
 	b.positions.push(x, y, z);
@@ -74,6 +91,7 @@ function vertex(
 	b.uvs.push(speed, body + 1);
 	// The current's direction, which the surface function reads from 0 to 1 in each axis.
 	b.uvs1.push(dx * 0.5 + 0.5, dz * 0.5 + 0.5);
+	b.colors?.push(1, 1, 1, depth);
 	return index;
 }
 
@@ -84,6 +102,7 @@ function arrays(b: Builder): MeshArrays {
 		normals: new Float32Array(b.normals),
 		uvs: new Float32Array(b.uvs),
 		uvs1: new Float32Array(b.uvs1),
+		...(b.colors && { colors: new Float32Array(b.colors) }),
 		indices: new Uint32Array(b.indices),
 	};
 }
@@ -139,31 +158,45 @@ function sections(shape: RiverShape, step: number): Section[] {
 /** The surface's mesh for a river: a strip that follows its middle line, with the current in it. */
 function riverMesh(
 	shape: RiverShape,
+	bodyOf: WaterBody,
 	level: number,
 	step: number,
 	across: number,
+	reach: number,
 	speed: number,
 	body: number,
+	bed: boolean,
 ): MeshArrays {
 	const list = sections(shape, step);
 	const rows = across + 1;
-	const b = builder();
+	const b = builder(bed);
+	const current = shape.current;
 	for (const section of list) {
 		// The direction across the current: the current's direction turned a quarter turn.
 		const nx = -section.dz;
 		const nz = section.dx;
-		const reach = section.halfWidth * REACH;
+		const span = section.halfWidth * reach;
 		for (let j = 0; j < rows; j++) {
 			const offset = (j / across) * 2 - 1;
+			const x = section.x + nx * offset * span;
+			const z = section.z + nz * offset * span;
+			// A current of its own is read at each vertex, so a river whose flow does not follow
+			// its middle line still carries every part of the surface at its own speed.
+			let vx = section.dx * speed;
+			let vz = section.dz * speed;
+			if (current) [vx, vz] = current(x, z);
+			const length = Math.hypot(vx, vz);
+			const moving = length > 1e-5;
 			vertex(
 				b,
-				section.x + nx * offset * reach,
+				x,
 				level,
-				section.z + nz * offset * reach,
-				speed,
-				section.dx,
-				section.dz,
+				z,
+				length,
+				moving ? vx / length : 1,
+				moving ? vz / length : 0,
 				body,
+				bed ? bodyOf.depthAt(x, z) : 0,
 			);
 		}
 	}
@@ -186,6 +219,7 @@ function lakeMesh(
 	level: number,
 	cell: number,
 	index: number,
+	bed: boolean,
 ): MeshArrays {
 	const reach = SHORE_CELLS * cell;
 	const minX = body.minX - reach;
@@ -194,7 +228,7 @@ function lakeMesh(
 	const nz = Math.max(1, Math.ceil((body.maxZ + reach - minZ) / cell));
 	const dx = (body.maxX + reach - minX) / nx;
 	const dz = (body.maxZ + reach - minZ) / nz;
-	const b = builder();
+	const b = builder(bed);
 	const row = nx + 1;
 	// Each grid point that lies over the water, or within the band past the shore.
 	const near = new Uint8Array(row * (nz + 1));
@@ -203,7 +237,7 @@ function lakeMesh(
 			const x = minX + i * dx;
 			const z = minZ + j * dz;
 			// A lake stills its water, so the surface holds no direction, and the shader ignores both.
-			vertex(b, x, level, z, 0, 1, 0, index);
+			vertex(b, x, level, z, 0, 1, 0, index, bed ? body.depthAt(x, z) : 0);
 			near[j * row + i] = body.contains(x, z) || fromShore(shape.shore, x, z) < reach ? 1 : 0;
 		}
 	for (let j = 0; j < nz; j++)
@@ -221,7 +255,8 @@ function lakeMesh(
  * The surface's mesh for one water body, at the height of its surface. A river's mesh follows its
  * middle line and carries the current in its second texture coordinate for the shader to drift
  * with. A lake's mesh is a grid over its bounds, and a still one. `index` is the body's place in
- * the water's list of bodies.
+ * the water's list of bodies. With `bed`, each vertex also carries the bed's depth for the surface
+ * to read in place of the scene's own.
  */
 export function bodyMesh(
 	shape: WaterShape,
@@ -229,11 +264,13 @@ export function bodyMesh(
 	level: number,
 	detail: MeshDetail,
 	index = 0,
+	bed = false,
 ): MeshArrays {
 	const step = detail.step ?? STEP;
 	const across = detail.across ?? ACROSS;
 	const cell = detail.cell ?? CELL;
+	const reach = detail.reach ?? REACH;
 	if (shape.kind === 'river')
-		return riverMesh(shape, level, step, across, shape.speed ?? 0.35, index);
-	return lakeMesh(shape, body, level, cell, index);
+		return riverMesh(shape, body, level, step, across, reach, shape.speed ?? 0.35, index, bed);
+	return lakeMesh(shape, body, level, cell, index, bed);
 }
