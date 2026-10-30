@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `impostor-bake`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `two-step`, `demos`, `skyway`, `vegetation`, `tree-generation` and `vegetation-scatter`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `impostor-bake`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `two-step`, `demos`, `skyway`, `vegetation`, `tree-generation`, `vegetation-scatter`, `terrain` and `terrain-shadow`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is gray while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-gray when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -390,15 +390,29 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - Each page sets `?target-fps=1`, so the quality governor holds the whole render scale and each
   preset's own cost shows. The ground's own detail follows the preset, through its level-of-detail
   threshold, so the triangle counts fall from High to Low.
-- The page has 8 items: 4 presets on core WebGPU, 2 on compatibility mode and 2 on WebGL2. The
-  capabilities page comes first, so a device that lacks a path skips those pages.
+- The page has 24 items: 8 at each preset and path as above, and beside each one a held-camera pair
+  with the morph on and off for the offset's own cost. The capabilities page comes first, so a
+  device that lacks a path skips those pages.
+- The morph pair holds the camera with `?still` on both sides. The demo's own camera orbits, so a
+  moving pair draws a different selection on each side: the first pair on the S25 drew 22% more
+  triangles with the morph off only because its measure began at another point of the orbit. Both
+  sides carry the same vertex bytes, so the pair isolates the vertex offset's own work.
 - Run it on the Mac, the owner's iPad and an S24-class phone. The Mac and the iPad are timing runs,
   so start them through the queue with `QUIET_OK=1`. The iPad loads the runner page over the local
   network and its own WebAssembly build must exist in the worktree:
   `bun tests/real-browsers.ts --plan terrain "Google Chrome"` and
   `bun tests/real-browsers.ts --plan terrain --lan ipad-safari`. Then run the cloud phone:
   `bun run devices:cloud --only bsgalaxys24-chrome --plan terrain -- --only capabilities,terrain-low-webgl2,terrain-medium-webgl2`.
-  The Galaxy S24 has no WebGPU, so its command runs the two WebGL2 pages alone.
+  The Galaxy S24 has no WebGPU, so its command runs the two WebGL2 pages alone. Pick the morph pair
+  of a preset and path with `--only`, such as `terrain-low-webgpu-morph-on` and
+  `terrain-low-webgpu-morph-off`.
+
+- The `terrain-shadow` plan draws the terrain demo from a still camera at High, for the shadow
+  redraw that a morphing caster causes. Its three pages run with the morph on, with it off, and with
+  the ground casting no shadow, which shows the same frame over a cascade that stays cached. Each
+  page reports the draw calls per frame, the GPU time of each pass and the frame interval, so the
+  cascades that draw again name themselves in the GPU time. Run it on the Mac in its installed
+  Chrome: `bun tests/real-browsers.ts --plan terrain-shadow "Google Chrome"`.
 
 ## The reflection plan
 

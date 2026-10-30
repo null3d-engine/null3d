@@ -87,7 +87,10 @@
 //                       the page downloaded, or vegetation, which times Creek and the forest demo
 //                       at every preset on each GPU path with the triangles and the memory, or
 //                       terrain, which times the terrain demo at each preset that a GPU path draws,
-//                       the same way, or
+//                       the same way, and beside each page a held-camera pair with the morph on and
+//                       off for the offset's own cost, or terrain-shadow, which draws the demo from
+//                       a still camera with the morph on, with it off and with the far cascades kept
+//                       to their turns, for the shadow redraw that a morphing caster causes, or
 //                       tree-generation, which times procedural tree generation in a worker, or
 //                       vegetation-scatter, which places Creek's valley by the vegetation add-on's
 //                       ecological rules and checks the placement against the reference, or
@@ -1134,6 +1137,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'vegetation',
 	'vegetation-wind',
 	'terrain',
+	'terrain-shadow',
 	'tree-generation',
 	'vegetation-scatter',
 	'webgpu-stall',
