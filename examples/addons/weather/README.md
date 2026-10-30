@@ -136,10 +136,16 @@ bound. A scene reflects from the screen instead pays nothing extra for the water
 screen-space reflections already run. The planar pass costs what any reflection pass costs, at the
 share of the render size and the cadence its preset gives it.
 
-The cost page and its figures per GPU path and preset are in `tests/pages/weather-cost.ts` and
-`tests/image/weather-cost.spec.ts`, and the add-on README's table holds the run. The page times a
-plain ground against the wet ground, and the wet ground against the same ground with the planar
-mirror, in turns.
+The cost page and its spec are `tests/pages/weather-cost.ts` and `tests/image/weather-cost.spec.ts`.
+The page times a plain ground against the wet ground, and the wet ground against the same ground
+with the planar mirror, in turns. The figures per GPU path and preset are in
+[the run file](../../../.dev/tested-devices/macbook-pro-m3-max-chrome/20261030-120731-weather-cost.md).
+
+On an Apple M3 Max with Chrome 156 at 1920 by 1080, the wet surface added about half a millisecond
+of GPU time at Low and less at Medium, and the run's variation hides it above that. The planar
+mirror was small on WebGPU and compatibility. On WebGL2 it cost 1.6 to 4.1 ms of GPU time and about
+0.6 ms of CPU time, because the pass draws the whole view again for the driver as well as the GPU.
+No row moved a frame interval.
 
 The windshield is one blended draw of the canopy's own triangles, and the splashes and steam are
 particle buffers of the sizes their calls name.
