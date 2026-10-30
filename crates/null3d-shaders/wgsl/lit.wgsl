@@ -267,6 +267,9 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::math::{half_vector}
 #import null3d::tables::{AreaTerms, area_terms}
 #endif
+#ifdef CUSTOM_DIFFUSE_NORMAL
+#import null3d::lighting::{brdf_lambert, f_schlick}
+#endif
 #ifdef ALPHA_COVERAGE
 #import null3d::cutout::{alpha_coverage}
 #endif
@@ -1116,6 +1119,11 @@ struct Surface {
     /// stored depth sets it to that depth along the view, so the card takes the shadow that falls
     /// on the surface it shows rather than on its own plane.
     shadowOffset: vec3f,
+    /// The unit normal that lights the surface's diffuse and ambient light, in world space, where a
+    /// surface function names one of its own. It is the mesh's normal unless the function sets it,
+    /// so a crown of leaves can light as the volume it stands for and keep each leaf's own normal
+    /// for its gloss and the light through it. The specular keeps `normal`.
+    diffuseNormal: vec3f,
     /// How much of the light behind the surface passes through it, from 0 to 1, in place of that
     /// share of its diffuse light, where the material lets light through.
     transmission: f32,
@@ -1552,6 +1560,8 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
     s.reflection = vec4f(0.0);
     s.lobe = vec4f(0.0);
     s.shadowOffset = vec3f(0.0);
+    // The diffuse light takes the surface's own normal unless the function names another.
+    s.diffuseNormal = input.normal;
 #endif
 #ifdef TRANSMISSION
     s.transmission = transmission_row.values.x;
@@ -2148,6 +2158,7 @@ fn light_surface(
     relative: vec3f,
     shadow_offset: vec3f,
     normal: vec3f,
+    diffuse_normal: vec3f,
     vertex_normal: vec3f,
     face_normal: vec3f,
     to_view: vec3f,
@@ -2193,6 +2204,14 @@ fn light_surface(
     sun_color *= layered_light(normal, to_view, to_sun, sun_color);
 #endif
     var sun = direct_light(m, normal, to_view, to_sun, sun_color, compensation);
+#ifdef CUSTOM_DIFFUSE_NORMAL
+    // The diffuse light takes the surface's own normal, and the specular keeps the surface normal.
+    // The sun's colour holds its shadow by now, so one lookup lights both.
+    let v_dot_h = saturate(dot(to_view, null3d::math::half_vector(to_sun, to_view)));
+    let fresnel = f_schlick(m.specular, m.specular_grazing, v_dot_h);
+    sun.diffuse = saturate(dot(diffuse_normal, to_sun)) * sun_color
+        * brdf_lambert(m.diffuse) * (1.0 - fresnel);
+#endif
 #ifdef CUSTOM_LOBE
     // The material's own lobe adds its specular beside the base lobe's for the sun. It knows the
     // light, the view and the half vector, which a surface function cannot see.
@@ -2220,7 +2239,11 @@ fn light_surface(
     let clustered = clustered_light(m, relative, normal, vertex_normal, to_view, compensation);
 #endif
     let n_dot_v = saturate(dot(normal, to_view));
+#ifdef CUSTOM_DIFFUSE_NORMAL
+    let surrounding_light = ambient_light(diffuse_normal) + extra;
+#else
     let surrounding_light = ambient_light(normal) + extra;
+#endif
 #ifdef COAT_SHEEN
     let ambient = indirect_diffuse(m, surrounding_light, dfg)
         * layered_ambient(surrounding_light, n_dot_v, occlusion);
@@ -2308,6 +2331,14 @@ fn shadow_catcher(s: Surface, input: SurfaceInput, face_normal: vec3f, pixel: ve
 /// shadows. A shadow-catcher material draws only the sun's shadows instead (`shadow_catcher`).
 fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let normal = normalize(s.normal);
+    // The normal that lights the diffuse and ambient light, which a surface function may name apart
+    // from the surface's own: a crown of leaves lights as a volume, and each leaf keeps its own
+    // normal for its gloss and the light through it.
+#ifdef CUSTOM_DIFFUSE_NORMAL
+    let diffuse_normal = normalize(s.diffuseNormal);
+#else
+    let diffuse_normal = normal;
+#endif
     // Where the mesh's normal changes fast between pixels, highlights widen, so they flicker less
     // as the surface moves. As in Filament, the normal is the mesh's own, before a map or a surface
     // function bends it.
@@ -2474,6 +2505,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         input.relativePosition,
         shadow_offset,
         normal,
+        diffuse_normal,
         input.normal,
         plane_normal,
         input.viewDirection,
