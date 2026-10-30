@@ -484,6 +484,44 @@ the plane maps back to the canvas's own coordinates. The design and its measured
   comes from a render pass rather than a canvas. Its look could move onto the add-on's material if
   the add-on took any texture, and that is a later change.
 
+## The weather add-on (M3-B4)
+
+`examples/addons/weather/` puts rain where it lands: water on the ground, drops on a car's glass,
+and the link to the particles add-on for the splashes and steam that rain makes. Each scene keeps
+its own material, its maps and its paint, and the add-on adds the water to the surface that the
+scene hands it.
+
+- **One block, copied by its readers.** A scene's material owns its surface function, and the
+  shader build resolves only the engine's library, so a shader cannot import another shader. The
+  add-on's water is one WGSL block in `wet.wgsl` between the markers `// <wet-surface>` and
+  `// </wet-surface>`. A reader copies it into its own WGSL and ends its surface function with
+  `return wet_surface(s, input, depth, material.wet0, material.wet1, material.wet2);`. The wind
+  add-on shares its field block the same way. `examples/addons/weather/wet.test.ts` compares every
+  copy with the canonical block and fails when one is edited alone; a one-word edit to a copy fails
+  it.
+- **The block's work.** It darkens and smooths the surface where the water is deep, bends the
+  normal with ripple rings hashed from world-space cells, and puts a planar mirror's light into the
+  surface's reflection. The water depth comes from the scene: a puddle map where it has one, else
+  `wet_noise_depth`. Three `vec4f`s carry the look, which `createWetSurface` gives and writes each
+  frame. The rain streaks are not the add-on's: they come from the core's draw from a vertex count
+  (M3-A5). The splashes and steam come from `@null3d/particles` (F11).
+- **The mirror.** With a planar pass, the add-on adds it at a share of the render size and a cadence
+  per preset: every other frame on Low and Medium, every frame above. Without one, the block leaves
+  the mirror to the engine's screen-space reflections and the add-on binds a black stand-in.
+- **Skyway.** The city ground in `examples/showcase/skyway/city.ts` keeps its plan, pavements, kerbs
+  and lane paint, and the block covers its road. The scene reflects from the screen, so the ground
+  takes no planar pass. The hero car's canopy carries the add-on's windshield drops, and the rain's
+  splashes on its roof and the vapour from its nozzles are particle systems from the add-on.
+- **Night town.** The comparison's street in `examples/compare/night-town/shaders.ts` keeps its
+  maps, its paint, its crossings and its own water depth, and the block covers it. The add-on owns
+  the planar pass that the puddles mirror, at the same share and in every frame, as three.js's
+  reflector draws; the three.js half keeps its own mirror. The particles link stays out of the
+  comparison, so both halves draw the same scene.
+- **The cost.** The add-on's README holds the wet surface's cost per GPU path and preset, measured
+  by `tests/image/weather-cost.spec.ts` with `NULL3D_WEATHER_COST=1`. The page times a plain ground
+  against the wet ground, and the wet ground against the same ground with the planar mirror, in
+  turns, at 1920 by 1080 with a render scale of 1.
+
 ## The automatic exposure demo (M2-EX31)
 
 `auto-exposure: Courtyard and hall` shows automatic exposure ([D-148](decisions/D-148-automatic-exposure.md)). The camera walks from a sunny courtyard into a dark stone hall, turns round, and walks out again, in a loop of 20 seconds. The eye opens in the hall, and closes again when the camera faces the bright door. E turns automatic exposure off and on, so a visitor can see the fixed exposure that the camera would have.
@@ -613,6 +651,14 @@ and a hero car with two screens.
   (`examples/addons/facades/`), and Skyway uses it ([D-254](decisions/D-254-interior-mapped-facades.md)).
   The wall pages and the window codes are made in code when the scene starts, so the add-on ships
   no image. Street level is a band of lit shop fronts, also from the add-on.
+- **The wet road, the glass and the rain's particles.** The city ground keeps its plan, pavements,
+  kerbs and lane paint, and the weather add-on's block adds the water to its surface
+  (`examples/addons/weather/`). The scene reflects from the screen, so the ground takes no planar
+  pass. The hero car's canopy carries the add-on's windshield drops, and the splashes on its roof
+  and the vapour from its nozzles are particle systems from the add-on, which wraps
+  `@null3d/particles`. The falling streaks stay the core's draw from a vertex count. The Rain
+  button hides the streaks, the splashes and the vapour and dries the glass; Storm raises the
+  ground's water and the streaks together.
 - **The power-on wave** lights the city from the middle out over the first second, from the frame
   clock. Each window waits for the wave to reach it and then rises on a damped spring, which
   overshoots slightly and settles. A held frame therefore always shows the same city.
@@ -765,8 +811,9 @@ The particles demo uses the particles add-on. The showcase and comparison scenes
 A demo takes each engine feature as it lands, not all at once. A scene is ready for its look pass when every feature it needs is on main.
 
 - **Creek** takes lit fog, the physical sky, foliage translucency and impostors.
-- **Night town** takes screen-space reflections, area lights, reflection probes, decals and automatic exposure.
+- **Night town** takes screen-space reflections, area lights, reflection probes, decals, automatic exposure and the weather add-on's wet street.
 - **Battle** takes the particles add-on, joint overrides, weighted blended transparency, decals, terrain and the physical sky.
+- **Skyway** takes the weather add-on's wet road, windshield drops and particles link, beside its facades, screens, traffic lanes and lens kit.
 - **Factory**, **forest**, the **campfire glade** and the feature demos take the sky, the exposure and contact shadows where they fit. A surface that suits clearcoat takes it.
 
 The owner reviews each scene's look before its references are remade. Every scene holds the display rate at its preset, as the other demos do.
