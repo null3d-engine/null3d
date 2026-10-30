@@ -494,7 +494,6 @@ function buildTools(folder) {
  *
  * @typedef {object} BuiltFileSize
  * @property {string} name
- * @property {string} [text] The file's text, so a test can read what it imports.
  * @property {number} raw
  * @property {number} gzip
  * @property {number} brotli
@@ -521,17 +520,17 @@ export function emptyShaders() {
 }
 
 /**
- * Builds the add-on's entry with the null3D plugin, which compiles its WGSL for WebGPU and WebGL2,
- * and gives the size of each file that the build wrote. The engine and every other null3D package
- * stay external, since a page loads them as dependencies of their own: the sizes are the add-on's
- * own. A second build answers each WGSL import with an empty module. It gives each file's code
- * alone, so the size gate can tell that code from the compiled WGSL inlined beside it.
+ * Builds the add-on's entry twice with the null3D plugin, which compiles its WGSL for WebGPU and
+ * WebGL2, and gives the files that each build wrote. The engine and every other null3D package stay
+ * external, since a page loads them as dependencies of their own. The first build is the one that
+ * the sizes come from. The second answers each WGSL import with an empty module, so a test can tell
+ * the add-on's code from the compiled WGSL that the plugin inlines beside it.
  *
  * @param {string} folder
  * @param {string} entry
- * @returns {Promise<{ files?: BuiltFileSize[], missing?: string, error?: string }>}
+ * @returns {Promise<{ full?: BuiltOutput[], codeOnly?: BuiltOutput[], missing?: string, error?: string }>}
  */
-export async function buildAddon(folder, entry) {
+export async function buildAddonOutputs(folder, entry) {
 	const tools = buildTools(folder);
 	if (tools === undefined)
 		return { missing: 'vite or @null3d/vite-plugin is not installed beside the add-on' };
@@ -564,18 +563,33 @@ export async function buildAddon(folder, entry) {
 							part
 						);
 					if (file.type !== 'chunk' && file.type !== 'asset') continue;
-					const bytes = Buffer.from(String(file.type === 'chunk' ? file.code : file.source));
-					files.push({ name: file.fileName ?? 'addon.js', bytes, text: bytes.toString('utf8') });
+					files.push({
+						name: file.fileName ?? 'addon.js',
+						bytes: Buffer.from(String(file.type === 'chunk' ? file.code : file.source)),
+					});
 				}
 			}
 			return files;
 		};
 		const full = written(await outputsOf([plugin.default()]));
 		const codeOnly = written(await outputsOf([emptyShaders(), plugin.default()]));
-		return { files: splitShaderData(full, codeOnly) };
+		return { full, codeOnly };
 	} catch (error) {
 		return { error: error instanceof Error ? error.message : String(error) };
 	}
+}
+
+/**
+ * The size of each file that the build with the plugin wrote.
+ *
+ * @param {string} folder
+ * @param {string} entry
+ * @returns {Promise<{ files?: BuiltFileSize[], missing?: string, error?: string }>}
+ */
+export async function buildAddon(folder, entry) {
+	const built = await buildAddonOutputs(folder, entry);
+	if (built.full === undefined || built.codeOnly === undefined) return built;
+	return { files: splitShaderData(built.full, built.codeOnly) };
 }
 
 /**
@@ -591,7 +605,7 @@ export async function buildAddon(folder, entry) {
 export function splitShaderData(full, codeOnly) {
 	const code = new Map(codeOnly.map((file) => [file.name, file.bytes]));
 	return full.map(({ name, bytes }) => {
-		const file = { name, text: bytes.toString('utf8'), ...sizesOf(bytes) };
+		const file = { name, ...sizesOf(bytes) };
 		const alone = code.get(name);
 		if (alone === undefined) return file;
 		const size = sizesOf(alone);
@@ -605,7 +619,6 @@ export function splitShaderData(full, codeOnly) {
  * @typedef {object} BuiltOutput
  * @property {string} name
  * @property {Buffer} bytes
- * @property {string} [text]
  */
 
 /** The size of `bytes` in each column. */
