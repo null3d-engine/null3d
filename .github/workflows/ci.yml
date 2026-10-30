@@ -9,7 +9,15 @@ name: CI
 on:
   push:
     branches: [main, 'm[0-9]+-start']
+  # A run started by hand can ask its picture shards to keep every image that they draw, including
+  # the images of shards that pass, so a picture reference comes from CI's own drawing without
+  # waiting for a failure to save it. An ordinary run saves nothing extra.
   workflow_dispatch:
+    inputs:
+      drawn-images:
+        description: Keep every picture that the image tests draw, also from the shards that pass
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -1101,14 +1109,27 @@ jobs:
         env:
           # One weight for each shard of the matrix, in its order.
           PWTEST_SHARD_WEIGHTS: "83:74:16:67:115:192:216:358:307:174:150:115:21:127:140:177:136:114:298:101:84:88:88"
+          # Set only by a run started by hand that asked for the drawings.
+          NULL3D_TAKE_IMAGES: ${{ inputs['drawn-images'] && '1' || '' }}
         run: bun run test:browser --grep-invert "@alone|$CITY_TESTS|$HEAVY_TESTS" --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       # The images that differ from their references, or have none yet, with their diffs:
-      # bun run images:review --ci <run> fetches them.
+      # bun run images:review --ci <run> fetches them. The drawings, which the run keeps only when
+      # it was asked for them, have an artifact of their own.
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: browser-test-results-${{ matrix.shard }}
-          path: test-results/
+          path: |
+            test-results/
+            !test-results/drawn/**
+          if-no-files-found: ignore
+      # Every picture that the shard drew, when the run asked for them. The name carries the head
+      # and the shard, because a reference holds only for the tree and the renderer that drew it.
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && inputs['drawn-images'] }}
+        with:
+          name: drawn-images-${{ github.sha }}-browser-shard-${{ matrix.shard }}
+          path: test-results/drawn/
           if-no-files-found: ignore
 
   browser-alone:
@@ -1191,12 +1212,24 @@ jobs:
         env:
           # One weight for each shard of the matrix, in its order.
           PWTEST_SHARD_WEIGHTS: "17:11:17:18:21:24:26:33:12:17:8:4"
+          # Set only by a run started by hand that asked for the drawings.
+          NULL3D_TAKE_IMAGES: ${{ inputs['drawn-images'] && '1' || '' }}
         run: bun run test:browser --grep "$HEAVY_TESTS" --grep-invert "@alone" --workers=1 --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: browser-heavy-test-results-${{ matrix.shard }}
-          path: test-results/
+          path: |
+            test-results/
+            !test-results/drawn/**
+          if-no-files-found: ignore
+      # Every picture that the shard drew, when the run asked for them. The name carries the head
+      # and the shard, because a reference holds only for the tree and the renderer that drew it.
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && inputs['drawn-images'] }}
+        with:
+          name: drawn-images-${{ github.sha }}-heavy-shard-${{ matrix.shard }}
+          path: test-results/drawn/
           if-no-files-found: ignore
   browser-production:
     # The production build projects' tests, which serve the production build of the test pages: the
@@ -1315,12 +1348,25 @@ jobs:
         with:
           mode: download
       - name: S6's image tests on SwiftShader, WebGPU and WebGL2
+        env:
+          # Set only by a run started by hand that asked for the drawings.
+          NULL3D_TAKE_IMAGES: ${{ inputs['drawn-images'] && '1' || '' }}
         run: bun run test:browser --grep '\bs6 on '
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: browser-test-results-city
-          path: test-results/
+          path: |
+            test-results/
+            !test-results/drawn/**
+          if-no-files-found: ignore
+      # Every picture that the city drew, when the run asked for them. The name carries the head,
+      # because a reference holds only for the tree and the renderer that drew it.
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && inputs['drawn-images'] }}
+        with:
+          name: drawn-images-${{ github.sha }}-city
+          path: test-results/drawn/
           if-no-files-found: ignore
 
   showcase:
