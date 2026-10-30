@@ -86,7 +86,7 @@ of the light tables' array, so it needs no binding either. The texture grows to 
 size with every level, with the tables in a corner of their layers. It makes room for 4 images,
 then 8, 16 and 32, and the frame groups bind it again. Up to 32 lights show images at once. A
 rectangle light's picture takes the same resampler and layers as a spot light's map, which
-[D-179](D-179-technique-rulings-2026-10-15.md) gives, and a tube light shows no picture, so it pays
+[D-179](D-179-technique-rulings.md) gives, and a tube light shows no picture, so it pays
 nothing.
 
 ### Records and culling
