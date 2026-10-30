@@ -34,9 +34,19 @@ interface Job {
 	steps?: Step[];
 }
 
+/** A hand-started run's input, as the workflow writes it. */
+interface DispatchInput {
+	type?: string;
+	default?: unknown;
+	description?: string;
+}
+
 const ROOT = join(import.meta.dirname, '../..');
 const workflow = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')) as {
-	on: Record<string, { branches?: string[] } | null>;
+	on: {
+		push?: { branches?: string[] };
+		workflow_dispatch?: { inputs?: Record<string, DispatchInput> };
+	};
 	concurrency: { group: string; 'cancel-in-progress': string };
 	jobs: Record<string, Job>;
 };
@@ -596,6 +606,60 @@ describe("CI's workflow", () => {
 		expect(workflow.concurrency.group).toBe(
 			`ci-${expression("github.event_name == 'push' && github.ref_name || github.run_id")}`,
 		);
+	});
+
+	/** The step of a job that uploads the pictures an image test drew. */
+	const drawnUpload = (job: Job): Step | undefined =>
+		(job.steps ?? []).find(
+			({ uses, with: given }) =>
+				uses === 'actions/upload-artifact@v4' &&
+				String(given?.name ?? '').startsWith('drawn-images-'),
+		);
+
+	it('keeps the pictures of a shard that passes only when a run started by hand asks', () => {
+		// CI's software GPU draws a picture reference. A shard saves its pictures only when it fails,
+		// so a run asks for the others with this input, which an ordinary run leaves off.
+		expect(workflow.on.workflow_dispatch?.inputs?.['drawn-images']).toMatchObject({
+			type: 'boolean',
+			default: false,
+		});
+		const asked = expression("inputs['drawn-images'] && '1' || ''");
+		for (const name of ['browser', 'browser-heavy', 'browser-city']) {
+			const step = (jobNamed(name).steps ?? []).find(({ run }) =>
+				run?.includes('bun run test:browser'),
+			);
+			expect(step?.env?.NULL3D_TAKE_IMAGES, name).toBe(asked);
+		}
+	});
+
+	it('hands on the drawings under the head and the shard, also when the shard fails', () => {
+		// A reference holds only for the tree that drew it, so the name carries the head. The step
+		// keeps running after a failed test step, since a shard that fails while drawing is one of
+		// the cases the artifact serves: !cancelled() is a status check, so GitHub adds no success().
+		const afterFailure = expression("!cancelled() && inputs['drawn-images']");
+		for (const [job, part] of [
+			['browser', `browser-shard-${expression('matrix.shard')}`],
+			['browser-heavy', `heavy-shard-${expression('matrix.shard')}`],
+			['browser-city', 'city'],
+		] as const) {
+			const step = drawnUpload(jobNamed(job));
+			expect(step?.if, job).toBe(afterFailure);
+			expect(String(step?.with?.name), job).toBe(
+				`drawn-images-${expression('github.sha')}-${part}`,
+			);
+			expect(String(step?.with?.path), job).toBe('test-results/drawn/');
+		}
+	});
+
+	it('leaves the drawings out of the failure upload, so one image never arrives twice', () => {
+		// The review accepts each reference once, and it refuses two candidates that would write it.
+		for (const name of ['browser', 'browser-heavy', 'browser-city']) {
+			const failure = (jobNamed(name).steps ?? []).find(
+				({ uses, if: condition }) =>
+					uses === 'actions/upload-artifact@v4' && condition === 'failure()',
+			);
+			expect(String(failure?.with?.path), name).toContain('!test-results/drawn/**');
+		}
 	});
 
 	it('cancels a run in progress only on a push to main, so every other run that starts ends', () => {
