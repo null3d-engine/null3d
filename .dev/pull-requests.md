@@ -17,6 +17,8 @@ Record the reasons for the change in `.dev/`, in the same branch, as [AGENTS.md]
 
 The `Docs-Checked:` trailer names the page that holds the reason, or says why the change has no new reason.
 
+A change that moves a picture passes the look bar. Foliage, shadows, lighting and materials can pass every figure and still look worse, so a separate reviewer compares the before and after pictures and refuses approval until the new look is on par or better. Its tests and its verdict belong to [Image tests](image-tests.md#the-look-bar).
+
 ### Guidance from demos and showcase scenes
 
 The owner set this rule for every demo in `examples/` and every showcase scene. Developers copy these scenes as the model of good visuals for their own projects. Work on any one's look or behavior may show a better way to use the engine, or a pitfall that users will hit too. The same change then adds that guidance to the user docs and to the agent skills. It is part of done for that work, not a follow-up. A fault in the engine itself is fixed in the engine, not worked around in the scene.
