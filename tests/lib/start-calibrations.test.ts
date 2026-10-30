@@ -89,8 +89,16 @@ describe('the run’s start readings', () => {
 		);
 	});
 
-	it('says nothing without a reading or a run', () => {
+	it('says the reading is missing when the page ran the instrument without one', () => {
+		expect(calibrationNote(0, readings)).toBe('; its start reading could not be read');
+		expect(calibrationNote(Number.NaN, readings)).toBe('; its start reading could not be read');
+	});
+
+	it('says nothing for a result from a page without the instrument', () => {
 		expect(calibrationNote(undefined, readings)).toBe('');
-		expect(calibrationNote(3, [])).toBe('');
+	});
+
+	it('gives the absolute when the run kept no other reading', () => {
+		expect(calibrationNote(3, [])).toBe('; its start calibration 3.00 ms');
 	});
 });

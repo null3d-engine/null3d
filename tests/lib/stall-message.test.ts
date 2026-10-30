@@ -37,16 +37,16 @@ describe('the message of a page that stopped noting steps', () => {
 		);
 	});
 
-	it('says nothing about the readings without one', () => {
-		expect(stallMessage(['1 ms a'], 2000, undefined)).toBe(
-			'no result and no new step within 2 s. The last steps:\n1 ms a\nno other worker was running',
+	it('says the reading is missing and the machine was quiet', () => {
+		expect(stallMessage(['1 ms a'], 2000, 0)).toBe(
+			'no result and no new step within 2 s. The last steps:\n1 ms a\nits start reading could not be read; no other worker was running',
 		);
 	});
 
-	it('adds no clause outside a Playwright worker', () => {
+	it('says the reading is missing outside a Playwright worker', () => {
 		delete process.env.TEST_WORKER_INDEX;
-		expect(stallMessage(['1 ms a'], 2000, undefined)).toBe(
-			'no result and no new step within 2 s. The last steps:\n1 ms a',
+		expect(stallMessage(['1 ms a'], 2000, 0)).toBe(
+			'no result and no new step within 2 s. The last steps:\n1 ms a\nits start reading could not be read',
 		);
 	});
 });
