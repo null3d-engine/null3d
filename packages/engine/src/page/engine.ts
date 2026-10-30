@@ -1863,6 +1863,10 @@ async function startEngine(
 	);
 	const expectedObjects = expectedObjectCount(options.expectedObjects);
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
+	// The frame figures go on the page as the start makes them, so a test tool can time a start
+	// that stalls before it publishes anything, and read the sketch's growth, the first draw's
+	// pipelines and the first frame beside the steps it has noted.
+	(globalThis as { __null3dMetrics?: ArrayBufferLike }).__null3dMetrics = metrics;
 	const views = controlViews(control);
 	const { slots } = views;
 	if (switches.replayDelay !== undefined)
