@@ -76,6 +76,7 @@ A `Surface` holds the values that the engine lights. Colors are linear, as the e
 | `metalness` | `f32` | 0 for a surface such as paint or plastic, and 1 for a metal |
 | `roughness` | `f32` | The perceptual roughness: 0 is a mirror, and 1 is fully matte |
 | `normal` | `vec3f` | The unit normal that lights the point, in world space |
+| `diffuseNormal` | `vec3f` | The unit normal that lights the point's diffuse and ambient light alone, in world space. It starts as the input's normal; the specular and the light through the point keep `normal` ([A normal for the diffuse light](#a-normal-for-the-diffuse-light)) |
 | `emissive` | `vec3f` | Light that the point gives off itself, added after lighting |
 | `occlusion` | `f32` | How much of the ambient light and the irradiance reaches the point, from 0 to 1 |
 | `irradiance` | `vec3f` | Baked light that reaches the point, such as a light map's, added to the ambient light |
@@ -108,6 +109,24 @@ fn surface(input: SurfaceInput) -> Surface {
 ```
 
 To show a value while you work on a function, put it in the emissive light and make the base color black: `s.emissive = vec3f(value); s.baseColor = vec3f(0.0);`.
+
+## A normal for the diffuse light
+
+A surface can light its diffuse and ambient light by a normal of its own, and keep `s.normal` for its gloss and the light through it. A crown of leaves uses this: the crown's outward normal lights the diffuse light, so the crown reads as the volume it stands for, while each leaf keeps its own normal for the gloss and the sun through it.
+
+```wgsl
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.normal = leafNormal;
+    s.diffuseNormal = crownNormal;
+    return s;
+}
+```
+
+- `diffuseNormal` starts as the mesh's normal. A material that never sets it draws as it did.
+- The sun's diffuse light and the ambient, hemisphere and environment light use `diffuseNormal`. The specular, the reflection and the diffuse transmission keep `s.normal`.
+- The point and spot lights keep `s.normal` for their diffuse light too.
+- The engine compiles the second normal into the material's builds alone, where its WGSL names the field. A material that does not name it takes the template's single-normal path, so it pays nothing.
 
 ## A material's own lobe
 

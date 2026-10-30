@@ -49,8 +49,9 @@ struct Uniforms {
     tint: vec3f,
     /// The plant's height in meters, which its trunk's bend follows.
     height: f32,
-    /// How much of a leaf's diffuse light passes through it, from its species' record.
-    transmission: f32,
+    /// How much of a leaf's diffuse light passes through it, from its species' record. The name
+    /// avoids the standard value `transmission`, which a custom uniform may not take.
+    throughLeaf: f32,
     /// The distance from the camera out to which the plant sways, in meters: 0 for every distance.
     swayDistance: f32,
     /// The branch records that the pivot texture holds.
@@ -222,21 +223,24 @@ fn surface(input: SurfaceInput) -> Surface {
         // Light through the leaf, about a third of its diffuse light, tinted by the leaf's own hue
         // and lifted toward yellow as the leaf turns. A leaf is about a millimeter thick.
         s.thickness = surfaceMap.a * 0.001;
-        s.diffuseTransmission = material.transmission;
+        s.diffuseTransmission = material.throughLeaf;
         s.diffuseTransmissionColor = mix(s.baseColor * 1.6, vec3f(1.0, 0.7, 0.2), autumn * 0.6);
         // The inside of the crown receives less of the sky and less of the sun. A mesh without the
         // vertex data, such as a preview card, reads white and keeps the light.
         let windy = step(input.vertexColor.r, 0.999);
         s.occlusion = mix(0.0, 1.0 - input.vertexColor.a, windy);
-        // The crown bends the leaves' normals outward, so a crown reads as a volume rather than as
-        // a scatter of cards, while the leaf's own markings stay.
-        s.normal = normalize(mix(leafNormal, crown_normal(input.worldPosition), material.crownBend));
+        // The diffuse light follows the crown's volume, so a crown reads as a shape rather than as a
+        // scatter of cards. The leaf keeps its own normal for its gloss and the light through it.
+        s.normal = leafNormal;
+        s.diffuseNormal = normalize(mix(leafNormal, crown_normal(input.worldPosition), material.crownBend));
         // Autumn shifts a leaf's colour toward yellow, brightens it and dries its surface.
         let turned = mix(s.baseColor, s.baseColor * vec3f(1.5, 1.1, 0.35), autumn * 0.8);
         s.baseColor = turned;
         s.roughness = mix(s.roughness, 0.7, autumn);
     } else {
+        // A trunk lights by its own normal, as a leaf's gloss does.
         s.normal = leafNormal;
+        s.diffuseNormal = leafNormal;
         s.roughness = surfaceMap.b;
     }
     return s;

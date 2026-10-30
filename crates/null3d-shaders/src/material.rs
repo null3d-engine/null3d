@@ -100,6 +100,9 @@ const HOOKS: [Hook; 4] = [
 const VERTEX_OFFSET_DEF: &str = "CUSTOM_VERTEX_OFFSET";
 /// The shader def that makes a custom material's shadow caster test the material's coverage.
 const COVERAGE_DEF: &str = "CUSTOM_COVERAGE";
+/// The shader def that makes the template light a custom surface's diffuse and ambient light by a
+/// normal that the material names, which only WGSL that reads the field gets.
+const DIFFUSE_NORMAL_DEF: &str = "CUSTOM_DIFFUSE_NORMAL";
 
 /// `defs` without the def that binds the scene's depth, which only the shading builds read: a
 /// caster, a motion or a pick build draws no surface function, so it takes no depth group.
@@ -327,6 +330,11 @@ fn read_inputs(tokens: &[Token]) -> Vec<&'static str> {
         })
         .map(|input| input.def)
         .collect()
+}
+
+/// True when the WGSL names a normal of its own for the surface's diffuse and ambient light.
+fn reads_diffuse_normal(tokens: &[Token]) -> bool {
+    reads_field(tokens, None, "diffuseNormal")
 }
 
 /// What a problem in the template's own lines says after its message.
@@ -730,6 +738,7 @@ impl Compiler {
         let offsets = declared.iter().any(|hook| hook.def == VERTEX_OFFSET_DEF);
         let coverage = declared.iter().any(|hook| hook.def == COVERAGE_DEF);
         let inputs = read_inputs(&tokens);
+        let diffuse_normal = reads_diffuse_normal(&tokens);
         let scene_depth = calls_scene_depth(&tokens);
         let mut variants: BTreeMap<String, Variant> = template
             .variants
@@ -739,6 +748,9 @@ impl Compiler {
                 defs.extend(CUSTOM_DEFS.map(str::to_owned));
                 defs.extend(declared.iter().map(|hook| hook.def.to_owned()));
                 defs.extend(inputs.iter().map(|&def| def.to_owned()));
+                if diffuse_normal {
+                    defs.push(DIFFUSE_NORMAL_DEF.to_owned());
+                }
                 defs.extend(uniforms.as_ref().map(|_| UNIFORMS_DEF.to_owned()));
                 if !texture_fields.is_empty() {
                     defs.push(TEXTURES_DEF.to_owned());

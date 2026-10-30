@@ -203,7 +203,8 @@ export interface PlantMaterialOptions {
 	 */
 	readonly morph?: PlantMorph;
 	/**
-	 * The plant's wind data, which moves the material's vertices and bends the leaves' normals. Leave
+	 * The plant's wind data, which moves the material's vertices and lights the leaves' diffuse light
+	 * by the crown's outward normal. Leave
 	 * it out for a still material, such as the atlas page's preview cards.
 	 */
 	readonly wind?: PlantWind;
@@ -292,7 +293,7 @@ export function plantMaterial(
 		tiles: options.barkTiles ?? 3,
 		tint: (options.color ?? [1, 1, 1]) as [number, number, number],
 		height: wind?.height ?? 1,
-		transmission: leaves ? (options.transmission ?? 0.35) : 0,
+		throughLeaf: leaves ? (options.transmission ?? 0.35) : 0,
 		swayDistance: wind?.swayDistance ?? 0,
 		branches: wind?.branches ?? 0,
 		windBox: wind?.field.size ?? 1,

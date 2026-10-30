@@ -1573,3 +1573,33 @@ fn the_vegetation_plant_shaders_build() {
         );
     }
 }
+
+/// A surface that names its own normal for the diffuse light, as a crown of leaves does.
+const CROWN_LIT: &str = "fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.diffuseNormal = normalize(input.normal + vec3f(0.0, 0.1, 0.0));
+    return s;
+}
+";
+
+#[test]
+fn the_diffuse_normal_reaches_only_the_builds_that_name_it() {
+    // A material that names the field lights its diffuse and ambient by it. The template's split
+    // appears in every one of its builds, and a material that never names the field keeps the
+    // template's single-normal path unchanged.
+    let named = compile(CROWN_LIT).expect("the surface with a normal of its own builds");
+    let mut wgsl = named
+        .variants
+        .values()
+        .filter_map(|variant| variant.wgsl.as_ref());
+    assert!(wgsl.all(|build| build.source.contains("dot(diffuse_normal, to_sun)")));
+    let plain = compile(STRIPES).expect("the plain surface builds");
+    let mut wgsl = plain
+        .variants
+        .values()
+        .filter_map(|variant| variant.wgsl.as_ref());
+    assert!(wgsl.all(
+        |build| !build.source.contains("dot(diffuse_normal, to_sun)")
+            && !build.source.contains("ambient_light(diffuse_normal)")
+    ));
+}
