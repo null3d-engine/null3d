@@ -50,34 +50,49 @@ lens.set({ vignette: false });
 - The grading table, the vignette and the sharpening run in the final pass, so the grade and the
   vignette cost the frame nothing extra. The sharpening value draws the final pass in its two steps
   at the whole canvas's render scale, which adds one full-screen pass there.
-- The effect costs one full-screen pass with about 18 taps where all four of its values are above
-  0; a look that leaves one at 0 skips its taps.
-- The whole look's cost, as GPU time per frame in milliseconds, measured on a MacBook Pro with an
-  Apple M3 Max in Chrome 156, at a canvas of 3840 x 2160 CSS pixels with the pixel ratio held at 2,
-  which draws into a 7680 x 4320 buffer, with the governor off and a render scale of 1. The scene
-  holds a wall of lit boxes under bloom, and the same scene runs with the look and without it in
-  turns, five rounds each, the sides in the opposite order on alternate rounds. Each figure is the
-  median with the look less the median without it; its range is the lowest and highest of the five
-  rounds' differences.
+- The effect costs one full-screen pass with up to 18 reads of neighboring pixels where all four of
+  its values are above 0; a look that leaves one at 0 skips its reads.
+- A lit scene's own frame time moves by a millisecond or two between seconds, which hides part of
+  the look. The cost test therefore measures it on a quiet machine with the scene cleared to its
+  background and the bars that feed bloom. A mark alone is a fraction of a millisecond, so its cell
+  draws the marks' effect eight times in every frame and divides what it measures by eight. Each
+  side takes eight rounds of a second, with the sides in the opposite order on alternate rounds, and
+  a cell is the whole frame's difference, so it holds every pass that the look adds. The canvas is
+  3840 by 2160 CSS pixels with the pixel ratio held at 2,
+  which draws into a 7680 by 4320 buffer, at a render scale of 1 with the governor off. Run it with
+  `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts` on a quiet machine. The figures
+  below come from a MacBook Pro with an Apple M3 Max in Chrome 156, at a load under 8. Each cell is
+  the median over the rounds, with the lowest and highest rounds in brackets.
 
   | Path | Low | Medium | High | Ultra |
   | --- | --- | --- | --- | --- |
-  | WebGPU | 2.00 (1.64 to 2.77) | 3.41 (2.71 to 5.16) | 2.02 (0.68 to 3.29) | 1.27 (0.47 to 6.10) |
-  | Compatibility mode | 5.42 (5.35 to 5.46) | 2.35 (0.78 to 2.88) | 0.87 (-0.73 to 5.54) | 2.00 (0.52 to 8.10) |
-  | WebGL2 | 1.41 (0.50 to 2.39) | 1.64 (-7.02 to 1.64) | 0.71 (0.43 to 7.37) | 1.46 (1.42 to 8.77) |
+  | WebGPU | 3.91 (1.36 to 4.10) | 3.49 (1.84 to 4.54) | 3.22 (1.80 to 4.23) | 3.13 (1.47 to 4.53) |
+  | Compatibility mode | 3.82 (2.47 to 4.45) | 3.46 (1.71 to 4.92) | 3.12 (0.69 to 4.31) | 3.64 (2.24 to 5.47) |
 
-  Ten of the twelve cells keep their whole range above zero. Compatibility High's and WebGL2
-  Medium's ranges cross it. A range that wide is the scene's own variation between rounds, where
-  the off side moved by several milliseconds; the look costs no frames at any of these cells,
-  because every row held the display's 16.665 ms interval.
-- Each mark alone costs, at the highest preset its path allows, with every other value at 0:
-  sharpen, streak and speed on WebGPU, grade and grain in compatibility mode, and vignette and
-  grain on WebGL2. Those seven cells read between 0.38 and 1.58 ms with their whole range above
-  zero. The other fourteen cross zero, so this canvas does not resolve their marks from the scene's
-  own variation; treat their cost as below what five rounds here can tell apart.
-- Compatibility mode draws no custom effect, so its figure is the core's grade, vignette and
-  sharpening alone. The quality chooser caps compatibility mode and WebGL2 at Medium, so their High
-  and Ultra cells repeat Medium's settings.
+  The look costs about 3.1 to 3.9 ms at every preset on both paths, and every cell keeps its whole
+  range above zero. The cost follows the pixels rather than the preset, since the page holds the
+  render scale at 1: the canvas draws 33 megapixels, so a megapixel costs about a tenth of a
+  millisecond. WebGL2 keeps no figure in this table. Its cleared frame reads about 9 ms and moves by
+  about a millisecond between rounds, which hides the look's own change there, so its marks stand in
+  the table below instead.
+- Each mark alone costs, at the highest preset its path allows, with every other value at 0. The
+  marks draw eight times in each frame and the figure divides by eight, so each is a cost of its own
+  at the same 33 megapixel canvas.
+
+  | Mark | WebGPU | Compatibility mode | WebGL2 |
+  | --- | --- | --- | --- |
+  | Color fringes | 0.207 (0.102 to 0.429) | 0.189 (-0.080 to 0.417) | 0.400 (0.064 to 0.499) |
+  | Streak | 0.589 (0.449 to 0.713) | 0.259 (0.212 to 0.495) | 0.425 (0.250 to 0.509) |
+  | Grain | 0.308 (0.161 to 0.455) | 0.514 (0.417 to 0.732) | 0.349 (0.166 to 0.499) |
+  | Speed blur | 0.382 (0.315 to 0.501) | 0.700 (0.597 to 0.861) | 0.373 (0.066 to 0.635) |
+  | Sharpening | 1.316 (0.560 to 2.940) | 1.094 (0.272 to 1.864) | not resolved |
+
+  The compatibility cells repeat the Medium preset, which the quality chooser's cap makes their
+  highest. The color fringes' range in compatibility mode touches zero, so that cell is at the edge
+  of what the run tells apart. The sharpening draws the first step of the engine's two-step pass,
+  which WebGL2's whole-frame timer does not separate from the frame's own movement. The grade and
+  the vignette stay inside the final pass: their cells read between -0.38 and 0.14 ms across the
+  paths, so they cost less than this method resolves, under about 0.2 ms.
 - The lens draws no depth of field. The scene keeps the engine's own `dof` setting, which turns on
   from the Post tab.
 - The effect needs HDR color, as bloom does. On a device without a float target it stays off, and
