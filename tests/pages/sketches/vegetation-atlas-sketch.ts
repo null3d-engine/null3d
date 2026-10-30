@@ -4,6 +4,7 @@
 // the levels below it down the right-hand column.
 import { defineSketch } from '@null3d/engine';
 import { bakePlantAtlases, plantMaterial } from '@null3d/vegetation';
+import { PLANT_CARD } from '../lib/plant-card';
 
 export default defineSketch((ctx) => {
 	const { scene } = ctx;
@@ -45,16 +46,10 @@ export default defineSketch((ctx) => {
 		cell: 'cluster-a',
 		color: [0.13, 0.28, 0.07],
 	});
-	scene.createMesh({
-		mesh: ctx.geometry.plane({ width: 4, height: 4 }),
-		material: bark,
-		position: [-2.4, -2.4, 0.6],
-	});
-	scene.createMesh({
-		mesh: ctx.geometry.plane({ width: 4, height: 4 }),
-		material: leaves,
-		position: [2.4, -2.4, 0.6],
-	});
+	const card = ctx.geometry.fromArrays(PLANT_CARD);
+	const scale = [4, 4, 1] as [number, number, number];
+	scene.createMesh({ mesh: card, material: bark, position: [-2.4, -2.4, 0.6], scale });
+	scene.createMesh({ mesh: card, material: leaves, position: [2.4, -2.4, 0.6], scale });
 
 	const camera = scene.createPerspectiveCamera({
 		fov: 40,

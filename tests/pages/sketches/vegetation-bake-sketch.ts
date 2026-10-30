@@ -4,6 +4,7 @@
 // medians is what a page pays for its plants' textures.
 import { defineSketch, type Mesh } from '@null3d/engine';
 import { bakePlantAtlases, plantMaterial } from '@null3d/vegetation';
+import { PLANT_CARD } from '../lib/plant-card';
 
 /** The frames measured on each side, after the frames that the engine spends building pipelines. */
 const WARM_UP = 30;
@@ -21,6 +22,7 @@ export default defineSketch((ctx) => {
 		color: [0.2, 0.4, 0.1],
 	});
 	const plain = ctx.materials.unlit({ color: '#3a6a1e' });
+	const card = ctx.geometry.fromArrays(PLANT_CARD);
 	const meshes: Mesh[] = [];
 	for (let i = 0; i < 24; i++) {
 		// A wall of cards fills the picture, so the atlas's fragment work is the frame's work.
@@ -28,9 +30,10 @@ export default defineSketch((ctx) => {
 		const y = Math.floor(i / 6) * 1.6 - 2.4;
 		meshes.push(
 			scene.createMesh({
-				mesh: ctx.geometry.plane({ width: 1.5, height: 1.5 }),
+				mesh: card,
 				material: withAtlas,
 				position: [x, y, 0],
+				scale: [1.5, 1.5, 1],
 			}),
 		);
 	}

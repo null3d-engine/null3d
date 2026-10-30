@@ -204,8 +204,10 @@ export interface PlantMaterialOptions {
 	readonly morph?: PlantMorph;
 	/**
 	 * The plant's wind data, which moves the material's vertices and lights the leaves' diffuse light
-	 * by the crown's outward normal. Leave
-	 * it out for a still material, such as the atlas page's preview cards.
+	 * by the crown's outward normal. Leave it out for a still material, such as the atlas page's
+	 * preview cards. A plant material draws only a mesh that carries the plant vertex format's
+	 * colours. They hold each vertex's branch index and leaf phase, and a still material reads
+	 * neither.
 	 */
 	readonly wind?: PlantWind;
 	/**

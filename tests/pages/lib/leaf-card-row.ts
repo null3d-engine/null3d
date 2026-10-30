@@ -4,6 +4,7 @@
 // share the further a card stands. The cards stand on the picture where their boxes do not meet.
 import type { SketchContext } from '@null3d/engine';
 import { bakePlantAtlases, plantMaterial } from '@null3d/vegetation';
+import { PLANT_CARD } from './plant-card';
 
 /** The camera that frames the cards: its place, the point that it looks at and its field of view. */
 export const CAMERA = { position: [0, 0, -10], target: [0, 0, 0], fov: 40 } as const;
@@ -36,11 +37,13 @@ export function addLeafCardRow(ctx: SketchContext): void {
 	});
 	// The material takes no light of its own, so the cards stand in the light of the sky alone.
 	scene.createAmbientLight({ intensity: 1 });
+	const mesh = ctx.geometry.fromArrays(PLANT_CARD);
 	for (const card of CARDS)
 		scene.createMesh({
-			mesh: ctx.geometry.plane({ width: card.size, height: card.size }),
+			mesh,
 			material: leaves,
 			position: [card.at[0], card.at[1], card.at[2]],
+			scale: [card.size, card.size, 1],
 		});
 	const camera = scene.createPerspectiveCamera({
 		fov: CAMERA.fov,
