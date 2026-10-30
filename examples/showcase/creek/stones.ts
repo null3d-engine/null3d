@@ -13,7 +13,13 @@ import { INTERIOR_LAYER } from '../../lib/layers';
 import { Noise, random, rock, type TexelSample, textureSet, within } from '../../lib/procedural';
 import { fromStream, groundHeight, streamHalf, streamZ, UNREFLECTED_LAYER, WATER } from './land';
 import { type Part, placed } from './models';
-import type { Obstacle } from './water';
+
+/** A stone where it breaks the water: its middle and its radius at the water's height. */
+export interface Obstacle {
+	x: number;
+	z: number;
+	r: number;
+}
 
 /** Pebbles at each preset, over all their batches. */
 const PEBBLES: Record<QualityPreset, number> = { low: 1200, medium: 3000, high: 4800, ultra: 6000 };
