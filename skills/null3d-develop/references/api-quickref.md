@@ -346,7 +346,7 @@ const paint = materials.standard({
   emissive: '#000000', emissiveIntensity: 1,   // light the surface gives off itself
   ior: 1.5, specularIntensity: 1, specularColor: '#ffffff',  // (0.2) non-metal reflection, as three.js's physical material
   transmission: 0, thickness: 0,              // (0.2) glass and clear water: give transmission at creation to let light through; bends by ior, blurs by roughness
-  transmissionMap: tmap, thicknessMap: tmap,  // (0.3) linear: the red multiplies transmission, the green thickness; a material with them takes no specular maps, though a layered one keeps them where no layer map fills their slot
+  transmissionMap: tmap, thicknessMap: tmap,  // (0.3) linear: the red multiplies transmission, the green thickness; each keeps a row slot and samples a specular slot's array, so the specular maps may draw beside them
   attenuationColor: '#ffffff', attenuationDistance: Infinity,  // (0.2) the volume's color over that distance
   diffuseTransmission: 0, diffuseTransmissionColor: '#ffffff',  // (0.2) leaves, petals, ears: light behind shows on the front; give it at creation; the base color does not tint it
   subsurfaceRadius: 0, subsurfaceColor: '#ffffff',  // (0.2) skin 0.012 and [1, 0.4, 0.25], wax, jade: light spreads under the surface; give it at creation; blurs on High and Ultra only

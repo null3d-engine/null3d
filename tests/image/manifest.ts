@@ -3268,12 +3268,22 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
 	},
-	// The balls' transmission and thickness vary across them, from the two maps that take the
-	// specular maps' slots: bands of the transmission map's red and bands of the thickness map's
-	// green. A software GPU builds these shaders slowly.
+	// The balls' transmission and thickness vary across them, from the two maps that keep row slots
+	// beside the specular maps: bands of the transmission map's red and bands of the thickness
+	// map's green. A software GPU builds these shaders slowly.
 	{
 		name: 'transmission-maps',
 		sketch: `${TRANSMISSION_SKETCH}?maps`,
+		hold: 0,
+		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
+		timeoutSeconds: 60,
+	},
+	// The same balls with a specular intensity map in the same texture array, lit by the built-in
+	// room whose reflection its bands vary: each map keeps its own row slot, so a build that drops
+	// either one draws a different picture. A software GPU builds these shaders slowly.
+	{
+		name: 'transmission-specular',
+		sketch: `${TRANSMISSION_SKETCH}?maps&specular&env`,
 		hold: 0,
 		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
 		timeoutSeconds: 60,

@@ -64,10 +64,11 @@ transform in the normal map's slot. A production build also leaves out a map tha
 another map's slot, such as a clear coat's roughness map beside a coat map. That map's transform
 would place the slot that the other map fills. So a map that the writes leave out places no slot.
 
-**Figures.** The row holds thirty-two `vec4f`s, 512 bytes, against eighteen and 288 bytes with one
-transform per material. That adds 224 KiB to the material table at its 1,024 rows, on both GPU
-paths. On WebGL2 the material data texture's rows are forty-eight texels against thirty-four, the
-sixteen columns of the split-sum table included. The shader's table column is 32. The fragment
+**Figures.** The row holds thirty-seven `vec4f`s, 592 bytes, against nineteen and 304 bytes with one
+transform per material. That adds 288 KiB to the WebGPU table at its 1,024 rows, and twice that on
+WebGL2, whose data texture holds a row per material and a row for its custom values. On WebGL2 the
+material data texture's rows are fifty-three texels against thirty-five, the sixteen columns of the
+split-sum table included. The shader's table column is 37. The fragment
 shader reads a map's two rows inside the branch that samples that map, and applies them there: two
 dot products place the coordinate and four carry its changes across the pixel. A material pays that
 for each map it samples, and nothing for a map it lacks. One exception is the anisotropy's tangent

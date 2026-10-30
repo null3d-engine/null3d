@@ -472,10 +472,9 @@ fn material_dispersion(id: u32) -> f32 {
 
 /// Which family of maps material `id` keeps in each group of shared slots, two bits each: bits 0
 /// and 1 for the light map's slot, bits 2 and 3 for the specular intensity map's, and bits 4 and 5
-/// for the specular color map's. 0 is a clear coat's and a sheen's, 1 is iridescence's and the
-/// anisotropy's, and 2 is the transmission and thickness maps'. A material with layers may keep its
-/// transmission and thickness maps in the specular slots, so each specular slot names its family
-/// apart from the other's and from the light slot's.
+/// for the specular color map's. 0 is a clear coat's and a sheen's, and 1 is iridescence's and the
+/// anisotropy's. Bits 6 and 7 say that the transmission and thickness maps read the second texture
+/// coordinates.
 fn layer_maps_kind_of(id: u32) -> u32 {
 #ifdef WEBGL2
     return u32(textureLoad(materials, vec2u(16u, id), 0).z);
@@ -521,9 +520,9 @@ fn material_light_map_uv(id: u32) -> vec4f {
 #endif
 }
 
-/// The texel of a material's row where the transforms of the maps of the slots from the second up
-/// start, two texels for each.
-const MATERIAL_MAP_UV_TEXEL: u32 = 18u;
+/// The texel of a material's row where the transforms of the maps of the row slots from the second
+/// up start, two texels for each.
+const MATERIAL_MAP_UV_TEXEL: u32 = 19u;
 
 /// The two rows of a 2 x 3 matrix that places a map on the texture coordinates: the row that gives
 /// u, then the row that gives v. Each row's fourth float is a spare.
@@ -550,6 +549,17 @@ fn material_light_map_direction(id: u32) -> f32 {
     return textureLoad(materials, vec2u(9u, id), 0).w;
 #else
     return materials[id].transmission.w;
+#endif
+}
+
+/// The layers of material `id`'s transmission and thickness maps in the specular slots' texture
+/// arrays: the transmission map's layer, then the thickness map's, each negative where the map
+/// draws nothing. A shader reads each through the slot's binding at that layer.
+fn material_volume_layers(id: u32) -> vec2f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(18u, id), 0).xy;
+#else
+    return materials[id].volume.xy;
 #endif
 }
 
