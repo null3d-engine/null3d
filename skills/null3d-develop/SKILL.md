@@ -27,7 +27,7 @@ Doc IDs appear in backticks throughout, for example `concepts/architecture`. A n
 
 ## 2. The model
 
-In null3D, a 3D scene is called a sketch: the module in `sketch.ts` that builds the scene with `defineSketch` and updates it every frame.
+In null3D, a 3D scene is a sketch: the `sketch.ts` module that builds it with `defineSketch` and updates it every frame.
 
 ```
 page.ts (main thread)        sketch.ts (sketch worker)          render worker
@@ -97,7 +97,7 @@ Each rule comes with its reason, because the reason covers cases the rule does n
 1. Allocate nothing in `onUpdate`, `onFixedUpdate` or `onLateUpdate`: no `new`, no array or object literals, no closures, no `map` or `filter`. Create scratch values at setup, such as `const tmp = vec3.create()`. Garbage collection pauses the sketch worker, and users see the pause as a stutter.
 2. Use an instance batch for many copies of one mesh. A batch is one engine object and one typed array for you, where the same number of `createMesh` calls means as many objects to manage. (`concepts/instances`)
 3. Move many objects by writing arrays, not by calling setters in a loop. Each setter call crosses from JavaScript into WebAssembly; a typed-array write does not cross at all.
-4. Create an object with `dynamic: true` only if it changes most frames. Static objects cost nothing until changed, and dynamic ones are recomputed every frame. Only dynamic objects and batches may be written through arrays, because static objects rely on setters to mark them changed.
+4. Create an object with `dynamic: true` only if it changes most frames. Static objects cost nothing until changed, and dynamic ones are recomputed every frame. Only dynamic objects and batches may be written through arrays; static objects rely on setters to mark them changed.
 5. Create and destroy in bulk, and pool short-lived objects such as bullets: make a batch with a fixed capacity and use `setActiveCount`. A frame with a structural change (create, destroy, a new mesh or material) rebuilds the draw tables; `setVisible` and `setActiveCount` do not. The engine sizes its memory for the scene it holds, so create meshes, materials and batches during setup. One created during play grows engine memory next frame.
 6. Load and warm up before play: `await assets.preload([...])` and `await scene.warmUp()` behind a loading screen. A shader feature, such as a normal map, is fixed when you create the material and the first frame waits for its pipeline, so create every variant before play; a later stage's objects can start hidden, await `scene.warmUp()`, then show. (`guides/loading-screens`)
 7. Keep the DOM on the page, and keep messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
@@ -105,11 +105,11 @@ Each rule comes with its reason, because the reason covers cases the rule does n
 9. Respect the quality preset. Do not force a heavier preset on phones. When frames run long, the engine's governor lowers a sketch's budgets and the render scale in turn, a budget's step first, then the shadow settings, by itself. Keep your own values per preset, such as particle counts or AI update rates, in one table keyed by `quality.preset`. Never check the device type yourself, and listen to `quality.onChange` to apply the values. (`concepts/quality-presets`)
 10. Ship optimized assets: KTX2 textures, which stay compressed on the GPU, and glTF models with integer vertices (0.2). `bunx @null3d/cli assets optimize <in> <out>` makes both, or a `?optimized` import of a `.glb` through the Vite plugin. It compresses models with meshopt, adds blockers for WebGL2's occlusion culling, stores raycast trees for large mesh parts, and bakes normal map detail into the roughness mips so distant bumpy surfaces do not flicker. It records the shader features each model needs, so the engine builds only the pipelines it draws with. Large PNGs and float meshes cost download time and GPU memory. The KTX2 transcoder and the meshopt decoder load with the first file that needs them: set no decoder path and copy no worker file. (`api/textures`, `guides/assets-pipeline`, `concepts/assets`)
 11. Keep custom WGSL portable. Use only the three language features every browser shares, and write flat interpolation as `@interpolate(flat, either)`. The build rejects other features, `enable` lines and `f16`, but it cannot check the portable limits or `textureSample` in branches. Test those on each GPU path. (`shaders/wgsl-rules`)
-12. Never branch on GPU names or user agents; read `engine.capabilities` on the page. Several browsers hide GPU names, and a name does not tell you what the engine enabled.
+12. Never branch on GPU names or user agents; read `engine.capabilities` on the page. Several browsers hide GPU names, and a name says nothing about what the engine enabled.
 
 ## 5. When the engine may not have the feature
 
-A request may need a capability that null3D has not built. Settle its state before you design the scene. A user who asks for such a feature brings three things:
+A request may need a capability that null3D has not built. Settle its state before you design the scene. The user brings three things:
 
 - What they want to see on screen, with a reference picture or the effect in another engine.
 - The devices and browsers it must run on, such as a mid-range Android phone.
@@ -117,7 +117,7 @@ A request may need a capability that null3D has not built. Settle its state befo
 
 1. Search first: the docs page (section 1), `references/api-quickref.md`, then the add-on table in section 6. A core call or an add-on may answer the need.
 2. A page whose status is `planned`, or whose note says "not built yet", describes a call this version lacks. Tell the user, name the step that adds it, and use the page's workaround. Do not call it, and do not invent an option in its place.
-3. If nothing covers the need, build it above the public API: a custom material, vertex offset, post effect or render pass. Keep that code in the project, and add no property or call that imitates engine API, because it breaks on the next update.
+3. If nothing covers the need, build it above the public API: a custom material, vertex offset, post effect or render pass. Keep that code in the project; never imitate engine API, which breaks on the next update.
 4. Never write a second version of a feature in the add-on table. A hand-rolled copy gets no fixes.
 5. Say in your summary what the engine lacks, what you used instead, and what a later version changes. A silent workaround reads as the real feature.
 
@@ -138,7 +138,7 @@ Check this table before you write a generator, control, effect or loader. Each f
 | Rigid bodies, joints and character movement | the physics add-on | `guides/physics` | not built yet; run Rapier or cannon-es in the sketch worker |
 | Text in the scene, sharp at any distance | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
 | A river or a lake, with waves, foam, soft shores and a surface seen from below | `@null3d/water` | `api/water` | built |
-| An open sea whose swell and chop come from wave spectra transformed on the GPU | `@null3d/water` | `api/water` | built |
+| An open sea whose waves come from GPU-transformed spectra | `@null3d/water` | `api/water` | built |
 | Trees, shrubs, ferns, hostas and grass, with detail levels, wind data and ecological placement | `@null3d/vegetation` | `api/vegetation` | built (generator, scatter and atlases; grass and materials not built yet) |
 | Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | `api/wind` | built (the field carries no state between frames yet) |
 | three.js look modes for a port: Reinhard and Cineon tone curves, and a soft outline with a glow and a pulse | `@null3d/three-compat` | `api/three-compat` | built |
