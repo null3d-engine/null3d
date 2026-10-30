@@ -46,6 +46,13 @@ const PUBLIC_ENTRIES = new Set(['@null3d/engine', '@null3d/engine/stats']);
 /** The engine's entry-point prefix. */
 const ENGINE_ENTRY = '@null3d/engine';
 
+/**
+ * The packages that stay out of an add-on's build: every null3D package. A foundation add-on may
+ * build on another foundation, and a page loads that package as a dependency of its own. So the
+ * build measures the add-on's own files alone, as it measures them for the engine.
+ */
+export const ADDON_EXTERNALS = [/^@null3d\//];
+
 /** The package scope of the engine's own add-ons, which pin the engine version. */
 const ENGINE_SCOPE = '@null3d/';
 
@@ -110,7 +117,8 @@ const OPTIONS = /** @type {const} */ ({
 export const HELP = `Usage: bunx @null3d/cli check-addon [folder] [options]
 
 Runs the engine's gates on one add-on package, in \`folder\` (the current folder without one):
-  public API   the shipped code imports only @null3d/engine and @null3d/engine/stats
+  public API   the shipped code reaches the engine only through @null3d/engine and
+               @null3d/engine/stats; another package that it names loads on its own
   interface    the entry declares the plugin interface that it works with, or, for a null3D
                package, pins the engine version
   shaders      a build compiles the add-on's WGSL for WebGPU and WebGL2
@@ -512,16 +520,17 @@ export function emptyShaders() {
 }
 
 /**
- * Builds the add-on's entry with the null3D plugin, which compiles its WGSL for WebGPU and WebGL2,
- * and gives the size of each file that the build wrote. The engine stays external: the sizes are
- * the add-on's own. A second build answers each WGSL import with an empty module. It gives each
- * file's code alone, so the size gate can tell that code from the compiled WGSL inlined beside it.
+ * Builds the add-on's entry twice with the null3D plugin, which compiles its WGSL for WebGPU and
+ * WebGL2, and gives the files that each build wrote. The engine and every other null3D package stay
+ * external, since a page loads them as dependencies of their own. The first build is the one that
+ * the sizes come from. The second answers each WGSL import with an empty module, so a test can tell
+ * the add-on's code from the compiled WGSL that the plugin inlines beside it.
  *
  * @param {string} folder
  * @param {string} entry
- * @returns {Promise<{ files?: BuiltFileSize[], missing?: string, error?: string }>}
+ * @returns {Promise<{ full?: BuiltOutput[], codeOnly?: BuiltOutput[], missing?: string, error?: string }>}
  */
-export async function buildAddon(folder, entry) {
+export async function buildAddonOutputs(folder, entry) {
 	const tools = buildTools(folder);
 	if (tools === undefined)
 		return { missing: 'vite or @null3d/vite-plugin is not installed beside the add-on' };
@@ -538,7 +547,7 @@ export async function buildAddon(folder, entry) {
 					write: false,
 					minify: true,
 					lib: { entry, formats: ['es'], fileName: 'addon' },
-					rollupOptions: { external: [/^@null3d\/engine(?:\/stats)?$/] },
+					rollupOptions: { external: ADDON_EXTERNALS },
 				},
 			});
 			return /** @type {unknown[]} */ (Array.isArray(result) ? result : [result]);
@@ -564,10 +573,23 @@ export async function buildAddon(folder, entry) {
 		};
 		const full = written(await outputsOf([plugin.default()]));
 		const codeOnly = written(await outputsOf([emptyShaders(), plugin.default()]));
-		return { files: splitShaderData(full, codeOnly) };
+		return { full, codeOnly };
 	} catch (error) {
 		return { error: error instanceof Error ? error.message : String(error) };
 	}
+}
+
+/**
+ * The size of each file that the build with the plugin wrote.
+ *
+ * @param {string} folder
+ * @param {string} entry
+ * @returns {Promise<{ files?: BuiltFileSize[], missing?: string, error?: string }>}
+ */
+export async function buildAddon(folder, entry) {
+	const built = await buildAddonOutputs(folder, entry);
+	if (built.full === undefined || built.codeOnly === undefined) return built;
+	return { files: splitShaderData(built.full, built.codeOnly) };
 }
 
 /**

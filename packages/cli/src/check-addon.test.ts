@@ -8,12 +8,14 @@ import { fixture } from '../../../tools/lib/fixture';
 import { FIRST_USE_SHADER_BUDGET, LATER_BUDGET } from '../../../tools/lib/size-report.ts';
 import { UsageError } from './args.js';
 import {
+	ADDON_EXTERNALS,
 	ADDON_FILE_BUDGET,
 	ADDON_SHADER_BUDGET,
 	allocationGate,
 	allocationOutcome,
 	budgetOf,
 	buildAddon,
+	buildAddonOutputs,
 	emptyShaders,
 	engineVersions,
 	interfaceResult,
@@ -544,6 +546,12 @@ describe('emptyShaders', () => {
 /** An add-on whose entry imports a compute shader, so a build of it holds shader data. */
 const ADDON_FIXTURE = join(import.meta.dirname, '../../../tests/fixtures/check-addon-split');
 
+/** An add-on that builds on another null3D package, which its build must keep external. */
+const ADDON_EXTERNAL_FIXTURE = join(
+	import.meta.dirname,
+	'../../../tests/fixtures/check-addon-external',
+);
+
 /**
  * True where a build of the fixture can run. It needs the engine's core files, which the build job
  * writes, as it writes the shader modules that a compile of the WGSL reads.
@@ -559,7 +567,38 @@ it.if(Boolean(process.env.CI))('finds the core files in CI, so the build checks 
 	expect(missingCoreFiles(ADDON_FIXTURE)).toEqual([]);
 });
 
+describe('ADDON_EXTERNALS', () => {
+	it('keeps every null3D package out of the add-on build, and no other package', () => {
+		const external = (specifier: string) =>
+			ADDON_EXTERNALS.some((pattern) => pattern.test(specifier));
+		for (const specifier of [
+			'@null3d/engine',
+			'@null3d/engine/stats',
+			'@null3d/impostors',
+			'@null3d/wind',
+		])
+			expect(external(specifier)).toBe(true);
+		for (const specifier of ['@acme/vegetation', 'some-package', './local.js'])
+			expect(external(specifier)).toBe(false);
+	});
+});
+
 describe.skipIf(!BUILDS)('buildAddon', () => {
+	it('keeps a null3D package that the add-on builds on out of its file', async () => {
+		const before = process.env[NO_CACHE];
+		process.env[NO_CACHE] = '1';
+		try {
+			const built = await buildAddonOutputs(ADDON_EXTERNAL_FIXTURE, './src/index.ts');
+			expect(built.error).toBeUndefined();
+			const entry = (built.full ?? []).find((file) => file.name === 'addon.js');
+			// The import survives the build, so the file holds the package's name and not its code.
+			expect(entry?.bytes.toString('utf8')).toContain('@null3d/impostors');
+		} finally {
+			if (before === undefined) delete process.env[NO_CACHE];
+			else process.env[NO_CACHE] = before;
+		}
+	});
+
 	it('gives the shader data that the entry holds a part of its own', async () => {
 		// A build that reads no cache writes nothing into the fixture and announces no compile, so
 		// the fixture keeps no file of its own and no output escapes into a later test.
