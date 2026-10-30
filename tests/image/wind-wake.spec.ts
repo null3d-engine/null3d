@@ -88,10 +88,11 @@ test('wind-wake: the air behind the body keeps the trail its pushes made', async
 		console.log(`${run.id}: pushed ${moved.toFixed(5)}`);
 		// The pushes change a share of the picture where the body passed and the air carried the
 		// trail. A page that never pushed, or a flight that never rolled the pushes in, draws the
-		// control's picture. On this Mac's software GPU the two WebGPU paths measure 0.04091 and
-		// 0.02438 of the channels changed. The software WebGL2 path measures 0.00231, which is
-		// close to the difference that two captures at other times make, so this test does not yet
-		// prove a wake on that path; the floor is under its reading rather than proving it.
+		// control's picture. On this Mac's software GPU the two WebGPU paths measure about 0.040 and
+		// 0.026 of the channels changed over two runs. The software WebGL2 path measures about
+		// 0.002, which is close to the difference that two captures at other times make, so this
+		// test does not yet prove a wake on that path; the floor is under its reading rather than
+		// proving it.
 		expect
 			.soft(moved, `${run.id}: the pushes leave air that reaches the cards`)
 			.toBeGreaterThan(0.001);
