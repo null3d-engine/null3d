@@ -47,12 +47,12 @@ export default defineSketch(async (ctx) => {
 	scene.setActiveCamera(camera);
 	// The pointer points at an upright plane down the path: left is golden hour, right is dusk.
 	const view = interact(ctx, camera, { target: TARGET, planeZ: -10, bounds: BOUNDS });
-	const bark = createWood(ctx);
+	const trees = createWood(ctx, camera);
 
 	// Lanterns on iron posts, each with a bench below it whose shadow falls into the light's cone.
 	const box = geometry.box();
 	const iron = materials.standard({ color: '#24221f', roughness: 0.45, metalness: 0.7 });
-	const wood = materials.standard({ color: '#7a6250', roughness: 0.9, ...bark });
+	const wood = materials.standard({ color: '#7a6250', roughness: 0.9, ...trees.bark });
 	const glow = materials.standard({ color: '#1a1410', emissive: '#ffc070' });
 	const bulb = geometry.sphere({ radius: 0.12 });
 	const part = (material: Material, position: Vec3, scale: Vec3) =>
@@ -90,6 +90,7 @@ export default defineSketch(async (ctx) => {
 	let shown = -1;
 	return {
 		onUpdate(dt) {
+			trees.update();
 			if (!view.userCamera) {
 				// The camera walks slowly down the path and back.
 				const walk = 16 - 9 * (0.5 - 0.5 * Math.cos(time.now * 0.08));
