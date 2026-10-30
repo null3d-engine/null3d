@@ -1065,10 +1065,10 @@ jobs:
     runs-on: ubuntu-latest
     # The weights give each shard about the same time, and each shard runs one worker: two workers
     # on two cores made pages wait, and a page that waits out its own limit fails where its work
-    # was never slow. On run 40994532941 the split models its slowest shard at 14.9 minutes, against
-    # 17.2 measured for the split of two workers and 23 shards. No weights can go below that: a
-    # test group stays whole in one shard and runs in order, and the longest group alone takes
-    # 14.9 minutes.
+    # was never slow. With these weights the split models its slowest shard at 16.3 minutes on each
+    # of the two runs it was tuned over, against 17.2 measured for the split of two workers and 23
+    # shards. No weights can go below the longest group alone: a test group stays whole in one
+    # shard and runs in order, and that group takes 14.9 minutes.
     # A slow machine runs the tests twice as slowly but pays the setup once, so the room a shard
     # needs is 26 minutes; the limit rounds that up rather than doubling the setup as well. It is
     # room for a slow machine, not for a hang.
