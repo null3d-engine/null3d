@@ -163,8 +163,8 @@ pub mod map_slot {
     pub const IRIDESCENCE_ROW: u32 = LayerMap::Iridescence.slot() as u32;
     pub const IRIDESCENCE_THICKNESS_ROW: u32 = LayerMap::IridescenceThickness.slot() as u32;
     pub const ANISOTROPY_ROW: u32 = LayerMap::Anisotropy.slot() as u32;
-    pub const TRANSMISSION_ROW: u32 = LayerMap::Transmission.slot() as u32;
-    pub const THICKNESS_ROW: u32 = LayerMap::Thickness.slot() as u32;
+    pub const TRANSMISSION_ROW: u32 = LayerMap::Transmission.row_slot() as u32;
+    pub const THICKNESS_ROW: u32 = LayerMap::Thickness.row_slot() as u32;
 
     /// The number that `setMaterialMap` takes for a layer map: its place after the map slots.
     const fn layer(map: LayerMap) -> u32 {
