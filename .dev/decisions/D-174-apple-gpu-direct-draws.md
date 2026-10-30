@@ -231,11 +231,15 @@ cannot hold a full load's copies refuses that frame and never traps.
 
 A frame error raised after the frame recorded a command stops the builder. Later frames would draw
 with GPU objects that the dropped commands never made. Every such error halts it, not only this
-one. The builder records again from the start on two triggers. The scene changed, or the frame's
-upload bound is smaller than the bound of the frame that halted. The second trigger covers a load
-the page lowered, a sun shadow it turned off and a preset step the governor made down. A frame
-forecasts its bound from the settings and lights before it records, and compares it with the
-bound that the halted frame stored. A page that lowers a load the engine refused keeps drawing,
+one. The builder records again from the start on three triggers. The scene changed, the sources that
+draw fell, or the frame's forecast fell below two figures. Those are the forecast that the halted
+frame made and the bound that frame reached. The second trigger is the WebGL2 builder's, whose bound
+follows draw records rather than rows. The third covers a load the page lowered, and a sun shadow
+it turned off. It also covers a preset step the governor made down. A frame forecasts its bound from the settings and lights
+before it records, and compares it with the figures that the halted frame stored. The stored
+forecast is the one the failed frame leaves, after it has built its layout. So the next frame's
+forecast and the stored one come from the same state. Every retry needs a further fall. So a table that holds its size, or a layout that grows past the forecast,
+never makes a page re-create its GPU objects every frame. A page that lowers a load the engine refused keeps drawing,
 with no restart. The frame that failed names the reason, and the next frame starts the GPU's
 objects again.
 

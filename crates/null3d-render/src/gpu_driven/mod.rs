@@ -171,9 +171,9 @@ use crate::exposure::{ComputeIds, ExposureIds};
 use crate::final_pass::FinalIds;
 use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
-    CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
-    RecordError, SceneSettings, StillMarks, UploadArena, active_sources, bind_frame_group,
-    floats_as_bytes, unbound_buffer_bytes, uploads_out_of_memory,
+    CanvasOutput, FrameBuilder, FrameInput, HaltFigures, KeyCounts, MaterialStorage, MeshBuffers,
+    ParityLists, RecordError, SceneSettings, StillMarks, UploadArena, active_sources,
+    bind_frame_group, floats_as_bytes, unbound_buffer_bytes, uploads_out_of_memory,
 };
 use crate::frame_graph::{DrawnViews, FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -3881,16 +3881,38 @@ impl FrameBuilder for GpuDrivenRenderer {
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
         self.settings.set_still(self.lists.still());
         let forecast = self.forecast_bound(input);
+        let active = active_sources(input);
         let mut took = self.lists.take(input.frame);
-        if took.is_err() && self.lists.can_retry(forecast, input.structure_changed) {
+        if took.is_err()
+            && self
+                .lists
+                .can_retry(forecast, active, input.structure_changed)
+        {
             self.reset_gpu();
             took = self.lists.take(input.frame);
         }
         let (mut list, mut arena) = took?;
         let result = self.record_into(input, &mut list, &mut arena);
+        // A failed frame stores the forecast of the state it leaves, which is the state the next
+        // frame forecasts from: the layout it built, and the settings it used.
+        let halted_forecast = if result.is_err() {
+            self.forecast_bound(input)
+        } else {
+            forecast
+        };
         let marks = StillMarks::of(input, &self.settings, &self.graph, &self.pipelines);
-        self.lists
-            .restore(input.frame, list, arena, marks, result, self.frame_bound)
+        self.lists.restore(
+            input.frame,
+            list,
+            arena,
+            marks,
+            result,
+            HaltFigures {
+                bound: self.frame_bound,
+                forecast: halted_forecast,
+                active,
+            },
+        )
     }
 
     fn still(&self) -> crate::still::Still {

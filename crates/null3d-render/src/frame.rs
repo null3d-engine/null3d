@@ -809,6 +809,15 @@ pub(crate) fn put_u32(bytes: &mut [u8], word: usize, value: u32) {
     bytes[word * 4..word * 4 + 4].copy_from_slice(&value.to_ne_bytes());
 }
 
+/// The figures of a frame that halted the builder, which a later frame compares with its own: the
+/// bound it reached, the forecast of the state it leaves, and the sources that could draw it.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct HaltFigures {
+    pub bound: usize,
+    pub forecast: usize,
+    pub active: u32,
+}
+
 /// The draw list and the upload arena of each frame parity, and the frames' all-or-nothing rule.
 ///
 /// A frame that fails publishes an empty list, so the thread that draws replays nothing and the
@@ -829,9 +838,13 @@ pub(crate) struct ParityLists {
     still: crate::still::Still,
     /// The error of a frame that failed after it recorded commands.
     halted: Option<RecordError>,
-    /// The upload bound of the frame that halted the builder, which a later frame compares with
-    /// its own to know whether the frame now fits.
+    /// The upload bound of the frame that halted the builder, and the bound that frame forecast
+    /// before it recorded. A later frame retries only when its forecast falls below both.
     halted_bound: usize,
+    halted_forecast: usize,
+    /// The sources that could draw the frame that halted the builder, which the WebGL2 builder's
+    /// bound does not follow, so a row drop there needs a trigger of its own.
+    halted_sources: u32,
 }
 
 impl ParityLists {
@@ -847,6 +860,8 @@ impl ParityLists {
             still: crate::still::Still::default(),
             halted: None,
             halted_bound: 0,
+            halted_forecast: 0,
+            halted_sources: 0,
         }
     }
 
@@ -901,7 +916,8 @@ impl ParityLists {
     /// ago outside its marked parts: the arena's volatile bytes and the list's marked words. The
     /// still count then grows, or falls to zero. A frame that changed while it blended a still view
     /// gets the whole weight, so it shows as it is drawn rather than mixed into the old history.
-    /// `bound` is the frame's upload bound, which a later frame compares with its own.
+    /// `figures` holds the bound the frame reached, the forecast of the state it leaves, and the
+    /// sources that could draw it. A later frame compares its own with them.
     pub(crate) fn restore(
         &mut self,
         frame: u32,
@@ -909,7 +925,7 @@ impl ParityLists {
         mut arena: UploadArena,
         marks: StillMarks<'_>,
         result: Result<bool, RecordError>,
-        bound: usize,
+        figures: HaltFigures,
     ) -> Result<bool, RecordError> {
         let parity = (frame & 1) as usize;
         if result.is_ok() {
@@ -938,7 +954,9 @@ impl ParityLists {
         if let Err(error) = result {
             if !list.is_empty() {
                 self.halted = Some(error);
-                self.halted_bound = bound;
+                self.halted_bound = figures.bound;
+                self.halted_forecast = figures.forecast;
+                self.halted_sources = figures.active;
             }
             list.clear();
         }
@@ -953,12 +971,17 @@ impl ParityLists {
         self.halted = None;
     }
 
-    /// True when the builder halted and the scene changed, or the frame's upload bound is smaller
-    /// than the bound of the frame that halted it. The caller then starts the GPU's objects again
-    /// and records the frame, so a page that lowers a load, turns off a shadow or steps its preset
-    /// down keeps drawing. `forecast` is the next frame's bound, or an upper bound of it.
-    pub(crate) fn can_retry(&self, forecast: usize, changed: bool) -> bool {
-        self.halted.is_some() && (changed || forecast < self.halted_bound)
+    /// True when the builder halted and the next frame can record where the halted one could not.
+    /// That needs one of three: the scene changed, the sources that draw fell, or the frame's
+    /// forecast fell below both the forecast the halted frame made and the bound it reached. The
+    /// last condition is what stops a page from grinding: a forecast that stays level, because a
+    /// table holds its size or because the layout grows past the forecast, never retries. The
+    /// caller then starts the GPU's objects again and records the frame.
+    pub(crate) fn can_retry(&self, forecast: usize, active: u32, changed: bool) -> bool {
+        self.halted.is_some()
+            && (changed
+                || active < self.halted_sources
+                || (forecast < self.halted_forecast && forecast < self.halted_bound))
     }
 }
 
@@ -4505,6 +4528,31 @@ mod tests {
         let second = arena.memory_use();
         assert_eq!(second.peak, 300);
         assert_eq!(second.used, 100);
+    }
+
+    /// A halted builder retries only on a changed scene, a row drop, or a forecast below both the
+    /// forecast that failed and the bound it reached. A forecast that holds level never retries,
+    /// so a page cannot grind by re-creating its GPU objects every frame.
+    #[test]
+    fn a_halted_builder_retries_only_on_a_change_or_a_further_fall() {
+        let mut lists = ParityLists::new(16, 64);
+        lists.halted = Some(RecordError::OutOfMemory { bytes: 1 });
+        lists.halted_bound = 1_000;
+        lists.halted_forecast = 900;
+        lists.halted_sources = 10;
+        // The same load and forecast: the builder keeps the error.
+        assert!(!lists.can_retry(900, 10, false));
+        // Below the bound the frame reached but not below its forecast: no retry, since the frame
+        // would reach the same bound again.
+        assert!(!lists.can_retry(950, 10, false));
+        // A further fall below both retries.
+        assert!(lists.can_retry(800, 10, false));
+        // A row drop retries even when the forecast holds, which is the WebGL2 builder's case.
+        assert!(lists.can_retry(900, 5, false));
+        // A row rise does not, nor a level row count with a level forecast.
+        assert!(!lists.can_retry(900, 15, false));
+        // A changed scene retries whatever the figures.
+        assert!(lists.can_retry(900, 10, true));
     }
 
     /// A frame that asks its arena for more room than the engine's memory holds reports the size
