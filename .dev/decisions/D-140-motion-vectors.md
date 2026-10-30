@@ -33,6 +33,8 @@ Option C needs the depth prepass, which most presets leave off ([quality presets
 
 Option B leaves the main pass alone. Its pipelines bind only what motion needs, so the texture limit holds. A still scene draws nothing in it but a clear. It costs a second vertex pass over the moving objects. That is the trade that Unity and Unreal make by default. The outline mask is the same kind of pass already: its own view, its own culling and layout, and the scene's depth as its depth target, read but never written.
 
+A custom material whose fragment stage tests its own coverage reads its row of custom values there, so its motion build declares that texture in the fragment stage. The motion pass's frame group gives that texture to both stages, as the depth group does. A vertex-only entry there stops every such material's motion pipeline from building on WebGPU, with E1408, and the motion view of a custom material shows it.
+
 ### What the target holds
 
 The motion target holds two 16-bit floats per pixel (`rg16float`, a new format code), in units of the image: the change of texture coordinates across the render size, x right and y down, from the top left as effects count them.

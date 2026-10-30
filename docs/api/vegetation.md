@@ -265,6 +265,7 @@ const leaves = plantMaterial(ctx, {
 - **The colour map multiplies the species' colour.** It holds the veins, the shade of each leaf and the lift of its ridges, so two species that share a cell still differ.
 - **The engine makes each texture's mip levels.** A masked material fades its cut edges with alpha to coverage, so a leaf card that shrinks keeps the share of the picture that its leaves cover, and a crown far away stays as dense as it is up close.
 - **The card material morphs, and the plain one does not.** `plantMaterial` takes `morph` only for a plant's leaves: its WGSL adds a vertex offset that reads each leaf vertex's target record. A trunk, a frond or a flower drawn with the plain material needs no record.
+- **A plant material draws a mesh with the plant vertex format.** Its wind offset reads each vertex's branch index and leaf phase from the vertex color. A still material reads neither, but its mesh must still carry the color attribute. Without it the pair draws nothing.
 - **The four textures take about 4.6 MB of texture memory.** They are painted once, in the setup, and kept for the visit. A plant's branch records take one more small texture, eight bytes for each branch.
 
 
