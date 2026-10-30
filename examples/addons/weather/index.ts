@@ -434,8 +434,9 @@ export interface SplashOptions {
 	/** How bright the splashes glow. The default is 0.7. */
 	intensity?: number;
 	/**
-	 * The layers the splashes draw on. Give them a layer that a planar reflection pass leaves out:
-	 * on WebGL2 a particle buffer beside a blended mesh in that pass stops the frame.
+	 * The layers the splashes draw on. The default is the default layer, which a planar reflection
+	 * draws. Leaving the splashes out of a mirror is optional: D-278 records the WebGL2 fault that
+	 * once stopped the frame here, and the engine now keeps that fault from returning.
 	 */
 	layers?: number;
 }
@@ -506,8 +507,9 @@ export interface SteamOptions {
 	/** The wind that carries the steam, in meters a second. The default is a soft drift. */
 	wind?: Vec3Like;
 	/**
-	 * The layers the steam draws on. Give it a layer that a planar reflection pass leaves out: on
-	 * WebGL2 a particle buffer beside a blended mesh in that pass stops the frame.
+	 * The layers the steam draws on. The default is the default layer, which a planar reflection
+	 * draws. Leaving the steam out of a mirror is optional: D-278 records the WebGL2 fault that once
+	 * stopped the frame here, and the engine now keeps that fault from returning.
 	 */
 	layers?: number;
 }

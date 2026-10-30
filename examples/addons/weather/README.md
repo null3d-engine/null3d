@@ -161,12 +161,13 @@ particle buffers of the sizes their calls name.
   mask runs its surface function in the shadow caster too, so keep the wet readers opaque.
 - A custom material samples at most six textures of its own. A scene that already uses six has no
   room for `wetMirror`.
-- A planar reflection pass whose view draws a particle system beside a blended mesh stops the frame
-  on WebGL2. This is an engine fault, not the add-on's
-  ([D-278](../../../.dev/decisions/D-278-reflection-pass-particle-trap.md)). Give the particles a
-  layer that the pass leaves out: `createSplashes` and `createSteam` take `layers`, the pass takes
-  `layers`, and the camera's layers must include the particles' layer. The weather cost page and its
-  picture test show the arrangement.
+- A planar reflection pass once stopped the frame on WebGL2 when its view drew a particle system
+  beside a blended mesh. The engine fault is fixed and recorded
+  ([D-278](../../../.dev/decisions/D-278-reflection-pass-particle-trap.md)), so leaving the
+  particles in the mirror is safe. `createSplashes` and `createSteam` still take `layers`, and a
+  scene that leaves them out sets the layer on both the particles and the pass, while the camera's
+  layers keep drawing them. The weather cost page and its picture test keep the split until their
+  pictures are drawn again.
 - A pass switch reaches the frame after the call (`render.setPassEnabled`). A scene that switched
   its pass and then held a single frame showed no mirror in it, with no error to say so. The
   add-on therefore switches its pass on at the first update and one update before each draw, and a

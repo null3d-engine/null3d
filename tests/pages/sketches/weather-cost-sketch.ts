@@ -189,8 +189,8 @@ export default defineSketch(async (ctx) => {
 		...(MIRROR
 			? {
 					// The pass draws the ground, the posts and the canopy, and leaves the particle
-					// systems out: on WebGL2 a particle buffer beside a blended mesh in the pass stops
-					// the frame.
+					// systems out. The WebGL2 fault that this guarded against is fixed (D-278), so
+					// the split is optional; it stays until the pictures are drawn again.
 					reflection: { scale: 0.5 as const, layers: 1 },
 				}
 			: { reflection: false as const }),
