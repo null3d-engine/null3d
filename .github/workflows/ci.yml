@@ -1125,8 +1125,10 @@ jobs:
           if-no-files-found: ignore
       # Every picture that the shard drew, when the run asked for them. The name carries the head
       # and the shard, because a reference holds only for the tree and the renderer that drew it.
+      # A shard that runs out of time is reported as cancelled, and its pictures are the ones
+      # hardest to draw again, so it uploads what it has either way.
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() && inputs['drawn-images'] }}
+        if: ${{ always() && inputs['drawn-images'] }}
         with:
           name: drawn-images-${{ github.sha }}-browser-shard-${{ matrix.shard }}
           path: test-results/drawn/
@@ -1225,8 +1227,10 @@ jobs:
           if-no-files-found: ignore
       # Every picture that the shard drew, when the run asked for them. The name carries the head
       # and the shard, because a reference holds only for the tree and the renderer that drew it.
+      # A shard that runs out of time is reported as cancelled, and its pictures are the ones
+      # hardest to draw again, so it uploads what it has either way.
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() && inputs['drawn-images'] }}
+        if: ${{ always() && inputs['drawn-images'] }}
         with:
           name: drawn-images-${{ github.sha }}-heavy-shard-${{ matrix.shard }}
           path: test-results/drawn/
@@ -1361,9 +1365,11 @@ jobs:
             !test-results/drawn/**
           if-no-files-found: ignore
       # Every picture that the city drew, when the run asked for them. The name carries the head,
-      # because a reference holds only for the tree and the renderer that drew it.
+      # because a reference holds only for the tree and the renderer that drew it. A job that runs
+      # out of time is reported as cancelled, and its pictures are the ones hardest to draw again,
+      # so it uploads what it has either way.
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() && inputs['drawn-images'] }}
+        if: ${{ always() && inputs['drawn-images'] }}
         with:
           name: drawn-images-${{ github.sha }}-city
           path: test-results/drawn/
