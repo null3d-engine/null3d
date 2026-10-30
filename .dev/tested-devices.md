@@ -266,7 +266,55 @@ species, so 78 variants for a preset.
 
 The phone stands in for the S24 class. D-241's generation budget allows a whole variant set to build
 in 200 ms on the slowest measured device, and every preset sits inside it. The cost per variant is
-about 1.7 times the iPad's, whose run is in that device's folder.
+about 1.7 times the iPad's, whose rows are below. Its byte column counts the arrays before the leaf
+parts carried the morph data, so it is lower than the iPad's.
+
+### Tree generation on the iPad Pro 13
+
+The same plan ran on the cloud iPad Pro 13 in Safari 26.6.1
+([its run](tested-devices/ipad-pro-13-safari/20261030-014425-tree-generation.md)). The page
+generated every species at each preset's detail in a worker, six seeds each: 78 variants for a
+preset.
+
+| Preset | Variants | Total (ms) | Per variant (ms) | Triangles | Bytes (MB) |
+| --- | --- | --- | --- | --- | --- |
+| Low | 78 | 105.2 | 1.35 | 337,008 | 20.5 |
+| Medium | 78 | 77.6 | 1.00 | 337,008 | 20.5 |
+| High | 78 | 93.3 | 1.20 | 409,182 | 24.5 |
+| Ultra | 78 | 80.6 | 1.03 | 409,182 | 24.5 |
+
+D-241 allows the set 200 ms on the slowest measured device and 150 ms on the iPad. Every preset sits
+inside both lines, and the slowest is Low at 105.2 ms, 70 per cent of the iPad's line.
+
+The arrays take 20.5 MB at Low and Medium and 24.5 MB at High and Ultra, which is the budget that
+D-241 sets. The leaf parts carry the next level's place for each vertex, which the material's morph
+reads.
+
+### Tree generation on the Galaxy S25 with the leaf morph data
+
+The plan ran twice on the cloud Galaxy S25 with the current generator. The second run came after the
+phone had time to cool, and it is the figure
+([its run](tested-devices/galaxy-s25-sm-s931b-chrome/20261030-021612-tree-generation.md)). The page
+generated 78 variants for each preset.
+
+| Preset | Variants | Total (ms) | Per variant (ms) | Triangles | Bytes (MB) |
+| --- | --- | --- | --- | --- | --- |
+| Low | 78 | 198.6 | 2.55 | 337,008 | 20.5 |
+| Medium | 78 | 164.9 | 2.11 | 337,008 | 20.5 |
+| High | 78 | 161.9 | 2.08 | 409,182 | 24.5 |
+| Ultra | 78 | 172.4 | 2.21 | 409,182 | 24.5 |
+
+D-241 allows the set 200 ms on the slowest measured device. Low is inside it at 198.6 ms, by 0.7
+per cent, and the other presets sit inside it. Both runs drew on a 30 Hz display, and the runner
+names the phone's heat or the display setting, so the figure carries that caveat.
+
+The first run
+([its run](tested-devices/galaxy-s25-sm-s931b-chrome/20261030-015719-tree-generation.md)) read
+213.4 ms at Low while the cloud reported the phone hot. It is discarded as an upper bound, and the
+two runs differ by 14.8 ms at Low.
+
+The arrays take 20.5 MB at Low and Medium and 24.5 MB at High and Ultra, which is the budget that
+D-241 sets.
 
 ### The splats add-on at its full count, iPad Pro 13 and Galaxy S24
 
