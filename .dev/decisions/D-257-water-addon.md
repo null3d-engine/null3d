@@ -1,15 +1,15 @@
 # D-257: The water add-on
 
-Status: decided. Built: the `@null3d/water` add-on, its demo, the reflection's cadence through
-the feature host, and one owner for each point where bodies meet. Owed: the cost per preset, and
-the Creek's migration to the add-on, which waits until the add-on follows the current as the Creek
-does. Tasks: M3-F5, M3-E6.
+Status: decided. Built: the `@null3d/water` add-on, its demo, the reflection's cadence through the
+feature host, one owner for each point where bodies meet, and the Creek's migration to the add-on.
+Owed: the cost per preset. Tasks: M3-F5, M3-E6.
 
 Summary: `@null3d/water` draws a river and a lake from one shape, with waves, ripples, caustics,
 foam, soft shores, a reflection and an underwater view. The surface reads the copy of the scene's
-depth, so a shore fades against the real bed. The reflection's cadence is a feature setting of the
-preset and the governor. The Creek draws its own water, by the owner's ruling on the look. Its waves
-run along the stream's current, so the whole surface moves downstream.
+depth, or the bed that the shape describes, so a shore fades against the bed. The reflection's
+cadence is a feature setting of the preset and the governor. The current carries the whole wave set
+downstream, so every crest moves with the river. The Creek draws its water and its underwater view
+through the add-on, and keeps no water code of its own.
 
 ## Question
 
@@ -50,16 +50,20 @@ and foam maps, which the add-on needs.
 
 **The shape.** One description has two kinds. A river takes the points along its middle line, its
 half width and its depth. A lake takes the points around its shore, its depth and the distance over
-which the bed deepens. Both resolve to a body that answers `depthAt`, `contains` and `currentAt`. The
-surface mesh comes from the same body. It is a strip along a river, and a grid over a lake's bounds
-with the cells outside its shore left out. The current is in the mesh's texture coordinates, so a leaf or
-a boat reads it without a texture.
+which the bed deepens. Both resolve to a body that answers `depthAt`, `contains` and `currentAt`. A
+shape may give its bed and, for a river, its current as functions of any point, and its own mesh
+detail, for water that a middle line and a width do not describe. The surface mesh comes from the
+same body. It is a strip along a river, and a grid over a lake's bounds with the cells outside its
+shore left out. The current is in the mesh's texture coordinates, so a leaf or a boat reads it
+without a texture.
 
 **The surface.** One material draws every body of one `createWater` call. It declares
-`sceneInputs: ['sceneDepth']` and two textures, the mirror and the foam map. The gap between the
-sheet and the bed behind each pixel gives the water's depth, the tint, the caustics' reach and the
-foam. Measured over a band, the same gap gives the soft shore, which fades the alpha instead of
-ending on the mesh's edge. The surface draws both faces, and its back face shows the window overhead.
+`sceneInputs: ['sceneDepth']` and its textures, among them the mirror and the foam map. The gap
+between the sheet and the bed behind each pixel gives the water's depth, the tint, the caustics'
+reach and the foam. Measured over a band, the same gap gives the soft shore, which fades the alpha
+instead of ending on the mesh's edge. A call told `bed: 'shape'` instead carries each vertex's bed
+depth in its color, and the surface reads that. The surface draws both faces, and its back face
+shows the window overhead.
 
 **The reflection cadence.** The pass redraws every other frame on Low and Medium and every frame on
 High and Ultra, and a caller may give its own cadence. [The cadence through the feature
@@ -70,39 +74,34 @@ of the Creek's own.
 the same long waves and the same current, and the effect shows only near or under the surface. It keeps the
 Creek's per-pixel test, wobble, caustics and absorption.
 
-**The Creek.** It keeps its own `water.ts` and `underwater.ts`. Its bisect switches keep working:
-`without=water` leaves the water out, and `reflect=always` and `reflection-scale` set the
-reflection's cadence and its size. The add-on's river and the Creek's water differ in three ways,
-and the owner rules those differences wrong for the Creek.
+**The Creek.** It draws its water through the add-on, and `water.ts` and `underwater.ts` are gone.
+Its bisect switches keep working: `without=water` leaves the water out, and `reflect=always` and
+`reflection-scale` set the reflection's cadence and its size. The three differences that once kept
+the Creek on its own water are closed:
 
-- **The current.** The add-on reads it from the river mesh's texture coordinates, so each vertex
-  carries a vector. The wave phase, the foam drift and the caustic drift follow that vector. The
-  Creek's water takes its current from the stream's middle line, and the wave phase, the foam drift
-  and the caustic drift follow it.
-- **The thickness.** The add-on takes it from the screen-space copy of the scene's depth. The
-  Creek's water computes an analytic bed. The change moves the caustics and the edge foam.
-- **The shore.** The add-on fades the water's alpha over a soft ramp. The Creek's water ends
-  opaque at the mesh's edge.
+- **The current.** The add-on turns each wave's direction into the current's frame and carries the
+  whole set at the current's speed, so the crests keep every angle between them and every one drifts
+  downstream. A river may also give its current as a function of any point, so the Creek's straight
+  sheets follow the stream's winding middle line. The caustics and the foam flecks drift the same
+  way.
+- **The thickness.** A shape may give its bed as a function of any point, and the water may read it
+  in place of the copy of the scene's depth (`bed: 'shape'`). The mesh carries each vertex's bed
+  depth in its vertex colors. The Creek gives the analytic bed that its land uses.
+- **The shore.** The Creek's material draws opaque, and its bed ends the surface where the bed meets
+  it. The add-on's soft shore remains for a scene that gives no bed.
 
-The owner rejects the add-on's look in the Creek: the surface shows sideways lines between stretches
-of flow. The owner also ruled that all visible motion follows the river, and that the crests stay.
-The Creek's own water therefore takes the current from the stream's middle line. The six wave
-directions stay as they were, measured in the current's frame, so the crests keep every angle
-between them. The current carries the whole set, so the pattern keeps its cross-hatch and every
-crest drifts downstream. The caustics and the foam flecks drift along the same current.
+The owner ruled that all visible motion follows the river, and that the crests stay. A block match
+on the close view at three moments moves the near band's median -73, -80 and -99 degrees, against
+the -90 of straight downstream, and its spread falls by more than half. The far band has only eight
+blocks, so its angle is coarse: that limits the precision of the figure, not the direction, and
+every far block points downstream.
 
-A block match on the close view at three moments moves the near band's median -73, -80 and -99
-degrees, against the -90 of straight downstream, and its spread falls by more than half. The far
-band has only eight blocks, so its angle is coarse: that limits the precision of the figure, not the
-direction, and every far block points downstream.
-
-The add-on still lets each wave run along a direction fixed in the world, so its crests cross the
-stream. The Creek therefore draws its own water. M3-F5's migration of the Creek to the add-on waits
-until the add-on follows the current in the same way. The close picture at 640 by 360 guards the
-carried set, because its frame fills with the surface. The three bank views are 320 wide and draw
-the stream as a ribbon a few dozen pixels across, so no crest pattern reads there; their reference
-changes are incidental. The unit tests keep the wave copies equal, check that no two directions
-collapse, and check that the pattern drifts downstream with the current.
+The Creek's three sheets keep the columns and rows of the water that it drew itself, so their
+surfaces have the same vertices and triangles. The close picture at 640 by 360 guards the carried
+set, because its frame fills with the surface. The three bank views are 320 wide and draw the stream
+as a ribbon a few dozen pixels across, so no crest pattern reads there. The add-on's unit tests
+carry the wave copies in step, check that the whole set travels with the current, and check a shape's
+own bed, current and mesh.
 
 ### The cadence through the feature host
 
@@ -183,12 +182,17 @@ is red until a CI run draws them and `images:review` takes them from it.
 
 ## Consequences
 
-- The add-on's largest material set is 55.9 KB after Brotli, within D-14's first-use shader budget
-  of 56 KB, which leaves 0.1 KB.
+- The add-on's largest material set is 79.9 KB after Brotli, past D-14's first-use shader budget of
+  56 KB. The landing head without this change measures 79.5 KB, so this change adds at most 0.6 KB.
+  The growth past the 55.9 KB recorded here earlier is the builds that a material naming its surface
+  alpha compiles for alpha to coverage, the alpha hash and a masked shadow and motion, which the
+  water's soft shore names (`681d70cea`). The add-on check warns and does not fail, by the owner's
+  ruling that an add-on's size is a warning ([D-225](D-225-addon-listing-check.md)).
 - A custom effect that draws its own pass keeps no pieces in its module, because they never reach a
   host. The underwater effect's pieces would be 93 KB of the add-on's entry. D-225 gives the rule.
-- The Creek's pictures draw its own water, and the add-on's demo draws the add-on. A change to one
-  moves only that one's pictures.
+- The Creek's pictures draw the add-on, as the add-on's demo does. The Creek keeps the columns and
+  rows of the water that it drew itself, so each sheet has the same vertices and triangles as the
+  water it replaced.
 - The page and allocation gates ran in the browser against E4a's engine: the water page starts from
   another origin under the strict policy, threaded and single-threaded, and the add-on's own code
   allocates zero bytes a frame on all four presets. That is E4a's first user, end to end.
@@ -196,10 +200,11 @@ is red until a CI run draws them and `images:review` takes them from it.
   90 to 155. Its command is `bun packages/cli/bin/null3d.js check-addon packages/water`, which
   measures the add-on's page on each preset; `--skip-cost` leaves that gate out and runs the page
   and allocation gates.
-- The add-on's tests cover the shape, the mesh's coverage and winding, the wave copies, the foam
-  map and the size gates. The demo `examples/water` draws both bodies and the view from below. The
-  package's own page (`packages/water/page`, which the tarball leaves out) gives the listing check's
-  page, cost and allocation gates a scene to measure.
+- The add-on's tests cover the shape, the mesh's coverage and winding, a shape's own current, bed
+  and mesh, the carried wave set, the wave copies, the foam map and the size gates. The demo
+  `examples/water` draws both bodies and the view from below. The package's own page
+  (`packages/water/page`, which the tarball leaves out) gives the listing check's page, cost and
+  allocation gates a scene to measure.
 - The demo's tour is one loop of shots through the route of `examples/lib/cinematic.ts`, as a
   function of the time. It drifts down the river along the bank and dives under the lake for about
   24 s. It then rises, turns to face back over the scene, and circles the valley back to its first

@@ -31,7 +31,7 @@ The facts below hold at `origin/main` 114a1246d, the commit that the proposal wa
   - transmission ([D-122](D-122-transmission.md));
   - a custom material's surface function, with vertex offsets for waves.
 
-  The guide [Custom passes](../../docs/guides/custom-passes.md) has a water recipe. The Creek showcase builds its water this way (`examples/showcase/creek/water.ts`): waves, ripples, caustics and foam. The three.js mapping sends `Water` and `Water2` to the reflection-pass recipe.
+  The guide [Custom passes](../../docs/guides/custom-passes.md) has a water recipe. The water add-on builds on it: waves, ripples, caustics and foam, from one description of a river or a lake. The Creek showcase draws its water through that add-on. The three.js mapping sends `Water` and `Water2` to the reflection-pass recipe.
 
 So a clouds add-on would put clouds in two places, each with its own settings: flat clouds in the core, volumetric clouds in the add-on. A water add-on next to the recipe would give two ways to make water.
 
