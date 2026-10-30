@@ -131,9 +131,9 @@ pressure, and the projection. Its stage rides in the state's fourth number. A fr
 the runs the sketch time owes, and the engine swaps the states between them.
 
 The step is fixed at a sixtieth of a second. A frame runs the cycles that the sketch time owes,
-counted from the start of that time. A held page runs its sketch's updates without drawing, and the
-pass advances only in a frame that draws. Its one drawn frame therefore solves one cycle from the
-analytic field. A live page shows the developed field, and its picture is the measure of it.
+counted from the start of that time. A held page steps its sketch's updates up to the held time, and the pass
+runs with each step, so a held picture carries the air that the hold built. A page held at nothing
+draws one cycle from the analytic field, and a page held later carries whatever moved since.
 
 Each cycle pulls the air toward the analytic field. That field is the base wind, the swirl and the
 traveling gust of place and time. The pushes and the gust are injected where a page sends them. The
@@ -205,8 +205,8 @@ two above, which waits on M3-V13; V13 landed and the add-on builds on it.
 
 ## What the checks found when they first ran
 
-The solver changed what a held picture draws, and the checks that measure the field found three
-faults in the add-on's own page and stepping.
+The checks that measure the field found three faults in the add-on's own page and stepping, and a
+fourth in the check that judges the wake.
 
 - **A held page drew an empty grid.** The warm-up set the pass's runs when the page made the field,
   and the page's updates then set them again before any frame drew. A held page draws one frame at
@@ -223,7 +223,10 @@ faults in the add-on's own page and stepping.
   so the lookup missed and the engine asked for a module named `undefined`. The page names the
   module literally now, and sets the switches on the address afterwards.
 - **The wake check judged the wrong thing.** At eight levels of change a one-pixel lean counts as
-  nothing, so the pushes read as absent. At one level the two WebGPU paths measure 0.04091 and
-  0.02438 of the channels changed with the pushes on, against none with them off. This Mac's
-  software WebGL2 path measures 0.00231, which is near what two captures at other times differ by.
-  The wake on that path is not proven yet.
+  nothing, so the pushes read as absent. The check now holds two pages at the same time, the one
+  that pushes the air and the one that turns `?push=0`, and compares them at one level. The pair
+  measures 0.07940, 0.05505 and 0.07452 of the channels changed on this Mac's card, and 0.07955,
+  0.05506 and 0.07448 on its software GPU. With the pushes off on both pages it measures 0.00000,
+  so the difference is the trail and nothing else, and a held pair is the same on every run.
+  An earlier live pair read 0.002 on the software WebGL2 path. That was the live run's own
+  frame-count noise: the held pair reads 0.07448 there, so the WebGL2 push path is sound.

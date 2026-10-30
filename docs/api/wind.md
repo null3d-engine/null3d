@@ -268,7 +268,7 @@ Each cycle pulls the air toward an analytic field of place and time. It injects 
 
 The air starts when a page makes the wind, so a field made late in a sketch runs no air from before it.
 
-A held page runs its sketch's updates without drawing, and the pass advances only in a frame that draws. Its one drawn frame solves one cycle from the analytic field, and holds that air. A picture of a developed field therefore comes from a live page.
+A held page steps its sketch's updates up to the held time, and the pass runs with each step, so a held picture carries the air that the hold time built. Two held pages at two times therefore differ by the air that moved between them.
 
 Beyond its box the field carries on. The box sets the detail, not the field's extent. So a plant past the box reads the air at its own place.
 
