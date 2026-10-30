@@ -286,10 +286,9 @@ preset.
 D-241 allows the set 200 ms on the slowest measured device and 150 ms on the iPad. Every preset sits
 inside both lines, and the slowest is Low at 105.2 ms, 70 per cent of the iPad's line.
 
-The arrays are over the budget that D-241 sets. They take 20.5 MB at Low and Medium and 24.5 MB at
-High and Ultra, where the budget allows 16.7 and 20.0 MB. The leaf parts carry the next level's
-place for each vertex, which the material's morph reads, and that data is part of the array. The
-budget is the owner's and does not move here.
+The arrays take 20.5 MB at Low and Medium and 24.5 MB at High and Ultra, which is the budget that
+D-241 sets. The leaf parts carry the next level's place for each vertex, which the material's morph
+reads.
 
 ### The splats add-on at its full count, iPad Pro 13 and Galaxy S24
 

@@ -233,12 +233,11 @@ those presets draw on core WebGPU only, and the tablet offers no WebGPU adapter.
   slowest measured device, and under 150 ms on the iPad. The stand-in's 24 variants took 14 to
   23 ms on the iPhone and the iPad. The package's 78 variants take 77.6 to 105.2 ms on the iPad and
   137.9 to 163.0 ms on the S25. The budget leaves the set room to grow.
-- **Memory:** the budget allows the package's variant arrays 16.7 MB at Low and Medium and 20.0 MB
-  at High and Ultra, against the stand-in's 7.0 to 22.7 MB. They take 20.5 and 24.5 MB on the iPad,
-  over that line, because the leaf parts carry the next level's place for each vertex. The owner's
-  budget does not move. The GPU textures must stay within the measured figures for the same demo and
-  preset, which the add-on shares with the scene. Creek's 3.1 MB of Blender models leave, and the
-  arrays replace them.
+- **Memory:** the budget is 20.5 MB at Low and Medium and 24.5 MB at High and Ultra. The owner set
+  it on 30 October 2026, because every leaf vertex carries the next level's place for the material's
+  morph. <!-- outside date --> The stand-in took 7.0 to 22.7 MB. The GPU textures must stay within
+  the measured figures for the same demo and preset, which the add-on shares with the scene. Creek's
+  3.1 MB of Blender models leave, and the arrays replace them.
 
 ## The generator's shape
 
