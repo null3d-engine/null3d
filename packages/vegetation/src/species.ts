@@ -63,6 +63,12 @@ export interface BranchLevel {
 	readonly segments: number;
 	/** How far the level twists around its parent, in degrees. */
 	readonly twist: number;
+	/**
+	 * Rings that the level's children grow in, along the parent. Each ring puts its children at one
+	 * height, so a conifer's whorls carry their boughs as one shelf. Zero spreads the children evenly
+	 * instead, as a broadleaf's limbs grow.
+	 */
+	readonly whorls?: number;
 }
 
 /**
@@ -78,6 +84,11 @@ export interface Crown {
 	readonly spread: number;
 	/** The vertical pull on every branch: positive bends down, as a willow does. */
 	readonly pull: number;
+	/**
+	 * The share of a branch's length that the crown keeps at its narrowest, from 0 to 1. The default
+	 * is 0.2, which holds a rounded crown's top open; a conifer that tapers to a point asks for less.
+	 */
+	readonly floor?: number;
 }
 
 /**
@@ -294,6 +305,8 @@ export function speciesProblems(species: Species): string[] {
 			if (!Number.isInteger(level.segments) || level.segments < 1 || level.segments > 24)
 				problems.push(`${at}.segments must be a whole number from 1 to 24.`);
 			if (!finite(level.twist)) problems.push(`${at}.twist must be a number of degrees.`);
+			if (level.whorls !== undefined && (!Number.isInteger(level.whorls) || level.whorls < 0))
+				problems.push(`${at}.whorls must be a whole number from 0.`);
 		});
 	}
 
@@ -315,6 +328,7 @@ export function speciesProblems(species: Species): string[] {
 	if (!finite(species.crown.spread) || species.crown.spread < 0)
 		problems.push(`${name}: crown.spread must be a number from 0.`);
 	if (!finite(species.crown.pull)) problems.push(`${name}: crown.pull must be a number.`);
+	if (species.crown.floor !== undefined) share(species.crown.floor, `${name}: crown.floor`);
 
 	if (species.kind === 'fern' || species.kind === 'rosette' || species.kind === 'grass') {
 		if (!species.rosette) problems.push(`${name}: a ${species.kind} needs a rosette record.`);
@@ -412,6 +426,7 @@ const LEVEL_FIELDS = [
 	'sides',
 	'segments',
 	'twist',
+	'whorls',
 ] as const;
 
 /**
@@ -425,6 +440,7 @@ const LEVEL_FIELDS = [
  */
 export function branchLevel(base: BranchLevel, level: Partial<BranchLevel>): BranchLevel {
 	const out: Record<string, number> = {};
-	for (const field of LEVEL_FIELDS) out[field] = level[field] ?? base[field];
+	// A level's optional fields, such as its whorls, keep the base's value when the record names none.
+	for (const field of LEVEL_FIELDS) out[field] = (level[field] ?? base[field]) as number;
 	return out as unknown as BranchLevel;
 }

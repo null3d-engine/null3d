@@ -62,8 +62,8 @@ const BROADLEAF_BRANCHES = [
 function coniferBranches(height: number): BranchLevel[] {
 	return [
 		level({
-			children: 14,
-			prune: 0.08,
+			children: 15,
+			prune: 0.05,
 			length: height,
 			lengthVariance: 0.1,
 			angle: 2,
@@ -93,6 +93,9 @@ function coniferBranches(height: number): BranchLevel[] {
 			// the crown, and they run to the trunk's tip, so the crown carries foliage to its point.
 			start: 0.48,
 			end: 1,
+			// Five rings of three boughs, so the crown is shelves of needles with air between them, as
+			// an evergreen's whorls grow, rather than one even mass.
+			whorls: 5,
 			sides: 6,
 			segments: 5,
 			twist: 100,
@@ -171,12 +174,12 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 		// The crown holds its mass up the trunk: the lower part is bare, and the branches crowd the
 		// upper tree, as an evergreen's do, so light passes beneath the crown. The outline narrows
 		// quickly, so the crown tapers to a point instead of standing as a column of clumps.
-		crown: { shape: 'conical', start: 0.48, spread: 0.5, pull: 0.04 },
+		crown: { shape: 'conical', start: 0.48, spread: 0.45, pull: 0.04, floor: 0.15 },
 		leaf: {
 			kind: 'needle',
-			cards: 20,
+			cards: 19,
 			width: 0.45,
-			height: 0.9,
+			height: 1.1,
 			perCard: 40,
 			up: 0.3,
 			out: 1.1,
@@ -311,6 +314,10 @@ export const CREEK_SPECIES: readonly Species[] = [
 				length: 3.8,
 				angle: 50,
 				taper: 0.032,
+				// The limbs start inside the crown, so no lone clump of leaves hangs on the bare trunk
+				// below it with no branch to grow from.
+				start: 0.4,
+				end: 0.95,
 				sides: 6,
 				segments: 5,
 			}),
@@ -320,12 +327,16 @@ export const CREEK_SPECIES: readonly Species[] = [
 				length: 1.6,
 				angle: 56,
 				taper: 0.012,
+				// The branchlets leave the limb past its middle, so a limb shows its own branch before
+				// any leaf hangs on it.
+				start: 0.45,
+				end: 1,
 				sides: 4,
 				segments: 4,
 			}),
 			level({ children: 0, length: 0.7, angle: 60, taper: 0.004, sides: 3, segments: 2 }),
 		],
-		crown: { shape: 'spherical', start: 0.3, spread: 0.35, pull: 0.2 },
+		crown: { shape: 'spherical', start: 0.3, spread: 0.35, pull: 0.1 },
 		leaf: {
 			kind: 'cluster',
 			cards: 10,
@@ -338,7 +349,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 			end: 1,
 		},
 		wind: { stiffness: [0.1, 0.4, 0.7, 0.85], flutter: 0.02, frequency: 1.5 },
-		color: { bark: [0.16, 0.13, 0.1], leaf: [0.12, 0.25, 0.06], tint: 0.08, transmission: 0.34 },
+		color: { bark: [0.16, 0.13, 0.1], leaf: [0.09, 0.19, 0.045], tint: 0.08, transmission: 0.3 },
 		height: 13,
 		trunks: 1,
 		heightVariance: 0.16,

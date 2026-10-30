@@ -64,9 +64,11 @@ export function rosetteLeaves(
 		const yaw =
 			(k / rosette.blades) * Math.PI * 2 +
 			(unitAt(seed, species.seedSalt, variant, k, KEY_YAW) - 0.5) * 0.5;
+		// Each blade leaves the base at its own angle, so a clump fans in many planes rather than one,
+		// and the blades shade each other instead of reading as a flat fan.
 		const pitch =
 			(rosette.upright * 1.15 - 0.15) * (Math.PI / 2) +
-			(unitAt(seed, species.seedSalt, variant, k, KEY_PITCH) - 0.5) * 0.35;
+			(unitAt(seed, species.seedSalt, variant, k, KEY_PITCH) - 0.5) * 1.1;
 		const length =
 			rosette.length * (0.85 + 0.3 * unitAt(seed, species.seedSalt, variant, k, KEY_LENGTH));
 		const width =

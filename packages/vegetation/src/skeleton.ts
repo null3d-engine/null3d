@@ -182,12 +182,20 @@ function grow(
 	const childLevel: BranchLevel | undefined = species.branchLevels[level + 1];
 	if (childLevel && levelRecord.children > 0) {
 		const count = Math.max(0, Math.round(levelRecord.children));
+		// A whorled level groups its children into rings at the same height, as a conifer's boughs
+		// grow. Each ring carries a plate of branches that spread level, so a crown of rings reads as
+		// layered shelves with air between them rather than one even mass.
+		const whorls = Math.max(0, Math.floor(childLevel.whorls ?? 0));
+		const perWhorl = whorls > 0 ? Math.max(1, Math.ceil(count / whorls)) : count;
 		for (let k = 0; k < count; k++) {
 			const key = branchKey * 0x9e37 + k + 1;
 			if (unitAt(seed, species.seedSalt, variant, key, KEY_TILT) < levelRecord.prune) continue;
 			const jitter = (unitAt(seed, species.seedSalt, variant, key, KEY_ANGLE) - 0.5) * 0.6;
-			const share =
-				childLevel.start + (childLevel.end - childLevel.start) * ((k + 0.5 + jitter) / count);
+			const along =
+				whorls > 0
+					? (Math.floor(k / perWhorl) + 0.5) / Math.min(whorls, count)
+					: (k + 0.5 + jitter) / count;
+			const share = childLevel.start + (childLevel.end - childLevel.start) * along;
 			const sample = Math.round(share * (samples - 1));
 			const [cx, cy, cz] = pointAt(points, sample);
 			const [tx, ty, tz] = directionAt(points, sample);
@@ -195,7 +203,12 @@ function grow(
 				1,
 				Math.max(0, (cy - growth.crownStart) / Math.max(1e-6, growth.top - growth.crownStart)),
 			);
-			const scale = crownScale(species.crown.shape, species.crown.spread, heightShare);
+			const scale = crownScale(
+				species.crown.shape,
+				species.crown.spread,
+				heightShare,
+				species.crown.floor,
+			);
 			const variance =
 				1 +
 				(unitAt(seed, species.seedSalt, variant, key, KEY_LENGTH) * 2 - 1) *

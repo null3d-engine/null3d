@@ -20,7 +20,14 @@ const FLAT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
 export default defineSketch(async (ctx) => {
 	const { scene, assets } = ctx;
 	scene.setBackground('#9fc0dd');
-	scene.createDirectionalLight({ direction: [-0.45, -1, -0.3], intensity: 2.8 });
+	// Both trees cast shadows with a short contact reach, so the trunk's base meets the ground on
+	// either side of the comparison.
+	scene.createDirectionalLight({
+		direction: [-0.45, -1, -0.3],
+		intensity: 2.8,
+		castShadows: true,
+		shadow: { distance: 40, contactDistance: 0.3 },
+	});
 	scene.createAmbientLight({ intensity: 0.45 });
 	const ground = ctx.materials.standard({ color: '#4a5137', roughness: 1, metalness: 0 });
 	scene.createMesh({
@@ -42,6 +49,8 @@ export default defineSketch(async (ctx) => {
 			position: [-6 + node.position[0], node.position[1], node.position[2]],
 			rotation: node.rotation,
 			scale: node.scale,
+			castShadows: true,
+			receiveShadows: true,
 		});
 	}
 
@@ -66,6 +75,8 @@ export default defineSketch(async (ctx) => {
 			mesh: ctx.geometry.fromArrays(part.arrays),
 			material: part.name === 'wood' ? bark : leaves,
 			position: [6, 0, 0],
+			castShadows: true,
+			receiveShadows: true,
 		});
 
 	const camera = scene.createPerspectiveCamera({
