@@ -7,10 +7,12 @@ import {
 	defaultFieldState,
 	divergence,
 	type FieldState,
+	GUST_SLOT,
+	lattice,
 	PUSH_LIFE,
-	PUSH_SLOTS,
 	type Push,
 	profile,
+	RING_SLOTS,
 	value3,
 } from './analytic';
 
@@ -36,12 +38,6 @@ const at = (
  */
 function referenceValue3(px: number, py: number, pz: number): number {
 	const U = 0xffffffffn;
-	const pcg = (v: bigint): bigint => {
-		const state = (v * 747796405n + 2891336453n) & U;
-		const shift = (state >> 28n) + 4n;
-		const word = (((state >> shift) ^ state) * 277803737n) & U;
-		return ((word >> 22n) ^ word) & U;
-	};
 	const pcg3d = (x: bigint, y: bigint, z: bigint): bigint[] => {
 		let [p, q, r] = [x, y, z].map((v) => (v * 1664525n + 1013904223n) & U) as [
 			bigint,
@@ -87,6 +83,17 @@ describe('the noise the field is built from', () => {
 		}
 	});
 
+	test('keeps its hash inside the whole numbers that the browser holds itself', () => {
+		// A number past 2147483647 is an object to the browser, and one field sample reads 32 of
+		// these hashes. The hash is the same 32 bits read as signed, and the top 24 come out the same.
+		for (let i = 0; i < 2000; i++) {
+			const hash = lattice(i * 7919 - 3000, i * 104729 + 5, i * 37);
+			expect(hash).toBeGreaterThanOrEqual(-2147483648);
+			expect(hash).toBeLessThanOrEqual(2147483647);
+			expect(Number.isInteger(hash)).toBe(true);
+		}
+	});
+
 	test('stays within 0 and 1 and varies smoothly', () => {
 		for (let i = 0; i < 200; i++) {
 			const n = value3(i * 0.37, i * 0.11, i * 0.73);
@@ -103,12 +110,21 @@ describe('the pushes ring', () => {
 	test('writes its own slots, so a push allocates nothing', () => {
 		const ring = createPushRing();
 		const first = ring.slots.map((slot) => slot);
-		expect(first).toHaveLength(PUSH_SLOTS);
-		for (let i = 0; i < 20; i++) ring.add(i, -i, 1, i);
+		expect(first).toHaveLength(RING_SLOTS);
+		for (let i = 0; i < 20; i++) ring.add(i, -i, 1, i, false);
 		// The same objects come back, which a call that made a push object would break.
-		for (let i = 0; i < PUSH_SLOTS; i++) expect(ring.slots[i]).toBe(first[i]);
-		// Four slots, so the newest four pushes are the ones that turn the air.
-		expect(ring.slots.map((slot) => slot.x)).toEqual([16, 17, 18, 19]);
+		for (let i = 0; i < RING_SLOTS; i++) expect(ring.slots[i]).toBe(first[i]);
+		// Three push slots, so the newest three pushes are the ones that turn the air, and the
+		// gust's own slot stays empty.
+		expect(ring.slots.map((slot) => slot.x)).toEqual([18, 19, 17, 0]);
+	});
+
+	test('a page’s pushes never push its gust out of the ring', () => {
+		const ring = createPushRing();
+		ring.add(-20, -14, 7, 0, true);
+		for (let i = 1; i <= 12; i++) ring.add(i, -i, 4, i * 0.25, false);
+		expect(ring.slots[GUST_SLOT]?.x).toBe(-20);
+		expect(ring.slots[GUST_SLOT]?.strength).toBe(7);
 	});
 
 	test('an empty ring turns nothing', () => {
@@ -154,6 +170,33 @@ describe('the analytic field', () => {
 		// Far from the gust's wake, the air keeps its base wind alone.
 		const quiet = at(state, 0, 5, 40, 2);
 		expect(Math.abs(quiet[2])).toBeLessThan(0.01);
+	});
+
+	test('a gust that a page sends travels from where it was sent, and a push stays there', () => {
+		// The ambient gust is off, so only the slot that the page writes can turn the air.
+		const state = still({ gustSpeed: 8, gustRadius: 5, gustWave: 1 });
+		const ring = createPushRing();
+		ring.add(0, 0, 6, 0, true);
+		// Its wave's center has traveled 8 m along the heading by one second, so the air turns
+		// beside that center and no longer beside the place it was sent from.
+		const arrived = at(state, 8, 5, 3, 1, ring.slots);
+		const arrivedBase = at(state, 8, 5, 3, 1);
+		const moved = Math.abs(arrived[0] - arrivedBase[0]);
+		expect(moved).toBeGreaterThan(0.5);
+		const sent = at(state, 0, 5, 3, 1, ring.slots);
+		const sentBase = at(state, 0, 5, 3, 1);
+		// The wave's tail still reaches back, but it is a fraction of the turn at its center.
+		expect(Math.abs(sent[0] - sentBase[0])).toBeLessThan(moved / 10);
+
+		// A push at the same place turns the air where it was made, and its reach falls away.
+		const pushes = createPushRing();
+		pushes.add(0, 0, 6, 0, false);
+		const stayed = at(state, 3, 5, 0, 1, pushes.slots);
+		const stayedBase = at(state, 3, 5, 0, 1);
+		expect(Math.abs(stayed[2] - stayedBase[2])).toBeGreaterThan(0.5);
+		const far = at(state, 30, 5, 0, 1, pushes.slots);
+		const farBase = at(state, 30, 5, 0, 1);
+		expect(far[2]).toBeCloseTo(farBase[2], 6);
 	});
 
 	test('a push turns the air and fades away', () => {

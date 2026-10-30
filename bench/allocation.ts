@@ -390,6 +390,26 @@ const PROBE_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = 
 };
 
 /**
+ * Places that allocate with `--wind`, on top of `BUDGETS`: the browser's boxing of a fraction that
+ * one of the wind's functions works out and passes to another that it does not inline. S1's frame
+ * both runs the field's sample and inlines the large `pose` of the page, so the browser's inlining
+ * budget runs out before the field's small functions, and each fraction they hand on becomes an
+ * object. The places are the functions that receive and hand on the fractions, as the engine's own
+ * setters and S1's camera step do, and not the field's arrays or its ring, which are made once.
+ */
+export const WIND_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+	'sketch-worker': {
+		'analyticVelocity src/analytic.ts': 224,
+		'value3 src/analytic.ts': 48,
+		'lattice src/analytic.ts': 48,
+		'(anonymous) null3d/addons.ts': 32,
+		'sample src/wind.ts': 12,
+		'owedSteps src/wind.ts': 12,
+	},
+	'render-worker': {},
+};
+
+/**
  * Places that allocate with `--calls`, on top of `BUDGETS`: the sketch's own step, which makes the
  * calls that the engine's docs promise allocate nothing, and the figure places that its read of
  * `debug.frameStats` turns on, which are `STATS_BUDGETS`'.
@@ -643,6 +663,7 @@ interface PageSwitch {
  * - `--transmission`: the pass that copies the opaque color, with the passes of its mip levels;
  * - `--ssr`: the depth prepass, the depth copy, the six levels of the depth pyramid, the trace and
  *   the copy of the opaque colors, with the passes of the copy's mip levels;
+ * - `--wind`: the wind add-on's field, one compute pass that fills its grid;
  * - `--particles`: the pass that copies the opaque depth for the soft particles;
  * - `--decals`: the decal pass;
  * - `--splats`: the pass that copies the opaque depth, which the splats' soft mix with meshes reads.
@@ -711,6 +732,8 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--terrain', query: '&terrain' },
 	{ flag: '--impostors', query: '&impostors' },
 	{ flag: '--splats', query: '&splats', swiftShaderQuery: '&splats=12000', passes: 1 },
+	// The wind's field: one compute pass that fills its grid.
+	{ flag: '--wind', query: '&wind', passes: 1, budgets: WIND_BUDGETS },
 	{ flag: '--inertial', query: '&inertial' },
 	{ flag: '--calls', query: '&calls', budgets: CALLS_BUDGETS },
 	{ flag: '--time-of-day', query: '&timeOfDay', budgets: DAY_BUDGETS },

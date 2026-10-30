@@ -15,6 +15,7 @@
 		"@null3d/splats": "workspace:*",
 		"@null3d/terrain": "workspace:*",
 		"@null3d/vite-plugin": "workspace:*",
+		"@null3d/wind": "workspace:*",
 		"@playwright/test": "1.63.0",
 		"@types/three": "0.186.0",
 		"@webgpu/types": "0.1.74",
