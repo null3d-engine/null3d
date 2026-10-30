@@ -22,7 +22,9 @@ const params = new URL(import.meta.url).searchParams;
 const SCALE = params.get('scale');
 const FIXED = params.has('fixed');
 const MIRROR = params.get('mirror') === '1';
-const SHOW = params.has('show');
+const SHOW = params.get('show') === '1';
+/** The layer of the particle systems, which the planar pass leaves out. */
+const SPRAY_LAYER = 1 << 1;
 
 /** The wet ground of the cost page: the block copied from the add-on, over a plain surface. */
 const wetGround = /* wgsl */ `
@@ -137,6 +139,7 @@ export default defineSketch(async (ctx) => {
 			far: 120,
 			position: [0, 3.2, 7.5],
 			target: [0, 0.4, -1],
+			layers: 1 | SPRAY_LAYER,
 		}),
 	);
 	scene.createDirectionalLight({
@@ -183,7 +186,14 @@ export default defineSketch(async (ctx) => {
 		rain: 1,
 		grainScale: 1.6,
 		roadMirror: 0.5,
-		...(MIRROR ? { reflection: { scale: 0.5 as const } } : { reflection: false as const }),
+		...(MIRROR
+			? {
+					// The pass draws the ground, the posts and the canopy, and leaves the particle
+					// systems out: on WebGL2 a particle buffer beside a blended mesh in the pass stops
+					// the frame.
+					reflection: { scale: 0.5 as const, layers: 1 },
+				}
+			: { reflection: false as const }),
 	});
 	const plainWet = materials.shader({
 		wgsl: wetGround,
@@ -234,11 +244,13 @@ export default defineSketch(async (ctx) => {
 			position: [0, 0.03, 0.5],
 			size: [9, 0.02, 9],
 			rate: 45,
+			layers: SPRAY_LAYER,
 		});
 		const vapour = await createSteam(ctx, {
 			position: [2.2, 0.3, -1.2],
 			size: [0.4, 0.1, 0.4],
 			rate: 9,
+			layers: SPRAY_LAYER,
 		});
 		return {
 			shield,
