@@ -21,6 +21,11 @@ ensureShaderModules(REPO_ROOT);
 
 const ci = Boolean(process.env.CI);
 /**
+ * The reporter that records each test while it runs, so a failure names the tests that other workers
+ * ran beside it on the same machine. A page that stalls on a contended machine then shows it.
+ */
+const neighbourReporter = join(import.meta.dirname, 'lib/neighbour-reporter.ts');
+/**
  * The main project's environment, which names the references that its image tests compare with:
  * SwiftShader in CI, and the real GPU through the installed Google Chrome elsewhere.
  */
@@ -87,7 +92,7 @@ export default defineConfig({
 		join(import.meta.dirname, 'lib/checkout-setup.ts'),
 	],
 	forbidOnly: ci,
-	reporter: ci ? [['list'], ['github']] : 'list',
+	reporter: ci ? [['list'], ['github'], [neighbourReporter]] : [['list'], [neighbourReporter]],
 	use: {
 		baseURL: `http://localhost:${HTTP_PORT}/tests/pages/`,
 		headless: true,

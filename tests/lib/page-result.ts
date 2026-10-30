@@ -3,11 +3,26 @@
 // engine's hold mode.
 import { type ConsoleMessage, errors, type Page } from '@playwright/test';
 import { windowValue } from '../../packages/cli/src/page.js';
-import type { ItemResult } from './runs.ts';
+import { neighbourNote } from './running-tests.ts';
+import { type ItemResult, lastSteps } from './runs.ts';
 
-/** Waits until the page publishes its result, and returns it. Throws when the time runs out. */
-export function pageResult<T>(page: Page, timeoutMs: number): Promise<T> {
-	return windowValue<T>(page, '__null3dResult', timeoutMs);
+/**
+ * Waits until the page publishes its result, and returns it. Throws when the time runs out, with
+ * the page's last steps and the tests that other workers ran beside it added to the message: a page
+ * that published nothing still says where its time went, and a bare timeout says nothing.
+ */
+export async function pageResult<T>(page: Page, timeoutMs: number): Promise<T> {
+	try {
+		return await windowValue<T>(page, '__null3dResult', timeoutMs);
+	} catch (e) {
+		if (e instanceof errors.TimeoutError) {
+			// A page that closed keeps its own timeout: reading it would throw in its place.
+			try {
+				e.message += lastSteps(await pageTrail(page)) + neighbourNote();
+			} catch {}
+		}
+		throw e;
+	}
 }
 
 /**
