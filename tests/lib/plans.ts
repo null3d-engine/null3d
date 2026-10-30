@@ -1789,6 +1789,83 @@ export function terrainPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * The morph's own cost at each preset that a GPU path draws: the demo from a camera that holds
+ * still, once with the morph on and once with it off, in turns. A moving camera would draw a
+ * different selection on each side: the first pair on the S25 drew 22% more triangles with the
+ * morph off only because its measure started at another point of the orbit.
+ */
+const TERRAIN_MORPH_VARIANTS = [
+	{ id: 'on', switches: [] },
+	{ id: 'off', switches: ['morph=off'] },
+] as const;
+
+export function terrainMorphPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const { path, tier, presets } of TERRAIN_PATHS)
+		for (const preset of presets)
+			for (const { id, switches } of TERRAIN_MORPH_VARIANTS)
+				items.push(
+					pageItem(
+						`terrain-morph-${preset}-${path}-${id}`,
+						'demo-device',
+						{ kind: 'probe', tier },
+						{
+							switches: [
+								`gpu=${path}`,
+								'demo=terrain',
+								`preset=${preset}`,
+								'target-fps=1',
+								'seconds=5',
+								'still',
+								...switches,
+							],
+							timeoutSeconds: TERRAIN_TIMEOUT_SECONDS,
+						},
+					),
+				);
+	return items;
+}
+
+/**
+ * The terrain demo with a still camera, for the shadow redraw that a morphing caster causes: the
+ * pages draw the same ground from the same eye, one with the morph on and one with it off, and a
+ * third that keeps the far cascades to their turns, which is the same casters over a cascade that
+ * stays cached.
+ */
+const TERRAIN_SHADOW_VARIANTS = [
+	{ id: 'morph-on', switches: ['morph=on'] },
+	{ id: 'morph-off', switches: ['morph=off'] },
+	{ id: 'follow-off', switches: ['morph=on', 'follow=off'] },
+] as const;
+
+export function terrainShadowPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...TERRAIN_SHADOW_VARIANTS.map(({ id, switches }) =>
+			pageItem(
+				`terrain-shadow-${id}`,
+				'demo-device',
+				{ kind: 'probe', tier: 'webgpu' },
+				{
+					switches: [
+						'gpu=webgpu',
+						'demo=terrain',
+						'preset=high',
+						'target-fps=1',
+						'seconds=5',
+						'still',
+						...switches,
+					],
+					timeoutSeconds: TERRAIN_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	];
+}
+
+/**
  * One page for the bisect of the Creek stall on Apple WebGPU: Creek at Low on core WebGPU, with the
  * page's own switches naming what to measure and which shared effects to turn off. The time limit is
  * short, so a page that stalls ends its session instead of holding it for the full limit.
@@ -2490,6 +2567,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
 	terrain: terrainPlan,
+	'terrain-morph': terrainMorphPlan,
+	'terrain-shadow': terrainShadowPlan,
 	'tree-generation': treeGenerationPlan,
 	'vegetation-scatter': vegetationScatterPlan,
 	'canvas-cost': canvasCostPlan,

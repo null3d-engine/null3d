@@ -65,7 +65,7 @@ function ground(x: number, z: number): number {
 }
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, post, time } = ctx;
+	const { scene, assets, geometry, materials, page, post, quality, time } = ctx;
 	const day = timeOfDay('goldenHour', { heading: -2.3 });
 	scene.setBackground(
 		{ sky: { ...day.sky, cloudCoverage: 0.25 } },
@@ -99,6 +99,14 @@ export default defineSketch(async (ctx) => {
 		maxLevel: 6,
 		camera,
 	});
+	// A cost page holds the camera, switches the morph, or keeps the far cascades to their turns.
+	let still = false;
+	page.onMessage((name, value) => {
+		if (name === 'still') still = value !== 'off';
+		if (name === 'morph') terrain.setMorph(value !== 'off');
+		if (name === 'follow') void quality.set({ followMovingCasters: value !== 'off' });
+		page.post('cost');
+	});
 
 	// Boulders seated on the ground, each where the height field says the ground is.
 	const rock = geometry.sphere({ radius: 1, widthSegments: 8, heightSegments: 5 });
@@ -124,9 +132,9 @@ export default defineSketch(async (ctx) => {
 	const eye = vec3.create();
 	return {
 		onUpdate(dt) {
-			// A slow circle over the valley, looking down its length toward the low sun.
+			// A slow circle over the valley, or the view that a cost page holds in one place.
 			if (!view.userCamera) {
-				const t = time.now * 0.05;
+				const t = still ? 1.57 : time.now * 0.05;
 				const [x, z] = [Math.sin(t) * 230, Math.cos(t) * 230];
 				const [ax, az] = [Math.sin(t + 0.55) * 330, Math.cos(t + 0.55) * 330];
 				camera.setPosition(x, ground(x, z) + 32, z);
