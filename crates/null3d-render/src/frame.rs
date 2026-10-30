@@ -1189,6 +1189,9 @@ pub struct SceneSettings {
     light_tables: LightTables,
     /// The most area lights that one frame shades, which the quality settings set.
     area_light_cap: u32,
+    /// True while the GPU may fit the light clusters' depth slices to the depth it measured, which
+    /// the quality settings set.
+    light_fit: bool,
     /// Whether the lit templates draw with their builds that shade area lights.
     area_shading: AreaShading,
     /// True when the last gather found an area light whose tables have arrived.
@@ -1343,6 +1346,7 @@ impl SceneSettings {
             mirror_halvings: 1,
             light_tables: LightTables::default(),
             area_light_cap: DEFAULT_AREA_LIGHT_CAP,
+            light_fit: true,
             area_shading: AreaShading::default(),
             area_wanted: false,
             particles: ParticleTable::default(),
@@ -1413,6 +1417,17 @@ impl SceneSettings {
     /// Sets the most area lights that one frame shades, from the next frame on.
     pub fn set_area_light_cap(&mut self, cap: u32) {
         self.area_light_cap = cap;
+    }
+
+    /// True while the GPU may fit the light clusters' depth slices to the depth it measured.
+    pub fn light_fit(&self) -> bool {
+        self.light_fit
+    }
+
+    /// Leaves the light clusters' slices on the CPU's, or lets the GPU fit them to the measured
+    /// depth, from the next frame on.
+    pub fn set_light_fit(&mut self, fit: bool) {
+        self.light_fit = fit;
     }
 
     /// Makes the standard material's maps share the first `units` bindings of their bind group,

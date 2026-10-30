@@ -30,6 +30,9 @@ struct Frame {
     /// The light grid's tiles across, tiles up, slices, and slices per doubling of the slice
     /// depth. The slices are 0 when no point or spot light reaches the view.
     cluster_grid: vec4f,
+    /// 1 while the view's slices may be fitted to the measured depth, so a fragment finds its
+    /// slice in the grid's header, and 0 while it reads cluster_depth and cluster_grid.
+    cluster_fit: vec4f,
     /// The sketch time in seconds, the seconds since the frame before, the frame's number as the
     /// bits of a `u32`, and a spare.
     clock: vec4f,

@@ -271,6 +271,8 @@ const OBJECTS: &str = "objects";
 const LIGHTS: &str = "lights";
 /// The camera's light grid, which the light clustering pass fills on WebGPU.
 const LIGHT_GRID: &str = "lightGrid";
+/// The depth reduction that the next frame's light clustering fits its slices to.
+const LIGHT_REDUCTION: &str = "lightReduction";
 /// The camera's color target, which reaches the canvas.
 const SCENE_COLOR: &str = "sceneColor";
 /// The first step of the two-step pass's target: the scene's display color at the render size,
@@ -592,6 +594,8 @@ pub(crate) struct DrawnViews {
 pub(crate) enum Role {
     /// Lists the lights of each cluster of the camera's light grid on the GPU.
     LightClusters,
+    /// Reduces the camera view's depth for the light clusters' fitted slices.
+    LightDepth,
     /// Skins the skinned meshes that some view draws, on the GPU, into the skinned vertex buffer
     /// that the shadow and scene passes draw.
     Skin,
@@ -847,6 +851,8 @@ pub(crate) struct FrameGraph {
     samples: u32,
     /// True when the GPU culls each view in a culling pass.
     gpu_culling: bool,
+    /// True when the camera's grid lists a light, so the frame reduces its depth for the slices.
+    light_depth: bool,
     /// The format of the scene's color targets.
     scene_color: SceneColor,
     /// True when the scene's render pass can resolve its color into the canvas: on the 8-bit path
@@ -1246,6 +1252,7 @@ impl FrameGraph {
             declared_names: Vec::new(),
             samples: antialias.samples(),
             gpu_culling,
+            light_depth: false,
             scene_color,
             resolves: !scene_color.is_hdr() && antialias == Antialias::Msaa,
             scales: false,
@@ -1804,12 +1811,37 @@ impl FrameGraph {
         }
     }
 
+    /// Turns the light depth reduction on while the camera's grid lists a light, for the next
+    /// frames. Its read keeps the scene depth out of transient memory, so a frame without local
+    /// lights declares it not at all.
+    pub(crate) fn set_light_depth(&mut self, on: bool) {
+        if on != self.light_depth {
+            self.light_depth = on;
+            self.declared = false;
+        }
+    }
+
     /// The draw list's id of the scene depth that the decal pass reads, or `None` while it does
     /// not run. Valid once the frame's [`FrameGraph::prepare`] made the plan's textures.
     pub(crate) fn decal_depth(&self) -> Option<u32> {
         self.decals_declared
             .then(|| self.sampled_id(SCENE_DEPTH))
             .flatten()
+    }
+
+    /// The draw list's id of the scene depth that the light clusters' depth reduction reads, or
+    /// `None` while the graph declares no reduction. A frame without it never binds the depth, so
+    /// the depth keeps the usage that the graph planned.
+    pub(crate) fn scene_depth(&self) -> Option<u32> {
+        self.light_depth
+            .then(|| self.sampled_id(SCENE_DEPTH))
+            .flatten()
+    }
+
+    /// True when the scene depth target is multisampled, so the depth reduction reads its first
+    /// sample.
+    pub(crate) fn scene_depth_multisampled(&self) -> bool {
+        self.gpu_culling && self.samples > 1
     }
 
     /// Bytes that one frame may copy into its arena for the graph's own passes. The final pass can
@@ -2991,10 +3023,21 @@ impl FrameGraph {
         });
         if self.gpu_culling {
             self.graph.import_buffer(LIGHTS);
-            let clusters = Pass::new("LightClusters", PassKind::Compute)
-                .reads(LIGHTS)
-                .creates_buffer(LIGHT_GRID);
+            let mut clusters = Pass::new("LightClusters", PassKind::Compute).reads(LIGHTS);
+            if self.light_depth {
+                self.graph.import_buffer(LIGHT_REDUCTION);
+                clusters = clusters.reads_so_far(LIGHT_REDUCTION);
+            }
+            let clusters = clusters.creates_buffer(LIGHT_GRID);
             self.add(clusters, Role::LightClusters);
+            // The depth reduction reads the depth that the camera view's opaque pass leaves, and
+            // fills what the next frame's clustering fits its slices to.
+            if self.light_depth {
+                let light_depth = Pass::new("LightDepth", PassKind::Compute)
+                    .reads(SCENE_DEPTH)
+                    .writes(LIGHT_REDUCTION);
+                self.add(light_depth, Role::LightDepth);
+            }
             self.graph.import_buffer(OBJECTS);
             for (index, names) in named.iter().enumerate() {
                 if (self.fullscreen_views | self.compute_views) & (1 << index) != 0 {
@@ -5915,6 +5958,7 @@ impl FrameGraph {
         let view = |view: ViewId| view.index() as u32;
         let (code, place) = match role {
             Role::LightClusters => (P::LightClusters, 0),
+            Role::LightDepth => (P::LightDepth, 0),
             Role::Skin => (P::Skin, 0),
             Role::Cull(view_id) => (P::Cull, view(view_id)),
             Role::Prepass(view_id) => (P::Prepass, view(view_id)),
@@ -6378,6 +6422,7 @@ fn role_view(role: Role) -> Option<ViewId> {
 fn role_scope(role: Role) -> u32 {
     match role {
         Role::LightClusters => scope::LIGHT_CLUSTERS,
+        Role::LightDepth => scope::LIGHT_DEPTH,
         Role::Skin => scope::SKIN,
         Role::Cull(view) => scope::of(scope::CULL, view.index() as u32),
         Role::Prepass(view) => scope::of(scope::PREPASS, view.index() as u32),
@@ -8147,6 +8192,43 @@ mod tests {
             .unwrap();
         assert_eq!(steps(&frames), without);
         assert!(list.is_empty(), "switching the lines makes no texture");
+    }
+
+    #[test]
+    fn a_frame_with_lights_reduces_the_camera_depth_after_its_opaque_pass() {
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
+        frames.set_light_depth(true);
+        frames.sync(&[View::default()]);
+        let mut list = DrawList::with_capacity(256);
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        let built = steps(&frames);
+        let flat: Vec<&str> = built.iter().flatten().map(String::as_str).collect();
+        let opaque = flat
+            .iter()
+            .position(|name| *name == "Opaque")
+            .expect("an opaque pass");
+        let depth = flat
+            .iter()
+            .position(|name| *name == "LightDepth")
+            .expect("a depth reduction");
+        assert!(
+            depth > opaque,
+            "the reduction reads the depth that the opaque pass leaves: {flat:?}"
+        );
+        // A frame without a local light declares no reduction, so its depth stays transient.
+        let mut plain = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
+        plain.sync(&[View::default()]);
+        plain
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        assert!(
+            !steps(&plain)
+                .iter()
+                .flatten()
+                .any(|name| name == "LightDepth")
+        );
     }
 
     #[test]
