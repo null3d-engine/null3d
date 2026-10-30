@@ -1,6 +1,6 @@
 # D-228: Staged levels of detail, coarse first
 
-Status: accepted. The owner approved the staged load and the automatic skip of a level that never draws. Built: whole levels download as stages, and a stage whose level never draws is held back. Not built: the cluster patch groups' kind of stage, whose share of the layout is fixed but not read. Task: M3-L4.
+Status: accepted. The owner approved the staged load and the automatic skip of a level that never draws. Built: whole levels download as stages, a stage whose level never draws is held back, and a cluster tree's bands stream as stages of their own, which `NULL3D_stages.bands` names and the loader applies in the order they extend the tree. Task: M3-L4.
 
 Summary: The asset tool's `--stages` keeps a model's full vertex stream and its coarsest level in the file, writes each finer level to a stage file beside it, and names the stages in each node's extras as `NULL3D_stages`. The engine draws the coarsest level at once and downloads the stages from the coarsest down, and the copies that already draw the mesh refine in place as each arrives. A loader option caps the levels that a page downloads, and the engine holds back a stage whose level the camera never picks, so a page whose camera never shows the finest level downloads less.
 
