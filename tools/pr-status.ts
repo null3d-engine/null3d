@@ -9,6 +9,7 @@
 // From the repository root:
 //   bun run pr-status            print the description
 //   bun run pr-status --apply    write it to the milestone pull request
+//   bun run pr-status --ready    print the open tasks, the ones nothing blocks first
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -239,10 +240,76 @@ function description(): string {
 	return `${lines.join('\n')}\n`;
 }
 
+/** The tasks that count as done: landed, with an evidence entry and nothing that holds them. */
+function doneTasks(): Set<string> {
+	const landed = landedTasks();
+	return new Set(
+		planTasks()
+			.filter(
+				({ id }) =>
+					landed.has(id) &&
+					!PARTIAL[id] &&
+					!ON_BRANCH.has(id) &&
+					!INCOMPLETE.has(id) &&
+					!(id in AUDIT_GAPS) &&
+					id in TASK_EVIDENCE,
+			)
+			.map(({ id }) => id),
+	);
+}
+
+/**
+ * Each task's dependencies, as the plan's own lines name them. A task is blocked only by a task it
+ * names and that is not done, so the list never grows by an assumption about what a feature needs.
+ */
+function planDependencies(): Map<string, string[]> {
+	const text = readFileSync(PLAN, 'utf8');
+	const marks = [...text.matchAll(/^(M3-[A-Z0-9]+[a-z]?) /gm)];
+	const out = new Map<string, string[]>();
+	for (let i = 0; i < marks.length; i++) {
+		const mark = marks[i];
+		if (!mark) continue;
+		const id = mark[1] as string;
+		const start = mark.index ?? 0;
+		const next = marks[i + 1];
+		const end = next?.index ?? text.length;
+		const deps = new Set<string>();
+		for (const line of text.slice(start, end).split('\n'))
+			if (/depends on/i.test(line))
+				for (const match of line.matchAll(/M3-[A-Z0-9]+[a-z]?/g)) deps.add(match[0]);
+		deps.delete(id);
+		out.set(id, [...deps]);
+	}
+	return out;
+}
+
+/** The open tasks, the ones nothing blocks first, so a coordinator starts what can start. */
+function readyLines(): string[] {
+	const done = doneTasks();
+	const deps = planDependencies();
+	const open = planTasks().filter(({ id }) => !done.has(id));
+	const lines: string[] = [];
+	const ready = open.filter(({ id }) => (deps.get(id) ?? []).every((dep) => done.has(dep)));
+	const waiting = open.filter(({ id }) => !ready.includes(open.find((t) => t.id === id)!));
+	lines.push(`${ready.length} tasks nothing blocks, and ${waiting.length} that wait on another:`);
+	for (const { id, name } of ready) lines.push(`ready    ${id} — ${name}`);
+	for (const { id, name } of waiting) {
+		const blocked = (deps.get(id) ?? []).filter((dep) => !done.has(dep));
+		lines.push(
+			`waiting  ${id} — waits on ${blocked.join(', ')}${blocked.length === 0 ? name : ''}`,
+		);
+	}
+	return lines;
+}
+
 function main(): void {
 	if (!existsSync(PLAN)) {
 		console.error(`pr-status reads the plan at ${PLAN}, which this clone does not keep.`);
 		process.exit(1);
+	}
+	if (process.argv.includes('--ready')) {
+		process.stdout.write(`${readyLines().join('\n')}\n`);
+		return;
 	}
 	const body = description();
 	// A task the plan no longer holds can still be named by an old commit's trailer, and it owes
