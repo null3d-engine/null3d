@@ -5025,6 +5025,15 @@ impl FrameGraph {
 
     /// True when the full-screen pass of the view at `place` runs in the compiled plan.
     fn fullscreen_runs(&self, place: usize) -> bool {
+        // A cadence skips the frames between its turns, and the pass records and advances its
+        // history state only in the frames that it draws.
+        if self
+            .declared_views
+            .get(place)
+            .is_some_and(|view| !view.target().draws())
+        {
+            return false;
+        }
         let Some(plan) = self.graph.plan() else {
             return false;
         };
@@ -5081,6 +5090,15 @@ impl FrameGraph {
 
     /// True when the compute pass of the view at `place` runs in the compiled plan.
     fn compute_runs(&self, place: usize) -> bool {
+        // A cadence skips the frames between its turns, and the pass records and advances its
+        // history state only in the frames that it draws.
+        if self
+            .declared_views
+            .get(place)
+            .is_some_and(|view| !view.target().draws())
+        {
+            return false;
+        }
         let Some(plan) = self.graph.plan() else {
             return false;
         };
@@ -5624,6 +5642,10 @@ impl FrameGraph {
                     // own, not in a compute pass that its path cannot run.
                     if self.is_fallback_step(plan, step) {
                         for &pass in plan.passes(step) {
+                            // A view whose turn has not come records nothing, compute or fallback.
+                            if !self.draws(self.roles[pass.index()]) {
+                                continue;
+                            }
                             let Role::Fullscreen(view) = self.roles[pass.index()] else {
                                 continue;
                             };
@@ -5655,6 +5677,10 @@ impl FrameGraph {
                     let mut began = false;
                     let mut wrote = false;
                     for &pass in plan.passes(step) {
+                        // A view whose turn has not come records nothing, compute or fallback.
+                        if !self.draws(self.roles[pass.index()]) {
+                            continue;
+                        }
                         // A sketch's compute pass is the graph's to record. Every other compute
                         // pass of the step belongs to the builder.
                         match self.roles[pass.index()] {

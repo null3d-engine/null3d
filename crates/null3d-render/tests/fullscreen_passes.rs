@@ -13,6 +13,7 @@ use null3d_core::scene::{Command, flags};
 use null3d_core::testing::CountingAllocator;
 use null3d_gpu::drawlist::{Op, format, template};
 use null3d_gpu::mock::MockBackend;
+use null3d_gpu::pass_role::{self, PassRole};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::effects::{EFFECT_FLOATS, Effect, EffectMaps, MAX_TEXTURES};
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
@@ -243,6 +244,54 @@ fn passes_chain_before_and_after_the_camera_and_bind_their_textures_on_both_path
             &format!("WebGL2, {antialias:?}"),
         );
     }
+}
+
+/// Steps `world` six times with a cadence of two on its full-screen pass, and returns how many
+/// frames of each drew it: one turn, then a frame without, and so on.
+fn cadence_draws<B: FrameBuilder>(mut world: World<B>, path: &str) {
+    let view = add_fullscreen(
+        &mut world,
+        "Cadence",
+        PassSource::SceneColor,
+        EffectMaps::NONE,
+    );
+    // A target that nothing shows is culled, so a screen reads this pass's texture.
+    let shown = world.show(view);
+    add_screen(&mut world, shown);
+    let mut mock = MockBackend::default();
+    world.renderer.check_graph().unwrap();
+    // The frame that builds the pass draws it once, so the cadence starts after it.
+    world.step(&mut mock, true);
+    world.renderer.settings_mut().set_view_every(view, 2);
+    let label = pass_role::label(PassRole::Fullscreen, view.index() as u32);
+    let mut draws = Vec::new();
+    for _ in 0..6 {
+        let commands = world.step(&mut mock, false);
+        let mut inside = false;
+        let mut count = 0;
+        for (op, operands) in &commands {
+            match op {
+                Op::BeginRenderPass => {
+                    let at = operands.len().saturating_sub(2);
+                    inside = operands.len() >= 2 && operands[at] == label;
+                }
+                Op::EndRenderPass => inside = false,
+                Op::Draw if inside => count += 1,
+                _ => {}
+            }
+        }
+        draws.push(count);
+    }
+    // A cadence of two draws in the first frame of each pair, and its target keeps the last image
+    // in the frame between.
+    assert_eq!(draws, vec![1, 0, 1, 0, 1, 0], "{path}");
+}
+
+#[test]
+fn a_cadenced_full_screen_pass_draws_in_one_frame_of_two() {
+    let (webgpu, webgl2) = worlds(Antialias::None);
+    cadence_draws(webgpu, "WebGPU");
+    cadence_draws(webgl2, "WebGL2");
 }
 
 /// Records warm-up frames of `world`'s chain, then frames in which the passes' uniforms and the
