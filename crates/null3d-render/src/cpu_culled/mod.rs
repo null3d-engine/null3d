@@ -582,6 +582,8 @@ pub struct CpuCulledRenderer {
     config: CpuCulledConfig,
     settings: SceneSettings,
     lists: ParityLists,
+    /// The upload bound that the frame just recorded used, for a later frame's retry.
+    frame_bound: usize,
     graph: FrameGraph,
     /// The scene's layout, which the camera views draw.
     layout: Layout,
@@ -732,6 +734,7 @@ impl CpuCulledRenderer {
             config,
             settings,
             lists: ParityLists::new(config.draw_list_words, config.draw_list_limit),
+            frame_bound: 0,
             // WebGL2 has no transient attachments: the backend discards what a pass does not store
             // with `invalidateFramebuffer` instead.
             graph: {
@@ -1823,6 +1826,9 @@ impl CpuCulledRenderer {
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
+        // A failure before the bound is known leaves no bound to compare, so a later frame retries
+        // only on a changed scene.
+        self.frame_bound = 0;
         // A pick that waits declares the pick's passes for this frame. The request stays until a
         // frame records its read, and the passes stay declared for a few frames after it, while
         // its copy may still wait.
@@ -2073,6 +2079,7 @@ impl CpuCulledRenderer {
         }
         let rebuilt = self.layout.built_in == input.frame;
         let bound = self.upload_bound() + LinesPass::upload_bytes(&input.lines);
+        self.frame_bound = bound;
         arena
             .reset(bound)
             .map_err(|_| crate::frame::uploads_out_of_memory(bound))?;
@@ -3201,9 +3208,9 @@ impl FrameBuilder for CpuCulledRenderer {
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
         self.settings.set_still(self.lists.still());
-        let active = crate::frame::active_sources(input);
+        let forecast = self.upload_bound() + LinesPass::upload_bytes(&input.lines);
         let mut took = self.lists.take(input.frame);
-        if took.is_err() && self.lists.can_retry(active, input.structure_changed) {
+        if took.is_err() && self.lists.can_retry(forecast, input.structure_changed) {
             self.reset_gpu();
             took = self.lists.take(input.frame);
         }
@@ -3211,7 +3218,7 @@ impl FrameBuilder for CpuCulledRenderer {
         let result = self.record_into(input, &mut list, &mut arena);
         let marks = StillMarks::of(input, &self.settings, &self.graph, &self.pipelines);
         self.lists
-            .restore(input.frame, list, arena, marks, result, active)
+            .restore(input.frame, list, arena, marks, result, self.frame_bound)
     }
 
     fn still(&self) -> crate::still::Still {

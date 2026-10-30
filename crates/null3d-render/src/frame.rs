@@ -502,7 +502,9 @@ pub trait FrameBuilder {
     fn account(&self, register: &mut MemoryRegister);
     /// Forgets every GPU object the draw lists created and every upload they made, so the next
     /// frame creates them all again and uploads the whole scene. The thread that draws asks for
-    /// this after the browser took the GPU away and it made a new device.
+    /// this after the browser took the GPU away and it made a new device. A builder also does this
+    /// itself to record again after a frame failed, once the scene changed or the frame's bound
+    /// shrank.
     fn reset_gpu(&mut self);
     /// Draws the scene into a target of another format, or with another anti-aliasing mode, from
     /// the next frame on, as an effect that needs HDR color asks on the 8-bit path. The render
@@ -813,7 +815,9 @@ pub(crate) fn put_u32(bytes: &mut [u8], word: usize, value: u32) {
 /// canvas keeps the last frame that recorded whole. A failure before the frame recorded any
 /// command changed nothing on the GPU, and the next frame tries again. A failure after it recorded
 /// commands leaves the builder believing that the GPU holds what the dropped commands would have
-/// made, so every later frame fails with the same error until a new GPU device starts afresh.
+/// made. Later frames then fail with the same error until the scene changes or the frame's upload
+/// bound shrinks, when the builder forgets its GPU objects and records from the start, or until a
+/// new GPU device starts afresh.
 pub(crate) struct ParityLists {
     lists: [DrawList; 2],
     arenas: [UploadArena; 2],
@@ -825,8 +829,9 @@ pub(crate) struct ParityLists {
     still: crate::still::Still,
     /// The error of a frame that failed after it recorded commands.
     halted: Option<RecordError>,
-    /// The sources that could draw the frame that halted the builder.
-    halted_sources: u32,
+    /// The upload bound of the frame that halted the builder, which a later frame compares with
+    /// its own to know whether the frame now fits.
+    halted_bound: usize,
 }
 
 impl ParityLists {
@@ -841,7 +846,7 @@ impl ParityLists {
             snapshots: Default::default(),
             still: crate::still::Still::default(),
             halted: None,
-            halted_sources: 0,
+            halted_bound: 0,
         }
     }
 
@@ -896,8 +901,7 @@ impl ParityLists {
     /// ago outside its marked parts: the arena's volatile bytes and the list's marked words. The
     /// still count then grows, or falls to zero. A frame that changed while it blended a still view
     /// gets the whole weight, so it shows as it is drawn rather than mixed into the old history.
-    /// `active` is the sources that could draw the frame, which a later frame compares to know
-    /// whether the page lowered the load that failed.
+    /// `bound` is the frame's upload bound, which a later frame compares with its own.
     pub(crate) fn restore(
         &mut self,
         frame: u32,
@@ -905,7 +909,7 @@ impl ParityLists {
         mut arena: UploadArena,
         marks: StillMarks<'_>,
         result: Result<bool, RecordError>,
-        active: u32,
+        bound: usize,
     ) -> Result<bool, RecordError> {
         let parity = (frame & 1) as usize;
         if result.is_ok() {
@@ -934,7 +938,7 @@ impl ParityLists {
         if let Err(error) = result {
             if !list.is_empty() {
                 self.halted = Some(error);
-                self.halted_sources = active;
+                self.halted_bound = bound;
             }
             list.clear();
         }
@@ -943,16 +947,18 @@ impl ParityLists {
         result
     }
 
-    /// Lets frames record again on a new GPU device, which the builder fills from the start.
+    /// Lets frames record again, which the builder fills from the start: a new GPU device holds
+    /// none of the objects, and a frame that failed once its scene or bound changed starts again.
     pub(crate) fn reset_gpu(&mut self) {
         self.halted = None;
     }
 
-    /// True when the builder halted and `active` names a different load than the frame that
-    /// halted it, or the scene changed. The caller then starts the GPU's objects again and
-    /// records the frame, so a page that lowers a load the engine refused keeps drawing.
-    pub(crate) fn can_retry(&self, active: u32, changed: bool) -> bool {
-        self.halted.is_some() && (changed || self.halted_sources != active)
+    /// True when the builder halted and the scene changed, or the frame's upload bound is smaller
+    /// than the bound of the frame that halted it. The caller then starts the GPU's objects again
+    /// and records the frame, so a page that lowers a load, turns off a shadow or steps its preset
+    /// down keeps drawing. `forecast` is the next frame's bound, or an upper bound of it.
+    pub(crate) fn can_retry(&self, forecast: usize, changed: bool) -> bool {
+        self.halted.is_some() && (changed || forecast < self.halted_bound)
     }
 }
 
@@ -3369,6 +3375,11 @@ impl SceneSettings {
     /// casts no shadows.
     pub fn sun_shadow_cascades(&self) -> u32 {
         self.lighting.sun_shadow.map_or(0, |shadow| shadow.cascades)
+    }
+
+    /// The main directional light's shadow settings, or None when it casts no shadows.
+    pub fn sun_shadow(&self) -> Option<SunShadow> {
+        self.lighting.sun_shadow
     }
 
     /// How the cascades' shadow map stores depth.

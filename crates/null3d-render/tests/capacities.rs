@@ -136,8 +136,8 @@ fn a_draw_list_that_starts_small_grows_once_on_both_builders() {
 }
 
 /// Steps a world of `builder` past its draw list's limit, part way through a frame, and checks
-/// the frame publishes nothing, later frames fail the same way while the GPU holds what the frame
-/// never made, and a new GPU device records the scene whole again.
+/// that the frame publishes nothing and that a frame whose scene changed records again, with
+/// every object created anew.
 fn fails_whole_until_the_scene_changes<B: FrameBuilder>(builder: impl Fn(usize) -> B) {
     const OBJECTS: u32 = 1_000;
     let capacity = OBJECTS + 64;
