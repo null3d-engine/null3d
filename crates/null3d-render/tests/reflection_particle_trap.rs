@@ -91,6 +91,51 @@ fn add_system<B: FrameBuilder>(world: &mut World<B>, capacity: u32, drawn: u32) 
     id
 }
 
+/// Adds an object that draws `vertices` vertices for each of `instances` copies from its counts,
+/// at `z`, and returns it.
+fn add_vertex_draw<B: FrameBuilder>(
+    world: &mut World<B>,
+    z: f32,
+    vertices: u32,
+    instances: u32,
+) -> Handle {
+    let settings = world.renderer.settings_mut();
+    let mesh = settings.meshes_mut().add(&grid(1, 1)).unwrap() + 1;
+    let material = settings
+        .materials_mut()
+        .create(
+            Shading::Custom(CustomShading {
+                template: template::CUSTOM_FIRST,
+                attributes: 0,
+                base_color: true,
+                textures: 0,
+                transmission: false,
+                row_values: false,
+                caster: false,
+                object_ids: false,
+            }),
+            feature::BLEND,
+            [0.6, 0.8, 1.0, 0.5],
+        )
+        .unwrap()
+        + 1;
+    let object = world.scene.reserve().unwrap();
+    world.scene.set_position(object, [0.0, 0.0, z]).unwrap();
+    world.scene.set_local_radius(object, 1.0).unwrap();
+    let commands = [
+        Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+        Command::set_material(object, material),
+    ];
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    world
+        .renderer
+        .settings_mut()
+        .vertex_draws_mut()
+        .create(object.slot(), vertices, instances)
+        .unwrap();
+    object
+}
+
 /// Adds a ground that samples the view's target, and returns its material.
 fn add_ground<B: FrameBuilder>(world: &mut World<B>, view: ViewId) -> u32 {
     let mirror = world.show(view);
@@ -278,4 +323,36 @@ fn a_mirror_view_gives_each_blended_run_its_own_records_with_multi_draw() {
         .add_view(View::mirror(mirror, Some(1), None))
         .unwrap();
     check_each_run_has_its_own_records(world, view);
+}
+
+/// A blended plane and a vertex-count draw farther than it, so the mirror view sorts the vertex
+/// draw's call last: a call that writes no records must not size the view's draw records.
+fn record_vertex_draw_last(mut world: World<CpuCulledRenderer>, view: ViewId) {
+    add_ground(&mut world, view);
+    add_blended(&mut world, 5.0);
+    add_vertex_draw(&mut world, 0.0, 6, 10);
+    record_and_replay(&mut world, 4);
+    let draws = decode(world.renderer.list(world.frame - 1).words()).any(|command| {
+        matches!(
+            command,
+            Ok(command) if command.op == Op::Draw && command.operands.starts_with(&[6, 10])
+        )
+    });
+    assert!(draws, "the vertex draw draws its counts");
+}
+
+#[test]
+fn a_mirror_view_records_a_vertex_draw_last_behind_a_blended_mesh() {
+    let config = CpuCulledConfig {
+        multi_draw: false,
+        ..CpuCulledConfig::default()
+    };
+    let mut world = World::build(CpuCulledRenderer::new(config));
+    let mirror = Mirror::new([0.0, 1.0, 0.0], [0.0, -2.0, 0.0]).unwrap();
+    let view = world
+        .renderer
+        .settings_mut()
+        .add_view(View::mirror(mirror, Some(1), None))
+        .unwrap();
+    record_vertex_draw_last(world, view);
 }
