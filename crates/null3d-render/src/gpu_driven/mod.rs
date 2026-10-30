@@ -171,9 +171,9 @@ use crate::exposure::{ComputeIds, ExposureIds};
 use crate::final_pass::FinalIds;
 use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
-    CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
-    RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, floats_as_bytes,
-    unbound_buffer_bytes,
+    CanvasOutput, FrameBuilder, FrameInput, HaltFigures, KeyCounts, MaterialStorage, MeshBuffers,
+    ParityLists, RecordError, SceneSettings, StillMarks, UploadArena, active_sources,
+    bind_frame_group, floats_as_bytes, unbound_buffer_bytes, uploads_out_of_memory,
 };
 use crate::frame_graph::{DrawnViews, FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -895,6 +895,8 @@ pub struct GpuDrivenRenderer {
     meshes: MeshBuffers,
     pipelines: PipelineCache,
     lists: ParityLists,
+    /// The upload bound that the frame just recorded used, for a later frame's retry.
+    frame_bound: usize,
     graph: FrameGraph,
     /// The scene's layout, which the camera views draw.
     layout: Layout,
@@ -1072,6 +1074,7 @@ impl GpuDrivenRenderer {
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
             lists: ParityLists::new(config.draw_list_words, config.draw_list_limit),
+            frame_bound: 0,
             graph: {
                 let mut graph = FrameGraph::new(
                     true,
@@ -1492,6 +1495,9 @@ impl GpuDrivenRenderer {
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
+        // A failure before the bound is known leaves no bound to compare, so a later frame retries
+        // only on a changed scene.
+        self.frame_bound = 0;
         // A draw whose count the GPU writes needs the indirect path: the direct path reads every
         // count on the CPU and creates no indirect buffer for the frame's count copy. The first
         // frame picks the builder's path, so a scene that holds such a draw takes the indirect one.
@@ -2180,7 +2186,19 @@ impl GpuDrivenRenderer {
             )?;
         }
 
-        arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
+        // The shadow views that draw this frame, each of which uploads the copies of the casters
+        // it sees. A frame sizes the arena for those alone, never for every cascade and tile that
+        // a setting allows.
+        let shadow_views = shadow
+            .as_ref()
+            .map_or(0, |shadow| shadow.drawn.count_ones()) as usize
+            + self.tiles.shape().map_or(0, |shape| shape.layers as usize);
+        let bound = self.upload_bound(shadow_views, active_sources(input))
+            + LinesPass::upload_bytes(&input.lines);
+        self.frame_bound = bound;
+        arena
+            .reset(bound)
+            .map_err(|_| uploads_out_of_memory(bound))?;
         let array = self.settings.probes().array().map_or(0, |(id, _)| id);
         let probe_layers = self.settings.probes().probe_layers();
         self.settings
@@ -3680,8 +3698,10 @@ impl GpuDrivenRenderer {
     /// uploaded yet, the whole material table, three.js's table of specular terms, both layouts'
     /// tables, the light grid, each view's, each cascade's and each tile's frame uniform, culling
     /// parameters and indirect draws, the cascades' and the tiles' uniforms, and the final pass's
-    /// settings.
-    fn upload_bound(&self) -> usize {
+    /// settings. `shadow_views` counts the cascades and tiles that draw this frame, each of which
+    /// uploads the casters it sees. `active_sources` bounds the sources that can draw this frame,
+    /// which is all that the views copy.
+    fn upload_bound(&self, shadow_views: usize, active_sources: u32) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         // The cluster tables upload again whenever the layout changes, and every view uploads its
         // three blocks of dispatch parameters. Both belong to the cluster pass, which the direct
@@ -3699,7 +3719,7 @@ impl GpuDrivenRenderer {
             (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
                 + layout.draws.len() * INDIRECT_BYTES as usize
                 + if self.config.direct_draws {
-                    layout.compacted_bytes() as usize
+                    layout.copy_upload_bytes(active_sources) as usize
                 } else {
                     0
                 }
@@ -3720,8 +3740,7 @@ impl GpuDrivenRenderer {
             + per_view(&self.outlined)
             + per_view(&self.scattering)
             + motion;
-        let tiles = self.settings.tile_settings().tiles as usize;
-        let cascades = (MAX_CASCADES + tiles.min(MAX_TILES)) * per_view(&self.casters);
+        let shadow_copies = shadow_views * per_view(&self.casters);
         let tables = self.layout.upload_bound()
             + self.casters.upload_bound()
             + self.outlined.upload_bound()
@@ -3744,7 +3763,7 @@ impl GpuDrivenRenderer {
             + tables
             + lights
             + views
-            + cascades
+            + shadow_copies
             + shadows
             + sorted
             + particles
@@ -3766,6 +3785,43 @@ impl GpuDrivenRenderer {
             motion: self.moving.material_views,
             pick: self.layout.pick_views,
         });
+    }
+
+    /// The upload bound that the next frame can need with the current settings and inputs, or an
+    /// upper bound of it: the shadow views that the settings and lights allow, the sources that
+    /// draw, the tables, and the frame's own uploads. A page that turns off a shadow or steps its
+    /// preset down lowers it, and a frame the memory refused can then record again.
+    fn forecast_bound(&self, input: &FrameInput<'_>) -> usize {
+        self.upload_bound(self.most_shadow_views(input), active_sources(input))
+            + LinesPass::upload_bytes(&input.lines)
+    }
+
+    /// The most shadow views that the current settings and lights can draw: the sun's cascades,
+    /// the sun's hero tile, and the tiles that the spot and point lights fill. A frame can draw
+    /// fewer of the sun's cascades, so this bounds its shadow views from above.
+    fn most_shadow_views(&self, input: &FrameInput<'_>) -> usize {
+        let sun = self.settings.sun_shadow();
+        let cascades = sun
+            .map_or(0, |shadow| shadow.cascades as usize)
+            .min(MAX_CASCADES);
+        let hero = usize::from(sun.is_some_and(|shadow| shadow.hero.is_some()));
+        let settings = self.settings.tile_settings();
+        let faces = if settings.point_shadows {
+            shadow_tiles::POINT_FACES
+        } else {
+            0
+        };
+        let tiles: usize = input
+            .shadow_lights
+            .iter()
+            .map(|light| match light.kind {
+                null3d_core::lights::kind::SPOT => 1,
+                null3d_core::lights::kind::POINT => faces,
+                _ => 0,
+            })
+            .sum();
+        let room = MAX_TILES.saturating_sub(hero);
+        cascades + hero + tiles.min(settings.tiles as usize).min(room)
     }
 }
 
@@ -3811,7 +3867,11 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.moving.reserve(sources)?;
 
         let added = sources.saturating_sub(self.layout.sources);
-        let bound = self.upload_bound() + (added * TABLE_BYTES_PER_SOURCE) as usize;
+        // Book room for every shadow view that the settings allow, since the scene may grow
+        // before the next frame names the views that draw.
+        let tiles = (self.settings.tile_settings().tiles as usize).min(MAX_TILES);
+        let bound = self.upload_bound(MAX_CASCADES + tiles, sources)
+            + (added * TABLE_BYTES_PER_SOURCE) as usize;
         for arena in self.lists.arenas_mut() {
             arena.try_reserve(bound)?;
         }
@@ -3820,10 +3880,39 @@ impl FrameBuilder for GpuDrivenRenderer {
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
         self.settings.set_still(self.lists.still());
-        let (mut list, mut arena) = self.lists.take(input.frame)?;
+        let forecast = self.forecast_bound(input);
+        let active = active_sources(input);
+        let mut took = self.lists.take(input.frame);
+        if took.is_err()
+            && self
+                .lists
+                .can_retry(forecast, active, input.structure_changed)
+        {
+            self.reset_gpu();
+            took = self.lists.take(input.frame);
+        }
+        let (mut list, mut arena) = took?;
         let result = self.record_into(input, &mut list, &mut arena);
+        // A failed frame stores the forecast of the state it leaves, which is the state the next
+        // frame forecasts from: the layout it built, and the settings it used.
+        let halted_forecast = if result.is_err() {
+            self.forecast_bound(input)
+        } else {
+            forecast
+        };
         let marks = StillMarks::of(input, &self.settings, &self.graph, &self.pipelines);
-        self.lists.restore(input.frame, list, arena, marks, result)
+        self.lists.restore(
+            input.frame,
+            list,
+            arena,
+            marks,
+            result,
+            HaltFigures {
+                bound: self.frame_bound,
+                forecast: halted_forecast,
+                active,
+            },
+        )
     }
 
     fn still(&self) -> crate::still::Still {

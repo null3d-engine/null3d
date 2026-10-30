@@ -124,8 +124,8 @@ use crate::exposure::ExposureIds;
 use crate::final_pass::FinalIds;
 use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
-    CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
-    RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows,
+    CanvasOutput, FrameBuilder, FrameInput, HaltFigures, KeyCounts, MaterialStorage, MeshBuffers,
+    ParityLists, RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows,
     indices_as_bytes, joined_rows, settled, unbound_buffer_bytes,
 };
 use crate::frame_graph::{
@@ -582,6 +582,8 @@ pub struct CpuCulledRenderer {
     config: CpuCulledConfig,
     settings: SceneSettings,
     lists: ParityLists,
+    /// The upload bound that the frame just recorded used, for a later frame's retry.
+    frame_bound: usize,
     graph: FrameGraph,
     /// The scene's layout, which the camera views draw.
     layout: Layout,
@@ -732,6 +734,7 @@ impl CpuCulledRenderer {
             config,
             settings,
             lists: ParityLists::new(config.draw_list_words, config.draw_list_limit),
+            frame_bound: 0,
             // WebGL2 has no transient attachments: the backend discards what a pass does not store
             // with `invalidateFramebuffer` instead.
             graph: {
@@ -1823,6 +1826,9 @@ impl CpuCulledRenderer {
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
+        // A failure before the bound is known leaves no bound to compare, so a later frame retries
+        // only on a changed scene.
+        self.frame_bound = 0;
         // A pick that waits declares the pick's passes for this frame. The request stays until a
         // frame records its read, and the passes stay declared for a few frames after it, while
         // its copy may still wait.
@@ -2072,7 +2078,11 @@ impl CpuCulledRenderer {
             Opaque::bind_frame(list, ViewId::SUBSURFACE, Some(lit_for(lit, ViewId::CAMERA)))?;
         }
         let rebuilt = self.layout.built_in == input.frame;
-        arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
+        let bound = self.upload_bound() + LinesPass::upload_bytes(&input.lines);
+        self.frame_bound = bound;
+        arena
+            .reset(bound)
+            .map_err(|_| crate::frame::uploads_out_of_memory(bound))?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::MATERIALS, MATERIAL_TEXELS)?;
             ao::upload_blank(list, arena, ids::BLANK_AO)?;
@@ -3198,10 +3208,39 @@ impl FrameBuilder for CpuCulledRenderer {
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
         self.settings.set_still(self.lists.still());
-        let (mut list, mut arena) = self.lists.take(input.frame)?;
+        let forecast = self.upload_bound() + LinesPass::upload_bytes(&input.lines);
+        let active = crate::frame::active_sources(input);
+        let mut took = self.lists.take(input.frame);
+        if took.is_err()
+            && self
+                .lists
+                .can_retry(forecast, active, input.structure_changed)
+        {
+            self.reset_gpu();
+            took = self.lists.take(input.frame);
+        }
+        let (mut list, mut arena) = took?;
         let result = self.record_into(input, &mut list, &mut arena);
+        // A failed frame stores the forecast of the state it leaves, which is the state the next
+        // frame forecasts from.
+        let halted_forecast = if result.is_err() {
+            self.upload_bound() + LinesPass::upload_bytes(&input.lines)
+        } else {
+            forecast
+        };
         let marks = StillMarks::of(input, &self.settings, &self.graph, &self.pipelines);
-        self.lists.restore(input.frame, list, arena, marks, result)
+        self.lists.restore(
+            input.frame,
+            list,
+            arena,
+            marks,
+            result,
+            HaltFigures {
+                bound: self.frame_bound,
+                forecast: halted_forecast,
+                active,
+            },
+        )
     }
 
     fn still(&self) -> crate::still::Still {
@@ -3504,7 +3543,7 @@ mod patch_tests {
         );
         let mut list = DrawList::with_capacity(64);
         let mut arena = UploadArena::default();
-        arena.reset(1 << 16);
+        arena.reset(1 << 16).expect("room for the test's uploads");
         let mut sizes = Vec::new();
         upload_patches(
             &mut sizes, &patches, &meshes, true, &mut list, &mut arena, true,
