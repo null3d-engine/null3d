@@ -82,7 +82,7 @@ The command-line tool and the Vite plugin put no code in a page. Their packages 
 
 ## The example add-ons
 
-`examples/addons/` holds aurora, car-paint, facades, lens-kit, screens and traffic-lanes. No package publishes them. Each builds on the engine's public API and implements its techniques in its own code, so it carries the engine's license and no third-party notice.
+`examples/addons/` holds aurora, car-paint, facades, lens-kit, screens, traffic-lanes and weather. No package publishes them. Each builds on the engine's public API and implements its techniques in its own code, so it carries the engine's license and no third-party notice.
 
 ## Where the notices are
 
