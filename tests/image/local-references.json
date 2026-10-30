@@ -197,6 +197,12 @@
 		"date": "2026-10-30",
 		"reason": "the wind add-on's held pictures changed when the field began to step from the time the page makes it, and CI's run is not available for this branch; drawn on this Mac's SwiftShader at load 7.8 with the lane free"
 	},
+	"chromium-swiftshader/compat/wind-page.png": {
+		"test": "wind-page",
+		"tier": "compat",
+		"date": "2026-10-30",
+		"reason": "the wind page's look witness is new, and this Mac's Chromium drew the software set; CI's run of the merged head draws its own and replaces it"
+	},
 	"chromium-swiftshader/webgl2/asset-bent-grid.png": {
 		"test": "asset-bent-grid",
 		"tier": "webgl2",
@@ -388,6 +394,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-30",
 		"reason": "the wind add-on's held pictures changed when the field began to step from the time the page makes it, and CI's run is not available for this branch; drawn on this Mac's SwiftShader at load 7.8 with the lane free"
+	},
+	"chromium-swiftshader/webgl2/wind-page.png": {
+		"test": "wind-page",
+		"tier": "webgl2",
+		"date": "2026-10-30",
+		"reason": "the wind page's look witness is new, and this Mac's Chromium drew the software set; CI's run of the merged head draws its own and replaces it"
 	},
 	"chromium-swiftshader/webgpu/asset-bent-grid.png": {
 		"test": "asset-bent-grid",
@@ -586,5 +598,11 @@
 		"tier": "webgpu",
 		"date": "2026-10-30",
 		"reason": "the wind add-on's held pictures changed when the field began to step from the time the page makes it, and CI's run is not available for this branch; drawn on this Mac's SwiftShader at load 7.8 with the lane free"
+	},
+	"chromium-swiftshader/webgpu/wind-page.png": {
+		"test": "wind-page",
+		"tier": "webgpu",
+		"date": "2026-10-30",
+		"reason": "the wind page's look witness is new, and this Mac's Chromium drew the software set; CI's run of the merged head draws its own and replaces it"
 	}
 }
