@@ -99,12 +99,17 @@ know whether the marks draw, such as on a device that has no HDR target.
 
 The kit's marks draw in one full-screen pass with up to 18 reads of neighboring pixels. A mark that
 a look leaves at 0 skips its reads. The fringes take 2, the streak 10 and the speed blur 6, and the
-grain takes none. A look with only the grain therefore pays one read. A look with every mark at 0,
-such as one that wants the grade alone, adds no pass at all.
+grain takes none. A look with only the grain therefore pays no neighbor read. A look with every mark
+at 0, such as one that wants the grade alone, adds no pass at all.
 
 The grade and the vignette run inside the final pass and add no pass of their own. The sharpening at
 the whole canvas's render scale adds the first step of the two-step pass, as any `sharpen` value
 does. Below the whole canvas's render scale, effects do not join passes, so each draws one.
+
+On a MacBook Pro with an M3 Max, at a canvas of 3840 by 2160 CSS pixels with the pixel ratio held
+at 2, which draws 33 megapixels, the whole look costs about 3 to 4 ms of GPU time a frame. The cost
+follows the pixels: a megapixel costs about a tenth of a millisecond. The add-on's README holds the
+figure at each preset and for each mark.
 
 ## Limits
 
