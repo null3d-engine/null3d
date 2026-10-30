@@ -75,12 +75,16 @@ test('wind-wake: the air behind the body keeps the trail its pushes made', async
 	const runs = IMAGE_RUNS.filter((run) => run.test === 'wind-cards');
 	expect(runs.length).toBeGreaterThan(0);
 	test.setTimeout(runs.length * 2 * PAGE_MS);
+	// Every run measures: no run is skipped, so a page that drew nothing cannot leave the test
+	// green with no reading. The count says so if a later change adds a skip.
+	let measured = 0;
 	for (const run of runs) {
 		const pushed = await imageOf(page, address(run, true));
 		const control = await imageOf(page, address(run, false));
 		// A one-step bar counts a card that leans one pixel further, which is what the trail does
 		// to the cards that the body passed.
 		const moved = changed(pushed, control, 1 / 255);
+		measured++;
 		console.log(`${run.id}: pushed ${moved.toFixed(5)}`);
 		// The pushes change a share of the picture where the body passed and the air carried the
 		// trail. A page that never pushed, or a flight that never rolled the pushes in, draws the
@@ -91,4 +95,5 @@ test('wind-wake: the air behind the body keeps the trail its pushes made', async
 			.soft(moved, `${run.id}: the pushes leave air that reaches the cards`)
 			.toBeGreaterThan(0.01);
 	}
+	expect(measured, `runs that measured the wake, of ${runs.length}`).toBe(runs.length);
 });

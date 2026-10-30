@@ -249,7 +249,8 @@ fn wind_advect(
     let magnitude = max(length(gradient), 1e-6);
     let n = gradient / magnitude;
     v += vec2f(n.y, -n.x) * WIND_VORTICITY * cell * curl * dt;
-    // The box's edge keeps the analytic air, so the far field and the grid meet there.
+    // The box's edge takes the analytic air exactly, so the far field and the grid meet there. A
+    // cell beside the edge carries advected air, which lags a push, so beside a push the two differ.
     if (at.x == 0 || at.y == 0 || at.x == i32(size.x) - 1 || at.y == i32(size.y) - 1) {
         v = pullTo.xz;
     }

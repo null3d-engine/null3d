@@ -125,6 +125,21 @@ describe('the field that a reader samples', () => {
 		expect(steps.at(-1)).toBe(CYCLE_STEPS);
 	});
 
+	test('a stall skips the air that it missed instead of paying for it later', () => {
+		const steps: number[] = [];
+		const ctx = context('webgpu', [], undefined, steps);
+		(ctx.time as { now: number }).now = 0;
+		const wind = createWind(ctx, { camera, grid: 8 });
+		// A frame that arrives twenty sketch seconds late runs one frame's worth of air: ten
+		// seconds of cycles, which is the most that a frame runs.
+		(ctx.time as { now: number }).now = 20;
+		wind.update();
+		expect(steps.at(-1)).toBe(10 * 60 * CYCLE_STEPS);
+		// The next frame owes nothing extra, so the stall left no debt behind it.
+		wind.update();
+		expect(steps.at(-1)).toBe(0);
+	});
+
 	test('a box of no width keeps no grid either, so every sample is the steady field', () => {
 		const passes = { count: 0 };
 		const wind = createWind(context('webgpu', [], passes), { camera, box: 0, grid: 8 });
