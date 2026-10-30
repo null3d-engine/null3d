@@ -47,6 +47,18 @@ frame's list, so it can change a picture only where a cluster reaches more light
 fitted slices are shallower, so a cluster reaches fewer lights, and a cap cuts no more than before.
 In the GPU test's S3-like case, no cluster reaches the cap of 128 with the CPU's slicing.
 
+The device runs confirm it. The device runner drew S3's visual page before the fit and again
+with it, on the same page, scene, 640 by 360 size and 2.05 s hold, and kept eight frames of each
+device: four in motion, the normals, and three of the shadows. Every frame is byte-identical. The
+iPad's `moving-1.png` carries the sha256
+`55a68bca15a09ee8267705cd4e44eca127f05d5a4e4d084054884b9993b9be0b` on both sides, and its
+`shadows.png` `a9c2784ae4b264b7744f6c141c138d01d71c11d2b1ad6b8ab4906b6f51e72cfe`. The Galaxy
+S25's `moving-1.png` carries
+`496d4ba43d23bf4ef523de7975d47a9932bbf0ec79de67401717dac603220553` and its `shadows.png`
+`a75b54ef56ac4feedc62fbf92713a37dc4df991141d89a84c125ecc26ab13159`. All eight match on the
+iPad at Medium, where the fit runs, and on the S25 at Low. The S25's frames also match the run that
+fitted the slices at Low, so the picture is the same with the header read on and off.
+
 ## Data
 
 ### The list is packed
@@ -124,7 +136,9 @@ The Mac ran S3 on null3D's WebGPU page, on the protocol canvas at High, three ro
 turns, with 10 s of warm-up and 10 s measured (`bun run bench:run --compare <baseline>,. --scenes
 s3 --pages null3d-webgpu --runs 3 --seconds 10`). The baseline side is commit 2196803c5, and the
 new side is the same commit with this change uncommitted, so the report names both sides alike. The
-comparison ran on the 14 cores of an Apple M3 Max in Chrome 156.0.8078.79. The GPU time per frame
+comparison ran on the 14 cores of an Apple M3 Max in Chrome 156.0.8078.79. The figures come from
+this session's Mac, a MacBook Pro with an M3 Max, not the MacBook Pro with an M5 Max whose loop
+cost the ceiling above measured. The GPU time per frame
 fell from 4.462 ms (4.309 to 4.498) to 4.197 ms (4.021 to 4.207), 6.5 percent at a noise of
 0.2 percent. The busiest thread and the engine's own work did not move. No run was dropped, and
 every run held 120 Hz.
