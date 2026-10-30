@@ -1217,7 +1217,7 @@ jobs:
       - name: The heavy browser tests, one at a time, on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "17:11:17:18:21:24:26:33:12:17:8:4"
+          PWTEST_SHARD_WEIGHTS: "17:11:5:25:17:21:28:37:20:3:22:5"
           # Set only by a run started by hand that asked for the drawings.
           NULL3D_TAKE_IMAGES: ${{ inputs['drawn-images'] && '1' || '' }}
         run: bun run test:browser --grep "$HEAVY_TESTS" --grep-invert "@alone" --workers=1 --shard=${{ matrix.shard }}/${{ strategy.job-total }}
