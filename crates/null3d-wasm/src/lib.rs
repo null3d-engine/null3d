@@ -4201,6 +4201,52 @@ pub fn mark_particle_values(id: u32) -> u32 {
     })
 }
 
+/// Makes room for `count` births' parameters and returns the address of the block's first
+/// number, which the sketch fills before it asks for their records. Each birth takes nine
+/// numbers: the birth place, the birth time, the velocity, the lifetime and the seed. 0 means the
+/// memory cannot grow.
+#[wasm_bindgen(js_name = particleRecordBlock)]
+pub fn particle_record_block(count: u32) -> u32 {
+    value_with_engine(|e| {
+        let address = e
+            .renderer
+            .settings_mut()
+            .particles_mut()
+            .births_address(count as usize);
+        if address == 0 {
+            Err(out_of_memory(u64::from(count) * 9 * 4))
+        } else {
+            Ok(address)
+        }
+    })
+}
+
+/// Writes the records of `count` births from the block that `particleRecordBlock` gave, from
+/// record `first` on, and marks them for the next frame's upload.
+#[wasm_bindgen(js_name = writeParticleRecords)]
+pub fn write_particle_records(id: u32, count: u32, first: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .particles_mut()
+            .write_records(id, count, first);
+        0
+    })
+}
+
+/// Takes whole `seconds` off the birth times of records `from..to`, which moves the time that
+/// they count from, and marks them for the next frame's upload.
+#[wasm_bindgen(js_name = shiftParticleRecords)]
+pub fn shift_particle_records(id: u32, from: u32, to: u32, seconds: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .particles_mut()
+            .shift_records(id, from, to, seconds);
+        0
+    })
+}
+
 /// Makes a draw of `vertices` vertices for each of `instances` copies for the object in scene slot
 /// `slot`, whose material is a full shader of the sketch's that makes its vertices from the vertex
 /// and instance indices, and returns its id: 0 when the scene holds the most draws already. No mesh
