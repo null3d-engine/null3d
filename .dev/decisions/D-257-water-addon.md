@@ -194,8 +194,9 @@ GPU paths, without work on the page's thread?
 
 ### Rule
 
-- The compute hook fills the heights in the frame that the material reads them, and its fragment
-  form draws the same chain on WebGL2. Both paths draw one sea.
+- The compute hook fills the heights in the frame that the material reads them, and the same chain
+  has a fragment form for WebGL2. The compute form draws the sea; the fragment form's map binding is
+  an open fault, so its field differs until that is fixed.
 - The add-on owns the ocean as it owns the river (D-173).
 - A pass may not read its own texture. WebGL2 draws a fragment form one texel for each pixel. So a
   stage that each pixel computes alone is the form that both paths share.
@@ -284,12 +285,12 @@ vertex's world place is the origin with its place in the mesh.
   heights back and compares them with the transform on the page's thread.
 - The WebGL2 fallback cannot draw the sea at a usable rate: its simulation is 675 ms of an 833 ms
   frame. The table in the data gives what fewer bands, a smaller grid or the analytic waves would
-  cost. That choice is the owner's, and the demo waits for it.
+  cost. That choice is the owner's.
 - The WebGL2 fragment form draws a sea that differs from the compute form by 0.60 m of height. Its
   stage, size, layer, tile and texel all read right, and a chain that copies its map returns a field
   five times smaller than the map gives, so the map's binding is what differs. The review holds that
-  open with the test that will name it, and the test marks that path as an expected failure until
-  then. The demo follows when the three paths draw one sea.
+  open. `ocean-waves` marks that path as an expected failure until then, and the demo draws the two
+  paths that draw one sea.
 
 ## Consequences
 
