@@ -2,7 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { Camera, SketchContext } from '@null3d/engine';
 import ts from 'typescript';
-import { CYCLE_STEPS, createWind, holdsField, STEP_SECONDS } from './wind';
+import { createWind, holdsField } from './wind';
+
+/** Medium's cycle: its 16 pressure steps, the advection and the projection. */
+const MEDIUM_CYCLE = 18;
+/** The time between Medium's field steps, in seconds. */
+const MEDIUM_STEP = 0.033;
 
 /** A camera that stands at the world's origin. */
 const camera = {
@@ -26,10 +31,23 @@ function context(
 	options?: unknown[],
 	textures: unknown[] = [],
 ): SketchContext {
-	const pass = { enabled: true, live: true };
+	const pass = { enabled: true, live: true, name: 'wind-field', writes: 'wind', place: 1 };
 	return {
 		time: { now: 1 },
 		engine: { capabilities: { tier, hdr } },
+		// The feature host reads the preset, the budget and the page's stats channel.
+		quality: {
+			preset: 'medium',
+			settings: {},
+			onChange: () => () => {},
+			setBudget: (given: { name: string; ms: number }) => ({
+				name: given.name,
+				scale: 1,
+				ms: given.ms,
+				remove() {},
+			}),
+		},
+		page: { post: () => {} },
 		render: {
 			addPass: (given: unknown) => {
 				if (passes) passes.count++;
@@ -85,6 +103,7 @@ describe('the field that a reader samples', () => {
 		expect(textures[0]).toMatchObject({ width: 1, height: 1, depth: 1 });
 		expect((textures[0] as { data: unknown }).data).toBeInstanceOf(Uint8Array);
 		expect(wind.field.air.base).toEqual([4, 0, 0.65, 0]);
+		wind.destroy();
 	});
 
 	test('the pass keeps its state and runs the steps that the sketch time owes', () => {
@@ -93,20 +112,21 @@ describe('the field that a reader samples', () => {
 		const ctx = context('webgpu', true, undefined, steps, options);
 		const wind = createWind(ctx, { camera, grid: 8 });
 		// The field starts when the page makes it, so the first frame owes the cycles since then.
+		// Medium runs 16 pressure steps, the advection and the projection, so a cycle is 18 runs.
 		expect(options[0]).toMatchObject({
 			kind: 'compute',
 			history: true,
 			format: 'rgba16float',
-			steps: CYCLE_STEPS,
+			steps: MEDIUM_CYCLE,
 		});
 		expect(steps[0]).toBe(0);
-		// A frame that adds a sixtieth of a second owes one cycle, and a frame that adds nothing
-		// owes none.
-		(ctx.time as { now: number }).now = 1 + STEP_SECONDS;
+		// A frame that adds one Medium step owes one cycle, and a frame that adds nothing owes none.
+		(ctx.time as { now: number }).now = 1 + MEDIUM_STEP;
 		wind.update();
-		expect(steps[1]).toBe(CYCLE_STEPS);
+		expect(steps[1]).toBe(MEDIUM_CYCLE);
 		wind.update();
 		expect(steps[2]).toBe(0);
+		wind.destroy();
 	});
 
 	test('a held page solves one cycle in its one drawn frame', () => {
@@ -118,10 +138,11 @@ describe('the field that a reader samples', () => {
 		(ctx.time as { now: number }).now = 0;
 		const wind = createWind(ctx, { camera, grid: 8 });
 		for (let step = 0; step <= 60; step++) {
-			(ctx.time as { now: number }).now = step * STEP_SECONDS;
+			(ctx.time as { now: number }).now = step * MEDIUM_STEP;
 			wind.update();
 		}
-		expect(steps.at(-1)).toBe(CYCLE_STEPS);
+		expect(steps.at(-1)).toBe(MEDIUM_CYCLE);
+		wind.destroy();
 	});
 
 	test('a stall skips the air that it missed instead of paying for it later', () => {
@@ -129,14 +150,15 @@ describe('the field that a reader samples', () => {
 		const ctx = context('webgpu', true, undefined, steps);
 		(ctx.time as { now: number }).now = 0;
 		const wind = createWind(ctx, { camera, grid: 8 });
-		// A frame that arrives twenty sketch seconds late runs one frame's worth of air: ten
-		// seconds of cycles, which is the most that a frame runs.
+		// A frame that arrives twenty sketch seconds late runs one frame's worth of air: the most
+		// that a frame runs is 600 cycles.
 		(ctx.time as { now: number }).now = 20;
 		wind.update();
-		expect(steps.at(-1)).toBe(10 * 60 * CYCLE_STEPS);
+		expect(steps.at(-1)).toBe(600 * MEDIUM_CYCLE);
 		// The next frame owes nothing extra, so the stall left no debt behind it.
 		wind.update();
 		expect(steps.at(-1)).toBe(0);
+		wind.destroy();
 	});
 
 	test('a box of no width keeps no grid either, so every sample is the steady field', () => {
@@ -144,6 +166,7 @@ describe('the field that a reader samples', () => {
 		const wind = createWind(context('webgpu', true, passes), { camera, box: 0, grid: 8 });
 		expect(passes.count).toBe(0);
 		expect(wind.field.size).toBe(0);
+		wind.destroy();
 	});
 
 	test('a device that holds the field takes its box, and each reader reads the settings', () => {
@@ -155,6 +178,7 @@ describe('the field that a reader samples', () => {
 		wind.setBase(9, 0.5);
 		expect(wind.field.air.base[0]).toBe(9);
 		expect(wind.field.air.base[1]).toBe(0.5);
+		wind.destroy();
 	});
 });
 
@@ -177,6 +201,7 @@ describe('the calls that a frame makes', () => {
 		// The field itself reads the noise through a hash that makes no tuple and no closure, so a
 		// sample allocates nothing. The bytes per frame are the allocation gate's measure, which
 		// D-265 names as owed.
+		wind.destroy();
 	});
 
 	test('a frozen field gives the same air at two times, and a live one does not', () => {
@@ -192,6 +217,8 @@ describe('the calls that a frame makes', () => {
 		(frozen.time as { now: number }).now = 2;
 		still.sample(3, 4, -2, later);
 		expect(later).toEqual(first);
+		// One wind fills a scene, so the add-on's feature goes before the next one starts.
+		still.destroy();
 
 		const live = context();
 		const blowing = createWind(live, { camera, grid: 8 });
@@ -199,6 +226,7 @@ describe('the calls that a frame makes', () => {
 		(live.time as { now: number }).now = 2;
 		blowing.sample(3, 4, -2, later);
 		expect(later).not.toEqual(first);
+		blowing.destroy();
 	});
 });
 

@@ -55,11 +55,14 @@ describe('the shaders of the grid', () => {
 		expect(constant(steady, 'WIND_GROUND_HEIGHT')).toBe(GROUND_HEIGHT);
 		expect(constant(steady, 'WIND_CURL_STEP')).toBe(CURL_STEP);
 		expect(constant(marked(gridFile, 'wind-events'), 'WIND_PUSH_LIFE')).toBe(PUSH_LIFE);
-		// The step count of a cycle is the same in the shader and in the add-on that asks for it.
+		// The pressure count is the preset's, so it arrives with the frame in the ground setting's
+		// whole part rather than as a constant.
 		const solver = marked(gridFile, 'wind-solver');
-		expect(constant(solver, 'WIND_PRESSURE_STEPS')).toBe(PRESSURE_STEPS);
-		// The cycle adds the advection and the projection to the pressure's iterations.
-		expect(solver).toContain('const WIND_CYCLE: i32 = WIND_PRESSURE_STEPS + 2;');
+		expect(solver).toContain('state: WindState, pressure: i32');
+		expect(solver).toContain('state.stage <= pressure');
+		for (const form of [gridFile, fallbackFile])
+			expect(readFileSync(form, 'utf8')).toContain('let pressure = i32(floor(packed));');
+		// The default cycle still adds the advection and the projection to the pressure's iterations.
 		expect(CYCLE_STEPS).toBe(PRESSURE_STEPS + 2);
 	});
 

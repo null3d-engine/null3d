@@ -5,6 +5,8 @@ import {
 	type Camera,
 	defineFeature,
 	type EngineCapabilities,
+	FeatureHost,
+	type FeatureValue,
 	type SketchContext,
 	type Texture,
 } from '@null3d/engine';
@@ -21,6 +23,7 @@ import {
 } from './analytic';
 import fallbackShader from './grid.fallback.wgsl';
 import gridShader from './grid.wgsl';
+import { NAMESPACE } from './namespace';
 
 /**
  * What a page gives the wind, at the start or later.
@@ -35,7 +38,10 @@ export interface WindOptions {
 	 * air out from the steady field.
 	 */
 	box?: number;
-	/** The grid's texels across each way. */
+	/**
+	 * The grid's texels across each way. A page that gives it keeps it; otherwise the preset's
+	 * `windGrid` row sets it.
+	 */
 	grid?: number;
 	/** The air's settings: its speed, heading, gust, push and swirl. */
 	air?: Partial<FieldState>;
@@ -51,7 +57,8 @@ export interface WindField {
 	 * The texture. A reader declares it as `var wind: texture_2d<f32>;` and samples it through the
 	 * sampling function, which gives the air back: the wind across the ground, the wind's rise,
 	 * which is zero while the field is flat, and how fast the air moves. The grid keeps its state
-	 * in the texture's own numbers, so a reader does not decode them itself.
+	 * in the texture's own numbers, so a reader does not decode them itself. A preset change that
+	 * changes the grid makes a new texture, so read this again after one.
 	 */
 	readonly texture: Texture;
 	/** The box's near corner across the ground, in meters: x and z. */
@@ -101,11 +108,28 @@ export interface Wind {
 	destroy(): void;
 }
 
-/** The Jacobi iterations that one cycle of the solver runs, as its shaders hold them. */
+/** The presets in the order that a setting's row gives them. */
+const PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
+/** The time between field steps at each preset, in ms. Low keeps the analytic field. */
+const STEP_MS = [0, 33, 33, 16] as const;
+/** The same on WebGL2, where a run costs far more. */
+const STEP_MS_WEBGL2 = [0, 66, 66, 66] as const;
+/** The pressure iterations of one cycle at each preset. */
+const PRESSURE_ROW = [0, 16, 24, 40] as const;
+/** The trees that keep branch springs at each preset. The vegetation add-on reads it. */
+const SPRING_ROW = [0, 8, 32, 64] as const;
+/** The grid's texels across each way at each preset; 0 keeps no grid. */
+const GRID_ROW = ['0', '64', '128', '256'] as const;
+/** The field's own budget per frame at each preset, in ms, from M3-V14's figures. */
+const BUDGET_MS = [0.5, 1.2, 4.9, 6.25] as const;
+/** The least share of full quality that the governor gives the field, so it always keeps moving. */
+const BUDGET_MIN = 0.25;
+
+/** The Jacobi iterations that one cycle runs by default, before a preset applies. */
 export const PRESSURE_STEPS = 20;
 /** The runs that one cycle takes: the forces and the advection, the pressure, the projection. */
 export const CYCLE_STEPS = PRESSURE_STEPS + 2;
-/** The fixed time that one cycle steps the air by, in seconds. */
+/** The fixed time that one cycle steps the air by, in seconds, before a preset applies. */
 export const STEP_SECONDS = 1 / 60;
 /**
  * The most cycles that one frame runs, which is ten seconds of air. A longer stall in a page skips
@@ -138,10 +162,21 @@ export function holdsField(capabilities: Pick<EngineCapabilities, 'tier' | 'hdr'
 export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	const { camera } = options;
 	const box = options.box ?? 128;
-	const grid = options.grid ?? 64;
 	const air: FieldState = { ...defaultFieldState(), ...options.air };
 	const pushes = createPushRing();
 	const now = (): number => ctx.time.now;
+
+	// The preset gives the field's step interval, its pressure count and its grid. A page's own
+	// grid wins over the preset's.
+	const at = PRESETS.indexOf(ctx.quality.preset as (typeof PRESETS)[number]);
+	const preset = at < 0 ? 1 : at;
+	let stepSeconds =
+		((ctx.engine.capabilities.tier === 'webgl2' ? STEP_MS_WEBGL2 : STEP_MS)[preset] ?? 33) / 1000;
+	let pressureSteps: number = PRESSURE_ROW[preset] ?? 16;
+	// A page that names a grid keeps it: it is the page's own, not the preset's.
+	const fixedGrid = options.grid !== undefined;
+	let grid = options.grid ?? Number(GRID_ROW[preset] ?? '64');
+	let gridDirty = false;
 
 	// The solver runs one fixed step per cycle, and the pass takes eight value vectors: the step and
 	// the settings, the ring of pushes and gusts, and the box. A frame sets the runs that the sketch
@@ -150,26 +185,30 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	// The air starts when a page makes the wind. A held page steps its updates up to the held time
 	// and the pass runs with each step, so a held picture carries the air that the hold built.
 	let solved = now();
+	const cycleSteps = (): number => pressureSteps + 2;
 	const owedSteps = (): number => {
+		if (stepSeconds <= 0) return 0;
 		// The sketch time is a sum of frame times, so a frame that owes exactly one step can read a
 		// hair under it.
-		const owed = Math.floor((now() - solved) / STEP_SECONDS + 1e-6);
+		const owed = Math.floor((now() - solved) / stepSeconds + 1e-6);
 		if (owed <= 0) return 0;
 		const cycles = Math.min(owed, MAX_CYCLES);
 		// A stall that owes more than one frame runs skips the air that it missed. Crediting only
 		// the cycles that ran would leave a debt, and every later frame would pay it.
-		solved = owed > MAX_CYCLES ? now() : solved + cycles * STEP_SECONDS;
-		return cycles * CYCLE_STEPS;
+		solved = owed > MAX_CYCLES ? now() : solved + cycles * stepSeconds;
+		return cycles * cycleSteps();
 	};
 
 	const values = new Array<number>(32).fill(0);
 	const place: number[] = [0, 0, 0];
 	const write = (): void => {
 		// The first vector holds the solver's step, then the air's settings.
-		values[0] = STEP_SECONDS;
+		values[0] = stepSeconds;
 		values[1] = air.speed;
 		values[2] = air.heading;
-		values[3] = air.ground;
+		// The pressure count rides in the ground setting's whole part, and its fraction carries the
+		// ground itself. The grid reads the ground at a height where its slowdown is nil.
+		values[3] = pressureSteps + air.ground / 100;
 		values[4] = air.gustStrength;
 		values[5] = air.gustRadius;
 		values[6] = air.gustWave;
@@ -198,40 +237,120 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	// texture, which holds the field's neutral black, but its box has no width, so every sample is
 	// the steady field that `shaders/field.wgsl` works out. A box of no width asks for the same.
 	const holds = box > 0 && holdsField(ctx.engine.capabilities);
-	const pass = holds
-		? ctx.render.addPass({
+	const neutral = ctx.textures.fromData({
+		width: 1,
+		height: 1,
+		depth: 1,
+		data: new Uint8Array(4),
+	});
+	type Pass = ReturnType<typeof ctx.render.addPass>;
+	/** The texture of the grid that the readers sample now. */
+	let gridTexture: Texture | undefined;
+
+	// Makes the grid's pass at the setting's size, or keeps no grid. The pass keeps two states, so a
+	// reader samples the one that the last run wrote.
+	const makePass = (): Pass | undefined => {
+		gridTexture = undefined;
+		if (!holds || grid <= 0) return undefined;
+		const created = ctx.render.addPass({
+			kind: 'compute',
+			description: defineFeature({
+				name: 'wind',
+				frame: 'background',
 				kind: 'compute',
-				description: defineFeature({
-					name: 'wind',
-					frame: 'background',
-					kind: 'compute',
-					outputs: { wind: { default: 'black' } },
-				}),
-				wgsl: gridShader,
-				fallback: { wgsl: fallbackShader },
-				format: 'rgba16float',
-				size: [grid, grid],
-				history: true,
-				steps: CYCLE_STEPS,
-				values,
-				name: 'wind-field',
-			})
-		: undefined;
+				outputs: { wind: { default: 'black' } },
+			}),
+			wgsl: gridShader,
+			fallback: { wgsl: fallbackShader },
+			format: 'rgba16float',
+			size: [grid, grid],
+			history: true,
+			steps: cycleSteps(),
+			values,
+			name: 'wind-field',
+		});
+		gridTexture = ctx.textures.fromPass(created);
+		return created;
+	};
+	let pass = makePass();
+
 	const field: WindField = {
-		texture: pass
-			? ctx.textures.fromPass(pass)
-			: ctx.textures.fromData({
-					width: 1,
-					height: 1,
-					depth: 1,
-					data: new Uint8Array(4),
-				}),
+		get texture(): Texture {
+			return gridTexture ?? neutral;
+		},
 		origin: [0, 0],
-		size: holds ? box : 0,
+		get size(): number {
+			return holds && grid > 0 ? box : 0;
+		},
 		air: createReading(air),
 	};
+
+	// The feature's settings reach the solver here. A change of grid needs a pass of another size,
+	// which the frame loop makes so a preview of the change never shows a half-made pass.
+	const applySettings = (own: Readonly<Record<string, FeatureValue>>): void => {
+		stepSeconds = (own.windStepMs as number) / 1000;
+		pressureSteps = own.windPressureSteps as number;
+		const next = fixedGrid ? grid : Number(own.windGrid);
+		if (next !== grid) {
+			grid = next;
+			gridDirty = true;
+		}
+	};
+	const describe = (): ReturnType<typeof defineFeature> =>
+		defineFeature({
+			name: 'wind',
+			gpu: pass ? { passes: [pass] } : undefined,
+			settings: {
+				windStepMs: {
+					presets: STEP_MS,
+					webgl2: STEP_MS_WEBGL2,
+					values: { min: 0, max: 133, whole: true },
+					governor: 'double',
+				},
+				windPressureSteps: {
+					presets: PRESSURE_ROW,
+					values: { min: 0, max: 80, whole: true },
+					governor: 'scale',
+				},
+				windSpringTrees: {
+					presets: SPRING_ROW,
+					values: { min: 0, max: 128, whole: true },
+					governor: 'scale',
+				},
+				windGrid: {
+					presets: GRID_ROW,
+					values: GRID_ROW,
+					governor: 'none',
+				},
+			},
+			budget: { presets: BUDGET_MS, min: BUDGET_MIN },
+			memory: () => (pass ? grid * grid * 2 * 8 : 0),
+			quality: (_preset, _settings, own) => applySettings(own.settings),
+		});
+	const host = new FeatureHost({
+		quality: ctx.quality,
+		tier: ctx.engine.capabilities.tier,
+		page: ctx.page,
+		namespace: NAMESPACE,
+	});
+	let feature = host.add(describe());
+
+	// A preset that changes the grid makes the pass again at the new size. The state starts empty,
+	// so the new grid fills from the analytic field over its first cycles.
+	const rebuild = (): void => {
+		gridDirty = false;
+		const old = pass;
+		if (old) ctx.render.removePass(old);
+		pass = makePass();
+		solved = now();
+		host.remove('wind');
+		feature = host.add(describe());
+		feature.refresh();
+	};
+
 	// The box follows the camera and the pushes fade, so the values go up in every frame.
 	const apply = (): void => {
+		if (gridDirty) rebuild();
 		write();
 		if (pass) {
 			ctx.render.setPassSteps(pass, owedSteps());
@@ -272,8 +391,9 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		sample,
 		update: apply,
 		destroy() {
+			host.destroy();
 			if (pass) ctx.render.removePass(pass);
-			else field.texture.destroy();
+			neutral.destroy();
 		},
 	};
 }
