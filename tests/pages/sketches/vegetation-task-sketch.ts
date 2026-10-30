@@ -7,6 +7,7 @@ import {
 	ALL_SPECIES,
 	generatePlant,
 	generatePlantInTask,
+	type PartArrays,
 	type PlantAsset,
 } from '@null3d/vegetation';
 
@@ -20,6 +21,22 @@ function sameBytes(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
 	return true;
 }
 
+/** Whether two parts hold every array that the generator writes, the morph targets included. */
+function samePart(one: PartArrays, other: PartArrays): boolean {
+	if (one.positions.length !== other.positions.length) return false;
+	if (!sameBytes(one.positions, other.positions)) return false;
+	if (!sameBytes(one.normals, other.normals)) return false;
+	if (!sameBytes(one.uvs, other.uvs)) return false;
+	if (!sameBytes(one.colors, other.colors)) return false;
+	if (!sameBytes(one.indices, other.indices)) return false;
+	// A leaf part carries the next level's place; a trunk or a flower carries none.
+	if ((one.targets === undefined) !== (other.targets === undefined)) return false;
+	if (one.targets !== undefined && other.targets !== undefined) {
+		if (!sameBytes(one.targets, other.targets)) return false;
+	}
+	return true;
+}
+
 /** Whether the task-grown plant is the one that the thread grows from the same species and seed. */
 function samePlant(left: PlantAsset, right: PlantAsset): boolean {
 	if (left.levels.length !== right.levels.length) return false;
@@ -28,11 +45,10 @@ function samePlant(left: PlantAsset, right: PlantAsset): boolean {
 		const b = right.levels[l];
 		if (!a || !b || a.parts.length !== b.parts.length) return false;
 		for (let p = 0; p < a.parts.length; p++) {
-			const one = a.parts[p]?.arrays;
-			const other = b.parts[p]?.arrays;
-			if (!one || !other) return false;
-			if (!sameBytes(one.positions, other.positions)) return false;
-			if (!sameBytes(one.indices, other.indices)) return false;
+			const one = a.parts[p];
+			const other = b.parts[p];
+			if (!one || !other || one.name !== other.name) return false;
+			if (!samePart(one.arrays, other.arrays)) return false;
 		}
 	}
 	return sameBytes(left.wind.pivots, right.wind.pivots);

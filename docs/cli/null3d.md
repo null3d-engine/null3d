@@ -362,7 +362,7 @@ bunx @null3d/cli check-addon addons/splats
 | Gate | What it checks |
 | --- | --- |
 | package | the folder has a manifest with a name and an entry file |
-| public API | the add-on's shipped code imports only `@null3d/engine` and `@null3d/engine/stats` |
+| public API | the add-on's shipped code reaches the engine only through `@null3d/engine` and `@null3d/engine/stats`; another package that it names loads on its own |
 | interface | the entry declares the plugin interface range that it works with, or, for a `@null3d/...` package, pins the exact engine version |
 | shaders | a build compiles the add-on's WGSL for WebGPU and WebGL2 |
 | sizes | each file that the add-on loads after the start holds to its budget: its own code to the budget for code, and the compiled WGSL that the build inlined in it to the budget for shader builds. The gate warns, and does not fail, when a file goes over a budget |

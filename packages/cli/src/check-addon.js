@@ -117,7 +117,8 @@ const OPTIONS = /** @type {const} */ ({
 export const HELP = `Usage: bunx @null3d/cli check-addon [folder] [options]
 
 Runs the engine's gates on one add-on package, in \`folder\` (the current folder without one):
-  public API   the shipped code imports only @null3d/engine and @null3d/engine/stats
+  public API   the shipped code reaches the engine only through @null3d/engine and
+               @null3d/engine/stats; another package that it names loads on its own
   interface    the entry declares the plugin interface that it works with, or, for a null3D
                package, pins the engine version
   shaders      a build compiles the add-on's WGSL for WebGPU and WebGL2
@@ -493,6 +494,7 @@ function buildTools(folder) {
  *
  * @typedef {object} BuiltFileSize
  * @property {string} name
+ * @property {string} [text] The file's text, so a test can read what it imports.
  * @property {number} raw
  * @property {number} gzip
  * @property {number} brotli
@@ -562,10 +564,8 @@ export async function buildAddon(folder, entry) {
 							part
 						);
 					if (file.type !== 'chunk' && file.type !== 'asset') continue;
-					files.push({
-						name: file.fileName ?? 'addon.js',
-						bytes: Buffer.from(String(file.type === 'chunk' ? file.code : file.source)),
-					});
+					const bytes = Buffer.from(String(file.type === 'chunk' ? file.code : file.source));
+					files.push({ name: file.fileName ?? 'addon.js', bytes, text: bytes.toString('utf8') });
 				}
 			}
 			return files;
@@ -591,7 +591,7 @@ export async function buildAddon(folder, entry) {
 export function splitShaderData(full, codeOnly) {
 	const code = new Map(codeOnly.map((file) => [file.name, file.bytes]));
 	return full.map(({ name, bytes }) => {
-		const file = { name, ...sizesOf(bytes) };
+		const file = { name, text: bytes.toString('utf8'), ...sizesOf(bytes) };
 		const alone = code.get(name);
 		if (alone === undefined) return file;
 		const size = sizesOf(alone);
@@ -605,6 +605,7 @@ export function splitShaderData(full, codeOnly) {
  * @typedef {object} BuiltOutput
  * @property {string} name
  * @property {Buffer} bytes
+ * @property {string} [text]
  */
 
 /** The size of `bytes` in each column. */
