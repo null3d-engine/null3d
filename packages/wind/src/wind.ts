@@ -156,10 +156,12 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	const owedSteps = (): number => {
 		// The sketch time is a sum of frame times, so a frame that owes exactly one step can read a
 		// hair under it.
-		const owed = (now() - solved) / STEP_SECONDS + 1e-6;
-		const cycles = Math.min(Math.floor(owed), MAX_CYCLES);
-		if (cycles <= 0) return 0;
-		solved += cycles * STEP_SECONDS;
+		const owed = Math.floor((now() - solved) / STEP_SECONDS + 1e-6);
+		if (owed <= 0) return 0;
+		const cycles = Math.min(owed, MAX_CYCLES);
+		// A stall that owes more than one frame runs skips the air that it missed. Crediting only
+		// the cycles that ran would leave a debt, and every later frame would pay it.
+		solved = owed > MAX_CYCLES ? now() : solved + cycles * STEP_SECONDS;
 		return cycles * CYCLE_STEPS;
 	};
 
@@ -250,9 +252,9 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		out: [number, number, number],
 	): [number, number, number] => analyticVelocity(air, pushes.slots, x, y, z, now(), out);
 
-	// A gust and a push each write one slot of the ring, and the newest replaces the oldest. A gust
-	// travels from where it was sent, and a push stays there. The ring writes its own slots, so
-	// neither call allocates anything.
+	// A push takes the next of the three push slots, and a gust takes the slot after them, so a
+	// page's pushes never push its gust out. A gust travels from where it was sent, and a push
+	// stays there. The ring writes its own slots, so neither call allocates anything.
 	const turn = (at: readonly [number, number], strength: number, gust: boolean): void => {
 		pushes.add(at[0], at[1], strength, now(), gust);
 	};
