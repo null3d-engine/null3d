@@ -102,8 +102,6 @@ const NOTES: Readonly<Record<string, string>> = {
  * because both describe the same task and only one of them can be true.
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
-	'M3-V15':
-		"unticked by the round 24 audit: no allocation run and no full check-addon run exist for the wind (only the sizes gate, which passes since M3-R25), the gust call is a fading push at one place rather than a gust that travels, a device without float targets reads still air rather than the analytic field, the sampling function is a copy that reads the box's edge rather than a function in the add-on's WGSL namespace with the analytic far field. The owner ruled that M3-V15 waits for M3-V13 with no split into two stages. It stays not done until the solver, the forces and the fixed step are built on M3-V13's repeated pass",
 	'M3-F4':
 		"unticked by its check at 652fd235b on `feat/m3-f4-lightmap-evidence`: the captured frame is one side of the comparison rather than the comparison itself, D-258 claims more than that frame settles, not every figure has a recorded run. The evidence entry is written now and names what is owed rather than claiming it: the engine-to-viewer comparison does not exist, and the picture's failure without the direction is unrecorded. The same branch's ae46e947d states the viewer-side limit in D-258 lines 78 to 82 instead of closing it, so the owner has not ruled whether an engine-to-viewer comparison is owed",
 	'M3-L4':
