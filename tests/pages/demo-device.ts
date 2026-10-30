@@ -196,6 +196,23 @@ run('demo-device', async () => {
 		engine.postToSketch(group, id);
 		note(`turned off ${id}`);
 	}
+	// A cost page changes one thing at a time through the demo's own messages, such as ?morph=off
+	// or ?still, and waits until the sketch has applied each one before it measures.
+	const cost = ['morph', 'still', 'follow'].filter((id) => params.has(id));
+	if (cost.length > 0) {
+		const applied = new Promise<void>((resolve) => {
+			let left = cost.length;
+			const off = engine.onSketchMessage((type) => {
+				if (type !== 'cost' || --left > 0) return;
+				off();
+				resolve();
+			});
+		});
+		for (const id of cost) engine.postToSketch(id, params.get(id) || 'on');
+		await applied;
+		// A held view may select other blocks, which build over the next updates, so let them finish.
+		await new Promise((resolve) => setTimeout(resolve, 1000));
+	}
 	const metrics = MEASURE ? await engine.measure(SECONDS) : undefined;
 	if (metrics) note(`the measure drew ${metrics.frames} frames`);
 	else note(`the measure is off; waiting for the overlay`);
