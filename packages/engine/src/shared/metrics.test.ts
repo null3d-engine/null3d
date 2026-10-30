@@ -170,6 +170,38 @@ describe('frame records', () => {
 		expect(reader.firstDrawMs).toBe(12.5);
 	});
 
+	it('keep the start and the length of the sketch setup, and the first builds, once', () => {
+		const buffer = createMetricsBuffer(true, 0);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
+		const reader = new MetricsReader(buffer);
+		expect([reader.setupStart, reader.setupMs, reader.warmUpStart]).toEqual([0, null, 0]);
+		sketch.markSetupStart();
+		const started = reader.setupStart;
+		expect(started).toBeGreaterThan(0);
+		expect(reader.setupMs).toBeNull();
+		sketch.markSetupStart();
+		sketch.markSetupDone(1200);
+		sketch.markSetupDone(5);
+		expect(reader.setupStart).toBe(started);
+		expect(reader.setupMs).toBe(1200);
+		sketch.markWarmUp(true);
+		const warmUp = reader.warmUpStart;
+		sketch.markWarmUp(false);
+		expect(warmUp).toBeGreaterThan(0);
+		expect(reader.warmUpStart).toBe(warmUp);
+		expect(reader.warmUpMs).not.toBeNull();
+	});
+
+	it('tell a setup that took no measurable time from one still running', () => {
+		const buffer = createMetricsBuffer(false, 0);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
+		const reader = new MetricsReader(buffer);
+		sketch.markSetupStart();
+		sketch.markSetupDone(0);
+		expect(reader.setupMs).toBeGreaterThan(0);
+		expect(Math.round(reader.setupMs as number)).toBe(0);
+	});
+
 	it('sum the records of a window without turning costly timing on', () => {
 		const buffer = createMetricsBuffer(true, 0, 4);
 		const completion = new FrameRecorder(buffer, Role.Completion);

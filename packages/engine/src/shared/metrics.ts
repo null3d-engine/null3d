@@ -160,7 +160,14 @@ const MEMORY = 9;
  */
 const MEMORY_AREAS = MEMORY + MemoryFigure.Count;
 const AREA_VALUES = MEMORY_AREA_COUNT * MEMORY_AREA_VALUES;
-const HEADER_WORDS = 2 * (MEMORY_AREAS + AREA_VALUES);
+/**
+ * Float64 index of the epoch time, in ms, at which the sketch's setup function started, or 0
+ * before it: the page reads it to tell a scene that is still growing from one that has stopped.
+ */
+const SETUP_START = MEMORY_AREAS + AREA_VALUES;
+/** Float64 index of the time, in ms, that the sketch's setup function took, or 0 until it ends. */
+const SETUP_MS = SETUP_START + 1;
+const HEADER_WORDS = 2 * (SETUP_MS + 1);
 const WRITTEN = HEADER_WORDS;
 
 function recordsStart(rings: number): number {
@@ -426,6 +433,25 @@ export class FrameRecorder {
 	}
 
 	/**
+	 * Records, once per engine, when the sketch's setup function started, as epoch milliseconds, so
+	 * the page can time a scene that is still growing.
+	 */
+	markSetupStart(): void {
+		const { times } = this.views;
+		if (times[SETUP_START] === 0) times[SETUP_START] = performance.timeOrigin + performance.now();
+	}
+
+	/**
+	 * Records, once per engine, how long the sketch's setup function took, in milliseconds. A
+	 * finished setup records a value even when its call took no measurable time, which the readers
+	 * would otherwise take for one still running.
+	 */
+	markSetupDone(ms: number): void {
+		const { times } = this.views;
+		if (times[SETUP_MS] === 0) times[SETUP_MS] = ms > 0 ? ms : Number.EPSILON;
+	}
+
+	/**
 	 * Records, once per engine, when the first frame's pipelines started to build and when none was
 	 * building any longer, as epoch milliseconds. The thread that draws calls it each time it
 	 * checks the first frame, until that frame draws.
@@ -507,6 +533,25 @@ export class MetricsReader {
 	get firstFramePipelines(): number | null {
 		const { times } = this.views;
 		return (times[FIRST_FRAME] as number) > 0 ? (times[FIRST_FRAME_PIPELINES] as number) : null;
+	}
+
+	/** Epoch milliseconds at which the sketch's setup function started, or 0 before it. */
+	get setupStart(): number {
+		return this.views.times[SETUP_START] as number;
+	}
+
+	/** Milliseconds that the sketch's setup function took, or null while it runs. */
+	get setupMs(): number | null {
+		const ms = this.views.times[SETUP_MS] as number;
+		return ms > 0 ? ms : null;
+	}
+
+	/**
+	 * Epoch milliseconds at which the first frame's pipelines started to build, or 0 before the
+	 * thread that draws first checked that frame.
+	 */
+	get warmUpStart(): number {
+		return this.views.times[WARM_UP_START] as number;
 	}
 
 	/** The display's refresh rate in hertz, or 0 before the thread that draws has measured it. */
