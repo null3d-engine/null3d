@@ -63,10 +63,11 @@ export default defineSketch(async (ctx) => {
 		bounds: [-6e3, -1e4, -1, 6e3, 1e4, 1],
 	});
 
-	valley(ctx);
+	const live = valley(ctx, camera);
 
 	return {
 		onUpdate(dt) {
+			live.update();
 			view.update(dt);
 			// The pointer picks an hour from 4:00 at the left to 20:00 at the right.
 			const hour = math.lerp(clock(time.now), 12 + view.point[0] * 1.3e-3, view.steering);
