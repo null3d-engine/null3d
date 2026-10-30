@@ -51,7 +51,6 @@ const INCOMPLETE = new Set([
 	'M3-K3',
 	'M3-V3',
 	'M3-K2',
-	'M3-V9',
 ]);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
@@ -78,8 +77,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		'unticked under the policy this branch now states rather than by its own clause: no public behaviour may be reachable by nobody. The pick build of a compute-driven vertex offset is in its What bullet, and nothing takes it: no unit test, no browser test and no example. The owner may reverse this one without touching the others',
 	'M3-K2':
 		'unticked under the same policy: drag controls are exported and reached by no unit test, browser test, picture or example, because the gizmos picture and its spec reach only the transform controls',
-	'M3-V9':
-		"held open although its work has landed, for one reason: its own first clause names a witness that does not exist. It asks that Creek's far slopes show impostor trees matching the near ones at the hand-off, and no Creek page draws impostors, because the call is made only by the impostors demo and the impostor sketches. The hand-over picture that exists is the demo's; the Creek half belongs with M3-V11, which dresses Creek through the add-on. Either the clause should name the demo or the plan should hand that half to V11. Its cost is measured on the Mac, the iPad Pro 13 and the Galaxy S25, and its evidence entry and D-274 quote the figures",
 	'M3-F3':
 		"dropped with the temporal resolve it waited on (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F10':
