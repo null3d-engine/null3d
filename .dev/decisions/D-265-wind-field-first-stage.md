@@ -176,14 +176,26 @@ two above, which waits on M3-V13; V13 landed and the add-on builds on it.
   itself, so it made an object of each. The same 32 bits read as signed are the same hash. The top
   24 bits that the noise reads come out the same, so each step wraps with `| 0`. A test holds 2,000
   hashes inside the range. The reference test still matches the engine's integer hash.
-- **The sample path boxes fractions.** `bun run bench:allocation --wind` names the add-on's own
-  functions as places that allocate. Chrome makes an object of each fraction that crosses a call it
-  keeps out of its top tier. The hash's unsigned values were the largest part, and `| 0` fixes
-  them. S1's frame both runs the sample and inlines the page's large `pose`, so the browser's
-  inlining budget runs out before the field's small functions. The rest is the browser's boxing.
-  The engine answers that with a budget and a reason at S1's camera step and elsewhere.
-  `WIND_BUDGETS` in `bench/allocation.ts` does the same for six of the add-on's places. The run then
-  passes. The docs do not promise that a call allocates nothing without that caveat.
+- **The sample path boxes fractions.** `bun run bench:allocation --wind` names six of the add-on's
+  places, and each is the browser boxing a value rather than the add-on making an object. Every one
+  computes, receives or hands on numbers, and the arrays they write belong to their caller and are
+  made once. The run on the production pages measures, at the least sample and at the most:
+
+  | place | bytes a frame | most |
+  | --- | --- | --- |
+  | `analyticVelocity src/analytic.ts` | 186.0 | 188.5 |
+  | `value3 src/analytic.ts` | 47.9 | 51.7 |
+  | `lattice src/analytic.ts` | 11.7 | 140.6 |
+  | `(anonymous) null3d/addons.ts` | 24.7 | 28.1 |
+  | `sample src/wind.ts` | 9.8 | 12.7 |
+  | `owedSteps src/wind.ts` | 4.0 | 6.2 |
+
+  The sketch worker reads 752.7 bytes a frame in all. The engine's own frame path is 544 of them.
+  The engine answers this boxing the same way at its own places. `BUDGETS` in
+  `bench/allocation.ts` gives S1's camera step 48 bytes a frame, and `SETTER_BUDGETS` gives the
+  setters their places. The reason is the same: Chrome boxes a fraction that a function does not
+  inline. `WIND_BUDGETS` holds the six above with that reason, and the run passes. The docs do not
+  promise that a call allocates nothing without that caveat.
 
 - **The namespace part still waits.** D-224's addendum says the shader build resolves only the
   engine's `null3d::` prefix. No add-on can import another add-on's WGSL module yet. The plan's
