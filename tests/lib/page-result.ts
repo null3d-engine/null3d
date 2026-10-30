@@ -8,9 +8,6 @@ import { type ItemResult, lastSteps } from './runs.ts';
 import { stallMessage } from './stall-message.ts';
 import { calibrationNote, noteCalibration } from './start-calibrations.ts';
 
-/** How long a stalled page may take to answer with its start reading before the failure reports. */
-const READING_MS = 2000;
-
 /** The page's name for the run's readings: its sketch and tier where the address names them. */
 function pageName(page: Page): string {
 	try {
@@ -23,20 +20,25 @@ function pageName(page: Page): string {
 	}
 }
 
-/** Records the start reading that a page published, if it published one. */
-function recordCalibration(page: Page, result: unknown): void {
-	noteCalibration(pageName(page), (result as { calibrationMs?: unknown } | null)?.calibrationMs);
+/** Records a page's start reading for the run. */
+function recordCalibration(page: Page, calibrationMs: unknown): void {
+	noteCalibration(pageName(page), calibrationMs);
 }
 
-/** The start reading of a page that never published a result, if it still answers, within a limit. */
-async function stalledCalibration(page: Page): Promise<number | undefined> {
-	const reading = page
+/**
+ * Watches the start reading that the page sets as its start begins, from the first moment the page
+ * answers. A page that later stalls in a long synchronous phase cannot answer a question, but the
+ * reading it set before the stall still counts.
+ */
+function readingFromStart(page: Page): () => number | undefined {
+	let ms: number | undefined;
+	page
 		.evaluate(() => (globalThis as { __null3dStartCalibration?: number }).__null3dStartCalibration)
-		.catch(() => undefined);
-	const limit = new Promise<undefined>((resolve) =>
-		setTimeout(() => resolve(undefined), READING_MS),
-	);
-	return Promise.race([reading, limit]);
+		.then((value) => {
+			if (typeof value === 'number' && Number.isFinite(value) && value > 0) ms = value;
+		})
+		.catch(() => {});
+	return () => ms;
 }
 
 /**
@@ -46,15 +48,19 @@ async function stalledCalibration(page: Page): Promise<number | undefined> {
  * also gives the run its start reading, which says whether this page stood out.
  */
 export async function pageResult<T>(page: Page, timeoutMs: number): Promise<T> {
+	// Start the reading now, so a page that stalls later has already answered.
+	const startReading = readingFromStart(page);
 	try {
 		const result = await windowValue<T>(page, '__null3dResult', timeoutMs);
-		recordCalibration(page, result);
+		const published = (result as { calibrationMs?: unknown } | null)?.calibrationMs;
+		recordCalibration(page, published ?? startReading());
 		return result;
 	} catch (e) {
 		if (e instanceof errors.TimeoutError) {
-			// A page that stalled still measured its start speed, if its thread answers.
-			const calibrationMs = await stalledCalibration(page);
-			recordCalibration(page, { calibrationMs });
+			// The page may have answered before its stall, so take the reading kept from its start.
+			// A page that never answered still names the missing reading: zero, not undefined.
+			const calibrationMs = startReading() ?? 0;
+			recordCalibration(page, calibrationMs);
 			// A page that closed keeps its own timeout: reading it would throw in its place.
 			try {
 				e.message +=
@@ -133,8 +139,8 @@ export async function loadResult(page: Page, path: string, timeoutMs: number): P
 			ok: false,
 			error: `no result within ${timeoutMs / 1000} s`,
 			trail: await pageTrail(page),
-			// The reading that pageResult took, so the failure names its place among the run's pages.
-			calibrationMs: (e as { calibrationMs?: number }).calibrationMs,
+			// Zero, not undefined: the page ran the instrument, and the reading is missing.
+			calibrationMs: (e as { calibrationMs?: number }).calibrationMs ?? 0,
 		};
 	}
 }

@@ -101,15 +101,20 @@ function ordinal(n: number): string {
 }
 
 /**
- * What a failure says about where its page's reading falls among the run's pages, or nothing
- * without a reading. A page that stands out from the run names itself, so one page that stalled
- * reads differently from a machine that slowed every page.
+ * What a failure says about where its page's reading falls among the run's pages. A page that gave
+ * no reading says so: a missing clause would read the same as a run with no instrument, and the
+ * case the instrument exists for is the one where it falls silent. A value of `undefined` means the
+ * result came from a page that never ran the instrument, such as a runner's own failure, and says
+ * nothing. A page with a reading but no other reading in the run gives the absolute, which still
+ * names the page.
  */
 export function calibrationNote(ms: unknown, readings = calibrations()): string {
-	if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return '';
-	const spread = spreadOf(readings);
-	if (!spread) return '';
+	if (ms === undefined) return '';
+	if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0)
+		return '; its start reading could not be read';
 	const reading = ms.toFixed(2);
+	const spread = spreadOf(readings);
+	if (spread === undefined) return `; its start calibration ${reading} ms`;
 	// The run's readings are the ones recorded when the note is composed, not the run's whole set.
 	const recorded = readings.some((entry) => entry.ms === ms);
 	const count = readings.length + (recorded ? 0 : 1);
