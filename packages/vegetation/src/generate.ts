@@ -75,6 +75,10 @@ function windData(species: Species, skeleton: Skeleton, height: number): WindDat
 			pivots[at + 9] = species.wind.frequency;
 			pivots[at + 10] = branch.level;
 			pivots[at + 11] = branch.length;
+			// The branch turns about its pivot out of step with its neighbours: its flutter phase,
+			// spread by the golden angle so that branches that share a byte still differ.
+			const turn = (branch.flutter / 255 + (i + 1) * 0.6180339887498949) % 1;
+			pivots[at + 12] = turn * Math.PI * 2;
 		} else {
 			pivots[at + 4] = 1;
 			pivots[at + 6] = -1;
@@ -82,6 +86,7 @@ function windData(species: Species, skeleton: Skeleton, height: number): WindDat
 			pivots[at + 8] = species.wind.flutter;
 			pivots[at + 9] = species.wind.frequency;
 			pivots[at + 11] = height;
+			pivots[at + 12] = 0;
 		}
 	}
 	return { pivots, stride: WIND_STRIDE, branches: records };

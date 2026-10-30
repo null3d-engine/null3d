@@ -2894,7 +2894,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Each built-in vegetation species: three of its variants, grown from the species record and a
 	// fixed seed, in a row on flat ground, drawn with the bark and leaf atlases that the GPU paints
-	// at first use.
+	// at first use. The shrub's page takes longer than the default limit on CI's software GPU, where
+	// it ran out the 60 seconds on compatibility and on WebGL2, so it asks for three times that.
 	...[
 		'broadleaf',
 		'conifer',
@@ -2913,6 +2914,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		name: `vegetation-${species}`,
 		sketch: `tests/pages/sketches/vegetation-sketch.ts?species=${species}`,
 		hold: 1,
+		...(species === 'shrub' && { timeoutSeconds: 180 }),
 	})),
 	// The four maps that the GPU paints for the two atlases, each with its mip levels beside it,
 	// and below them a trunk and a leaf card drawn through the materials that sample them.
@@ -2946,6 +2948,41 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/vegetation-coverage-sketch.ts',
 		hold: 1,
 		size: [640, 360],
+	},
+	// A grove of grown oaks in the scene's one wind field: the leaf and bark materials sway, the
+	// leaves flutter and the sun's shadows follow. The two holds catch the trees at different points
+	// of their sway, the motion picture draws the sway's motion, and the still picture holds the air
+	// for the pair that the sway moves. The page that first compiles the instanced plant materials
+	// and their shadow casters pays minutes for it on CI's software GPU, which took 2.0 to 4.6
+	// minutes a page, so these four run in the heavy job, where each has a runner of its own, and
+	// hold 600 seconds. A later test that compiles these builds first meets the same wall.
+	{
+		name: 'vegetation-wind',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+	},
+	{
+		name: 'vegetation-wind-later',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts',
+		hold: 1.6,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+	},
+	{
+		name: 'vegetation-wind-motion',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?motion',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+	},
+	{
+		name: 'vegetation-wind-still',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?still',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
 	},
 	// The wind add-on's own page: a field of cards that reads the air at each vertex. A gust
 	// crosses the field between the first hold and the second, so the pairs change where the gust

@@ -50,7 +50,8 @@ export interface WindData {
 	/**
 	 * The branch records, 16 floats each: the pivot's x, y and z, the axis's x, y and z, the
 	 * parent's index, the stiffness, the flutter amplitude, the flutter frequency, the branch level,
-	 * the branch's length, and four floats that wait for a later use.
+	 * the branch's length, the branch's sway phase in radians, and three floats that wait for a
+	 * later use.
 	 */
 	readonly pivots: Float32Array;
 	/** The floats that one branch record holds. */

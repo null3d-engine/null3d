@@ -1813,6 +1813,14 @@ export interface ShaderOptions<Wgsl extends string | CompiledWgsl = string | Com
 	 * caster follows it in every frame, and a far cascade must draw again for each one.
 	 */
 	castsStill?: boolean;
+	/**
+	 * How far from the camera the vertex offset moves, in meters, for an offset that fades out with
+	 * distance such as wind. The material's WGSL fades its offset to nothing by this distance, and
+	 * the engine counts a caster of the material as moving only while its bounding sphere reaches
+	 * within it, so a far shadow cascade that only the sway reaches keeps the layer it holds. Zero,
+	 * the default, moves the offset at every distance, as an offset that follows time alone does.
+	 */
+	swayDistance?: number;
 }
 
 /** A uniform of a custom material: its type, and the float of the row of custom values it starts at. */
@@ -3703,7 +3711,8 @@ export class Materials {
 
 	/**
 	 * Creates a material in the engine core, with its standard options and the feature bits
-	 * `extra` and its layers, and returns its id.
+	 * `extra` and its layers, and returns its id. `sway` is the distance from the camera out to
+	 * which a custom material's vertex offset moves, in meters, or 0 for every distance.
 	 */
 	private createId(
 		shading: number,
@@ -3711,6 +3720,7 @@ export class Materials {
 		call: string,
 		layered = hasLayers(options),
 		extra = 0,
+		sway = 0,
 	): { id: number; owners: SlotOwners } {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
 		const emissive = linearOrNone(options.emissive, call, EMISSIVE);
@@ -3743,7 +3753,7 @@ export class Materials {
 		const { constant = 0, slopeScale = 0 } = options.depthBias ?? {};
 		const { core } = this;
 		const id = core.checkGrowth(
-			core.glue.createMaterial(shading, features, r, g, b, opacity, constant, slopeScale),
+			core.glue.createMaterial(shading, features, r, g, b, opacity, constant, slopeScale, sway),
 			call,
 		);
 		const values = { ...options, color: undefined, opacity: undefined };
@@ -3927,6 +3937,15 @@ export class Materials {
 				'E1217',
 				`${call}() got a clear coat, a sheen or iridescence, but its WGSL never names the surface's layers, so it has no builds that light them. Set them in fn surface, such as s.clearcoat = 1.0 or s.sheenColor = vec3f(1.0).`,
 			);
+		if (
+			DEV &&
+			options.swayDistance !== undefined &&
+			!(Number.isFinite(options.swayDistance) && options.swayDistance >= 0)
+		)
+			throw new EngineError(
+				'E1108',
+				`${call}() got the swayDistance ${options.swayDistance}; it takes a finite 0 or more, and leaves it out for an offset that moves at every distance.`,
+			);
 		const uniforms = new Map(compiled.uniforms.map((u) => [u.name, u]));
 		for (const name of uniforms.keys())
 			if (STANDARD_VALUES.has(name))
@@ -3967,6 +3986,7 @@ export class Materials {
 				(builds(compiled, PERMUTATION_MOTION) ? MATERIAL_FEATURE_MOVING_VERTICES : 0) |
 				(alpha || compiled.functions.includes('coverage') ? MATERIAL_FEATURE_CASTER_COVERAGE : 0) |
 				(options.castsStill ? MATERIAL_FEATURE_STILL_CASTER : 0),
+			options.swayDistance ?? 0,
 		);
 		// The copy of the opaque depth draws with the particle depth shaders, so the file loads
 		// with the material, before its first frame.

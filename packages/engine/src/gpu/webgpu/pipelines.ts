@@ -784,12 +784,14 @@ export class Pipelines {
 		);
 		// The motion pass's frame group: the depth group's entries, then the motion block and the last
 		// frame's joints, which vertex shaders read, and the table of object ranges for custom
-		// materials that read object ids.
+		// materials that read object ids. A custom material's fragment stage reads its row of custom
+		// values, where it tests its own coverage, so that texture reaches both stages as it does in
+		// the depth group.
 		this.defineLayout(LAYOUT_MOTION_FRAME, 'motion frame', [
 			...frameEntries,
 			{
 				binding: 2,
-				visibility: GPUShaderStage.VERTEX,
+				visibility: GPUShaderStage.VERTEX | fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},
 			{ binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },

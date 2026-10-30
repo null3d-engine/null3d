@@ -3,15 +3,9 @@
 // integer hashes in `atlas-pixels.ts`. The engine makes each texture's mip levels, whose average
 // alpha keeps a leaf's coverage as it shrinks, and a masked material fades its cut edges with alpha
 // to coverage.
-import type {
-	ColorInput,
-	Material,
-	Materials,
-	SketchContext,
-	Texture,
-	Textures,
-} from '@null3d/engine';
+import type { ColorInput, SketchContext, Texture, Textures } from '@null3d/engine';
 import { type AtlasPixels, paintBark, paintLeaf } from './atlas-pixels';
+import type { PlantWind } from './plant';
 import plantShader from './plant.wgsl';
 import plantCardsShader from './plant-cards.wgsl';
 import type { LeafKind, Species } from './species';
@@ -208,6 +202,25 @@ export interface PlantMaterialOptions {
 	 * `crownRadius`, so the engine measures the distance that the morph ends at.
 	 */
 	readonly morph?: PlantMorph;
+	/**
+	 * The plant's wind data, which moves the material's vertices and lights the leaves' diffuse light
+	 * by the crown's outward normal. Leave it out for a still material, such as the atlas page's
+	 * preview cards. A plant material draws only a mesh that carries the plant vertex format's
+	 * colours. They hold each vertex's branch index and leaf phase, and a still material reads
+	 * neither.
+	 */
+	readonly wind?: PlantWind;
+	/**
+	 * The share of a leaf's diffuse light that passes through it, from the species' record. The
+	 * default is 0.35, the share that a measured leaf passes. It applies to the leaves alone.
+	 */
+	readonly transmission?: number;
+	/**
+	 * How strongly the crown's outward normal replaces a leaf's own normal for its diffuse light,
+	 * from 0 to 1: a crown lit as a volume needs less of its cards' own facing. The default is 0.5.
+	 * It applies to the leaves alone.
+	 */
+	readonly crownBend?: number;
 }
 
 /**
@@ -227,43 +240,69 @@ export interface PlantMorph {
 
 /**
  * A material that draws a plant part from the generated atlases: the base colour from the colour
- * map, the normal that bends it from the surface map, and the leaf's outline from its coverage. The
- * leaf's thickness reaches the light that passes through it where the engine lights a thin surface.
+ * map, the normal that bends it from the surface map, and the leaf's outline from its coverage. A
+ * leaf lets about a third of its diffuse light through, rougher and glossier than a painted card,
+ * and the crown's occlusion darkens the leaves inside it. Given a plant's {@link PlantWind}, the
+ * material sways with the scene's one wind field, and the same offset draws its shadow.
  *
  * The engine's mip levels blur the atlas as a card shrinks, and a masked material's alpha to
  * coverage keeps the share of the picture that its leaves cover, so a crown far away stays as dense
  * as it is up close.
  *
- * @param ctx The sketch's context, or its `materials` alone.
+ * @param ctx The sketch's context, or its `materials` and `textures`.
  * @param options The atlases, the part and the look.
  * @returns The material.
  * @category api/vegetation
  */
 export function plantMaterial(
-	ctx: Pick<SketchContext, 'materials'>,
+	ctx: Pick<SketchContext, 'materials' | 'textures'>,
 	options: PlantMaterialOptions,
-): Material {
-	const { atlases, part } = options;
+) {
+	const { atlases, part, wind } = options;
+	const leaves = part === 'leaves';
 	const cell = LEAF_CELLS_BY_KIND[options.cell ?? 'cluster-a'];
+	const crown = wind?.crown;
+	const crownCenter = crown
+		? ([crown.center[0], crown.center[1], crown.center[2]] as [number, number, number])
+		: ([0, 0, 0] as [number, number, number]);
 	const look = {
 		textures: {
 			barkColor: atlases.bark.color.texture,
 			barkSurface: atlases.bark.surface.texture,
 			leafColor: atlases.leaf.color.texture,
 			leafSurface: atlases.leaf.surface.texture,
+			pivots: wind?.pivots ?? stillTextures(ctx.textures).pivots,
+			wind: wind?.field.texture ?? stillTextures(ctx.textures).wind,
 		},
-		alphaMode: (part === 'leaves' ? 'mask' : 'opaque') as 'mask' | 'opaque',
+		alphaMode: (leaves ? 'mask' : 'opaque') as 'mask' | 'opaque',
 		alphaCutoff: options.alphaCutoff ?? 0.35,
-		doubleSided: part === 'leaves',
+		doubleSided: leaves,
 		roughness: 1,
 		metalness: 0,
+		// A leaf's gloss is a dielectric's: about 0.035 at normal incidence, in the range that
+		// measured leaves give.
+		specularIntensity: leaves ? 0.875 : 1,
+		// The leaf's light through it needs the engine's builds of a thin surface, and a bark's
+		// share is zero.
+		diffuseTransmission: leaves ? (options.transmission ?? 0.35) : 0,
+		// A plant past the distance stands still, so its far shadow cascades keep their layers.
+		swayDistance: wind?.swayDistance ?? 0,
 	};
 	const fields = {
 		cells: [atlases.leaf.cells[0], atlases.leaf.cells[1]] as [number, number],
 		cell: [cell[0], cell[1]] as [number, number],
-		part: part === 'leaves' ? 1 : 0,
+		part: leaves ? 1 : 0,
 		tiles: options.barkTiles ?? 3,
 		tint: (options.color ?? [1, 1, 1]) as [number, number, number],
+		height: wind?.height ?? 1,
+		throughLeaf: leaves ? (options.transmission ?? 0.35) : 0,
+		swayDistance: wind?.swayDistance ?? 0,
+		branches: wind?.branches ?? 0,
+		windBox: wind?.field.size ?? 1,
+		windStrength: wind ? 1 : 0,
+		windLayer: 0,
+		crownCenter,
+		crownBend: wind ? (options.crownBend ?? 0.5) : 0,
 	};
 	if (options.morph) {
 		if (part !== 'leaves')
@@ -283,4 +322,38 @@ export function plantMaterial(
 		});
 	}
 	return ctx.materials.shader({ wgsl: plantShader, ...look, uniforms: fields });
+}
+
+/**
+ * A material that draws a plant's part: a trunk's bark or a crown's leaves, from the atlases that
+ * the GPU paints. Its uniforms carry the wind's settings and the frame's state, which
+ * {@link plantWind} and `setWindLayer` fill.
+ *
+ * @category api/vegetation
+ */
+export type PlantMaterial = ReturnType<typeof plantMaterial>;
+
+/**
+ * The stand-ins for the two textures that a plant's WGSL always declares, for a material that names
+ * no wind: a black pivot table and a single layer of still air. One pair serves every such material
+ * of a page.
+ */
+const STILL = new WeakMap<Textures, { pivots: Texture; wind: Texture }>();
+
+function stillTextures(textures: Textures): { pivots: Texture; wind: Texture } {
+	const held = STILL.get(textures);
+	if (held) return held;
+	const black = new Float32Array(4);
+	const made = {
+		pivots: textures.fromData({ width: 1, height: 1, format: 'rgba16float', data: black }),
+		wind: textures.fromData({
+			width: 1,
+			height: 1,
+			depth: 1,
+			format: 'rgba16float',
+			data: black,
+		}),
+	};
+	STILL.set(textures, made);
+	return made;
 }
