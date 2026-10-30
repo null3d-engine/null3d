@@ -56,7 +56,8 @@ describe('WebGL2Backend', () => {
 		const { gl, calls } = fakeContext();
 		const canvas = { width: 1, height: 1 } as OffscreenCanvas;
 		new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
-		expect(calls.filter((name) => name === 'linkProgram')).toHaveLength(2);
+		// The mip and layer copy programs, and the cookie copy's own.
+		expect(calls.filter((name) => name === 'linkProgram')).toHaveLength(3);
 		expect(calls).not.toContain('getProgramParameter');
 	});
 
