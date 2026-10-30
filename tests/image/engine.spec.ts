@@ -16,6 +16,7 @@ import {
 } from '../lib/engine-checks.ts';
 import { gltfDownloads, recordRequests } from '../lib/gltf-loader-files.ts';
 import { pageResult } from '../lib/page-result.ts';
+import { failureText, type ItemResult } from '../lib/runs.ts';
 import { restoreWaitAsync, withoutWaitAsync } from '../lib/without-wait-async.ts';
 
 test.describe.configure({ mode: 'parallel' });
@@ -482,8 +483,9 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				? `first-use-live.html?gpu=${gpu}&sketch=${encodeURIComponent(`/${sketch}`)}`
 				: `image.html?gpu=${gpu}&hold=0&preset=high&size=320x180${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`;
 			await page.goto(address);
-			const result = await pageResult<{ error?: string }>(page, FIRST_USE_WAIT_MS);
-			expect(result.error).toBeUndefined();
+			// A page that failed gives the steps it got through, which say where it spent the time.
+			const result = await pageResult<ItemResult>(page, FIRST_USE_WAIT_MS);
+			expect(result.error, failureText(result)).toBeUndefined();
 			const shaderFiles = requests.filter(isFirstUseShaderFile);
 			const owner = FEATURE_FILE_OWNERS[feature]?.[gpu];
 			if (owner === null) {

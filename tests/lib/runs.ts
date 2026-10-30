@@ -9,6 +9,7 @@ import { MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
 import { type DeviceFacts, webKitOnIos } from './device-record.ts';
 import type { GpuPath, MissingAllowed } from './gpu-paths.ts';
 import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
+import { neighbourNote } from './running-tests.ts';
 
 export interface PlanItem<Check = unknown> {
 	/** The item's name, which is also its result's file name. */
@@ -196,9 +197,12 @@ export function lastSteps(trail: unknown): string {
 	return steps.length > 0 ? `; the page's last steps: ${steps.slice(-LAST_STEPS).join('; ')}` : '';
 }
 
-/** What a failed page's result says went wrong, with the last steps the page got through. */
+/**
+ * What a failed page's result says went wrong, with the last steps the page got through and the
+ * tests that other workers ran beside it, which say whether the machine was contended.
+ */
 export const failureText = (result: ItemResult) =>
-	`${result.error ?? 'the page failed without a message'}${lastSteps(result.trail)}`;
+	`${result.error ?? 'the page failed without a message'}${lastSteps(result.trail)}${neighbourNote()}`;
 
 /** How many of a runner's latest pages the out-of-memory guard looks at. */
 export const OOM_WINDOW_PAGES = 5;

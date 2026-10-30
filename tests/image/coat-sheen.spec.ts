@@ -4,6 +4,7 @@
 // way, so it fails even before a test has references.
 import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
+import { failureText, type ItemResult } from '../lib/runs.ts';
 import { IMAGE_RUNS } from './manifest.ts';
 
 test.describe.configure({ mode: 'parallel' });
@@ -23,8 +24,8 @@ const PAGES_PER_RUN = 3;
 /** Each pixel's red, green and blue, from 0 to 1. */
 async function imageOf(page: Page, path: string): Promise<Float32Array> {
 	await page.goto(path);
-	const frame = await pageResult<Frame>(page, PAGE_MS);
-	expect(frame.error).toBeUndefined();
+	const frame = await pageResult<Frame & ItemResult>(page, PAGE_MS);
+	expect(frame.error, failureText(frame)).toBeUndefined();
 	const pixels = new Uint8Array(Buffer.from(frame.pixels, 'base64'));
 	const rgb = new Float32Array((pixels.length / 4) * 3);
 	for (let i = 0, j = 0; i < pixels.length; i += 4, j += 3)
