@@ -37,7 +37,9 @@ const EARTH = [0.17, 0.11, 0.06];
  * The wood's own pine: a tall, sparse conifer, grown from the add-on's record with its boughs opened
  * out. A wood of the dense evergreen closes its canopy over the path, and the low sun never reaches
  * the haze between the trunks; this record keeps four rings of two boughs on a trunk that stands
- * bare to half its height, so the sky comes through and the shafts show.
+ * bare to half its height, so the sky comes through and the shafts show. Its needle cards are short
+ * and many to a twig: the light that the crowns pass then falls on the floor as fine dapple, and
+ * each clump reads as a spray rather than one flat panel.
  */
 function woodlandPine(base: Species): Species {
 	const [trunk, bough, branchlet, twig] = base.branchLevels as readonly [
@@ -67,9 +69,9 @@ function woodlandPine(base: Species): Species {
 		],
 		leaf: {
 			kind: 'needle',
-			cards: 10,
-			width: 0.35,
-			height: 0.5,
+			cards: 22,
+			width: 0.22,
+			height: 0.31,
 			perCard: 40,
 			up: 0.3,
 			out: 1.1,

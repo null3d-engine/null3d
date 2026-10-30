@@ -21,10 +21,12 @@ const [CYCLE, GOLDEN, BLUE, STEP] = [36, 17.1, 18.7, 1 / 30];
 /** The share of the sky's color that the haze keeps in shade, so the sunlit air stands out. */
 const SHADE = 0.3;
 // The wood stands in the sky's light, so its floor never falls to black. The sun's own light in the
-// haze sits above the sky's, so the shafts stand out, and the sky itself stays below white.
+// haze sits above the sky's, so the shafts stand out, and the sky itself stays below white. The haze
+// is thin enough that the ranks of trunks keep their depth, and that light carries the brightness
+// that the thinner air gives up.
 const FILL = 1.8;
 const SKY = 0.5;
-const SHAFT = 2.2;
+const SHAFT = 3;
 const EXPOSURE = 0.9;
 /** The lanterns along the path: x and z, each on a post that leans its light over the path. */
 const LANTERNS = [1.6, 8, -1.6, 1, 1.6, -6, -1.6, -13];
@@ -39,7 +41,13 @@ export default defineSketch(async (ctx) => {
 	const heading = (ahead ? -Math.PI / 2 : Math.PI / 2) + 0.3;
 	const sky = { ...timeOfDay(GOLDEN, { heading }).sky, cloudCoverage: 0.15 };
 	post.set({ bloom: { intensity: 0.2, threshold: 1 }, ao: { radius: 0.6 }, vignette: {} });
-	const sun = scene.createDirectionalLight({ castShadows: true, shadow: { distance: 70 } });
+	// The sun's light through the crowns falls on the floor as bands. A coarse map blurs each edge
+	// over the penumbra that the low sun gives it, where a fine map draws the band as a hard cut that
+	// reads as the map's cells.
+	const sun = scene.createDirectionalLight({
+		castShadows: true,
+		shadow: { distance: 70, mapSize: 1024 },
+	});
 	// The sky lights the wood too, through an environment map that follows it as the sun sinks.
 	const skyLight = await assets.skyEnvironment();
 	const camera = scene.createPerspectiveCamera({ fov: 55, far: 3000, position: [0, 1.7, 16] });
@@ -119,7 +127,7 @@ export default defineSketch(async (ctx) => {
 			scene.setFog({
 				color: [r * SHADE, g * SHADE, b * SHADE],
 				sunGlow: day.fog.sunGlow,
-				density: 0.03,
+				density: 0.02,
 				height: 0,
 				heightFalloff: 0.12,
 				volumetric: { intensity: SHAFT, anisotropy: 0.7, distance: 60 },

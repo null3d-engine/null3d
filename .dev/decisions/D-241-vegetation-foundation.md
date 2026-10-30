@@ -665,6 +665,8 @@ of a third that size drew as a wisp: a card's size costs no vertex, and the coun
 shade keeps a share of the sky (below), and the trunk's bark color is a pine's pale plate rather
 than near black.
 
+**The cards are short, and the skyline keeps its skirt.** The pines above the stone garden's wall grow from the garden's own record. Their boughs leave the trunk at a fifth of its height, and the whorls' boughs lengthen toward the foot. The crown tapers to a point, so the part above the wall is a layered spruce skirt. On the Mac at 1280 by 720, that crown widens from 66 pixels at its top to 143 at its base. The built-in record held 81 to 88 throughout. Its top stands six pixels lower, clear of the frame's edge. The light-shafts wood's needle cards are 0.44 by 0.62 meters and 22 to a twig. They were 0.7 by 1 meter and 10 to a twig. The low sun then falls through the crowns as fine dapple, not broad panels. The crown area under 0.18 luminance falls from 34.1 to 24.5 per cent of the upper frame. That wood's sun draws a 1,024-texel map, so a dappled edge blurs over a penumbra instead of reading as the map's cells. Its fog keeps 0.02 density with the volumetric sun at 3, so the ranks of trunks stand apart. The middle band's column means spread from 0.555 to 0.571. A garden pine is 11,657 triangles, against the built-in conifer's 9,620.
+
 **A crown keeps its shade.** Crown occlusion used to take the ambient light to nothing at the crown's
 axis, and the sun does not reach inside a crown, so the shade side was flat black. The material now
 keeps `CROWN_SHADE`, 0.55, of the ambient at the deepest point and loses it smoothly from the

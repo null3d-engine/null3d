@@ -7,13 +7,16 @@
 import { type Camera, type MeshArrays, math, quat, type SketchContext } from '@null3d/engine';
 import { icosahedron } from '@null3d/geometry';
 import {
+	type BranchLevel,
 	bakePlantAtlases,
+	branchLevel,
 	builtInSpecies,
 	generatePlant,
 	leafCellFor,
 	type PlantMaterial,
 	plantMaterial,
 	plantWind,
+	type Species,
 	setWindLayer,
 	swayDistanceFor,
 	treeValues,
@@ -21,6 +24,41 @@ import {
 import { createWind } from '@null3d/wind';
 import { TURN } from '../lib/pines';
 import { random } from '../lib/procedural';
+
+/**
+ * The garden's pines grow from the add-on's conifer. The wall hides the lower trunk, so the part
+ * that shows is the crown's upper half, and a record whose crown starts halfway up leaves a rounded
+ * cap above the wall. This record starts the boughs at a fifth of the trunk, in whorls whose boughs
+ * lengthen toward the foot, and lets the crown taper to a point, so the skyline shows a layered
+ * spruce skirt. The needles stay dark, as a backlit conifer's do, and pass little light.
+ */
+function skylinePine(base: Species): Species {
+	const [trunk, bough, branchlet, twig] = base.branchLevels as readonly [
+		BranchLevel,
+		BranchLevel,
+		BranchLevel,
+		BranchLevel,
+	];
+	return {
+		...base,
+		id: 'skyline-spruce',
+		crown: { shape: 'conical', start: 0.22, spread: 0.45, pull: 0.04, floor: 0.04 },
+		branchLevels: [
+			branchLevel(trunk, { children: 15, prune: 0.02, length: 15, start: 0, end: 1 }),
+			branchLevel(bough, {
+				children: 5,
+				prune: 0.05,
+				length: 15 * 0.17,
+				whorls: 5,
+				start: 0.22,
+				end: 1,
+			}),
+			branchLevel(branchlet, { children: 2, prune: 0.05, length: 15 * 0.11 }),
+			branchLevel(twig, { children: 0, length: 15 * 0.05 }),
+		],
+		color: { ...base.color, leaf: [0.06, 0.17, 0.07], transmission: 0.18 },
+	};
+}
 
 /** The sand bed's side in meters, its texels along each side, and the rake's spacing in meters. */
 const BED = 10;
@@ -190,8 +228,9 @@ export function garden(ctx: SketchContext, camera: Camera): { update(): void } {
 	}
 	// The pines beyond the wall are the add-on's conifers, at its three levels and in the scene's
 	// one wind field: one variant, each copy its own height and turn.
-	const conifer = builtInSpecies('conifer');
-	if (!conifer) throw new Error('the vegetation add-on has no conifer');
+	const coniferBase = builtInSpecies('conifer');
+	if (!coniferBase) throw new Error('the vegetation add-on has no conifer');
+	const conifer = skylinePine(coniferBase);
 	const atlases = bakePlantAtlases(ctx);
 	const wind = createWind(ctx, { camera, box: 32, grid: 64 });
 	const swayDistance = swayDistanceFor(quality.preset);
