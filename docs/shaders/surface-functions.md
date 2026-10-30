@@ -456,6 +456,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 - The engine keeps the mesh's normals, so a moved surface lights as the unmoved one did. Give the material `flatShading: true` to light each face by its moved position, or bend `s.normal` in a surface function.
 - Culling tests the mesh's bounding sphere. Vertices that move out of it can make the object vanish at the edge of the view. Give the object a sphere that holds them with `setBounds(center, radius)`, at setup, as [Objects and transforms](../api/objects.md) describes.
 - Shadows follow the moved vertices. The material's shadow casters run the vertex offset too, with the same `frame`, `object` and `material` values, so a swaying surface casts a swaying shadow. Such casters draw again in every frame that a shadow map draws, as moving objects do. A material whose offset follows only the view that draws the object declares `castsStill: true`: its casters hold their shadow while the light stands still, so the far shadow cascades stay cached.
+- An offset that fades out with distance, such as wind, declares `swayDistance`: the distance from the camera out to which it moves. Fade the offset to nothing by that distance in the WGSL, and the engine stops counting the material's casters as moving once they stand beyond it. A far shadow cascade that only the sway reached then keeps the layer it holds. The plant template in the vegetation add-on does both from one value.
 
 ## Shadows
 

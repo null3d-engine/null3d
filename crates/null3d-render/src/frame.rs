@@ -3512,7 +3512,8 @@ impl SceneSettings {
         let materials = &self.materials;
         self.moving_casters
             .update(scene, input.batches, input.structure_changed, |material| {
-                sways(materials, material) && !casts_still(materials, material)
+                (sways(materials, material) && !casts_still(materials, material))
+                    .then(|| materials.sway(material - 1))
             });
         let moving = &self.moving_casters;
         // A still view has no moving caster for a far cascade to follow, so every cascade draws in
@@ -3530,7 +3531,14 @@ impl SceneSettings {
             interval,
             |bounds| {
                 quality.follow_movers
-                    && moving.touch(scene, input.batches, parity, shadow.layers, bounds)
+                    && moving.touch(
+                        scene,
+                        input.batches,
+                        parity,
+                        shadow.layers,
+                        bounds,
+                        absolute,
+                    )
             },
         );
         Some(ShadowFrame {
