@@ -192,7 +192,8 @@ is red until a CI run draws them and `images:review` takes them from it.
   host. The underwater effect's pieces would be 93 KB of the add-on's entry. D-225 gives the rule.
 - The Creek's pictures draw the add-on, as the add-on's demo does. The Creek keeps the columns and
   rows of the water that it drew itself, so each sheet has the same vertices and triangles as the
-  water it replaced.
+  water it replaced. Its four held pictures pass against the references already in the tree on
+  WebGPU, compatibility mode and WebGL2, on the Mac and on SwiftShader, so no Creek reference moved.
 - The page and allocation gates ran in the browser against E4a's engine: the water page starts from
   another origin under the strict policy, threaded and single-threaded, and the add-on's own code
   allocates zero bytes a frame on all four presets. That is E4a's first user, end to end.
