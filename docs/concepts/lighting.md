@@ -107,7 +107,9 @@ Colors that you set in the scene's units take the exposure too: a background col
 
 ## Clustered forward shading
 
-A scene can hold hundreds of point, spot and area lights, but a surface only needs the few whose ranges reach it. The engine therefore cuts the camera's view into clusters. The screen splits into 16 tiles across and 9 up, and the depth splits into 24 slices. Slices grow with distance, from the near plane out to where the farthest light ends. Near the camera, where each meter covers more of the screen, slices are thin.
+A scene can hold hundreds of point, spot and area lights, but a surface only needs the few whose ranges reach it. The engine therefore cuts the camera's view into clusters. The screen splits into 16 tiles across and 9 up, and the depth splits into 24 slices. Slices grow with distance. Near the camera, where each meter covers more of the screen, slices are thin.
+
+On WebGPU at Medium and above, the slices fit the depth that the surfaces in view span. A small compute pass after the opaque pass samples the depth sparsely and keeps the nearest and farthest surface. The next frame fits its slices to that range, so a slice covers a shorter part of the view and lists fewer lights. The first slice still starts at the near plane. The last still ends where the farthest light ends. A surface outside the measured range therefore keeps every light that reaches it. Low keeps the CPU's slicing, from the near plane to the farthest light's end. WebGL2 keeps that slicing at every preset.
 
 Each frame the engine lists, for each cluster, the lights whose range spheres reach it. Each pixel of a standard material then finds its cluster and loops over that cluster's lights alone. The test is conservative: a cluster may list a light that ends just before it, but never misses a light that reaches it. Each light fades smoothly to nothing at its range, so a listed light that does not reach a pixel adds nothing.
 
@@ -124,10 +126,10 @@ flowchart LR
 
 Where the lists come from depends on the GPU path:
 
-- On WebGPU, a compute pass on the GPU lists each cluster's lights, before the scene draws. The CPU only picks the frame's lights, cuts the view into slices and uploads the light list. Its work per frame stays small with hundreds of lights.
+- On WebGPU at Medium and above, a compute pass on the GPU fits the slices to the measured depth range and lists each cluster's lights, before the scene draws. At Low the pass lists the lights with the CPU's slicing and reads no measured depth. The CPU only picks the frame's lights, records a slicing and uploads the light list. Its work per frame stays small with hundreds of lights.
 - On WebGL2, which has no compute shaders, the job workers list them on the CPU, and the frame uploads the lists as data textures.
 
-Both paths use the same tests in the same order, so they list the same lights in each cluster.
+Both paths use the same tests in the same order. At Low the two paths list the same lights. A fitted slice at Medium and above lists fewer lights, because it covers a shorter depth. A light that a pixel does not reach adds nothing, so the pictures match.
 
 The engine shades each surface in the pass that draws it. A deferred renderer would light the whole screen in a later pass instead. Forward shading favors phones and tablets:
 

@@ -1525,6 +1525,7 @@ pub fn typescript() -> String {
                 ("FINAL_BLOOM", null3d_render::scope::FINAL_BLOOM),
                 ("OUTPUT", null3d_render::scope::OUTPUT),
                 ("OUTPUT_BLOOM", null3d_render::scope::OUTPUT_BLOOM),
+                ("LIGHT_DEPTH", null3d_render::scope::LIGHT_DEPTH),
             ],
         ),
         // The draw list's codes that `createTexture` takes, so the sketch thread needs no import of

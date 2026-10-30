@@ -127,6 +127,8 @@ export const LAYOUT_MATERIAL_MAPS_SCENE = 61;
 export const LAYOUT_FRAME_PARALLAX = 48;
 export const LAYOUT_DEPTH = 7;
 export const LAYOUT_LIGHT_CLUSTERS = 8;
+export const LAYOUT_LIGHT_DEPTH = 63;
+export const LAYOUT_LIGHT_DEPTH_MS = 64;
 export const LAYOUT_BLOOM = 9;
 export const LAYOUT_FINAL_BLOOM = 10;
 export const LAYOUT_JOINTS = 11;
@@ -332,6 +334,11 @@ export const TEMPLATE_TAA_RESOLVE = 80;
 export const TEMPLATE_TAA_RESOLVE_MS = 81;
 export const TEMPLATE_TAA_COPY = 82;
 export const TEMPLATE_FEATURE_ROWS = 83;
+export const TEMPLATE_LIGHT_DEPTH = 84;
+export const TEMPLATE_LIGHT_DEPTH_MS = 85;
+export const TEMPLATE_LIGHT_DEPTH_CLEAR = 86;
+export const TEMPLATE_LIGHT_DEPTH_CLEAR_MS = 87;
+export const TEMPLATE_LIGHT_FIT = 88;
 export const TEMPLATE_CUSTOM_FIRST = 128;
 
 export const BUFFER_USAGE_MAP_READ = 1;
@@ -353,7 +360,7 @@ export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 export const SIZE_INSTANCE_STRIDE = 64;
 export const SIZE_MOTION_INSTANCE_STRIDE = 112;
 export const SIZE_INDEX_STRIDE = 16;
-export const SIZE_FRAME_UNIFORM_BYTES = 1088;
+export const SIZE_FRAME_UNIFORM_BYTES = 1104;
 export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;
@@ -390,9 +397,9 @@ export const VERTEX_TYPES: readonly (readonly [bytes: number, max: number, norma
 /** Each vertex attribute in vertex order, which is also its shader location: its format bit (0 for one every format has), its values per vertex, the first bit of its type field, its types by the field's value, and whether shaders read whole numbers. */
 export const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, components: number, shift: number, types: readonly number[], integer: boolean])[] = [[0, 3, 6, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [0, 3, 10, [0, 2, 4], false], [1, 2, 12, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [2, 2, 16, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [4, 4, 20, [0, 2, 4], false], [8, 4, 22, [0, 1, 3], false], [16, 4, 24, [5, 7], true], [32, 4, 25, [0, 1, 3], false], [134217728, 4, 27, [0], false]];
 /** The name of each pass role by code. */
-export const PASS_ROLE_NAMES: readonly string[] = ["", "background", "light clusters", "skin", "cull", "prepass", "opaque", "occluders", "depth pyramid", "late cull", "shadow cascade", "shadow tile", "shadow hero", "debug lines", "transparent", "decals", "decal redraw", "pick", "pick resolve", "resolve", "bloom", "outline mask", "skin light", "subsurface blur", "ambient occlusion", "screen reflections", "effect", "depth of field", "fog light", "fog block", "fog sum", "fog apply", "temporal anti-aliasing", "view copy", "full-screen", "compute", "transmission copy", "motion", "motion view", "weighted layer", "weighted composite", "particle depth copy", "accumulate", "final", "final still", "final with bloom", "output", "output with bloom", "exposure histogram", "exposure downsample", "exposure adapt", "feature rows", "sky"];
+export const PASS_ROLE_NAMES: readonly string[] = ["", "background", "light clusters", "skin", "cull", "prepass", "opaque", "occluders", "depth pyramid", "late cull", "shadow cascade", "shadow tile", "shadow hero", "debug lines", "transparent", "decals", "decal redraw", "pick", "pick resolve", "resolve", "bloom", "outline mask", "skin light", "subsurface blur", "ambient occlusion", "screen reflections", "effect", "depth of field", "fog light", "fog block", "fog sum", "fog apply", "temporal anti-aliasing", "view copy", "full-screen", "compute", "transmission copy", "motion", "motion view", "weighted layer", "weighted composite", "particle depth copy", "accumulate", "final", "final still", "final with bloom", "output", "output with bloom", "exposure histogram", "exposure downsample", "exposure adapt", "feature rows", "sky", "light depth"];
 /** Whether each pass role prints its place: 0 never, 1 always, 2 when the place is not 0. */
-export const PASS_ROLE_PLACES: readonly number[] = [0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 1, 1, 0, 0, 2, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+export const PASS_ROLE_PLACES: readonly number[] = [0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 1, 1, 0, 0, 2, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0];
 /** The bits of a pass label that hold the pass's place. */
 export const PASS_ROLE_PLACE_SHIFT = 16;
 /** The role code of the background pass, which the page's renderer records itself. */

@@ -1065,6 +1065,7 @@ export class SketchRunner {
 			this.setReflectionScale(settings.reflectionScale) !== 0 ||
 			glue.setProbeSize(settings.probeSize) !== 0 ||
 			glue.setAreaLightCap(settings.areaLights) !== 0 ||
+			glue.setLightFit(settings.lightFit ? 1 : 0) !== 0 ||
 			this.setLevelQuality() !== 0 ||
 			glue.setPhysicalSky(settings.physicalSky) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0 ||

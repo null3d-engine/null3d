@@ -3550,6 +3550,17 @@ pub fn set_area_light_cap(cap: u32) -> u32 {
     })
 }
 
+/// Fits the light clusters' depth slices to the depth that the frame before measured, from the next
+/// frame on, or leaves them on the CPU's slicing: the quality preset's `lightFit`. It runs only on
+/// WebGPU, where the light clustering passes do this work.
+#[wasm_bindgen(js_name = setLightFit)]
+pub fn set_light_fit(enabled: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_light_fit(enabled != 0);
+        0
+    })
+}
+
 /// The halvings of the render size each way that make a share `scale` of it: 0 for the whole
 /// size, 1 for half and 2 for a quarter.
 fn halvings_of(scale: f32) -> u8 {

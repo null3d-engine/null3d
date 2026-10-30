@@ -789,6 +789,8 @@ export interface CoreGlue extends CoreErrors {
 	setReflectionScale(): number;
 	/** Sets the most area lights that one frame shades. */
 	setAreaLightCap(cap: number): number;
+	/** Fits the light clusters' depth slices to the depth that the frame before measured, or not. */
+	setLightFit(enabled: number): number;
 	/** Makes room for the area lights' tables; the address of their half floats, or 0. */
 	areaLightTables(): number;
 	/** Marks the area lights' tables as written, so frames light with area lights. */
@@ -1417,6 +1419,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setPassValues',
 	'setReflectionScale',
 	'setAreaLightCap',
+	'setLightFit',
 	'areaLightTables',
 	'finishAreaLightTables',
 	'lightImage',

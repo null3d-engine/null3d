@@ -1171,3 +1171,19 @@ shaders = ["cull_occlusion", "pyramid"]
 file = "light_clusters.wgsl"
 by_device = true
 variants.webgpu = { targets = ["wgsl"] }
+
+# The light clusters' depth reduction, which fits the slices to the measured depth: one compute
+# entry point, `reduce_depth`, that reads the view's depth as a float texture and writes the nearest
+# and farthest into a buffer that the next frame's fit reads. WebGPU only; WebGL2 keeps the CPU's
+# slicing.
+[shaders.light_depth]
+file = "light_depth.wgsl"
+by_device = true
+variants.webgpu = { targets = ["wgsl"] }
+
+# The same reduction from a multisampled depth target, whose sample 0 it reads. Only WebGPU reads
+# multisampled textures.
+[shaders.light_depth_ms]
+file = "light_depth.wgsl"
+by_device = true
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }

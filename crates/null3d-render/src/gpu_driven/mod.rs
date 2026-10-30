@@ -136,6 +136,7 @@
 mod clusters;
 mod copies;
 mod cull;
+mod depth_fit;
 mod direct;
 mod feature_rows;
 mod layout;
@@ -201,6 +202,7 @@ use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
 use crate::view_copy::ViewCopyIds;
 use crate::weighted::WeightedIds;
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES, Phase};
+use depth_fit::LightDepths;
 use direct::Direct;
 use feature_rows::FeatureRows;
 use layout::{Drawn, Layout};
@@ -588,6 +590,18 @@ mod ids {
     /// per-view buffers, which leaves the page buffers and the texture store's groups above them
     /// their own numbers.
     pub const COMPUTE: u32 = CLUSTER_BUFFERS + 5 * MAX_VIEW_IDS as u32;
+    /// The light depth reduction's buffers, after every mesh page, so that their ids collide with
+    /// no buffer the frame's passes take.
+    const LIGHT_DEPTH_BUFFERS: u32 = PAGES + 2 * super::skin::MAX_PAGES;
+    /// Each camera view's uniform block of its light depth reduction.
+    const LIGHT_DEPTH_PARAMS: u32 = LIGHT_DEPTH_BUFFERS;
+
+    pub const fn light_depth_params(view: ViewId) -> u32 {
+        LIGHT_DEPTH_PARAMS + view.index() as u32
+    }
+    /// The depth reduction that the light clusters' fit reads: the nearest and farthest reversed
+    /// depth of the last frame.
+    pub const LIGHT_REDUCTION: u32 = LIGHT_DEPTH_PARAMS + MAX_VIEW_IDS as u32;
     /// The compute pipeline of each compute pass, from this id on, by its view's place. The
     /// engine's own compute pipelines take the low numbers.
     pub const COMPUTE_PIPELINES: u32 = 100;
@@ -647,6 +661,13 @@ mod ids {
     pub const CULL_MOTION: u32 = 14;
     /// The conversion of feature-instance rows to camera-relative rows.
     pub const FEATURE_ROWS: u32 = 15;
+    /// The light clusters' depth reduction, and the same from a multisampled depth target.
+    pub const LIGHT_DEPTH: u32 = 16;
+    pub const LIGHT_DEPTH_MS: u32 = 17;
+    pub const LIGHT_DEPTH_CLEAR: u32 = 18;
+    pub const LIGHT_DEPTH_CLEAR_MS: u32 = 19;
+    /// The fit that light clustering runs first, which writes the grid's header.
+    pub const LIGHT_FIT: u32 = 20;
 
     /// Each view's bind groups: the frame group of its render pipelines, its culling group, and
     /// the group of the pipelines that read their instances by index.
@@ -774,8 +795,16 @@ mod ids {
     /// The bind groups of temporal anti-aliasing's resolve and copy, after the conversions'.
     pub const TAA_GROUPS: u32 =
         FEATURE_ROWS_GROUPS + crate::feature_instances::MAX_FEATURE_INSTANCES;
-    /// The bind groups of materials' maps, after temporal anti-aliasing's.
-    pub const TEXTURE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
+    /// Each camera view's group of its light depth reduction, after temporal anti-aliasing's and
+    /// before the texture store's groups, whose ids run on from here.
+    pub const LIGHT_DEPTH_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
+
+    pub const fn light_depth_group(view: ViewId) -> u32 {
+        LIGHT_DEPTH_GROUPS + view.index() as u32
+    }
+
+    /// The bind groups of materials' maps, after the light depth reductions'.
+    pub const TEXTURE_GROUPS: u32 = LIGHT_DEPTH_GROUPS + MAX_VIEW_IDS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -982,6 +1011,8 @@ pub struct GpuDrivenRenderer {
     lights_made: u32,
     /// The pass that lists the lights of each cluster of each camera view's light grid.
     light_clusters: LightClusters,
+    /// The depth reduction that fits each camera view's light slices to the depth.
+    depths: LightDepths,
     /// The pass that skins the skinned meshes that some view draws.
     skinning: Skinning,
     /// Each camera view's values in the frame being recorded, or `None` for a view with no camera.
@@ -1269,6 +1300,7 @@ impl GpuDrivenRenderer {
             lights: LightGrids::new(config.light_limits, true),
             lights_made: 0,
             light_clusters: LightClusters::default(),
+            depths: LightDepths::default(),
             skinning: Skinning::new(config.skinning),
             frames: Vec::new(),
             cascade_frames: [None; MAX_CASCADES],
@@ -1841,6 +1873,7 @@ impl GpuDrivenRenderer {
                 cull::create_pipeline(list)?;
             }
             lights::create_pipelines(list)?;
+            self.depths.create_pipelines(list)?;
         }
         // The cluster pass's shader loads on first use, so its pipeline is made with the first
         // frame that draws a tree of cluster patches. A page whose scene holds no tree never
@@ -1889,6 +1922,8 @@ impl GpuDrivenRenderer {
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
         self.graph
             .set_tone_mask(!self.tone.buckets.is_empty() && self.graph.hdr_color());
+        self.graph
+            .set_light_depth(self.settings.light_fit() && !input.lights.is_empty());
         self.graph.set_still_enabled(self.settings.still_enabled());
         self.graph.set_still(self.settings.still());
         self.graph.set_subsurface(
@@ -2142,6 +2177,7 @@ impl GpuDrivenRenderer {
         let exposure = self.settings.drawn_output().exposure;
         self.lights
             .set_area_light_cap(self.settings.area_light_cap());
+        self.lights.set_fit(self.settings.light_fit());
         for index in 0..views {
             let view = ViewId::from_index(index);
             // A view that the graph culls needs no values.
@@ -2171,19 +2207,18 @@ impl GpuDrivenRenderer {
         for index in 0..views {
             let view = ViewId::from_index(index);
             let bit = 1 << index;
-            if self.lights_made & bit != 0 {
-                continue;
+            if self.lights_made & bit == 0 {
+                let Some(lights) = self.lights.get(view) else {
+                    continue;
+                };
+                lights::create(list, view, lights)?;
+                self.lights_made |= bit;
+                self.bind_frame(
+                    list,
+                    view,
+                    frame_inputs(view, view, probe_array(probes_now)),
+                )?;
             }
-            let Some(lights) = self.lights.get(view) else {
-                continue;
-            };
-            lights::create(list, view, lights)?;
-            self.lights_made |= bit;
-            self.bind_frame(
-                list,
-                view,
-                frame_inputs(view, view, probe_array(probes_now)),
-            )?;
         }
 
         // The shadow views that draw this frame, each of which uploads the copies of the casters
@@ -2199,6 +2234,20 @@ impl GpuDrivenRenderer {
         arena
             .reset(bound)
             .map_err(|_| uploads_out_of_memory(bound))?;
+        // The camera view's depth reduction names its light grid, so it waits for the grid, and
+        // its block counts wait for the arena that this frame's uploads take.
+        if let Some(depth) = self.graph.scene_depth() {
+            let multisampled = self.graph.scene_depth_multisampled();
+            self.depths.prepare(
+                list,
+                ViewId::CAMERA,
+                depth,
+                multisampled,
+                self.graph.textures_made(),
+            )?;
+            self.depths
+                .upload(list, arena, ViewId::CAMERA, self.graph.render_size())?;
+        }
         let array = self.settings.probes().array().map_or(0, |(id, _)| id);
         let probe_layers = self.settings.probes().probe_layers();
         self.settings
@@ -3067,6 +3116,9 @@ impl GpuDrivenRenderer {
         let motion_draws = motion_on && self.motion.draws();
         let (frames, cascade_frames, tiles) = (&self.frames, &self.cascade_frames, &self.tiles);
         let (background, light_clusters) = (&self.background, &self.light_clusters);
+        let (depths, depth_multisampled) = (&self.depths, self.graph.scene_depth_multisampled());
+        // A frame without lights pays nothing for the depth reduction.
+        let light_depth_on = self.lights.camera().grid().uniform().grid[2] != 0.0;
         let skinning = &self.skinning;
         let drawn = |view: ViewId| match (view.cascade_index(), view.tile_index()) {
             (Some(cascade), _) => cascade_frames[cascade].is_some(),
@@ -3155,6 +3207,10 @@ impl GpuDrivenRenderer {
             skips,
             |list, role| match role {
                 Role::LightClusters => light_clusters.record(list),
+                Role::LightDepth if light_depth_on => {
+                    depths.record(list, ViewId::CAMERA, depth_multisampled)
+                }
+                Role::LightDepth => Ok(()),
                 Role::Skin => skinning.record(list),
                 Role::Cull(ViewId::MOTION) if drawn(ViewId::MOTION) => {
                     culling.record(list, ViewId::MOTION, moving, Phase::Motion(parity))
@@ -3637,6 +3693,8 @@ impl GpuDrivenRenderer {
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
         transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
+        // The light cluster groups bind the depth reduction, so it comes before their groups.
+        self.depths.create_buffer(list)?;
         lights::create(list, ViewId::CAMERA, self.lights.camera())?;
         self.lights_made = 1 << ViewId::CAMERA.index();
         self.dfg_pending = true;
@@ -3747,7 +3805,7 @@ impl GpuDrivenRenderer {
             + self.scattering.upload_bound()
             + self.moving.upload_bound();
 
-        let lights = self.lights.upload_room();
+        let lights = self.lights.upload_room() + LightDepths::UPLOAD_BYTES;
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         let sorted = Transparent::upload_bound(&self.sorted, camera_views)
             + Transparent::upload_bound(&self.decal_layout, 1)
@@ -3995,6 +4053,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.tiles.forget_gpu();
         self.lines.forget_gpu();
         self.lights.forget_gpu();
+        self.depths.forget_gpu();
         self.lights_made = 0;
         self.skinning.forget_gpu();
         self.transparent.forget_gpu();
