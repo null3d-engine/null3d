@@ -15,6 +15,7 @@ import {
 	allocationOutcome,
 	budgetOf,
 	buildAddon,
+	buildAddonOutputs,
 	emptyShaders,
 	engineVersions,
 	interfaceResult,
@@ -587,11 +588,11 @@ describe.skipIf(!BUILDS)('buildAddon', () => {
 		const before = process.env[NO_CACHE];
 		process.env[NO_CACHE] = '1';
 		try {
-			const built = await buildAddon(ADDON_EXTERNAL_FIXTURE, './src/index.ts');
+			const built = await buildAddonOutputs(ADDON_EXTERNAL_FIXTURE, './src/index.ts');
 			expect(built.error).toBeUndefined();
-			const entry = (built.files ?? []).find((file) => file.name === 'addon.js');
+			const entry = (built.full ?? []).find((file) => file.name === 'addon.js');
 			// The import survives the build, so the file holds the package's name and not its code.
-			expect(entry?.text).toContain('@null3d/impostors');
+			expect(entry?.bytes.toString('utf8')).toContain('@null3d/impostors');
 		} finally {
 			if (before === undefined) delete process.env[NO_CACHE];
 			else process.env[NO_CACHE] = before;
