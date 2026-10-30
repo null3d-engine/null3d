@@ -7189,20 +7189,53 @@ mod tests {
         assert!(step_of(&frames, "ShadowCascade0").is_some());
         assert!(step_of(&frames, "Motion").is_some());
         assert!(step_of(&frames, "Pick").is_some());
-        // Each pass's layout draws a material that samples the pass's target.
-        frames.set_drawn_views(DrawnViews {
-            casters: 1 << 1,
-            motion: 1 << 1,
-            pick: 1 << 1,
-        });
-        frames.sync(&[View::default(), compute(true)]);
-        frames
-            .prepare(&mut list, (320, 180), RenderScale::FULL)
-            .unwrap();
-        let pass = step_of(&frames, "Opaque1").expect("the pass runs");
-        assert!(pass < step_of(&frames, "ShadowCascade0").unwrap());
-        assert!(pass < step_of(&frames, "Motion").unwrap());
-        assert!(pass < step_of(&frames, "Pick").unwrap());
+
+        // A material that the camera does not draw: only a shadow caster, the motion pass or the
+        // pick draws it, so no texture shows the pass to the camera. The pass reads a full-screen
+        // view that the graph declares after the camera, which the graph runs first, so the pass
+        // itself cannot run early: only the reading pass's edge puts it first. Without that edge
+        // the reader runs before the pass, and the pass is culled because nothing else reads it.
+        let mut field = compute(false);
+        field.compute_pass_mut().unwrap().maps.views = 1 << 2;
+        let views = [View::default(), field, fullscreen(PassSource::None, false)];
+        let readers = [
+            (
+                "ShadowCascade0",
+                DrawnViews {
+                    casters: 1 << 1,
+                    ..DrawnViews::default()
+                },
+            ),
+            (
+                "Motion",
+                DrawnViews {
+                    motion: 1 << 1,
+                    ..DrawnViews::default()
+                },
+            ),
+            (
+                "Pick",
+                DrawnViews {
+                    pick: 1 << 1,
+                    ..DrawnViews::default()
+                },
+            ),
+        ];
+        for (reader, drawn) in readers {
+            frames.set_drawn_views(drawn);
+            frames.sync(&views);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            let pass = step_of(&frames, "Opaque1")
+                .unwrap_or_else(|| panic!("{reader}: the pass runs because the reader reads it"));
+            let reading =
+                step_of(&frames, reader).unwrap_or_else(|| panic!("{reader}: the reader runs"));
+            assert!(
+                pass < reading,
+                "{reader}: the pass runs at step {pass}, before its reader at {reading}"
+            );
+        }
     }
 
     /// The step of each named pass in the plan, or `None` for a pass that does not run.
