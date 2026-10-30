@@ -1030,7 +1030,7 @@ mod tests {
         let patches = PatchView::new(&patch_starts, &runs);
         let mut list = DrawList::with_capacity(1024);
         let mut arena = UploadArena::default();
-        arena.reset(1 << 16);
+        arena.reset(1 << 16).expect("room for the test's uploads");
         let meshes = MeshBuffers::new(100);
         opaque
             .record_motion(
@@ -1077,7 +1077,7 @@ mod tests {
         let patches = PatchView::new(&patch_starts, &runs);
         let mut list = DrawList::with_capacity(256);
         let mut arena = UploadArena::default();
-        arena.reset(1 << 16);
+        arena.reset(1 << 16).expect("room for the test's uploads");
         let meshes = MeshBuffers::new(100);
         opaque
             .record_motion(
@@ -1175,7 +1175,7 @@ mod tests {
             }
             let mut list = DrawList::with_capacity(256);
             let mut arena = UploadArena::default();
-            arena.reset(256);
+            arena.reset(256).expect("room for the test's uploads");
             let shading = Shading::Lit { light_slot: 0 };
             let (meshes, starts) = (MeshBuffers::new(100), [0, 3, 5]);
             let hidden = |group: u32| group == 9;
