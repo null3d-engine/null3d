@@ -677,9 +677,18 @@ length, and the broadleaf's 18, so a trunk leans rather than standing as a pole.
 spread wider across the atlas, and the leaf atlas's dark rim fell from more than half to 0.22 over a
 leaf's last seventh.
 
-**What it costs.** The built-in set generates 29.1 MB of arrays against the 30 MB ceiling at High and
-Ultra, with the denser conifer and broadleaf taking the room that the ceiling left. The conifer's
-level 0 takes 4.7 MB of it.
+**What it costs.** The built-in set generates 29.08 MB of arrays against the 30 MB ceiling at High
+and Ultra, with the denser conifer and broadleaf taking the room that the ceiling left. The
+conifer's level 0 takes 4.7 MB of it. A conifer is 9,620 triangles, against the hand-built pine's
+6,400.
+
+**The demos' frames.** On this Mac at 1600 by 900 on core WebGPU with the governor on, the stone
+garden holds the display's 16.67 ms at every preset, and the light-shafts wood reads 33.3 ms at
+Low, 50.0 at Medium and High, and 116.7 at Ultra. Its cost is the volumetric fog and the 150 trees'
+shadows, not the plants alone. The run file is
+[the demos' run](../tested-devices/macbook-pro-m3-max-chrome/20261031-0122-v12-demos.md), and the
+wood's High sits under the forest's High ceilings of 62.5 ms on the iPhone 17 and 67.1 on the iPad
+Pro 13.
 
 ## Fluid wind is an add-on of its own
 
