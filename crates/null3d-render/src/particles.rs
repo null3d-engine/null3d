@@ -61,6 +61,9 @@ use crate::view::{ViewFrame, ViewId};
 pub const RECORD_BYTES: u32 = 32;
 /// 32-bit words of one particle's record.
 pub const RECORD_WORDS: usize = (RECORD_BYTES / 4) as usize;
+/// Floats that one birth's parameters take in the block that the sketch writes: the birth place,
+/// the birth time, the velocity, the lifetime and the seed.
+pub const BIRTH_FLOATS: usize = 9;
 /// Floats of a system's values, which its shader reads as a uniform block.
 pub const PARAM_FLOATS: usize = 128;
 /// Floats that the sketch writes in every frame, after the values: the system's time in seconds,
@@ -168,6 +171,9 @@ pub struct ParticleTable {
     changed: bool,
     /// False when the quality preset draws soft particles with hard edges.
     hard: bool,
+    /// The parameters of the births that the sketch is writing, `BIRTH_FLOATS` numbers per birth.
+    /// The sketch fills the block, then asks the table to write its records once.
+    births: Vec<f32>,
 }
 
 impl ParticleTable {
@@ -271,6 +277,83 @@ impl ParticleTable {
         if let Some(system) = self.get_mut(id) {
             system.values_changed = true;
         }
+    }
+
+    /// Makes room for `count` births' parameters and returns the address of the block's first
+    /// number, or 0 when the memory cannot grow. Each birth takes `BIRTH_FLOATS` floats.
+    pub fn births_address(&mut self, count: usize) -> u32 {
+        let floats = count.saturating_mul(BIRTH_FLOATS);
+        if self.births.len() < floats {
+            if self.births.try_reserve(floats - self.births.len()).is_err() {
+                return 0;
+            }
+            self.births.resize(floats, 0.0);
+        }
+        self.births.as_ptr() as usize as u32
+    }
+
+    /// Writes the records of `count` births, whose parameters are in the birth block, from record
+    /// `first` on, and marks what it wrote. Birth `i` takes the record at `(first + i) % capacity`.
+    pub fn write_records(&mut self, id: u32, count: u32, first: u32) {
+        let births = &self.births;
+        let systems = &mut self.systems;
+        let Some(system) = systems
+            .get_mut((id as usize).wrapping_sub(1))
+            .and_then(Option::as_mut)
+        else {
+            return;
+        };
+        let capacity = system.capacity;
+        if capacity == 0 {
+            return;
+        }
+        let base = first % capacity;
+        let mut start = base;
+        let mut end = base;
+        for i in 0..count {
+            let at = i as usize * BIRTH_FLOATS;
+            if at + BIRTH_FLOATS > births.len() {
+                break;
+            }
+            let index = (base + i) % capacity;
+            if index != end {
+                system.mark(start, end);
+                start = index;
+            }
+            let word = index as usize * RECORD_WORDS;
+            for k in 0..7 {
+                system.records[word + k] = births[at + k].to_bits();
+            }
+            // The lifetime as the 16-bit float nearest below it, at most the largest finite one.
+            let bits = births[at + 7].to_bits();
+            let exponent = ((bits >> 23) & 0xff) as i32 - 112;
+            let half = if exponent <= 0 {
+                0
+            } else if exponent >= 31 {
+                0x7bff
+            } else {
+                ((exponent as u32) << 10) | ((bits >> 13) & 0x3ff)
+            };
+            let seed = births[at + 8] as u32 & 0xffff;
+            system.records[word + 7] = (half << 16) | seed;
+            end = index + 1;
+        }
+        system.mark(start, end);
+    }
+
+    /// Takes whole `seconds` off the birth times of records `from..to`, which moves the time that
+    /// they count from, and marks what it wrote.
+    pub fn shift_records(&mut self, id: u32, from: u32, to: u32, seconds: u32) {
+        let Some(system) = self.get_mut(id) else {
+            return;
+        };
+        let end = to.min(system.capacity);
+        for index in from..end {
+            let word = index as usize * RECORD_WORDS + 3;
+            let time = f32::from_bits(system.records[word]) - seconds as f32;
+            system.records[word] = time.to_bits();
+        }
+        system.mark(from, end);
     }
 
     /// The id of the system whose object is in scene slot `slot`.
@@ -867,5 +950,78 @@ mod tests {
         system.values[PARAM_FLOATS + 2] = 5.0;
         system.values[PARAM_FLOATS + 3] = 1000.0;
         assert_eq!(system.rebase(), [5.0, 1000.0]);
+    }
+
+    #[test]
+    fn a_birth_block_writes_the_records_that_the_sketch_gave_it() {
+        let mut table = ParticleTable::default();
+        let id = table.create(1, 8).unwrap();
+        assert_ne!(table.births_address(2), 0);
+        table.births[0..9].copy_from_slice(&[1.0, 2.0, 3.0, 4.5, -1.0, 0.5, 0.0, 1.75, 4660.0]);
+        table.births[9..18].copy_from_slice(&[0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 2.0, 7.0]);
+        table.write_records(id, 2, 3);
+        let system = table.get(id).unwrap();
+        let record =
+            |index: usize| &system.records[index * RECORD_WORDS..(index + 1) * RECORD_WORDS];
+        let words = record(3);
+        assert_eq!(
+            words[..7]
+                .iter()
+                .map(|w| f32::from_bits(*w))
+                .collect::<Vec<_>>(),
+            [1.0, 2.0, 3.0, 4.5, -1.0, 0.5, 0.0]
+        );
+        // 1.75 as a 16-bit float, then the seed.
+        assert_eq!(words[7], (0x3f00 << 16) | 0x1234);
+        let words = record(4);
+        assert_eq!(f32::from_bits(words[3]), 5.0);
+        // 2.0 as a 16-bit float, then the seed.
+        assert_eq!(words[7], (0x4000 << 16) | 7);
+        assert_eq!(system.range_count, 1);
+        assert_eq!(system.ranges[0], (3, 5));
+    }
+
+    #[test]
+    fn a_batch_that_wraps_writes_the_records_around_the_buffer() {
+        let mut table = ParticleTable::default();
+        let id = table.create(1, 4).unwrap();
+        assert_ne!(table.births_address(4), 0);
+        for birth in 0..4 {
+            let at = birth * BIRTH_FLOATS;
+            table.births[at + 3] = birth as f32;
+        }
+        // Records 2, 3, 0 and 1: the end of the buffer, then its start.
+        table.write_records(id, 4, 2);
+        let system = table.get(id).unwrap();
+        // The two ranges touch, so they upload as the whole buffer.
+        assert_eq!(system.range_count, 1);
+        assert_eq!(system.ranges[0], (0, 4));
+        for index in 0..4 {
+            let time = f32::from_bits(system.records[index * RECORD_WORDS + 3]);
+            let expected = if index >= 2 { index - 2 } else { index + 2 } as f32;
+            assert_eq!(time, expected);
+        }
+    }
+
+    #[test]
+    fn shifting_records_moves_the_birth_times_and_marks_them() {
+        let mut table = ParticleTable::default();
+        let id = table.create(1, 8).unwrap();
+        assert_ne!(table.births_address(4), 0);
+        for birth in 0..4 {
+            let at = birth * BIRTH_FLOATS;
+            table.births[at + 3] = 1000.0 + birth as f32;
+        }
+        table.write_records(id, 4, 0);
+        table.clear_marks();
+        table.shift_records(id, 1, 3, 1000);
+        let system = table.get(id).unwrap();
+        let time = |index: usize| f32::from_bits(system.records[index * RECORD_WORDS + 3]);
+        assert_eq!(
+            [time(0), time(1), time(2), time(3)],
+            [1000.0, 1.0, 2.0, 1003.0]
+        );
+        assert_eq!(system.range_count, 1);
+        assert_eq!(system.ranges[0], (1, 3));
     }
 }

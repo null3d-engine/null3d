@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import type { Mat4Like, ParticleBuffer, ParticleValues, SketchTime } from '@null3d/engine';
+import type {
+	Mat4Like,
+	Object3D,
+	ParticleBuffer,
+	ParticleValues,
+	SketchTime,
+} from '@null3d/engine';
 import {
 	AGE,
 	FLIGHT_FLOATS,
@@ -40,6 +46,22 @@ function fakeBuffer(capacity: number) {
 		write: (index: number, record: ArrayLike<number>, seed: number) => {
 			records[index] = [...Array.from(record), seed];
 			writes++;
+		},
+		writeRecords: (block: Float32Array, count: number, first: number) => {
+			for (let i = 0; i < count; i++) {
+				const at = i * 9;
+				const index = (first + i) % capacity;
+				records[index] = [...block.slice(at, at + 8), block[at + 8] as number];
+				writes++;
+			}
+		},
+		shiftRecords: (from: number, to: number, seconds: number) => {
+			for (let i = from; i < to; i++) {
+				const record = records[i];
+				if (!record) continue;
+				record[3] = (record[3] as number) - seconds;
+				writes++;
+			}
 		},
 		read: (index: number, out: Float32Array) => out.set(records[index] ?? []),
 		frame,
@@ -171,6 +193,32 @@ describe('sub-emitters', () => {
 		expect(child.records.length).toBe(3);
 		expect(child.records[0]?.[1]).toBeCloseTo(-1, 2);
 	});
+	test('a followed emitter places its births between the two frames’ places', () => {
+		let x = 0;
+		const follow = {
+			getWorldMatrix: (out: Mat4Like) => {
+				for (let k = 0; k < 16; k++) out[k] = k % 5 === 0 ? 1 : 0;
+				out[12] = x;
+			},
+		} as unknown as Object3D;
+		const { records, system: particles } = system({ follow, rate: 100, lifetime: 1 }, 128);
+		particles.update(0.1);
+		// The first frame's births stand where the emitter stood.
+		for (const record of records.filter((record) => (record[3] as number) < 0.105))
+			expect(record[0]).toBeCloseTo(0, 5);
+		x = 1;
+		particles.update(0.1);
+		// The second frame's births take the emitter's place at their share through the frame.
+		const second = records.filter((record) => (record[3] as number) > 0.105);
+		expect(second.length).toBeGreaterThan(5);
+		for (const record of second) {
+			const share = ((record[3] as number) - 0.1) / 0.1;
+			expect(record[0]).toBeCloseTo(share, 5);
+		}
+		expect(second[0]?.[0] as number).toBeGreaterThan(0.05);
+		expect(second.at(-1)?.[0] as number).toBeGreaterThan(0.85);
+	});
+
 	test('the table of pending events starts small and grows to hold every particle', () => {
 		const child = system({ lifetime: 1 }, 2048);
 		const parent = system(
