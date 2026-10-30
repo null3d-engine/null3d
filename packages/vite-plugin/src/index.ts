@@ -29,6 +29,7 @@ import {
 	ensureEngineShaders,
 } from './engine-shaders.ts';
 import { buildEngineShadersLocally } from './engine-shaders-local.ts';
+import { HashPool } from './hash-pool.ts';
 import {
 	changedLiterals,
 	HOT_CLIENT,
@@ -352,17 +353,6 @@ function isGeneratedShaderFile(importer: string, address: string): boolean {
 	);
 }
 
-/**
- * The output name of a generated shader file that the build copies rather than bundles: the
- * file's own name, which its feature set, target and bits fix, and a content hash, so a changed
- * shader takes a new name and no browser serves an old one. The hash is read from the file alone,
- * one at a time, so the build never holds the whole generated set in memory.
- */
-function copiedShaderHash(file: string): string {
-	// Hex, so the name has one dash before the hash and the size report splits it the same way.
-	return createHash('sha256').update(readFileSync(file)).digest('hex').slice(0, 8);
-}
-
 /** A WGSL file that a module imports, without a query such as `?raw`. */
 const WGSL_FILE = /\.wgsl$/;
 
@@ -445,16 +435,29 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 	const emitted = new Map<string, string>();
 	/** The chunks emitted for the scripts that a worker imports, by their rollup reference. */
 	const workerChunks = new Set<string>();
+	/** Hashes the generated shader files on worker threads, so the build goes on meanwhile. */
+	const hasher = new HashPool();
 	/**
 	 * The generated shader files that the build copies instead of bundling, by their output name:
-	 * each is hashed and copied in a stream, so the build never holds the whole set in memory.
+	 * each is named by a hash of its bytes and copied on its own, so the build never holds the
+	 * whole set in memory.
 	 */
 	const copiedShaders = new Map<string, string>();
 	/**
-	 * The content hash of each generated shader file by its path. A page build and its workers reach
-	 * the same files, so each file is read and hashed once for the whole build.
+	 * The content hash of each generated shader file by its path, which the pool computes. A page
+	 * build and its workers reach the same files, so each file is hashed once for the whole build,
+	 * and a second name for it waits for the same hash.
 	 */
-	const copiedShaderHashes = new Map<string, string>();
+	const copiedShaderHashes = new Map<string, Promise<string>>();
+	/** The hash of a generated shader file, read on the pool when a module first names it. */
+	const copiedShaderHash = (file: string): Promise<string> => {
+		let hash = copiedShaderHashes.get(file);
+		if (hash === undefined) {
+			hash = hasher.hash(file);
+			copiedShaderHashes.set(file, hash);
+		}
+		return hash;
+	};
 	/** A copied shader file's path in the output, whatever the assets folder is called. */
 	const assetPath = (name: string) => (assetsDir === '' ? name : posix.join(assetsDir, name));
 	/** Compiles WGSL on worker threads, so the dev server answers other requests meanwhile. */
@@ -578,8 +581,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 				);
 			}
 		},
-		buildEnd() {
-			return compiler.close();
+		async buildEnd() {
+			await Promise.all([compiler.close(), hasher.close()]);
 		},
 		// The dev server's pages import the client module of hot updates. A build of pages that
 		// imports the engine ships the early script, found from the module that imports the engine,
@@ -961,8 +964,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 	 * Names the generated shader files' copies before Vite's own asset step sees them, which runs
 	 * after the plugins that declare no order. A generated module loads each of its builds by
 	 * `new URL('./shaders-<name>.js', import.meta.url)`, and a bundler reads every one of them into
-	 * memory to emit it as an asset; here each file is hashed and copied on its own, and the module
-	 * names the copy, so the build never holds the whole generated set at once.
+	 * memory to emit it as an asset; here a pool of worker threads hashes each file and the build
+	 * copies it on its own, and the module names the copy, so the build never holds the whole set
+	 * at once.
 	 *
 	 * The argument is a mark rather than an address: where a copy lands is fixed, but the file that
 	 * names it can sit anywhere in the output, and only `generateBundle` knows where.
@@ -972,24 +976,31 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 		enforce: 'pre',
 		apply: 'build',
 
-		transform(code, id) {
+		async transform(code, id) {
 			if (!code.includes('import.meta.url')) return;
 			const file = id.split('?')[0] ?? id;
-			let out: MagicString | undefined;
+			// The files this module names, and the base of the copy name that each one's hash fixes.
+			const named: { match: RegExpExecArray; base: string; target: string }[] = [];
 			for (const match of code.matchAll(SCRIPT_URL)) {
 				const address = match[2] ?? '';
-				if (!isGeneratedShaderFile(file, address)) {
-					continue;
-				}
+				if (!isGeneratedShaderFile(file, address)) continue;
 				const target = resolve(dirname(file), address);
 				if (!existsSync(target)) continue;
 				const base = target.slice(target.lastIndexOf('/') + 1).replace(/\.js$/, '');
-				let hash = copiedShaderHashes.get(target);
-				if (hash === undefined) {
-					hash = copiedShaderHash(target);
-					copiedShaderHashes.set(target, hash);
-				}
-				const name = `${base}-${hash}.js`;
+				named.push({ match, base, target });
+			}
+			if (named.length === 0) return;
+			// The pool reads each file in chunks and hashes it, so the build's own thread reads none
+			// of the files and holds none of their bytes.
+			const hashed = await Promise.all(
+				named.map(async ({ match, base, target }) => ({
+					match,
+					target,
+					name: `${base}-${await copiedShaderHash(target)}.js`,
+				})),
+			);
+			let out: MagicString | undefined;
+			for (const { match, name, target } of hashed) {
 				copiedShaders.set(name, target);
 				out ??= new MagicString(code);
 				out.overwrite(
