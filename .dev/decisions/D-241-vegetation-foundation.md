@@ -427,7 +427,13 @@ last, and returns flat arrays of nine floats for each point.
 **Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds 955 points. They
 are 104 canopy trees, 174 saplings, 651 ground plants and 26 dead wood. The checksum of that placement is
 916344353. The device page compares it on every device and both GPU paths. On the Mac the scatter
-takes about 10 ms in Chrome and the ground maps about 45 ms.
+takes about 10 ms in Chrome and the ground maps about 45 ms. A check on an Apple M3 Max in Bun,
+beside the machine's other jobs, reads a median of 13.6 ms and ground maps of 42.7 ms.
+
+**The budget.** The placement runs once, after the ground maps and before the first plant draws, so
+it holds a one-time line rather than a frame ceiling: 200 ms on the slowest measured device, the
+line that M3-V4 sets for the generator. Every measured placement sits well inside it. The ground
+maps are timed apart from it and take 41 to 86 ms once.
 
 The `vegetation-scatter` plan ran on two cloud phones, each page reporting the middle of three
 timed placements.
@@ -561,8 +567,11 @@ reads 0.490, 0.496 and 0.498 of a card's box at 12, 24 and 48 meters, on all thr
 therefore keeps its share as it shrinks.
 
 **The bake's time.** `paintLeaf` takes about 230 ms, and `paintBark` about 160 ms, on an Apple M5 Max
-laptop under load. Each leaf rejects a texel outside a box around its outline before it works out the
-outline. That holds down the cost of a cell of many leaves.
+laptop under load. A check on an Apple M3 Max reads 244 ms for the leaves and 144 ms for the bark,
+389 ms together. It ran in Bun, beside the machine's other jobs, and the total
+stays inside the one-second line that keeps an atlas across visits. Each leaf rejects a texel outside
+a box around its outline before it works out the outline. That holds down the cost of a cell of many
+leaves. The figures on the iPad Pro 13 and an S24-class phone are owed.
 
 **What the pictures show.** The `vegetation-atlas` picture's leaf card is a twig of lobed leaves that
 fills its square. The `vegetation-versus-creek` picture shows the generated oak beside Creek's
