@@ -146,8 +146,8 @@
 	"chromium-swiftshader/compat/impostor-handover.png": {
 		"test": "impostor-handover",
 		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "the picture is new with the far-tree branch; drawn on the software renderer for its reference"
+		"date": "2026-10-30",
+		"reason": "the branch has no CI run, so the software set is drawn here with CI=1, as the impostor shadow commit did"
 	},
 	"chromium-swiftshader/compat/impostor-plant.png": {
 		"test": "impostor-plant",
@@ -434,8 +434,8 @@
 	"chromium-swiftshader/webgl2/impostor-handover.png": {
 		"test": "impostor-handover",
 		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "the picture is new with the far-tree branch; drawn on the software renderer for its reference"
+		"date": "2026-10-30",
+		"reason": "the branch has no CI run, so the software set is drawn here with CI=1, as the impostor shadow commit did"
 	},
 	"chromium-swiftshader/webgl2/impostor-plant.png": {
 		"test": "impostor-plant",
@@ -716,8 +716,8 @@
 	"chromium-swiftshader/webgpu/impostor-handover.png": {
 		"test": "impostor-handover",
 		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "the picture is new with the far-tree branch; drawn on the software renderer for its reference"
+		"date": "2026-10-30",
+		"reason": "the branch has no CI run, so the software set is drawn here with CI=1, as the impostor shadow commit did"
 	},
 	"chromium-swiftshader/webgpu/impostor-plant.png": {
 		"test": "impostor-plant",

@@ -50,6 +50,7 @@ import {
 	MATERIAL_FEATURE_SCENE_DEPTH,
 	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
+	MATERIAL_FEATURE_STILL_CASTER,
 	MATERIAL_FEATURE_SUBSURFACE,
 	MATERIAL_FEATURE_TRANSLUCENCY,
 	MATERIAL_FEATURE_TRANSMISSION,
@@ -427,6 +428,14 @@ describe('Material.set', () => {
 			MATERIAL_FEATURE_NO_FOG,
 			0,
 		]);
+	});
+
+	test("passes a card's still-caster claim to the core, and its withdrawal", () => {
+		const { features, materials } = fakeCore();
+		materials.shader({ wgsl: compiledMaterial(), castsStill: true });
+		materials.shader({ wgsl: compiledMaterial(), castsStill: false });
+		materials.shader({ wgsl: compiledMaterial() });
+		expect(features).toEqual([MATERIAL_FEATURE_STILL_CASTER, 0, 0]);
 	});
 
 	test('passes the blend alpha mode with each blending', () => {
