@@ -24,11 +24,15 @@ import { REPO_ROOT } from './lib/server.ts';
 const USAGE =
 	'usage: bun run images:review [--accept [<tests>]] [--from <folder> | --ci <run>] [--local-reason <why>]';
 
-/** The CI artifacts that hold images for review: the browser test shards' and the Safari and Firefox jobs'. */
+/**
+ * The CI artifacts that hold images for review: the browser test shards' and the Safari and Firefox
+ * jobs', and the drawings that a run started by hand asked its shards to keep.
+ */
 const CI_ARTIFACTS = [
 	'browser-test-results-*',
 	'browser-heavy-test-results-*',
 	'real-browser-runs-*',
+	'drawn-images-*',
 ];
 
 export interface ReviewOptions {
@@ -77,7 +81,7 @@ function downloadRun(run: string): string {
 		});
 	} catch {
 		throw new Error(
-			`could not download the artifacts of CI run ${run}. A run saves its images only when a browser test fails.`,
+			`could not download the artifacts of CI run ${run}. A run saves its images when a browser test fails, and when a run started by hand asks for its drawn images.`,
 		);
 	}
 	return folder;

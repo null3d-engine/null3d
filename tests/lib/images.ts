@@ -7,7 +7,9 @@
 // a device's own references where a test records that the device's GPU draws it differently. An
 // image without a reference, or one that differs from its reference, becomes a candidate under
 // test-results/images/, with its diff. Only the review step (tests/review-images.ts) turns a
-// candidate into a reference.
+// candidate into a reference. A run that asks for its drawings keeps every image that it drew
+// under test-results/drawn/, whether the image matched its reference or not, so a reference can
+// come from a shard that passed.
 import { createHash } from 'node:crypto';
 import {
 	copyFileSync,
@@ -583,16 +585,26 @@ export function referenceDigest(file: string): string | undefined {
 	}
 }
 
-/** The folders of references and of candidates. */
+/** The folders of references and of candidates, and of the drawings that a run was asked to keep. */
 export interface HarnessDirs {
 	references: string;
 	candidates: string;
+	/** Overrides the folder of the drawings that an asked run saves, which a test points elsewhere. */
+	drawn?: string;
 }
+
+/** Where a run that was asked for its drawings keeps every image that its tests drew. */
+export const DRAWN_IMAGES = join(REPO_ROOT, 'test-results/drawn');
 
 export const HARNESS_DIRS: HarnessDirs = {
 	references: join(REPO_ROOT, 'tests/image/references'),
 	candidates: join(REPO_ROOT, 'test-results/images'),
+	drawn: DRAWN_IMAGES,
 };
+
+/** Whether the run asks for every image that its tests draw, as CI's picture run does. */
+export const takingDrawnImages = (env: Readonly<Record<string, string | undefined>>): boolean =>
+	env.NULL3D_TAKE_IMAGES === '1';
 
 /** What a candidate's JSON file records, beside its image. */
 export interface CandidateFacts {
@@ -602,8 +614,11 @@ export interface CandidateFacts {
 	mode?: string;
 	/** The environment or the runner that drew it. */
 	drawnIn: string;
-	/** New: the image has no reference. Changed: it differs from its reference beyond the tolerance. */
-	status: 'new' | 'changed';
+	/**
+	 * New: the image has no reference. Changed: it differs from its reference beyond the tolerance.
+	 * Drawn: an asked run kept an image that matched its comparison, or failed it, without a diff.
+	 */
+	status: 'new' | 'changed' | 'drawn';
 	/** The reference it was compared with, from the folder of references. */
 	reference: string;
 	/** For a changed image, the share of its pixels that differ, from 0 to 1. */
@@ -648,6 +663,38 @@ export function clearCandidates(place: Place, dirs = HARNESS_DIRS): void {
 }
 
 /**
+ * Saves the image that the renderer drew, with the facts that the review reads, under the folder
+ * of drawings. A run asked for its drawings keeps one picture for each test and tier that it drew
+ * in, whichever thread mode drew it first. A run whose image cannot become a reference keeps
+ * nothing, since the artifact exists to hand references on.
+ */
+export function saveDrawnImage(
+	run: ImageRun,
+	place: Place,
+	image: RgbaImage,
+	share: number | undefined,
+	dirs = HARNESS_DIRS,
+): void {
+	const reference = referenceOf(run, place);
+	if (reference.fixed) return;
+	const base = join(dirs.drawn ?? DRAWN_IMAGES, drawnIn(place), run.tier, run.test);
+	if (existsSync(`${base}${CANDIDATE_FILES.facts}`)) return;
+	const facts: CandidateFacts = {
+		test: run.test,
+		tier: run.tier,
+		...(run.mode && { mode: run.mode.name }),
+		drawnIn: drawnIn(place),
+		status: 'drawn',
+		reference: reference.file,
+		...(share !== undefined && { share }),
+		tolerance: reference.tolerance,
+		...(ciRunOf(process.env) && { ciRun: ciRunOf(process.env) }),
+	};
+	writePng(`${base}${CANDIDATE_FILES.image}`, image);
+	writeFileSync(`${base}${CANDIDATE_FILES.facts}`, `${JSON.stringify(facts, null, '\t')}\n`);
+}
+
+/**
  * Compares a run's image with its reference in the place that drew it. An image without a
  * reference, or beyond the tolerance, is saved as a candidate with the facts of the comparison, and
  * with the reference and the diff when there is one. Returns what is wrong, or nothing.
@@ -661,6 +708,7 @@ export function compareWithReference(
 	const reference = referenceOf(run, place);
 	const referencePath = join(dirs.references, reference.file);
 	const base = candidateBase(run, place, dirs);
+	const keepDrawn = takingDrawnImages(process.env);
 	const facts: CandidateFacts = {
 		test: run.test,
 		tier: run.tier,
@@ -689,17 +737,20 @@ export function compareWithReference(
 	const shown = relative(REPO_ROOT, `${base}${CANDIDATE_FILES.image}`);
 	if (!existsSync(referencePath)) {
 		save({});
+		if (keepDrawn) saveDrawnImage(run, place, image, undefined, dirs);
 		return [`there is no reference ${reference.file} yet. The new image is ${shown}`];
 	}
 	const expected = readPng(referencePath);
 	if (expected.width !== image.width || expected.height !== image.height) {
 		save({ status: 'changed', share: 1 });
+		if (keepDrawn) saveDrawnImage(run, place, image, 1, dirs);
 		return [
 			`the image is ${image.width} x ${image.height}, and the reference ${reference.file} is ${expected.width} x ${expected.height}. The new image is ${shown}`,
 		];
 	}
 	const tolerance = toleranceFor(place, reference.tolerance);
 	const { share, diff } = compareImages(expected, image, tolerance.threshold);
+	if (keepDrawn) saveDrawnImage(run, place, image, share, dirs);
 	if (share <= tolerance.maxDiffRatio) return [];
 	save({ status: 'changed', share }, diff);
 	return [
