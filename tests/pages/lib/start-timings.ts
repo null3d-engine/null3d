@@ -52,6 +52,17 @@ export interface Contention {
 	worstMs: number | null;
 }
 
+/** The page's start reading, in milliseconds, or 0 before the page measured one. */
+let startReadingMs = 0;
+
+/**
+ * Milliseconds that the page's fixed arithmetic took as its start began, or 0 before a start. It
+ * reaches the page's result and the run's readings, whose spread says whether a page stood out.
+ */
+export function startCalibration(): number {
+	return startReadingMs;
+}
+
 /** What the trail says about the page's machine beside its start timings. */
 function contentionLine({ startMs, worstMs }: Contention): string {
 	// A reading under the clock's resolution still reads as a speed, not as a division by zero.
@@ -100,6 +111,10 @@ export function watchStartTimings(trail: string[]): void {
 	// machine was while the start ran. The readings stop at the first draw, so the figures stay the
 	// ones that the start paid, not those of the page's later frames.
 	const contention: Contention = { startMs: calibrate(), worstMs: null };
+	startReadingMs = contention.startMs;
+	// The page publishes the reading for a harness that times a page which never publishes a result.
+	(globalThis as { __null3dStartCalibration?: number }).__null3dStartCalibration =
+		contention.startMs;
 	let drawn = false;
 	const show = (text: string) => {
 		if (text === line) return;

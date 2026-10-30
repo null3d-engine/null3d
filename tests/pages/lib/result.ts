@@ -5,7 +5,7 @@
 // steps the page notes itself.
 
 import { MEMORY_REFUSED } from './room';
-import { watchStartTimings } from './start-timings';
+import { startCalibration, watchStartTimings } from './start-timings';
 
 declare global {
 	interface Window {
@@ -190,6 +190,8 @@ export async function publish(name: string, result: Record<string, unknown>): Pr
 		page: name,
 		userAgent: navigator.userAgent,
 		url: location.href,
+		// The page's own speed, which the run's results keep so a page that stood out names itself.
+		calibrationMs: startCalibration(),
 		...result,
 		...(fellBack && !('trail' in result) ? { trail: [...trail] } : {}),
 	};

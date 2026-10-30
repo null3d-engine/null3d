@@ -42,11 +42,15 @@ export function runningTest(
 	return worker === undefined || worker < 0 ? undefined : readRecord(recordPath(worker));
 }
 
-/** Records that `worker` started the test `name` now. */
-export function noteTestRunning(worker: number | undefined, name: string): void {
+/** Records that `worker` started the test `name` at `startedAt`, now unless a caller gives a time. */
+export function noteTestRunning(
+	worker: number | undefined,
+	name: string,
+	startedAt = Date.now(),
+): void {
 	if (worker === undefined || worker < 0) return;
 	mkdirSync(directory(), { recursive: true });
-	writeFileSync(recordPath(worker), JSON.stringify({ name, startedAt: Date.now() }));
+	writeFileSync(recordPath(worker), JSON.stringify({ name, startedAt }));
 }
 
 /** Clears `worker`'s record, which it keeps only while its test runs. */
@@ -57,24 +61,30 @@ export function clearTestRunning(worker: number | undefined): void {
 
 /** Clears every record at the start of a run: one that a crashed worker left would lie. */
 export function clearRunningTests(): void {
-	rmSync(directory(), { recursive: true, force: true });
+	let files: string[];
+	try {
+		files = readdirSync(directory());
+	} catch {
+		return;
+	}
+	for (const file of files)
+		if (/^worker-\d+\.json$/.test(file)) rmSync(join(directory(), file), { force: true });
 }
 
-/** The tests that the other workers were running at `now`, with how long each had run. */
-function neighbours(own: number, now: number): { name: string; runMs: number }[] {
+/** The tests that the other workers were running, with when each started. */
+function neighbours(own: number): { name: string; startedAt: number }[] {
 	let files: string[];
 	try {
 		files = readdirSync(directory());
 	} catch {
 		return [];
 	}
-	const running: { name: string; runMs: number }[] = [];
+	const running: { name: string; startedAt: number }[] = [];
 	for (const file of files) {
 		const index = /^worker-(\d+)\.json$/.exec(file)?.[1];
 		if (index === undefined || Number(index) === own) continue;
 		const record = readRecord(join(directory(), file));
-		if (record !== undefined)
-			running.push({ name: record.name, runMs: Math.max(0, now - record.startedAt) });
+		if (record !== undefined) running.push({ name: record.name, startedAt: record.startedAt });
 	}
 	return running;
 }
@@ -83,18 +93,34 @@ function neighbours(own: number, now: number): { name: string; runMs: number }[]
 const NAMED_NEIGHBOURS = 3;
 
 /**
+ * When `startedAt` reads beside the test that failed: a neighbour that began long after the page was
+ * already stalled did not hold the page, and the words say so.
+ */
+function startBeside(startedAt: number, ownStart: number | undefined, now: number): string {
+	if (ownStart === undefined)
+		return `ran ${((now - startedAt) / 1000).toFixed(1)} s before this failure`;
+	const seconds = Math.abs(startedAt - ownStart) / 1000;
+	if (seconds < 0.5) return 'started with this test';
+	return startedAt > ownStart
+		? `started ${seconds.toFixed(1)} s after this test`
+		: `started ${seconds.toFixed(1)} s before this test`;
+}
+
+/**
  * What a failure adds to name the tests that other workers ran beside it, or nothing outside a
  * Playwright worker, where no record is kept. A run with no other worker says so: a sentence that
- * never appears and a machine that was quiet would otherwise read the same.
+ * never appears and a machine that was quiet would otherwise read the same. Each test's start comes
+ * from its own record, so a neighbour's time reads against this page's start and not the failure's.
  */
 export function neighbourNote(own = workerIndex(), now = Date.now()): string {
 	if (own === undefined) return '';
-	const running = neighbours(own, now)
-		.sort((a, b) => b.runMs - a.runMs)
+	const running = neighbours(own)
+		.sort((a, b) => a.startedAt - b.startedAt)
 		.slice(0, NAMED_NEIGHBOURS);
 	if (running.length === 0) return '; no other worker was running';
+	const ownStart = runningTest(own)?.startedAt;
 	const names = running.map(
-		({ name, runMs }) => `"${name}" (started ${(runMs / 1000).toFixed(1)} s ago)`,
+		({ name, startedAt }) => `"${name}" (${startBeside(startedAt, ownStart, now)})`,
 	);
 	const who = running.length === 1 ? 'another worker was running' : 'other workers were running';
 	return `; ${who} ${names.join(', ')}`;
