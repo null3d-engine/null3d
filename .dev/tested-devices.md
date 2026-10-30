@@ -266,7 +266,30 @@ species, so 78 variants for a preset.
 
 The phone stands in for the S24 class. D-241's generation budget allows a whole variant set to build
 in 200 ms on the slowest measured device, and every preset sits inside it. The cost per variant is
-about 1.7 times the iPad's, whose run is in that device's folder.
+about 1.7 times the iPad's, whose rows are below. Its byte column counts the arrays before the leaf
+parts carried the morph data, so it is lower than the iPad's.
+
+### Tree generation on the iPad Pro 13
+
+The same plan ran on the cloud iPad Pro 13 in Safari 26.6.1
+([its run](tested-devices/ipad-pro-13-safari/20261030-014425-tree-generation.md)). The page
+generated every species at each preset's detail in a worker, six seeds each: 78 variants for a
+preset.
+
+| Preset | Variants | Total (ms) | Per variant (ms) | Triangles | Bytes (MB) |
+| --- | --- | --- | --- | --- | --- |
+| Low | 78 | 105.2 | 1.35 | 337,008 | 20.5 |
+| Medium | 78 | 77.6 | 1.00 | 337,008 | 20.5 |
+| High | 78 | 93.3 | 1.20 | 409,182 | 24.5 |
+| Ultra | 78 | 80.6 | 1.03 | 409,182 | 24.5 |
+
+D-241 allows the set 200 ms on the slowest measured device and 150 ms on the iPad. Every preset sits
+inside both lines, and the slowest is Low at 105.2 ms, 70 per cent of the iPad's line.
+
+The arrays are over the budget that D-241 sets. They take 20.5 MB at Low and Medium and 24.5 MB at
+High and Ultra, where the budget allows 16.7 and 20.0 MB. The leaf parts carry the next level's
+place for each vertex, which the material's morph reads, and that data is part of the array. The
+budget is the owner's and does not move here.
 
 ### The splats add-on at its full count, iPad Pro 13 and Galaxy S24
 

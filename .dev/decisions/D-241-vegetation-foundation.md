@@ -197,8 +197,11 @@ replaces the stand-in, and the stand-in's figures set the shape of the budget.
 
 The package's own generator ran on the S25, at 78 variants for each preset. The set took 163.0 ms at
 Low, 137.9 at Medium, 156.9 at High and 148.9 at Ultra ([its run](../tested-devices/galaxy-s25-sm-s931b-chrome/20261027-002251-tree-generation.md)).
-Its arrays take 16.7 MB at Low and Medium, and 20.0 MB at High and Ultra. The page draws nothing and
-asks for no GPU path, so these are the JavaScript engine's and the worker's figures, not a GPU's.
+The same generator ran on the iPad Pro 13, where the set took 77.6 to 105.2 ms and the arrays take
+20.5 and 24.5 MB ([its run](../tested-devices/ipad-pro-13-safari/20261030-014425-tree-generation.md)).
+The page draws nothing and asks for no GPU path, so these are the JavaScript engine's and the
+worker's figures, not a GPU's. The S25's run counts the arrays before the leaf parts carried the
+morph data, so its byte figures are lower.
 
 **The budgets that every later V task takes, by preset.** The frame and generation figures come
 from measured rows above. The add-on's own GPU time keeps room beside the scene. A later task states
@@ -228,12 +231,14 @@ those presets draw on core WebGPU only, and the tablet offers no WebGPU adapter.
   budget takes the larger Apple figure.
 - **Generation:** the whole tree variant set at any preset must build in under 200 ms on the
   slowest measured device, and under 150 ms on the iPad. The stand-in's 24 variants took 14 to
-  23 ms on the iPhone and the iPad. The package's 78 variants take 79.6 to 94.8 ms on the iPad and
+  23 ms on the iPhone and the iPad. The package's 78 variants take 77.6 to 105.2 ms on the iPad and
   137.9 to 163.0 ms on the S25. The budget leaves the set room to grow.
-- **Memory:** the package's variant arrays take 16.7 MB at Low and Medium and 20.0 MB at High and
-  Ultra, against the stand-in's 7.0 to 22.7 MB. The GPU textures must stay within the measured
-  figures for the same demo and preset, which the add-on shares with the scene. Creek's 3.1 MB of
-  Blender models leave, and the arrays replace them.
+- **Memory:** the budget allows the package's variant arrays 16.7 MB at Low and Medium and 20.0 MB
+  at High and Ultra, against the stand-in's 7.0 to 22.7 MB. They take 20.5 and 24.5 MB on the iPad,
+  over that line, because the leaf parts carry the next level's place for each vertex. The owner's
+  budget does not move. The GPU textures must stay within the measured figures for the same demo and
+  preset, which the add-on shares with the scene. Creek's 3.1 MB of Blender models leave, and the
+  arrays replace them.
 
 ## The generator's shape
 
