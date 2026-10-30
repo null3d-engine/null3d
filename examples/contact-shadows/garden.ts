@@ -4,9 +4,22 @@
 // granite curb on a moss lawn. A plaster wall closes the back and the left side, with bamboo and
 // pines beyond it. Each object in the garden casts and receives shadows, so contact shadows show
 // wherever things touch.
-import { type MeshArrays, math, quat, type SketchContext } from '@null3d/engine';
+import { type Camera, type MeshArrays, math, quat, type SketchContext } from '@null3d/engine';
 import { icosahedron } from '@null3d/geometry';
-import { type Arrays, grid, TURN } from '../lib/pines';
+import {
+	bakePlantAtlases,
+	builtInSpecies,
+	generatePlant,
+	leafCellFor,
+	type PlantMaterial,
+	plantMaterial,
+	plantWind,
+	setWindLayer,
+	swayDistanceFor,
+	treeValues,
+} from '@null3d/vegetation';
+import { createWind } from '@null3d/wind';
+import { TURN } from '../lib/pines';
 import { random } from '../lib/procedural';
 
 /** The sand bed's side in meters, its texels along each side, and the rake's spacing in meters. */
@@ -35,8 +48,6 @@ const PINES = [
 	[-21, -3, 6.5],
 	[-19, 4, 4.5],
 ] as const;
-/** The pines' tiers of boughs, lowest first, for a tree 1 high: base height, radius and height. */
-const TIERS = [0, 1, 2, 3, 4, 5, 6].map((k) => [0.16 + k * 0.11, 0.36 - k * 0.042, 0.2] as const);
 /**
  * The wall's two runs, behind the garden and along its left side: middle x and z, width, depth
  * and height. The low sun stands on the left, so the left run is low enough to leave the bed lit.
@@ -76,43 +87,9 @@ function noise(size: number, cells: number): Float32Array {
 	return out;
 }
 
-/**
- * A pine 1 high: a trunk under tiers of boughs, each tier ragged around its edge and drooping at
- * its tips, in mottled greens that lighten toward the tips' new growth.
- */
-function pine(): MeshArrays {
-	const next = random(7);
-	const out: Arrays = { positions: [], colors: [], indices: [] };
-	grid(out, 8, 1, (u, h) => {
-		const a = u * TURN;
-		return [Math.cos(a) * 0.03, h * 0.4, Math.sin(a) * 0.03, 0.16, 0.09, 0.05];
-	});
-	const around = 30;
-	TIERS.forEach(([y, radius, height], k) => {
-		const reach = Array.from({ length: around }, (_, c) => {
-			return 0.8 + 0.25 * Math.sin((c / around) * TURN * 5 + k * 2) + 0.3 * next();
-		});
-		grid(out, around, 4, (u, h) => {
-			const bough = reach[Math.round(u * around) % around] as number;
-			const e = radius * (1 - h) ** 1.3 * math.lerp(bough, 1, h);
-			const a = u * TURN + k;
-			const [tone, fresh] = [(0.55 + 0.45 * h) * (0.6 + 0.8 * next()), (1 - h) ** 3];
-			return [
-				Math.cos(a) * e,
-				y + height * h - 0.1 * bough * (1 - h) ** 2,
-				Math.sin(a) * e,
-				(0.008 + 0.03 * fresh) * tone,
-				(0.1 + 0.1 * fresh) * tone,
-				(0.03 + 0.01 * fresh) * tone,
-			];
-		});
-	});
-	return { ...out, computeNormals: true };
-}
-
-/** Builds the garden in the scene of `ctx`. */
-export function garden(ctx: SketchContext): void {
-	const { scene, geometry, materials, textures } = ctx;
+/** Builds the garden in the scene of `ctx`, with its plants swaying in the field of `camera`. */
+export function garden(ctx: SketchContext, camera: Camera): { update(): void } {
+	const { scene, geometry, materials, textures, quality } = ctx;
 	const solid = { castShadows: true, receiveShadows: true } as const;
 	const flat = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
 
@@ -211,20 +188,54 @@ export function garden(ctx: SketchContext): void {
 			...solid,
 		});
 	}
-	const pines = scene.createInstances(geometry.fromArrays(pine()), PINES.length, {
-		material: materials.standard({
-			color: '#ffffff',
-			roughness: 0.85,
-			vertexColors: true,
-			doubleSided: true,
-		}),
+	// The pines beyond the wall are the add-on's conifers, at its three levels and in the scene's
+	// one wind field: one variant, each copy its own height and turn.
+	const conifer = builtInSpecies('conifer');
+	if (!conifer) throw new Error('the vegetation add-on has no conifer');
+	const atlases = bakePlantAtlases(ctx);
+	const wind = createWind(ctx, { camera, box: 32, grid: 64 });
+	const swayDistance = swayDistanceFor(quality.preset);
+	const plantMaterials: PlantMaterial[] = [];
+	const pineAsset = generatePlant(conifer, { seed: 5, variant: 0, levels: conifer.levels });
+	const pineField = plantWind(ctx, pineAsset, wind.field, { swayDistance });
+	const pineBark = plantMaterial(ctx, {
+		atlases,
+		part: 'wood',
+		color: conifer.color.bark,
+		wind: pineField,
 	});
-	PINES.forEach(([x, z, height], i) => {
-		pines.positions.set([x, 0, z], i * 3);
-		pines.scales.set([height, height, height], i * 3);
-		pines.rotations.set([0, Math.sin(i), 0, Math.cos(i)], i * 4);
+	const pineLeaves = plantMaterial(ctx, {
+		atlases,
+		part: 'leaves',
+		cell: leafCellFor(conifer),
+		color: conifer.color.leaf,
+		transmission: conifer.color.transmission,
+		wind: pineField,
 	});
-	pines.markDirty();
+	plantMaterials.push(pineBark, pineLeaves);
+	for (const part of pineAsset.levels[0]?.parts ?? []) {
+		const base = geometry.fromArrays(part.arrays);
+		base.setLevels(
+			pineAsset.levels.slice(1).map((level) => {
+				const coarser = level.parts.find((other) => other.name === part.name);
+				if (!coarser) throw new Error(`a ${part.name} part has no level at ${level.error} m`);
+				return { mesh: geometry.fromArrays(coarser.arrays), error: level.error };
+			}),
+			{ fade: false },
+		);
+		const batch = scene.createInstances(base, PINES.length, {
+			material: part.name === 'wood' ? pineBark : pineLeaves,
+			values: true,
+			...solid,
+		});
+		PINES.forEach(([x, z, height], i) => {
+			batch.positions.set([x, 0, z], i * 3);
+			batch.scales.fill(height / conifer.height, i * 3, i * 3 + 3);
+			batch.rotations.set([0, Math.sin(i), 0, Math.cos(i)], i * 4);
+			batch.values?.set(treeValues(x, z, 5, 0), i * 4);
+		});
+		batch.markDirty();
+	}
 	// Bamboo: tall jointless stalks that lean a little, with narrow leaves that hang from their
 	// upper halves.
 	const next = random(3);
@@ -364,41 +375,54 @@ export function garden(ctx: SketchContext): void {
 		);
 	}
 	pebbles.markDirty();
-	// Tufts of grass: thin blades that lean out from a root, at the rocks and the lantern.
-	const BLADES = 12;
+	// Tufts of grass at the rocks and the lantern are the add-on's meadow-grass rosettes, one to a
+	// root, each its own size and turn, in the same wind field. The rosettes' costs are measured
+	// with the demo's budget, since M3-V8's GPU grass is not built.
+	const grassSpecies = builtInSpecies('meadow-grass');
+	if (!grassSpecies) throw new Error('the vegetation add-on has no meadow grass');
 	const roots = [
 		...ROCKS.map(([x, z, r]) => [x + r * 0.9, z + r * 0.5] as const),
 		[LANTERN[0] - 0.3, LANTERN[1] + 0.3] as const,
 	];
-	const grass = scene.createInstances(
-		geometry.cone({ radius: 0.012, height: 1, radialSegments: 4 }),
-		roots.length * BLADES,
-		{
-			material: materials.standard({ color: '#ffffff', roughness: 0.8 }),
-			colors: true,
-			...solid,
-		},
-	);
-	roots.forEach(([x, z], tuft) => {
-		for (let b = 0; b < BLADES; b++) {
-			const i = tuft * BLADES + b;
-			const [a, lean, h] = [
-				math.randFloat(0, Math.PI * 2),
-				math.randFloat(0.1, 0.6),
-				math.randFloat(0.2, 0.4),
-			];
-			const [s, c] = [Math.sin(a), Math.cos(a)];
-			const tip = [-s * Math.sin(lean), Math.cos(lean), c * Math.sin(lean)];
-			grass.positions.set([x + (tip[0] * h) / 2, (tip[1] * h) / 2, z + (tip[2] * h) / 2], i * 3);
-			grass.rotations.set(
-				[Math.sin(lean / 2) * c, 0, Math.sin(lean / 2) * s, Math.cos(lean / 2)],
-				i * 4,
-			);
-			grass.scales.set([1, h, 1], i * 3);
-			grass.colors?.set([math.randFloat(0.08, 0.2), math.randFloat(0.22, 0.35), 0.04, 1], i * 4);
-		}
+	const grassAsset = generatePlant(grassSpecies, {
+		seed: 5,
+		variant: 0,
+		levels: grassSpecies.levels,
 	});
-	grass.markDirty();
+	const grassField = plantWind(ctx, grassAsset, wind.field, { swayDistance });
+	const grassLeaves = plantMaterial(ctx, {
+		atlases,
+		part: 'leaves',
+		cell: leafCellFor(grassSpecies),
+		color: grassSpecies.color.leaf,
+		transmission: grassSpecies.color.transmission,
+		wind: grassField,
+	});
+	plantMaterials.push(grassLeaves);
+	for (const part of grassAsset.levels[0]?.parts ?? []) {
+		const base = geometry.fromArrays(part.arrays);
+		base.setLevels(
+			grassAsset.levels.slice(1).map((level) => {
+				const coarser = level.parts.find((other) => other.name === part.name);
+				if (!coarser) throw new Error(`a ${part.name} part has no level at ${level.error} m`);
+				return { mesh: geometry.fromArrays(coarser.arrays), error: level.error };
+			}),
+			{ fade: false },
+		);
+		const batch = scene.createInstances(base, roots.length, {
+			material: grassLeaves,
+			values: true,
+			...solid,
+		});
+		roots.forEach(([x, z], i) => {
+			batch.positions.set([x, 0, z], i * 3);
+			batch.scales.fill(math.randFloat(0.6, 1), i * 3, i * 3 + 3);
+			const turn = math.randFloat(0, Math.PI * 2);
+			batch.rotations.set([0, Math.sin(turn / 2), 0, Math.cos(turn / 2)], i * 4);
+			batch.values?.set(treeValues(x, z, 5, 0), i * 4);
+		});
+		batch.markDirty();
+	}
 	// A stone lantern with a warm light in its fire box.
 	const [lx, lz] = LANTERN;
 	const parts = [
@@ -427,4 +451,17 @@ export function garden(ctx: SketchContext): void {
 		intensity: 1.5,
 		range: 3,
 	});
+	// A preset change gives the plants the new preset's distance, as M3-E6 asks.
+	quality.onChange(() => {
+		const distance = swayDistanceFor(quality.preset);
+		for (const material of plantMaterials) material.setUniform('swayDistance', distance);
+	});
+	return {
+		update() {
+			// The field's box follows the camera, and a gust and a push fade, so it steps every frame.
+			wind.update();
+			// The field keeps two states, so the plants read the one that this frame's run wrote.
+			setWindLayer(plantMaterials, wind.field);
+		},
+	};
 }
