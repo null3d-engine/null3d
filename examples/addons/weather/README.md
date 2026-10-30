@@ -141,11 +141,14 @@ The page times a plain ground against the wet ground, and the wet ground against
 with the planar mirror, in turns. The figures per GPU path and preset are in
 [the run file](../../../.dev/tested-devices/macbook-pro-m3-max-chrome/20261030-120731-weather-cost.md).
 
-On an Apple M3 Max with Chrome 156 at 1920 by 1080, the wet surface added about half a millisecond
-of GPU time at Low and less at Medium, and the run's variation hides it above that. The planar
-mirror was small on WebGPU and compatibility. On WebGL2 it cost 1.6 to 4.1 ms of GPU time and about
-0.6 ms of CPU time, because the pass draws the whole view again for the driver as well as the GPU.
-No row moved a frame interval.
+On an Apple M3 Max with Chrome 156 at 1920 by 1080, the wet surface added 0.568 ms of GPU time on
+WebGPU at Low, 0.576 ms on compatibility and 0.559 ms on WebGL2. The three agree within 0.02 ms, so
+the water's cost is the shader's own work rather than the path's. Above Medium the run's variation
+hides it.
+
+The planar mirror was small on WebGPU and compatibility. On WebGL2 it cost 1.6 to 4.1 ms of GPU time
+and about 0.6 ms of CPU time, because the pass draws the whole view again for the driver as well as
+the GPU. No row moved a frame interval.
 
 The windshield is one blended draw of the canopy's own triangles, and the splashes and steam are
 particle buffers of the sizes their calls name.
@@ -169,6 +172,11 @@ particle buffers of the sizes their calls name.
   picture test of a scene with a cadenced pass must let the pass draw once before it captures.
 - The plan: the reader copies the block. An edited copy fails `wet.test.ts` until it is copied
   again from `wet.wgsl`.
+- Eight of the pictures that this add-on moves are owed to a CI picture run: the weather test's
+  three tiers, the Skyway demo's three (its ground is wet now) and the night town comparison's two
+  (its street draws rain). The weather test's three are missing, so `bun run limits` fails until
+  they are drawn. The other five exist but are stale, and so does the comparison's Linux WebGL2
+  device reference, which the device tolerance of half a per cent leaves probably passing.
 - The drops and the reflections need both GPU paths, as the rest of the engine does.
 
 ## Licence
