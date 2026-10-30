@@ -634,9 +634,10 @@ describe("CI's workflow", () => {
 
 	it('hands on the drawings under the head and the shard, also when the shard fails', () => {
 		// A reference holds only for the tree that drew it, so the name carries the head. The step
-		// keeps running after a failed test step, since a shard that fails while drawing is one of
-		// the cases the artifact serves: !cancelled() is a status check, so GitHub adds no success().
-		const afterFailure = expression("!cancelled() && inputs['drawn-images']");
+		// keeps running whatever the shard's result, a cancelled one included: a shard that runs
+		// out of time after drawing its pictures is exactly the one whose drawings are hardest to
+		// repeat, and a job stops at its time limit instead of failing a step.
+		const afterFailure = expression("always() && inputs['drawn-images']");
 		for (const [job, part] of [
 			['browser', `browser-shard-${expression('matrix.shard')}`],
 			['browser-heavy', `heavy-shard-${expression('matrix.shard')}`],

@@ -1063,8 +1063,12 @@ jobs:
     # of the full run take the same condition.
     if: &full-run "github.event_name != 'push' || github.ref == 'refs/heads/main'"
     runs-on: ubuntu-latest
-    # The weights fill each shard to about the same time: on the three full runs that measured the
-    # split they make, the slowest shard models 12.5 minutes of tests and its setup about a minute.
+    # The weights give each shard about the same time, and each shard runs one worker: two workers
+    # on two cores made pages wait, and a page that waits out its own limit fails where its work
+    # was never slow. On run 40994532941 the split models its slowest shard at 16.9 minutes, against
+    # 17.2 measured for the split of two workers and 23 shards, so it costs no wall clock. No
+    # weights can go below that: a test group stays whole in one shard and runs in order, and the
+    # longest group alone takes 16.9 minutes.
     # A slow machine runs the tests twice as slowly but pays the setup once, so the room a shard
     # needs is 26 minutes; the limit rounds that up rather than doubling the setup as well. It is
     # room for a slow machine, not for a hang.
@@ -1076,7 +1080,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33]
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       # Its tests read no production build, so the run builds none (tests/playwright.config.ts).
@@ -1108,10 +1112,10 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "83:74:16:67:115:192:216:358:307:174:150:115:21:127:140:177:136:114:298:101:84:88:88"
+          PWTEST_SHARD_WEIGHTS: "76:31:51:28:4:7:149:108:112:154:90:402:288:147:156:87:39:15:127:109:97:125:100:41:59:77:264:73:66:67:71:77:68"
           # Set only by a run started by hand that asked for the drawings.
           NULL3D_TAKE_IMAGES: ${{ inputs['drawn-images'] && '1' || '' }}
-        run: bun run test:browser --grep-invert "@alone|$CITY_TESTS|$HEAVY_TESTS" --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+        run: bun run test:browser --grep-invert "@alone|$CITY_TESTS|$HEAVY_TESTS" --shard=${{ matrix.shard }}/${{ strategy.job-total }} --workers=1
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them. The drawings, which the run keeps only when
       # it was asked for them, have an artifact of their own.
@@ -1126,7 +1130,9 @@ jobs:
       # Every picture that the shard drew, when the run asked for them. The name carries the head
       # and the shard, because a reference holds only for the tree and the renderer that drew it.
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() && inputs['drawn-images'] }}
+        # Always, not only when the job has not been cancelled: a shard that runs out of time is
+        # exactly the one whose drawings are hardest to reproduce.
+        if: ${{ always() && inputs['drawn-images'] }}
         with:
           name: drawn-images-${{ github.sha }}-browser-shard-${{ matrix.shard }}
           path: test-results/drawn/
@@ -1226,7 +1232,9 @@ jobs:
       # Every picture that the shard drew, when the run asked for them. The name carries the head
       # and the shard, because a reference holds only for the tree and the renderer that drew it.
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() && inputs['drawn-images'] }}
+        # Always, not only when the job has not been cancelled: a shard that runs out of time is
+        # exactly the one whose drawings are hardest to reproduce.
+        if: ${{ always() && inputs['drawn-images'] }}
         with:
           name: drawn-images-${{ github.sha }}-heavy-shard-${{ matrix.shard }}
           path: test-results/drawn/
@@ -1363,7 +1371,9 @@ jobs:
       # Every picture that the city drew, when the run asked for them. The name carries the head,
       # because a reference holds only for the tree and the renderer that drew it.
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() && inputs['drawn-images'] }}
+        # Always, not only when the job has not been cancelled: a shard that runs out of time is
+        # exactly the one whose drawings are hardest to reproduce.
+        if: ${{ always() && inputs['drawn-images'] }}
         with:
           name: drawn-images-${{ github.sha }}-city
           path: test-results/drawn/
