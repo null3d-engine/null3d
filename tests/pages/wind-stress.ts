@@ -16,6 +16,9 @@ interface StressState {
 	scale: number;
 	preset: string;
 	layer: number;
+	/** The load that the device's instance limit allowed. */
+	cards: number;
+	maxInstances: number;
 	settings: Readonly<Record<string, number | string>>;
 }
 
@@ -97,8 +100,8 @@ run('wind-stress', async () => {
 		tier: engine.capabilities.tier,
 		requested: preset,
 		preset: light.state?.preset ?? preset,
-		cards,
-		maxInstances: engine.capabilities.maxInstances,
+		cards: light.state?.cards ?? cards,
+		maxInstances: light.state?.maxInstances ?? engine.capabilities.maxInstances,
 		light,
 		heavy,
 		bottom,

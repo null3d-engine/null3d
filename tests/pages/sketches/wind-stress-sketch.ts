@@ -6,8 +6,8 @@ import { defineSketch, type QualityPreset, type SketchContext } from '@null3d/en
 import { createWind } from '@null3d/wind';
 
 const params = new URL(import.meta.url).searchParams;
-/** The cards that the page may switch on, and how far they stand from the middle. */
-const CARDS = Number(params.get('cards') ?? '40000');
+/** The cards the page asks for, and how far they stand from the middle. */
+const REQUESTED = Number(params.get('cards') ?? '40000');
 const GROUND = 36;
 
 /** The card's material: a plane whose top leans with the air at its foot. */
@@ -50,6 +50,10 @@ export default defineSketch((ctx: SketchContext) => {
 	scene.createAmbientLight({ intensity: 0.45 });
 
 	const wind = createWind(ctx, { camera, box: 96 });
+
+	// The device's instance limit counts the scene's own objects too, so the load keeps room for
+	// them. A phone with WebGPU's default limits therefore takes a smaller load than the Mac.
+	const CARDS = Math.max(1, Math.min(REQUESTED, ctx.engine.capabilities.maxInstances - 2048));
 
 	scene.createMesh({
 		mesh: geometry.plane({ width: GROUND * 2, height: GROUND * 2 }),
@@ -104,6 +108,8 @@ export default defineSketch((ctx: SketchContext) => {
 				scale: quality.renderScale,
 				preset: quality.preset,
 				layer: wind.field.texture.layer,
+				cards: CARDS,
+				maxInstances: ctx.engine.capabilities.maxInstances,
 				settings: { ...wind.settings },
 			});
 		}
