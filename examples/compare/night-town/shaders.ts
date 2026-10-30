@@ -153,34 +153,97 @@ fn surface(input: SurfaceInput) -> Surface {
 /**
  * The wet street: asphalt that rain has darkened, puddles that mirror the town through the
  * reflection pass and ripple where drops land, water along the curbs, and paint: a double line
- * down each street and a crossing at each corner. The wet asphalt between the puddles shows the
- * same mirror at `wetMirror`, smeared up and down the screen by its grain, so each light leaves a
- * broken streak. That share is where screen-space reflections take over once they join: the
- * puddles keep the planar mirror, which wins on its plane.
+ * down each street and a crossing at each corner. The asphalt between the puddles shows the same
+ * mirror, smeared up and down the screen by its grain, so each light leaves a broken streak. The
+ * water itself comes from the weather add-on's block, which the surface calls at its end; the
+ * street keeps its own maps, paint and water depth.
  */
 export const STREET_WGSL = /* wgsl */ `
+#import null3d::noise::{value2}
 #import null3d::reflection::{reflection_uv}
 
-struct Uniforms { time: f32, puddleShare: f32, wetDarken: f32, mirrorShare: f32, wetMirror: f32 }
+struct Uniforms { wetDarken: f32, wet0: vec4f, wet1: vec4f, wet2: vec4f }
 
 var colorMap: texture_2d<f32>;
 var ormMap: texture_2d<f32>;
 var normalMap: texture_2d<f32>;
 var puddleMap: texture_2d<f32>;
-var mirror: texture_2d<f32>;
+var wetMirror: texture_2d<f32>;
 
-fn town_hash(a: i32, b: i32, c: i32) -> f32 {
-    var h = (bitcast<u32>(a) * 0x27d4eb2du) ^ (bitcast<u32>(b) * 0x165667b1u) ^ (bitcast<u32>(c) * 0x9e3779b9u);
-    h = h ^ (h >> 15u);
-    h = h * 0x2c1b3c6du;
-    h = h ^ (h >> 12u);
-    h = h * 0x297a2d39u;
-    h = h ^ (h >> 15u);
-    return f32(h >> 8u) / 16777216.0;
+// <wet-surface>
+/// The water depth at a place from two octaves of value noise, for a scene with no puddle map. The
+/// scale is the width of the largest puddles in meters, and the result runs from 0 for dry ground
+/// to 1 for deep water.
+fn wet_noise_depth(p: vec2f, scale: f32) -> f32 {
+    let large = value2(p / max(scale, 1e-3));
+    let small = value2(p / max(scale * 0.37, 1e-3) + 13.0);
+    return large * 0.68 + small * 0.32;
 }
-fn ripple_hash(c: vec2f) -> f32 {
-    return town_hash(i32(c.x), i32(c.y), 0);
+
+/// Adds water to a surface. The state is the scene's surface, which this returns wetted; the depth
+/// is the scene's own water depth, from a map or from wet_noise_depth, where 0 is dry ground. The
+/// vectors carry the look:
+/// wet0 = (puddle coverage, edge softness, ripple cell in meters, ripples a second),
+/// wet1 = (darken, planar mirror share, wet roughness, ripple strength),
+/// wet2 = (time, rain, grain scale, dry asphalt's share of the planar mirror).
+/// The surface faces up, as a road or a floor does.
+fn wet_surface(
+    state: Surface,
+    input: SurfaceInput,
+    depth: f32,
+    wet0: vec4f,
+    wet1: vec4f,
+    wet2: vec4f,
+) -> Surface {
+    var s = state;
+    let p = input.worldPosition.xz;
+    let rain = clamp(wet2.y, 0.0, 1.0);
+    let edge = 1.0 - wet0.x;
+    let water = smoothstep(edge, edge + max(wet0.y, 1e-4), depth) * rain;
+    // The asphalt between the puddles keeps its grain, but rain has darkened and smoothed it, and
+    // it shows a share of the planar mirror that its grain breaks into streaks.
+    let road = (1.0 - water) * clamp(wet2.w, 0.0, 1.0) * rain;
+    if (water <= 0.0 && road <= 0.0) {
+        return s;
+    }
+
+    // Rain rings: one drop at a time in each cell, its place and its moment from the cell's hash.
+    // The cell is wet0.z meters across, and its ring grows and fades over a second or so.
+    let cell = floor(p / max(wet0.z, 1e-3));
+    let jitter = (vec2f(value2(cell), value2(cell + 17.0)) - 0.5) * 0.35;
+    let at = fract(p / max(wet0.z, 1e-3)) - 0.5 - jitter;
+    let phase = fract(wet2.x * wet0.w + value2(cell + 3.0));
+    let radius = phase * 0.42;
+    let d = (length(at) - radius) / 0.07;
+    let ring = exp(-d * d) * (1.0 - phase) * water;
+    let tilt = normalize(at + vec2f(1e-4, 1e-4)) * ring * wet1.w;
+
+    // The planar mirror, where the scene gave one. The branch is on a uniform, so the sample is
+    // uniform; the texture coordinates are not, which textureSampleLevel allows.
+    var mirrored = vec3f(0.0);
+    if (wet1.y > 0.0) {
+        // The asphalt's grain moves each pixel's sample across the mirror, so each reflected light
+        // leaves a short broken streak on the wet road, while a puddle stays a clean mirror.
+        let grain = vec2f(value2(p * wet2.z), value2(p * wet2.z + 29.0)) - 0.5;
+        let smear = grain * vec2f(0.004, 0.3) * (1.0 - water);
+        let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+        mirrored = textureSampleLevel(
+            wetMirror,
+            wetMirrorSampler,
+            reflection_uv(clip, tilt * 0.08 + smear),
+            0.0,
+        ).rgb;
+    }
+
+    // Water darkens the surface and smooths it, and the rings bend its normal. Light from the
+    // mirror direction takes the place of the environment's reflection where the water shows.
+    s.baseColor = s.baseColor * mix(1.0, wet1.x, water);
+    s.roughness = mix(s.roughness, wet1.z, water);
+    s.normal = normalize(mix(s.normal, vec3f(tilt.x, 1.0, tilt.y), water));
+    s.reflection = vec4f(mirrored, clamp(wet1.y, 0.0, 1.0) * (water + road));
+    return s;
 }
+// </wet-surface>
 
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
@@ -209,38 +272,20 @@ fn surface(input: SurfaceInput) -> Surface {
     color = mix(color, vec3f(0.62, 0.42, 0.05) * worn, yellow);
     color = mix(color, vec3f(0.7, 0.7, 0.68) * worn, white);
 
-    // Water: puddles from the puddle map, the cracks, and a band along each curb.
+    // The water's depth: the puddle map, the cracks, and a band along each curb.
     let curb = max(smoothstep(16.4, 15.0, a.x) * select(0.0, 1.0, on_z_street), smoothstep(16.4, 15.0, a.y) * select(0.0, 1.0, on_x_street));
     let depth = water.r + 0.25 * curb + 0.15 * texel.a;
-    let edge = 1.0 - material.puddleShare;
-    let puddle = smoothstep(edge, edge + 0.035, depth);
-
-    // Rain rings in the water: one drop at a time in each cell of 0.6 m.
-    let cell = floor(p / 0.6);
-    let offset = (vec2f(ripple_hash(cell), ripple_hash(cell + 17.0)) - 0.5) * 0.25;
-    let to = fract(p / 0.6) - 0.5 - offset;
-    let phase = fract(material.time * 0.85 + ripple_hash(cell + 3.0));
-    let radius = phase * 0.28;
-    let d = length(to) * 0.6;
-    let ring = exp(-pow((d - radius) / 0.012, 2.0)) * (1.0 - phase);
-    let tilt = normalize(to + vec2f(0.0001)) * ring * 0.35 * puddle;
-
+    // The street's own tone and normal: the same water threshold the block uses, so dry asphalt
+    // stays dark and a puddle takes its share of the color away.
+    let edge = 1.0 - material.wet0.x;
+    let puddle = smoothstep(edge, edge + max(material.wet0.y, 1e-4), depth);
     let up = vec3f(0.0, 1.0, 0.0);
     let rough_normal = normalize(vec3f(bump.x, 0.0, -bump.y) * 0.3 + up * bump.z);
-    let water_normal = normalize(vec3f(tilt.x, 1.0, tilt.y));
-    s.normal = normalize(mix(rough_normal, water_normal, puddle));
     s.baseColor = s.baseColor * color * mix(material.wetDarken, 0.35, puddle);
-    s.roughness = mix(orm.g * 0.32, 0.03, puddle);
+    s.roughness = orm.g * 0.32;
     s.metalness = 0.0;
-
-    // The asphalt's grain moves each pixel's sample of the mirror up or down the screen.
-    let wet = 1.0 - puddle;
-    let smear = vec2f((water.g - 0.5) * 0.004, (orm.g - 0.855) * 0.6) * wet;
-    let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
-    let uv = reflection_uv(clip, tilt * 0.08 + smear);
-    let mirrored = textureSampleLevel(mirror, mirrorSampler, uv, 0.0).rgb;
-    s.reflection = vec4f(mirrored, (puddle + wet * material.wetMirror) * material.mirrorShare);
-    return s;
+    s.normal = rough_normal;
+    return wet_surface(s, input, depth, material.wet0, material.wet1, material.wet2);
 }
 `;
 

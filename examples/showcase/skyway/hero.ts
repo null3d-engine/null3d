@@ -6,10 +6,20 @@
 // Its paint is a clear coat over a deep blue, with amber running lights down its flanks. Three
 // panels on the rear deck carry screens from the screens add-on: the speed, the altitude and the
 // cockpit's navigation map. Each refreshes at its own rate, and only the part of its picture that
-// changed uploads, so a number, a bar and a moving dot cost no frame work. Two spot lights at the
-// nose light the rain ahead, and a lamp under the belly spills the car's colour on the air below it.
-import { math, type PerspectiveCamera, quat, type SketchContext, vec3 } from '@null3d/engine';
-import { createVehicleHull } from '../../addons/traffic-lanes/index';
+// changed uploads, so a number, a bar and a moving dot cost no frame work. Its canopy carries the
+// weather add-on's rain drops, which slide and leave trails and that a wiper clears now and then.
+// Two spot lights at the nose light the rain ahead, and a lamp under the belly spills the car's
+// colour on the air below it.
+import {
+	type Group,
+	math,
+	type PerspectiveCamera,
+	quat,
+	type SketchContext,
+	vec3,
+} from '@null3d/engine';
+import { createVehicleHull, vehicleCanopy } from '../../addons/traffic-lanes/index';
+import { createWindshield } from '../../addons/weather/index';
 import { EFFECT_LAYER } from '../../lib/layers';
 import { createCockpit } from './cockpit';
 
@@ -61,8 +71,12 @@ fn surface(input: SurfaceInput) -> Surface {
 
 /** The hero car of the scene. */
 export interface Hero {
+	/** The car's world pose, which a splash or steam effect hangs under. */
+	readonly group: Group;
 	/** Flies the car after the camera, or holds it in Manual. Call once per frame. */
 	update(dt: number, t: number, chasing: boolean): void;
+	/** Sets how heavy the rain is on the car's glass, from 0 for a dry glass to 1. */
+	setRain(value: number): void;
 }
 
 /** Where the car starts, from the route's opening pose. */
@@ -91,6 +105,15 @@ export function createHero(ctx: SketchContext, camera: PerspectiveCamera, start:
 		material: paint,
 		parent: body,
 		layers: EFFECT_LAYER,
+	});
+	// The glass carries the weather add-on's drops: beads that slide and leave trails, and a wiper
+	// that clears them now and then. The overlay is a blended surface over the canopy, so the car's
+	// paint and reflections stay under it.
+	const shield = createWindshield(ctx, {
+		mesh: vehicleCanopy(ctx),
+		parent: body,
+		layers: EFFECT_LAYER,
+		wiper: { every: 7, duration: 0.9 },
 	});
 
 	// The engine's two nozzles, and the lamp that plays behind them.
@@ -180,6 +203,7 @@ export function createHero(ctx: SketchContext, camera: PerspectiveCamera, start:
 	opening();
 
 	return {
+		group,
 		update(dt, t, chasing) {
 			if (chasing) {
 				// The car keeps its place ahead of the shot, easing after it.
@@ -213,8 +237,13 @@ export function createHero(ctx: SketchContext, camera: PerspectiveCamera, start:
 			group.setPose(at, spin);
 			engine.set({ strength: 2.6 + Math.sin(t * 17) * 0.45 });
 			engineLight.setIntensity(130 + Math.sin(t * 17) * 26);
+			// The drops slide and the wiper sweeps.
+			shield.update(t);
 			// The panels read out the flight at their own rates.
 			cockpit.update(t, speed * 3.6, at[1] as number);
+		},
+		setRain(value) {
+			shield.setRain(math.clamp(value, 0, 1));
 		},
 	};
 }
