@@ -145,6 +145,10 @@ describe('the presets', () => {
 			windSpringTrees: 64,
 			windGrid: '256',
 		});
+		// The page reads the same values through the add-on's own handle.
+		const figures = context.stats();
+		expect(figures).toBeDefined();
+		if (figures) expect(wind.settings).toEqual(figures.settings);
 		wind.destroy();
 	});
 

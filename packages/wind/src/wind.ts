@@ -100,6 +100,12 @@ export interface Wind {
 	 */
 	sample(x: number, y: number, z: number, out: [number, number, number]): [number, number, number];
 	/**
+	 * The feature's settings, as the preset and the frame-budget governor resolve them now: the step
+	 * interval, the pressure steps, the spring trees and the grid. The object stays the same and its
+	 * values change in place, so read it in a frame without allocating.
+	 */
+	readonly settings: Readonly<Record<string, FeatureValue>>;
+	/**
 	 * Places the box about the camera, runs the steps that the sketch time owes and sends the
 	 * values to the GPU. Call once in each frame.
 	 */
@@ -377,6 +383,9 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 
 	return {
 		field,
+		get settings() {
+			return feature.settings;
+		},
 		setBase(speed, heading) {
 			air.speed = speed;
 			air.heading = heading;

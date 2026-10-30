@@ -66,6 +66,7 @@ Call `update` once in each frame. It places the box about the camera and sends t
 | `sample(x, y, z, out)` | The analytic air at a world place, in meters a second: the field that the solver pulls toward, with the pushes and the gust it injects. It writes `[x, y, z]` into `out`. The solved air is on the GPU. |
 | `update()` | Places the box about the camera, runs the steps that the sketch time owes and sends the values. Call it once in each frame. |
 | `destroy()` | Removes the pass and its texture. |
+| `settings` | The feature's settings as the preset and the governor resolve them now: `windStepMs`, `windPressureSteps`, `windSpringTrees` and `windGrid`. The object stays the same, so read it in a frame without allocating. |
 | `field` | The texture, its box and the steady settings that a reader works the air out from beyond the box. |
 
 The ring holds the three newest pushes, and each fades over three seconds. A page that pushes often therefore keeps a wake behind the body it moves. The newest gust has a slot of its own, so a page's pushes never push its gust out. A gust's wave travels for as long as its reach holds it.
