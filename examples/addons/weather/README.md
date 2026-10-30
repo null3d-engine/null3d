@@ -143,12 +143,13 @@ with the planar mirror, in turns. The figures per GPU path and preset are in
 
 On an Apple M3 Max with Chrome 156 at 1920 by 1080, the wet surface added 0.568 ms of GPU time on
 WebGPU at Low, 0.576 ms on compatibility and 0.559 ms on WebGL2. The three agree within 0.02 ms, so
-the water's cost is the shader's own work rather than the path's. Above Medium the run's variation
-hides it.
+the water's cost is the shader's own work rather than the path's. At Medium and above the run's
+variation hides it.
 
-The planar mirror was small on WebGPU and compatibility. On WebGL2 it cost 1.6 to 4.1 ms of GPU time
-and about 0.6 ms of CPU time, because the pass draws the whole view again for the driver as well as
-the GPU. No row moved a frame interval.
+The planar mirror was small on WebGPU and compatibility. On WebGL2 its CPU cost held at about
+0.6 ms at every preset, and its GPU cost was 3.2 to 4.1 ms at Medium and above. At Low the GPU cost
+is not firm: the two readings gave 0.83 and 1.59 ms, and the first sits beside WebGPU's 0.68 ms at
+the same preset. No row moved a frame interval.
 
 The windshield is one blended draw of the canopy's own triangles, and the splashes and steam are
 particle buffers of the sizes their calls name.
