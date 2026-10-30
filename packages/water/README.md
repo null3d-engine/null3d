@@ -9,7 +9,8 @@ the surface keeps it, and a second effect tints, bends and lights the view from 
 `createOcean` draws an open sea instead. Its waves come from two or three bands of wave spectra.
 Compute passes transform each band into the height of the sea in every frame. One material sums the
 bands at their own scales, lights their slopes, breaks foam on the crests and mirrors the sky.
-WebGL2 draws the same chain as fragment passes.
+WebGL2 draws the same chain as fragment passes. That path is not ready: its heights differ from the
+other paths, and its transform costs far more. Draw the ocean on WebGPU or in compatibility mode.
 
 ## Use
 
