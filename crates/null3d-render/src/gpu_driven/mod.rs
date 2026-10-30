@@ -895,6 +895,8 @@ pub struct GpuDrivenRenderer {
     meshes: MeshBuffers,
     pipelines: PipelineCache,
     lists: ParityLists,
+    /// The upload bound that the frame just recorded used, for a later frame's retry.
+    frame_bound: usize,
     graph: FrameGraph,
     /// The scene's layout, which the camera views draw.
     layout: Layout,
@@ -1072,6 +1074,7 @@ impl GpuDrivenRenderer {
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
             lists: ParityLists::new(config.draw_list_words, config.draw_list_limit),
+            frame_bound: 0,
             graph: {
                 let mut graph = FrameGraph::new(
                     true,
@@ -1492,6 +1495,9 @@ impl GpuDrivenRenderer {
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
+        // A failure before the bound is known leaves no bound to compare, so a later frame retries
+        // only on a changed scene.
+        self.frame_bound = 0;
         // A draw whose count the GPU writes needs the indirect path: the direct path reads every
         // count on the CPU and creates no indirect buffer for the frame's count copy. The first
         // frame picks the builder's path, so a scene that holds such a draw takes the indirect one.
@@ -2189,6 +2195,7 @@ impl GpuDrivenRenderer {
             + self.tiles.shape().map_or(0, |shape| shape.layers as usize);
         let bound = self.upload_bound(shadow_views, active_sources(input))
             + LinesPass::upload_bytes(&input.lines);
+        self.frame_bound = bound;
         arena
             .reset(bound)
             .map_err(|_| uploads_out_of_memory(bound))?;
@@ -3779,6 +3786,43 @@ impl GpuDrivenRenderer {
             pick: self.layout.pick_views,
         });
     }
+
+    /// The upload bound that the next frame can need with the current settings and inputs, or an
+    /// upper bound of it: the shadow views that the settings and lights allow, the sources that
+    /// draw, the tables, and the frame's own uploads. A page that turns off a shadow or steps its
+    /// preset down lowers it, and a frame the memory refused can then record again.
+    fn forecast_bound(&self, input: &FrameInput<'_>) -> usize {
+        self.upload_bound(self.most_shadow_views(input), active_sources(input))
+            + LinesPass::upload_bytes(&input.lines)
+    }
+
+    /// The most shadow views that the current settings and lights can draw: the sun's cascades,
+    /// the sun's hero tile, and the tiles that the spot and point lights fill. A frame can draw
+    /// fewer of the sun's cascades, so this bounds its shadow views from above.
+    fn most_shadow_views(&self, input: &FrameInput<'_>) -> usize {
+        let sun = self.settings.sun_shadow();
+        let cascades = sun
+            .map_or(0, |shadow| shadow.cascades as usize)
+            .min(MAX_CASCADES);
+        let hero = usize::from(sun.is_some_and(|shadow| shadow.hero.is_some()));
+        let settings = self.settings.tile_settings();
+        let faces = if settings.point_shadows {
+            shadow_tiles::POINT_FACES
+        } else {
+            0
+        };
+        let tiles: usize = input
+            .shadow_lights
+            .iter()
+            .map(|light| match light.kind {
+                null3d_core::lights::kind::SPOT => 1,
+                null3d_core::lights::kind::POINT => faces,
+                _ => 0,
+            })
+            .sum();
+        let room = MAX_TILES.saturating_sub(hero);
+        cascades + hero + tiles.min(settings.tiles as usize).min(room)
+    }
 }
 
 impl FrameBuilder for GpuDrivenRenderer {
@@ -3836,9 +3880,9 @@ impl FrameBuilder for GpuDrivenRenderer {
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
         self.settings.set_still(self.lists.still());
-        let active = active_sources(input);
+        let forecast = self.forecast_bound(input);
         let mut took = self.lists.take(input.frame);
-        if took.is_err() && self.lists.can_retry(active, input.structure_changed) {
+        if took.is_err() && self.lists.can_retry(forecast, input.structure_changed) {
             self.reset_gpu();
             took = self.lists.take(input.frame);
         }
@@ -3846,7 +3890,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         let result = self.record_into(input, &mut list, &mut arena);
         let marks = StillMarks::of(input, &self.settings, &self.graph, &self.pipelines);
         self.lists
-            .restore(input.frame, list, arena, marks, result, active)
+            .restore(input.frame, list, arena, marks, result, self.frame_bound)
     }
 
     fn still(&self) -> crate::still::Still {

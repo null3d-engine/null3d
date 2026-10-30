@@ -231,14 +231,20 @@ cannot hold a full load's copies refuses that frame and never traps.
 
 A frame error raised after the frame recorded a command stops the builder. Later frames would draw
 with GPU objects that the dropped commands never made. Every such error halts it, not only this
-one. The builder records again from the start once the page changes the scene. A page that lowers a
-load the engine refused keeps drawing, with no restart. The frame that failed names the
-reason, and the next frame starts the GPU's objects again.
+one. The builder records again from the start on two triggers. The scene changed, or the frame's
+upload bound is smaller than the bound of the frame that halted. The second trigger covers a load
+the page lowered, a sun shadow it turned off and a preset step the governor made down. A frame
+forecasts its bound from the settings and lights before it records, and compares it with the
+bound that the halted frame stored. A page that lowers a load the engine refused keeps drawing,
+with no restart. The frame that failed names the reason, and the next frame starts the GPU's
+objects again.
 
 A rebuilt frame creates every object it draws with. `reset_gpu` forgets every object's bookkeeping,
 so the frame records a creation for each one before any draw. The thread that draws replaces an
 object whose id already exists. So the rebuilt list cannot draw with an object that the dropped
-commands never made. The test `a_frame_that_fails_part_way_draws_nothing_and_a_changed_scene_records_again`
+commands never made. No test fails a mesh upload to reach `MeshStorage::forget` alone. The recovery
+tests draw scenes whose meshes fit, and they hold the rebuilt list against the mock backend. None
+makes a mesh upload fail, so the forget itself is never under test. The test `a_frame_that_fails_part_way_draws_nothing_and_a_changed_scene_records_again`
 in `crates/null3d-render/tests/capacities.rs` holds both halves: the failed frame publishes no
 command, and a frame whose scene changed records again and replays its whole list.
 
