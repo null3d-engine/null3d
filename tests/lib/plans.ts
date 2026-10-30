@@ -1500,6 +1500,56 @@ export function impostorCostPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * The GPU paths of the impostor frame plan's pages, and the presets that each one draws. WebGL2 and
+ * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
+ * under another name.
+ */
+const IMPOSTOR_FRAME_PATHS = [
+	{ path: 'webgpu', tier: 'webgpu', presets: ['low', 'medium', 'high', 'ultra'] },
+	{ path: 'compat', tier: 'webgpu', presets: ['low', 'medium'] },
+	{ path: 'webgl2', tier: 'webgl2', presets: ['low', 'medium'] },
+] as const;
+
+/**
+ * How long one page of the impostor frame plan may take: the demo builds its forest in code, draws
+ * its first frame, measures five seconds and reads the overlay.
+ */
+const IMPOSTOR_FRAME_TIMEOUT_SECONDS = 600;
+
+/**
+ * The impostors demo at each preset that a GPU path draws, for the far-tree task's frame check: the
+ * demo that shows the far cards holds the frame ceiling of D-241 at its preset. Each page fixes its
+ * path and its preset, and holds the render scale at 1 with the governor's target at a rate that no
+ * frame misses, so each preset's own cost shows. The capabilities page comes first, so a device
+ * without WebGPU skips those pages.
+ */
+export function impostorFramePlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const { path, tier, presets } of IMPOSTOR_FRAME_PATHS)
+		for (const preset of presets)
+			items.push(
+				pageItem(
+					`impostor-frame-${preset}-${path}`,
+					'demo-device',
+					{ kind: 'probe', tier },
+					{
+						switches: [
+							`gpu=${path}`,
+							'demo=impostors',
+							`preset=${preset}`,
+							'target-fps=1',
+							'seconds=5',
+						],
+						timeoutSeconds: IMPOSTOR_FRAME_TIMEOUT_SECONDS,
+					},
+				),
+			);
+	return items;
+}
+
+/**
  * A canvas screen's refresh cost on each GPU path: a 1024 x 1024 OffscreenCanvas whose 256 x 256
  * rectangle refreshes at 30 Hz. The page times the refresh in the sketch and reports the frame's
  * GPU and CPU time with refreshes and without them. D-204 records the figures.
@@ -2430,6 +2480,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'alpha-mask-cost': alphaMaskPlan,
 	'impostor-bake': impostorBakePlan,
 	'impostor-cost': impostorCostPlan,
+	'impostor-frame': impostorFramePlan,
 	'cluster-cost': clusterCostPlan,
 	'history-cost': historyCostPlan,
 	'lod-cost': lodCostPlan,
