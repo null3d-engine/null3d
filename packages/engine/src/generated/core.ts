@@ -177,6 +177,7 @@ export const TONE_MAPPING_NONE = 3;
 export const TONE_MAPPING_AGX_PUNCHY = 4;
 
 export const PARTICLE_RECORD_BYTES = 32;
+export const PARTICLE_BIRTH_FLOATS = 9;
 export const PARTICLE_PARAM_FLOATS = 128;
 export const PARTICLE_FRAME_FLOATS = 4;
 export const PARTICLE_MAX_SYSTEMS = 256;

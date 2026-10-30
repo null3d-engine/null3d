@@ -931,6 +931,21 @@ export interface CoreGlue extends CoreErrors {
 	markParticleRecords(id: number, start: number, count: number): number;
 	/** Marks a particle system's values for the next frame's upload. */
 	markParticleValues(id: number): number;
+	/**
+	 * Makes room for `count` births' parameters in the core's block, nine numbers per birth, and
+	 * returns the address of its first number, or 0 when the memory cannot grow.
+	 */
+	particleRecordBlock(count: number): number;
+	/**
+	 * Writes the records of `count` births from the core's block, from record `first` on, and
+	 * marks them for the next frame's upload.
+	 */
+	writeParticleRecords(id: number, count: number, first: number): number;
+	/**
+	 * Takes whole `seconds` off the birth times of records `from` to `to`, which moves the time
+	 * that they count from, and marks them.
+	 */
+	shiftParticleRecords(id: number, from: number, to: number, seconds: number): number;
 	/** Lets soft particles fade near the surfaces behind them, or draws them with hard edges. */
 	setSoftParticles(on: boolean): number;
 	/**
@@ -1448,6 +1463,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'particleValues',
 	'markParticleRecords',
 	'markParticleValues',
+	'particleRecordBlock',
+	'writeParticleRecords',
+	'shiftParticleRecords',
 	'setSoftParticles',
 	'createVertexDraw',
 	'destroyVertexDraw',
