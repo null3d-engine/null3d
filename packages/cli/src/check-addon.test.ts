@@ -545,6 +545,12 @@ describe('emptyShaders', () => {
 /** An add-on whose entry imports a compute shader, so a build of it holds shader data. */
 const ADDON_FIXTURE = join(import.meta.dirname, '../../../tests/fixtures/check-addon-split');
 
+/** An add-on that builds on another null3D package, which its build must keep external. */
+const ADDON_EXTERNAL_FIXTURE = join(
+	import.meta.dirname,
+	'../../../tests/fixtures/check-addon-external',
+);
+
 /**
  * True where a build of the fixture can run. It needs the engine's core files, which the build job
  * writes, as it writes the shader modules that a compile of the WGSL reads.
@@ -577,6 +583,21 @@ describe('ADDON_EXTERNALS', () => {
 });
 
 describe.skipIf(!BUILDS)('buildAddon', () => {
+	it('keeps a null3D package that the add-on builds on out of its file', async () => {
+		const before = process.env[NO_CACHE];
+		process.env[NO_CACHE] = '1';
+		try {
+			const built = await buildAddon(ADDON_EXTERNAL_FIXTURE, './src/index.ts');
+			expect(built.error).toBeUndefined();
+			const entry = (built.files ?? []).find((file) => file.name === 'addon.js');
+			// The import survives the build, so the file holds the package's name and not its code.
+			expect(entry?.text).toContain('@null3d/impostors');
+		} finally {
+			if (before === undefined) delete process.env[NO_CACHE];
+			else process.env[NO_CACHE] = before;
+		}
+	});
+
 	it('gives the shader data that the entry holds a part of its own', async () => {
 		// A build that reads no cache writes nothing into the fixture and announces no compile, so
 		// the fixture keeps no file of its own and no output escapes into a later test.
