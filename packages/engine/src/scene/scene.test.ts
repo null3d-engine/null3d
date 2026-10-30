@@ -14,6 +14,7 @@ import type { EngineError } from '../errors/engine-error';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
+import { SIZE_MAP_ROWS } from '../generated/gpu';
 import { cameraTransform, LabelLoop } from '../page/label-loop';
 import { LabelSlots, labelCapacity, labelCapacity3d, PageLabels } from '../page/labels';
 import { controlLabels, controlViews, createControlBuffer, Slot } from '../shared/control';
@@ -551,14 +552,19 @@ describe('hold script property paths', () => {
 		const row = (values: number[] | undefined) => values?.map((value) => value || 0);
 		expect(row(last(C.MATERIAL_PARAM_UV_U))).toEqual([1, C.MATERIAL_PARAM_UV_U, 2, 0, 0.5]);
 		expect(row(last(C.MATERIAL_PARAM_UV_V))).toEqual([1, C.MATERIAL_PARAM_UV_V, 0, 3, 0.25]);
-		// Eight maps, two rows each, for both animations.
-		expect(written).toHaveLength(32);
-		expect(row(written.at(-2))).toEqual([
+		// Every map's transform, two rows each, for both animations.
+		expect(written).toHaveLength(SIZE_MAP_ROWS * 4);
+		// The last map that the material keeps takes both animations, so neither stops short of it.
+		const [scaleRow, offsetRow] = written.slice(-2);
+		const scaleParam = scaleRow?.[1] ?? 0;
+		expect(offsetRow?.[1]).toBe(scaleParam + C.MATERIAL_PARAM_MAP_UV_STRIDE / 2);
+		expect(row(scaleRow)).toEqual([1, scaleParam, 2, 0, 0.5]);
+		expect(row(offsetRow)).toEqual([
 			1,
-			C.MATERIAL_PARAM_MAP_UV + 6 * C.MATERIAL_PARAM_MAP_UV_STRIDE,
-			2,
+			scaleParam + C.MATERIAL_PARAM_MAP_UV_STRIDE / 2,
 			0,
-			0.5,
+			3,
+			0.25,
 		]);
 	});
 
