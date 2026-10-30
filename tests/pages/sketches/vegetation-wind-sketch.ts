@@ -132,6 +132,14 @@ export default defineSketch((ctx) => {
 		}
 	}
 
+	// The preset's distance also follows a step of the quality setting, so a governor that lowers
+	// the preset shortens the sway with it, as M3-E6 asks.
+	if (SWAY === undefined)
+		quality.onChange(() => {
+			const distance = swayDistanceFor(quality.preset);
+			for (const material of plantMaterials) material.setUniform('swayDistance', distance);
+		});
+
 	return {
 		onUpdate() {
 			// The field's box follows the camera, and a gust and a push fade, so it steps every frame.
