@@ -198,10 +198,13 @@ export function createWetSurface(ctx: SketchContext, options: WetSurfaceOptions 
 			Math.round(reflection?.every?.[preset] ?? (REFLECT_EVERY[PRESETS.indexOf(preset)] as number)),
 		);
 	let every = everyAt(quality.preset);
+	// How many frames have been updated. The first update switches the pass on for the next frame,
+	// so a scene and a held picture show their mirror from the opening frame.
+	let frame = 0;
 	quality.onChange(() => {
 		every = everyAt(quality.preset);
+		frame = 0;
 	});
-	let frame = 0;
 	return {
 		uniforms,
 		textures: { wetMirror: mirror },
@@ -218,8 +221,10 @@ export function createWetSurface(ctx: SketchContext, options: WetSurfaceOptions 
 				render.setPassEnabled(pass, true);
 				return;
 			}
-			frame = (frame + 1) % every;
-			render.setPassEnabled(pass, frame === 0);
+			// The switch reaches the next frame, so it is set an update early, and the first update
+			// switches the pass on. A frame that leaves it off keeps the last mirror it drew.
+			render.setPassEnabled(pass, frame % every === 0);
+			frame += 1;
 		},
 		set(next) {
 			look = resolveLook(next, look);
@@ -428,6 +433,11 @@ export interface SplashOptions {
 	color?: ColorInput;
 	/** How bright the splashes glow. The default is 0.7. */
 	intensity?: number;
+	/**
+	 * The layers the splashes draw on. Give them a layer that a planar reflection pass leaves out:
+	 * on WebGL2 a particle buffer beside a blended mesh in that pass stops the frame.
+	 */
+	layers?: number;
 }
 
 /** The splashes that drops make where they land. */
@@ -464,6 +474,7 @@ export async function createSplashes(
 		alphaOverLife: [1, 0.7, 0],
 		intensity: options.intensity ?? 0.7,
 		blending: 'additive',
+		...(options.layers !== undefined && { layers: options.layers }),
 		prewarm: true,
 	});
 	return {
@@ -494,6 +505,11 @@ export interface SteamOptions {
 	colors?: readonly [ColorInput, ColorInput];
 	/** The wind that carries the steam, in meters a second. The default is a soft drift. */
 	wind?: Vec3Like;
+	/**
+	 * The layers the steam draws on. Give it a layer that a planar reflection pass leaves out: on
+	 * WebGL2 a particle buffer beside a blended mesh in that pass stops the frame.
+	 */
+	layers?: number;
 }
 
 /** The steam that a hot thing lets out into the rain. */
@@ -528,6 +544,7 @@ export async function createSteam(ctx: SketchContext, options: SteamOptions = {}
 		sizeOverLife: [0.4, 1, 2.2],
 		colors: options.colors ?? ['#9fb6c8', '#6b7784'],
 		alphaOverLife: [0, 0.28, 0.14, 0],
+		...(options.layers !== undefined && { layers: options.layers }),
 		prewarm: true,
 	});
 	return {
