@@ -35,7 +35,7 @@ export const LEAF_WIDTH = LEAF_CELLS_X * LEAF_CELL;
 export const LEAF_HEIGHT = LEAF_CELLS_Y * LEAF_CELL;
 
 /** The most leaves or needles that one card draws. */
-const MAX_LEAVES = 40;
+const MAX_LEAVES = 72;
 /** How wide a leaf's outline fades out at its edge, in fractions of a cell. */
 const LEAF_EDGE = 0.006;
 /** How far the bark's and the leaf's height fields bend their normals, per texel. */
@@ -177,7 +177,7 @@ const FAMILIES = {
 		lobeDepth: 0.2,
 		veins: 3,
 	},
-	needle: { profile: 1, aspect: 0.1, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 1 },
+	needle: { profile: 1, aspect: 0.2, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 1 },
 	blade: { profile: 1, aspect: 0.06, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 3 },
 	hosta: {
 		profile: 0.55,
@@ -389,10 +389,11 @@ function leafPaint(leaf: PlacedLeaf, cardX: number, cardY: number, spot: LeafSpo
 		0.3 * midrib +
 		0.22 * shape.veinStrength * vein +
 		0.12 * (spot.t - 0.5);
-	// The tip catches more light, a slow blotch mottles the blade, and the rim darkens so that two
-	// leaves that overlap still read apart.
+	// The tip catches more light and a slow blotch mottles the blade. The rim darkens a little, so
+	// two leaves that overlap still read apart: a deep band turns every edge of a distant crown
+	// into a dark speckle, so the fall is shallow and starts close to the outline.
 	const blotch = 0.84 + 0.3 * value2(cardX * 6 + leaf.seed * 7.3, cardY * 6 + leaf.seed * 3.1);
-	const rim = 1 - 0.58 * smoothstep(0.72, 1, edge);
+	const rim = 1 - 0.22 * smoothstep(0.86, 1, edge);
 	const light =
 		shape.brightness *
 		(0.84 + 0.26 * spot.t) *
@@ -433,6 +434,20 @@ interface LeafCellPainter {
 /** A texel that holds no leaf: the painter fills its colour and height from the cell's mean. */
 const EMPTY_CELL_POINT: LeafPoint = { color: [1, 1, 1], alpha: 0, height: 0.5, thickness: 0.6 };
 
+/** How wide a cell fades out at its edge, as a share of the cell. */
+const RIM_FADE = 0.02;
+
+/**
+ * The card's coverage at its rim, which falls to nothing at the cell's edge. A leaf that grows past
+ * the edge is cut there, and without the fall its cut is a straight line that a crown shows as a
+ * seam along the card's border.
+ */
+function cellRim(cardX: number, cardY: number): number {
+	const across = smoothstep(0, RIM_FADE, Math.min(cardX, 1 - cardX));
+	const up = smoothstep(0, RIM_FADE, Math.min(cardY, 1 - cardY));
+	return across * up;
+}
+
 /** How far a point of a card lies outside the stem that runs up its middle. */
 function stemDistance(cardX: number, cardY: number, lean: number, half: number): number {
 	const along = 0.5 + lean * Math.sin(Math.PI * cardY) - cardX;
@@ -450,14 +465,39 @@ function stemPoint(distance: number, cardY: number): LeafPoint {
 	};
 }
 
+/** How many tiles across and down a cell sorts its leaves into, for the painter's lookup. */
+const CELL_TILES = 16;
+
+/** The tile of a cell that holds a coordinate, from 0 to the last tile. */
+function tileOf(value: number): number {
+	return Math.min(CELL_TILES - 1, Math.max(0, Math.floor(value * CELL_TILES)));
+}
+
+/**
+ * The leaves of a spray sorted into square tiles of the cell, so a texel tests the leaves that can
+ * reach it rather than all of them. A leaf reaches no further than its own box, so the rest cost
+ * nothing, and a cell of many leaves paints in the time a cell of few took.
+ */
+function tileLeaves(leaves: readonly PlacedLeaf[]): readonly (readonly PlacedLeaf[])[] {
+	const tiles: PlacedLeaf[][] = Array.from({ length: CELL_TILES * CELL_TILES }, () => []);
+	for (const leaf of leaves) {
+		const [left, bottom, right, top] = leaf.box as readonly [number, number, number, number];
+		for (let y = tileOf(bottom); y <= tileOf(top); y++)
+			for (let x = tileOf(left); x <= tileOf(right); x++) tiles[y * CELL_TILES + x]?.push(leaf);
+	}
+	return tiles;
+}
+
 /** Paints a cell from its leaves and the stem that carries them, or from its leaves alone. */
-function leafSpray(leaves: readonly PlacedLeaf[], stem: number | null): LeafCellPainter {
+function leafSpray(all: readonly PlacedLeaf[], stem: number | null): LeafCellPainter {
+	const leaves = tileLeaves(all);
 	return {
 		at(cardX, cardY) {
 			let winner: PlacedLeaf | null = null;
 			let nearest = 1;
 			let covers = 0;
-			for (const leaf of leaves) {
+			const tile = tileOf(cardY) * CELL_TILES + tileOf(cardX);
+			for (const leaf of leaves[tile] as readonly PlacedLeaf[]) {
 				const distance = leafDistance(leaf, cardX, cardY);
 				if (distance < 0) covers += 1;
 				if (distance < nearest) {
@@ -477,7 +517,7 @@ function leafSpray(leaves: readonly PlacedLeaf[], stem: number | null): LeafCell
 			const shade = 1 - 0.14 * Math.min(covers - 1, 2);
 			return {
 				color: [paint.color[0] * shade, paint.color[1] * shade, paint.color[2] * shade],
-				alpha: cover(spot.distance, LEAF_EDGE),
+				alpha: cover(spot.distance, LEAF_EDGE) * cellRim(cardX, cardY),
 				height: paint.height,
 				thickness: paint.thickness,
 			};
@@ -494,27 +534,35 @@ interface SprayOptions {
 	readonly to: number;
 	/** The angle from the card's up axis that the first and the last leaf lean out by. */
 	readonly lean: readonly [number, number];
+	/**
+	 * How far a leaf's angle may wander either side of its lean, in radians. A wide wander breaks the
+	 * card's outline into leaf edges and makes its leaves face different ways.
+	 */
+	readonly turn?: number;
 	/** The length of the first and the last leaf, against the cell's width. */
 	readonly length: readonly [number, number];
-	/** How far the leaves' bases sit either side of the stem. */
+	/** How far a leaf's base may sit from the stem, as a share of the cell's width. */
 	readonly spread: number;
 }
 
-/** Places a spray of leaves along a card, alternating the sides that they grow from. */
+/** Places a spray of leaves over a card, each at a point and an angle of its own. */
 function sprayLeaves(seed: number, family: LeafFamily, options: SprayOptions): PlacedLeaf[] {
 	const leaves: PlacedLeaf[] = [];
 	const count = Math.min(options.count, MAX_LEAVES);
+	const turn = options.turn ?? 0.3;
 	for (let i = 0; i < count; i++) {
-		const f = count > 1 ? i / (count - 1) : 0.5;
+		// The leaves rise up the card in their turn, but each sits at its own height on its own side.
+		const f = count > 1 ? (i + random2(seed * 131 + i, 7)) / count : 0.5;
 		const key = seed * 131 + i;
-		const side = (i & 1) === 0 ? 1 : -1;
-		const along = options.from + (options.to - options.from) * f + (random2(key, 3) - 0.5) * 0.07;
+		const side = random2(key, 8) < 0.5 ? -1 : 1;
+		const along = options.from + (options.to - options.from) * f;
 		const lean = options.lean[0] + (options.lean[1] - options.lean[0]) * f;
-		const angle = side * (lean + 0.3 * (random2(key, 6) - 0.5));
-		const baseX = 0.5 + side * options.spread * random2(key, 5);
+		const angle = side * lean + (random2(key, 6) - 0.5) * 2 * turn;
+		// Bases stay inside the card's middle, so a leaning leaf is not cut off at the cell's edge.
+		const baseX = clamp(0.5 + (random2(key, 5) - 0.5) * 2 * options.spread, 0.2, 0.8);
 		const length =
 			(options.length[0] + (options.length[1] - options.length[0]) * f) *
-			(0.9 + 0.2 * random2(key, 4));
+			(0.82 + 0.36 * random2(key, 4));
 		leaves.push(placeLeaf(key, family, baseX, along, angle, length));
 	}
 	return leaves;
@@ -555,60 +603,68 @@ function broadCell(seed: number): LeafCellPainter {
 function leafCells(): LeafCellPainter[] {
 	return [
 		// Four sprays of broadleaves, each a different outline: an oak's lobes, a beech's fine teeth, a
-		// birch's small teeth and a willow's long narrow blade.
+		// birch's small teeth and a willow's long narrow blade. Each carries many small leaves at
+		// angles of their own, so a card's outline breaks into leaf edges and its leaves face apart.
 		leafSpray(
 			sprayLeaves(11, FAMILIES.oak, {
-				count: 22,
+				count: 62,
 				from: 0.04,
-				to: 0.96,
-				lean: [0.5, 1.45],
-				length: [0.46, 0.3],
-				spread: 0.05,
+				to: 0.9,
+				lean: [0.4, 1.4],
+				turn: 0.9,
+				length: [0.27, 0.17],
+				spread: 0.2,
 			}),
 			0.03,
 		),
 		leafSpray(
 			sprayLeaves(23, FAMILIES.beech, {
-				count: 23,
+				count: 64,
 				from: 0.04,
-				to: 0.96,
-				lean: [0.5, 1.45],
-				length: [0.42, 0.28],
-				spread: 0.05,
+				to: 0.9,
+				lean: [0.4, 1.4],
+				turn: 0.9,
+				length: [0.26, 0.17],
+				spread: 0.2,
 			}),
 			0.02,
 		),
 		leafSpray(
 			sprayLeaves(37, FAMILIES.birch, {
-				count: 24,
+				count: 60,
 				from: 0.03,
-				to: 0.97,
-				lean: [0.55, 1.5],
-				length: [0.38, 0.24],
-				spread: 0.05,
+				to: 0.9,
+				lean: [0.45, 1.45],
+				turn: 0.95,
+				length: [0.22, 0.14],
+				spread: 0.21,
 			}),
 			0.03,
 		),
 		leafSpray(
 			sprayLeaves(41, FAMILIES.willow, {
-				count: 20,
+				count: 62,
 				from: 0.04,
-				to: 0.96,
-				lean: [0.5, 1.4],
-				length: [0.5, 0.32],
-				spread: 0.05,
+				to: 0.9,
+				lean: [0.4, 1.35],
+				turn: 0.8,
+				length: [0.32, 0.2],
+				spread: 0.18,
 			}),
 			0.03,
 		),
-		// A conifer's needle spray, a fern's frond, a clump of grass blades and a broad leaf.
+		// A conifer's needle spray, a fern's frond, a clump of grass blades and a broad leaf. The
+		// needles fan out from the twig at their own angles, so a card reads as a spray and not as a
+		// row of teeth.
 		leafSpray(
 			sprayLeaves(53, FAMILIES.needle, {
-				count: 28,
-				from: 0.06,
-				to: 0.96,
-				lean: [1.2, 0.8],
-				length: [0.3, 0.1],
-				spread: 0.01,
+				count: 72,
+				from: 0.02,
+				to: 0.97,
+				lean: [1.4, 0.4],
+				turn: 0.65,
+				length: [0.46, 0.26],
+				spread: 0.13,
 			}),
 			0.012,
 		),
@@ -680,9 +736,11 @@ function barkColorAt(
 	plate: number,
 ): [number, number, number] {
 	const mix = clamp(height, 0, 1);
-	const dark = [0.34, 0.31, 0.29] as const;
-	const light = [1.15, 1.06, 0.98] as const;
-	const shade = 0.86 + 0.28 * plate;
+	const dark = [0.3, 0.27, 0.25] as const;
+	const light = [1.2, 1.1, 1.0] as const;
+	// One plate sits at a different tone from its neighbours, so a trunk shows bands of bark rather
+	// than one flat colour.
+	const shade = 0.72 + 0.52 * plate;
 	const moss = smoothstep(0.55, 0.85, fbm2(u * 5 + 11, v * 2 + 4, 3)) * 0.4;
 	return [0, 1, 2].map((channel) => {
 		const base =
