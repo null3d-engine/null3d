@@ -1272,8 +1272,10 @@ for them.
 The count rose again with M3-V2: an instance batch whose rows bring values takes its mask's own test, as a mesh without rows does, so `ROW_VALUES` left `APART` beside
 `ALPHA_COVERAGE` and `ALPHA_HASH` in the draw list. The lit templates then build each mask family
 over the row bit, and `SAMPLE_MASK` adds its WebGPU builds beside them, where a multisampled target
-has no alpha. The manifest makes 62,334 GLSL builds and 24,515 WGSL builds, and `BUILD_BUDGET`
-records those figures. The vegetation add-on draws its trees in batches, and the row bit is what
+has no alpha. The count rose by two WGSL builds with M3-R9: the light clusters' depth fit walks the slices by a
+compute pass of its own, `light_depth.wgsl`, which builds once for each of its two targets. The
+manifest now makes 62,334 GLSL builds and 24,517 WGSL builds, and `BUILD_BUDGET` records those
+figures. The vegetation add-on draws its trees in batches, and the row bit is what
 lets such a batch take alpha to coverage.
 
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
