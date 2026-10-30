@@ -110,13 +110,14 @@ export function calibrationNote(ms: unknown, readings = calibrations()): string 
 	const spread = spreadOf(readings);
 	if (!spread) return '';
 	const reading = ms.toFixed(2);
-	// A page whose reading the run did not record still counts among its pages.
+	// The run's readings are the ones recorded when the note is composed, not the run's whole set.
 	const recorded = readings.some((entry) => entry.ms === ms);
 	const count = readings.length + (recorded ? 0 : 1);
-	if (count === 1) return `; its start calibration ${reading} ms, the only page this run measured`;
+	if (count === 1)
+		return `; its start calibration ${reading} ms, the only page this run measured so far`;
 	const place = readings.filter((entry) => entry.ms > ms).length + 1;
 	const where = place === 1 ? 'the highest' : `the ${ordinal(place)} highest`;
-	return `; its start calibration ${reading} ms was ${where} of ${count} pages this run (median ${spread.median.toFixed(2)} ms)`;
+	return `; its start calibration ${reading} ms was ${where} of ${count} pages so far this run (median ${spread.median.toFixed(2)} ms)`;
 }
 
 /** Clears the run's readings, which a run does as it starts. */

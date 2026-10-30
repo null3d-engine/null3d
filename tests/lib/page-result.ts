@@ -5,6 +5,7 @@ import { type ConsoleMessage, errors, type Page } from '@playwright/test';
 import { windowValue } from '../../packages/cli/src/page.js';
 import { neighbourNote } from './running-tests.ts';
 import { type ItemResult, lastSteps } from './runs.ts';
+import { stallMessage } from './stall-message.ts';
 import { calibrationNote, noteCalibration } from './start-calibrations.ts';
 
 /** How long a stalled page may take to answer with its start reading before the failure reports. */
@@ -98,8 +99,8 @@ const pageTrail = (page: Page): Promise<string[]> =>
 /**
  * Waits until the page publishes its result, for as long as the page keeps noting steps in its
  * trail. Each wait lasts `stallMs`, and a wait in which the page noted no new step throws, with the
- * trail's last steps. A page whose work takes longer on a busy machine gets the time it needs, and
- * a stuck page still fails after one wait.
+ * trail's last steps, the page's start reading and the tests that ran beside it. A page whose work
+ * takes longer on a busy machine gets the time it needs, and a stuck page still fails after one wait.
  */
 export async function pageResultWhileProgressing<T>(page: Page, stallMs: number): Promise<T> {
 	let steps = -1;
@@ -111,7 +112,7 @@ export async function pageResultWhileProgressing<T>(page: Page, stallMs: number)
 			const trail = await pageTrail(page);
 			if (trail.length <= steps)
 				throw new Error(
-					`no result and no new step within ${stallMs / 1000} s. The last steps:\n${trail.slice(-5).join('\n')}`,
+					stallMessage(trail, stallMs, (e as { calibrationMs?: number }).calibrationMs),
 				);
 			steps = trail.length;
 		}
