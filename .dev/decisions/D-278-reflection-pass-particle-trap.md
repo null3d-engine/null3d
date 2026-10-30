@@ -3,7 +3,8 @@
 Status: decided. The weather add-on keeps its particle systems on a layer its planar reflection
 pass leaves out, and that workaround is built. The engine fault is open: on WebGL2 a reflection
 pass whose view draws a particle buffer beside a blended mesh stops the frame with a core
-`unreachable` trap. The smallest scene is named below. Task: M3-B4.
+`unreachable` trap. The smallest scene is named below. Found by task M3-B4; the fault itself has no
+task yet.
 
 Summary: On WebGL2, a reflection pass that draws a particle system and a blended mesh in the same
 view stops the frame with an `unreachable` trap in the step after culling. Either draw alone draws,
@@ -42,7 +43,19 @@ overlay alone, and with the splashes and steam alone. The pass with the overlay 
 systems together stopped. The WebGPU and compatibility tiers drew the same scenes.
 
 The engine reports the fault at the frame after the last timed phase, which is the cull, so the
-trap is in the record step. The render worker does not report the panic's message or stack.
+trap is in the record step. The render worker reports no panic message or stack. No hook can
+report one either: the wasm build takes the release profile's `panic = "abort"` (`-Z
+build-std=panic_abort,std`), so a panic is a trap to JavaScript and the hook never runs. The shader
+tool's module states the same limit for a failed request: it aborts the module and never reaches
+the panic hook (`crates/null3d-shaders-wasm/src/lib.rs`).
+
+## First move
+
+The fault needs a name before a fix. The simplest way to get one keeps the current wasm build:
+write a line for each draw of the record step to a buffer that the page reads back. The last line
+then names the pass and the draw that trapped. A message from the panic itself needs a build of
+the render module that keeps unwinding, as `[profile.shader]` does for the shader tool
+(`Cargo.toml`). That is a build change of its own, and it is the second move rather than the first.
 
 ## Look
 
@@ -66,8 +79,8 @@ The options rejected:
   draw in every other scene.
 - **Leave the pass drawing everything and document a crash.** A scene would fail on a device, and
   the fault would read as the add-on's.
-- **Fix the engine fault in this branch.** The fix needs the render worker's trap message, which it
-  does not report. The smallest scene is now in the tree, so the fix has a starting point and a
+- **Fix the engine fault in this branch.** The trap names no call, and a build that reports it is a
+  change of its own. The smallest scene is now in the tree, so the fix has a starting point and a
   test.
 
 ## Consequences
@@ -76,5 +89,6 @@ The options rejected:
   add-on's README states the limit and points here.
 - The weather cost page and its picture test use the layer split, and so does any scene that adds a
   planar pass beside the add-on's particles.
-- The engine fault is a task of its own. A fix would let a reflection pass draw soft particle
-  systems with blended meshes, and the add-on's layer split could then go.
+- The engine fault stays open, and this record is its home until the owner places it in a task. A
+  fix would let a reflection pass draw soft particle systems with blended meshes, and the add-on's
+  layer split could then go.
