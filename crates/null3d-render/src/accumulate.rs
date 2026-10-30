@@ -189,7 +189,9 @@ mod tests {
 
         let mut list = DrawList::with_capacity(256);
         let mut arena = UploadArena::default();
-        arena.reset(UPLOAD_BYTES);
+        arena
+            .reset(UPLOAD_BYTES)
+            .expect("room for the test's uploads");
         let at = pass.prepare(&mut list, &mut arena, 10, 0.25, true).unwrap();
         // The weight's bytes are all volatile: the still comparison leaves them out.
         assert_eq!(at, 0);
@@ -200,14 +202,20 @@ mod tests {
         // Each later frame uploads the weight alone, as the same command whatever its value, and
         // binds nothing again while the color holds.
         let before = list.len();
-        arena.reset(UPLOAD_BYTES);
+        arena
+            .reset(UPLOAD_BYTES)
+            .expect("room for the test's uploads");
         pass.prepare(&mut list, &mut arena, 10, 0.5, false).unwrap();
         let one_frame = list.len() - before;
-        arena.reset(UPLOAD_BYTES);
+        arena
+            .reset(UPLOAD_BYTES)
+            .expect("room for the test's uploads");
         pass.prepare(&mut list, &mut arena, 10, 0.0, false).unwrap();
         assert_eq!(list.len() - before, 2 * one_frame);
         // A color that moved binds again.
-        arena.reset(UPLOAD_BYTES);
+        arena
+            .reset(UPLOAD_BYTES)
+            .expect("room for the test's uploads");
         pass.prepare(&mut list, &mut arena, 20, 0.5, false).unwrap();
         assert_eq!(pass.bound, Some(20));
     }

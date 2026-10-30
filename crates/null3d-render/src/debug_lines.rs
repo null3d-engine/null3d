@@ -378,7 +378,7 @@ mod tests {
         let lines = DebugLines::new(&positions, &colors);
         let mut list = DrawList::with_capacity(64);
         let mut arena = UploadArena::default();
-        arena.reset(4096);
+        arena.reset(4096).expect("room for the test's uploads");
         pass.upload(&mut list, &mut arena, &lines, Some(&camera), limit)
             .expect("the lines fit the buffer");
         let made = created(&list);
@@ -393,7 +393,7 @@ mod tests {
         let lines = DebugLines::new(&positions, &colors);
         let mut list = DrawList::with_capacity(64);
         let mut arena = UploadArena::default();
-        arena.reset(4096);
+        arena.reset(4096).expect("room for the test's uploads");
         assert_eq!(
             pass.upload(&mut list, &mut arena, &lines, Some(&camera), limit),
             Err(RecordError::BufferFull { bytes: limit })
