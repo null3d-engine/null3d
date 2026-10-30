@@ -31,13 +31,16 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 	test(`a still camera keeps the far cascades of a swaying grove on ${gpu}`, async ({ page }) => {
 		test.setTimeout(300_000);
 		// Near plants sway and the far ones stand still, then every plant sways.
-		const near = await count(page, gpu, 40);
+		const near = await count(page, gpu, 16);
 		const every = await count(page, gpu, 0);
 		console.log(
-			`${near.tier} at ${near.preset}: sway 40 m draws ${near.drawCalls.toFixed(1)} calls a frame, every distance draws ${every.drawCalls.toFixed(1)}`,
+			`${near.tier} at ${near.preset}: sway 16 m draws ${near.drawCalls.toFixed(1)} calls a frame, every distance draws ${every.drawCalls.toFixed(1)}`,
 		);
 		expect(near.drawCalls).toBeLessThan(every.drawCalls);
-		// Two far cascades of three redraw every fourth frame, so their plants' draws cost about half
-		// a cascade a frame over the window.
-		expect(every.drawCalls - near.drawCalls).toBeGreaterThan(every.drawCalls * 0.05);
+		// The grove draws eight plant batches, and the two far cascades that only the far plants reach
+		// hold them while those plants stand still. With no sway distance every plant sways, so both
+		// far cascades draw those batches in their turns: the frame draws eight calls fewer with the
+		// distance inside the grove, 26 against 34 on WebGPU and 32 against 40 on WebGL2 at Low. The
+		// bound sits at half the measured gap, well above the noise of a steady count.
+		expect(every.drawCalls - near.drawCalls).toBeGreaterThanOrEqual(4);
 	});

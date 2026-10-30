@@ -22,12 +22,12 @@ const MOTION = params.has('motion');
 const STILL = params.has('still');
 const AUTUMN = Math.min(1, Math.max(0, Number(params.get('autumn') ?? 0)));
 /** How far from the camera the plants sway, in meters: 0 moves them at every distance. */
-const SWAY = Math.max(0, Number(params.get('sway') ?? 40));
+const SWAY = Math.max(0, Number(params.get('sway') ?? 16));
 /** The scene's seed, which the plants' shapes and their tints come from. */
 const SEED = 12;
-const VARIANTS = 3;
+const VARIANTS = 4;
 /** The copies of each variant, one behind another along the view. */
-const COPIES = 6;
+const COPIES = 7;
 /** The quaternion that lays a plane, which faces +Z, flat on the ground. */
 const FLAT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
 
@@ -39,12 +39,15 @@ export default defineSketch((ctx) => {
 	void quality.set({ governor: false });
 	scene.setBackground('#9fc0dd');
 	scene.createAmbientLight({ intensity: 0.5 });
+	// The sun stands in front of the camera, so the far cascades lie along its direction ahead of
+	// the near plants: a near plant that sways does not reach the farthest box, and the far plants
+	// stand still past the sway distance.
 	scene.createDirectionalLight({
-		direction: [-0.6, -0.9, -0.35],
+		direction: [0.15, -0.3, 1],
 		color: '#fff3dc',
 		intensity: 2.7,
 		castShadows: true,
-		shadow: { cascades: 3, mapSize: 2048, distance: 160 },
+		shadow: { cascades: 3, mapSize: 2048, distance: 200 },
 	});
 	scene.createMesh({
 		mesh: geometry.plane({ width: 500, height: 500 }),
@@ -54,11 +57,13 @@ export default defineSketch((ctx) => {
 	});
 
 	const camera = scene.createPerspectiveCamera({
-		fov: 45,
+		// A long lens keeps the far cascades small across the light, so the near plants that sway
+		// stand outside their boxes and those cascades keep the layers they hold.
+		fov: 20,
 		near: 0.1,
 		far: 600,
-		position: [0, 6, 34],
-		target: [0, 7, -40],
+		position: [0, 5, 8],
+		target: [0, 7, -80],
 	});
 	scene.setActiveCamera(camera);
 	const wind = createWind(ctx, {
@@ -101,8 +106,8 @@ export default defineSketch((ctx) => {
 			for (let row = 0; row < COPIES; row++) {
 				// The rows stand behind one another along the view, so the near plants are inside
 				// the sway distance and the far ones past it.
-				const x = (variant - 1) * 9 + (row - (COPIES - 1) / 2) * 5.5;
-				const z = -6 - row * 18 - variant * 3;
+				const x = (variant - (VARIANTS - 1) / 2) * 7 + (row - (COPIES - 1) / 2) * 1.5;
+				const z = -3 - row * 16 - variant * 1.5;
 				batch.positions.set([x, 0, z], row * 3);
 				const yaw = (row + variant) * 0.7;
 				batch.rotations.set([0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)], row * 4);

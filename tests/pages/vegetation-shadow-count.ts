@@ -9,7 +9,7 @@ import { progress, run } from './lib/result';
 
 const params = new URLSearchParams(location.search);
 /** How far from the camera the plants sway, in meters: 0 moves them at every distance. */
-const SWAY = Math.max(0, Number(params.get('sway') ?? 40));
+const SWAY = Math.max(0, Number(params.get('sway') ?? 16));
 /** The seconds that the measurement runs for. */
 const SECONDS = Math.max(0.5, Number(params.get('seconds') ?? 2));
 
