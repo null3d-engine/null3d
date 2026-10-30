@@ -286,8 +286,8 @@ preset.
 D-241 allows the set 200 ms on the slowest measured device and 150 ms on the iPad. Every preset sits
 inside both lines, and the slowest is Low at 105.2 ms, 70 per cent of the iPad's line.
 
-The arrays take 20.5 MB at Low and Medium and 24.5 MB at High and Ultra, which is the budget that
-D-241 sets. The leaf parts carry the next level's place for each vertex, which the material's morph
+The arrays take 20.5 MB at Low and Medium and 24.5 MB at High and Ultra, which is inside the 25 and 30 MB
+that D-241 sets. The leaf parts carry the next level's place for each vertex, which the material's morph
 reads.
 
 ### Tree generation on the Galaxy S25 with the leaf morph data
@@ -313,8 +313,8 @@ The first run
 213.4 ms at Low while the cloud reported the phone hot. It is discarded as an upper bound, and the
 two runs differ by 14.8 ms at Low.
 
-The arrays take 20.5 MB at Low and Medium and 24.5 MB at High and Ultra, which is the budget that
-D-241 sets.
+The arrays take 20.5 MB at Low and Medium and 24.5 MB at High and Ultra, which is inside the 25 and 30 MB
+that D-241 sets.
 
 ### The splats add-on at its full count, iPad Pro 13 and Galaxy S24
 

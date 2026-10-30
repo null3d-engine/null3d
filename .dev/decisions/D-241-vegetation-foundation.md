@@ -239,8 +239,9 @@ those presets draw on core WebGPU only, and the tablet offers no WebGPU adapter.
   161.9 to 198.6 ms on the S25, inside the 200 ms line at Low by 0.7 per cent on a second run after
   the phone cooled. A first S25 run read 213.4 ms at Low on a hot phone, and it is discarded as an
   upper bound.
-- **Memory:** the budget is 20.5 MB at Low and Medium and 24.5 MB at High and Ultra. The owner set
-  it, because every leaf vertex carries the next level's place for the material's morph. The
+- **Memory:** the budget is 25 MB at Low and Medium and 30 MB at High and Ultra, a fifth above the
+  measured arrays. The owner raised it, because every leaf vertex carries the next level's place for
+  the material's morph, and the margin leaves room for a later field of leaf data. The
   stand-in took 7.0 to 22.7 MB. The GPU textures must stay within the measured figures for the same
   demo and preset, which the add-on shares with the scene. Creek's 3.1 MB of Blender models leave,
   and the arrays replace them.
