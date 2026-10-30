@@ -51,7 +51,6 @@ const INCOMPLETE = new Set([
 	'M3-F14',
 	'M3-K3',
 	'M3-V3',
-	'M3-K2',
 ]);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
