@@ -5,9 +5,11 @@
 // each with the scene. ?custom draws the balls with a custom material whose surface function sets
 // the transmission itself.
 // ?blend adds a blended pane in front of the balls, which draws in the same pass as they do.
-// ?maps varies the transmission and the thickness across each ball with the two maps that take the
-// specular maps' slots: bands of the transmission map's red, and bands of the thickness map's green.
-// ?coat gives the balls a clear coat, whose value leaves the specular slots free for those maps.
+// ?maps varies the transmission and the thickness across each ball with the two maps that keep row
+// slots beside the specular maps: bands of the transmission map's red, and bands of the thickness
+// map's green. ?specular adds a specular intensity map in the same texture array, in bands of its
+// own, so a material can carry both map families at once. ?env lights the scene from the built-in
+// room, whose reflection the specular map varies. ?coat gives the balls a clear coat.
 // ?tone=none turns the tone mapping off, as the parity test's three.js twin draws.
 import { defineSketch } from '@null3d/engine';
 import {
@@ -52,8 +54,12 @@ function texels(size: number, rgba: (u: number, v: number) => [number, number, n
 /** Every share, in the texture that both the transmission map and the thickness map read. */
 const BANDS = 4;
 
-export default defineSketch(({ scene, materials, geometry, post, textures }) => {
+export default defineSketch(async ({ scene, materials, geometry, post, textures, assets }) => {
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
+	if (params.has('env')) {
+		// A bright sky broadens what the specular map varies, so a picture shows it.
+		scene.setEnvironment(await assets.skyEnvironment(), { intensity: 1 });
+	}
 	scene.setBackground(BACKGROUND);
 	scene.createDirectionalLight({
 		direction: SUN.direction,
@@ -88,11 +94,26 @@ export default defineSketch(({ scene, materials, geometry, post, textures }) => 
 				colorSpace: 'linear',
 			})
 		: undefined;
+	// The specular intensity map keeps its own rows of the same texture array, so the material
+	// carries it beside the two volume maps: its alpha doubles the reflection in half the bands.
+	const specular = params.has('specular')
+		? textures.fromData({
+				width: 32,
+				height: 32,
+				data: texels(32, (u) => [0, 0, 0, (u * BANDS) % 1 < 0.5 ? 1 : 0]),
+				colorSpace: 'linear',
+			})
+		: undefined;
 	const [widthSegments, heightSegments] = BALL_SEGMENTS;
 	const ball = geometry.sphere({ radius: BALL_RADIUS, widthSegments, heightSegments });
 	const balls = params.has('empty') ? [] : TRANSMISSION_BALLS;
 	const thin = params.has('thin');
 	const coat = params.has('coat') ? { clearcoat: 1, clearcoatRoughness: 0.2 } : {};
+	// A specular color near a mirror's makes the reflection strong, so that the specular map's
+	// bands show across the ball.
+	const reflection = params.has('env')
+		? { specularColor: [25, 25, 25] as [number, number, number], envIntensity: 1 }
+		: {};
 	for (const { position: center, roughness, thickness, attenuation } of balls) {
 		const options = {
 			color: '#ffffff',
@@ -102,10 +123,12 @@ export default defineSketch(({ scene, materials, geometry, post, textures }) => 
 			transmission: 1,
 			thickness: thin ? 0 : thickness,
 			...coat,
+			...reflection,
 			...(attenuation
 				? { attenuationColor: attenuation.color, attenuationDistance: attenuation.distance }
 				: {}),
 			...(bands ? { transmissionMap: bands, thicknessMap: bands } : {}),
+			...(specular ? { specularIntensityMap: specular } : {}),
 		};
 		const material = params.has('custom')
 			? materials.shader({ ...options, wgsl: glassWgsl, uniforms: { amount: 1 } })

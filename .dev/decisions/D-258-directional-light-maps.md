@@ -111,7 +111,7 @@ a quiet window. [Benchmarks](../benchmarks.md#directional-light-maps) gives the 
 - `materials.standard` takes `lightMapDirection`, `lightMapOffset`, `lightMapRepeat` and
   `lightMapDecode`. `assets.loadLightMap` gives `directionTexture` beside the radiance's texture,
   and the [baked light data guide](../../docs/guides/baked-light-data.md) shows both.
-- The material row is 512 bytes (`MATERIAL_BYTES`). The light map's transform is the `vec4f` at
+- The material row is 592 bytes (`MATERIAL_BYTES`). The light map's transform is the `vec4f` at
   floats 68 to 71 (`LIGHT_MAP_SCALE` and `LIGHT_MAP_OFFSET` in `crates/null3d-render/src/materials.rs`).
   The shader's fragment stage reads the light map's transform and direction layer only for a
   material that has a light map.

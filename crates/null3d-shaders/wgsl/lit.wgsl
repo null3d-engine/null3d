@@ -38,9 +38,11 @@ enable draw_index;
 // The COAT_SHEEN builds light a clear coat and a sheen above the base, as three.js's
 // MeshPhysicalMaterial does (null3d::coat_sheen). In them the map slots of the light map and the
 // specular maps hold the coat map, the coat normal map and the sheen map, since a layered material
-// has neither, and the row's flags say which channels of the coat and sheen maps apply. Custom
-// materials' surfaces have the layers' values in every build, and the COAT_SHEEN builds only where
-// their WGSL names them.
+// has neither, and the row's flags say which channels of the coat and sheen maps apply. A
+// transmission or thickness map keeps a row slot of its own, sampling a specular slot's texture
+// array at a layer of its own, so it draws beside the specular map of that slot. Custom materials'
+// surfaces have the layers' values in every build, and the COAT_SHEEN builds only where their WGSL
+// names them.
 //
 // The SUBSURFACE builds, of the templates of the skin pass, light the surface as the others do and
 // write only the diffuse light that scatters under it, after the fog, as the camera's opaque pass
@@ -79,7 +81,8 @@ enable draw_index;
 //
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive, light, specular intensity and specular color maps, each a layer of a texture array with
-// a sampler. A map reads
+// a sampler, and a material that lets light through reads its transmission and thickness maps
+// through the two specular slots' arrays at layers of their own. A map reads
 // the first texture coordinates, or the second where the material's flags say so, through the
 // material's texture coordinate transform. A map whose image is not on the GPU yet has no layer,
 // and the material draws as without it. The normal map bends the normal in a frame from the mesh's
@@ -231,7 +234,7 @@ fn pick_color(key: u32) -> vec4f {
 #endif
 #ifdef TRANSMISSION
 #import null3d::globals::{MaterialTransmission}
-#import null3d::mesh::{NO_FOG, layer_maps_kind_of, material_dispersion, material_transmission}
+#import null3d::mesh::{NO_FOG, layer_maps_kind_of, material_dispersion, material_transmission, material_volume_layers}
 #import null3d::refraction::{transmitted_light}
 #ifdef TONE_MAP
 #import null3d::fog::{fog_factor}
@@ -346,10 +349,14 @@ var<private> pixel_material: u32;
 var<private> transmission_row: MaterialTransmission;
 
 /// Which family of maps the material keeps in each group of shared slots, two bits each: the light
-/// map's, the specular intensity map's and the specular color map's. A material that lets light
-/// through names 2 for the slots that hold its transmission and thickness maps, so `with_maps`
-/// reads them instead of the specular maps.
+/// map's, the specular intensity map's and the specular color map's. Bits 6 and 7 say that the
+/// transmission and thickness maps read the second texture coordinates.
 var<private> layer_maps_kinds: u32;
+
+/// The layers of the material's transmission and thickness maps in the specular slots' texture
+/// arrays, which the shader samples through those slots' bindings: the transmission map's layer,
+/// then the thickness map's, each negative where the map draws nothing.
+var<private> volume_layers: vec2f;
 
 /// The strength of the volume's dispersion, which spreads the light through it over three rays,
 /// one per color.
@@ -419,6 +426,17 @@ var<private> decal_uv_dy: vec2f;
 /// The bit of a material's flags for the map of slot 0 on the second texture coordinates; the
 /// next slots take the bits above it.
 const SECOND_UV: u32 = 256u;
+
+#ifdef TRANSMISSION
+/// The row slots of the transmission and thickness maps, after the eight slots that have a binding
+/// of their own. Each samples the specular slot's texture array at a layer of its own.
+const TRANSMISSION_SLOT: u32 = 8u;
+const THICKNESS_SLOT: u32 = 9u;
+/// The bits of the layer maps' kinds that say the transmission and thickness maps read the second
+/// texture coordinates.
+const TRANSMISSION_SECOND_UV: u32 = 64u;
+const THICKNESS_SECOND_UV: u32 = 128u;
+#endif
 
 #ifdef COAT_SHEEN
 /// The bits of a layered material's flags that say which channels of its coat and sheen maps
@@ -529,11 +547,25 @@ fn transform_uv(rows: MapUvRows, uv: vec2f, dx: vec2f, dy: vec2f) -> MapUv {
     );
 }
 
+/// True when the map of `slot` reads the second texture coordinates. A slot below the volume maps'
+/// names its bit in the flags; a volume map's bit sits in the layer maps' kinds.
+fn reads_second_uv(flags: u32, slot: u32) -> bool {
+#ifdef TRANSMISSION
+    if (slot == TRANSMISSION_SLOT) {
+        return (layer_maps_kinds & TRANSMISSION_SECOND_UV) != 0u;
+    }
+    if (slot == THICKNESS_SLOT) {
+        return (layer_maps_kinds & THICKNESS_SECOND_UV) != 0u;
+    }
+#endif
+    return (flags & (SECOND_UV << slot)) != 0u;
+}
+
 /// The coordinates of the map of `slot` through that map's own transform, with their derivatives:
 /// the second set where the flags say so, else the first.
 fn map_uv(flags: u32, slot: u32, raw: RawUv) -> MapUv {
     let rows = slot_uv_rows(slot);
-    if (flags & (SECOND_UV << slot)) != 0u {
+    if reads_second_uv(flags, slot) {
         return transform_uv(rows, raw.uv1, raw.dx1, raw.dy1);
     }
     return transform_uv(rows, raw.uv, raw.dx, raw.dy);
@@ -1293,11 +1325,10 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     }
     specular_texel = vec4f(1.0);
 #ifdef COAT_SHEEN
-    // A material with layers keeps one family's maps in slots 5 to 7, and one that lets light
-    // through keeps its transmission and thickness maps in the two specular slots beside the layer
-    // map of the light slot. The row names each group's family apart: the clear coat's or
-    // iridescence's for the light slot, and either of those or the transmission's and the
-    // thickness's for a specular slot.
+    // A material with layers keeps one family's maps in slots 5 to 7. The row names each group's
+    // family apart: the clear coat's or iridescence's for the light slot, and either of those for
+    // a specular slot. A material that lets light through keeps its transmission and thickness
+    // maps in row slots of their own, which `volume_layers` names.
     let kinds = u32(anisotropy_row.z);
     let layer_kind = kinds & 3u;
     let intensity_kind = (kinds >> 2u) & 3u;
@@ -1316,10 +1347,6 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = specular_intensity_texel(m.more_maps.z, at);
         if intensity_kind == 1u {
             s.iridescenceThickness = mix(film_row.z, film_row.w, texel.g);
-#ifdef TRANSMISSION
-        } else if intensity_kind == 2u {
-            s.transmission *= texel.r;
-#endif
         } else {
             let scale = coat_sheen_row.coat.zw;
             s.clearcoatNormal = bent_normal(texel, scale, at, input, position_dx, position_dy);
@@ -1330,10 +1357,6 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         if color_kind == 0u {
             s.sheenColor *= select(vec3f(1.0), texel.rgb, (flags & SHEEN_COLOR_MAP) != 0u);
             s.sheenRoughness *= select(1.0, texel.a, (flags & SHEEN_ROUGHNESS_MAP) != 0u);
-#ifdef TRANSMISSION
-        } else if color_kind == 2u {
-            s.thickness *= texel.g;
-#endif
         }
     }
 #else
@@ -1347,14 +1370,6 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, raw));
 #ifdef TRANSLUCENCY
         s.diffuseTransmission *= texel.a;
-#else ifdef TRANSMISSION
-        // A material that lets light through keeps its transmission and thickness maps there
-        // instead, whose red and green scale the transmission and the volume.
-        if ((layer_maps_kinds >> 2u) & 3u) == 2u {
-            s.transmission *= texel.r;
-        } else {
-            specular_texel.a = texel.a;
-        }
 #else
         specular_texel.a = texel.a;
 #endif
@@ -1363,15 +1378,19 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, raw));
 #ifdef TRANSLUCENCY
         s.diffuseTransmissionColor *= texel.rgb;
-#else ifdef TRANSMISSION
-        if ((layer_maps_kinds >> 4u) & 3u) == 2u {
-            s.thickness *= texel.g;
-        } else {
-            specular_texel = vec4f(texel.rgb, specular_texel.a);
-        }
 #else
         specular_texel = vec4f(texel.rgb, specular_texel.a);
 #endif
+    }
+#endif
+#ifdef TRANSMISSION
+    // The transmission and thickness maps keep row slots of their own beside the specular maps,
+    // which sample the same texture arrays at layers of their own.
+    if map_ready(volume_layers.x) {
+        s.transmission *= specular_intensity_texel(volume_layers.x, map_uv(flags, TRANSMISSION_SLOT, raw)).r;
+    }
+    if map_ready(volume_layers.y) {
+        s.thickness *= specular_color_texel(volume_layers.y, map_uv(flags, THICKNESS_SLOT, raw)).g;
     }
 #endif
     // A height map in the normal map's slot bends the normal only in the builds that read it, so
@@ -2809,6 +2828,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef TRANSMISSION
     transmission_row = material_transmission(in.material);
     layer_maps_kinds = layer_maps_kind_of(in.material);
+    volume_layers = material_volume_layers(in.material);
     volume_dispersion = material_dispersion(in.material);
     object_scale = in.scale;
 #else ifdef TRANSLUCENCY

@@ -142,6 +142,7 @@ import {
 	PERMUTATION_ROW_VALUES,
 	PERMUTATION_TRANSLUCENCY,
 	PERMUTATION_TRANSMISSION,
+	SIZE_MAP_ROWS,
 	SIZE_MAP_SLOTS,
 } from '../generated/gpu';
 import type { ShaderVariants } from '../generated/shaders';
@@ -1439,17 +1440,19 @@ export interface StandardMaps {
 	diffuseTransmissionColorMap?: Texture;
 	/**
 	 * The share of the light behind the surface that passes through it, in red, in linear color.
-	 * Its red multiplies `transmission`. Only a material created with `transmission` takes it, and
-	 * such a material takes no specular intensity map, since these maps take its slot. A material
-	 * with layers keeps it unless a layer map fills the slot: a clear coat's normal map and
-	 * iridescence's thickness map do.
+	 * Its red multiplies `transmission`. Only a material created with `transmission` takes it. It
+	 * keeps a row slot of its own and samples the specular intensity map's texture array at its own
+	 * layer, so a specular intensity map may draw beside it when the two textures share an array.
+	 * A material with layers keeps it unless a layer map fills that slot: a clear coat's normal map
+	 * and iridescence's thickness map do.
 	 */
 	transmissionMap?: Texture;
 	/**
 	 * The thickness of the volume under the surface, in green, in linear color. Its green
-	 * multiplies `thickness`. Only a material created with `transmission` takes it, and such a
-	 * material takes no specular color map, since these maps take its slot. A material with layers
-	 * keeps it unless a layer map fills the slot: the sheen's maps and an anisotropy map do.
+	 * multiplies `thickness`. Only a material created with `transmission` takes it. It keeps a row
+	 * slot of its own and samples the specular color map's texture array at its own layer, so a
+	 * specular color map may draw beside it when the two textures share an array. A material with
+	 * layers keeps it unless a layer map fills that slot: the sheen's maps and an anisotropy map do.
 	 */
 	thicknessMap?: Texture;
 	/**
@@ -1989,9 +1992,9 @@ const MAP_OPTIONS: readonly (readonly [Exclude<keyof StandardMaps, 'parallax'>, 
 
 /**
  * The row slot that holds the texture of each map whose core slot is not a row slot: a layer map
- * keeps its texture in one of the light and specular slots, and a bump or displacement map in the
- * normal map's slot. The row keeps a texture coordinate transform for each row slot, so a map's
- * transform goes to the slot that holds its texture.
+ * keeps its texture in one of the light and specular slots, the transmission and thickness maps
+ * keep row slots after them, and a bump or displacement map in the normal map's slot. The row keeps
+ * a texture coordinate transform for each row slot, so a map's transform goes to its own slot.
  */
 const MAP_ROW_SLOTS: ReadonlyMap<number, number> = new Map<number, number>([
 	[MAP_SLOT_COAT, MAP_ROW_SLOT_COAT],
@@ -2099,17 +2102,13 @@ function skipsMap(key: keyof StandardMaps, features: number): boolean {
 
 /**
  * True for a transmission or thickness map that a material leaves out, because it gives no
- * transmission, lets light through to its other side, or gives a specular map: each of them takes
- * the specular maps' slots. Development builds refuse these with E1217 instead.
+ * transmission or lets light through to its other side: each of those takes the specular maps'
+ * slots. A material may keep the specular maps beside these two. Development builds refuse these
+ * with E1217 instead.
  */
 function skipsTransmissionMap(options: StandardOptions, key: keyof StandardMaps): boolean {
 	if (!TRANSMISSION_MAPS.has(key)) return false;
-	return (
-		options.transmission === undefined ||
-		options.diffuseTransmission !== undefined ||
-		options.specularIntensityMap !== undefined ||
-		options.specularColorMap !== undefined
-	);
+	return options.transmission === undefined || options.diffuseTransmission !== undefined;
 }
 
 /** The values of a clear coat, a sheen, iridescence or anisotropy, any of which gives a material its layers. */
@@ -2167,10 +2166,10 @@ const SPECULAR_COLOR_LAYER_MAPS: readonly (keyof StandardMaps)[] = [
 ];
 
 /**
- * The layer map that fills the slot that a transmission or a thickness map takes, or none: the
- * transmission map shares the specular intensity map's slot and the thickness map the specular
- * color map's. A material with layers may keep the two maps beside the one layer map of the light
- * map's slot, so this names the clash that remains.
+ * The layer map that fills the texture array that a transmission or a thickness map samples, or
+ * none: the transmission map samples the specular intensity slot's array and the thickness map the
+ * specular color slot's. A material with layers may keep the two maps beside the one layer map of
+ * the light map's slot, so this names the clash that remains.
  */
 function volumeSlotOwner(
 	options: StandardOptions,
@@ -2577,8 +2576,8 @@ function writeValues(
 	}
 }
 
-/** The map slots that a material's row keeps a transform for, from the base color map's at 0. */
-const MAP_SLOT_COUNT = SIZE_MAP_SLOTS;
+/** The map row slots that a material's row keeps a transform for, from the base color map's at 0. */
+const MAP_SLOT_COUNT = SIZE_MAP_ROWS;
 
 /** The floats between the two rows of one map's transform in a material's row. */
 const UV_ROW_STRIDE = 4;
@@ -2902,16 +2901,12 @@ function checkFeatures(options: StandardOptions, call: string): void {
 				'E1217',
 				`${call}() got ${key} with diffuseTransmission; a material that lets light through to its other side keeps its diffuse transmission maps in the same slots. Give the material one kind of map or the other.`,
 			);
-		const specular =
-			options.specularIntensityMap !== undefined
-				? 'specularIntensityMap'
-				: options.specularColorMap !== undefined
-					? 'specularColorMap'
-					: undefined;
-		if (specular)
+		// A thickness map samples the specular color map's texture array, and an sRGB texture never
+		// shares an array with a linear one, so the two cannot draw together.
+		if (key === 'thicknessMap' && options.specularColorMap !== undefined)
 			throw new EngineError(
 				'E1217',
-				`${call}() got ${specular} with ${key}; the transmission and thickness maps take the specular maps' slots. Give the material the specular maps or those two, not both.`,
+				`${call}() got thicknessMap with specularColorMap; the thickness map samples the specular color map's texture array, and an sRGB texture never shares an array with a linear one. Give the material one map of that slot or the other.`,
 			);
 	}
 	for (const [key] of MAP_OPTIONS)
@@ -2994,16 +2989,16 @@ function checkLayerMaps(options: StandardOptions, call: string): void {
 			'E1217',
 			`${call}() got ${sharedSlot} with a clear coat, a sheen, iridescence or anisotropy, whose maps take its place. Bake its light or specular values into the other maps, or use a material without layers.`,
 		);
-	// The transmission and thickness maps take the specular maps' slots, which a layer map fills
-	// only when the material gives one of that slot: the light map's slot stays free for its layer
-	// map beside them.
+	// The transmission and thickness maps sample the specular slots' texture arrays, which a layer
+	// map fills only when the material gives one of that slot: the light map's slot stays free for
+	// its layer map beside them.
 	for (const key of TRANSMISSION_MAPS) {
 		if (options[key] === undefined) continue;
 		const owner = volumeSlotOwner(options, key);
 		if (owner)
 			throw new EngineError(
 				'E1217',
-				`${call}() got ${key} with ${owner}, which fills the same slot. Give the material one map of that slot or the other.`,
+				`${call}() got ${key} with ${owner}, which fills the array that it samples. Give the material one map of that slot or the other.`,
 			);
 	}
 	for (const [first, second, packed] of [

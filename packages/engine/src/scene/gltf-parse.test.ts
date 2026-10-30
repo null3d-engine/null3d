@@ -660,17 +660,34 @@ describe('materials, textures and lights', () => {
 		expect(thickness).toBeGreaterThanOrEqual(0);
 		expect(data.textures[transmission]?.colorSpace).toBe('linear');
 		expect(data.textures[thickness]?.colorSpace).toBe('linear');
-		// The specular textures keep their slots, which the transmission textures would take.
+		// A specular texture and a transmission texture keep their own row slots, so both draw.
 		expect(second?.maps.specularIntensityMap).toBeDefined();
-		expect(second?.maps.transmissionMap).toBeUndefined();
+		expect(second?.maps.transmissionMap).toBeDefined();
 		expect(second?.maps.thicknessMap).toBeUndefined();
+		expect(data.notes.filter((note) => /transmissionTexture|thicknessTexture/.test(note))).toEqual(
+			[],
+		);
 		expect(third?.transmission).toBeUndefined();
 		expect(third?.maps.transmissionMap).toBeUndefined();
 		expect(third?.maps.thicknessMap).toBeUndefined();
-		expect(data.notes).toEqual(
-			expect.arrayContaining([
-				"material 1's transmissionTexture, which it leaves out beside a specular texture",
-			]),
+	});
+
+	test('a thickness texture stays out beside a specular color texture, whose array it cannot share', () => {
+		const b = specularBuilder()
+			.uses('KHR_materials_transmission')
+			.uses('KHR_materials_volume')
+			.uses('KHR_materials_specular');
+		const [glass] = b.json.materials as [GltfJson];
+		glass.extensions = {
+			KHR_materials_specular: { specularColorTexture: { index: 2 } },
+			KHR_materials_transmission: { transmissionFactor: 1 },
+			KHR_materials_volume: { thicknessFactor: 0.4, thicknessTexture: { index: 1 } },
+		};
+		const data = parse(b.glb());
+		expect(data.materials[0]?.maps.specularColorMap).toBeDefined();
+		expect(data.materials[0]?.maps.thicknessMap).toBeUndefined();
+		expect(data.notes).toContain(
+			"material 0's thicknessTexture, which it leaves out beside a specular color texture, whose sRGB texels never share its texture array",
 		);
 	});
 

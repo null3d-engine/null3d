@@ -203,6 +203,12 @@
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
 	},
+	"chromium-swiftshader/compat/transmission-specular.png": {
+		"test": "transmission-specular",
+		"tier": "compat",
+		"date": "2026-10-30",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that keeps a specular map beside the volume maps; the branch was not pushed when the set was drawn, so no CI run could draw it, and CI's own drawing of the branch replaces them"
+	},
 	"chromium-swiftshader/compat/vegetation-alder.png": {
 		"test": "vegetation-alder",
 		"tier": "compat",
@@ -484,6 +490,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgl2/transmission-specular.png": {
+		"test": "transmission-specular",
+		"tier": "webgl2",
+		"date": "2026-10-30",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that keeps a specular map beside the volume maps; the branch was not pushed when the set was drawn, so no CI run could draw it, and CI's own drawing of the branch replaces them"
 	},
 	"chromium-swiftshader/webgl2/vegetation-alder.png": {
 		"test": "vegetation-alder",
@@ -778,6 +790,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgpu/transmission-specular.png": {
+		"test": "transmission-specular",
+		"tier": "webgpu",
+		"date": "2026-10-30",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that keeps a specular map beside the volume maps; the branch was not pushed when the set was drawn, so no CI run could draw it, and CI's own drawing of the branch replaces them"
 	},
 	"chromium-swiftshader/webgpu/vegetation-alder.png": {
 		"test": "vegetation-alder",
