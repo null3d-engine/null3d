@@ -67,25 +67,25 @@ describe('the run’s start readings', () => {
 
 	it('says where the highest page falls', () => {
 		expect(calibrationNote(3, readings)).toBe(
-			'; its start calibration 3.00 ms was the highest of 3 pages this run (median 2.00 ms)',
+			'; its start calibration 3.00 ms was the highest of 3 pages so far this run (median 2.00 ms)',
 		);
 	});
 
 	it('says where a lower page falls', () => {
 		expect(calibrationNote(1, readings)).toBe(
-			'; its start calibration 1.00 ms was the 3rd highest of 3 pages this run (median 2.00 ms)',
+			'; its start calibration 1.00 ms was the 3rd highest of 3 pages so far this run (median 2.00 ms)',
 		);
 	});
 
 	it('counts a page whose reading the run did not record', () => {
 		expect(calibrationNote(5, readings)).toBe(
-			'; its start calibration 5.00 ms was the highest of 4 pages this run (median 2.00 ms)',
+			'; its start calibration 5.00 ms was the highest of 4 pages so far this run (median 2.00 ms)',
 		);
 	});
 
-	it('names a run of one page', () => {
+	it('names a run of one page so far', () => {
 		expect(calibrationNote(2, [readings[1] as Calibration])).toBe(
-			'; its start calibration 2.00 ms, the only page this run measured',
+			'; its start calibration 2.00 ms, the only page this run measured so far',
 		);
 	});
 
