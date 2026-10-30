@@ -46,6 +46,13 @@ const PUBLIC_ENTRIES = new Set(['@null3d/engine', '@null3d/engine/stats']);
 /** The engine's entry-point prefix. */
 const ENGINE_ENTRY = '@null3d/engine';
 
+/**
+ * The packages that stay out of an add-on's build: every null3D package. A foundation add-on may
+ * build on another foundation, and a page loads that package as a dependency of its own. So the
+ * build measures the add-on's own files alone, as it measures them for the engine.
+ */
+export const ADDON_EXTERNALS = [/^@null3d\//];
+
 /** The package scope of the engine's own add-ons, which pin the engine version. */
 const ENGINE_SCOPE = '@null3d/';
 
@@ -513,9 +520,10 @@ export function emptyShaders() {
 
 /**
  * Builds the add-on's entry with the null3D plugin, which compiles its WGSL for WebGPU and WebGL2,
- * and gives the size of each file that the build wrote. The engine stays external: the sizes are
- * the add-on's own. A second build answers each WGSL import with an empty module. It gives each
- * file's code alone, so the size gate can tell that code from the compiled WGSL inlined beside it.
+ * and gives the size of each file that the build wrote. The engine and every other null3D package
+ * stay external, since a page loads them as dependencies of their own: the sizes are the add-on's
+ * own. A second build answers each WGSL import with an empty module. It gives each file's code
+ * alone, so the size gate can tell that code from the compiled WGSL inlined beside it.
  *
  * @param {string} folder
  * @param {string} entry
@@ -538,7 +546,7 @@ export async function buildAddon(folder, entry) {
 					write: false,
 					minify: true,
 					lib: { entry, formats: ['es'], fileName: 'addon' },
-					rollupOptions: { external: [/^@null3d\/engine(?:\/stats)?$/] },
+					rollupOptions: { external: ADDON_EXTERNALS },
 				},
 			});
 			return /** @type {unknown[]} */ (Array.isArray(result) ? result : [result]);
