@@ -44,6 +44,21 @@ export const DEFAULT_VEHICLE: VehicleSize = { halfWidth: 0.96, height: 1.1, half
 export type HullDetail = 'full' | 'light';
 
 /**
+ * The canopy's eight places in the hull's own space, from the windshield at the nose to the rear
+ * deck: a ridge that rises from the body, left and right at each of four stations.
+ */
+const CANOPY = [
+	[-0.42, 0.84, 1.0],
+	[0.42, 0.84, 1.0],
+	[-0.34, 1.1, 0.1],
+	[0.34, 1.1, 0.1],
+	[-0.36, 1.05, -0.9],
+	[0.36, 1.05, -0.9],
+	[-0.44, 0.8, -1.0],
+	[0.44, 0.8, -1.0],
+] as const;
+
+/**
  * Builds a low hover vehicle: a hull lofted through four sections with a low canopy. Its nose
  * points along local +Z, its belly sits just above y = 0, and its canopy rises to `height`. The
  * add-on's surface paints its lights from that space, and `VehicleLook.size` takes the same three
@@ -91,16 +106,7 @@ export function createVehicleHull(
 		[-s.half, s.top, s.z],
 	];
 	// The canopy: a low ridge from the windshield back to the rear deck, in its eight places.
-	const canopy = [
-		[-0.42, 0.84, 1.0],
-		[0.42, 0.84, 1.0],
-		[-0.34, 1.1, 0.1],
-		[0.34, 1.1, 0.1],
-		[-0.36, 1.05, -0.9],
-		[0.36, 1.05, -0.9],
-		[-0.44, 0.8, -1.0],
-		[0.44, 0.8, -1.0],
-	] as const;
+	const canopy = CANOPY;
 	if (detail === 'full') {
 		for (let k = 0; k < sections.length - 1; k++) {
 			const a = corners(sections[k] as (typeof sections)[number]);
@@ -154,6 +160,52 @@ export function createVehicleHull(
 	return geometry.fromArrays({
 		positions: new Float32Array(positions),
 		uvs,
+		indices: new Uint32Array(indices),
+		computeNormals: true,
+	});
+}
+
+/**
+ * Builds the canopy of the default vehicle as a mesh of its own, so an overlay such as the weather
+ * add-on's windshield drops covers exactly the glass. Its texture coordinates run across each of
+ * the canopy's four faces, from the windshield at the nose to the rear deck, so a pattern in them
+ * keeps its size on the glass.
+ */
+export function vehicleCanopy(
+	ctx: SketchContext,
+	size: VehicleSize = DEFAULT_VEHICLE,
+): MeshGeometry {
+	const { geometry } = ctx;
+	const sx = size.halfWidth / DEFAULT_VEHICLE.halfWidth;
+	const sy = size.height / DEFAULT_VEHICLE.height;
+	const sz = size.halfLength / DEFAULT_VEHICLE.halfLength;
+	const positions: number[] = [];
+	const uvs: number[] = [];
+	const indices: number[] = [];
+	/** Adds a face of the canopy as two triangles, its corners in order round it. */
+	const face = (
+		a: readonly number[],
+		b: readonly number[],
+		c: readonly number[],
+		d: readonly number[],
+	) => {
+		const first = positions.length / 3;
+		for (const corner of [a, b, c, d])
+			positions.push(
+				(corner[0] as number) * sx,
+				(corner[1] as number) * sy,
+				(corner[2] as number) * sz,
+			);
+		uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
+		indices.push(first, first + 1, first + 2, first, first + 2, first + 3);
+	};
+	face(CANOPY[0], CANOPY[1], CANOPY[3], CANOPY[2]);
+	face(CANOPY[2], CANOPY[3], CANOPY[5], CANOPY[4]);
+	face(CANOPY[0], CANOPY[2], CANOPY[4], CANOPY[6]);
+	face(CANOPY[1], CANOPY[7], CANOPY[5], CANOPY[3]);
+	return geometry.fromArrays({
+		positions: new Float32Array(positions),
+		uvs: new Float32Array(uvs),
 		indices: new Uint32Array(indices),
 		computeNormals: true,
 	});

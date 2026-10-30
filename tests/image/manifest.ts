@@ -3380,6 +3380,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'car-paint',
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// The weather add-on: the wet ground with its puddles, ripple rings and planar mirror, the
+	// windshield drops on a canopy in front, and the splashes and steam from the particles add-on.
+	// The scene is small and fixed, so the software GPU draws it quickly.
+	{
+		name: 'weather',
+		sketch: 'tests/pages/sketches/weather-cost-sketch.ts?mirror=1&show=1',
+		hold: 1,
+		size: [640, 360],
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 120,
+	},
 	// Weighted blending: crossing panes of glass and overlapping puffs blend in any order in the
 	// camera's weighted layer, over a pane of normal blending.
 	{ name: 'weighted', sketch: WEIGHTED_SKETCH, hold: 0, size: [480, 270] },
