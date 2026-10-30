@@ -20,6 +20,28 @@ export function workerIndex(): number | undefined {
 
 const recordPath = (worker: number) => join(directory(), `worker-${worker}.json`);
 
+/** The record at `path`, or undefined when it is missing or not a record. */
+function readRecord(path: string): { name: string; startedAt: number } | undefined {
+	try {
+		const { name, startedAt } = JSON.parse(readFileSync(path, 'utf8')) as {
+			name?: unknown;
+			startedAt?: unknown;
+		};
+		return typeof name === 'string' && typeof startedAt === 'number'
+			? { name, startedAt }
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** The test that `worker` runs now, or undefined when it keeps no record. */
+export function runningTest(
+	worker: number | undefined,
+): { name: string; startedAt: number } | undefined {
+	return worker === undefined || worker < 0 ? undefined : readRecord(recordPath(worker));
+}
+
 /** Records that `worker` started the test `name` now. */
 export function noteTestRunning(worker: number | undefined, name: string): void {
 	if (worker === undefined || worker < 0) return;
@@ -50,16 +72,9 @@ function neighbours(own: number, now: number): { name: string; runMs: number }[]
 	for (const file of files) {
 		const index = /^worker-(\d+)\.json$/.exec(file)?.[1];
 		if (index === undefined || Number(index) === own) continue;
-		try {
-			const { name, startedAt } = JSON.parse(readFileSync(join(directory(), file), 'utf8')) as {
-				name?: unknown;
-				startedAt?: unknown;
-			};
-			if (typeof name === 'string' && typeof startedAt === 'number')
-				running.push({ name, runMs: Math.max(0, now - startedAt) });
-		} catch {
-			// A record that a worker is still writing reads as an empty one, which names nothing.
-		}
+		const record = readRecord(join(directory(), file));
+		if (record !== undefined)
+			running.push({ name: record.name, runMs: Math.max(0, now - record.startedAt) });
 	}
 	return running;
 }
@@ -68,15 +83,16 @@ function neighbours(own: number, now: number): { name: string; runMs: number }[]
 const NAMED_NEIGHBOURS = 3;
 
 /**
- * What a failure adds to name the tests that other workers ran beside it, or nothing when it ran
- * alone. Empty outside a Playwright worker, where no record is kept.
+ * What a failure adds to name the tests that other workers ran beside it, or nothing outside a
+ * Playwright worker, where no record is kept. A run with no other worker says so: a sentence that
+ * never appears and a machine that was quiet would otherwise read the same.
  */
 export function neighbourNote(own = workerIndex(), now = Date.now()): string {
 	if (own === undefined) return '';
 	const running = neighbours(own, now)
 		.sort((a, b) => b.runMs - a.runMs)
 		.slice(0, NAMED_NEIGHBOURS);
-	if (running.length === 0) return '';
+	if (running.length === 0) return '; no other worker was running';
 	const names = running.map(
 		({ name, runMs }) => `"${name}" (started ${(runMs / 1000).toFixed(1)} s ago)`,
 	);
