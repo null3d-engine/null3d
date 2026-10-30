@@ -677,7 +677,7 @@ length, and the broadleaf's 18, so a trunk leans rather than standing as a pole.
 spread wider across the atlas, and the leaf atlas's dark rim fell from more than half to 0.22 over a
 leaf's last seventh.
 
-**What it costs.** The built-in set generates 29.08 MB of arrays against the 30 MB ceiling at High
+**What it costs.** The built-in set generates 29.75 MiB of arrays, 31,192,082 bytes, against the 30 MB ceiling at High
 and Ultra, with the denser conifer and broadleaf taking the room that the ceiling left. The
 conifer's level 0 takes 4.7 MB of it. A conifer is 9,620 triangles, against the hand-built pine's
 6,400.
