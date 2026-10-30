@@ -40,7 +40,6 @@ const INCOMPLETE = new Set([
 	'M3-F5',
 	'M3-B1',
 	'M3-B5',
-	'M3-V4',
 	'M3-F2',
 	'M3-K9',
 	'M3-V6',
@@ -112,8 +111,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the re-run at four times the pixels does not resolve the cost either: its off side reads 2.72 to 5.03 ms on WebGPU and 4.69 to 9.21 ms on WebGL2 across the presets, and the grade mark alone reaches 11.234 ms there, more than most marks cost, so the scene's own variation still swamps the look, and the GPU idles through most of each frame. Seven of the twenty-one marks keep their whole range above zero but that is not resolution: WebGL2 grain is 0.38 with a range to 9.40 and WebGL2 vignette 1.16 with a range to 5.90, and the WebGPU presets read Low 2.00, Medium 3.41 and Ultra 1.27, out of order for the same work. The method to close it: draw the look, or one mark, sixteen to thirty-two times a frame and divide; on WebGPU read the look's own pass from the per-pass timer (0.065536 ms steps), not the whole frame's difference; and alternate the sides every frame or few frames so a clock change hits both. Grade and vignette run inside the final pass and add no pass, so read that pass's part with each on and off, or state the design reason and show the part unchanged within a step. WebGL2's whole-frame figure spans the shared timeline, so those rows need another measure or must say they are not a cost",
 	'M3-B5':
 		'the glints draw and are tested in both sets; its cost per preset is owed (D-255), which needs a quiet GPU',
-	'M3-V4':
-		"three tracked records of 27 October time the 78-variant generator on the Mac (65.2 to 77.7 ms), the owner's iPad (79.6 to 94.8) and the S25 (137.9 to 163.0), each with its memory, and the entry's 50 ms figure is an older 24-variant run. What is owed is the iPad budget, a check-addon run, and proof on both GPU paths",
 	'M3-F2':
 		"the cloud that arrives as 100,000 splats used to become one chunk and could not stream; `chunks.ts` now cuts it into up to eight, which landed in `dcbacc193`. The streaming test's last recorded CI failure predates that change and no pass has been recorded since, so the fix is in the tree and unproved",
 	'M3-V6':
