@@ -32,7 +32,16 @@ function fakeTextures() {
 	return { textures, calls };
 }
 
-const field = { texture: {} as Texture, origin: [0, 0], size: 96 } as WindField;
+const field = {
+	texture: {} as Texture,
+	origin: [0, 0],
+	size: 96,
+	air: {
+		base: [4, 0, 0.65, 0],
+		gust: [3.5, 14, 2, 6],
+		swirl: [1.6, 0.06, 0.5, 0],
+	},
+} as WindField;
 
 describe('the plant wind data', () => {
 	test('puts the branch records in one row of four texels each', () => {
@@ -47,9 +56,15 @@ describe('the plant wind data', () => {
 		expect(calls).toHaveLength(1);
 		const [record] = calls;
 		expect(record?.format).toBe('rgba16float');
-		expect(record?.height).toBe(1);
+		// The first row holds the records. The second holds the field's steady settings, which the
+		// vertex offset works the air out from beyond the field's box.
+		expect(record?.height).toBe(2);
 		expect(record?.width).toBe(asset.wind.branches * 4);
-		expect(record?.data).toBe(asset.wind.pivots);
+		const data = Array.from(record?.data ?? []);
+		expect(data.slice(0, asset.wind.pivots.length)).toEqual(Array.from(asset.wind.pivots));
+		expect(data.slice((record?.width as number) * 4, (record?.width as number) * 4 + 12)).toEqual(
+			Array.from(new Float32Array([4, 0, 0.65, 0, 3.5, 14, 2, 6, 1.6, 0.06, 0.5, 0])),
+		);
 	});
 
 	test('sways at every distance without a sway distance', () => {

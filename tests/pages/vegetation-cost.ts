@@ -14,7 +14,9 @@ run('vegetation-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL('./sketches/vegetation-wind-sketch.ts', import.meta.url);
-	sketch.searchParams.set('sway', String(params.get('sway') ?? 60));
+	// Without a sway switch the sketch takes its distance from the preset, which is the look that
+	// costs the page its budget.
+	if (params.has('sway')) sketch.searchParams.set('sway', String(params.get('sway')));
 	const engine = await createEngine({
 		canvas,
 		sketch,

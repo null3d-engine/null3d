@@ -3,7 +3,7 @@
 // integer hashes in `atlas-pixels.ts`. The engine makes each texture's mip levels, whose average
 // alpha keeps a leaf's coverage as it shrinks, and a masked material fades its cut edges with alpha
 // to coverage.
-import type { ColorInput, Material, SketchContext, Texture, Textures } from '@null3d/engine';
+import type { ColorInput, SketchContext, Texture, Textures } from '@null3d/engine';
 import { type AtlasPixels, paintBark, paintLeaf } from './atlas-pixels';
 import type { PlantWind } from './plant';
 import plantShader from './plant.wgsl';
@@ -257,7 +257,7 @@ export interface PlantMorph {
 export function plantMaterial(
 	ctx: Pick<SketchContext, 'materials' | 'textures'>,
 	options: PlantMaterialOptions,
-): Material {
+) {
 	const { atlases, part, wind } = options;
 	const leaves = part === 'leaves';
 	const cell = LEAF_CELLS_BY_KIND[options.cell ?? 'cluster-a'];
@@ -300,6 +300,7 @@ export function plantMaterial(
 		branches: wind?.branches ?? 0,
 		windBox: wind?.field.size ?? 1,
 		windStrength: wind ? 1 : 0,
+		windLayer: 0,
 		crownCenter,
 		crownBend: wind ? (options.crownBend ?? 0.5) : 0,
 	};
@@ -322,6 +323,15 @@ export function plantMaterial(
 	}
 	return ctx.materials.shader({ wgsl: plantShader, ...look, uniforms: fields });
 }
+
+/**
+ * A material that draws a plant's part: a trunk's bark or a crown's leaves, from the atlases that
+ * the GPU paints. Its uniforms carry the wind's settings and the frame's state, which
+ * {@link plantWind} and `setWindLayer` fill.
+ *
+ * @category api/vegetation
+ */
+export type PlantMaterial = ReturnType<typeof plantMaterial>;
 
 /**
  * The stand-ins for the two textures that a plant's WGSL always declares, for a material that names
