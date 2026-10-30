@@ -64,6 +64,9 @@ export {
 /** The environment whose references other browsers and devices compare with. */
 export const REAL_GPU: Environment = 'chrome-real-gpu';
 
+/** The software environment: CI's Linux SwiftShader draws and judges its set. */
+export const SWIFTSHADER: Environment = 'chromium-swiftshader';
+
 /**
  * The tolerance of other browsers and devices against the real-GPU references, for GPUs that
  * rasterize edges a little differently. SwiftShader differs from the Mac's GPU in up to 0.35% of
@@ -695,12 +698,49 @@ export function compareWithReference(
 			`the image is ${image.width} x ${image.height}, and the reference ${reference.file} is ${expected.width} x ${expected.height}. The new image is ${shown}`,
 		];
 	}
-	const { share, diff } = compareImages(expected, image, reference.tolerance.threshold);
-	if (share <= reference.tolerance.maxDiffRatio) return [];
+	const tolerance = toleranceFor(place, reference.tolerance);
+	const { share, diff } = compareImages(expected, image, tolerance.threshold);
+	if (share <= tolerance.maxDiffRatio) return [];
 	save({ status: 'changed', share }, diff);
 	return [
-		`${percent(share)} of pixels differ from the reference ${reference.file}, and at most ${percent(reference.tolerance.maxDiffRatio)} may. The new image is ${shown}, and the diff ${relative(REPO_ROOT, `${base}${CANDIDATE_FILES.diff}`)}`,
+		`${percent(share)} of pixels differ from the reference ${reference.file}, and at most ${percent(tolerance.maxDiffRatio)} may. The new image is ${shown}, and the diff ${relative(REPO_ROOT, `${base}${CANDIDATE_FILES.diff}`)}${elsewhereHint(place)}`,
 	];
+}
+
+/** The name a platform takes in a message: `macOS`, `win32`, `linux`. */
+const platformName = () => (process.platform === 'darwin' ? 'macOS' : process.platform);
+
+/**
+ * The software set is CI's Linux SwiftShader's drawing, and a run of it on another platform is a
+ * smoke test: the same tests against the same committed set, with the tolerance widened to a per
+ * cent. A renderer's own edge rule lays a softened edge, a cut-out mask's boundary or a shape a few
+ * pixels wide a little differently, and the differences measured when the sets were drawn were 0.167,
+ * 0.224, 0.354 and 0.540 per cent: a per cent covers them with room, and a change that really alters
+ * a picture reads at several per cent and still fails. What this cannot do is tell a platform
+ * difference from a small real change between those two figures, so a local run is a check that
+ * nothing broke, and CI's own run at a tenth of a per cent is the judge.
+ */
+export const LOCAL_SOFTWARE_TOLERANCE = 0.01;
+
+/** The tolerance a comparison uses: the test's own, widened on a local software run. */
+function toleranceFor(place: Place, tolerance: Tolerance): Tolerance {
+	if (!('environment' in place) || place.environment !== SWIFTSHADER) return tolerance;
+	if (process.platform === 'linux') return tolerance;
+	return {
+		...tolerance,
+		maxDiffRatio: Math.max(tolerance.maxDiffRatio, LOCAL_SOFTWARE_TOLERANCE),
+	};
+}
+
+/**
+ * What a local software run's failure means. It is against CI's Linux SwiftShader drawing, at the
+ * widened tolerance, so a difference at this size is either the platform or a change too small for
+ * the smoke test to separate: read the diff, and let CI judge the set.
+ */
+function elsewhereHint(place: Place): string {
+	if (!('environment' in place) || place.environment !== SWIFTSHADER) return '';
+	if (process.platform === 'linux') return '';
+	return `. This run drew the software set on ${platformName()} against CI's Linux SwiftShader drawing, where the tolerance widens to ${percent(LOCAL_SOFTWARE_TOLERANCE)} for that reason: read the diff, and let CI's run judge the set`;
 }
 
 /** The image in a page's result, or what is wrong with it. */
