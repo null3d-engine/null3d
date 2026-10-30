@@ -198,7 +198,9 @@ A measured leaf reflects about 7 to 11 per cent of visible light and transmits a
 cent of it, and almost all of that comes out diffuse. The share of its diffuse light that passes
 through therefore sits near a third: 0.25 to 0.45. Its gloss is a dielectric's, with a reflectance
 at normal incidence of about 0.03 to 0.04 and a perceptual roughness of 0.35 to 0.6. The
-vegetation add-on's leaf material takes these values from the species record.
+vegetation add-on's leaf material takes these values from the species record. Petals and paper are
+thinner than leaves and let more through, so the translucency demo keeps its petals at 0.7 and its
+paper lantern at 0.85; the measured range is for leaves.
 
 Give `diffuseTransmission` when you create the material, even as 0, to change it later with `set`. The option picks the shaders that light the back. A material created without it lets no light through to its other side.
 

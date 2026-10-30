@@ -10,7 +10,7 @@ declare const shader: CompiledMaterial<
 		readonly tiles: 'f32';
 		readonly tint: 'vec3f';
 		readonly height: 'f32';
-		readonly transmission: 'f32';
+		readonly throughLeaf: 'f32';
 		readonly swayDistance: 'f32';
 		readonly branches: 'f32';
 		readonly windBox: 'f32';
