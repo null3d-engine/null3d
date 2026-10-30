@@ -48,7 +48,6 @@ const INCOMPLETE = new Set([
 	'M3-R19',
 	'M3-F14',
 	'M3-K3',
-	'M3-V3',
 ]);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
@@ -71,8 +70,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"unticked by the 29 October audit: the entry gained a rule-42 bullet that the tick never covered. The per-frame terrain work, the quadtree select and the block build, is still in TypeScript and there is no terrain crate; that work is also what M3-R39's new bullet hands here by name, so R39 stands and this carries it",
 	'M3-K3':
 		"unticked by the 29 October audit: the owner's 26 October ruling is that cookies take any texture and larger sizes, and the head still resamples to 128 by 128 and takes pixels only",
-	'M3-V3':
-		'unticked under the policy this branch now states rather than by its own clause: no public behaviour may be reachable by nobody. The pick build of a compute-driven vertex offset is in its What bullet, and nothing takes it: no unit test, no browser test and no example. The owner may reverse this one without touching the others',
 	'M3-F3':
 		"dropped with the temporal resolve it waited on (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F10':
