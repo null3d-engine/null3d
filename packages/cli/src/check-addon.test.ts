@@ -8,6 +8,7 @@ import { fixture } from '../../../tools/lib/fixture';
 import { FIRST_USE_SHADER_BUDGET, LATER_BUDGET } from '../../../tools/lib/size-report.ts';
 import { UsageError } from './args.js';
 import {
+	ADDON_EXTERNALS,
 	ADDON_FILE_BUDGET,
 	ADDON_SHADER_BUDGET,
 	allocationGate,
@@ -557,6 +558,22 @@ const BUILDS = (missingCoreFiles(ADDON_FIXTURE) ?? []).length === 0;
  */
 it.if(Boolean(process.env.CI))('finds the core files in CI, so the build checks run there', () => {
 	expect(missingCoreFiles(ADDON_FIXTURE)).toEqual([]);
+});
+
+describe('ADDON_EXTERNALS', () => {
+	it('keeps every null3D package out of the add-on build, and no other package', () => {
+		const external = (specifier: string) =>
+			ADDON_EXTERNALS.some((pattern) => pattern.test(specifier));
+		for (const specifier of [
+			'@null3d/engine',
+			'@null3d/engine/stats',
+			'@null3d/impostors',
+			'@null3d/wind',
+		])
+			expect(external(specifier)).toBe(true);
+		for (const specifier of ['@acme/vegetation', 'some-package', './local.js'])
+			expect(external(specifier)).toBe(false);
+	});
 });
 
 describe.skipIf(!BUILDS)('buildAddon', () => {
