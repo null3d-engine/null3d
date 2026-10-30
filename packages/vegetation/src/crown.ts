@@ -55,8 +55,8 @@ export function crownEnvelope(shape: CrownShape, t: number): number {
 	}
 }
 
-/** The share of a child's length that the crown keeps at its narrowest. */
-const CROWN_FLOOR = 0.2;
+/** The share of a child's length that a crown keeps at its narrowest, unless its record names one. */
+export const CROWN_FLOOR = 0.2;
 
 /**
  * The length scale that the crown gives a branch at a height share through it.
@@ -67,9 +67,14 @@ const CROWN_FLOOR = 0.2;
  * @returns A length multiplier.
  * @category api/vegetation
  */
-export function crownScale(shape: CrownShape, spread: number, t: number): number {
+export function crownScale(
+	shape: CrownShape,
+	spread: number,
+	t: number,
+	floor = CROWN_FLOOR,
+): number {
 	const shapeValue = crownEnvelope(shape, t);
-	return CROWN_FLOOR + (1 - CROWN_FLOOR) * shapeValue ** (1 + spread);
+	return floor + (1 - floor) * shapeValue ** (1 + spread);
 }
 
 /**

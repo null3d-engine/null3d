@@ -13,6 +13,7 @@ const KEY_AT = 11;
 const KEY_SIDE = 12;
 const KEY_ROLL = 13;
 const KEY_SIZE = 14;
+const KEY_LEAN = 15;
 
 /** A direction of unit length. */
 function normalize(x: number, y: number, z: number): [number, number, number] {
@@ -97,7 +98,15 @@ export function leafCards(
 			const { point, tangent } = pointAndTangent(branch, sample);
 			// The outward direction is horizontal, away from the plant's axis.
 			const outward = normalize(point[0], 0, point[2]);
-			const normal = normalize(outward[0] * leaf.out, leaf.up, outward[2] * leaf.out);
+			const facing = normalize(outward[0] * leaf.out, leaf.up, outward[2] * leaf.out);
+			// Each card leans its own way, so a crown's leaves point in many directions rather than
+			// one, which is what makes a real crown read as leaves and not as a shell. The lean keeps
+			// the card's up-and-out bias: a leaf that faced inward would not catch the sun.
+			const normal = normalize(
+				facing[0] + (unitAt(seed, 6, variant, key, KEY_LEAN) - 0.5) * 1.5,
+				facing[1] + (unitAt(seed, 7, variant, key, KEY_LEAN) - 0.5) * 1.1,
+				facing[2] + (unitAt(seed, 8, variant, key, KEY_LEAN) - 0.5) * 1.5,
+			);
 			// The card's up axis leans along the branch, so a leaf reads as growing from its twig.
 			const sideX = tangent[1] * normal[2] - tangent[2] * normal[1];
 			const sideY = tangent[2] * normal[0] - tangent[0] * normal[2];
@@ -208,8 +217,10 @@ export function buildLeaves(
 		const w = card.width;
 		const h = card.height;
 		if (card.kind === 'cluster') {
-			// A card folded along its middle: six vertices and four triangles, as a leaf cluster.
-			const lift = Math.min(w, h) * 0.35;
+			// A card folded along its middle: six vertices and four triangles, as a leaf cluster. The
+			// fold turns a card that the camera sees edge-on into a lit panel rather than a dark line,
+			// so a crown's edges break into leaves instead of a black comb.
+			const lift = Math.min(w, h) * 0.45;
 			const leftX = normalize(
 				card.normal[0] - card.right[0] * 0.5,
 				card.normal[1] - card.right[1] * 0.5,

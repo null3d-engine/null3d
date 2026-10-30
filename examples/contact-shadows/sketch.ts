@@ -65,7 +65,7 @@ export default defineSketch(async (ctx) => {
 		castShadows: true,
 		shadow: { distance: 30, contactDistance: REACH },
 	});
-	garden(ctx);
+	const live = garden(ctx, camera);
 
 	// The two settings of the light's contact shadows, which the cycle swaps between.
 	const lit = [{ contactDistance: REACH }, { contactDistance: 0 }] as const;
@@ -77,6 +77,7 @@ export default defineSketch(async (ctx) => {
 	let steered = false;
 	return {
 		onUpdate(dt) {
+			live.update();
 			view.update(dt);
 			// Contact shadows on for one half of each cycle, off for the other.
 			const half = Math.floor(time.now / CYCLE) % 2;

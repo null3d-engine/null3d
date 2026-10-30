@@ -203,6 +203,9 @@ struct Uniforms {
 
 /// One turn, for the phases that the records and the vertex colours carry.
 const TURN: f32 = 6.283185307179586;
+/// How much of the crown's ambient light its deepest inside loses. The rest of the light reaches it,
+/// so a shaded leaf stays green and its crown shows a fall of tone rather than a flat black.
+const CROWN_SHADE: f32 = 0.55;
 /// How far the trunk's top moves for each meter a second of wind, as a share of its height.
 const TRUNK_BEND: f32 = 0.02;
 /// How far a branch turns about its pivot for each meter a second of wind.
@@ -372,10 +375,12 @@ fn surface(input: SurfaceInput) -> Surface {
         s.thickness = surfaceMap.a * 0.001;
         s.diffuseTransmission = material.throughLeaf;
         s.diffuseTransmissionColor = mix(s.baseColor * 1.6, vec3f(1.0, 0.7, 0.2), autumn * 0.6);
-        // The inside of the crown receives less of the sky and less of the sun. A mesh without the
-        // vertex data, such as a preview card, reads white and keeps the light.
-        let windy = step(input.vertexColor.r, 0.999);
-        s.occlusion = mix(0.0, 1.0 - input.vertexColor.a, windy);
+        // The inside of the crown receives less of the sky and less of the sun, and the fall from the
+        // crown's surface to its axis gives it its tone. The fall stops short of none, so a leaf deep
+        // in the crown keeps its green rather than turning black, as a leaf in a real crown does. A
+        // mesh without the vertex data, such as a preview card, reads white and keeps its light.
+        let enclosed = clamp(input.vertexColor.a, 0.0, 1.0);
+        s.occlusion = 1.0 - CROWN_SHADE * enclosed * enclosed;
         // The diffuse light follows the crown's volume, so a crown reads as a shape rather than as a
         // scatter of cards. The leaf keeps its own normal for its gloss and the light through it.
         s.normal = leafNormal;

@@ -4,9 +4,27 @@
 // close. A dirt path winds from the camera down to the lake, boulders lie beside it and on the
 // shore, and the lake mirrors the sky's environment. Pines with drooping tiers stand in clumps of
 // many sizes with open meadow between, more of them toward the valley's slopes, and a few alone.
-import { type MeshArrays, math, type SketchContext } from '@null3d/engine';
+import {
+	type Camera,
+	type InstanceBatch,
+	type MeshArrays,
+	math,
+	type SketchContext,
+} from '@null3d/engine';
+import {
+	bakePlantAtlases,
+	builtInSpecies,
+	generatePlant,
+	leafCellFor,
+	type PlantMaterial,
+	plantMaterial,
+	plantWind,
+	setWindLayer,
+	swayDistanceFor,
+	treeValues,
+} from '@null3d/vegetation';
+import { createWind } from '@null3d/wind';
 import { Noise, rock, type TexelSample, textureSet } from '../lib/procedural';
-import { pineWithLevels } from './pine';
 
 /** Quads along each side of the land, its width in metres, and the lake's height. */
 const QUADS = 320;
@@ -200,7 +218,8 @@ function path(): MeshArrays {
 }
 
 /** Adds the land, the path, the lake, the boulders and the pines to the scene. */
-export function valley({ scene, geometry, materials, textures, quality }: SketchContext): void {
+export function valley(ctx: SketchContext, camera: Camera): { update(): void } {
+	const { scene, geometry, materials, textures, quality } = ctx;
 	math.seed(11);
 	const groves = clumps();
 	const grass = textureSet(textures, 512, grassTexel);
@@ -252,16 +271,65 @@ export function valley({ scene, geometry, materials, textures, quality }: Sketch
 	});
 	boulders.markDirty(0, BOULDERS);
 
-	// Each pine is 14 to 26 m tall, turned its own way, a little lighter, darker, bluer or more
-	// yellow than the next, and picks its level of detail in every frame. Most stand in the clumps,
-	// more of them in the larger ones and toward each clump's middle, and a few stand alone.
-	const pines = scene.createInstances(pineWithLevels(geometry), TREES.high, {
-		material: materials.standard({ vertexColors: true, roughness: 0.85 }),
-		colors: true,
-		castShadows: true,
-		receiveShadows: true,
-	});
-	const { positions, rotations, scales, colors } = pines;
+	// The pines are the add-on's conifers, grown from its species record: three variants share the
+	// clump's places, each drawn as its bark and its needle cards, in the scene's one wind field.
+	const species = builtInSpecies('conifer');
+	if (!species) throw new Error('the vegetation add-on has no conifer');
+	const atlases = bakePlantAtlases(ctx);
+	const wind = createWind(ctx, { camera, box: 128, grid: 64 });
+	const SEED = 11;
+	const VARIANTS = 3;
+	/** The rows that one variant's batch holds, one row for each copy at the highest preset. */
+	const ROWS = Math.ceil(TREES.high / VARIANTS);
+	const cell = leafCellFor(species);
+	const swayDistance = swayDistanceFor(quality.preset);
+	const variants: { wood: InstanceBatch; leaves: InstanceBatch; rows: number }[] = [];
+	const plantMaterials: PlantMaterial[] = [];
+	for (let variant = 0; variant < VARIANTS; variant++) {
+		const asset = generatePlant(species, { seed: SEED, variant, levels: species.levels });
+		const field = plantWind(ctx, asset, wind.field, { swayDistance });
+		const bark = plantMaterial(ctx, {
+			atlases,
+			part: 'wood',
+			color: species.color.bark,
+			wind: field,
+		});
+		const leaves = plantMaterial(ctx, {
+			atlases,
+			part: 'leaves',
+			cell,
+			color: species.color.leaf,
+			transmission: species.color.transmission,
+			wind: field,
+		});
+		plantMaterials.push(bark, leaves);
+		const batches = { rows: 0 } as { wood: InstanceBatch; leaves: InstanceBatch; rows: number };
+		for (const part of asset.levels[0]?.parts ?? []) {
+			// Each part's base mesh names its coarser levels, which the engine picks by their
+			// measured error; the batch's bounds are the crown's sphere, which the morph reads.
+			const base = geometry.fromArrays(part.arrays);
+			base.setLevels(
+				asset.levels.slice(1).map((level) => {
+					const coarser = level.parts.find((other) => other.name === part.name);
+					if (!coarser) throw new Error(`a ${part.name} part has no level at ${level.error} m`);
+					return { mesh: geometry.fromArrays(coarser.arrays), error: level.error };
+				}),
+				{ fade: false },
+			);
+			const batch = scene.createInstances(base, ROWS, {
+				material: part.name === 'wood' ? bark : leaves,
+				values: true,
+				castShadows: true,
+				receiveShadows: true,
+			});
+			if (part.name === 'wood') batches.wood = batch;
+			else batches.leaves = batch;
+		}
+		variants.push(batches);
+	}
+	// Each copy stands 14 to 26 m tall, turned its own way, with the add-on's per-tree tint from
+	// where it stands. Most stand in the clumps, more of them in the larger ones and toward each
+	// clump's middle, and a few stand alone.
 	const areas = groves.map(([, , r]) => r * r);
 	const total = areas.reduce((sum, area) => sum + area, 0);
 	for (let k = 0; k < TREES.high; ) {
@@ -276,16 +344,43 @@ export function valley({ scene, geometry, materials, textures, quality }: Sketch
 		}
 		const y = groundAt(x, z);
 		if (!treeGround(x, z, y) || (Math.abs(x - pathX(z)) < PATH * 2 && z > 3300)) continue;
-		positions.set([x, y - 0.3, z], k * 3);
+		const chosen = variants[k % VARIANTS] as (typeof variants)[number];
+		const row = chosen.rows++;
 		const turn = math.randFloat(0, Math.PI);
-		rotations.set([0, Math.sin(turn), 0, Math.cos(turn)], k * 4);
-		scales.fill(math.randFloat(14, 26), k * 3, k * 3 + 3);
-		const [shade, hue] = [math.randFloat(0.8, 1.2), math.randFloat(-1, 1)];
-		colors?.set([shade * (1 + 0.15 * hue), shade, shade * (1 - 0.1 * hue), 1], k * 4);
+		const height = math.randFloat(14, 26) / species.height;
+		for (const batch of [chosen.wood, chosen.leaves]) {
+			batch.positions.set([x, y - 0.3, z], row * 3);
+			batch.rotations.set([0, Math.sin(turn), 0, Math.cos(turn)], row * 4);
+			batch.scales.fill(height, row * 3, row * 3 + 3);
+			batch.values?.set(treeValues(x, z, SEED, 0), row * 4);
+		}
 		k++;
 	}
-	pines.markDirty(0, TREES.high);
-	const fit = () => pines.setActiveCount(TREES[quality.preset]);
+	for (const variant of variants) {
+		variant.wood.markDirty(0, variant.rows);
+		variant.leaves.markDirty(0, variant.rows);
+	}
+	// A preset draws fewer of the copies, and gives the plants a shorter distance to sway within.
+	const fit = (): void => {
+		const copies = TREES[quality.preset];
+		for (const variant of variants) {
+			const count = Math.round((copies / TREES.high) * variant.rows);
+			variant.wood.setActiveCount(count);
+			variant.leaves.setActiveCount(count);
+		}
+	};
 	fit();
-	quality.onChange(fit);
+	quality.onChange(() => {
+		fit();
+		const distance = swayDistanceFor(quality.preset);
+		for (const material of plantMaterials) material.setUniform('swayDistance', distance);
+	});
+	return {
+		update() {
+			// The field's box follows the camera, and a gust and a push fade, so it steps every frame.
+			wind.update();
+			// The field keeps two states, so the plants read the one that this frame's run wrote.
+			setWindLayer(plantMaterials, wind.field);
+		},
+	};
 }

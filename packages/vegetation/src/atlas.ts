@@ -217,8 +217,9 @@ export interface PlantMaterialOptions {
 	readonly transmission?: number;
 	/**
 	 * How strongly the crown's outward normal replaces a leaf's own normal for its diffuse light,
-	 * from 0 to 1: a crown lit as a volume needs less of its cards' own facing. The default is 0.5.
-	 * It applies to the leaves alone.
+	 * from 0 to 1: a crown lit as a volume needs less of its cards' own facing. The default is 0.35,
+	 * which keeps each leaf's own angle in the light so a sunlit crown shows leaves rather than one
+	 * even sheet. It applies to the leaves alone.
 	 */
 	readonly crownBend?: number;
 }
@@ -302,7 +303,7 @@ export function plantMaterial(
 		windStrength: wind ? 1 : 0,
 		windLayer: 0,
 		crownCenter,
-		crownBend: wind ? (options.crownBend ?? 0.5) : 0,
+		crownBend: wind ? (options.crownBend ?? 0.35) : 0,
 	};
 	if (options.morph) {
 		if (part !== 'leaves')
