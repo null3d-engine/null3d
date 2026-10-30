@@ -7,7 +7,7 @@
 //
 // A full-screen pass of a few taps is a fraction of a millisecond, and the scene's own frame time
 // moves by more than that between rounds, so the page clears the scene to the background and the
-// two bars that feed bloom (?clear) and draws the marks' effect eight times in every frame
+// the bars that feed bloom (?clear) and draws the marks' effect eight times in every frame
 // (?repeat=8). The cell divides what it measures by the repeat count. Eight is the most effects
 // that the engine runs at once.
 //
@@ -48,8 +48,6 @@ const HIGHEST_PRESET: Readonly<Record<string, string>> = {
 };
 /** The marks that draw the add-on's effect, which the page repeats. */
 const EFFECT_MARKS = new Set(['aberration', 'streak', 'grain', 'speed']);
-/** The marks that draw no streak, so their pages leave bloom out and keep the frame's passes few. */
-const NO_BLOOM = new Set(['aberration', 'grain', 'speed']);
 /** How many times the page draws the effect in each frame. */
 const REPEAT = 8;
 /** The rounds of each side, and the seconds of each turn. */
@@ -160,9 +158,8 @@ async function timeLook(
 	// mark draws eight times, so its own fraction of a millisecond rises above the run's variation.
 	const repeat = mark !== undefined && EFFECT_MARKS.has(mark) ? REPEAT : 1;
 	const look = mark === undefined ? '' : `&look=${mark}`;
-	const bloom = mark !== undefined && NO_BLOOM.has(mark) ? '&bloom=off' : '';
 	await page.goto(
-		`effect-cost.html?effect=lens&gpu=${gpu}&preset=${preset}&scale=1&pixel-ratio=${PIXEL_RATIO}&rounds=${ROUNDS}&seconds=${SECONDS}&clear&repeat=${repeat}${look}${bloom}`,
+		`effect-cost.html?effect=lens&gpu=${gpu}&preset=${preset}&scale=1&pixel-ratio=${PIXEL_RATIO}&rounds=${ROUNDS}&seconds=${SECONDS}&clear&repeat=${repeat}${look}`,
 	);
 	const result = await pageResult<CostResult & { repeat: number }>(page, 400_000);
 	expect(result.error).toBeUndefined();
@@ -190,6 +187,9 @@ async function timeLook(
 		].join('\n'),
 	);
 	expect(result.failures).toEqual([]);
+	// A page whose frames failed draws no timed side, and a run that read nothing must not pass as
+	// a cost of zero.
+	expect(chosen.rounds, `the ${mark ?? 'whole look'} cell read no round`).toBeGreaterThan(0);
 }
 
 for (const gpu of paths)

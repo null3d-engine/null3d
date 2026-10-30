@@ -8,9 +8,9 @@
 // The look's own work is a fraction of a millisecond, and the scene's frame-to-frame variation is
 // larger than that, so the page takes two options that lift it above the variation. ?repeat= draws
 // the marks' effect that many times in each frame, in place of the kit's own, and the page divides
-// what it measures by the count. ?clear draws only the background and the two bars that feed bloom,
-// so the work around the look does not hide it. ?bloom=off leaves bloom out for a mark that draws
-// no streak, whose passes then fall inside the few that the engine times one by one.
+// what it measures by the count. ?clear draws only the background and the bars that feed bloom, so
+// the work around the look does not hide it. Bloom stays on for every case: the kit's shader names
+// a level of bloom's chain, and the frame fails when no pass writes that level.
 //
 // The module uses no type annotations: an address whose last value holds a dot, such as scale=0.5,
 // makes the dev server read the module as JavaScript.
@@ -28,8 +28,6 @@ if (!(Number.isSafeInteger(REPEAT) && REPEAT >= 1 && REPEAT <= EFFECT_MAX))
 	throw new Error(`the page repeats the look between 1 and ${EFFECT_MAX} times, not ${REPEAT}`);
 /** True leaves the wall of boxes out, so only the look's own work and bloom's chain remain. */
 const CLEAR = params.has('clear');
-/** True keeps bloom, which the streak reads. False drops it for a mark that draws no streak. */
-const BLOOM = params.get('bloom') !== 'off';
 /** Boxes along each side of the wall that covers the view. */
 const WALL = 32;
 
@@ -97,8 +95,8 @@ export default defineSketch((ctx) => {
 		});
 	}
 	// Bloom lights the streak, and it stays the same on both sides, so only the lens's own cost is
-	// timed. A mark that draws no streak leaves it out, which keeps the frame's passes few.
-	if (BLOOM) post.set({ bloom: { intensity: 0.5, threshold: 1 } });
+	// timed. It stays on for every case, because the kit's shader names a level of its chain.
+	post.set({ bloom: { intensity: 0.5, threshold: 1 } });
 	scene.setBackground('#0e1420');
 	scene.setActiveCamera(
 		scene.createPerspectiveCamera({
