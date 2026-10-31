@@ -1,7 +1,8 @@
-// Two filmstrips that a still cannot draw, for D-274's look bar. The hand-over strip walks the
-// camera from before the hand-over band to past it, one frame at a time, and counts each frame's
-// pixels off the background. A card that faded as its mesh does would drop the pixels that the
-// mesh's dither drops too, and the count would dip by about a quarter inside the band, so the strip
+// Two filmstrips that a still cannot draw, for D-274's look bar. The hand-over strip holds the
+// camera still and walks the switch across it, one frame at a time, and counts each frame's tree
+// pixels: the trees keep their size and place in the picture, so the only change from frame to
+// frame is the two fades. A card that faded while the mesh faded would drop the pixels that the
+// mesh's dither drops too, and the count would dip by about a third inside the band, so the strip
 // fails when a middle frame keeps fewer than this share of the ends. The sun strip moves the sun
 // around a row of turned pairs, so the meshes and their cards relight together.
 //
@@ -45,7 +46,8 @@ async function frame(
 	page: import('@playwright/test').Page,
 	sketch: string,
 ): Promise<{ width: number; height: number; data: Uint8Array }> {
-	const query = `gpu=webgpu&hold=0&size=480x270&sketch=${encodeURIComponent(sketch)}`;
+	// The preset is the references' High, where the engine fades a distance band's edges.
+	const query = `gpu=webgpu&hold=0&size=480x270&preset=high&sketch=${encodeURIComponent(sketch)}`;
 	await page.goto(`image.html?${query}`);
 	const result = await pageResult<FrameResult>(page, 60_000);
 	expect(result.error).toBeUndefined();
@@ -53,37 +55,19 @@ async function frame(
 	return { width: result.width, height: result.height, data };
 }
 
-/** The pixels that differ from the frame's top-left corner, which the background fills. */
-function off(pixels: { width: number; data: Uint8Array }): number {
-	const at = (x: number, y: number) => (y * pixels.width + x) * 4;
-	const [r, g, b] = [
-		pixels.data[at(2, 2)] ?? 0,
-		pixels.data[at(2, 2) + 1] ?? 0,
-		pixels.data[at(2, 2) + 2] ?? 0,
-	];
-	let count = 0;
-	for (let i = 0; i < pixels.data.length; i += 4)
-		if (
-			Math.abs((pixels.data[i] ?? 0) - r) +
-				Math.abs((pixels.data[i + 1] ?? 0) - g) +
-				Math.abs((pixels.data[i + 2] ?? 0) - b) >
-			6
-		)
-			count++;
-	return count;
-}
-
 test('the hand-over strip keeps every crown pixel through the band', async ({ page }) => {
 	test.setTimeout(240_000);
 	mkdirSync(OUT, { recursive: true });
 	const sketch = '/tests/pages/sketches/impostor-handover-sketch.ts';
+	// The same camera draws the ground and sky alone, which the tree pixels differ from.
+	const empty = await frame(page, `${sketch}?at=0.96&band=move&only=none`);
 	const counts: { at: number; off: number }[] = [];
 	for (const at of AT) {
-		const pixels = await frame(page, `${sketch}?at=${at}`);
+		const pixels = await frame(page, `${sketch}?at=${at}&band=move`);
 		writePng(join(OUT, `impostor-handover-${at.toFixed(3)}.png`), pixels);
-		counts.push({ at, off: off(pixels) });
+		counts.push({ at, off: shape(pixels, empty).reduce((sum, one) => sum + one, 0) });
 	}
-	console.log(counts.map((one) => `at ${one.at}: ${one.off} pixels off the ground`).join('\n'));
+	console.log(counts.map((one) => `at ${one.at}: ${one.off} tree pixels`).join('\n'));
 	// The ends draw the whole tree, as the mesh and as the card; a middle frame that drops a share
 	// of them shows a hole.
 	const ends = Math.min(counts[0]?.off ?? 0, counts.at(-1)?.off ?? 0);
