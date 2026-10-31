@@ -3591,9 +3591,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.017 },
 			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
-			// The ocean's WebGL2 fragment form costs 675 ms of a frame (D-257), and the owner holds the
-			// choice of what that path does. Until it lands, the demo draws the two paths that draw one
-			// sea, and a reference of it on WebGL2 would record the flat picture that path gives.
+			// The ocean's WebGL2 fragment form stores its field upside down, so its surface draws the
+			// swell the other way (D-257, .dev/code-review.md). The demo draws the two paths that draw
+			// one sea, and its WebGL2 picture waits for that fix.
 			...(demo.name === 'ocean' && { tiers: ['webgpu', 'compat'] as const }),
 			// The hero shadow is fine detail on one object, so its demo draws larger than the
 			// other demos, where the tile size's difference shows.

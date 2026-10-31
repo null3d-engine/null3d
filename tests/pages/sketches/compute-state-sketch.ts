@@ -162,9 +162,9 @@ for (let layer = 0; layer < 2; layer++)
 	for (let y = 0; y < MAP_SIDE; y++)
 		for (let x = 0; x < MAP_SIDE; x++) {
 			const at = ((layer * MAP_SIDE + y) * MAP_SIDE + x) * 4;
-			MAP_TEXELS[at] = layer + 1;
-			MAP_TEXELS[at + 1] = x;
-			MAP_TEXELS[at + 2] = y;
+			MAP_TEXELS[at] = 0.002;
+			MAP_TEXELS[at + 1] = 0.0001 * x;
+			MAP_TEXELS[at + 2] = layer + 1;
 			MAP_TEXELS[at + 3] = 0;
 		}
 
@@ -251,7 +251,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 				},
 				format: 'rgba16float',
 				size: CASE === 'cost' ? [256, 256] : kept ? [64, 64] : [4, 4],
-				history: !kept && !layered,
+				history: !kept && !layered && !mapped,
 				layers: mapped ? 2 : layered ? 3 : 1,
 				textures: mapped ? [copyMap] : undefined,
 				// The cadence case draws in one frame of two from its first frame on.
@@ -383,17 +383,22 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 			await wait(1);
 			for (let layer = 0; layer < 3; layer++) values[layer] = await read(layer);
 		} else if (CASE === 'map') {
-			await wait(1);
+			// The map's texels upload in the first frames, so the copy waits for them.
+			await wait(5);
 			for (let layer = 0; layer < 2; layer++) values[layer] = await read(layer);
-			// A square away from the first row and column, so a wrong row, column or layer shows.
-			const region = await render.readPass(field, {
-				x: 3,
-				y: 5,
-				width: 2,
-				height: 2,
-				layer: 1,
-			});
-			texels = [...region.data];
+			// One texel of each layer, whose red and green name its place and whose blue names the
+			// layer: a single texel takes no row order, so a map that gives the wrong layer or place
+			// shows on every path.
+			const corners: [number, number, number][] = [
+				[1, 1, 0],
+				[1, 1, 1],
+				[2, 1, 1],
+			];
+			texels = [];
+			for (const [x, y, layer] of corners) {
+				const texel = await render.readPass(field, { x, y, width: 1, height: 1, layer });
+				texels.push(...texel.data);
+			}
 		} else if (CASE === 'stopped') {
 			render.setPassSteps(field, 1);
 			await wait(3);

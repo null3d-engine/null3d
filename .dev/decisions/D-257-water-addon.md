@@ -282,14 +282,17 @@ vertex's world place is the origin with its place in the mesh.
   after the read buffers, and a unit test in each builder refuses their meeting.
 - The add-on's own page draws the sea on the three GPU paths, and a browser test reads each band's
   heights back and compares them with the transform on the page's thread.
-- The WebGL2 fallback cannot draw the sea at a usable rate: its simulation is 675 ms of an 833 ms
-  frame. The table in the data gives what fewer bands, a smaller grid or the analytic waves would
-  cost. That choice is the owner's.
-- The WebGL2 fragment form draws a sea that differs from the compute form by 0.60 m of height. Its
-  stage, size, layer, tile and texel all read right, and a chain that copies its map returns a field
-  five times smaller than the map gives, so the map's binding is what differs. The review holds that
-  open. `ocean-waves` marks that path as an expected failure until then, and the demo draws the two
-  paths that draw one sea.
+- The WebGL2 fragment form draws the same sea as the compute form, in a target whose image is
+  upside down: a read of the pass at the image's row 6 gives the field that the page's thread gives
+  at its row 118, within 0.004 m. The map, the layer, the size and the time all read right, so the
+  fault is the row's place in the image and not the transform. A material that samples the pass with
+  `textureSampleLevel` sees the mirror, so the surface draws the swell the other way. The review
+  holds it open ([the fragment form's image](../code-review.md#a-compute-passs-fragment-form-stores-its-image-upside-down-m3-f9)).
+  `ocean-waves` marks that path as an expected failure until then, the demo draws the two paths that
+  draw one sea, and its WebGL2 picture waits for the fix.
+- The add-on's page holds 60 frames a second on WebGL2 when the transform and the reflection carry
+  their cadence without being switched: the 833 ms frame was the graph compiling on every frame that
+  a pass switched, not the sea's draws ([D-270](D-270-a-pass-carries-its-cadence.md)).
 
 ## Consequences
 
