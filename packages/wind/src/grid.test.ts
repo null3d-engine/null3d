@@ -27,11 +27,6 @@ const docsFile = new URL('../../../docs/api/wind.md', import.meta.url);
 const plantFile = new URL('../../vegetation/src/plant.wgsl', import.meta.url);
 /** The add-on's morphing leaf cards, which read the same field. */
 const cardsFile = new URL('../../vegetation/src/plant-cards.wgsl', import.meta.url);
-/** The vegetation add-on's branch-pose pass, which reads the air once for each tree. */
-const posesFile = new URL('../../vegetation/src/poses.wgsl', import.meta.url);
-/** The pose pass's WebGL2 form. */
-const posesFallbackFile = new URL('../../vegetation/src/poses.fallback.wgsl', import.meta.url);
-
 describe('the shaders of the grid', () => {
 	test('the compute form, the WebGL2 form and the sampling file hold one steady field', () => {
 		// The shader build resolves only the engine's library, so a shader cannot import another
@@ -95,7 +90,7 @@ describe('the sampling function', () => {
 		expect(marked(docsFile, 'wind-sample')).toBe(sample);
 		// The vegetation add-on reads this field for its plants, so its two materials carry the
 		// same blocks.
-		for (const file of [plantFile, cardsFile, posesFile, posesFallbackFile]) {
+		for (const file of [plantFile, cardsFile]) {
 			expect(marked(file, 'wind-steady')).toBe(steady);
 			expect(marked(file, 'wind-sample')).toBe(sample);
 		}

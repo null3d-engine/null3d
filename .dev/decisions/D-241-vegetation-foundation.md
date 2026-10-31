@@ -101,10 +101,11 @@ No source gives phone figures for either method on the web. So M3-V10 builds bra
 
 ## Wind by branch poses, built and measured
 
-M3-V10 builds the pass that "Wind by bones" asks for, and measures it beside the per-vertex sway.
+M3-V10 built the pass that "Wind by bones" asks for, measured it beside the per-vertex sway, and
+removed it on the owner's ruling.
 
-**What a page gives it.** A page makes the pass for a variant with `plantPoses`. It gives the pass
-the copies of that variant that the scene places. It also gives the most of them that stand within
+**What a page gave it.** A page made the pass for a variant with `plantPoses`, which this change
+removes. It gave the pass the copies of that variant that the scene places. It also gives the most of them that stand within
 the sway distance at once. In each frame the page chooses a slot for each copy inside the distance. It also
 sends the pass the trees' places and normal matrices. The pass writes an instance header, the
 field's settings and one row of pose texels for each slot. The leaf and bark offsets read the turn
@@ -131,11 +132,13 @@ upload in the frame. A page pays those beside the vertex work that it saves.
 grove through the pose materials at two hold times, its motion view, and a still that borrows the
 per-vertex method's reference. The nine reference pictures pass in all 12 runs of
 `CI=1 bun run test:images -g "vegetation-poses"`. The spring test also reads the pose pass live, so
-it shows a branch turning on after the air stops and settling back.
+it shows a branch turning on after the air stops and settling back. The owner's ruling removes the
+pass, so these four tests and their nine references are deleted with it.
 
-**The trees' default stays open.** The figures below measure both methods on the same grove, and the
-owner picks the trees' default from them. A preset may switch only when its figure holds D-241's
-frame ceiling.
+**The owner's ruling.** The owner ruled that wind per vertex is the trees' default, with no
+preset switch, and that the branch-pose path is removed. The figures below measure
+both methods on the same grove, and they are the comparison that led to the ruling. A preset may
+switch only when its figure holds D-241's frame ceiling.
 
 **Guides from a loaded machine.** These single runs were taken while other sessions used the Mac, so
 they direct the work and are not the record's figures. The grove was dense, as the page's measurement
@@ -218,10 +221,14 @@ the two texels. The grove's four variants then cost the 1.3 to 2.6 ms that the W
 show. A history pass also keeps three copies of the table on WebGL2 and copies one state in each
 run. That is small beside the fragment work.
 
-**The owner's pick.** The figures do not support a preset switch. Wind per vertex stays the trees'
-default, and this record recommends no change. The pose method's two wins are inside the noise of
-the devices it was measured on, and its cost is clear wherever many trees stand near the camera or
-the WebGL2 form runs. The trees' own figures above are the ceiling that each preset keeps.
+**Why the posing lost.** The look review found the pose method's motion better: boughs bend and
+spring instead of the canopy sliding. Its cost and its softening did not carry the pick. Its two
+wins sit inside the noise of the devices it was measured on, and its cost is clear wherever many
+trees stand near the camera or the WebGL2 form runs. Its pictures also carried about a quarter less
+leaf-edge energy at both holds, and its WebGL2 grove moved about a quarter as much a frame as the
+other two paths. The branch-pose pass, its two shaders, its plan, its spring test and its picture
+tests and references are removed with this change, so the per-vertex offset is the trees' only path,
+and the trees' own figures above are the ceiling that each preset keeps.
 
 **What the demos' pages need.** Four demos draw groves on the software GPU, and their pages pay for
 the plants' setup, so a page time sets each page's limit. These times were taken with one test at a

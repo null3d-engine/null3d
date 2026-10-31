@@ -19,6 +19,6 @@ declare const shader: CompiledMaterial<
 		readonly crownCenter: 'vec3f';
 		readonly crownBend: 'f32';
 	},
-	'barkColor' | 'barkSurface' | 'leafColor' | 'leafSurface' | 'branchData' | 'wind'
+	'barkColor' | 'barkSurface' | 'leafColor' | 'leafSurface' | 'pivots' | 'wind'
 >;
 export default shader;
