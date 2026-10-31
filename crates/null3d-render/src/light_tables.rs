@@ -122,8 +122,10 @@ struct Image {
     source: ImageSource,
     /// True while the texture lacks the image's texels.
     pending: bool,
-    /// True once the array holds the image's texels, so the light's record may name it.
+    /// True once the array holds the image's texels, so a texture's record may name it.
     shown: bool,
+    /// True while the sketch thread writes a picture's texels, so the light shows none of them.
+    writing: bool,
 }
 
 /// The area lights' tables and the lights' images in engine memory, and the layers of the frame
@@ -185,7 +187,7 @@ impl LightTables {
             }
         };
         image.source = ImageSource::Pixels(texels);
-        image.shown = false;
+        image.writing = true;
         match &mut image.source {
             ImageSource::Pixels(texels) => Some(texels),
             ImageSource::Texture(_) => None,
@@ -204,6 +206,7 @@ impl LightTables {
         image.source = ImageSource::Texture(texture);
         image.pending = true;
         image.shown = false;
+        image.writing = false;
         true
     }
 
@@ -224,6 +227,7 @@ impl LightTables {
                             source: ImageSource::Pixels(Vec::new()),
                             pending: false,
                             shown: false,
+                            writing: false,
                         });
                         self.images.len() - 1
                     }
@@ -246,6 +250,7 @@ impl LightTables {
         let image = &mut self.images[place];
         image.pending = true;
         image.shown = true;
+        image.writing = false;
         image_record(place, image.size, probe_layers)
     }
 
@@ -262,19 +267,23 @@ impl LightTables {
     /// The record that each light with an image needs once the array holds `probe_layers` probe
     /// layers: its layer in the shared array, and the number of its size above that (see
     /// [`size_index`]). A probe's layers come before the images', so a probe that a scene adds or
-    /// removes moves every image, and the light records name the new place. A light whose image
-    /// has not finished, whether its texels are still being written or still wait for their
-    /// texture, shows none: its record is 0, so it keeps its color and never shows half a picture.
+    /// removes moves every image, and the light records name the new place.
+    ///
+    /// A picture that the sketch thread is still writing shows none, so a light never shows half a
+    /// picture. A picture whose texels come from a texture shows none until a frame copies them.
+    /// A picture from pixels shows as soon as the sketch finishes it, even after the GPU reset that
+    /// a held frame starts with: the frame that names it uploads it before it draws.
     pub fn image_records(&self, probe_layers: u32) -> impl Iterator<Item = (u32, f32)> + '_ {
         self.images
             .iter()
             .enumerate()
             .filter(|(_, image)| image.light != 0)
             .map(move |(place, image)| {
-                let record = if image.shown {
-                    image_record(place, image.size, probe_layers).unwrap_or(0.0)
-                } else {
+                let texture_waits = matches!(image.source, ImageSource::Texture(_)) && !image.shown;
+                let record = if image.writing || texture_waits {
                     0.0
+                } else {
+                    image_record(place, image.size, probe_layers).unwrap_or(0.0)
                 };
                 (image.light, record)
             })
@@ -294,6 +303,7 @@ impl LightTables {
             image.source = ImageSource::Pixels(Vec::new());
             image.pending = false;
             image.shown = false;
+            image.writing = false;
         }
     }
 
