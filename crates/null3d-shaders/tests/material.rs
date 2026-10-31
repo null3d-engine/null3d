@@ -1475,6 +1475,11 @@ fn every_buildable_permutation_of_a_full_custom_material_builds() {
     let mut expected = 0usize;
     let mut not_builds = 0usize;
     for (name, variant) in &template.variants {
+        // The compiler keeps out the variants that a pass's own bit marks as the engine's: no
+        // custom material's word sets that bit.
+        if !variant.required.is_empty() {
+            continue;
+        }
         // The compiler drops the left-out bits from the variant's list before it expands the rest,
         // so the free bits are the list without them.
         let free: Vec<u32> = variant
