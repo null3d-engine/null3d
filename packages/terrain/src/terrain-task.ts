@@ -106,7 +106,10 @@ interface TerrainState {
 
 /** The module, which the worker instantiates at its first task and keeps. */
 let wasm: TerrainWasm | undefined;
-/** The next free byte of the module's memory. */
+/**
+ * The next free byte of the module's memory. The module's first pages hold its shadow stack, which
+ * grows down from the top of them, so the add-on's arrays start above them.
+ */
 let next = 0;
 /** The arrays that each terrain keeps in this worker, by the input's `id`. */
 const states = new Map<number, TerrainState>();
@@ -145,6 +148,8 @@ function start(module: WebAssembly.Module): TerrainWasm {
 	}
 	if (typeof wasm.terrain_select !== 'function' || typeof wasm.terrain_build !== 'function')
 		throw loadError('the terrain builder holds no selection or build call');
+	// The module's memory starts with its shadow stack, so the first array goes above all of it.
+	next = wasm.memory.buffer.byteLength;
 	return wasm;
 }
 
