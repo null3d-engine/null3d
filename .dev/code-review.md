@@ -40,8 +40,9 @@ counts a texture's rows from the bottom and WebGPU from the top. The engine's re
 The map is not at fault: `compute-state`'s `map` case copies a known two-layer texture through a
 fragment form and reads each layer back right on every path. The block, the size, the layer and the
 time are right too. [D-271](decisions/D-271-a-fallback-pass-writes-the-image.md) gives the rule and
-the fix: the fragment form writes the image's rows, and the shader build turns a pass map's read so a
-chain's `textureLoad` keeps the index it names.
+the fix, which the branch `fix/m3-v13-fallback-image` writes: the fragment form turns its row, the
+store marks a pass map's slot, and the shader build turns that map's `textureLoad` so a chain keeps the
+index it names. The runs that prove it on the three paths are owed until the machine's gate opens.
 
 ## A pass texture reads as not ready on WebGL2 (M3-V13)
 
