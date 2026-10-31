@@ -40,8 +40,10 @@ async function frame(
 	page: import('@playwright/test').Page,
 	t: number,
 	quiet = false,
+	run = 'corner',
 ): Promise<{ width: number; height: number; data: Uint8Array }> {
-	const sketch = `/tests/pages/sketches/skyway-sight-sketch.ts?t=${t}${quiet ? '&quiet=1' : ''}`;
+	const flags = `${quiet ? '&quiet=1' : ''}${run === 'corner' ? '' : `&run=${run}`}`;
+	const sketch = `/tests/pages/sketches/skyway-sight-sketch.ts?t=${t}${flags}`;
 	const query = `gpu=webgpu&hold=0&size=640x360&sketch=${encodeURIComponent(sketch)}`;
 	await page.goto(`image.html?${query}`);
 	const result = await pageResult<FrameResult>(page, 120_000);
@@ -79,4 +81,21 @@ test('the chase camera keeps the car in sight past a tower', async ({ page }) =>
 	// NULL3D_SKYWAY_SIGHT_OLD, so the frames that lose the car are kept for the comparison.
 	if (!process.env.NULL3D_SKYWAY_SIGHT_OLD)
 		for (const one of counts) expect(one.neon, `t ${one.t}`).toBeGreaterThan(0);
+});
+
+// The car flies north along a tower's face and turns away: the swing brings the tower across the
+// camera's line. The car must stay in sight the whole way, and the band's growth from frame to frame
+// shows the pull closing at a steady rate rather than snapping.
+test('the pull eases through a turn away from a tower', async ({ page }) => {
+	test.setTimeout(300_000);
+	mkdirSync(OUT, { recursive: true });
+	const times = [1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
+	const counts: { t: number; neon: number }[] = [];
+	for (const t of times) {
+		const pixels = await frame(page, t, false, 'turn');
+		writePng(join(OUT, `skyway-turn-${t.toFixed(2)}.png`), pixels);
+		counts.push({ t, neon: neon(pixels) });
+	}
+	console.log(counts.map((one) => `turn t ${one.t}: ${one.neon} neon pixels`).join('\n'));
+	for (const one of counts) expect(one.neon, `turn t ${one.t}`).toBeGreaterThan(0);
 });
