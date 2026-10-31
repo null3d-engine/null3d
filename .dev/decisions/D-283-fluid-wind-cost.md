@@ -48,9 +48,11 @@ a second. M3-V16 has not landed the settings. The preset rows are therefore mode
 chain's step and the real cycle's floor, as the plan's cost runs allow.
 
 The field's own figures in this section were measured again at `5e29e392c`, after the rebase. Its
-harness files are byte-identical to `c4504a038`'s, which the rebase removed, and to `8e74d0dec`,
-where the audit checked them. The readers' and the phones' figures come from the runs at
-`c4504a038`. The machine is the Mac's installed Chrome 156, on an Apple M3 Max with 36 GB of
+harness files are byte-identical to `c4504a038`'s, which no ref reaches now, and to `8e74d0dec`,
+which a reader can reach and where the audit checked them. The readers' and the phones' figures
+come from the runs at `c4504a038`, whose harness matches this head's byte for byte. Those two runs
+were timed on that tree's engine core, not this head's, so the harness matches while the engine
+around it does not. The machine is the Mac's installed Chrome 156, on an Apple M3 Max with 36 GB of
 memory. The display is 60 Hz and the window is 640 by 400. The field runs began at a 1-minute load
 of 7.6 to 7.9 and ended between 3.6 and 19.7. Each side is the median GPU time of three rounds,
 alternating the order. WebGPU and compatibility mode time each pass. WebGL2 on a phone has no pass
