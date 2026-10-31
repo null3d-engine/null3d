@@ -1808,7 +1808,7 @@ export function vegetationScatterPlan(): PlanItem<Check>[] {
 }
 
 /** The showcase demos that the demos plan measures. */
-const MEASURED_DEMOS = ['skyway', 'night-town'] as const;
+const MEASURED_DEMOS = ['skyway', 'island'] as const;
 
 /**
  * Showcase demos on each GPU path, with the quality governor on: the frame rate, the display's

@@ -2180,7 +2180,7 @@ impl GpuDrivenRenderer {
             )?;
         }
 
-        arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
+        arena.begin_frame(self.upload_bound() + LinesPass::upload_bytes(&input.lines))?;
         let array = self.settings.probes().array().map_or(0, |(id, _)| id);
         let probe_layers = self.settings.probes().probe_layers();
         self.settings
@@ -2288,6 +2288,19 @@ impl GpuDrivenRenderer {
         // for every source. It comes before the layouts are applied and the views' bundles are
         // recorded: both name the slices' bases in commands that the frame keeps.
         self.fit_level_copies(input, parity)?;
+        let mut slices_moved = false;
+        for drawn in [
+            &mut self.layout,
+            &mut self.casters,
+            &mut self.outlined,
+            &mut self.scattering,
+            &mut self.moving,
+            &mut self.tone,
+        ] {
+            slices_moved |= drawn.take_slices_moved();
+        }
+        // The bundles name the slices' places, and the buffers must hold them.
+        let buffers_remade = buffers_remade || slices_moved;
         self.note_stage_band_picks(input, parity);
         let (shared_recreated, casters_recreated) = if upload_everything {
             let shared = self.layout.apply(list, arena, binding_bytes)?;

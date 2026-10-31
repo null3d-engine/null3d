@@ -5,8 +5,6 @@
 import { describe, expect, it } from 'bun:test';
 import * as creekLand from '../showcase/creek/land';
 import * as creek from '../showcase/creek/sketch';
-import * as townLand from '../showcase/night-town/land';
-import * as town from '../showcase/night-town/sketch';
 import { type MountainRingOptions, mountainRing } from './mountains';
 
 /** How far the lowest crest must stand above the camera's highest reach, in meters. */
@@ -14,10 +12,7 @@ const CREST_MARGIN = 10;
 /** How far under the land's edge the ring must lie where it passes under it, in meters. */
 const UNDER = 0.1;
 
-const SCENES = [
-	{ name: 'night town', settings: townLand.mountainSettings, bounds: town.BOUNDS },
-	{ name: 'creek', settings: creekLand.mountainSettings, bounds: creek.BOUNDS },
-];
+const SCENES = [{ name: 'creek', settings: creekLand.mountainSettings, bounds: creek.BOUNDS }];
 /** The bearings and rows of the ring at each quality preset, the fewest and the most. */
 const DETAILS = [
 	[160, 32],

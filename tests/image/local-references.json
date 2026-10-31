@@ -83,11 +83,23 @@
 		"date": "2026-10-29",
 		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
 	},
+	"chromium-swiftshader/compat/demo-island.png": {
+		"test": "demo-island",
+		"tier": "compat",
+		"date": "2026-10-31",
+		"reason": "This branch's scene has no CI run yet, because nothing is pushed. CI's own drawing replaces these."
+	},
 	"chromium-swiftshader/compat/demo-terrain.png": {
 		"test": "demo-terrain",
 		"tier": "compat",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+	},
+	"chromium-swiftshader/compat/demo-water.png": {
+		"test": "demo-water",
+		"tier": "compat",
+		"date": "2026-10-31",
+		"reason": "Held frames now draw the water's reflection. Nothing is pushed yet, so CI's own drawing replaces these."
 	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
@@ -338,8 +350,8 @@
 	"chromium-swiftshader/webgl2/creek-water-close.png": {
 		"test": "creek-water-close",
 		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
+		"date": "2026-10-31",
+		"reason": "Held frames now draw the water's reflection. Nothing is pushed yet, so CI's own drawing replaces these."
 	},
 	"chromium-swiftshader/webgl2/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
@@ -377,11 +389,23 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/webgl2/demo-island.png": {
+		"test": "demo-island",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "This branch's scene has no CI run yet, because nothing is pushed. CI's own drawing replaces these."
+	},
 	"chromium-swiftshader/webgl2/demo-terrain.png": {
 		"test": "demo-terrain",
 		"tier": "webgl2",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+	},
+	"chromium-swiftshader/webgl2/demo-water.png": {
+		"test": "demo-water",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "Held frames now draw the water's reflection. Nothing is pushed yet, so CI's own drawing replaces these."
 	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -472,6 +496,24 @@
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgl2/script-demo-island-closer.png": {
+		"test": "script-demo-island-closer",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "This branch's scene has no CI run yet, because nothing is pushed. CI's own drawing replaces these."
+	},
+	"chromium-swiftshader/webgl2/script-demo-island-turned.png": {
+		"test": "script-demo-island-turned",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "This branch's scene has no CI run yet, because nothing is pushed. CI's own drawing replaces these."
+	},
+	"chromium-swiftshader/webgl2/script-demo-island-walked.png": {
+		"test": "script-demo-island-walked",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "This branch's scene has no CI run yet, because nothing is pushed. CI's own drawing replaces these."
 	},
 	"chromium-swiftshader/webgl2/sky-layer-scene-pass.png": {
 		"test": "sky-layer-scene-pass",
@@ -658,6 +700,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgpu/demo-island.png": {
+		"test": "demo-island",
+		"tier": "webgpu",
+		"date": "2026-10-31",
+		"reason": "This branch's scene has no CI run yet, because nothing is pushed. CI's own drawing replaces these."
 	},
 	"chromium-swiftshader/webgpu/demo-terrain.png": {
 		"test": "demo-terrain",

@@ -151,7 +151,10 @@ fn surface(input: SurfaceInput) -> Surface {
     }
     let share = j.y;
     let current = current_of(input.uv, input.uv1);
-    let w = shared_waves(p, frame.time, current, share, true);
+    var w = shared_waves(p, frame.time, current, share, true);
+    // A far ripple is finer than a pixel, so its slope fades with distance and never shimmers.
+    let far = dot(input.relativePosition, input.relativePosition);
+    w = vec3f(w.x, w.yz / (1.0 + far / 40000.0));
     s.normal = normalize(vec3f(-w.y, 1.0, -w.z));
     let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
     let mirrorUv = reflection_uv(clip, w.yz * 0.08);

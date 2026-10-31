@@ -92,6 +92,8 @@ export interface DeviceReport {
 
 /** What the engine core and the thread that draws need to know about the device and the canvas. */
 export interface CoreDevice {
+	/** The shared memory's declared maximum in MiB, in a build whose memory has one. */
+	memoryMaximumMiB?: number;
 	/** True on the WebGL2 path, false on WebGPU. */
 	webgl2: boolean;
 	/** WebGPU: the largest storage binding to request, which sizes the scene the core can draw. */
