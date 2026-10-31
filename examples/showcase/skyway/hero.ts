@@ -25,7 +25,7 @@ import { EFFECT_LAYER } from '../../lib/layers';
 import { COCKPIT, CONSOLE, createCanopy, createCanopyOverlay, createShell, FITTINGS } from './body';
 import { createCockpit } from './cockpit';
 import { createConsole } from './console';
-import { cityTowers, type Flight, fly, keepOut, type Stick } from './drive';
+import { cityTowers, clearSight, type Flight, fly, keepOut, type Stick } from './drive';
 import { HERO_LAYER } from './layout';
 
 /** The layers of the car's own meshes: the effect layer, as the rest of what flies, and the layer
@@ -48,6 +48,12 @@ const ARC = 1.2;
 const CHASE = { behind: 13, above: 4.4, ahead: 22, lift: 1.4 };
 /** How quickly the chase camera follows the car's place and its look, per second. */
 const CHASE_FOLLOW = 7;
+/** How far before a tower the chase camera stops, so it does not skim a wall, in meters. */
+const SIGHT_CLEARANCE = 0.6;
+/** How close the camera must come to the car before it looks at the car rather than down the road,
+ * in meters. A camera pulled in before a tower is close above the car, which would fall below the
+ * frame if the look stayed far ahead. */
+const SIGHT_CLOSE = 7;
 /** The chase camera's tilt above the car, and its distance from it. */
 const CHASE_TILT = Math.atan2(CHASE.above, CHASE.behind);
 const CHASE_DISTANCE = Math.hypot(CHASE.behind, CHASE.above);
@@ -470,8 +476,41 @@ export function createHero(
 		chase.z += ((at[2] as number) + Math.cos(around) * level - chase.z) * k;
 		// The camera never sits inside a tower, though the car may hug one.
 		keepOut(chase, towers);
+		// A tower between the car and the camera would hide the car. Pull the camera in before the
+		// nearest one, then keep the new place out of the towers, since the pull may have taken it
+		// inside another. The pull follows a point that moves with the tower's edge, so the camera
+		// closes smoothly; when the tower clears, the easing above carries it back out.
+		for (let pass = 0; pass < 2; pass++) {
+			if (
+				!clearSight(
+					at[0] as number,
+					at[1] as number,
+					at[2] as number,
+					chase,
+					towers,
+					SIGHT_CLEARANCE,
+				)
+			)
+				break;
+			keepOut(chase, towers);
+		}
+		// The look lies ahead of the car while the camera sits at its usual distance. A camera pulled
+		// in before a tower looks at the car instead, since the car is close below it and would
+		// otherwise fall below the frame. The look eases with the camera, so neither jumps.
+		const away = Math.hypot(
+			chase.x - (at[0] as number),
+			chase.y - (at[1] as number),
+			chase.z - (at[2] as number),
+		);
+		const closeness = math.clamp(
+			(away - SIGHT_CLOSE) / Math.max(CHASE_DISTANCE - SIGHT_CLOSE, 1e-3),
+			0,
+			1,
+		);
 		const lead =
-			CHASE.ahead * math.clamp(1 - (Math.abs(orbit.turn) + Math.abs(orbit.tilt)) / 0.6, 0, 1);
+			CHASE.ahead *
+			closeness *
+			math.clamp(1 - (Math.abs(orbit.turn) + Math.abs(orbit.tilt)) / 0.6, 0, 1);
 		vec3.set(
 			goal,
 			(at[0] as number) + sx * lead,

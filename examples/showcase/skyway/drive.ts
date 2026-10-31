@@ -102,6 +102,85 @@ export function fly(flight: Flight, stick: Stick, dt: number, towers: Towers): v
 	keepOut(flight, towers);
 }
 
+/** The least distance a pulled-in chase camera keeps from the point it looks at, in meters. */
+const SIGHT_NEAREST = 2;
+
+/**
+ * Moves `flight` to the nearest place before a tower that stands between it and the point
+ * (fromX, fromY, fromZ), so the tower cannot hide that point. `towers` holds the boxes that
+ * `keepOut` reads. Each box is grown by `clearance`, so the camera stops that far before a wall,
+ * and it keeps at least two meters from the point so the near plane never clips a body there.
+ * Returns true when a tower stood in the way and the place moved.
+ */
+export function clearSight(
+	fromX: number,
+	fromY: number,
+	fromZ: number,
+	flight: Flight,
+	towers: Towers,
+	clearance: number,
+): boolean {
+	const dx = flight.x - fromX;
+	const dy = flight.y - fromY;
+	const dz = flight.z - fromZ;
+	const length = Math.hypot(dx, dy, dz);
+	if (length <= SIGHT_NEAREST) return false;
+	/** Where along the segment from the point to the camera the nearest box starts, from 0 to 1. */
+	let entry = 1;
+	for (let k = 0; k < towers.length; k += 5) {
+		const minX = (towers[k] as number) - (towers[k + 2] as number) - clearance;
+		const maxX = (towers[k] as number) + (towers[k + 2] as number) + clearance;
+		const minZ = (towers[k + 1] as number) - (towers[k + 3] as number) - clearance;
+		const maxZ = (towers[k + 1] as number) + (towers[k + 3] as number) + clearance;
+		const maxY = (towers[k + 4] as number) + clearance;
+		// The segment against the box's three slabs. It enters where the last slab's near side
+		// begins and leaves where the first far side ends, so it crosses only when near <= far.
+		let near = 0;
+		let far = 1;
+		if (Math.abs(dx) < 1e-9) {
+			if (fromX < minX || fromX > maxX) continue;
+		} else {
+			let t1 = (minX - fromX) / dx;
+			let t2 = (maxX - fromX) / dx;
+			if (t1 > t2) [t1, t2] = [t2, t1];
+			near = Math.max(near, t1);
+			far = Math.min(far, t2);
+			if (near > far) continue;
+		}
+		// The box rises from the ground to its top.
+		if (Math.abs(dy) < 1e-9) {
+			if (fromY < -clearance || fromY > maxY) continue;
+		} else {
+			let t1 = (-clearance - fromY) / dy;
+			let t2 = (maxY - fromY) / dy;
+			if (t1 > t2) [t1, t2] = [t2, t1];
+			near = Math.max(near, t1);
+			far = Math.min(far, t2);
+			if (near > far) continue;
+		}
+		if (Math.abs(dz) < 1e-9) {
+			if (fromZ < minZ || fromZ > maxZ) continue;
+		} else {
+			let t1 = (minZ - fromZ) / dz;
+			let t2 = (maxZ - fromZ) / dz;
+			if (t1 > t2) [t1, t2] = [t2, t1];
+			near = Math.max(near, t1);
+			far = Math.min(far, t2);
+			if (near > far) continue;
+		}
+		// The point is outside the box, so an entry ahead of it is a tower in the way.
+		if (near > 0 && near < entry) entry = near;
+	}
+	if (entry >= 1) return false;
+	const t = Math.max(entry, SIGHT_NEAREST / length);
+	// The camera keeps its height as it pulls in, so it looks down at the point from above a car's
+	// roof rather than entering the car's own body. Its new place is in front of the box across,
+	// where the line to the point stays out of it.
+	flight.x = fromX + dx * t;
+	flight.z = fromZ + dz * t;
+	return true;
+}
+
 /**
  * Keeps the car out of every tower, above the street, under the ceiling and inside the city. A car
  * inside a tower's box, widened by the clearance, leaves by the nearest face: a wall stops the
