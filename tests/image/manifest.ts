@@ -567,6 +567,42 @@ function aoTests(): ImageTest[] {
 	];
 }
 
+/** The prototype AO comparison page (tests/pages/proto-s3.ts), not an engine page. */
+const PROTO_AO_PAGE = 'tests/pages/proto-s3.html';
+
+/**
+ * The bitmask ambient occlusion prototype's own pictures, which keep the figures in its decision
+ * record reproducible. Each draws the prototype page's fixed scene on both GPU paths and publishes
+ * one picture of the occlusion alone: the current technique and the bitmask variant, each at half
+ * and at a quarter size. These entries and the page serve the prototype alone. The engine's own AO
+ * tests do not draw them.
+ */
+function protoAoTests(): ImageTest[] {
+	const test = (name: string, ao: string, aoscale: string): ImageTest => ({
+		name,
+		page: PROTO_AO_PAGE,
+		size: [960, 540],
+		tiers: ['webgpu', 'webgl2'],
+		switches: [
+			`aos=${ao}`,
+			`aoscale=${aoscale}`,
+			`picture=copy-${ao}-bilinear-ao`,
+			'imagesize=960x540',
+			'measure=0',
+		],
+		// The software set is this machine's SwiftShader drawing, and CI's Linux SwiftShader is the
+		// judge. A wider tolerance covers the two renderers' rounding until a CI run draws the set.
+		swiftShaderTolerance: { maxDiffRatio: 0.01 },
+		timeoutSeconds: 180,
+	});
+	return [
+		test('proto-ao-current-half', 'three', '0.5'),
+		test('proto-ao-current-quarter', 'three', '0.25'),
+		test('proto-ao-bitmask-half', 'bitmask', '0.5'),
+		test('proto-ao-bitmask-quarter', 'bitmask', '0.25'),
+	];
+}
+
 /** The sketch of the occlusion tests: a city whose buildings block the view from its streets. */
 const OCCLUSION_SKETCH = 'tests/pages/sketches/occlusion-sketch.ts';
 
@@ -1618,6 +1654,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...hdrLimitTests(),
 	...realUnitsTests(),
 	...aoTests(),
+	...protoAoTests(),
 	...outlineTests(),
 	...minimapTests(),
 	...reflectionTests(),
@@ -2951,6 +2988,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1,
 		size: [640, 360],
 	},
+	// The first grass picture: a hill of tufts grown by the add-on, placed and tinted by integer
+	// hash, drawn as one band. The blades read the wind add-on's field, which this picture holds
+	// still; the camera and the light are fixed, so two runs draw the same frame.
+	{
+		name: 'vegetation-grass',
+		sketch: 'tests/pages/sketches/vegetation-grass-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+	},
 	// A grove of grown oaks in the scene's one wind field: the leaf and bark materials sway, the
 	// leaves flutter and the sun's shadows follow. The two holds catch the trees at different points
 	// of their sway, the motion picture draws the sway's motion, and the still picture holds the air
@@ -3049,6 +3095,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'impostor-turn-azimuth',
 		sketch: 'tests/pages/sketches/impostor-turn-sketch.ts?azimuth=65',
+		hold: 0,
+		size: [480, 270],
+	},
+	// One leaned pine beside its own card, whose crown is not symmetric, seen from 90 degrees around
+	// the pair. The tree and its card are turned by the same angle, so the pair must show the same
+	// lit and dark sides. A card that turned its stored normal with the camera's own frame lights
+	// the opposite side here, where the camera's azimuth and the tree's turn add up.
+	{
+		name: 'impostor-turn-lean-azimuth',
+		sketch: 'tests/pages/sketches/impostor-turn-lean-sketch.ts?azimuth=90',
 		hold: 0,
 		size: [480, 270],
 	},

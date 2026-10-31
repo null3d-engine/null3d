@@ -152,8 +152,8 @@
 	"chromium-swiftshader/compat/impostor-handover.png": {
 		"test": "impostor-handover",
 		"tier": "compat",
-		"date": "2026-10-30",
-		"reason": "the branch has no CI run, so the software set is drawn here with CI=1, as the impostor shadow commit did"
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
 	},
 	"chromium-swiftshader/compat/impostor-shadow.png": {
 		"test": "impostor-shadow",
@@ -166,6 +166,12 @@
 		"tier": "compat",
 		"date": "2026-10-29",
 		"reason": "the picture is new with the far-tree branch; drawn on the software renderer for its reference"
+	},
+	"chromium-swiftshader/compat/impostor-turn-lean-azimuth.png": {
+		"test": "impostor-turn-lean-azimuth",
+		"tier": "compat",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
 	},
 	"chromium-swiftshader/compat/impostor-turn-sun-back.png": {
 		"test": "impostor-turn-sun-back",
@@ -202,6 +208,30 @@
 		"tier": "compat",
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/compat/vegetation-broadleaf.png": {
+		"test": "vegetation-broadleaf",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/compat/vegetation-conifer.png": {
+		"test": "vegetation-conifer",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/compat/vegetation-grass.png": {
+		"test": "vegetation-grass",
+		"tier": "compat",
+		"date": "2026-10-30",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 for the hill that the grass draws as one band, before the branch was pushed; CI's own software set replaces it when the branch lands"
+	},
+	"chromium-swiftshader/compat/vegetation-rush.png": {
+		"test": "vegetation-rush",
+		"tier": "compat",
+		"date": "2026-10-29",
+		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
 	"chromium-swiftshader/compat/water-bounds.png": {
 		"test": "water-bounds",
@@ -362,8 +392,8 @@
 	"chromium-swiftshader/webgl2/impostor-handover.png": {
 		"test": "impostor-handover",
 		"tier": "webgl2",
-		"date": "2026-10-30",
-		"reason": "the branch has no CI run, so the software set is drawn here with CI=1, as the impostor shadow commit did"
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
 	},
 	"chromium-swiftshader/webgl2/impostor-shadow.png": {
 		"test": "impostor-shadow",
@@ -376,6 +406,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "the picture is new with the far-tree branch; drawn on the software renderer for its reference"
+	},
+	"chromium-swiftshader/webgl2/impostor-turn-lean-azimuth.png": {
+		"test": "impostor-turn-lean-azimuth",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
 	},
 	"chromium-swiftshader/webgl2/impostor-turn-sun-back.png": {
 		"test": "impostor-turn-sun-back",
@@ -407,6 +443,30 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
+	"chromium-swiftshader/webgl2/proto-ao-bitmask-half.png": {
+		"test": "proto-ao-bitmask-half",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "the branch has no CI run; the prototype S3 page draws its fixed scene with plain GPU calls, and its bitmask pictures moved with the look fixes, so the software set is drawn here until a CI run replaces it"
+	},
+	"chromium-swiftshader/webgl2/proto-ao-bitmask-quarter.png": {
+		"test": "proto-ao-bitmask-quarter",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "the branch has no CI run; the prototype S3 page draws its fixed scene with plain GPU calls, and its bitmask pictures moved with the look fixes, so the software set is drawn here until a CI run replaces it"
+	},
+	"chromium-swiftshader/webgl2/proto-ao-current-half.png": {
+		"test": "proto-ao-current-half",
+		"tier": "webgl2",
+		"date": "2026-10-30",
+		"reason": "the branch has no CI run; the prototype S3 page is a test page that draws its fixed scene with plain GPU calls, so the software set can be drawn here until a CI run replaces it"
+	},
+	"chromium-swiftshader/webgl2/proto-ao-current-quarter.png": {
+		"test": "proto-ao-current-quarter",
+		"tier": "webgl2",
+		"date": "2026-10-30",
+		"reason": "the branch has no CI run; the prototype S3 page is a test page that draws its fixed scene with plain GPU calls, so the software set can be drawn here until a CI run replaces it"
+	},
 	"chromium-swiftshader/webgl2/sky-layer-scene-pass.png": {
 		"test": "sky-layer-scene-pass",
 		"tier": "webgl2",
@@ -418,6 +478,24 @@
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgl2/vegetation-conifer.png": {
+		"test": "vegetation-conifer",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgl2/vegetation-grass.png": {
+		"test": "vegetation-grass",
+		"tier": "webgl2",
+		"date": "2026-10-30",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 for the hill that the grass draws as one band, before the branch was pushed; CI's own software set replaces it when the branch lands"
+	},
+	"chromium-swiftshader/webgl2/vegetation-meadow-grass.png": {
+		"test": "vegetation-meadow-grass",
+		"tier": "webgl2",
+		"date": "2026-10-29",
+		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
 	"chromium-swiftshader/webgl2/water-bounds.png": {
 		"test": "water-bounds",
@@ -578,8 +656,8 @@
 	"chromium-swiftshader/webgpu/impostor-handover.png": {
 		"test": "impostor-handover",
 		"tier": "webgpu",
-		"date": "2026-10-30",
-		"reason": "the branch has no CI run, so the software set is drawn here with CI=1, as the impostor shadow commit did"
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
 	},
 	"chromium-swiftshader/webgpu/impostor-shadow.png": {
 		"test": "impostor-shadow",
@@ -592,6 +670,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "the picture is new with the far-tree branch; drawn on the software renderer for its reference"
+	},
+	"chromium-swiftshader/webgpu/impostor-turn-lean-azimuth.png": {
+		"test": "impostor-turn-lean-azimuth",
+		"tier": "webgpu",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
 	},
 	"chromium-swiftshader/webgpu/impostor-turn-sun-back.png": {
 		"test": "impostor-turn-sun-back",
@@ -623,6 +707,30 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
+	"chromium-swiftshader/webgpu/proto-ao-bitmask-half.png": {
+		"test": "proto-ao-bitmask-half",
+		"tier": "webgpu",
+		"date": "2026-10-31",
+		"reason": "the branch has no CI run; the prototype S3 page draws its fixed scene with plain GPU calls, and its bitmask pictures moved with the look fixes, so the software set is drawn here until a CI run replaces it"
+	},
+	"chromium-swiftshader/webgpu/proto-ao-bitmask-quarter.png": {
+		"test": "proto-ao-bitmask-quarter",
+		"tier": "webgpu",
+		"date": "2026-10-31",
+		"reason": "the branch has no CI run; the prototype S3 page draws its fixed scene with plain GPU calls, and its bitmask pictures moved with the look fixes, so the software set is drawn here until a CI run replaces it"
+	},
+	"chromium-swiftshader/webgpu/proto-ao-current-half.png": {
+		"test": "proto-ao-current-half",
+		"tier": "webgpu",
+		"date": "2026-10-30",
+		"reason": "the branch has no CI run; the prototype S3 page is a test page that draws its fixed scene with plain GPU calls, so the software set can be drawn here until a CI run replaces it"
+	},
+	"chromium-swiftshader/webgpu/proto-ao-current-quarter.png": {
+		"test": "proto-ao-current-quarter",
+		"tier": "webgpu",
+		"date": "2026-10-30",
+		"reason": "the branch has no CI run; the prototype S3 page is a test page that draws its fixed scene with plain GPU calls, so the software set can be drawn here until a CI run replaces it"
+	},
 	"chromium-swiftshader/webgpu/row-colors.png": {
 		"test": "row-colors",
 		"tier": "webgpu",
@@ -652,6 +760,18 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgpu/vegetation-conifer.png": {
+		"test": "vegetation-conifer",
+		"tier": "webgpu",
+		"date": "2026-10-29",
+		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgpu/vegetation-grass.png": {
+		"test": "vegetation-grass",
+		"tier": "webgpu",
+		"date": "2026-10-30",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 for the hill that the grass draws as one band, before the branch was pushed; CI's own software set replaces it when the branch lands"
 	},
 	"chromium-swiftshader/webgpu/water-bounds.png": {
 		"test": "water-bounds",

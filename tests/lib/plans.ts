@@ -1749,6 +1749,42 @@ const VEGETATION_WIND_PATHS = [
 	['compat', 'webgpu'],
 	['webgl2', 'webgl2'],
 ] as const;
+/**
+ * The GPU paths of the grass plan's pages, with the presets that each one draws. WebGL2 and
+ * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
+ * under another name.
+ */
+const VEGETATION_GRASS_PATHS = [
+	{ path: 'webgpu', tier: 'webgpu', presets: ['low', 'medium', 'high', 'ultra'] },
+	{ path: 'compat', tier: 'webgpu', presets: ['low', 'medium'] },
+	{ path: 'webgl2', tier: 'webgl2', presets: ['low', 'medium'] },
+] as const;
+
+/**
+ * What the grass on one hill costs at each preset that a GPU path draws, for M3-V8: the frame's
+ * GPU time, its per-pass breakdown where the device times passes, the CPU time and the draw calls.
+ * The page places 20,000 tufts at High, draws a preset's share of them, and measures five seconds.
+ * Each of the hill's three distance bands also runs alone at High on WebGPU, so the far bands'
+ * cheaper draws read as figures of their own rather than as one hill's average.
+ */
+export function vegetationGrassPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const { path, tier, presets } of VEGETATION_GRASS_PATHS)
+		for (const preset of presets)
+			items.push(
+				pageItem(
+					`vegetation-grass-${preset}-${path}`,
+					'vegetation-grass',
+					{ kind: 'probe', tier },
+					{
+						switches: [`gpu=${path}`, `preset=${preset}`, 'seconds=5'],
+						timeoutSeconds: 600,
+					},
+				),
+			);
+	return items;
+}
+
 /** The presets that the vegetation wind plan runs on each path. */
 const VEGETATION_WIND_PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
 
@@ -2374,7 +2410,7 @@ const WARM_UP_TIMEOUT_SECONDS = 90;
 
 /** Each benchmark scene's count on its own page. */
 /** The sketches whose warm-up the plan times: each benchmark scene at its own count, then each demo. */
-function warmUpSketches(): { scene: string; sketch: string }[] {
+export function warmUpSketches(): { scene: string; sketch: string }[] {
 	return [
 		...(Object.keys(SCENE_COUNTS) as BenchScene[]).map((scene) => ({
 			scene,
@@ -2584,6 +2620,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
 	'vegetation-wind': vegetationWindPlan,
+	'vegetation-grass': vegetationGrassPlan,
 	terrain: terrainPlan,
 	'terrain-shadow': terrainShadowPlan,
 	'tree-generation': treeGenerationPlan,

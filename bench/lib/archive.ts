@@ -184,6 +184,21 @@ export interface ThreeShare {
 	share: number;
 }
 
+/** The memory figures that a page's `?memory-figures` mode reports, in bytes. */
+export interface ArchivedMemory {
+	/** Whether the overlay showed the figures before the page read them. */
+	ready: boolean;
+	/** The engine's WebAssembly memory, and the bytes its tables and allocators use. */
+	wasmBytes: number | null;
+	engineBytes: number | null;
+	/** The GPU's textures and buffers. */
+	gpuTextureBytes: number | null;
+	gpuBufferBytes: number | null;
+	/** The page's JavaScript heap, and the whole page's memory. */
+	jsHeapBytes: number | null;
+	totalBytes: number | null;
+}
+
 /** The figures of one page's runs, summed up. */
 export interface PageFigures {
 	runs: number;
@@ -215,6 +230,8 @@ export interface ArchivedPage extends PageFigures {
 	n?: number;
 	/** The quality presets that the null3D page's runs drew with. */
 	presets?: string[];
+	/** What the page's `?memory-figures` mode read, where a run asked for it. */
+	memory?: ArchivedMemory;
 	trace?: TraceSummary;
 	visual?: VisualFigures;
 	/** A null3D page against three.js's renderer that does the least, by each measure. */
@@ -245,6 +262,8 @@ export interface ArchivedRun {
 	gpuPassMs?: { name: string; ms: number }[];
 	gpuLatencyMs?: number | null;
 	refreshHz?: number | null;
+	/** What the page's `?memory-figures` mode read, where the run asked for it. */
+	memory?: ArchivedMemory;
 	trace?: TraceSummary;
 	heat?: HeatSummary;
 }
@@ -289,10 +308,11 @@ function againstLowest(
 	return { ...best, share: null3dMs / best.threeMs };
 }
 
-/** Facts of a page that the runs' summary leaves out: its object count and presets. */
+/** Facts of a page that the runs' summary leaves out: its object count, presets and memory. */
 interface PageDetails {
 	n?: number;
 	presets?: string[];
+	memory?: ArchivedMemory;
 }
 
 /** The details of a page from its successful runs. */
@@ -300,7 +320,15 @@ export function pageDetails(results: readonly BenchResult[]): PageDetails {
 	const presets = [
 		...new Set(results.flatMap((result) => (result.mode?.preset ? [result.mode.preset] : []))),
 	];
-	return { n: results[0]?.n, ...(presets.length > 0 && { presets }) };
+	const withMemory = results.find(
+		(result) => (result as BenchResult & { memory?: ArchivedMemory }).memory !== undefined,
+	) as (BenchResult & { memory?: ArchivedMemory }) | undefined;
+	const memory = withMemory?.memory;
+	return {
+		n: results[0]?.n,
+		...(presets.length > 0 && { presets }),
+		...(memory !== undefined && { memory }),
+	};
 }
 
 /**
@@ -358,6 +386,7 @@ export function archiveRun(
 	const bench = result as unknown as BenchResult & {
 		runnerRefreshHz?: number;
 		heat?: HeatSummary;
+		memory?: ArchivedMemory;
 		stats?: {
 			refreshHz?: number | null;
 			gpuPassMs?: { name: string; ms: { median: number } }[] | null;
@@ -391,6 +420,7 @@ export function archiveRun(
 		}),
 		gpuLatencyMs: figures.gpuLatencyMs,
 		refreshHz,
+		...(bench.memory && { memory: bench.memory }),
 		...(bench.trace && { trace: summarizeTrace(bench.trace, refreshHz) }),
 		heat: bench.heat,
 	};
@@ -1048,6 +1078,7 @@ const VARIANT_NAMES: Readonly<Record<string, string>> = {
 	half: 'half precision',
 	prepass: 'depth prepass',
 	depth32: '32-bit shadow cascades',
+	'reflection-off': 'no reflection',
 };
 
 /** The GPU path of a null3D page, in words, with its variant. */

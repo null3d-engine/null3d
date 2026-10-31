@@ -1039,19 +1039,28 @@ describe('the checks plan', () => {
 		expect(job).toContain("matrix.browser == 'Safari' && '--shaders sampled'");
 		expect(job).toMatch(/--prebuilt \$\{\{ env\.PREBUILT \}\}/);
 		expect(job).toMatch(/^\s+PREBUILT: none$/m);
-		const count = Number(/^\s+shards: \[(\d+)\]$/m.exec(job)?.[1]);
-		expect(count).toBeGreaterThan(0);
-		// The matrix must list every shard from 1 to the count, or a shard never runs.
-		const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(job)?.[1]?.split(',').map(Number);
-		expect(listed).toEqual(Array.from({ length: count }, (_, i) => i + 1));
+		// Each browser has a job of its own, because a job's condition cannot read `matrix` and the
+		// two counts differ. Each job's own shard list is its count, from one.
+		const shardCount = (name: string) => {
+			const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(workflowJob(name))?.[1];
+			const shards = listed?.split(',').map(Number) ?? [];
+			expect(shards, name).toEqual(Array.from({ length: shards.length }, (_, i) => i + 1));
+			expect(workflowJob(name), name).toContain('${{ matrix.shards }}');
+			return shards.length;
+		};
+		const count = shardCount('real-browsers');
+		const firefoxCount = shardCount('real-browsers-firefox');
+		expect(count).toBeGreaterThan(firefoxCount);
+		expect(firefoxCount).toBeGreaterThan(0);
 		const minutes = shardsOf(count, ['--prebuilt', 'none']).map((shard) => secondsOf(shard) / 60);
 		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
 		// Firefox compiles every build of the shaders page, by its own measured times.
 		const firefox = Array.from(
-			{ length: count },
+			{ length: firefoxCount },
 			(_, i) =>
-				planItems(parseArgs(['--prebuilt', 'none', '--shard', `${i + 1}/${count}`, 'Firefox'])) ??
-				[],
+				planItems(
+					parseArgs(['--prebuilt', 'none', '--shard', `${i + 1}/${firefoxCount}`, 'Firefox']),
+				) ?? [],
 		).map((shard) => shard.reduce((sum, item) => sum + expectedSeconds(item, 'Firefox'), 0) / 60);
 		expect(Math.max(...firefox)).toBeLessThanOrEqual(10);
 	});

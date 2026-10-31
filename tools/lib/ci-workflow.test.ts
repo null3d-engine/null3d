@@ -200,8 +200,11 @@ describe("CI's workflow", () => {
 		const step = jobNamed('ci-passed').steps?.find(({ name }) => name === 'Every job passed');
 		const list = /\[([^\]]*)\] as \$full/.exec(step?.run ?? '')?.[1] ?? '';
 		const skippable = [...list.matchAll(/"([\w-]+)"/g)].map(([, job]) => job).sort();
+		// A job may narrow the full run's condition for itself — the device job skips the shard axis
+		// values that Firefox does not use — so the test reads the condition as a part of the job's
+		// own rather than as the whole of it.
 		const full = needsOf(jobs['ci-passed'])
-			.filter((name) => jobNamed(name).if === FULL_RUN)
+			.filter((name) => String(jobNamed(name).if ?? '').includes(FULL_RUN))
 			.sort();
 		expect(skippable).toEqual(full);
 		expect(full.length).toBeGreaterThan(0);
@@ -229,15 +232,26 @@ describe("CI's workflow", () => {
 			['browser', 'shard'],
 			['browser-alone', 'shard'],
 			['browser-heavy', 'shard'],
-			['real-browsers', 'shard'],
 			['shader-entries', 'shard'],
 		] as const) {
 			const shards = matrixOf(name)[key] as number[];
 			expect(shards, name).toEqual(oneTo(shards.length));
 		}
-		expect(matrixOf('real-browsers').shards).toEqual([
-			(matrixOf('real-browsers').shard as number[]).length,
-		]);
+		// The device rows are two jobs, one per browser, because a job's condition cannot read
+		// `matrix`: each carries its own shard axis and its count, and they share one step list.
+		const counts: Record<string, { axis: number[]; shards: number[] }> = {};
+		for (const name of ['real-browsers', 'real-browsers-firefox']) {
+			const matrix = matrixOf(name);
+			const axis = matrix.shard as number[];
+			expect(axis, name).toEqual(oneTo(axis.length));
+			expect(matrix.shards, name).toEqual([axis.length]);
+			counts[name] = { axis, shards: matrix.shards as number[] };
+		}
+		expect(counts['real-browsers']?.axis.length).not.toBe(
+			counts['real-browsers-firefox']?.axis.length,
+		);
+		// One step list, so the two commands cannot drift apart.
+		expect(jobNamed('real-browsers-firefox').steps).toEqual(jobNamed('real-browsers').steps);
 	});
 
 	it('gives each browser shard one weight', () => {

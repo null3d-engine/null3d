@@ -8,7 +8,7 @@ summary: "Trees, conifers, shrubs, ferns, hostas and grass grown from a species 
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass. This page covers the species generator, the scatter, the bark and leaf atlases that the browser paints at first use, the material that draws a plant from them, and the far tree that a card draws.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass's compute-built blades and its near shadows. This page covers the species generator, the scatter, the bark and leaf atlases that the browser paints at first use, the material that draws a plant from them, the far tree that a card draws, and the grass's CPU path.
 
 ```mermaid
 flowchart LR
@@ -234,6 +234,16 @@ A large scene need not place every plant at once. `EcoScatter` takes tiles with 
 
 `varianceMaps` holds three patches at one to two meters. The type picks a species' variant, the color shifts a plant's tint, and the lichen covers a plant or a stone. Each point carries the values at its place in its `tint` and `lichen` fields. Neighboring plants therefore differ a little, and the ground gains patches.
 
+## Grass on the ground
+
+`createGrass(ctx, { height, area, count, seed, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)` and skip ground steeper than `maxSlope`. Their turn, size and tint come from integer hashes, so one seed places the same grass on every device. Each tuft's row values carry its tint, which its shader reads. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
+
+The blades bend in the wind add-on's field, the same field that the leaf material reads. Give `createGrass` its `wind` field, and call `grass.setWindLayer(field)` in each frame with the field's newest state, as the leaf material takes it. A page that gives no field grows grass that stands still.
+
+The CPU tile path draws on WebGPU and WebGL2, with one instance batch for each tuft shape. The rows are built for Ultra's share once, so a preset change only changes how many rows each batch draws, not the memory. The compute path, which builds and culls blades on the GPU for the denser presets, is not built yet.
+
+The blades receive the sun's shadows. The ground's own colour and the blades' root colours should meet at the hill's foot.
+
 ## Speed and memory
 
 The built-in set holds thirteen species and six variants each. Grown in one call, the whole set takes about 50 ms on an Apple M5 Max laptop. The measured budgets are 60 ms for the iPhone and the iPad, and 200 ms for the slowest tablet. A tree takes about 3,000 to 5,500 triangles at full detail, and all of its levels together take about 0.3 to 0.5 MB. The whole set of 78 variants takes about 18 MB of vertex arrays.
@@ -306,7 +316,7 @@ handOverToCards(nearTrees, cards.batch, 240);
 
 `bakeFarTree` returns the two textures, the grid, the card's `size` and the plant's `depth`, which scales the stored depth that places a card's own shadow lookup. A far card casts the crown's shape through a second batch with `castShadows: true`, on a layer that the sun draws and no camera does, and takes the shadows of other objects with `receiveShadows: true` ([Impostors](impostors.md)). The bake draws level 0, or the level that the plant's `impostorSource` names. The bark colour tints the wood and the leaf colour the leaves, as the plant's materials do. A second call for the same plant, grid and cell size reuses the baked pixels.
 
-`handOverToCards(meshes, cards, switchDistance)` sets the distance bands. The meshes draw up to the switch, and over the last eighth of that range the engine dithers their pixels out. The cards draw from just before that band and stand at full coverage behind the meshes, so each pixel that a mesh's dither drops shows its card, and no pixel ever drops out of both. The cards take no fading build, which every custom material lacks: a batch that dithered as well would leave the background showing through the crown. The meshes and the cards stand at the same trees, so a tree draws as its mesh near the camera and as its card far from it.
+`handOverToCards(meshes, cards, switchDistance)` sets the distance bands. The meshes draw up to the switch. Over the last 8 per cent of that range the engine dithers their pixels out. The cards start a fifth of the switch earlier. Their own dithered edge then finishes before the mesh's edge begins to thin. They stand at full coverage behind the meshes, each pixel that a mesh's dither drops shows its card, and no pixel ever drops out of both. A custom material fades at a range edge as the engine's own materials do. The mesh and the card are different sources, so their dither phases differ, and the two edges must not fall on the same pixels. The meshes and the cards stand at the same trees, so a tree draws as its mesh near the camera and as its card far from it.
 
 A card's rows need their turn, so a turned tree's crown matches its card. The plant's `impostorSource.bounds` gives the largest bound over its levels, which the bake uses for the card's size and for its lowest point.
 

@@ -5,6 +5,7 @@ import type { QualityPreset, SketchContext } from '@null3d/engine';
 import {
 	createTrafficLanes,
 	createVehicleHull,
+	type Lane,
 	type TrafficLanes,
 } from '../addons/traffic-lanes/index';
 
@@ -20,20 +21,55 @@ export const CARS: Record<QualityPreset, number> = {
 const LINES = [-75, -55, -35, 35, 55, 75];
 const SIZE = { halfWidth: 0.7, height: 0.38, halfLength: 1.2 };
 
+/** How far a lane sits from its line, so every direction keeps to its own side. */
+const SIDE = 4;
+/**
+ * The height of each level, in meters. The gaps grow with height, so the lanes sit closer
+ * together low down and the rows pack toward the horizon.
+ */
+const HEIGHTS = [16, 17.2, 18.7, 20.6, 23, 26, 29.5, 34];
+
+/**
+ * The four directions, each on its own right-hand side of a line: the heading's index and the sign
+ * of the side it keeps to.
+ */
+const HEADINGS = [
+	{ heading: 0, side: 1 },
+	{ heading: 1, side: -1 },
+	{ heading: 2, side: -1 },
+	{ heading: 3, side: 1 },
+] as const;
+
+/**
+ * The lanes of the field's sky, listed one by one: each line carries four directions at each of
+ * `HEIGHTS` levels, each direction keeping to its own side, and each lane has one speed so its
+ * cars keep their gaps. Every heading lists its own rows, so the cars spread as widely as the grid
+ * plan spread them and stay short against the sky.
+ */
+function laneList(): Lane[] {
+	const lanes: Lane[] = [];
+	for (const [i, line] of LINES.entries()) {
+		const inner = 1 - i / Math.max(1, LINES.length - 1);
+		for (const [level, height] of HEIGHTS.entries()) {
+			// A small lift that changes from line to line keeps the rows from aligning.
+			const lift = (((i * 5 + level * 3) % 7) - 3) * 0.25;
+			for (const { heading, side } of HEADINGS) {
+				const speed = 24 + inner * 10 + ((level * 3 + i) % 5) - (heading % 2) * 1.5;
+				lanes.push({ heading, across: line + side * SIDE, altitude: height + lift, speed });
+			}
+		}
+	}
+	return lanes;
+}
+
 /** Builds the traffic of the field's sky. */
 export function createTraffic(ctx: SketchContext): TrafficLanes {
 	return createTrafficLanes(ctx, {
 		mesh: createVehicleHull(ctx, SIZE),
-		plan: {
-			lines: LINES,
-			// The lanes run on past the field, so the cars stream in from the haze.
-			from: -1300,
-			to: 1300,
-			low: 16,
-			high: 34,
-			levels: 4,
-			offset: 4,
-		},
+		// The lanes are listed rather than laid out as a grid, so each keeps to its own side of a
+		// line and carries one speed: the inner lines run faster, and the four directions keep
+		// their own pace.
+		plan: { from: -1300, to: 1300, lanes: laneList() },
 		counts: CARS,
 		look: {
 			body: '#2c3a52',

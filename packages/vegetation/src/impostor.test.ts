@@ -58,7 +58,10 @@ describe('bakeFarTree', () => {
 });
 
 describe('handOverToCards', () => {
-	test('draws the cards from just before the mesh fades, so no pixel drops out of both', () => {
+	/** The engine's fade band as a share of an edge's distance (see `FADE_BAND` in levels.rs). */
+	const BAND = 0.08;
+
+	test('draws the cards from far enough before the switch that their fade ends first', () => {
 		const ranges: [number, number][] = [];
 		const batch = {
 			setDrawRange(start: number, end: number) {
@@ -67,10 +70,14 @@ describe('handOverToCards', () => {
 		} as never;
 		handOverToCards(batch, batch, 100);
 		expect(ranges[0]).toEqual([0, 100]);
-		// The cards stand from a fade band before the switch, which is before the engine's dither
-		// starts to thin the mesh out, so every pixel the mesh drops shows its card.
-		expect(ranges[1]?.[0]).toBeCloseTo(92);
+		const cardStart = ranges[1]?.[0] ?? 0;
 		expect(ranges[1]?.[1]).toBeGreaterThanOrEqual(1e9 - 1);
+		// The engine fades a range's near edge in from the start to the start plus one band, and
+		// its far edge out from the end less one band to the end. The two batches' dither phases
+		// differ, so the card must reach full coverage before the mesh starts to thin.
+		const cardFull = cardStart * (1 + BAND);
+		const meshThins = 100 / (1 + BAND);
+		expect(cardFull).toBeLessThan(meshThins);
 	});
 
 	test('refuses a switch distance that is not above 0', () => {
