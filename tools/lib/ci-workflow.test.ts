@@ -237,20 +237,21 @@ describe("CI's workflow", () => {
 			const shards = matrixOf(name)[key] as number[];
 			expect(shards, name).toEqual(oneTo(shards.length));
 		}
-		// The device job gives each browser its own count from an expression beside the axis, because
-		// a list inside an `include` entry is assigned as a list rather than expanded.
-		const [axis] = [matrixOf('real-browsers').shard as number[]];
-		expect(axis, 'real-browsers').toEqual(oneTo(axis.length));
-		expect(matrixOf('real-browsers').browser).toEqual(['Safari', 'Firefox']);
-		const run = (jobNamed('real-browsers').steps ?? [])
-			.map(({ run }) => run ?? '')
-			.find((command) => command.includes('--shard'));
-		const counts = [...(run ?? '').matchAll(/&& (\d+) \|\| (\d+)/g)].flatMap((match) => [
-			Number(match[1]),
-			Number(match[2]),
-		]);
-		expect(counts.length, 'real-browsers').toBeGreaterThan(0);
-		for (const count of counts) expect(count).toBeLessThanOrEqual(axis.length);
+		// The device rows are two jobs, one per browser, because a job's condition cannot read
+		// `matrix`: each carries its own shard axis and its count, and they share one step list.
+		const counts: Record<string, { axis: number[]; shards: number[] }> = {};
+		for (const name of ['real-browsers', 'real-browsers-firefox']) {
+			const matrix = matrixOf(name);
+			const axis = matrix.shard as number[];
+			expect(axis, name).toEqual(oneTo(axis.length));
+			expect(matrix.shards, name).toEqual([axis.length]);
+			counts[name] = { axis, shards: matrix.shards as number[] };
+		}
+		expect(counts['real-browsers']?.axis.length).not.toBe(
+			counts['real-browsers-firefox']?.axis.length,
+		);
+		// One step list, so the two commands cannot drift apart.
+		expect(jobNamed('real-browsers-firefox').steps).toEqual(jobNamed('real-browsers').steps);
 	});
 
 	it('gives each browser shard one weight', () => {
