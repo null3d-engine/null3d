@@ -1,6 +1,6 @@
 // What screen-space bounce light costs, on each GPU path at each preset, at the whole render scale
 // and at half of it: the effect cost page's bounce scene, timed with the light off and on in turns
-// (tests/pages/effect-cost.ts). It prints each side's medians for D-282. It runs only with
+// (tests/pages/effect-cost.ts). It prints each side's medians for D-284. It runs only with
 // NULL3D_BOUNCE_COST set, in a quiet window on a computer with a GPU of its own:
 // NULL3D_BOUNCE_COST=1 bun run test:browser -- bounce-cost.spec.ts.
 // The light draws on ambient occlusion's grid at half the render size, so its cost follows the

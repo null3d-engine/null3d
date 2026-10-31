@@ -2311,7 +2311,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			timeoutSeconds: 60,
 		}),
 	),
-	// Screen-space bounce light in the room that the light probe grid's tests use (D-282): the
+	// Screen-space bounce light in the room that the light probe grid's tests use (D-284): the
 	// neutral floor takes red light at the red wall and green at the green one, which the
 	// environment's uniform light cannot show. ?bounce draws the bounce light from the camera's view,
 	// ?grid bakes a light probe grid instead, and neither draws the room's environment alone. The

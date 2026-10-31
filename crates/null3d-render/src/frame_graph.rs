@@ -11168,6 +11168,60 @@ mod tests {
         assert_eq!(copy_format(&frames), format::RGBA16_FLOAT);
     }
 
+    /// The bounce light reads the frame before's opaque color, so it declares the copy and keeps
+    /// it even when nothing else wants it: no surface lets light through, and the reflections are
+    /// off.
+    #[test]
+    fn the_bounce_light_keeps_the_copy_for_itself_with_reflections_off() {
+        let canvas = (320, 180);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        frames.set_ssr(None, 0.0);
+        let mut list = DrawList::with_capacity(8192);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 1);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        // Unasked, the frame declares and keeps nothing of the copy.
+        assert!(!frames.transmission_copied());
+        assert_eq!(frames.transmission_texture(), IDS.transmission.blank);
+
+        frames.set_bounce(Some(BounceFrame {
+            bounce: crate::bounce::Bounce::default(),
+            projection: (Mat4::default(), Mat4::default()),
+        }));
+        frames.request_pipelines(&mut pipelines, 1);
+        assert!(!frames.bounce_draws(), "the light waits for its pipelines");
+        pipelines.create_new(&mut list, 2).unwrap();
+        frames.request_pipelines(&mut pipelines, 2);
+        assert!(frames.bounce_draws());
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+
+        // The light declares the copy for itself, keeps it, and binds it to its trace. The trace
+        // reads the copy as the frame before left it, so it runs before this frame's copy pass,
+        // which refreshes the kept target for the next frame.
+        assert!(frames.transmission_copied());
+        assert_ne!(frames.transmission_texture(), IDS.transmission.blank);
+        assert!(frames.graph().find_resource(TRANSMISSION_COLOR).is_some());
+        let with = steps(&frames);
+        let copy_at = with
+            .iter()
+            .position(|step| step == &[TRANSMISSION_PASS])
+            .expect("the copy draws in a render pass of its own");
+        let trace_at = with
+            .iter()
+            .position(|step| step.iter().any(|name| name == BOUNCE_PASSES[0]))
+            .expect("the bounce light's trace is declared");
+        assert!(
+            trace_at < copy_at,
+            "the trace reads the copy that the frame before kept"
+        );
+    }
+
     #[test]
     fn the_8_bit_path_draws_no_bloom() {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
