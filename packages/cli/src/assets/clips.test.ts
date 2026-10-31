@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { type Accessor, type AnimationSampler, type Document, NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { MeshoptDecoder } from 'meshoptimizer';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { samplePath } from '../../../../tools/lib/samples.ts';
 import { encodeOnce, encoderPool } from './encoder-pool.js';
 import { MSFTLod } from './lod-extension.js';
@@ -12,7 +13,7 @@ import { DEFAULT_OPTIONS, optimizeModel } from './pipeline.js';
 import { Null3dMeshBvh, Null3dOccluder } from './spatial-extensions.js';
 
 // Texture encodes take seconds each on a busy machine or a CI runner of four cores.
-setDefaultTimeout(60_000);
+setDefaultTimeout(scaledBudget(60_000));
 
 const pool = encoderPool(2);
 const encode = encodeOnce((job) => pool.encode(job));

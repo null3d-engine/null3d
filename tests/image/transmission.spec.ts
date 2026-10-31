@@ -112,6 +112,101 @@ test('transmission-maps: the transmission and thickness maps vary the glass', as
 	}
 });
 
+/**
+ * A clear coat's value leaves the specular maps' slots free, where the transmission and thickness
+ * maps sit. A shader that dropped those maps in a coated material would draw the same glass with
+ * and without them, so the plain coat's balls differ from the mapped ones by far more than a
+ * drawing's own noise.
+ */
+test('transmission-maps: a clear coat keeps the transmission and thickness maps', async ({
+	page,
+}) => {
+	test.setTimeout(240_000);
+	const runs = IMAGE_RUNS.filter((run) => run.test === 'transmission-maps');
+	expect(runs.length).toBe(3);
+	for (const run of runs) {
+		// The plain scene's run of the same tier and thread mode draws the balls without a map, so
+		// each variant adds its own switches to that path rather than to the mapped one's.
+		const plain = manifestRun(
+			'transmission',
+			run.tier,
+			run.mode?.name as EngineModeName | undefined,
+		);
+		const mapped = await imageOf(page, variant(plain.path, GLASS_SKETCH, '?coat&maps'));
+		const coated = await imageOf(page, variant(plain.path, GLASS_SKETCH, '?coat'));
+		const smooth = discOf(mapped, SMOOTH);
+		expect
+			.soft(difference(mapped, coated, smooth), `${run.id}: the coat keeps the maps`)
+			.toBeGreaterThan(0.01);
+	}
+});
+
+/**
+ * A specular intensity map and the transmission and thickness maps draw together: the specular map
+ * keeps its own row slot and samples the specular intensity slot's texture array, where the
+ * transmission map takes a layer of its own. A shader that dropped either family would draw the
+ * glass as the scene with the other alone, so each pair below differs by far more than a drawing's
+ * own noise.
+ */
+test('transmission-specular-maps: the specular map and the volume maps both draw', async ({
+	page,
+}) => {
+	test.setTimeout(240_000);
+	const runs = IMAGE_RUNS.filter((run) => run.test === 'transmission');
+	expect(runs.length).toBe(3);
+	for (const run of runs) {
+		// Every variant adds its switches to the same tier's path, so the three scenes differ only
+		// in the maps that they give the glass.
+		const both = await imageOf(page, variant(run.path, GLASS_SKETCH, '?maps&specular&env'));
+		const volumes = await imageOf(page, variant(run.path, GLASS_SKETCH, '?maps&env'));
+		const specular = await imageOf(page, variant(run.path, GLASS_SKETCH, '?specular&env'));
+		const smooth = discOf(both, SMOOTH);
+		expect
+			.soft(difference(both, volumes, smooth), `${run.id}: the specular map draws beside them`)
+			.toBeGreaterThan(0.01);
+		expect
+			.soft(difference(both, specular, smooth), `${run.id}: the volume maps draw beside it`)
+			.toBeGreaterThan(0.01);
+	}
+});
+
+/**
+ * The mean difference between every pixel left of the middle column of `image` and the pixel at
+ * its mirror in the right half, from 0 to 1 per channel.
+ */
+function mirroredDifference(image: Image): number {
+	let sum = 0;
+	let count = 0;
+	for (let y = 0; y < image.height; y++)
+		for (let x = 0; x < image.width / 2; x++) {
+			const left = 3 * (y * image.width + x);
+			const right = 3 * (y * image.width + (image.width - 1 - x));
+			for (let c = 0; c < 3; c++)
+				sum += Math.abs((image.rgb[left + c] ?? 0) - (image.rgb[right + c] ?? 0));
+			count += 3;
+		}
+	return sum / count;
+}
+
+/**
+ * A glTF file whose glass both masks its alpha and lets light through: two panes draw in front of a
+ * striped backdrop, the left one takes its transmission and thickness from maps and the right one
+ * takes neither. Every other part of the picture mirrors about its middle column, so the panes draw
+ * alike on a tier that drops the maps and differ where the maps vary the light from behind. The
+ * three.js twin draws the same file, which the parity test compares.
+ */
+test('gltf-transmission-mask: masked glTF glass keeps its transmission maps', async ({ page }) => {
+	test.setTimeout(240_000);
+	const runs = IMAGE_RUNS.filter((run) => run.test === 'gltf-transmission-mask');
+	expect(runs.length).toBe(3);
+	for (const run of runs) {
+		const image = await imageOf(page, run.path);
+		expect
+			.soft(mirroredDifference(image), `${run.id}: the maps change the pane that reads them`)
+			.toBeGreaterThan(0.01);
+	}
+});
+
 test('transmission-water: ripples bend the bed that shows through the water', async ({ page }) => {
 	test.setTimeout(240_000);
 	const runs = IMAGE_RUNS.filter((run) => run.test === 'transmission-water');

@@ -1,9 +1,10 @@
 // Dense swaying grass for the temporal resolve's quality figures (D-129's method): tufts of curved
 // blades in one instance batch, over a flat bank, with rocks. Each blade bends in the wind from the
-// sketch's frame number, so every run draws the same picture in the same frame: the resolve's motion
-// target has no per-vertex wind, which is the condition that D-129 measured. ?orbit= turns the camera
-// around the bank in radians per second, and 0 holds it still. ?taa=0 starts the resolve off, and
-// ?frames posts each frame's number.
+// frame number, so every run of a scene draws the same picture in the same frame and the 64-sample
+// reference compares with the frames. The motion target therefore holds no wind for this scene, as
+// in D-129; tests/image/motion-vectors.spec.ts holds a custom material's vertex offset motion for
+// the wind that the engine does carry. ?orbit= turns the camera around the bank in radians per
+// second, and 0 holds it still. ?taa=0 starts the resolve off, and ?frames posts each frame's number.
 import { defineSketch, type MeshArrays, quat } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -12,6 +13,8 @@ const ORBIT = Number(params.get('orbit') ?? '0.1');
 const RATE = 60;
 const FRAMES = params.has('frames');
 const JITTER = params.get('jitter') !== '0';
+/** True picks the resolve's cheaper phone path. */
+const PHONE = params.get('phone') === '1';
 const TARGET = [0, 1, -10] as const;
 const RADIUS = 9;
 /** Tufts on the bank. */
@@ -109,7 +112,7 @@ const spin = quat.create();
 export default defineSketch(({ scene, geometry, materials, post, quality, page, time }) => {
 	if (params.has('fixed')) quality.set({ minRenderScale: 1, maxRenderScale: 1, governor: false });
 	const setResolve = (on: boolean) =>
-		post.set({ taa: on ? { feedback: 0.9, jitter: JITTER } : false });
+		post.set({ taa: on ? { feedback: 0.9, jitter: JITTER, phone: PHONE } : false });
 	setResolve(params.get('taa') !== '0');
 	scene.setBackground('#9cc4e8');
 	scene.createAmbientLight({ color: '#c8d8ff', intensity: 0.6 });

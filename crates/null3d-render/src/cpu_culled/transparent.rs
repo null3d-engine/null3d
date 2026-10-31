@@ -99,11 +99,23 @@ impl CallKind {
     }
 }
 
+/// The aligned offset after the records of the last call, where the next call that writes records
+/// starts: 0 for no calls. A call that writes no records, of a particle system or a vertex draw,
+/// leaves the offset where the call before it left it.
+fn records_after(calls: &[Call]) -> u32 {
+    calls.last().map_or(0, |call| {
+        call.records + (call.count * sizes::DRAW_RECORD_BYTES).next_multiple_of(OFFSET_ALIGNMENT)
+    })
+}
+
 /// A view's draws of the frame.
 #[derive(Debug, Default)]
 struct ViewDraws {
     parts: Vec<PartDraw>,
     calls: Vec<Call>,
+    /// Bytes of draw records that the calls write, each call's block aligned for its dynamic
+    /// offset: the end of the last call that writes records.
+    records_bytes: u32,
 }
 
 /// Each view's draws of the transparent pass, and how the device draws many at once.
@@ -182,16 +194,17 @@ impl Transparent {
         let state = &mut self.views[view];
         state.parts.clear();
         state.calls.clear();
+        state.records_bytes = 0;
         let per_call = if self.multi_draw {
             sizes::MULTI_DRAW_RECORDS
         } else {
             1
         };
         let storage = settings.meshes();
-        let mut records = 0;
         for run in sorted.draws() {
             let bucket = layout.buckets[run.bucket as usize];
             if let Some(system) = bucket.particle_system() {
+                let records = records_after(&state.calls);
                 state.calls.push(Call {
                     pipeline: bucket.pipeline,
                     textures: bucket.textures,
@@ -207,6 +220,7 @@ impl Transparent {
                 continue;
             }
             if let Some(id) = bucket.vertex_draw() {
+                let records = records_after(&state.calls);
                 state.calls.push(Call {
                     pipeline: bucket.pipeline,
                     textures: bucket.textures,
@@ -259,11 +273,7 @@ impl Transparent {
                         call.count += 1;
                     }
                 } else {
-                    if let Some(call) = state.calls.last() {
-                        records = call.records
-                            + (call.count * sizes::DRAW_RECORD_BYTES)
-                                .next_multiple_of(OFFSET_ALIGNMENT);
-                    }
+                    let records = records_after(&state.calls);
                     state.calls.push(Call {
                         pipeline,
                         textures: bucket.textures,
@@ -330,6 +340,8 @@ impl Transparent {
                 }
             }
         }
+        let total = records_after(&state.calls);
+        state.records_bytes = total;
     }
 
     /// Writes a view's draw records into the ring slot at `slot`, from its transparent part at
@@ -344,10 +356,10 @@ impl Transparent {
         at: u32,
     ) -> Result<(), RecordError> {
         let state = &self.views[view];
-        let Some(last) = state.calls.last() else {
+        if state.calls.last().is_none() {
             return Ok(());
-        };
-        let bytes = last.records + last.count * sizes::DRAW_RECORD_BYTES;
+        }
+        let bytes = state.records_bytes;
         let (from, records) = arena.push_zeroed(bytes as usize)?;
         for call in state.calls.iter().filter(|call| !call.repeat) {
             let parts = &state.parts[call.first as usize..][..call.count as usize];

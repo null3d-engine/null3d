@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it, setDefaultTimeout } from 'bun:test';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { CompilerPool } from './compile-pool';
 import {
 	compileMaterial,
@@ -9,8 +10,9 @@ import {
 } from './shader-compiler';
 
 // A custom surface function builds into every variant of the standard material, which takes seconds
-// on a CI runner of four cores.
-setDefaultTimeout(30_000);
+// on a CI runner of four cores. The mask's builds in an instance batch grew the manifest by five
+// thousand builds, and a compile on a loaded runner now passes thirty seconds.
+setDefaultTimeout(scaledBudget(60_000));
 
 /**
  * `bun run test:shader-compiler` sets this. The module must be built first with `bun run build`,

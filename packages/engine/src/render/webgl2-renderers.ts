@@ -166,6 +166,7 @@ class WebGL2SceneRenderer implements Renderer {
 			images,
 			device.parallelCompile,
 			device.transparent,
+			device.multiDraw,
 		);
 		this.slots = new Int32Array(control);
 		this.backend.moreShaders = shaders;

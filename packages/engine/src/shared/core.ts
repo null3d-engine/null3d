@@ -41,6 +41,7 @@ export interface CoreGlue extends CoreErrors {
 		transparent: boolean,
 		cellCulling: boolean,
 		depthPrepass: boolean,
+		prepassColor: number,
 		skinning: number,
 		indexInstances: boolean,
 		largeWorld: boolean,
@@ -160,6 +161,12 @@ export interface CoreGlue extends CoreErrors {
 	 * frame, where the path culls on the CPU, or `CORE_NOT_COUNTED` where the GPU culls.
 	 */
 	occludedEntries(frame: number): number;
+	/**
+	 * The ranges of cluster-tree patches that a recorded frame's camera view draws, where the path
+	 * walks the trees, or `CORE_NOT_COUNTED` where the GPU picks the patches itself. Zero where
+	 * the view draws the trees' whole levels.
+	 */
+	patchRanges(frame: number): number;
 	/** True when the last recorded frame rebuilt its draw tables after a structure change. */
 	drawTablesRebuilt(): boolean;
 	/** True when the last recorded frame's still view has accumulated enough frames to rest. */
@@ -312,6 +319,28 @@ export interface CoreGlue extends CoreErrors {
 	 * frame's camera finds the texture coordinates of its pixel.
 	 */
 	pickFrame(): number;
+	/**
+	 * Asks the next recorded frame to copy a region of the compute pass at view place `place` back
+	 * into engine memory: `x` and `y` texels from the texture's stored first row, `width` and
+	 * `height` its size, `layer` its array layer, `ring` the read of the readback ring, and `slot`
+	 * the control slot that rises once the bytes land. Returns 0 when another read waits, the
+	 * target's format code plus one when the frame copies the region, or -1 as a 32-bit number when
+	 * the pass or the region cannot be read.
+	 */
+	requestPassRead(
+		place: number,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		layer: number,
+		ring: number,
+		slot: number,
+	): number;
+	/** The address in engine memory of the readback ring's regions, one after another. */
+	passReadAddress(): number;
+	/** The bytes of one readback ring region. */
+	passReadStride(): number;
 	/** The object or batch id that a pick's source key names, or 0 for a key that names nothing. */
 	pickTargetId(key: number): number;
 	/** The instance row that a pick's source key names, or 0 for an object of the scene. */
@@ -382,11 +411,25 @@ export interface CoreGlue extends CoreErrors {
 	 * cover the mesh's vertices.
 	 */
 	setMeshPatches(mesh: number, patches: number, indices: number, root: number): number;
+	/**
+	 * Appends one band to a mesh's tree of cluster patches: `patches` records of eight words each,
+	 * four floats of a bounding sphere and four integers of a run of indices, a parent and an
+	 * error, then `indices` indices, at `meshArrays`'s address. A run's first index counts from the
+	 * band's own indices, and a parent names a patch that the tree already holds. 1 when the mesh
+	 * takes the band, 0 when it has no tree, and the code of the rule that refused it otherwise.
+	 */
+	appendMeshPatches(mesh: number, patches: number, indices: number): number;
 	meshRadius(mesh: number): number;
 	/** A mesh's vertex count, or 0 for an unknown mesh. */
 	meshVertexCount(mesh: number): number;
 	/** A mesh's vertex format: its attribute bits and type fields, or 0 for an unknown mesh. */
 	meshFormat(mesh: number): number;
+	/**
+	 * Turns a rectangle's rows over in place, so that its last row comes first, at `address` in the
+	 * engine's memory: a canvas counts rows from its top, and a texture from the bottom. Each row is
+	 * `rowBytes` long and there are `height` of them. The caller writes the rectangle first.
+	 */
+	turnRows(address: number, rowBytes: number, height: number): void;
 	/**
 	 * Writes new values of the attribute at vertex shader `location` into vertices `start` to
 	 * `start + count` of a mesh, from `meshArrays`'s words: `components` values per vertex in the
@@ -422,6 +465,12 @@ export interface CoreGlue extends CoreErrors {
 	 * for the mesh itself. 0 for a mesh that no loader watches.
 	 */
 	stageLevelPicks(base: number): number;
+	/**
+	 * The bands of the mesh `base`'s tree of cluster patches that a view drew since its watch
+	 * began, one bit each, bit 0 for the band that the file holds. 0 for a mesh that no loader
+	 * watches.
+	 */
+	stageBandPicks(base: number): number;
 	/** The frames that drew the mesh `base` since its watch began, 0 for a mesh that no watch has. */
 	stageFrames(base: number): number;
 	/**
@@ -435,7 +484,8 @@ export interface CoreGlue extends CoreErrors {
 	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
 	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on, as is the depth bias: three.js's
-	 * polygon offset units and factor.
+	 * polygon offset units and factor. `swayDistance` is the distance from the camera out to which a
+	 * custom material's vertex offset moves, in meters, or 0 for every distance.
 	 */
 	createMaterial(
 		shading: number,
@@ -446,6 +496,7 @@ export interface CoreGlue extends CoreErrors {
 		a: number,
 		biasConstant: number,
 		biasSlope: number,
+		swayDistance: number,
 	): number;
 	/**
 	 * Changes one value of a material, `param` (a `MATERIAL_PARAM_*` code), and keeps the others.
@@ -591,6 +642,8 @@ export interface CoreGlue extends CoreErrors {
 	failTextureReload(texture: number): void;
 	/** One of the texture store's numbers, by `TEXTURE_STAT_*` code; `texture` names one texture. */
 	textureStat(field: number, texture: number): number;
+	/** The array layer that a map of the texture samples now. */
+	textureLayer(texture: number): number;
 	/** Changes one of the texture store's settings, by `TEXTURE_OPTION_*` code. */
 	setTextureOption(option: number, value: number): number;
 	/**
@@ -665,6 +718,10 @@ export interface CoreGlue extends CoreErrors {
 		template: number,
 		flags: number,
 		source: number,
+		fallback: number,
+		history: number,
+		layers: number,
+		steps: number,
 	): number;
 	/**
 	 * Adds a compute pass named `pass`, which runs the compiled WGSL of compute pipeline template
@@ -691,6 +748,9 @@ export interface CoreGlue extends CoreErrors {
 		countsBuffer: number,
 		instancesBuffer: number,
 		instancesBytes: number,
+		history: number,
+		layers: number,
+		steps: number,
 	): number;
 	/**
 	 * Gives the compute pass of view place `place` the uniforms at `effectValues` and the textures
@@ -698,6 +758,10 @@ export interface CoreGlue extends CoreErrors {
 	 * texture that closes a loop of passes.
 	 */
 	setComputeValues(place: number): number;
+	/** Gives the compute pass of view place `place` the runs that a frame records. */
+	setComputeSteps(place: number, steps: number): number;
+	/** Asks the compute pass of view place `place` to clear both states before its next run. */
+	resetComputeState(place: number): number;
 	/**
 	 * Adds a view that draws the scene into a rectangle of the canvas, which the first four call
 	 * values name: its left and top, then its width and height, as fractions of the canvas. The
@@ -725,6 +789,8 @@ export interface CoreGlue extends CoreErrors {
 	setReflectionScale(): number;
 	/** Sets the most area lights that one frame shades. */
 	setAreaLightCap(cap: number): number;
+	/** Fits the light clusters' depth slices to the depth that the frame before measured, or not. */
+	setLightFit(enabled: number): number;
 	/** Makes room for the area lights' tables; the address of their half floats, or 0. */
 	areaLightTables(): number;
 	/** Marks the area lights' tables as written, so frames light with area lights. */
@@ -837,10 +903,17 @@ export interface CoreGlue extends CoreErrors {
 	/** The taps of each step of the subsurface blur, from the next frame on: 0 draws none. */
 	setSubsurfaceTaps(taps: number): number;
 	/**
-	 * Temporal anti-aliasing, a prototype: the history's share in thousandths, 0 for off, and
-	 * whether the camera takes its sub-pixel offsets.
+	 * Temporal anti-aliasing, a prototype: the history's share in thousandths, 0 for off, whether
+	 * the camera takes its sub-pixel offsets, whether the cheaper path draws, the bits of the
+	 * transparency signals that lower the history, and whether the history follows the exposure.
 	 */
-	setTaa(feedback: number, jitter: boolean): number;
+	setTaa(
+		feedback: number,
+		jitter: boolean,
+		phone: boolean,
+		reactive: number,
+		exposure: boolean,
+	): number;
 	/** Turns automatic exposure on with the post-processing values' settings, or off. */
 	setAutoExposure(on: boolean): number;
 	/** The meter of automatic exposure, from the next frame on: 0 the downsample, 1 the histogram. */
@@ -860,6 +933,21 @@ export interface CoreGlue extends CoreErrors {
 	markParticleRecords(id: number, start: number, count: number): number;
 	/** Marks a particle system's values for the next frame's upload. */
 	markParticleValues(id: number): number;
+	/**
+	 * Makes room for `count` births' parameters in the core's block, nine numbers per birth, and
+	 * returns the address of its first number, or 0 when the memory cannot grow.
+	 */
+	particleRecordBlock(count: number): number;
+	/**
+	 * Writes the records of `count` births from the core's block, from record `first` on, and
+	 * marks them for the next frame's upload.
+	 */
+	writeParticleRecords(id: number, count: number, first: number): number;
+	/**
+	 * Takes whole `seconds` off the birth times of records `from` to `to`, which moves the time
+	 * that they count from, and marks them.
+	 */
+	shiftParticleRecords(id: number, from: number, to: number, seconds: number): number;
 	/** Lets soft particles fade near the surfaces behind them, or draws them with hard edges. */
 	setSoftParticles(on: boolean): number;
 	/**
@@ -889,6 +977,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setFeatureInstanceCount(id: number, count: number): number;
 	/**
+	 * Tells the engine whether the add-on's feature draws now. A draw that is not ready records no
+	 * draw, no conversion and no count copy. Returns 1 for a draw that does not exist.
+	 */
+	setFeatureInstanceReady(id: number, ready: boolean): number;
+	/**
 	 * Writes `count` per-instance rows from `values` at row `start`, as the engine's instance
 	 * buffers hold them: three world-matrix rows, then the ids. Returns 0, or 1 for values that a
 	 * draw does not take.
@@ -915,16 +1008,9 @@ export interface CoreGlue extends CoreErrors {
 	setLut(texture: number): number;
 	/**
 	 * Grades the canvas color with the built-in grading table in a 3D texture, or with none for 0,
-	 * from the next frame on: a job worker baked the sketch's grading values into it. `hdr` says
-	 * the table holds the grade over high dynamic range light, which the pass reads before the tone
-	 * curve, instead of display color.
+	 * from the next frame on: a job worker baked the sketch's grading values into it.
 	 */
-	setGrade(texture: number, hdr: boolean): number;
-	/**
-	 * Sets the grading controls that the 8-bit path's shaders apply before their tone curve from
-	 * the post-processing values, or clears them.
-	 */
-	setGradeValues(on: boolean): number;
+	setGrade(texture: number): number;
 	/**
 	 * Turns the vignette on with the post-processing values' intensity, size, falloff and roundness,
 	 * or off.
@@ -1231,6 +1317,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'recordFrame',
 	'visibleEntries',
 	'occludedEntries',
+	'patchRanges',
 	'drawTablesRebuilt',
 	'resetGpu',
 	'drawListAddress',
@@ -1267,6 +1354,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'pickFrame',
 	'pickTargetId',
 	'pickTargetRow',
+	'requestPassRead',
+	'passReadAddress',
+	'passReadStride',
 	'createShapeMesh',
 	'meshArrays',
 	'createMeshFromArrays',
@@ -1275,14 +1365,17 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMeshBvh',
 	'setMeshBlocker',
 	'setMeshPatches',
+	'appendMeshPatches',
 	'meshRadius',
 	'meshVertexCount',
 	'meshFormat',
+	'turnRows',
 	'updateVertices',
 	'destroyMeshes',
 	'setMeshLevels',
 	'watchStageLevels',
 	'stageLevelPicks',
+	'stageBandPicks',
 	'stageFrames',
 	'unwatchStageLevels',
 	'meshMemoryBytes',
@@ -1313,6 +1406,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'takeTextureReload',
 	'failTextureReload',
 	'textureStat',
+	'textureLayer',
 	'setTextureOption',
 	'setShadowTiles',
 	'setPerspectiveCamera',
@@ -1322,12 +1416,15 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'addFullscreenPass',
 	'addComputePass',
 	'setComputeValues',
+	'setComputeSteps',
+	'resetComputeState',
 	'addSceneView',
 	'setSceneViewRect',
 	'removeSceneView',
 	'setPassValues',
 	'setReflectionScale',
 	'setAreaLightCap',
+	'setLightFit',
 	'areaLightTables',
 	'finishAreaLightTables',
 	'lightImage',
@@ -1374,6 +1471,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'particleValues',
 	'markParticleRecords',
 	'markParticleValues',
+	'particleRecordBlock',
+	'writeParticleRecords',
+	'shiftParticleRecords',
 	'setSoftParticles',
 	'createVertexDraw',
 	'destroyVertexDraw',
@@ -1384,13 +1484,13 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'featureInstanceCountBuffer',
 	'setFeatureInstanceCount',
 	'setFeatureInstanceRows',
+	'setFeatureInstanceReady',
 	'setSoftwareOcclusion',
 	'setParallax',
 	'setMomentTransparency',
 	'setOcclusionBuffer',
 	'setLut',
 	'setGrade',
-	'setGradeValues',
 	'setVignette',
 	'setSharpen',
 	'environmentValues',

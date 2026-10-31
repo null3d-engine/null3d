@@ -40,7 +40,8 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 
 | Pass | Kind | Reads | Writes |
 | --- | --- | --- | --- |
-| Light clustering | Compute, on WebGPU only | The point and spot lights of the camera's view and of each scene pass that sees one | The list of lights of each cluster of each view |
+| Light clustering | Compute, on WebGPU only | The point and spot lights of the camera's view and of each scene pass that sees one, and the depth range that the light depth pass measured | The list of lights of each cluster of each view, and the fitted slice bounds in its header |
+| Light depth | Compute, on WebGPU only, while the camera sees a local light | The camera view's scene depth | The nearest and farthest depth that the next frame's light clustering fits its slices to |
 | Culling | Compute, one pass per view (the camera's, and each shadow cascade's and tile's), on WebGPU only | The world matrix and bounds of every object and instance | The view's visible instances and draw counts |
 | Shadow | Scene, one pass per shadow cascade and per tile of the shadow atlas, in the frames in which it draws | The visible casters of its view | Its layer of the shadow map or of the shadow atlas |
 | Depth prepass | Scene, one pass per view, with the `depthPrepass` setting | The view's visible instances | The scene depth |

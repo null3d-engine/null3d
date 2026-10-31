@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import MagicString from 'magic-string';
@@ -29,6 +29,7 @@ import {
 	ensureEngineShaders,
 } from './engine-shaders.ts';
 import { buildEngineShadersLocally } from './engine-shaders-local.ts';
+import { HashPool } from './hash-pool.ts';
 import {
 	changedLiterals,
 	HOT_CLIENT,
@@ -53,7 +54,7 @@ import {
 } from './offline.ts';
 import { ShaderPack } from './pack.ts';
 import { null3dPackages } from './package-files.ts';
-import { emitParagraphTables, shaderParagraphsPlugin } from './paragraphs.ts';
+import { emitParagraphTables, shaderParagraphsPlugin, tableStemsOfFile } from './paragraphs.ts';
 import { ShaderCache, shaderCacheOff } from './shader-cache.ts';
 import {
 	compileLiteral,
@@ -149,6 +150,13 @@ function readCertificate(root: string, certDir: string): { cert: Buffer; key: Bu
 /** A script that a page passes by address, such as `new URL('./sketch.ts', import.meta.url)`. */
 const SCRIPT_URL =
 	/new\s+URL\(\s*(['"])(\.{1,2}\/[^'"]+?\.[cm]?[jt]sx?)\1\s*,\s*import\.meta\.url\s*\)/g;
+
+/**
+ * Marks a copied shader file's address in a transformed module until the build knows where the
+ * module that names it lands. The mark is not a path, so no bundler resolves it; `generateBundle`
+ * replaces it with the address from that module's own place in the output.
+ */
+const SHADER_URL_MARK = '__null3d_shader__';
 
 /** Text just before a script address that a worker constructor takes; Vite builds those itself. */
 const WORKER_BEFORE = /new\s+(?:Shared)?Worker\(\s*$/;
@@ -405,7 +413,7 @@ export function missingCoreFiles(root: string): string[] | null {
  * production build that compiles each sketch module, ships the engine core and starts its download
  * from each page that loads it.
  */
-export default function null3d(options: Null3dPluginOptions = {}): Plugin {
+export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 	let building = false;
 	/** True for a production build of pages, which gets the early script. */
 	let buildingPages = false;
@@ -427,6 +435,31 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	const emitted = new Map<string, string>();
 	/** The chunks emitted for the scripts that a worker imports, by their rollup reference. */
 	const workerChunks = new Set<string>();
+	/** Hashes the generated shader files on worker threads, so the build goes on meanwhile. */
+	const hasher = new HashPool();
+	/**
+	 * The generated shader files that the build copies instead of bundling, by their output name:
+	 * each is named by a hash of its bytes and copied on its own, so the build never holds the
+	 * whole set in memory.
+	 */
+	const copiedShaders = new Map<string, string>();
+	/**
+	 * The content hash of each generated shader file by its path, which the pool computes. A page
+	 * build and its workers reach the same files, so each file is hashed once for the whole build,
+	 * and a second name for it waits for the same hash.
+	 */
+	const copiedShaderHashes = new Map<string, Promise<string>>();
+	/** The hash of a generated shader file, read on the pool when a module first names it. */
+	const copiedShaderHash = (file: string): Promise<string> => {
+		let hash = copiedShaderHashes.get(file);
+		if (hash === undefined) {
+			hash = hasher.hash(file);
+			copiedShaderHashes.set(file, hash);
+		}
+		return hash;
+	};
+	/** A copied shader file's path in the output, whatever the assets folder is called. */
+	const assetPath = (name: string) => (assetsDir === '' ? name : posix.join(assetsDir, name));
 	/** Compiles WGSL on worker threads, so the dev server answers other requests meanwhile. */
 	const compiler = new CompilerPool();
 	/** Keeps each compiled shader in the project's cache, so a later build skips the compile. */
@@ -466,7 +499,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		const asSource = join(folder, name.replace(/\.js$/, '.ts'));
 		return existsSync(asSource) ? asSource : null;
 	};
-	return {
+	const plugin: Plugin = {
 		name: 'null3d',
 		// Runs before Vite's own asset handling, which would copy a sketch file as raw text, and
 		// before TypeScript becomes JavaScript, so tagged WGSL sits where the source file has it.
@@ -490,6 +523,10 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				worker: {
 					format: 'es',
 					plugins: () => [
+						// A worker build keeps only these plugins, so the generated shader files are
+						// named here as they are on the page; otherwise every one of them is read
+						// into memory to reach the page's bundle through the worker's own.
+						streamedShaderAssets,
 						workerFilesPlugin(workerFiles),
 						workerPreloadPlugin(),
 						shaderParagraphsPlugin(),
@@ -530,6 +567,10 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		buildStart() {
 			emitted.clear();
 			workerChunks.clear();
+			// The copies follow the generated set: a watch rebuild reads the files again, so a hash
+			// from the last build would name old bytes, and a file that went away would be copied.
+			copiedShaders.clear();
+			copiedShaderHashes.clear();
 			earlyCoreId = undefined;
 			earlyCoreSought = false;
 			if (!building) return;
@@ -540,8 +581,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				);
 			}
 		},
-		buildEnd() {
-			return compiler.close();
+		async buildEnd() {
+			await Promise.all([compiler.close(), hasher.close()]);
 		},
 		// The dev server's pages import the client module of hot updates. A build of pages that
 		// imports the engine ships the early script, found from the module that imports the engine,
@@ -693,7 +734,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 						const start = match.index;
 						if (WORKER_BEFORE.test(code.slice(Math.max(0, start - 40), start))) continue;
 						const address = match[2] ?? '';
-						if (isGeneratedShaderFile(id, address)) continue;
+						if (isGeneratedShaderFile(file, address)) continue;
 						const script = await this.resolve(address, id);
 						if (!script || !isImportedModule(script.id)) continue;
 						// The worker imports the compiled module by this address, as a sketch or a task.
@@ -772,9 +813,66 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 						bundle,
 						[...workerChunks].map((ref) => this.getFileName(ref)),
 					);
+				// Each file that names a copy now knows where it sits, so the mark becomes the
+				// address from there to the copy's own place in the output. A worker's files reach
+				// this bundle as the worker built them, so they take the same pass.
+				for (const file of Object.values(bundle)) {
+					const text =
+						file.type === 'chunk'
+							? file.code
+							: typeof file.source === 'string'
+								? file.source
+								: new TextDecoder().decode(file.source);
+					if (!text.includes(SHADER_URL_MARK)) continue;
+					const from = posix.dirname(file.fileName);
+					const rewritten = text.replaceAll(
+						/__null3d_shader__([^"'`\s)]+)/g,
+						(_match, name: string) => {
+							const address = posix.relative(from, assetPath(name));
+							return address.startsWith('.') ? address : `./${address}`;
+						},
+					);
+					if (file.type === 'chunk') file.code = rewritten;
+					else file.source = rewritten;
+				}
 				const tables = emitParagraphTables.call(this, bundle, root);
+				// The copied device modules are not in the bundle, so the tables of shared
+				// paragraphs that they import are emitted from here, once each, and each copy's
+				// module names them as its loads. Every build that copies the files needs them,
+				// whatever it is for.
+				const emittedTables = new Set([...tables.values()].flat());
+				const loads = new Map<string, string[]>();
+				for (const [name, source] of copiedShaders) {
+					const own: string[] = [];
+					for (const stem of tableStemsOfFile(source)) {
+						const table = assetPath(`${stem}.js`);
+						own.push(table);
+						if (emittedTables.has(table)) continue;
+						const file = join(dirname(source), `${stem}.js`);
+						if (!existsSync(file))
+							this.error(
+								`null3D: ${assetPath(name)} imports ${stem}.js, which the engine's shader modules do not hold. Run \`bun run shaders\` again, and reinstall @null3d/engine if the build still fails.`,
+							);
+						emittedTables.add(table);
+						this.emitFile({ type: 'asset', fileName: table, source: readFileSync(file) });
+					}
+					loads.set(name, own);
+				}
 				if (buildingPages) {
-					const files = offlineFiles(listedFiles(bundle, workerFiles, packageOf, root, tables));
+					const listed = listedFiles(bundle, workerFiles, packageOf, root, tables);
+					// The copied shader files are not in the bundle, so the list of files for offline
+					// play takes them here, by the module each one holds.
+					for (const [name, source] of copiedShaders) {
+						const module = engineModule(source, packageOf);
+						listed.push({
+							fileName: assetPath(name),
+							entry: false,
+							modules: module === undefined ? [] : [module],
+							imports: [],
+							loads: loads.get(name) ?? [],
+						});
+					}
+					const files = offlineFiles(listed);
 					this.emitFile({
 						type: 'asset',
 						fileName: FILES_LIST,
@@ -792,6 +890,13 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			handler(options, bundle) {
 				const outDir = options.dir;
 				if (!outDir) return;
+				// The generated shader files are copied one at a time, so the build never holds the
+				// whole set of builds in memory as a bundle of assets.
+				if (copiedShaders.size > 0) {
+					const folder = join(outDir, assetsDir);
+					mkdirSync(folder, { recursive: true });
+					for (const [name, source] of copiedShaders) copyFileSync(source, join(folder, name));
+				}
 				const recovered = missingWorkerAssets(bundle, workerFiles).filter(
 					({ fileName, source }) => !existsSync(join(outDir, fileName)) && existsSync(source),
 				);
@@ -854,4 +959,61 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			server.middlewares.use(immutableAssetsMiddleware);
 		},
 	};
+
+	/**
+	 * Names the generated shader files' copies before Vite's own asset step sees them, which runs
+	 * after the plugins that declare no order. A generated module loads each of its builds by
+	 * `new URL('./shaders-<name>.js', import.meta.url)`, and a bundler reads every one of them into
+	 * memory to emit it as an asset; here a pool of worker threads hashes each file and the build
+	 * copies it on its own, and the module names the copy, so the build never holds the whole set
+	 * at once.
+	 *
+	 * The argument is a mark rather than an address: where a copy lands is fixed, but the file that
+	 * names it can sit anywhere in the output, and only `generateBundle` knows where.
+	 */
+	const streamedShaderAssets: Plugin = {
+		name: 'null3d:streamed-shader-assets',
+		enforce: 'pre',
+		apply: 'build',
+
+		async transform(code, id) {
+			if (!code.includes('import.meta.url')) return;
+			const file = id.split('?')[0] ?? id;
+			// The files this module names, and the base of the copy name that each one's hash fixes.
+			const named: { match: RegExpExecArray; base: string; target: string }[] = [];
+			for (const match of code.matchAll(SCRIPT_URL)) {
+				const address = match[2] ?? '';
+				if (!isGeneratedShaderFile(file, address)) continue;
+				const target = resolve(dirname(file), address);
+				if (!existsSync(target)) continue;
+				const base = target.slice(target.lastIndexOf('/') + 1).replace(/\.js$/, '');
+				named.push({ match, base, target });
+			}
+			if (named.length === 0) return;
+			// The pool reads each file in chunks and hashes it, so the build's own thread reads none
+			// of the files and holds none of their bytes.
+			const hashed = await Promise.all(
+				named.map(async ({ match, base, target }) => ({
+					match,
+					target,
+					name: `${base}-${await copiedShaderHash(target)}.js`,
+				})),
+			);
+			let out: MagicString | undefined;
+			for (const { match, name, target } of hashed) {
+				copiedShaders.set(name, target);
+				out ??= new MagicString(code);
+				out.overwrite(
+					match.index,
+					match.index + match[0].length,
+					`((u) => new URL(u, import.meta.url))(${JSON.stringify(SHADER_URL_MARK + name)})`,
+				);
+			}
+			return out
+				? { code: out.toString(), map: out.generateMap({ hires: 'boundary' }) }
+				: undefined;
+		},
+	};
+
+	return [streamedShaderAssets, plugin];
 }

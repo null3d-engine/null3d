@@ -24,6 +24,12 @@ export const CLUSTER_FILE = 'cluster-terrain.glb';
 /** The path of the model from a test page, which the dev server serves from this folder. */
 export const CLUSTER_PATH = `assets/models/${CLUSTER_FILE}`;
 
+/** The model that draws the root band of a tree and streams the bands below it. */
+export const CLUSTER_STAGED_FILE = 'cluster-staged-terrain.glb';
+
+/** The path of the staged model from a test page. */
+export const CLUSTER_STAGED_PATH = `assets/models/${CLUSTER_STAGED_FILE}`;
+
 /** The quads along each side of the heightfield: 128 gives 32,768 triangles. */
 const SIDE = 128;
 
@@ -83,16 +89,25 @@ export async function buildClusterFixture(): Promise<Uint8Array> {
 	return (await buildClusterModel()).glb;
 }
 
-/** Builds the cluster model with its report, as the asset tool writes it. */
-export async function buildClusterModel() {
+/**
+ * Builds a model with the tool's options, and checks that the tool gave the terrain a tree. The
+ * model's name keys its stage files, so each staged model keeps its own.
+ *
+ * @param {{ clusters?: boolean, stages?: boolean }} options
+ * @param {string} [name]
+ */
+async function buildTerrain(
+	options: { clusters?: boolean; stages?: boolean },
+	name = 'terrain.glb',
+) {
 	const folder = mkdtempSync(join(tmpdir(), 'null3d-cluster-fixture-'));
 	try {
 		const io = new NodeIO();
-		const source = join(folder, 'terrain.glb');
+		const source = join(folder, name);
 		writeFileSync(source, await io.writeBinary(terrainDocument()));
 		const model = await optimizeModel(
 			source,
-			{ ...DEFAULT_OPTIONS, clusters: true, maxTextureSize: 64 },
+			{ ...DEFAULT_OPTIONS, maxTextureSize: 64, ...options },
 			() => {
 				throw new Error('the heightfield has no texture to encode');
 			},
@@ -104,8 +119,30 @@ export async function buildClusterModel() {
 	}
 }
 
+/** Builds the cluster model with its report, as the asset tool writes it. */
+export async function buildClusterModel() {
+	return buildTerrain({ clusters: true }, CLUSTER_FILE);
+}
+
+/**
+ * Builds the staged cluster model: the model file holds the tree's first band, and each band below
+ * it downloads from a file of its own.
+ */
+export async function buildStagedClusterModel() {
+	const model = await buildTerrain({ clusters: true, stages: true }, CLUSTER_STAGED_FILE);
+	if (model.stages.size === 0) throw new Error('the tool wrote no band file');
+	return model;
+}
+
 if (import.meta.main) {
 	const bytes = await buildClusterFixture();
 	writeFileSync(join(MODELS_DIR, CLUSTER_FILE), bytes);
 	console.log(`${CLUSTER_FILE}: ${bytes.byteLength} bytes`);
+	const staged = await buildStagedClusterModel();
+	writeFileSync(join(MODELS_DIR, CLUSTER_STAGED_FILE), staged.glb);
+	console.log(`${CLUSTER_STAGED_FILE}: ${staged.glb.byteLength} bytes`);
+	for (const [name, band] of staged.stages) {
+		writeFileSync(join(MODELS_DIR, name), band);
+		console.log(`${name}: ${band.byteLength} bytes`);
+	}
 }

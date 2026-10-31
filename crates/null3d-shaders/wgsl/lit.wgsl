@@ -38,9 +38,11 @@ enable draw_index;
 // The COAT_SHEEN builds light a clear coat and a sheen above the base, as three.js's
 // MeshPhysicalMaterial does (null3d::coat_sheen). In them the map slots of the light map and the
 // specular maps hold the coat map, the coat normal map and the sheen map, since a layered material
-// has neither, and the row's flags say which channels of the coat and sheen maps apply. Custom
-// materials' surfaces have the layers' values in every build, and the COAT_SHEEN builds only where
-// their WGSL names them.
+// has neither, and the row's flags say which channels of the coat and sheen maps apply. A
+// transmission or thickness map keeps a row slot of its own, sampling a specular slot's texture
+// array at a layer of its own, so it draws beside the specular map of that slot. Custom materials'
+// surfaces have the layers' values in every build, and the COAT_SHEEN builds only where their WGSL
+// names them.
 //
 // The SUBSURFACE builds, of the templates of the skin pass, light the surface as the others do and
 // write only the diffuse light that scatters under it, after the fog, as the camera's opaque pass
@@ -51,11 +53,14 @@ enable draw_index;
 // The ROW_VALUES builds draw the rows of instance batches with row values (null3d::mesh): the row's
 // color multiplies the vertex color, so it tints the base color and the alpha as three.js's
 // instance colors do, and custom materials read the row's own values as `object.values` in both
-// stages. The CASTER builds, which only custom materials with a vertex offset have, draw a shadow
-// caster's depth: the vertex shader moves each vertex by the offset, then places it as the shadow
-// depth template places a caster's, flattened onto the near face of the light's box. Their
-// pipelines have no fragment stage on WebGPU, and on WebGL2 their fragment shader writes nothing
-// that the pass keeps. The PICK builds, which also only custom materials with a vertex offset have,
+// stages. The CASTER builds, which only custom materials with a vertex offset, a coverage function
+// or a surface alpha have, draw a shadow caster's depth: the vertex shader moves each vertex by the
+// offset, then places it as the shadow depth template places a caster's, flattened onto the near
+// face of the light's box. A material whose WGSL declares `fn coverage` tests it here, and a
+// material whose WGSL sets or reads the surface's alpha runs that alpha here, against the
+// material's cutoff, so a card cuts its own shape out of its shadow. Their other pipelines have no
+// fragment stage on WebGPU, and on WebGL2 their fragment shader writes nothing that the pass keeps.
+// The PICK builds, which also only custom materials with a vertex offset have,
 // draw such an object into GPU picking's id target: the vertex shader moves and places each vertex
 // as the shading builds do, and the fragment shader writes the instance's ids as the pick template
 // does (pick.wgsl). Without them, the pick template would test the scene's depth at the object's
@@ -65,8 +70,9 @@ enable draw_index;
 // moving object for the motion pass (decision record D-140, null3d::motion): the vertex shader
 // moves each vertex by the offset with this frame's built-in values, and again with the last
 // frame's time and `frame.lastFrame` set, places the second with the last frame's matrix, and the
-// fragment shader writes the difference on the screen. Like the casters, they ignore the
-// material's alpha.
+// fragment shader writes the difference on the screen. Like the casters, they test the material's
+// alpha only where its WGSL sets or reads the surface's alpha, and cut the mask's holes at the
+// cutoff.
 //
 // The LOD_FADE builds draw a level of detail inside the band where it hands over to the next
 // (null3d::mesh): the vertex shader passes on the instance's fade value, and the fragment shader
@@ -75,7 +81,8 @@ enable draw_index;
 //
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive, light, specular intensity and specular color maps, each a layer of a texture array with
-// a sampler. A map reads
+// a sampler, and a material that lets light through reads its transmission and thickness maps
+// through the two specular slots' arrays at layers of their own. A map reads
 // the first texture coordinates, or the second where the material's flags say so, through the
 // material's texture coordinate transform. A map whose image is not on the GPU yet has no layer,
 // and the material draws as without it. The normal map bends the normal in a frame from the mesh's
@@ -114,9 +121,10 @@ enable draw_index;
 // uniforms. When their WGSL declares textures, the build binds them in the maps' bind group and
 // adds `load_custom_texture_layers`, which CUSTOM_TEXTURES makes each stage call. Inputs that cost
 // something come only to WGSL that reads them: CUSTOM_UV1 reads the second texture coordinates,
+// CUSTOM_VERTEX_COLOR reads the mesh's vertex color, which a vertex offset takes as data,
 // OBJECT_IDS finds the instance's index and the object's id (null3d::mesh), and OBJECT_MATRICES
 // passes the world matrix's rows to the fragment shader, at the locations that only the MAPS and
-// ALPHA_HASH builds use otherwise, which custom materials never have. Their WGSL
+// ALPHA_HASH builds use otherwise, which moves the alpha hash's place elsewhere. Their WGSL
 // shares this file's names, so the template imports library items by name and keeps its own names
 // few. It never imports a module whole, which would reserve the module's name
 // in their WGSL too. Names that only the MAPS builds declare stay free for custom materials, which
@@ -141,7 +149,9 @@ enable draw_index;
 #endif
 #import null3d::ibl::{reflected_direction}
 #import null3d::lighting::{horizon_occlusion, indirect_specular, specular_occlusion}
+#ifndef CUSTOM_LOBE
 #import null3d::lights::{clustered_light}
+#endif
 #ifndef PARALLAX
 #import null3d::ssr::{screen_reflection}
 #endif
@@ -197,7 +207,8 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::mesh::{caster_clip}
 #endif
 #ifdef MOTION
-#import null3d::motion::{last_transform, motion_block, surface_motion}
+#import null3d::motion::{last_transform, motion_block}
+#import null3d::motion_math::surface_motion
 #import null3d::vertex::{transform_point}
 #ifndef WEBGL2
 #import null3d::motion::{LastIn}
@@ -207,6 +218,7 @@ fn pick_color(key: u32) -> vec4f {
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, map_unit, straight_texel, world_direction}
 #import null3d::mesh::{material_light_map_direction, material_light_map_uv}
+#import null3d::mesh::{MapUvRows, material_map_uv}
 #else ifdef TRANSMISSION
 #import null3d::mesh::{world_direction}
 #else ifdef DECAL
@@ -222,11 +234,11 @@ fn pick_color(key: u32) -> vec4f {
 #endif
 #ifdef TRANSMISSION
 #import null3d::globals::{MaterialTransmission}
-#import null3d::mesh::{NO_FOG, layer_maps_kind_of, material_transmission}
-#import null3d::transmission::{transmitted_light}
+#import null3d::mesh::{NO_FOG, layer_maps_kind_of, material_dispersion, material_transmission, material_volume_layers}
+#import null3d::refraction::{transmitted_light}
 #ifdef TONE_MAP
 #import null3d::fog::{fog_factor}
-#import null3d::tonemap::{encode, graded_light, tone_map, vignette}
+#import null3d::tonemap::{encode, tone_map, vignette, vignette_place}
 #endif
 #endif
 #ifdef TRANSLUCENCY
@@ -251,6 +263,16 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::iridescence::{eval_iridescence, schlick_to_reflectance}
 #import null3d::math::{rotate_2d}
 #endif
+#ifdef CUSTOM_LOBE
+#import null3d::lighting::{Reflected}
+#import null3d::lights::{cluster_lights, cluster_sample, grid_word, light_of}
+#import null3d::lights::{KIND_RECT, area_light}
+#import null3d::math::{half_vector}
+#import null3d::tables::{AreaTerms, area_terms}
+#endif
+#ifdef CUSTOM_DIFFUSE_NORMAL
+#import null3d::lighting::{brdf_lambert, f_schlick}
+#endif
 #ifdef ALPHA_COVERAGE
 #import null3d::cutout::{alpha_coverage}
 #endif
@@ -270,7 +292,7 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::moment::{moment_colour_fragment}
 
 /// The moment store that the colour pass reads at each fragment's own pixel (decision record
-/// D-260): the four moments that the moment pass summed there, read with `textureLoad` as plain
+/// D-261): the four moments that the moment pass summed there, read with `textureLoad` as plain
 /// floats. Binding 19 is free in the frame's group: the composer keeps every module's globals,
 /// and the refraction module's own texture holds binding 15 in every build.
 @group(0) @binding(19) var moment_store: texture_2d<f32>;
@@ -300,6 +322,8 @@ const LIGHT_MAP_RGBM: u32 = 16777216u;
 var<private> material_row: Material;
 
 #ifdef MAPS
+/// The material that the pixel shows, which names the transforms that its row keeps for its maps.
+var<private> map_material: u32;
 /// The scale of the light map's texture coordinates along u and v, then their offset along u and
 /// v, which the fragment shader reads once.
 var<private> light_map_uv: vec4f;
@@ -339,10 +363,19 @@ var<private> pixel_material: u32;
 /// The values of the material that lets light through, which the fragment shader reads once.
 var<private> transmission_row: MaterialTransmission;
 
-/// Which family of maps the material keeps in the light map's and the specular maps' slots: 2 when
-/// they hold its transmission and thickness maps, so `with_maps` reads them instead of the
-/// specular maps.
-var<private> layer_maps_kind: u32;
+/// Which family of maps the material keeps in each group of shared slots, two bits each: the light
+/// map's, the specular intensity map's and the specular color map's. Bits 6 and 7 say that the
+/// transmission and thickness maps read the second texture coordinates.
+var<private> layer_maps_kinds: u32;
+
+/// The layers of the material's transmission and thickness maps in the specular slots' texture
+/// arrays, which the shader samples through those slots' bindings: the transmission map's layer,
+/// then the thickness map's, each negative where the map draws nothing.
+var<private> volume_layers: vec2f;
+
+/// The strength of the volume's dispersion, which spreads the light through it over three rays,
+/// one per color.
+var<private> volume_dispersion: f32;
 
 /// The diffuse light that `light_surface` gathers, of which the light through the surface takes
 /// the transmission's share.
@@ -408,6 +441,17 @@ var<private> decal_uv_dy: vec2f;
 /// The bit of a material's flags for the map of slot 0 on the second texture coordinates; the
 /// next slots take the bits above it.
 const SECOND_UV: u32 = 256u;
+
+#ifdef TRANSMISSION
+/// The row slots of the transmission and thickness maps, after the eight slots that have a binding
+/// of their own. Each samples the specular slot's texture array at a layer of its own.
+const TRANSMISSION_SLOT: u32 = 8u;
+const THICKNESS_SLOT: u32 = 9u;
+/// The bits of the layer maps' kinds that say the transmission and thickness maps read the second
+/// texture coordinates.
+const TRANSMISSION_SECOND_UV: u32 = 64u;
+const THICKNESS_SECOND_UV: u32 = 128u;
+#endif
 
 #ifdef COAT_SHEEN
 /// The bits of a layered material's flags that say which channels of its coat and sheen maps
@@ -482,25 +526,81 @@ struct MapUv {
     dy: vec2f,
 }
 
-/// The coordinates of the map of `slot`: the second set where the flags say so, else the first.
-fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
-    if (flags & (SECOND_UV << slot)) != 0u {
-        return second;
-    }
-    return first;
+/// A surface's two texture coordinate sets before any map's own transform, and how each changes
+/// across a pixel and up a row. The derivatives come from uniform control flow, so each map
+/// transforms them through its own matrix rather than taking derivatives of its own coordinates.
+#ifdef MAPS
+struct RawUv {
+    uv: vec2f,
+    uv1: vec2f,
+    dx: vec2f,
+    dy: vec2f,
+    dx1: vec2f,
+    dy1: vec2f,
 }
 
-/// Texture coordinates through the material's transform, with their derivatives.
-fn transformed_uv(uv: vec2f, uv_u: vec4f, uv_v: vec4f) -> MapUv {
-    let at = vec2f(dot(uv_u.xyz, vec3f(uv, 1.0)), dot(uv_v.xyz, vec3f(uv, 1.0)));
-#ifdef DECAL
-    let dx = vec2f(dot(uv_u.xy, decal_uv_dx), dot(uv_v.xy, decal_uv_dx));
-    let dy = vec2f(dot(uv_u.xy, decal_uv_dy), dot(uv_v.xy, decal_uv_dy));
-    return MapUv(at, dx, dy);
-#else
-    return MapUv(at, dpdx(at), dpdy(at));
-#endif
+/// The map slot that holds a material's normal map, and the bump or displacement map that takes
+/// its place in the builds that read a height.
+const NORMAL_SLOT: u32 = 2u;
+
+/// The transform of the map that the pixel shows in `slot`: the base color map's two rows, which
+/// the values that every shader reads hold, or the two rows that the row keeps for another slot.
+fn slot_uv_rows(slot: u32) -> MapUvRows {
+    if slot == 0u {
+        return MapUvRows(material_row.uv_u, material_row.uv_v);
+    }
+    return material_map_uv(map_material, slot);
 }
+
+/// Texture coordinates through a map's transform, with their derivatives.
+fn transform_uv(rows: MapUvRows, uv: vec2f, dx: vec2f, dy: vec2f) -> MapUv {
+    let at = vec2f(dot(rows.u.xyz, vec3f(uv, 1.0)), dot(rows.v.xyz, vec3f(uv, 1.0)));
+    return MapUv(
+        at,
+        vec2f(dot(rows.u.xy, dx), dot(rows.v.xy, dx)),
+        vec2f(dot(rows.u.xy, dy), dot(rows.v.xy, dy)),
+    );
+}
+
+/// True when the map of `slot` reads the second texture coordinates. A slot below the volume maps'
+/// names its bit in the flags; a volume map's bit sits in the layer maps' kinds.
+fn reads_second_uv(flags: u32, slot: u32) -> bool {
+#ifdef TRANSMISSION
+    if (slot == TRANSMISSION_SLOT) {
+        return (layer_maps_kinds & TRANSMISSION_SECOND_UV) != 0u;
+    }
+    if (slot == THICKNESS_SLOT) {
+        return (layer_maps_kinds & THICKNESS_SECOND_UV) != 0u;
+    }
+#endif
+    return (flags & (SECOND_UV << slot)) != 0u;
+}
+
+/// The coordinates of the map of `slot` through that map's own transform, with their derivatives:
+/// the second set where the flags say so, else the first.
+fn map_uv(flags: u32, slot: u32, raw: RawUv) -> MapUv {
+    let rows = slot_uv_rows(slot);
+    if reads_second_uv(flags, slot) {
+        return transform_uv(rows, raw.uv1, raw.dx1, raw.dy1);
+    }
+    return transform_uv(rows, raw.uv, raw.dx, raw.dy);
+}
+
+/// The shift of the raw texture coordinates that moves a map with `rows` by `shift` in its own
+/// coordinates: the inverse of the matrix's linear part, which the transform applies to the raw
+/// coordinates. A matrix with no inverse, as a zero scale makes, shifts nothing.
+fn raw_shift(rows: MapUvRows, shift: vec2f) -> vec2f {
+    let a = rows.u.x;
+    let b = rows.u.y;
+    let c = rows.v.x;
+    let d = rows.v.y;
+    let det = a * d - b * c;
+    if abs(det) < 1e-20 {
+        return vec2f(0.0);
+    }
+    return vec2f((d * shift.x - b * shift.y) / det, (a * shift.y - c * shift.x) / det);
+}
+#endif
 
 #ifdef WEBGL2
 /// The texel of a map whose layer, as the row holds it, is `layer`, at `at`. The layer also names
@@ -594,13 +694,17 @@ fn specular_color_texel(layer: f32, at: MapUv) -> vec4f {
 @group(1) @binding(0) var scene_depth_copy: texture_2d<f32>;
 #endif
 
-/// The texel of the copy of the scene's depth that holds the image's place `uv`, counted from the
-/// top left. A place outside the image reads the nearest texel inside it.
-fn scene_depth_texel(uv: vec2f) -> vec2u {
-    let size = textureDimensions(scene_depth_copy);
-    let pixel = vec2u(clamp(uv * vec2f(size), vec2f(0.0), vec2f(size) - 1.0));
+/// The texel of the copy of the scene's depth at `place`, a place on the image counted from the top
+/// left, where the image covers `image_size` pixels of the copy's corner at this render scale. The
+/// copy keeps the canvas's size, and below the whole render scale the image draws into a corner of
+/// it, so a place on the image lands at the image size's texel within the copy, not at the copy
+/// size's. A place outside the image, or a copy of one texel, reads the nearest texel it holds.
+fn scene_depth_texel(place: vec2f, image_size: vec2u) -> vec2u {
+    let copy = vec2u(textureDimensions(scene_depth_copy));
+    let held = min(image_size, copy);
+    let pixel = vec2u(clamp(place * vec2f(held), vec2f(0.0), vec2f(held) - 1.0));
 #ifdef WEBGL2
-    return vec2u(pixel.x, size.y - 1u - pixel.y);
+    return vec2u(pixel.x, copy.y - 1u - pixel.y);
 #else
     return pixel;
 #endif
@@ -609,7 +713,11 @@ fn scene_depth_texel(uv: vec2f) -> vec2u {
 /// The scene's depth at `uv`, counted from the top left: 1 at the camera's near plane and 0 at its
 /// far plane, as `null3d::depth` describes, and 0 where nothing drew or no copy exists yet.
 fn sceneDepth(uv: vec2f) -> f32 {
-    return textureLoad(scene_depth_copy, scene_depth_texel(uv), 0).x;
+    return textureLoad(
+        scene_depth_copy,
+        scene_depth_texel(uv, vec2u(engine_frame.target_size.xy)),
+        0,
+    ).x;
 }
 
 /// The distance in front of the camera of the surface that the scene's depth at `uv` shows, in
@@ -625,9 +733,11 @@ fn sceneDistance(uv: vec2f) -> f32 {
     return -orthographic_depth_to_view_z(depth, near, far);
 }
 #else ifdef SCENE_DEPTH_STUB
-// A custom material's functions join every build of this template, and its shadow caster, motion
-// and pick builds read no surface and bind no depth. These stand-ins let the functions build there;
-// the builds that shade a surface bind the copy and get the functions above.
+// A custom material's functions join every build of this template. A masked caster and a motion
+// build run a surface but bind no copy of the camera's depth, where the builds that shade one do,
+// and a pick build carries the functions without running them. These stand-ins let such a surface
+// build there; they give 0 and the far plane, so a surface whose alpha reads the depth cuts another
+// shape in those passes than it does where it shades.
 fn sceneDepth(uv: vec2f) -> f32 {
     return 0.0;
 }
@@ -640,8 +750,8 @@ fn sceneDistance(uv: vec2f) -> f32 {
 #ifdef MAPS
 /// Where a height map in the normal map's slot reads. Rows count upward on both paths, so a bump
 /// map compares the pixel with the one above it, as three.js's renderers both do.
-fn height_uv(flags: u32, first: MapUv, second: MapUv) -> MapUv {
-    let picked = map_uv(flags, 2u, first, second);
+fn height_uv(flags: u32, raw: RawUv) -> MapUv {
+    let picked = map_uv(flags, NORMAL_SLOT, raw);
     return MapUv(picked.uv, picked.dx, picked.dy * ROWS_UP);
 }
 
@@ -835,6 +945,9 @@ struct VertexIn {
 #endif
 #ifdef VERTEX_COLOR
     @location(5) vertex_color: vec4f,
+#else ifdef CUSTOM_VERTEX_COLOR
+    /// The mesh's vertex color, which a vertex offset reads as wind data.
+    @location(5) vertex_color: vec4f,
 #endif
 #ifdef SKIN
     @location(6) joints: vec4u,
@@ -842,6 +955,10 @@ struct VertexIn {
 #endif
 #ifdef MORPH
     @location(8) morph: vec2f,
+#endif
+#ifdef CUSTOM_TARGET
+    /// The four-number record of a generated mesh, which a vertex offset reads.
+    @location(8) vertex_record: vec4f,
 #endif
 }
 
@@ -869,8 +986,14 @@ struct VertexOut {
     @location(6) bitangent: vec3f,
 #endif
 #ifdef ALPHA_HASH
-    /// The position in the mesh's own space, where the alpha hash finds its pattern.
+    /// The position in the mesh's own space, where the alpha hash finds its pattern. A custom
+    /// material's object matrices take the other slot, since no build carries both a mask by the
+    /// hash and a pick key.
+#ifdef OBJECT_MATRICES
+    @location(13) mesh_place: vec3f,
+#else
     @location(7) mesh_place: vec3f,
+#endif
 #endif
 #ifdef CUSTOM
     /// The object's origin, relative to the camera.
@@ -899,10 +1022,19 @@ struct VertexOut {
 #endif
 #endif
 #ifdef LOD_FADE
-    /// The fade value of the instance's level of detail, and the phase of its dither. It shares
-    /// its slot with the object ids, as only custom materials read those, and they have no fading
-    /// builds.
+    /// The fade value of the instance's level of detail, and the phase of its dither. A custom
+    /// material's object ids take the scale slot, which a build that fades leaves free, unless its
+    /// diffuse transmission fills that slot: then the lod takes the hash's other slot, which a
+    /// fading build leaves free.
+#ifdef OBJECT_IDS
+#ifdef TRANSLUCENCY
+    @location(13) @interpolate(flat, either) lod: vec2f,
+#else
+    @location(9) @interpolate(flat, either) lod: vec2f,
+#endif
+#else
     @location(12) @interpolate(flat, either) lod: vec2f,
+#endif
 #endif
 #ifdef OBJECT_MATRICES
     /// The rows of the object's world matrix that give x, y and z, relative to the camera.
@@ -935,9 +1067,19 @@ struct VertexInput {
     /// The vertex's second texture coordinates, or the first on a mesh without a second set.
     uv1: vec2f,
 #endif
+#ifdef CUSTOM_VERTEX_COLOR
+    /// The vertex's color, as the mesh stores it. It carries data that a vertex offset reads, such
+    /// as a branch index and a phase for wind.
+    colors: vec4f,
+#endif
 #ifdef OBJECT_IDS
     /// The instance's index in its batch: 0 for an object of the scene.
     instance: u32,
+#endif
+#ifdef CUSTOM_TARGET
+    /// The mesh's four-number vertex record: a generated shape writes the position that the vertex
+    /// takes at a coarser level of detail and that level's error, or whatever the shape needs.
+    vertexRecord: vec4f,
 #endif
 }
 #endif
@@ -1016,6 +1158,16 @@ struct Surface {
     /// Four values for the material's own lobe function, which the engine passes to `fn lobe`.
     /// `defaultSurface` leaves them zero, and a material that declares no lobe reads none.
     lobe: vec4f,
+    /// Where the sun's shadow lookup reads, relative to the surface and in world space: zero by
+    /// default, so the lookup reads the surface itself. A stand-in card that shows a surface at a
+    /// stored depth sets it to that depth along the view, so the card takes the shadow that falls
+    /// on the surface it shows rather than on its own plane.
+    shadowOffset: vec3f,
+    /// The unit normal that lights the surface's diffuse and ambient light, in world space, where a
+    /// surface function names one of its own. It is the mesh's normal unless the function sets it,
+    /// so a crown of leaves can light as the volume it stands for and keep each leaf's own normal
+    /// for its gloss and the light through it. The specular keeps `normal`.
+    diffuseNormal: vec3f,
     /// How much of the light behind the surface passes through it, from 0 to 1, in place of that
     /// share of its diffuse light, where the material lets light through.
     transmission: f32,
@@ -1084,25 +1236,27 @@ struct Surface {
 }
 
 #ifdef CUSTOM_LOBE
-/// What a custom material's own lobe function knows of the main directional light. The surface
-/// function passes its own four values through `Surface.lobe`, and the engine adds the lobe's
-/// return to the base lobe's specular.
+/// What a custom material's own lobe function knows of one light that reaches the surface. The
+/// surface function passes its own four values through `Surface.lobe`, and the engine adds the
+/// lobe's return to that light's base specular. The engine calls the lobe for the sun and for each
+/// point and spot light of the surface's cluster; area lights keep the base lobe.
 struct LobeInput {
     /// The surface's unit normal in world space.
     normal: vec3f,
     /// The unit direction from the surface toward the camera.
     view: vec3f,
-    /// The unit direction from the surface toward the main light.
+    /// The unit direction from the surface toward the light.
     light: vec3f,
-    /// The unit half vector between the main light and the camera.
+    /// The unit half vector between the light and the camera, or zero where the two cancel, since
+    /// no unit bisector exists there.
     half: vec3f,
     /// The surface's perceptual roughness, after the engine's filter.
     roughness: f32,
     /// The specular reflectance at normal incidence.
     f0: vec3f,
-    /// The specular radiance that the base lobe reflects from the main light, before the layers.
+    /// The specular radiance that the base lobe reflects from the light, before the layers.
     specular: vec3f,
-    /// The main light's irradiance on the surface: the cosine, the color and the shadow.
+    /// The light's irradiance on the surface: the cosine, the color and the shadow.
     irradiance: vec3f,
     /// The four values that the surface function wrote to `Surface.lobe`.
     values: vec4f,
@@ -1134,120 +1288,129 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     let m = material_row;
     let flags = u32(m.strengths.z);
     var s = surface;
-    // The coordinates' derivatives come first, where every pixel of the quad runs them; each map
-    // then samples with them inside its branch.
-    var first = transformed_uv(input.uv, m.uv_u, m.uv_v);
-    var second = transformed_uv(input.uv1, m.uv_u, m.uv_v);
+    // The coordinates and their changes come first, where every pixel of the quad runs them; each
+    // map then takes them through its own transform inside its branch.
+#ifdef DECAL
+    var raw = RawUv(input.uv, input.uv1, decal_uv_dx, decal_uv_dy, decal_uv_dx, decal_uv_dy);
+#else
+    var raw = RawUv(
+        input.uv, input.uv1,
+        dpdx(input.uv), dpdy(input.uv), dpdx(input.uv1), dpdy(input.uv1),
+    );
+#endif
     let position_dy = dpdy(input.relativePosition) * ROWS_UP;
     let position_dx = dpdx(input.relativePosition);
 #ifdef PARALLAX
-    // Parallax shifts every map's coordinates of the set that the displacement map reads, where
-    // the view ray meets its relief.
+    // Parallax shifts the coordinates of the set that the displacement map reads, where the view
+    // ray meets its relief. The march works in that map's own coordinates, so its shift comes back
+    // through the map's scale and turn, and each map then takes it through its own transform.
     let values = custom_value(pixel_material, 0u);
     let pixel_layer = custom_value(pixel_material, 2u).w;
     if map_ready(pixel_layer) {
+        let rows = slot_uv_rows(NORMAL_SLOT);
         let on_second = values.w != 0.0;
-        var at = first;
+        var at = transform_uv(rows, raw.uv, raw.dx, raw.dy);
         if on_second {
-            at = second;
+            at = transform_uv(rows, raw.uv1, raw.dx1, raw.dy1);
         }
         let along_y = position_dy * ROWS_UP;
         let shift = parallax_shift(
             pixel_layer, at, input.normal, input.viewDirection, position_dx, along_y,
             height_scale, surface_height,
         );
+        let moved = raw_shift(rows, shift);
         if on_second {
-            second.uv += shift;
+            raw.uv1 += moved;
         } else {
-            first.uv += shift;
+            raw.uv += moved;
         }
     }
 #endif
     if map_ready(m.maps.x) {
-        let texel = straight_texel(m, base_color_texel(m.maps.x, map_uv(flags, 0u, first, second)));
+        let texel = straight_texel(m, base_color_texel(m.maps.x, map_uv(flags, 0u, raw)));
         s.baseColor *= texel.rgb;
         s.alpha *= texel.a;
     }
     if map_ready(m.maps.y) {
-        let texel = metal_rough_texel(m.maps.y, map_uv(flags, 1u, first, second));
+        let texel = metal_rough_texel(m.maps.y, map_uv(flags, 1u, raw));
         s.roughness *= texel.g;
         s.metalness *= texel.b;
     }
     if map_ready(m.maps.w) {
-        let texel = occlusion_texel(m.maps.w, map_uv(flags, 3u, first, second));
+        let texel = occlusion_texel(m.maps.w, map_uv(flags, 3u, raw));
         s.occlusion = (texel.r - 1.0) * m.strengths.x + 1.0;
     }
     if map_ready(m.more_maps.x) {
-        s.emissive *= emissive_texel(m.more_maps.x, map_uv(flags, 4u, first, second)).rgb;
+        s.emissive *= emissive_texel(m.more_maps.x, map_uv(flags, 4u, raw)).rgb;
     }
     specular_texel = vec4f(1.0);
 #ifdef COAT_SHEEN
-    // A layered material's slots 5 to 7 hold the maps of one family of layers, which the row's
-    // kind names: the clear coat's, the coat normal's and the sheen's, or iridescence's and its
-    // thickness with the anisotropy's.
-    if u32(anisotropy_row.z) == 1u {
-        if map_ready(m.more_maps.y) {
-            let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+    // A material with layers keeps one family's maps in slots 5 to 7. The row names each group's
+    // family apart: the clear coat's or iridescence's for the light slot, and either of those for
+    // a specular slot. A material that lets light through keeps its transmission and thickness
+    // maps in row slots of their own, which `volume_layers` names.
+    let kinds = u32(anisotropy_row.z);
+    let layer_kind = kinds & 3u;
+    let intensity_kind = (kinds >> 2u) & 3u;
+    let color_kind = (kinds >> 4u) & 3u;
+    if map_ready(m.more_maps.y) {
+        let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, raw));
+        if layer_kind == 1u {
             s.iridescence *= texel.r;
-        }
-        if map_ready(m.more_maps.z) {
-            let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, first, second));
-            s.iridescenceThickness = mix(film_row.z, film_row.w, texel.g);
-        }
-    } else {
-        if map_ready(m.more_maps.y) {
-            let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+        } else {
             s.clearcoat *= select(1.0, texel.r, (flags & COAT_MAP) != 0u);
             s.clearcoatRoughness *= select(1.0, texel.g, (flags & COAT_ROUGHNESS_MAP) != 0u);
         }
-        if map_ready(m.more_maps.z) {
-            let at = map_uv(flags, 6u, first, second);
-            let texel = specular_intensity_texel(m.more_maps.z, at);
+    }
+    if map_ready(m.more_maps.z) {
+        let at = map_uv(flags, 6u, raw);
+        let texel = specular_intensity_texel(m.more_maps.z, at);
+        if intensity_kind == 1u {
+            s.iridescenceThickness = mix(film_row.z, film_row.w, texel.g);
+        } else {
             let scale = coat_sheen_row.coat.zw;
             s.clearcoatNormal = bent_normal(texel, scale, at, input, position_dx, position_dy);
         }
-        if map_ready(m.more_maps.w) {
-            let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+    }
+    if map_ready(m.more_maps.w) {
+        let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, raw));
+        if color_kind == 0u {
             s.sheenColor *= select(vec3f(1.0), texel.rgb, (flags & SHEEN_COLOR_MAP) != 0u);
             s.sheenRoughness *= select(1.0, texel.a, (flags & SHEEN_ROUGHNESS_MAP) != 0u);
         }
     }
 #else
     if map_ready(m.more_maps.y) {
-        let texel = light_map_texel(m.more_maps.y, light_map_at(map_uv(flags, 5u, first, second)));
+        let texel = light_map_texel(m.more_maps.y, light_map_at(map_uv(flags, 5u, raw)));
         s.irradiance = texel.rgb * m.strengths.y;
     }
     // A material that lets light through a thin surface keeps its diffuse transmission maps in
     // the specular maps' slots, which read the same channels.
     if map_ready(m.more_maps.z) {
-        let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, first, second));
+        let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, raw));
 #ifdef TRANSLUCENCY
         s.diffuseTransmission *= texel.a;
-#else ifdef TRANSMISSION
-        // A material that lets light through keeps its transmission and thickness maps there
-        // instead, whose red and green scale the transmission and the volume.
-        if layer_maps_kind == 2u {
-            s.transmission *= texel.r;
-        } else {
-            specular_texel.a = texel.a;
-        }
 #else
         specular_texel.a = texel.a;
 #endif
     }
     if map_ready(m.more_maps.w) {
-        let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+        let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, raw));
 #ifdef TRANSLUCENCY
         s.diffuseTransmissionColor *= texel.rgb;
-#else ifdef TRANSMISSION
-        if layer_maps_kind == 2u {
-            s.thickness *= texel.g;
-        } else {
-            specular_texel = vec4f(texel.rgb, specular_texel.a);
-        }
 #else
         specular_texel = vec4f(texel.rgb, specular_texel.a);
 #endif
+    }
+#endif
+#ifdef TRANSMISSION
+    // The transmission and thickness maps keep row slots of their own beside the specular maps,
+    // which sample the same texture arrays at layers of their own.
+    if map_ready(volume_layers.x) {
+        s.transmission *= specular_intensity_texel(volume_layers.x, map_uv(flags, TRANSMISSION_SLOT, raw)).r;
+    }
+    if map_ready(volume_layers.y) {
+        s.thickness *= specular_color_texel(volume_layers.y, map_uv(flags, THICKNESS_SLOT, raw)).g;
     }
 #endif
     // A height map in the normal map's slot bends the normal only in the builds that read it, so
@@ -1255,20 +1418,20 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     let heights = flags & (BUMP_MAP | HEIGHT_NORMALS);
 #ifdef BUMP
     if heights == BUMP_MAP && map_ready(m.maps.z) {
-        let change = height_change(m.maps.z, height_uv(flags, first, second)) * m.surface.z;
+        let change = height_change(m.maps.z, height_uv(flags, raw)) * m.surface.z;
         let facing = select(-1.0, 1.0, input.frontFacing);
         s.normal = bent_by_height(input.normal, normalize(position_dx), normalize(position_dy), change, facing);
     }
 #endif
 #ifdef DISPLACEMENT
     if heights == HEIGHT_NORMALS && map_ready(m.maps.z) {
-        let change = height_slope_change(m.maps.z, height_uv(flags, first, second)) * height_scale;
+        let change = height_slope_change(m.maps.z, height_uv(flags, raw)) * height_scale;
         let facing = select(-1.0, 1.0, input.frontFacing);
         s.normal = bent_by_height(input.normal, position_dx, position_dy, change, facing);
     }
 #endif
     if heights == 0u && map_ready(m.maps.z) {
-        let at = map_uv(flags, 2u, first, second);
+        let at = map_uv(flags, NORMAL_SLOT, raw);
         let texel = normal_texel(m.maps.z, at);
         s.normal = bent_normal(texel, m.surface.zw, at, input, position_dx, position_dy);
     }
@@ -1278,17 +1441,17 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         // The anisotropy's axes come from the surface's tangent frame, which three.js builds from
         // the normal map's coordinates where the material has a normal map, and from the first
         // coordinates otherwise.
-        var frame_at = first;
+        var frame_at = map_uv(flags, 0u, raw);
         if heights == 0u && map_ready(m.maps.z) {
-            frame_at = map_uv(flags, 2u, first, second);
+            frame_at = map_uv(flags, NORMAL_SLOT, raw);
         }
         let frame = tangent_frame(input, frame_at, position_dx, position_dy);
         s.anisotropyTangent = frame[0];
         s.anisotropyBitangent = frame[1];
-        // Its map takes the specular color map's slot in the iridescence family, which the row's
-        // kind names.
-        if u32(anisotropy_row.z) == 1u && map_ready(m.more_maps.w) {
-            let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+        // Its map takes the specular color map's slot in the iridescence family, which the row
+        // names by that slot's kind.
+        if color_kind == 1u && map_ready(m.more_maps.w) {
+            let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, raw));
             s.anisotropyDirection = texel.rg;
             s.anisotropyMapStrength = texel.b;
         }
@@ -1302,7 +1465,7 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     // did keeps its light; the bake's term is clamped so a surface that faces away from the light
     // does not blow up.
     if map_ready(light_map_direction) {
-        let at = light_map_at(map_uv(flags, 5u, first, second));
+        let at = light_map_at(map_uv(flags, 5u, raw));
         let direction = normalize(light_texel(light_map_direction, at).rgb * 2.0 - 1.0);
         let toward = dot(s.normal, direction);
         let baked = dot(input.normal, direction);
@@ -1362,6 +1525,54 @@ fn bent_normal(
 }
 #endif
 
+#ifdef COAT_SHEEN
+#ifndef MAPS
+#ifndef CUSTOM
+/// The frame that the anisotropy turns its direction in where the material draws without maps:
+/// any frame square to the normal, since a surface without texture coordinates gives the lobe no
+/// direction of its own. A material with a map takes the frame from the mesh's tangents or from
+/// the map's coordinates, in the builds that read maps.
+fn normal_frame(input: SurfaceInput) -> mat3x3f {
+    let normal = input.normal;
+    let facing = select(-1.0, 1.0, input.frontFacing);
+    // The helper axis stays away from the normal's own direction, so the cross product keeps its
+    // length.
+    let helper = select(vec3f(0.0, 0.0, 1.0), vec3f(1.0, 0.0, 0.0), abs(normal.z) > 0.999);
+    let tangent = normalize(cross(helper, normal));
+    return mat3x3f(tangent * facing, cross(normal, tangent) * facing, normal);
+}
+#endif
+#endif
+#endif
+
+#ifdef CUSTOM
+/// The surface input of a pixel whose point relative to the camera is `relative`, whose mesh
+/// normal is `normal`, and whose triangle faces the camera when `front` is true: the values that a
+/// mask's test reads, without its texture coordinates, its vertex color or its pixel position. The
+/// masked builds of a custom material's shadow and motion call it.
+fn surface_place(relative: vec3f, normal: vec3f, front: bool) -> SurfaceInput {
+    var input: SurfaceInput;
+    input.relativePosition = relative;
+    // Toward the camera: from the point for a perspective camera, and one direction for an
+    // orthographic camera, whose view rays are parallel. A light's view holds the camera's place
+    // here, since its own is the light's.
+    let eye = engine_frame.camera_eye;
+    input.viewDirection = normalize(eye.xyz - relative * eye.w);
+    // A face's normal comes from how the position changes between pixels. The two GPU paths count
+    // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
+    // flat normals face it.
+    let face = normalize(cross(dpdx(relative), dpdy(relative)));
+    let face_normal = select(-face, face, dot(face, input.viewDirection) >= 0.0);
+    // Back faces draw only for double-sided materials, and light as front faces do.
+    let smooth_normal = normalize(normal) * select(-1.0, 1.0, front);
+    let flat_shading = (u32(material_row.strengths.z) & FLAT_SHADING) != 0u;
+    input.normal = select(smooth_normal, face_normal, flat_shading);
+    input.vertexColor = vec4f(1.0);
+    input.frontFacing = front;
+    return input;
+}
+#endif
+
 /// The surface as the material's own values make it: its base color times the vertex color, its
 /// metalness, roughness and emissive light, and the normal of the input, with the material's
 /// texture maps in the builds that have them.
@@ -1379,6 +1590,9 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
 #ifdef CUSTOM
     s.reflection = vec4f(0.0);
     s.lobe = vec4f(0.0);
+    s.shadowOffset = vec3f(0.0);
+    // The diffuse light takes the surface's own normal unless the function names another.
+    s.diffuseNormal = input.normal;
 #endif
 #ifdef TRANSMISSION
     s.transmission = transmission_row.values.x;
@@ -1428,6 +1642,18 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
 #endif
 #ifdef MAPS
     s = with_maps(s, input);
+#else
+#ifdef COAT_SHEEN
+#ifndef CUSTOM
+    // A surface without maps gives the stretch no direction of its own, so the lobe takes any
+    // frame square to the normal.
+    if (u32(m.strengths.z) & ANISOTROPY_FLAG) != 0u {
+        let frame = normal_frame(input);
+        s.anisotropyTangent = frame[0];
+        s.anisotropyBitangent = frame[1];
+    }
+#endif
+#endif
 #endif
     return s;
 }
@@ -1460,8 +1686,14 @@ fn vertex_input(v: VertexIn, position: vec3f, normal: vec3f, ids: vec2u) -> Vert
 #ifdef CUSTOM_UV1
     input.uv1 = mesh_second_uv(v.uv1);
 #endif
+#ifdef CUSTOM_VERTEX_COLOR
+    input.colors = v.vertex_color;
+#endif
 #ifdef OBJECT_IDS
     input.instance = ids.x;
+#endif
+#ifdef CUSTOM_TARGET
+    input.vertexRecord = v.vertex_record;
 #endif
     return input;
 }
@@ -1469,11 +1701,47 @@ fn vertex_input(v: VertexIn, position: vec3f, normal: vec3f, ids: vec2u) -> Vert
 
 #ifdef MOTION
 /// What a motion build's vertex shader passes on: this frame's clip position, where this frame's
-/// point would have shown in the last frame, and where the moved point showed in it.
+/// point would have shown in the last frame, and where the moved point showed in it. A masked
+/// build passes the surface's own values too, which its mask's test reads.
 struct MotionOut {
     @invariant @builtin(position) clip: vec4f,
     @location(0) still: vec4f,
     @location(1) last: vec4f,
+#ifdef ALPHA_MASK
+    @location(2) @interpolate(flat, either) material: u32,
+    /// The position relative to the camera.
+    @location(3) relative: vec3f,
+    @location(4) normal: vec3f,
+#ifdef CUSTOM_UV1
+    /// The first texture coordinates, then the second.
+    @location(5) uv: vec4f,
+#else
+    @location(5) uv: vec2f,
+#endif
+#ifdef VERTEX_COLOR
+    @location(6) vertex_color: vec4f,
+#endif
+#ifdef ROW_VALUES
+    @location(7) @interpolate(flat, either) row_color: vec4f,
+    @location(8) @interpolate(flat, either) row_values: vec4f,
+#endif
+#ifdef ALPHA_HASH
+    /// The position in the mesh's own space, where the alpha hash finds its pattern.
+    @location(9) mesh_place: vec3f,
+#endif
+    /// The object's origin, relative to the camera.
+    @location(10) @interpolate(flat, either) origin: vec3f,
+#ifdef OBJECT_IDS
+    /// The instance's index in its batch, then the object's id.
+    @location(11) @interpolate(flat, either) ids: vec2u,
+#endif
+#ifdef OBJECT_MATRICES
+    /// The rows of the object's world matrix that give x, y and z, relative to the camera.
+    @location(12) @interpolate(flat, either) world_x: vec4f,
+    @location(13) @interpolate(flat, either) world_y: vec4f,
+    @location(14) @interpolate(flat, either) world_z: vec4f,
+#endif
+#endif
 }
 
 @vertex
@@ -1517,11 +1785,119 @@ fn vs(v: VertexIn, i: InstanceIn, l: LastIn) -> MotionOut {
     out.clip = clip_of(found, now);
     out.still = motion_block.last_view_proj * vec4f(now, 1.0);
     out.last = motion_block.last_view_proj * vec4f(then, 1.0);
+#ifdef ALPHA_MASK
+    out.material = found.material;
+    out.relative = now;
+    // The surface function reads a normal in the world's space, as it does where it shades.
+    out.normal = world_normal(found, v.normal);
+#ifdef CUSTOM_UV1
+    out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));
+#else
+    out.uv = mesh_uv(v.uv0);
+#endif
+#ifdef VERTEX_COLOR
+    out.vertex_color = v.vertex_color;
+#endif
+#ifdef ROW_VALUES
+    out.row_color = row.color;
+    out.row_values = row.values;
+#endif
+#ifdef ALPHA_HASH
+    out.mesh_place = position;
+#endif
+    out.origin = origin;
+#ifdef OBJECT_IDS
+    out.ids = ids;
+#endif
+#ifdef OBJECT_MATRICES
+    out.world_x = found.row_x;
+    out.world_y = found.row_y;
+    out.world_z = found.row_z;
+#endif
+#endif
     return out;
 }
 
 @fragment
-fn fs(in: MotionOut) -> @location(0) vec4f {
+fn fs(in: MotionOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+#ifdef ALPHA_MASK
+    // A masked surface cuts the holes of its mask into its motion, at the cutoff, as its caster
+    // does.
+    material_row = material_of(in.material);
+    fill_builtins(in.origin);
+#ifdef ROW_VALUES
+    object.values = in.row_values;
+#endif
+#ifdef OBJECT_IDS
+    object.id = in.ids.y;
+#endif
+#ifdef OBJECT_MATRICES
+    object.worldMatrix = affine_matrix(in.world_x, in.world_y, in.world_z);
+    object.normalMatrix = affine_normal_matrix(in.world_x, in.world_y, in.world_z);
+#endif
+#ifdef CUSTOM_UNIFORMS
+    material = load_material_uniforms(in.material);
+#endif
+#ifdef CUSTOM_TEXTURES
+    load_custom_texture_layers(in.material);
+#endif
+#ifdef ALPHA_HASH
+    hash_place = in.mesh_place;
+#endif
+    var input: SurfaceInput;
+    input.relativePosition = in.relative;
+    // Toward the camera: from the point for a perspective camera, and one direction for an
+    // orthographic camera, whose view rays are parallel. A light's view holds the camera's place
+    // here, since its own is the light's.
+    let eye = engine_frame.camera_eye;
+    input.viewDirection = normalize(eye.xyz - in.relative * eye.w);
+    // A face's normal comes from how the position changes between pixels. The two GPU paths count
+    // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
+    // flat normals face it.
+    let face = normalize(cross(dpdx(in.relative), dpdy(in.relative)));
+    let face_normal = select(-face, face, dot(face, input.viewDirection) >= 0.0);
+    // Back faces draw only for double-sided materials, and light as front faces do.
+    let smooth_normal = normalize(in.normal) * select(-1.0, 1.0, front);
+    let flat_shading = (u32(material_row.strengths.z) & FLAT_SHADING) != 0u;
+    input.normal = select(smooth_normal, face_normal, flat_shading);
+    input.frontFacing = front;
+    input.vertexColor = vec4f(1.0);
+#ifdef VERTEX_COLOR
+    input.vertexColor = in.vertex_color;
+#endif
+#ifdef ROW_VALUES
+    input.vertexColor *= in.row_color;
+#endif
+    input.worldPosition = in.relative + engine_frame.camera_world.xyz;
+#ifdef CUSTOM_UV1
+    input.uv = in.uv.xy;
+    input.uv1 = in.uv.zw;
+#else
+    input.uv = in.uv;
+#endif
+    var coord = in.clip.xyz;
+#ifdef WEBGL2
+    coord.y = engine_frame.target_size.y - coord.y;
+#endif
+    input.fragCoord = coord;
+#ifdef OBJECT_IDS
+    input.instance = in.ids.x;
+#endif
+#ifdef CUSTOM_SURFACE
+    let alpha = surface(input).alpha;
+#else
+    let alpha = defaultSurface(input).alpha;
+#endif
+#ifdef ALPHA_HASH
+    if alpha < alpha_hash_threshold(in.mesh_place) {
+        discard;
+    }
+#else
+    if alpha < material_row.emissive.w {
+        discard;
+    }
+#endif
+#endif
     return surface_motion(in.still, in.last);
 }
 #else
@@ -1719,6 +2095,71 @@ fn has_surrounding() -> bool {
 #endif
 }
 
+#ifdef CUSTOM_LOBE
+/// The light that a surface reflects toward the camera from the point and spot lights of its
+/// cluster, with the material's own lobe added beside each light's base specular. It walks the
+/// cluster itself rather than calling `null3d::lights`'s loop, because a library module cannot call
+/// a function of the shader that declares it, and the material declares the lobe here. Area lights
+/// keep the base lobe, and the per-light work beyond the lobe is the library's own `cluster_sample`.
+/// The arguments are those that `light_surface` passes to its clustered lights, and `lobe_values`
+/// holds the material's four values for its lobe.
+fn clustered_lobed_light(
+    m: PbrMaterial,
+    relative: vec3f,
+    normal: vec3f,
+    mesh_normal: vec3f,
+    to_view: vec3f,
+    compensation: vec3f,
+    lobe_values: vec4f,
+) -> Reflected {
+    var sum = Reflected(vec3f(0.0), vec3f(0.0));
+    let found = cluster_lights(relative);
+#ifdef AREA_LIGHTS
+    // The area lights' tables for the surface, read with the cluster's first area light.
+    var terms = AreaTerms(vec4f(0.0), vec2f(0.0));
+    var have_terms = false;
+#endif
+    for (var k = 0u; k < found.y; k++) {
+        let light = light_of(grid_word(found.x + k));
+        let kind = bitcast<u32>(light.penumbra.y);
+#ifdef AREA_LIGHTS
+        if kind >= KIND_RECT {
+            if !have_terms {
+                terms = area_terms(dot(normal, to_view), m.roughness);
+                have_terms = true;
+            }
+            let reflected = area_light(m, terms, light, kind, relative, normal, to_view);
+            sum.diffuse += reflected.diffuse;
+            sum.specular += reflected.specular;
+            continue;
+        }
+#else
+        if kind >= KIND_RECT {
+            continue;
+        }
+#endif
+        let sample = cluster_sample(light, relative, normal, mesh_normal, to_view);
+        var reflected = direct_light(m, normal, to_view, sample.to_light, sample.incoming, compensation);
+        // The material's own lobe adds its specular beside the base lobe's for this light. It
+        // knows the light, the view and the half vector, which a surface function cannot see.
+        reflected.specular += lobe(LobeInput(
+            normal,
+            to_view,
+            sample.to_light,
+            half_vector(sample.to_light, to_view),
+            m.roughness,
+            m.specular_blended,
+            reflected.specular,
+            saturate(dot(normal, sample.to_light)) * sample.incoming,
+            lobe_values,
+        ));
+        sum.diffuse += reflected.diffuse;
+        sum.specular += reflected.specular;
+    }
+    return sum;
+}
+#endif
+
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
 /// where its shadows fall, the point and spot lights of the surface's cluster, the ambient and
 /// hemisphere lights, `extra` irradiance such as a light map's, and the light around it, from the
@@ -1728,20 +2169,29 @@ fn has_surrounding() -> bool {
 /// `occlusion` darkens the ambient and hemisphere lights and the environment's diffuse light, and
 /// its specular light as three.js's `computeSpecularOcclusion` does. The environment's specular
 /// light also fades where the shading `normal` reflects the view below the mesh's own
-/// `vertex_normal`. `contact` is the share of the sun's light that the sun's contact shadows let
-/// through. `relative` is the surface's position relative to the camera, `to_view` points from the
-/// surface toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and
-/// view angle. `reflection` holds light from the mirror direction and its share, from screen-space
+/// `vertex_normal`. The sun and the clustered lights move their shadow lookups off the surface by
+/// the mesh's own normal, `vertex_normal`, before a normal map bends it, and the sun compares each
+/// stored depth with the plane of the mesh's triangle, `face_normal`, turned toward the sun.
+/// `contact` is the share of the sun's light that the sun's contact shadows let through. `relative`
+/// is the surface's position relative to the camera, and `shadow_offset` a distance from it that
+/// the sun's shadow reads instead, which a surface names with `Surface.shadowOffset`. `to_view`
+/// points from the surface toward the camera, and `dfg` holds the split-sum terms at the surface's
+/// roughness and view angle.
+/// `reflection` holds light from the mirror direction and its share, from screen-space
 /// reflections and a custom material's planar reflection, which takes the place of that share of
 /// the reflection probes' and the environment's reflection, with or without either. `lobe_values`
-/// holds the material's own values for its lobe function, which the engine calls for the main
-/// light. In the TRANSLUCENCY builds the lights also gather the light that reaches the surface's
-/// back, and the ambient, hemisphere and environment light from behind goes to `back_indirect`.
+/// holds the material's own values for its lobe function, which the engine calls for the sun and
+/// for each point and spot light. In the TRANSLUCENCY builds the lights also gather the light that
+/// reaches the surface's back, and the ambient, hemisphere and environment light from behind goes
+/// to `back_indirect`.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
+    shadow_offset: vec3f,
     normal: vec3f,
+    diffuse_normal: vec3f,
     vertex_normal: vec3f,
+    face_normal: vec3f,
     to_view: vec3f,
     dfg: vec2f,
     extra: vec3f,
@@ -1752,6 +2202,9 @@ fn light_surface(
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
     let to_sun = -engine_frame.sun_direction.xyz;
+    // The sun's shadow reads the point that the surface names, which a card moves to the surface
+    // that it shows. Every other light and probe reads the point itself.
+    let shadow_point = relative + shadow_offset;
     var sun_color = engine_frame.sun_color.rgb;
 #ifdef RECEIVE_SHADOWS
 #ifdef TRANSLUCENCY
@@ -1759,9 +2212,9 @@ fn light_surface(
     // runs, from the side that the sun falls on. Contact shadows march from the side the camera
     // sees, so only a surface that faces the sun takes them: from the back, the march would find
     // the surface itself in its way.
-    let seen = relative + engine_frame.shadow_origin.xyz;
+    let seen = shadow_point + engine_frame.shadow_origin.xyz;
     let facing = dot(normal, to_sun) > 0.0;
-    sun_color *= sun_shadow(seen, lit_side(normal, to_sun), to_sun) * select(1.0, contact, facing);
+    sun_color *= sun_shadow(seen, lit_side(vertex_normal, to_sun), face_normal, to_sun) * select(1.0, contact, facing);
 #else
     // A surface that faces away from the sun gets none of its light whatever the shadow map
     // holds, so it skips the lookup and the filter's reads. A coat that faces the sun still
@@ -1773,7 +2226,7 @@ fn light_surface(
     let facing = dot(normal, to_sun);
 #endif
     if facing > 0.0 {
-        sun_color *= sun_shadow(relative + engine_frame.shadow_origin.xyz, normal, to_sun) * contact;
+        sun_color *= sun_shadow(shadow_point + engine_frame.shadow_origin.xyz, vertex_normal, face_normal, to_sun) * contact;
     }
 #endif
 #endif
@@ -1782,14 +2235,22 @@ fn light_surface(
     sun_color *= layered_light(normal, to_view, to_sun, sun_color);
 #endif
     var sun = direct_light(m, normal, to_view, to_sun, sun_color, compensation);
+#ifdef CUSTOM_DIFFUSE_NORMAL
+    // The diffuse light takes the surface's own normal, and the specular keeps the surface normal.
+    // The sun's colour holds its shadow by now, so one lookup lights both.
+    let v_dot_h = saturate(dot(to_view, null3d::math::half_vector(to_sun, to_view)));
+    let fresnel = f_schlick(m.specular, m.specular_grazing, v_dot_h);
+    sun.diffuse = saturate(dot(diffuse_normal, to_sun)) * sun_color
+        * brdf_lambert(m.diffuse) * (1.0 - fresnel);
+#endif
 #ifdef CUSTOM_LOBE
-    // The material's own lobe adds its specular beside the base lobe's for the main light. It
-    // knows the light, the view and the half vector, which a surface function cannot see.
+    // The material's own lobe adds its specular beside the base lobe's for the sun. It knows the
+    // light, the view and the half vector, which a surface function cannot see.
     sun.specular += lobe(LobeInput(
         normal,
         to_view,
         to_sun,
-        normalize(to_sun + to_view),
+        half_vector(to_sun, to_view),
         m.roughness,
         m.specular_blended,
         sun.specular,
@@ -1801,9 +2262,19 @@ fn light_surface(
     gather_back_light(normal, to_sun, sun_color);
     back_indirect = ambient_light(-normal) * occlusion;
 #endif
-    let clustered = clustered_light(m, relative, normal, to_view, compensation);
+#ifdef CUSTOM_LOBE
+    // The material's own lobe answers each light, so the cluster's point and spot lights run
+    // through the loop of this file.
+    let clustered = clustered_lobed_light(m, relative, normal, vertex_normal, to_view, compensation, lobe_values);
+#else
+    let clustered = clustered_light(m, relative, normal, vertex_normal, to_view, compensation);
+#endif
     let n_dot_v = saturate(dot(normal, to_view));
+#ifdef CUSTOM_DIFFUSE_NORMAL
+    let surrounding_light = ambient_light(diffuse_normal) + extra;
+#else
     let surrounding_light = ambient_light(normal) + extra;
+#endif
 #ifdef COAT_SHEEN
     let ambient = indirect_diffuse(m, surrounding_light, dfg)
         * layered_ambient(surrounding_light, n_dot_v, occlusion);
@@ -1867,12 +2338,15 @@ fn light_surface(
 /// camera sees what lies behind it. The exposure and the tone mapping apply, and the scene's fog does
 /// not, as three.js applies them to that material. Only the main directional light's shadows fall on
 /// it. The mesh must receive shadows, so a build without `RECEIVE_SHADOWS` draws nothing.
-fn shadow_catcher(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
+/// `face_normal` is the unit normal of the triangle's plane, turned toward the sun, which each
+/// stored depth compares with.
+fn shadow_catcher(s: Surface, input: SurfaceInput, face_normal: vec3f, pixel: vec4f) -> vec4f {
     var shadow = 0.0;
 #ifdef RECEIVE_SHADOWS
     shadow = 1.0 - sun_shadow(
         input.relativePosition + engine_frame.shadow_origin.xyz,
-        s.normal,
+        input.normal,
+        face_normal,
         -engine_frame.sun_direction.xyz,
     );
 #endif
@@ -1888,6 +2362,14 @@ fn shadow_catcher(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 /// shadows. A shadow-catcher material draws only the sun's shadows instead (`shadow_catcher`).
 fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let normal = normalize(s.normal);
+    // The normal that lights the diffuse and ambient light, which a surface function may name apart
+    // from the surface's own: a crown of leaves lights as a volume, and each leaf keeps its own
+    // normal for its gloss and the light through it.
+#ifdef CUSTOM_DIFFUSE_NORMAL
+    let diffuse_normal = normalize(s.diffuseNormal);
+#else
+    let diffuse_normal = normal;
+#endif
     // Where the mesh's normal changes fast between pixels, highlights widen, so they flicker less
     // as the surface moves. As in Filament, the normal is the mesh's own, before a map or a surface
     // function bends it.
@@ -1906,6 +2388,12 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     let face = cross(dpdx(input.relativePosition), dpdy(input.relativePosition));
 #endif
+    // The plane of the mesh's triangle, turned toward the sun: the shadow filter compares each
+    // stored depth with this plane, and the map holds the triangles themselves, so a normal map's
+    // tilt must not move it. The turn gives the plane the side that the light's projection reads.
+    let plane_normal = normalize(
+        select(face, -face, dot(face, engine_frame.sun_direction.xyz) > 0.0),
+    );
     // The alpha tests' derivatives come here too, before the shadow-catcher branch: a derivative
     // must run in uniform control flow, and everything after the branch depends on it.
 #ifdef ALPHA_HASH
@@ -1915,7 +2403,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let alpha_width = fwidth(s.alpha);
 #endif
     if (u32(material_row.strengths.z) & SHADOW_CATCHER_FLAG) != 0u {
-        return shadow_catcher(s, input, pixel);
+        return shadow_catcher(s, input, plane_normal, pixel);
     }
     // The material's dielectric specular values, times its specular maps in the MAPS builds.
     var specular = material_row.specular;
@@ -2034,16 +2522,23 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let takes_contact = (u32(material_row.strengths.z) & NO_CONTACT_SHADOWS_FLAG) == 0u;
     let contact = select(1.0, screen.values.w, toward_sun && takes_contact);
 #ifdef CUSTOM
-    // The material's own values for its lobe, or zeros where it has none.
+    // The material's own values for its lobe, or zeros where it has none, and the point that the
+    // sun's shadow reads: a card moves it to the surface that it shows, so its own cast does not
+    // fall on it.
     let lobe_values = s.lobe;
+    let shadow_offset = s.shadowOffset;
 #else
     let lobe_values = vec4f(0.0);
+    let shadow_offset = vec3f(0.0);
 #endif
     let reflected = light_surface(
         pbr,
         input.relativePosition,
+        shadow_offset,
         normal,
+        diffuse_normal,
         input.normal,
+        plane_normal,
         input.viewDirection,
         dfg,
         s.irradiance * engine_frame.output.exposure,
@@ -2067,6 +2562,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         transmission_row.values.z,
         transmission_row.attenuation,
         object_scale,
+        volume_dispersion,
     ) * pbr.diffuse * (1.0 - fresnel);
 #ifdef TONE_MAP
     let emitted = s.emissive * engine_frame.output.exposure;
@@ -2142,11 +2638,15 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     // joins after the tone mapping, as far as the fog lets it.
     let unfogged = (u32(material_row.strengths.z) & NO_FOG) != 0u;
     let fog = select(fog_factor(engine_frame.fog, input.relativePosition), 0.0, unfogged);
-    let shade = vignette(pixel.xy, engine_frame.target_size.xy, engine_frame.vignette);
+    let shade = vignette(
+        vignette_place(pixel.xy, engine_frame.occlusion.y),
+        engine_frame.target_size.xy,
+        engine_frame.vignette,
+    );
     let shaded = fogged(layered, input.relativePosition, material_row) * shade;
     let keeps = keeps_display_color(material_row);
     let toned = select(
-        tone_map(graded_light(shaded, engine_frame.output), engine_frame.output),
+        tone_map(shaded, engine_frame.output),
         saturate(shaded),
         keeps,
     );
@@ -2182,6 +2682,166 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 }
 
 #ifndef DECAL
+/// What a surface function knows of the point that the fragment shows, from the values that the
+/// vertex stage passed on and the materials that the fragment stage loaded.
+fn surface_input(in: VertexOut, front: bool) -> SurfaceInput {
+    var input: SurfaceInput;
+    input.relativePosition = in.relative;
+    // Toward the camera: from the point for a perspective camera, and one direction for an
+    // orthographic camera, whose view rays are parallel.
+    let eye = engine_frame.camera_position;
+    input.viewDirection = normalize(eye.xyz - in.relative * eye.w);
+    // A face's normal comes from how the position changes between pixels. The two GPU paths count
+    // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
+    // flat normals face it.
+    let face = normalize(cross(dpdx(in.relative), dpdy(in.relative)));
+    let face_normal = select(-face, face, dot(face, input.viewDirection) >= 0.0);
+    // Back faces draw only for double-sided materials, and light as front faces do.
+    let smooth_normal = normalize(in.normal) * select(-1.0, 1.0, front);
+    let flat_shading = (u32(material_row.strengths.z) & FLAT_SHADING) != 0u;
+    input.normal = select(smooth_normal, face_normal, flat_shading);
+    input.vertexColor = vec4f(1.0);
+#ifdef VERTEX_COLOR
+    input.vertexColor = in.vertex_color;
+#endif
+#ifdef ROW_VALUES
+    input.vertexColor *= in.row_color;
+#endif
+#ifdef CUSTOM
+    input.worldPosition = in.relative + engine_frame.camera_world.xyz;
+#endif
+#ifdef MAPS
+    input.uv = in.uv.xy;
+    input.uv1 = in.uv.zw;
+#else ifdef CUSTOM_UV1
+    input.uv = in.uv.xy;
+    input.uv1 = in.uv.zw;
+#else ifdef UV0
+    input.uv = in.uv;
+#endif
+#ifdef VERTEX_TANGENT
+    input.tangent = in.tangent;
+    input.bitangent = in.bitangent;
+#endif
+    input.frontFacing = front;
+#ifdef CUSTOM
+    // Pixel rows count upward on WebGL2, so its rows turn to count from the top, as on WebGPU.
+    // The target keeps the canvas's height at every render scale, while the frame's render size
+    // may be smaller, so the turn counts from the target's height rather than the render size's.
+    var coord = in.clip.xyz;
+#ifdef WEBGL2
+    coord.y = engine_frame.occlusion.y - coord.y;
+#endif
+    input.fragCoord = coord;
+#endif
+#ifdef OBJECT_IDS
+    input.instance = in.ids.x;
+#endif
+    return input;
+}
+
+#ifdef CASTER
+/// A caster writes no color: a masked material's caster drops the pixels that its coverage or its
+/// surface alpha leaves out, and the pass keeps the depth alone.
+@fragment
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) {
+#ifdef CUSTOM_COVERAGE
+#ifdef ALPHA_MASK
+    // The caster tests the material's coverage of the light's view, as a masked surface cuts its
+    // shadow: a card that shows a tree casts the tree's shape, not its whole quad.
+    material_row = material_of(in.material);
+#ifdef CUSTOM
+    fill_builtins(in.origin);
+#ifdef ROW_VALUES
+    object.values = in.row_values;
+#endif
+#ifdef OBJECT_IDS
+    object.id = in.ids.y;
+#endif
+#ifdef OBJECT_MATRICES
+    object.worldMatrix = affine_matrix(in.world_x, in.world_y, in.world_z);
+    object.normalMatrix = affine_normal_matrix(in.world_x, in.world_y, in.world_z);
+#endif
+#endif
+#ifdef CUSTOM_UNIFORMS
+    material = load_material_uniforms(in.material);
+#endif
+#ifdef CUSTOM_TEXTURES
+    load_custom_texture_layers(in.material);
+#endif
+    if (coverage(surface_input(in, front)) < material_row.emissive.w) {
+        discard;
+    }
+#endif
+#else ifdef ALPHA_MASK
+    // A masked caster runs the surface's alpha, so its shadow keeps the material's holes. It tests
+    // the cutoff, since a shadow map holds one depth for each pixel.
+    material_row = material_of(in.material);
+#ifdef CUSTOM
+    fill_builtins(in.origin);
+#ifdef ROW_VALUES
+    object.values = in.row_values;
+#endif
+#ifdef OBJECT_IDS
+    object.id = in.ids.y;
+#endif
+#ifdef OBJECT_MATRICES
+    object.worldMatrix = affine_matrix(in.world_x, in.world_y, in.world_z);
+    object.normalMatrix = affine_normal_matrix(in.world_x, in.world_y, in.world_z);
+#endif
+#endif
+#ifdef CUSTOM_UNIFORMS
+    material = load_material_uniforms(in.material);
+#endif
+#ifdef CUSTOM_TEXTURES
+    load_custom_texture_layers(in.material);
+#endif
+#ifdef ALPHA_HASH
+    hash_place = in.mesh_place;
+#endif
+    var input = surface_place(in.relative, in.normal, front);
+#ifdef VERTEX_COLOR
+    input.vertexColor = in.vertex_color;
+#endif
+#ifdef ROW_VALUES
+    input.vertexColor *= in.row_color;
+#endif
+    input.worldPosition = in.relative + engine_frame.camera_world.xyz;
+#ifdef CUSTOM_UV1
+    input.uv = in.uv.xy;
+    input.uv1 = in.uv.zw;
+#else
+    input.uv = in.uv;
+#endif
+    // A surface sees the camera's pixel here, as it does where it shades. This pass draws from the
+    // light, so the position that its fragment stage receives is a texel of the shadow map. The
+    // frame's camera values place the point in the camera's view instead.
+    let camera_clip = engine_frame.camera_view_proj * vec4f(in.relative, 1.0);
+    let camera_ndc = camera_clip.xyz / camera_clip.w;
+    input.fragCoord = vec3f(
+        (camera_ndc.xy * vec2f(0.5, -0.5) + 0.5) * engine_frame.camera_target.xy,
+        camera_ndc.z,
+    );
+#ifdef OBJECT_IDS
+    input.instance = in.ids.x;
+#endif
+#ifdef CUSTOM_SURFACE
+    var alpha = surface(input).alpha;
+#else
+    var alpha = defaultSurface(input).alpha;
+#endif
+#ifdef ALPHA_HASH
+    if alpha < alpha_hash_threshold(in.mesh_place) {
+        discard;
+    }
+#else
+    if alpha < material_row.emissive.w {
+        discard;
+    }
+#endif
+#endif
+}
+#else
 @fragment
 #ifdef SAMPLE_MASK
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
@@ -2194,12 +2854,13 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
-#ifdef CASTER
-    return vec4f(0.0);
-#else ifdef PICK
+#ifdef PICK
     return pick_color(in.key);
 #else
     material_row = material_of(in.material);
+#ifdef MAPS
+    map_material = in.material;
+#endif
 #ifdef MAPS
     // Only a light-mapped material reads the light map's transform and direction layer.
     if map_ready(material_row.more_maps.y) {
@@ -2212,7 +2873,9 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #ifdef TRANSMISSION
     transmission_row = material_transmission(in.material);
-    layer_maps_kind = layer_maps_kind_of(in.material);
+    layer_maps_kinds = layer_maps_kind_of(in.material);
+    volume_layers = material_volume_layers(in.material);
+    volume_dispersion = material_dispersion(in.material);
     object_scale = in.scale;
 #else ifdef TRANSLUCENCY
     translucency_row = material_translucency(in.material);
@@ -2259,56 +2922,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef CUSTOM_TEXTURES
     load_custom_texture_layers(in.material);
 #endif
-    var input: SurfaceInput;
-    input.relativePosition = in.relative;
-    // Toward the camera: from the point for a perspective camera, and one direction for an
-    // orthographic camera, whose view rays are parallel.
-    let eye = engine_frame.camera_position;
-    input.viewDirection = normalize(eye.xyz - in.relative * eye.w);
-    // A face's normal comes from how the position changes between pixels. The two GPU paths count
-    // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
-    // flat normals face it.
-    let face = normalize(cross(dpdx(in.relative), dpdy(in.relative)));
-    let face_normal = select(-face, face, dot(face, input.viewDirection) >= 0.0);
-    // Back faces draw only for double-sided materials, and light as front faces do.
-    let smooth_normal = normalize(in.normal) * select(-1.0, 1.0, front);
-    let flat_shading = (u32(material_row.strengths.z) & FLAT_SHADING) != 0u;
-    input.normal = select(smooth_normal, face_normal, flat_shading);
-    input.vertexColor = vec4f(1.0);
-#ifdef VERTEX_COLOR
-    input.vertexColor = in.vertex_color;
-#endif
-#ifdef ROW_VALUES
-    input.vertexColor *= in.row_color;
-#endif
-#ifdef CUSTOM
-    input.worldPosition = in.relative + engine_frame.camera_world.xyz;
-#endif
-#ifdef MAPS
-    input.uv = in.uv.xy;
-    input.uv1 = in.uv.zw;
-#else ifdef CUSTOM_UV1
-    input.uv = in.uv.xy;
-    input.uv1 = in.uv.zw;
-#else ifdef UV0
-    input.uv = in.uv;
-#endif
-#ifdef VERTEX_TANGENT
-    input.tangent = in.tangent;
-    input.bitangent = in.bitangent;
-#endif
-    input.frontFacing = front;
-#ifdef CUSTOM
-    // Pixel rows count upward on WebGL2, so its rows turn to count from the top, as on WebGPU.
-    var coord = in.clip.xyz;
-#ifdef WEBGL2
-    coord.y = engine_frame.target_size.y - coord.y;
-#endif
-    input.fragCoord = coord;
-#endif
-#ifdef OBJECT_IDS
-    input.instance = in.ids.x;
-#endif
+    let input = surface_input(in, front);
 #ifdef CUSTOM_SURFACE
     let s = surface(input);
 #else
@@ -2331,6 +2945,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #endif
 }
+#endif
 #else
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
@@ -2399,6 +3014,9 @@ fn decal_ramp(low: f32, high: f32, x: f32) -> f32 {
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4f {
     material_row = material_of(in.material);
+#ifdef MAPS
+    map_material = in.material;
+#endif
 #ifdef MAPS
     // Only a light-mapped material reads the light map's transform and direction layer.
     if map_ready(material_row.more_maps.y) {

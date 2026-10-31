@@ -41,7 +41,10 @@ function serve(answers: Record<string, Answer>): void {
 		const answer = answers[url];
 		if (answer === undefined || answer === 'network') throw new TypeError('Failed to fetch');
 		if (typeof answer === 'number') return new Response('', { status: answer });
-		return new Response(answer as BodyInit);
+		// A server gives a length for what it sends, so the progress handlers know the total.
+		const length =
+			typeof answer === 'string' ? new TextEncoder().encode(answer).length : answer.length;
+		return new Response(answer as BodyInit, { headers: { 'content-length': String(length) } });
 	}) as typeof fetch;
 	globalThis.createImageBitmap = (async (blob: Blob, options: ImageBitmapOptions) => {
 		decoded.push(options);
@@ -192,6 +195,55 @@ describe('assets', () => {
 		expect(events.length).toBe(5);
 	});
 
+	test('a large file reports its bytes as they arrive, and its total from the response length', async () => {
+		const size = 64 * 1024;
+		const pieces = 4;
+		const body = new Uint8Array(size).fill(7);
+		let sent = 0;
+		globalThis.fetch = (async () => {
+			const stream = new ReadableStream<Uint8Array>({
+				pull(controller) {
+					if (sent >= pieces) {
+						controller.close();
+						return;
+					}
+					const from = (sent * size) / pieces;
+					sent++;
+					controller.enqueue(body.subarray(from, from + size / pieces));
+				},
+			});
+			return new Response(stream, { headers: { 'content-length': String(size) } });
+		}) as unknown as typeof fetch;
+		const { textures } = fakeTextures();
+		const assets = new Assets(textures, PAGE);
+		const seen: [number, number, string][] = [];
+		assets.onProgress((loaded, total, url) => seen.push([loaded, total, url]));
+		const bytes = await assets.loadBinary('/big.bin');
+		expect(bytes.byteLength).toBe(size);
+		// One event for each piece: the bytes rise to the length the response gave, which is the
+		// total from the first piece on.
+		expect(seen.length).toBe(pieces);
+		expect(seen.every(([, total]) => total === size)).toBe(true);
+		expect(seen.every(([loaded]) => loaded > 0)).toBe(true);
+		expect(seen.at(-1)?.[0]).toBe(size);
+		expect(seen.at(-1)?.[2]).toBe('https://game.example/big.bin');
+	});
+
+	test('a file whose response gives no length reports its bytes with the total unknown', async () => {
+		const body = new Uint8Array(4096).fill(3);
+		globalThis.fetch = (async () => new Response(body)) as unknown as typeof fetch;
+		const { textures } = fakeTextures();
+		const assets = new Assets(textures, PAGE);
+		const seen: [number, number][] = [];
+		assets.onProgress((loaded, total) => seen.push([loaded, total]));
+		const bytes = await assets.loadBinary('/unknown.bin');
+		expect(bytes.byteLength).toBe(4096);
+		expect(seen.length).toBeGreaterThan(0);
+		// Nothing told the page the length, so the total stays unknown and the bytes still rise.
+		expect(seen.every(([, total]) => total === 0)).toBe(true);
+		expect(seen.at(-1)?.[0]).toBe(4096);
+	});
+
 	test('an image whose header claims more pixels than its use takes fails with E1412 before it decodes', async () => {
 		serve({
 			'https://game.example/huge.png': pngHeader(65536, 65536) as Uint8Array<ArrayBuffer>,
@@ -221,8 +273,8 @@ describe('assets', () => {
 			'https://game.example/broken.png': 'broken',
 		});
 		const assets = new Assets(fakeTextures().textures, PAGE);
-		const events: number[] = [];
-		assets.onProgress((loaded) => events.push(loaded));
+		const events: [number, number][] = [];
+		assets.onProgress((loaded, total) => events.push([loaded, total]));
 		expect(await codeOf(assets.loadTexture('/missing.png'))).toBe(
 			'E1411: assets.loadTexture() could not download https://game.example/missing.png: HTTP 404.',
 		);
@@ -235,8 +287,11 @@ describe('assets', () => {
 		expect(await codeOf(assets.loadTexture('/broken.png'))).toBe(
 			'E1412: assets.loadTexture() could not decode https://game.example/broken.png as an image: The source image could not be decoded.',
 		);
-		// Failed downloads count as done, so a loading bar reaches its end.
-		expect(events).toEqual([1, 2, 3, 4]);
+		// Failed downloads count as done, so a loading bar reaches its end: the bytes downloaded climb
+		// to the bytes expected, each failure counting what its response announced or one byte.
+		expect(events.map(([loaded]) => loaded)).toEqual([1, 2, 3, 9]);
+		const [loaded, total] = events.at(-1) ?? [0, 0];
+		expect(loaded).toBe(total);
 		// A failed preload rejects, and the next load of the file tries again.
 		expect(await codeOf(assets.preload(['/missing.png']))).toStartWith('E1411: assets.preload()');
 		expect(await codeOf(assets.loadBinary('/missing.png'))).toStartWith(

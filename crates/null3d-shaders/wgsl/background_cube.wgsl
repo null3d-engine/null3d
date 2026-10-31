@@ -40,6 +40,7 @@ fn fs(in: CubeOut) -> @location(0) vec4f {
         return null3d::tonemap::finish(
             backdrop.color.rgb,
             in.clip.xy,
+            frame.occlusion.y,
             frame.output,
             frame.target_size.xy,
             frame.vignette,
@@ -57,6 +58,7 @@ fn fs(in: CubeOut) -> @location(0) vec4f {
     return null3d::tonemap::finish(
         light * scale,
         in.clip.xy,
+        frame.occlusion.y,
         frame.output,
         frame.target_size.xy,
         frame.vignette,

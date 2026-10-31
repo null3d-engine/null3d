@@ -35,6 +35,9 @@ run('first-use-live', async () => {
 		settle = resolve;
 	});
 	let sketchError: string | undefined;
+	// What the sketch reported with its `picked` message, for a page test that reads more than the
+	// outcome's error.
+	let picked: unknown;
 	const engine = await createEngine({
 		canvas,
 		sketch: sketchUrl(sketch),
@@ -45,6 +48,7 @@ run('first-use-live', async () => {
 		},
 		onSketchMessage: (name, data) => {
 			if (name !== 'picked') return;
+			picked = data;
 			const error = (data as { error?: unknown } | null)?.error;
 			settle(typeof error === 'string' ? error : undefined);
 		},
@@ -59,5 +63,5 @@ run('first-use-live', async () => {
 	await engine.destroy();
 	if (failure !== undefined) throw new Error(failure);
 	if (sketchError !== undefined) throw new Error(sketchError);
-	return { tier };
+	return { tier, picked };
 });

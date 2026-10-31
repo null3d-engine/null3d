@@ -12,7 +12,7 @@ import type { Camera, DirectionalLight, Object3D } from '../scene/scene';
 import { MEMORY_AREA_COUNT, MEMORY_AREA_VALUES } from '../shared/memory-area';
 import { sampleFrames } from '../shared/metrics';
 import type { Tier } from '../shared/tier';
-import type { Debug, DebugGridOptions, DebugLightOptions, DebugView } from './debug';
+import type { Debug, DebugGridOptions, DebugLightOptions, DebugViewName } from './debug';
 import type { FrameStats, FrameStatsWindow, StatsSources } from './stats';
 import type { StatsRequest } from './stats-options';
 
@@ -40,6 +40,7 @@ function noFigures(tier: Tier, preset: QualityPreset): FrameStats {
 		threads: [],
 		gpuMs: null,
 		gpuStepMs: null,
+		gpuSteps: [],
 		drawCalls: 0,
 		triangles: 0,
 		objects: 0,
@@ -74,7 +75,11 @@ export class SketchDebug implements Debug {
 	frustum(_camera: Camera, _color?: ColorInput): void {}
 	light(_light: DirectionalLight, _options?: DebugLightOptions): void {}
 	skeleton(_object: Object3D, _color?: ColorInput): void {}
-	view(_view: DebugView): void {}
+	view(_view: DebugViewName): void {}
+	cullingSpheres(_show?: boolean): void {}
+	cullingSpheresDrawn(): number {
+		return 0;
+	}
 	shadowCamera(_camera?: Camera): void {}
 
 	stats(show: StatsRequest = true): void {

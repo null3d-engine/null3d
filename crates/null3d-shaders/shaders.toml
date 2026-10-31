@@ -138,22 +138,28 @@
 # of alpha to coverage write their coverage of the pixel's samples themselves, for a multisampled
 # WebGPU target without alpha, which cannot turn alpha into coverage. A bit builds only beside the
 # bits it needs, and ALPHA_COVERAGE and ALPHA_HASH never build together (drawlist.rs, NEEDS and
-# APART). Custom materials build none of the three.
+# APART). Custom materials build the three only where their WGSL sets or reads the surface's alpha:
+# such a material cuts the shape that its own surface function makes, by coverage, by the hash, and
+# in its shadow caster and its motion, whose fragment stages test that same alpha. Their caster
+# builds, which material.rs makes beside these, keep ALPHA_MASK where their WGSL declares `fn
+# coverage` or sets the surface's alpha, and their fragment stage drops each shadow texel under the
+# material's cutoff.
 # RECEIVE_SHADOWS reads the main directional light's shadow maps. TRANSMISSION lets light through
 # the surface from the copy of the camera's opaque color (null3d::refraction); it builds without a
 # mask or index-read instances, and loads on first use. Custom materials build this template, with
 # TRANSMISSION only where their WGSL sets the surface's transmission. ROW_VALUES draws the rows of
 # instance batches with row values: each row's color multiplies the vertex color, and custom
-# materials read each row's values. It builds without skins, morph targets, alpha to coverage, the
-# alpha hash, transmission and index-read instances, which batches with row values never draw
-# with, and loads on first use. TRANSLUCENCY lets light through a thin surface to its other side,
+# materials read each row's values. It builds without skins, morph targets, transmission and
+# index-read instances, which batches with row values never draw with, and loads on first use.
+# A mask in such a batch tests its alpha by the cutoff, by alpha to coverage or by the alpha hash.
+# TRANSLUCENCY lets light through a thin surface to its other side,
 # as glTF's diffuse transmission does (null3d::translucency); it builds without transmission and
 # index-read instances, and loads on first use. Custom materials build it only where their WGSL
 # names the surface's diffuse transmission or its color. LOD_FADE draws a level of detail inside
 # the band where it hands over to the next: each instance's fade value and a 4 × 4 ordered dither
 # keep the pixels of its side of the band, after the mask's own test by its cutoff or by coverage.
 # It builds without skins, morph targets, the alpha hash, transmission and index-read instances,
-# and loads on first use. Custom materials build none of its builds: their levels switch at once.
+# and loads on first use. Custom materials build it too, which their levels use.
 # WEIGHTED draws a surface of the weighted blending into the camera's weighted layer
 # (null3d::weighted), in any order with the other weighted surfaces. It builds without a mask, light
 # through the surface, index-read instances, a fading level of detail, a prepass or a caster, and
@@ -185,6 +191,8 @@ variants.webgl2 = { defs = ["MOMENT_COLOUR", "WEBGL2"], permutations = ["DRAW_IN
 # occlusion, emissive, light and specular maps, which share six texture units on WebGL2. In the
 # TRANSLUCENCY builds the specular maps' slots hold the diffuse transmission maps instead, and in
 # the COAT_SHEEN builds the light and specular maps' slots hold the coat, coat normal and sheen maps.
+# A build of both features keeps a layer map in the light map's slot and the transmission and
+# thickness maps in the specular slots, where no layer map fills one of them.
 # VERTEX_TANGENT takes the normal map's frame from the mesh's tangents, and VERTEX_COLOR, ALPHA_MASK,
 # RECEIVE_SHADOWS, TRANSMISSION, TRANSLUCENCY and COAT_SHEEN act as for the standard material.
 # BUMP bends the normal by a height map in the normal map's slot. DISPLACEMENT moves each vertex
@@ -927,15 +935,17 @@ variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 
 # The debug views, which development builds of the engine draw in place of every material: the
-# normals, the depth, the overdraw or the wireframe, by the two debug view bits, or the shadows, by
-# RECEIVE_SHADOWS, with the low bit on surfaces that receive none. It reads each
-# instance as the mesh templates do, and stays in shaders.ts, where only development builds import
-# it, so release builds hold none of it.
+# normals, the depth, the overdraw or the wireframe, by the two debug view bits, the shadows, by
+# RECEIVE_SHADOWS with the low bit on surfaces that receive none, or the levels of detail, by
+# DEBUG_VIEW_LEVELS. The levels view reads the level code that the culling
+# writes beside each instance, which WebGL2 lists in the word after a fading entry, so the template
+# builds with LOD_FADE too. It reads each instance as the mesh templates do, and stays in
+# shaders.ts, where only development builds import it, so release builds hold none of it.
 [shaders.debug_view]
 file = "debug_view.wgsl"
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "RECEIVE_SHADOWS", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "RECEIVE_SHADOWS", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH", "SKIN", "MORPH"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "RECEIVE_SHADOWS", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH", "DEBUG_VIEW_LEVELS", "LOD_FADE"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "RECEIVE_SHADOWS", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH", "DEBUG_VIEW_LEVELS", "LOD_FADE", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # The motion debug view's step, which development builds draw over the scene color: each pixel's
 # whole motion as a color, from the motion target and the depth. TONE_MAP writes display color for
@@ -1186,9 +1196,11 @@ variants.depth = { defs = ["DEPTH"], targets = ["wgsl", "glsl"] }
 variants.fog = { defs = ["FOG"], targets = ["wgsl", "glsl"] }
 variants.lighting = { defs = ["LIGHTING"], targets = ["wgsl", "glsl"] }
 variants.math = { defs = ["MATH"], targets = ["wgsl", "glsl"] }
+variants.motion_math = { defs = ["MOTION_MATH"], targets = ["wgsl", "glsl"] }
 variants.noise = { defs = ["NOISE"], targets = ["wgsl", "glsl"] }
 variants.reflection = { defs = ["REFLECTION"], targets = ["wgsl", "glsl"] }
 variants.sdf = { defs = ["SDF"], targets = ["wgsl", "glsl"] }
+variants.temporal = { defs = ["TEMPORAL"], targets = ["wgsl", "glsl"] }
 variants.vertex = { defs = ["VERTEX"], targets = ["wgsl", "glsl"] }
 
 # A test shader for the build itself.
@@ -1284,3 +1296,19 @@ shaders = ["cull_occlusion", "pyramid"]
 file = "light_clusters.wgsl"
 by_device = true
 variants.webgpu = { targets = ["wgsl"] }
+
+# The light clusters' depth reduction, which fits the slices to the measured depth: one compute
+# entry point, `reduce_depth`, that reads the view's depth as a float texture and writes the nearest
+# and farthest into a buffer that the next frame's fit reads. WebGPU only; WebGL2 keeps the CPU's
+# slicing.
+[shaders.light_depth]
+file = "light_depth.wgsl"
+by_device = true
+variants.webgpu = { targets = ["wgsl"] }
+
+# The same reduction from a multisampled depth target, whose sample 0 it reads. Only WebGPU reads
+# multisampled textures.
+[shaders.light_depth_ms]
+file = "light_depth.wgsl"
+by_device = true
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }

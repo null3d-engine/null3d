@@ -61,6 +61,7 @@ use null3d_render::fog_volume::{self, Volumetric};
 use null3d_render::frame::{
     CanvasOutput, FrameBuilder, FrameInput, LevelQuality, RecordError, SceneSettings,
 };
+use null3d_render::frame_graph::PrepassColor;
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
@@ -73,7 +74,7 @@ use null3d_render::meshes::{MeshError, MeshSlot, UpdateError};
 use null3d_render::mirror::Mirror;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
-use null3d_render::output::{Antialias, GradeUniform, Output, SceneColor, ToneMapping};
+use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::patches::{PatchError, PatchTree};
 use null3d_render::physical_sky::Atmosphere;
 use null3d_render::pipelines::DepthBias;
@@ -164,6 +165,9 @@ mod codes {
     pub const NOT_READY: u32 = 1403;
     /// A mesh, material or GPU buffer is full, or an id names nothing (details say which).
     pub const RENDER: u32 = 1501;
+    /// A draw whose instance count the GPU writes arrived after the first frame, on a device that
+    /// draws directly.
+    pub const FEATURE_DRAW_AFTER_FIRST_FRAME: u32 = 1506;
 }
 
 /// Details of `codes::RENDER` failures.
@@ -197,6 +201,8 @@ mod render_detail {
     pub const NOT_A_VOLUME: u32 = 17;
     /// The second detail is the bytes that the shadow atlas would take, in mebibytes.
     pub const SHADOW_ATLAS_TOO_LARGE: u32 = 18;
+    /// The second detail is the most bytes that one buffer may take.
+    pub const BUFFER_FULL: u32 = 19;
 }
 
 struct Engine {
@@ -245,6 +251,10 @@ struct Engine {
     query_rays: Vec<f64>,
     /// The bytes that GPU picking's reads land in: four words for each read of the ring.
     pick_results: Box<[u32; null3d_render::pick::RING * null3d_render::pick::RESULT_WORDS]>,
+    /// The bytes that a read of a compute pass's region lands in, one region for each read of its
+    /// ring.
+    pass_read_bytes:
+        Box<[u8; null3d_render::readback::RING * null3d_render::readback::MAX_BYTES as usize]>,
     /// True when the last recorded frame drew a pick and copied its ids back, so the thread that
     /// draws must take that frame.
     pick_recorded: bool,
@@ -300,10 +310,6 @@ const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
         16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
         0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.1, 0.9, 0.5,
         3.0, 1.0, -4.0, 4.0, 0.0, 1.0, 100.0, 0.5, 0.5, 0.0,
-        // The grading controls: unit white balance factors and saturation, no lift, unit gamma
-        // and gain, and no split toning.
-        1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
     ];
     let mut level = 0;
     while level < bloom::LEVELS {
@@ -329,11 +335,6 @@ impl Engine {
     fn post_values3(&self, place: u32) -> [f32; 3] {
         std::array::from_fn(|k| self.post_value(place + k as u32))
     }
-
-    /// Four post-processing values from `place` on.
-    fn post_values4(&self, place: u32) -> [f32; 4] {
-        std::array::from_fn(|k| self.post_value(place + k as u32))
-    }
 }
 
 impl Engine {
@@ -348,6 +349,9 @@ impl Engine {
         jobs: &'static JobSystem,
         pipelines_built: u32,
     ) -> (&mut dyn FrameBuilder, FrameInput<'_>) {
+        self.renderer
+            .settings_mut()
+            .set_last_frame_size(canvas, render_scale);
         if self.snapshot.frame() != frame {
             self.snapshot.record(frame, &self.scene, &self.batches);
             self.renderer.settings_mut().gather_lights(
@@ -415,8 +419,12 @@ fn record_failure(error: RecordError) -> u32 {
         }
         RecordError::SkinnedPagesFull { limit } => (render_detail::SKINNED_PAGES_FULL, limit),
         RecordError::UploadsFull => (render_detail::UPLOADS_FULL, 0),
+        RecordError::BufferFull { bytes } => (render_detail::BUFFER_FULL, bytes),
         RecordError::ShadowAtlasTooLarge { megabytes } => {
             (render_detail::SHADOW_ATLAS_TOO_LARGE, megabytes)
+        }
+        RecordError::FeatureDrawAfterFirstFrame => {
+            return fail(codes::FEATURE_DRAW_AFTER_FIRST_FRAME, [0, 0]);
         }
         RecordError::OutOfMemory { bytes } => {
             return core_failure(CoreError::OutOfMemory { bytes });
@@ -528,7 +536,10 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// 8-bit path. `antialias` is the anti-aliasing mode's code; an unknown code takes MSAA.
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
 /// every object, with no grid cells skipped first. With `depth_prepass`, each camera view draws its
-/// opaque objects' depth before it shades them. `skinning` is the code of WebGPU's skinning mode
+/// opaque objects' depth before it shades them. `prepass_color` is how such a prepass starts the
+/// stand-in color that it never draws, where a screen step splits it from the opaque pass
+/// (`constants::prepass_color`), which a benchmark page measures on WebGL2. `skinning` is the code
+/// of WebGPU's skinning mode
 /// (`constants::SKINNING`): the skinning pass with or without its savings, or the vertex shader of
 /// each pass; an unknown code takes the default. With `index_instances`, WebGPU's vertex shaders
 /// read each culled instance by index from storage buffers, not from a copy that the culling
@@ -557,6 +568,7 @@ pub fn init_engine(
     transparent: bool,
     cell_culling: bool,
     depth_prepass: bool,
+    prepass_color: u32,
     skinning: u32,
     index_instances: bool,
     large_world: bool,
@@ -617,6 +629,7 @@ pub fn init_engine(
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,
                 depth_prepass,
+                prepass_color: PrepassColor::from_code(prepass_color),
                 cascade_depth,
                 ..CpuCulledConfig::default()
             }))
@@ -655,6 +668,9 @@ pub fn init_engine(
         query_hits: vec![0.0; query::HIT_FLOATS as usize],
         query_rays: Vec::new(),
         pick_results: Box::new([0; null3d_render::pick::RING * null3d_render::pick::RESULT_WORDS]),
+        pass_read_bytes: Box::new(
+            [0; null3d_render::readback::RING * null3d_render::readback::MAX_BYTES as usize],
+        ),
         pick_recorded: false,
         pick_covered: false,
         pick_frame: NO_PICK_FRAME,
@@ -1130,9 +1146,10 @@ pub fn update_batches(frame: u32) -> u32 {
 
 /// Finds the frame's visible objects on the job workers, where the frame builder culls on the CPU,
 /// for a canvas of this size in device pixels. Call it before `recordFrame`, with the same `scale`
-/// and `built`: the render scale in thousandths, which the choice of levels of detail reads, and
-/// the newest frame that the thread that draws drew with every pipeline built. The views cull at
-/// the canvas's full size.
+/// and `built`: the render scale in thousandths, which the choice of levels of detail reads and
+/// which the views' frame values carry, and the newest frame that the thread that draws drew with
+/// every pipeline built. The frame values that the cull builds are the ones its frame draws with,
+/// so they must be the render size's, as `recordFrame`'s are.
 #[wasm_bindgen(js_name = cullFrame)]
 pub fn cull_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32) -> u32 {
     let Some(jobs) = JOBS.get() else {
@@ -1141,7 +1158,7 @@ pub fn cull_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32) -
     with_engine(|e| {
         let scale = RenderScale::from_thousandths(scale);
         e.renderer.settings_mut().set_level_scale(scale);
-        let (renderer, input) = e.frame(frame, (width, height), RenderScale::FULL, jobs, built);
+        let (renderer, input) = e.frame(frame, (width, height), scale, jobs, built);
         match renderer.cull(&input) {
             Ok(()) => 0,
             Err(error) => record_failure(error),
@@ -1206,6 +1223,17 @@ pub fn occluded_entries(frame: u32) -> u32 {
     value_with_engine(|e| {
         Ok(e.renderer
             .occluded_entries(frame)
+            .unwrap_or(constants::NOT_COUNTED))
+    })
+}
+
+/// The ranges of cluster-tree patches that a recorded frame's camera view draws, or `NOT_COUNTED`
+/// where the GPU path picks the patches itself.
+#[wasm_bindgen(js_name = patchRanges)]
+pub fn patch_ranges(frame: u32) -> u32 {
+    value_with_engine(|e| {
+        Ok(e.renderer
+            .patch_ranges(frame)
             .unwrap_or(constants::NOT_COUNTED))
     })
 }
@@ -2149,14 +2177,79 @@ pub fn set_mesh_patches(mesh: u32, patches: u32, indices: u32, root: u32) -> u32
                     })
                 })
             }
-            Some(Err(error)) => Ok(match error {
-                PatchError::Empty => 2,
-                PatchError::Root => 3,
-                PatchError::Record => 4,
-                PatchError::Parent => 5,
-                PatchError::Vertex => 6,
-                PatchError::Bounds => 7,
-            }),
+            Some(Err(error)) => Ok(patch_failure(error)),
+            None => Ok(0),
+        }
+    })
+}
+
+/// The code that a tree that the engine refused answers with: 2 for a tree without patches, 3 for
+/// a root that names none, 4 for a patch's run, 5 for a parent, 6 for an index and 7 for a sphere.
+fn patch_failure(error: PatchError) -> u32 {
+    match error {
+        PatchError::Empty => 2,
+        PatchError::Root => 3,
+        PatchError::Record => 4,
+        PatchError::Parent => 5,
+        PatchError::Vertex => 6,
+        PatchError::Bounds => 7,
+    }
+}
+
+/// Appends one band to the tree of cluster patches of the mesh `mesh`: `patches` records of eight
+/// words each, four floats of its bounding sphere and then four integers of its run, its parent and
+/// its error, followed by `indices` indices, in the staging words. A run's first index counts from
+/// the band's own indices, and a parent names a patch that the tree already holds. Returns 1 when
+/// the mesh takes the band, 0 when it has no tree, and the code of the rule that refused it
+/// otherwise (see [`set_mesh_patches`]).
+#[wasm_bindgen(js_name = appendMeshPatches)]
+pub fn append_mesh_patches(mesh: u32, patches: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let vertices = e
+            .renderer
+            .settings()
+            .meshes()
+            .mesh(mesh.checked_sub(1).unwrap_or(u32::MAX))
+            .map_or(0, |slot| slot.vertex_count);
+        let records = patches as usize;
+        let enough = vertices > 0 && staging.len() >= records * 8 + indices as usize;
+        let band = enough.then(|| {
+            let bounds: Vec<[f32; 4]> = (0..records)
+                .map(|k| {
+                    let at = k * 8;
+                    [0, 1, 2, 3].map(|c| f32::from_bits(staging[at + c]))
+                })
+                .collect();
+            let runs: Vec<[u32; 4]> = (0..records)
+                .map(|k| {
+                    let at = k * 8 + 4;
+                    [
+                        staging[at],
+                        staging[at + 1],
+                        staging[at + 2],
+                        staging[at + 3],
+                    ]
+                })
+                .collect();
+            let first = records * 8;
+            (
+                bounds,
+                runs,
+                staging[first..first + indices as usize].to_vec(),
+            )
+        });
+        let appended = band.and_then(|(bounds, runs, list)| {
+            e.renderer
+                .append_mesh_patches(mesh, &bounds, &runs, &list, vertices)
+        });
+        drop(staging);
+        match appended {
+            Some(Ok(())) => {
+                e.structure_changed = true;
+                Ok(1)
+            }
+            Some(Err(error)) => Ok(patch_failure(error)),
             None => Ok(0),
         }
     })
@@ -2191,8 +2284,9 @@ fn staged_arrays(
         (has(mesh_arrays::TANGENTS), 4, 4),
         (has(mesh_arrays::JOINTS), 6, 4),
         (has(mesh_arrays::WEIGHTS), 7, 4),
+        (has(mesh_arrays::TARGETS), 8, 4),
     ];
-    let mut arrays = [None; 8];
+    let mut arrays = [None; 9];
     let mut at = 0;
     for (array, &(present, location, per_vertex)) in arrays.iter_mut().zip(&staged) {
         if !present {
@@ -2223,6 +2317,7 @@ fn staged_arrays(
         tangents,
         joints,
         weights,
+        targets,
     ] = arrays;
     Some(MeshArrays {
         positions: positions?,
@@ -2234,6 +2329,7 @@ fn staged_arrays(
         tangents,
         joints,
         weights,
+        targets,
         indices: has(mesh_arrays::INDICES).then(|| &words[at..]),
         compute_normals: has(mesh_arrays::COMPUTE_NORMALS),
         compute_tangents: has(mesh_arrays::COMPUTE_TANGENTS),
@@ -2393,6 +2489,40 @@ pub fn mesh_radius(mesh: u32) -> f32 {
     mesh_value(mesh, |slot| slot.radius)
 }
 
+/// Turns a rectangle's rows over in place, so that its last row comes first, which a canvas needs:
+/// it counts rows from its top, and a texture counts them from the bottom.
+///
+/// The rectangle starts at `address` in the engine's memory, each row is `row_bytes` long, and
+/// there are `height` rows. The caller writes the rectangle there first, and gives a length that it
+/// really wrote: this function trusts the three numbers and turns exactly that many bytes.
+#[wasm_bindgen(js_name = turnRows)]
+pub fn turn_rows(address: u32, row_bytes: u32, height: u32) {
+    let row = row_bytes as usize;
+    let rows = height as usize;
+    if row == 0 || rows < 2 {
+        return;
+    }
+    // SAFETY: the caller passes the address and size of a rectangle that it wrote in this memory,
+    // as every other function here trusts the addresses that TypeScript hands it.
+    let bytes = unsafe { std::slice::from_raw_parts_mut(address as *mut u8, row * rows) };
+    turn_rows_bytes(bytes, row);
+}
+
+/// Turns `row`-byte rows over in place, so that the last comes first. A call with fewer than two
+/// rows or an empty row leaves the bytes as they are, which the export's checks also give.
+fn turn_rows_bytes(bytes: &mut [u8], row: usize) {
+    if row == 0 {
+        return;
+    }
+    let rows = bytes.len() / row;
+    for top in 0..rows / 2 {
+        let (first, last) = (top * row, (rows - 1 - top) * row);
+        for k in 0..row {
+            bytes.swap(first + k, last + k);
+        }
+    }
+}
+
 /// A mesh's vertex count, or 0 for an unknown mesh.
 #[wasm_bindgen(js_name = meshVertexCount)]
 pub fn mesh_vertex_count(mesh: u32) -> u32 {
@@ -2416,7 +2546,10 @@ pub fn mesh_format(mesh: u32) -> u32 {
 /// `shading::CUSTOM_TRANSMISSION` when its WGSL has the builds that let light through. Its features
 /// (`constants::material_feature`) and its depth bias are fixed from now on. The bias takes
 /// three.js's `polygonOffsetUnits` as `bias_constant` and its `polygonOffsetFactor` as
-/// `bias_slope`, whose positive values push the surface away.
+/// `bias_slope`, whose positive values push the surface away. A custom material whose vertex offset
+/// sways gives the distance from the camera out to which it moves, in meters, as `sway_distance`:
+/// past it the material's casters stand still, so far shadow cascades keep their layers. Zero sways
+/// at every distance.
 #[wasm_bindgen(js_name = createMaterial)]
 #[allow(clippy::too_many_arguments)]
 pub fn create_material(
@@ -2428,6 +2561,7 @@ pub fn create_material(
     a: f32,
     bias_constant: f32,
     bias_slope: f32,
+    sway_distance: f32,
 ) -> u32 {
     let shading = match shading {
         shading::UNLIT => Shading::Unlit,
@@ -2457,6 +2591,9 @@ pub fn create_material(
             .create(shading, features, [r, g, b, a])
             .map_err(material_failure)?;
         table.set_depth_bias(id, bias).map_err(material_failure)?;
+        table
+            .set_sway(id, sway_distance)
+            .map_err(material_failure)?;
         // A wireframe draws each part's edge list, which the meshes keep from the first one on.
         if features & materials::feature::WIREFRAME != 0 {
             settings.meshes_mut().keep_edges();
@@ -2921,6 +3058,24 @@ pub fn texture_stat(field: u32, texture: u32) -> f64 {
     value
 }
 
+/// The array layer that a map of `texture` samples on the GPU: the first layer of the state that a
+/// pass wrote last, for a pass that keeps two states, and the texture's own first layer otherwise.
+/// 0 while no image of the texture is on the GPU.
+#[wasm_bindgen(js_name = textureLayer)]
+pub fn texture_layer(texture: u32) -> u32 {
+    let mut layer = 0;
+    with_engine(|e| {
+        layer = e
+            .renderer
+            .settings()
+            .textures()
+            .ready_layer(Handle::from_raw(texture))
+            .unwrap_or(0);
+        0
+    });
+    layer
+}
+
 // Sets up the shadow atlas of point and spot lights: its most tiles, from 0, which turns their
 // shadows off, the texels on each side of each tile, and whether point lights cast shadows.
 /// Sets up the shadow atlas of point and spot lights.
@@ -3114,8 +3269,9 @@ pub fn add_pass(
 /// `target`: of `width` x `height` texels, or with a width of 0, of `scale` of the render size
 /// each way, 1, 0.5 or 0.25. It reads the input image `source` (`constants::pass_source`), the
 /// scene's depth with the flag `constants::effect_flag::DEPTH`, its uniforms at `effectValues` and
-/// its textures at `effectTextures`, in one frame of every `every`. Returns the view's place, from
-/// 1, or 0 as `addPass` does.
+/// its textures at `effectTextures`, in one frame of every `every`. `fallback` says the pass runs
+/// in place of a compute pass: it then keeps `history`'s two states of `layers` layers each, and
+/// draws `steps` runs a frame. Returns the view's place, from 1, or 0 as `addPass` does.
 #[wasm_bindgen(js_name = addFullscreenPass)]
 #[allow(clippy::too_many_arguments)]
 pub fn add_fullscreen_pass(
@@ -3128,6 +3284,10 @@ pub fn add_fullscreen_pass(
     template: u32,
     flags: u32,
     source: u32,
+    fallback: u32,
+    history: u32,
+    layers: u32,
+    steps: u32,
 ) -> u32 {
     let target = ViewTarget {
         size: (width > 0).then_some((width, height.max(1))),
@@ -3144,6 +3304,11 @@ pub fn add_fullscreen_pass(
         |e| {
             let content = Fullscreen {
                 template,
+                fallback: fallback != 0,
+                history: fallback != 0 && history != 0,
+                layers: if fallback != 0 { layers.max(1) } else { 1 },
+                steps: if fallback != 0 { steps } else { 1 },
+                reset: 0,
                 source,
                 depth: flags & constants::effect_flag::DEPTH != 0,
                 values: *e.effect_values,
@@ -3165,8 +3330,10 @@ pub fn add_fullscreen_pass(
 /// workgroups along each axis, packed the same way, or covers the target when every count is 0. It
 /// reads its uniforms at `effectValues`
 /// and its textures at `effectTextures`, in one frame of every `every`. With `afterScene` it
-/// records after the camera's passes, which it reads the scene color of. Returns the view's place,
-/// from 1, or 0 as `addPass` does.
+/// records after the camera's passes, which it reads the scene color of. `layers` is the array
+/// layers of each state, and `history` a flag: a pass with history keeps two states, and each run
+/// writes one and reads the other. `steps` is the number of runs that a frame records, which the
+/// page changes with `setComputeSteps`. Returns the view's place, from 1, or 0 as `addPass` does.
 #[wasm_bindgen(js_name = addComputePass)]
 #[allow(clippy::too_many_arguments)]
 pub fn add_compute_pass(
@@ -3184,6 +3351,9 @@ pub fn add_compute_pass(
     counts_buffer: u32,
     instances_buffer: u32,
     instances_bytes: u32,
+    history: u32,
+    layers: u32,
+    steps: u32,
 ) -> u32 {
     let target = ViewTarget {
         size: (width > 0).then_some((width, height.max(1))),
@@ -3214,6 +3384,10 @@ pub fn add_compute_pass(
                     instances: instances_buffer,
                     instances_bytes,
                 }),
+                history: history != 0 && counts_buffer == 0,
+                layers: layers.max(1),
+                steps,
+                reset: 0,
             };
             View::compute(content, target)
         },
@@ -3250,6 +3424,28 @@ pub fn set_compute_values(place: u32) -> u32 {
             let _ = e.renderer.check_graph();
             return code;
         }
+        0
+    })
+}
+
+/// Gives the compute pass of view place `place`, from 1, the number of runs that a frame records,
+/// from the next frame on. A pass that keeps history swaps its two states between runs.
+#[wasm_bindgen(js_name = setComputeSteps)]
+pub fn set_compute_steps(place: u32, steps: u32) -> u32 {
+    with_engine(|e| {
+        let view = ViewId::from_place(place as usize);
+        e.renderer.settings_mut().set_compute_steps(view, steps);
+        0
+    })
+}
+
+/// Asks the compute pass of view place `place`, from 1, to start its states again: the next frame
+/// clears both states before the pass's first run.
+#[wasm_bindgen(js_name = resetComputeState)]
+pub fn reset_compute_state(place: u32) -> u32 {
+    with_engine(|e| {
+        let view = ViewId::from_place(place as usize);
+        e.renderer.settings_mut().reset_compute_state(view);
         0
     })
 }
@@ -3350,6 +3546,17 @@ pub fn set_reflection_scale() -> u32 {
 pub fn set_area_light_cap(cap: u32) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().set_area_light_cap(cap);
+        0
+    })
+}
+
+/// Fits the light clusters' depth slices to the depth that the frame before measured, from the next
+/// frame on, or leaves them on the CPU's slicing: the quality preset's `lightFit`. It runs only on
+/// WebGPU, where the light clustering passes do this work.
+#[wasm_bindgen(js_name = setLightFit)]
+pub fn set_light_fit(enabled: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_light_fit(enabled != 0);
         0
     })
 }
@@ -3852,6 +4059,14 @@ pub fn stage_level_picks(mesh: u32) -> u32 {
     value_with_engine(|e| Ok(e.renderer.settings().stage_level_picks(mesh)))
 }
 
+/// The bands of the tree of cluster patches of the mesh `mesh` that a view drew since its watch
+/// began, one bit each, bit 0 for the band that the file holds. 0 for a mesh that no loader
+/// watches.
+#[wasm_bindgen(js_name = stageBandPicks)]
+pub fn stage_band_picks(mesh: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.settings().stage_band_picks(mesh)))
+}
+
 /// Stops watching the levels that the views pick for the mesh `mesh`, so the frames that follow pay
 /// nothing while no loader waits on it. The loader of a model with staged levels releases a watch
 /// that it has no more use for, and watches the mesh again when the camera could want its next
@@ -4004,6 +4219,52 @@ pub fn mark_particle_values(id: u32) -> u32 {
     })
 }
 
+/// Makes room for `count` births' parameters and returns the address of the block's first
+/// number, which the sketch fills before it asks for their records. Each birth takes nine
+/// numbers: the birth place, the birth time, the velocity, the lifetime and the seed. 0 means the
+/// memory cannot grow.
+#[wasm_bindgen(js_name = particleRecordBlock)]
+pub fn particle_record_block(count: u32) -> u32 {
+    value_with_engine(|e| {
+        let address = e
+            .renderer
+            .settings_mut()
+            .particles_mut()
+            .births_address(count as usize);
+        if address == 0 {
+            Err(out_of_memory(u64::from(count) * 9 * 4))
+        } else {
+            Ok(address)
+        }
+    })
+}
+
+/// Writes the records of `count` births from the block that `particleRecordBlock` gave, from
+/// record `first` on, and marks them for the next frame's upload.
+#[wasm_bindgen(js_name = writeParticleRecords)]
+pub fn write_particle_records(id: u32, count: u32, first: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .particles_mut()
+            .write_records(id, count, first);
+        0
+    })
+}
+
+/// Takes whole `seconds` off the birth times of records `from..to`, which moves the time that
+/// they count from, and marks them for the next frame's upload.
+#[wasm_bindgen(js_name = shiftParticleRecords)]
+pub fn shift_particle_records(id: u32, from: u32, to: u32, seconds: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .particles_mut()
+            .shift_records(id, from, to, seconds);
+        0
+    })
+}
+
 /// Makes a draw of `vertices` vertices for each of `instances` copies for the object in scene slot
 /// `slot`, whose material is a full shader of the sketch's that makes its vertices from the vertex
 /// and instance indices, and returns its id: 0 when the scene holds the most draws already. No mesh
@@ -4072,8 +4333,8 @@ pub fn destroy_feature_instances(id: u32) -> u32 {
     })
 }
 
-/// Sets the count that a shadow view draws and that a page without compute sets for a draw whose
-/// instance count the GPU writes.
+/// Sets the count that a page without compute draws for a draw whose instance count the GPU
+/// writes. The count word starts each frame from it.
 #[wasm_bindgen(js_name = setFeatureInstanceCount)]
 pub fn set_feature_instance_count(id: u32, count: u32) -> u32 {
     with_engine(|e| {
@@ -4082,6 +4343,20 @@ pub fn set_feature_instance_count(id: u32, count: u32) -> u32 {
             .feature_instances_mut()
             .set_count(id, count);
         0
+    })
+}
+
+/// Tells the engine whether the add-on's feature draws now, for a draw whose instance count the GPU
+/// writes. A draw that is not ready records no draw, no conversion and no count copy.
+#[wasm_bindgen(js_name = setFeatureInstanceReady)]
+pub fn set_feature_instance_ready(id: u32, ready: bool) -> u32 {
+    with_engine(|e| {
+        u32::from(
+            !e.renderer
+                .settings_mut()
+                .feature_instances_mut()
+                .set_ready(id, ready),
+        )
     })
 }
 
@@ -4173,14 +4448,19 @@ pub fn set_auto_exposure(on: bool) -> u32 {
 }
 
 /// Turns temporal anti-aliasing on, a prototype, or off with a `feedback` of 0, from the next
-/// frame on. `feedback` is the history's share in thousandths, and `jitter` moves the camera by
-/// the sequence's sub-pixel offsets.
+/// frame on. `feedback` is the history's share in thousandths, `jitter` moves the camera by the
+/// sequence's sub-pixel offsets, `phone` picks the path whose reads cost less per pixel,
+/// `reactive` names the transparency signals that lower the history, as bits, and `exposure`
+/// scales the history by the frame's exposure ratio.
 #[wasm_bindgen(js_name = setTaa)]
-pub fn set_taa(feedback: u32, jitter: bool) -> u32 {
+pub fn set_taa(feedback: u32, jitter: bool, phone: bool, reactive: u32, exposure: bool) -> u32 {
     with_engine(|e| {
         let taa = (feedback > 0).then(|| null3d_render::taa::Taa {
             feedback: feedback.min(990) as f32 / 1000.0,
             jitter,
+            phone,
+            reactive: null3d_render::taa::Reactive(reactive as u8),
+            exposure,
         });
         e.renderer.settings_mut().set_taa(taa);
         0
@@ -4350,37 +4630,16 @@ pub fn set_lut(texture: u32) -> u32 {
 
 /// Grades the canvas color with the built-in grading table in 3D texture `texture`, or with none
 /// when `texture` is 0, from the next frame on. A job worker baked the sketch's grading values into
-/// the table's texels. `hdr` says the table holds the grade over high dynamic range light, which
-/// the pass reads before the tone curve. The TypeScript API checks the values. Fails for a texture
-/// that is not live.
+/// the table's texels. The TypeScript API checks the values. Fails for a texture that is not live.
 #[wasm_bindgen(js_name = setGrade)]
-pub fn set_grade(texture: u32, hdr: bool) -> u32 {
+pub fn set_grade(texture: u32) -> u32 {
     with_engine(|e| {
         let settings = e.renderer.settings_mut();
         let texture = match texture_or_none(settings, texture) {
             Ok(texture) => texture,
             Err(failure) => return failure,
         };
-        settings.set_grade((!texture.is_none()).then_some(texture), hdr);
-        0
-    })
-}
-
-/// Sets the grading controls that the 8-bit path's shaders apply before their tone curve, from the
-/// post-processing values, or clears them with `on` false, from the next frame on. The TypeScript
-/// API checks the values.
-#[wasm_bindgen(js_name = setGradeValues)]
-pub fn set_grade_values(on: bool) -> u32 {
-    with_engine(|e| {
-        let values = on.then(|| GradeUniform {
-            white_balance: e.post_values4(constants::post_value::GRADE_WHITE_BALANCE),
-            lift: e.post_values4(constants::post_value::GRADE_LIFT),
-            gamma: e.post_values4(constants::post_value::GRADE_GAMMA),
-            gain: e.post_values4(constants::post_value::GRADE_GAIN),
-            shadows: e.post_values4(constants::post_value::GRADE_SHADOWS),
-            highlights: e.post_values4(constants::post_value::GRADE_HIGHLIGHTS),
-        });
-        e.renderer.settings_mut().set_grade_values(values);
+        settings.set_grade((!texture.is_none()).then_some(texture));
         0
     })
 }
@@ -5710,6 +5969,118 @@ pub fn pick_target_row(key: u32) -> u32 {
     value_with_engine(|e| Ok(e.renderer.pick_target(key).map_or(u32::MAX, |(_, row)| row)))
 }
 
+/// Asks the next recorded frame to copy a region of the compute pass of view place `place` back
+/// into engine memory: `x` and `y` are texels from the texture's stored first row, `width` and
+/// `height` its size, and `layer` the array layer. `ring` names the read of the readback ring and
+/// `slot` the control slot that rises once the bytes are in engine memory. Returns 0 when another
+/// read waits for its frame, the target's format code plus one when the frame will copy the region,
+/// and the largest number when the pass or the region cannot be read.
+#[wasm_bindgen(js_name = requestPassRead)]
+#[allow(clippy::too_many_arguments)]
+pub fn request_pass_read(
+    place: u32,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    layer: u32,
+    ring: u32,
+    slot: u32,
+) -> u32 {
+    with_engine(|e| {
+        if ring as usize >= null3d_render::readback::RING {
+            return 0;
+        }
+        let settings = e.renderer.settings();
+        if settings.pass_read().is_some() {
+            return 0;
+        }
+        let view = ViewId::from_place(place as usize);
+        let Some(declared) = settings.views().get(view.index()) else {
+            return u32::MAX;
+        };
+        // A compute pass writes its target in its own format; the fragment form of a WebGL2 page
+        // writes the scene color's.
+        let (format, layers) = if let Some(pass) = declared.compute_pass() {
+            if pass.buffers.is_some() {
+                return u32::MAX;
+            }
+            let format = if pass.format == 0 {
+                null3d_gpu::drawlist::format::RGBA16_FLOAT
+            } else {
+                pass.format
+            };
+            (format, pass.target_layers())
+        } else if let Some(pass) = declared.fullscreen_pass().filter(|pass| pass.fallback) {
+            // A full-screen pass's target has an alpha channel even where the scene color packs
+            // its color, and the canvas code names the 8-bit path's target.
+            let format = match settings.canvas().scene_color.format() {
+                null3d_gpu::drawlist::format::CANVAS => null3d_gpu::drawlist::format::RGBA8_UNORM,
+                null3d_gpu::drawlist::format::RG11B10_UFLOAT => {
+                    null3d_gpu::drawlist::format::RGBA16_FLOAT
+                }
+                other => other,
+            };
+            (
+                format,
+                pass.layers.max(1) * if pass.history { 2 } else { 1 },
+            )
+        } else {
+            return u32::MAX;
+        };
+        if width == 0
+            || height == 0
+            || width > null3d_render::readback::MAX_SIDE
+            || height > null3d_render::readback::MAX_SIDE
+            || (layer != u32::MAX && layer >= layers)
+        {
+            return u32::MAX;
+        }
+        // A region that reaches past the pass's texture would invalidate the frame's commands, so
+        // it is refused here rather than at that frame. The last frame's size gives a full-size
+        // target's size.
+        if let Some((canvas, scale)) = settings.last_frame_size() {
+            let (side_width, side_height) = declared.drawn_size(canvas, scale);
+            if x.saturating_add(width) > side_width || y.saturating_add(height) > side_height {
+                return u32::MAX;
+            }
+        }
+        let texel_bytes = null3d_gpu::drawlist::format::texel_bytes(format);
+        if texel_bytes == 0 || width * height * texel_bytes > null3d_render::readback::MAX_BYTES {
+            return u32::MAX;
+        }
+        let destination =
+            address(&e.pass_read_bytes[..]) + ring * null3d_render::readback::MAX_BYTES;
+        e.renderer
+            .settings_mut()
+            .set_pass_read(null3d_render::readback::PassRead {
+                view: place,
+                x,
+                y,
+                width,
+                height,
+                layer,
+                ring,
+                slot,
+                destination,
+                texel_bytes,
+            });
+        format + 1
+    })
+}
+
+/// The address in engine memory of the readback ring's regions, one after another.
+#[wasm_bindgen(js_name = passReadAddress)]
+pub fn pass_read_address() -> u32 {
+    value_with_engine(|e| Ok(address(&e.pass_read_bytes[..])))
+}
+
+/// The bytes of one readback ring region.
+#[wasm_bindgen(js_name = passReadStride)]
+pub fn pass_read_stride() -> u32 {
+    null3d_render::readback::MAX_BYTES
+}
+
 /// The address of a query array, or the hit array's capacity in records.
 #[wasm_bindgen(js_name = queryArrays)]
 pub fn query_arrays(field: u32) -> u32 {
@@ -5814,6 +6185,20 @@ pub fn overlap(kind: u32, layers: u32) -> u32 {
 mod tests {
     use super::*;
     use null3d_core::animation::NO_PARENT;
+
+    #[test]
+    fn a_rectangles_rows_turn_over_in_place() {
+        let mut three = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        turn_rows_bytes(&mut three, 4);
+        assert_eq!(three, [9, 10, 11, 12, 5, 6, 7, 8, 1, 2, 3, 4]);
+        // An even count turns every row, and fewer than two rows turns none.
+        let mut two = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        turn_rows_bytes(&mut two, 4);
+        assert_eq!(two, [5, 6, 7, 8, 1, 2, 3, 4]);
+        let mut one = [1u8, 2, 3, 4];
+        turn_rows_bytes(&mut one, 4);
+        assert_eq!(one, [1, 2, 3, 4]);
+    }
 
     #[test]
     fn a_reflections_share_of_the_render_size_becomes_halvings() {

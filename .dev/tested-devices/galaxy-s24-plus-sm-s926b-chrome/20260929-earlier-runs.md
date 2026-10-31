@@ -29,7 +29,7 @@ E9: 8 of 8 environment pages (run 20261005-074005-checks); room light passed; ge
 Shadow fix: 15 of 15 shadow pages (run 20261005-074055-checks); the stripes on open lit ground fall from 3.7% to 10.8% on main to 0.06% to 0.41% with the fix, under the 1.5% limit.
 Skinning fix: 10 of 10 meshopt and skinning pages (run 20261005-074712-checks).
 The phone stayed cool: thermal status 0, no Samsung throttle.
-Gate commit 89a1d6295, 2026-10-05, at 60 Hz and thermal status 0 before each timed run: startup, Slow 4G, pipelined, first frame done at 4,532 ms cold and 945 ms warm, then 4,557 ms and 945 ms in a second run; the cold target is 5.5 s ([D-83](../../decisions/D-83-gate-rulings-2026-10-06.md)).
+Gate commit 89a1d6295, 2026-10-05, at 60 Hz and thermal status 0 before each timed run: startup, Slow 4G, pipelined, first frame done at 4,532 ms cold and 945 ms warm, then 4,557 ms and 945 ms in a second run; the cold target is 5.5 s ([D-83](../../decisions/D-83-m1-gate-rulings.md)).
 S4 at Low for 10 minutes held 60 fps in 300 of 300 seconds (run 20261005-155424-bench).
 governor: 2 passed, 2 skipped (run 20261005-160442-governor).
 S1 at 300,000 against three.js: 16 passed, 5 skipped; null3D took 57% of three.js's CPU time per frame (run 20261005-160642-bench).
@@ -40,6 +40,6 @@ environment-load 2026-10-07: 3 passed, 3 skipped (the WebGPU pages), 0 failed (r
 The room, the .exr and the .hdr drew their first lit frame 174, 339 and 508 ms after the request, and no frame lacked the light ([D-19](../../decisions/D-19-environment-maps.md)).
 startup 2026-10-07, medians to the first finished frame: Slow 4G cold 4,616 to 4,682 ms, with 12 requests and 424 KB; Slow 4G warm 937 to 968 ms.
 At full speed: cold 342 to 359 ms, warm 328 to 364 ms.
-All are within the targets of 5.5 s cold and 1 s warm ([D-83](../../decisions/D-83-gate-rulings-2026-10-06.md)).
+All are within the targets of 5.5 s cold and 1 s warm ([D-83](../../decisions/D-83-m1-gate-rulings.md)).
 Pipelined cold was about 125 ms slower than at the gate commit.
 No heat warning; the battery went from 31.0 to 32.6 °C.

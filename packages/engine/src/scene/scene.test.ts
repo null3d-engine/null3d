@@ -9,21 +9,32 @@ import {
 	Vector2,
 	Vector3,
 } from 'three';
+import { boxPrimitive, GltfBuilder } from '../../../../tests/pages/lib/gltf-files';
 import type { EngineError } from '../errors/engine-error';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
+import { SIZE_MAP_ROWS } from '../generated/gpu';
 import { cameraTransform, LabelLoop } from '../page/label-loop';
 import { LabelSlots, labelCapacity, labelCapacity3d, PageLabels } from '../page/labels';
 import { controlLabels, controlViews, createControlBuffer, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { type LabelRegion, labelSequence, presentLabels } from '../shared/labels';
 import { Ui } from '../sketch/ui';
+import { PropertyPlayer } from './animation';
 import { Cubemap } from './background';
 import { Environment } from './environment';
 import { withCallValues } from './fake-call-values';
 import { FrameCameras } from './frame-cameras';
+import { propertyAnimation } from './gltf';
+import { parseGltf, readContainer } from './gltf-parse';
 import { CoreMemory } from './memory';
+import {
+	PROPERTY_MATERIAL,
+	PropertyAnimation,
+	type PropertyBinding,
+	type SlotSource,
+} from './property-animation';
 import { Material, MeshGeometry } from './resources';
 import { type Object3D, Scene } from './scene';
 import { Texture, type Textures } from './textures';
@@ -87,6 +98,8 @@ function fakeCore(largeWorld = false) {
 	const viewCalls = { added: [] as number[][], rects: [] as number[][], removed: [] as number[] };
 	/** The lens that each camera sent: its target, its handle, its layers, then its values. */
 	const lenses: number[][] = [];
+	/** Each material value that the core received: its material, its parameter and its numbers. */
+	const materialValues: number[][] = [];
 	let nextView = 1;
 	const glue = {
 		sceneCapacity: () => CAPACITY,
@@ -131,6 +144,8 @@ function fakeCore(largeWorld = false) {
 			return 0;
 		},
 		setOverrideMaterial: (material: number) => overrides.push(material) && 0,
+		setMaterialValue: (material: number, param: number, x: number, y: number, z: number) =>
+			materialValues.push([material, param, x, y, z]) && 0,
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
@@ -177,6 +192,8 @@ function fakeCore(largeWorld = false) {
 		box,
 		ball,
 		paint,
+		/** Each material value that the core received: its material, its parameter and its numbers. */
+		materialValues,
 		/** The override material ids that the core received, in order, with 0 for none. */
 		overrides,
 		/** Sets the world matrix that the core gives an object, from a three.js matrix. */
@@ -511,6 +528,103 @@ describe('hold script property paths', () => {
 		expect(() => scene.readScriptPath(car, 'intensity')).toThrow('which it does not take');
 	});
 
+	test("animates a material's maps offset and scale, and keeps their other numbers", () => {
+		const { scene, paint, materialValues } = fakeCore();
+		scene.animateProperty(paint, 'uvOffset', {
+			times: [0, 1],
+			values: [0, 0, 0.5, 0.25],
+			time: 1,
+			loop: false,
+		});
+		scene.animateProperty(paint, 'uvScale', {
+			times: [0, 1],
+			values: [1, 1, 2, 3],
+			time: 1,
+			loop: false,
+		});
+		const start = materialValues.length;
+		scene.propertySystem().step(0);
+		const written = materialValues.slice(start);
+		// Each write sends one map transform's two rows: their scale and turn, then the offset. A
+		// sketch's own animation moves every map of the material together.
+		const last = (param: number) => written.filter((values) => values[1] === param).at(-1);
+		// A zero turn gives -0 in one row, which is a zero.
+		const row = (values: number[] | undefined) => values?.map((value) => value || 0);
+		expect(row(last(C.MATERIAL_PARAM_UV_U))).toEqual([1, C.MATERIAL_PARAM_UV_U, 2, 0, 0.5]);
+		expect(row(last(C.MATERIAL_PARAM_UV_V))).toEqual([1, C.MATERIAL_PARAM_UV_V, 0, 3, 0.25]);
+		// Every map's transform, two rows each, for both animations.
+		expect(written).toHaveLength(SIZE_MAP_ROWS * 4);
+		// The last map that the material keeps takes both animations, so neither stops short of it.
+		const [scaleRow, offsetRow] = written.slice(-2);
+		const scaleParam = scaleRow?.[1] ?? 0;
+		expect(offsetRow?.[1]).toBe(scaleParam + C.MATERIAL_PARAM_MAP_UV_STRIDE / 2);
+		expect(row(scaleRow)).toEqual([1, scaleParam, 2, 0, 0.5]);
+		expect(row(offsetRow)).toEqual([
+			1,
+			scaleParam + C.MATERIAL_PARAM_MAP_UV_STRIDE / 2,
+			0,
+			3,
+			0.25,
+		]);
+	});
+
+	test('a property track moves only its own map of a material', () => {
+		const { scene, paint, materialValues } = fakeCore();
+		const system = scene.propertySystem();
+		// A file's pointer names one map, so its track writes that map's transform alone.
+		const track = (slot: number, name: 'uvOffset' | 'uvScale', values: number[]) => {
+			const binding: PropertyBinding = {
+				what: PROPERTY_MATERIAL,
+				name,
+				components: 2,
+				base: new Float32Array(2),
+				slot,
+			};
+			system.add(
+				new PropertyAnimation(
+					system,
+					paint,
+					binding,
+					{
+						binding: 0,
+						interpolation: 'linear',
+						times: new Float32Array([0, 1]),
+						values: new Float32Array(values),
+					},
+					{ times: [0, 1], values, time: 1, loop: false },
+				),
+			);
+		};
+		track(C.MAP_SLOT_BASE_COLOR, 'uvOffset', [0, 0, 0.5, 0.25]);
+		track(C.MAP_SLOT_EMISSIVE, 'uvScale', [1, 1, 2, 3]);
+		const start = materialValues.length;
+		system.step(0);
+		const written = materialValues.slice(start);
+		const rowOf = (param: number) => written.find((values) => values[1] === param);
+		const base =
+			C.MATERIAL_PARAM_MAP_UV + (C.MAP_SLOT_EMISSIVE - 1) * C.MATERIAL_PARAM_MAP_UV_STRIDE;
+		// The base color map's offset reached its own two rows.
+		expect(rowOf(C.MATERIAL_PARAM_UV_U)?.map((value) => value || 0)).toEqual([
+			1,
+			C.MATERIAL_PARAM_UV_U,
+			1,
+			0,
+			0.5,
+		]);
+		expect(rowOf(C.MATERIAL_PARAM_UV_V)?.map((value) => value || 0)).toEqual([
+			1,
+			C.MATERIAL_PARAM_UV_V,
+			0,
+			1,
+			0.25,
+		]);
+		// The emissive map's scale reached the rows of its own slot.
+		expect(rowOf(base)?.map((value) => value || 0)).toEqual([1, base, 2, 0, 0]);
+		expect(rowOf(base + 4)?.map((value) => value || 0)).toEqual([1, base + 4, 0, 3, 0]);
+		// No other map moved.
+		expect(written).toHaveLength(4);
+	});
+
 	test('reads a camera lens, and names the objects that are close to a name', () => {
 		const { scene } = fakeCore();
 		scene.createGroup({ name: 'car' });
@@ -519,6 +633,114 @@ describe('hold script property paths', () => {
 		expect(scene.readScriptPath(camera, 'fov')).toEqual([60]);
 		expect(scene.nearNames('cr')).toEqual(['crate']);
 		expect(scene.nearNames('zzz')).toEqual(['car', 'crate']);
+	});
+});
+
+describe("a model's clip that moves two maps", () => {
+	/** The animation table's sample slots, which the job workers advance. */
+	class Slots implements SlotSource {
+		readonly sources = new Uint32Array(C.ANIMATION_MAX_BLEND).fill(C.ANIMATION_NO_SOURCE);
+		readonly times = new Float32Array(C.ANIMATION_MAX_BLEND);
+		readonly weights = new Float32Array(C.ANIMATION_MAX_BLEND);
+
+		slotSources(): Uint32Array {
+			return this.sources;
+		}
+		slotTimes(): Float32Array {
+			return this.times;
+		}
+		slotWeights(): Float32Array {
+			return this.weights;
+		}
+		/** Plays `clip` in `slot` at `time` seconds, with `weight`. */
+		play(slot: number, clip: number, time: number, weight: number): void {
+			this.sources[slot] = clip;
+			this.times[slot] = time;
+			this.weights[slot] = weight;
+		}
+	}
+
+	/**
+	 * A file whose clip moves a base color map's offset from its first key to `base`, and an emissive
+	 * map's from its own first key to `emissive`, so a time between the keys gives each a value.
+	 */
+	function movingFile(base: readonly number[], emissive: readonly number[]): Uint8Array {
+		const b = new GltfBuilder().uses('KHR_animation_pointer').uses('KHR_texture_transform');
+		b.json.images = [{ uri: 'tex/base.png' }];
+		b.json.textures = [{ source: 0 }];
+		b.json.materials = [
+			{
+				pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+				emissiveTexture: { index: 0 },
+			},
+		];
+		b.node({ name: 'Box', mesh: b.mesh([boxPrimitive(b, 0)], 'box') });
+		const at = b.accessor(new Float32Array([0, 1]), 1, { min: [0], max: [1] });
+		const pairs = (values: readonly number[]) => b.accessor(new Float32Array(values), 2);
+		const pointer = (path: string) => ({
+			path: 'pointer',
+			extensions: { KHR_animation_pointer: { pointer: path } },
+		});
+		const offset = (texture: string) =>
+			pointer(`/materials/0/${texture}/extensions/KHR_texture_transform/offset`);
+		b.json.animations = [
+			{
+				name: 'Move',
+				samplers: [
+					{ input: at, output: pairs([0, 0, ...base]) },
+					{ input: at, output: pairs([2, 2, ...emissive]) },
+				],
+				channels: [
+					{ sampler: 0, target: offset('pbrMetallicRoughness/baseColorTexture') },
+					{ sampler: 1, target: offset('emissiveTexture') },
+				],
+			},
+		];
+		return b.glb();
+	}
+
+	/** The row that the material `id` last sent for parameter `param`, from its offsets on. */
+	const writtenRow = (materialValues: number[][], id: number, param: number) =>
+		materialValues
+			.filter((values) => values[0] === id && values[1] === param)
+			.at(-1)
+			// A zero turn gives -0 in one row, which is a zero.
+			?.slice(2)
+			.map((value) => value || 0);
+
+	test("writes each map's own offset to the rows of its own transform", () => {
+		const { core, scene, materialValues } = fakeCore();
+		const url = 'https://example.com/models/two-maps.glb';
+		// The base color map's offset runs from 0 to 1, and the emissive map's from 2 to 4.
+		const data = parseGltf(readContainer(movingFile([1, 1], [4, 4]), url), new Map(), url);
+		// The material that the file's primitives draw, which both maps' tracks write.
+		const both = new Material(2, core, 'materials.standard.set');
+		const made = propertyAnimation(
+			data,
+			{ variants: () => [both] } as unknown as Parameters<typeof propertyAnimation>[1],
+			[],
+			[],
+			{ clips: new Map([['Move', 1]]) } as unknown as Parameters<typeof propertyAnimation>[4],
+			data.notes,
+		);
+		if (!made) throw new Error('the file made no property tracks');
+		const slots = new Slots();
+		const system = scene.propertySystem();
+		system.addPlayer(
+			new PropertyPlayer(slots, 0, made.bindings, made.clips, made.targets, made.keys),
+		);
+		// Halfway between the keys, the base color map sits at 0.5 and the emissive map at 3. The
+		// first clip's id is 1, and the sample table names a clip by its id less one.
+		slots.play(0, 0, 0.5, 1);
+		system.step(0);
+		const emissive =
+			C.MATERIAL_PARAM_MAP_UV + (C.MAP_SLOT_EMISSIVE - 1) * C.MATERIAL_PARAM_MAP_UV_STRIDE;
+		// The base color map's two rows carry its own offset.
+		expect(writtenRow(materialValues, 2, C.MATERIAL_PARAM_UV_U)).toEqual([1, 0, 0.5]);
+		expect(writtenRow(materialValues, 2, C.MATERIAL_PARAM_UV_V)).toEqual([0, 1, 0.5]);
+		// The emissive map's two rows carry its own offset, which differs.
+		expect(writtenRow(materialValues, 2, emissive)).toEqual([1, 0, 3]);
+		expect(writtenRow(materialValues, 2, emissive + 4)).toEqual([0, 1, 3]);
 	});
 });
 

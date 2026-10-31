@@ -45,9 +45,22 @@ describe('the GPU check', () => {
 		);
 		expect(result.status).toBe('passed');
 		expect(result.line).toBe(
-			'GPU-Checked: 061177262..a0a7c1777 passed: s4 medium 1.86 to 1.90 ms (+2.2%); s6 medium 3.82 to 3.93 ms (+2.9%); s4 high 1.82 to 1.80 ms (-1.1%); s6 high 6.17 to 6.30 ms (+2.1%)',
+			'GPU-Checked: 061177262..a0a7c1777 passed: s4 medium 1.86 to 1.90 ms (+2.2%, same, noise 0.0%); s6 medium 3.82 to 3.93 ms (+2.9%, same, noise 0.0%); s4 high 1.82 to 1.80 ms (-1.1%, same, noise 0.0%); s6 high 6.17 to 6.30 ms (+2.1%, same, noise 0.0%)',
 		);
 		expect(gpuCheckPasses(result)).toBe(true);
+	});
+
+	test('says whether each page is the same, faster or slower, and its noise', () => {
+		const same = gpu('s4', 2, 2.02, 'same');
+		same.noise = 0.01;
+		const faster = gpu('s6', 4, 3.8, 'faster');
+		faster.noise = 0.005;
+		const result = gpuCheckResult(
+			[preset('medium', [same, faster]), preset('high', [gpu('s4', 2, 2), gpu('s6', 4, 4)])],
+			'a..b',
+		);
+		expect(result.line).toContain('s4 medium 2.00 to 2.02 ms (+1.0%, same, noise 1.0%)');
+		expect(result.line).toContain('s6 medium 4.00 to 3.80 ms (-5.0%, faster, noise 0.5%)');
 	});
 
 	test("fails on a page whose GPU time is slower than the rule allows, as #389's map switch was", () => {
@@ -59,7 +72,7 @@ describe('the GPU check', () => {
 			'a..b',
 		);
 		expect(result.status).toBe('failed');
-		expect(result.line).toContain('s4 medium 1.90 to 30.80 ms (+1521.1%, slower)');
+		expect(result.line).toContain('s4 medium 1.90 to 30.80 ms (+1521.1%, slower, noise 0.0%)');
 		expect(gpuCheckPasses(result)).toBe(false);
 	});
 
@@ -73,7 +86,9 @@ describe('the GPU check', () => {
 			'a..b',
 		);
 		expect(result.status).toBe('passed');
-		expect(result.line).toContain('s4 medium 2.00 to 3.00 ms (+50.0%, slower, expected)');
+		expect(result.line).toContain(
+			's4 medium 2.00 to 3.00 ms (+50.0%, slower, expected, noise 0.0%)',
+		);
 	});
 
 	test('is not measured where a page has no GPU time from both builds', () => {
@@ -84,7 +99,7 @@ describe('the GPU check', () => {
 		);
 		expect(result.status).toBe('not measured');
 		expect(result.line).toBe(
-			'GPU-Checked: a..b not measured: s4 medium 2.00 to 2.00 ms (+0.0%); no GPU time from both builds on s6 medium, s4 high, s6 high',
+			'GPU-Checked: a..b not measured: s4 medium 2.00 to 2.00 ms (+0.0%, same, noise 0.0%); no GPU time from both builds on s6 medium, s4 high, s6 high',
 		);
 		expect(gpuCheckPasses(result)).toBe(false);
 	});

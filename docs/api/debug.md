@@ -3,7 +3,7 @@ id: api/debug
 title: Debug drawing and stats
 status: experimental
 since: "0.1"
-summary: "debug.line, box, sphere, arrow, axes, grid, frustum, light and skeleton; the stats overlay, debug.frameStats and @null3d/engine/stats; engine.measure and its figures; debug.view and debug.shadowCamera."
+summary: "debug.line, box, sphere, arrow, axes, grid, frustum, light and skeleton; the stats overlay, debug.frameStats and @null3d/engine/stats; engine.measure and its figures; debug.view, the ?view switch and add-on views; debug.shadowCamera."
 ---
 
 # Debug drawing and stats
@@ -87,7 +87,16 @@ flowchart LR
 
 ```ts
 export default defineSketch(({ debug, input }) => {
-  const views = ['lit', 'normals', 'depth', 'overdraw', 'wireframe', 'shadows', 'motion'] as const;
+  const views = [
+    'lit',
+    'normals',
+    'depth',
+    'overdraw',
+    'wireframe',
+    'shadows',
+    'motion',
+    'levels',
+  ] as const;
   let shown = 0;
   return {
     onUpdate() {
@@ -109,13 +118,40 @@ export default defineSketch(({ debug, input }) => {
 | `'wireframe'` | The edges of each triangle as lines one pixel wide, in the material's color |
 | `'shadows'` | How much of the main directional light's shadow falls on each surface, as a gray: black in full shadow, white in full light. The gray is the factor that lit shading multiplies the sun's light by. A surface that faces away from the sun is black, as no sunlight reaches it. A surface that receives no shadows, or whose material takes no light, is white |
 | `'motion'` | How far each pixel's surface moved on the screen since the last frame, the camera's move included, as a color. The hue gives the direction: red to the right, yellow-green downward, cyan to the left and violet upward. The brightness gives the length, full at 16 pixels. A still pixel is black. Moving objects, instance batch rows, skinned and morphed meshes and the vertex offsets of custom materials all show their motion. See-through surfaces show the motion of what lies behind them |
+| `'levels'` | One color for each [level of detail](../concepts/lod.md) that a draw picks: blue for the base mesh, then green, yellow, orange, red, purple, cyan and gray for the lower levels. Where two levels hand over in a fading band, a dither mixes the two colors. A source that the size rule or a draw range hid draws at its base level in a striped magenta marker, so the view shows what the culling dropped instead of a hole |
 
 - A debug view clears to black and hides the background texture. It uses no tone mapping and no exposure, so its colors reach the canvas as the table gives them. The motion view colors every pixel, the background too, and a background that the camera's turn moves shows that motion.
 - The motion view shows the engine's motion vectors, which [the render graph](../concepts/render-graph.md#motion-vectors) explains. While it shows, the engine keeps the last frame's transforms and skinning results on the GPU. In other frames it keeps nothing and draws no motion pass. In [hold mode](../guides/testing.md#hold-mode) the engine draws the frame before the held one too, so the held frame shows one step of motion.
 - The shading views ignore what a material changes: maps, vertex colors, alpha, blending, depth options and custom shaders, vertex offsets included. A mesh keeps its place and the faces it culls.
 - The first frame of a view builds its GPU pipelines, so objects can be missing from a few frames after a change.
 - The wireframe view keeps an edge list for each mesh once it has shown, which takes twice the GPU memory of the mesh's triangle indices.
-- Debug views work in development builds only. In a release build, `debug.view` does nothing, and the build holds neither their code nor their shader. A name that the engine does not know fails with [E1213](../errors/E1213.md).
+- The levels view reads the level of each draw from the culling that picks it. Each level is a bucket of its own, so the view needs no shader for each material. Its first frame builds the pipelines that carry the level code, so the levels can be missing for a few frames after a change.
+- `debug.cullingSpheres(true)` draws the bounding sphere that culling tests for each of the first 128 objects whose mesh has levels, until `debug.cullingSpheres(false)`. Use it beside the levels view to see why the size rule hid a copy. It reads the mesh's own sphere around the object's origin, so it does not draw the sphere that `setBounds` gave an object. Instance batch rows draw no sphere. `debug.cullingSpheresDrawn()` gives the spheres that the last frame drew, which is zero while the switch is off, so a page can tell that the switch drew them rather than nothing.
+- Debug views work in development builds only. In a release build, `debug.view` does nothing, and the build holds none of the views' shaders or drawing code. A few small parts stay, because the engine shares them: the scene's traversal of objects whose meshes have levels, and the culling's level code. Together they add about 2.4 KB after Brotli to a single-threaded build, and less to a pipelined one. A name that the engine does not know, and that no add-on feature registers, fails with [E1213](../errors/E1213.md).
+
+### The view from the address
+
+`?view=<name>` picks any debug view on any page, as `?stats` does: in development builds, and in a production build only when the Vite plugin's `urlSwitches` option is on. The views themselves draw in development builds only, as the section above says. A person, or `bunx @null3d/cli shot --page '/your-page?view=levels'`, can then see any demo's levels with no code change. A name that no view has draws the materials.
+
+### Views from add-ons
+
+An add-on adds a view of its own through the `debugViews` field of its [feature description](features.md#the-fields). Each view gives its name and a `set` callback, which hears when the view starts and stops. The add-on draws the view itself, with its own materials or its own debug drawing. Picking an add-on's view clears the engine's own view, so the two never draw together. A name that no feature has registered yet clears it too. A view's name must not name one of the engine's views, and each name belongs to one add-on.
+
+```ts
+host.add(
+  defineFeature({
+    name: 'terrain',
+    debugViews: [
+      {
+        name: 'terrain-blocks',
+        set: (active) => {
+          blocks.watchLevels(active);
+        },
+      },
+    ],
+  }),
+);
+```
 
 ### Watch the shadow cascades from elsewhere
 
@@ -144,12 +180,12 @@ The cascades keep their boxes and their split distances from the other camera's 
 flowchart LR
     threads["Each engine thread writes<br/>a few numbers per frame"] --> buffer["The frame figures buffer"]
     buffer --> header["The overlay's header:<br/>the frame rate"]
-    buffer --> card["The overlay's card:<br/>work, memory, counts"]
+    buffer --> card["The overlay's card:<br/>four tabs of figures"]
     buffer --> sketch["debug.frameStats()<br/>in the sketch"]
     page["The page's own meters:<br/>heap, page memory"] --> card
 ```
 
-The stats overlay sits over the top-right corner of the canvas. Its header is a button with a ring gauge and the frame rate, such as `58 fps`. A click on it, or Enter or Space while it has the focus, opens a card of figures under it and closes the card again. Four calls show the overlay:
+The stats overlay sits over the top-right corner of the canvas. Its header is a button with a ring gauge and the frame rate, such as `58 fps`. A click on it, or Enter or Space while it has the focus, opens a card of figures under it and closes the card again. The card holds four tabs, which show one group of figures at a time. Four calls show the overlay:
 
 - `createEngine({ stats: true })` shows it from the first frame.
 - `engine.stats(true)` on the page shows it, and `engine.stats(false)` hides it.
@@ -172,21 +208,20 @@ const engine = await createEngine({
 
 The page and the sketch show and hide the same overlay, and the last call wins, from either side. So the sketch's `debug.stats(false)` hides an overlay that the page showed, and the page's `engine.stats(false)` hides one that the sketch showed. Options add up: a call changes only the options that it names, and an overlay that shows again keeps them. Each `debug.stats` call sends a message to the page, so call it when the choice changes, not in every frame. The page draws the overlay and updates it four times a second. A held engine for image tests shows no overlay.
 
-The header stays in the corner when the card opens, and the card opens under it, aligned to the right. Only the header button and the card's two symbols take the pointer. Drags anywhere else on the overlay reach the canvas.
+The header stays in the corner when the card opens, and the card opens under it, aligned to the right. Only the header button, the card's two symbols and its tab buttons take the pointer. Drags anywhere else on the overlay reach the canvas.
 
 ### The card
 
-| Part | What it shows |
+The card is 360 pixels wide and takes its height from the tab that shows, so a short tab leaves no empty card. Switching tabs can therefore make the card taller or shorter. Four tabs show one section at a time: `Frame`, `Memory`, `Steps` and `Systems`. A click on a tab shows it, the arrow keys move between tabs, and Home and End go to the first and last. The card's own header keeps these figures in view on every tab: the mode's symbol, the display's symbol, the display's refresh rate and the target with its interval, such as `120 Hz ≥60 fps · 16.7 ms` (or `60 fps · 16.7 ms` where the target is the display's full rate).
+
+| Tab | What it shows |
 | --- | --- |
-| `Frame work` | A symbol of the engine's thread mode, then a display symbol. After them come the display's refresh rate and the target with its interval, such as `120 Hz ≥60 fps · 16.7 ms`. Where the target is the display's full rate, the rate shows once, such as `60 fps · 16.7 ms` |
-| Work bars | CPU time per frame of each engine thread, and the GPU's time per frame, against the target |
-| `Held back by` | Below the target frame rate, the part of the frame that holds it back |
-| `Memory` | The engine's memory, the GPU's textures and buffers, and the page's JavaScript heap, as one bar with a legend |
-| `Memory by system` | Development builds only: one row for each engine table and allocator, with the bytes that it uses, reserves and has used at most |
-| Whole page | The memory of the whole page and its workers, as the browser counts it |
-| Counts | Draw calls, triangles and objects per frame |
-| `Add-ons` | One row for each add-on feature that reports figures: its GPU time, its settings, its budget and its memory. The section shows only while a feature reports figures |
-| Last line | The GPU path, the quality preset and the render scale |
+| `Frame` | One work bar per engine thread and one for the GPU, against the target. Below them, the `Held back by` line below the target rate and the counts of draw calls, triangles and objects per frame. The last line names the GPU path, the quality preset and the render scale |
+| `Memory` | The engine's memory, the GPU's textures and buffers, and the page's JavaScript heap, as one bar with a legend. Under it, the memory of the whole page and its workers, as the browser counts it |
+| `Steps` | One row for each add-on feature that reports figures: its name, its GPU time beside it, and under them its settings, its budget and its memory. Then one row for each pass of the frame that the GPU timed, such as `opaque` or `bloom 2`, with its GPU time per frame |
+| `Systems` | Development builds only: one row for each engine table and allocator, with the bytes that it uses, reserves and has used at most. A build that reports none says so |
+
+The overlay updates every tab on each refresh, so a tab shows current figures the moment it is chosen. It gathers nothing extra for a tab that does not show: the figures come from the frame records that the engine writes anyway and from the same GPU timing pass, whichever tab is open.
 
 **The target.** The overlay judges each frame against the engine's own [target frame rate](../concepts/quality-presets.md#the-target-frame-rate): the one that the preset check and the quality governor defend. It is the display's refresh rate, at most 60 frames a second, unless the page's `targetFps` option asks for more. The `?fps=` switch caps it too. The engine still draws at the display's full rate when the GPU allows it. So on a 120 Hz display the card reads `120 Hz ≥60 fps · 16.7 ms`: the engine draws up to 120 frames per second and defends 60. With `targetFps: 'display'`, the same card reads `120 fps · 8.3 ms`. The display symbol is a button whose tooltip explains the figures, as the mode's symbol does.
 
@@ -206,11 +241,11 @@ A bar stacks parts only where the parts add up to the time beside it. A thread's
 | Low latency | A clock | One thread prepares and then draws each frame. One bar, `Sketch + drawing`, stacks your code, the engine's sketch steps, then the drawing, and must fit the target |
 | Single thread | A clock | Without shared memory, the page's thread prepares and draws each frame. It shows as one `Sketch + drawing` bar too |
 
-**The colors.** A work bar's time is green below 80% of the target's interval, amber up to the interval, and red past it. The ring gauge in the header fills with the frame rate as a share of the target. It is green from 90% of the target, the share that a preset must hold in the preset check. It is amber from 75%, and red below.
+**The colors.** A work bar's parts are blue for your code, purple for the engine's work, and green for the GPU. The memory bar keeps those meanings: purple for the engine's memory, green for the GPU's textures and buffers, and blue for the page's JavaScript heap. The chrome is amber: the active tab's underline, the header's border and the whole-page note's dot mark it. A work bar's time is green below 80% of the target's interval, amber up to the interval, and red past it. The ring gauge in the header fills with the frame rate as a share of the target. It is green from 90% of the target, the share that a preset must hold in the preset check. It is amber from 75%, and red below.
 
 **Held back by.** While the frame rate is below 90% of the target, a line under the GPU bar names the bar furthest past the target's mark: `Held back by: GPU`, `Drawing`, `Sketch`, `Sketch + drawing`, `Jobs` or `Page`. When no bar passes the mark, it reads `Held back by: outside the engine`. The rest of the page's code, or the browser, then holds the frame back.
 
-**The add-ons' rows.** A feature that an add-on declares with `settings`, `budget` or `memory` gets one row under the counts, such as `splats  gpu 0.42 ms  budgetSplats 500000  budget 3.0 of 4.0 ms  memory 12.0 MiB`. The row names the feature, its one GPU timing scope, its own settings, its budget and the memory that it reports. The budget shows now and at full quality. A feature's GPU scope reads `gpu not measured` until the engine records and times its work. [Add-on feature descriptions](features.md#stats) explains the figures.
+**The add-ons' rows.** A feature that an add-on declares with `settings`, `budget`, `gpu` or `memory` gets one row in the Steps tab, such as `water  gpu 0.42 ms  reflectionEvery 1  budget 1.7 of 1.7 ms`. The row names the feature, its one GPU timing scope, its own settings, its budget and the memory that it reports. The budget shows now and at full quality. A feature names its GPU scope with the render passes that carry its work, and the overlay adds up their time. A feature whose work records inside a pass of the engine's own reads `gpu not measured`. On WebGL2 no pass is timed alone, so every feature reads that. [Add-on feature descriptions](features.md#stats) explains the figures.
 
 **Figures that the browser gives.** The frame rate, the work bars, the engine's and the GPU's memory and the counts show in every browser that runs the engine. The page's JavaScript heap comes from `performance.memory`, and the whole page's memory from `performance.measureUserAgentSpecificMemory`. Some browsers have neither. Where the browser lacks one, the overlay leaves it out, and the memory total adds up what it lists. Where the GPU path has no timer queries, the GPU bar reads `not measured` and stays empty.
 
@@ -242,6 +277,7 @@ export default defineSketch(({ debug, page, time }) => {
 | `threads` | Each engine thread's name, its CPU time per frame, and the time of each phase, as `engine.measure` names them |
 | `gpuMs` | GPU time per frame in milliseconds, from one frame in eleven, or null without timer queries. It is the latest pass end less the earliest pass begin, because a tile GPU overlaps the passes |
 | `gpuStepMs` | The step between the GPU's timestamps in milliseconds, when the browser rounds them, or null when they look exact. It is the greatest common divisor of the offsets that the timer reads back |
+| `gpuSteps` | The GPU time per frame of each pass that the GPU timed one by one, in the frame's order, each with the step's name and its time. A pass after the last one timed adds its time to it, and its name then ends in `and later`. Empty on WebGL2, which times the whole frame alone |
 | `drawCalls`, `uploadBytes` | Draw calls and bytes uploaded to the GPU, per frame |
 | `triangles`, `objects` | Triangles and objects drawn per frame, over every pass |
 | `wasmBytes` | The size of the engine's WebAssembly memory |
@@ -388,14 +424,18 @@ for (const part of stats.gpuPassMs ?? []) {
 
 `gpuMs` is the latest pass end less the earliest pass begin, not the sum of the passes' own times. A tile GPU overlaps the spans of its passes, so a sum counts the shared time more than once. A browser gives no period for its timestamps, so `gpuStepMs` finds the step between them as the greatest common divisor of the offsets that the timer reads back. It is null when they look exact. Start Chrome with `--enable-webgpu-developer-features --disable-dawn-features=timestamp_quantization` to turn off its timestamp rounding.
 
-`gpuPassMs` splits `gpuMs` into the parts of the frame, in the order the GPU runs them:
+`gpuPassMs` splits `gpuMs` into the parts of the frame, in the order the GPU runs them. Each pass is named by what it draws for, so a figure belongs to a named pass and not to the slot that it happened to land in:
 
 | Part | What it is |
 | --- | --- |
 | `copies` | Copies recorded before the frame's first pass, where the browser times them |
-| `compute 1`, `compute 2` and so on | Each compute pass, such as the culling pass on WebGPU, where the browser times it |
-| `render 1`, `render 2` and so on | Each render pass, such as the main pass, where the browser times it |
+| `compute` | The compute passes that the browser times together, such as the culling passes on WebGPU |
+| `shadow cascade 1`, `shadow tile 2`, `shadow hero` | A shadow pass, by what casts into it |
+| `opaque`, `transparent`, `final` | The camera's passes, by what they draw |
+| `bloom 0`, `ambient occlusion 2`, `depth of field 1` | A step of a post effect, by its place in the effect's chain |
 | `between passes` | The time from the end of one pass to the start of the next, in a frame of more than one pass where the browser times every pass |
+
+A pass whose role has a place among the passes of that role, such as a shadow cascade, prints it. A role without a place, such as `final`, prints only its name. A pass whose role is the same in each frame keeps its name where the number of passes before it changes.
 
 These figures time the GPU's work only. Work that the browser does outside the passes shows in `gpuLatencyMs` and in the frame rates.
 

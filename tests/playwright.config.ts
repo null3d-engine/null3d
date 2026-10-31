@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
 import { browserOptions, defaultEnvironment } from '../packages/cli/src/browser.js';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
 import { ALONE_PROJECT_SUFFIX, RUNS_ALONE } from './lib/alone.ts';
 import {
@@ -11,11 +12,19 @@ import {
 	REPO_ROOT,
 } from './lib/server.ts';
 
+// A run refuses to start in another run's quiet window. Its workers and web servers inherit the
+// runner's pass, so a window that opens later never stops a run halfway.
+refuseInQuietWindow('The browser tests');
 // The test files import the shader modules, which git does not keep, and Playwright loads the test
 // files before it starts the web servers.
 ensureShaderModules(REPO_ROOT);
 
 const ci = Boolean(process.env.CI);
+/**
+ * The reporter that records each test while it runs, so a failure names the tests that other workers
+ * ran beside it on the same machine. A page that stalls on a contended machine then shows it.
+ */
+const neighbourReporter = join(import.meta.dirname, 'lib/neighbour-reporter.ts');
 /**
  * The main project's environment, which names the references that its image tests compare with:
  * SwiftShader in CI, and the real GPU through the installed Google Chrome elsewhere.
@@ -65,8 +74,8 @@ const PRODUCTION_SERVER = {
 	reuseExistingServer: false,
 	// The chain builds seven pages before the preview serves them, and on a slow runner the default
 	// minute runs out partway through: the run then fails as if the server never started, with every
-	// build it finished in the log. A busy CI machine took the chain past five minutes on 19 October
-	// 2026 while each build was still finishing.
+	// build it finished in the log. A busy CI machine can take the chain past five minutes while each
+	// build is still finishing.
 	timeout: 900_000,
 };
 
@@ -83,7 +92,7 @@ export default defineConfig({
 		join(import.meta.dirname, 'lib/checkout-setup.ts'),
 	],
 	forbidOnly: ci,
-	reporter: ci ? [['list'], ['github']] : 'list',
+	reporter: ci ? [['list'], ['github'], [neighbourReporter]] : [['list'], [neighbourReporter]],
 	use: {
 		baseURL: `http://localhost:${HTTP_PORT}/tests/pages/`,
 		headless: true,

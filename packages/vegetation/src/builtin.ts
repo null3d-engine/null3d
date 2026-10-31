@@ -31,59 +31,101 @@ const BARK_BROWN: readonly [number, number, number] = [0.2, 0.15, 0.1];
 /** The color of a broadleaf's leaves. */
 const LEAF_GREEN: readonly [number, number, number] = [0.13, 0.28, 0.07];
 
-/** A broadleaf tree's branches: a trunk, two limb levels and the twigs that carry the cards. */
+/**
+ * A broadleaf tree's branches: a trunk that leans and bends, two limb levels and the twigs that
+ * carry the cards. The bend is gentle, and it carries the whole crown a little off the trunk's foot,
+ * as a grown tree's does.
+ */
 const BROADLEAF_BRANCHES = [
-	level({ children: 6, prune: 0.15, length: 9, angle: 55, taper: 0.1, sides: 8, segments: 9 }),
+	level({
+		children: 6,
+		prune: 0.15,
+		length: 9,
+		angle: 55,
+		curve: 18,
+		curveVariance: 8,
+		taper: 0.1,
+		sides: 8,
+		segments: 9,
+	}),
 	level({ children: 5, prune: 0.2, length: 3.6, angle: 52, taper: 0.03, sides: 6, segments: 5 }),
 	level({ children: 4, prune: 0.25, length: 1.5, angle: 56, taper: 0.01, sides: 4, segments: 4 }),
 	level({ children: 0, length: 0.6, angle: 60, taper: 0.003, sides: 3, segments: 2 }),
 ];
 
-/** The needle card that every conifer's branchlets carry. */
+/**
+ * The dense evergreen's branch system: a trunk that bends, fourteen whorls of boughs that spread
+ * nearly level, branchlets off them, and short twigs that carry the needles. Four levels give the
+ * crown its mass, so the silhouette closes from the middle of the trunk up rather than reading as
+ * bare twigs, and the whorls are close enough that the cone holds no gap between them.
+ */
 function coniferBranches(height: number): BranchLevel[] {
 	return [
 		level({
-			children: 14,
-			prune: 0.1,
+			children: 15,
+			prune: 0.05,
 			length: height,
 			lengthVariance: 0.1,
 			angle: 2,
 			angleVariance: 1,
-			curve: 4,
-			curveVariance: 2,
-			taper: 0.14,
-			start: 0.06,
-			end: 0.97,
+			// The trunk leans and bends, so no tree stands as a straight pole. Its own share of the
+			// trunk is never read, since a trunk has no parent: the boughs' share is their level's.
+			curve: 12,
+			curveVariance: 6,
+			taper: 0.12,
+			start: 0,
+			end: 1,
 			sides: 8,
-			segments: 10,
+			segments: 12,
 			twist: 0,
 		}),
 		level({
-			children: 6,
+			children: 5,
 			prune: 0.1,
-			length: height * 0.22,
-			lengthVariance: 0.2,
-			angle: 78,
+			length: height * 0.17,
+			lengthVariance: 0.18,
+			angle: 82,
 			angleVariance: 8,
-			curve: -18,
-			curveVariance: 8,
-			taper: 0.012,
-			start: 0.15,
-			end: 0.95,
-			sides: 5,
-			segments: 4,
+			curve: -10,
+			curveVariance: 6,
+			taper: 0.03,
+			// The boughs start above the lower trunk, so it stands bare and the light passes beneath
+			// the crown, and they run to the trunk's tip, so the crown carries foliage to its point.
+			start: 0.48,
+			end: 1,
+			// Five rings of three boughs, so the crown is shelves of needles with air between them, as
+			// an evergreen's whorls grow, rather than one even mass.
+			whorls: 5,
+			sides: 6,
+			segments: 5,
 			twist: 100,
 		}),
 		level({
+			children: 2,
+			prune: 0.05,
+			length: height * 0.11,
+			lengthVariance: 0.25,
+			angle: 52,
+			angleVariance: 14,
+			curve: -8,
+			curveVariance: 5,
+			taper: 0.02,
+			start: 0.12,
+			end: 1,
+			sides: 4,
+			segments: 3,
+			twist: 60,
+		}),
+		level({
 			children: 0,
-			length: height * 0.06,
+			length: height * 0.05,
 			lengthVariance: 0.3,
-			angle: 40,
+			angle: 38,
 			angleVariance: 20,
-			curve: -10,
-			curveVariance: 6,
-			taper: 0.003,
-			start: 0.2,
+			curve: -6,
+			curveVariance: 5,
+			taper: 0.012,
+			start: 0.25,
 			end: 1,
 			sides: 3,
 			segments: 2,
@@ -105,10 +147,10 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 		crown: { shape: 'spherical', start: 0.28, spread: 0.3, pull: 0.16 },
 		leaf: {
 			kind: 'cluster',
-			cards: 10,
-			width: 0.34,
-			height: 0.34,
-			perCard: 8,
+			cards: 12,
+			width: 0.6,
+			height: 0.6,
+			perCard: 12,
 			up: 0.75,
 			out: 1,
 			start: 0.15,
@@ -129,20 +171,27 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 		id: 'conifer',
 		kind: 'conifer',
 		branchLevels: coniferBranches(15),
-		crown: { shape: 'conical', start: 0.08, spread: 0.4, pull: 0.05 },
+		// The crown holds its mass up the trunk: the lower part is bare, and the branches crowd the
+		// upper tree, as an evergreen's do, so light passes beneath the crown. The outline narrows
+		// quickly, so the crown tapers to a point instead of standing as a column of clumps.
+		crown: { shape: 'conical', start: 0.48, spread: 0.45, pull: 0.04, floor: 0.15 },
 		leaf: {
 			kind: 'needle',
-			cards: 24,
-			width: 0.35,
-			height: 0.7,
-			perCard: 30,
-			up: 0.4,
+			cards: 19,
+			width: 0.45,
+			height: 1.1,
+			perCard: 40,
+			up: 0.3,
 			out: 1.1,
-			start: 0.1,
+			// The cards run the whole twig, so the foliage follows the branch rather than balling at
+			// its tip.
+			start: 0.05,
 			end: 1,
 		},
 		wind: { stiffness: [0.1, 0.4, 0.7, 0.85], flutter: 0.008, frequency: 2.4 },
-		color: { bark: [0.16, 0.11, 0.08], leaf: [0.06, 0.16, 0.07], tint: 0.05, transmission: 0.25 },
+		// A pine's bark is pale and breaks into warm plates, so a trunk reads even in the shade of its
+		// own crown; its needles are a deep green that the light lifts.
+		color: { bark: [0.26, 0.18, 0.13], leaf: [0.08, 0.2, 0.09], tint: 0.05, transmission: 0.25 },
 		height: 15,
 		trunks: 1,
 		heightVariance: 0.18,
@@ -216,9 +265,9 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 		branchLevels: [],
 		crown: { shape: 'cylindrical', start: 0, spread: 0.2, pull: 0.4 },
 		rosette: {
-			blades: 13,
-			length: 0.45,
-			width: 0.018,
+			blades: 26,
+			length: 0.5,
+			width: 0.034,
 			arch: 0.7,
 			segments: 3,
 			shape: 'blade',
@@ -227,7 +276,7 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 			flowers: 0,
 		},
 		wind: { stiffness: [1], flutter: 0.03, frequency: 3.2 },
-		color: { bark: [0.2, 0.18, 0.1], leaf: [0.18, 0.32, 0.08], tint: 0.12, transmission: 0.45 },
+		color: { bark: [0.2, 0.18, 0.1], leaf: [0.24, 0.4, 0.1], tint: 0.12, transmission: 0.5 },
 		height: 0.5,
 		trunks: 0,
 		heightVariance: 0.2,
@@ -265,6 +314,10 @@ export const CREEK_SPECIES: readonly Species[] = [
 				length: 3.8,
 				angle: 50,
 				taper: 0.032,
+				// The limbs start inside the crown, so no lone clump of leaves hangs on the bare trunk
+				// below it with no branch to grow from.
+				start: 0.4,
+				end: 0.95,
 				sides: 6,
 				segments: 5,
 			}),
@@ -274,17 +327,21 @@ export const CREEK_SPECIES: readonly Species[] = [
 				length: 1.6,
 				angle: 56,
 				taper: 0.012,
+				// The branchlets leave the limb past its middle, so a limb shows its own branch before
+				// any leaf hangs on it.
+				start: 0.45,
+				end: 1,
 				sides: 4,
 				segments: 4,
 			}),
 			level({ children: 0, length: 0.7, angle: 60, taper: 0.004, sides: 3, segments: 2 }),
 		],
-		crown: { shape: 'spherical', start: 0.3, spread: 0.35, pull: 0.2 },
+		crown: { shape: 'spherical', start: 0.3, spread: 0.35, pull: 0.1 },
 		leaf: {
 			kind: 'cluster',
 			cards: 10,
-			width: 0.4,
-			height: 0.36,
+			width: 0.5,
+			height: 0.42,
 			perCard: 9,
 			up: 0.7,
 			out: 1,
@@ -292,7 +349,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 			end: 1,
 		},
 		wind: { stiffness: [0.1, 0.4, 0.7, 0.85], flutter: 0.02, frequency: 1.5 },
-		color: { bark: [0.16, 0.13, 0.1], leaf: [0.12, 0.25, 0.06], tint: 0.08, transmission: 0.34 },
+		color: { bark: [0.16, 0.13, 0.1], leaf: [0.09, 0.19, 0.045], tint: 0.08, transmission: 0.3 },
 		height: 13,
 		trunks: 1,
 		heightVariance: 0.16,

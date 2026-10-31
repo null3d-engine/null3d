@@ -15,6 +15,7 @@ function arraysOf(asset: PlantAsset): (Float32Array | Uint8Array | Uint16Array |
 				part.arrays.normals,
 				part.arrays.uvs,
 				part.arrays.colors,
+				...(part.arrays.targets ? [part.arrays.targets] : []),
 				part.arrays.indices,
 			);
 	arrays.push(asset.wind.pivots);
@@ -134,6 +135,24 @@ describe('the generator', () => {
 		expect(asset.levels.length).toBe(1);
 	});
 
+	test('gives every leaf part a target record for the level after it', () => {
+		const asset = generatePlant(oak, { seed: 5 });
+		for (const [level, record] of asset.levels.entries()) {
+			const error =
+				level + 1 < asset.levels.length ? (asset.levels[level + 1]?.error as number) : 0;
+			for (const part of record.parts) {
+				if (part.name !== 'leaves') {
+					expect(part.arrays.targets).toBeUndefined();
+					continue;
+				}
+				const vertices = part.arrays.positions.length / 3;
+				const targets = part.arrays.targets as Float32Array;
+				expect(targets.length).toBe(vertices * 4);
+				for (let v = 0; v < vertices; v++) expect(targets[v * 4 + 3]).toBeCloseTo(error, 5);
+			}
+		}
+	});
+
 	test('counts what it grew', () => {
 		const asset = generatePlant(oak, { seed: 4 });
 		const triangles = asset.levels.reduce((sum, level) => sum + level.triangles, 0);
@@ -220,9 +239,11 @@ describe('the generator', () => {
 		}
 		const elapsed = performance.now() - started;
 		expect(variants).toBe(ALL_SPECIES.length * 6);
-		// The measured bounds are 7.0 to 22.7 MB of arrays, and the device time budgets are far
-		// above the Mac's. These bounds catch a generator that slowed by an order of magnitude.
-		expect(bytes).toBeLessThan(23 * 1024 * 1024);
+		// The measured total is 29.75 MiB of arrays, 31,192,082 bytes, the leaf targets
+		// included, and the device time
+		// budgets are far above the Mac's. These bounds catch a generator that slowed by an order
+		// of magnitude.
+		expect(bytes).toBeLessThan(30 * 1024 * 1024);
 		expect(elapsed).toBeLessThan(3000);
 	});
 });

@@ -2,16 +2,19 @@
 // with waves and ripples that the current carries, caustics on the bed, foam, a soft shore that
 // reads the scene's own depth, and a mirror of the banks and the sky that redraws as often as the
 // quality preset affords. The same material draws from below, so a camera that dips under the water
-// keeps its surface.
+// keeps its surface. Where two bodies meet, as at a river's mouth, the junction map gives each point
+// to one body and lets the river's waves give way to the lake's without a seam.
 import {
 	declareAddonNamespace,
 	defineFeature,
 	FeatureHost,
+	type MeshArrays,
 	type QualityPreset,
 	type ShaderOptions,
 	type SketchContext,
 	type Texture,
 } from '@null3d/engine';
+import { type Junctions, junctions } from './junction';
 import { bodyMesh, type MeshDetail } from './mesh';
 import { type WaterBody, type WaterShape, waterBody } from './shape';
 import waterShader from './water.wgsl';
@@ -113,8 +116,15 @@ export interface WaterOptions {
 	 * size by default. A smaller share softens the reflection and costs less.
 	 */
 	readonly reflectionScale?: 1 | 0.5 | 0.25;
-	/** How fine the surface's mesh is. */
+	/** How fine the surface's mesh is, for the bodies that give no detail of their own. */
 	readonly mesh?: MeshDetail;
+	/**
+	 * Where the surface reads the depth of the bed: `'scene'`, the copy of the opaque scene's depth
+	 * behind each pixel, or `'shape'`, the depth that each shape describes, carried in the mesh's
+	 * vertex colors. It is `'scene'` by default. `'shape'` suits a bed that the scene states rather
+	 * than draws, or one whose drawn shape differs from the depth that the water should read.
+	 */
+	readonly bed?: 'scene' | 'shape';
 	/** The standard material values, such as the volume's tint and its thickness. */
 	readonly material?: WaterMaterialOptions;
 }
@@ -138,12 +148,14 @@ export interface Water {
 	update(): void;
 	/**
 	 * The height of the water's surface at a point and a sketch time, in meters, as its long waves
-	 * move it. It uses the current of the body that the point lies over.
+	 * move it. It uses the current of the body that the point lies over. Where two bodies meet, it
+	 * follows the surface there, which lies flat and mixes the river's waves into the lake's.
 	 */
 	surfaceHeight(x: number, z: number, t: number): number;
 	/**
-	 * The current of the body that a point lies over, as a direction and a speed in meters a second,
-	 * written into `out`. It is zero for still water and outside every body.
+	 * The current of the body that a point lies over, as a velocity in meters a second, written into
+	 * `out`. It is zero for still water and outside every body. Where a river runs into
+	 * a lake, the lake owns the water inside its shore.
 	 */
 	currentAt(x: number, z: number, out: [x: number, z: number]): void;
 	/** Sets the light that the ripples focus on the bed, as a linear color. */
@@ -183,7 +195,9 @@ function cadenceRow(
 
 /**
  * The height of a water surface at a point and a sketch time, in meters, as its long waves move it.
- * The `current` carries their phases downstream, and `ripple` scales them.
+ * A `current` carries the whole set downstream, with each wave's direction turned into the
+ * current's frame; still water keeps the authored directions and each wave's own speed. `ripple`
+ * scales them.
  *
  * @category api/water
  */
@@ -195,15 +209,43 @@ export function waveHeight(
 	current: readonly [x: number, z: number],
 	ripple: number,
 ): number {
+	const speed = Math.hypot(current[0], current[1]);
+	const moving = speed > 1e-5;
+	const cx = moving ? current[0] / speed : 0;
+	const cz = moving ? current[1] / speed : 0;
 	let height = level;
-	for (const [dx, dz, k, speed] of LONG_WAVES) {
-		const length = Math.hypot(dx, dz);
-		const along = (dx * x + dz * z) / length;
-		const carry = (current[0] * dx + current[1] * dz) / length;
-		const phase = k * (along - t * carry) - speed * t;
+	for (const [ownX, ownZ, k, ownSpeed] of LONG_WAVES) {
+		const length = Math.hypot(ownX, ownZ);
+		const along = ownX / length;
+		const across = ownZ / length;
+		// The authored direction turned into the current's frame, and the current's phase.
+		const dx = moving ? cx * along - cz * across : along;
+		const dz = moving ? cz * along + cx * across : across;
+		const phase = moving
+			? k * (dx * x + dz * z - speed * t * (dx * cx + dz * cz))
+			: k * (along * x + across * z) - ownSpeed * t;
 		height += (ripple * 0.05 * Math.sin(phase)) / k;
 	}
 	return height;
+}
+
+/** The bytes of one array that a water mesh was made from: a typed array's bytes, or four a number. */
+function arrayBytes(values: unknown): number {
+	if (values === undefined) return 0;
+	const array = values as { readonly byteLength?: number; readonly length?: number };
+	return array.byteLength ?? (array.length ?? 0) * 4;
+}
+
+/** The bytes of the arrays of one water mesh that the add-on made. */
+function meshArrayBytes(arrays: MeshArrays): number {
+	return (
+		arrayBytes(arrays.positions) +
+		arrayBytes(arrays.normals) +
+		arrayBytes(arrays.uvs) +
+		arrayBytes(arrays.uvs1) +
+		arrayBytes(arrays.colors) +
+		arrayBytes(arrays.indices)
+	);
 }
 
 /** A texture of one black texel, which a water without a foam map samples. */
@@ -216,11 +258,22 @@ function noFoam({ textures }: SketchContext): Texture {
 	});
 }
 
+/** The junction map's texture, or one texel that names no junction where no two bodies meet. */
+function junctionTexture({ textures }: SketchContext, map: Junctions | undefined): Texture {
+	return textures.fromData({
+		width: map?.width ?? 1,
+		height: map?.height ?? 1,
+		data: map?.data ?? new Uint8Array([0, 255, 0, 255]),
+		colorSpace: 'linear',
+	});
+}
+
 /**
  * Makes the water that a scene draws, and the reflection pass that mirrors the scene in it. The
  * bodies come from one description: a river that follows a line, or a lake that fills an outline.
- * The surface reads the copy of the opaque scene's depth, so its shores fade against the bed, and
- * the reflection redraws as often as the quality preset affords.
+ * The surface reads the copy of the opaque scene's depth, or the bed that the shapes describe, so
+ * its shores fade against the bed, and the reflection redraws as often as the quality preset
+ * affords.
  *
  * @category api/water
  */
@@ -245,6 +298,15 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	const mirror = textures.fromPass(pass);
 	const ownFoam = foam === undefined;
 	const foamMap = foam?.texture ?? noFoam(ctx);
+	const shapes = Array.isArray(options.shapes) ? options.shapes : [options.shapes as WaterShape];
+	const bedFromShape = options.bed === 'shape';
+	const arrays = bodies.map((body, index) => {
+		const shape = shapes[index] as WaterShape;
+		return bodyMesh(shape, body, level, shape.mesh ?? options.mesh ?? {}, index, bedFromShape);
+	});
+	// The junction map also gives the vertices near a meeting the river's current there.
+	const junction = junctions(bodies, arrays);
+	const junctionMap = junctionTexture(ctx, junction);
 	const material = materials.shader({
 		color: '#ffffff',
 		roughness: 0.03,
@@ -258,37 +320,39 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 		attenuationColor: '#93b59a',
 		attenuationDistance: 0.9,
 		...options.material,
+		// The shape's bed rides in the vertex colors, which the material reads there.
+		...(bedFromShape && { vertexColors: true }),
 		wgsl: waterShader,
-		// The water's depth comes from the scene's own bed behind each pixel.
+		// The water's depth comes from the scene's own bed behind each pixel, or from the shapes.
 		sceneInputs: ['sceneDepth'],
-		textures: { mirror, foamMap },
+		textures: { mirror, foamMap, junctionMap },
 		uniforms: {
 			ripple: options.ripple ?? RIPPLE,
 			softness: options.softness ?? SOFTNESS,
 			caustics: [0, 0, 0],
 			foamOrigin: [foamOrigin[0], foamOrigin[1]],
 			foamSize: [foamSize[0], foamSize[1]],
+			junctionOrigin: junction ? [junction.origin[0], junction.origin[1]] : [0, 0],
+			junctionSize: junction ? [junction.size[0], junction.size[1]] : [0, 0],
+			bedFromShape: bedFromShape ? 1 : 0,
 		},
 	});
-	const meshes = bodies.map((body, index) =>
-		scene.createMesh({
-			mesh: geometry.fromArrays(
-				bodyMesh(
-					(Array.isArray(options.shapes) ? options.shapes[index] : options.shapes) as WaterShape,
-					body,
-					level,
-					options.mesh ?? {},
-				),
-			),
+	let meshBytes = 0;
+	const meshes = arrays.map((mesh) => {
+		meshBytes += meshArrayBytes(mesh);
+		return scene.createMesh({
+			mesh: geometry.fromArrays(mesh),
 			material,
 			position: [0, 0, 0],
 			receiveShadows: true,
-		}),
-	);
+		});
+	});
 	// The feature carries the cadence through the sketch's quality: the preset gives the row, and
 	// the frame-budget governor doubles it while frames take too long. The stats overlay reads the
 	// cadence and the pass's share of a frame from the host's figures.
 	let every = 1;
+	/** True while the `water-bounds` debug view draws. */
+	let debugBounds = false;
 	const host = new FeatureHost({
 		quality,
 		tier: ctx.engine.capabilities.tier,
@@ -298,6 +362,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	host.add(
 		defineFeature({
 			name: 'water',
+			gpu: { passes: [pass] },
 			settings: {
 				reflectionEvery: {
 					presets: cadenceRow(options.reflectionEvery),
@@ -306,17 +371,40 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 				},
 			},
 			budget: { presets: REFLECT_MS, min: 0.25 },
+			// The reflection target is the render graph's, so the figure counts the arrays, the
+			// junction map and the foam texture that the add-on made.
+			memory: () => meshBytes + junctionMap.bytes + (ownFoam ? foamMap.bytes : 0),
 			quality: (_preset, _settings, own) => {
 				every = own.settings.reflectionEvery as number;
 			},
+			// A debug view of the add-on's own: the bounds of each water body at the surface.
+			debugViews: [
+				{
+					name: 'water-bounds',
+					set: (active) => {
+						debugBounds = active;
+					},
+				},
+			],
 		}),
 	);
 	let frame = 0;
 	const current: [number, number] = [0, 0];
 	const causticLight: [number, number, number] = [0, 0, 0];
+	const still: [number, number] = [0, 0];
+	const carried: [number, number] = [0, 0];
+	// The body that owns a point: the one that the junction map names, else a lake whose shore holds
+	// it, else the first body that holds it, as the surface draws them.
 	const over = (x: number, z: number): WaterBody | undefined => {
-		for (const body of bodies) if (body.contains(x, z)) return body;
-		return undefined;
+		const owner = junction?.ownerAt(x, z) ?? -1;
+		if (owner >= 0) return bodies[owner];
+		let first: WaterBody | undefined;
+		for (const body of bodies)
+			if (body.contains(x, z)) {
+				if (body.kind === 'lake') return body;
+				first ??= body;
+			}
+		return first;
 	};
 	return {
 		level,
@@ -325,6 +413,11 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			return every;
 		},
 		update() {
+			// The add-on draws its own debug view: each body's bounds at the water's surface.
+			if (debugBounds) {
+				for (const body of bodies)
+					ctx.debug.box([body.minX, level, body.minZ], [body.maxX, level, body.maxZ], '#4fc3f7');
+			}
 			if (every <= 1) {
 				render.setPassEnabled(pass, true);
 				return;
@@ -333,8 +426,16 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			render.setPassEnabled(pass, frame === 0);
 		},
 		surfaceHeight(x, z, t) {
+			const ripple = options.ripple ?? RIPPLE;
 			(over(x, z) ?? bodies[0])?.currentAt(x, z, current);
-			return waveHeight(x, z, t, level, current, options.ripple ?? RIPPLE);
+			if (!junction) return waveHeight(x, z, t, level, current, ripple);
+			const share = junction.shareAt(x, z);
+			const flatness = junction.flatnessAt(x, z);
+			if (share >= 1 && flatness <= 0) return waveHeight(x, z, t, level, current, ripple);
+			const moving = junction.currentAt(x, z, carried) ? carried : current;
+			let height = waveHeight(x, z, t, level, moving, ripple);
+			if (share < 1) height += (waveHeight(x, z, t, level, still, ripple) - height) * (1 - share);
+			return level + (height - level) * (1 - flatness);
 		},
 		currentAt(x, z, out) {
 			const body = over(x, z);
@@ -363,6 +464,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			for (const mesh of meshes) mesh.destroy();
 			render.removePass(pass);
 			material.destroy();
+			junctionMap.destroy();
 			if (ownFoam) foamMap.destroy();
 		},
 	};

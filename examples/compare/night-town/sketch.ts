@@ -20,6 +20,7 @@ import {
 	quat,
 	type SpotLight,
 } from '@null3d/engine';
+import { createWetSurface } from '../../addons/weather/index';
 import {
 	effectsFromText,
 	gradeTable,
@@ -119,7 +120,8 @@ interface Blocks {
 }
 
 export default defineSketch(
-	async ({ scene, geometry, materials, textures, assets, post, quality, page, render }) => {
+	async (ctx) => {
+		const { scene, geometry, materials, textures, assets, post, quality, page } = ctx;
 		const params = new URL(import.meta.url).searchParams;
 		const capacity = nightBlocks(Number(params.get('capacity') ?? NIGHT_HOLD.count));
 		const effects = effectsFromText(params.get('effects'));
@@ -210,38 +212,46 @@ export default defineSketch(
 			timed.push(material);
 			return material;
 		});
-		const reflection = effects.reflections
-			? render.addPass({
-					kind: 'reflection',
-					writes: 'street',
-					plane: { point: [0, 0, 0] },
-					scale: 0.5,
-				})
-			: null;
-		const black = textures.fromData({
-			width: 1,
-			height: 1,
-			data: new Uint8Array([0, 0, 0, 255]),
-			colorSpace: 'linear',
+		// The weather add-on owns the water on the street: its planar mirror pass, its values and the
+		// black stand-in for a run with the reflections off. The street keeps its maps and its paint.
+		const wet = createWetSurface(ctx, {
+			...(effects.reflections
+				? {
+						reflection: {
+							name: 'street',
+							scale: 0.5 as const,
+							// The comparison draws in every frame, as three.js's reflector does.
+							every: { low: 1, medium: 1, high: 1, ultra: 1 },
+						},
+					}
+				: { reflection: false }),
+			coverage: look.street.puddleShare,
+			softness: 0.035,
+			rippleSize: 0.6,
+			rippleRate: 0.85,
+			// The street applies its own tone, so the block adds no second darkening.
+			darken: 1,
+			mirrorShare: effects.reflections ? 1 : 0,
+			wetRoughness: 0.03,
+			rippleStrength: 0.35,
+			rain: 1,
+			grainScale: 1.4,
+			roadMirror: look.street.wetMirror,
 		});
 		const streetMaterial = materials.shader({
 			wgsl: STREET_WGSL,
 			uniforms: {
-				time: 0,
-				puddleShare: look.street.puddleShare,
 				wetDarken: look.street.wetDarken,
-				mirrorShare: reflection ? 1 : 0,
-				wetMirror: look.street.wetMirror,
+				...wet.uniforms,
 			},
 			textures: {
 				colorMap: upload(street.color),
 				ormMap: upload(street.orm),
 				normalMap: upload(street.normal),
 				puddleMap: upload(street.puddles),
-				mirror: reflection ? textures.fromPass(reflection) : black,
+				wetMirror: wet.textures.wetMirror,
 			},
 		});
-		timed.push(streetMaterial);
 		const neon = NEON_COLORS.map((color) => {
 			const material = materials.shader({
 				wgsl: NEON_WGSL,
@@ -656,6 +666,8 @@ export default defineSketch(
 			for (const batch of flyers) batch.markDirty();
 			time.time = seconds;
 			for (const material of timed) material.set(time as never);
+			// The street's water moves with the clock, and its values reach the street's material.
+			wet.update(streetMaterial, seconds);
 			for (let b = 0; b < town.activeBlocks; b++)
 				for (const sign of signLights[b] ?? [])
 					sign.light.setIntensity(look.sign.intensity * signFlicker(seconds, sign.lotX, sign.lotZ));

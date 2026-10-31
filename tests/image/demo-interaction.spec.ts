@@ -3,16 +3,33 @@
 // sketch time of the frame that answered. A hover leads the math demo's lamp and leaves its camera
 // alone. In the instances demo, a drag hands the scripted camera over to the user with no jump, the
 // script then stops moving it, and the wheel zooms. In the walk and fly demo, a key hands the
-// scripted walk over to first-person controls, and Space switches to fly controls.
+// scripted walk over to first-person controls, and Space switches to fly controls. In the weighted
+// transparency demo, a key and the controls HUD swap the two blends and the picture follows, while
+// the pointer leaves the blend alone.
 // CI's software GPU draws only a few frames a second, and a frame's step is at most 0.25 s, so
 // sketch time can run slower than the page's. Every check therefore waits on sketch time or on a
 // condition, never on the page's clock alone.
 import { expect, type Page, test } from '@playwright/test';
+import { frameDifference, readFrame } from '../lib/canvas-frame.ts';
 import { pageResult } from '../lib/page-result.ts';
 import type { DemoProbe } from '../pages/lib/demo-probe.ts';
 
 /** How long a wait on sketch time or on a condition may take, in milliseconds of page time. */
 const PATIENCE = 60_000;
+/**
+ * How long the engine's first frame may take to arrive during the swap test. The page takes its
+ * loading overlay away on that frame, and a picture read before it is an empty canvas, so the read
+ * would pay the frame loop's whole wait for a frame that is not coming. A software GPU builds every
+ * pipeline before its first frame, and that took over three minutes on a busy runner.
+ */
+const FIRST_FRAME_MS = 300_000;
+/**
+ * How long a key's change of the blend may take to show in the canvas. A switch costs the page work
+ * and a frame read costs the frame loop a whole frame, so on a software GPU one read can take many
+ * seconds and a few of them fill a minute before the change is in a frame. The showcase HUD tests
+ * allow their switches three minutes for the same reason.
+ */
+const CHANGE_MS = 180_000;
 
 /** Opens a demo on the probe page, and collects the page's errors. */
 async function open(page: Page, demo: string): Promise<string[]> {
@@ -42,8 +59,12 @@ const apart = (a: number[], b: number[]) =>
 	Math.hypot(...a.map((value, k) => value - (b[k] as number)));
 
 // Each test waits several times, for the page's start and then for each probe, so it may take
-// longer than the default limit on a slow GPU.
-test.describe.configure({ timeout: 240_000 });
+// longer than the default limit on a slow GPU. The swap test also waits for the engine's first
+// frame, which on a busy software renderer can take minutes past the page's own start, so the limit
+// covers the worst case of every wait in it rather than the common one.
+// Each test opens a demo page of its own, so they run in parallel: as one group they held a shard
+// for as long as all four take, which set the floor under every shard's time.
+test.describe.configure({ mode: 'parallel', timeout: 780_000 });
 
 /** The probe of the first frame at or after the sketch time `time`. */
 async function probeAt(page: Page, time: number): Promise<DemoProbe> {
@@ -176,5 +197,79 @@ test('a key hands the walk and fly demo to first-person controls, and Space to f
 	const flown = await probeAt(page, later.time + 1.5);
 	await page.keyboard.up('KeyR');
 	expect(flown.camera[1]).toBeGreaterThan(3.5);
+	expect(errors).toEqual([]);
+});
+
+test('a key swaps the weighted demo between its two blends, as the HUD does, and the pointer does not', async ({
+	page,
+}) => {
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	page.on('console', (message) => {
+		if (message.type() === 'error' && !message.location().url.endsWith('/favicon.ico'))
+			errors.push(message.text());
+	});
+	// The demos page publishes its running engine behind ?bench, which reads the canvas with no page
+	// element over it. The Low preset draws the same blend several times faster on a software GPU.
+	await page.goto('/examples/index.html?demo=weighted-transparency&preset=low&bench');
+	await page.waitForFunction(
+		() => (globalThis as { __null3dEngine?: unknown }).__null3dEngine !== undefined,
+		undefined,
+		{ timeout: PATIENCE },
+	);
+	// The label over the brazier names the blend on show.
+	const label = page.locator('.label');
+	await expect(label).toHaveText('Weighted blending', { timeout: PATIENCE });
+	// The page takes its loading overlay away on the engine's first frame, and a read before that
+	// one waits on a frame that is not coming, so the checks start from that frame.
+	await expect(page.locator('.loader')).toHaveCount(0, { timeout: FIRST_FRAME_MS });
+	// The scene's own drift over the gap that the key's change is measured over.
+	const before = await readFrame(page);
+	await page.waitForTimeout(400);
+	const rest = await readFrame(page);
+	const drift = frameDifference(rest, before);
+	// A hover over the right half of the canvas leaves the blend alone.
+	const box = await page.locator('canvas').boundingBox();
+	if (!box) throw new Error('the page has no canvas');
+	await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.5);
+	await page.mouse.move(box.x + box.width * 0.8 + 2, box.y + box.height * 0.5 + 2);
+	await page.waitForTimeout(1500);
+	await expect(label).toHaveText('Weighted blending');
+	// The key swaps the blend, and the picture changes by more than the scene drifts over the same
+	// gap. A slow GPU may draw no frame within a fixed wait, so the difference is polled.
+	const parked = await readFrame(page);
+	await page.keyboard.press('KeyS');
+	await expect(label).toHaveText('Sorted blending', { timeout: PATIENCE });
+	let change = 0;
+	await expect
+		.poll(
+			async () => {
+				change = frameDifference(await readFrame(page), parked);
+				return change;
+			},
+			{ timeout: CHANGE_MS },
+		)
+		.toBeGreaterThan(Math.max(2, drift * 3));
+	// A second press gives the weighted blending back.
+	await page.keyboard.press('KeyS');
+	await expect(label).toHaveText('Weighted blending', { timeout: PATIENCE });
+	// The controls HUD names the blend and the key, and its buttons pick a blend with no keyboard.
+	await page.locator('.hud__chevron').click();
+	const blend = page.locator('#hud-panel-blend');
+	const weighted = blend.getByRole('button', { name: /Weighted/ });
+	const sorted = blend.getByRole('button', { name: /Sorted/ });
+	await expect(page.getByRole('tab', { name: 'Blending' })).toHaveAttribute(
+		'aria-selected',
+		'true',
+	);
+	await expect(weighted).toHaveAttribute('aria-pressed', 'true');
+	await expect(sorted).toContainText('S');
+	await sorted.click();
+	await expect(label).toHaveText('Sorted blending', { timeout: PATIENCE });
+	await expect(sorted).toHaveAttribute('aria-pressed', 'true');
+	// The key and the HUD set one mode, so the key turns the HUD's pick back.
+	await page.keyboard.press('KeyS');
+	await expect(label).toHaveText('Weighted blending', { timeout: PATIENCE });
+	await expect(weighted).toHaveAttribute('aria-pressed', 'true');
 	expect(errors).toEqual([]);
 });

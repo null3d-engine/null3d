@@ -7,9 +7,11 @@
 
 import type { QualityPreset } from '../quality/presets';
 import { stepMs } from '../shared/gpu-clock';
+import { scopeName, scopePlace } from '../shared/gpu-scope';
 import { MEMORY_AREA_COUNT, MEMORY_AREA_VALUES } from '../shared/memory-area';
 import {
 	Counter,
+	GPU_TIMED_PASSES,
 	GpuCounter,
 	memoryAreaFigures,
 	memoryFigures,
@@ -40,6 +42,28 @@ export interface FrameStatsThread {
 	readonly busyMs: number;
 	/** Mean CPU time per frame of each phase, in milliseconds: 0 for a phase that runs elsewhere. */
 	readonly phases: Readonly<Record<PhaseName, number>>;
+}
+
+/**
+ * The GPU time per frame of one step of the frame, as the stats overlay shows it and
+ * `debug.frameStats` returns it.
+ *
+ * @category api/debug
+ */
+export interface FrameStatsStep {
+	/** The step's name, such as `shadows` or `bloom 2`, or a sketch pass's own name. */
+	readonly name: string;
+	/**
+	 * The step's GPU time per frame in milliseconds, over the frames the GPU timed that recorded
+	 * the step. A step that some frames leave out, such as a reflection that draws every other
+	 * frame, reports the time of the frames that draw it.
+	 */
+	readonly ms: number;
+	/**
+	 * @internal The render pass that the step draws into, or 0 for a step of the engine's own. A
+	 * feature's scope names its passes by this place.
+	 */
+	readonly place: number;
 }
 
 /**
@@ -87,6 +111,14 @@ export interface FrameStats {
 	 * window before it.
 	 */
 	readonly gpuStepMs: number | null;
+	/**
+	 * The GPU time per frame of each step of the frame that the GPU timed one by one, in the order
+	 * the frame runs them: the engine's own passes, by their step, and a sketch's pass by its place.
+	 * A tile GPU overlaps the passes, so the steps do not add up to `gpuMs`. The engine times one
+	 * frame in eleven and at most seven passes in it. A pass after them adds its time to the last
+	 * one's, whose name then ends in `and later`. Empty on WebGL2, which times the whole frame alone.
+	 */
+	readonly gpuSteps: readonly FrameStatsStep[];
 	/** Mean draw calls per frame, over every pass. */
 	readonly drawCalls: number;
 	/**
@@ -247,6 +279,40 @@ function drawnMean(sums: Float64Array, counter: number): number {
 		(sums[SUM_RECORDS] as number) - (sums[SUM_COUNTERS + Counter.UncountedFigures] as number);
 	return records > 0 ? (sums[SUM_COUNTERS + counter] as number) / records : 0;
 }
+
+/** The steps before the first window: none. */
+const NO_STEPS: readonly FrameStatsStep[] = Object.freeze([]);
+
+/**
+ * The GPU time per frame of each pass that the GPU records timed one by one, by its scope, over
+ * the frames that timed the pass. A pass that the GPU left untimed stays out of the list.
+ */
+function gpuStepsOf(gpu: RingSums): readonly FrameStatsStep[] {
+	const steps: FrameStatsStep[] = [];
+	const copies = gpu.phaseRecords[0] as number;
+	if (copies > 0)
+		steps.push({
+			name: 'copies',
+			ms: (gpu.phaseSums[0] as number) / copies,
+			place: 0,
+		});
+	const passes = Math.min(gpu.last[GpuCounter.Passes] as number, GPU_TIMED_PASSES);
+	// A pass after the last one timed adds its time to that one's, so the last step names the rest.
+	const rest = (gpu.last[GpuCounter.Passes] as number) > GPU_TIMED_PASSES;
+	for (let pass = 0; pass < passes; pass++) {
+		const timed = gpu.phaseRecords[1 + pass] as number;
+		if (timed <= 0) continue;
+		const id = gpu.last[GpuCounter.Scope + pass] as number;
+		const name = scopeName(id);
+		steps.push({
+			name: rest && pass === GPU_TIMED_PASSES - 1 ? `${name} and later` : name,
+			ms: (gpu.phaseSums[1 + pass] as number) / timed,
+			place: scopePlace(id),
+		});
+	}
+	return Object.freeze(steps);
+}
+
 /**
  * Reads frame figures from a metrics buffer. Each `update` takes in the records written since the
  * last one; once the presented frames in them cover a window, it publishes the window's figures to
@@ -288,7 +354,8 @@ export class FrameStatsWindow {
 		this.values[RENDER_SCALE] = sources.renderScaleThousandths() / 1000;
 		this.values[GPU_MS] = -1;
 		this.values[GPU_STEP_MS] = -1;
-		this.gpu = new RingSums(buffer, Role.Gpu, false, GpuCounter.Tick);
+		// The sums keep each pass's time, which the overlay lists as the frame's steps.
+		this.gpu = new RingSums(buffer, Role.Gpu, true, GpuCounter.Tick, true);
 		this.memory = memoryFigures(buffer);
 		this.publishedAreas = memoryAreaFigures(buffer);
 		const ring = (role: number): RingSums => {
@@ -323,6 +390,7 @@ export class FrameStatsWindow {
 		stats.tier = sources.tier;
 		stats.preset = sources.preset();
 		stats.memoryAreas = this.areas;
+		stats.gpuSteps = NO_STEPS;
 		this.published = stats;
 		this.stats = stats;
 	}
@@ -355,6 +423,7 @@ export class FrameStatsWindow {
 			values[GPU_MS] = mean(gpu, SUM_BUSY_MS);
 			const step = stepMs(this.gpu.commonStep);
 			values[GPU_STEP_MS] = step ?? -1;
+			this.published.gpuSteps = gpuStepsOf(this.gpu);
 			this.gpu.clear();
 		}
 		let busiest = 0;

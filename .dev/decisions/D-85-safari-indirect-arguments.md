@@ -1,8 +1,8 @@
 # D-85: Indirect draws on Safari 26: each draw reads its own copy of its arguments
 
-Status: decided; since [D-87](D-87-webkit-indirect-arguments.md), the copies run only in Apple's WebKit. Date: 2026-10-06. Task: fix/safari-gate-1006 (an M1 gate failure).
+Status: decided. Built: the copies, which run only in Apple's WebKit ([D-87](D-87-webkit-indirect-arguments.md)). Task: an M1 gate failure.
 
-Summary: Safari 26 can hang the GPU when a pass draws indirect twice from one buffer (WebKit bug 321876). Before such a pass, the WebGPU backend copies each draw's 20 bytes of arguments into a buffer of its own, in Apple's WebKit only since D-87.
+Summary: Safari 26 can hang the GPU when a pass draws indirect twice from one buffer (WebKit bug 321876). Before such a pass, the WebGPU backend copies each draw's 20 bytes of arguments into a buffer of its own, in Apple's WebKit only (D-87).
 
 ## Question
 
@@ -11,14 +11,14 @@ Safari 26 can hang the GPU when one render pass holds two indexed indirect draws
 ## Rule
 
 - No GPU reset, and the right image, in Safari 26 on WebGPU and in compatibility mode.
-- The WebGPU backend cannot tell browsers apart (hard rule 14). The fix runs in every browser, so its cost in Chrome must be too small to measure, or within the noise of the benchmark comparison.
+- The WebGPU backend does not tell browsers apart (hard rule 14), except where [D-87](D-87-webkit-indirect-arguments.md) allows it. A fix that runs in every browser must cost too little in Chrome to measure, or stay within the noise of the benchmark comparison.
 - No allocation in steady frames, and no change to what the culling pass computes.
 
 ## Data
 
-The fault is WebKit bug 321876, which WebKit fixed in August 2026 (commit 6dca6330), after Safari 26 shipped. Safari clamps each indirect draw's arguments into a scratch slot before the draw. Safari 26 keeps one slot per buffer, and nothing makes a draw read the slot before the next draw's clamp writes it again. So a draw can run with the next draw's counts, or a mix of the two.
+The fault is WebKit bug 321876, which WebKit commit 6dca6330 fixes. Safari 26 shipped without that commit. Safari clamps each indirect draw's arguments into a scratch slot before the draw. Safari 26 keeps one slot per buffer, and nothing makes a draw read the slot before the next draw's clamp writes it again. So a draw can run with the next draw's counts, or a mix of the two.
 
-Safari 26.6.2 on the owner's Mac (M5 Max), 6 October 2026:
+Safari 26.6.2 on the owner's Mac (M5 Max):
 
 | Page | Result |
 | --- | --- |
@@ -44,18 +44,18 @@ Chrome 154.0.8037.98 on the Mac at 144 Hz, load 11.9 at the start and 21.2 at th
 
 ## Options
 
-1. Copy each draw's 20 bytes of arguments into a small buffer of its own before the pass. Do so when the pass holds two or more indexed indirect draws. Chosen.
+1. Copy each draw's 20 bytes of arguments into a small buffer of its own before the pass. Do so when the pass holds two or more indexed indirect draws. Chosen, in Apple's WebKit only (option 5).
 2. Begin a new render pass for each indirect draw. It also passed, but each new pass loads and stores the targets again. That costs a tile-based GPU memory traffic for every bucket, in every view and every frame.
 3. Read instances and vertices from storage buffers, so that Safari does not clamp the draws. Compatibility mode allows no storage buffers in vertex shaders, and every pipeline would change.
 4. Two argument buffers taken in turn. Then only Metal's barriers would end a draw's read of its arguments before a later draw's clamp writes them. WebKit's fix says that no barrier can name that read.
-5. Copies in Safari only. Hard rule 14 forbids choosing by browser, and a feature test would need a GPU hang to see the fault. Rejected at first; the owner later chose it as a narrow exception to rule 14 ([D-87](D-87-webkit-indirect-arguments.md)), once the copies proved to double S4's GPU time in Chrome.
+5. Copies in Safari only. Hard rule 14 forbids choosing by browser, and a feature test would need a GPU hang to see the fault. The owner chose it as a narrow exception to rule 14, because the copies double S4's GPU time in Chrome ([D-87](D-87-webkit-indirect-arguments.md)).
 
 ## Decision
 
-Option 1. The backend (`gpu/webgpu/indirect-arguments.ts`) finds the pass's indexed indirect draws when the pass begins, its bundles included. It copies each one's arguments into a buffer of its own, which it makes once and keeps. A buffer that indirect draws read is made as a copy source too. A pass with one indirect draw copies nothing. In Chrome, the copies cost no CPU time that the comparison can measure. The comparison did not look at GPU time, which the copies doubled in S4: [D-87](D-87-webkit-indirect-arguments.md) has the figures, and limits the copies to Apple's WebKit.
+Option 1. The backend (`gpu/webgpu/indirect-arguments.ts`) finds the pass's indexed indirect draws when the pass begins, its bundles included. It copies each one's arguments into a buffer of its own, which it makes once and keeps. A buffer that indirect draws read is made as a copy source too. A pass with one indirect draw copies nothing. In Chrome, the copies cost no CPU time that the comparison can measure, but they double S4's GPU time. So [D-87](D-87-webkit-indirect-arguments.md) limits the copies to Apple's WebKit, and gives the figures.
 
 ## Consequences
 
-- The culled passes run the same draws as before, from copies of their arguments. The culling pass and the draw list do not change.
-- When Safari's fix has shipped and the engine's minimum Safari has it, the copies can go. [D-64](D-64-minimum-browsers.md) sets the minimum: Safari 18 today.
+- The culled passes run the same draws, from copies of their arguments. The culling pass and the draw list do not change.
+- When Safari's fix has shipped and the engine's minimum Safari has it, the copies can go. [D-64](D-64-minimum-browsers.md) sets the minimum, which is Safari 18.
 - [Implementation notes](../implementation-notes.md#browser-faults) give the evidence. [Device sessions](../devices.md#browser-apps-on-the-mac) say to hunt such faults only while the owner is away, because a GPU reset disturbs the whole Mac.

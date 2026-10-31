@@ -1,24 +1,34 @@
 // The examples page of a clone. A sidebar lists the demos by group, and the panel beside it runs
 // the demo that ?demo=<name> names, or the comparison with three.js that ?compare=<name> names
 // (compare-page.ts), on a canvas that fills the panel. Each link loads the page
-// afresh, so the engine of the last demo stops with its workers and memory. Without ?demo=, the
+// afresh, so the engine of the last demo stops with its workers and memory; the sidebar keeps its
+// scroll position across that load. Without ?demo=, the
 // panel shows a short welcome. In a narrow window, the sidebar is a drawer that the menu button
-// opens. The engine reads its own switches from the address: ?hold=2 draws the frame at 2 seconds
-// that the demo's image test holds, and ?gpu=webgl2 forces a GPU path. The page's links are
+// opens. In a development build the engine also reads its own switches from the address: ?hold=2
+// draws the frame at 2 seconds that the demo's image test holds, and ?gpu=webgl2 forces a GPU path.
+// A production build reads no switches, so this page reads ?preset= itself and gives it to the
+// demo's engine, and keeps it in the sidebar's links. The page's links are
 // relative, so it runs under any address prefix. It is one layout of the demos: another page can
 // show them its own way with the list and startDemo.
 
+import type { QualityPreset } from '@null3d/engine';
 import { COMPARE_GROUP, COMPARISONS } from './compare/comparisons';
 import { runComparison } from './compare-page';
 import { DEMO_GROUPS, DEMOS, type Demo } from './demos';
 import { startDemo } from './lib/run';
 import { sourceUrl } from './lib/source';
 
+/** The quality presets that `?preset=` may name, from the lightest. A production build reads no
+ * URL switches, so this page reads the preset itself and gives it to each demo's engine. */
+const PRESETS: readonly QualityPreset[] = ['low', 'medium', 'high', 'ultra'];
+
 const params = new URLSearchParams(location.search);
 const name = params.get('demo');
 const current = DEMOS.find((demo) => demo.name === name);
 const compareName = params.get('compare');
 const comparison = COMPARISONS.find((entry) => entry.name === compareName);
+const wanted = params.get('preset');
+const preset = PRESETS.find((entry) => entry === wanted);
 
 const nav = document.querySelector('nav') as HTMLElement;
 const menu = document.querySelector('.menu') as HTMLButtonElement;
@@ -35,8 +45,40 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, text = '', href?
 	return node;
 }
 
-/** The address of a demo's page. */
-const demoLink = (demo: Demo) => `?demo=${demo.name}`;
+/** The address of a demo's page, keeping the preset that the address named. */
+const demoLink = (demo: Demo) =>
+	preset === undefined ? `?demo=${demo.name}` : `?demo=${demo.name}&preset=${preset}`;
+
+/**
+ * The sidebar's place in this tab. Each link loads the page afresh, which is what stops the last
+ * demo's engine and its workers, so the place is kept here rather than in the page.
+ */
+const NAV_SCROLL = 'null3d.demos.navScroll';
+
+/** Puts the sidebar back where this tab left it, when it has been here before. */
+function restoreNavScroll(): void {
+	try {
+		const saved = sessionStorage.getItem(NAV_SCROLL);
+		if (saved !== null) nav.scrollTop = Number(saved);
+	} catch {
+		// A browser that refuses storage opens the sidebar at its top.
+	}
+}
+
+/** Remembers the sidebar's place, so the next demo's load keeps it. */
+function rememberNavScroll(): void {
+	nav.addEventListener(
+		'scroll',
+		() => {
+			try {
+				sessionStorage.setItem(NAV_SCROLL, String(nav.scrollTop));
+			} catch {
+				// A browser that refuses storage opens the sidebar at its top next time.
+			}
+		},
+		{ passive: true },
+	);
+}
 
 /** A demo's title, then its scene as a smaller sub-title under it, on its own line. */
 function heading(demo: Demo): (string | HTMLElement)[] {
@@ -152,7 +194,14 @@ async function runDemo(demo: Demo): Promise<void> {
 	path.setAttribute('stroke-linejoin', 'round');
 	svg.append(path);
 	chevron.append(svg);
-	title.append(h1, chevron);
+	title.append(h1);
+	// The demo's keys sit under its title, so a reader finds them without pressing at random.
+	if (demo.controls) {
+		const keys = element('span', demo.controls);
+		keys.className = 'controls';
+		title.append(keys);
+	}
+	title.append(chevron);
 	caption.append(title, element('p', demo.summary));
 	const code = element('a', 'View code', sourceUrl(demo));
 	code.target = '_blank';
@@ -176,7 +225,7 @@ async function runDemo(demo: Demo): Promise<void> {
 		stage.append(hud);
 	}
 	try {
-		await startDemo({ canvas, demo, labels, choices, hud });
+		await startDemo({ canvas, demo, labels, choices, hud, preset });
 	} catch (error) {
 		const message = element('p', error instanceof Error ? error.message : String(error));
 		message.className = 'error';
@@ -186,6 +235,8 @@ async function runDemo(demo: Demo): Promise<void> {
 }
 
 listDemos();
+restoreNavScroll();
+rememberNavScroll();
 handleDrawer();
 if (comparison) void runComparison(stage, comparison);
 else if (current) void runDemo(current);

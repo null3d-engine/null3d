@@ -140,9 +140,12 @@ struct CullParams {
     /// The view's row of the cell offsets texture.
     offsets_row: u32,
     /// What the level choice reads: the level factor (0 for none), 1 for an orthographic camera,
-    /// whose distance counts as 1, the share of a switch distance that a fading band covers, and a
-    /// spare.
+    /// whose distance counts as 1, the share of a switch distance that a fading band covers, and
+    /// the projection's P[1][1].
     levels: vec4f,
+    /// The first word is 1 while the levels debug view draws, whose copies carry each source's
+    /// level code in place of the fade value. The rest are spare.
+    debug: vec4u,
     /// Each run: its first position in the cell order, its end, and its first workgroup.
     ranges: array<vec4u, MAX_RANGES>,
     /// What the occlusion phases read. Other views leave it unset.
@@ -182,6 +185,9 @@ struct Bucket {
     /// What the switch value measures: the level's error, a distance, or a share of the screen's
     /// height.
     level_switch: u32,
+    /// The level of detail that the bucket draws, from 0, which the levels debug view writes
+    /// beside each copy.
+    level: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: CullParams;
@@ -225,6 +231,25 @@ const SWITCH_COVERAGE: u32 = 2u;
 
 /// The bucket of an instance that draws nowhere.
 const HIDDEN: u32 = 0xffffffffu;
+
+/// The bits of a level code, which the levels debug view reads in place of a copy's fade value:
+/// the level in the lowest bits, a mark for a source that the size rule or a draw range hid, the
+/// share of a fading band that the level keeps, and the sign that names the band's side. The
+/// levels view's shader reads the same bits.
+const LEVEL_CODE_LEVEL_MAX: u32 = 7u;
+const LEVEL_CODE_HIDDEN: u32 = 1u << 3u;
+const LEVEL_CODE_FADE_SHIFT: u32 = 4u;
+const LEVEL_CODE_FADE_MAX: u32 = 63u;
+const LEVEL_CODE_NEGATIVE: u32 = 1u << 10u;
+
+/// The code of a draw at level `level`, of a source that `hidden` hides, at fade `fade`.
+fn level_code(level: u32, hidden: bool, fade: f32) -> u32 {
+    let share = u32(round(clamp(abs(fade), 0.0, 1.0) * f32(LEVEL_CODE_FADE_MAX)));
+    return (level & LEVEL_CODE_LEVEL_MAX)
+        | select(0u, LEVEL_CODE_HIDDEN, hidden)
+        | (share << LEVEL_CODE_FADE_SHIFT)
+        | select(0u, LEVEL_CODE_NEGATIVE, fade < 0.0);
+}
 /// A bucket's first joint that sends each copy to its source's own in `skin_firsts`.
 const PER_SOURCE_JOINT: u32 = 0xffffffffu;
 /// Sources per row of the skin firsts texture are 1 << INDEX_ROW_SHIFT.
@@ -400,8 +425,13 @@ fn append(s: Survivor, level: Level, draws_before: u32) {
     let band = params.levels.z;
     let new_fade = buckets[level.bucket].fade;
     let old_fade = buckets[level.before].fade;
-    // A source outside its distance range draws nothing.
+    let debug = params.debug.x != 0u;
+    // A source outside its distance range draws nothing, apart from the mark that the levels
+    // debug view draws at its base level.
     if level.distance < level.start || level.distance > level.end {
+        if debug {
+            append_to(s, s.bucket, draws_before, 0.0, true);
+        }
         return;
     }
     // Inside each edge of it, the share of the pixels that the dither keeps grows to one, or falls
@@ -409,36 +439,42 @@ fn append(s: Survivor, level: Level, draws_before: u32) {
     if band > 0.0 && new_fade != 0u {
         if level.start > 0.0 && level.distance < level.start * (1.0 + band) {
             let t = (level.distance / level.start - 1.0) / band;
-            append_to(s, new_fade - 1u, draws_before, max(t, 1e-6));
+            append_to(s, new_fade - 1u, draws_before, max(t, 1e-6), false);
             return;
         }
         if level.distance > level.end / (1.0 + band) {
             let inner = level.end / (1.0 + band);
             let t = (level.distance - inner) / (level.end - inner);
-            append_to(s, new_fade - 1u, draws_before, -max(t, 0.0));
+            append_to(s, new_fade - 1u, draws_before, -max(t, 0.0), false);
             return;
         }
     }
     if level.bucket != s.bucket && band > 0.0 && new_fade != 0u && old_fade != 0u {
         let t = level.past / band;
         if t < 1.0 {
-            append_to(s, new_fade - 1u, draws_before, max(t, 1e-6));
-            append_to(s, old_fade - 1u, draws_before, -max(t, 0.0));
+            append_to(s, new_fade - 1u, draws_before, max(t, 1e-6), false);
+            append_to(s, old_fade - 1u, draws_before, -max(t, 0.0), false);
             return;
         }
     }
     if level.hidden {
         if band > 0.0 && new_fade != 0u && level.hide_past < band {
-            append_to(s, new_fade - 1u, draws_before, -max(level.hide_past / band, 0.0));
+            append_to(s, new_fade - 1u, draws_before, -max(level.hide_past / band, 0.0), false);
+        } else if debug {
+            // The size rule hides the source, or its bounds cover fewer pixels than the
+            // threshold: the levels view draws its base level marked as hidden.
+            append_to(s, s.bucket, draws_before, 0.0, true);
         }
         return;
     }
-    append_to(s, level.bucket, draws_before, 0.0);
+    append_to(s, level.bucket, draws_before, 0.0, false);
 }
 
 /// Appends an instance in the view to bucket `b`'s slice with the fade value `fade`, and counts it
-/// in each of the bucket's draws, which start `draws_before` draws into the indirect draws.
-fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32) {
+/// in each of the bucket's draws, which start `draws_before` draws into the indirect draws. A
+/// source that `hidden` marks, and every source while the levels debug view draws, carries the
+/// level code that the view's shader reads in place of the fade value.
+fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32, hidden: bool) {
     let bucket = buckets[b];
     let first = (draws_before + bucket.first_draw) * INDIRECT_WORDS + 1u;
     let slot = atomicAdd(&indirect[first], 1u);
@@ -458,7 +494,11 @@ fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32) {
     visible[dst] = bitcast<vec4u>(s.r0);
     visible[dst + 1u] = bitcast<vec4u>(s.r1);
     visible[dst + 2u] = bitcast<vec4u>(s.r2);
-    visible[dst + 3u] = vec4u(bucket.material, first_joint, s.index, bitcast<u32>(fade));
+    var fourth = bitcast<u32>(fade);
+    if params.debug.x != 0u {
+        fourth = level_code(bucket.level, hidden, fade);
+    }
+    visible[dst + 3u] = vec4u(bucket.material, first_joint, s.index, fourth);
 }
 
 #ifdef MOTION

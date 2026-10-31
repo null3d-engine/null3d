@@ -43,8 +43,11 @@ const HEAVY_JOB = '\n  browser-heavy:\n';
 const DEFAULT_RUNS = 5;
 /** The count of main's newest passing runs to search for runs with browser jobs. */
 const SEARCH_RUNS = 50;
-/** The workers of each shard: Playwright's default of half the cores of CI's four-core runners. */
-const WORKERS = 2;
+/**
+ * The workers that the browser job's command asks for, or Playwright's default of half the cores of
+ * CI's four-core runners when it asks for none.
+ */
+const WORKERS_LINE = /--workers=(\d+)/;
 /** The workers of each shard of the heavy tests, which run one at a time. */
 const HEAVY_WORKERS = 1;
 
@@ -87,6 +90,12 @@ if (!workflow.includes(HEAVY_JOB) || !heavyCurrent)
 	throw new Error(`${WORKFLOW} has no browser-heavy job with PWTEST_SHARD_WEIGHTS`);
 const currentWeights = current.split(':').map(Number);
 const shards = Number(option('--shards') ?? currentWeights.length);
+// The browser job's command sits after its weights, in the same job's text.
+const browserJobStart = workflow.indexOf('  browser:\n');
+const workers =
+	Number(
+		WORKERS_LINE.exec(workflow.slice(browserJobStart, workflow.indexOf('  browser-heavy:')))?.[1],
+	) || 2;
 const heavyWeights = heavyCurrent.split(':').map(Number);
 const heavyShards = Number(option('--heavy-shards') ?? heavyWeights.length);
 
@@ -252,7 +261,7 @@ function weigh(
 		show(`Weights to ${target} minutes, ${filled.length} shards`, filled);
 	}
 }
-weigh('The browser job', shardedGroups, WORKERS, shards, currentWeights);
+weigh('The browser job', shardedGroups, workers, shards, currentWeights);
 weigh('The heavy tests (browser-heavy)', heavyGroups, HEAVY_WORKERS, heavyShards, heavyWeights);
 
 const aloneGroups = timedGroups(

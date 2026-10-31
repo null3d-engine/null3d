@@ -124,11 +124,13 @@ use crate::exposure::ExposureIds;
 use crate::final_pass::FinalIds;
 use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
-    CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
-    RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows, joined_rows,
-    settled,
+    CanvasOutput, FrameBuilder, FrameInput, HaltFigures, KeyCounts, MaterialStorage, MeshBuffers,
+    ParityLists, RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows,
+    indices_as_bytes, joined_rows, settled, unbound_buffer_bytes,
 };
-use crate::frame_graph::{DrawnViews, FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
+use crate::frame_graph::{
+    DrawnViews, FrameGraph, GraphIds, PrepassColor, Role, ShadowPasses, TilePasses,
+};
 use crate::fullscreen::FullscreenIds;
 use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{LightGrid, LightGrids, LightLimits};
@@ -157,7 +159,7 @@ use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices, write_row_values};
 use layout::{BatchSlot, Clusters, Drawn, Layout, RESIDENT, STREAMED};
 use lights::LightTextures;
-use opaque::{LitTextures, OFFSETS_BYTES, Opaque, Shading, ViewUpload};
+use opaque::{LitTextures, OFFSETS_BYTES, Opaque, PatchView, Shading, ViewUpload};
 use skin::Skins;
 use transparent::Transparent;
 
@@ -348,12 +350,24 @@ mod ids {
     pub const PICK_BUFFERS: u32 = BLANK_LAST + 1;
     /// The bind group of GPU picking's resolve pass.
     pub const PICK_GROUP: u32 = PICK_BUFFERS + crate::pick::RING as u32;
+    /// The buffers of compute pass reads, one for each read that may wait for the GPU.
+    pub const PASS_READ_BUFFERS: u32 = PICK_GROUP + 1;
     /// The buffers of the sky maps' light captures, one for each read that may wait for the GPU.
-    pub const SKY_LIGHT_BUFFERS: u32 = PICK_GROUP + 1;
+    pub const SKY_LIGHT_BUFFERS: u32 = PASS_READ_BUFFERS + crate::readback::RING as u32;
+    /// The index buffer of mesh `mesh`'s tree of cluster patches, which a view draws its chosen
+    /// patches from. It sits above every other id, so its range warns nothing else.
+    pub const PATCH_INDEX: u32 = 1 << 22;
+
+    pub const fn patch_index(mesh: u32) -> u32 {
+        PATCH_INDEX + mesh
+    }
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = SKY_LIGHT_BUFFERS + crate::sky_maps::LIGHT_RING as u32;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
+    /// The scratch textures and state views of the fragment forms of compute passes, above every
+    /// other id so that their ids collide with none and cost the backends no room.
+    pub const FALLBACK_IDS: u32 = 1 << 20;
     /// The uniform buffer of the compute passes' blocks. WebGL2 runs no compute pass, so nothing
     /// uses these, and the graph's ids stay a table of one shape on both builders.
     pub const COMPUTE: u32 = TEXTURE_ARRAYS + 1;
@@ -473,8 +487,14 @@ mod ids {
     /// Group 0 of each compute pass. WebGL2 runs no compute pass, so nothing uses this band, and
     /// it keeps the builder's table the same shape as the other path's.
     pub const COMPUTE_GROUPS: u32 = MOTION_FRAME_GROUPS + 2 * RING;
+    /// Group 0 of each compute pass's second state, after the first states' groups.
+    pub const COMPUTE_HISTORY_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
+    /// One state view for each compute pass's two states, after the groups.
+    pub const COMPUTE_VIEWS: u32 = COMPUTE_HISTORY_GROUPS + MAX_VIEWS as u32;
+    /// The two state textures of each compute pass, after the state views.
+    pub const COMPUTE_STATES: u32 = COMPUTE_VIEWS + 2 * MAX_VIEWS as u32;
     /// The bind groups of temporal anti-aliasing's resolve and copy, after the compute passes'.
-    pub const TAA_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
+    pub const TAA_GROUPS: u32 = COMPUTE_STATES + 2 * MAX_VIEWS as u32;
     /// The bind groups of the moment layer's steps, after temporal anti-aliasing's.
     pub const MOMENT_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
     /// Each camera view's frame group that carries the moment store, after the layer's steps'.
@@ -514,6 +534,9 @@ pub struct CpuCulledConfig {
     /// True to draw each camera view's opaque objects' depth in a depth prepass, before the opaque
     /// pass shades them.
     pub depth_prepass: bool,
+    /// How a depth prepass that a screen step splits from the opaque pass starts the stand-in
+    /// color that it never draws.
+    pub prepass_color: PrepassColor,
     /// How the shadow cascades store depth.
     pub cascade_depth: CascadeDepth,
     /// True when the device draws into one-sample targets of 16-bit floats, which the camera's
@@ -533,6 +556,7 @@ impl Default for CpuCulledConfig {
             cell_culling: true,
             light_limits: LightLimits::default(),
             depth_prepass: false,
+            prepass_color: PrepassColor::default(),
             cascade_depth: CascadeDepth::default(),
             float16_targets: true,
         }
@@ -573,6 +597,8 @@ pub struct CpuCulledRenderer {
     config: CpuCulledConfig,
     settings: SceneSettings,
     lists: ParityLists,
+    /// The upload bound that the frame just recorded used, for a later frame's retry.
+    frame_bound: usize,
     graph: FrameGraph,
     /// The scene's layout, which the camera views draw.
     layout: Layout,
@@ -604,6 +630,9 @@ pub struct CpuCulledRenderer {
     /// True when the scene's layout was built with the depth prepass's pipelines.
     layout_prepass: bool,
     clusters: Clusters,
+    /// Each mesh's tree of cluster patches, as the made bytes of its GPU index buffer, by the
+    /// mesh's id minus one: 0 before a buffer exists or after the GPU replaced it.
+    patch_indices: Vec<u32>,
     /// Grid-cell culling: the still scene objects in cell order, and each cell's box.
     cells: CellCulling,
     culling: Culling,
@@ -723,6 +752,7 @@ impl CpuCulledRenderer {
             config,
             settings,
             lists: ParityLists::new(config.draw_list_words, config.draw_list_limit),
+            frame_bound: 0,
             // WebGL2 has no transient attachments: the backend discards what a pass does not store
             // with `invalidateFramebuffer` instead.
             graph: {
@@ -780,11 +810,23 @@ impl CpuCulledRenderer {
                             first_group: ids::FULLSCREEN_GROUPS,
                             blank_color: ids::BLANK_PASS_COLOR,
                             blank_depth: ids::BLANK_PASS_DEPTH,
+                            first_view: ids::FALLBACK_IDS + MAX_VIEWS as u32,
+                            first_scratch: ids::FALLBACK_IDS,
+                            first_layer_group: ids::FALLBACK_IDS
+                                + MAX_VIEWS as u32
+                                + MAX_VIEWS as u32 * 2 * crate::fullscreen::MAX_FALLBACK_LAYERS,
+                            layer_buffer: ids::FALLBACK_IDS
+                                + MAX_VIEWS as u32
+                                + MAX_VIEWS as u32 * 2 * crate::fullscreen::MAX_FALLBACK_LAYERS
+                                + MAX_VIEWS as u32 * crate::fullscreen::MAX_FALLBACK_LAYERS,
                         },
                         compute: ComputePassIds {
                             buffer: ids::COMPUTE,
                             first_group: ids::COMPUTE_GROUPS,
+                            first_history_group: ids::COMPUTE_HISTORY_GROUPS,
                             first_pipeline: ids::COMPUTE_PIPELINES,
+                            first_view: ids::COMPUTE_VIEWS,
+                            first_state: ids::COMPUTE_STATES,
                         },
                         dof: DofIds {
                             buffer: ids::DOF,
@@ -847,6 +889,7 @@ impl CpuCulledRenderer {
                 graph.set_weighted_targets(config.float16_targets);
                 graph.set_moment_targets(config.float16_targets);
                 graph.set_depth_prepass(config.depth_prepass);
+                graph.set_prepass_color(config.prepass_color);
                 graph
             },
             layout: Layout::new(Drawn::Scene),
@@ -863,6 +906,7 @@ impl CpuCulledRenderer {
             layouts_picked: false,
             layout_prepass: false,
             clusters: Clusters::default(),
+            patch_indices: Vec::new(),
             cells: CellCulling::new(config.cell_culling, true),
             culling: Culling::new(ViewId::CAMERA),
             occluders: Occluders::default(),
@@ -1487,6 +1531,17 @@ impl CpuCulledRenderer {
     /// [`Self::upload_bound`] without the cluster orders.
     fn upload_bound_without_clusters(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
+        // A rebuilt scene uploads each mesh's tree of cluster patches again, when the device
+        // draws many ranges in one call.
+        let patches = if self.config.multi_draw {
+            self.settings
+                .patches()
+                .iter()
+                .map(|(_, tree)| tree.indices().len() * 2 + 256)
+                .sum()
+        } else {
+            0
+        };
         let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2
             + dfg::BYTES
             + ao::BLANK_BYTES;
@@ -1501,6 +1556,7 @@ impl CpuCulledRenderer {
         let outline = per_view(&self.outlined) + per_view(&self.scattering) + per_view(&self.tone);
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         meshes
+            + patches
             + materials
             + self.lights.upload_room()
             + views * per_view(&self.layout)
@@ -1556,6 +1612,18 @@ impl CpuCulledRenderer {
         )?;
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         probe_grid::create_objects(list, ids::BLANK_PROBE_GRID)?;
+        // The buffers that a read of a compute pass's region lands in, one for each read that may
+        // wait for the GPU.
+        for ring in 0..crate::readback::RING as u32 {
+            list.push(
+                Op::CreateBuffer,
+                &[
+                    ids::PASS_READ_BUFFERS + ring,
+                    crate::readback::MAX_BYTES,
+                    buffer_usage::MAP_READ | buffer_usage::COPY_DST,
+                ],
+            )?;
+        }
         ao::create_blank(list, ids::BLANK_AO)?;
         transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
         list.push(
@@ -1799,6 +1867,9 @@ impl CpuCulledRenderer {
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
+        // A failure before the bound is known leaves no bound to compare, so a later frame retries
+        // only on a changed scene.
+        self.frame_bound = 0;
         // A pick that waits declares the pick's passes for this frame. The request stays until a
         // frame records its read, and the passes stay declared for a few frames after it, while
         // its copy may still wait.
@@ -1885,8 +1956,11 @@ impl CpuCulledRenderer {
         self.graph.set_scaling(self.settings.render_scaling());
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
-        self.graph
-            .request_fullscreen_pipelines(&mut self.pipelines, self.settings.views());
+        self.graph.request_fullscreen_pipelines(
+            &mut self.pipelines,
+            input.pipelines_built,
+            self.settings.views(),
+        );
         self.background.request_pipeline(
             &self.settings,
             &mut self.pipelines,
@@ -1911,6 +1985,7 @@ impl CpuCulledRenderer {
         self.graph.set_tiles(self.tiles.shape().map(|s| TilePasses {
             tiles: s.layers,
             size: s.size,
+            hero: self.tiles.hero_tile(),
         }));
         self.settings.prepare_probe_capture(input.frame);
         self.settings.pace_views(input.canvas, input.render_scale);
@@ -1928,6 +2003,8 @@ impl CpuCulledRenderer {
         let pick_drawing = self.pick_ready(input, requested);
         self.graph.set_picking_draws(pick_drawing);
         self.graph.prepare(list, input.canvas, input.render_scale)?;
+        self.graph
+            .apply_compute_layers(self.settings.textures_mut());
         let pick_frame = self.begin_pick(list, input, pick_drawing)?;
         self.pick.keep = if pick_frame.is_some() {
             crate::pick::KEEP_FRAMES
@@ -1951,7 +2028,13 @@ impl CpuCulledRenderer {
             self.settings.probes().size(),
             self.settings.probes().probe_layers(),
         );
-        self.settings.probes_mut().record(list, shape)?;
+        self.settings.probes_mut().record(
+            list,
+            shape,
+            input.frame,
+            created_pipelines,
+            input.pipelines_built,
+        )?;
         // The next frame destroys the old array, so no frame group may still bind it.
         let probes_now = self.settings.probes().array();
         let probes_remade = probes_now != self.bound_probes;
@@ -2053,13 +2136,26 @@ impl CpuCulledRenderer {
             Opaque::bind_frame(list, ViewId::SUBSURFACE, Some(lit_for(lit, ViewId::CAMERA)))?;
         }
         let rebuilt = self.layout.built_in == input.frame;
-        arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
+        let bound = self.upload_bound() + LinesPass::upload_bytes(&input.lines);
+        self.frame_bound = bound;
+        arena
+            .reset(bound)
+            .map_err(|_| crate::frame::uploads_out_of_memory(bound))?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::MATERIALS, MATERIAL_TEXELS)?;
             ao::upload_blank(list, arena, ids::BLANK_AO)?;
         }
         self.meshes
             .upload(list, arena, self.settings.meshes().pages())?;
+        upload_patches(
+            &mut self.patch_indices,
+            self.settings.patches(),
+            self.settings.meshes(),
+            self.config.multi_draw,
+            list,
+            arena,
+            rebuilt,
+        )?;
         // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.
         let table = MaterialStorage::Texture(ids::MATERIALS);
         let camera_y = self
@@ -2335,11 +2431,15 @@ impl CpuCulledRenderer {
             }
         }
         let camera = self.culling.frame(ViewId::CAMERA);
+        // WebGL2 binds no storage buffers, so the portable limit on a buffer's size alone bounds
+        // the lines' vertex buffer.
+        let lines_bytes = unbound_buffer_bytes(None);
         self.lines.upload(
             list,
             arena,
             &input.lines,
             camera.map(|values| &values.camera),
+            lines_bytes,
         )?;
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
         let weighted = self.graph.weighted_declared();
@@ -2415,6 +2515,7 @@ impl CpuCulledRenderer {
                         meshes,
                         shading,
                         &hidden,
+                        culling.patch_view(frame, view),
                         scene_blank,
                     )?;
                     if backdrop {
@@ -2429,21 +2530,48 @@ impl CpuCulledRenderer {
                     };
                     let hidden = hidden_in(view);
                     opaque.record(
-                        list, arena, view, starts, layout, meshes, shading, &hidden, 0,
+                        list,
+                        arena,
+                        view,
+                        starts,
+                        layout,
+                        meshes,
+                        shading,
+                        &hidden,
+                        culling.patch_view(frame, view),
+                        0,
                     )
                 }
                 Role::Shadow(view) if cascade_culling.frame(view).is_some() => {
                     let starts = cascade_culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Depth;
                     cascade_draws.record(
-                        list, arena, view, starts, casters, meshes, shading, &never, 0,
+                        list,
+                        arena,
+                        view,
+                        starts,
+                        casters,
+                        meshes,
+                        shading,
+                        &never,
+                        PatchView::NONE,
+                        0,
                     )
                 }
                 Role::Shadow(view) if tile_culling.frame(view).is_some() => {
                     let starts = tile_culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Tile;
                     tile_draws.record(
-                        list, arena, view, starts, casters, meshes, shading, &never, 0,
+                        list,
+                        arena,
+                        view,
+                        starts,
+                        casters,
+                        meshes,
+                        shading,
+                        &never,
+                        PatchView::NONE,
+                        0,
                     )
                 }
                 Role::OutlineMask
@@ -2462,6 +2590,7 @@ impl CpuCulledRenderer {
                             meshes,
                             Shading::Depth,
                             &never,
+                            PatchView::NONE,
                             0,
                         )?;
                     }
@@ -2478,6 +2607,7 @@ impl CpuCulledRenderer {
                             meshes,
                             Shading::Depth,
                             &never,
+                            PatchView::NONE,
                             0,
                         )?;
                     }
@@ -2499,6 +2629,7 @@ impl CpuCulledRenderer {
                         meshes,
                         shading,
                         &hidden,
+                        PatchView::NONE,
                         scene_blank,
                     )
                 }
@@ -2664,6 +2795,7 @@ impl CpuCulledRenderer {
                         meshes,
                         Shading::Pick,
                         &hidden,
+                        culling.patch_view(frame, view),
                         0,
                     )
                 }
@@ -2682,7 +2814,16 @@ impl CpuCulledRenderer {
                 Role::Motion if motion_draws && culling.frame(ViewId::CAMERA).is_some() => {
                     let starts = culling.culled(frame, ViewId::CAMERA).bucket_starts();
                     let moving = motion_moving.as_slice();
-                    opaque.record_motion(list, arena, starts, layout, meshes, motion_group, moving)
+                    opaque.record_motion(
+                        list,
+                        arena,
+                        starts,
+                        layout,
+                        meshes,
+                        motion_group,
+                        moving,
+                        culling.patch_view(frame, ViewId::CAMERA),
+                    )
                 }
                 Role::FogLight(_) => {
                     let slot = opaque.frame_slot(ViewId::CAMERA);
@@ -2718,6 +2859,23 @@ impl CpuCulledRenderer {
                 true,
             )?;
             self.settings.take_pick();
+        }
+        // A read of a compute pass's region copies it once the pass's runs have finished. WebGL2's
+        // target stores its first row at the image's bottom edge.
+        if let Some(mut read) = self.settings.take_pass_read()
+            && let Some((texture, size)) = self.graph.read_target(read.view as usize)
+        {
+            read.layer = self.graph.read_layer(read.view as usize, read.layer);
+            // A canvas that shrank since the call leaves the region past the edge, and a copy
+            // there would reject the frame's commands, so it is skipped for the read's timeout.
+            crate::readback::record_region(
+                list,
+                &read,
+                texture,
+                ids::PASS_READ_BUFFERS + read.ring,
+                true,
+                size,
+            )?;
         }
         self.tiles
             .finish(input.frame, created_pipelines, input.pipelines_built);
@@ -2778,6 +2936,7 @@ fn upload_views(
             listed,
             new_list,
             starts,
+            patches: culling.patch_view(frame, view),
         };
         draws.upload(list, arena, view, upload, layout)?;
         let Some(SortedPasses {
@@ -2886,7 +3045,7 @@ impl FrameBuilder for CpuCulledRenderer {
             self.tiles.forget_drawn();
         }
         let settings = &self.settings;
-        let sways = |material| settings.sways(material);
+        let sways = |material| settings.sways(material) && !settings.casts_still(material);
         self.tiles.plan(
             input,
             tile_settings,
@@ -3004,6 +3163,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 },
                 &|view| settings.level_view(view, canvas),
                 Some((sorted, decal_layout, redraw_layout)),
+                Some(settings.patches()),
                 Some(cull::Occlusion {
                     occluders: &mut self.occluders,
                     meshes: settings.meshes(),
@@ -3047,6 +3207,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 &|_| shadow_rule,
                 None,
                 None,
+                None,
             )
             .map_err(|_| out_of_memory(&self.casters))?;
         let tiles = &self.tiles;
@@ -3058,6 +3219,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 cells,
                 &|view| tiles.frame(view.tile_index()?).copied(),
                 &|_| shadow_rule,
+                None,
                 None,
                 None,
             )
@@ -3077,6 +3239,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 &|_| camera_rule,
                 None,
                 None,
+                None,
             )
             .map_err(|_| out_of_memory(&self.outlined))?;
         // The subsurface view sees what the camera's view sees, while some object's material has a
@@ -3090,6 +3253,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 cells,
                 &|_| camera.filter(|_| scatters),
                 &|_| camera_rule,
+                None,
                 None,
                 None,
             )
@@ -3107,9 +3271,11 @@ impl FrameBuilder for CpuCulledRenderer {
                 &|_| camera_rule,
                 None,
                 None,
+                None,
             )
             .map_err(|_| out_of_memory(&self.tone))?;
-        // The staged levels' watches read the levels that the camera's view picked.
+        // The staged levels' watches read the levels that the camera's view picked, and the staged
+        // bands' watches read the bands of patches that it drew.
         if self.settings.watches_stages() {
             let cull = self.culling.culled_in(input.frame, ViewId::CAMERA);
             self.layout.note_stage_picks(
@@ -3117,16 +3283,68 @@ impl FrameBuilder for CpuCulledRenderer {
                 self.settings.stage_watches_mut(),
                 u64::from(input.frame),
             );
+            let frame = self.culling.frame(ViewId::CAMERA);
+            let rule = self.settings.level_view(ViewId::CAMERA, canvas);
+            let offsets = self.culling.offsets(ViewId::CAMERA);
+            let layout = &self.layout;
+            let drawn = |mesh: u32| {
+                layout
+                    .cluster_buckets
+                    .iter()
+                    .any(|cluster| cluster.mesh == mesh)
+            };
+            if let Some(frame) = frame {
+                self.settings.note_stage_bands(
+                    input.scene,
+                    parity,
+                    &crate::patches::BandView {
+                        view: frame,
+                        rule,
+                        offsets: offsets.as_slice(),
+                        frame: u64::from(input.frame),
+                    },
+                    drawn,
+                );
+            }
         }
         Ok(())
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
         self.settings.set_still(self.lists.still());
-        let (mut list, mut arena) = self.lists.take(input.frame)?;
+        let forecast = self.upload_bound() + LinesPass::upload_bytes(&input.lines);
+        let active = crate::frame::active_sources(input);
+        let mut took = self.lists.take(input.frame);
+        if took.is_err()
+            && self
+                .lists
+                .can_retry(forecast, active, input.structure_changed)
+        {
+            self.reset_gpu();
+            took = self.lists.take(input.frame);
+        }
+        let (mut list, mut arena) = took?;
         let result = self.record_into(input, &mut list, &mut arena);
+        // A failed frame stores the forecast of the state it leaves, which is the state the next
+        // frame forecasts from.
+        let halted_forecast = if result.is_err() {
+            self.upload_bound() + LinesPass::upload_bytes(&input.lines)
+        } else {
+            forecast
+        };
         let marks = StillMarks::of(input, &self.settings, &self.graph, &self.pipelines);
-        self.lists.restore(input.frame, list, arena, marks, result)
+        self.lists.restore(
+            input.frame,
+            list,
+            arena,
+            marks,
+            result,
+            HaltFigures {
+                bound: self.frame_bound,
+                forecast: halted_forecast,
+                active,
+            },
+        )
     }
 
     fn still(&self) -> crate::still::Still {
@@ -3139,6 +3357,10 @@ impl FrameBuilder for CpuCulledRenderer {
 
     fn occluded_entries(&self, frame: u32) -> Option<u32> {
         Some(self.culling.occluded_entries(frame))
+    }
+
+    fn patch_ranges(&self, frame: u32) -> Option<u32> {
+        Some(self.culling.patch_ranges(frame))
     }
 
     fn set_software_occlusion(&mut self, on: bool) {
@@ -3217,6 +3439,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.settings.forget_shadow_maps();
         self.layout.built = false;
         self.meshes.forget();
+        self.patch_indices.clear();
         self.pipelines.forget();
         self.textures.forget_gpu();
         self.culling.forget_gpu();
@@ -3291,5 +3514,162 @@ impl FrameBuilder for CpuCulledRenderer {
 
     fn allow_motion(&mut self, one_sample: bool, multisampled: bool) {
         self.graph.allow_motion(one_sample, multisampled);
+    }
+}
+
+/// Uploads each mesh's tree of cluster patches into its own GPU index buffer, which a view draws
+/// its chosen patches from. A buffer is made at the mesh's id, which no other id takes, and
+/// uploaded when it is new or the scene's structure changed, so a replaced tree reaches the GPU.
+/// The indices add the mesh's first vertex in its page, because WebGL2's pages hold several meshes
+/// and rebase the mesh's own index list. A mesh that fills more than one part draws no tree, so it
+/// gets no buffer.
+fn upload_patches(
+    sizes: &mut Vec<u32>,
+    patches: &crate::patches::PatchStorage,
+    meshes: &MeshStorage,
+    multi_draw: bool,
+    list: &mut DrawList,
+    arena: &mut UploadArena,
+    rebuilt: bool,
+) -> Result<(), RecordError> {
+    if !multi_draw {
+        return Ok(());
+    }
+    for (mesh, tree) in patches.iter() {
+        let Some(slot) = meshes.mesh(mesh.wrapping_sub(1)) else {
+            continue;
+        };
+        let parts = meshes.parts(slot, false);
+        let [part] = parts else {
+            continue;
+        };
+        let at = mesh.wrapping_sub(1) as usize;
+        if sizes.len() <= at {
+            sizes.resize(at + 1, 0);
+        }
+        let bytes = (tree.indices().len() * 2) as u32;
+        if sizes[at] < bytes {
+            sizes[at] = bytes.max(2);
+            list.push(
+                Op::CreateBuffer,
+                &[
+                    ids::patch_index(mesh),
+                    sizes[at],
+                    buffer_usage::INDEX | buffer_usage::COPY_DST,
+                ],
+            )?;
+        } else if !rebuilt {
+            continue;
+        }
+        let mut halves = Vec::with_capacity(tree.indices().len());
+        halves.extend(
+            tree.indices()
+                .iter()
+                .map(|&index| (index + part.first_vertex) as u16),
+        );
+        let (at, length) = arena.push(indices_as_bytes(&halves))?;
+        list.push(Op::WriteBuffer, &[ids::patch_index(mesh), 0, at, length])?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ids;
+    use crate::readback::RING as READ_RING;
+    use crate::sky_maps::LIGHT_RING;
+    use crate::view::{MAX_VIEW_IDS, ViewId};
+
+    #[test]
+    fn the_buffers_that_reads_land_in_keep_ids_of_their_own() {
+        // A read maps the buffer at its id with the region's bytes, so a view's shorter buffer at
+        // that id refuses the map. A frame with many passes makes many views, so the two ranges
+        // must not meet at any view.
+        let mut reads = Vec::new();
+        for ring in 0..READ_RING as u32 {
+            reads.push(ids::PASS_READ_BUFFERS + ring);
+            reads.push(ids::PICK_BUFFERS + ring);
+        }
+        for ring in 0..LIGHT_RING as u32 {
+            reads.push(ids::SKY_LIGHT_BUFFERS + ring);
+        }
+        for index in 0..MAX_VIEW_IDS {
+            let view = ViewId::from_index(index);
+            for id in [ids::frame(view), ids::draws(view)] {
+                assert!(
+                    !reads.contains(&id),
+                    "view {index} takes the buffer id {id}, which a read maps"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod patch_tests {
+    use super::*;
+
+    /// A quad of four vertices of the base format, all at the origin.
+    fn quad() -> crate::geometry::Geometry {
+        let stride = null3d_gpu::drawlist::vertex::stride(0) as usize;
+        crate::geometry::Geometry {
+            format: 0,
+            vertices: vec![0; 4 * stride],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        }
+    }
+
+    /// A page holds several meshes and rebases their indices, so a tree's own indices add the
+    /// mesh's first vertex in the page. Without that, a tree whose mesh follows another in the page
+    /// would draw the other mesh's vertices.
+    #[test]
+    fn a_trees_indices_add_the_meshs_first_vertex_in_its_page() {
+        let mut meshes = MeshStorage::new(Packing::Pages);
+        meshes.add(&quad()).unwrap();
+        let index = meshes.add(&quad()).unwrap();
+        let mesh = index + 1;
+        let slot = meshes.mesh(index).unwrap();
+        let first_vertex = meshes.parts(slot, false)[0].first_vertex;
+        assert!(first_vertex > 0, "the second mesh starts after the first");
+        let mut patches = crate::patches::PatchStorage::default();
+        patches.set(
+            mesh,
+            Some(
+                crate::patches::PatchTree::new(
+                    vec![0, 1, 2],
+                    vec![[0.0, 0.0, 0.0, 1.0]],
+                    vec![[0, 3, 0, 0]],
+                    0,
+                    4,
+                )
+                .unwrap(),
+            ),
+        );
+        let mut list = DrawList::with_capacity(64);
+        let mut arena = UploadArena::default();
+        arena.reset(1 << 16).expect("room for the test's uploads");
+        let mut sizes = Vec::new();
+        upload_patches(
+            &mut sizes, &patches, &meshes, true, &mut list, &mut arena, true,
+        )
+        .unwrap();
+        null3d_gpu::drawlist::decode(list.words())
+            .filter_map(Result::ok)
+            .find(|command| {
+                command.op == Op::WriteBuffer && command.operands[0] == ids::patch_index(mesh)
+            })
+            .expect("the tree's indices are written");
+        // The list names the arena's address, not an offset. The tree's indices are its only push.
+        let at = 0;
+        let bytes = arena.bytes();
+        let index = |k: usize| u16::from_le_bytes([bytes[at + 2 * k], bytes[at + 2 * k + 1]]);
+        assert_eq!(
+            [index(0), index(1), index(2)],
+            [
+                first_vertex as u16,
+                (1 + first_vertex) as u16,
+                (2 + first_vertex) as u16
+            ]
+        );
     }
 }

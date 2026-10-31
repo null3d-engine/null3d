@@ -2,7 +2,7 @@
 // cluster-cost page, timed at three camera distances (tests/pages/cluster-cost.ts). Near the ground
 // a view draws most patches at full detail, and far from it the walk stops at coarse patches, so
 // the figures show both the saving and the cost of the pass that picks them. It prints the medians
-// for D-213. It runs only with NULL3D_CLUSTER_COST set, in a quiet window on a computer with a GPU
+// for D-231. It runs only with NULL3D_CLUSTER_COST set, in a quiet window on a computer with a GPU
 // of its own: NULL3D_CLUSTER_COST=1 bun run test:browser -- cluster-cost.spec.ts.
 // NULL3D_CLUSTER_PRESETS sets the presets, as a list.
 import { expect, test } from '@playwright/test';
@@ -37,6 +37,14 @@ interface ClusterCostResult {
 /** A figure with one decimal place, or a dash where the device has no GPU timer. */
 const ms = (value: number | null | undefined) => (value == null ? '-' : value.toFixed(1));
 
+/** The busiest job worker's busy time, or none when the page runs no job workers. */
+const busiestJob = (threads: Record<string, number | null>) => {
+	const jobs = Object.entries(threads)
+		.filter(([name]) => name.startsWith('job'))
+		.map(([, busy]) => busy ?? 0);
+	return jobs.length === 0 ? null : Math.max(...jobs);
+};
+
 for (const gpu of ['webgpu', 'webgl2'] as const)
 	for (const preset of presets)
 		test(`cluster levels on ${gpu} at ${preset}, timed at three distances`, async ({ page }) => {
@@ -44,9 +52,9 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			test.setTimeout(costTimeout(600_000));
 			const loadBefore = await waitForQuiet();
 			await page.setViewportSize({ width: 1600, height: 900 });
-			// The patch pass runs on the indirect path, which the switch forces: the start-up probe
-			// may pick the direct path, which draws the whole mesh, and the figures would tell of
-			// another drawing.
+			// The patch route draws on WebGPU's indirect path and on WebGL2 with
+			// `WEBGL_multi_draw`. The switch keeps the start-up probe from choosing the direct
+			// path, which draws the whole levels, and the figures would tell of another drawing.
 			await page.goto(`cluster-cost.html?gpu=${gpu}&preset=${preset}&direct=off`);
 			const result = await pageResult<ClusterCostResult>(page, 200_000);
 			expect(result.error).toBeUndefined();
@@ -55,7 +63,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 					`${result.tier} ${gpu} ${preset}, ${result.window.join('x')} at ${result.devicePixelRatio}x, load ${loadBefore} before and ${loadNow()} after`,
 					...result.sides.map(
 						(side) =>
-							`  ${String(side.distance).padStart(3)} m: ${ms(side.gpuMs)} ms GPU, ${ms(side.intervalMs)} ms a frame, ${ms(side.cpuMs)} ms CPU`,
+							`  ${String(side.distance).padStart(3)} m: ${ms(side.gpuMs)} ms GPU, ${ms(side.intervalMs)} ms a frame, ${ms(side.cpuMs)} ms CPU, ${ms(busiestJob(side.threads))} ms the busiest job`,
 					),
 				].join('\n'),
 			);

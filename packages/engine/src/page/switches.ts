@@ -1,29 +1,37 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
+// ?sketch-thread=main, ?latency=, ?uploads=copy, ?multidraw=off, ?depth=, ?compile=wait, ?shaders=fresh,
 // ?check=fresh, ?wake=message, ?hdr=off, ?scene-format=, ?half= and ?compression=. Twelve more
 // set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count,
 // ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on the GPU,
 // ?cells=off for culling without grid cells, ?prepass=on or off for the depth prepass,
-// ?moments=on or off for moment transparency,
+// ?moments=on or off for moment transparency, ?prepass-color= for how a prepass that a screen
+// step splits from the opaque pass starts the stand-in color that it never draws,
 // ?occlusion=on or off for occlusion culling, ?occlusion-buffer= for the size of software occlusion
 // culling's buffer, such as 384x216, ?skinning= for how WebGPU skins (compute for the skinning
 // pass, or full, skip or narrow for the pass with fewer of its savings), ?instances=index for
 // vertex shaders that read instance data by index on core WebGPU, ?shadowdepth=32 for shadow
 // cascades in 32-bit float depth instead of 16-bit depth,
-// ?texture-cache=off for KTX2 files that transcode on every load, ?join=off for custom effects
-// in a pass each, none joined, and ?grading=hdr or display for where the built-in grading table
-// takes its input. ?replay-delay= makes the thread that draws wait before it replays
-// each frame's list, for a test of memory that the sketch thread frees while the list may still
-// point at it. ?hold starts hold mode for image tests, ?preset= fixes the quality preset,
+// ?texture-cache=off for KTX2 files that transcode on every load, and ?join=off for custom effects
+// in a pass each, none joined, for pages that measure what joining saves. ?replay-delay= makes the
+// thread that draws wait before it replays each frame's list, for a test of memory that the sketch
+// thread frees while the list may still point at it. ?hold starts hold mode for image tests, ?preset= fixes the quality preset,
 // ?target-fps= sets the frame rate that the engine defends, ?bench publishes the running engine
-// for benchmark tools, ?gl-timing times each WebGL call for benchmark pages, and ?stats shows the
-// stats overlay.
+// for benchmark tools, ?gl-timing times each WebGL call for benchmark pages, ?stats shows the
+// stats overlay, and ?view picks a debug view, one of the engine's own or one that an add-on's
+// feature registers.
 
 import type { StatsRequest } from '../debug/stats-options';
 import type { TargetFps } from '../quality/check';
 import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
+/**
+ * How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
+ * that it never draws, which ?prepass-color= picks: `load` starts it from what the texture holds
+ * and then invalidates it, `clear` clears it first, and `none` attaches no color at all. All three
+ * draw the same image. `none` is the engine's default, and the other two serve measurements.
+ */
+export type PrepassColor = 'load' | 'clear' | 'none';
 /**
  * How the WebGL2 path times its calls for benchmarks: each call alone, or each call followed by a
  * call that waits for the browser's GPU process, so a wait there counts toward the call that
@@ -89,13 +97,6 @@ export type SkinningSwitch = 'vertex' | 'compute' | 'full' | 'skip' | 'narrow';
 /** A family of compressed texture formats that KTX2 files can become. */
 export type CompressionFamily = 'astc' | 'bc' | 'etc2';
 
-/**
- * Where the built-in grading table takes its input, which ?grading= picks: `display` grades the
- * canvas color after the tone curve, and `hdr` grades the light's LogC code before the curve, which
- * the pass then maps as it maps any light.
- */
-export type GradingMode = 'display' | 'hdr';
-
 const COMPRESSION_FAMILIES: readonly CompressionFamily[] = ['astc', 'bc', 'etc2'];
 
 export interface Switches {
@@ -109,6 +110,12 @@ export interface Switches {
 	latency: LatencyMode | undefined;
 	/** True when ?uploads=copy makes the WebGL2 path copy uploads out of shared memory first. */
 	copyUploads: boolean;
+	/**
+	 * False when ?multidraw=off hides `WEBGL_multi_draw` from the WebGL2 path, as a device without
+	 * the extension is, so the path draws the whole levels of a cluster tree instead of its patches.
+	 * The engine probes and draws as if the browser never offered it.
+	 */
+	multiDraw: boolean;
 	/**
 	 * The depth mode that ?depth= asks the WebGL2 path to draw with, or undefined for the device's
 	 * own. A device without `EXT_clip_control` cannot draw `reversed`, and draws its own instead.
@@ -183,11 +190,6 @@ export interface Switches {
 	 */
 	join: boolean;
 	/**
-	 * Where the built-in grading table takes its input, which ?grading= picks: `'hdr'` grades the
-	 * light before the tone curve, and `'display'` grades the canvas color after the curve.
-	 */
-	grading: GradingMode;
-	/**
 	 * True when ?prepass=on turns the depth prepass on, false when ?prepass=off turns it off, and
 	 * undefined to leave it to the page's option and the quality preset.
 	 */
@@ -197,6 +199,15 @@ export interface Switches {
 	 * undefined to leave it to the page's option and the quality preset.
 	 */
 	moments: boolean | undefined;
+	/**
+	 * How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
+	 * that it never draws, which ?prepass-color= picks: `load` starts it from what the texture
+	 * holds and then invalidates it, `clear` clears it first, and `none` gives the prepass a
+	 * depth-only framebuffer. Undefined takes the engine's default. Device runs measure the three
+	 * against each other, as binding an unwritten color costs Safari's WebGL2 path time that
+	 * follows the target's size (WebKit bug 328158).
+	 */
+	prepassColor: PrepassColor | undefined;
 	/**
 	 * True when ?occlusion=on turns occlusion culling on, false when ?occlusion=off turns it off,
 	 * and undefined to leave it to the page's options and the quality preset. It sets GPU occlusion
@@ -288,6 +299,11 @@ export interface Switches {
 	/** True when ?bench asks the engine to publish itself on the page for a benchmark tool. */
 	bench: boolean;
 	/**
+	 * The debug view that ?view= asks for, by the name that `debug.view` takes: one of the engine's
+	 * own views, or a view that an add-on's feature registers. Undefined without the switch.
+	 */
+	view: string | undefined;
+	/**
 	 * True when a bare ?stats or ?stats=on shows the stats overlay, false when ?stats=off hides it,
 	 * options when ?stats=collapsed or ?stats=open shows it collapsed or open, and undefined without
 	 * the switch. It wins over the page's option.
@@ -299,6 +315,12 @@ export interface Switches {
 	 * undefined to time none.
 	 */
 	glTiming: GlTimingMode | undefined;
+	/**
+	 * `record` for `?permutations=record`, which collects the permutation words that the scene's
+	 * pipelines ask for and publishes them on `window.__null3dPermutations`, so a tool can write the
+	 * list that a narrowed shader build builds.
+	 */
+	permutations: 'record' | undefined;
 	/**
 	 * The milliseconds that ?replay-delay= makes the thread that draws wait before it replays each
 	 * frame's list, or undefined for no wait. The sketch thread then steps the next frame first.
@@ -380,6 +402,7 @@ export function parseSwitches(search: string): Switches {
 		sketchThread: oneOf(params.get('sketch-thread'), ['worker', 'main'] as const),
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
 		copyUploads: params.get('uploads') === 'copy',
+		multiDraw: params.get('multidraw') !== 'off',
 		depth: oneOf(params.get('depth'), ['reversed', 'reversed-gl', 'standard'] as const),
 		compression: params
 			.get('compression')
@@ -396,9 +419,9 @@ export function parseSwitches(search: string): Switches {
 		half: onOff(params.get('half')),
 		cells: params.get('cells') !== 'off',
 		join: params.get('join') !== 'off',
-		grading: oneOf(params.get('grading'), ['display', 'hdr'] as const) ?? 'display',
 		prepass: onOff(params.get('prepass')),
 		moments: onOff(params.get('moments')),
+		prepassColor: oneOf(params.get('prepass-color'), ['load', 'clear', 'none'] as const),
 		occlusion: onOff(params.get('occlusion')),
 		occlusionBuffer: pixelsOf(params.get('occlusion-buffer')),
 		skinning:
@@ -418,7 +441,9 @@ export function parseSwitches(search: string): Switches {
 		record: params.has('record'),
 		still: params.get('still-camera') !== 'off',
 		bench: params.has('bench'),
+		view: params.get('view') || undefined,
 		stats: statsSwitch(params.get('stats')),
+		permutations: params.get('permutations') === 'record' ? 'record' : undefined,
 		glTiming: !params.has('gl-timing')
 			? undefined
 			: params.get('gl-timing') === 'sync'

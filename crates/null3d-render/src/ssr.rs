@@ -482,7 +482,9 @@ mod tests {
         let frame = trace_frame();
         let mut prepare = |pass: &mut SsrPass, list: &mut DrawList, grid| {
             list.clear();
-            arena.reset(SsrPass::UPLOAD_BYTES);
+            arena
+                .reset(SsrPass::UPLOAD_BYTES)
+                .expect("room for the test's uploads");
             pass.prepare(
                 list,
                 &mut arena,

@@ -27,6 +27,7 @@ function material(uniforms: CompiledMaterial['uniforms'] = []): CompiledMaterial
 		baseColor: true,
 		objectIds: false,
 		sceneDepth: false,
+		alpha: false,
 	};
 }
 
@@ -60,6 +61,9 @@ describe('hot state', () => {
 		expect(hot.swaps('a.wgsl', { ...material(tint), functions: ['surface', 'vertexOffset'] })).toBe(
 			false,
 		);
+		// A surface alpha that comes or goes changes the material's cut-out builds and the draw
+		// list's mask, which the engine fixes when it creates the material.
+		expect(hot.swaps('a.wgsl', { ...material(tint), alpha: true })).toBe(false);
 		expect(hot.swaps('a.wgsl', material())).toBe(false);
 		expect(hot.swaps('a.wgsl', { ...material(tint), locations: [0, 1, 2, 5] })).toBe(false);
 		expect(hot.swaps('b.wgsl', material(tint))).toBe(false);

@@ -162,6 +162,10 @@ export interface ParticleSystemOptions extends Omit<ParticleBufferOptions, 'capa
 const REBASE_AFTER = 1024;
 /** Records whose birth times one frame moves to the new time base, while the base moves. */
 const REBASE_RECORDS = 16384;
+/** The most births that one block holds, which bounds the block's memory. */
+const BIRTH_CHUNK = 1024;
+/** The numbers of one birth that the engine's record block takes: the record's eight, then the seed. */
+const BIRTH_FLOATS = 9;
 /** Floats of a pending sub-emitter event: its time and sub-emitter, then the particle's numbers. */
 const EVENT_FLOATS = 2 + PARTICLE_FLOATS;
 /** The pending sub-emitter events that a system makes room for at first, before it doubles them. */
@@ -281,7 +285,10 @@ export class ParticleSystem {
 	/** This system's world matrix and the matrix into a sub-emitter's space, while events fire. */
 	private readonly world = new Float64Array(16);
 	private readonly childLocal = new Float64Array(16);
-	private readonly saved = new Float32Array(9);
+	/** The block of births' parameters that one call writes, and how many the block holds. */
+	private birthBlock: Float32Array | null = null;
+	private birthFirst = 0;
+	private birthCount = 0;
 
 	/** @internal */
 	constructor(
@@ -364,7 +371,8 @@ export class ParticleSystem {
 	 * Moves the system on by the frame's step, or by `dt` seconds: emits the particles born in that
 	 * time, fires the sub-emitters of particles that died or met the ground, and gives the buffer
 	 * its time. Call it once per frame in `onLateUpdate`. It allocates nothing, apart from the
-	 * table of a system with sub-emitters, which grows while the system warms up.
+	 * table of a system with sub-emitters, which grows while the system warms up, and the block of
+	 * births, which it makes on the first birth.
 	 */
 	update(dt?: number): void {
 		const s = this.span;
@@ -385,6 +393,7 @@ export class ParticleSystem {
 		this.emitBetween();
 		this.time = s[TO] as number;
 		this.fireEvents();
+		this.flushBirths();
 		if (this.shift === 0 && this.time - this.base > REBASE_AFTER) this.startRebase();
 		if (this.shift !== 0) this.rebaseStep();
 		const frame = this.buffer.frame;
@@ -405,6 +414,7 @@ export class ParticleSystem {
 		this.span[BIRTH_TIME] = this.time;
 		this.span[SHARE] = 1;
 		for (let k = 0; k < count; k++) this.emit(at, velocity);
+		this.flushBirths();
 	}
 
 	/** Emits the rate's and the bursts' particles born after the span's start and up to its end. */
@@ -485,10 +495,37 @@ export class ParticleSystem {
 		r[RECORD_TIME] =
 			(this.span[BIRTH_TIME] as number) - this.base + (index >= this.rebased ? this.shift : 0);
 		const seed = (seeds[PARTICLE_SEED] as number) & 0xffff;
-		this.buffer.write(index, r, seed);
+		this.writeBirth(index, r, seed);
 		this.growBirths();
 		const subs = this.options.subEmitters;
 		if (subs) for (let k = 0; k < subs.length; k++) this.planEvent(k);
+	}
+
+	/**
+	 * Puts one birth's numbers into the block that the next write sends to the engine, and writes
+	 * the block when it is full. The block holds the record's eight numbers and the seed.
+	 */
+	private writeBirth(index: number, record: Float64Array, seed: number): void {
+		let block = this.birthBlock;
+		if (!block) {
+			block = new Float32Array(Math.min(this.buffer.capacity, BIRTH_CHUNK) * BIRTH_FLOATS);
+			this.birthBlock = block;
+		}
+		if (this.birthCount === 0) this.birthFirst = index;
+		const at = this.birthCount * BIRTH_FLOATS;
+		for (let k = 0; k < 8; k++) block[at + k] = record[k] as number;
+		block[at + 8] = seed;
+		this.birthCount++;
+		if (this.birthCount * BIRTH_FLOATS === block.length) this.flushBirths();
+	}
+
+	/** Writes the block's births to the buffer in one call, and empties it. */
+	private flushBirths(): void {
+		const count = this.birthCount;
+		const block = this.birthBlock;
+		if (count === 0 || !block) return;
+		this.buffer.writeRecords(block, count, this.birthFirst);
+		this.birthCount = 0;
 	}
 
 	/**
@@ -756,14 +793,7 @@ export class ParticleSystem {
 	private rebaseStep(): void {
 		const count = Math.min(this.emitted, this.buffer.capacity);
 		const end = Math.min(this.rebased + REBASE_RECORDS, count);
-		const saved = this.saved;
-		const r = this.record;
-		for (let i = this.rebased; i < end; i++) {
-			this.buffer.read(i, saved);
-			for (let k = 0; k < 8; k++) r[k] = saved[k] as number;
-			r[RECORD_TIME] = (r[RECORD_TIME] as number) - this.shift;
-			this.buffer.write(i, r, saved[8] as number);
-		}
+		this.buffer.shiftRecords(this.rebased, end, this.shift);
 		this.rebased = end;
 		if (end < count) return;
 		this.shift = 0;

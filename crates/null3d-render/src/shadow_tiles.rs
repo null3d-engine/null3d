@@ -69,7 +69,7 @@
 //! camera, so the block uploads whenever the camera or a tile's light moves, while the tiles'
 //! depth stays.
 
-use null3d_core::cells::{CELL_SIZE, CellCoords, CellPosition};
+use null3d_core::cells::{CELL_SIZE, CellCoords};
 use null3d_core::culling::Frustum;
 use null3d_core::handle::Handle;
 use null3d_core::lights::{LightShadow, NOT_VISIBLE, VisibleLight, kind};
@@ -85,7 +85,7 @@ use crate::frame::{FrameInput, NO_MESH, RecordError, UploadArena};
 use crate::frame_data::FrameUniform;
 use crate::meshes::MeshStorage;
 use crate::pipelines::PassTargets;
-use crate::shadows::{HeroShadow, camera_world};
+use crate::shadows::{HeroShadow, ShadingCamera, camera_world};
 use crate::view::ViewFrame;
 
 /// The most tiles of the shadow atlas.
@@ -503,8 +503,9 @@ impl ShadowTiles {
     /// Plans the tiles of the frame `input`, with `settings` and the shadow filter's square of
     /// `filter` texels, for the camera's view `camera`, or for no camera: then no tile draws.
     /// `meshes` says which meshes' vertices changed. `sways` says whether a material, by engine id,
-    /// moves its vertices by a vertex offset, which its casters' shadows follow in every frame.
-    /// `hero` is the sun's hero object, which draws into the atlas's last tile.
+    /// moves its vertices by a vertex offset, which its casters' shadows follow in every frame; a
+    /// material that holds its casters still leaves its tiles alone. `hero` is the sun's hero
+    /// object, which draws into the atlas's last tile.
     /// Allocates only when more lights cast shadows, or the scene holds more objects, than in any
     /// frame before.
     ///
@@ -582,11 +583,14 @@ impl ShadowTiles {
                     layers: light.layers,
                 };
                 self.uniform.view_proj[tile] = view.view_proj;
+                // The tile count shares the fourth value with the light's shadow intensity, which
+                // takes half a step each: the count is the whole part and the intensity twice the
+                // rest, so neither needs a value of its own.
                 self.uniform.params[tile] = [
                     view.texel_per_meter,
                     light.bias,
                     light.normal_bias,
-                    lit.faces as f32,
+                    lit.faces as f32 + light.intensity.clamp(0.0, 1.0) * 0.5,
                 ];
                 let slot = &mut self.slots[tile];
                 if slot.key != Some(key) {
@@ -597,7 +601,7 @@ impl ShadowTiles {
                     continue;
                 }
                 fresh += usize::from(!slot.held);
-                let mut frame = view.frame(camera.camera, light.layers);
+                let mut frame = view.frame(ShadingCamera::of(camera), light.layers);
                 frame.uniform.clock = camera.uniform.clock;
                 self.frames[tile] = Some(frame);
             }
@@ -649,6 +653,7 @@ impl ShadowTiles {
         };
         let [x, y, z] = [m[2], m[6], m[10]].map(|v| v * length);
         let side = size.max(1) as f32;
+        let shading = ShadingCamera::of(camera);
         self.frames[tile as usize] = Some(ViewFrame {
             uniform: FrameUniform {
                 view_proj,
@@ -656,6 +661,13 @@ impl ShadowTiles {
                 target_size: [side, side, 1.0 / side, 1.0 / side],
                 clock: camera.uniform.clock,
                 camera_world: camera_world(camera.camera),
+                // The scene camera, which a material's surface reads where its caster runs.
+                view: shading.view,
+                projection: shading.projection,
+                camera_range: shading.range,
+                camera_view_proj: shading.view_proj,
+                camera_target: shading.target,
+                camera_eye: shading.eye,
                 ..FrameUniform::default()
             },
             frustum,
@@ -666,7 +678,7 @@ impl ShadowTiles {
     }
 
     /// The hero tile's layer, while the frame planned last holds a hero.
-    fn hero_tile(&self) -> Option<u32> {
+    pub(crate) fn hero_tile(&self) -> Option<u32> {
         (self.hero.key.is_some() && self.shape.layers > 0).then(|| self.shape.layers - 1)
     }
 
@@ -1419,9 +1431,11 @@ impl TileView {
         }
     }
 
-    /// The tile's view values for a camera at `camera`, culling the casters on `layers`. Its camera
-    /// is the light, and its target is the tile, whose texels the casters' offset counts.
-    pub fn frame(&self, camera: CellPosition, layers: u32) -> ViewFrame {
+    /// The tile's view values for the camera that `shading` belongs to, culling the casters on
+    /// `layers`. Its camera is the light, and its target is the tile, whose texels the casters'
+    /// offset counts. `shading` is the camera that the materials shade for, which a masked custom
+    /// material's caster places its fragment in.
+    pub fn frame(&self, shading: ShadingCamera, layers: u32) -> ViewFrame {
         let [x, y, z] = self.position;
         let size = self.size.max(1) as f32;
         ViewFrame::new(
@@ -1429,10 +1443,17 @@ impl TileView {
                 view_proj: self.view_proj,
                 camera_position: [x, y, z, 1.0],
                 target_size: [size, size, 1.0 / size, 1.0 / size],
-                camera_world: camera_world(camera),
+                // The scene camera, which a material's surface reads where its caster runs.
+                view: shading.view,
+                projection: shading.projection,
+                camera_range: shading.range,
+                camera_view_proj: shading.view_proj,
+                camera_target: shading.target,
+                camera_eye: shading.eye,
+                camera_world: camera_world(shading.camera),
                 ..FrameUniform::default()
             },
-            camera,
+            shading.camera,
             self.depth,
             layers,
         )
@@ -1441,6 +1462,8 @@ impl TileView {
 
 #[cfg(test)]
 mod tests {
+    use null3d_core::cells::CellPosition;
+
     use super::*;
 
     fn spot(direction: [f32; 3], angle: f32) -> LightShadow {
@@ -1454,6 +1477,7 @@ mod tests {
             range: 10.0,
             bias: 0.5,
             normal_bias: 1.0,
+            intensity: 1.0,
             layers: 1,
         }
     }
@@ -1502,12 +1526,30 @@ mod tests {
         let light = spot([0.0, -1.0, 0.0], 0.5);
         let at = [2.0, 5.0, -1.0];
         let view = TileView::of(&light, 0, at, 256);
-        let uniform = view.frame(CellPosition::default(), 1).uniform;
+        let shading = ShadingCamera {
+            view_proj: std::array::from_fn(|k| k as f32),
+            view: std::array::from_fn(|k| k as f32 + 20.0),
+            projection: std::array::from_fn(|k| k as f32 + 40.0),
+            target: [640.0, 360.0, 1.0 / 640.0, 1.0 / 360.0],
+            eye: [0.0, 0.0, 0.0, 1.0],
+            range: [0.1, 40.0, 0.0, 0.0],
+            camera: CellPosition::default(),
+        };
+        let uniform = view.frame(shading, 1).uniform;
         assert_eq!(uniform.camera_position, [2.0, 5.0, -1.0, 1.0]);
         assert_eq!(
             uniform.target_size,
             [256.0, 256.0, 1.0 / 256.0, 1.0 / 256.0]
         );
+        // A masked custom material's caster reads the camera that the materials shade for, not
+        // the light that the pass draws from.
+        assert_eq!(uniform.camera_view_proj, shading.view_proj);
+        assert_eq!(uniform.camera_target, shading.target);
+        assert_eq!(uniform.camera_eye, shading.eye);
+        // The camera's own fields carry the scene camera too, which the built-in `camera` reads.
+        assert_eq!(uniform.view, shading.view);
+        assert_eq!(uniform.projection, shading.projection);
+        assert_eq!(uniform.camera_range, shading.range);
         // The shadow depth shader's texel at a point 4 m along the light: two clip units over the
         // texels across, times the point's w, in meters.
         let m = &view.view_proj;

@@ -9,7 +9,10 @@ declare const shader: CompiledMaterial<
 		readonly caustics: 'vec3f';
 		readonly foamOrigin: 'vec2f';
 		readonly foamSize: 'vec2f';
+		readonly junctionOrigin: 'vec2f';
+		readonly junctionSize: 'vec2f';
+		readonly bedFromShape: 'f32';
 	},
-	'mirror' | 'foamMap'
+	'mirror' | 'foamMap' | 'junctionMap'
 >;
 export default shader;

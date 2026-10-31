@@ -11,6 +11,7 @@
 import { execFileSync } from 'node:child_process';
 import type { Browser, BrowserContextOptions, LaunchOptions, Page } from '@playwright/test';
 import { launchChromium } from '../../packages/cli/src/browser.js';
+import { BACKGROUND_PRIORITY, processPriority } from '../../tools/lib/build-cache.ts';
 import { REFRESH_MEASURE, refreshRate } from '../pages/lib/refresh-rate.ts';
 
 /** How the runner tool opens a browser app's window on a Mac. */
@@ -201,9 +202,6 @@ export async function keepingFocus<T>(step: () => Promise<T>): Promise<T> {
 	}
 }
 
-/** The scheduling priority that `ps` shows on macOS for a process at background priority. */
-export const BACKGROUND_PRIORITY = 4;
-
 /**
  * Why a browser that this process starts would run too slowly to time, or undefined when it would
  * not. macOS runs a process started with `taskpolicy -b` at background priority. Each of its
@@ -213,19 +211,6 @@ export const BACKGROUND_PRIORITY = 4;
 export function priorityProblem(priority: number | undefined): string | undefined {
 	if (priority === undefined || priority > BACKGROUND_PRIORITY) return undefined;
 	return `this process runs at macOS background priority (${priority}), which every browser it starts inherits: Chrome then draws about 10 frames a second and its timers fire late, so no timing would hold. It was most likely started by a job run with \`taskpolicy -b\`. Start it from a shell at normal priority`;
-}
-
-/** A process's scheduling priority as `ps` shows it on macOS, or undefined elsewhere or when `ps` fails. */
-export function processPriority(pid: number = process.pid): number | undefined {
-	if (process.platform !== 'darwin') return undefined;
-	try {
-		const priority = Number(
-			execFileSync('ps', ['-o', 'pri=', '-p', String(pid)], { encoding: 'utf8', timeout: 10_000 }),
-		);
-		return Number.isFinite(priority) ? priority : undefined;
-	} catch {
-		return undefined;
-	}
 }
 
 /**

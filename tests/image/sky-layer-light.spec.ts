@@ -3,9 +3,9 @@
 // rough sphere. The sky layer light sketch draws both spheres under a sky with no light of its own,
 // installs a green layer, and later removes it. This test reads the spheres' colors in every capture
 // and checks that each shows the layer, that each loses it, and that neither shows it while the
-// other does not for more than the few frames that the light takes to follow the map.
+// other does not beyond the frames that the copy's wait on the light allows.
 import { expect, test } from '@playwright/test';
-import { pageResult } from '../lib/page-result.ts';
+import { pageResultWhileProgressing } from '../lib/page-result.ts';
 
 interface Capture {
 	stretch: number;
@@ -19,12 +19,22 @@ const [BEFORE, WITH, AFTER] = [0, 1, 2];
 /** The change of a color that counts as the layer's, in levels of 255. */
 const CHANGE = 15;
 /**
- * The frames that the diffuse light may reach the scene before the map's levels do. It is never
- * after them: no frame draws a mirror that holds the layer beside a light that does not.
+ * The frames that the diffuse light may reach the scene before the map's levels do. The copy of
+ * the levels waits for the light's read, so the levels publish with the light or after it. A read
+ * later than that wait publishes the levels without the light, so the check below allows the light
+ * to cross one frame after them.
  */
 const LEAD = 3;
 /** How far the captures at the end of a stretch must agree, in levels of 255. */
 const STEADY = 3;
+/**
+ * The run fails when its page notes no new step for this long. The page notes a step at its first
+ * frame and after each capture. CI's software GPU runs the page several times slower than a
+ * desktop, so a wait on each step leaves a slow machine room and still fails a stuck page.
+ */
+const STALL_MS = 30_000;
+/** The most time the run may take in all. */
+const RUN_LIMIT_MS = 4 * 60_000;
 const TIERS = { webgpu: 'webgpu', compat: 'webgpu-compat', webgl2: 'webgl2' } as const;
 
 /** How green a color is: the green above the mean of red and blue, in levels of 255. */
@@ -57,12 +67,13 @@ function crossing(
 
 for (const gpu of Object.keys(TIERS) as (keyof typeof TIERS)[])
 	test(`a sky layer reaches the reflections and the light on ${gpu}`, async ({ page }) => {
-		test.setTimeout(120_000);
+		test.setTimeout(RUN_LIMIT_MS);
 		await page.goto(`sky-layer-light.html?gpu=${gpu}&fps=20`);
-		const result = await pageResult<{ error?: string; tier: string; frames: Capture[] }>(
-			page,
-			90_000,
-		);
+		const result = await pageResultWhileProgressing<{
+			error?: string;
+			tier: string;
+			frames: Capture[];
+		}>(page, STALL_MS);
 		expect(result.error).toBeUndefined();
 		expect(result.tier).toBe(TIERS[gpu]);
 		const { frames } = result;
@@ -92,9 +103,16 @@ for (const gpu of Object.keys(TIERS) as (keyof typeof TIERS)[])
 			for (const frame of lastTwo)
 				expect(Math.abs(green(frame[place]) - withLayer), text).toBeLessThanOrEqual(STEADY);
 		}
-		// The light follows the map's own texels, so it reaches the scene with them or a frame
-		// before them, never after: no frame shows the layer in the mirror beside the core sky's
-		// light alone.
+		// The figures of every run, which a passing test otherwise discards: the settled green of
+		// each place before the layer, with it, and after it was removed.
+		console.log(
+			`sky layer light on ${gpu}: ${places
+				.map((place) => `${place} ${greens[place].map((value) => value.toFixed(1)).join(' ')}`)
+				.join(', ')}`,
+		);
+		// The light follows the map's own texels, so it reaches the scene with them or up to a few
+		// frames before them. A read later than the copy's wait publishes the levels without the
+		// light, so the checks below allow the light to cross one frame after them.
 		const crossed = {
 			mirror: crossing(frames, 'mirror', greens.mirror[0], greens.mirror[1]),
 			rough: crossing(frames, 'rough', greens.rough[0], greens.rough[1]),

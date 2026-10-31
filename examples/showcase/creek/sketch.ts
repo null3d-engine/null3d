@@ -9,8 +9,14 @@
 // depth of field, which focuses on the point that the camera looks at. The camera runs a cinematic
 // route that is made for this scene (see SHOTS); `c` hands it to the user. For held frames, the
 // sketch's address takes the mood too: `?mood=Night&dslr`.
-import { defineSketch, math, type QualityPreset, timeOfDay } from '@null3d/engine';
-import { createUnderwater, createWater, foamMap } from '@null3d/water';
+import {
+	defineSketch,
+	math,
+	type QualityPreset,
+	type SketchContext,
+	timeOfDay,
+} from '@null3d/engine';
+import { createUnderwater, createWater, foamMap, type Water, type WaterShape } from '@null3d/water';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { createHaze } from '../../lib/haze';
 import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
@@ -23,27 +29,28 @@ import { createGrass } from './grass';
 import {
 	createLand,
 	createMountains,
-	FLOW,
 	GORGE,
 	groundHeight,
-	streamHalf,
+	STREAM_REACH,
+	streamCurrent,
+	streamDepth,
 	streamZ,
 	UNREFLECTED_LAYER,
 	WATER,
 } from './land';
 import { loadModels } from './models';
 import { createShafts } from './shafts';
-import { createStones } from './stones';
+import { createStones, type Obstacle } from './stones';
 
 /** The detail that each preset builds at the start: the land's quads, texture sizes and more. */
 const DETAIL: Record<
 	QualityPreset,
-	{ land: number; texture: number; rock: number; ring: readonly [number, number] }
+	{ land: number; texture: number; rock: number; water: number; ring: readonly [number, number] }
 > = {
-	low: { land: 192, texture: 256, rock: 2, ring: [160, 32] },
-	medium: { land: 256, texture: 512, rock: 3, ring: [224, 40] },
-	high: { land: 320, texture: 512, rock: 3, ring: [288, 48] },
-	ultra: { land: 384, texture: 1024, rock: 3, ring: [320, 56] },
+	low: { land: 192, texture: 256, rock: 2, water: 200, ring: [160, 32] },
+	medium: { land: 256, texture: 512, rock: 3, water: 300, ring: [224, 40] },
+	high: { land: 320, texture: 512, rock: 3, water: 400, ring: [288, 48] },
+	ultra: { land: 384, texture: 1024, rock: 3, water: 400, ring: [320, 56] },
 };
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
@@ -142,9 +149,99 @@ const ALWAYS_REFLECT = params.get('reflect') === 'always';
 const REFLECT_SCALE = Number(params.get('reflection-scale')) || undefined;
 /** The parts of the scene that the address leaves out, for the bisect of the Apple WebGPU stall. */
 const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean));
+/**
+ * The render scale that the address fixes, for the picture tests that draw below the whole canvas,
+ * or undefined to leave the scale to the governor.
+ */
+const RENDER_SCALE = Number(params.get('render-scale')) || undefined;
+/**
+ * True draws the scene from just above the stream, looking along it, so the picture shows the
+ * water's surface close up. The picture tests ask for it; the demo and its route never do.
+ */
+const WATER_CLOSE = params.has('water-close');
+/** The close camera's place, just over the stream, and the point it looks at down the stream. */
+const CLOSE_POSITION: readonly [number, number, number] = [-11, 0.55, streamZ(-11) + 0.9];
+const CLOSE_TARGET: readonly [number, number, number] = [1, -0.5, streamZ(1)];
+/** The shot that holds the close camera, so the picture draws the surface and nothing else moves. */
+const CLOSE_SHOT: Shot = {
+	position: CLOSE_POSITION,
+	target: CLOSE_TARGET,
+	seconds: 1,
+	move: 'hold',
+};
+/** The water's length in the middle of the land, whose columns are finer toward the middle. */
+const WATER_MIDDLE = 140;
+/** The meters between the columns of the water that runs on down the valley past the middle. */
+const FAR_STEP = 8;
+/** The rows across the water's sheet: fine where the camera looks, coarse down the gorges. */
+const WATER_ROWS = 48;
+const GORGE_ROWS = 12;
+/** The half width of the water's sheet: the stream's reach, plus the margin that its banks leave. */
+const WATER_HALF = STREAM_REACH + 1;
+/** The water's depth under its middle line, in meters: the mean bed that the stream cuts. */
+const STREAM_DEPTH = 0.62;
+
+/**
+ * The creek's water, drawn by the add-on. Three sheets run along x: fine columns where the camera
+ * looks, and 8 m columns on down each gorge into the haze. The sheets are straight, and the shape
+ * gives the bed and the current that the winding stream has at each point, so every part of the
+ * water carries the stream's own flow. The stones that break the surface give it the foam. The
+ * reflection draws layer 0 alone, which leaves out what lies on or under the water.
+ */
+function createCreekWater(
+	ctx: SketchContext,
+	quadsX: number,
+	obstacles: readonly Obstacle[],
+	reach: number,
+	alwaysReflect: boolean,
+	reflectScale: 0.25 | 0.5 | 1 | undefined,
+): Water {
+	const middle = Array.from({ length: quadsX + 1 }, (_, k) => {
+		const s = (k / quadsX) * 2 - 1;
+		return (WATER_MIDDLE / 2) * (0.25 * s + 0.75 * s * s * s);
+	});
+	const steps = Math.ceil((reach - WATER_MIDDLE / 2) / FAR_STEP);
+	const far = Array.from({ length: steps + 1 }, (_, k) => WATER_MIDDLE / 2 + k * FAR_STEP);
+	const sheet = (xs: readonly number[], across: number): WaterShape => ({
+		kind: 'river',
+		middle: xs.map((x) => [x, 0] as const),
+		halfWidth: WATER_HALF,
+		depth: STREAM_DEPTH,
+		current: (x) => streamCurrent(x),
+		bed: streamDepth,
+		// The columns are the sheet's own, and the bed ends the surface, so the mesh needs no shore band.
+		mesh: { step: 1e9, across, reach: 1 },
+	});
+	return createWater(ctx, {
+		shapes: [
+			sheet(middle, WATER_ROWS),
+			sheet(far, GORGE_ROWS),
+			sheet(far.map((x) => -x).reverse(), GORGE_ROWS),
+		],
+		level: WATER,
+		layers: 1,
+		...(reflectScale !== undefined && { reflectionScale: reflectScale }),
+		...(alwaysReflect && { reflectionEvery: { low: 1, medium: 1, high: 1, ultra: 1 } }),
+		bed: 'shape',
+		// The stream's own bed gives the water all its depth, so the surface draws opaque.
+		material: { alphaMode: 'opaque' },
+		foam: foamMap(ctx, obstacles, {
+			origin: [-30, -6.5],
+			size: [60, 13],
+			width: 1024,
+			height: 224,
+		}),
+	});
+}
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time } = ctx;
+	if (RENDER_SCALE !== undefined)
+		await quality.set({
+			minRenderScale: RENDER_SCALE,
+			maxRenderScale: RENDER_SCALE,
+			governor: false,
+		});
 	const detail = DETAIL[quality.preset];
 	reportLoading(ctx);
 	const [sky, room] = await Promise.all([
@@ -195,38 +292,17 @@ export default defineSketch(async (ctx) => {
 	page.post('loading', 'Loading the trees, plants and cave');
 	const models = await loadModels(ctx);
 	const stones = createStones(ctx, detail.rock, detail.texture, models.cave);
-	// The stream's middle line, sampled finely over the land and coarsely down the gorges.
-	const middle: [number, number][] = [];
-	for (let x = -GORGE.end; x < GORGE.end; x += Math.abs(x) < 70 ? 1.5 : 8)
-		middle.push([x, streamZ(x)]);
-	middle.push([GORGE.end, streamZ(GORGE.end)]);
 	const water = WITHOUT.has('water')
 		? undefined
-		: createWater(ctx, {
-				level: WATER,
-				// The reflection draws layer 0 alone, which leaves out what lies on or under the water.
-				layers: 1,
-				// The address can draw the reflection every frame, and at a share of the render size, for
-				// the bisect of the Apple WebGPU stall.
-				...(ALWAYS_REFLECT && { reflectionEvery: { low: 1, medium: 1, high: 1, ultra: 1 } }),
-				...(REFLECT_SCALE !== undefined && {
-					reflectionScale: REFLECT_SCALE as 0.25 | 0.5 | 1,
-				}),
-				shapes: {
-					kind: 'river',
-					middle,
-					halfWidth: middle.map(([x]) => streamHalf(x)),
-					depth: 0.62,
-					speed: FLOW,
-				},
-				foam: foamMap(ctx, stones.obstacles, {
-					origin: [-30, -6.5],
-					size: [60, 13],
-					width: 1024,
-					height: 224,
-				}),
-			});
-	const underwater = water === undefined ? undefined : createUnderwater(ctx, camera, water);
+		: createCreekWater(
+				ctx,
+				detail.water,
+				stones.obstacles,
+				GORGE.end,
+				ALWAYS_REFLECT,
+				REFLECT_SCALE as 0.25 | 0.5 | 1 | undefined,
+			);
+	const underwater = water && createUnderwater(ctx, camera, water);
 	const flora = await createFlora(ctx, models);
 	const air = await createAir(ctx, flora.crowns);
 	const shafts = createShafts(ctx, camera);
@@ -356,7 +432,7 @@ export default defineSketch(async (ctx) => {
 	for (const haze of hazes) haze.update(stage.airColor, stage.light);
 
 	const film = createCinematic(ctx, camera, {
-		shots: SHOTS,
+		shots: WATER_CLOSE ? [CLOSE_SHOT] : SHOTS,
 		target,
 		groups: controls.groups,
 		bounds: {

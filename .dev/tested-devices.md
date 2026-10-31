@@ -1,6 +1,6 @@
 # Tested devices
 
-This record lists every device and browser that null3D has run on, with the plans that ran and their results. [Device sessions](devices.md) says how each device runs. It feeds the compatibility matrix in the README and in the user docs, as the owner asked on 4 October 2026.
+This record lists every device and browser that null3D has run on, with the plans that ran and their results. [Device sessions](devices.md) says how each device runs. It feeds the compatibility matrix in the README and in the user docs, as the owner asked.
 
 ## The record
 
@@ -10,7 +10,7 @@ A new run is a new file, so two pull requests that record runs do not edit the s
 
 The dates are the dates in the run names, which are in UTC. An empty cell means that nobody recorded the fact. "TestingBot's device list" or "BrowserStack's device list" marks a fact that the browser does not report, read from the cloud's own list of devices.
 
-The Where fact names the place of each run: the owner's phone, tablet or Mac, TestingBot's device cloud, BrowserStack Live, or BrowserStack Automate. On BrowserStack Live, a person picks the device and the browser in each session. On BrowserStack Automate, which the team uses from 3 October 2026, the device runner opens and drives each session, with nobody at it ([Device sessions](devices.md#browserstack-automate)).
+The Where fact names the place of each run: the owner's phone, tablet or Mac, TestingBot's device cloud, BrowserStack Live, or BrowserStack Automate. On BrowserStack Live, a person picks the device and the browser in each session. On BrowserStack Automate, the device runner opens and drives each session, with nobody at it ([Device sessions](devices.md#browserstack-automate)).
 
 ## How to add a run
 
@@ -22,23 +22,21 @@ The Where fact names the place of each run: the owner's phone, tablet or Mac, Te
 6. Add a known issue as a new paragraph under "Known issues" in the README, with a link to its pull request or decision record. Then run `bun run docs`.
 7. Write links in these files relative to the file, such as `../../decisions/D-12-memory-budgets.md`. The tables move them to the page's folder.
 8. The runner page saves what it found in `device.json`, in each runner's folder of the run: `target/runs/<run>/<runner>/device.json`. It holds the user agent and, where the browser has them, the client hints. It also holds the detected browser, the GPU, the screen, the pixel ratio, the cores and the page's address. `jq '{browser, gpu, userAgent, userAgentData}' target/runs/<run>/<runner>/device.json` prints the main facts.
-9. The GPU facts are `gpu.webgpu`, the WebGPU adapter's details, `gpu.compatibility`, which says whether compatibility mode gave an adapter, and `gpu.webgl2.renderer`. Runs before October 2026 have no `gpu` and no `browser` in `device.json`. For those, read the checks plan's `capabilities.json`, under `report.webgpu.adapterInfo` and `report.webgl2.renderer`.
+9. The GPU facts are `gpu.webgpu`, the WebGPU adapter's details, `gpu.compatibility`, which says whether compatibility mode gave an adapter, and `gpu.webgl2.renderer`. When `device.json` has no `gpu` and no `browser`, read the checks plan's `capabilities.json`, under `report.webgpu.adapterInfo` and `report.webgl2.renderer`.
 10. Leave a fact empty rather than guess. User agents freeze the OS version. Safari 26 reports iOS 18.7 on iOS 26, and Safari on an iPad reports a Mac. Chrome reports Android 10 on every Android. Only client hints give the real version. Brave and Firefox hide the GPU.
 
 `bun run docs:check` and the commit hook refuse a file that breaks these rules. A folder's name is lowercase words joined by hyphens. A run file's name starts with the run's date as eight digits. Each folder has a README with all six facts and a "Known issues" section, and at least one run. Each run file has a `Plans:` paragraph, then the `Result:`, which may take several paragraphs to the end of the file.
 
-A branch from before the split edited the old single table. [Branches and parallel work](pull-requests.md#a-branch-that-edited-the-old-table-of-tested-devices) says how to move its edits into run files.
-
-## iPad Pro 11-inch, iPadOS 26.7, 19 October 2026
+## iPad Pro 11-inch, iPadOS 26.7: the upscaler probe
 
 - Brave on iOS is WebKit, so this run measures the same engine as Safari. Two-step upscaler probe, canvas 1920x1080, render scale 0.5, FXAA on, timer wall clock with `gl.finish`, seven samples of twenty rounds. Head 5949e07cf.
-- Mip bias 0: today's pass 2.184 ms, GSR 0.537 ms, so GSR is 1.647 ms faster. Image scores at the engine's setting favour GSR: SSIM 0.9552 against 0.9532, MAE 1.48 against 1.49.
-- Mip bias -1: today's pass 2.434 ms, GSR 0.732 ms, so GSR is 1.702 ms faster. GSR scores slightly lower there: SSIM 0.9586 against 0.9655, MAE 1.34 against 1.20.
+- Mip bias 0: the bilinear pass 2.184 ms, GSR 0.537 ms, so GSR is 1.647 ms faster. Image scores at the engine's setting favor GSR: SSIM 0.9552 against 0.9532, MAE 1.48 against 1.49.
+- Mip bias -1: the bilinear pass 2.434 ms, GSR 0.732 ms, so GSR is 1.702 ms faster. GSR scores slightly lower there: SSIM 0.9586 against 0.9655, MAE 1.34 against 1.20.
 - The rule that decides the upscaler asks for a cost inside 0.2 ms. GSR is faster by more than eight times that on this iPad, and better at the engine's mip bias, so the iPad keeps GSR 1.
 
-## iPad Pro 13-inch, iPadOS 26, Safari, 23 October 2026, on BrowserStack
+## iPad Pro 13-inch, iPadOS 26, Safari, on BrowserStack: the M2 gate's timed rows
 
-The M2 gate's timed rows were rerun on the newest tip through BrowserStack's cloud iPad Pro 13, the
+The M2 gate's timed rows ran again on a newer tip through BrowserStack's cloud iPad Pro 13, the
 same device the gate commit was measured on. Each row draws the showcase scene for 300 seconds, rests
 five minutes while the device cools, and reports the frames presented.
 
@@ -51,21 +49,24 @@ five minutes while the device cools, and reports the frames presented.
 | S6 | WebGPU | 59.8 | 59.8 |
 | S6 | WebGL2 | 59.8 | 59.9 |
 
-The device holds its target on every scene but S5, and S5 has lost frames on both paths since the gate
-commit. The engine's own threads use 3.1 ms of a 33 ms frame there, so the loss is on the graphics side.
+The device holds its target on every scene but S5, and S5 draws fewer frames on both paths than on
+the gate commit. The engine's own threads use 3.1 ms of a 33 ms frame there, so the loss is on the
+graphics side.
 The rows were read from `target/runs/20261023-002748-showcase/bsipadpro13-safari` in the gate checkout.
 
-## Vegetation on four cloud devices, 24 October 2026
+## Vegetation on the five cloud devices
 
 Creek and the forest demo ran for M3-V1 ([D-241](decisions/D-241-vegetation-foundation.md)) on the
-cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet. The runs took one
+cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet. The Galaxy S25 ran Creek
+on core WebGPU, and the package's generator on its own, in a later run. The runs took one
 BrowserStack Automate session at a time. Each page fixed its GPU path and its preset. It also set
 the quality governor's target at 1 frame a second, so the render scale stayed at 1 and each
 preset's own cost shows.
 
 WebGL2 and compatibility mode cap the preset at Medium ([the chooser](../packages/engine/src/quality/chooser.ts)).
 So High and Ultra ran on core WebGPU only. Creek at Low on WebGPU stalls an Apple device's page
-after its first frame ([Driver bug reports](driver-bugs.md)), so Creek has no WebGPU row here.
+after its first frame ([Driver bug reports](driver-bugs.md)), so Creek has no WebGPU row on the
+Apple devices.
 
 The tables give the frames per second and the frame interval. They give the busiest thread's CPU
 time per frame, and the GPU time where the device has a timer. They also give the triangles drawn,
@@ -170,6 +171,8 @@ offer, and no adapter was left to start another.
 
 Three pages passed, three were skipped, and one failed. The device offers no compatibility adapter,
 so the plan skipped its compatibility pages, and it skipped them only after that first one had run.
+It has no High or Ultra row at any path, because those presets draw on core WebGPU only, and the
+tablet offers no WebGPU adapter.
 The page then reported 3 frames in 5.5 s, so the runner counted a pass with no triangles and no
 texture bytes. Its figures are in no table here and must not be read. The device's own fault is in
 [Driver bug reports](driver-bugs.md).
@@ -177,6 +180,55 @@ texture bytes. Its figures are in no table here and must not be read. The device
 Creek at Medium failed: its first frame took 42 s, and then the measure drew no frame in 5.5 s. The
 tablet is the slowest measured device. It draws Creek at Low under one frame a second, and the
 forest at Medium under one frame a second.
+
+### Galaxy S25, Chrome 152, Android 15: Creek on WebGPU
+
+Creek has no WebGPU row on the devices above. Its Low page stalls an Apple device after its first
+frame ([Driver bug reports](driver-bugs.md)). The Galaxy S24 offers no WebGPU adapter. The cloud
+Galaxy S25 draws Creek on core WebGPU at every preset. The owner ruled that this phone stands in for
+the S24 class, and its Adreno 830 is a faster GPU of another make than the S24's Xclipse 940.
+
+| Preset | Path | FPS | Frame ms | CPU ms | GPU ms | Triangles | Draws | Textures MiB | Buffers MiB | wasm MiB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Low | WebGPU | 29.1 | 33.3 | 2.88 | 26.28 | 1,524,500 | 182 | 49.6 | 28.9 | 94.4 |
+| Medium | WebGPU | 5.15 | 166.6 | 3.38 | 149.88 | 4,387,400 | 174 | 105.7 | 46.2 | 116.0 |
+| High | WebGPU | 4.20 | 208.3 | 4.66 | 213.61 | 6,798,700 | 288 | 131.3 | 40.0 | 136.1 |
+| Ultra | WebGPU | 1.95 | 499.8 | 4.47 | 468.19 | 11,100,000 | 303 | 341.1 | 44.2 | 184.8 |
+
+The display ran at 30 Hz. Every frame interval except Low is longer than that cap, so those frames
+are the device's own. The GPU times come from the GPU's timer.
+
+The GPU time of each render pass, as the engine names it and times it. A pass that the preset does
+not run is empty. The engine times one frame in a step. A pass after the last timed one is counted
+there, so read the columns side by side within a row.
+
+| Pass | Low | Medium | High | Ultra |
+| --- | --- | --- | --- | --- |
+| copies | 0.00 | 0.00 | 0.03 | 0.00 |
+| shadow cascade 0 | 0.26 | 0.33 | 0.33 | 0.85 |
+| shadow cascade 1 | 0.79 | 0.85 | 0.98 | 2.16 |
+| opaque 1 | 5.57 | 44.07 | | |
+| prepass 1 | | | 45.74 | 182.19 |
+| view copy 1 | 0.00 | 0.03 | 0.03 | 0.13 |
+| opaque | 20.38 | 141.16 | | |
+| prepass | | | 1.64 | 3.15 |
+| ambient occlusion 0 | | | 0.13 | 0.33 |
+| ambient occlusion 1 | | | 164.72 | 279.38 |
+| transmission copy | 0.13 | 0.26 | | |
+| transparent | 0.82 | 1.18 | | |
+| between passes | 0.20 | 0.20 | 0.00 | 0.00 |
+| bloom 0 | 0.07 | 0.07 | | |
+| bloom 1 | 0.66 | 0.39 | | |
+| Whole frame | 26.28 | 149.88 | 213.61 | 468.19 |
+
+Low and Medium draw with bloom, and the opaque pass carries almost all of the frame. High and Ultra
+turn on ambient occlusion, which splits the depth prepass from the opaque pass. The CPU time stays
+near 3 to 5 ms at every preset, so the cost is the GPU's.
+
+The run: [20261029-200013-vegetation](tested-devices/galaxy-s25-sm-s931b-chrome/20261029-200013-vegetation.md).
+Five pages passed, and none was skipped. The same plan ran on this phone on 27 October
+([that run](tested-devices/galaxy-s25-sm-s931b-chrome/20261027-002402-vegetation.md)), and it holds
+no per-pass figures.
 
 ### Tree generation, all four devices
 
@@ -198,7 +250,73 @@ variant on the tablet was an oak at Ultra: 5.42 ms for 27,090 triangles. The tab
 The other three are in their folders: the iPhone and the iPad at 20261024-084032, and the S24 at
 20261024-084231.
 
-### The splats add-on's first full run, iPad Pro 13 and Galaxy S24
+### Tree generation on the Galaxy S25
+
+The `tree-generation` plan ran again on the cloud Galaxy S25, with the vegetation package's own
+generator instead of the stand-in ([its run](tested-devices/galaxy-s25-sm-s931b-chrome/20261027-002251-tree-generation.md)).
+The page generated every species at each preset's detail in a worker, six seeds each: thirteen
+species, so 78 variants for a preset.
+
+| Preset | Variants | Total (ms) | Per variant (ms) | Triangles | Bytes (MB) |
+| --- | --- | --- | --- | --- | --- |
+| Low | 78 | 163.0 | 2.09 | 337,008 | 16.7 |
+| Medium | 78 | 137.9 | 1.77 | 337,008 | 16.7 |
+| High | 78 | 156.9 | 2.01 | 409,182 | 20.0 |
+| Ultra | 78 | 148.9 | 1.91 | 409,182 | 20.0 |
+
+The phone stands in for the S24 class. D-241's generation budget allows a whole variant set to build
+in 200 ms on the slowest measured device, and every preset sits inside it. The cost per variant is
+about 1.7 times the iPad's, whose rows are below. Its byte column counts the arrays before the leaf
+parts carried the morph data, so it is lower than the iPad's.
+
+### Tree generation on the iPad Pro 13
+
+The same plan ran on the cloud iPad Pro 13 in Safari 26.6.1
+([its run](tested-devices/ipad-pro-13-safari/20261030-014425-tree-generation.md)). The page
+generated every species at each preset's detail in a worker, six seeds each: 78 variants for a
+preset.
+
+| Preset | Variants | Total (ms) | Per variant (ms) | Triangles | Bytes (MB) |
+| --- | --- | --- | --- | --- | --- |
+| Low | 78 | 105.2 | 1.35 | 337,008 | 20.5 |
+| Medium | 78 | 77.6 | 1.00 | 337,008 | 20.5 |
+| High | 78 | 93.3 | 1.20 | 409,182 | 24.5 |
+| Ultra | 78 | 80.6 | 1.03 | 409,182 | 24.5 |
+
+D-241 allows the set 200 ms on the slowest measured device and 150 ms on the iPad. Every preset sits
+inside both lines, and the slowest is Low at 105.2 ms, 70 per cent of the iPad's line.
+
+The arrays take 20.5 MB at Low and Medium and 24.5 MB at High and Ultra, which is inside the 25 and 30 MB
+that D-241 sets. The leaf parts carry the next level's place for each vertex, which the material's morph
+reads.
+
+### Tree generation on the Galaxy S25 with the leaf morph data
+
+The plan ran twice on the cloud Galaxy S25 with the current generator. The second run came after the
+phone had time to cool, and it is the figure
+([its run](tested-devices/galaxy-s25-sm-s931b-chrome/20261030-021612-tree-generation.md)). The page
+generated 78 variants for each preset.
+
+| Preset | Variants | Total (ms) | Per variant (ms) | Triangles | Bytes (MB) |
+| --- | --- | --- | --- | --- | --- |
+| Low | 78 | 198.6 | 2.55 | 337,008 | 20.5 |
+| Medium | 78 | 164.9 | 2.11 | 337,008 | 20.5 |
+| High | 78 | 161.9 | 2.08 | 409,182 | 24.5 |
+| Ultra | 78 | 172.4 | 2.21 | 409,182 | 24.5 |
+
+D-241 allows the set 200 ms on the slowest measured device. Low is inside it at 198.6 ms, by 0.7
+per cent, and the other presets sit inside it. Both runs drew on a 30 Hz display, and the runner
+names the phone's heat or the display setting, so the figure carries that caveat.
+
+The first run
+([its run](tested-devices/galaxy-s25-sm-s931b-chrome/20261030-015719-tree-generation.md)) read
+213.4 ms at Low while the cloud reported the phone hot. It is discarded as an upper bound, and the
+two runs differ by 14.8 ms at Low.
+
+The arrays take 20.5 MB at Low and Medium and 24.5 MB at High and Ultra, which is inside the 25 and 30 MB
+that D-241 sets.
+
+### The splats add-on at its full count, iPad Pro 13 and Galaxy S24
 
 The splats streaming page drew a 400,000-splat cloud at the Low preset on the cloud iPad and the
 cloud S24-class phone ([its plan](devices.md#the-splats-plan)). Each path drew exactly the budget
@@ -212,7 +330,7 @@ that it settled on, so the cloud stayed within it.
 
 The iPad's display ran at 59 Hz. The S24's ran at 30 Hz, so the runner marks its timing figures
 unreliable. The cloud in these runs was built in the page's code and handed to the add-on as a blob,
-so the add-on was not yet downloading a stream. The add-on's streaming reads an index and downloads
+so the add-on downloaded no stream. The add-on's streaming reads an index and downloads
 only the chunks that the view needs.
 
 The runs:
@@ -221,7 +339,7 @@ The runs:
 
 ### The splats add-on streaming, iPad Pro 13 and Galaxy S24
 
-Both cloud devices ran the streaming plan on 24 October 2026 ([its plan](devices.md#the-splats-plan)).
+Both cloud devices ran the streaming plan ([its plan](devices.md#the-splats-plan)).
 The page read an index of 11 chunk files, 5,628,772 bytes for 400,000 splats, and the add-on
 downloaded only the chunks that the view asked for.
 
@@ -240,7 +358,7 @@ The 100,000-splat quarter clouds arrived whole on both devices, because each cut
 almost all the splats.
 
 The S24's display ran at 30 Hz and the Mac was loaded, so the timing figures are unreliable. The
-rates follow the earlier runs of the same cloud: 12.4, 3.29 and 1.07 frames a second.
+rates match the full-count runs of the same cloud: 12.4, 3.29 and 1.07 frames a second.
 
 The runs:
 [20261024-171907-splats](tested-devices/ipad-pro-13-safari/20261024-171907-splats.md) and
@@ -256,13 +374,36 @@ The splats streaming page drew 100,000 splats at the same pixel count as its ful
 | WebGPU | 100,000 | 250,000 | 2.84 | 26.5 s |
 | WebGL2 | 25,003 | 37,500 | 6.88 | 26.3 s |
 
-The full count drew 1.07 frames a second on WebGPU and 3.29 on WebGL2 in the same cloud, earlier
-that day. So a quarter of the count gave between two and three times the rate, and not four times.
+The full count drew 1.07 frames a second on WebGPU and 3.29 on WebGL2 in the same cloud. So a
+quarter of the count gave between two and three times the rate, and not four times.
 The cards' fill sets much of the cost, and the work of each splat sets the rest.
 
 The WebGPU budget reads 250,000, which is Medium's count rather than Low's 100,000. The page reported
 again only when the drawn count changed. This cloud's 100,000 splats fit under both Medium's 250,000
-and Low's 100,000, so the move to Low changed no drawn count, sent no new report, and left the
-earlier figure in place. The record's first version gave a different cause, which was wrong.
+and Low's 100,000, so the move to Low changed no drawn count, sent no new report, and left
+Medium's figure in place.
 
 The run: [20261024-111706-splats](tested-devices/ipad-pro-13-safari/20261024-111706-splats.md).
+
+### S3's 256 lights with depth-fitted clusters, iPad Pro 13 and Galaxy S25
+
+The fit's before and after ran the device runner's bench plan: S3 on null3D's WebGPU page, three
+runs of 10 s warm-up and 10 s measured each. The iPad chose Medium, where the fit runs, and the S25
+chose Low, where it stays off.
+
+| Device | Preset | Before, GPU ms | After, GPU ms | Light depth pass, ms |
+| --- | --- | --- | --- | --- |
+| iPad Pro 13 | Medium | 8.41 | 6.23 | 0.162 |
+| Galaxy S25 | Low | 19.01 | 19.14 | none: the fit is off |
+
+The iPad saves 2.18 ms, thirteen times the new pass. The phone's frame stays within the 0.1 ms that
+two runs of the before build differ. The S25's display runs at 30 Hz, so the runner marks its
+timing figures unreliable; its GPU times compare between its sessions. The S25 stands in for the
+S24 class by the owner's ruling. [D-264](decisions/D-264-light-cluster-depth-fit.md) gives the
+reason for each preset's choice.
+
+The runs, before and after each device:
+[20261030-150954-bench](tested-devices/ipad-pro-13-safari/20261030-150954-bench.md),
+[20261030-162243-bench](tested-devices/ipad-pro-13-safari/20261030-162243-bench.md),
+[20261030-150954-bench](tested-devices/galaxy-s25-sm-s931b-chrome/20261030-150954-bench.md) and
+[20261030-162243-bench](tested-devices/galaxy-s25-sm-s931b-chrome/20261030-162243-bench.md).

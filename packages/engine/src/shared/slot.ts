@@ -130,10 +130,18 @@ export const JobsYieldAddress = 36;
 export const FrameRest0 = 33;
 export const FrameRest1 = 34;
 /**
- * Nonzero where the page turns the still-camera accumulation off, such as in hold mode and the
- * image tests: a still view then draws every frame as it moves.
+ * Nonzero where the page turns the still-camera accumulation off, such as in hold mode, a replay
+ * and the image tests: a still view then draws every frame as it moves.
  */
-export const StillOff = 35;
+export const StillOff = 57;
+/**
+ * The ranges of cluster-tree patches that the camera view drew in the frame the sketch recorded
+ * last, 0 where it drew the trees' whole levels, or a negative value where the GPU path picks the
+ * patches itself. The sketch thread writes it, for a page that reports which path a frame took.
+ */
+export const ClusterPatches = 58;
+/** The frame that `ClusterPatches` belongs to. The sketch thread writes it with the count. */
+export const ClusterPatchFrame = 59;
 /**
  * The programs that may still be compiling in the background on WebGL2, as the thread that draws
  * found them at its last frame, for the development probe of the two-step pass.
@@ -159,9 +167,11 @@ export const TwoStepScale = 47;
  * engine memory. The sketch takes a read's answer when its slot is not 0.
  */
 /**
- * The generation of the newest plan's texture list, as the sketch thread recorded it. A list
- * recorded under an older generation names textures that the newer plan replaced, so the thread
- * that draws takes that frame without drawing it, as it does a frame of an older GPU epoch.
+ * The generation of the newest plan's texture list, as the sketch thread recorded it. A capture
+ * replays a list long after its frame was recorded, so it draws only a list recorded under this
+ * generation: an older list names textures that the newer plan replaced. The frame loop draws its
+ * frames in the order they were recorded, and each list carries the textures that it makes and
+ * releases, so a later plan does not make an earlier frame unsafe.
  */
 export const PlanEpoch = 48;
 /** The plan generation each frame parity's draw list was recorded under. */
@@ -173,7 +183,22 @@ export const FramePlan1 = 50;
  * them by comparing the words that landed with the ones before, so nothing reads this slot.
  */
 export const SkyLight = 51;
+/**
+ * The frames that the thread that draws took and drew none of, because each was recorded for a GPU
+ * device that the browser took away. A skipped list never draws again, so the work that only it
+ * records, such as a probe's capture, is lost. A page reports the count around a change, so a lost
+ * result names a skip as its cause.
+ */
+export const FramesSkipped = 56;
 export const PickRead0 = 37;
 export const PickRead1 = 38;
 export const PickRead2 = 39;
 export const PickRead3 = 40;
+/**
+ * Each read of a compute pass's region: the thread that draws adds one once the read's bytes are
+ * in engine memory. The sketch takes a read's answer when its slot is not 0.
+ */
+export const PassRead0 = 52;
+export const PassRead1 = 53;
+export const PassRead2 = 54;
+export const PassRead3 = 55;

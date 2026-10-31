@@ -10,4 +10,4 @@
 ## Known issues
 
 Brave reports 3 cores, where Safari reports 8.
-Soak not run yet
+The soak plan has not run in Brave.

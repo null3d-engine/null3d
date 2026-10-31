@@ -1,16 +1,22 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { missingCoreFiles } from '../../../packages/vite-plugin/src/index.ts';
 import { MATERIAL_BUILDS_ADDRESS } from '../../../packages/vite-plugin/src/material-builds.ts';
+import { NO_CACHE } from '../../../packages/vite-plugin/src/shader-cache.ts';
 import { fixture } from '../../../tools/lib/fixture';
 import { FIRST_USE_SHADER_BUDGET, LATER_BUDGET } from '../../../tools/lib/size-report.ts';
 import { UsageError } from './args.js';
 import {
+	ADDON_EXTERNALS,
 	ADDON_FILE_BUDGET,
 	ADDON_SHADER_BUDGET,
 	allocationGate,
 	allocationOutcome,
 	budgetOf,
+	buildAddon,
+	buildAddonOutputs,
+	emptyShaders,
 	engineVersions,
 	interfaceResult,
 	MAX_ALLOCATION_SAMPLES,
@@ -23,6 +29,7 @@ import {
 	run,
 	samplingIntervalFor,
 	sizeProblems,
+	splitShaderData,
 } from './check-addon.js';
 import { freePort } from './devtools.js';
 import type { CallFrame, ProfileNode } from './heap-profile.js';
@@ -121,6 +128,18 @@ describe('readAddon', () => {
 		expect(readAddon(fixture({ 'package.json': '{"name":"a"}' })).problems[0] ?? '').toStartWith(
 			'no entry file: ',
 		);
+	});
+});
+
+describe('the build tools', () => {
+	it('finds the Vite plugin through the manifest that the plugin exports', () => {
+		// The gates that compile WGSL and measure the build resolve `@null3d/vite-plugin/package.json`.
+		// Node refuses a sub-path that a package's `exports` does not name, and the two gates then
+		// skip, so the entry below is what keeps them running under the command's own node.
+		const manifest = JSON.parse(
+			readFileSync(join(import.meta.dirname, '../../vite-plugin/package.json'), 'utf8'),
+		) as { exports?: Record<string, unknown> };
+		expect(manifest.exports?.['./package.json']).toBe('./package.json');
 	});
 });
 
@@ -418,17 +437,17 @@ describe('sizeProblems', () => {
 
 	it('accepts a file at its budget in every column', () => {
 		expect(
-			sizeProblems([{ name: 'addon.js', raw: 64 * KB, gzip: 24 * KB, brotli: 17 * KB }]),
+			sizeProblems([{ name: 'addon.js', raw: 64 * KB, gzip: 24 * KB, brotli: 18 * KB }]),
 		).toEqual([]);
 	});
 
 	it('names each column of a file over its budget', () => {
 		expect(
-			sizeProblems([{ name: 'addon.js', raw: 65 * KB, gzip: 25 * KB, brotli: 18 * KB }]),
+			sizeProblems([{ name: 'addon.js', raw: 65 * KB, gzip: 25 * KB, brotli: 19 * KB }]),
 		).toEqual([
 			'addon.js is 65.0 KB raw, over its 64.0 KB budget',
 			'addon.js is 25.0 KB gzip, over its 24.0 KB budget',
-			'addon.js is 18.0 KB brotli, over its 17.0 KB budget',
+			'addon.js is 19.0 KB brotli, over its 18.0 KB budget',
 		]);
 	});
 
@@ -447,6 +466,155 @@ describe('sizeProblems', () => {
 		expect(sizeProblems([{ name, raw: 900 * KB, gzip: 160 * KB, brotli: 57 * KB }])).toEqual([
 			`${name} is 57.0 KB brotli, over its 56.0 KB budget`,
 		]);
+	});
+
+	/** A file of code that holds the compiled WGSL that the plugin inlined in it. */
+	const split = (code: number, shader: number) => ({
+		name: 'addon.js',
+		raw: code + shader,
+		gzip: 0,
+		brotli: 0,
+		code: { raw: code, gzip: 0, brotli: 0 },
+		shader: { raw: shader, gzip: 0, brotli: 0 },
+	});
+
+	it('answers each budget for its own part of a file that holds compiled WGSL', () => {
+		// Together the parts are past the code budget, which the shader data is not code for.
+		expect(sizeProblems([split(14 * KB, 75 * KB)])).toEqual([]);
+	});
+
+	it('names the code of a file that holds compiled WGSL', () => {
+		expect(sizeProblems([split(65 * KB, 75 * KB)])).toEqual([
+			'addon.js is 65.0 KB raw of code, over its 64.0 KB budget',
+		]);
+	});
+
+	it('holds the shader data inlined in a file to the shader budget', () => {
+		// The code keeps its budget, so a gate that stopped counting the inlined data would pass.
+		expect(sizeProblems([split(14 * KB, 2000 * KB)])).toEqual([
+			'addon.js is 2000.0 KB raw of shader data, over its 1792.0 KB budget',
+		]);
+	});
+
+	it('names a file that the shader data did not change by its whole size', () => {
+		expect(sizeProblems([split(65 * KB, 0)])).toEqual([
+			'addon.js is 65.0 KB raw, over its 64.0 KB budget',
+		]);
+	});
+});
+
+describe('splitShaderData', () => {
+	const file = (name: string, text: string) => ({ name, bytes: Buffer.from(text) });
+
+	it('gives each file that both builds wrote its code and the shader data beside it', () => {
+		const [full] = splitShaderData([file('addon.js', 'x'.repeat(4096))], [file('addon.js', 'x')]);
+		expect(full?.raw).toBe(4096);
+		expect(full?.code?.raw).toBe(1);
+		expect(full?.shader?.raw).toBe(4095);
+		expect(full?.code?.gzip).toBeGreaterThan(0);
+		expect(full?.code?.brotli).toBeGreaterThan(0);
+		// The parts add up to the whole, so no byte of the file is left out.
+		expect((full?.code?.raw ?? 0) + (full?.shader?.raw ?? 0)).toBe(4096);
+	});
+
+	it('gives a file that only the build with the plugin wrote its whole size alone', () => {
+		const [, shaderBuild] = splitShaderData(
+			[file('addon.js', 'code'), file('material-wgsl-0-0123abcd.js', 'builds')],
+			[file('addon.js', 'code')],
+		);
+		expect(shaderBuild?.code).toBeUndefined();
+		expect(shaderBuild?.shader).toBeUndefined();
+		expect(shaderBuild?.raw).toBe('builds'.length);
+	});
+
+	it('gives no shader bytes to a file that the shader data did not change', () => {
+		const [file_] = splitShaderData([file('addon.js', 'code')], [file('addon.js', 'code')]);
+		expect(file_?.shader).toEqual({ raw: 0, gzip: 0, brotli: 0 });
+	});
+});
+
+describe('emptyShaders', () => {
+	it('answers a WGSL import with an empty module, and every other file with nothing', () => {
+		const plugin = emptyShaders() as { enforce: string; load: (id: string) => unknown };
+		expect(plugin.enforce).toBe('pre');
+		expect(plugin.load('/project/src/grid.wgsl')).toBe('export default {};');
+		expect(plugin.load('/project/src/grid.wgsl?raw')).toBeUndefined();
+		expect(plugin.load('/project/src/wind.ts')).toBeUndefined();
+	});
+});
+
+/** An add-on whose entry imports a compute shader, so a build of it holds shader data. */
+const ADDON_FIXTURE = join(import.meta.dirname, '../../../tests/fixtures/check-addon-split');
+
+/** An add-on that builds on another null3D package, which its build must keep external. */
+const ADDON_EXTERNAL_FIXTURE = join(
+	import.meta.dirname,
+	'../../../tests/fixtures/check-addon-external',
+);
+
+/**
+ * True where a build of the fixture can run. It needs the engine's core files, which the build job
+ * writes, as it writes the shader modules that a compile of the WGSL reads.
+ */
+const BUILDS = (missingCoreFiles(ADDON_FIXTURE) ?? []).length === 0;
+
+/**
+ * CI's unit job downloads the build job's files before its tests, so there the core files are
+ * always present. A file missing there means the job lost it, and the build checks below would pass
+ * while they checked nothing, so the job fails instead.
+ */
+it.if(Boolean(process.env.CI))('finds the core files in CI, so the build checks run there', () => {
+	expect(missingCoreFiles(ADDON_FIXTURE)).toEqual([]);
+});
+
+describe('ADDON_EXTERNALS', () => {
+	it('keeps every null3D package out of the add-on build, and no other package', () => {
+		const external = (specifier: string) =>
+			ADDON_EXTERNALS.some((pattern) => pattern.test(specifier));
+		for (const specifier of [
+			'@null3d/engine',
+			'@null3d/engine/stats',
+			'@null3d/impostors',
+			'@null3d/wind',
+		])
+			expect(external(specifier)).toBe(true);
+		for (const specifier of ['@acme/vegetation', 'some-package', './local.js'])
+			expect(external(specifier)).toBe(false);
+	});
+});
+
+describe.skipIf(!BUILDS)('buildAddon', () => {
+	it('keeps a null3D package that the add-on builds on out of its file', async () => {
+		const before = process.env[NO_CACHE];
+		process.env[NO_CACHE] = '1';
+		try {
+			const built = await buildAddonOutputs(ADDON_EXTERNAL_FIXTURE, './src/index.ts');
+			expect(built.error).toBeUndefined();
+			const entry = (built.full ?? []).find((file) => file.name === 'addon.js');
+			// The import survives the build, so the file holds the package's name and not its code.
+			expect(entry?.bytes.toString('utf8')).toContain('@null3d/impostors');
+		} finally {
+			if (before === undefined) delete process.env[NO_CACHE];
+			else process.env[NO_CACHE] = before;
+		}
+	});
+
+	it('gives the shader data that the entry holds a part of its own', async () => {
+		// A build that reads no cache writes nothing into the fixture and announces no compile, so
+		// the fixture keeps no file of its own and no output escapes into a later test.
+		const before = process.env[NO_CACHE];
+		process.env[NO_CACHE] = '1';
+		try {
+			const built = await buildAddon(ADDON_FIXTURE, './src/index.ts');
+			expect(built.error).toBeUndefined();
+			const entry = (built.files ?? []).find((file) => file.name === 'addon.js');
+			// A build with no second pass, or a file that it did not split, leaves no shader part.
+			expect(entry?.shader?.raw ?? 0).toBeGreaterThan(0);
+			expect((entry?.code?.raw ?? 0) + (entry?.shader?.raw ?? 0)).toBe(entry?.raw ?? -1);
+		} finally {
+			if (before === undefined) delete process.env[NO_CACHE];
+			else process.env[NO_CACHE] = before;
+		}
 	});
 });
 
@@ -635,6 +803,34 @@ describe('allocationGate', () => {
 	});
 });
 
+/**
+ * An add-on whose entry minifies past the budget for code. Its manifest declares the plugin
+ * interface, and a link to the installed packages lets the build resolve Vite and the plugin from
+ * the add-on's own folder, as a package that installs them beside its manifest does. `source` adds
+ * lines before the entry's own, such as an import that the public-API gate refuses.
+ *
+ * @param {readonly string[]} [source]
+ */
+function overBudgetAddon(source: readonly string[] = []): string {
+	const folder = fixture({
+		'package.json': JSON.stringify({ name: '@acme/heavy' }),
+		// A literal that minifies to more than the raw budget and compresses far below the other two,
+		// so one column goes over and the warning names a single file.
+		'src/index.ts': [
+			...source,
+			"checkPluginInterface('@acme/heavy', { min: 1, max: 1 });",
+			`export const data = ${JSON.stringify('a'.repeat(70 * 1024))};`,
+			'',
+		].join('\n'),
+	});
+	symlinkSync(
+		join(import.meta.dirname, '../../../node_modules'),
+		join(folder, 'node_modules'),
+		'dir',
+	);
+	return folder;
+}
+
 describe('run', () => {
 	const log = spyOn(console, 'log').mockImplementation(() => {});
 	afterEach(() => log.mockClear());
@@ -672,6 +868,30 @@ describe('run', () => {
 		});
 		expect(await run([folder])).toBe(0);
 		expect(printed()).toContain('PASS  public API: 1 file imports only the engine');
+	});
+
+	it('warns, and exits 0, when a built file goes over a size budget', async () => {
+		const folder = overBudgetAddon();
+		expect(await run([folder, '--skip-browser'])).toBe(0);
+		expect(printed()).toContain(
+			'WARN  sizes: 1 file load more than the budget for a file after the start',
+		);
+		expect(printed()).toContain('over its 64.0 KB budget');
+		// The exit status follows the FAIL lines, so a warning leaves the run passing.
+		expect(printed()).not.toContain('FAIL');
+		expect(printed()).toContain('1 warning');
+	});
+
+	it('still exits 1 when a warning sits beside a failure', async () => {
+		// A type-only import refuses no build, so the sizes gate still warns beside the failure.
+		const folder = overBudgetAddon(["import type { internals } from '@null3d/engine/internal';"]);
+		expect(await run([folder, '--skip-browser'])).toBe(1);
+		expect(printed()).toContain('FAIL  public API: 1 import reaches past the engine');
+		expect(printed()).toContain(
+			'WARN  sizes: 1 file load more than the budget for a file after the start',
+		);
+		expect(printed()).toContain('1 failed');
+		expect(printed()).toContain('1 warning');
 	});
 
 	it('prints the help without checking anything', async () => {

@@ -395,6 +395,7 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     let out = null3d::tonemap::finish(
         light * frame.output.exposure,
         in.clip.xy,
+        frame.occlusion.y,
         frame.output,
         frame.target_size.xy,
         frame.vignette,

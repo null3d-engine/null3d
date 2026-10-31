@@ -69,6 +69,20 @@ function fakeCore(
 	/** False while the fake core has no texels of a texture, as before its first upload. */
 	let regionReady = true;
 	const glue = {
+		// The core turns a rectangle's rows over in place; the fake does it in this file's own
+		// memory, so the test sees the same bytes it would see from the engine.
+		turnRows: (address: number, row: number, height: number) => {
+			const bytes = new Uint8Array(memory.buffer);
+			for (let top = 0, bottom = height - 1; top < bottom; top++, bottom--) {
+				const a = address + top * row;
+				const b = address + bottom * row;
+				for (let k = 0; k < row; k++) {
+					const texel = bytes[a + k] as number;
+					bytes[a + k] = bytes[b + k] as number;
+					bytes[b + k] = texel;
+				}
+			}
+		},
 		createTexture: (...args: (number | boolean)[]) => {
 			created.push(args.map(Number));
 			return 7;
@@ -101,6 +115,7 @@ function fakeCore(
 					: field === TEXTURE_STAT_UPLOADING
 						? Number(uploading)
 						: 0,
+		textureLayer: (texture: number) => (texture === 7 ? 3 : 0),
 		destroyTexture: (texture: number) => {
 			destroyed.push(texture);
 			return 0;
@@ -207,6 +222,8 @@ describe('textures.fromImageBitmap', () => {
 		expect(sent).toEqual([[1, picture]]);
 		expect([texture.width, texture.height, texture.depth, texture.bytes]).toEqual([32, 16, 1, 700]);
 		expect([texture.format, texture.colorSpace, texture.uvSet]).toEqual(['rgba8unorm', 'srgb', 0]);
+		// The layer that a map samples now, which a pass texture moves with its newest state.
+		expect(texture.layer).toBe(3);
 		const options: TextureOptions = {
 			colorSpace: 'linear',
 			wrap: ['repeat', 'mirror'],

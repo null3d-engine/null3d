@@ -1,9 +1,16 @@
 // The glTF loader's texture step and its levels, with a fake engine: a load whose textures fail
-// part way frees what it made, and a level whose primitive names its base's accessors shares the
-// base's vertices.
+// part way frees what it made, a level whose primitive names its base's accessors shares the
+// base's vertices, and a file's error fades unless the tool's coverage comes beside it.
 
 import { expect, test } from 'bun:test';
-import { type GltfContext, makeTextures, readStage, sharesVertices } from './gltf';
+import {
+	fileLevelMeasure,
+	type GltfContext,
+	makeTextures,
+	readStage,
+	readStageBand,
+	sharesVertices,
+} from './gltf';
 import type { GltfData, PrimitiveData, TextureUse } from './gltf-parse';
 
 const use = (image: number): TextureUse => ({
@@ -115,6 +122,15 @@ test('a level copies its vertices when its base morphs or has no indices', () =>
 	expect(sharesVertices({ ...primitive(), indices: undefined }, base)).toBe(false);
 });
 
+test("a file's level fades unless the coverage that its measured error implies comes beside it", () => {
+	// A hand-set error, as the Creek trees' levels hold: the switch shows, so the level fades.
+	expect(fileLevelMeasure([28.297, 56.594], undefined, 0)).toEqual({ error: 28.297 });
+	// A measured error, which the asset tool writes with the coverage that the error implies.
+	expect(fileLevelMeasure([919.294], [0.0165], 0)).toEqual({ error: 919.294, fade: false });
+	// A file that gives the coverage of its levels alone.
+	expect(fileLevelMeasure(undefined, [0.0165], 0)).toEqual({ coverage: 0.0165 });
+});
+
 /** A stage file of `lists`, each at the width that its largest index takes, as the asset tool writes it. */
 function stageFile(lists: readonly number[][]): ArrayBuffer {
 	const placed = lists.map((list) => {
@@ -155,4 +171,53 @@ test('a stage file gives the triangle lists of the node its primitives, at eithe
 	expect(readStage(wrong, 2)).toBeUndefined();
 	expect(readStage(stageFile(lists), 1)).toBeUndefined();
 	expect(readStage(stageFile(lists).slice(0, 20), 2)).toBeUndefined();
+});
+
+/** A band stage file: the header with kind 1, the patch count, the patches, then one index list. */
+function bandStage(bounds: number[], records: number[], list: number[], width = 2): ArrayBuffer {
+	const patches = records.length / 4;
+	const count = Math.ceil((list.length * width) / 4) * 4;
+	const bytes = new Uint8Array(20 + patches * 32 + 8 + count);
+	const view = new DataView(bytes.buffer);
+	view.setUint32(0, 0x5344334e, true);
+	view.setUint32(4, 1, true);
+	view.setUint32(8, 1, true);
+	view.setUint32(12, 1, true);
+	view.setUint32(16, patches, true);
+	// Eight words a patch: its sphere's four floats, then its record's four integers.
+	for (let k = 0; k < patches; k++) {
+		for (let c = 0; c < 4; c++)
+			view.setFloat32(20 + k * 32 + c * 4, bounds[k * 4 + c] as number, true);
+		for (let c = 0; c < 4; c++)
+			view.setUint32(20 + k * 32 + 16 + c * 4, records[k * 4 + c] as number, true);
+	}
+	const listAt = 20 + patches * 32;
+	view.setUint32(listAt, list.length, true);
+	view.setUint32(listAt + 4, width, true);
+	const array = width === 2 ? new Uint16Array(bytes.buffer, listAt + 8, list.length) : null;
+	if (array) array.set(list);
+	else new Uint32Array(bytes.buffer, listAt + 8, list.length).set(list);
+	return bytes.buffer;
+}
+
+test('a band stage gives the patches and indices of one band of a tree', () => {
+	const bounds = [1, 2, 3, 4, 5, 6, 7, 8];
+	const records = [0, 3, 0, 0, 3, 6, 1, 0];
+	const list = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+	const band = readStageBand(bandStage(bounds, records, list));
+	expect(band && Array.from(band.bounds)).toEqual(bounds);
+	expect(band && Array.from(band.records)).toEqual(records);
+	expect(band && Array.from(band.indices)).toEqual(list);
+	// Four-byte indices reach a mesh of more than 65,535 vertices.
+	const wide = readStageBand(bandStage(bounds, records, [0, 70_000, 2], 4));
+	expect(wide && Array.from(wide.indices)).toEqual([0, 70_000, 2]);
+	// A file of another kind or version, one cut short, and one with no patch is left out.
+	const wrongKind = bandStage(bounds, records, list);
+	new DataView(wrongKind).setUint32(8, 0, true);
+	expect(readStageBand(wrongKind)).toBeUndefined();
+	const wrongVersion = bandStage(bounds, records, list);
+	new DataView(wrongVersion).setUint32(4, 2, true);
+	expect(readStageBand(wrongVersion)).toBeUndefined();
+	expect(readStageBand(bandStage(bounds, records, list).slice(0, 40))).toBeUndefined();
+	expect(readStageBand(bandStage([], [], list))).toBeUndefined();
 });

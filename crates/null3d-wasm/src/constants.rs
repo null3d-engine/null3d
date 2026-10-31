@@ -21,6 +21,7 @@ use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
 use null3d_render::materials::{feature, param};
+use null3d_render::meshes::MAX_BUFFER_BYTES;
 use null3d_render::output::{Antialias, ToneMapping};
 use null3d_render::particles;
 use null3d_render::skinning::SkinningMode;
@@ -152,6 +153,18 @@ pub mod map_slot {
     pub const ANISOTROPY: u32 = layer(LayerMap::Anisotropy);
     pub const TRANSMISSION: u32 = layer(LayerMap::Transmission);
     pub const THICKNESS: u32 = layer(LayerMap::Thickness);
+    /// The row slot that holds a layer map's texture, and whose own texture coordinate transform
+    /// the shader reads. A layer map shares one of the light and specular slots.
+    pub const COAT_ROW: u32 = LayerMap::Coat.slot() as u32;
+    pub const COAT_ROUGHNESS_ROW: u32 = LayerMap::CoatRoughness.slot() as u32;
+    pub const COAT_NORMAL_ROW: u32 = LayerMap::CoatNormal.slot() as u32;
+    pub const SHEEN_COLOR_ROW: u32 = LayerMap::SheenColor.slot() as u32;
+    pub const SHEEN_ROUGHNESS_ROW: u32 = LayerMap::SheenRoughness.slot() as u32;
+    pub const IRIDESCENCE_ROW: u32 = LayerMap::Iridescence.slot() as u32;
+    pub const IRIDESCENCE_THICKNESS_ROW: u32 = LayerMap::IridescenceThickness.slot() as u32;
+    pub const ANISOTROPY_ROW: u32 = LayerMap::Anisotropy.slot() as u32;
+    pub const TRANSMISSION_ROW: u32 = LayerMap::Transmission.row_slot() as u32;
+    pub const THICKNESS_ROW: u32 = LayerMap::Thickness.row_slot() as u32;
 
     /// The number that `setMaterialMap` takes for a layer map: its place after the map slots.
     const fn layer(map: LayerMap) -> u32 {
@@ -276,17 +289,8 @@ pub mod post_value {
     pub const SSR_MAX_ROUGHNESS: u32 = 62;
     /// The sharpening's strength, from 0 to 1.
     pub const SHARPEN: u32 = 63;
-    /// The grading controls' white balance factors and the saturation, the lift, the gamma and
-    /// the gain of each channel, and the split toning's two chromas with its balance and its
-    /// strength, in this order. The 8-bit path's shaders apply them before their tone curve.
-    pub const GRADE_WHITE_BALANCE: u32 = 64;
-    pub const GRADE_LIFT: u32 = 68;
-    pub const GRADE_GAMMA: u32 = 72;
-    pub const GRADE_GAIN: u32 = 76;
-    pub const GRADE_SHADOWS: u32 = 80;
-    pub const GRADE_HIGHLIGHTS: u32 = 84;
     /// The values in the block.
-    pub const COUNT: u32 = 88;
+    pub const COUNT: u32 = 64;
 }
 
 /// The block of numbers that `callValues` gives: 64-bit floats that TypeScript writes before a
@@ -445,6 +449,19 @@ pub mod camera_target {
     pub const PASS_VIEWS: u32 = 2;
 }
 
+/// How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
+/// that it never draws, in `initEngine`'s `prepass_color`. A benchmark page picks it with
+/// ?prepass-color=. `NONE` is the default that the device run chose (D-269).
+pub mod prepass_color {
+    /// Starts it from what the texture holds, then invalidates it. The engine's behavior before the
+    /// device run, kept for measurement.
+    pub const LOAD: u32 = 0;
+    /// Clears it. The device run showed that the clear does not remove the charge.
+    pub const CLEAR: u32 = 1;
+    /// Gives the prepass a depth-only framebuffer, with no color attachment.
+    pub const NONE: u32 = 2;
+}
+
 /// The settings that `setTextureOption` changes.
 pub mod texture_option {
     /// The texel bytes that one frame may upload.
@@ -477,6 +494,8 @@ pub mod mesh_arrays {
     pub const COMPUTE_TANGENTS: u32 = 256;
     pub const JOINTS: u32 = 512;
     pub const WEIGHTS: u32 = 1024;
+    /// The four-number vertex record of a generated mesh, which a material's vertex offset reads.
+    pub const TARGETS: u32 = 2048;
 }
 
 /// The morph target arrays that `createMeshFromArrays` finds in the staging words after the
@@ -823,6 +842,7 @@ pub fn typescript() -> String {
                 ("RADIUS", light_value::RADIUS),
                 ("IMAGE", light_value::IMAGE),
                 ("HERO_SIZE", light_value::HERO_SIZE),
+                ("SHADOW_INTENSITY", light_value::SHADOW_INTENSITY),
             ],
         ),
         (
@@ -945,6 +965,7 @@ pub fn typescript() -> String {
                     "PORTABLE_STORAGE_BINDING_BYTES",
                     sizes::PORTABLE_STORAGE_BINDING_BYTES,
                 ),
+                ("PORTABLE_BUFFER_BYTES", MAX_BUFFER_BYTES as u32),
                 ("MAX_USEFUL_BINDING_BYTES", MAX_USEFUL_BINDING_BYTES),
                 ("INSTANCE_STRIDE", sizes::INSTANCE_STRIDE),
                 ("PORTABLE_MAX_SOURCES", PORTABLE_MAX_SOURCES),
@@ -1008,6 +1029,7 @@ pub fn typescript() -> String {
             "PARTICLE",
             &[
                 ("RECORD_BYTES", particles::RECORD_BYTES),
+                ("BIRTH_FLOATS", particles::BIRTH_FLOATS as u32),
                 ("PARAM_FLOATS", particles::PARAM_FLOATS as u32),
                 ("FRAME_FLOATS", particles::FRAME_FLOATS as u32),
                 ("MAX_SYSTEMS", particles::MAX_SYSTEMS as u32),
@@ -1066,6 +1088,7 @@ pub fn typescript() -> String {
                 ("BLEND", feature::BLEND),
                 ("NO_DEPTH_WRITE", feature::NO_DEPTH_WRITE),
                 ("NO_DEPTH_TEST", feature::NO_DEPTH_TEST),
+                ("NO_COLOR_WRITE", feature::NO_COLOR_WRITE),
                 ("ADDITIVE", feature::ADDITIVE),
                 ("MULTIPLY", feature::MULTIPLY),
                 ("NO_FOG", feature::NO_FOG),
@@ -1087,6 +1110,9 @@ pub fn typescript() -> String {
                 ("IRIDESCENCE", feature::IRIDESCENCE),
                 ("ANISOTROPY", feature::ANISOTROPY),
                 ("LIGHT_MAP_RGBM", feature::LIGHT_MAP_RGBM),
+                ("MOVING_VERTICES", feature::MOVING_VERTICES),
+                ("STILL_CASTER", feature::STILL_CASTER),
+                ("CASTER_COVERAGE", feature::CASTER_COVERAGE),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -1100,6 +1126,7 @@ pub fn typescript() -> String {
                 ("WIREFRAME", debug_view::code::WIREFRAME),
                 ("SHADOWS", debug_view::code::SHADOWS),
                 ("MOTION", debug_view::code::MOTION),
+                ("LEVELS", debug_view::code::LEVELS),
             ],
         ),
         // The fog curves that `setFog` takes, and its code for no fog.
@@ -1143,6 +1170,25 @@ pub fn typescript() -> String {
                 ("LIGHT_MAP_DIRECTION", map_slot::LIGHT_MAP_DIRECTION),
             ],
         ),
+        // The row slot that holds each map's texture, which is the slot whose own transform the
+        // shader reads: the layer maps and the maps that take the normal map's slot share one.
+        (
+            "MAP_ROW_SLOT",
+            &[
+                ("COAT", map_slot::COAT_ROW),
+                ("COAT_ROUGHNESS", map_slot::COAT_ROUGHNESS_ROW),
+                ("COAT_NORMAL", map_slot::COAT_NORMAL_ROW),
+                ("SHEEN_COLOR", map_slot::SHEEN_COLOR_ROW),
+                ("SHEEN_ROUGHNESS", map_slot::SHEEN_ROUGHNESS_ROW),
+                ("IRIDESCENCE", map_slot::IRIDESCENCE_ROW),
+                ("IRIDESCENCE_THICKNESS", map_slot::IRIDESCENCE_THICKNESS_ROW),
+                ("ANISOTROPY", map_slot::ANISOTROPY_ROW),
+                ("TRANSMISSION", map_slot::TRANSMISSION_ROW),
+                ("THICKNESS", map_slot::THICKNESS_ROW),
+                ("BUMP", map_slot::NORMAL),
+                ("DISPLACEMENT", map_slot::NORMAL),
+            ],
+        ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.
         (
             "MATERIAL_PARAM",
@@ -1160,6 +1206,8 @@ pub fn typescript() -> String {
                 ("ENV_INTENSITY", param::ENV_INTENSITY as u32),
                 ("UV_U", param::UV_U as u32),
                 ("UV_V", param::UV_V as u32),
+                ("MAP_UV", param::MAP_UV as u32),
+                ("MAP_UV_STRIDE", param::MAP_UV_STRIDE as u32),
                 ("REFLECTANCE", param::REFLECTANCE as u32),
                 ("SPECULAR_COLOR", param::SPECULAR_COLOR as u32),
                 ("SPECULAR_INTENSITY", param::SPECULAR_INTENSITY as u32),
@@ -1195,6 +1243,7 @@ pub fn typescript() -> String {
                 ),
                 ("ANISOTROPY", param::ANISOTROPY as u32),
                 ("ANISOTROPY_ROTATION", param::ANISOTROPY_ROTATION as u32),
+                ("DISPERSION", param::DISPERSION as u32),
                 ("LIGHT_MAP_SCALE", param::LIGHT_MAP_SCALE as u32),
                 ("LIGHT_MAP_OFFSET", param::LIGHT_MAP_OFFSET as u32),
                 ("DECAL_FADE_START", param::DECAL_FADE_START as u32),
@@ -1306,12 +1355,6 @@ pub fn typescript() -> String {
                 ("SSR_THICKNESS", post_value::SSR_THICKNESS),
                 ("SSR_MAX_ROUGHNESS", post_value::SSR_MAX_ROUGHNESS),
                 ("SHARPEN", post_value::SHARPEN),
-                ("GRADE_WHITE_BALANCE", post_value::GRADE_WHITE_BALANCE),
-                ("GRADE_LIFT", post_value::GRADE_LIFT),
-                ("GRADE_GAMMA", post_value::GRADE_GAMMA),
-                ("GRADE_GAIN", post_value::GRADE_GAIN),
-                ("GRADE_SHADOWS", post_value::GRADE_SHADOWS),
-                ("GRADE_HIGHLIGHTS", post_value::GRADE_HIGHLIGHTS),
                 ("COUNT", post_value::COUNT),
             ],
         ),
@@ -1411,10 +1454,78 @@ pub fn typescript() -> String {
             ],
         ),
         (
+            "PREPASS_COLOR",
+            &[
+                ("LOAD", prepass_color::LOAD),
+                ("CLEAR", prepass_color::CLEAR),
+                ("NONE", prepass_color::NONE),
+            ],
+        ),
+        (
             "SHADOW_CASTERS",
             &[
                 ("CASCADE_MASK", shadow_casters::CASCADE_MASK),
                 ("TILES", shadow_casters::TILES),
+            ],
+        ),
+        // The scopes of a GPU pass, which the page names in the stats overlay and which a feature
+        // adds up to report its own GPU time. A scope's index, where it has one, is in the high 16
+        // bits.
+        (
+            "SCOPE",
+            &[
+                ("NONE", null3d_render::scope::NONE),
+                ("LIGHT_CLUSTERS", null3d_render::scope::LIGHT_CLUSTERS),
+                ("SKIN", null3d_render::scope::SKIN),
+                ("CULL", null3d_render::scope::CULL),
+                ("PREPASS", null3d_render::scope::PREPASS),
+                ("OPAQUE", null3d_render::scope::OPAQUE),
+                ("OCCLUDERS", null3d_render::scope::OCCLUDERS),
+                ("PYRAMID", null3d_render::scope::PYRAMID),
+                ("LATE_CULL", null3d_render::scope::LATE_CULL),
+                ("SHADOW", null3d_render::scope::SHADOW),
+                ("DEBUG_LINES", null3d_render::scope::DEBUG_LINES),
+                ("TRANSPARENT", null3d_render::scope::TRANSPARENT),
+                ("DECALS", null3d_render::scope::DECALS),
+                ("DECAL_REDRAW", null3d_render::scope::DECAL_REDRAW),
+                ("PICK", null3d_render::scope::PICK),
+                ("PICK_RESOLVE", null3d_render::scope::PICK_RESOLVE),
+                ("RESOLVE", null3d_render::scope::RESOLVE),
+                ("BLOOM", null3d_render::scope::BLOOM),
+                ("OUTLINE_MASK", null3d_render::scope::OUTLINE_MASK),
+                ("SKIN_LIGHT", null3d_render::scope::SKIN_LIGHT),
+                ("SUBSURFACE", null3d_render::scope::SUBSURFACE),
+                ("AO", null3d_render::scope::AO),
+                ("SSR", null3d_render::scope::SSR),
+                ("EFFECT", null3d_render::scope::EFFECT),
+                ("DOF", null3d_render::scope::DOF),
+                ("FOG_LIGHT", null3d_render::scope::FOG_LIGHT),
+                ("FOG_BLOCK", null3d_render::scope::FOG_BLOCK),
+                ("FOG_SUM", null3d_render::scope::FOG_SUM),
+                ("FOG_APPLY", null3d_render::scope::FOG_APPLY),
+                ("TAA", null3d_render::scope::TAA),
+                ("VIEW_COPY", null3d_render::scope::VIEW_COPY),
+                ("FULLSCREEN", null3d_render::scope::FULLSCREEN),
+                ("COMPUTE", null3d_render::scope::COMPUTE),
+                ("TRANSMISSION_COPY", null3d_render::scope::TRANSMISSION_COPY),
+                ("MOTION", null3d_render::scope::MOTION),
+                ("MOTION_VIEW", null3d_render::scope::MOTION_VIEW),
+                ("WEIGHTED", null3d_render::scope::WEIGHTED),
+                (
+                    "WEIGHTED_COMPOSITE",
+                    null3d_render::scope::WEIGHTED_COMPOSITE,
+                ),
+                (
+                    "PARTICLE_DEPTH_COPY",
+                    null3d_render::scope::PARTICLE_DEPTH_COPY,
+                ),
+                ("ACCUMULATE", null3d_render::scope::ACCUMULATE),
+                ("FINAL", null3d_render::scope::FINAL),
+                ("FINAL_STILL", null3d_render::scope::FINAL_STILL),
+                ("FINAL_BLOOM", null3d_render::scope::FINAL_BLOOM),
+                ("OUTPUT", null3d_render::scope::OUTPUT),
+                ("OUTPUT_BLOOM", null3d_render::scope::OUTPUT_BLOOM),
+                ("LIGHT_DEPTH", null3d_render::scope::LIGHT_DEPTH),
             ],
         ),
         // The draw list's codes that `createTexture` takes, so the sketch thread needs no import of
@@ -1484,6 +1595,7 @@ pub fn typescript() -> String {
                 ("COMPUTE_TANGENTS", mesh_arrays::COMPUTE_TANGENTS),
                 ("JOINTS", mesh_arrays::JOINTS),
                 ("WEIGHTS", mesh_arrays::WEIGHTS),
+                ("TARGETS", mesh_arrays::TARGETS),
             ],
         ),
         // The morph target arrays of `createMeshFromArrays`, the morph weight table, and the bytes of
@@ -1513,6 +1625,7 @@ pub fn typescript() -> String {
                 ("INDICES", ArrayName::Indices as u32),
                 ("JOINTS", ArrayName::Joints as u32),
                 ("WEIGHTS", ArrayName::Weights as u32),
+                ("TARGETS", ArrayName::Targets as u32),
             ],
         ),
         (

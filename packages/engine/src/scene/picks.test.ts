@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { setErrorFixes } from '../errors/engine-error';
+import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import type { CoreGlue } from '../shared/core';
-import { PickRead0 } from '../shared/slot';
+import { GpuEpoch, PickRead0 } from '../shared/slot';
 import { CoreMemory } from './memory';
 import { type PickHit, ScenePicks } from './picks';
 import type { QueryTarget, QueryTargets } from './queries';
@@ -98,6 +98,28 @@ async function answer(picks: ScenePicks, slots: Int32Array, ring: number) {
 	await Promise.resolve();
 }
 
+/** A promise's outcome: a value, or the error it rejected with. */
+type Outcome<T> = { value: T; error?: never } | { value?: never; error: unknown };
+
+/** Waits for a promise to settle, and fails when it has not settled within `ms`. */
+async function settlesWithin<T>(promise: Promise<T>, ms: number): Promise<Outcome<T>> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const bound = new Promise<Outcome<T>>((_, reject) => {
+		timer = setTimeout(() => reject(new Error(`the pick did not settle within ${ms} ms`)), ms);
+	});
+	try {
+		return await Promise.race([
+			promise.then(
+				(value): Outcome<T> => ({ value }),
+				(error: unknown): Outcome<T> => ({ error }),
+			),
+			bound,
+		]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 describe('a pick', () => {
 	test('answers through its promise when the ray fails before the loop starts', async () => {
 		const core = fakeCore();
@@ -159,6 +181,44 @@ describe('a pick', () => {
 		core.setKey(1, 2);
 		await answer(picks, slots, 1);
 		expect(await second).toEqual(noUv(OBJECT, -1));
+	});
+
+	test('rejects a pick that waits when the GPU is lost, and does not ask again', async () => {
+		const core = fakeCore();
+		const { picks, slots } = fakePicks(core.core);
+		const pick = picks.pick(12, 34);
+		expect(core.requested).toHaveLength(1);
+		// The device that recorded the read goes away before its copy lands: the read's slot stays
+		// 0 and the GPU epoch rises.
+		Atomics.store(slots, GpuEpoch, 1);
+		picks.poll(slots);
+		const outcome = await settlesWithin(pick, 1000);
+		expect(outcome.error).toBeInstanceOf(EngineError);
+		expect((outcome.error as EngineError).code).toBe('E1436');
+		// The lost read cannot land, so the pick is rejected rather than asked again.
+		expect(core.requested).toHaveLength(1);
+	});
+
+	test('answers the picks that wait behind the rejected one on the new device', async () => {
+		const core = fakeCore();
+		const { picks, slots } = fakePicks(core.core);
+		const lost = picks.pick(12, 34);
+		const next = picks.pick(56, 78);
+		expect(core.requested).toHaveLength(1);
+		Atomics.store(slots, GpuEpoch, 1);
+		picks.poll(slots);
+		const outcome = await settlesWithin(lost, 1000);
+		expect((outcome.error as EngineError).code).toBe('E1436');
+		// Only the pick that the lost device recorded is rejected: the next one was still queued,
+		// so the new device asks for it.
+		expect(core.requested).toEqual([
+			{ x: 12, y: 34, ring: 0, slot: PickRead0 },
+			{ x: 56, y: 78, ring: 1, slot: PickRead0 + 1 },
+		]);
+		core.name(3, 0xffffffff);
+		core.setKey(1, 77);
+		await answer(picks, slots, 1);
+		expect(await next).toEqual(noUv(OBJECT, -1));
 	});
 
 	test('gives the texture coordinates that a ray from the picked frame finds', async () => {

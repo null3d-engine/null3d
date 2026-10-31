@@ -135,9 +135,9 @@ export function modelKey(identity: string, options: object, files: readonly stri
 /**
  * What the asset tool is: the version it reports and a hash of its own code, which is the module the
  * plugin loads and the files that share its name, the WebAssembly file among them. The version alone
- * is not enough, because it stays `0.0.0` in the repository: a fix to the tool then changed what a
- * model encoded to without changing the key, and the cache kept serving models that the pipeline
- * before the fix wrote (code review H-17). A tool whose files cannot be read falls back to the
+ * is not enough, because it stays `0.0.0` in the repository: a fix to the tool can change what a
+ * model encodes to without changing the key, and the cache would keep serving models that the tool
+ * wrote before the fix (code review H-17). A tool whose files cannot be read falls back to the
  * version it reports.
  */
 export function toolIdentity(version: string): string {
@@ -177,20 +177,24 @@ export function fileCodeHash(path: string): string | null {
 const STAGE_FILE = /^[\w.-]+\.bin$/;
 
 /**
- * The stage files that a model names, by their file names beside it: the files of the levels that
- * download after it, from `NULL3D_stages` in each node's extras.
+ * The stage files that a model names, by their file names beside it: the files of the levels and
+ * the bands that download after it, from `NULL3D_stages` in each node's extras.
  */
 function stagesOf(glb: Uint8Array): string[] {
 	const view = new DataView(glb.buffer, glb.byteOffset, glb.byteLength);
 	const json = JSON.parse(
 		new TextDecoder().decode(glb.subarray(20, 20 + view.getUint32(12, true))),
 	) as {
-		nodes?: { extras?: { NULL3D_stages?: { levels?: { url?: unknown }[] } } }[];
+		nodes?: {
+			extras?: { NULL3D_stages?: { levels?: { url?: unknown }[]; bands?: { url?: unknown }[] } };
+		}[];
 	};
 	const out: string[] = [];
-	for (const node of json.nodes ?? [])
-		for (const level of node.extras?.NULL3D_stages?.levels ?? [])
-			if (typeof level.url === 'string' && STAGE_FILE.test(level.url)) out.push(level.url);
+	for (const node of json.nodes ?? []) {
+		const staged = node.extras?.NULL3D_stages;
+		for (const stage of [...(staged?.levels ?? []), ...(staged?.bands ?? [])])
+			if (typeof stage.url === 'string' && STAGE_FILE.test(stage.url)) out.push(stage.url);
+	}
 	return out;
 }
 

@@ -1,8 +1,7 @@
-// Pre-push guard: refuses a range that puts a second copy of a commit on the branch. A
-// history rewrite gives every rewritten commit a new id and keeps its subject, its author's date and
-// its change, so a branch started before the rewrite carries the old copies, and merging it puts
-// both copies on the branch with no conflict and no change to any tree. On 25 October 2026 such a
-// merge brought the rewritten commits back to the milestone branch. A commit of the range is a copy
+// Pre-push guard: refuses a range that puts a second copy of a commit on the branch. A history
+// rewrite gives every rewritten commit a new id and keeps its subject, its author's date and its
+// change, so a branch started before the rewrite carries the old copies, and merging it puts both
+// copies on the branch with no conflict and no change to any tree. A commit of the range is a copy
 // when another commit that the range's head reaches has the same subject, the same author's date
 // and the same change, by `git patch-id`. A fix that is cherry-picked onto the rewritten history
 // shares its subject and date with the old one, but the old one is not reached from the head, so
@@ -21,9 +20,9 @@ export interface CommitLine {
 }
 
 /**
- * The pairs of copies that the milestone branch took from 21 to 25 October 2026, before the rule:
- * helper branches landed twice, as a rebase of them and as the branch itself. Each pair holds the
- * same change twice, so neither copy changes the tree.
+ * The pairs of copies that the milestone branch took before the rule: helper branches that landed
+ * twice, as a rebase of them and as the branch itself. Each pair holds the same change twice, so
+ * neither copy changes the tree.
  */
 export const KNOWN_COPIES: readonly (readonly [string, string])[] = [
 	['000107daa8d1074979196866bc406cd12b2425f7', '3e1b8e29b752b36c1d69787de68cb66337a043c6'],

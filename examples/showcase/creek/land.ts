@@ -7,8 +7,6 @@ import { Noise, type TexelSample, terrain, textureSet } from '../../lib/procedur
 
 /** The height of the water's surface. */
 export const WATER = 0;
-/** How fast the current carries the ripples and the caustics downstream, toward +x. */
-export const FLOW = 0.35;
 /**
  * The layer of what the camera draws and the water's reflection leaves out: the grass far from the
  * water, the pebbles and the floating leaves, which lie under or on the water's plane.
@@ -23,6 +21,10 @@ const { smoothstep } = math;
 /** The z of the stream's middle at x: two gentle bends. */
 export const streamZ = (x: number) => 1.4 * Math.sin(x * 0.11 + 0.6) + 0.5 * Math.sin(x * 0.27);
 
+/** The slope across the stream of its middle line at x: how far the current turns from +x. */
+export const streamSlope = (x: number) =>
+	0.154 * Math.cos(x * 0.11 + 0.6) + 0.135 * Math.cos(x * 0.27);
+
 /** The half width of the water at x, at its surface. */
 export const streamHalf = (x: number) => 1.9 + 0.45 * Math.sin(x * 0.19 + 1.3);
 
@@ -31,6 +33,19 @@ export const STREAM_REACH = 1.9 + 2.35;
 
 /** How far a point lies from the stream's middle, in half widths: 1 at the water's edge. */
 export const fromStream = (x: number, z: number) => Math.abs(z - streamZ(x)) / streamHalf(x);
+
+/** How fast the stream's current runs along its middle line, in meters a second. */
+export const FLOW = 0.35;
+
+/** The depth of the stream's water at a point, in meters: the mean bed under the stream. */
+export const streamDepth = (x: number, z: number) =>
+	0.62 * (1 - smoothstep(fromStream(x, z), 0.72, 1.32));
+
+/** The stream's current at a point, as a velocity in meters a second along its middle line. */
+export function streamCurrent(x: number): readonly [number, number] {
+	const length = Math.hypot(1, streamSlope(x));
+	return [FLOW / length, (FLOW * streamSlope(x)) / length];
+}
 
 /** The height of the ground at a point. */
 export function groundHeight(x: number, z: number): number {

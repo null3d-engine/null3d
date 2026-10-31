@@ -36,6 +36,9 @@ pub struct FrameUniform {
     /// The light grid's tiles across, tiles up, slices and slices per doubling of the slice depth.
     /// The slices are 0 for a view whose grid lists no light.
     pub cluster_grid: [f32; 4],
+    /// 1 while the view's slices may be fitted to the measured depth, so a fragment finds its
+    /// slice in the grid's header, and 0 while it reads `cluster_depth` and `cluster_grid`.
+    pub cluster_fit: [f32; 4],
     /// The sketch time in seconds, the seconds since the frame before, the frame's number as the
     /// bits of a `u32`, and a spare: what custom materials read as `frame`.
     pub clock: [f32; 4],
@@ -46,10 +49,12 @@ pub struct FrameUniform {
     /// The size of the render target in pixels, and one over each.
     pub target_size: [f32; 4],
     /// The distances of the camera's near and far planes, then the change in normalized device
-    /// coordinates across one CSS pixel of the canvas, along x and along y.
+    /// coordinates across one CSS pixel of the canvas, along x and along y. In the views of lights
+    /// they are the scene camera's.
     pub camera_range: [f32; 4],
-    /// Ambient occlusion's strength, 0 when the view draws none, the scene target's height in
-    /// pixels, and the texels of its texture per pixel of the scene, across and down.
+    /// Ambient occlusion's strength, 0 when the view draws none, the view's target height in
+    /// pixels, which custom materials turn their pixel rows by on WebGL2 and the vignette measures
+    /// its distance from, and the texels of its texture per pixel of the scene, across and down.
     pub occlusion: [f32; 4],
     /// The scene's environment: see [`crate::environment`].
     pub environment: EnvironmentUniform,
@@ -65,10 +70,11 @@ pub struct FrameUniform {
     /// add this to a position relative to the view's camera. It is 0 in the camera's view.
     pub shadow_origin: [f32; 4],
     /// The view matrix for positions relative to the camera, which custom materials read as
-    /// `camera.view`: `projection` times it is `view_proj`. Zero in the views of lights.
+    /// `camera.view`: `projection` times it is `view_proj`. In the views of lights it is the scene
+    /// camera's, which a material's surface reads.
     pub view: Mat4,
     /// The projection matrix, with reversed depth, which custom materials read as
-    /// `camera.projection`. Zero in the views of lights.
+    /// `camera.projection`. In the views of lights it is the scene camera's.
     pub projection: Mat4,
     /// Takes a position relative to this frame's camera into the clip space of the camera's view
     /// in the frame before, whose color screen-space reflections read (see [`crate::ssr`]).
@@ -91,6 +97,14 @@ pub struct FrameUniform {
     /// shaders apply before their tone mapping in the camera's view. Zero elsewhere, which applies
     /// none: on the HDR path the final pass applies the vignette.
     pub vignette: [f32; 4],
+    /// The camera's view-projection, and the size of its render target in pixels with one over
+    /// each, for the camera that a material's surface reads: this view's own camera, and the scene
+    /// camera in the views of lights, whose own `view_proj` and `target_size` belong to the light.
+    pub camera_view_proj: Mat4,
+    pub camera_target: [f32; 4],
+    /// The camera's place as a homogeneous point, as `camera_position` holds it in its view, which
+    /// a masked custom material's caster reads for the direction toward the camera.
+    pub camera_eye: [f32; 4],
 }
 
 const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES as usize);

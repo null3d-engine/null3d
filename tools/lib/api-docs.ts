@@ -31,6 +31,7 @@ export const API_PACKAGES: readonly ApiPackage[] = [
 	{ entry: 'packages/geometry/src/index.ts', source: 'packages/geometry/src' },
 	{ entry: 'packages/three-compat/src/index.ts', source: 'packages/three-compat/src' },
 	{ entry: 'packages/water/src/index.ts', source: 'packages/water/src' },
+	{ entry: 'packages/wind/src/index.ts', source: 'packages/wind/src' },
 ];
 const API_TSCONFIG = 'packages/engine/tsconfig.json';
 

@@ -11,6 +11,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { PRODUCTION_BUILD_PAGES, PRODUCTION_BUILD_TESTS } from '../../tests/lib/server.ts';
 import { HEARTBEAT_SECONDS } from '../../tests/pages/lib/runner-rules.ts';
 import { PASS_KEYED } from './ci-passes.ts';
+import { withImports } from './script-imports.ts';
 
 interface Step {
 	id?: string;
@@ -33,9 +34,19 @@ interface Job {
 	steps?: Step[];
 }
 
+/** A hand-started run's input, as the workflow writes it. */
+interface DispatchInput {
+	type?: string;
+	default?: unknown;
+	description?: string;
+}
+
 const ROOT = join(import.meta.dirname, '../..');
 const workflow = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')) as {
-	on: Record<string, { branches?: string[] } | null>;
+	on: {
+		push?: { branches?: string[] };
+		workflow_dispatch?: { inputs?: Record<string, DispatchInput> };
+	};
 	concurrency: { group: string; 'cancel-in-progress': string };
 	jobs: Record<string, Job>;
 };
@@ -133,40 +144,13 @@ const RUST_STARTED_SCRIPTS = [
 /** A script path in a command: a file of the repository that Bun runs or tests. */
 const SCRIPT_PATH = /(?:^|[\s(])(?:\.\/)?((?:tools|tests|packages|bench)\/[\w./-]+\.[cm]?[jt]s)\b/g;
 /** A relative import or a dynamic import of a relative path. */
-const RELATIVE_IMPORT = /(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"?]+)/g;
 /** The build job writes this folder, and the key names its inputs instead of its files. */
 const GENERATED = 'packages/engine/src/generated/';
 
-/** The repository file that an import names, by its path from the root, or null outside it. */
-function importedFile(from: string, spec: string): string | null {
-	const base = resolve(dirname(join(ROOT, from)), spec);
-	for (const candidate of [
-		base,
-		base.replace(/\.js$/, '.ts'),
-		`${base}.ts`,
-		join(base, 'index.ts'),
-	])
-		if (existsSync(candidate) && statSync(candidate).isFile()) return relative(ROOT, candidate);
-	return null;
-}
-
 /** The scripts and every repository file that they import, directly or through other files. */
-function scriptsWithImports(start: readonly string[]): Set<string> {
-	const found = new Set<string>();
-	const next = [...start];
-	for (let file = next.pop(); file !== undefined; file = next.pop()) {
-		if (found.has(file)) continue;
-		found.add(file);
-		if (file.startsWith(GENERATED)) continue;
-		for (const [, spec] of readFileSync(join(ROOT, file), 'utf8').matchAll(RELATIVE_IMPORT)) {
-			const imported = spec === undefined ? null : importedFile(file, spec);
-			if (imported !== null && !imported.includes('node_modules')) next.push(imported);
-		}
-	}
-	return found;
-}
+const scriptsWithImports = (start: readonly string[]) =>
+	withImports(ROOT, start, (file) => file.startsWith(GENERATED));
 
-/** A pattern of `hashFiles` as a regular expression over paths from the root. */
 /** The globs of each hash that the passes job's step works out, by the hash's name. */
 function passHashGlobs(): Map<string, string[]> {
 	const step = jobNamed('passes').steps?.find(({ id }) => id === 'hashes');
@@ -181,6 +165,7 @@ function passHashGlobs(): Map<string, string[]> {
 	return globs;
 }
 
+/** A pattern of `hashFiles` as a regular expression over paths from the root. */
 const globPattern = (glob: string) =>
 	new RegExp(
 		`^${glob
@@ -600,6 +585,15 @@ describe("CI's workflow", () => {
 		);
 		expect(at(restore)).toBeLessThan(build);
 		expect(at(save)).toBeGreaterThan(build);
+		// A miss restores the newest earlier folder, whose entries the build checks one by one, and
+		// the folder keeps only this build's entries before it is saved, so it does not grow.
+		const prefix = String(restore?.with?.['restore-keys']);
+		expect(prefix.length).toBeGreaterThan(0);
+		expect(String(save?.with?.key).startsWith(prefix)).toBe(true);
+		const trim = steps.find(({ run }) => run?.includes('bun tools/build-wasm.ts --keep-current'));
+		expect(at(trim)).toBeGreaterThan(build);
+		expect(at(trim)).toBeLessThan(at(save));
+		expect(trim?.if).toBe(save?.if);
 	});
 
 	it("runs a milestone branch's pushes in the branch's caches, and no pull request event", () => {
@@ -612,6 +606,61 @@ describe("CI's workflow", () => {
 		expect(workflow.concurrency.group).toBe(
 			`ci-${expression("github.event_name == 'push' && github.ref_name || github.run_id")}`,
 		);
+	});
+
+	/** The step of a job that uploads the pictures an image test drew. */
+	const drawnUpload = (job: Job): Step | undefined =>
+		(job.steps ?? []).find(
+			({ uses, with: given }) =>
+				uses === 'actions/upload-artifact@v4' &&
+				String(given?.name ?? '').startsWith('drawn-images-'),
+		);
+
+	it('keeps the pictures of a shard that passes only when a run started by hand asks', () => {
+		// CI's software GPU draws a picture reference. A shard saves its pictures only when it fails,
+		// so a run asks for the others with this input, which an ordinary run leaves off.
+		expect(workflow.on.workflow_dispatch?.inputs?.['drawn-images']).toMatchObject({
+			type: 'boolean',
+			default: false,
+		});
+		const asked = expression("inputs['drawn-images'] && '1' || ''");
+		for (const name of ['browser', 'browser-heavy', 'browser-city']) {
+			const step = (jobNamed(name).steps ?? []).find(({ run }) =>
+				run?.includes('bun run test:browser'),
+			);
+			expect(step?.env?.NULL3D_TAKE_IMAGES, name).toBe(asked);
+		}
+	});
+
+	it('hands on the drawings under the head and the shard, also when the shard fails', () => {
+		// A reference holds only for the tree that drew it, so the name carries the head. The step
+		// keeps running whatever the shard's result, a cancelled one included: a shard that runs
+		// out of time after drawing its pictures is exactly the one whose drawings are hardest to
+		// repeat, and a job stops at its time limit instead of failing a step.
+		const afterFailure = expression("always() && inputs['drawn-images']");
+		for (const [job, part] of [
+			['browser', `browser-shard-${expression('matrix.shard')}`],
+			['browser-heavy', `heavy-shard-${expression('matrix.shard')}`],
+			['browser-city', 'city'],
+		] as const) {
+			const step = drawnUpload(jobNamed(job));
+			expect(step?.if, job).toBe(afterFailure);
+			expect(String(step?.with?.name), job).toBe(
+				`drawn-images-${expression('github.sha')}-${part}`,
+			);
+			expect(String(step?.with?.path), job).toBe('test-results/drawn/');
+		}
+	});
+
+	it('leaves the drawings out of the failure upload, so one image never arrives twice', () => {
+		// The review accepts each reference once, and it refuses two candidates that would write it.
+		for (const name of ['browser', 'browser-heavy', 'browser-city']) {
+			const failure = (jobNamed(name).steps ?? []).find(
+				({ uses, if: condition }) =>
+					uses === 'actions/upload-artifact@v4' && condition === 'failure()',
+			);
+			expect(String(failure?.with?.path), name).toContain('!test-results/drawn/**');
+		}
 	});
 
 	it('cancels a run in progress only on a push to main, so every other run that starts ends', () => {

@@ -1,8 +1,8 @@
 # D-63: Specular and index of refraction in the standard material
 
-Status: decided. Date: 2026-10-05. Task: M2-J5.
+Status: decided and built. Task: M2-J5.
 
-Summary: `KHR_materials_ior` and `KHR_materials_specular` become `ior`, `specularIntensity`, `specularColor` and two maps of the standard material, as three.js's `MeshPhysicalMaterial` takes them, with no new lobe. The material row grows to nine `vec4f` and the map slots to eight. Each WebGL2 program numbers its own texture units. Parity with three.js: 0.004% to 0.043% of the pixels differ, and files without the extensions draw bit for bit as before.
+Summary: `KHR_materials_ior` and `KHR_materials_specular` become `ior`, `specularIntensity`, `specularColor` and two maps of the standard material, as three.js's `MeshPhysicalMaterial` takes them, with no new lobe. The material row holds nine `vec4f`, the material has eight map slots, and each WebGL2 program numbers its own texture units. Parity with three.js: 0.004% to 0.043% of the pixels differ, and files without the extensions keep their exact bits.
 
 ## Question
 
@@ -11,7 +11,7 @@ glTF's `KHR_materials_specular` and `KHR_materials_ior` change how strongly a no
 ## Rule
 
 - Both extensions draw like three.js's `GLTFLoader` and `MeshPhysicalMaterial`, by three.js's image rule, on all three GPU tiers and on both GPU sets.
-- A material without them draws exactly as before: the same bits, not only the same image within a tolerance.
+- A material without them keeps its exact pixels: the same bits, not only the same image within a tolerance.
 - No new lobe, no new shader variant, and the material table grows as little as it can.
 
 ## What three.js does
@@ -38,12 +38,12 @@ Every later term already takes `F0`, `F90` and the blended value. These terms ar
 
 ### Parity with three.js
 
-Two scenes make their files in code, as small equivalents of the Khronos test models: `specularBuilder` and `iorBuilder` in `tests/pages/lib/gltf-files.ts`. SpecularTest (223 KB, CC BY 4.0) shows its spheres only through the reflection of an environment map. IORTestGrid (2.6 MB) needs transmission and volume, which the engine does not read yet. The equivalents keep the rows and values of the originals. A directional light and a point light behind the grid light them, so the reflection shows head on and at grazing angles:
+Two scenes make their files in code, as small equivalents of the Khronos test models: `specularBuilder` and `iorBuilder` in `tests/pages/lib/gltf-files.ts`. SpecularTest (223 KB, CC BY 4.0) shows its spheres only through the reflection of an environment map. IORTestGrid (2.6 MB) also needs transmission and volume, which are outside this record. The equivalents keep the rows and values of the originals. A directional light and a point light behind the grid light them, so the reflection shows head on and at grazing angles:
 
 - `gltf-specular`: the specular factor, and the same values in a texture's alpha whose purple color must not show. Then gray and yellow color factors and textures, and color factors up to 25.
 - `gltf-ior`: indices of 1, 1.25, 1.5, 2, 3 and 0, at three roughnesses, half metal with a specular factor and color, and a color of 2.
 
-Pixels that differ, by three.js's rule, on 5 October 2026. The first rows come from `bun run parity` in Chrome on the Mac's GPU, and the SwiftShader rows from the parity test of `bun run test:bench`:
+Pixels that differ, by three.js's rule. The first rows come from `bun run parity` in Chrome on the Mac's GPU, and the SwiftShader rows from the parity test of `bun run test:bench`:
 
 | Scene | WebGPU | Compatibility | WebGL2 | three.js's two renderers |
 | --- | --- | --- | --- | --- |
@@ -58,34 +58,34 @@ The last two rows show that the scenes catch a loader or shader that drops the v
 
 ### Files without the extensions
 
-With the defaults, the shader computes `min(0.04 * 1, 1) * 1` and `1 + (1 - 1) * metalness`. These give 0.04 and 1 exactly, and the blend takes the same inputs as before. The CPU writes `((1.5 - 1) / (1.5 + 1))^2` in doubles, which rounds to the same 32-bit float as 0.04. On the Mac's GPU, the image tests of every glTF model drew their references unchanged. So did the standard material scenes, custom materials, textures, sprites, lines, shadows and ambient occlusion.
+With the defaults, the shader computes `min(0.04 * 1, 1) * 1` and `1 + (1 - 1) * metalness`. These give 0.04 and 1 exactly, so the blend takes the inputs of `MeshStandardMaterial`. The CPU writes `((1.5 - 1) / (1.5 + 1))^2` in doubles, which rounds to the same 32-bit float as 0.04. On the Mac's GPU, the image tests of every glTF model drew their references unchanged. So did the standard material scenes, custom materials, textures, sprites, lines, shadows and ambient occlusion.
 
 ## Decision
 
 ### The material row
 
-The row grows from eight `vec4f` to nine (128 to 144 bytes):
+The row holds nine `vec4f` (144 bytes). The values take three spare floats of the first eight `vec4f`, and the whole ninth:
 
-| Floats | Before | After |
-| --- | --- | --- |
-| 19 (`uv_u.w`) | Spare | The reflectance `((ior - 1) / (ior + 1))^2`, which TypeScript computes when `ior` is set |
-| 30, 31 (`more_maps.zw`) | Spare | The layers of the specular intensity and specular color maps |
-| 32 to 34 (`specular.xyz`) | | The specular color, linear, which may exceed 1 |
-| 35 (`specular.w`) | | The specular intensity |
+| Floats | Holds |
+| --- | --- |
+| 19 (`uv_u.w`) | The reflectance `((ior - 1) / (ior + 1))^2`, which TypeScript computes when `ior` is set |
+| 30, 31 (`more_maps.zw`) | The layers of the specular intensity and specular color maps |
+| 32 to 34 (`specular.xyz`) | The specular color, linear, which may exceed 1 |
+| 35 (`specular.w`) | The specular intensity |
 
-The row held four spare floats, and the values and layers take seven, so one more `vec4f` is the least growth. The row stores the reflectance, not the index. So the CPU computes it once, in doubles, where three.js's shader does a division and a square for each pixel. The rows of custom values keep 32 floats for uniforms, as [D-47](D-47-custom-material-textures.md) decided. They have the row's width, and the last four floats stay unused. 1,024 materials take 16 KB more on the GPU.
+The first eight `vec4f` hold only four spare floats, and the values and layers take seven, so a ninth `vec4f` is the least growth. The row stores the reflectance, not the index. So the CPU computes it once, in doubles, where three.js's shader does a division and a square for each pixel. The rows of custom values keep 32 floats for uniforms, as [D-47](D-47-custom-material-textures.md) decided. They have the row's width, and the last four floats stay unused. 1,024 materials take 16 KB more on the GPU.
 
 ### The maps
 
-The standard material's map slots grow from six to eight, so the map bind group has eight texture arrays and eight samplers. The maps are fixed when a material is created, as the others are. They need no shader variant, because each samples behind a check of its layer.
+The standard material has eight map slots, two of them for these maps, so the map bind group has eight texture arrays and eight samplers. The maps are fixed when a material is created, as the others are. They need no shader variant, because each samples behind a check of its layer.
 
-WebGPU allows 16 sampled textures and 16 samplers per stage by default. The fragment stage of the maps build now sees 12 textures and 9 samplers, and the vertex stage of a custom material 9 textures.
+WebGPU allows 16 sampled textures and 16 samplers per stage by default. The fragment stage of the maps build sees 12 textures and 9 samplers, and the vertex stage of a custom material 9 textures.
 
-WebGL2 needed a change. Each texture's binding slot was its texture unit, and the eight maps with the environment map's planned slots would have reached unit 32. Each program now numbers its own textures from unit 0, as the [implementation notes](../implementation-notes.md#textures-on-both-gpu-paths) describe. The busiest stage read 15 of the 16 units that WebGL2 guarantees to a stage, and 16 once the environment map landed. A unit test fails above 16.
+On WebGL2, each program numbers its own textures from unit 0, as the [implementation notes](../implementation-notes.md#textures-on-both-gpu-paths) describe. A unit for each binding slot would reach unit 32 with the eight maps and the environment map's slots. With one unit per map, the busiest stage reads all 16 units that WebGL2 guarantees to a stage. [D-65](D-65-webgl2-texture-units.md) keeps 4 of them free, and [D-89](D-89-webgl2-texture-units.md) packs the maps to do so.
 
 ### The shader
 
-`null3d::lighting` gains `with_specular(m, reflectance, color, intensity)`, which sets a `PbrMaterial`'s `specular`, `specular_blended` and `specular_grazing` with three.js's formulas. The standard material's `shade` and the lit lines call it on every material. The maps build multiplies the values by the two maps' texels first. The values are not fields of the surface record of custom materials. So a custom material takes them from its standard values, and cannot change them per pixel yet.
+`null3d::lighting` has `with_specular(m, reflectance, color, intensity)`, which sets a `PbrMaterial`'s `specular`, `specular_blended` and `specular_grazing` with three.js's formulas. The standard material's `shade` and the lit lines call it on every material. The maps build multiplies the values by the two maps' texels first. The values are not fields of the surface record of custom materials. So a custom material takes them from its standard values, and cannot change them per pixel.
 
 `F90` is written `intensity + (1 - intensity) * metalness`, not with `mix`. GPUs may evaluate `mix(a, b, t)` as `a * (1 - t) + b * t`, which does not give exactly 1 when both ends are 1. Written this way, the default gives 1 bit for bit.
 
@@ -104,4 +104,4 @@ WebGL2 needed a change. Each texture's binding slot was its texture unit, and th
 - `materials.standard` takes `ior`, `specularIntensity`, `specularColor`, `specularIntensityMap` and `specularColorMap`, with three.js's names and ranges. `set` throws E1108 for an `ior` below 1.
 - The glTF parser reads both extensions, and refuses values outside their ranges with E1416.
 - The docs pages `api/materials`, `api/assets` and `concepts/assets`, the mapping entries `mat-physical` and `mat-specular-ior`, and both skills describe the values.
-- Clearcoat and sheen come later, in shader files that load on first use. They add lobes, which this record does not.
+- Clearcoat and sheen add lobes, in shader files that load on first use ([D-147](D-147-clearcoat-and-sheen.md)). This record adds none.

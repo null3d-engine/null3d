@@ -42,6 +42,10 @@ function core(calls: string[]) {
 			calls.push(`setFeatureInstanceRows ${id} ${start} ${count}`);
 			return 0;
 		},
+		setFeatureInstanceReady: (id: number, ready: boolean) => {
+			calls.push(`setFeatureInstanceReady ${id} ${ready}`);
+			return 0;
+		},
 		featureInstanceBuffer: () => 41,
 		featureInstanceCountBuffer: () => 42,
 	};
@@ -83,6 +87,8 @@ function standIns(webgl2: boolean, calls: string[]) {
 		setVisible: () => {},
 		setRenderOrder: () => {},
 	};
+	/** The readiness polls that the scene runs before each frame. */
+	const polls: Array<() => void> = [];
 	const host: ComputeInstancesHost = {
 		webgl2,
 		core: core(calls),
@@ -108,12 +114,19 @@ function standIns(webgl2: boolean, calls: string[]) {
 			calls.push(`createBatch ${count}`);
 			return batch as never;
 		},
+		watchReady: (poll) => {
+			polls.push(poll);
+			return () => {
+				const at = polls.indexOf(poll);
+				if (at >= 0) polls.splice(at, 1);
+			};
+		},
 		fail: (detail) => {
 			calls.push('fail');
 			return new Error(`E1223: ${detail}`);
 		},
 	};
-	return { host, material, mesh, object, batch, positions, rotations, scales };
+	return { host, material, mesh, object, batch, positions, rotations, scales, polls };
 }
 
 /** The 16 floats of one instance: a 2× scale on y, a quarter turn about z, moved to (5, 6, 7). */
@@ -193,6 +206,60 @@ describe('createComputeInstances', () => {
 			'material.destroy',
 			'mesh.destroy',
 		]);
+	});
+
+	it('tells the engine each frame whether the feature is ready', () => {
+		const calls: string[] = [];
+		const { host, polls } = standIns(false, calls);
+		let ready = true;
+		const draw = createComputeInstances(
+			description({ ready: () => ready }),
+			{ shader: WGSL, vertices: VERTICES, capacity: 4, count: 2 },
+			host,
+		);
+		// The scene asks one poll each frame, and a feature that is ready asks the core for nothing.
+		expect(polls.length).toBe(1);
+		expect(calls).not.toContain('setFeatureInstanceReady 7 true');
+		ready = false;
+		polls[0]?.();
+		expect(calls).toEqual([
+			'shader',
+			'fromArrays',
+			'createMesh',
+			'object.setFrustumCulled false',
+			'createFeatureInstances 3 4',
+			'setFeatureInstanceCount 7 2',
+			'setFeatureInstanceReady 7 false',
+		]);
+		// The same answer reaches the engine once, not every frame.
+		polls[0]?.();
+		expect(calls.filter((call) => call.startsWith('setFeatureInstanceReady')).length).toBe(1);
+		ready = true;
+		polls[0]?.();
+		expect(calls.at(-1)).toBe('setFeatureInstanceReady 7 true');
+		// A destroyed draw stops being asked.
+		draw.destroy();
+		expect(polls.length).toBe(0);
+	});
+
+	it('draws none of the CPU batch rows while the feature is not ready', () => {
+		const calls: string[] = [];
+		const { host, polls } = standIns(true, calls);
+		let ready = false;
+		const draw = createComputeInstances(
+			description({ ready: () => ready }),
+			{ shader: WGSL, vertices: VERTICES, capacity: 4, count: 2 },
+			host,
+		);
+		// The draw reports its first answer as it starts, so the batch draws no rows at once.
+		expect(polls.length).toBe(1);
+		expect(calls.at(-1)).toBe('batch.setActiveCount 0');
+		draw.setCount(2);
+		expect(calls.at(-1)).toBe('batch.setActiveCount 0');
+		ready = true;
+		polls[0]?.();
+		expect(calls.at(-1)).toBe('batch.setActiveCount 2');
+		draw.destroy();
 	});
 
 	it('fills an unculled instance batch on the CPU path', () => {

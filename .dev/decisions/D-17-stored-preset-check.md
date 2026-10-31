@@ -1,6 +1,6 @@
 # D-17: The preset check on repeat visits
 
-Status: decided. Date: 2026-10-03. Task: M1-K5, for T-28.
+Status: decided and built. Task: M1-K5, for T-28.
 
 Summary: Store each sketch's preset check result in `localStorage` for a week, and skip the check on a matching repeat visit: about 1 s saved per preset measured on the iPad. A check during play would show the switch and fight the governor; a shorter check for known GPUs needs GPU names.
 
@@ -18,7 +18,7 @@ The engine must run the preset that the check would choose, with the same settin
 
 The check draws the first frames behind the loading screen. For each preset it measures, it draws for 250 ms, then measures for 500 ms, so each preset costs at least 0.75 s. It draws up to 2 s more while textures upload. A lower preset adds the wait for its pipelines. In practice one preset took about 0.8 s on the MacBook Pro, in [D-11](D-11-frames-in-flight.md#the-preset-checks-thresholds-m1-g3) and in the table below. On the iPad it took about 1 s.
 
-From [D-13](D-13-shader-variants.md)'s warm-up time runs of 2 October 2026, the time from `createEngine` until the first frame was on screen:
+From [D-13](D-13-shader-variants.md)'s warm-up time runs, the time from `createEngine` until the first frame was on screen:
 
 | Device and path | Shown | The check's part |
 | --- | --- | --- |
@@ -26,7 +26,7 @@ From [D-13](D-13-shader-variants.md)'s warm-up time runs of 2 October 2026, the 
 | iPad, Safari 26.6, WebGL2 | 1.0 to 2.2 s | the same; loads that lowered the preset once took 1.9 to 2.2 s |
 | S24+, Chrome 154, WebGL2 | 0.23 to 0.43 s | none: a phone starts at Low, which has no lighter preset |
 
-The startup benchmark ran on the MacBook Pro M5 Max, WebGPU, on 3 October 2026. Chrome ran `bun run bench:startup --loads warm`. Safari ran the device runner's `startup` plan. "Ready" is when `createEngine` resolved, and "Frame done" when the GPU finished the first frame. Both measure from navigation start. The page's loading screen waits for the later of the two. Each figure is the median of 5 loads. A warm load repeats the address and the storage of an earlier load, as a repeat visit does. With `?check=fresh`, the engine measures again, as on a first visit.
+The startup benchmark ran on the MacBook Pro M5 Max, WebGPU. Chrome ran `bun run bench:startup --loads warm`. Safari ran the device runner's `startup` plan. "Ready" is when `createEngine` resolved, and "Frame done" when the GPU finished the first frame. Both measure from navigation start. The page's loading screen waits for the later of the two. Each figure is the median of 5 loads. A warm load repeats the address and the storage of an earlier load, as a repeat visit does. With `?check=fresh`, the engine measures again, as on a first visit.
 
 | Browser and thread mode | Ready, stored result | Ready, `?check=fresh` | Frame done, both |
 | --- | --- | --- | --- |
@@ -36,7 +36,7 @@ The startup benchmark ran on the MacBook Pro M5 Max, WebGPU, on 3 October 2026. 
 
 So a repeat visit on the Mac shows its first view about 0.8 s sooner, in both browsers. The first frame itself does not move: the check runs after it. Safari's cold loads, which start with empty storage, still checked: Ready at 827 to 850 ms.
 
-The same `startup` plan on the 11-inch iPad Pro, Safari 26.6.2, WebGPU, 3 October 2026. The iPad had just run 25 minutes of timing runs, so it was warm.
+The same `startup` plan on the 11-inch iPad Pro, Safari 26.6.2, WebGPU. The iPad was warm from 25 minutes of timing runs.
 
 | Thread mode | Ready, stored result | Ready, `?check=fresh` | Frame done, both |
 | --- | --- | --- | --- |
@@ -46,7 +46,7 @@ The same `startup` plan on the 11-inch iPad Pro, Safari 26.6.2, WebGPU, 3 Octobe
 
 The cold loads checked in both runs: Ready at 876 to 902 ms.
 
-The warm-up time plan on the iPad, the same day, starts each benchmark scene and demo at the preset that the engine chooses. Its first two loads take `?shaders=fresh` and `?check=fresh`, as a first visit. Its last two take the stored result, as a repeat visit. The time from `createEngine` until the first frame was on screen, as medians of two loads:
+The warm-up time plan on the iPad starts each benchmark scene and demo at the preset that the engine chooses. Its first two loads take `?shaders=fresh` and `?check=fresh`, as a first visit. Its last two take the stored result, as a repeat visit. The time from `createEngine` until the first frame was on screen, as medians of two loads:
 
 | Path | First visit | Repeat visit |
 | --- | --- | --- |
@@ -79,7 +79,7 @@ A stored result applies only when the start matches the one that the check measu
 - A check from the last 7 days. Browsers and drivers update every few weeks, and Safari clears a site's script storage after 7 days of use without a visit to it anyway.
 - No crash: a start after a crashed start measures again, and does not store.
 
-The engine stores a result only when it measured against the highest target, 60 frames per second, or the `?fps=` cap. A display that saves power with a lower refresh rate gives an easier target. Its result could keep a preset too heavy for a normal day. A result measured against the highest target is safe to take at any lower target. Since [D-124](D-124-target-frame-rate.md), the page's `targetFps` setting is one of the conditions. The engine stores a result whose target reaches 60, or the setting's rate when that is lower.
+The engine stores a result only when it measured against the highest target, 60 frames per second, or the `?fps=` cap. A display that saves power with a lower refresh rate gives an easier target. Its result could keep a preset too heavy for a normal day. A result measured against the highest target is safe to take at any lower target. The page's `targetFps` setting ([D-124](D-124-target-frame-rate.md)) is one of the conditions. The engine stores a result whose target reaches 60, or the setting's rate when that is lower.
 
 A start that takes a stored result runs the stored preset from its setup on. Its settings fixed at the start keep the values of the preset that the check started from, as they do after the check's own steps. These are anti-aliasing, the shadow tiles, point light shadows and the prepass. A unit test checks that both paths give the same settings. `engine.mode.presetCheck` reports the stored result with `reused: true`. The `?check=fresh` switch measures again.
 
@@ -97,5 +97,4 @@ three.js has no preset check. Apps choose a quality level themselves, or adapt d
 - `PresetCheck` has `reused`. The `?check=fresh` switch measures again.
 - The device runner's quality and preset check pages take `?check=fresh`, so each run measures. So do the first two loads of each scene in the warm-up time plan. Its later loads take the stored result, as a repeat visit does.
 - The quality presets page and the loading screens guide describe repeat visits.
-- The `startup` plan measures repeat visits, with and without `?check=fresh`. So does the warm-up time plan, whose last two loads of each scene take the stored result. The iPad runs of 3 October 2026 were 20261003-062311-startup, 20261003-062605-startup with `?check=fresh`, and 20261003-062907-warm-up-time.
-- The record is in the table in README.md.
+- The `startup` plan measures repeat visits, with and without `?check=fresh`. So does the warm-up time plan, whose last two loads of each scene take the stored result. The iPad's runs are 20261003-062311-startup, 20261003-062605-startup with `?check=fresh`, and 20261003-062907-warm-up-time.

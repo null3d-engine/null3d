@@ -39,9 +39,7 @@ mod textures;
 mod typescript;
 mod uniforms;
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::collections::BTreeSet;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 #[cfg(not(target_arch = "wasm32"))]
 use std::num::NonZeroUsize;
@@ -114,6 +112,13 @@ pub struct Inputs {
     /// per-entry cache, whose key covers the whole entry.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub parts: BTreeMap<String, Part>,
+    /// The permutation words to build, as a production build lists the ones its scenes use, or
+    /// empty to build every word. The list holds each word without the bits that a device fixes,
+    /// so one list serves every device module. A variant builds each word it can make, which is
+    /// the build whose own bits equal the listed word once those device bits are cleared. A word
+    /// that a variant cannot make builds nothing there, so one list serves every template.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub only: BTreeSet<u32>,
 }
 
 impl Inputs {
@@ -127,6 +132,7 @@ impl Inputs {
             manifest,
             files,
             parts: BTreeMap::new(),
+            only: BTreeSet::new(),
         })
     }
 }
@@ -194,10 +200,14 @@ pub fn build_with_cache_reporting(
     let manifest = parse_manifest(inputs)?;
     let mut compiler = Compiler::new(&inputs.files)?;
     compiler.engine = true;
+    compiler.only = inputs.only.clone();
     check_files(inputs, &manifest).or(())?;
 
     let mut errors = BuildError::default();
-    let mut output = Output::default();
+    let mut output = Output {
+        listed: inputs.only.clone(),
+        ..Default::default()
+    };
     let mut stats = CacheStats::default();
     let entries = build_entries(
         compiler,
@@ -286,7 +296,9 @@ pub fn build_names(inputs: &Inputs) -> Result<BTreeMap<String, Vec<String>>, Bui
         .iter()
         .map(|(name, shader)| {
             let part = inputs.parts.get(name).copied().unwrap_or(Part::WHOLE);
-            let builds = planned_builds(&shader.variants, |place, _, _| part.holds(place));
+            let builds = planned_builds(&shader.variants, &inputs.only, |place, _, _| {
+                part.holds(place)
+            });
             let names = builds.into_iter().map(|(_, build)| build.name).collect();
             (name.clone(), names)
         })
@@ -339,6 +351,15 @@ fn build_entries(
     errors: &mut BuildError,
     stats: &mut CacheStats,
 ) -> Result<Vec<BTreeMap<String, VariantOutput>>, BuildError> {
+    // The listed words, as the cache key names them: an entry built for one list is not the entry
+    // that a build of another list may reuse. The shader compiler has no cache, so it names none.
+    #[cfg(not(target_arch = "wasm32"))]
+    let listed = inputs
+        .only
+        .iter()
+        .map(|word| format!("{word:08x}"))
+        .collect::<Vec<_>>()
+        .join(",");
     let shaders: Vec<_> = manifest.shaders.iter().collect();
     let mut found = Vec::with_capacity(shaders.len());
     let mut jobs = Vec::new();
@@ -351,14 +372,16 @@ fn build_entries(
         let cached = {
             let table = toml::to_string(shader).unwrap_or_default();
             let source = &inputs.files[&shader.file];
-            let key = cache.key(shader_name, &shader.file, source, &table);
+            let key = cache.key(shader_name, &shader.file, source, &table, &listed);
             let found = match part {
                 Some(part) => {
                     let builds: Vec<String> =
-                        planned_builds(&shader.variants, |place, _, _| part.holds(place))
-                            .into_iter()
-                            .map(|(_, build)| build.name)
-                            .collect();
+                        planned_builds(&shader.variants, &inputs.only, |place, _, _| {
+                            part.holds(place)
+                        })
+                        .into_iter()
+                        .map(|(_, build)| build.name)
+                        .collect();
                     cache.load_part(shader_name, &key, part, &builds, &inputs.files)
                 }
                 None => cache.load(shader_name, &key, &inputs.files),
@@ -375,8 +398,10 @@ fn build_entries(
             Err(_) => {
                 stats.compiled += 1;
                 let part = part.unwrap_or(Part::WHOLE);
-                let builds =
-                    planned_builds(&shader.variants, |place, _, _| part.holds(place)).into_iter();
+                let builds = planned_builds(&shader.variants, &inputs.only, |place, _, _| {
+                    part.holds(place)
+                })
+                .into_iter();
                 jobs.extend(builds.map(|(variant, build)| Job {
                     entry,
                     variant,
@@ -444,7 +469,8 @@ fn build_entries(
 /// Compiles each job's build, with the results in the jobs' order. The builds are independent,
 /// so they spread over the machine's cores, each thread with a compiler of its own. The shader
 /// compiler that a page or a bundler loads is built for WebAssembly, which has no threads there,
-/// so it compiles them one after another.
+/// so it compiles them one after another. The results hold each source text once: a build's
+/// sources become the copies that earlier builds with the same texts made.
 fn compile_jobs(
     compiler: &mut Compiler,
     shaders: &[(&String, &manifest::Shader)],
@@ -455,22 +481,33 @@ fn compile_jobs(
     let next = AtomicUsize::new(0);
     let finished = AtomicUsize::new(0);
     let total = jobs.len();
+    let sources = output::SharedSources::default();
+    let fresh_composers = composer_builds();
     let work = |compiler: &mut Compiler| {
         let mut done = Vec::new();
+        let mut since_fresh = 0;
         loop {
             let index = next.fetch_add(1, Ordering::Relaxed);
             let Some(job) = jobs.get(index) else {
                 return done;
             };
+            if fresh_composers.is_some_and(|builds| since_fresh >= builds) {
+                compiler.composers = Composers::default();
+                since_fresh = 0;
+            }
+            since_fresh += 1;
             let shader = shaders[job.entry].1;
             // The engine's own builds fail on every warning, so a build that passes has none.
-            let result = compiler.variant(
+            let mut result = compiler.variant(
                 &shader_path(&shader.file),
                 &inputs.files[&shader.file],
                 &shader.pipelines,
                 job.variant,
                 &job.build,
             );
+            if let Ok(built) = &mut result {
+                sources.share(&mut built.output);
+            }
             done.push((index, result));
             progress(finished.fetch_add(1, Ordering::Relaxed) + 1, total);
         }
@@ -506,6 +543,20 @@ fn compile_jobs(
     Ok(done.into_iter().map(|(_, result)| result).collect())
 }
 
+/// How many builds a thread compiles before its composers start again empty. A composer keeps the
+/// library modules it built for every set of shader defs it has met. So what a thread holds grows
+/// with each new set that its builds bring, and starting again bounds it. D-235 gives the effect.
+const COMPOSER_BUILDS: usize = 200;
+
+/// [`COMPOSER_BUILDS`], or the count that NULL3D_SHADER_COMPOSER_BUILDS sets, where zero keeps the
+/// modules for the whole run.
+fn composer_builds() -> Option<usize> {
+    std::env::var("NULL3D_SHADER_COMPOSER_BUILDS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .map_or(Some(COMPOSER_BUILDS), |count| (count > 0).then_some(count))
+}
+
 /// How many threads compile `jobs` builds: one for each core, and no more than there are builds.
 #[cfg(not(target_arch = "wasm32"))]
 fn threads(jobs: usize) -> usize {
@@ -528,15 +579,23 @@ fn threads(_jobs: usize) -> usize {
 
 /// The builds of an entry's variants in build order, each with its variant, that `keep` takes. It
 /// gets each build's place in that order, counted from 0, its variant and its permutation word.
-fn planned_builds(
-    variants: &BTreeMap<String, Variant>,
+/// `only` names the words to build, and an empty set builds every build.
+fn planned_builds<'a>(
+    variants: &'a BTreeMap<String, Variant>,
+    only: &BTreeSet<u32>,
     keep: impl Fn(usize, &Variant, u32) -> bool,
-) -> Vec<(&Variant, Build)> {
+) -> Vec<(&'a Variant, Build)> {
     let mut planned = Vec::new();
     let mut place = 0;
     for (name, variant) in variants {
         for build in variant.builds(name) {
-            if keep(place, variant, build.permutation) {
+            // A recording lists the words without the bits that a device fixes, so one list holds
+            // the words of every device module. A build matches its word with those bits cleared.
+            let word = build.permutation;
+            let listed = only.is_empty()
+                || only.contains(&word)
+                || only.contains(&(word & !permutation::DEVICE));
+            if listed && keep(place, variant, build.permutation) {
                 planned.push((variant, build));
             }
             place += 1;
@@ -603,6 +662,8 @@ pub struct Compiler {
     engine: bool,
     /// Warnings of the builds since the last [`Compiler::take_warnings`].
     warnings: BuildError,
+    /// The permutation words to build, or empty to build every word.
+    only: BTreeSet<u32>,
 }
 
 impl Compiler {
@@ -616,6 +677,7 @@ impl Compiler {
             hosts: HashMap::new(),
             engine: false,
             warnings: BuildError::default(),
+            only: BTreeSet::new(),
         })
     }
 
@@ -671,7 +733,7 @@ impl Compiler {
         let held = |place, variant: &Variant, permutation| {
             share.is_none_or(|share| share.holds(place, variant, permutation))
         };
-        for (variant, build) in planned_builds(variants, held) {
+        for (variant, build) in planned_builds(variants, &self.only, held) {
             match self.variant(path, source, pipelines, variant, &build) {
                 Ok(Built {
                     output, warnings, ..
@@ -938,8 +1000,8 @@ pub enum Written {
     Unchanged,
 }
 
-/// Device modules in the output folder that the build did not make, by path.
-fn stale_modules(root: &Path, modules: &BTreeMap<String, String>) -> Vec<String> {
+/// Device modules in the output folder that are not among the build's `modules`, by path.
+fn stale_modules(root: &Path, modules: &std::collections::BTreeSet<String>) -> Vec<String> {
     let Ok(entries) = fs::read_dir(root.join(OUTPUT_DIR)) else {
         return Vec::new();
     };
@@ -952,7 +1014,7 @@ fn stale_modules(root: &Path, modules: &BTreeMap<String, String>) -> Vec<String>
                 && (name.ends_with(".ts") || name.ends_with(".js"))
         })
         .map(|name| format!("{OUTPUT_DIR}/{name}"))
-        .filter(|path| !modules.contains_key(path))
+        .filter(|path| !modules.contains(path))
         .collect();
     stale.sort();
     stale
@@ -977,25 +1039,52 @@ pub fn write_cached_reporting(
     cache: &Cache,
     progress: Progress<'_>,
 ) -> Result<(Written, CacheStats), BuildError> {
-    let inputs = Inputs::read(root)?;
-    let (output, stats) = build_with_cache_reporting(&inputs, cache, progress)?;
-    let modules = typescript(&output);
+    write_cached_reporting_inputs(root, &Inputs::read(root)?, cache, progress)
+}
+
+/// [`write_cached_reporting`] with the inputs already read, so a caller that narrows them builds
+/// and writes what it narrowed.
+pub fn write_cached_reporting_inputs(
+    root: &Path,
+    inputs: &Inputs,
+    cache: &Cache,
+    progress: Progress<'_>,
+) -> Result<(Written, CacheStats), BuildError> {
+    let (output, stats) = build_with_cache_reporting(inputs, cache, progress)?;
+    Ok((write_modules(root, &output)?, stats))
+}
+
+/// Writes each module of `output` whose file holds other text, and deletes the device modules that
+/// the build no longer makes. Each module is written as soon as it renders and then dropped, so the
+/// run never holds the whole set's text, which is several gigabytes.
+fn write_modules(root: &Path, output: &Output) -> Result<Written, BuildError> {
+    let set = ModuleSet::new(output);
+    let paths: std::collections::BTreeSet<String> = set
+        .names()
+        .map(|name| format!("{OUTPUT_DIR}/{name}"))
+        .collect();
     let mut written = Written::Unchanged;
-    for path in stale_modules(root, &modules) {
+    for path in stale_modules(root, &paths) {
         fs::remove_file(root.join(&path))
             .map_err(|e| Problem::in_file(&path, format!("cannot delete the file: {e}")))?;
         written = Written::Updated;
     }
-    for (path, module) in &modules {
-        let file = root.join(path);
-        if fs::read_to_string(&file).is_ok_and(|current| current == *module) {
-            continue;
+    let changes = set.render_each(|name, module| {
+        let path = format!("{OUTPUT_DIR}/{name}");
+        let file = root.join(&path);
+        if fs::read_to_string(&file).is_ok_and(|current| current == module) {
+            return Ok(false);
         }
         file.parent()
             .map_or(Ok(()), fs::create_dir_all)
-            .and_then(|()| fs::write(&file, module))
-            .map_err(|e| Problem::in_file(path, format!("cannot write the file: {e}")))?;
-        written = Written::Updated;
+            .and_then(|()| fs::write(&file, &module))
+            .map(|()| true)
+            .map_err(|e| Problem::in_file(&path, format!("cannot write the file: {e}")))
+    });
+    for changed in changes {
+        if changed? {
+            written = Written::Updated;
+        }
     }
-    Ok((written, stats))
+    Ok(written)
 }

@@ -48,6 +48,8 @@ A record is eight 32-bit numbers, or 32 bytes.
 
 The seed picks the particle's random size, turn, spin, color and first flipbook frame. Two particles of one buffer get their own values from their own seeds. Call `write(index, record, seed)` with the eight numbers in that order: place, birth time, velocity, lifetime. The seed is the third argument.
 
+Call `writeRecords(block, count, first)` to write many births in one call. The block holds nine numbers for each birth: the eight above and the seed. Row `first` takes the first birth, and the rest follow, wrapping at the capacity. The engine packs the records and marks them, so the sketch's loop fills the block and the call writes it. Pass a block that stays the same size from frame to frame, which keeps the engine's room for it. Call `shiftRecords(from, to, seconds)` to take whole seconds off the birth times of rows `from` to `to`, which moves the time that they count from.
+
 ## Layout in practice
 
 The records are one table, with a row for each particle that the buffer holds at once. An index from 0 to `capacity - 1` names a row. The buffer keeps no list of live particles. The shader reads each record's birth time and lifetime, so a particle draws nothing before its birth and nothing after its death.

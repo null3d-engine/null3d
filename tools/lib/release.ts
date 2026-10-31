@@ -9,6 +9,7 @@ import { PAGES, pagePath } from './docs';
 import { checkDocsStyle, DECISION_RECORD_SOURCE, INTERNAL_REFERENCE_SOURCE } from './docs-style';
 import { readIfExists } from './files';
 import { parseFrontMatter } from './frontmatter';
+import { repositoryEnv } from './git-env';
 
 export interface ParsedCommit {
 	/** Lowercased commit type, such as `feat`; empty when the subject is not conventional. */
@@ -63,6 +64,7 @@ export function parseCommit({ subject, body, hash }: RawCommit): ParsedCommit {
 export async function* readCommits(root: string, range: string): AsyncGenerator<ParsedCommit> {
 	const git = spawn('git', ['log', '--no-merges', '--format=%H%x00%s%x00%b%x1e', range], {
 		cwd: root,
+		env: repositoryEnv(),
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
 	const exited = new Promise<number | null>((resolve, reject) => {
@@ -263,11 +265,12 @@ const REWORDED_SUBJECTS: Readonly<Record<string, string>> = {
 
 /**
  * Why release notes cannot be published: each line that breaks the published docs' writing rules,
- * which the docs check holds `CHANGELOG.md` to. Empty when the notes pass.
+ * which the docs check holds `CHANGELOG.md` to. Empty when the notes pass. The notes are a log by
+ * design, so each release's date passes.
  */
 export function notesProblems(notes: string): string[] {
 	return checkDocsStyle(notes)
-		.filter((f) => f.severity === 'error')
+		.filter((f) => f.severity === 'error' && f.rule !== 'dated_history')
 		.map((f) => `line ${f.line}: ${f.message} (${f.excerpt})`);
 }
 

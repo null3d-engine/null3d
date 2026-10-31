@@ -1,0 +1,413 @@
+// Measures the temporal resolve's study fixes (task M3-A11, D-206) and the effects that need it:
+// an exposure change between frames, the transparency mask over a transparent canvas and over an
+// opaque surface, the phone path against the full one, and the frame-to-frame change of thin rain
+// and of the volumetric fog. ?case= names the measurement. Each figure is in 8-bit levels of the
+// displayed color's luma. The page runs the same scenes with the resolve off and on, or with each
+// setting, so each figure compares with its own baseline.
+import { createEngine, type Engine } from '@null3d/engine';
+import { run } from './lib/result';
+
+const params = new URLSearchParams(location.search);
+const CASE = params.get('case') ?? 'exposure';
+const GPU = params.get('gpu') ?? 'webgpu';
+const REACTIVE = params.get('reactive') ?? 'both';
+/**
+ * How many times over the run captures its frames. A software GPU draws slower than the page asks,
+ * so its captures skip frames and two runs line up on fewer sketch frames. More captures give the
+ * same number of lined-up pairs.
+ */
+const CAPTURES = Number(params.get('captures') ?? '1');
+/** The measurement's size in pixels. */
+const SIZE = [320, 180] as const;
+/** The square's place after it jumped, in pixels from the top left, inside its 40 pixel edge. */
+const ARRIVED = { x: 45, y: 85, width: 30, height: 10 };
+/** The same patch at the square's first place, on the other side of the view. */
+const OLD = { x: 245, y: 85, width: 30, height: 10 };
+const LEFT = OLD;
+const RIGHT = ARRIVED;
+
+interface Frame {
+	width: number;
+	height: number;
+	luma: Float32Array;
+}
+
+/** A frame's luma in 8-bit levels of the displayed color. */
+function luma(pixels: Uint8Array, width: number, height: number): Frame {
+	const values = new Float32Array(width * height);
+	for (let i = 0, at = 0; i < values.length; i++, at += 4)
+		values[i] =
+			0.2126 * (pixels[at] as number) +
+			0.7152 * (pixels[at + 1] as number) +
+			0.0722 * (pixels[at + 2] as number);
+	return { width, height, luma: values };
+}
+
+/** The mean luma of a frame, or of a region of it. */
+function mean(
+	frame: Frame,
+	region?: { x: number; y: number; width: number; height: number },
+): number {
+	const { x = 0, y = 0, width = frame.width, height = frame.height } = region ?? {};
+	let sum = 0;
+	for (let row = y; row < y + height; row++)
+		for (let column = x; column < x + width; column++)
+			sum += frame.luma[row * frame.width + column] as number;
+	return sum / (width * height);
+}
+
+/** The mean distance of two frames' luma over a region. */
+function distance(
+	a: Frame,
+	b: Frame,
+	region?: { x: number; y: number; width: number; height: number },
+): number {
+	const { x = 0, y = 0, width = a.width, height = a.height } = region ?? {};
+	let sum = 0;
+	for (let row = y; row < y + height; row++)
+		for (let column = x; column < x + width; column++)
+			sum += Math.abs(
+				(a.luma[row * a.width + column] as number) - (b.luma[row * b.width + column] as number),
+			);
+	return sum / (width * height);
+}
+
+/** Starts one engine that draws the sketch with `query`, and waits for its first frame. */
+async function start(
+	query: string,
+	options: { transparent?: boolean } = {},
+): Promise<{ engine: Engine; canvas: HTMLCanvasElement; heard: number[]; applied: number[] }> {
+	const canvas = document.createElement('canvas');
+	canvas.width = SIZE[0];
+	canvas.height = SIZE[1];
+	canvas.style.width = `${SIZE[0]}px`;
+	canvas.style.height = `${SIZE[1]}px`;
+	document.body.append(canvas);
+	const heard: number[] = [];
+	const applied: number[] = [];
+	// A template literal inside `new URL` is rewritten to a fixed address, so the query is set on
+	// the URL instead, as the guide for the image tests says.
+	const sketch = new URL('./sketches/taa-fixes-sketch.ts', import.meta.url);
+	sketch.search = `?${query}&frames`;
+	const engine = await createEngine({
+		canvas,
+		sketch,
+		maxPixelRatio: 1,
+		preset: 'high',
+		transparent: options.transparent === true,
+		onSketchMessage: (name, data) => {
+			if (name === 'frame') heard.push(data as number);
+			else if (name === 'applied') applied.push((data as { frame: number }).frame);
+		},
+	});
+	await engine.firstFrame;
+	return { engine, canvas, heard, applied };
+}
+
+/**
+ * Sends a message and waits for the sketch to apply it, so the next capture shows it. Resolves
+ * with the last sketch frame the sketch drew before the change, which a capture must pass.
+ */
+async function apply(
+	engine: Engine,
+	applied: number[],
+	name: string,
+	data: unknown,
+): Promise<number> {
+	const from = applied.length;
+	engine.postToSketch(name, data);
+	const deadline = performance.now() + 30_000;
+	while (applied.length === from) {
+		if (performance.now() > deadline) throw new Error(`the sketch never applied ${name}`);
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+	return applied.at(-1) as number;
+}
+
+/** Waits until the sketch has recorded frame `target` or a later one. */
+async function waitFrame(heard: number[], target: number): Promise<void> {
+	const deadline = performance.now() + 60_000;
+	while ((heard.at(-1) ?? 0) < target) {
+		if (performance.now() > deadline) throw new Error(`the sketch never reached frame ${target}`);
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+}
+
+/** Waits until the sketch has drawn `count` frames beyond the last one it posted. */
+async function advance(heard: number[], count: number): Promise<void> {
+	const from = heard.at(-1) ?? 0;
+	const deadline = performance.now() + 60_000;
+	while ((heard.at(-1) ?? 0) < from + count) {
+		if (performance.now() > deadline) throw new Error('the sketch stopped drawing frames');
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+}
+
+/** One capture: the luma of its frame, and the sketch frame that the capture drew. */
+interface Shot {
+	image: Frame;
+	frame: number;
+}
+
+/** Draws and captures the next frame, with the sketch frame that it drew. */
+async function shot(engine: Engine): Promise<Shot> {
+	const { width, height, pixels, frame } = await engine.captureFrame();
+	return { image: luma(pixels, width, height), frame };
+}
+
+/** The luma of the next captured frame. */
+async function capture(engine: Engine): Promise<Frame> {
+	return (await shot(engine)).image;
+}
+
+/**
+ * Captures the first frame past sketch frame `from`, the frame that the sketch drew before a
+ * change. A capture can replay the frame recorded before the change when the GPU draws slower than
+ * the page asks, so a capture that does not pass it is taken again. A run that never gets past it
+ * throws, as the page's other waits do, so a replay can never stand in for a frame that followed.
+ */
+async function capturedAfter(engine: Engine, from: number): Promise<Frame> {
+	const deadline = performance.now() + 30_000;
+	for (;;) {
+		const taken = await shot(engine);
+		if (taken.frame > from) return taken.image;
+		if (performance.now() > deadline)
+			throw new Error(`no capture passed sketch frame ${from} within 30 s`);
+	}
+}
+
+/** One run's captured frames, the sketch frame of each, and whether every capture advanced. */
+interface Run {
+	frames: Frame[];
+	numbers: number[];
+	consecutive: boolean;
+	/** How many captures skipped a sketch frame, whose pairs the figures leave out. */
+	skipped: number;
+}
+
+/** Captures `count` frames, with the sketch frame that each drew. */
+async function sequence(engine: Engine, count: number): Promise<Run> {
+	const frames: Frame[] = [];
+	const numbers: number[] = [];
+	let consecutive = true;
+	let skipped = 0;
+	for (let k = 0; k < count; k++) {
+		const taken = await shot(engine);
+		const last = numbers[k - 1] as number | undefined;
+		if (k > 0 && taken.frame <= (last as number)) consecutive = false;
+		else if (last !== undefined && taken.frame - last > 1) skipped++;
+		frames.push(taken.image);
+		numbers.push(taken.frame);
+	}
+	return { frames, numbers, consecutive, skipped };
+}
+
+/** The mean distance of two runs' frames that hold the same sketch frame, and how many there are. */
+function compare(a: Run, b: Run): { mean: number; overlap: number } {
+	const other = new Map<number, Frame>();
+	b.numbers.forEach((number, index) => {
+		other.set(number, b.frames[index] as Frame);
+	});
+	let sum = 0;
+	let overlap = 0;
+	a.numbers.forEach((number, index) => {
+		const frame = other.get(number);
+		if (!frame) return;
+		sum += distance(a.frames[index] as Frame, frame);
+		overlap++;
+	});
+	return { mean: sum / Math.max(1, overlap), overlap };
+}
+
+/** The frame-to-frame change of each adjacent pair, by the later frame's number. */
+function pairChanges(run: Run): Map<number, number> {
+	const found = new Map<number, number>();
+	for (let k = 1; k < run.frames.length; k++) {
+		const frame = run.numbers[k] as number;
+		if (frame - (run.numbers[k - 1] as number) !== 1) continue;
+		found.set(frame, distance(run.frames[k] as Frame, run.frames[k - 1] as Frame));
+	}
+	return found;
+}
+
+/**
+ * Each run's mean frame-to-frame change over the frames all of them hold, and how many pairs that
+ * is. The fog's change alternates from frame to frame, so a mean over different frames differs by
+ * more than the offset request could. Comparing one set of frames keeps the figures comparable on
+ * a machine whose captures skip frames.
+ */
+function sharedChange(runs: readonly Run[]): { means: number[]; pairs: number } {
+	const found = runs.map(pairChanges);
+	const frames = [...(found[0] as Map<number, number>).keys()].filter((frame) =>
+		found.every((pairs) => pairs.has(frame)),
+	);
+	const means = found.map(
+		(pairs) =>
+			frames.reduce((sum, frame) => sum + (pairs.get(frame) as number), 0) /
+			Math.max(1, frames.length),
+	);
+	return { means, pairs: frames.length };
+}
+
+/** Runs one scene, and stops its engine. */
+async function scene<T>(
+	query: string,
+	work: (engine: Engine, heard: number[], applied: number[]) => Promise<T>,
+	options: { transparent?: boolean } = {},
+): Promise<T> {
+	const { engine, canvas, heard, applied } = await start(query, options);
+	try {
+		return await work(engine, heard, applied);
+	} finally {
+		await engine.destroy();
+		canvas.remove();
+	}
+}
+
+run('taa-fixes', async () => {
+	if (CASE === 'exposure') {
+		// The history settles at an exposure of 1 and the sketch doubles it at a frame of the
+		// sequence, so every run draws the step at the same frame. The same scene without the resolve
+		// is the reference: a history that keeps the old exposure draws darker than it. The ratio
+		// switch runs the scene again with the history held at its own exposure.
+		const step = Number(params.get('step') ?? '8');
+		const run = (taa: boolean, ratio: boolean) =>
+			scene(
+				`case=exposure&gpu=${GPU}&taa=${taa ? 1 : 0}&jitter=0&ratio=${ratio ? 1 : 0}&step=${step}`,
+				async (engine, heard) => {
+					await waitFrame(heard, step);
+					return sequence(engine, 12 * CAPTURES);
+				},
+			);
+		const reference = await run(false, true);
+		const on = await run(true, true);
+		const off = await run(true, false);
+		const onError = compare(on, reference);
+		const offError = compare(off, reference);
+		return {
+			case: CASE,
+			gpu: GPU,
+			resolved: mean(on.frames[0] as Frame),
+			reference: mean(reference.frames[0] as Frame),
+			error: onError.mean,
+			offResolved: mean(off.frames[0] as Frame),
+			offReference: mean(reference.frames[0] as Frame),
+			offError: offError.mean,
+			overlap: Math.min(onError.overlap, offError.overlap),
+			consecutive: reference.consecutive && on.consecutive && off.consecutive,
+		};
+	}
+
+	if (CASE === 'alpha' || CASE === 'opaque') {
+		// The square settles on the right and jumps to the left. Its new place's history holds the
+		// background, so the frame after the jump shows how much of it stayed in the square.
+		const result = await scene(
+			`case=${CASE}&gpu=${GPU}&taa=1&jitter=0&reactive=${REACTIVE}`,
+			async (engine, heard, applied) => {
+				await apply(engine, applied, 'place', 0);
+				await advance(heard, 8);
+				// A capture that still holds the frame before the jump is taken again, so this is the
+				// first frame that shows the square's new place.
+				const before = await apply(engine, applied, 'place', 1);
+				const frame = await capturedAfter(engine, before);
+				engine.postToSketch('taa-off', null);
+				await advance(heard, 4);
+				await apply(engine, applied, 'place', 1);
+				const reference = await capture(engine);
+				return { frame, reference };
+			},
+			{ transparent: CASE === 'alpha' },
+		);
+		return {
+			case: CASE,
+			gpu: GPU,
+			reactive: REACTIVE,
+			// How far the square's new place strays from the same frame without the resolve.
+			error: distance(result.frame, result.reference, ARRIVED),
+			level: mean(result.reference, ARRIVED),
+			frameArrived: mean(result.frame, ARRIVED),
+			frameLeft: mean(result.frame, LEFT),
+			frameRight: mean(result.frame, RIGHT),
+			referenceArrived: mean(result.reference, ARRIVED),
+			referenceRight: mean(result.reference, RIGHT),
+		};
+	}
+
+	if (CASE === 'phone') {
+		// A blended square slides across a transparent canvas, from the frame number, so every run
+		// draws the same picture in the same frame. The scene's alpha lowers the full path's history;
+		// the phone path reads no signal, so the same setting must not change its picture. The
+		// signal's own figure shows that the scene would change if the path read it.
+		const run = (phone: boolean, reactive: 'off' | 'alpha') =>
+			scene(
+				`case=phone&gpu=${GPU}&taa=1&jitter=1&phone=${phone ? 1 : 0}&reactive=${reactive}`,
+				async (engine, heard) => {
+					await waitFrame(heard, 12);
+					return sequence(engine, 16 * CAPTURES);
+				},
+				{ transparent: true },
+			);
+		const fullOff = await run(false, 'off');
+		const fullAlpha = await run(false, 'alpha');
+		const phoneOff = await run(true, 'off');
+		const phoneAlpha = await run(true, 'alpha');
+		const signal = compare(fullAlpha, fullOff);
+		const skip = compare(phoneAlpha, phoneOff);
+		const path = compare(fullOff, phoneOff);
+		return {
+			case: CASE,
+			gpu: GPU,
+			distance: path.mean,
+			signal: signal.mean,
+			skip: skip.mean,
+			mean: mean(phoneOff.frames[0] as Frame),
+			overlap: Math.min(signal.overlap, skip.overlap, path.overlap),
+			consecutive:
+				fullOff.consecutive &&
+				fullAlpha.consecutive &&
+				phoneOff.consecutive &&
+				phoneAlpha.consecutive,
+		};
+	}
+
+	// The jittered effects: the same scene with the resolve off and on, and the frame-to-frame
+	// change of each, which is what a temporal resolve is meant to lower. The resolve off draws
+	// the scene with and without the offset request, which the frame applies only while the
+	// resolve draws, so the two says whether the offsets alone change the picture.
+	const measure = (query: string) =>
+		scene(query, async (engine, heard) => {
+			await waitFrame(heard, 12);
+			return sequence(engine, 16 * CAPTURES);
+		});
+	const off = await measure(`case=${CASE}&gpu=${GPU}&taa=0&jitter=0`);
+	const offJitter = await measure(`case=${CASE}&gpu=${GPU}&taa=0&jitter=1`);
+	const on = await measure(`case=${CASE}&gpu=${GPU}&taa=1&jitter=1`);
+	// The same resolve with both transparency signals off, so a difference that stays is the
+	// history's place rather than a mask dropping it.
+	const onNoMask = await measure(`case=${CASE}&gpu=${GPU}&taa=1&jitter=1&reactive=off`);
+	const runs = [off, offJitter, on, onNoMask];
+	const shared = sharedChange(runs);
+	const [offChange, offJitterChange, onChange, onNoMaskChange] = shared.means as [
+		number,
+		number,
+		number,
+		number,
+	];
+	return {
+		case: CASE,
+		gpu: GPU,
+		off: offChange,
+		on: onChange,
+		onNoMask: onNoMaskChange,
+		jitter: Math.abs(offJitterChange - offChange),
+		offMean: mean(off.frames[0] as Frame),
+		onMean: mean(on.frames[0] as Frame),
+		onNoMaskMean: mean(onNoMask.frames[0] as Frame),
+		// The frames all four runs hold, which every figure is measured over.
+		steps: shared.pairs,
+		// The captures that skipped a sketch frame, whose pairs every figure leaves out.
+		skipped: runs.reduce((sum, run) => sum + run.skipped, 0),
+		captures: runs.reduce((sum, run) => sum + run.numbers.length, 0),
+		consecutive: runs.every((run) => run.consecutive),
+	};
+});

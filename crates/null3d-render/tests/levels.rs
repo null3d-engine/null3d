@@ -3,12 +3,13 @@
 
 mod common;
 
-use common::{World, base_sphere, count};
+use common::{World, base_sphere, count, grid};
 use null3d_core::levels::Switch;
 use null3d_core::scene::Command;
 use null3d_gpu::drawlist::{Op, permutation, template};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, LevelQuality};
+use null3d_render::geometry::Geometry;
 use null3d_render::levels::LevelError;
 use null3d_render::materials::{Shading, feature};
 
@@ -455,6 +456,84 @@ fn forty_thousand_copies_of_four_levels_take_one_copy_each() {
     assert_eq!(8 * rows * 64, 20_480_000);
 }
 
+/// The same forest as the test above, but its trees cast the sun's shadows in four cascades. The
+/// casters' layout is one copy list that every cascade draws, so the four cascades must not
+/// multiply the list.
+#[test]
+fn forty_thousand_casters_of_four_cascades_take_one_copy_each() {
+    let rows: u32 = 40_000;
+    let mut measured = Vec::new();
+    for with_levels in [false, true] {
+        let mut world = World::new();
+        world.cast_sun_shadows(4);
+        if with_levels {
+            give_levels_of(&mut world, &[0.01, 0.05, 0.2], 0b1110);
+        }
+        let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+        let material = world.scene.materials()[slot];
+        let batch = world
+            .batches
+            .create(rows, false, false, BALL, material, 0.9)
+            .unwrap();
+        {
+            let batch = world.batches.get_mut(batch).unwrap();
+            batch.set_active_count(rows).unwrap();
+            batch.set_shadows(null3d_core::scene::flags::CAST_SHADOWS);
+        }
+        world.record(true);
+        measured.push(copies(&world)[1]);
+    }
+    // `measured[0]` is the casters' list without levels, and `measured[1]` with them. The four
+    // cascades draw one copy list, so the list takes one copy for each of the 40,000 trees, and
+    // the levels add nothing to it: 2.56 MB. The removed rule kept a slice for every copy in every
+    // level, and the casters' list has four levels and no fading band, because its shadow
+    // pipelines take no fading build: 10.24 MB.
+    let per_copy = rows * 64;
+    assert_eq!(measured[1], measured[0], "{measured:?}");
+    for bytes in measured {
+        assert!(bytes >= per_copy && bytes < per_copy + 128, "{bytes}");
+    }
+    assert_eq!(4 * per_copy, 10_240_000);
+}
+
+/// A copy list that reserves room for more copies than the device's binding holds is refused, so
+/// the frame asks for no buffer the device cannot bind. The buffer's room to grow was rounded up
+/// and then down to the need, which asked for more than the binding.
+#[test]
+fn a_copy_list_past_the_binding_is_refused_rather_than_sized_over_it() {
+    use common::{BATCH_ROWS, SCENE_CAPACITY};
+    use null3d_gpu::drawlist::sizes;
+    use null3d_render::frame::RecordError;
+    use null3d_render::gpu_driven::RendererConfig;
+
+    // A batch whose rows name no local radius reserves room in every bucket of its levels, so its
+    // copies pass the sources that the binding holds.
+    let rows = 64;
+    let sources = SCENE_CAPACITY + 1 + BATCH_ROWS + rows;
+    let binding = sources * sizes::INSTANCE_STRIDE;
+    let mut world = World::with_config(RendererConfig {
+        storage_binding_bytes: binding,
+        ..RendererConfig::default()
+    });
+    give_levels_of(&mut world, &[0.01, 0.05, 0.2], 0b1110);
+    let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+    let material = world.scene.materials()[slot];
+    let batch = world
+        .batches
+        .create(rows, false, false, BALL, material, 0.0)
+        .unwrap();
+    world
+        .batches
+        .get_mut(batch)
+        .unwrap()
+        .set_active_count(rows)
+        .unwrap();
+    assert_eq!(
+        world.try_record(true),
+        Err(RecordError::BufferFull { bytes: binding })
+    );
+}
+
 #[test]
 fn a_bias_on_an_object_makes_its_levels_switch_nearer() {
     let mut world = cpu_world();
@@ -618,20 +697,13 @@ fn a_bias_divides_the_switch_of_one_object() {
         },
     ];
     let rule = LevelRule::new(360.0, 1.732, false, 1.0, 0.0);
-    println!("factor {}", rule.factor);
-    // Level 1 switches at 0.01 times the factor, halved by a bias of 2: 1.56 m.
-    println!(
-        "no bias at 1.606: {:?}",
-        rule.pick(&links, 0, 1.0, 0.5, 1.606, 1.0, DrawRange::NONE)
-    );
-    println!(
-        "bias 2 at 1.606: {:?}",
-        rule.pick(&links, 0, 1.0, 0.5, 1.606, 2.0, DrawRange::NONE)
-    );
-    println!(
-        "bias 2 at 1.481: {:?}",
-        rule.pick(&links, 0, 1.0, 0.5, 1.481, 2.0, DrawRange::NONE)
-    );
+    // Level 1 switches at 0.01 times the factor, 3.12 m. At 1.606 m it is over the threshold and
+    // the base level draws; a bias of 2 halves its switch to 1.56 m, so the same distance draws
+    // the level.
+    assert!(matches!(
+        rule.pick(&links, 0, 1.0, 0.5, 1.606, 1.0, DrawRange::NONE),
+        Picked::One(0)
+    ));
     assert!(matches!(
         rule.pick(&links, 0, 1.0, 0.5, 1.606, 2.0, DrawRange::NONE),
         Picked::One(1)
@@ -677,5 +749,125 @@ fn the_culling_shader_culls_a_row_by_its_own_bound_where_it_has_one() {
     assert!(
         radius.contains("own * scale"),
         "the shader ignores the row's own radius: {radius}"
+    );
+}
+
+#[test]
+fn the_direct_path_draws_a_trees_whole_levels_rather_than_its_patches() {
+    use null3d_render::gpu_driven::RendererConfig;
+    let mut world = World::with_config(RendererConfig {
+        direct_draws: true,
+        ..RendererConfig::default()
+    });
+    // One object draws this mesh, so the two-copy rule cannot keep its levels by itself.
+    let mesh = world.add_object(&base_sphere(0.5, [6, 4]), Shading::Lit);
+    let settings = world.renderer.settings_mut();
+    let lower = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
+        .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+    settings
+        .set_mesh_levels(mesh, &lower, &[0.01, 0.05], &[Switch::Error; 2], &[0, 0], 0)
+        .unwrap();
+    world
+        .renderer
+        .set_mesh_patches(mesh, Some(one_patch_tree()))
+        .unwrap();
+    world.record(true);
+    let drawn: Vec<(u32, u32)> = world
+        .commands()
+        .iter()
+        .filter(|(op, _)| *op == Op::DrawIndexed)
+        .map(|(_, o)| (o[0], o[1]))
+        .collect();
+    // The direct path runs no cluster pass, so the tree leaves the whole levels in place.
+    assert!(
+        drawn.contains(&(indices_of(&world, lower[1]), 1)),
+        "{drawn:?}"
+    );
+    assert!(
+        world
+            .commands()
+            .iter()
+            .all(|(op, o)| !(*op == Op::CreateComputePipeline && o[1] == template::CLUSTER))
+    );
+}
+
+/// A tree of one patch over the first three indices of a mesh: the smallest tree the GPU path
+/// accepts.
+fn one_patch_tree() -> null3d_render::patches::PatchTree {
+    null3d_render::patches::PatchTree::new(
+        vec![0, 1, 2],
+        vec![[0.0, 0.0, 0.0, 1.0]],
+        vec![[0, 3, 0, 0]],
+        0,
+        4,
+    )
+    .unwrap()
+}
+
+/// Gives mesh `mesh` two lower levels, for the GPU path's tests of a tree.
+fn give_levels_to<B: FrameBuilder>(world: &mut World<B>, mesh: u32, levels: [Geometry; 2]) {
+    let settings = world.renderer.settings_mut();
+    let lower = levels.map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+    settings
+        .set_mesh_levels(mesh, &lower, &[0.01, 0.05], &[Switch::Error; 2], &[0, 0], 0)
+        .unwrap();
+}
+
+#[test]
+fn the_gpu_path_keeps_a_trees_levels_when_two_objects_draw_the_mesh() {
+    let mut plain = World::new();
+    give_levels_to(
+        &mut plain,
+        BALL,
+        [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])],
+    );
+    let without = indirect_draws(&mut plain);
+    let mut world = World::new();
+    give_levels_to(
+        &mut world,
+        BALL,
+        [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])],
+    );
+    world
+        .renderer
+        .set_mesh_patches(BALL, Some(one_patch_tree()))
+        .unwrap();
+    // Two ball objects share the mesh's bucket, so the pass has no single copy to pick patches
+    // for. Its levels stay, and no cluster pipeline is made.
+    assert_eq!(indirect_draws(&mut world), without);
+    assert!(
+        world
+            .commands()
+            .iter()
+            .all(|(op, o)| !(*op == Op::CreateComputePipeline && o[1] == template::CLUSTER))
+    );
+}
+
+#[test]
+fn the_gpu_path_keeps_a_trees_levels_when_its_mesh_fills_several_parts() {
+    let mut plain = World::new();
+    let plain_mesh = plain.add_object(&grid(256, 256), Shading::Lit);
+    give_levels_to(&mut plain, plain_mesh, [grid(2, 2), grid(1, 1)]);
+    let without = indirect_draws(&mut plain);
+    let mut world = World::new();
+    let mesh = world.add_object(&grid(256, 256), Shading::Lit);
+    give_levels_to(&mut world, mesh, [grid(2, 2), grid(1, 1)]);
+    let settings = world.renderer.settings();
+    let parts = settings
+        .meshes()
+        .parts(settings.meshes().mesh(mesh - 1).unwrap(), false)
+        .len();
+    assert!(parts > 1, "the mesh of the test fills {parts} parts");
+    world
+        .renderer
+        .set_mesh_patches(mesh, Some(one_patch_tree()))
+        .unwrap();
+    // A patch's indices name one part's vertices, so a split mesh keeps its whole levels.
+    assert_eq!(indirect_draws(&mut world), without);
+    assert!(
+        world
+            .commands()
+            .iter()
+            .all(|(op, o)| !(*op == Op::CreateComputePipeline && o[1] == template::CLUSTER))
     );
 }

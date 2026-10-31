@@ -58,6 +58,11 @@ fn check<B: FrameBuilder>(mut world: World<B>, name: &str) {
             state_flags::NO_DEPTH_TEST | state_flags::BLEND_ADDITIVE,
         ),
         (DebugView::Wireframe, LOW | HIGH, state_flags::LINE_LIST),
+        (
+            DebugView::Levels,
+            permutation::DEBUG_VIEW_LEVELS | permutation::LOD_FADE,
+            0,
+        ),
     ] {
         assert!(world.renderer.settings_mut().set_debug_view(view), "{name}");
         let draws = mock.draws;

@@ -86,9 +86,16 @@
 //                       preset's budget, with the frame rate, the first-frame time and the bytes
 //                       the page downloaded, or vegetation, which times Creek and the forest demo
 //                       at every preset on each GPU path with the triangles and the memory, or
+//                       terrain, which times the terrain demo at each preset that a GPU path draws,
+//                       the same way, and beside each page a held-camera pair with the morph on and
+//                       off for the offset's own cost, or terrain-shadow, which draws the demo from
+//                       a still camera with the morph on, with it off and with the far cascades kept
+//                       to their turns, for the shadow redraw that a morphing caster causes, or
 //                       tree-generation, which times procedural tree generation in a worker, or
 //                       vegetation-scatter, which places Creek's valley by the vegetation add-on's
-//                       ecological rules and checks the placement against the reference
+//                       ecological rules and checks the placement against the reference, or
+//                       history-cost, which times a compute pass that keeps its state between frames,
+//                       with the pass off and on
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
@@ -130,7 +137,7 @@
 //                       that comes only now and then
 //   --shields on|off    the state of Brave's Shields for the dev server's site, which the runner
 //                       cannot read: it goes into each Brave result and the run's summary. No
-//                       plan tests Brave any more; it runs only where a run names it
+//                       plan tests Brave; it runs only where a run names it
 //   --quiet-cap <s>     a runner page that sends nothing for this many seconds on a page counts as
 //                       stopped, however long the page may take, so a new runner page takes over
 //                       sooner. For a browser in front, as on CI's machines, whose runner page
@@ -1120,11 +1127,17 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'texture-cache',
 	'reflection',
 	'alpha-mask-cost',
+	'impostor-cost',
+	'impostor-frame',
 	'canvas-cost',
 	'cluster-cost',
+	'lod-cost',
 	'splats',
 	'demos',
 	'vegetation',
+	'vegetation-wind',
+	'terrain',
+	'terrain-shadow',
 	'tree-generation',
 	'vegetation-scatter',
 	'webgpu-stall',

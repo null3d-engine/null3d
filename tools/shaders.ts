@@ -31,6 +31,7 @@
 // it:
 //   bun tools/shaders.ts --entries-shard 0/8 --entries-out target/shader-entries
 import { join } from 'node:path';
+import { refuseInQuietWindow } from './lib/quiet-window';
 import {
 	buildEntriesShard,
 	compilerStamp,
@@ -75,6 +76,7 @@ try {
 	} else if (process.argv.includes('--entry-folder')) {
 		console.log(`folder=${entryCacheFolder(root)}`);
 	} else if (shard !== undefined) {
+		refuseInQuietWindow('The shader build');
 		const { stored, folder } = buildEntriesShard(root, shard, out);
 		console.log(
 			`Shard ${shard} stored ${stored.length} new shader entries in ${folder}${out === undefined ? '.' : `, and copied them to ${out}.`}`,

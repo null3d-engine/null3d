@@ -3,11 +3,74 @@
 // engine's hold mode.
 import { type ConsoleMessage, errors, type Page } from '@playwright/test';
 import { windowValue } from '../../packages/cli/src/page.js';
-import type { ItemResult } from './runs.ts';
+import { neighbourNote } from './running-tests.ts';
+import { type ItemResult, lastSteps } from './runs.ts';
+import { stallMessage } from './stall-message.ts';
+import { calibrationNote, noteCalibration } from './start-calibrations.ts';
 
-/** Waits until the page publishes its result, and returns it. Throws when the time runs out. */
-export function pageResult<T>(page: Page, timeoutMs: number): Promise<T> {
-	return windowValue<T>(page, '__null3dResult', timeoutMs);
+/** The page's name for the run's readings: its sketch and tier where the address names them. */
+function pageName(page: Page): string {
+	try {
+		const url = new URL(page.url());
+		const sketch = url.searchParams.get('sketch') ?? url.pathname;
+		const gpu = url.searchParams.get('gpu');
+		return gpu === null ? sketch : `${sketch} on ${gpu}`;
+	} catch {
+		return page.url();
+	}
+}
+
+/** Records a page's start reading for the run. */
+function recordCalibration(page: Page, calibrationMs: unknown): void {
+	noteCalibration(pageName(page), calibrationMs);
+}
+
+/**
+ * Watches the start reading that the page sets as its start begins, from the first moment the page
+ * answers. A page that later stalls in a long synchronous phase cannot answer a question, but the
+ * reading it set before the stall still counts.
+ */
+function readingFromStart(page: Page): () => number | undefined {
+	let ms: number | undefined;
+	page
+		.evaluate(() => (globalThis as { __null3dStartCalibration?: number }).__null3dStartCalibration)
+		.then((value) => {
+			if (typeof value === 'number' && Number.isFinite(value) && value > 0) ms = value;
+		})
+		.catch(() => {});
+	return () => ms;
+}
+
+/**
+ * Waits until the page publishes its result, and returns it. Throws when the time runs out, with
+ * the page's last steps and the tests that other workers ran beside it added to the message: a page
+ * that published nothing still says where its time went, and a bare timeout says nothing. Each page
+ * also gives the run its start reading, which says whether this page stood out.
+ */
+export async function pageResult<T>(page: Page, timeoutMs: number): Promise<T> {
+	// Start the reading now, so a page that stalls later has already answered.
+	const startReading = readingFromStart(page);
+	try {
+		const result = await windowValue<T>(page, '__null3dResult', timeoutMs);
+		const published = (result as { calibrationMs?: unknown } | null)?.calibrationMs;
+		recordCalibration(page, published ?? startReading());
+		return result;
+	} catch (e) {
+		if (e instanceof errors.TimeoutError) {
+			// The page may have answered before its stall, so take the reading kept from its start.
+			// A page that never answered still names the missing reading: zero, not undefined.
+			const calibrationMs = startReading() ?? 0;
+			recordCalibration(page, calibrationMs);
+			// A page that closed keeps its own timeout: reading it would throw in its place.
+			try {
+				e.message +=
+					lastSteps(await pageTrail(page)) + calibrationNote(calibrationMs) + neighbourNote();
+			} catch {}
+			// The caller's failure text names the reading's place among the run's pages.
+			(e as { calibrationMs?: number }).calibrationMs = calibrationMs;
+		}
+		throw e;
+	}
 }
 
 /**
@@ -42,8 +105,8 @@ const pageTrail = (page: Page): Promise<string[]> =>
 /**
  * Waits until the page publishes its result, for as long as the page keeps noting steps in its
  * trail. Each wait lasts `stallMs`, and a wait in which the page noted no new step throws, with the
- * trail's last steps. A page whose work takes longer on a busy machine gets the time it needs, and
- * a stuck page still fails after one wait.
+ * trail's last steps, the page's start reading and the tests that ran beside it. A page whose work
+ * takes longer on a busy machine gets the time it needs, and a stuck page still fails after one wait.
  */
 export async function pageResultWhileProgressing<T>(page: Page, stallMs: number): Promise<T> {
 	let steps = -1;
@@ -55,7 +118,7 @@ export async function pageResultWhileProgressing<T>(page: Page, stallMs: number)
 			const trail = await pageTrail(page);
 			if (trail.length <= steps)
 				throw new Error(
-					`no result and no new step within ${stallMs / 1000} s. The last steps:\n${trail.slice(-5).join('\n')}`,
+					stallMessage(trail, stallMs, (e as { calibrationMs?: number }).calibrationMs),
 				);
 			steps = trail.length;
 		}
@@ -76,6 +139,8 @@ export async function loadResult(page: Page, path: string, timeoutMs: number): P
 			ok: false,
 			error: `no result within ${timeoutMs / 1000} s`,
 			trail: await pageTrail(page),
+			// Zero, not undefined: the page ran the instrument, and the reading is missing.
+			calibrationMs: (e as { calibrationMs?: number }).calibrationMs ?? 0,
 		};
 	}
 }
