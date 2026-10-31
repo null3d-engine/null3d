@@ -49,8 +49,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"the compute pass and its WebGL2 fragment form are built and tested, and the wind add-on fills its field through the hook with a compute pass. The owner's 25 October ruling adds M3-V13's history to the hook, and the first-user outcome the plan names still waits on M3-F9's ocean",
 	'M3-R22':
 		"the shader cache on the branch is D-248's change, not this task's: it reuses every entry when a compiler change leaves the compiled program identical, 0 compiled and 79 reused in 19 s, where the same change cost an hour. The task's own change, three entries instead of four for every module kind, is on `feat/m3-r22-entry-set` and not on this branch, and the determinism list here still holds `lit`; the two checks' CI times remain unmeasured",
-	'M3-E1':
-		"unticked by the 29 October audit: the entry gained a rule-42 bullet that the tick never covered. The particles add-on's birth records are still written one per birth per frame on the sketch thread, and the engine's particle buffer gives them a Rust home",
 	'M3-F3':
 		"dropped with the temporal resolve it waited on (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F10':
@@ -72,8 +70,6 @@ const NOTES: Readonly<Record<string, string>> = {
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-C1':
 		"the scene, its lanes, rain and the hero car are in, and so are the moods (`createMoods` in the skyway sketch) and the instances demo, which is registered and built on the traffic-lanes add-on; the owner approved the look. What remains is the chase camera's tower occlusion fix, held on `feat/skyway-camera` until its look review passes, and the frame rates against the target: the iPad Pro 13 drew 50.0 fps at Low on WebGPU and 54.2 on WebGL2, and the cloud S24 drew 11.7 at Low and 7.8 in the demos plan, all under 60",
-	'M3-E1':
-		"held by its own rule-42 bullet: the engine can now write a frame's birth records in Rust from a parameter block, which is built and proved, but the add-on still fills that block with one loop row per birth on the sketch thread, so the per-birth loop the bullet names is still there. The bullet stays open until the engine gains a function over the emitter's rate and births, or the plan is amended to put the add-on's own module in its place; either shape needs the per-birth maths to leave the sketch thread, with the emitter's settings passed across",
 	'M3-F4':
 		"unticked by its check at 652fd235b on `feat/m3-f4-lightmap-evidence`: the captured frame is one side of the comparison rather than the comparison itself, D-258 claims more than that frame settles, not every figure has a recorded run. The evidence entry is written now and names what is owed rather than claiming it: the engine-to-viewer comparison does not exist, and the picture's failure without the direction is unrecorded. The same branch's ae46e947d states the viewer-side limit in D-258 lines 78 to 82 instead of closing it, so the owner has not ruled whether an engine-to-viewer comparison is owed",
 	'M3-L4':
