@@ -100,6 +100,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the CPU path draws a hill through the add-on and is measured on this Mac's Chrome, and the task's Done-when is not met. Creek's sketch still imports its own `./grass`, so no hill of Creek draws through the add-on; the cost has a row only for this Mac, and the iPad, an S24-class phone and the Tab A9 Plus are owed; near grass shadows are not built; and the compute-built blade list waits on M3-E8's same-frame output, M3-E9's count in the near shadow views and M3-V3's graph edge, as the evidence entry says",
 	'M3-X1':
 		"held open by its own line: the vegetation add-on in Creek (M3-V11) is open, so Creek's plants are not drawn by a demo yet, and the demo budgets do not hold: the Skyway rates recorded for M3-C1 sit under the 60 fps target on the iPad Pro 13 (50.0 fps at Low on WebGPU, 54.2 on WebGL2) and the cloud S24 (11.7 at Low, 7.8 in the demos plan)",
+	'M3-V10':
+		"the pose work, its tests, its pictures and its figures are on the branch; its Done-when's last two clauses are open. The owner's pick of the trees' default waits for the morning by the owner's own rule, and the other method's tree path stays until that pick, because removing the wrong one is what the clause forbids. The look review's two notes ride with the pick: the pose pictures carry about a quarter less leaf-edge energy at both holds, and the WebGL2 grove moves about a quarter as much a frame as WebGPU and compatibility mode",
 };
 
 /** The plan's groups, by the first letter of a task's part, in the plan's order. */
