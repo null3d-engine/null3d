@@ -94,6 +94,7 @@ import { MEMORY_AREA_COUNT } from '../shared/memory-area';
 import { MemoryViews } from '../shared/memory-views';
 import { Counter, FrameRecorder, MemoryFigure, PHASE_NAMES, Phase, Role } from '../shared/metrics';
 import type { Recorder, ReplayProgram, ReplayResult } from '../shared/recording';
+import { tasksPending } from '../shared/task-pending';
 import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
@@ -108,6 +109,13 @@ export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]
 
 /** Fixed sizes of the engine core. */
 const MAX_BATCHES = 256;
+/**
+ * How long a held frame waits for the tasks that the sketch queued before it. A task answers
+ * between frames, and a hold runs its frames with no frame loop, so the held frame waits here or
+ * it draws what the tasks had not yet written. The limit keeps a task that never answers from
+ * stopping the hold.
+ */
+const TASK_SETTLE_LIMIT_MS = 10_000;
 const COMMAND_CAPACITY = 1 << 16;
 /** The id of the pointer that a timed script drives, and the bit of its main button. */
 const MAIN_POINTER = 1;
@@ -1315,7 +1323,11 @@ export class SketchRunner {
 			// capture views take one probe a frame, so a second frame at the same time captures the
 			// next. The thread that draws keeps two frames' lists.
 			Atomics.store(slots, Slot.HeldFrom, frame);
-			if (glue.readsLastFrame() !== 0 || glue.probesWaiting() !== 0) {
+			// A task that the sketch queued in a frame answers between frames, so the last frame that
+			// the loop ran may have drawn what the task had not yet written. Once the tasks settle, one
+			// more frame at the same time draws what they wrote.
+			if (glue.readsLastFrame() !== 0 || glue.probesWaiting() !== 0 || tasksPending() > 0) {
+				if (tasksPending() > 0) await this.settleTasks();
 				this.clock.holdStep(steps, steps, seconds);
 				frame = this.frame();
 			}
@@ -1335,6 +1347,22 @@ export class SketchRunner {
 		Atomics.store(slots, Slot.HeldFrom, first);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
+	}
+
+	/**
+	 * Waits for the tasks that the sketch queued, which write their answers between frames, so the
+	 * held frame draws what they wrote. A chain of tasks has each one queued before the promise that
+	 * answered before it runs its next code, so the count reaches zero only when the chain is done.
+	 */
+	private async settleTasks(): Promise<void> {
+		const deadline = performance.now() + TASK_SETTLE_LIMIT_MS;
+		while (tasksPending() > 0) {
+			if (performance.now() >= deadline) {
+				console.warn(`hold mode stopped waiting for ${tasksPending()} task(s) that did not answer`);
+				return;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
 	}
 
 	/**
@@ -1391,7 +1419,8 @@ export class SketchRunner {
 				if (first === 0 && (before || at === frames - 1)) first = frame;
 			}
 			Atomics.store(slots, Slot.HeldFrom, frame);
-			if (glue.readsLastFrame() !== 0 || glue.probesWaiting() !== 0) {
+			if (glue.readsLastFrame() !== 0 || glue.probesWaiting() !== 0 || tasksPending() > 0) {
+				if (tasksPending() > 0) await this.settleTasks();
 				this.clock.replayStep(now, 0);
 				frame = this.frame();
 			}
