@@ -308,6 +308,26 @@ post.removeEffect(vignette);
 - A new effect starts to draw a few frames after `addEffect`, once its pipeline builds. An effect that must show at a moment, such as when the camera dips under water, is added a little before. For example, add it when the camera comes within 0.6 m of the water, and remove it once the camera is 1 m above.
 - An effect that depends on where the camera is, such as under water, decides per pixel. Find where the pixel's line of sight leaves the near plane, from the camera's position, axes, `fov` and `near` passed as uniforms, and test that point. A test of the camera's own height leaves a strip at the waterline without the effect. The full example: `guides/custom-passes`, "Example: under the water".
 
+### A lens look: grain, fringes, a streak and a speed blur (0.3)
+
+Four effects that draw their own neighboring reads cost four full-screen passes. Write them as one
+effect, or copy the lens-kit example add-on, which sets the core's grade, sharpening and vignette
+from one look and draws the marks in a single effect. Engine docs: `guides/lens-kit`.
+
+- Each mark reads a value that is 0 or more and off at 0, so a pixel costs only the marks that the
+  look uses. A look with every mark at 0 adds no effect, which is how a grade alone costs no pass.
+- The fringes and the speed blur call `effectColor`, so the effect draws a pass of its own. Keep it
+  last in the chain, where its neighbor reads land on the frame's finished color.
+- A streak must not blur the picture again. Bloom already thresholded and blurred the bright parts,
+  so read a level of its chain with `effectBloom` and spread that sideways: `post.addEffect({ wgsl,
+  bloomLevel: 2 })`. Without bloom the streak reads black.
+- Grain on linear HDR color reads weaker than the same value on display color, because the tone
+  curve lifts the shadows. Tune it against the final picture, not against a display-color reference.
+- Seed grain from an integer hash of `input.pixel` and the time, never from a sine, and step the
+  time at the film rate (`floor(input.time * 24.0)`) so the grain does not crawl with the frame rate.
+- A value that fixes the effect's shape, such as `bloomLevel`, is read when the effect is made.
+  Change it by removing the effect and adding it again.
+
 A custom tone curve replaces the built-in curves in the final pass:
 
 ```ts

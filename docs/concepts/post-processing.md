@@ -407,6 +407,8 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 
 - [Post-processing API](../api/post.md): `post.set` and its settings, and `post.addEffect`.
 - [Custom passes](../guides/custom-passes.md): how to write custom effects and tone curves.
+- [Lens kit](../guides/lens-kit.md): one camera look, with grain, color fringes, an anamorphic
+  streak and a speed blur in one effect, and the core's grade, sharpening and vignette.
 - [Objects and transforms](../api/objects.md#mesh-calls): `setOutlined`.
 - [Color management](color-management.md): HDR color, the final pass and the 8-bit path.
 - [The render graph](render-graph.md): how the passes of a frame are declared and ordered.
