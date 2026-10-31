@@ -121,8 +121,8 @@ describe('the grass batches', () => {
 	test('the High count fills the near band and each preset draws its share', () => {
 		const { ctx, made } = context('high');
 		const grass = createGrass(ctx, field);
-		expect(grass.bands.length).toBe(3);
-		expect(grass.batches.length).toBe(3);
+		expect(grass.bands.length).toBe(2);
+		expect(grass.batches.length).toBe(2);
 		const b = made[0] as ReturnType<typeof batch>;
 		// The capacity also holds Ultra's extra quarter.
 		expect(b.count).toBe(125);
@@ -137,32 +137,30 @@ describe('the grass batches', () => {
 		grass.fit('ultra');
 		expect(b.active).toBe(125);
 	});
-	test('each band thins its tufts, widens its blades and draws in its own distance window', () => {
+	test('each band keeps the tufts and the width and drops a blade segment with the distance', () => {
 		const { ctx, made } = context('high');
 		const grass = createGrass(ctx, field);
-		// The defaults place the edges at 0.5, 0.9 and 1.6 times the area's ten meters, with 1, a half
-		// and a quarter of the tufts, and blades of 3, 2 and 1 segments.
-		expect(grass.bands.map((band) => band.far)).toEqual([5, 9, 16]);
-		expect(grass.bands.map((band) => band.near)).toEqual([0, 5, 9]);
-		expect(grass.bands.map((band) => band.count)).toEqual([100, 50, 25]);
-		expect(grass.bands.map((band) => band.triangles)).toEqual([65, 39, 13]);
-		// A band's rows fade in at the edge before it and out past its own, so no line around the
-		// camera shows where one band hands over to the next.
+		// The defaults place the edge at half the area's ten meters, and the hill ends at 1.6 times
+		// it. Both bands place every tuft, so no line of a changed density crosses the ground; the
+		// far band's blades have two segments where the near band's have three.
+		expect(grass.bands.map((band) => band.far)).toEqual([5, 16]);
+		expect(grass.bands.map((band) => band.near)).toEqual([0, 5]);
+		expect(grass.bands.map((band) => band.count)).toEqual([100, 100]);
+		expect(grass.bands.map((band) => band.triangles)).toEqual([65, 39]);
+		// A band's rows draw between its distances; the engine fades each edge, which cross-fades the
+		// two bands' tufts along the boundary.
 		for (let index = 0; index < grass.bands.length; index++) {
 			const band = grass.bands[index] as (typeof grass.bands)[number];
 			const rows = made[index] as ReturnType<typeof batch>;
-			const near = band.near;
 			for (let row = 0; row < rows.count; row++) {
-				expect(rows.ranges[row * 2]).toBe(near);
-				const far = rows.ranges[row * 2 + 1] as number;
-				expect(far).toBeGreaterThanOrEqual(band.far);
-				expect(far).toBeLessThanOrEqual(band.far * 1.06 + 1e-6);
+				expect(rows.ranges[row * 2]).toBe(band.near);
+				expect(rows.ranges[row * 2 + 1]).toBe(band.far);
 			}
 		}
 	});
-	test('a band beyond the first grows wider blades for the tufts it thins', () => {
+	test('a band that a page thins widens its blades by the same factor', () => {
 		const { ctx, meshes } = context('high');
-		createGrass(ctx, field);
+		createGrass(ctx, { ...field, bands: [{ far: 5 }, { far: 9, share: 0.5 }] });
 		// The two side vertices of a blade's root are its width.
 		const width = (mesh: { positions: Float32Array }) =>
 			Math.hypot(
@@ -171,20 +169,19 @@ describe('the grass batches', () => {
 				(mesh.positions[2] as number) - (mesh.positions[5] as number),
 			);
 		const near = width(meshes[0] as { positions: Float32Array });
-		const middle = width(meshes[1] as { positions: Float32Array });
-		// The middle band places half the tufts, so its blades are wider by the square root of two.
-		expect(middle / near).toBeCloseTo(Math.SQRT2, 5);
+		const far = width(meshes[1] as { positions: Float32Array });
+		// Half the tufts need blades twice as wide to cover the same ground.
+		expect(far / near).toBeCloseTo(2, 5);
 	});
 	test('a preset thins each band by its share', () => {
 		const { ctx, made } = context('high');
 		const grass = createGrass(ctx, field);
-		const middle = made[1] as ReturnType<typeof batch>;
-		// The middle band's High count is 50, and Low draws 0.35 of it.
-		expect(middle.active).toBe(50);
+		const far = made[1] as ReturnType<typeof batch>;
+		expect(far.active).toBe(100);
 		grass.fit('low');
-		expect(middle.active).toBe(18);
+		expect(far.active).toBe(35);
 		grass.fit('ultra');
-		expect(middle.active).toBe(Math.ceil(50 * 1.25));
+		expect(far.active).toBe(125);
 	});
 	test('a band edge that does not stand beyond the one before it is refused', () => {
 		const { ctx } = context('high');
@@ -192,15 +189,15 @@ describe('the grass batches', () => {
 	});
 	test('the plan gives each band its tufts, triangles and rows', () => {
 		const plans = grassBands(field);
-		expect(plans.map((plan) => plan.counts.high)).toEqual([100, 50, 25]);
-		expect(plans.map((plan) => plan.counts.low)).toEqual([35, 18, 9]);
-		expect(plans.map((plan) => plan.triangles)).toEqual([65, 39, 13]);
+		expect(plans.map((plan) => plan.counts.high)).toEqual([100, 100]);
+		expect(plans.map((plan) => plan.counts.low)).toEqual([35, 35]);
+		expect(plans.map((plan) => plan.triangles)).toEqual([65, 39]);
 		// The rows hold the Ultra preset's share of each band's High count.
-		expect(plans.map((plan) => plan.rows)).toEqual([125, 63, 32]);
-		expect(plans.map((plan) => plan.rowBytes)).toEqual([125 * 64, 63 * 64, 32 * 64]);
+		expect(plans.map((plan) => plan.rows)).toEqual([125, 125]);
+		expect(plans.map((plan) => plan.rowBytes)).toEqual([125 * 64, 125 * 64]);
 		// Two shapes split each band's tufts, and the rows of the split round up. A page that sizes
 		// its memory from the plan therefore sizes what `createGrass` builds.
-		expect(grassBands({ ...field, shapes: 2 }).map((plan) => plan.rows)).toEqual([126, 64, 34]);
+		expect(grassBands({ ...field, shapes: 2 }).map((plan) => plan.rows)).toEqual([126, 126]);
 	});
 	test('the grass reads the field it is given, and takes its newest layer', () => {
 		const { ctx, materials, uploads, layers } = context('high');
