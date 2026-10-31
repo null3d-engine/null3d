@@ -172,11 +172,11 @@ function upload(
 
 /**
  * The share of the switch distance that the cards start before it. The engine thins a draw range's
- * edge out with a dither over the last eighth of that edge's distance, and the dither's phase comes
- * from each copy's own source. The mesh and the card are different sources, so their phases differ:
- * a card that faded in while the mesh faded out would drop the pixels that both left out, and the
- * background would show through the crown. Starting the cards this far ahead finishes their fade
- * while the mesh still draws every pixel, so the card stands at full coverage from before the
+ * edge out with a dither over the last 8 per cent of that edge's distance, and the dither's phase
+ * comes from each copy's own source. The mesh and the card are different sources, so their phases
+ * differ: a card that faded in while the mesh faded out would drop the pixels that both left out,
+ * and the background would show through the crown. Starting the cards this far ahead finishes their
+ * fade while the mesh still draws every pixel, so the card stands at full coverage from before the
  * mesh's edge begins to thin. The lead covers the gap between the two batches' bounding spheres,
  * whose radii differ because a card's corner lies farther from its origin than the plant's own
  * vertices do.
