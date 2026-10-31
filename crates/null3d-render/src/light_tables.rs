@@ -92,12 +92,20 @@ pub const fn size_of_index(index: u32) -> u32 {
 /// number. The record holds the layer plus one, so 0 names an image that the light lacks.
 pub const IMAGE_LAYER_BITS: u32 = 6;
 
-// The record keeps the image's layer plus one in the low bits, so the highest image that the
-// probes' and images' caps can place, plus one, must be less than the field's size. That is why
-// the bound below is strict. A rise in either cap that outgrows the field stops the build here
-// rather than spilling into the bits that hold the size's number.
+// The record keeps the image's layer plus one in the low bits, so the highest image that a scene
+// can place, plus one, must be less than the field's size. The layer arithmetic rounds the probe
+// count and the image room up to powers of two, so the check uses those rooms, not the caps: with
+// MAX_PROBES at 40 and MAX_IMAGES at 20 the rooms are 64 and 32, and the sum outgrows the six
+// bits. The build then stops here rather than writing another image's layer into the size's bits.
+// The bound is strict for that reason.
+const fn layer_room(cap: usize, floor: usize) -> usize {
+    let room = cap.next_power_of_two();
+    if room < floor { floor } else { room }
+}
+
 const _: () = assert!(
-    FIRST_IMAGE_LAYER as usize + MAX_PROBES + MAX_IMAGES < (1 << IMAGE_LAYER_BITS),
+    FIRST_IMAGE_LAYER as usize + layer_room(MAX_PROBES, 2) + layer_room(MAX_IMAGES, 4)
+        < (1 << IMAGE_LAYER_BITS),
     "the image layer and its size number fit a light record's low bits"
 );
 
