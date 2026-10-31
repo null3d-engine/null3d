@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { CORE_NOT_COUNTED } from '../generated/core';
+import { PASS_ROLE_NAMES } from '../generated/gpu';
 import { gpuPassStats, secondRates, summarizeFrames, timerStep } from '../page/frame-stats';
 import { QUALITY_SETTINGS } from '../quality/presets';
 import {
@@ -167,6 +168,38 @@ describe('frame records', () => {
 		expect(first).toBeGreaterThan(0);
 		expect(reader.firstFrameTime).toBe(first);
 		expect(reader.firstDrawMs).toBe(12.5);
+	});
+
+	it('keep the start and the length of the sketch setup, and the first builds, once', () => {
+		const buffer = createMetricsBuffer(true, 0);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
+		const reader = new MetricsReader(buffer);
+		expect([reader.setupStart, reader.setupMs, reader.warmUpStart]).toEqual([0, null, 0]);
+		sketch.markSetupStart();
+		const started = reader.setupStart;
+		expect(started).toBeGreaterThan(0);
+		expect(reader.setupMs).toBeNull();
+		sketch.markSetupStart();
+		sketch.markSetupDone(1200);
+		sketch.markSetupDone(5);
+		expect(reader.setupStart).toBe(started);
+		expect(reader.setupMs).toBe(1200);
+		sketch.markWarmUp(true);
+		const warmUp = reader.warmUpStart;
+		sketch.markWarmUp(false);
+		expect(warmUp).toBeGreaterThan(0);
+		expect(reader.warmUpStart).toBe(warmUp);
+		expect(reader.warmUpMs).not.toBeNull();
+	});
+
+	it('tell a setup that took no measurable time from one still running', () => {
+		const buffer = createMetricsBuffer(false, 0);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
+		const reader = new MetricsReader(buffer);
+		sketch.markSetupStart();
+		sketch.markSetupDone(0);
+		expect(reader.setupMs).toBeGreaterThan(0);
+		expect(Math.round(reader.setupMs as number)).toBe(0);
 	});
 
 	it('sum the records of a window without turning costly timing on', () => {
@@ -348,13 +381,20 @@ describe('summarizeFrames', () => {
 describe('gpuPassStats', () => {
 	/** Reads back GPU records of frames whose passes are render passes where `render` says so. */
 	function gpuRecords(
-		frames: { copies: number; passes: number[]; render: boolean[]; frameMs: number }[],
+		frames: {
+			copies: number;
+			passes: number[];
+			render: boolean[];
+			frameMs: number;
+			/** Each pass's label, in the order of the frame's passes. */
+			roles?: number[];
+		}[],
 	) {
 		const buffer = createMetricsBuffer(false, 0);
 		const reader = new MetricsReader(buffer);
 		reader.begin();
 		const gpu = new FrameRecorder(buffer, Role.Gpu);
-		frames.forEach(({ copies, passes, render, frameMs }, index) => {
+		frames.forEach(({ copies, passes, render, frameMs, roles }, index) => {
 			gpu.begin(index + 1);
 			let renderPasses = 0;
 			render.forEach((isRender, pass) => {
@@ -364,11 +404,19 @@ describe('gpuPassStats', () => {
 			gpu.gpuTime(0, copies);
 			passes.slice(0, GPU_TIMED_PASSES).forEach((ms, pass) => {
 				gpu.gpuTime(1 + pass, ms);
+				gpu.gpuPassRole(pass, roles?.[pass] ?? 0);
 			});
 			gpu.commit(frameMs);
 		});
 		reader.end();
 		return reader.records[Role.Gpu] as RingRecords;
+	}
+
+	/** A pass label from the role's name and its place among the passes of that role. */
+	function label(name: string, place = 0): number {
+		const role = PASS_ROLE_NAMES.indexOf(name);
+		if (role < 0) throw new Error(`no pass role ${name}`);
+		return (role | (place << 16)) >>> 0;
 	}
 
 	it('names each pass by its kind and place, after the copies and before the gaps', () => {
@@ -388,6 +436,79 @@ describe('gpuPassStats', () => {
 		expect(parts?.[2]?.ms).toMatchObject({ count: 2, median: 1.5 });
 		// Frame 1 leaves 2 - 0.25 - 0.5 - 1 = 0.25 ms between passes, frame 2 leaves 0.75 ms.
 		expect(parts?.[3]?.ms.median).toBeCloseTo(0.5, 9);
+	});
+
+	it('names each pass by what it draws for rather than its slot', () => {
+		const parts = gpuPassStats(
+			gpuRecords([
+				{
+					copies: 0.1,
+					passes: [0.4, 0.6, 0.2],
+					render: [false, true, true],
+					roles: [label('compute'), label('shadow cascade', 1), label('shadow hero')],
+					frameMs: 1.3,
+				},
+			]),
+		);
+		expect(parts?.map((part) => part.name)).toEqual([
+			'copies',
+			'compute',
+			'shadow cascade 1',
+			'shadow hero',
+			'between passes',
+		]);
+	});
+
+	it('adds a role together across frames even where the pass moves slot', () => {
+		// The far cascade draws in the first frame only, so the hero's pass lands one slot earlier
+		// there. Both frames' cascade times belong to the cascade, not to a position.
+		const parts = gpuPassStats(
+			gpuRecords([
+				{
+					copies: 0,
+					passes: [0.5, 0.7],
+					render: [true, true],
+					roles: [label('shadow cascade', 0), label('shadow hero')],
+					frameMs: 1.2,
+				},
+				{
+					copies: 0,
+					passes: [0.3, 0.9],
+					render: [true, true],
+					roles: [label('shadow cascade', 0), label('final')],
+					frameMs: 1.2,
+				},
+			]),
+		);
+		expect(parts?.map((part) => part.name)).toEqual([
+			'copies',
+			'shadow cascade 0',
+			'shadow hero',
+			'between passes',
+			'final',
+		]);
+		expect(parts?.[1]?.ms).toMatchObject({ count: 2 });
+		expect(parts?.[1]?.ms.median).toBeCloseTo(0.4, 6);
+	});
+
+	it('prints a place only where the role has one', () => {
+		const parts = gpuPassStats(
+			gpuRecords([
+				{
+					copies: 0,
+					passes: [0.2, 0.3],
+					render: [true, true],
+					roles: [label('opaque'), label('opaque', 2)],
+					frameMs: 0.5,
+				},
+			]),
+		);
+		expect(parts?.map((part) => part.name)).toEqual([
+			'copies',
+			'opaque',
+			'opaque 2',
+			'between passes',
+		]);
 	});
 
 	it('counts passes of each kind apart, and reports no gap for a frame of one pass', () => {

@@ -39,9 +39,9 @@ const CORNERS = POINTS.slice(-4);
 const BLOCK = 2;
 /**
  * The largest gap between the two paths in any channel of a point's mean color, in steps out of
- * 255. On 13 October 2026 the paths differed by at most 0.6 steps at these points, on SwiftShader
- * and on the Mac's GPU. A vignette a tenth of its size too large or too small moved them by 9 to 31
- * steps, and no vignette by 47 to 144.
+ * 255. The paths differ by at most 0.6 steps at these points, on SwiftShader and on the Mac's GPU.
+ * A vignette a tenth of its size too large or too small moves them by 9 to 31 steps, and no
+ * vignette by 47 to 144.
  */
 const MAX_GAP = 3;
 /** How many steps darker than the top's middle each corner must be, in every channel. */

@@ -19,6 +19,10 @@ export const DEMO_GROUPS = [
 /** The group that a demo belongs to. */
 export type DemoGroup = (typeof DEMO_GROUPS)[number];
 
+/** The keys that every showcase scene reads, from its camera and from the controls' help. */
+const SHOWCASE_CONTROLS =
+	'C switches between the Auto and Manual camera, and H or Escape opens and closes the controls. The Manual camera pans with W, A, S and D, and rises and falls with R and F.';
+
 /** A demo in the examples folder. */
 export interface Demo {
 	/** The demo's folder, which holds its sketch.ts: lowercase words joined by dashes. */
@@ -38,10 +42,22 @@ export interface Demo {
 	scene: string;
 	/** What the demo shows. */
 	summary: string;
+	/**
+	 * How the demo takes input of its own: the keys that it reads, or the pointer's part where it
+	 * does more than turn the camera. A demo with neither leaves it out.
+	 */
+	controls?: string;
 	/** The sketch time, in seconds, that the demo's image test holds at. */
 	hold: number;
 	/** True for a demo that starts the engine in large-world mode. */
 	largeWorld?: boolean;
+	/**
+	 * True for a demo whose canvas is see-through over a page backdrop: `startDemo` starts the
+	 * engine on a transparent canvas, puts a page-like backdrop behind the canvas, and puts the
+	 * labels' layer there too. The sketch shows its page as a `'world'` label and sets no
+	 * background, so the page shows where no object draws.
+	 */
+	backdrop?: boolean;
 	/**
 	 * False starts the engine on the 8-bit path, where a material with `toneMapped: false` keeps its
 	 * color as the display shows it, as it does on the HDR path. The image test adds the page's
@@ -96,6 +112,7 @@ export const DEMOS: readonly Demo[] = [
 			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, with dense swaying grass, mossy rocks and leaves that float on the current, under the sky of the time of day. Trees, ferns and a cave mouth stand on the banks.',
 		assets:
 			'Shows organic models loaded from files: its trees, plants and cave mouth are built by script in Blender and optimized by the asset tool. The land, water, grass and rocks are made in code.',
+		controls: SHOWCASE_CONTROLS,
 		hold: 0.5,
 		// A software GPU draws the scene with its bloom and its full-detail meshes, which takes it
 		// well past a minute on a loaded runner, and past three on an emulated Firefox GPU.
@@ -110,6 +127,7 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'A snowy town square under the moon',
 		summary:
 			'Timber houses with lit windows around a cobbled square on a snowy night, with a stone clock tower, iron lamps that throw warm light, a well, market stalls, snow pines and bare trees strung with fairy lights, falling snow and smoke from the chimneys.',
+		controls: SHOWCASE_CONTROLS,
 		hold: 0.5,
 		timeoutSeconds: 180,
 	},
@@ -122,6 +140,7 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'A rainy megacity from a hover car',
 		summary:
 			'Fly a hover car through a rainy night city: tens of thousands of hover cars streaming along the sky lanes, towers whose windows light room by room, glowing shop fronts and signs, wet streets that mirror the light, and a hero car whose deck panels read the flight, leading the camera under the rain.',
+		controls: SHOWCASE_CONTROLS,
 		hold: 1,
 		timeoutSeconds: 300,
 	},
@@ -154,7 +173,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Extra shapes',
 		scene: 'Mirror floor at dusk',
 		summary:
-			'A torus knot, polyhedra, a lathe, an extruded star, a tube and a flat heart from @null3d/geometry, with the parameters of three.js geometry classes, in glass, metals and glazed clay over a polished stone floor.',
+			'A torus knot, polyhedra, a lathe, an extruded star, a tube and a flat heart from @null3d/geometry, with the parameters of three.js geometry classes, in glass that separates the light into colors, metals and glazed clay over a polished stone floor.',
 		hold: 1,
 		timeoutSeconds: 120,
 	},
@@ -211,7 +230,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Aurora',
 		scene: 'A frozen lake at night',
 		summary:
-			"Curtains of green and violet light over a still night, drawn by the aurora example add-on through the sky-layer hook: one WGSL function over the core sky, under the moon and the stars, with the sky's thin clouds hiding it where they thicken. The ice holds the light and the pines stand dark against it.",
+			"Curtains of green and violet light over a still night, drawn by the aurora example add-on through the sky-layer hook: one WGSL function over the core sky, under the moon and the stars, with the sky's thin clouds hiding it where they thicken. The pines stand dark against the light, and the frozen lake mirrors them.",
 		hold: 1.5,
 		timeoutSeconds: 60,
 	},
@@ -295,6 +314,7 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'Two-room gallery',
 		summary:
 			"A warm room and a cool room over one polished stone floor, each with a reflection probe, so the floor reflects its own room where the walls stand. A chrome ball and a gold ring drift through the doorway and take each room's light in turn.",
+		controls: "B switches the probes' box projection off and on.",
 		hold: 2,
 		timeoutSeconds: 60,
 	},
@@ -318,7 +338,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Water',
 		scene: 'River into a lake',
 		summary:
-			'A river winds down a grassy valley into a lake, drawn by @null3d/water from one description of both bodies. Waves and ripples follow the current, caustics play over the bed, boulders trail foam, the banks and the sky mirror in the surface, and the shore fades where the bed rises to meet it. The camera drifts downstream and dips under the water, where the add-on tints, bends and lights the view from below.',
+			'A river winds down a grassy valley into a lake, drawn by @null3d/water from one description of both bodies. Waves and ripples follow the current, caustics play over the bed, boulders trail foam, the banks and the sky mirror in the surface, and the shore fades where the bed rises to meet it. The camera drifts down the river, dives under the lake, where the add-on tints, bends and lights the view from below, and circles the valley back to its start.',
 		hold: 1,
 		timeoutSeconds: 180,
 	},
@@ -342,7 +362,8 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Relief maps',
 		scene: 'Hillside at sundown',
 		summary:
-			'Hills and cut boulders whose vertices move by displacement maps made in code, so their outlines and shadows follow the relief, and their light follows its slopes. A brick wall steps down the slope: parallax gives its flat faces the depth of their bricks, and bump maps give its cap stones their grain. A geodesic frame drawn as a wireframe casts a shadow of lines. Turn parallax off and on with the button or the P key.',
+			'Hills and cut boulders whose vertices move by displacement maps made in code, so their outlines and shadows follow the relief, and their light follows its slopes. A brick wall steps down the slope: parallax gives its flat faces the depth of their bricks, and bump maps give its cap stones their grain. A geodesic frame drawn as a wireframe casts a shadow of lines.',
+		controls: 'P, or the Parallax button, switches parallax off and on.',
 		choices: [{ name: 'parallax', label: 'Parallax', options: ['On', 'Off'] }],
 		hold: 1,
 		timeoutSeconds: 60,
@@ -354,7 +375,8 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Multiple views',
 		scene: 'Courtyard on two cameras',
 		summary:
-			"One scene drawn from two cameras in the same frame: a high, wide camera and a low one among a ring of standing stones, split across the canvas. Each view culls the scene and draws it for its own rectangle, at that rectangle's shape. The Layout button or the V key switches to a picture in picture, with the wide camera over the canvas and the low one in an inset.",
+			"One scene drawn from two cameras in the same frame: a high, wide camera and a low one among a ring of standing stones, split across the canvas. Each view culls the scene and draws it for its own rectangle, at that rectangle's shape. The layout switches to a picture in picture, with the wide camera over the canvas and the low one in an inset.",
+		controls: 'V, or the Layout button, switches between the split view and the inset.',
 		choices: [{ name: 'layout', label: 'Layout', options: ['Split', 'Inset'] }],
 		hold: 1,
 		timeoutSeconds: 60,
@@ -390,7 +412,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Atmosphere',
 		scene: 'Valley of ridges',
 		summary:
-			'A day passes over a valley in a minute, under the physical sky. The air turns the sky gold and rose at sunset and hazes each ridge by its distance. At night the moon lights the air and the stars come out.',
+			"A day passes over a valley in a minute, under the physical sky. The air turns the sky gold and rose at sunset and hazes each ridge by its distance. At night the moon lights the air and the stars come out. The groves on the valley floor are the vegetation add-on's conifers, grown at three levels and swaying in the wind add-on's field.",
 		hold: 2,
 		timeoutSeconds: 60,
 	},
@@ -402,7 +424,8 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Contact shadows',
 		scene: 'Stone garden',
 		summary:
-			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of grass, a stone lantern, and a plaster wall with bamboo and pines beyond it. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
+			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of meadow grass and pines from the vegetation add-on, a stone lantern, and a plaster wall with bamboo beyond it. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
+		controls: 'Move the pointer, or tap, to swing the sun around the garden.',
 		hold: 1,
 		timeoutSeconds: 60,
 	},
@@ -450,7 +473,20 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'Courtyard and hall',
 		summary:
 			'A walk from a sunny courtyard into a dark stone hall and back. The hall starts almost black, then the eye opens and its lamps and golden sphere come out of the dark. Turned toward the door, the courtyard blazes white until the eye closes again, faster, as eyes do.',
+		controls: "E switches the eye's adaptation off and on.",
 		hold: 6,
+	},
+	{
+		name: 'depth-only',
+		group: 'Light, materials and effects',
+		sketch: new URL('./depth-only/sketch.ts', import.meta.url),
+		title: 'Depth-only holdout',
+		scene: 'Glass over an embedded page',
+		summary:
+			'Glass panes float in front of an embedded page that sits below a see-through canvas, with a hall of glowing pylons behind it. A plane at the page writes depth and no color, so the hall never draws over the page while the glass still shows it through. An opaque plane there would hide the page.',
+		backdrop: true,
+		hold: 1,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'tone-mapped',
@@ -472,7 +508,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Light shafts and lit fog',
 		scene: 'Pine wood at sunset',
 		summary:
-			"A path through a pine wood in haze. The volumetric fog takes the light of the low sun between the trunks, so rays fall through the gaps and the trunks' shadows cut dark lanes. At dusk the lanterns light up, and each casts a glowing cone into the fog.",
+			"A path through a pine wood in haze, its conifers grown by the vegetation add-on and swaying in the wind add-on's field. The volumetric fog takes the light of the low sun between the trunks, so rays fall through the gaps and the trunks' shadows cut dark lanes. At dusk the lanterns light up, and each casts a glowing cone into the fog.",
 		hold: 2,
 		timeoutSeconds: 60,
 	},
@@ -591,6 +627,8 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'Walking robot',
 		summary:
 			'An action map moves a small robot with the keyboard or a gamepad. Its legs and arms swing on joints as it walks, and the camera follows it.',
+		controls:
+			"W, A, S and D or the arrow keys walk, Space jumps, and E changes the paint. The gamepad's right stick turns the camera.",
 		hold: 0,
 		timeoutSeconds: 60,
 	},
@@ -602,6 +640,8 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'Temple ruins',
 		summary:
 			'A walk through a ruined temple at golden hour. First-person controls walk and look, the pointer lock turns the view with the mouse as in a game, and fly controls soar over the columns.',
+		controls:
+			'W, A, S and D walk and a drag looks; a click locks the pointer, so the mouse looks as in a game. Space switches to fly controls, where R and F rise and fall, the arrows turn, and Q and E roll.',
 		hold: 3,
 		timeoutSeconds: 60,
 		pointerLock: true,
@@ -671,7 +711,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Terrain',
 		scene: 'Golden valley',
 		summary:
-			'A 1.2 km valley from the terrain add-on. The ground near the camera draws at about a meter of detail and the far hills draw coarser blocks, each with a skirt that hides the seam. Grass, soil, rock and snow blend by a splat map filled from the height and the slope, and boulders made in code stand on the ground.',
+			'A 1.2 km valley from the terrain add-on. The ground near the camera draws at about a meter of detail and the far hills draw coarser blocks, each with a skirt that hides the seam and normals baked over the whole ground, so the far hills keep their relief. Grass, soil, rock and snow blend by a splat map filled from the height and the slope, each layer pushing through its neighbours where two meet, and boulders made in code stand on the ground.',
 		hold: 3,
 		timeoutSeconds: 60,
 	},
@@ -705,7 +745,9 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Levels of detail',
 		scene: 'Mixed forest',
 		summary:
-			'56,000 trees of four kinds over rolling hills at golden hour, and 8,000 on phones. Three firs and a broadleaf tree are made in code at four levels of detail, and an understory of bushes covers the ground between the trunks and fades out at its own distance. Each tree picks its own level in every frame by its size on the screen, and the levels share the pixels through a dither at a switch. On phones the nearest trees draw in full and the rest as cut-out cards. Press B to compare the hero fir beside the flight, which keeps its detail by its own threshold bias, with the trees around it.',
+			'56,000 trees of four kinds over rolling hills at golden hour, and 8,000 on phones. Three firs and a broadleaf tree are made in code at four levels of detail, and an understory of bushes covers the ground between the trunks and fades out at its own distance. Each tree picks its own level in every frame by its size on the screen, and the levels share the pixels through a dither at a switch. On phones the nearest trees draw in full and the rest as cut-out cards. The hero fir beside the flight keeps its detail by its own threshold bias, for comparison with the trees around it.',
+		controls:
+			'B gives the hero fir its own level-of-detail bias, and L switches the levels of detail off and on.',
 		hold: 2,
 		timeoutSeconds: 300,
 	},
@@ -717,7 +759,8 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Impostors',
 		scene: 'Forest three ways',
 		summary:
-			'A pine forest at golden hour, drawn three ways by distance: level-of-detail meshes near, one merged mesh per grid cell in the middle, and octahedral impostor cards far out, from an atlas made in code. Press L to draw the far band as meshes instead and compare.',
+			'A pine forest at golden hour, drawn three ways by distance: level-of-detail meshes near, one merged mesh per grid cell in the middle, and octahedral impostor cards far out, from an atlas made in code.',
+		controls: 'T sweeps the sun, and L draws the far band as meshes instead of impostor cards.',
 		hold: 3,
 		timeoutSeconds: 120,
 	},

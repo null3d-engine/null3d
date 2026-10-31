@@ -493,7 +493,7 @@ describe('the GPU pages of the checks plan', () => {
 		).toEqual([`${removed.shader} fragment: ${undeclared.log}`]);
 	});
 
-	it("passes a program that linked at the second try after Safari's Metal fault, with a note", () => {
+	it("passes a program that linked again after Safari's Metal fault, with a note", () => {
 		notes.length = 0;
 		const shader = 'standard_maps.webgl2_alpha_mask.main';
 		const error =
@@ -508,7 +508,7 @@ describe('the GPU pages of the checks plan', () => {
 		};
 		expect(judge(checkOf('shaders-1'), result, NONE_MISSING, context)).toEqual([]);
 		expect(notes).toEqual([
-			`1 program linked at the second try after Safari's random Metal fault: ${shader} (${error})`,
+			`1 program linked again after Safari's random Metal fault: ${shader} (${error})`,
 		]);
 	});
 

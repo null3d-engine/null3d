@@ -5,11 +5,18 @@
 // as a distance in the units the mesh draws in, which the engine compares with the screen.
 import { MathUtils } from '@gltf-transform/core';
 import { MeshoptSimplifier } from 'meshoptimizer';
-import { cacheOrder, setIndices, triangleIndices, triangleLists } from './geometry.js';
+import {
+	cacheOrder,
+	reorderVertices,
+	setIndices,
+	triangleIndices,
+	triangleLists,
+} from './geometry.js';
 import { lodOf, MSFT_LOD, MSFTLod } from './lod-extension.js';
 
 /** @import { Accessor, Buffer, Document, Mesh, Node, Primitive, Skin } from '@gltf-transform/core' */
 /** @import { SimplifierFlags } from 'meshoptimizer' */
+/** @import { ClusterPlan } from './clusters.js' */
 
 /** Meshes with fewer triangles get no levels of detail: they cost little to draw anyway. */
 export const LOD_MIN_TRIANGLES = 64;
@@ -653,21 +660,150 @@ const hasLevels = (mesh) =>
 					p.listParents().some((q) => q.propertyType === 'Lod')),
 		);
 
+/** Reads the bits of a patch's error as the float that the file stores. */
+const errorView = new DataView(new ArrayBuffer(4));
+const errorOf = (/** @type {number} */ bits) => {
+	errorView.setUint32(0, bits, true);
+	return errorView.getFloat32(0, true);
+};
+
 /**
- * Plans levels of detail for each mesh of enough triangles. Each level simplifies the level above
- * toward half its triangles, with no error limit short of the mesh's size: the engine draws a
- * level only where its error spans under a pixel, so a coarse level only draws far away. Each
- * level's error is at least 1.5 times the level above's. The levels stop when one keeps more than
- * three quarters of the triangles above it. They share the mesh's vertices: only their indices
- * are new. Meshes whose levels the file already has keep them.
+ * The triangles of a tree's cut at `threshold`: each patch whose own error passes the threshold
+ * and whose parent's does not, one patch after another. A cut covers the mesh once, so it is a
+ * whole triangle list at that depth.
+ *
+ * @param {ClusterPlan} plan
+ * @param {number} threshold
+ */
+function cutTriangles(plan, threshold) {
+	const { indices, patches } = plan;
+	const runs = [];
+	let total = 0;
+	for (let p = 0; p < patches.length / 4; p++) {
+		const error = errorOf(/** @type {number} */ (patches[p * 4 + 3]));
+		if (!(error <= threshold)) continue;
+		const parent = /** @type {number} */ (patches[p * 4 + 2]) - 1;
+		if (parent >= 0 && errorOf(/** @type {number} */ (patches[parent * 4 + 3])) <= threshold)
+			continue;
+		const first = /** @type {number} */ (patches[p * 4]);
+		const end = first + /** @type {number} */ (patches[p * 4 + 1]);
+		runs.push(indices.subarray(first, end));
+		total += end - first;
+	}
+	const out = new Uint32Array(total);
+	let at = 0;
+	for (const run of runs) {
+		out.set(run, at);
+		at += run.length;
+	}
+	return out;
+}
+
+/**
+ * The errors at which a mesh's trees lose enough triangles to pay for a level: each patch that
+ * replaces its children lowers the cut's triangle count, and the errors where it does so are
+ * applied in order. A cut is kept when it holds at most three quarters of the cut before it, so
+ * the levels fall like the levels that simplification makes, and the errors rise, so the levels
+ * switch in order.
+ *
+ * @param {readonly ClusterPlan[]} plans The trees whose cuts share one mesh's levels.
+ * @param {number} base The mesh's triangles.
+ */
+function cutErrors(plans, base) {
+	/** @type {{ error: number, triangles: number }[]} */
+	const events = [];
+	for (const plan of plans) {
+		const count = plan.patches.length / 4;
+		const children = new Float64Array(count);
+		for (let p = 0; p < count; p++) {
+			const parent = /** @type {number} */ (plan.patches[p * 4 + 2]) - 1;
+			if (parent < 0) continue;
+			const kept = /** @type {number} */ (children[parent]);
+			children[parent] = kept + /** @type {number} */ (plan.patches[p * 4 + 1]) / 3;
+		}
+		for (let p = 0; p < count; p++) {
+			const below = /** @type {number} */ (children[p]);
+			if (below === 0) continue;
+			events.push({
+				error: errorOf(/** @type {number} */ (plan.patches[p * 4 + 3])),
+				triangles: /** @type {number} */ (plan.patches[p * 4 + 1]) / 3 - below,
+			});
+		}
+	}
+	events.sort((a, b) => a.error - b.error);
+	/** @type {number[]} */
+	const errors = [];
+	let triangles = base;
+	let previous = base;
+	for (let i = 0; i < events.length && errors.length < LOD_MAX_LEVELS; ) {
+		const error = /** @type {{ error: number }} */ (events[i]).error;
+		while (i < events.length && /** @type {{ error: number }} */ (events[i]).error === error)
+			triangles += /** @type {{ triangles: number }} */ (events[i++]).triangles;
+		if (triangles > 0 && triangles <= previous * LOD_MAX_KEPT) {
+			errors.push(error);
+			previous = triangles;
+		}
+	}
+	return errors;
+}
+
+/**
+ * The whole levels that a mesh's trees cut into, for a viewer that draws no patches: each level
+ * draws the tree's cut at one error, a complete triangle list that gets coarser with the error.
+ * A primitive of the mesh without a tree draws its own triangles in every level. Returns null
+ * when no tree of the mesh cuts into a level.
+ *
+ * @param {Primitive[]} prims
+ * @param {Map<Primitive, ClusterPlan>} trees
+ * @returns {MeshLevels | null}
+ */
+function levelsFromTrees(prims, trees) {
+	const plans = prims.map((prim) => trees.get(prim));
+	const drawn = /** @type {ClusterPlan[]} */ (plans.filter((plan) => plan !== undefined));
+	if (drawn.length === 0) return null;
+	const counts = prims.map((prim) =>
+		triangleIndices(prim, /** @type {Accessor} */ (prim.getAttribute('POSITION')).getCount()),
+	);
+	const base = counts.reduce((sum, indices) => sum + indices.length / 3, 0);
+	const errors = cutErrors(drawn, base);
+	if (errors.length === 0) return null;
+	const side = Math.max(...drawn.map((plan) => plan.side));
+	/** @type {MeshLevels['levels']} */
+	const levels = errors.map((error) => {
+		const indices = prims.map((_, k) => {
+			const plan = plans[k];
+			return plan ? cutTriangles(plan, error) : /** @type {Uint32Array} */ (counts[k]);
+		});
+		return {
+			indices,
+			positions: prims.map(() => undefined),
+			error,
+			triangles: indices.reduce((sum, list) => sum + list.length / 3, 0),
+		};
+	});
+	return { prims, side, levels };
+}
+
+/**
+ * Plans levels of detail for each mesh of enough triangles. A mesh with a tree of cluster patches
+ * gets the levels that its tree cuts into, so a viewer that draws no patches draws the same mesh
+ * at a few depths. Each other mesh simplifies the level above toward half its triangles, with no
+ * error limit short of the mesh's size: the engine draws a level only where its error spans under
+ * a pixel, so a coarse level only draws far away. Each level's error is at least 1.5 times the
+ * level above's. The levels stop when one keeps more than three quarters of the triangles above
+ * it. They share the mesh's vertices: only their indices are new. Meshes whose levels the file
+ * already has keep them.
  *
  * Run after quantizing: the planning reads the positions as stored, so the errors are in the
  * units that the file's mesh has.
  *
  * @param {Document} doc
+ * @param {Map<Primitive, ClusterPlan>} [trees] The trees that the mesh's primitives draw, which
+ *   their levels cut into.
+ * @param {boolean} [simplify] Whether meshes without a tree get levels by simplification too.
  * @returns {Promise<Map<Mesh, MeshLevels>>}
  */
-export async function planLevels(doc) {
+export async function planLevels(doc, trees = new Map(), simplify = true) {
 	await MeshoptSimplifier.ready;
 	/** @type {Map<Mesh, MeshLevels>} */
 	const plans = new Map();
@@ -678,6 +814,12 @@ export async function planLevels(doc) {
 			return sum + (prim.getIndices()?.getCount() ?? count) / 3;
 		}, 0);
 		if (total < LOD_MIN_TRIANGLES || hasLevels(mesh)) continue;
+		const cut = levelsFromTrees(prims, trees);
+		if (cut) {
+			plans.set(mesh, cut);
+			continue;
+		}
+		if (!simplify) continue;
 		const { lists, side } = planningLists(mesh, prims);
 		if (side === 0) continue;
 		const flags = simplifierFlags(prims);
@@ -703,6 +845,69 @@ export async function planLevels(doc) {
 		if (levels.length > 0) plans.set(mesh, { prims, side, levels });
 	}
 	return plans;
+}
+
+/**
+ * Orders each planned mesh's vertices so that a coarse level names a prefix of them, as
+ * meshoptimizer's README advises: the coarsest level's vertices first, then each finer level's new
+ * ones, then the base mesh's own, and any vertex that no triangle uses last. A viewer can then send
+ * a coarse level's part of the buffer first and add the finer parts as they download. The base and
+ * every level keep their triangles: only the vertex numbering changes.
+ *
+ * @param {Document} doc
+ * @param {Map<Mesh, MeshLevels>} plans
+ * @param {Map<Primitive, ClusterPlan>} [trees] The trees whose indices name the same vertices,
+ *   which the new numbering renames too.
+ */
+export function orderLevels(doc, plans, trees = new Map()) {
+	for (const [, plan] of plans) {
+		plan.prims.forEach((prim, p) => {
+			const count = /** @type {Accessor} */ (prim.getAttribute('POSITION')).getCount();
+			/** @type {number[]} */
+			const order = [];
+			const seen = new Uint8Array(count);
+			/** @param {Uint32Array} indices */
+			const take = (indices) => {
+				for (const vertex of indices)
+					if (!seen[vertex]) {
+						seen[vertex] = 1;
+						order.push(vertex);
+					}
+			};
+			// The coarsest level first, then each finer one, then the base mesh itself.
+			for (let k = plan.levels.length - 1; k >= 0; k--) {
+				const level = plan.levels[k];
+				if (level) take(/** @type {Uint32Array} */ (level.indices[p]));
+			}
+			take(triangleIndices(prim, count));
+			for (let vertex = 0; vertex < count; vertex++) if (!seen[vertex]) order.push(vertex);
+			const remap = new Uint32Array(count);
+			order.forEach((vertex, at) => {
+				remap[vertex] = at;
+			});
+			reorderVertices(doc, prim, remap);
+			for (const level of plan.levels) {
+				const indices = /** @type {Uint32Array} */ (level.indices[p]);
+				level.indices[p] = Uint32Array.from(
+					indices,
+					(vertex) => /** @type {number} */ (remap[vertex]),
+				);
+				const positions = level.positions[p];
+				if (!positions) continue;
+				const moved = new Float32Array(positions.length);
+				for (let vertex = 0; vertex < count; vertex++)
+					for (let c = 0; c < 3; c++)
+						moved[/** @type {number} */ (remap[vertex]) * 3 + c] = /** @type {number} */ (
+							positions[vertex * 3 + c]
+						);
+				level.positions[p] = moved;
+			}
+			const tree = trees.get(prim);
+			if (tree)
+				for (let i = 0; i < tree.indices.length; i++)
+					tree.indices[i] = /** @type {number} */ (remap[/** @type {number} */ (tree.indices[i])]);
+		});
+	}
 }
 
 /**
@@ -797,7 +1002,9 @@ export const STAGE_MAGIC = 0x5344334e;
 export const STAGE_VERSION = 1;
 /** The kind of a stage that holds a level's triangles, one list for each of a mesh's primitives. */
 export const STAGE_LEVELS = 0;
-/** The words of a stage file's header: its magic number, its version, its kind and its list count. */
+/** The kind of a stage that holds one band of a tree of cluster patches. */
+export const STAGE_BAND = 1;
+/** The words of a stage file's header: its magic number, its version, its kind and a count. */
 export const STAGE_HEADER_SIZE = 4;
 
 /**
@@ -829,6 +1036,51 @@ export function stageFile(lists) {
 		out.set(new Uint8Array(array.buffer), at + 8);
 		at += 8 + bytes;
 	}
+	return out;
+}
+
+/**
+ * A stage file of one band of a tree of cluster patches: the header with the band's kind and its
+ * count of 1, then the patch count, then each patch's sphere and record, then the band's indices as
+ * kind 0 frames a list. A record's first index counts from the band's own indices, and its parent
+ * names a patch that the model file or an earlier band holds. Every number counts little-endian,
+ * as the engine reads it.
+ *
+ * @param {Float32Array} bounds Each patch's centre and radius, as four floats.
+ * @param {Uint32Array} records Each patch's first index, index count, parent's place plus one, and
+ *   error's bits, as four integers.
+ * @param {Uint32Array} indices The band's indices.
+ * @returns {Uint8Array}
+ */
+export function bandFile(bounds, records, indices) {
+	const patches = records.length / 4;
+	const size = indices.some((index) => index > 0xffff) ? 4 : 2;
+	const bytes = Math.ceil((indices.length * size) / 4) * 4;
+	const length = (STAGE_HEADER_SIZE + 1) * 4 + patches * 32 + 8 + bytes;
+	const out = new Uint8Array(length);
+	const view = new DataView(out.buffer);
+	view.setUint32(0, STAGE_MAGIC, true);
+	view.setUint32(4, STAGE_VERSION, true);
+	view.setUint32(8, STAGE_BAND, true);
+	view.setUint32(12, 1, true);
+	view.setUint32(16, patches, true);
+	let at = (STAGE_HEADER_SIZE + 1) * 4;
+	// Eight words a patch: its sphere's four floats, then its record's four integers.
+	for (let k = 0; k < patches; k++) {
+		for (let c = 0; c < 4; c++) {
+			view.setFloat32(at, /** @type {number} */ (bounds[k * 4 + c]), true);
+			at += 4;
+		}
+		for (let c = 0; c < 4; c++) {
+			view.setUint32(at, /** @type {number} */ (records[k * 4 + c]), true);
+			at += 4;
+		}
+	}
+	view.setUint32(at, indices.length, true);
+	view.setUint32(at + 4, size, true);
+	const array = size === 2 ? new Uint16Array(bytes / 2) : new Uint32Array(bytes / 4);
+	array.set(indices);
+	out.set(new Uint8Array(array.buffer), at + 8);
 	return out;
 }
 
@@ -868,21 +1120,28 @@ function levelIndices(level) {
  *
  * A mesh whose levels hold positions of their own, such as a level of cards, cannot share its
  * vertices with a stage, so its levels stay in the file as `MSFT_lod` gives them. A mesh with one
- * level has nothing to stream, and keeps its levels in the file too.
+ * level has nothing to stream, and keeps its levels in the file too. A mesh with a tree of cluster
+ * patches keeps its whole levels in the file as well: the tree's bands are what stream, and the
+ * levels draw the mesh whole on the paths that draw no patches.
  *
  * @param {Document} doc
  * @param {Map<Mesh, MeshLevels>} plans
  * @param {Map<string, Uint8Array>} stages The stage files by their address beside the model.
  * @param {string} prefix The model's name, which the stages' names start with.
+ * @param {Map<Primitive, ClusterPlan>} [trees] The trees that the mesh's primitives draw.
  * @returns {{ meshes: number, files: number, bytes: number, levels: number }} The staged meshes.
  */
-export function storeStages(doc, plans, stages, prefix) {
+export function storeStages(doc, plans, stages, prefix, trees = new Map()) {
 	const extension = doc.createExtension(MSFTLod);
 	const buffer = doc.getRoot().listBuffers()[0] ?? doc.createBuffer();
 	const summary = { meshes: 0, files: 0, bytes: 0, levels: 0 };
 	const meshes = doc.getRoot().listMeshes();
 	plans.forEach((plan, mesh) => {
 		const { prims, levels } = plan;
+		if (prims.some((prim) => trees.has(prim))) {
+			storeLevels(doc, new Map([[mesh, plan]]), extension);
+			return;
+		}
 		const shared = levels.every((level) => level.positions.every((p) => p === undefined));
 		if (!shared || levels.length < 2) {
 			storeLevels(doc, new Map([[mesh, plan]]), extension);

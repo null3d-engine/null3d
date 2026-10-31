@@ -9,9 +9,10 @@
 // holds any hour, Auto moves the sun and the moon, and Studio opens its own light. The city's own
 // lights follow the hour, so its windows and street lamps go out by day and light it at night. The
 // HUD's Traffic buttons change how many cars fly, and the Quality buttons change the preset. The
-// stats overlay is on from the first frame.
-import { defineSketch, type GradingSettings, type QualityPreset, vec3 } from '@null3d/engine';
+// stats overlay starts collapsed to its frame rate, as every demo's does.
+import { defineSketch, type GradingSettings, vec3 } from '@null3d/engine';
 import { createLensKit } from '../../addons/lens-kit/index';
+import { createSplashes, createSteam } from '../../addons/weather/index';
 import { type CameraBounds, type Cinematic, createCinematic, type Shot } from '../../lib/cinematic';
 import { type HudGroup, radioGroup } from '../../lib/controls';
 import { EFFECT_LAYER } from '../../lib/layers';
@@ -175,7 +176,8 @@ export default defineSketch(async (ctx) => {
 		// The speed blur follows the camera's own travel, below, so a held frame has none.
 		speedBlur: 0,
 	});
-	debug.stats(true);
+	// Collapsed, like every other demo's overlay, so the panel does not cover the city on load.
+	debug.stats({ collapsed: true });
 
 	page.post('loading', 'Raising the towers');
 	const facades = createFacades(ctx);
@@ -190,6 +192,21 @@ export default defineSketch(async (ctx) => {
 	const hero = createHero(ctx, camera, {
 		position: (SHOTS[0] as Shot).position,
 		target: TARGET,
+	});
+	// The rain's splashes on the car's roof and body, and the vapour from its engine nozzles, both
+	// through the particles add-on. The hero group is not scaled, so these sizes are meters.
+	const spray = await createSplashes(ctx, {
+		parent: hero.group,
+		position: [0, 2.45, 0],
+		size: [2.4, 0.08, 6.2],
+		rate: 70,
+	});
+	const vapour = await createSteam(ctx, {
+		parent: hero.group,
+		position: [0, 1.2, -4.4],
+		size: [1.2, 0.12, 0.25],
+		rate: 14,
+		wind: [0, 0.5, -1.2],
 	});
 
 	const fit = (): void => {
@@ -249,10 +266,14 @@ export default defineSketch(async (ctx) => {
 			switch (id) {
 				case 'rain':
 					rain.setVisible(on);
+					spray.setVisible(on);
+					vapour.setVisible(on);
+					hero.setRain(on ? 1 : 0);
 					break;
 				case 'storm':
 					stage.setWeather(on ? STORM_WEATHER : CLEAR_WEATHER);
 					rain.setStrength(on ? STORM_RAIN : 1);
+					city.setRain(on ? 1 : 0.85);
 					break;
 				case 'ao':
 					post.set({ ao: on ? { radius: 1.4 } : false });
@@ -325,6 +346,11 @@ export default defineSketch(async (ctx) => {
 			traffic.update(eye, t);
 			if (controls.on.dof) post.set(lensSettings);
 			controls.update(t);
+		},
+		onLateUpdate() {
+			// The particles move in the late update, where every object's world place is this frame's.
+			spray.update();
+			vapour.update();
 		},
 	};
 });

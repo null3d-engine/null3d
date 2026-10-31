@@ -248,7 +248,7 @@ if (input.wasPressed('Mouse0')) {
 }
 ```
 
-The hit carries `uv` and `hasUv` as a raycast's hit does. Repeated textures give values past 1, and a material's `uvTransform` leaves them alone. A scene with a whole shader of your own answers its picks with a raycast instead. So does a scene with a blended or transmissive material, or a sprite, point or line. A raycast tests triangles, so it ignores masks. Docs: `api/raycast#pixel-exact-picking`.
+The hit carries `uv` and `hasUv` as a raycast's hit does. Repeated textures give values past 1, and a material's `uvTransform` leaves them alone. A scene with a whole shader of your own answers its picks with a raycast instead. So does a scene with a blended or transmissive material, or a sprite, point or line. A raycast tests triangles, so it ignores masks. A pick that waits for its read when the browser takes the GPU away rejects with E1436: ask again on the new device. Docs: `api/raycast#pixel-exact-picking`.
 
 ## 7. HTML labels above objects (0.2)
 
@@ -279,11 +279,13 @@ ui.trackLabel(head, 'title', { transform: 'billboard', rotation: 0.1 });        
 
 The engine moves a plane's element into a container of its own inside the element's parent, and writes its matrix. Keep that parent over the canvas. Planes count against `createEngine({ maxLabels3d })`, 256 by default.
 
+To show a page under the drawn scene, start the engine with `createEngine({ transparent: true })`, put the labels' layer below the canvas, and set no background. A plane at the page writes its depth and no color with `materials.unlit({ colorWrite: false })`, so the scene behind the page never draws over it, while a glass object in front still shows the page through itself. Size the plane like the label: an element's CSS pixels are the scene's units. Docs: `guides/ui-overlays#a-page-under-the-scene`, `api/materials#invisible-surfaces-that-hide`.
+
 ## 8. Loading screen with progress and warm-up
 
 ```ts
 // sketch.ts
-assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+assets.onProgress((loaded, total) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));
 await assets.preload(['/levels/one.json', '/tex/terrain.png', '/tex/rocks.png']);
 const level = await assets.loadJson<Level>('/levels/one.json');   // from memory: preload downloaded it
 const terrain = await assets.loadTexture('/tex/terrain.png', { wrap: 'repeat', anisotropy: 8 });
@@ -635,7 +637,7 @@ fn surface(input: SurfaceInput) -> Surface {
 `;
 
 export default defineSketch(({ scene, geometry, materials, textures, render }) => {
-  scene.setBackground({ sky: { sunPosition: [0.4, 0.35, -0.85] } });
+  scene.setBackground({ sky: { sunPosition: [0.4, 1, 0.5] } });
   scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 2.5, 8], target: [0, 0.5, 0] }));
   scene.createDirectionalLight({ direction: [-0.4, -1, -0.5], intensity: 2.5 });
   scene.createMesh({ mesh: geometry.box(), material: materials.standard({ color: '#e03030' }), position: [0, 0.5, 0] });
@@ -654,7 +656,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render }) =
 });
 ```
 
-The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint, foam and soft shores: read the depth behind the sheet with `sceneInputs: ['sceneDepth']` (0.3). The water's depth is the gap between the sheet and the surface behind it: convert `input.fragCoord.z` with `engine_frame.camera_range` and subtract it from `sceneDistance(uv)`. Fade the alpha over the end of that gap and the shore ends softly. Or use the height-field water recipe in `guides/custom-passes`. For a river or a lake, use `createWater` from `@null3d/water` instead: one shape gives either body, with waves, foam, soft shores, caustics, a reflection whose cadence follows the preset, and `createUnderwater` for the view from below. Build water by hand only for a shape the add-on does not take. A sheet that reads the depth takes up to seven textures of its own, so the mirror joins it. Docs: `api/water`, `api/render`, `shaders/surface-functions`.
+The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint, foam and soft shores: read the depth behind the sheet with `sceneInputs: ['sceneDepth']` (0.3). The water's depth is the gap between the sheet and the surface behind it: convert `input.fragCoord.z` with `engine_frame.camera_range` and subtract it from `sceneDistance(uv)`. Fade the alpha over the end of that gap and the shore ends softly. Or use the height-field water recipe in `guides/custom-passes`. For a river or a lake, use `createWater` from `@null3d/water` instead: one shape gives either body, with waves that the current carries, foam, a soft shore or a bed of the shape's own, caustics, a reflection whose cadence follows the preset, and `createUnderwater` for the view from below. Build water by hand only for a shape the add-on does not take. A sheet that reads the depth takes up to seven textures of its own, so the mirror joins it. Docs: `api/water`, `api/render`, `shaders/surface-functions`.
 
 ## 21. Fire, smoke and sparks with particles
 
@@ -751,13 +753,13 @@ export default defineSketch((ctx) => {
     height: ground,
     resolution: 256,
     layers: [
-      { map: layers.grass, tile: 6, roughness: 1 },
-      { map: layers.soil, tile: 10, roughness: 1 },
-      { map: layers.rock, tile: 7, roughness: 0.85 },
-      { map: layers.snow, tile: 12, roughness: 0.7 },
+      { map: layers.grass, tile: 6, roughness: 1, heightFrom: 'alpha' },
+      { map: layers.soil, tile: 10, roughness: 1, heightFrom: 'alpha' },
+      { map: layers.rock, tile: 7, roughness: 0.85, heightFrom: 'alpha' },
+      { map: layers.snow, tile: 12, roughness: 0.7, heightFrom: 'alpha' },
     ],
     maxLevel: 6,
-    split: 2.1,
+    camera,
   });
 
   // Seat an object on the ground with heightAt, since the terrain carries no collision.
@@ -781,7 +783,7 @@ export default defineSketch((ctx) => {
 });
 ```
 
-The quadtree splits a block only when the camera comes near it, so a still camera costs no work. Read `heightAt` and `normalAt` to place objects, and call `terrain.destroy()` to free the ground. The layers blend by a splat map that the add-on fills from the height and the slope by default. Give `splat` to paint the weights yourself. Docs: `api/terrain`.
+The quadtree splits a block by the screen error of its cells. The camera's position, field of view and the preset's `lodThreshold` set that error, so a still camera costs no work. Every pixel lights from normals that the add-on bakes over the ground, so the far hills keep their relief. Set `bakedNormals: false` to light from the mesh's own normals. Read `heightAt` and `normalAt` to place objects, and call `terrain.destroy()` to free the ground. The layers blend by a splat map that the add-on fills from the height and the slope by default. Each layer's own height pushes it through its neighbours at a boundary, and `contrast` sets how strongly. Give `splat` to paint the weights yourself. Each block also morphs toward its parent block's surface before it hands over, so the ground does not pop as the camera moves; `morph: false` switches each block at once. Docs: `api/terrain`.
 
 ## 23. Outdoor land with an edge the camera never sees
 
@@ -867,3 +869,5 @@ To place the plants rather than set them out by hand, read the ground once with 
 Call `generatePlantInTask` in place of `generateVariantSet` when a scene grows many plants: it runs in a job worker, so the first frames do not wait. A species record is plain data, so a themed set is a list of records and needs no code.
 
 `bakePlantAtlases` paints the bark and the leaf atlases in the browser the first time a page asks for them, and `plantMaterial` draws a part from them: the species' colour multiplies the atlas's own, the normal map bends the light, and the leaf's coverage cuts its outline. `leafCellFor(species)` picks the leaf shape that suits a record, so give each species its own leaf material when a scene draws more than one. Call it once in the setup: it paints four textures and keeps them, and no image file is downloaded. Docs: `api/vegetation`.
+
+A tree's leaf cards morph toward the next level, so a card that the level drops shrinks and a kept one grows before the switch. Give the leaves a material with `morph: { crownRadius }`, and give the object or batch that draws the tree the same radius with `setBounds([0, 0, 0], crownRadius)` or `batch.setBoundingRadius(crownRadius)`. Read the radius from the asset, such as the crown's radius plus the distance to its middle. One material serves plants of one crown size. Set the levels with `{ fade: false }`, since the generator measures each error and the morph covers the change. Docs: `api/vegetation` (Detail levels).

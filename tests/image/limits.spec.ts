@@ -13,12 +13,16 @@ interface LimitsResult {
 	maxInstances: number;
 	pastPortable: BatchResult;
 	pastPortableDrawn: number;
+	/** How long the page waited for the batch's pixels, in milliseconds. */
+	pastPortableWaitMs: number;
 	full: BatchResult;
 	after: BatchResult;
 	afterDrawn: number;
+	afterWaitMs: number;
 	hugeMesh: BatchResult;
 	afterMesh: BatchResult;
 	afterMeshDrawn: number;
+	afterMeshWaitMs: number;
 	failures: string[];
 }
 

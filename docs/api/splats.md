@@ -112,7 +112,8 @@ The budget follows the quality preset. On each preset the add-on draws at most:
 | Ultra | 800,000 | 400,000 |
 
 The frame-budget governor lowers the count when frames take too long, and the stats overlay shows
-the feature's memory beside the engine's own figures. `setBudget(count)` caps the count below the
+the feature's memory beside the engine's own figures. Its draw records inside the engine's transparent
+pass, so the row reads `gpu not measured` and shows no GPU time of its own. `setBudget(count)` caps the count below the
 preset's value, and `capacity` sets the rows that the batch holds.
 
 A whole file appears as its chunks are cut: the first chunks draw while the rest are cut, and a

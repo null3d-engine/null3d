@@ -1,8 +1,8 @@
 // Car paint: a metallic base under the engine's clear coat, with metal flakes, panel seams and an
 // optional carbon weave. The paint is a custom material: its surface function places the flakes and
-// its lobe counts how many of them reflect the main light into the eye, so the engine's own
-// lighting and clear coat give the look. The flakes never shimmer: a cell that shrinks below a
-// pixel averages its facets, so a distant car draws as smooth metal.
+// its lobe counts how many of them reflect each light into the eye, so the engine's own lighting
+// and clear coat give the look. The flakes never shimmer: a cell that shrinks below a pixel
+// averages its facets, so a distant car draws as smooth metal.
 import type { ColorInput, Material, SketchContext } from '@null3d/engine';
 import paintShader from './paint.wgsl';
 
@@ -16,14 +16,15 @@ export interface PaintFlakes {
 	cells?: readonly [number, number];
 	/**
 	 * How far the flakes' normals spread from the surface normal, from 0 for none to about 0.5 for
-	 * a rough glitter. It sets the width of the band where the flakes catch the main light. The
+	 * a rough glitter. It sets the width of the band where the flakes catch a light. The
 	 * default is 0.25.
 	 */
 	tilt?: number;
 	/**
-	 * The angular radius of the main light in radians, which sets how many flakes reflect it at
-	 * once. The default is 0.02, about the size of a soft studio light. Use a smaller value for a
-	 * hard sun or a larger one for a broad light.
+	 * The angular radius of a light in radians, which sets how many flakes reflect it at once.
+	 * The default is 0.25, a softbox that many flakes catch together. A smaller value suits a
+	 * hard sun, where the glints are rarer and brighter, and point lights, whose glints the paint
+	 * draws with the same angle.
 	 */
 	angle?: number;
 	/**
@@ -88,7 +89,7 @@ export interface CarPaintLook {
 const DEFAULT_FLAKES: Required<PaintFlakes> = {
 	cells: [120, 210],
 	tilt: 0.25,
-	angle: 0.02,
+	angle: 0.25,
 	max: 64,
 };
 /** The seams that a paint starts with. */

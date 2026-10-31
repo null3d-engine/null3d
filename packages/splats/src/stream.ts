@@ -84,10 +84,10 @@ export function parseStreamIndex(
 	if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
 		throw splatsError(2112, `${what} holds no JSON object, so it is not a splat stream index.`);
 	const index = parsed as Record<string, unknown>;
-	if (index['format'] !== STREAM_FORMAT)
+	if (index.format !== STREAM_FORMAT)
 		throw splatsError(
 			2112,
-			`${what} names the format ${JSON.stringify(index['format'])}, and a splat stream index names ${JSON.stringify(STREAM_FORMAT)}.`,
+			`${what} names the format ${JSON.stringify(index.format)}, and a splat stream index names ${JSON.stringify(STREAM_FORMAT)}.`,
 		);
 	if (index['version'] !== STREAM_VERSION)
 		throw splatsError(

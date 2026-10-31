@@ -3,21 +3,32 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Accessor, Document, NodeIO } from '@gltf-transform/core';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { parseGltf, readContainer } from '../../../engine/src/scene/gltf-parse.ts';
 import { clustersOf, NULL3D_CLUSTERS, Null3dClusters } from './cluster-extension.js';
-import { buildClusterFixture, CLUSTER_FILE, MODELS_DIR } from './cluster-fixture.js';
 import {
+	buildClusterFixture,
+	buildStagedClusterModel,
+	CLUSTER_FILE,
+	CLUSTER_STAGED_FILE,
+	MODELS_DIR,
+} from './cluster-fixture.js';
+import {
+	BAND_MIN_PATCHES,
+	bandClusters,
 	CLUSTER_MIN_TRIANGLES,
 	CLUSTER_TRIANGLES,
 	type ClusterPlan,
 	clusterSummary,
 	planClusters,
+	splitTree,
 	storeClusters,
 } from './clusters.js';
+import { LOD_MAX_LEVELS, orderLevels, planLevels, STAGE_BAND, STAGE_MAGIC } from './levels.js';
 
 // The build of a mesh of 32,000 triangles simplifies its tree in a second or two on a busy
 // machine, and a CI runner of four cores takes longer.
-setDefaultTimeout(60_000);
+setDefaultTimeout(scaledBudget(60_000));
 
 const scratch = mkdtempSync(join(tmpdir(), 'null3d-clusters-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -308,11 +319,138 @@ describe('the tree of a large mesh', () => {
 		expect(summary.bytes).toBeGreaterThan(0);
 	});
 
-	it('writes the model that the cluster sketch loads, byte for byte', async () => {
-		const built = await buildClusterFixture();
-		const committed = readFileSync(join(MODELS_DIR, CLUSTER_FILE));
-		expect(Buffer.from(built).equals(committed)).toBe(true);
-	}, 180_000);
+	it('cuts the tree into whole levels for a viewer that draws no patches', async () => {
+		const { doc, plans } = await planned;
+		const levels = await planLevels(doc, plans, false);
+		expect(levels.size).toBe(1);
+		const cut = [...levels.values()][0];
+		if (!cut) throw new Error('the mesh of the test got no levels');
+		const { plan } = await only();
+		const patches = readTree(plan);
+		expect(cut.levels.length).toBeGreaterThan(0);
+		expect(cut.levels.length).toBeLessThanOrEqual(LOD_MAX_LEVELS);
+		let previous = plan.triangles;
+		let lastError = 0;
+		for (const level of cut.levels) {
+			// Every cut errs more than the one before it, so the engine switches them in order,
+			// and holds fewer triangles, so each pays for itself.
+			expect(level.error).toBeGreaterThan(lastError);
+			lastError = level.error;
+			expect(level.triangles).toBeLessThan(previous);
+			previous = level.triangles;
+			// The level is the tree's cut at its error: each patch whose own error passes and
+			// whose parent's does not, so the level covers the mesh once.
+			let expected = 0;
+			for (const patch of patches) {
+				if (patch.error > level.error) continue;
+				if (patch.parent >= 0 && entry(patches, patch.parent).error <= level.error) continue;
+				expected += patch.count;
+			}
+			const indices = entry(/** @type {Uint32Array[]} */ (level.indices), 0);
+			expect(indices.length).toBe(expected);
+			// The level names the mesh's own vertices, as the tree does.
+			for (const index of indices) expect(index).toBeLessThan(mesh.positions.length / 3);
+		}
+	});
+
+	it('renames the tree when the levels order the vertices', async () => {
+		const fresh = documentOf(mesh);
+		const trees = await planClusters(fresh);
+		const levels = await planLevels(fresh, trees, false);
+		orderLevels(fresh, levels, trees);
+		const { plan } = await only();
+		const stored = [...trees.values()][0];
+		if (!stored) throw new Error('the mesh of the test got no tree');
+		// The reorder changes the vertex numbering, so the tree names the vertices again.
+		const prim = fresh.getRoot().listMeshes()[0]?.listPrimitives()[0];
+		const vertices = prim?.getAttribute('POSITION')?.getCount() ?? 0;
+		for (const index of stored.indices) expect(index).toBeLessThan(vertices);
+		expect(stored.indices.length).toBe(plan.indices.length);
+	});
+
+	it('cuts the tree into bands whose patches all find their parents before them', async () => {
+		const { plan } = await only();
+		const bands = splitTree(plan);
+		expect(bands.length).toBeGreaterThan(1);
+		expect(entry(bands, 0).length).toBeGreaterThanOrEqual(BAND_MIN_PATCHES);
+		// Every patch lands once, and its parent landed in an earlier band or before it.
+		const places = new Uint32Array(plan.patches.length / 4);
+		let next = 0;
+		for (const ids of bands) for (const id of ids) places[id] = next++;
+		expect(next).toBe(plan.patches.length / 4);
+		for (const ids of bands)
+			for (const id of ids) {
+				const parent = value(plan.patches, id * 4 + 2) - 1;
+				if (parent >= 0) expect(value(places, parent)).toBeLessThan(value(places, id));
+			}
+	});
+
+	it('keeps the first band in the file and writes the rest as stage files', async () => {
+		const doc = documentOf(sphere(128, 128));
+		const trees = await planClusters(doc);
+		const levels = await planLevels(doc, trees, false);
+		orderLevels(doc, levels, trees);
+		const plan = [...trees.values()][0];
+		if (!plan) throw new Error('the mesh of the test got no tree');
+		const before = plan.patches.length / 4;
+		/** @type {Map<string, Uint8Array>} */
+		const stages = new Map();
+		const summary = bandClusters(doc, trees, stages, 'model');
+		expect(summary.trees).toBe(1);
+		expect(stages.size).toBe(summary.files);
+		expect(summary.files).toBeGreaterThan(0);
+		// The plan keeps the tree's first band, which the file stores.
+		expect(plan.patches.length / 4).toBeLessThan(before);
+		// The node names each band with its primitive and its bytes.
+		const node = doc.getRoot().listScenes()[0]?.listChildren()[0];
+		const extras = node?.getExtras() as {
+			NULL3D_stages?: { bands?: { primitive: number; url: string; bytes: number }[] };
+		};
+		const staged = extras.NULL3D_stages;
+		expect(staged?.bands).toHaveLength(summary.files);
+		let landed = plan.patches.length / 4;
+		for (const band of staged?.bands ?? []) {
+			expect(band.primitive).toBe(0);
+			const file = stages.get(band.url);
+			if (!file) throw new Error(`no stage file ${band.url}`);
+			expect(band.bytes).toBe(file.byteLength);
+			const view = new DataView(file.buffer, file.byteOffset, file.byteLength);
+			expect(view.getUint32(0, true)).toBe(STAGE_MAGIC);
+			expect(view.getUint32(8, true)).toBe(STAGE_BAND);
+			const patches = view.getUint32(16, true);
+			// Every patch names a parent that the tree or an earlier band holds.
+			for (let k = 0; k < patches; k++) {
+				const parent = view.getUint32(20 + k * 32 + 24, true) - 1;
+				if (parent >= 0) expect(parent).toBeLessThan(landed + k);
+			}
+			landed += patches;
+		}
+		expect(landed).toBe(before);
+	});
+
+	it(
+		'writes the model that the cluster sketch loads, byte for byte',
+		async () => {
+			const built = await buildClusterFixture();
+			const committed = readFileSync(join(MODELS_DIR, CLUSTER_FILE));
+			expect(Buffer.from(built).equals(committed)).toBe(true);
+		},
+		scaledBudget(180_000),
+	);
+
+	it(
+		'writes the staged model and its bands, byte for byte',
+		async () => {
+			const built = await buildStagedClusterModel();
+			const committed = readFileSync(join(MODELS_DIR, CLUSTER_STAGED_FILE));
+			expect(Buffer.from(built.glb).equals(committed)).toBe(true);
+			for (const [name, bytes] of built.stages) {
+				const file = readFileSync(join(MODELS_DIR, name));
+				expect(Buffer.from(bytes).equals(file), name).toBe(true);
+			}
+		},
+		scaledBudget(180_000),
+	);
 
 	it('writes the tree where the engine reads it', async () => {
 		const { doc, plans } = await planned;

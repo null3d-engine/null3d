@@ -5,7 +5,7 @@
 // The plane moves at six meters a second, which is two pixels a frame on the exact case's view.
 import { expect, test } from '@playwright/test';
 import { imageRuns, TIERS } from '../lib/images.ts';
-import { loadResult } from '../lib/page-result.ts';
+import { loadResult, pageResult } from '../lib/page-result.ts';
 import { failureText } from '../lib/runs.ts';
 import {
 	decodeMotion,
@@ -58,3 +58,28 @@ for (const tier of TIERS) {
 		]).toEqual([]);
 	});
 }
+
+/** What the live page publishes for the pick case, beside its own outcome. */
+interface PickResult {
+	ok: boolean;
+	error?: string;
+	picked?: { case?: string; moved?: boolean; authored?: boolean };
+}
+
+// A pick has no held frame to read: it asks the engine which object a pixel shows, and the engine
+// answers after a frame that draws. So the pick runs in a live engine, which the sketch tells when
+// its answer has settled. The moved place must show the box and the authored place must not: a
+// pick build that skips the vertex offset, or a pass that ran after the pick, finds the box where
+// the mesh's own triangles stand.
+for (const gpu of TIERS)
+	test(`a vertex offset that reads a compute output picks where it draws on ${gpu}`, async ({
+		page,
+	}) => {
+		// The first pick loads the picking shader files and builds their pipelines.
+		test.setTimeout(120_000);
+		const sketch = encodeURIComponent(`${SKETCH}?case=pick`);
+		await page.goto(`first-use-live.html?gpu=${gpu}&sketch=${sketch}`);
+		const result = await pageResult<PickResult>(page, 90_000);
+		expect(result.error).toBeUndefined();
+		expect(result.picked).toEqual({ case: 'pick', moved: true, authored: false });
+	});

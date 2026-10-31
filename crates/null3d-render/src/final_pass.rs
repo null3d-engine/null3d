@@ -33,10 +33,9 @@ use crate::outline::Outline;
 use crate::output::{Antialias, Output, OutputUniform, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
-/// Bytes of the final pass's settings: the output settings, which hold the grading controls too,
-/// then the vignette's vector, the color grading table's two, the outline's two and the
-/// sharpening's one.
-const SETTINGS_BYTES: u32 = 208;
+/// Bytes of the final pass's settings: the output settings, then the vignette's vector, the color
+/// grading table's two, the outline's two and the sharpening's one.
+const SETTINGS_BYTES: u32 = 112;
 /// The bindings of the color grading table and of its sampler in the final pass's group.
 const LUT_BINDING: u32 = 9;
 const LUT_SAMPLER_BINDING: u32 = 10;
@@ -486,17 +485,8 @@ impl FinalPass {
         };
         let grade = match inputs.grading.grade {
             Some(texture) => {
-                // The display-space table grades display color in this pass. The table over high
-                // dynamic range light is read before the tone curve, where the color is still high
-                // dynamic range: the second step of the two-step pass reads display color, which
-                // the first step mapped.
-                if inputs.grading.hdr {
-                    if flags & OutputUniform::DISPLAY_COLOR == 0 {
-                        settings.output.flags |= OutputUniform::GRADE_HDR;
-                    }
-                } else {
-                    settings.output.flags |= OutputUniform::GRADE;
-                }
+                // The table grades display color in this pass, after the tone curve.
+                settings.output.flags |= OutputUniform::GRADE;
                 texture
             }
             None => ids.blank_lut,
@@ -749,7 +739,9 @@ mod tests {
         let mut pass = FinalPass::new(IDS, SceneColor::from_format(format), antialias);
         let mut list = DrawList::with_capacity(256);
         let mut arena = UploadArena::default();
-        arena.reset(FinalPass::UPLOAD_BYTES);
+        arena
+            .reset(FinalPass::UPLOAD_BYTES)
+            .expect("room for the test's uploads");
         let mut pipelines = PipelineCache::default();
         pass.request_pipeline(&mut pipelines, false);
         pass.prepare(&mut list, &mut arena, &inputs(grading), true, true)
@@ -806,7 +798,9 @@ mod tests {
         let mut list = DrawList::with_capacity(256);
         let mut arena = UploadArena::default();
         // Two steps, so two settings blocks fit.
-        arena.reset(2 * FinalPass::UPLOAD_BYTES);
+        arena
+            .reset(2 * FinalPass::UPLOAD_BYTES)
+            .expect("room for the test's uploads");
         // The first step draws at the render size and leaves the dither to the second.
         let mut first = FinalPass::new(
             IDS,
@@ -867,7 +861,9 @@ mod tests {
         assert_eq!(flags & OutputUniform::RESOLVE, 0);
 
         // Back at the whole canvas the pass uploads its own settings and makes no group.
-        arena.reset(2 * FinalPass::UPLOAD_BYTES);
+        arena
+            .reset(2 * FinalPass::UPLOAD_BYTES)
+            .expect("room for the test's uploads");
         let mut list = DrawList::with_capacity(256);
         second
             .prepare(&mut list, &mut arena, &read, false, true)
@@ -947,37 +943,6 @@ mod tests {
     }
 
     #[test]
-    fn the_table_over_high_dynamic_range_light_grades_before_the_curve() {
-        check_flag("GRADE_HDR", OutputUniform::GRADE_HDR);
-        // The HDR path reads the table before the tone curve, and sets the flag that says so.
-        let (_, settings, _) = prepared(
-            format::RGBA16_FLOAT,
-            Antialias::Msaa,
-            Grading {
-                grade: Some(41),
-                hdr: true,
-                ..Grading::default()
-            },
-        );
-        assert_eq!(settings.output.flags & OutputUniform::GRADE, 0);
-        assert_ne!(settings.output.flags & OutputUniform::GRADE_HDR, 0);
-        // The 8-bit path's scene shaders grade, so its pass leaves the display color as it is.
-        let (_, settings, _) = prepared(
-            format::CANVAS,
-            Antialias::Msaa,
-            Grading {
-                grade: Some(41),
-                hdr: true,
-                ..Grading::default()
-            },
-        );
-        assert_eq!(
-            settings.output.flags & (OutputUniform::GRADE | OutputUniform::GRADE_HDR),
-            0
-        );
-    }
-
-    #[test]
     fn grading_sets_its_flags_and_values_and_binds_the_table_or_the_blank_one() {
         check_flag("VIGNETTE", OutputUniform::VIGNETTE);
         check_flag("LUT", OutputUniform::LUT);
@@ -1013,7 +978,6 @@ mod tests {
                 roundness: 0.5,
             }),
             sharpen: None,
-            ..Grading::default()
         };
         let (_, settings, list) = prepared(format::CANVAS, Antialias::Msaa, grading);
         assert_eq!(

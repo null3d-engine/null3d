@@ -8,10 +8,12 @@ import {
 	readdirSync,
 	readFileSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, delimiter, join } from 'node:path';
+import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import { hashOf } from './build-cache';
 import { fixture } from './fixture';
 import {
@@ -80,6 +82,38 @@ function repository(): string {
 	});
 }
 
+/** Stores `files` in the shared cache as the set of `root`'s inputs, with its record. */
+function storeCachedSet(root: string, files: Record<string, string>): string {
+	const cached = join(modulesCacheDir(), inputHash(root));
+	mkdirSync(cached, { recursive: true });
+	const record: Record<string, string> = {};
+	for (const [name, text] of Object.entries(files)) {
+		writeFileSync(join(cached, name), text);
+		record[name] = hashOf(text);
+	}
+	writeFileSync(join(cached, 'modules.json'), JSON.stringify(record));
+	return cached;
+}
+
+/**
+ * Runs `ensureShaderModules` on `root` in a process of its own with `env`, and returns what it
+ * printed. The script is a file of its own because a `-e` import of an absolute TypeScript path is
+ * not portable: on CI's runner the child prints nothing at all.
+ */
+function ensureInChild(root: string, env: NodeJS.ProcessEnv): string {
+	const script = join(root, 'copy-set.ts');
+	writeFileSync(
+		script,
+		`import { ensureShaderModules } from ${JSON.stringify(join(import.meta.dirname, 'shader-modules.ts'))};\nconsole.log(ensureShaderModules(${JSON.stringify(root)}));\n`,
+	);
+	const run = spawnSync('bun', [script], { env, encoding: 'utf8', timeout: scaledBudget(30_000) });
+	if (run.stdout.trim() !== 'false')
+		throw new Error(
+			`the child printed ${JSON.stringify(run.stdout.trim())}, not false, and wrote ${JSON.stringify(run.stderr.trim())}`,
+		);
+	return run.stdout;
+}
+
 /** The environment without CI's demand that the shader set be freshly built. */
 function withoutFreshShaders(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	const copy = { ...env };
@@ -97,6 +131,7 @@ describe('the shader modules', () => {
 		expect(isShaderModule('shaders-glsl-combos-half.ts')).toBe(true);
 		expect(isShaderModule('shaders-glsl-draw-index.ts')).toBe(false);
 		expect(isShaderModule('shader-features.ts')).toBe(true);
+		expect(isShaderModule('shader-permutations.ts')).toBe(true);
 		expect(isShaderModule('shaders-environment-wgsl.ts')).toBe(true);
 		// A target's table of shared paragraphs is plain JavaScript beside the device modules. Its
 		// name carries no `shaders-` prefix, so the offline file list reads it as no feature.
@@ -211,51 +246,60 @@ describe('the shader modules', () => {
 		});
 	});
 
-	it("copy a set that the shared cache holds without waiting for another checkout's build", () => {
-		withScratchCaches(() => {
-			const root = repository();
-			mkdirSync(join(root, 'target'));
-			// The set of these inputs, as another checkout's build stored it.
-			const cached = join(modulesCacheDir(), inputHash(root));
-			mkdirSync(cached, { recursive: true });
-			const files = {
-				'shaders.ts': 'export const CACHED = 1;\n',
-				'shaders-wgsl.js': 'export {};\n',
-			};
-			const record: Record<string, string> = {};
-			for (const [name, text] of Object.entries(files)) {
-				writeFileSync(join(cached, name), text);
-				record[name] = hashOf(text);
-			}
-			writeFileSync(join(cached, 'modules.json'), JSON.stringify(record));
-			// A build holds the lock, under the id of a running process: this test's.
-			const lock = join(process.env.NULL3D_BUILD_CACHE ?? '', 'shader-modules.lock');
-			mkdirSync(lock, { recursive: true });
-			writeFileSync(join(lock, 'pid'), String(process.pid));
-			// In a process of its own, so that a wait for the lock fails the test rather than hanging it.
-			// The script is a file of its own because a `-e` import of an absolute TypeScript path is
-			// not portable: on CI's runner the child prints nothing at all.
-			const script = join(root, 'copy-set.ts');
-			writeFileSync(
-				script,
-				`import { ensureShaderModules } from ${JSON.stringify(join(import.meta.dirname, 'shader-modules.ts'))};\nconsole.log(ensureShaderModules(${JSON.stringify(root)}));\n`,
-			);
-			const run = spawnSync('bun', [script], {
-				// CI's docs-and-tools job asks for fresh shaders, and the child would inherit it and
-				// refuse the cached set before it read it, which is not what this test is about.
-				env: withoutFreshShaders(process.env),
-				encoding: 'utf8',
-				timeout: 30_000,
-			});
-			if (run.stdout.trim() !== 'false')
-				throw new Error(
-					`the child printed ${JSON.stringify(run.stdout.trim())}, not false, and wrote ${JSON.stringify(run.stderr.trim())}`,
+	it(
+		"take a set that the shared cache holds without waiting for another checkout's build",
+		() => {
+			withScratchCaches(() => {
+				const root = repository();
+				mkdirSync(join(root, 'target'));
+				// The set of these inputs, as another checkout's build stored it.
+				const files = {
+					'shaders.ts': 'export const CACHED = 1;\n',
+					'shaders-wgsl.js': 'export {};\n',
+				};
+				storeCachedSet(root, files);
+				// A build holds the lock, under the id of a running process: this test's.
+				const lock = join(process.env.NULL3D_BUILD_CACHE ?? '', 'shader-modules.lock');
+				mkdirSync(lock, { recursive: true });
+				writeFileSync(join(lock, 'pid'), String(process.pid));
+				// In a process of its own, so that a wait for the lock fails the test rather than hanging it.
+				// CI's docs-and-tools job asks for fresh shaders, and the child would inherit it and refuse
+				// the cached set before it read it, which is not what this test is about.
+				ensureInChild(root, withoutFreshShaders(process.env));
+				expect(readFileSync(join(root, MODULE_DIR, 'shaders.ts'), 'utf8')).toBe(
+					files['shaders.ts'],
 				);
-			expect(readFileSync(join(root, MODULE_DIR, 'shaders.ts'), 'utf8')).toBe(files['shaders.ts']);
-			expect(existsSync(join(lock, 'pid'))).toBe(true);
-		});
-		// The run starts a process of its own, which a loaded machine starts slowly.
-	}, 60_000);
+				expect(existsSync(join(lock, 'pid'))).toBe(true);
+			});
+			// The run starts a process of its own, which a loaded machine starts slowly.
+		},
+		scaledBudget(60_000),
+	);
+
+	it(
+		'link a cached set into place on a machine that GitHub hosts for CI, and copy it on any other',
+		() => {
+			withScratchCaches(() => {
+				const files = { 'shaders.ts': 'export const CACHED = 1;\n' };
+				for (const ci of [true, false]) {
+					const root = repository();
+					mkdirSync(join(root, 'target'));
+					const cached = storeCachedSet(root, files);
+					const env = withoutFreshShaders(process.env);
+					if (ci) env.RUNNER_ENVIRONMENT = 'github-hosted';
+					else delete env.RUNNER_ENVIRONMENT;
+					ensureInChild(root, env);
+					const placed = statSync(join(root, MODULE_DIR, 'shaders.ts'));
+					expect(readFileSync(join(root, MODULE_DIR, 'shaders.ts'), 'utf8')).toBe(
+						files['shaders.ts'],
+					);
+					expect(placed.ino === statSync(join(cached, 'shaders.ts')).ino, String(ci)).toBe(ci);
+					rmSync(cached, { recursive: true, force: true });
+				}
+			});
+		},
+		scaledBudget(60_000),
+	);
 
 	it('fail at once instead of building when the run takes the modules from the build job', () => {
 		withScratchCaches(() => {

@@ -36,8 +36,10 @@ export type {
 	LeafCell,
 	PlantAtlas,
 	PlantAtlases,
+	PlantMaterial,
 	PlantMaterialOptions,
 	PlantMaterialPart,
+	PlantMorph,
 } from './atlas';
 export {
 	bakePlantAtlases,
@@ -45,6 +47,7 @@ export {
 	leafCellFor,
 	plantMaterial,
 } from './atlas';
+export type { AtlasPixels, PaintedAtlas } from './atlas-pixels';
 export type { PartArrays } from './builder';
 export {
 	ALL_SPECIES,
@@ -77,6 +80,10 @@ export {
 	groundMaps,
 	maskValue,
 } from './ground';
+export type { FarTree, FarTreeOptions } from './impostor';
+export { bakeFarTree, handOverToCards } from './impostor';
+export type { PlantWind, PlantWindOptions } from './plant';
+export { plantWind, setWindLayer, treeValues } from './plant';
 export {
 	builtinRules,
 	type SpeciesRuleFields,
@@ -113,6 +120,7 @@ export {
 	speciesProblems,
 } from './species';
 export { type VarianceMaps, type VarianceOptions, varianceMaps } from './variance';
+export { PLANT_SWAY_DISTANCE, swayDistanceFor } from './wind-presets';
 
 /**
  * Grows one plant in a job worker, beside the frames, and resolves with its asset. The work is the

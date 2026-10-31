@@ -38,6 +38,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	capabilities: 0,
 	maxTextureSize: 0,
 	sharedUploads: true,
+	multiDraw: false,
 	depth: 'reversed',
 	parallelCompile: true,
 	freshShaders: false,
@@ -51,8 +52,8 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	shaderBits: 0,
 	cellCulling: true,
 	joinEffects: true,
-	gradingHdr: false,
 	depthPrepass: false,
+	prepassColor: C.PREPASS_COLOR_LOAD,
 	skinning: C.SKINNING_VERTEX,
 	indexInstances: false,
 	directDraws: false,
@@ -100,7 +101,6 @@ const PLAIN: DeviceOptions = {
 	compression: undefined,
 	cells: true,
 	join: true,
-	grading: 'display',
 	skinning: 'vertex',
 	indexInstances: false,
 	direct: 'auto',
@@ -111,6 +111,7 @@ const PLAIN: DeviceOptions = {
 	antialias: 'msaa',
 	transparent: false,
 	depthPrepass: false,
+	prepassColor: undefined,
 	largeWorld: false,
 	expectedObjects: 0,
 	gpuOcclusion: false,
@@ -330,6 +331,15 @@ describe('coreDevice on WebGL2', () => {
 		expect(coreDevice('webgl2', refused, PLAIN).capabilities).toBe(0);
 	});
 
+	it('passes the way the prepass starts its stand-in color, and the default without a switch', () => {
+		const code = (prepassColor: DeviceOptions['prepassColor']) =>
+			coreDevice('webgl2', report({}), { ...PLAIN, prepassColor }).prepassColor;
+		expect(code(undefined)).toBe(C.PREPASS_COLOR_NONE);
+		expect(code('load')).toBe(C.PREPASS_COLOR_LOAD);
+		expect(code('clear')).toBe(C.PREPASS_COLOR_CLEAR);
+		expect(code('none')).toBe(C.PREPASS_COLOR_NONE);
+	});
+
 	it('flags each compressed texture family whose extension the context turned on', () => {
 		const extensions = {
 			WEBGL_compressed_texture_astc: true,
@@ -482,6 +492,14 @@ describe('the permutation bits that a device fixes', () => {
 		expect(coreDevice('webgl2', multiDraw, PLAIN).shaderBits).toBe(PERMUTATION_DRAW_INDEX);
 		expect(coreDevice('webgl2', report({}), PLAIN).shaderBits).toBe(0);
 		expect(coreDevice('webgpu', multiDraw, PLAIN).shaderBits).toBe(0);
+	});
+
+	it('tells the drawing thread whether the device draws many ranges in one call', () => {
+		expect(
+			coreDevice('webgl2', report({ extensions: { WEBGL_multi_draw: true } }), PLAIN).multiDraw,
+		).toBe(true);
+		expect(coreDevice('webgl2', report({}), PLAIN).multiDraw).toBe(false);
+		expect(coreDevice('webgpu', report({}), PLAIN).multiDraw).toBe(false);
 	});
 
 	it('hold tone mapping in the shader on the 8-bit path', () => {

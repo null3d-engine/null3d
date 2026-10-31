@@ -6,9 +6,13 @@ import { expect, test } from 'bun:test';
 import { waveHeight } from '@null3d/water';
 import { routePosition, routeTimeline } from '../../lib/cinematic';
 import { TREES } from './flora';
-import { FLOW, groundHeight, streamZ, WATER } from './land';
+import { groundHeight, streamCurrent, streamZ, WATER } from './land';
 import { SHOTS } from './sketch';
 import { CAVE, rockPlaces } from './stones';
+
+/** The height of the creek's surface at a point and time, as the water's shape gives its current. */
+const surfaceHeight = (x: number, z: number, t: number) =>
+	waveHeight(x, z, t, WATER, streamCurrent(x), 1);
 
 /** How many points of the loop the check samples. A spline bends between the shots, so the
  * checks sample finely enough to catch a bulge that a shot's own pose does not show. */
@@ -71,7 +75,7 @@ test('the creek route dips under the water for five to seven seconds, clear of t
 		const t = k * step;
 		routePosition(route, t, pose);
 		const [x, y, z] = [pose[0] as number, pose[1] as number, pose[2] as number];
-		if (y >= waveHeight(x, z, t, WATER, [FLOW, 0], 1)) continue;
+		if (y >= surfaceHeight(x, z, t)) continue;
 		under += step;
 		const where = `${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}`;
 		expect(y, `the dip runs into the bed at ${where}`).toBeGreaterThan(

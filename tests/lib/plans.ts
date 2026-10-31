@@ -259,8 +259,12 @@ export type Check =
 	| { kind: 'grass'; tier: Tier }
 	/** The alpha-mask cost page: masked lit quads opaque and masked in turns, with and without MSAA. */
 	| { kind: 'alpha-mask'; tier: Tier; antialias: 'msaa' | 'none' }
+	/** The impostor cost page: a full view of cards hidden and shown in turns. */
+	| { kind: 'impostor-cost'; tier: Tier }
 	/** The cluster cost page: a tree of cluster patches timed at three distances. */
 	| { kind: 'cluster'; tier: Tier }
+	/** The level-of-detail cost page: 40,000 pines timed with every tree at its base mesh and at its level. */
+	| { kind: 'lod'; tier: Tier }
 	/**
 	 * A development page that only reports what it found, such as the two-step probe: its result
 	 * holds the figures, and nothing judges them.
@@ -505,8 +509,8 @@ const partsOf = (set: ShaderSet) => Math.ceil(glslProgramCountOf(set) / SHADER_P
  * with the coat bit in theirs. `sampled` compiles the same builds without the coat, a sample of
  * those with it, and a sample of the first-use builds, which keeps Safari's shards on CI's few Macs
  * short (D-147, D-189). Its samples share the parts of the other builds, since a part downloads its
- * share of every module: a sample with a part of its own downloaded every module, about 2.5 GB on
- * 20 October 2026, and Safari had not compiled one program of it after 205 s.
+ * share of every module: a sample with a part of its own downloads every module, about 2.5 GB, and
+ * Safari compiles no program of it within 205 s.
  */
 export const SHADER_PLANS = ['all', 'sampled'] as const;
 export type ShaderPlan = (typeof SHADER_PLANS)[number];
@@ -1184,6 +1188,36 @@ const EFFECT_TIMEOUT_SECONDS = 60;
 export const EFFECT_SCALES = [1, 0.5] as const;
 
 /**
+ * The way each plan item makes a depth prepass start the stand-in color that it never draws, for
+ * the ambient occlusion cost page: the two candidate fixes and the load that the engine made before
+ * the run chose one. The page tells them apart by their rise with ambient occlusion on.
+ */
+const PREPASS_COLOR_VARIANTS = ['load', 'clear', 'none'] as const;
+
+/**
+ * What each way of starting the prepass's stand-in color costs the ambient occlusion cost page on
+ * WebGL2, at the render scales of the ao plan. Safari's WebGL2 path pays for a framebuffer whose
+ * color was never written and then invalidated, by an amount that follows the texture's size
+ * (WebKit bug 328158), so the same page measures each way against its own frames with ambient
+ * occlusion off. The three pages draw the same image, so a way that looks different is a fault.
+ */
+export function prepassColorPlan(): PlanItem<Check>[] {
+	return EFFECT_SCALES.flatMap((scale) =>
+		PREPASS_COLOR_VARIANTS.map((variant) =>
+			pageItem(
+				`ao-prepass-color-webgl2-${scale * 100}-${variant}`,
+				'effect-cost',
+				{ kind: 'effect', effect: 'ao', tier: 'webgl2', scale },
+				{
+					switches: ['gpu=webgl2', `scale=${scale}`, 'effect=ao', `prepass-color=${variant}`],
+					timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	);
+}
+
+/**
  * What an effect costs on each GPU path at each render scale: the effect's scene fills the window,
  * and the page times its frames with the effect off and on in turns. Ambient occlusion turns the
  * depth prepass on with it, so the ao plan also times each page with the prepass on in both
@@ -1430,6 +1464,92 @@ export function alphaMaskPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * What a far-tree impostor bake costs on the device, at each preset's atlas grid: the bake page
+ * bakes a conifer, a birch and an oak at every grid and reports each bake's time on the sketch
+ * thread and the bytes that its two atlases hold. The bake runs on the CPU, so one run gives every
+ * GPU path the same figures. D-274 records them.
+ */
+export function impostorBakePlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'impostor-bake',
+			'impostor-bake',
+			{ kind: 'probe', tier: 'webgl2' },
+			{ timeoutSeconds: 180 },
+		),
+	];
+}
+
+/**
+ * What the impostor cards cost per frame on each GPU path: a field of 152 cards fills the window,
+ * and the page draws it with the whole batch hidden and shown again, in turns, and with its three
+ * nearest views and its nearest view alone. D-274 records the results.
+ */
+export function impostorCostPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const [path, tier] of ALPHA_MASK_PATHS)
+		items.push(
+			pageItem(
+				`impostor-cost-${path}`,
+				'impostor-cost',
+				{ kind: 'impostor-cost', tier },
+				{ switches: [`gpu=${path}`], timeoutSeconds: EFFECT_TIMEOUT_SECONDS },
+			),
+		);
+	return items;
+}
+
+/**
+ * The GPU paths of the impostor frame plan's pages, and the presets that each one draws. WebGL2 and
+ * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
+ * under another name.
+ */
+const IMPOSTOR_FRAME_PATHS = [
+	{ path: 'webgpu', tier: 'webgpu', presets: ['low', 'medium', 'high', 'ultra'] },
+	{ path: 'compat', tier: 'webgpu', presets: ['low', 'medium'] },
+	{ path: 'webgl2', tier: 'webgl2', presets: ['low', 'medium'] },
+] as const;
+
+/**
+ * How long one page of the impostor frame plan may take: the demo builds its forest in code, draws
+ * its first frame, measures five seconds and reads the overlay.
+ */
+const IMPOSTOR_FRAME_TIMEOUT_SECONDS = 600;
+
+/**
+ * The impostors demo at each preset that a GPU path draws, for the far-tree task's frame check: the
+ * demo that shows the far cards holds the frame ceiling of D-241 at its preset. Each page fixes its
+ * path and its preset, and holds the render scale at 1 with the governor's target at a rate that no
+ * frame misses, so each preset's own cost shows. The capabilities page comes first, so a device
+ * without WebGPU skips those pages.
+ */
+export function impostorFramePlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const { path, tier, presets } of IMPOSTOR_FRAME_PATHS)
+		for (const preset of presets)
+			items.push(
+				pageItem(
+					`impostor-frame-${preset}-${path}`,
+					'demo-device',
+					{ kind: 'probe', tier },
+					{
+						switches: [
+							`gpu=${path}`,
+							'demo=impostors',
+							`preset=${preset}`,
+							'target-fps=1',
+							'seconds=5',
+						],
+						timeoutSeconds: IMPOSTOR_FRAME_TIMEOUT_SECONDS,
+					},
+				),
+			);
+	return items;
+}
+
+/**
  * A canvas screen's refresh cost on each GPU path: a 1024 x 1024 OffscreenCanvas whose 256 x 256
  * rectangle refreshes at 30 Hz. The page times the refresh in the sketch and reports the frame's
  * GPU and CPU time with refreshes and without them. D-204 records the figures.
@@ -1468,15 +1588,44 @@ export function clusterCostPlan(): PlanItem<Check>[] {
 				'cluster-cost',
 				{ kind: 'cluster', tier },
 				{
-					// The patch pass belongs to the path that culls on the GPU, so the switches
-					// keep the start-up probe from choosing the direct path, which draws the whole
-					// mesh and would time another drawing.
+					// The patch route draws on WebGPU's indirect path and on WebGL2 with
+					// `WEBGL_multi_draw`, so the switches keep the start-up probe from choosing
+					// the direct path, which draws the whole levels and would time another
+					// drawing.
 					switches: [`gpu=${path}`, 'preset=high', 'direct=off'],
 					timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
 				},
 			),
 		);
 	return items;
+}
+
+/**
+ * The GPU paths of the history cost plan, with the tier that each draws on.
+ */
+const HISTORY_PATHS = [
+	['webgpu', 'webgpu'],
+	['compat', 'webgpu'],
+	['webgl2', 'webgl2'],
+] as const;
+
+/**
+ * What a compute pass's history costs: the compute-state page's cost case, which runs a 256 by 256
+ * pass of 40 steps in a frame and measures three seconds, then measures three seconds again with
+ * the pass switched off. A history pass keeps two states and copies the newest one, and the WebGL2
+ * fragment form draws each step into its own target, so each path's own figure shows. The page
+ * reports the frame interval and the CPU time, the GPU time where the device times it, and the
+ * bytes that the pass's texel memory takes. M3-V13 records the figures.
+ */
+export function historyCostPlan(): PlanItem<Check>[] {
+	return HISTORY_PATHS.map(([path, tier]) =>
+		pageItem(
+			`history-cost-${path}`,
+			'compute-state',
+			{ kind: 'probe', tier },
+			{ switches: [`gpu=${path}`, 'case=cost'], timeoutSeconds: 180 },
+		),
+	);
 }
 
 /**
@@ -1590,6 +1739,150 @@ export function vegetationPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * What a grove of grown oaks costs at each preset, for M3-V7: the leaf and bark materials sway in
+ * the scene's one wind field, the leaves flutter and the sun's shadows follow them. The page times
+ * the frames at a fixed preset and GPU path, and reports the GPU time per frame and per pass, the
+ * CPU time and the draw calls.
+ */
+const VEGETATION_WIND_PATHS = [
+	['webgpu', 'webgpu'],
+	['compat', 'webgpu'],
+	['webgl2', 'webgl2'],
+] as const;
+/** The presets that the vegetation wind plan runs on each path. */
+const VEGETATION_WIND_PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
+
+export function vegetationWindPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const preset of VEGETATION_WIND_PRESETS)
+		for (const [path, tier] of VEGETATION_WIND_PATHS)
+			items.push(
+				pageItem(
+					`vegetation-wind-${preset}-${path}`,
+					'vegetation-cost',
+					{ kind: 'probe', tier },
+					{
+						switches: [`gpu=${path}`, `preset=${preset}`, 'seconds=5'],
+						timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
+					},
+				),
+			);
+	return items;
+}
+
+/**
+ * The GPU paths of the terrain plan's pages, and the presets that each one draws. WebGL2 and
+ * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
+ * under another name.
+ */
+const TERRAIN_PATHS = [
+	{ path: 'webgpu', tier: 'webgpu', presets: ['low', 'medium', 'high', 'ultra'] },
+	{ path: 'compat', tier: 'webgpu', presets: ['low', 'medium'] },
+	{ path: 'webgl2', tier: 'webgl2', presets: ['low', 'medium'] },
+] as const;
+
+/**
+ * How long one page of the terrain plan may take: the demo builds its ground, its layers and its
+ * boulders, draws its first frame, then measures five seconds and reads the overlay.
+ */
+const TERRAIN_TIMEOUT_SECONDS = 600;
+
+/**
+ * The terrain demo at each preset that a GPU path draws, for the terrain add-on's cost per preset:
+ * the frame interval, CPU time per frame, GPU time per pass, the triangles drawn and the memory.
+ * Each page fixes its path and its preset, so the start-up check cannot lower either, and holds the
+ * render scale at 1 with the governor's target at a rate that no frame misses, so each preset's own
+ * cost shows. The capabilities page comes first, so a device without WebGPU skips those pages.
+ */
+export function terrainPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const { path, tier, presets } of TERRAIN_PATHS)
+		for (const preset of presets) {
+			items.push(
+				pageItem(
+					`terrain-${preset}-${path}`,
+					'demo-device',
+					{ kind: 'probe', tier },
+					{
+						switches: [
+							`gpu=${path}`,
+							'demo=terrain',
+							`preset=${preset}`,
+							'target-fps=1',
+							'seconds=5',
+						],
+						timeoutSeconds: TERRAIN_TIMEOUT_SECONDS,
+					},
+				),
+			);
+			// The morph's own cost: one pair a preset and path, the same held view with the morph
+			// on and off. The demo's own camera orbits, so a moving pair draws a different
+			// selection on each side: the first S25 pair drew 22% more triangles off only because
+			// its measure began at another point. Both items therefore ask for the held view.
+			for (const side of ['on', 'off'] as const)
+				items.push(
+					pageItem(
+						`terrain-${preset}-${path}-morph-${side}`,
+						'demo-device',
+						{ kind: 'probe', tier },
+						{
+							switches: [
+								`gpu=${path}`,
+								'demo=terrain',
+								`preset=${preset}`,
+								'target-fps=1',
+								'seconds=5',
+								'still',
+								...(side === 'off' ? ['morph=off'] : []),
+							],
+							timeoutSeconds: TERRAIN_TIMEOUT_SECONDS,
+						},
+					),
+				);
+		}
+	return items;
+}
+
+/**
+ * The terrain demo with a still camera, for the shadow redraw that a morphing caster causes: the
+ * pages draw the same ground from the same eye, one with the morph on and one with it off, and a
+ * third that keeps the far cascades to their turns, which is the same casters over a cascade that
+ * stays cached.
+ */
+const TERRAIN_SHADOW_VARIANTS = [
+	{ id: 'morph-on', switches: ['morph=on'] },
+	{ id: 'morph-off', switches: ['morph=off'] },
+	{ id: 'follow-off', switches: ['morph=on', 'follow=off'] },
+] as const;
+
+export function terrainShadowPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...TERRAIN_SHADOW_VARIANTS.map(({ id, switches }) =>
+			pageItem(
+				`terrain-shadow-${id}`,
+				'demo-device',
+				{ kind: 'probe', tier: 'webgpu' },
+				{
+					switches: [
+						'gpu=webgpu',
+						'demo=terrain',
+						'preset=high',
+						'target-fps=1',
+						'seconds=5',
+						'still',
+						...switches,
+					],
+					timeoutSeconds: TERRAIN_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	];
+}
+
+/**
  * One page for the bisect of the Creek stall on Apple WebGPU: Creek at Low on core WebGPU, with the
  * page's own switches naming what to measure and which shared effects to turn off. The time limit is
  * short, so a page that stalls ends its session instead of holding it for the full limit.
@@ -1696,6 +1989,36 @@ export function demosPlan(): PlanItem<Check>[] {
 			),
 		),
 	];
+}
+
+/**
+ * What the levels of a dense forest save: the lod-cost page's 40,000 pines, four levels each, timed
+ * with every tree at its base mesh and with each at its own level in turns, at the lowest and the
+ * highest preset. The two presets carry different thresholds and shadow settings, so the saving
+ * shows at both ends of the quality range. The page reports each side's memory too, so the copy
+ * lists that the level buckets take show beside the frame time. The capabilities page comes first,
+ * so a device without WebGPU skips those pages. D-137 records the results.
+ */
+export function lodCostPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const [path, tier] of ALPHA_MASK_PATHS)
+		for (const preset of ['low', 'high'] as const)
+			items.push(
+				pageItem(
+					`lod-${path}-${preset}`,
+					'lod-cost',
+					{ kind: 'lod', tier },
+					{
+						switches: [`gpu=${path}`, `preset=${preset}`, 'count=40000'],
+						// The forest starts 40,000 trees of four levels before it times them, which a
+						// phone takes longer to do than the effect pages' scenes.
+						timeoutSeconds: 180,
+					},
+				),
+			);
+	return items;
 }
 
 /** The GPU paths of the sky plan's pages, with the tier each draws on. */
@@ -2235,6 +2558,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	ao: () => effectPlan('ao'),
 	'ao-calls': () => effectPlan('ao', true),
 	'ao-calls-sync': () => effectPlan('ao', 'sync'),
+	'ao-prepass-color': prepassColorPlan,
 	dof: () => effectPlan('dof'),
 	subsurface: () => effectPlan('subsurface'),
 	contact: () => effectPlan('contact'),
@@ -2248,12 +2572,20 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'environment-load': environmentLoadPlan,
 	grass: grassPlan,
 	'alpha-mask-cost': alphaMaskPlan,
+	'impostor-bake': impostorBakePlan,
+	'impostor-cost': impostorCostPlan,
+	'impostor-frame': impostorFramePlan,
 	'cluster-cost': clusterCostPlan,
+	'history-cost': historyCostPlan,
+	'lod-cost': lodCostPlan,
 	'two-step': twoStepPlan,
 	sky: skyPlan,
 	demos: demosPlan,
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
+	'vegetation-wind': vegetationWindPlan,
+	terrain: terrainPlan,
+	'terrain-shadow': terrainShadowPlan,
 	'tree-generation': treeGenerationPlan,
 	'vegetation-scatter': vegetationScatterPlan,
 	'canvas-cost': canvasCostPlan,
@@ -2488,10 +2820,10 @@ function skyRefreshReport(result: SkyRefreshResult): { line: string; problems: s
 }
 
 /**
- * The items that must share an item's shard: the items whose results the check compares with. The
- * parts of the shaders page once stayed in one shard too, where Safari compiles each part faster
- * than the one before. The page has since grown past the 10 minutes that one shard may take, so its
- * parts spread over the shards like the rest, and each shard pays for its own first part.
+ * The items that must share an item's shard: the items whose results the check compares with. In
+ * one shard, Safari compiles each part of the shaders page faster than the one before, but the page
+ * takes longer than the 10 minutes that one shard may take, so its parts spread over the shards
+ * like the rest, and each shard pays for its own first part.
  */
 export function itemsTogether(item: PlanItem<Check>): string[] {
 	return itemsNeeded(item.check);
@@ -2499,9 +2831,9 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
 
 /**
  * About how long the slow pages of the checks plan take in Safari on CI's Mac, for pages that the
- * measured table (`page-times.ts`) does not hold yet. The shaders page's parts grew with the shader
- * set. In run 39291513923 (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled
- * first in its shard. The WebGPU pages of the same names skip there.
+ * measured table (`page-times.ts`) does not hold yet. The shaders page's parts grow with the shader
+ * set: a shard's parts take 122 and 143 seconds, each compiled first in its shard (run
+ * 39291513923). The WebGPU pages of the same names skip there.
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
 	[/^shaders-/, 120],
@@ -2955,7 +3287,7 @@ export function judge(
 			const relinked = (result.relinked ?? []) as { shader: string; log: string }[];
 			if (relinked.length > 0)
 				context?.note?.(
-					`${relinked.length} ${relinked.length === 1 ? 'program' : 'programs'} linked at the second try after Safari's random Metal fault: ${relinked.map(({ shader, log }) => `${shader} (${metalFaultLine(log)})`).join('; ')}`,
+					`${relinked.length} ${relinked.length === 1 ? 'program' : 'programs'} linked again after Safari's random Metal fault: ${relinked.map(({ shader, log }) => `${shader} (${metalFaultLine(log)})`).join('; ')}`,
 				);
 			// A part holds one share of the builds, and the browser's extension decides which of them
 			// it can compile at all: a browser without `WEBGL_multi_draw` cannot compile the builds
@@ -3166,7 +3498,8 @@ export function judge(
 		case 'effect':
 		case 'environment':
 		case 'grass':
-		case 'alpha-mask': {
+		case 'alpha-mask':
+		case 'impostor-cost': {
 			const cost = result as ItemResult & { failures?: string[]; on?: { intervalMs?: number } };
 			const feature =
 				check.kind === 'effect'
@@ -3175,7 +3508,9 @@ export function judge(
 						? 'the grass swaying'
 						: check.kind === 'alpha-mask'
 							? 'the mask on'
-							: 'the environment';
+							: check.kind === 'impostor-cost'
+								? 'the cards on'
+								: 'the environment';
 			return [
 				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
 				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),
@@ -3194,6 +3529,25 @@ export function judge(
 				...(cost.sides ?? [])
 					.filter((side) => !side.intervalMs)
 					.map((side) => `the page measured no frame at ${side.distance} m`),
+			];
+		}
+		case 'lod': {
+			// The page times the forest with the levels off and on, so a side that measured no frame
+			// tells nothing about the saving, and a memory figure that never showed leaves the copy
+			// lists unmeasured on that device.
+			const cost = result as ItemResult & {
+				failures?: string[];
+				off?: { intervalMs?: number | null };
+				on?: { intervalMs?: number | null };
+				memory?: { off?: { ready?: boolean }; on?: { ready?: boolean } };
+			};
+			return [
+				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
+				...(cost.off?.intervalMs ? [] : ['the page measured no frame with the levels off']),
+				...(cost.on?.intervalMs ? [] : ['the page measured no frame with the levels on']),
+				...(cost.memory?.off?.ready && cost.memory?.on?.ready
+					? []
+					: ['the page reported no memory figure']),
 			];
 		}
 		case 'gpu-occlusion': {

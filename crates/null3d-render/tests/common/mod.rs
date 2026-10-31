@@ -217,6 +217,7 @@ impl<B: FrameBuilder> World<B> {
             map_size: 1024,
             bias: 0.5,
             normal_bias: 1.0,
+            intensity: 1.0,
             distance: 40.0,
             auto: false,
             contact: 0.0,
@@ -446,6 +447,33 @@ impl<B: FrameBuilder> World<B> {
         mesh
     }
 
+    /// As [`World::add_object_with`], with the object at `position`, and returns the object's
+    /// handle, which a test needs to give it a flag such as casting shadows.
+    pub fn add_object_at(
+        &mut self,
+        mesh: &Geometry,
+        shading: Shading,
+        features: u32,
+        position: [f32; 3],
+    ) -> Handle {
+        let settings = self.renderer.settings_mut();
+        let mesh = settings.meshes_mut().add(mesh).unwrap() + 1;
+        let material = settings
+            .materials_mut()
+            .create(shading, features, [1.0, 1.0, 1.0, 1.0])
+            .unwrap()
+            + 1;
+        let object = self.scene.reserve().unwrap();
+        self.scene.set_local_radius(object, 1.0).unwrap();
+        self.scene.set_position(object, position).unwrap();
+        let commands = [
+            Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+            Command::set_material(object, material),
+        ];
+        self.scene.apply_commands(&commands, self.frame).unwrap();
+        object
+    }
+
     /// Adds a texture of `size` texels on each side with an image on its way, a material that maps
     /// it, and a grid object that draws with the material, in the current frame. Returns the
     /// texture, and the engine ids of the mesh and the material.
@@ -573,6 +601,11 @@ pub fn base_format(g: Geometry) -> Geometry {
 /// A whole sphere from the engine's generator, in the base vertex format.
 pub fn base_sphere(radius: f64, segments: [u32; 2]) -> Geometry {
     base_format(sphere_geometry(radius, segments, (0.0, TAU), (0.0, PI)).unwrap())
+}
+
+/// A unit box from the engine's generator, in the base vertex format.
+pub fn base_box() -> Geometry {
+    base_format(box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap())
 }
 
 pub fn count(commands: &[(Op, Vec<u32>)], op: Op) -> usize {

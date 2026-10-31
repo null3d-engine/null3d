@@ -64,9 +64,17 @@ const LAYER_VALUES: usize = 21;
 /// The word that holds the id of the buffer that a light capture lands in, or 0 for no capture.
 const LIGHT_BUFFER_WORD: usize = 28;
 
-/// The nine coefficients of the light that a capture sums, red, green and blue each, as words in
-/// engine memory and as float bits in the target that the GPU draws them into.
-const LIGHT_WORDS: usize = 27;
+/// The coefficients of the light that a capture sums: nine bands of the spherical harmonics, red,
+/// green and blue each.
+const LIGHT_COEFFICIENTS: usize = 9;
+
+/// The words of a capture's target that one coefficient takes: its red, green and blue, and the
+/// padding word that fills the rest of its texel.
+const LIGHT_TEXEL: usize = 4;
+
+/// The words of a capture's target that the coefficients occupy, which the engine compares to tell
+/// whether a capture landed. The texels after them are unused, so they never change.
+const LIGHT_SPAN: usize = LIGHT_COEFFICIENTS * LIGHT_TEXEL;
 
 /// The bytes of a capture's target: sixteen words a row, of which the first nine hold the
 /// coefficients. A row of a texel copy starts on this boundary.
@@ -84,6 +92,13 @@ const LAYER_GRACE: u8 = 4;
 /// The captures that one map may have in flight. A map fills at most once every few frames, so
 /// three buffers leave a capture waiting for the GPU without ever stopping the next one.
 pub const LIGHT_RING: usize = 3;
+
+/// The frames that a copy waits for a capture that its own fill made, before it publishes the
+/// levels without the light. A capture lands a frame or two after its stage on a fast GPU, and a
+/// slow one can land later than the copy's frame; without the wait the levels then publish ahead
+/// of the light that explains them. A device that lands no read must not hold a fill for good, so
+/// the wait ends after this many frames.
+const LIGHT_WAIT: u8 = LAYER_GRACE;
 
 /// The least turn of a sun, in radians, that a map draws again for: half a degree. A sun that
 /// turns less darkens or brightens the light it gives a surface by far less than a level of 255.
@@ -383,6 +398,11 @@ struct LightCapture {
     /// True once a capture's coefficients are in `words`, and false until one lands and after the
     /// GPU is replaced.
     valid: bool,
+    /// True while a capture has been issued and its words still match the frame before, so the
+    /// light that it sums is not in engine memory yet.
+    pending: bool,
+    /// The frames that a copy has waited for the capture above, up to [`LIGHT_WAIT`].
+    waited: u8,
 }
 
 /// Where a map's light capture reads back to: the first GPU id of its ring of buffers, and the
@@ -403,6 +423,8 @@ impl LightCapture {
             words: Box::new([0; LIGHT_BYTES as usize]),
             before: [0; LIGHT_BYTES as usize],
             valid: false,
+            pending: false,
+            waited: 0,
         }
     }
 
@@ -411,10 +433,12 @@ impl LightCapture {
         address(&self.words[..])
     }
 
-    /// The coefficients that a capture wrote, as the light that a map gives a surface.
+    /// The coefficients that a capture wrote, as the light that a map gives a surface. The target
+    /// holds one texel for each coefficient, so coefficient `k`'s red, green and blue are the first
+    /// three words of texel `k`.
     fn coefficients(&self) -> Sh {
         let word = |k: usize| {
-            let at = k * 4;
+            let at = k * LIGHT_TEXEL;
             f32::from_le_bytes([
                 self.words[at],
                 self.words[at + 1],
@@ -422,19 +446,22 @@ impl LightCapture {
                 self.words[at + 3],
             ])
         };
-        std::array::from_fn(|k| std::array::from_fn(|c| word(k * 3 + c)))
+        std::array::from_fn(|k| std::array::from_fn(|c| word(k * LIGHT_TEXEL + c)))
     }
 
     /// Takes the coefficients of a capture that landed since the frame before. A capture that wrote
     /// nothing, as one does before the page's layer reached the thread that draws, leaves the words
     /// as they were: the map then keeps the CPU's model of the core sky for its light.
     fn take(&mut self) -> Option<Sh> {
-        let length = LIGHT_WORDS * 4;
+        let length = LIGHT_SPAN * 4;
         if self.words[..length] == self.before[..length] {
             return None;
         }
         self.before[..length].copy_from_slice(&self.words[..length]);
         self.valid = true;
+        // The read that a copy may be waiting for is the one that just landed.
+        self.pending = false;
+        self.waited = 0;
         Some(self.coefficients())
     }
 
@@ -470,6 +497,9 @@ impl LightCapture {
         }
         let buffer = target.buffers + self.next as u32;
         self.next = (self.next + 1) % LIGHT_RING;
+        // The copy of this fill waits for this read before it publishes the levels.
+        self.pending = true;
+        self.waited = 0;
         Ok(Some((buffer, self.destination(), target.slot)))
     }
 
@@ -477,6 +507,8 @@ impl LightCapture {
     fn reset_gpu(&mut self) {
         self.made = false;
         self.valid = false;
+        self.pending = false;
+        self.waited = 0;
         self.before = [0; LIGHT_BYTES as usize];
         *self.words = [0; LIGHT_BYTES as usize];
     }
@@ -743,6 +775,20 @@ impl SkyMaps {
             // the frame whose levels publish: no frame draws a map that the core sky's light alone
             // explains.
             let captured = layer.is_some_and(|layer| layer.map != 0);
+            // The copy waits for the capture that this fill made, because a slow read can land
+            // after the copy's frame: the levels then publish ahead of the light that explains
+            // them, and a frame draws the layer in the map beside the core sky's light alone. A
+            // read that does not land within `LIGHT_WAIT` frames publishes without it.
+            if captured
+                && map.shown.is_some()
+                && last == copy
+                && light.pending
+                && light.waited < LIGHT_WAIT
+            {
+                light.waited += 1;
+                continue;
+            }
+            light.waited = 0;
             for stage in first..=last {
                 let capture = match captured && stage == map.capture {
                     true => Some(&mut *light),
@@ -839,4 +885,57 @@ fn push_stage(
         list.push(Op::ReadBuffer, &[buffer, 0, LIGHT_BYTES, destination, slot])?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The word of the last coefficient's blue, which is the last word that the coefficients occupy
+    /// in the target.
+    const LAST: usize = (LIGHT_COEFFICIENTS - 1) * LIGHT_TEXEL + 2;
+
+    /// Puts a float at a word of a capture's target, as the GPU writes it.
+    fn write_word(capture: &mut LightCapture, word: usize, value: f32) {
+        capture.words[word * 4..][..4].copy_from_slice(&value.to_le_bytes());
+    }
+
+    /// A capture that moved only its last coefficient still lands. The change test covers every
+    /// word that the coefficients occupy, so the map takes the light that the capture summed.
+    #[test]
+    fn a_capture_that_moves_only_the_last_coefficient_lands() {
+        let mut capture = LightCapture::new();
+        write_word(&mut capture, LAST, 1.5);
+        let light = capture.take().expect("the capture landed");
+        assert_eq!(light[LIGHT_COEFFICIENTS - 1][2], 1.5);
+        assert_eq!(light[0][0], 0.0);
+    }
+
+    /// A capture whose words match the frame before did not land, and the light that landed stays.
+    #[test]
+    fn a_capture_that_writes_nothing_new_does_not_land() {
+        let mut capture = LightCapture::new();
+        write_word(&mut capture, LAST, 1.5);
+        assert!(capture.take().is_some());
+        assert!(capture.take().is_none());
+        let light = capture.light().expect("the light that landed");
+        assert_eq!(light[LIGHT_COEFFICIENTS - 1][2], 1.5);
+    }
+
+    /// A capture keeps the copy waiting until its read lands, and the landing clears the wait.
+    #[test]
+    fn a_landing_capture_ends_the_copy_wait() {
+        let mut capture = LightCapture::new();
+        capture.pending = true;
+        capture.waited = LIGHT_WAIT - 1;
+        assert!(
+            capture.take().is_none(),
+            "a read that wrote nothing has not landed"
+        );
+        assert!(capture.pending, "the copy still waits for the read");
+        write_word(&mut capture, LAST, 1.5);
+        assert!(capture.take().is_some());
+        assert!(!capture.pending, "the landing ends the wait");
+        assert_eq!(capture.waited, 0);
+    }
 }

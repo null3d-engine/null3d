@@ -1,8 +1,7 @@
 # D-243: One documented file format for baked probe grids and light maps
 
-Status: decided by the helper of M3-E5 on 24 October 2026, for the owner's review. Built: the
-reader, the writer, the two loading calls, the tests and the guide, as the consequences list.
-Date: 2026-10-24. Task: M3-E5.
+Status: decided by the helper of M3-E5, for the owner's review. Built: the reader, the writer, the
+two loading calls, the tests and the guide, as the consequences list. Task: M3-E5.
 
 Summary: A baked light file is JSON with the marker `null3d.baked-light`, a version and a kind. A
 probe grid carries the four values of `LightProbeGridData`. A grid that the engine bakes therefore
@@ -80,17 +79,17 @@ in what container, how is it validated, and how does the engine's own bake write
 ## M3-F1
 
 M3-F1 adds a validity mask and a sky-visibility term to each probe. Nothing reads a baked light
-file before 0.3.0 ships. F1 therefore adds those members to version 1 in the same release, with the
+file before the first release, 0.1.0, ships in M4 ([D-108](D-108-first-release.md)). F1 therefore adds those members to version 1 in the same release, with the
 same validation rules. The reader ignores unknown members, so the fields of this version keep their
 meaning when F1 lands. A file that omits the new members reads as a file without them.
 
 ## Consequences
 
-- New code: `packages/engine/src/scene/baked-light.ts`, the reader, the writer and the base64
-  codec, which loads on first use.
-- `assets` gains `loadLightProbeGrid`, `loadLightMap` and `lightProbeGridFile`, and
-  `LightMapData` joins the engine's public types.
-- A new error code, E1434, names every fault of the format.
+- Code: `packages/engine/src/scene/baked-light.ts`, the reader, the writer and the base64 codec,
+  which loads on first use.
+- `assets` has `loadLightProbeGrid`, `loadLightMap` and `lightProbeGridFile`, and `LightMapData` is
+  one of the engine's public types.
+- An error code, E1434, names every fault of the format.
 - The fixtures `tests/pages/assets/light/probe-grid.json` and `light-map.json` are the examples
   that the guide shows, and the writer must reproduce the grid fixture byte for byte.
 - The engine's own bake writes the format through `LightProbeGridData`, so a change to the grid's

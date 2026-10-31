@@ -21,7 +21,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { copyInPlace } from './atomic-files';
+import { copyInPlace, linkInPlace } from './atomic-files';
 import {
 	acquireLock,
 	cacheDir,
@@ -37,6 +37,7 @@ import {
 	touchCacheEntry,
 	writeFileAtomic,
 } from './build-cache';
+import { refuseInQuietWindow } from './quiet-window';
 
 /** The folder that the shader build writes its modules into. */
 export const MODULE_DIR = 'packages/engine/src/generated';
@@ -54,7 +55,7 @@ const SKIPPED_FOLDERS = new Set(['tests', 'benches', 'examples', 'target']);
 export const RECORD = 'target/shader-modules.json';
 /**
  * The folder that holds the modules of a build, keyed by the hash of its inputs, shared by every
- * checkout on the machine. A checkout whose inputs match a folder there copies its modules instead of
+ * checkout on the machine. A checkout whose inputs match a folder there takes its modules instead of
  * building them, which a fresh worktree needs. It is the `shader-modules` cache under the build
  * cache's one root; `NULL3D_SHADER_CACHE` names this folder alone, as before. The folder is read from
  * the environment on each call, so a caller that moves the cache root moves this cache too.
@@ -91,6 +92,7 @@ export function isShaderModule(name: string): boolean {
 	return (
 		name === 'shaders.ts' ||
 		name === 'shader-features.ts' ||
+		name === 'shader-permutations.ts' ||
 		/^shaders-[a-z0-9-]+-(wgsl|glsl)\.ts$/.test(name) ||
 		// A target's table of builds that need several features, one file for each family and each
 		// value of the half-precision bit: `shaders-wgsl-combos-bump` and
@@ -173,9 +175,39 @@ export function inputFiles(root: string, crate = SHADER_CRATE): string[] {
 	return files.sort();
 }
 
-/** A hash of every input of the build of `crate`, the shader build's by default. */
+/**
+ * The file whose lines list the permutation words that a narrowed build makes, from
+ * `NULL3D_SHADER_PERMUTATIONS`, or undefined when the build makes every word. Its text is an input
+ * of the build, so a changed list builds again rather than reusing entries of another list.
+ */
+export function permutationListFile(): string | undefined {
+	const file = process.env.NULL3D_SHADER_PERMUTATIONS;
+	return file === undefined || file === '' ? undefined : file;
+}
+
+/** The bytes of the permutation list, or empty bytes when the build makes every word. */
+function permutationListText(): Buffer {
+	const file = permutationListFile();
+	if (file === undefined) return Buffer.alloc(0);
+	try {
+		return readFileSync(file);
+	} catch (error) {
+		throw new Error(
+			`NULL3D_SHADER_PERMUTATIONS names ${file}, which cannot be read: ${(error as Error).message}. Record the list with bun tools/shader-permutations.ts, or leave the variable unset for a full build.`,
+		);
+	}
+}
+
+/**
+ * A hash of every input of the build of `crate`, the shader build's by default. A permutation list
+ * joins the shader build's hash, so a changed list builds again. Without a list the hash stays the
+ * one that every full build records, so a full set that a build before this one wrote is reused.
+ * The list never joins another crate's hash, such as the engine core's source stamp.
+ */
 export function inputHash(root: string, crate = SHADER_CRATE): string {
-	return hashFiles(root, inputFiles(root, crate));
+	const files = hashFiles(root, inputFiles(root, crate));
+	const list = crate === SHADER_CRATE ? permutationListText() : Buffer.alloc(0);
+	return list.length === 0 ? files : hashOf(files, list);
 }
 
 /**
@@ -365,10 +397,11 @@ export function announceColdBuild(entries: string): void {
  * while another process holds the machine's shader lock and this checkout already holds a whole
  * set. It then keeps that set, which does not match the sources, says so, and returns false; it
  * returns true when the modules match. A commit's type check takes this path, so that it does not
- * wait for another checkout's shader build, which can hold the lock for many minutes: on 25 October
- * 2026 a landing's commit waited 8 minutes behind a helper's build, at no processor time.
+ * wait for another checkout's shader build, which can hold the lock for many minutes: a landing's
+ * commit can wait 8 minutes behind a helper's build, at no processor time.
  */
 export function shaderModulesUnlessBusy(root: string): boolean {
+	refuseInQuietWindow('The shader build');
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs) || restoreFromCache(root, inputs)) return true;
 	const holder = freshShadersRequired() ? undefined : liveLockHolder(shaderLock());
@@ -556,6 +589,10 @@ function shaderProgram(root: string, entries?: string): string {
  */
 function runShaderBuild(root: string, extra: readonly string[] = [], cache?: CompilerCache): void {
 	const buildArgs = ['--root', root, ...extra];
+	// A list of permutation words narrows the build to them, and its bytes are an input of the
+	// build, so entries of another list are never reused for this one.
+	const permutations = permutationListFile();
+	if (permutations !== undefined) buildArgs.push('--permutations', permutations);
 	let used: CompilerCache | undefined;
 	if (shaderCacheOff()) {
 		buildArgs.push('--no-cache');
@@ -633,8 +670,26 @@ function writeRecord(root: string, record: ModuleRecord): void {
 }
 
 /**
- * Copies the modules of these inputs from the shared cache, when it holds them, so a checkout with
- * none builds nothing. Returns true when it copied them.
+ * How a module takes its place from the shared cache. A machine that GitHub hosts for a CI job
+ * starts empty and ends with the job, so there each module links to the cache's file, and none of
+ * the set's gigabytes is written again; a module that cannot link is copied. A machine that keeps
+ * its cache copies each module: through a link, a build that rewrites a module in place would
+ * change the cache's file for every other checkout.
+ */
+function placeModule(): (source: string, path: string) => void {
+	if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') return copyInPlace;
+	return (source, path) => {
+		try {
+			linkInPlace(source, path);
+		} catch {
+			copyInPlace(source, path);
+		}
+	};
+}
+
+/**
+ * Puts the modules of these inputs in place from the shared cache, when it holds them, so a
+ * checkout with none builds nothing. Returns true when it did.
  */
 function restoreFromCache(root: string, inputs: string): boolean {
 	const dir = modulesCacheDir();
@@ -648,11 +703,12 @@ function restoreFromCache(root: string, inputs: string): boolean {
 	const wanted = new Set(names);
 	for (const name of moduleNames(root))
 		if (!wanted.has(name)) rmSync(join(folder, name), { force: true });
+	const place = placeModule();
 	try {
 		// Each module takes its place whole, so a reader sees either the old file or the new one.
-		for (const name of names) copyInPlace(join(cache, name), join(folder, name));
+		for (const name of names) place(join(cache, name), join(folder, name));
 	} catch {
-		// A copy that fails is a miss; the build then writes the whole set itself.
+		// A module that cannot take its place is a miss; the build then writes the whole set itself.
 		return false;
 	}
 	const modules = moduleHash(root);
@@ -700,24 +756,25 @@ function pruneCaches(): void {
 }
 
 /**
- * Builds the shader modules unless the record shows that they match their inputs. It copies them
+ * Builds the shader modules unless the record shows that they match their inputs. It takes them
  * from the shared cache of every checkout when that holds them, so a fresh worktree builds nothing.
  * Returns true when it ran the build.
  */
 export function ensureShaderModules(root: string): boolean {
+	refuseInQuietWindow('The shader build');
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs)) return false;
 	if (freshShadersRequired()) throw new Error(staleSetMessage(root));
-	// A set that the shared cache holds needs no build, so it is copied without the lock, which
+	// A set that the shared cache holds needs no build, so it is taken without the lock, which
 	// keeps two builds from running at once: a checkout whose set is cached never waits for
 	// another checkout's build. Each module takes its place whole, and a set that lacks its record
-	// is a miss, so a copy beside a build that stores the same set reads the whole set or nothing.
+	// is a miss, so a restore beside a build that stores the same set reads the whole set or nothing.
 	if (restoreFromCache(root, inputs)) return false;
 	// A build holds the machine-wide lock, so a queue job that starts one holds every other build
-	// back for however long the queue runs it at background priority: on 25 October 2026 one build
-	// waited 71 minutes that way and used three hundredths of a second of processor time, while
-	// picture runs behind it could not start. A job that reaches this line needs a real build, so
-	// it stops here and says how to make the job fast instead of making every other job slow.
+	// back for however long the queue runs it at background priority: one such build can wait 71
+	// minutes on three hundredths of a second of processor time, while picture runs behind it cannot
+	// start. A job that reaches this line needs a real build, so it stops here and says how to make
+	// the job fast instead of making every other job slow.
 	if (process.env.NULL3D_HEAVY_SLOT)
 		throw new Error(
 			`the shader modules of ${root} are neither built nor cached, and building them inside the job queue holds the machine-wide shader lock for tens of minutes at background priority while every other build waits. Run \`bun tools/shaders.ts\` in that checkout outside the queue first, which takes under two minutes at normal priority, then run this job again. The queue sets NULL3D_HEAVY_SLOT, which is how this check knows it is inside one.`,

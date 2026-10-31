@@ -299,8 +299,8 @@ export interface EnginePart {
  * The parts of a thread's drawing code that it loads on demand, named after `prefix`, where
  * `drawing` names the part that holds the thread's frame loops. Each GPU path's renderers load once
  * the thread knows its path, with the code that both paths share beside them. The thread loads the
- * WebGL call timing, the texture generators' steps, the reader of the GPU-culled draws' counts and
- * the joiner of custom effects on first use.
+ * WebGL call timing, the texture generators of both paths, the reader of the GPU-culled draws'
+ * counts and the joiner of custom effects on first use.
  */
 function drawingParts(prefix: string, drawing: string): EnginePart[] {
 	const webgpu = `${prefix}-webgpu.js`;
@@ -311,6 +311,11 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 		{ name: shared, module: 'render/scene-renderer.ts', loadedBy: webgpu },
 		{ name: `${prefix}-call-timing.js`, module: 'gpu/webgl2/call-timing.ts', loadedBy: drawing },
 		{ name: `${prefix}-culled-counts.js`, module: 'gpu/webgpu/culled-counts.ts', loadedBy: webgpu },
+		{
+			name: `${prefix}-environment-maps.js`,
+			module: 'gpu/webgpu/environment.ts',
+			loadedBy: drawing,
+		},
 		{
 			name: `${prefix}-environment-generator.js`,
 			module: 'gpu/environment-steps.ts',
@@ -449,6 +454,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		loadedBy: 'page-sketch-runner.js',
 	},
 	{
+		name: 'page-feature-effects.js',
+		module: 'scene/feature-effects.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
+	{
 		name: 'page-feature-instances.js',
 		module: 'scene/feature-instances.ts',
 		loadedBy: 'page-sketch-runner.js',
@@ -563,6 +573,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'sketch-worker-feature-draws.js',
 		module: 'scene/feature-draws.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-feature-effects.js',
+		module: 'scene/feature-effects.ts',
 		loadedBy: 'sketch-worker.js',
 	},
 	{
@@ -900,10 +915,14 @@ export function findEngineParts(
 	};
 	const direct = (loader: BuiltFile) => new Set(mentions.get(loader.file) ?? []);
 	// Of several unclaimed files that hold a part's module, a part takes one that its loader names
-	// itself, then the one with the fewest engine modules, then the smaller, then the first by name.
-	// A worker that bundles a copy of the module usually holds more modules than the module's own
-	// file, though not always, so the file that the loader names comes first. The choice does not
+	// itself, then the one that holds the fewest modules of other parts, then the one with the fewest
+	// engine modules, then the smaller, then the first by name. A worker that bundles a copy of the
+	// module holds its own part's module too, and may hold fewer modules in all than the module's own
+	// file, so the count of all modules comes after the count of other parts. The choice does not
 	// follow the order in which the build lists its files, which differs from Linux to macOS.
+	const partModules = new Set(parts.map((part) => posix.join(ENGINE_SOURCE, part.module)));
+	const otherParts = (file: BuiltFile, own: string) =>
+		file.sources.filter((source) => partModules.has(source) && source !== own).length;
 	const engineModules = (file: BuiltFile) =>
 		file.sources.filter((source) => source.startsWith(ENGINE_SOURCE)).length;
 	const claim = (part: EnginePart, reach: (loader: BuiltFile) => ReadonlySet<string>): boolean => {
@@ -913,11 +932,13 @@ export function findEngineParts(
 		const claimed = new Set(found.values());
 		const reached = reach(loader);
 		const near = direct(loader);
+		const own = posix.join(ENGINE_SOURCE, part.module);
 		const [file] = files
 			.filter((f) => !claimed.has(f) && reached.has(f.file) && holds(f, part.module))
 			.sort(
 				(a, b) =>
 					Number(near.has(b.file)) - Number(near.has(a.file)) ||
+					otherParts(a, own) - otherParts(b, own) ||
 					engineModules(a) - engineModules(b) ||
 					a.text.length - b.text.length ||
 					(a.file < b.file ? -1 : a.file > b.file ? 1 : 0),
@@ -928,9 +949,10 @@ export function findEngineParts(
 	// Each part that a loader loads takes a file that the loader names, and only when none does, a
 	// file that the loader reaches through the files it names: a feature's loader loads the loaders
 	// of the files that the feature reads, as the file loader loads the glTF loader. The files that
-	// loaders name are matched until no part finds one, before any part looks further: a part listed
-	// before its loader once took a worker's copy two steps down while its own file waited. A round
-	// repeats while a loader that was found names the file of a part that waited for it.
+	// loaders name are matched until no part finds one, before any part looks further: otherwise a
+	// part listed before its loader can take a worker's copy two steps down while its own file
+	// waits. A round repeats while a loader that was found names the file of a part that waited for
+	// it.
 	const loaded = parts.filter((part) => part.loadedBy);
 	for (let round = 0; round < 4; round++) {
 		let foundOne = false;
@@ -1008,98 +1030,44 @@ export function downloadSizes(
  * The budget for the engine's JavaScript that a page downloads at its start, in whichever thread
  * mode downloads the most. The core's generated glue counts with the WebAssembly files instead.
  * Each column's budget is the owner's, and decision record D-14 holds its figures and approvals.
- * The gzip and raw budgets stop a start that grows on a gzip host, or on a host that sends files as
- * they are. The start's shader file fills most of each column.
+ * Only the owner raises a budget, and the owner gives standing permission to raise the Brotli
+ * figure when a feature needs the room. The gzip and raw budgets stop a start that grows on a gzip
+ * host, or on a host that sends files as they are. The start's shader file fills most of each
+ * column.
  *
- * The owner raised the Brotli figure from 165 KB to 166 KB on 18 October 2026, for the screen-space
- * reflections: their code adds about 1.6 KB of real start code, and the branch sat 50 bytes over
- * the old line. The owner chose the raise over trimming. The owner raised it again to 176 KB the
- * same day, for the still view, the surfaces that let light through and the skin scatter, with the
- * draw probe back in its worker's script: the branch measured 170,517 bytes against 169,984 and the
- * reflection probes still to land add about 1.4 KB. The raise comes with the reclaim the owner asked
- * for: the frame figures behind `measure()` and the error-fix table load on their first use.
+ * The Brotli figure is headroom: the work that closes the milestone's feature list does not stop
+ * for a crossing while the trims run beside it. At the measured 196,291 bytes of WebGL2's
+ * pipelined start, the largest, it leaves 65,853 bytes of room. The figure is not a target, and the
+ * first trim that wins bytes back takes them.
  *
- * The owner raised it to 178 KB on 22 October 2026, for the level bias, the canvas textures and the
- * sharpening value, which took the largest start to 181,238 bytes against the old 176 KB line. The
- * trim that pays it back is in hand: the fog write, the picks and the pointer events move to files
- * that load on first use and save about 2.6 KB, which needs the size report to follow the chunks the
- * bundler splits out.
- *
- * The owner gave standing permission to raise it without asking on 22 October 2026. It went to
- * 182 KB the same morning, because the night's work left the largest start at 181,958 bytes, 314
- * bytes under the line, and the next feature would have stopped every build on the machine for as
- * long as a raise waited. The trim above is still owed and still pays it back.
- *
- * The cluster levels' culling pass draws its shader into the start of every page, 2.7 KB after
- * Brotli, although only the WebGPU path builds its pipeline: the measured start moved by 650 bytes
- * and stays inside this budget. The trim it owes is to load that shader on the feature's first use,
- * as a material's shader loads, which returns the whole shader to pages that never draw a cluster
- * tree and keeps WebGL2's start as it was.
- *
- * It went to 186 KB on 23 October 2026, because compute passes and the draws that read the count a
- * GPU writes put their Rust and their glue into every start: WebGL2's pipelined start reached
- * 189,064 bytes, 648 bytes over the old line, and the shader build and every picture run after it
- * stop until the budget names the cost. The trim owed, beyond the cluster shader's, is to load the
- * compute pass and the instance draw's adapter with their first use rather than with the page.
- *
- * It went to 188 KB on 24 October 2026: WebGL2's pipelined start reached 191,594 bytes, 106 bytes
- * over the old line, after that day's landings. A hundred bytes is below the noise of one module's
- * change, so the raise costs less than finding them, and the trims owed above still pay it back.
- *
- * It went to 190 KB on 24 October 2026: WebGL2's pipelined start reached 193,396 bytes, 884 bytes
- * over the old line, for the timed script that hold mode performs. The script's steps and the scene
- * property reads and writes that they use are in the sketch runner, and the page and a script share
- * one writer of input records. The rise leaves 1,164 bytes of room.
- *
- * It went to 191 KB on 25 October 2026: the recording and its replay added 722 bytes after Brotli
- * to the start, for the page's replay switch, the download and check of a recording, and the offer
- * to save one. The day's other landings had already filled most of the room: the base reached
- * 194,126 bytes of the 194,560 line, so the feature landed 288 bytes over. The rise leaves 736
- * bytes.
- *
- * It went to 192 KB the same day, because the 191 KB figure was a local build's against a stale
- * base: CI measured the same commit's pipelined WebGL2 start at 196,106 bytes, 522 over that line,
- * and every run stopped on it. The time of a GPU frame as the span of its passes had also grown the
- * frame figures and the stats overlay. The rise leaves 502 bytes. The start went from 186 KB to
- * 192 KB in two days, and the owner ruled on 25 October 2026 to keep raising the line as needed for
- * now. A trim that wins bytes back runs beside the raises, and no crossing waits for it.
- *
- * It went to 194 KB on 25 October 2026: a local build of the grading work's branch measured
- * WebGL2's pipelined start at 197,411 bytes, 803 bytes over the old line. The grading controls added
- * the switch that picks the table's input and the values that the 8-bit path's shaders read. The
- * rise leaves 1,245 bytes of room.
- *
- * It went to 196 KB on 25 October 2026, on the owner's word, after the merge that landed the tooling
- * work measured WebGL2's pipelined start at 196,291 bytes against the 194 KB line, 2,365 left and
- * past the warning. Two causes: the sky layer's generator grew in both the page's and the sketch
- * worker's bundles, by 16.2 and 15.7 per cent, and the WebGL2 page grew 2.0 per cent. The rise
- * leaves 4,413 bytes of room. The trims owed above still stand as the next work that touches the
- * start's size.
- *
- * It went to 256 KB on 25 October 2026, on the owner's word and described as a figure for now: the
- * work that closes the milestone's feature list should not stop for a crossing while the trims run
- * beside it. It leaves 65,853 bytes of room at the measured 196,291. This is headroom, not a new
- * target; the first trim that wins bytes back still takes them.
+ * The frame figures behind `measure()` and the error-fix table load on their first use, which
+ * keeps them out of the start. This trim still pays the line back:
+ * - Compute passes and the draws that read the count a GPU writes put their Rust and their glue
+ *   into every start. Loading the compute pass and the instance draw's adapter with their first
+ *   use keeps them out of pages that use neither.
  */
 export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 256 * 1024 };
 
 /**
- * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,
- * from 16 KB, because the glTF worker drew the thin film's and the stretched lobe's options, their
- * map slots and their loader notes: it went from 14,737 to 16,832 bytes after Brotli (D-215). The
- * figure is the cap of every file that loads after the start, so the raise loosens each of them by
- * the same kilobyte; no other file is near it.
+ * The budget for each part that loads after the start. The Brotli figure is the cap of every file
+ * that loads after the start, and only the glTF worker is near it. The worker draws the thin film's
+ * and the stretched lobe's options, their map slots and their loader notes, which add 2,095 bytes
+ * after Brotli (D-215). Mapping the glTF texture-transform pointers that three.js moves takes it
+ * about 57 bytes past 17 KB. The only way under 17 KB is to drop the loader's checks for a
+ * malformed transform and for a material that moves two of them, which is a worse trade than the
+ * kilobyte. Only the owner raises this figure. It is headroom, not a target: the first trim that
+ * wins bytes back takes them.
  */
-export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 17 * 1024 };
+export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 18 * 1024 };
 
 /**
  * The budget for a generated combination table, whose name holds `-combos`: the list of module
  * addresses for the builds that need several features. The table gains a line set with every
  * combination that a feature's bits can form, so its uncompressed size grows with the engine's
  * features while its compressed figure, which is what a page downloads, stays small. The owner
- * approved this figure on 18 October 2026, for the four tables that the translucency builds grew
- * past 64 KB. The compressed figures date from that approval and did not follow the later
- * raise of [`LATER_BUDGET`], which the glTF worker alone outgrew.
+ * approved this figure for the four tables that the translucency builds grow past 64 KB. The
+ * compressed figures do not follow the Brotli figure of [`LATER_BUDGET`], whose extra room only the
+ * glTF worker needs.
  */
 export const COMBOS_BUDGET: Budget = { raw: 96 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
 
@@ -1126,21 +1094,19 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  * approvals.
  *
  * These are the caps of a file that a feature loads on its first use, and not of the JavaScript
- * that a page loads at its start, whose own figures are [`START_BUDGET`]. The raw and Brotli
- * figures rose on 22 October 2026 for the coat and sheen family, which gained iridescence's and
- * anisotropy's code (D-215). That code rides the family's builds, which the largest combinations
- * fill with over a hundred builds: the largest file went from 1,332,440 to 1,752,865 bytes
- * uncompressed and from 39,341 to 49,501 bytes after Brotli. A separate permutation value would
- * have doubled the lit builds instead, past the build budget.
+ * that a page loads at its start, whose own figures are [`START_BUDGET`]. The raw figure fits the
+ * coat and sheen family, whose builds carry iridescence's and anisotropy's code (D-215). The
+ * largest combinations fill the family's file with over a hundred builds: 1,752,865 bytes
+ * uncompressed and 49,501 bytes after Brotli. A separate permutation value would double the lit
+ * builds instead, past the build budget.
  *
- * The Brotli figure rose to 56 KB on 24 October 2026 for the water add-on (D-14's addendum of that
- * date). Its surface function rides every build of the standard material, and the largest set is
- * 1,204.5 KB uncompressed and 53.3 KB after Brotli, so the add-on's own gate would have failed on a
- * feature that works as the engine's own materials do.
+ * The Brotli figure fits the water add-on (D-14). Its surface function rides every build of the
+ * standard material, and the largest set is 1,204.5 KB uncompressed and 53.3 KB after Brotli. A
+ * lower figure would fail the add-on's own gate on a feature that works as the engine's own
+ * materials do.
  *
- * The grading controls' code over light, which every WebGL2 tone-map build carries, measured
- * 53,325 bytes in its largest file, the half-precision draw-index tone-map set. That fits inside
- * the line the water add-on set, so it moved no figure.
+ * The grading controls' code over light rides every WebGL2 tone-map build. Its largest file, the
+ * half-precision draw-index tone-map set, measures 53,325 bytes after Brotli, inside this figure.
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 1_792 * 1024,
@@ -1149,28 +1115,105 @@ export const FIRST_USE_SHADER_BUDGET: Budget = {
 };
 
 /**
- * The share of the start budget that a start may reach before the build prints a warning: 97%. A
- * start that passes it has little room for the next feature, so the report names it while the
- * build still passes. The owner asked for this warning in M3-T1.
+ * The extra uncompressed budget that two first-use shader files receive over
+ * [`FIRST_USE_SHADER_BUDGET`], by the name the report gives each file. Every other first-use
+ * shader file keeps the standard figure. The generated GLSL of a loop that fills four directional
+ * lights is verbose, and the loop repeats in every build that a file holds: these two coat and
+ * sheen files hold the most builds. The owner raised the two figures in writing.
+ */
+export const FIRST_USE_SHADER_RAW_RAISE: Readonly<Record<string, number>> = {
+	'shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-draw-index-tone-map-half.js':
+		16 * 1024,
+	'shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-tone-map-half.js':
+		16 * 1024,
+};
+
+/**
+ * The budget for the first-use shader file named `name`: [`FIRST_USE_SHADER_BUDGET`], with the
+ * raise that [`FIRST_USE_SHADER_RAW_RAISE`] gives the file when it names it.
+ */
+export function firstUseShaderBudget(name: string): Budget {
+	const raise = FIRST_USE_SHADER_RAW_RAISE[name];
+	if (!raise) return FIRST_USE_SHADER_BUDGET;
+	return { ...FIRST_USE_SHADER_BUDGET, raw: FIRST_USE_SHADER_BUDGET.raw + raise };
+}
+
+/**
+ * The share of a budget that a start or a file may reach in any column before the build prints a
+ * warning: 97%. A start or a file that passes it has little room for the next feature, so the
+ * report names it while the build still passes. The owner asked for this warning on the start in
+ * M3-T1. It covers every budgeted file as well, because a first-use shader file can stand at 99.8%
+ * of its uncompressed budget with no word from the build, and the next branch then takes it past.
  */
 export const NEAR_BUDGET_SHARE = 0.97;
 
+/** A start or a file that a budget caps: how a report names it, its size and its budget. */
+interface Budgeted {
+	what: string;
+	size: SizeEntry;
+	budget: Budget;
+}
+
 /**
- * A warning for each start that passes [`NEAR_BUDGET_SHARE`] of its Brotli budget without passing
- * the budget itself, which [`budgetProblems`] reports instead. The warning names the bytes left, so
- * a person can see how much room the next feature has.
+ * Each start and each file that a budget caps: the start of each thread mode, each part that loads
+ * after the start, each combination table and each device module of a feature that loads on first
+ * use.
+ */
+function budgetedSizes(
+	sizes: ReadonlyMap<string, SizeEntry>,
+	downloads: readonly Download[],
+	later: readonly EnginePart[],
+): Budgeted[] {
+	return [
+		...downloadSizes(sizes, downloads).map(({ mode, size }) => ({
+			what: `the engine JavaScript that a page downloads at its start in ${mode} mode`,
+			size,
+			budget: START_BUDGET,
+		})),
+		...later.flatMap(({ name }) => {
+			const size = sizes.get(name);
+			if (!size) return [];
+			// A combination table grows with every feature's bit pairs, so it has a raw limit of its
+			// own; its compressed figure, which a page downloads, stays within the shared one.
+			const budget = name.includes('-combos') ? COMBOS_BUDGET : LATER_BUDGET;
+			return [{ what: `js/${name}, which loads after the start,`, size, budget }];
+		}),
+		...[...sizes].flatMap(([name, size]) =>
+			isCombosPart(name)
+				? [{ what: `js/${name}, which loads after the start,`, size, budget: COMBOS_BUDGET }]
+				: isFirstUseShaderPart(name)
+					? [
+							{
+								what: `js/${name}, the shader builds of a feature that loads on first use,`,
+								size,
+								budget: firstUseShaderBudget(name),
+							},
+						]
+					: [],
+		),
+	];
+}
+
+/**
+ * A warning for each column of each start and each budgeted file that passes
+ * [`NEAR_BUDGET_SHARE`] of its budget without passing the budget itself, which [`budgetProblems`]
+ * reports instead. The warning names the bytes left, so a person can see how much room the next
+ * feature has.
  */
 export function budgetWarnings(
 	sizes: ReadonlyMap<string, SizeEntry>,
 	downloads: readonly Download[] = DOWNLOADS,
+	later: readonly EnginePart[] = LATER_PARTS,
 ): string[] {
-	const near = Math.floor(START_BUDGET.brotli * NEAR_BUDGET_SHARE);
-	return downloadSizes(sizes, downloads).flatMap(({ mode, size }) =>
-		size.brotli > near && size.brotli <= START_BUDGET.brotli
-			? [
-					`the engine JavaScript that a page downloads at its start in ${mode} mode is ${size.brotli.toLocaleString('en-US')} bytes after Brotli, past ${Math.round(NEAR_BUDGET_SHARE * 100)}% of its ${START_BUDGET.brotli / 1024} KB budget, with ${(START_BUDGET.brotli - size.brotli).toLocaleString('en-US')} bytes left`,
-				]
-			: [],
+	return budgetedSizes(sizes, downloads, later).flatMap(({ what, size, budget }) =>
+		COLUMNS.filter(
+			(column) =>
+				size[column] > Math.floor(budget[column] * NEAR_BUDGET_SHARE) &&
+				size[column] <= budget[column],
+		).map(
+			(column) =>
+				`${what} is ${size[column].toLocaleString('en-US')} bytes ${COLUMN_NAMES[column]}, past ${Math.round(NEAR_BUDGET_SHARE * 100)}% of its ${budget[column] / 1024} KB budget, with ${(budget[column] - size[column]).toLocaleString('en-US')} bytes left`,
+		),
 	);
 }
 
@@ -1184,32 +1227,7 @@ export function budgetProblems(
 	downloads: readonly Download[] = DOWNLOADS,
 	later: readonly EnginePart[] = LATER_PARTS,
 ): string[] {
-	return [
-		...downloadSizes(sizes, downloads).flatMap(({ mode, size }) =>
-			overBudget(
-				`the engine JavaScript that a page downloads at its start in ${mode} mode`,
-				size,
-				START_BUDGET,
-			),
-		),
-		...later.flatMap(({ name }) => {
-			const size = sizes.get(name);
-			if (!size) return [];
-			// A combination table grows with every feature's bit pairs, so it has a raw limit of its
-			// own; its compressed figure, which a page downloads, stays within the shared one.
-			const budget = name.includes('-combos') ? COMBOS_BUDGET : LATER_BUDGET;
-			return overBudget(`js/${name}, which loads after the start,`, size, budget);
-		}),
-		...[...sizes].flatMap(([name, size]) =>
-			isCombosPart(name)
-				? overBudget(`js/${name}, which loads after the start,`, size, COMBOS_BUDGET)
-				: isFirstUseShaderPart(name)
-					? overBudget(
-							`js/${name}, the shader builds of a feature that loads on first use,`,
-							size,
-							FIRST_USE_SHADER_BUDGET,
-						)
-					: [],
-		),
-	];
+	return budgetedSizes(sizes, downloads, later).flatMap(({ what, size, budget }) =>
+		overBudget(what, size, budget),
+	);
 }

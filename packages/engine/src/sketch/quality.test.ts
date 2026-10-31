@@ -248,6 +248,7 @@ describe('SketchQuality.lower', () => {
 			reflectionScale: low.reflectionScale,
 			probeSize: low.probeSize,
 			areaLights: low.areaLights,
+			lightFit: low.lightFit,
 			softParticles: low.softParticles,
 			lodThreshold: low.lodThreshold,
 			lodShadowFactor: low.lodShadowFactor,
@@ -274,7 +275,7 @@ describe('SketchQuality.lower', () => {
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
 		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps,
 		// the reflections' size, the probes' size, the cap of area lights, soft particles, the levels
-		// of detail and parallax did.
+		// of detail, parallax and the fitted light clusters did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'textureMemoryMiB',
@@ -295,6 +296,7 @@ describe('SketchQuality.lower', () => {
 			'lodFade',
 			'physicalSky',
 			'parallax',
+			'lightFit',
 		]);
 	});
 });

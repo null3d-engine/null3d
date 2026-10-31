@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
+	MAP_ROW_SLOT_COAT,
+	MAP_ROW_SLOT_SHEEN_COLOR,
+	MAP_ROW_SLOT_THICKNESS,
+	MAP_ROW_SLOT_TRANSMISSION,
 	MAP_SLOT_ANISOTROPY,
 	MAP_SLOT_BASE_COLOR,
 	MAP_SLOT_BUMP,
@@ -11,11 +15,13 @@ import {
 	MAP_SLOT_DIFFUSE_TRANSMISSION,
 	MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR,
 	MAP_SLOT_DISPLACEMENT,
+	MAP_SLOT_EMISSIVE,
 	MAP_SLOT_IRIDESCENCE,
 	MAP_SLOT_IRIDESCENCE_THICKNESS,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_LIGHT_MAP_DIRECTION,
 	MAP_SLOT_NORMAL,
+	MAP_SLOT_OCCLUSION,
 	MAP_SLOT_SHEEN_COLOR,
 	MAP_SLOT_SHEEN_ROUGHNESS,
 	MAP_SLOT_SPECULAR_COLOR,
@@ -28,6 +34,7 @@ import {
 	MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
 	MATERIAL_FEATURE_ANISOTROPY,
 	MATERIAL_FEATURE_BLEND,
+	MATERIAL_FEATURE_CASTER_COVERAGE,
 	MATERIAL_FEATURE_COAT_SHEEN,
 	MATERIAL_FEATURE_DECAL,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
@@ -35,6 +42,7 @@ import {
 	MATERIAL_FEATURE_IRIDESCENCE,
 	MATERIAL_FEATURE_LIGHT_MAP_RGBM,
 	MATERIAL_FEATURE_MULTIPLY,
+	MATERIAL_FEATURE_NO_COLOR_WRITE,
 	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
@@ -44,6 +52,7 @@ import {
 	MATERIAL_FEATURE_SCENE_DEPTH,
 	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
+	MATERIAL_FEATURE_STILL_CASTER,
 	MATERIAL_FEATURE_SUBSURFACE,
 	MATERIAL_FEATURE_TRANSLUCENCY,
 	MATERIAL_FEATURE_TRANSMISSION,
@@ -62,6 +71,7 @@ import {
 	MATERIAL_PARAM_DECAL_FADE_START,
 	MATERIAL_PARAM_DIFFUSE_TRANSMISSION,
 	MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
+	MATERIAL_PARAM_DISPERSION,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
@@ -72,6 +82,8 @@ import {
 	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
 	MATERIAL_PARAM_LIGHT_MAP_OFFSET,
 	MATERIAL_PARAM_LIGHT_MAP_SCALE,
+	MATERIAL_PARAM_MAP_UV,
+	MATERIAL_PARAM_MAP_UV_STRIDE,
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_NORMAL_SCALE,
 	MATERIAL_PARAM_OCCLUSION_STRENGTH,
@@ -98,6 +110,7 @@ import {
 import {
 	PERMUTATION_COAT_SHEEN,
 	PERMUTATION_TRANSLUCENCY,
+	SIZE_MAP_ROWS,
 	SIZE_MATERIAL_BYTES,
 	TEMPLATE_CUSTOM_FIRST,
 	VERTEX_COLOR,
@@ -108,7 +121,7 @@ import type { CoreGlue } from '../shared/core';
 import type { CustomShader } from '../shared/images';
 import { withCallValues } from './fake-call-values';
 import { CoreMemory } from './memory';
-import { Materials } from './resources';
+import { Materials, slotOwners } from './resources';
 import { ShaderPreloads } from './shader-preloads';
 import { ShaderTemplates } from './shader-templates';
 import { Texture, type Textures } from './textures';
@@ -153,10 +166,18 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX, 1],
 	[MATERIAL_PARAM_ANISOTROPY, 1],
 	[MATERIAL_PARAM_ANISOTROPY_ROTATION, 1],
+	[MATERIAL_PARAM_DISPERSION, 1],
 	[MATERIAL_PARAM_DECAL_FADE_START, 1],
 	[MATERIAL_PARAM_DECAL_FADE_END, 1],
 	[MATERIAL_PARAM_DECAL_EDGE_FADE, 1],
 ]);
+
+// Each map row slot from the second up keeps the two rows of its own transform.
+for (let slot = 1; slot < SIZE_MAP_ROWS; slot++) {
+	const at = MATERIAL_PARAM_MAP_UV + (slot - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+	WIDTHS.set(at, 3);
+	WIDTHS.set(at + 4, 3);
+}
 
 /** A texture as materials see it: its handle, and the coordinates its maps read. */
 const texture = (handle: number, uvSet: 0 | 1 = 0) => ({ handle, uvSet }) as unknown as Texture;
@@ -175,6 +196,8 @@ function fakeCore() {
 	/** Each map a material got: its material, slot, texture handle and coordinate set. */
 	const maps: number[][] = [];
 	const biases: [number, number][] = [];
+	/** The distance from the camera out to which each material's vertex offset sways, in meters. */
+	const sways: number[] = [];
 	/** The ids of the destroyed materials, in order. */
 	const destroyed: number[] = [];
 	/** Each displacement's material, scale and bias, as the core got them. */
@@ -200,16 +223,26 @@ function fakeCore() {
 			a: number,
 			biasConstant: number,
 			biasSlope: number,
+			sway: number,
 		) => {
 			const row = new Array<number>(SIZE_MATERIAL_BYTES / 4).fill(0);
 			row.splice(0, 4, r, g, b, a);
 			row[MATERIAL_PARAM_ALPHA_CUTOFF] = 0.5;
 			row[MATERIAL_PARAM_ROUGHNESS] = 1;
 			row[MATERIAL_PARAM_EMISSIVE_INTENSITY] = 1;
+			// The identity transform of every map, as the core's row of defaults gives them.
+			row[MATERIAL_PARAM_UV_U] = 1;
+			row[MATERIAL_PARAM_UV_V + 1] = 1;
+			for (let slot = 1; slot < SIZE_MAP_ROWS; slot++) {
+				const at = MATERIAL_PARAM_MAP_UV + (slot - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+				row[at] = 1;
+				row[at + 5] = 1;
+			}
 			features.push(bits);
 			shadings.push(shading);
 			custom.push(new Array<number>(32).fill(0));
 			biases.push([biasConstant, biasSlope]);
+			sways.push(sway);
 			return table.push(row);
 		},
 		setMaterialValue: (material: number, param: number, x: number, y: number, z: number) =>
@@ -249,6 +282,7 @@ function fakeCore() {
 		maps,
 		destroyed,
 		biases,
+		sways,
 		displacements,
 		materials: new Materials(
 			core,
@@ -403,6 +437,14 @@ describe('Material.set', () => {
 		]);
 	});
 
+	test("passes a card's still-caster claim to the core, and its withdrawal", () => {
+		const { features, materials } = fakeCore();
+		materials.shader({ wgsl: compiledMaterial(), castsStill: true });
+		materials.shader({ wgsl: compiledMaterial(), castsStill: false });
+		materials.shader({ wgsl: compiledMaterial() });
+		expect(features).toEqual([MATERIAL_FEATURE_STILL_CASTER, 0, 0]);
+	});
+
 	test('passes the blend alpha mode with each blending', () => {
 		const { features, materials } = fakeCore();
 		materials.standard({ alphaMode: 'blend' });
@@ -416,6 +458,36 @@ describe('Material.set', () => {
 			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_MULTIPLY,
 			MATERIAL_FEATURE_BLEND,
 			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_WEIGHTED | MATERIAL_FEATURE_DOUBLE_SIDED,
+		]);
+	});
+
+	test('transmission keeps a masked surface and refuses only the hash', () => {
+		const { features, materials } = fakeCore();
+		materials.standard({ alphaMode: 'mask', alphaCutoff: 0.4, transmission: 0.5 });
+		expect(features).toEqual([
+			MATERIAL_FEATURE_ALPHA_MASK |
+				MATERIAL_FEATURE_ALPHA_TO_COVERAGE |
+				MATERIAL_FEATURE_TRANSMISSION,
+		]);
+		const hashed = thrown(() => materials.standard({ alphaMode: 'hash', transmission: 0.5 }));
+		expect(hashed.code).toBe('E1217');
+		expect(hashed.message).toStartWith(
+			"E1217: materials.standard() got transmission with the alpha mode 'hash'; a material that lets light through takes 'opaque', 'mask' or 'blend'.",
+		);
+		expect(features).toHaveLength(1);
+	});
+
+	test('passes a material that writes depth alone, which the opaque pass draws first', () => {
+		const { features, materials } = fakeCore();
+		materials.unlit({ colorWrite: false });
+		materials.standard({ colorWrite: false, alphaMode: 'mask', alphaCutoff: 0.3 });
+		materials.unlit({ colorWrite: true });
+		expect(features).toEqual([
+			MATERIAL_FEATURE_NO_COLOR_WRITE,
+			MATERIAL_FEATURE_NO_COLOR_WRITE |
+				MATERIAL_FEATURE_ALPHA_MASK |
+				MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
+			0,
 		]);
 	});
 
@@ -453,6 +525,16 @@ describe('Material.set', () => {
 			"E1217: materials.shader() got the 'weighted' blending, which custom materials do not take.",
 		);
 		expect(features).toEqual([]);
+	});
+
+	test('a custom material names the distance out to which its offset sways', () => {
+		const { sways, materials } = fakeCore();
+		materials.shader({ wgsl: compiledMaterial() });
+		materials.shader({ wgsl: compiledMaterial(), swayDistance: 120 });
+		expect(sways).toEqual([0, 120]);
+		const bad = thrown(() => materials.shader({ wgsl: compiledMaterial(), swayDistance: -1 }));
+		expect(bad.code).toBe('E1108');
+		expect(bad.message).toStartWith('E1108: materials.shader() got the swayDistance -1;');
 	});
 
 	test('a light map direction takes its own map, and the map places the bake', () => {
@@ -622,10 +704,176 @@ describe('Material.set', () => {
 		close(v, [-3, 0, 0.25]);
 		stone.set({ uvTransform: { repeat: [4, 4] } });
 		close(row().slice(MATERIAL_PARAM_UV_U, MATERIAL_PARAM_UV_U + 3), [4, 0, 0]);
+		close(row().slice(MATERIAL_PARAM_UV_V, MATERIAL_PARAM_UV_V + 3), [0, 4, 0]);
+		// An animation changes one pair of the transform and keeps the rest, as a glTF pointer does.
+		stone.writeUvPair('uvOffset', 0.25, -0.5);
+		close(row().slice(MATERIAL_PARAM_UV_U, MATERIAL_PARAM_UV_U + 3), [4, 0, 0.25]);
+		close(row().slice(MATERIAL_PARAM_UV_V, MATERIAL_PARAM_UV_V + 3), [0, 4, -0.5]);
+		stone.writeUvPair('uvScale', 2, 2);
+		close(row().slice(MATERIAL_PARAM_UV_U, MATERIAL_PARAM_UV_U + 3), [2, 0, 0.25]);
+		close(row().slice(MATERIAL_PARAM_UV_V, MATERIAL_PARAM_UV_V + 3), [0, 2, -0.5]);
+		// A material created with a transform keeps its turn and its other pair for a part write.
+		const turned = materials.standard({
+			uvTransform: { offset: [0.5, 0.25], repeat: [2, 3], rotation: Math.PI / 2 },
+		});
+		turned.writeUvPair('uvScale', 1, 1);
+		const turnedU = table[1] as number[];
+		expect(turnedU[MATERIAL_PARAM_UV_U]).toBeCloseTo(0, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_U + 1]).toBeCloseTo(1, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_U + 2]).toBeCloseTo(0.5, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_V]).toBeCloseTo(-1, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_V + 1]).toBeCloseTo(0, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_V + 2]).toBeCloseTo(0.25, 12);
 		stone.set({ lightMapIntensity: 3 });
 		expect(row()[MATERIAL_PARAM_LIGHT_MAP_INTENSITY]).toBe(3);
 		stone.set({ envIntensity: 0.25 });
 		expect(row()[MATERIAL_PARAM_ENV_INTENSITY]).toBe(0.25);
+	});
+
+	test('places each map of a material with its own transform', () => {
+		const { table, materials } = fakeCore();
+		const emissive = MATERIAL_PARAM_MAP_UV + (MAP_SLOT_EMISSIVE - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+		const occlusion =
+			MATERIAL_PARAM_MAP_UV + (MAP_SLOT_OCCLUSION - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+		// A sheen map keeps its texture in the specular color map's slot, so its transform goes to
+		// that slot's rows rather than after the last map of its own.
+		const sheen =
+			MATERIAL_PARAM_MAP_UV + (MAP_ROW_SLOT_SHEEN_COLOR - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+		const mapped = materials.standard({
+			map: texture(1),
+			emissiveMap: texture(2),
+			aoMap: texture(3),
+			sheenColorMap: texture(4),
+			mapUvTransforms: {
+				emissiveMap: { offset: [0.5, 0.25], repeat: [2, 3] },
+				sheenColorMap: { repeat: [30, -30] },
+			},
+		});
+		const row = () => table[0] as number[];
+		const at = (param: number) =>
+			row()
+				.slice(param, param + 3)
+				.map((value) => value + 0);
+		// The emissive map takes its own transform, and every other map the identity.
+		expect(at(emissive)).toEqual([2, 0, 0.5]);
+		expect(at(emissive + 4)).toEqual([0, 3, 0.25]);
+		expect(at(MATERIAL_PARAM_UV_U)).toEqual([1, 0, 0]);
+		expect(at(MATERIAL_PARAM_UV_V)).toEqual([0, 1, 0]);
+		expect(at(occlusion)).toEqual([1, 0, 0]);
+		// The sheen map's transform reached the slot that holds its texture.
+		expect(at(sheen)).toEqual([30, 0, 0]);
+		expect(at(sheen + 4)).toEqual([0, -30, 0]);
+		// A track that names one map moves that map alone, and keeps the rest of its transform.
+		mapped.writeUvPair('uvOffset', 0.75, -0.25, MAP_SLOT_EMISSIVE);
+		expect(at(emissive)).toEqual([2, 0, 0.75]);
+		expect(at(emissive + 4)).toEqual([0, 3, -0.25]);
+		expect(at(MATERIAL_PARAM_UV_U)).toEqual([1, 0, 0]);
+		expect(at(occlusion)).toEqual([1, 0, 0]);
+		// A transform that a later `set` gives is kept too, so the track changes only the offset.
+		mapped.set({
+			mapUvTransforms: { emissiveMap: { repeat: [4, 5] } },
+		});
+		expect(at(emissive)).toEqual([4, 0, 0]);
+		mapped.writeUvPair('uvOffset', 0.75, -0.25, MAP_SLOT_EMISSIVE);
+		expect(at(emissive)).toEqual([4, 0, 0.75]);
+		expect(at(emissive + 4)).toEqual([0, 5, -0.25]);
+		// A write with no slot moves every map.
+		mapped.writeUvPair('uvScale', 2, 2);
+		expect(at(emissive)).toEqual([2, 0, 0.75]);
+		expect(at(MATERIAL_PARAM_UV_U)).toEqual([2, 0, 0]);
+		expect(at(occlusion)).toEqual([2, 0, 0]);
+		expect(at(sheen)).toEqual([2, 0, 0]);
+	});
+
+	test('places a slot with the map that fills it, and not one the material leaves out', () => {
+		const { table, materials } = fakeCore();
+		const normal = MATERIAL_PARAM_MAP_UV + (MAP_SLOT_NORMAL - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+		const at = (param: number, index = 0) =>
+			(table[index] as number[]).slice(param, param + 3).map((value) => value + 0);
+		// A normal map wins over a bump map, so the bump map's transform does not take the slot.
+		materials.standard({
+			normalMap: texture(1),
+			bumpMap: texture(2),
+			mapUvTransforms: { normalMap: { repeat: [2, 2] }, bumpMap: { repeat: [5, 5] } },
+		});
+		expect(at(normal)).toEqual([2, 0, 0]);
+		expect(at(normal + 4)).toEqual([0, 2, 0]);
+		// Without a normal map the bump map fills the slot, and a displacement map's transform
+		// does not take it, since the displacement reads that slot.
+		materials.standard({
+			bumpMap: texture(3),
+			displacementMap: texture(4),
+			mapUvTransforms: { bumpMap: { repeat: [3, 3] }, displacementMap: { repeat: [7, 7] } },
+		});
+		expect(at(normal, 1)).toEqual([3, 0, 0]);
+		// A displacement map fills the slot where neither other map does.
+		materials.standard({
+			displacementMap: texture(5),
+			mapUvTransforms: { displacementMap: { repeat: [7, 7] } },
+		});
+		expect(at(normal, 2)).toEqual([7, 0, 0]);
+		// A transform for a map the material does not have takes no slot at all.
+		materials.standard({
+			normalMap: texture(6),
+			mapUvTransforms: { bumpMap: { repeat: [9, 9] } },
+		});
+		expect(at(normal, 3)).toEqual([1, 0, 0]);
+	});
+
+	test('set places a slot with the map that fills it, and not one the material lacks', () => {
+		const { table, materials } = fakeCore();
+		const normal = MATERIAL_PARAM_MAP_UV + (MAP_SLOT_NORMAL - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+		const at = (param: number) =>
+			(table[0] as number[]).slice(param, param + 3).map((value) => value + 0);
+		const mapped = materials.standard({
+			normalMap: texture(1),
+			mapUvTransforms: { normalMap: { repeat: [2, 2] } },
+		});
+		expect(at(normal)).toEqual([2, 0, 0]);
+		// A transform for a map that the material does not have takes no slot from the normal map.
+		mapped.set({ mapUvTransforms: { bumpMap: { repeat: [9, 9] } } });
+		expect(at(normal)).toEqual([2, 0, 0]);
+		expect(at(normal + 4)).toEqual([0, 2, 0]);
+		// The recorded transform keeps the normal map's scale, which a later animation moves.
+		mapped.writeUvPair('uvOffset', 0.5, 0.5, MAP_SLOT_NORMAL);
+		expect(at(normal)).toEqual([2, 0, 0.5]);
+		expect(at(normal + 4)).toEqual([0, 2, 0.5]);
+		// A transform for the map that fills the slot still applies through set.
+		mapped.set({ mapUvTransforms: { normalMap: { repeat: [4, 5] } } });
+		expect(at(normal)).toEqual([4, 0, 0]);
+		expect(at(normal + 4)).toEqual([0, 5, 0]);
+	});
+
+	test('the map that fills a shared slot owns it, as the production skip rules leave it', () => {
+		const tex = texture(1);
+		// A clear coat's roughness map leaves the slot to a different coat map.
+		const coat = slotOwners({ clearcoatMap: tex, clearcoatRoughnessMap: texture(2) }, 0, true);
+		expect(coat[MAP_ROW_SLOT_COAT]).toBe('clearcoatMap');
+		// A transmission map keeps a row slot of its own, as a thickness map does, so the slot of a
+		// specular map stays with it.
+		const volume = slotOwners(
+			{ transmission: 1, transmissionMap: tex, specularIntensityMap: texture(2) },
+			0,
+			false,
+		);
+		expect(volume[MAP_ROW_SLOT_TRANSMISSION]).toBe('transmissionMap');
+		expect(volume[MAP_SLOT_SPECULAR_INTENSITY]).toBe('specularIntensityMap');
+		const thickness = slotOwners(
+			{ transmission: 1, thicknessMap: tex, specularIntensityMap: texture(2) },
+			0,
+			false,
+		);
+		expect(thickness[MAP_ROW_SLOT_THICKNESS]).toBe('thicknessMap');
+		// A translucent material keeps the diffuse transmission map and leaves out the specular one.
+		const thin = slotOwners(
+			{ diffuseTransmissionMap: tex, specularIntensityMap: texture(2) },
+			MATERIAL_FEATURE_TRANSLUCENCY,
+			false,
+		);
+		expect(thin[MAP_SLOT_DIFFUSE_TRANSMISSION]).toBe('diffuseTransmissionMap');
+		// A layered material leaves the light map out, and its transform with it.
+		const layered = slotOwners({ lightMap: tex, sheenColorMap: texture(2) }, 0, true);
+		expect(layered[MAP_SLOT_LIGHT]).toBeUndefined();
 	});
 
 	test('writes the specular values, with the reflectance that the index of refraction gives', () => {
@@ -736,7 +984,7 @@ describe('Material.set', () => {
 		expect(table).toEqual([]);
 	});
 
-	test('puts the transmission and thickness maps in the specular slots', () => {
+	test('keeps the transmission and thickness maps in row slots of their own', () => {
 		const { table, maps, features, materials } = fakeCore();
 		materials.standard({
 			transmission: 0.8,
@@ -745,21 +993,32 @@ describe('Material.set', () => {
 			thicknessMap: texture(6, 1),
 		});
 		expect((features[0] ?? 0) & MATERIAL_FEATURE_TRANSMISSION).toBe(MATERIAL_FEATURE_TRANSMISSION);
-		// They take the two slots that the specular maps leave free, and read the same channels.
+		// They keep row slots of their own, each sampling the specular slot's texture array.
 		expect(maps).toEqual([
 			[1, MAP_SLOT_TRANSMISSION, 5, 0],
 			[1, MAP_SLOT_THICKNESS, 6, 1],
 		]);
-		// A material that asks for the specular maps too is refused, never drawn without one.
-		const specular = thrown(() =>
+		// A specular map keeps its own slot beside the transmission map, and draws with it.
+		materials.standard({
+			transmission: 0.8,
+			transmissionMap: texture(8),
+			specularIntensityMap: texture(9),
+		});
+		expect(maps.slice(-2)).toEqual([
+			[2, MAP_SLOT_SPECULAR_INTENSITY, 9, 0],
+			[2, MAP_SLOT_TRANSMISSION, 8, 0],
+		]);
+		// A specular color texture is sRGB, so it never shares a texture array with a linear
+		// thickness texture: the pair is refused rather than drawn without one.
+		const colorThickness = thrown(() =>
 			materials.standard({
 				transmission: 0.8,
-				transmissionMap: texture(5),
-				specularIntensityMap: texture(5),
+				thicknessMap: texture(6),
+				specularColorMap: texture(7),
 			}),
 		);
-		expect(specular.message).toStartWith(
-			'E1217: materials.standard() got specularIntensityMap with transmissionMap;',
+		expect(colorThickness.message).toStartWith(
+			'E1217: materials.standard() got thicknessMap with specularColorMap;',
 		);
 		const opaque = thrown(() => materials.standard({ thicknessMap: texture(5) }));
 		expect(opaque.message).toStartWith(
@@ -771,13 +1030,74 @@ describe('Material.set', () => {
 		expect(leaf.message).toStartWith(
 			'E1217: materials.standard() got thicknessMap with diffuseTransmission;',
 		);
-		const painted = thrown(() =>
-			materials.standard({ transmission: 0.8, clearcoat: 1, transmissionMap: texture(5) }),
+		// A layer's values leave the specular slots free, so the maps fit beside a clear coat and a
+		// sheen. They stay out only where a layer map fills the slot that one of them takes.
+		materials.standard({
+			transmission: 0.8,
+			clearcoat: 1,
+			sheenColor: '#ffffff',
+			transmissionMap: texture(5),
+			thicknessMap: texture(6, 1),
+		});
+		expect(maps.at(-2)).toEqual([3, MAP_SLOT_TRANSMISSION, 5, 0]);
+		expect(maps.at(-1)).toEqual([3, MAP_SLOT_THICKNESS, 6, 1]);
+		const coatNormal = thrown(() =>
+			materials.standard({
+				transmission: 0.8,
+				clearcoat: 1,
+				clearcoatNormalMap: texture(7),
+				transmissionMap: texture(5),
+			}),
 		);
-		expect(painted.message).toStartWith(
-			'E1217: materials.standard() got transmissionMap with a clear coat, a sheen, iridescence or anisotropy,',
+		expect(coatNormal.message).toStartWith(
+			'E1217: materials.standard() got transmissionMap with clearcoatNormalMap,',
 		);
-		expect(table).toHaveLength(1);
+		const sheen = thrown(() =>
+			materials.standard({
+				transmission: 0.8,
+				sheenColor: '#ffffff',
+				sheenColorMap: texture(7),
+				thicknessMap: texture(5),
+			}),
+		);
+		expect(sheen.message).toStartWith(
+			'E1217: materials.standard() got thicknessMap with sheenColorMap,',
+		);
+		// The coat map of the light map's slot keeps its place beside the two.
+		materials.standard({
+			transmission: 0.8,
+			clearcoat: 1,
+			clearcoatMap: texture(7),
+			transmissionMap: texture(5),
+			thicknessMap: texture(6, 1),
+		});
+		expect(maps.slice(-3)).toEqual([
+			[4, MAP_SLOT_TRANSMISSION, 5, 0],
+			[4, MAP_SLOT_THICKNESS, 6, 1],
+			[4, MAP_SLOT_COAT, 7, 0],
+		]);
+		// One specular slot may hold a layer map while the other holds a volume map: a coat normal
+		// map fills the specular intensity slot, so only the thickness map fits beside it.
+		materials.standard({
+			transmission: 0.8,
+			clearcoat: 1,
+			clearcoatNormalMap: texture(7),
+			thicknessMap: texture(6),
+		});
+		expect(maps.slice(-2)).toEqual([
+			[5, MAP_SLOT_THICKNESS, 6, 0],
+			[5, MAP_SLOT_COAT_NORMAL, 7, 0],
+		]);
+		expect(table).toHaveLength(5);
+	});
+
+	test('gives a transmission material its dispersion, which set changes at any time', () => {
+		const { table, materials } = fakeCore();
+		const glass = materials.standard({ transmission: 1, dispersion: 0.36 });
+		expect((table[0] as number[])[MATERIAL_PARAM_DISPERSION]).toBe(0.36);
+		glass.set({ dispersion: 2.04 });
+		expect((table[0] as number[])[MATERIAL_PARAM_DISPERSION]).toBe(2.04);
+		expect(thrown(() => glass.set({ dispersion: -1 })).code).toBe('E1108');
 	});
 
 	test('refuses diffuse transmission beside layers and the weighted blending', () => {
@@ -932,7 +1252,10 @@ describe('Material.set', () => {
 			{ anisotropyRotation: Number.NaN },
 		])
 			expect(thrown(() => film.set(values)).code).toBe('E1108');
-		expect(thrown(() => materials.standard({ anisotropy: 0.5 })).code).toBe('E1217');
+		// The stretch needs no map: a material without one takes a frame square to the surface.
+		materials.standard({ anisotropy: 0.5 });
+		expect((features[3] ?? 0) & MATERIAL_FEATURE_ANISOTROPY).toBe(MATERIAL_FEATURE_ANISOTROPY);
+		expect(row(3)[MATERIAL_PARAM_ANISOTROPY]).toBe(0.5);
 		const clash = thrown(() =>
 			materials.standard({ clearcoatMap: texture(5), iridescenceMap: texture(9) }),
 		);
@@ -1260,17 +1583,47 @@ describe('materials.shader', () => {
 		);
 	});
 
-	test('refuses the alpha hash and alpha to coverage, which custom materials do not take', () => {
-		const { shadings, materials } = fakeCore();
+	test('cuts its shape only where the WGSL sets or reads the surface alpha', () => {
+		const { features, shadings, materials } = fakeCore();
 		const wgsl = compiledMaterial();
 		const hashed = thrown(() => materials.shader({ wgsl, alphaMode: 'hash' }));
 		expect(hashed.code).toBe('E1217');
-		expect(hashed.message).toStartWith("E1217: materials.shader() got the alpha mode 'hash';");
+		expect(hashed.message).toStartWith(
+			"E1217: materials.shader() got the alpha mode 'hash', but its WGSL never sets or reads the surface's alpha",
+		);
 		const covered = thrown(() =>
 			materials.shader({ wgsl, alphaMode: 'mask', alphaToCoverage: true }),
 		);
-		expect(covered.message).toStartWith('E1217: materials.shader() got alphaToCoverage;');
+		expect(covered.message).toStartWith(
+			"E1217: materials.shader() got alphaToCoverage, but its WGSL never sets or reads the surface's alpha",
+		);
 		expect(shadings).toEqual([]);
+		// WGSL that names the alpha has the builds, which its caster and its motion cut by too.
+		const naming = { ...compiledMaterial(), alpha: true };
+		materials.shader({ wgsl: naming, alphaMode: 'hash' });
+		materials.shader({ wgsl: naming, alphaMode: 'mask', alphaToCoverage: true });
+		expect(features).toEqual([
+			MATERIAL_FEATURE_ALPHA_MASK | MATERIAL_FEATURE_ALPHA_HASH | MATERIAL_FEATURE_CASTER_COVERAGE,
+			MATERIAL_FEATURE_ALPHA_MASK |
+				MATERIAL_FEATURE_ALPHA_TO_COVERAGE |
+				MATERIAL_FEATURE_CASTER_COVERAGE,
+		]);
+	});
+
+	test('refuses a coverage function without the mask whose cutoff its caster tests', () => {
+		const { shadings, materials } = fakeCore();
+		const covered = { ...compiledMaterial(), functions: ['surface', 'coverage'] as string[] };
+		const unmasked = thrown(() => materials.shader({ wgsl: covered }));
+		expect(unmasked.code).toBe('E1217');
+		expect(unmasked.message).toStartWith(
+			'E1217: materials.shader() declared fn coverage but got no alpha mode;',
+		);
+		const blended = thrown(() => materials.shader({ wgsl: covered, alphaMode: 'blend' }));
+		expect(blended.message).toStartWith(
+			"E1217: materials.shader() declared fn coverage but got the alpha mode 'blend';",
+		);
+		expect(shadings).toEqual([]);
+		materials.shader({ wgsl: covered, alphaMode: 'mask' });
 	});
 
 	test('lets light through to the other side only where its WGSL names the diffuse transmission', () => {

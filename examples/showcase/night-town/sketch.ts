@@ -105,6 +105,13 @@ export const SHOTS: readonly Shot[] = [
 
 const params = new URL(import.meta.url).searchParams;
 
+/**
+ * The pines that the count word draws, in place of the preset's count, for the count test. The
+ * page never gives it: a test holds the demo at one preset twice, with this one value changed.
+ */
+const pinesSwitch = Number(params.get('pines') ?? Number.NaN);
+const forcedPines = Number.isInteger(pinesSwitch) && pinesSwitch >= 0 ? pinesSwitch : undefined;
+
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time } = ctx;
 	const detail = DETAIL[quality.preset];
@@ -135,7 +142,11 @@ export default defineSketch(async (ctx) => {
 	const houses = createHouses(ctx, detail.texture);
 	const props = createProps(ctx, houses.clear);
 	page.post('loading', 'Growing the pines');
-	const trees = await createTrees(ctx, (x, z) => houses.clear(x, z) || props.clear(x, z));
+	const trees = await createTrees(
+		ctx,
+		(x, z) => houses.clear(x, z) || props.clear(x, z),
+		forcedPines,
+	);
 	const lamps = await createLamps(ctx);
 	page.post('loading', 'Falling the snow');
 	const air = await createAir(ctx, houses.homes);

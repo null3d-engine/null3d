@@ -128,11 +128,17 @@ run('probe-capture', async () => {
 	const before = reflectionOf(await reflected(engine, slots));
 	progress(`the sphere reflects at ${before.x.toFixed(3)} before it moves`);
 	// A move that the page captures again: the floor reflects the sphere where it moved to.
+	const skippedBefore = Atomics.load(slots, Slot.FramesSkipped);
 	engine.postToSketch('move', { x: RIGHT, capture: true });
 	await framesLater(slots, AFTER_MOVE);
 	const afterFrame = await settled(engine, slots);
 	const after = reflectionOf(afterFrame);
-	progress(`the sphere reflects at ${after.x.toFixed(3)} after a capture`);
+	// A frame that the thread that draws skipped took a capture with it, so the result names a skip
+	// as the cause of a reflection that did not move. The page never asks for the capture again.
+	const framesSkipped = Atomics.load(slots, Slot.FramesSkipped) - skippedBefore;
+	progress(
+		`the sphere reflects at ${after.x.toFixed(3)} after a capture, ${framesSkipped} frames skipped`,
+	);
 	// A move with no call: the probe keeps its map, so the floor still reflects the sphere at the
 	// right, while the sphere itself stands at the left of the image.
 	engine.postToSketch('move', { x: LEFT, capture: false });
@@ -154,6 +160,9 @@ run('probe-capture', async () => {
 		beforeCount: before.count,
 		afterCount: after.count,
 		staleCount: stale.count,
+		// The frames that the thread that draws skipped as stale between the request for a capture
+		// and the settled frame after it. A capture in a skipped frame is lost.
+		framesSkipped,
 		// The reflection stood at the left, moved to the right when the page captured again, and
 		// stayed at the right when the sphere moved back without a call.
 		beforeLeft: before.x < 0.45,

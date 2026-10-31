@@ -397,6 +397,15 @@ export class Texture {
 	}
 
 	/**
+	 * The array layer that a map of the texture samples now. A pass that keeps two states samples
+	 * the state that its last run wrote, so this is that state's first layer; another texture
+	 * gives 0. A reader that names layers of a texture array reads this layer for the newest state.
+	 */
+	get layer(): number {
+		return this.textures.layerOf(this);
+	}
+
+	/**
 	 * Gives the texture new texels, which upload in their turn. An image may have another size,
 	 * and the texture then takes that size; the image moves to the thread that draws, so this
 	 * thread can use it no more. Data must fit the texture's size and format. Until the new texels
@@ -538,7 +547,7 @@ export class Textures {
 			handle,
 			pass.width,
 			pass.height,
-			1,
+			pass.arrayLayers * (pass.history ? 2 : 1),
 			this.passFormat,
 			'linear',
 			0,
@@ -613,7 +622,7 @@ export class Textures {
 			sentRight: 0,
 			sentBottom: 0,
 		};
-		this.setData(texture, this.canvasRows(context, 0, 0, width, height), call);
+		this.setData(texture, this.canvasRows(context, 0, 0, width, height), call, true);
 		return texture;
 	}
 
@@ -676,10 +685,8 @@ export class Textures {
 		height: number,
 	): Uint8Array {
 		const image = context.getImageData(x, y, width, height);
-		const row = width * 4;
-		const rows = new Uint8Array(row * height);
+		const rows = new Uint8Array(width * 4 * height);
 		rows.set(image.data);
-		turnRows(rows, 0, row, height);
 		return rows;
 	}
 
@@ -776,7 +783,7 @@ export class Textures {
 		const height = bottom - top;
 		// A whole canvas fills a texture that waits for all its texels too.
 		if (left === 0 && top === 0 && width === source.width && height === source.height) {
-			this.setData(texture, this.canvasRows(source.context, left, top, width, height), call);
+			this.setData(texture, this.canvasRows(source.context, left, top, width, height), call, true);
 			return true;
 		}
 		if (this.setRegion(texture, source, left, top, width, height, call)) {
@@ -806,6 +813,7 @@ export class Textures {
 				texture,
 				this.canvasRows(source.context, 0, 0, source.width, source.height),
 				call,
+				true,
 			);
 		}
 		return true;
@@ -843,7 +851,7 @@ export class Textures {
 		const view = core.heap(Uint8Array);
 		const image = source.context.getImageData(x, top, width, height);
 		view.set(image.data, address);
-		turnRows(view, address, row, height);
+		core.glue.turnRows(address, row, height);
 		return true;
 	}
 
@@ -1182,8 +1190,12 @@ export class Textures {
 		this.send(id, image);
 	}
 
-	/** @internal Copies data of the texture's size and format into engine memory for its upload. */
-	setData(texture: Texture, data: TextureDataArray, call: string): void {
+	/**
+	 * @internal Copies data of the texture's size and format into engine memory for its upload.
+	 * `fromCanvas` turns the rows over once they arrive, because a canvas counts them from its top
+	 * and a texture from the bottom; the turn runs in the core, where a frame's work belongs.
+	 */
+	setData(texture: Texture, data: TextureDataArray, call: string, fromCanvas = false): void {
 		const { width, height, depth, format } = texture;
 		const values = width * height * depth * 4;
 		if (DEV) {
@@ -1207,6 +1219,8 @@ export class Textures {
 		if (data instanceof Float32Array) toHalfFloats(data, core.view(Uint16Array, address, values));
 		else if (data instanceof Uint16Array) core.view(Uint16Array, address, values).set(data);
 		else core.view(Uint8Array, address, values).set(data);
+		// A canvas has one layer, so its depth is 1 and the rows are its height alone.
+		if (fromCanvas) core.glue.turnRows(address, width * 4, height);
 	}
 
 	/** @internal */
@@ -1217,6 +1231,11 @@ export class Textures {
 	/** @internal */
 	droppedLevelsOf(texture: Texture): number {
 		return this.stat(TEXTURE_STAT_DROPPED_LEVELS, texture.handle);
+	}
+
+	/** @internal */
+	layerOf(texture: Texture): number {
+		return this.core.glue.textureLayer(texture.handle);
 	}
 
 	/**
@@ -1409,23 +1428,6 @@ function invalid(call: string, detail: string): EngineError {
 }
 
 const quote = (value: unknown) => (typeof value === 'string' ? `'${value}'` : String(value));
-
-/**
- * Turns the rows of a rectangle over in place, so that its last row comes first. A canvas counts
- * rows from its top, and a texture counts them from v = 0, the bottom of a plane. The rectangle
- * starts `offset` bytes into `rows`, which may be a view of the whole memory.
- */
-function turnRows(rows: Uint8Array, offset: number, row: number, height: number): void {
-	for (let top = 0, bottom = height - 1; top < bottom; top++, bottom--) {
-		const a = offset + top * row;
-		const b = offset + bottom * row;
-		for (let k = 0; k < row; k++) {
-			const texel = rows[a + k] as number;
-			rows[a + k] = rows[b + k] as number;
-			rows[b + k] = texel;
-		}
-	}
-}
 
 /**
  * Throws E1208 unless the image holds pixels: a closed image, or one sent away already, has none.

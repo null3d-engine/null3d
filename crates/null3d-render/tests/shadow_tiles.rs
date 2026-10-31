@@ -426,15 +426,17 @@ fn a_tile_cull_and_draw_on_webgpu_reads_the_casters_alone() {
     world.add_spot([-3.0, 4.0, 0.0], 6.0);
     let mut mock = MockBackend::default();
     world.frame = 0;
-    // Each frame with lights lists the lights of the camera's clusters in three dispatches.
-    let clustering = 3;
+    // Each frame with lights fits the slices, lists the lights of the camera's clusters in three
+    // dispatches, and reduces the depth in a clear and a dispatch.
+    let clustering = 4;
+    let depth = 2;
     let commands = step(&mut world, &mut mock, true);
     // The camera's culling dispatch and the tile's, and two bundles run: the camera's and the
     // tile's.
-    assert_eq!(count(&commands, Op::Dispatch), clustering + 2);
+    assert_eq!(count(&commands, Op::Dispatch), clustering + depth + 2);
     assert_eq!(count(&commands, Op::ExecuteBundles), 2);
     let still = step(&mut world, &mut mock, false);
-    assert_eq!(count(&still, Op::Dispatch), clustering + 1);
+    assert_eq!(count(&still, Op::Dispatch), clustering + depth + 1);
     assert_eq!(count(&still, Op::ExecuteBundles), 1);
 }
 
@@ -549,7 +551,8 @@ fn a_point_light_draws_six_tiles_when_its_casters_move<B: Tiles>(renderer: B) {
     world.scene.set_position(lit_box, [-3.0, 0.2, 0.0]).unwrap();
     let moved = step(&mut world, &mut mock, false);
     assert_eq!(depth_passes(&moved), 1);
-    // Its record names its first tile, and the tiles' block says that it has six.
+    // Its record names its first tile, and the tiles' block says that it has six, with the
+    // light's shadow strength in the half step past the count.
     let row = world.lights[0].light;
     assert_eq!(world.renderer.grid().lights()[0].shadow, 1.0);
     assert_eq!(
@@ -557,7 +560,7 @@ fn a_point_light_draws_six_tiles_when_its_casters_move<B: Tiles>(renderer: B) {
         1.0
     );
     let params = world.renderer.tiles().uniform().params;
-    assert!(params[..6].iter().all(|p| p[3] == 6.0));
+    assert!(params[..6].iter().all(|p| p[3] == 6.5));
 }
 
 #[test]

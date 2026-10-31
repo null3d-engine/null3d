@@ -70,7 +70,8 @@ const SWITCH_GROUP: Readonly<Record<string, string>> = {
 function overlayFigure(name: string): string | null {
 	const root = document.querySelector<HTMLElement>('[data-null3d-stats]')?.shadowRoot;
 	const node = root?.querySelector<HTMLElement>(`[data-figure="${name}"]`);
-	if (!node || node.closest('[hidden]')) return null;
+	// A tab that does not show still holds its figures; only a hidden figure is absent.
+	if (!node || node.closest('[hidden]:not(.pane)')) return null;
 	const text = node.textContent?.trim() ?? '';
 	return text.length > 0 ? text : null;
 }
@@ -147,6 +148,12 @@ run('demo-device', async () => {
 	if (!demo) throw new Error(`Add ?demo= with the name of a demo, not ${name}.`);
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
+	// A demo spells its own cost switches on its sketch's address, as the split page does, so a
+	// page that compares one change at a time passes them here.
+	const sketch = new URL(demo.sketch);
+	for (const id of ['morph', 'still', 'follow'])
+		if (params.has(id)) sketch.searchParams.set(id, params.get(id) ?? '');
+	const runDemo = { ...demo, sketch };
 	const failures: string[] = [];
 	// No stats overlay: its sampling would take frames that this page measures.
 	note(
@@ -155,12 +162,12 @@ run('demo-device', async () => {
 	// A showcase scene loads its models and builds its shaders in its setup, so the start itself can
 	// hold a slow phone for minutes. The wait ends, so a page that cannot start reports why.
 	const started = KEEP_COPIES
-		? startDemo({ canvas, demo, stats: false })
+		? startDemo({ canvas, demo: runDemo, stats: false })
 		: createEngine({
 				canvas,
-				sketch: demo.sketch,
-				largeWorld: demo.largeWorld,
-				hdr: demo.hdr,
+				sketch: runDemo.sketch,
+				largeWorld: runDemo.largeWorld,
+				hdr: runDemo.hdr,
 				stats: false,
 				keepTextureCopies: false,
 			});
@@ -238,8 +245,7 @@ run('demo-device', async () => {
 		? Number(/([\d.]+)\s*fps/.exec(overlayFigure('fps') ?? '')?.[1] ?? 0)
 		: pageFrames.count / DRAW_SECONDS;
 	// A frame that the engine drew without its GPU still counts, so a run that lost its device must
-	// fail: its figures describe a scene that the GPU never drew, as the tablet's compatibility run
-	// of 24 October 2026 did.
+	// fail: its figures describe a scene that the GPU never drew.
 	if (failures.length > 0) throw new Error(`the engine failed: ${failures.join('; ')}`);
 	if (metrics && !(metrics.presentedFps > 0))
 		throw new Error(

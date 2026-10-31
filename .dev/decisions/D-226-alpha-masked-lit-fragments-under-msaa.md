@@ -1,8 +1,8 @@
 # D-226: An alpha-masked lit fragment under MSAA
 
-Status: decided by the helper of M3-R6 on 23 October 2026, for the owner's review. Measured on the
-owner's Mac in Chrome and Safari. Not built yet: nothing follows from it, since the cost it measures
-stays under the rule. Date: 2026-10-23. Task: M3-R6.
+Status: decided by the helper of M3-R6, for the owner's review. Measured on the owner's Mac in
+Chrome and Safari. Not built: nothing follows from it, since the cost it measures stays under the
+rule. Task: M3-R6.
 
 Summary: A full screen of alpha-masked lit fragments costs at most 0.29 ms more than the same screen
 of opaque fragments with MSAA on, in Safari, and nothing measurable in Chrome. The study's +22.5 ms
@@ -42,8 +42,8 @@ engine's start. The masked build's cost is the difference between the two sides 
 mode. The frame holds a culling step, one opaque pass and one final pass, so a full screen of masked
 shading is the whole scene pass.
 
-Chrome 155.0.8059.85 on the MacBook Pro (Apple M5 Max, 18 cores, macOS 26.6.2), 23 October 2026, at
-a 1600 by 900 window in device pixels, in a quiet lane of the coordination queue with the machine's
+In the runs that commit `0ce99a741` records: Chrome 155.0.8059.85 on the MacBook Pro (Apple M5 Max, 18 cores, macOS 26.6.2), at a 1600 by 900
+window in device pixels, in a quiet lane of the coordination queue with the machine's
 1-minute load between 20 and 28 from other work:
 
 | GPU path | Antialiasing | Opaque, ms | Masked, ms | Masked less opaque, ms |
@@ -59,7 +59,7 @@ Chrome draws MSAA for 0.10 ms more on WebGPU core, 0.16 ms more in compatibility
 more on WebGL2, over the opaque side. The masked side is never slower than the opaque one by more
 than 0.01 ms: the discard saves more sample writes than the alpha test costs.
 
-Safari 26.6.2 on the same Mac, 23 October 2026, at the runner's parked window of 800 by 485 points at
+In the same commit's runs, Safari 26.6.2 on the same Mac, at the runner's parked window of 800 by 485 points at
 two device pixels each, about 1.55 million pixels, with the display at 60 Hz:
 
 | GPU path | Antialiasing | Opaque, ms | Masked, ms | Masked less opaque, ms |
@@ -100,7 +100,7 @@ The pattern stays. No change to the shader, the material table or the instance d
 ## Consequences
 
 - Nothing changes in the engine, its shaders or its material table.
-- `.dev/benchmarks.md` gains the page, the plan and the rule, so a later shader change or a browser
+- `.dev/benchmarks.md` holds the page, the plan and the rule, so a later shader change or a browser
   change can be measured the same way.
 - The `alpha-mask-cost` page, its browser test and the device plan stay in the repository as the
   measurement that answers the question again.

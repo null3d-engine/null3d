@@ -26,6 +26,9 @@ export async function buildEngineShadersLocally(
 	);
 	const staging = `${folder}.incoming-${process.pid}`;
 	try {
+		report(
+			"null3D: compiling the engine's shaders now. The compiler prints nothing until it returns, which on one core can take close to an hour; the percentage lines after it mark writing the modules, not compiling them.",
+		);
 		const names = prepareEngineModules();
 		rmSync(staging, { recursive: true, force: true });
 		mkdirSync(staging, { recursive: true });

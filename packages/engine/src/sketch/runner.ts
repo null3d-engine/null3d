@@ -27,6 +27,7 @@ import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import {
 	ANTIALIAS_MSAA,
+	CORE_NOT_COUNTED,
 	LIGHT_VALUE_HERO_SIZE,
 	LIGHT_VALUE_SHADOW_CASCADES,
 	LIGHT_VALUE_SHADOW_MAP_SIZE,
@@ -91,7 +92,7 @@ import {
 } from '../shared/images';
 import { MEMORY_AREA_COUNT } from '../shared/memory-area';
 import { MemoryViews } from '../shared/memory-views';
-import { Counter, FrameRecorder, MemoryFigure, Phase, Role } from '../shared/metrics';
+import { Counter, FrameRecorder, MemoryFigure, PHASE_NAMES, Phase, Role } from '../shared/metrics';
 import type { Recorder, ReplayProgram, ReplayResult } from '../shared/recording';
 import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
@@ -275,6 +276,7 @@ export async function runPipelined(
 ): Promise<void> {
 	const { slots } = controlViews(control);
 	sketch.context.scene.attachPickControl(slots);
+	sketch.context.render.attachReadControl(slots);
 	try {
 		while (Atomics.load(slots, Slot.Running) !== 0) {
 			const paused = Atomics.load(slots, Slot.Paused);
@@ -359,6 +361,8 @@ export class SketchRunner {
 	private frameOpen = false;
 	/** When the current phase of the frame started. */
 	private phaseStart = 0;
+	/** The last phase that the frame in progress ended, which names where a hold stopped. */
+	private lastPhase: string | undefined;
 	/** True while hold mode steps the sketch: the first failure then stops it. */
 	private holding = false;
 	/** Gives the thread its own Math.random back, after hold mode seeded it. */
@@ -459,6 +463,7 @@ export class SketchRunner {
 		private readonly holdScript?: HoldScript,
 		replay?: ReplayProgram,
 		record = false,
+		debugView?: string,
 	) {
 		this.replayProgram = replay;
 		this.records = record;
@@ -484,6 +489,7 @@ export class SketchRunner {
 			device.transparent,
 			device.cellCulling,
 			device.depthPrepass,
+			device.prepassColor,
 			device.skinning,
 			device.indexInstances,
 			device.largeWorld,
@@ -647,7 +653,7 @@ export class SketchRunner {
 			templates,
 			device.joinEffects,
 			new GradeTable(textures),
-			device.gradingHdr,
+			this.quality,
 		);
 		this.render = new Render(
 			this.core,
@@ -667,6 +673,10 @@ export class SketchRunner {
 			sketch.sendLabelSlot,
 		);
 		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
+		// The page's ?view switch applies before the sketch's setup, so a sketch that never calls
+		// debug.view still draws the view. A feature that registers an add-on view during the setup
+		// starts it when it registers.
+		if (debugView !== undefined) this.debugDraw?.requestView(debugView);
 		const debug = this.debugDraw ?? new SketchDebug(host);
 		const holdsFrames = this.holdsFrames;
 		this.context = {
@@ -715,7 +725,11 @@ export class SketchRunner {
 	 */
 	async setup(sketch: SketchDefinition): Promise<void> {
 		this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
+		// The setup grows the scene, and a page that stalls here reports the time it spent doing it.
+		this.record.markSetupStart();
+		const growing = performance.now();
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
+		this.record.markSetupDone(performance.now() - growing);
 		const { check } = this.sketch.quality;
 		if (check && !this.holdsFrames) await this.checkPreset();
 		// Warm-ups that the setup started without waiting for them publish their frames first, so
@@ -849,6 +863,7 @@ export class SketchRunner {
 			console.error(error);
 		}
 		this.context.scene.stopPicks();
+		this.render.stopReads();
 		this.core.stop();
 		stopHelperWorkers();
 		this.restoreRandom?.();
@@ -897,6 +912,7 @@ export class SketchRunner {
 		const at = this.record.phaseIndex(phase);
 		floats[at] = (floats[at] as number) + (now - this.phaseStart);
 		this.phaseStart = now;
+		this.lastPhase = PHASE_NAMES[phase];
 	}
 
 	/**
@@ -1049,6 +1065,7 @@ export class SketchRunner {
 			this.setReflectionScale(settings.reflectionScale) !== 0 ||
 			glue.setProbeSize(settings.probeSize) !== 0 ||
 			glue.setAreaLightCap(settings.areaLights) !== 0 ||
+			glue.setLightFit(settings.lightFit ? 1 : 0) !== 0 ||
 			this.setLevelQuality() !== 0 ||
 			glue.setPhysicalSky(settings.physicalSky) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0 ||
@@ -1304,9 +1321,13 @@ export class SketchRunner {
 				frame = this.frame();
 			}
 		} catch (error) {
+			// The message alone rarely says where the frame stopped, so name the phase that finished
+			// last: a failure during the phase after it belongs to that part of the frame.
+			const phase =
+				this.frameOpen && this.lastPhase !== undefined ? ` (past its ${this.lastPhase} phase)` : '';
 			throw new EngineError(
 				'E1408',
-				`hold mode stopped at ${Number(this.clock.now.toFixed(3))} seconds, in frame ${this.context.time.frame}: ${messageOf(error)}`,
+				`hold mode stopped at ${Number(this.clock.now.toFixed(3))} seconds, in frame ${this.context.time.frame}: ${messageOf(error)}${phase}`,
 			);
 		} finally {
 			this.holding = false;
@@ -1607,6 +1628,7 @@ export class SketchRunner {
 		this.updateFailed = false;
 		this.frameOpen = true;
 		this.phaseStart = start;
+		this.lastPhase = undefined;
 		this.readViewport();
 		// The governor judges the frames so far before the sketch's update, which then sees the
 		// render scale of this frame, and whose change handlers hear of a shadow step.
@@ -1671,6 +1693,8 @@ export class SketchRunner {
 		// Job workers woken now start while the engine applies the frame's commands; woken before
 		// the sketch's update, they would spin through it and sleep again.
 		glue.prepareJobs();
+		// Each feature draw answers whether its feature is ready before the frame takes its room.
+		this.context.scene.pollReadiness();
 		// Whole milliseconds and microseconds cross into the core without a number object each.
 		const timeMs = Math.round(time.now * 1000);
 		const stepUs = Math.round(dt * 1_000_000);
@@ -1756,6 +1780,11 @@ export class SketchRunner {
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		this.record.count(Counter.OccludedEntries, glue.occludedEntries(frame));
+		// The path that the frame's cluster trees took, for a page that reports which one a held
+		// frame drew: the ranges the walk chose, or none where the device draws whole levels.
+		const ranges = glue.patchRanges(frame);
+		Atomics.store(slots, Slot.ClusterPatches, ranges === CORE_NOT_COUNTED ? -1 : ranges);
+		Atomics.store(slots, Slot.ClusterPatchFrame, frame);
 		// A frame whose update threw still presents, so its record marks it: the figure that counts
 		// completed updates leaves it out.
 		this.record.count(Counter.UpdateErrors, this.updateFailed ? 1 : 0);
@@ -1797,8 +1826,10 @@ export class SketchRunner {
 			jobRecord.commitMicros(glue.takeJobBusyUs(k));
 		}
 		this.growJobs(glue, asked);
-		// A pick whose read landed answers now, before the next frame's update.
+		// A pick whose read landed answers now, before the next frame's update, and so does a read
+		// of a compute pass's region.
 		this.context.scene.pollPicks(this.sketch.control.slots);
+		this.render.pollReads(this.sketch.control.slots);
 		return frame;
 	}
 }

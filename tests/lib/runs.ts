@@ -9,6 +9,8 @@ import { MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
 import { type DeviceFacts, webKitOnIos } from './device-record.ts';
 import type { GpuPath, MissingAllowed } from './gpu-paths.ts';
 import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
+import { neighbourNote } from './running-tests.ts';
+import { calibrationNote } from './start-calibrations.ts';
 
 export interface PlanItem<Check = unknown> {
 	/** The item's name, which is also its result's file name. */
@@ -104,12 +106,14 @@ const HELD_MEMORY_FAILURE =
 	/\bE1109\b|\bE1302\b|Out of memory|lost (its|the) (GPU|context)|context lost|did not get back the memory/i;
 
 /**
- * A worker that did not start because its script, or a module it imports, did not load (E1405). In
- * CI's Firefox on Linux, a worker's load failed now and then on pages that load the same files
- * every time, so a new runner page sorts a passing fault from a page that cannot load its files.
+ * A sketch, render or job worker that did not start because its script, or a module it imports, did
+ * not load (E1405). The engine names each job worker by its number, as `job 2`, and the one that
+ * failed in CI by its role alone. In CI's Firefox on Linux, a worker's load failed now and then on pages that load
+ * the same files every time, so a new runner page sorts a passing fault from a page that cannot load
+ * its files.
  */
 const MODULE_LOAD_FAILURE =
-	/\bE1405: the (sketch|render) worker did not start: (its script( at \S+?, or a file that it imports,)? did not load|error loading dynamically imported module|.+\(the (sketch|render) worker's script is )/;
+	/\bE1405: the (sketch|render|job(?: \d+)?) worker did not start: (its script( at \S+?, or a file that it imports,)? did not load|error loading dynamically imported module|.+\(the (sketch|render|job(?: \d+)?) worker's script is )/;
 
 /**
  * Whether a page's failure earns one more run in a new runner page. A browser that draws with WebKit
@@ -137,7 +141,7 @@ export function rerunsInNewTab(
 export function unloadedModule(verdict: readonly string[]): string | undefined {
 	for (const problem of verdict) {
 		const loadFailure =
-			/\bE1405: the \w+ worker did not start: (?:error loading dynamically imported module: (\S+?)\.?(?:\s|$)|its script at (\S+?), or a file that it imports, did not load)/.exec(
+			/\bE1405: the \w+(?: \d+)? worker did not start: (?:error loading dynamically imported module: (\S+?)\.?(?:\s|$)|its script at (\S+?), or a file that it imports, did not load)/.exec(
 				problem,
 			);
 		const url =
@@ -194,9 +198,12 @@ export function lastSteps(trail: unknown): string {
 	return steps.length > 0 ? `; the page's last steps: ${steps.slice(-LAST_STEPS).join('; ')}` : '';
 }
 
-/** What a failed page's result says went wrong, with the last steps the page got through. */
+/**
+ * What a failed page's result says went wrong: the page's last steps, where its start reading falls
+ * among the run's pages, and the tests that other workers ran beside it.
+ */
 export const failureText = (result: ItemResult) =>
-	`${result.error ?? 'the page failed without a message'}${lastSteps(result.trail)}`;
+	`${result.error ?? 'the page failed without a message'}${lastSteps(result.trail)}${calibrationNote(result.calibrationMs)}${neighbourNote()}`;
 
 /** How many of a runner's latest pages the out-of-memory guard looks at. */
 export const OOM_WINDOW_PAGES = 5;

@@ -1250,9 +1250,7 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
 /// twenty or more feature sets those builds make; and a whole-shader first-use module, through
 /// `environment`. `lit` has the feature bits of the textured standard material, less its relief
 /// bits, at about a seventh of its builds. The textured material alone is most of the whole
-/// build, and two builds of it made this check the longest part of CI by far. The module exports
-/// test of `null3d-shaders-wasm` builds the same list, for the same reason, and keeps a copy of it,
-/// since one crate's tests cannot read another's.
+/// build, and two builds of it made this check the longest part of CI by far.
 const DETERMINISM_ENTRIES: &[&str] = &["lit", "environment", "pick", "timer_mark"];
 
 /// The one test that builds every shader of the repository. A full build takes minutes, and
@@ -1442,6 +1440,10 @@ fn every_module_kind(modules: &BTreeMap<String, String>) -> Result<(), String> {
     let kinds = [
         ("the main module", names.contains(&"shaders.ts")),
         ("the features module", names.contains(&"shader-features.ts")),
+        (
+            "the permutations module",
+            names.contains(&"shader-permutations.ts"),
+        ),
         ("a device module", has("shaders-", ".js")),
         ("a shared-paragraph table", has("shader-paragraphs-", ".js")),
         (
@@ -2041,7 +2043,13 @@ fn the_sun_shadow_loops_run_the_same_passes_at_every_pixel() {
     // The cascade count comes from the uniforms, so it is the same at every pixel of a draw. A
     // fixed MAX_CASCADES passes slowed S4's scene pass at Low on Apple's GPUs.
     let shadows = library_module("shadows");
-    let sun = function_text(&shadows, "sun_shadow");
+    // The light's strength mixes around the lookup, so the loops live in the function it mixes.
+    let sun = function_text(&shadows, "sun_shadow_unmixed");
+    let mixed = function_text(&shadows, "sun_shadow");
+    assert!(
+        mixed.contains("sun_shadow_unmixed("),
+        "the strength must mix the lookup: {mixed}"
+    );
     let loops: Vec<&str> = sun
         .lines()
         .map(str::trim)

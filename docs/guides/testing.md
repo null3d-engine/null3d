@@ -176,6 +176,7 @@ The engine reads these switches from the page's address in development builds, o
 | `?direct=on`, `?direct=off` | On WebGPU, force the direct or the indirect draw path, in place of the start-up probe's measured choice, to compare GPU time. `engine.capabilities.directDraws` says which path the engine took ([Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames)) |
 | `?depth=reversed`, `?depth=reversed-gl`, `?depth=standard` | Force a WebGL2 depth mode. `reversed-gl` draws as browsers without the `EXT_clip_control` extension do, such as Firefox |
 | `?uploads=copy` | On WebGL2, upload a copy of the data, as browsers that refuse to read shared memory need |
+| `?multidraw=off` | On WebGL2, draw as a browser without the `WEBGL_multi_draw` extension does: the engine probes none and draws the whole levels of a cluster tree in place of its patches ([Levels of detail](../concepts/lod.md#cluster-levels)) |
 | `?compile=wait` | On WebGL2, wait for each shader program's compile at its first draw, as browsers without the `KHR_parallel_shader_compile` extension do |
 | `?check=fresh` | Measure the quality preset again, as on a first visit, instead of taking the stored result of an earlier [preset check](../concepts/quality-presets.md#repeat-visits) |
 | `?compression=bc`, `?compression=astc,etc2`, `?compression=none` | Keep KTX2 textures to the compressed formats that the list names, of those the device has, as on a device with only those. `none` gives every KTX2 texture `rgba8unorm` |
@@ -195,3 +196,4 @@ The engine reads these switches from the page's address in development builds, o
 | `?still-camera=off` | Draw every frame of a view that holds still, without the [still-camera accumulation](../concepts/post-processing.md#still-camera-accumulation): the view neither blends nor rests. Hold mode draws without it too |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest; the engine then ignores starts that crashed before |
 | `?target-fps=display`, `?target-fps=90` | Set the frame rate that the preset check and the governor defend, in place of the `targetFps` option: the display's full rate, or at most that many frames per second ([The target frame rate](../concepts/quality-presets.md#the-target-frame-rate)) |
+| `?view=levels` | Draw a debug view, here the levels of detail, with no code change ([Debug views](../api/debug.md#the-view-from-the-address)). The switch takes any view name that `debug.view` takes |

@@ -16,6 +16,9 @@ import {
 	LAYOUT_BACKGROUND_LAYER,
 	LAYOUT_BLOOM,
 	LAYOUT_CLUSTER_CULL,
+	LAYOUT_COMPUTE_HISTORY_R32_FLOAT,
+	LAYOUT_COMPUTE_HISTORY_RGBA8_UNORM,
+	LAYOUT_COMPUTE_HISTORY_RGBA16_FLOAT,
 	LAYOUT_COMPUTE_INSTANCE_BUFFERS,
 	LAYOUT_COMPUTE_R32_FLOAT,
 	LAYOUT_COMPUTE_RGBA8_UNORM,
@@ -43,6 +46,8 @@ import {
 	LAYOUT_INSTANCE_INDEX,
 	LAYOUT_JOINTS,
 	LAYOUT_LIGHT_CLUSTERS,
+	LAYOUT_LIGHT_DEPTH,
+	LAYOUT_LIGHT_DEPTH_MS,
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_MATERIAL_MAPS_PARALLAX,
 	LAYOUT_MATERIAL_MAPS_SCENE,
@@ -141,6 +146,11 @@ import {
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
 	TEMPLATE_LIGHT_COUNT,
+	TEMPLATE_LIGHT_DEPTH,
+	TEMPLATE_LIGHT_DEPTH_CLEAR,
+	TEMPLATE_LIGHT_DEPTH_CLEAR_MS,
+	TEMPLATE_LIGHT_DEPTH_MS,
+	TEMPLATE_LIGHT_FIT,
 	TEMPLATE_LIGHT_PLACE,
 	TEMPLATE_LIGHT_WRITE,
 	TEMPLATE_LINE,
@@ -215,7 +225,7 @@ import {
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
 import { PARTICLE_RECORDS } from '../particle-records';
-import { variantFor } from '../variants';
+import { missingVariant, variantFor } from '../variants';
 import {
 	plainScale,
 	type VertexAttribute,
@@ -307,14 +317,28 @@ export interface ComputeTemplate {
 export const COMPUTE_MAPS_BIT = 1 << 8;
 
 /**
+ * The bit of a compute pass's format code that says the pass keeps two states: each run writes one
+ * state as its storage texture and reads the other, so its group 0 also binds the other state as a
+ * sampled texture.
+ */
+export const COMPUTE_HISTORY_BIT = 1 << 9;
+
+/**
  * The bind group layout of an add-on compute pass's group 0 for the target's format code: its
  * block of uniforms, then the storage texture that it fills. A format code of 0 names a pass that
  * fills an instance draw's two buffers instead, with no texture. The maps bit says the pass also
- * samples textures at group 1.
+ * samples textures at group 1. The history bit names the layout that also binds the previous
+ * state.
  */
 export function layoutOfComputeFormat(code: number): number {
-	const format = code & ~COMPUTE_MAPS_BIT;
+	const format = code & ~(COMPUTE_MAPS_BIT | COMPUTE_HISTORY_BIT);
+	const history = (code & COMPUTE_HISTORY_BIT) !== 0;
 	if (format === 0) return LAYOUT_COMPUTE_INSTANCE_BUFFERS;
+	if (history) {
+		if (format === FORMAT_R32_FLOAT) return LAYOUT_COMPUTE_HISTORY_R32_FLOAT;
+		if (format === FORMAT_RGBA8_UNORM) return LAYOUT_COMPUTE_HISTORY_RGBA8_UNORM;
+		return LAYOUT_COMPUTE_HISTORY_RGBA16_FLOAT;
+	}
 	if (format === FORMAT_R32_FLOAT) return LAYOUT_COMPUTE_R32_FLOAT;
 	if (format === FORMAT_RGBA8_UNORM) return LAYOUT_COMPUTE_RGBA8_UNORM;
 	return LAYOUT_COMPUTE_RGBA16_FLOAT;
@@ -384,6 +408,7 @@ export const SKIN_BUILDS = [
 
 /** The compute templates of light clustering: each one's entry point in the light clustering shader. */
 const LIGHT_ENTRY_POINTS: Readonly<Record<number, string>> = {
+	[TEMPLATE_LIGHT_FIT]: 'fit_lights',
 	[TEMPLATE_LIGHT_COUNT]: 'count_lights',
 	[TEMPLATE_LIGHT_PLACE]: 'place_lights',
 	[TEMPLATE_LIGHT_WRITE]: 'write_lights',
@@ -654,6 +679,10 @@ export class Pipelines {
 	private readonly clusterLayout: GPUPipelineLayout;
 	private readonly lightLayout: GPUPipelineLayout;
 	private readonly lightClusters: WgslShader | undefined;
+	private readonly lightDepth: WgslShader | undefined;
+	private readonly lightDepthMs: WgslShader | undefined;
+	private readonly lightDepthLayout: GPUPipelineLayout;
+	private readonly lightDepthMsLayout: GPUPipelineLayout;
 	private readonly skinLayout: GPUPipelineLayout;
 	/** The skinning pass's builds, which arrive with the skinning feature's shader file. */
 	private readonly skin: ShaderVariants;
@@ -698,8 +727,10 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_DEPTH, 'depth', [
 			...frameEntries,
 			{
+				// A custom material's caster reads its row of values in the vertex stage, and its
+				// fragment stage, where it declares a coverage function, reads that row too.
 				binding: 2,
-				visibility: GPUShaderStage.VERTEX,
+				visibility: GPUShaderStage.VERTEX | fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},
 			rowValues,
@@ -782,12 +813,14 @@ export class Pipelines {
 		);
 		// The motion pass's frame group: the depth group's entries, then the motion block and the last
 		// frame's joints, which vertex shaders read, and the table of object ranges for custom
-		// materials that read object ids.
+		// materials that read object ids. A custom material's fragment stage reads its row of custom
+		// values, where it tests its own coverage, so that texture reaches both stages as it does in
+		// the depth group.
 		this.defineLayout(LAYOUT_MOTION_FRAME, 'motion frame', [
 			...frameEntries,
 			{
 				binding: 2,
-				visibility: GPUShaderStage.VERTEX,
+				visibility: GPUShaderStage.VERTEX | fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},
 			{ binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
@@ -912,11 +945,33 @@ export class Pipelines {
 			],
 			true,
 		);
-		// Light clustering's parameters, the light list, and the light grid that it fills.
+		// Light clustering's parameters, the light list, the light grid that it fills, and the
+		// depth reduction that its fit reads.
 		this.defineLayout(LAYOUT_LIGHT_CLUSTERS, 'light clusters', [
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+		]);
+		// The light clusters' depth reduction: its blocks, the light grid whose header it writes,
+		// and the view's depth as a float texture. The multisampled layout reads sample 0.
+		this.defineLayout(LAYOUT_LIGHT_DEPTH, 'light depth', [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{
+				binding: 2,
+				visibility: GPUShaderStage.COMPUTE,
+				texture: { sampleType: 'unfilterable-float' },
+			},
+		]);
+		this.defineLayout(LAYOUT_LIGHT_DEPTH_MS, 'light depth ms', [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{
+				binding: 2,
+				visibility: GPUShaderStage.COMPUTE,
+				texture: { sampleType: 'unfilterable-float', multisampled: true },
+			},
 		]);
 		// The joint texture, which the builds that skin in the vertex shader read.
 		this.defineLayout(LAYOUT_JOINTS, 'joints', [
@@ -966,6 +1021,35 @@ export class Pipelines {
 			LAYOUT_COMPUTE_RGBA8_UNORM,
 			'compute rgba8unorm',
 			computeEntries('rgba8unorm'),
+			true,
+		);
+		// Group 0 of a compute pass that keeps two states: its block of uniforms, the state that
+		// this run writes as a storage texture, and the state of the run before, which the shader
+		// reads. Each run binds a view of one state's layers, so no subresource is both written
+		// and read in one dispatch.
+		const historyEntries = (
+			format: GPUTextureFormat,
+			sampleType: GPUTextureSampleType,
+		): GPUBindGroupLayoutEntry[] => [
+			...computeEntries(format),
+			{ binding: 2, visibility: compute, texture: { sampleType, viewDimension: '2d-array' } },
+		];
+		this.defineLayout(
+			LAYOUT_COMPUTE_HISTORY_RGBA16_FLOAT,
+			'compute history rgba16float',
+			historyEntries('rgba16float', 'float'),
+			true,
+		);
+		this.defineLayout(
+			LAYOUT_COMPUTE_HISTORY_R32_FLOAT,
+			'compute history r32float',
+			historyEntries('r32float', 'unfilterable-float'),
+			true,
+		);
+		this.defineLayout(
+			LAYOUT_COMPUTE_HISTORY_RGBA8_UNORM,
+			'compute history rgba8unorm',
+			historyEntries('rgba8unorm', 'float'),
 			true,
 		);
 		// Group 0 of an add-on's compute pass that fills an instance draw: its block of uniforms,
@@ -1172,6 +1256,7 @@ export class Pipelines {
 			{ binding: 4, visibility: fragment, texture: {} },
 			{ binding: 5, visibility: fragment, texture: {} },
 			{ binding: 6, visibility: fragment, sampler: {} },
+			{ binding: 7, visibility: fragment, texture: {} },
 		];
 		this.defineLayout(LAYOUT_TAA, 'taa', taa(false));
 		this.defineLayout(LAYOUT_TAA_MS, 'taa ms', taa(true));
@@ -1668,6 +1753,14 @@ export class Pipelines {
 			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_CLUSTERS)],
 		});
 		this.lightClusters = variantFor(shaders.light_clusters, 0, 'wgsl')?.wgsl ?? undefined;
+		this.lightDepth = variantFor(shaders.light_depth, 0, 'wgsl')?.wgsl ?? undefined;
+		this.lightDepthMs = variantFor(shaders.light_depth_ms, 0, 'wgsl')?.wgsl ?? undefined;
+		this.lightDepthLayout = device.createPipelineLayout({
+			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_DEPTH)],
+		});
+		this.lightDepthMsLayout = device.createPipelineLayout({
+			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_DEPTH_MS)],
+		});
 		this.skinLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_SKIN)] });
 		this.skin = shaders.skin;
 		this.exposureHistogram = shaders.exposure_histogram;
@@ -1777,6 +1870,10 @@ export class Pipelines {
 			shader: shader.variants,
 			pipeline: 'main',
 			layouts: [...(shader.textures > 0 ? [LAYOUT_FRAME, maps] : [LAYOUT_FRAME]), ...scene],
+			// A material that declares its shadow caster's coverage, or whose WGSL sets the
+			// surface's alpha, draws its casters' depth with a fragment stage, which drops the
+			// pixels that its cutoff leaves out.
+			depthFragment: shader.coverage === true || shader.alpha === true,
 			...(shader.meshless === true
 				? { vertexBuffers: [] }
 				: {
@@ -1895,8 +1992,7 @@ export class Pipelines {
 		const ownPrepass = places && (permutation & PERMUTATION_PREPASS) !== 0;
 		const build = ownPrepass ? (permutation & ~PERMUTATION_PREPASS) >>> 0 : permutation;
 		const shader = variantFor(t.shader, build, 'wgsl')?.wgsl;
-		if (!shader)
-			throw new Error(`render template ${template} has no variant for permutation ${permutation}`);
+		if (!shader) throw new Error(`render template ${template}: ${missingVariant(permutation)}`);
 		const module = this.module(t.label, shader);
 		const entryPoints = shader.pipelines[t.pipeline];
 		const skins = (permutation & PERMUTATION_SKIN) !== 0;
@@ -1964,7 +2060,7 @@ export class Pipelines {
 						entryPoint: ownPrepass ? 'fs' : entryPoints?.fragment,
 						targets: colorTargets(colorFormat, template, permutation, stateFlags),
 					}
-				: t.depthFragment
+				: t.depthFragment && !ownPrepass
 					? { module, entryPoint: entryPoints?.fragment, targets: [] }
 					: undefined,
 			primitive: {
@@ -2162,6 +2258,27 @@ export class Pipelines {
 				label: `exposure ${exposureEntry}`,
 				layout: this.exposureLayout,
 				compute: { module: this.module('exposure histogram', shader), entryPoint: exposureEntry },
+			};
+		}
+		if (
+			template === TEMPLATE_LIGHT_DEPTH ||
+			template === TEMPLATE_LIGHT_DEPTH_MS ||
+			template === TEMPLATE_LIGHT_DEPTH_CLEAR ||
+			template === TEMPLATE_LIGHT_DEPTH_CLEAR_MS
+		) {
+			const multisampled =
+				template === TEMPLATE_LIGHT_DEPTH_MS || template === TEMPLATE_LIGHT_DEPTH_CLEAR_MS;
+			const clear =
+				template === TEMPLATE_LIGHT_DEPTH_CLEAR || template === TEMPLATE_LIGHT_DEPTH_CLEAR_MS;
+			const shader = multisampled ? this.lightDepthMs : this.lightDepth;
+			if (!shader) throw new Error("the device's shader modules have no light depth shader");
+			return {
+				label: clear ? 'light depth clear' : 'light depth',
+				layout: multisampled ? this.lightDepthMsLayout : this.lightDepthLayout,
+				compute: {
+					module: this.module('light depth', shader),
+					entryPoint: clear ? 'clear_reduction' : 'reduce_depth',
+				},
 			};
 		}
 		const entryPoint = LIGHT_ENTRY_POINTS[template];

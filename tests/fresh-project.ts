@@ -1,20 +1,25 @@
 // The packed packages in a fresh project, as a developer installs them from npm. It packs every
 // public package as the publish job does, makes a new Vite project in a temporary folder outside
 // the repository, so that no file of the repository can stand in for a missing one, and installs
-// the tarballs there with Bun. In that project it runs the command-line tool's test command twice:
+// the tarballs there with Bun. In that project it shows first that the command-line tool's upgrade
+// moves a manifest's null3D packages to one version. Then it runs the tool's test command twice:
 // once to keep the images of the first run as the references, then once to match them. The test
 // command type checks the project against the packages' declarations, and draws the project's
-// sketch on every GPU tier. It shows next that the command's upgrade moves a manifest's null3D
-// packages to one version. Then the tool optimizes a model, and last, it builds the project for
+// sketch on every GPU tier. Then the tool optimizes a model, and last, it builds the project for
 // production. The build must hold the engine's third-party notices, and its page must start the
 // threaded engine in a browser under a strict Content-Security-Policy, whatever test switches the
-// address holds. Last, the project's service worker caches the build on a first visit, and the
-// page must start the threaded engine again with the server stopped, on both GPU paths. While those
-// two checks run, the project builds a page of its own layout around a copy of this repository's
-// examples folder, as a website that holds the repository as a submodule does. Two demos, and a
-// comparison in each engine, must start from that build. Run `bun run build` first, for the WebAssembly files. Run
-// from the repository root:
+// address holds. Last, the project's service worker caches the build on a first visit, and the page
+// must start the threaded engine again with the server stopped, on both GPU paths. Once the
+// production build has ended, the project also builds a page of its own layout around a copy of
+// this repository's examples folder, as a website that holds the repository as a submodule does.
+// That build runs beside the production build's start checks. Two demos, and a comparison in each
+// engine, must start from it. Run `bun run build` first, for the WebAssembly files, and
+// `bun run shaders`, for the modules that a step's build uses instead of compiling the engine's
+// shaders. A checkout without those modules still passes, but each build then compiles them from
+// source, which takes much longer. Run from the repository root:
 //   bun run test:packages [--keep]    --keep leaves the project's folder in place after a pass
+// `NULL3D_FRESH_PROJECT_SHADERS_FROM_SOURCE=1` leaves the checkout's modules unused, so every build
+// compiles the shaders from source and a run still proves that path.
 import { spawn, spawnSync } from 'node:child_process';
 import {
 	closeSync,
@@ -33,6 +38,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
+import { ENGINE_SHADERS_ENV } from '../packages/vite-plugin/src/engine-shaders.ts';
 import {
 	FILES_LIST,
 	ISOLATION_HEADERS,
@@ -41,12 +47,10 @@ import {
 } from '../packages/vite-plugin/src/index.ts';
 import { shaderCacheFolder } from '../packages/vite-plugin/src/shader-cache.ts';
 import { cacheDir, cacheOff, pruneCacheLocked, secondsSince } from '../tools/lib/build-cache.ts';
-import {
-	DEFAULT_PACK_DIR,
-	PACKAGES,
-	type PackedPackage,
-	packPackages,
-} from '../tools/lib/packages.ts';
+import { DEFAULT_PACK_DIR, packPackages } from '../tools/lib/pack.ts';
+import { PACKAGES, type PackedPackage } from '../tools/lib/packages.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
+import { MODULE_DIR } from '../tools/lib/shader-modules.ts';
 import { ASSET_SCENE } from './lib/asset-scene.ts';
 import { STRICT_POLICY } from './lib/content-security-policy.ts';
 
@@ -107,6 +111,32 @@ export function projectManifest(
 	};
 }
 
+/** The checkout's folder of built shader modules, which the shader build writes. */
+const SHADER_MODULES = join(ROOT, MODULE_DIR);
+
+/** Turns off the checkout's built shader modules, so each step's build compiles them from source. */
+export const SHADERS_FROM_SOURCE_ENV = 'NULL3D_FRESH_PROJECT_SHADERS_FROM_SOURCE';
+
+/**
+ * The shader setting that a step's command needs. A folder that the caller names is left as it is.
+ * Otherwise the checkout's built modules are passed when their main module exists, so the step
+ * compiles none, and the opt-out variable passes nothing so that the plugin builds the modules from
+ * the engine's sources.
+ */
+export function engineShaderEnvironment(
+	environment: NodeJS.ProcessEnv,
+	folder: string,
+): Record<string, string> {
+	if (environment[ENGINE_SHADERS_ENV]) return {};
+	if (environment[SHADERS_FROM_SOURCE_ENV]) return {};
+	return existsSync(join(folder, 'shaders.ts')) ? { [ENGINE_SHADERS_ENV]: folder } : {};
+}
+
+/** The environment of a step's command: this process's, the shader setting, and the step's own. */
+function stepEnvironment(env: Record<string, string>): NodeJS.ProcessEnv {
+	return { ...process.env, ...engineShaderEnvironment(process.env, SHADER_MODULES), ...env };
+}
+
 /** Runs a command in the project's folder with its output shown, and fails when it fails. */
 function step(
 	title: string,
@@ -119,7 +149,7 @@ function step(
 	const result = spawnSync(command, args, {
 		cwd,
 		stdio: 'inherit',
-		env: { ...process.env, ...env },
+		env: stepEnvironment(env),
 	});
 	if (result.status !== 0)
 		throw new Error(`${title} failed with ${result.error?.message ?? `status ${result.status}`}`);
@@ -129,7 +159,10 @@ function step(
 interface BackgroundStep {
 	/** Waits for the command's end, prints its output, and fails as `step` does when it failed. */
 	finish(): Promise<void>;
-	/** Stops the command, when a step before its end failed. */
+	/**
+	 * Stops the command if it still runs, and names the file of its output when `finish` has not
+	 * shown it.
+	 */
 	stop(): void;
 }
 
@@ -151,9 +184,10 @@ function stepInBackground(
 	const child = spawn(command, args, {
 		cwd,
 		stdio: ['ignore', output, output],
-		env: { ...process.env, ...env },
+		env: stepEnvironment(env),
 	});
 	closeSync(output);
+	let shown = false;
 	// Why the command failed, or nothing when it passed.
 	const ended = new Promise<string | undefined>((resolve) => {
 		child.once('error', (error) => resolve(error.message));
@@ -166,10 +200,15 @@ function stepInBackground(
 			const failure = await ended;
 			console.log(`\n${title}, which ran while the steps above did:`);
 			process.stdout.write(readFileSync(log, 'utf8'));
+			shown = true;
 			if (failure) throw new Error(`${title} failed with ${failure}`);
 		},
 		stop() {
-			if (child.exitCode === null && child.signalCode === null) child.kill();
+			const running = child.exitCode === null && child.signalCode === null;
+			if (running) child.kill();
+			// A step that fails first leaves this one's output unshown, so say where it is.
+			if (!shown)
+				console.log(`\n${title}${running ? ' was stopped' : ' ended'}. Its output is in ${log}`);
 		},
 	};
 }
@@ -405,7 +444,7 @@ async function playsOffline(dist: string): Promise<void> {
 		const firstPathFailed = failed.splice(0, failed.length);
 		if (offline.start !== 'threaded' || !offline.isolated || firstPathFailed.length > 0)
 			throw new Error(
-				`offline, the page did not start the threaded engine from the cache alone: start ${offline.start}, isolated ${offline.isolated}, failed requests ${JSON.stringify(failed)}`,
+				`offline, the page did not start the threaded engine from the cache alone: start ${offline.start}, isolated ${offline.isolated}, failed requests ${JSON.stringify(firstPathFailed)}`,
 			);
 		// The first visit drew with one GPU path. The cache must also start the other, which a
 		// device that changes its GPU or browser between visits takes.
@@ -510,7 +549,10 @@ const SITE_SHADER_CACHE_BYTES = 4 * 1024 * 1024 * 1024;
  * Starts the build of a website's page of its own layout around a copy of the repository's examples
  * folder, as a website does that holds the repository as a submodule and installs the packages from
  * npm. The build takes the packages from the project's tarballs and reads nothing of the project's
- * own build, so it runs while the checks of that build do.
+ * own build, so it runs beside that build's start checks. It starts once the production build has
+ * ended: with the two Vite builds at once, a CI runner stopped the production build, most likely
+ * for lack of memory. By then the test command has run for the last time, so its dev server cannot
+ * scan the copied examples.
  */
 function startSiteBuild(project: string): BackgroundStep {
 	const copy = join(project, 'null3d');
@@ -584,6 +626,7 @@ async function startsSiteDemos(project: string, build: BackgroundStep): Promise<
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The fresh-project test');
 	const keep = process.argv.includes('--keep');
 	console.log('Packing the public packages');
 	const packed = await packPackages(ROOT, join(ROOT, DEFAULT_PACK_DIR));
@@ -651,6 +694,7 @@ async function main(): Promise<void> {
 		if (!existsSync(notices)) throw new Error(`the production build writes no ${NOTICES_FILE}`);
 		if (readFileSync(notices, 'utf8') !== `${expected}\n`)
 			throw new Error(`the production build's ${NOTICES_FILE} differs from the packages' notices`);
+		// The site's build needs only the installed packages, so it runs beside the start checks.
 		site = startSiteBuild(project);
 		await startsUnderStrictPolicy(join(project, 'dist'));
 		await playsOffline(join(project, 'dist'));

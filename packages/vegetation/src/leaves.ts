@@ -13,6 +13,7 @@ const KEY_AT = 11;
 const KEY_SIDE = 12;
 const KEY_ROLL = 13;
 const KEY_SIZE = 14;
+const KEY_LEAN = 15;
 
 /** A direction of unit length. */
 function normalize(x: number, y: number, z: number): [number, number, number] {
@@ -97,7 +98,15 @@ export function leafCards(
 			const { point, tangent } = pointAndTangent(branch, sample);
 			// The outward direction is horizontal, away from the plant's axis.
 			const outward = normalize(point[0], 0, point[2]);
-			const normal = normalize(outward[0] * leaf.out, leaf.up, outward[2] * leaf.out);
+			const facing = normalize(outward[0] * leaf.out, leaf.up, outward[2] * leaf.out);
+			// Each card leans its own way, so a crown's leaves point in many directions rather than
+			// one, which is what makes a real crown read as leaves and not as a shell. The lean keeps
+			// the card's up-and-out bias: a leaf that faced inward would not catch the sun.
+			const normal = normalize(
+				facing[0] + (unitAt(seed, 6, variant, key, KEY_LEAN) - 0.5) * 1.5,
+				facing[1] + (unitAt(seed, 7, variant, key, KEY_LEAN) - 0.5) * 1.1,
+				facing[2] + (unitAt(seed, 8, variant, key, KEY_LEAN) - 0.5) * 1.5,
+			);
 			// The card's up axis leans along the branch, so a leaf reads as growing from its twig.
 			const sideX = tangent[1] * normal[2] - tangent[2] * normal[1];
 			const sideY = tangent[2] * normal[0] - tangent[0] * normal[2];
@@ -147,15 +156,37 @@ export function leafCards(
 }
 
 /**
+ * The next coarser level that a leaf part morphs toward: the cards that it keeps, how much each one
+ * grows, and the distance that its surface misses the base by.
+ * @category api/vegetation
+ */
+export interface LeafTargets {
+	/** The cards that the next level keeps. A card that it drops shrinks to its middle. */
+	readonly keep: ReadonlySet<LeafCard>;
+	/** How much each kept card grows, as a multiple of its base half-size. */
+	readonly grow: number;
+	/** The next level's error, in meters: the distance at which the engine switches to it. */
+	readonly error: number;
+}
+
+/**
  * Builds one level's leaves: the cards as folded cluster cards or flat needle cards, each grown by
- * the level's factor.
+ * the level's factor. Each vertex also takes its place at the next coarser level, which a leaf
+ * material morphs toward before the engine switches: a kept card's corner grows with the card, and
+ * a dropped card's corners fall to its middle. Without a next level the record names the level's own
+ * place with no error, which binds a morph that moves nothing.
  *
  * @param cards The level's cards.
  * @param grow How much each card grows about its middle.
+ * @param next The next coarser level, or undefined for the coarsest one that the engine draws.
  * @returns The leaves part's arrays.
  * @category api/vegetation
  */
-export function buildLeaves(cards: readonly LeafCard[], grow: number): PartArrays {
+export function buildLeaves(
+	cards: readonly LeafCard[],
+	grow: number,
+	next?: LeafTargets,
+): PartArrays {
 	const builder = new MeshBuilder();
 	// Every cluster card is six vertices and four triangles; every other card is four and two.
 	let vertices = 0;
@@ -165,6 +196,17 @@ export function buildLeaves(cards: readonly LeafCard[], grow: number): PartArray
 		triangles += card.kind === 'cluster' ? 4 : 2;
 	}
 	builder.reserve(vertices, triangles);
+	// The target record runs beside the vertices, in the order that they arrive.
+	const targets = new Float32Array(vertices * 4);
+	const ratio = next && grow > 0 ? next.grow / grow : 1;
+	const error = next?.error ?? 0;
+	const target = (card: LeafCard, x: number, y: number, z: number, at: number) => {
+		const kept = next?.keep.has(card) ?? false;
+		targets[at * 4] = kept ? card.center[0] + (x - card.center[0]) * ratio : card.center[0];
+		targets[at * 4 + 1] = kept ? card.center[1] + (y - card.center[1]) * ratio : card.center[1];
+		targets[at * 4 + 2] = kept ? card.center[2] + (z - card.center[2]) * ratio : card.center[2];
+		targets[at * 4 + 3] = error;
+	};
 	for (const card of cards) {
 		const wind: VertexWind = {
 			branch: card.branch,
@@ -175,8 +217,10 @@ export function buildLeaves(cards: readonly LeafCard[], grow: number): PartArray
 		const w = card.width;
 		const h = card.height;
 		if (card.kind === 'cluster') {
-			// A card folded along its middle: six vertices and four triangles, as a leaf cluster.
-			const lift = Math.min(w, h) * 0.35;
+			// A card folded along its middle: six vertices and four triangles, as a leaf cluster. The
+			// fold turns a card that the camera sees edge-on into a lit panel rather than a dark line,
+			// so a crown's edges break into leaves instead of a black comb.
+			const lift = Math.min(w, h) * 0.45;
 			const leftX = normalize(
 				card.normal[0] - card.right[0] * 0.5,
 				card.normal[1] - card.right[1] * 0.5,
@@ -197,19 +241,25 @@ export function buildLeaves(cards: readonly LeafCard[], grow: number): PartArray
 			];
 			const start = builder.vertexCount;
 			for (const [right, up, normal, direction] of corners) {
-				builder.vertex(
+				const x =
 					card.center[0] +
-						card.right[0] * right * grow +
-						card.up[0] * up * grow +
-						card.normal[0] * normal * grow,
+					card.right[0] * right * grow +
+					card.up[0] * up * grow +
+					card.normal[0] * normal * grow;
+				const y =
 					card.center[1] +
-						card.right[1] * right * grow +
-						card.up[1] * up * grow +
-						card.normal[1] * normal * grow,
+					card.right[1] * right * grow +
+					card.up[1] * up * grow +
+					card.normal[1] * normal * grow;
+				const z =
 					card.center[2] +
-						card.right[2] * right * grow +
-						card.up[2] * up * grow +
-						card.normal[2] * normal * grow,
+					card.right[2] * right * grow +
+					card.up[2] * up * grow +
+					card.normal[2] * normal * grow;
+				const at = builder.vertex(
+					x,
+					y,
+					z,
 					direction[0],
 					direction[1],
 					direction[2],
@@ -217,6 +267,7 @@ export function buildLeaves(cards: readonly LeafCard[], grow: number): PartArray
 					(up / h + 1) / 2,
 					wind,
 				);
+				target(card, x, y, z, at);
 			}
 			builder.triangle(start, start + 1, start + 4);
 			builder.triangle(start, start + 4, start + 3);
@@ -232,10 +283,13 @@ export function buildLeaves(cards: readonly LeafCard[], grow: number): PartArray
 				[-w, h],
 			];
 			for (const [right, up] of corners) {
-				builder.vertex(
-					card.center[0] + card.right[0] * right * grow + card.up[0] * up * grow,
-					card.center[1] + card.right[1] * right * grow + card.up[1] * up * grow,
-					card.center[2] + card.right[2] * right * grow + card.up[2] * up * grow,
+				const x = card.center[0] + card.right[0] * right * grow + card.up[0] * up * grow;
+				const y = card.center[1] + card.right[1] * right * grow + card.up[1] * up * grow;
+				const z = card.center[2] + card.right[2] * right * grow + card.up[2] * up * grow;
+				const at = builder.vertex(
+					x,
+					y,
+					z,
 					card.normal[0],
 					card.normal[1],
 					card.normal[2],
@@ -243,10 +297,11 @@ export function buildLeaves(cards: readonly LeafCard[], grow: number): PartArray
 					(up / h + 1) / 2,
 					wind,
 				);
+				target(card, x, y, z, at);
 			}
 			builder.triangle(start, start + 1, start + 2);
 			builder.triangle(start, start + 2, start + 3);
 		}
 	}
-	return builder.finish();
+	return { ...builder.finish(), targets };
 }

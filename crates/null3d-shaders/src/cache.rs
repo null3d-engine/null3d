@@ -50,6 +50,10 @@ const FORMAT: &str = "3";
 #[cfg(not(target_arch = "wasm32"))]
 const LIMIT_BYTES: u64 = 24 * 1024 * 1024 * 1024;
 
+/// How many bytes of a cache file a read takes from the disk at a time.
+#[cfg(not(target_arch = "wasm32"))]
+const READ_BUFFER: usize = 1 << 20;
+
 /// An entry written this recently stays when the folder is pruned, because the build that reads it
 /// may still be running.
 #[cfg(not(target_arch = "wasm32"))]
@@ -92,9 +96,11 @@ impl Cache {
         self.folder.is_some()
     }
 
-    /// The key of one entry: its name, file and source, its manifest table and the compiler's
-    /// stamp. A change to any of them gives another key, so the entry compiles again.
-    pub fn key(&self, name: &str, file: &str, source: &str, table: &str) -> String {
+    /// The key of one entry: its name, file and source, its manifest table, the compiler's stamp
+    /// and `only`, the listed permutation words that narrow an entry's builds. A change to any of
+    /// them gives another key, so the entry compiles again: an entry built for one list of words is
+    /// not the entry a build of another list may reuse.
+    pub fn key(&self, name: &str, file: &str, source: &str, table: &str, only: &str) -> String {
         digest(&[
             FORMAT.as_bytes(),
             self.stamp.as_bytes(),
@@ -102,6 +108,7 @@ impl Cache {
             file.as_bytes(),
             source.as_bytes(),
             table.as_bytes(),
+            only.as_bytes(),
         ])
     }
 
@@ -158,14 +165,14 @@ impl Cache {
     }
 
     /// One cache file in its stored form, when it was written under `key` and every dependency's
-    /// contents match `files`. The file's bytes are dropped once parsed, so the largest entry is
-    /// never held as bytes and as data at once.
+    /// contents match `files`. The file is parsed as it is read, so the largest entry, a file of
+    /// gigabytes, is never held as bytes and as data at once.
     #[cfg(not(target_arch = "wasm32"))]
     fn read_entry(&self, file: &str, key: &str, files: &BTreeMap<String, String>) -> Option<Entry> {
         let folder = self.folder.as_ref()?;
-        let bytes = fs::read(folder.join(file)).ok()?;
-        let entry: Entry = serde_json::from_slice(&bytes).ok()?;
-        drop(bytes);
+        let reader =
+            std::io::BufReader::with_capacity(READ_BUFFER, fs::File::open(folder.join(file)).ok()?);
+        let entry: Entry = serde_json::from_reader(reader).ok()?;
         if entry.key != key {
             return None;
         }
@@ -424,8 +431,8 @@ struct Entry {
     /// The library files the entry used, with the hash of each.
     deps: Vec<Dep>,
     /// The WGSL and GLSL sources of the entry's builds, each once. Thousands of builds share most
-    /// of them: writing each build's sources out whole made a single entry 1.5 GB (code review
-    /// M-32), and holding a copy for each build took several times the file's size in memory.
+    /// of them: writing each build's sources out whole makes a single entry 1.5 GB (code review
+    /// M-32), and holding a copy for each build takes several times the file's size in memory.
     texts: Vec<Arc<str>>,
     /// The builds by name, each naming its sources by their place in `texts`.
     variants: BTreeMap<String, StoredVariant>,
@@ -744,8 +751,8 @@ mod tests {
         let folder = temp_folder("keys");
         let cache = Cache::at(&folder, "stamp");
         let files = BTreeMap::new();
-        let one = cache.key("mipmap", "mipmap.wgsl", "source one", "table");
-        let two = cache.key("mipmap", "mipmap.wgsl", "source two", "table");
+        let one = cache.key("mipmap", "mipmap.wgsl", "source one", "table", "");
+        let two = cache.key("mipmap", "mipmap.wgsl", "source two", "table", "");
         cache.store("mipmap", &one, &[], &files, &variants("shared module", 2));
         cache.store("mipmap", &two, &[], &files, &variants("shared module", 2));
         // Two versions of one entry do not overwrite each other, so a branch that returns to an
@@ -761,7 +768,7 @@ mod tests {
         let folder = temp_folder("texts");
         let cache = Cache::at(&folder, "stamp");
         let files = BTreeMap::new();
-        let key = cache.key("mipmap", "mipmap.wgsl", "source", "table");
+        let key = cache.key("mipmap", "mipmap.wgsl", "source", "table", "");
         // One library module, as it runs through the thousands of builds of an entry shader.
         let module = "let shared_module_value = 1.0;\n".repeat(20);
         let built = variants(&module, 200);
@@ -824,7 +831,7 @@ mod tests {
     fn a_disabled_cache_answers_with_a_miss_and_stores_nothing() {
         let cache = Cache::disabled();
         let files = BTreeMap::new();
-        let key = cache.key("mipmap", "mipmap.wgsl", "source", "table");
+        let key = cache.key("mipmap", "mipmap.wgsl", "source", "table", "");
         assert!(cache.load("mipmap", &key, &files).is_none());
         cache.store(
             "mipmap",

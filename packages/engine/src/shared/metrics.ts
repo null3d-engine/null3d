@@ -110,7 +110,20 @@ const BUSY = 2;
 const INTERVAL = 3;
 const PHASES = 4;
 const COUNTERS = PHASES + PHASE_NAMES.length;
+/**
+ * A GPU record's label of each pass that the timer times alone, in the order of the pass slots
+ * after the copies. The label says what the pass draws for, so a frame's parts name a pass rather
+ * than its position. The spare words of a record hold them.
+ */
+const PASS_ROLES = COUNTERS + COUNTER_NAMES.length;
 const RECORD_WORDS = 32;
+// The record's spare words hold one label per timed pass. Nothing bounds the pass count to them but
+// this check, so a new timed pass that outgrows the record stops the module rather than writing past
+// the record at the first frame.
+if (PASS_ROLES + GPU_TIMED_PASSES > RECORD_WORDS)
+	throw new Error(
+		`the frame record holds ${RECORD_WORDS} words, and its counters and ${GPU_TIMED_PASSES} pass labels need ${PASS_ROLES + GPU_TIMED_PASSES}`,
+	);
 
 // Int32 words of the header, then one written count per ring.
 const CAPACITY = 0;
@@ -147,7 +160,14 @@ const MEMORY = 9;
  */
 const MEMORY_AREAS = MEMORY + MemoryFigure.Count;
 const AREA_VALUES = MEMORY_AREA_COUNT * MEMORY_AREA_VALUES;
-const HEADER_WORDS = 2 * (MEMORY_AREAS + AREA_VALUES);
+/**
+ * Float64 index of the epoch time, in ms, at which the sketch's setup function started, or 0
+ * before it: the page reads it to tell a scene that is still growing from one that has stopped.
+ */
+const SETUP_START = MEMORY_AREAS + AREA_VALUES;
+/** Float64 index of the time, in ms, that the sketch's setup function took, or 0 until it ends. */
+const SETUP_MS = SETUP_START + 1;
+const HEADER_WORDS = 2 * (SETUP_MS + 1);
 const WRITTEN = HEADER_WORDS;
 
 function recordsStart(rings: number): number {
@@ -324,6 +344,19 @@ export class FrameRecorder {
 		this.views.floats[this.at + PHASES + slot] = ms;
 	}
 
+	/** A GPU record's label of the pass in one slot, from 0 for the first pass after the copies. */
+	gpuPassRole(slot: number, label: number): void {
+		this.views.words[this.at + PASS_ROLES + slot] = label;
+	}
+
+	/**
+	 * The scope of a GPU record's pass: a code from the engine that names the step that the pass
+	 * records, or 0 where no scope names it.
+	 */
+	gpuScope(pass: number, id: number): void {
+		this.views.words[this.at + COUNTERS + GpuCounter.Scope + pass] = id;
+	}
+
 	/** Time since the previous presented frame, recorded by the thread that presents. */
 	interval(ms: number): void {
 		this.views.floats[this.at + INTERVAL] = ms;
@@ -400,6 +433,25 @@ export class FrameRecorder {
 	}
 
 	/**
+	 * Records, once per engine, when the sketch's setup function started, as epoch milliseconds, so
+	 * the page can time a scene that is still growing.
+	 */
+	markSetupStart(): void {
+		const { times } = this.views;
+		if (times[SETUP_START] === 0) times[SETUP_START] = performance.timeOrigin + performance.now();
+	}
+
+	/**
+	 * Records, once per engine, how long the sketch's setup function took, in milliseconds. A
+	 * finished setup records a value even when its call took no measurable time, which the readers
+	 * would otherwise take for one still running.
+	 */
+	markSetupDone(ms: number): void {
+		const { times } = this.views;
+		if (times[SETUP_MS] === 0) times[SETUP_MS] = ms > 0 ? ms : Number.EPSILON;
+	}
+
+	/**
 	 * Records, once per engine, when the first frame's pipelines started to build and when none was
 	 * building any longer, as epoch milliseconds. The thread that draws calls it each time it
 	 * checks the first frame, until that frame draws.
@@ -419,6 +471,8 @@ export interface RingRecords {
 	intervals: number[];
 	phases: number[][];
 	counters: number[][];
+	/** Each GPU record's pass labels, in the order of its pass slots after the copies. */
+	passRoles: number[][];
 }
 
 function emptyRecords(): RingRecords {
@@ -428,6 +482,7 @@ function emptyRecords(): RingRecords {
 		intervals: [],
 		phases: PHASE_NAMES.map(() => []),
 		counters: COUNTER_NAMES.map(() => []),
+		passRoles: Array.from({ length: GPU_TIMED_PASSES }, () => []),
 	};
 }
 
@@ -480,6 +535,25 @@ export class MetricsReader {
 		return (times[FIRST_FRAME] as number) > 0 ? (times[FIRST_FRAME_PIPELINES] as number) : null;
 	}
 
+	/** Epoch milliseconds at which the sketch's setup function started, or 0 before it. */
+	get setupStart(): number {
+		return this.views.times[SETUP_START] as number;
+	}
+
+	/** Milliseconds that the sketch's setup function took, or null while it runs. */
+	get setupMs(): number | null {
+		const ms = this.views.times[SETUP_MS] as number;
+		return ms > 0 ? ms : null;
+	}
+
+	/**
+	 * Epoch milliseconds at which the first frame's pipelines started to build, or 0 before the
+	 * thread that draws first checked that frame.
+	 */
+	get warmUpStart(): number {
+		return this.views.times[WARM_UP_START] as number;
+	}
+
 	/** The display's refresh rate in hertz, or 0 before the thread that draws has measured it. */
 	get refreshHz(): number {
 		return this.views.times[REFRESH_HZ] as number;
@@ -525,6 +599,8 @@ export class MetricsReader {
 					out.phases[p]?.push(floats[at + PHASES + p] as number);
 				for (let c = 0; c < COUNTER_NAMES.length; c++)
 					out.counters[c]?.push(words[at + COUNTERS + c] as number);
+				for (let p = 0; p < GPU_TIMED_PASSES; p++)
+					out.passRoles[p]?.push(words[at + PASS_ROLES + p] as number);
 				if (!this.views.holds(at, sequence)) {
 					dropLast(out);
 					this.lost++;
@@ -587,6 +663,21 @@ export class RefreshRate {
 export class RingSums {
 	/** The window's sums, by the `SUM_` indices. */
 	readonly sums: Float64Array;
+	/**
+	 * The last record's counters, by counter index. A reader that asks for them keeps them, and they
+	 * are 0 until one such record comes.
+	 */
+	readonly last = new Float64Array(COUNTER_NAMES.length);
+	/**
+	 * The records of the window whose phase slot held a time above 0, by phase index. A pass that a
+	 * GPU record did not time adds nothing to its phase's mean.
+	 */
+	readonly phaseRecords = new Float64Array(PHASE_NAMES.length);
+	/**
+	 * The window's sums of the phase slots that held a time above 0, by phase index. The sums leave
+	 * out a slot's untimed figure, so a pass that some records did not time still reads its mean.
+	 */
+	readonly phaseSums = new Float64Array(PHASE_NAMES.length);
 	private readonly views: MetricsViews;
 	private next: number;
 	/** The greatest common divisor of `stepCounter`'s values over the records added, or 0. */
@@ -599,13 +690,15 @@ export class RingSums {
 	/**
 	 * Sums `ring`'s records from those written after this call. With `detail`, the sums also hold
 	 * each phase and each counter. With `stepCounter`, `commonStep` keeps the greatest common
-	 * divisor of those counter values, for a figure that the records measure as a step.
+	 * divisor of those counter values, for a figure that the records measure as a step. With
+	 * `keep`, `last` and `phaseRecords` keep the newest record's counters and each phase's count.
 	 */
 	constructor(
 		buffer: ArrayBufferLike,
 		readonly ring: number,
 		detail = false,
 		stepCounter = -1,
+		private readonly keep = false,
 	) {
 		this.views = new MetricsViews(buffer);
 		this.next = Atomics.load(this.views.header, WRITTEN + ring);
@@ -621,7 +714,7 @@ export class RingSums {
 
 	/** Takes in the records written since the last call. */
 	add(): void {
-		const { views, sums, detail, stepCounter } = this;
+		const { views, sums, detail, stepCounter, keep } = this;
 		const { floats, words } = views;
 		const written = Atomics.load(views.header, WRITTEN + this.ring);
 		const from = Math.max(this.next, written - views.capacity);
@@ -638,6 +731,17 @@ export class RingSums {
 			}
 			if (!views.holds(at, sequence)) continue;
 			if (step > 0) this.step = gcd(this.step, step);
+			if (keep) {
+				for (let c = 0; c < COUNTER_NAMES.length; c++)
+					this.last[c] = words[at + COUNTERS + c] as number;
+				for (let p = 0; p < PHASE_NAMES.length; p++) {
+					const ms = floats[at + PHASES + p] as number;
+					if (ms > 0) {
+						this.phaseRecords[p] = (this.phaseRecords[p] as number) + 1;
+						this.phaseSums[p] = (this.phaseSums[p] as number) + ms;
+					}
+				}
+			}
 			sums[SUM_RECORDS] = (sums[SUM_RECORDS] as number) + 1;
 			sums[SUM_BUSY_MS] = (sums[SUM_BUSY_MS] as number) + busy;
 			sums[SUM_LONGEST_BUSY_MS] = Math.max(sums[SUM_LONGEST_BUSY_MS] as number, busy);
@@ -652,6 +756,9 @@ export class RingSums {
 	/** Starts a new window: the sums and the step go back to zero, and the place in the ring stays. */
 	clear(): void {
 		this.sums.fill(0);
+		this.phaseRecords.fill(0);
+		this.phaseSums.fill(0);
+		this.last.fill(0);
 		this.step = 0;
 	}
 }
@@ -662,4 +769,5 @@ function dropLast(records: RingRecords): void {
 	records.intervals.pop();
 	for (const values of records.phases) values.pop();
 	for (const values of records.counters) values.pop();
+	for (const values of records.passRoles) values.pop();
 }

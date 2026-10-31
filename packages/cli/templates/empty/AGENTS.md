@@ -6,10 +6,38 @@ Read the `null3d-develop` skill before you change the scene. If the project has
 `.claude/skills/null3d-develop/SKILL.md`, read that file first. If it does not, read the engine docs
 in `node_modules/@null3d/engine/docs/`. They match the installed version.
 
+## What the hook checks
+
+The hook holds one rule for each command and each edit. A rule with the action `refuse` blocks the
+call, and the agent must find another way. A rule with the action `flag` tells the agent, and the
+call goes on.
+
+| Rule | Action | What it checks |
+| --- | --- | --- |
+| `no-sleep` | refuse | A command that waits with `sleep`. |
+| `no-kill-by-name` | refuse | `pkill`, `killall`, or `kill` with a process name. |
+| `no-log-follow` | refuse | `tail -f`, `journalctl -f`, `docker logs -f` and their like. |
+| `no-planned-api` | flag | An import that the installed engine does not export. |
+| `no-allocation-in-onupdate` | flag | An object, array or string made inside `onUpdate`. |
+| `no-dom-in-sketch` | flag | A DOM name in `sketch.ts`. |
+
+Claude Code runs the hook through `.claude/settings.json`, and Codex runs it through
+`.codex/hooks.json`. Both run `.agent/agent-hook.mjs`, which takes its rules from
+`@null3d/cli/agent-rules` in the installed packages. The hook needs `bun install` to find the rules.
+Codex asks you to trust a project's hooks before it runs them. Other agents read this file and
+follow the same rules. The hook is optional: delete its entries in `.claude/settings.json` and
+`.codex/hooks.json`, or the hook file, to stop the checks.
+
 ## Before you build a feature
 
-A request may need a capability that null3D has not built. Settle its state before you design the
-scene.
+A request may need a capability that null3D has not built. A user who asks for such a feature brings
+three things:
+
+- What they want to see on screen, with a reference picture or the effect in another engine.
+- The devices and browsers it must run on, such as a mid-range Android phone.
+- The cost it may take, in milliseconds per frame or lowest frame rate.
+
+Settle its state before you design the scene.
 
 1. Read the docs page for the feature. Its status says whether the call exists. A `planned` page or
    a part marked "not built yet" is not in this version: tell the user, and use the workaround the
@@ -34,7 +62,8 @@ scene.
 | Rigid bodies, joints and character movement | the physics add-on | not built yet; run Rapier or cannon-es in the sketch worker |
 | Text in the scene | the MSDF text add-on | not built yet; use HTML labels |
 | A river or a lake, with waves, foam and soft shores | `@null3d/water` | built; see the docs page api/water |
-| Trees, shrubs, grass and wind | the vegetation add-on | not built yet |
+| Trees, shrubs, ferns, grass and their placement by ecological rules | `@null3d/vegetation` | built (generator, scatter and atlases; grass and materials not built yet) |
+| Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | built (the field carries no state between frames yet; see the docs page api/wind) |
 | three.js look modes for a port | `@null3d/three-compat` | built |
 
 ## Rules
@@ -51,9 +80,3 @@ scene.
    send messages between the two. A sketch on the main thread may use the DOM, but it shares the
    page thread.
 7. Run `bunx @null3d/cli test` before you report the work as done.
-
-Claude Code checks rules 2 to 6 before each command and each edit, through the hook that
-`.claude/settings.json` names. Codex checks the same rules through `.codex/hooks.json`, which runs
-the same hook script on Codex's tool calls. Codex asks you to trust a project's hooks before it
-runs them. Other agents read this file and follow the same rules. The hook is optional: delete
-those files, or their hook entries, to remove the checks.

@@ -1,9 +1,11 @@
 // The reflection cadence, as the sketch's quality gives it: the preset picks the row, the
 // frame-budget governor lengthens it while frames take too long, and the feature host reports the
 // cadence and the pass's share of a frame to the stats overlay. A page that draws no water has no
-// such row, and the figures go when the water goes.
+// such row, and the figures go when the water goes. The add-on's `water-bounds` debug view draws
+// each body's bounds at the surface, and stops when another view replaces it.
 import { describe, expect, it } from 'bun:test';
-import type { FeatureStats, QualityPreset, SketchContext } from '@null3d/engine';
+import type { FeatureStats, MeshArrays, QualityPreset, SketchContext } from '@null3d/engine';
+import { activateAddonDebugView, hasAddonDebugView } from '@null3d/engine/internal';
 import { createWater, type Water, type WaterOptions } from './water';
 
 /** A scale that the governor gives a budget. */
@@ -15,7 +17,12 @@ function fakeContext(start: QualityPreset = 'medium') {
 	/** The governor's steps of the budgets' scale that the budgets follow now. */
 	let level = 0;
 	const budgets = new Map<string, { min: number; onScale: OnScale | undefined; scale: number }>();
-	const posted: (readonly FeatureStats[] | undefined)[] = [];
+	const posted: unknown[] = [];
+	/** The boxes that the add-on's debug view draws. */
+	const boxes: [readonly number[], readonly number[], string][] = [];
+	/** The options that each material was made with, and the arrays of each mesh. */
+	const shaderOptions: Record<string, unknown>[] = [];
+	const meshes: MeshArrays[] = [];
 	const quality = {
 		preset: start,
 		settings: {},
@@ -52,23 +59,47 @@ function fakeContext(start: QualityPreset = 'medium') {
 		engine: { capabilities: { tier: 'webgpu' } },
 		page: {
 			post(_type: string, data?: unknown) {
-				posted.push(data as readonly FeatureStats[] | undefined);
+				posted.push(data);
 			},
 		},
-		scene: { createMesh: () => ({ destroy() {} }) },
-		geometry: { fromArrays: (arrays: unknown) => arrays },
-		materials: { shader: () => ({ set() {}, destroy() {} }) },
-		textures: {
-			fromPass: () => ({ destroy() {} }),
-			fromData: () => ({ destroy() {} }),
+		scene: {
+			createMesh: (options: { mesh: unknown }) => {
+				meshes.push(options.mesh as MeshArrays);
+				return { destroy() {} };
+			},
 		},
-		render: { addPass: () => ({}), setPassEnabled() {}, removePass() {} },
+		geometry: { fromArrays: (arrays: unknown) => arrays },
+		materials: {
+			shader: (options: Record<string, unknown>) => {
+				shaderOptions.push(options);
+				return { set() {}, destroy() {} };
+			},
+		},
+		textures: {
+			fromPass: () => ({ bytes: 4096, destroy() {} }),
+			fromData: () => ({ bytes: 4, destroy() {} }),
+		},
+		render: {
+			addPass: () => ({ name: 'water', writes: 'water', place: 1 }),
+			setPassEnabled() {},
+			removePass() {},
+		},
+		debug: {
+			box(min: readonly number[], max: readonly number[], color: string) {
+				boxes.push([min, max, color]);
+			},
+		},
 	} as unknown as SketchContext;
 	return {
 		ctx: ctx as unknown as SketchContext & { quality: typeof quality },
 		/** The last figures that the page was told. */
-		figures: () => posted.at(-1),
+		figures: () => (posted.at(-1) as { features?: readonly FeatureStats[] } | undefined)?.features,
 		posted,
+		/** The boxes that the add-on's debug view drew: each one's low and high corners, and its color. */
+		boxes,
+		/** The options of the material, and the arrays of the meshes, that the last water made. */
+		shaderOptions,
+		meshes,
 		/** Moves the governor's steps, as the frame loop does. */
 		step(next: number) {
 			level = next;
@@ -162,6 +193,43 @@ describe('the reflection cadence', () => {
 	});
 });
 
+describe('the bed that the water reads', () => {
+	/** A river with a bed of its own, whose depth rises along x. */
+	const BEDDED = {
+		...RIVER,
+		bed: (x: number) => 0.4 + x * 0.01,
+	} as const;
+
+	it('takes the shapes’ own depth and carries it in the mesh’s vertex colors', () => {
+		const context = fakeContext('medium');
+		const water = waterOn(context, { shapes: BEDDED, bed: 'shape' } as Partial<WaterOptions>);
+		const options = context.shaderOptions.at(-1) as {
+			vertexColors?: boolean;
+			uniforms: { bedFromShape: number };
+		};
+		expect(options.vertexColors).toBe(true);
+		expect(options.uniforms.bedFromShape).toBe(1);
+		const colors = context.meshes.at(-1)?.colors as Float32Array;
+		expect(colors).toBeDefined();
+		// The first vertex stands at the river's start, where the bed is 0.4 m deep.
+		expect(colors[3]).toBeCloseTo(0.4, 6);
+		water.destroy();
+	});
+
+	it('leaves the scene’s depth alone by default', () => {
+		const context = fakeContext('medium');
+		const water = waterOn(context, { shapes: BEDDED } as Partial<WaterOptions>);
+		const options = context.shaderOptions.at(-1) as {
+			vertexColors?: boolean;
+			uniforms: { bedFromShape: number };
+		};
+		expect(options.vertexColors).toBeUndefined();
+		expect(options.uniforms.bedFromShape).toBe(0);
+		expect(context.meshes.at(-1)?.colors).toBeUndefined();
+		water.destroy();
+	});
+});
+
 describe('the water’s figures in the stats overlay', () => {
 	it('reports the cadence and the pass’s share of a frame under the add-on’s own name', () => {
 		const context = fakeContext('medium');
@@ -170,10 +238,12 @@ describe('the water’s figures in the stats overlay', () => {
 		expect(figure?.settings).toEqual({ reflectionEvery: 2 });
 		expect(figure?.budgetMs).toBe(1.7);
 		expect(figure?.allowedMs).toBe(1.7);
-		// The pass draws through the engine's own reflection kind, so the engine times no scope of
-		// the feature, and the add-on owns no buffer or texture of its own to report.
+		// The overlay adds up the GPU time of the reflection pass that the add-on made, which is the
+		// feature's scope. The memory counts the mesh arrays and the foam texture that the add-on
+		// made; the reflection target is the render graph's.
+		expect(figure?.scope).toEqual([{ name: 'water', place: 1 }]);
 		expect(figure?.gpuMs).toBeNull();
-		expect(figure?.bytes).toBeNull();
+		expect(figure?.bytes).toBeGreaterThan(0);
 		context.step(1);
 		expect(waterFigure(context)?.settings).toEqual({ reflectionEvery: 4 });
 		expect(waterFigure(context)?.allowedMs).toBe(1.275);
@@ -187,5 +257,29 @@ describe('the water’s figures in the stats overlay', () => {
 		expect(waterFigure(context)?.name).toBe('water');
 		water.destroy();
 		expect(context.figures()).toEqual([]);
+	});
+});
+
+describe('the water-bounds debug view', () => {
+	it('draws the bounds of each body at the surface, and stops when turned off', () => {
+		const context = fakeContext('medium');
+		const water = waterOn(context, { level: 1.5 } as Partial<WaterOptions>);
+		expect(hasAddonDebugView('water-bounds')).toBe(true);
+		activateAddonDebugView('water-bounds');
+		water.update();
+		expect(context.boxes.length).toBe(water.bodies.length);
+		const [min, max, color] = context.boxes[0] as [readonly number[], readonly number[], string];
+		expect(color).toBe('#4fc3f7');
+		expect([min[1], max[1]]).toEqual([1.5, 1.5]);
+		// The river runs from (0, 0) to (10, 0), two meters to each side.
+		expect(min[0]).toBeLessThanOrEqual(0);
+		expect(max[0]).toBeGreaterThanOrEqual(10);
+		expect(min[2]).toBeLessThanOrEqual(0);
+		expect(max[2]).toBeGreaterThanOrEqual(0);
+		activateAddonDebugView(undefined);
+		water.update();
+		expect(context.boxes.length).toBe(water.bodies.length);
+		water.destroy();
+		expect(hasAddonDebugView('water-bounds')).toBe(false);
 	});
 });

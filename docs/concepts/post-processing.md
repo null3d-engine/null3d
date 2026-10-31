@@ -340,7 +340,7 @@ A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut` 
 - Both draw on every GPU path, with HDR color or without it, as [Post-processing API](../api/post.md#vignette) says.
 - They are settings of the final pass, not passes of their own. Turning one on builds no pipeline, so the picture changes in the next frame with no pause.
 - Each table is a 3D texture, read with one filtered texture read per pixel. The vignette costs a few operations per pixel.
-- The grading controls' table holds 32 texels a side, and the final pass takes the square root of a color before it reads the table, which places the texels closer together toward black where a grade's curve is steepest. A job worker computes the table's texels, so a value that changes costs no frame. The table keeps the worker's whole range, past white, and the canvas clips it, so a color that crosses white inside a texel's cell still matches the grade.
+- The grading controls' table holds 32 texels a side, and the final pass takes the square root of a color before it reads the table, which places the texels closer together toward black where a grade's curve is steepest. A job worker computes the table's texels, so a value that changes stalls no frame. The frame that lands a bake uploads the table, 256 KB. The table keeps the worker's whole range, past white, and the canvas clips it, so a color that crosses white inside a texel's cell still matches the grade.
 - The engine's parity test compares a `.cube` table alone with three.js's composer. It matches in all but under 0.1% of the pixels on every GPU path. With the vignette too, mapped from `VignetteShader`'s settings for AgX, it matches as closely.
 
 ## Sharpening
@@ -407,6 +407,8 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 
 - [Post-processing API](../api/post.md): `post.set` and its settings, and `post.addEffect`.
 - [Custom passes](../guides/custom-passes.md): how to write custom effects and tone curves.
+- [Lens kit](../guides/lens-kit.md): one camera look, with grain, color fringes, an anamorphic
+  streak and a speed blur in one effect, and the core's grade, sharpening and vignette.
 - [Objects and transforms](../api/objects.md#mesh-calls): `setOutlined`.
 - [Color management](color-management.md): HDR color, the final pass and the 8-bit path.
 - [The render graph](render-graph.md): how the passes of a frame are declared and ordered.

@@ -9,6 +9,7 @@ import { EngineError, errorFixesReady, errorOfMessage } from '../errors/engine-e
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
+import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
 import { maxTargetFps, type PresetCheck, type TargetFps } from '../quality/check';
 import {
 	choosePreset,
@@ -37,7 +38,7 @@ import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
 import { URL_SWITCHES } from '../shared/dev';
-import { FEATURE_STATS_MESSAGE } from '../shared/feature-stats';
+import { FEATURE_STATS_MESSAGE, mergeFeatureStats } from '../shared/feature-stats';
 import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
@@ -101,6 +102,7 @@ import {
 	takeParkedWorker,
 	takeWhenFree,
 } from './ownership';
+import { PermutationRecording } from './permutation-recording';
 import { type PointerLockOptions, requestPointerLock } from './pointer-lock';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
@@ -627,8 +629,10 @@ export interface Engine {
 	 * builds that a pipeline needs and that did not download fail the thread that draws with E1424.
 	 * After E1404 or E1424 the engine draws no new frames: destroy it and start a new one. On WebGPU,
 	 * the GPU can also run out of memory (E1304) or reject the engine's work (E1305), and the engine
-	 * draws on without the objects that failed. The engine reports each failure once. Without a
-	 * handler, it logs the failure to the console. Returns a function that removes the handler.
+	 * draws on without the objects that failed. The engine reports each failure once. A failure that
+	 * no handler listened for when the engine reported it reaches the first handler that listens, so
+	 * a failure that the app could not hear yet still arrives, and the engine also logs it to the
+	 * console. Returns a function that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
 	/**
@@ -690,13 +694,15 @@ export interface Engine {
 	 * Resolves with the pixels of the next frame that the engine draws, as RGBA8 rows, top row
 	 * first, for tests. The thread that draws waits until its frame loop has taken a new frame, then
 	 * draws that frame again offscreen and reads it back, so captures back to back give newer frames
-	 * even where each readback holds that thread up. In hold mode, and while the engine is paused,
+	 * even where each readback holds that thread up. `frame` is the sketch frame that the capture
+	 * drew: a capture that follows a scene change can hold the frame recorded before it, and a test
+	 * that measures frames aligns them by this number. In hold mode, and while the engine is paused,
 	 * it returns the frame on the canvas. A hidden page draws no frames, so its pixels come once the
 	 * page shows again. When no new frame comes within a second or two, as after a
 	 * sketch error, it returns the frame drawn last. It fails when the thread that draws gives no
 	 * answer within the engine's wait, rather than waiting with no end.
 	 */
-	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array }>;
+	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array; frame: number }>;
 	/**
 	 * Resolves with the recording of the session so far, or undefined when the page does not record
 	 * one. A page records with the `?record` switch, which also puts a save button on the page. The
@@ -753,9 +759,9 @@ const MAX_EARLY_MESSAGES = 256;
  * The longest that a request may wait for a worker's answer, in milliseconds. The slowest answer is
  * a capture: the thread that draws waits for a frame's pipelines for up to `BUILD_WAIT_LIMIT_MS`
  * before it draws, reads the frame back and encodes it. On a software renderer that work costs
- * minutes, and the forest demo's held frame passed a minute on CI's SwiftShader, so this figure
- * sits well above the slowest frame that was measured and below the image tests' own limit. A
- * thread that stops taking messages then fails the request with a named error instead of leaving
+ * minutes, and the forest demo's held frame takes more than a minute on CI's SwiftShader, so this
+ * figure sits well above the slowest frame that was measured and below the image tests' own limit.
+ * A thread that stops taking messages then fails the request with a named error instead of leaving
  * the page to wait with no end.
  */
 export const WORKER_REPLY_LIMIT_MS = 300_000;
@@ -887,6 +893,11 @@ export class EngineWorker {
 	private readyPromise: Promise<WorkerReply>;
 	private readonly stoppedPromise: Promise<void>;
 	private worker: Worker;
+	/**
+	 * The recording that gathers the words of each thread that draws, when the page records them.
+	 * Set before the page waits for any worker's ready reply.
+	 */
+	recording?: PermutationRecording;
 	private started = false;
 	/** True once the worker reported that its script, and the files it imports, loaded. */
 	private scriptLoaded = false;
@@ -948,6 +959,11 @@ export class EngineWorker {
 			worker.onmessage = (event: MessageEvent<WorkerReply>) => {
 				const reply = event.data;
 				switch (reply.type) {
+					case 'recorded':
+						// A recording publishes the drawing thread's words, which it gives once the held
+						// frame has built the scene's pipelines.
+						this.recording?.answered(reply.role, reply.permutations);
+						return;
 					case 'sketch-message':
 						events.sketchMessage(reply.name, reply.data);
 						return;
@@ -1733,14 +1749,16 @@ async function startEngine(
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
 	if (options.onSketchMessage) messageHandlers.add(options.onSketchMessage);
-	// The add-on features' figures, which the stats overlay shows beside the engine's own.
+	// The add-on features' figures, which the stats overlay shows beside the engine's own. Each
+	// add-on keeps its list, so two add-ons show side by side and one that stops leaves the other's.
+	const featureLists = new Map<string, readonly FeatureStats[]>();
 	let features: readonly FeatureStats[] = [];
 	// Messages sent before the page listens wait for the first handler. The newest are kept when a
 	// sketch sends many.
 	let earlyMessages: [string, unknown][] | undefined = options.onSketchMessage ? undefined : [];
 	const onSketchMessage = (name: string, data: unknown) => {
 		if (name === FEATURE_STATS_MESSAGE) {
-			features = data as readonly FeatureStats[];
+			features = mergeFeatureStats(featureLists, data);
 			return;
 		}
 		if (name === VIDEO_FOLLOW) {
@@ -1756,6 +1774,11 @@ async function startEngine(
 	};
 	const failureHandlers = new Set<(error: EngineError) => void>();
 	const sketchErrorHandlers = new Set<(error: Error) => void>();
+	/**
+	 * The failures that the engine reported while no handler listened, for the first handler that
+	 * does: a failure that reaches nothing is worse than a slow path.
+	 */
+	const earlyFailures: EngineError[] = [];
 	const reported = new Set<string>();
 	const onSketchError = (error: Error) => {
 		for (const handler of sketchErrorHandlers) handler(error);
@@ -1779,7 +1802,11 @@ async function startEngine(
 			start.abort(error);
 			return;
 		}
-		if (failureHandlers.size === 0) console.error(error);
+		if (failureHandlers.size === 0) {
+			earlyFailures.push(error);
+			console.error(error);
+			return;
+		}
 		for (const handler of failureHandlers) handler(error);
 	};
 	// The GPU path, the mode and the threads, which the start sets once the probe has run. The
@@ -1845,17 +1872,22 @@ async function startEngine(
 	);
 	const expectedObjects = expectedObjectCount(options.expectedObjects);
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
+	// The frame figures go on the page as the start makes them, so a test tool can time a start
+	// that stalls before it publishes anything, and read the sketch's growth, the first draw's
+	// pipelines and the first frame beside the steps it has noted.
+	(globalThis as { __null3dMetrics?: ArrayBufferLike }).__null3dMetrics = metrics;
 	const views = controlViews(control);
 	const { slots } = views;
 	if (switches.replayDelay !== undefined)
 		Atomics.store(slots, Slot.ReplayDelayMs, switches.replayDelay);
-	// Hold mode and the image tests draw each frame as it is: a still view there must not accumulate
-	// or rest, so a captured frame is the frame the sketch drew once.
+	// Hold mode, a replay and the image tests draw each frame as it is: a still view there must not
+	// accumulate or rest, so a captured frame is the frame the sketch drew once.
 	if (
 		!switches.still ||
 		options.still === false ||
 		options.hold !== undefined ||
-		switches.hold !== undefined
+		switches.hold !== undefined ||
+		switches.replay !== undefined
 	)
 		Atomics.store(slots, Slot.StillOff, 1);
 	const statsSwitch = new StatsSwitch(() => ({
@@ -2143,7 +2175,10 @@ async function startEngine(
 		parkWorker(options.canvas, canvasHold, canvasWorker.handle, canvasHold.movedTo);
 	};
 	try {
-		const report = await abortable(probeCapabilities(powerPreference, presetRequest.hints), signal);
+		const report = await abortable(
+			probeCapabilities(powerPreference, presetRequest.hints, switches.multiDraw),
+			signal,
+		);
 		const probeMs = performance.now() - startedAt;
 		const requested = switches.gpu !== 'auto' ? switches.gpu : (options.gpu ?? 'auto');
 		// After starts that crashed on WebGPU, WebGL2 comes first, unless the page names a GPU path.
@@ -2234,6 +2269,38 @@ async function startEngine(
 		};
 		/** Each engine thread's name and the roles it runs, for the frame figures. */
 		engineThreads = [...threadRoles(mode)];
+		// A recording run gathers the words of every thread that draws, and publishes them where the
+		// tool that writes the build's list reads them.
+		const recording =
+			switches.permutations === 'record'
+				? new PermutationRecording(
+						renderThread === 'render-worker'
+							? 'render'
+							: renderThread === 'sketch-worker'
+								? 'sketch'
+								: 'page',
+					)
+				: undefined;
+		if (recording) for (const worker of allWorkers(threads)) worker.recording = recording;
+		/**
+		 * Ends the recording and lets the drawing thread answer with its words. A held page runs it
+		 * once its frame has drawn the scene's pipelines, and a live page when the tool that records
+		 * has driven the page through its states.
+		 */
+		const stopRecording = () => {
+			if (!recording) return;
+			if (renderThread === 'main') {
+				recording.answered('page', stopRecordingPermutations());
+				return;
+			}
+			const worker = renderThread === 'render-worker' ? threads?.render : threads?.sketch;
+			worker?.send({ type: 'stop-recording' } satisfies RendererRequest);
+		};
+		// A live page has no held frame to end its recording, so the tool that records calls the
+		// page's stop once the page has shown every state that it offers.
+		if (recording && hold === undefined)
+			(globalThis as { __null3dStopRecording?: () => void }).__null3dStopRecording = stopRecording;
+		if (recording && renderThread === 'main') recordPermutations();
 		// What the thread that draws needs besides its canvas, whichever thread that is.
 		const rendererSetup: Omit<RendererSetup, 'canvas'> = {
 			tier,
@@ -2245,6 +2312,8 @@ async function startEngine(
 			hold: hold !== undefined,
 			glTiming: switches.glTiming,
 			preload: options.preload,
+			// The recording run lists the words that the scene draws with, for a narrowed build.
+			recordPermutations: switches.permutations === 'record',
 		};
 
 		const device = coreDevice(tier, report, {
@@ -2508,6 +2577,7 @@ async function startEngine(
 				holdScript,
 				replay,
 				record,
+				switches.view,
 			);
 			// In hold mode the sketch module loads only now, after the runner seeded the random
 			// numbers. The renderer starts before the setup, so a warm-up in the setup has a renderer
@@ -2558,6 +2628,7 @@ async function startEngine(
 				holdScript,
 				replay,
 				record,
+				debugView: switches.view,
 				quality,
 				maxTargetFps: maxTarget,
 				threads: engineThreads,
@@ -2621,7 +2692,12 @@ async function startEngine(
 			if (localDrawing && draw) return draw.captureFrame(localDrawing, slots);
 			const reply = await rendererHost?.request({ type: 'capture' });
 			if (reply?.type === 'captured')
-				return { width: reply.width, height: reply.height, pixels: reply.pixels };
+				return {
+					width: reply.width,
+					height: reply.height,
+					pixels: reply.pixels,
+					frame: reply.frame,
+				};
 			throw captureFailure(reply);
 		};
 		/**
@@ -2655,6 +2731,7 @@ async function startEngine(
 			},
 			onFailure(handler) {
 				failureHandlers.add(handler);
+				for (const error of earlyFailures.splice(0)) handler(error);
 				return () => failureHandlers.delete(handler);
 			},
 			onSketchError(handler) {
@@ -2772,19 +2849,29 @@ async function startEngine(
 		}
 		try {
 			held = await abortable(holdFrame(capture, failureHandlers), signal);
+			// The held frame built every pipeline that the scene draws with, so its words are
+			// complete here, before the page publishes the frame the tool waits on.
+			stopRecording();
 		} catch (error) {
 			await stop();
 			throw error;
 		}
 		if (DEV && switches.twoStep) logTwoStep(slots, true);
 		const { summarizeFrames } = await loadFrameStats();
+		const frame = Atomics.load(slots, Slot.FramesTaken);
+		const patchFrame = Atomics.load(slots, Slot.ClusterPatchFrame);
+		const patchRanges = Atomics.load(slots, Slot.ClusterPatches);
 		publishHold({
 			ok: true,
 			time: hold ?? replayResult?.seconds ?? 0,
-			frame: Atomics.load(slots, Slot.FramesTaken),
+			...held,
+			frame,
 			tier,
 			directDraws: device.directDraws,
-			...held,
+			// What the frame builder recorded: the patch ranges that its tree walk chose, or none
+			// where it drew the trees' whole levels. A negative count is a path that picks the
+			// patches on the GPU, and a count from another frame tells nothing about this one.
+			clusterPatches: patchFrame === frame && patchRanges >= 0 ? patchRanges > 0 : null,
 			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
 			...(scriptResult !== undefined && { script: scriptResult }),
 			...(replayResult !== undefined && { replay: replayResult }),

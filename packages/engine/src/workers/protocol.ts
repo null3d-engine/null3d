@@ -46,6 +46,12 @@ export interface CapturedFrame {
 	width: number;
 	height: number;
 	pixels: Uint8Array;
+	/**
+	 * The sketch frame that the capture drew, as the frame numbers the sketch posts. A capture can
+	 * hold a frame recorded before a scene change, so a page that measures frames reads this number
+	 * rather than the latest one it saw.
+	 */
+	frame: number;
 }
 
 /** What the thread that draws needs: its canvas, the GPU path and how it paces its frames. */
@@ -60,6 +66,11 @@ export interface RendererSetup extends FramePacing {
 	glTiming?: GlTimingMode;
 	/** The features whose shader files load before the first frame, as `createEngine` lists them. */
 	preload?: readonly string[];
+	/**
+	 * True when the page records the permutation words that its pipelines ask for, as a build of a
+	 * narrowed shader set lists, through the `?permutations=record` switch.
+	 */
+	recordPermutations?: boolean;
 }
 
 export type SketchWorkerInit = CoreHandoff & {
@@ -89,6 +100,8 @@ export type SketchWorkerInit = CoreHandoff & {
 	replay?: ReplayProgram;
 	/** True when the page records the session's frames and input, for a bug report. */
 	record?: boolean;
+	/** The debug view that the page's `?view` switch asks for, from the start. */
+	debugView?: string;
 	/** The quality preset and settings that the page chose. */
 	quality: QualityStart;
 	/** The highest target frame rate, as the sketch runner's options give it. */
@@ -130,7 +143,9 @@ export type RendererRequest =
 	| { type: 'capture'; image?: boolean }
 	| { type: 'lose-gpu' }
 	| { type: 'stop-drawing' }
-	| { type: 'park' };
+	| { type: 'park' }
+	/** Gives the permutation words that the drawing thread's pipelines asked for while it recorded. */
+	| { type: 'stop-recording' };
 
 /**
  * Sent to the worker that draws as soon as the probe has chosen the GPU path, before the core
@@ -153,6 +168,11 @@ export type WorkerReply =
 			version?: string;
 			tier?: Tier;
 	  }
+	/**
+	 * The drawing thread's answer to a recording's stop: the permutation words that its pipelines
+	 * asked for. A thread that does not draw never answers.
+	 */
+	| { type: 'recorded'; role: 'sketch' | 'render'; permutations: number[] }
 	| { type: 'error'; role: 'sketch' | 'render' | 'job'; message: string }
 	/**
 	 * A thread's loop failed after the start, such as the sketch's frame loop, the render loop or a

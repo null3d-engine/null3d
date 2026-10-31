@@ -92,10 +92,19 @@ pub enum Op {
     GenerateMipmaps = 15,
     /// [color target texture id or 0 for the canvas or `NO_TARGET`, resolve target texture id or
     /// 0 for the canvas or `NO_TARGET`, depth texture id or `NO_TARGET`, clear red, green, blue,
-    /// alpha (f32), clear depth (f32), pass flags, then optionally a second color target texture
-    /// id]. A target is a texture of one layer and one mip level, or a view of one. A pass without
-    /// a color target draws depth only. A second color target has one sample, no resolve, and the
-    /// first target's clear color and flags; its pipelines are those with `permutation::WEIGHTED`.
+    /// alpha (f32), clear depth (f32), pass flags, then the second color target's texture id when
+    /// the pass has one, then the pass's label, then the pass's scope]. A target is a texture of
+    /// one layer and one mip level, or a view of one. A pass without a color target draws depth
+    /// only. A second color target has one sample, no resolve, and the first target's clear color
+    /// and flags; its pipelines are those with `permutation::WEIGHTED`. The label says what the
+    /// pass draws for, from [`crate::pass_role`], so a frame's GPU time names the pass rather than
+    /// its slot. The scope names the step that the pass records, from the render graph's scope
+    /// codes, or 0 for a step that no scope names; the engine times each pass's GPU work by it.
+    /// The form follows the command's length: twelve operands carry the second color target, the
+    /// label and the scope; eleven carry the label and the scope and name no second target; ten
+    /// carry the label alone; nine stop after the flags. A list without a second target puts the
+    /// label where the target would have been, and the absent target is named by the length and
+    /// by nothing else.
     BeginRenderPass = 16,
     /// [render pipeline id]
     SetPipeline = 17,
@@ -130,7 +139,10 @@ pub enum Op {
     BeginBundle = 32,
     /// []
     EndBundle = 33,
-    /// []
+    /// [the pass's label, the pass's scope]: what the dispatches in this pass do, from
+    /// [`crate::pass_role`], so a frame's GPU time names the pass rather than its slot, and the
+    /// step that the pass records, from the render graph's scope codes, or 0 for a step that no
+    /// scope names.
     BeginComputePass = 40,
     /// [compute pipeline id]
     SetComputePipeline = 41,
@@ -221,12 +233,23 @@ pub enum Op {
     /// octahedral map. Level `i` of `n` holds perceptual roughness `1 - sqrt(1 - i / (n - 1))`,
     /// as an environment map's levels do.
     ProbeFilter = 56,
+    /// [view id, texture id, base layer, layer count]: a view of a range of one texture's array
+    /// layers, for bind groups to name in place of the whole texture. A draw that writes one range
+    /// as storage and reads the other as a sampled texture keeps each subresource in one usage,
+    /// which WebGPU requires. WebGL2 binds the whole texture and lets the shader pick the layer,
+    /// so the view names the texture there. The view has no texels of its own: `DestroyTexture`
+    /// releases it with its texture.
+    CreateBindView = 57,
+    /// [texture id, base layer, layer count]: clears a range of a texture's layers to zero, outside
+    /// every pass. The texture takes `RENDER_ATTACHMENT` usage, and each layer is one clear. A
+    /// compute pass asks for it when the page starts the pass's state again.
+    ClearTexture = 58,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 44] = [
+    pub const ALL: [Op; 46] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -270,6 +293,8 @@ impl Op {
         Op::GenerateTexture,
         Op::SkyMapStep,
         Op::ProbeFilter,
+        Op::CreateBindView,
+        Op::ClearTexture,
         Op::Submit,
     ];
 
@@ -322,6 +347,8 @@ impl Op {
             Op::GenerateTexture => "GENERATE_TEXTURE",
             Op::SkyMapStep => "SKY_MAP_STEP",
             Op::ProbeFilter => "PROBE_FILTER",
+            Op::CreateBindView => "CREATE_BIND_VIEW",
+            Op::ClearTexture => "CLEAR_TEXTURE",
             Op::Submit => "SUBMIT",
         }
     }
@@ -727,6 +754,19 @@ pub mod layout {
     /// block of uniforms, then the draw's count word and its per-instance rows, which the shader
     /// reads and writes as storage. A pass of this layout has no storage texture.
     pub const COMPUTE_INSTANCE_BUFFERS: u32 = 56;
+    /// Group 0 of a compute pass that keeps two states, as 16-bit floats: its block of uniforms,
+    /// the state that the run writes as a storage texture, and the state of the run before as a
+    /// sampled texture that the shader reads with `textureLoad`. Each run binds views of the two
+    /// states, so one subresource is never both written and read.
+    pub const COMPUTE_HISTORY_RGBA16_FLOAT: u32 = 13;
+    /// [`COMPUTE_HISTORY_RGBA16_FLOAT`] for a target of 32-bit floats.
+    pub const COMPUTE_HISTORY_R32_FLOAT: u32 = 15;
+    /// [`COMPUTE_HISTORY_RGBA16_FLOAT`] for a target of 8-bit color.
+    pub const COMPUTE_HISTORY_RGBA8_UNORM: u32 = 29;
+    /// Group 0 of a full-screen pass that runs in place of a compute pass with history: the pass's
+    /// block of uniforms, then the pass's two states as one sampled texture, which the shader
+    /// reads at a layer its block names. Only the WebGL2 path has it.
+    pub const FULLSCREEN_HISTORY: u32 = 62;
     /// Group 0 of the compute pipeline that converts a feature-instance draw's world rows to the
     /// camera-relative rows that the engine's vertex shaders read: its block of uniforms, which
     /// holds the camera's world position, then the draw's count word, its world rows and the rows
@@ -773,24 +813,24 @@ pub mod layout {
     pub const FRAME_PARALLAX: u32 = 48;
     /// Group 0 of the moment transparency layer's composite: the moment store and the colour sum,
     /// both read with `textureLoad` as unfilterable floats.
-    pub const MOMENT_COMPOSITE: u32 = 62;
+    pub const MOMENT_COMPOSITE: u32 = 65;
     /// The copy of a multisampled scene depth for the moment layer's two passes: the depth, read
     /// with `textureLoad` as multisampled unfilterable floats. Only WebGPU has it.
-    pub const MOMENT_DEPTH_MS: u32 = 63;
+    pub const MOMENT_DEPTH_MS: u32 = 66;
     /// Group 0 of the moment layer's colour builds: [`FRAME`]'s bindings without the copy of the
     /// opaque color, which no moment build reads, and the moment store at that binding. A moment
     /// build with the standard material's maps then reads within WebGPU's default count of
     /// sampled textures in its fragment stage.
-    pub const MOMENT_FRAME: u32 = 65;
+    pub const MOMENT_FRAME: u32 = 67;
     /// Group 0 of the moment layer's anti-aliasing first step: the scene color and the moment
     /// store, both read with `textureLoad` as unfilterable floats.
-    pub const MOMENT_SMAA_EDGES: u32 = 66;
+    pub const MOMENT_SMAA_EDGES: u32 = 68;
     /// Group 0 of the anti-aliasing second step: the edges it found, the two lookup tables, and a
     /// linear sampler that reads them all.
-    pub const MOMENT_SMAA_BLEND: u32 = 67;
+    pub const MOMENT_SMAA_BLEND: u32 = 69;
     /// Group 0 of the anti-aliasing last step: the scene color and the blending weights, and a
     /// linear sampler that reads them.
-    pub const MOMENT_SMAA_RESOLVE: u32 = 68;
+    pub const MOMENT_SMAA_RESOLVE: u32 = 70;
     /// Group 0 of depth-only pipelines, such as shadow casters': per-frame constants and the
     /// material table. It has no shadow map, so a pass that draws into the shadow map never binds
     /// it.
@@ -956,6 +996,13 @@ pub mod layout {
     /// the exposure as a storage texture of `RGBA32_FLOAT`, which the final pass reads. Only WebGPU
     /// has it.
     pub const EXPOSURE: u32 = 40;
+    /// Group 0 of the light clusters' depth reduction: its blocks' uniform block, the reduction
+    /// that it fills, and the view's depth target of one sample, which it reads as a float texture.
+    /// Only WebGPU has it.
+    pub const LIGHT_DEPTH: u32 = 63;
+    /// [`LIGHT_DEPTH`] for a multisampled depth target, whose sample 0 it reads. Only WebGPU has
+    /// it.
+    pub const LIGHT_DEPTH_MS: u32 = 64;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -999,6 +1046,11 @@ pub mod permutation {
     pub const DEBUG_VIEW_LOW: u32 = 1024;
     /// The high bit of the debug view's number.
     pub const DEBUG_VIEW_HIGH: u32 = 2048;
+    /// The debug view of levels of detail: each draw takes its level's color, a fading band dithers
+    /// its two levels, and a source that the size rule or a draw range hid draws in a marker
+    /// color. It shares [`OUTLINE_VISIBLE`]'s value: only the debug view template lists it, and only
+    /// the outline mask template lists the outline bit.
+    pub const DEBUG_VIEW_LEVELS: u32 = OUTLINE_VISIBLE;
     /// The pipeline draws the camera's depth prepass. On WebGPU it is a build of the depth
     /// template, which clips what lies in front of the near plane, as the templates that shade
     /// do; without the bit, the shadow passes flatten casters there onto the near face. On WebGL2
@@ -1102,7 +1154,7 @@ pub mod permutation {
     pub const WEIGHTED: u32 = 1 << 31;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 35] = [
+    pub const NAMES: [(&str, u32); 36] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -1123,6 +1175,7 @@ pub mod permutation {
         ("BLOOM", BLOOM),
         ("PICK", PICK),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
+        ("DEBUG_VIEW_LEVELS", DEBUG_VIEW_LEVELS),
         ("INSTANCE_INDEX", INSTANCE_INDEX),
         ("DEPTH_MULTISAMPLED", DEPTH_MULTISAMPLED),
         ("LOD_FADE", LOD_FADE),
@@ -1142,10 +1195,11 @@ pub mod permutation {
 
     /// Pairs of names that share one value, because no template lists both: the shader build
     /// refuses a template that lists two names of one value, and any other shared value.
-    pub const SHARED: [(&str, &str); 3] = [
+    pub const SHARED: [(&str, &str); 4] = [
         ("FXAA", "AREA_LIGHTS"),
         ("CASTER_OFFSET", "UPSCALE"),
         ("BLOOM", "PICK"),
+        ("OUTLINE_VISIBLE", "DEBUG_VIEW_LEVELS"),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -1167,11 +1221,17 @@ pub mod permutation {
     /// A mask tests its alpha one way, by coverage or by the hash. A mesh that WebGPU skins in the
     /// vertex shader reads the culling shader's copies, so the builds that read their instances by
     /// index never skin: those builds would load with the skinning feature and double its WebGPU
-    /// files. A surface that lets light through tests no mask, and draws in the transparent pass,
-    /// which never reads instances by index. Row values come from instance batches, which neither
-    /// skin nor morph, read their instances from the culling shader's copies, and test a mask
-    /// against its cutoff; a surface that lets light through draws its rows without their values.
-    /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
+    /// files. A surface that lets light through draws in the transparent pass, which never reads
+    /// instances by index, and keeps its mask: the cut-out leaves the pixels whose alpha passes, by
+    /// the cutoff or by coverage, and their light comes from behind. It takes no hash, which three.js
+    /// has no counterpart for, so the glTF files that ask for both draw with the plain mask. Row
+    /// values come from instance batches, which neither skin nor morph, read their instances from
+    /// the culling shader's copies, and test a mask as the shading does, by its cutoff, by coverage
+    /// or by the alpha hash; a surface that lets light through draws its rows without their values.
+    /// A caster's build writes depth alone, so it has none of the bits that shade or tone map, and
+    /// it tests a mask's alpha in its fragment stage where the mask cuts its shadow. A custom
+    /// material's caster may keep its mask, whose coverage or surface alpha its fragment stage
+    /// tests, so the two bits build together.
     /// Displacement and bump builds load on first use, so the test switch's builds do without them.
     /// A bump map takes the normal map's slot, so its builds never read the mesh's tangents.
     /// Parallax draws only opaque and masked surfaces, never one that lets light through. A
@@ -1180,9 +1240,8 @@ pub mod permutation {
     /// switch reads instances by index, which no build of such a surface needs. Layers win over
     /// light through a thin surface, whose maps would take their slots, and a weighted surface lets
     /// no light through a thin surface either, so neither doubles the builds of the other.
-    /// A motion build writes motion alone: it has none of those bits either, and a skinned or
-    /// morphed custom material draws its motion through the motion template, without its vertex
-    /// offset.
+    /// A motion build writes motion alone: it has none of the shading bits that a motion cannot
+    /// show, and it tests a mask's alpha in its fragment stage where the mask cuts its motion.
     /// A fading level's builds dither its pixels after the mask's own test, by its cutoff or by
     /// coverage: skinned, morphed, transmissive and index-read instances never fade, and a mask
     /// that tests its alpha by the hash switches its levels at once. A motion build never fades.
@@ -1191,20 +1250,16 @@ pub mod permutation {
     /// no light through and never fades, and it draws in the sorted pass's rows, which never read
     /// instances by index. The final pass's upscale draws only in the two-step pass's second step,
     /// with neither FXAA nor bloom.
-    pub const APART: [(u32, u32); 56] = [
+    pub const APART: [(u32, u32); 50] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
+        (TRANSMISSION, ALPHA_HASH),
         (SKIN, INSTANCE_INDEX),
-        (TRANSMISSION, ALPHA_MASK),
         (TRANSMISSION, INSTANCE_INDEX),
         (ROW_VALUES, SKIN),
         (ROW_VALUES, MORPH),
         (ROW_VALUES, INSTANCE_INDEX),
-        (ROW_VALUES, ALPHA_COVERAGE),
-        (ROW_VALUES, ALPHA_HASH),
         (ROW_VALUES, TRANSMISSION),
         (CASTER, TONE_MAP),
-        (CASTER, VERTEX_COLOR),
-        (CASTER, ALPHA_MASK),
         (CASTER, RECEIVE_SHADOWS),
         (CASTER, TRANSMISSION),
         (CASTER, PREPASS),
@@ -1221,8 +1276,6 @@ pub mod permutation {
         (TRANSLUCENCY, COAT_SHEEN),
         (TRANSLUCENCY, WEIGHTED),
         (MOTION, TONE_MAP),
-        (MOTION, VERTEX_COLOR),
-        (MOTION, ALPHA_MASK),
         (MOTION, RECEIVE_SHADOWS),
         (MOTION, SKIN),
         (MOTION, MORPH),
@@ -1361,8 +1414,9 @@ pub mod vertex {
     pub const JOINTS: u32 = 16;
     /// How much each of the four joints moves a skinned vertex.
     pub const WEIGHTS: u32 = 32;
-    /// Where a morphed vertex's morph target deltas start, and how many there are: two whole
-    /// numbers as floats.
+    /// The vertex record of a posed mesh, four floats: a morphed vertex's first morph-target texel
+    /// and the count and attributes of its deltas, or a generated mesh's morph data, which the
+    /// material's vertex offset reads. A mesh has one meaning or the other, never both.
     pub const MORPH: u32 = 1 << 27;
     /// Every optional attribute's bit.
     pub const ALL: u32 = UV0 | UV1 | TANGENT | COLOR | JOINTS | WEIGHTS | MORPH;
@@ -1585,7 +1639,7 @@ pub mod vertex {
         },
         Attribute {
             bit: MORPH,
-            components: 2,
+            components: 4,
             location: 8,
             shift: 27,
             types: FLOAT,
@@ -1703,11 +1757,13 @@ pub mod sizes {
     /// shadow lookups, the camera's view and projection matrices, which custom materials read,
     /// screen-space reflections' matrix into the frame before's view and their two vectors, a
     /// still view's jitter, which the scene's vertex shaders add, the physical sky's aerial
-    /// perspective's six vectors, and the vignette that the 8-bit path's fragment shaders apply.
-    pub const FRAME_UNIFORM_BYTES: u32 = 1088;
+    /// perspective's six vectors, the vignette that the 8-bit path's fragment shaders apply, and
+    /// the camera's view-projection, target size and eye, which a masked custom material's caster
+    /// reads in a light's view.
+    pub const FRAME_UNIFORM_BYTES: u32 = 1104;
     /// Bytes of the output settings: the exposure, the tone mapping, the flags and the render
-    /// size, then the grading controls that the 8-bit path's shaders apply before their curve.
-    pub const OUTPUT_UNIFORM_BYTES: u32 = 112;
+    /// size.
+    pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
     pub const CULL_WORKGROUP_SIZE: u32 = 128;
     /// 32-bit words per indexed indirect draw.
@@ -1717,9 +1773,9 @@ pub mod sizes {
     /// of a skin that the vertex shader skins, 1 for a bucket whose slice holds source indices
     /// instead of copies of the matrices, for a mesh with levels of detail the level's switch
     /// value, the bucket of the next coarser level plus one, the level's fade bucket plus one, the
-    /// threshold bias that picks the levels, 1 for none, and the measure that the switch value
-    /// names.
-    pub const BUCKET_WORDS: u32 = 15;
+    /// threshold bias that picks the levels, 1 for none, the measure that the switch value names,
+    /// and the level that the bucket draws, which the levels debug view writes beside each copy.
+    pub const BUCKET_WORDS: u32 = 16;
     /// A bucket record's first joint that sends the culling shader to each source's own: the
     /// buckets that skinned objects share, whose vertex shaders skin, read the first joint of each
     /// object's skin from a data texture of 32-bit indices, at the object's source.
@@ -1768,15 +1824,21 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: eighteen `vec4f`s. The row holds the
+    /// Bytes of one material's row in the material table: thirty-seven `vec4f`s. The row holds the
     /// base values, the transmission's values, the attenuation's, the clear coat's, the sheen's,
-    /// the diffuse transmission's, the subsurface scatter's, the iridescence's, the anisotropy's
-    /// and the light map's transform. On WebGL2 each row is a row of eighteen `RGBA32_FLOAT`
-    /// texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 288;
+    /// the diffuse transmission's, the subsurface scatter's, the iridescence's, the anisotropy's,
+    /// the light map's transform, the layers of the transmission and thickness maps, and the
+    /// transforms of the maps of the row's slots from the second up. On WebGL2 each row is a row
+    /// of thirty-seven `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 592;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
+    /// The map slots that a material's row keeps a transform and a layer for: the eight of
+    /// [`MAP_SLOTS`], then the transmission and the thickness map. Each of the last two samples
+    /// the texture array of a specular slot at a layer of its own, so it needs a row slot but no
+    /// binding of its own.
+    pub const MAP_ROWS: u32 = MAP_SLOTS + 2;
     /// The units that the standard material's maps share on WebGL2, which gives a shader stage
     /// only 16 texture units: the group's first bindings hold the units' arrays, and the bindings
     /// from [`MAP_SLOTS`] their samplers.
@@ -2111,47 +2173,60 @@ pub mod template {
     /// engine's vertex shaders read rows relative to their view's camera, and a page writes world
     /// rows (D-229). WebGPU only.
     pub const FEATURE_ROWS: u32 = 83;
+    /// The light clusters' depth reduction: reads the view's depth and writes its nearest and
+    /// farthest into the reduction that the next frame's clustering fits its slices to. WebGPU
+    /// only.
+    pub const LIGHT_DEPTH: u32 = 84;
+    /// [`LIGHT_DEPTH`] from a multisampled depth target, whose sample 0 it reads. WebGPU only.
+    pub const LIGHT_DEPTH_MS: u32 = 85;
+    /// Clears the depth reduction's buffer: one thread, before the reduction fills it. WebGPU only.
+    pub const LIGHT_DEPTH_CLEAR: u32 = 86;
+    /// [`LIGHT_DEPTH_CLEAR`] from a multisampled depth target. WebGPU only.
+    pub const LIGHT_DEPTH_CLEAR_MS: u32 = 87;
+    /// Light clustering's fit: one thread that fits the slices to the measured depth and writes
+    /// the grid's header, before the counting dispatch. WebGPU only.
+    pub const LIGHT_FIT: u32 = 88;
     /// The moment transparency layer's composite: one triangle that reads the moment store and the
     /// colour sum, one texel per pixel, works out from the moments the share that shows through,
     /// and blends the summed colour over the scene color. It binds as
     /// [`layout::MOMENT_COMPOSITE`](super::layout::MOMENT_COMPOSITE) does.
-    pub const MOMENT_COMPOSITE: u32 = 84;
+    pub const MOMENT_COMPOSITE: u32 = 89;
     /// The copy of the first sample of a multisampled scene depth into a depth target of one
     /// sample, which the moment layer's two passes test against: one triangle that writes each
     /// pixel's depth, first in the moment pass. Its pipeline names that pass's moment target, which
     /// it does not write. On WebGPU it reads the multisampled depth with the layout
     /// [`MOMENT_DEPTH_MS`](super::layout::MOMENT_DEPTH_MS); on WebGL2 it reads the copy of one
     /// sample that the backend keeps.
-    pub const MOMENT_DEPTH: u32 = 85;
+    pub const MOMENT_DEPTH: u32 = 90;
     /// The first step of the moment layer's anti-aliasing: one triangle over the scene color that
     /// marks the layer's edges with SMAA 1x, under the share that the moments cover, and leaves
     /// every other pixel unmarked. It binds as
     /// [`layout::MOMENT_SMAA_EDGES`](super::layout::MOMENT_SMAA_EDGES) does.
-    pub const MOMENT_SMAA_EDGES: u32 = 86;
+    pub const MOMENT_SMAA_EDGES: u32 = 91;
     /// The moment layer's colour pass for the standard material, from the lit template's file: it
     /// writes each fragment's colour and its share, weighted by the transmittance that the moment
     /// store gives at the fragment's own depth. It binds as [`INSTANCED_LIT`] does, with the moment
     /// store in its frame group.
-    pub const MOMENT_LIT: u32 = 87;
+    pub const MOMENT_LIT: u32 = 92;
     /// [`MOMENT_LIT`] with the standard material's maps.
-    pub const MOMENT_STANDARD_MAPS: u32 = 88;
+    pub const MOMENT_STANDARD_MAPS: u32 = 93;
     /// The moment layer's colour pass for the basic material, from the unlit template's file.
-    pub const MOMENT_UNLIT: u32 = 89;
+    pub const MOMENT_UNLIT: u32 = 94;
     /// [`MOMENT_UNLIT`] with the material's base color map.
-    pub const MOMENT_UNLIT_MAP: u32 = 90;
+    pub const MOMENT_UNLIT_MAP: u32 = 95;
     /// The moment layer's colour pass for sprites, from the sprite template's file.
-    pub const MOMENT_SPRITE: u32 = 91;
+    pub const MOMENT_SPRITE: u32 = 96;
     /// [`MOMENT_SPRITE`] with the material's map.
-    pub const MOMENT_SPRITE_MAP: u32 = 92;
+    pub const MOMENT_SPRITE_MAP: u32 = 97;
     /// The second step of the moment layer's anti-aliasing: one triangle that finds the ends of
     /// each marked edge and the areas at each side, from the two lookup tables, and writes the
     /// blending weights. It binds as
     /// [`layout::MOMENT_SMAA_BLEND`](super::layout::MOMENT_SMAA_BLEND) does.
-    pub const MOMENT_SMAA_BLEND: u32 = 93;
+    pub const MOMENT_SMAA_BLEND: u32 = 98;
     /// The last step of the moment layer's anti-aliasing: one triangle that mixes each pixel with
     /// the neighbour that its weights name, over the scene color. It binds as
     /// [`layout::MOMENT_SMAA_RESOLVE`](super::layout::MOMENT_SMAA_RESOLVE) does.
-    pub const MOMENT_SMAA_RESOLVE: u32 = 94;
+    pub const MOMENT_SMAA_RESOLVE: u32 = 99;
 
     /// The moment layer's colour template for a mesh template, or 0 for one that has no moment
     /// build. Six mesh templates draw in the layer: the standard material with and without maps,
@@ -2190,7 +2265,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 94] = [
+    pub const NAMES: [(&str, u32); 99] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2273,6 +2348,11 @@ pub mod template {
         ("TAA_RESOLVE_MS", TAA_RESOLVE_MS),
         ("TAA_COPY", TAA_COPY),
         ("FEATURE_ROWS", FEATURE_ROWS),
+        ("LIGHT_DEPTH", LIGHT_DEPTH),
+        ("LIGHT_DEPTH_MS", LIGHT_DEPTH_MS),
+        ("LIGHT_DEPTH_CLEAR", LIGHT_DEPTH_CLEAR),
+        ("LIGHT_DEPTH_CLEAR_MS", LIGHT_DEPTH_CLEAR_MS),
+        ("LIGHT_FIT", LIGHT_FIT),
         ("MOMENT_COMPOSITE", MOMENT_COMPOSITE),
         ("MOMENT_DEPTH", MOMENT_DEPTH),
         ("MOMENT_SMAA_EDGES", MOMENT_SMAA_EDGES),
@@ -2404,6 +2484,11 @@ pub mod groups {
         (template::LIGHT_COUNT, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_PLACE, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_WRITE, own!(layout::LIGHT_CLUSTERS)),
+        (template::LIGHT_DEPTH, own!(layout::LIGHT_DEPTH)),
+        (template::LIGHT_DEPTH_MS, own!(layout::LIGHT_DEPTH_MS)),
+        (template::LIGHT_DEPTH_CLEAR, own!(layout::LIGHT_DEPTH)),
+        (template::LIGHT_DEPTH_CLEAR_MS, own!(layout::LIGHT_DEPTH_MS)),
+        (template::LIGHT_FIT, own!(layout::LIGHT_CLUSTERS)),
         (template::SKIN, own!(layout::SKIN)),
         (template::OUTLINE_MASK, MESH),
         (template::TONE_MASK, MESH),
@@ -2688,6 +2773,8 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("FRAME_PARALLAX", layout::FRAME_PARALLAX),
     ("DEPTH", layout::DEPTH),
     ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
+    ("LIGHT_DEPTH", layout::LIGHT_DEPTH),
+    ("LIGHT_DEPTH_MS", layout::LIGHT_DEPTH_MS),
     ("BLOOM", layout::BLOOM),
     ("FINAL_BLOOM", layout::FINAL_BLOOM),
     ("JOINTS", layout::JOINTS),
@@ -2696,6 +2783,19 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("COMPUTE_R32_FLOAT", layout::COMPUTE_R32_FLOAT),
     ("COMPUTE_RGBA8_UNORM", layout::COMPUTE_RGBA8_UNORM),
     ("COMPUTE_INSTANCE_BUFFERS", layout::COMPUTE_INSTANCE_BUFFERS),
+    (
+        "COMPUTE_HISTORY_RGBA16_FLOAT",
+        layout::COMPUTE_HISTORY_RGBA16_FLOAT,
+    ),
+    (
+        "COMPUTE_HISTORY_R32_FLOAT",
+        layout::COMPUTE_HISTORY_R32_FLOAT,
+    ),
+    (
+        "COMPUTE_HISTORY_RGBA8_UNORM",
+        layout::COMPUTE_HISTORY_RGBA8_UNORM,
+    ),
+    ("FULLSCREEN_HISTORY", layout::FULLSCREEN_HISTORY),
     ("FEATURE_ROWS", layout::FEATURE_ROWS),
     ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
     ("AO_DEPTH", layout::AO_DEPTH),
@@ -2950,6 +3050,7 @@ pub fn typescript_constants() -> String {
                 ("MAX_MATERIALS", sizes::MAX_MATERIALS),
                 ("MATERIAL_BYTES", sizes::MATERIAL_BYTES),
                 ("MAP_SLOTS", sizes::MAP_SLOTS),
+                ("MAP_ROWS", sizes::MAP_ROWS),
                 ("SHARED_MAP_UNITS", sizes::SHARED_MAP_UNITS),
                 ("MAX_CELLS", sizes::MAX_CELLS),
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
@@ -3014,6 +3115,30 @@ pub fn typescript_constants() -> String {
     out.push_str(&format!(
         "/** Each vertex attribute in vertex order, which is also its shader location: its format bit (0 for one every format has), its values per vertex, the first bit of its type field, its types by the field's value, and whether shaders read whole numbers. */\nexport const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, components: number, shift: number, types: readonly number[], integer: boolean])[] = [{}];\n",
         attributes.join(", ")
+    ));
+    let role_names: Vec<String> = crate::pass_role::PassRole::ALL
+        .iter()
+        .map(|role| format!("\"{}\"", role.name()))
+        .collect();
+    let role_places: Vec<String> = crate::pass_role::PassRole::ALL
+        .iter()
+        .map(|role| (role.place() as u32).to_string())
+        .collect();
+    out.push_str(&format!(
+        "/** The name of each pass role by code. */\nexport const PASS_ROLE_NAMES: readonly string[] = [{}];\n",
+        role_names.join(", ")
+    ));
+    out.push_str(&format!(
+        "/** Whether each pass role prints its place: 0 never, 1 always, 2 when the place is not 0. */\nexport const PASS_ROLE_PLACES: readonly number[] = [{}];\n",
+        role_places.join(", ")
+    ));
+    out.push_str(&format!(
+        "/** The bits of a pass label that hold the pass's place. */\nexport const PASS_ROLE_PLACE_SHIFT = {};\n",
+        crate::pass_role::PLACE_SHIFT
+    ));
+    out.push_str(&format!(
+        "/** The role code of the background pass, which the page's renderer records itself. */\nexport const PASS_ROLE_BACKGROUND = {};\n",
+        crate::pass_role::PassRole::Background.code()
     ));
     out
 }
@@ -3084,10 +3209,12 @@ mod tests {
                 "const VALUES_ROW_SHIFT: u32 = {}u;",
                 shift(sizes::ROW_VALUES_PER_TEXTURE_ROW)
             ),
-            // The last of a material row's texels on WebGL2, one per vec4f.
+            // The texel of a material's row where the maps' own transforms start, one per vec4f:
+            // the last eighteen of the row's texels, two for each of the nine map row slots above
+            // the base color map's.
             format!(
-                "textureLoad(materials, vec2u({}u, id), 0)",
-                sizes::MATERIAL_BYTES / 16 - 1
+                "const MATERIAL_MAP_UV_TEXEL: u32 = {}u;",
+                sizes::MATERIAL_BYTES / 16 - 18
             ),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
             format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
@@ -3164,10 +3291,172 @@ mod tests {
     }
 
     #[test]
+    fn a_custom_material_caster_keeps_its_mask_and_every_other_pair_stays_apart() {
+        use permutation::*;
+
+        // A standard material's caster writes depth alone, and its build reaches no coverage test,
+        // so a mask bit would do nothing there. Only a custom material's caster keeps the mask: its
+        // fragment stage calls the material's coverage function or its surface's alpha, whose cutoff
+        // drops each shadow texel. The vertex color and the alpha hash come with the mask, since
+        // the surface input reads the color and the hash picks the texels. These pairs therefore
+        // build, and no standard-material caster gains a coverage stage.
+        assert!(permutation::buildable(CASTER | ALPHA_MASK));
+        assert!(permutation::buildable(
+            CASTER | ALPHA_MASK | VERTEX_COLOR | ALPHA_HASH
+        ));
+        assert!(permutation::buildable(
+            MOTION | ALPHA_MASK | VERTEX_COLOR | ALPHA_HASH
+        ));
+        assert!(!permutation::APART.contains(&(CASTER, ALPHA_MASK)));
+        assert!(!permutation::APART.contains(&(ALPHA_MASK, CASTER)));
+
+        // The rest of the table, written as the rule that holds each pair. A build that loses one
+        // of these refusals fails here as well as in the table.
+        let rule: &[(u32, &[u32])] = &[
+            // A mask tests its alpha one way, by coverage or by the hash.
+            (ALPHA_HASH, &[ALPHA_COVERAGE]),
+            // A mesh that WebGPU skins in the vertex shader reads the culling shader's copies, so
+            // the builds that read instances by index never skin.
+            (SKIN, &[INSTANCE_INDEX]),
+            // A surface that lets light through keeps its mask but takes no hash, and it draws in
+            // the transparent pass, which reads no instances by index, no rows, no parallax, no
+            // light through a thin surface, no motion and no level fade, and blends without
+            // weighted blending.
+            (
+                TRANSMISSION,
+                &[
+                    ALPHA_HASH,
+                    INSTANCE_INDEX,
+                    ROW_VALUES,
+                    PARALLAX,
+                    TRANSLUCENCY,
+                    MOTION,
+                    LOD_FADE,
+                    WEIGHTED,
+                ],
+            ),
+            // Row values come from instance batches, which neither skin nor morph, read their
+            // instances from the culling shader's copies, and test a mask as the shading does: by
+            // the cutoff, by coverage or by the hash.
+            (ROW_VALUES, &[SKIN, MORPH, INSTANCE_INDEX]),
+            // A caster's build writes depth alone, so it has none of the bits that shade or tone
+            // map. The mask, the vertex color that carries its alpha, and the alpha hash are the
+            // bits a custom material's caster may keep, which the assertions above allow.
+            (
+                CASTER,
+                &[
+                    TONE_MAP,
+                    RECEIVE_SHADOWS,
+                    TRANSMISSION,
+                    PREPASS,
+                    INSTANCE_INDEX,
+                    AREA_LIGHTS,
+                ],
+            ),
+            // Displacement and bump builds load on first use, so the test switch's builds do
+            // without them.
+            (DISPLACEMENT, &[INSTANCE_INDEX]),
+            // A bump map takes the normal map's slot, so its builds never read the mesh's tangents.
+            (BUMP, &[INSTANCE_INDEX, VERTEX_TANGENT]),
+            // Parallax draws only opaque and masked surfaces, never one that lets light through.
+            (PARALLAX, &[TRANSLUCENCY]),
+            // Light through a thin surface takes no caster, and its maps take the slots that a
+            // clear coat's would. Only the test switch reads instances by index, which no build of
+            // such a surface needs, and a weighted surface lets no light through it either.
+            (
+                TRANSLUCENCY,
+                &[CASTER, INSTANCE_INDEX, COAT_SHEEN, WEIGHTED],
+            ),
+            // A motion build writes motion alone: it has none of the shading bits that a motion
+            // cannot show, and it never fades. A custom material's motion keeps its mask, the
+            // vertex color that carries the alpha and the alpha hash, so those three build.
+            (
+                MOTION,
+                &[
+                    TONE_MAP,
+                    RECEIVE_SHADOWS,
+                    SKIN,
+                    MORPH,
+                    PREPASS,
+                    INSTANCE_INDEX,
+                    CASTER,
+                    LOD_FADE,
+                ],
+            ),
+            // A fading level's builds dither its pixels after the mask's own test: skinned,
+            // morphed and index-read instances never fade. A mask that tests its alpha by the
+            // hash switches its levels at once, and a displaced level of detail switches at once.
+            (
+                LOD_FADE,
+                &[SKIN, MORPH, INSTANCE_INDEX, ALPHA_HASH, DISPLACEMENT],
+            ),
+            // The layers shade, so casters never have them, and only the test switch reads
+            // instances by index, which no layered build needs.
+            (COAT_SHEEN, &[INSTANCE_INDEX, CASTER]),
+            // A weighted surface blends, so it tests no mask, takes no prepass, casts no shadow and
+            // never fades, and it draws in the sorted pass's rows, which never read instances by
+            // index or show the outline.
+            (
+                WEIGHTED,
+                &[
+                    ALPHA_MASK,
+                    INSTANCE_INDEX,
+                    PREPASS,
+                    CASTER,
+                    OUTLINE_VISIBLE,
+                    LOD_FADE,
+                ],
+            ),
+            // The final pass's upscale draws only in the two-step pass's second step, with neither
+            // FXAA nor bloom.
+            (UPSCALE, &[FXAA, BLOOM]),
+        ];
+
+        let name = |bit: u32| {
+            permutation::NAMES
+                .iter()
+                .find(|(_, b)| *b == bit)
+                .map_or("an unnamed bit", |(name, _)| *name)
+        };
+        let mut pairs = 0;
+        for &(bit, others) in rule {
+            for &other in others {
+                pairs += 1;
+                assert!(
+                    !permutation::buildable(bit | other),
+                    "{} builds beside {}",
+                    name(bit),
+                    name(other)
+                );
+                assert!(
+                    permutation::APART.contains(&(bit, other))
+                        || permutation::APART.contains(&(other, bit)),
+                    "{} and {} are not kept apart",
+                    name(bit),
+                    name(other)
+                );
+            }
+        }
+        // Every pair of the table is one that the rule above names, so a pair that leaves the
+        // table without this list losing it fails on the count.
+        assert_eq!(pairs, permutation::APART.len());
+        for &(a, b) in permutation::APART.iter() {
+            assert!(
+                rule.iter().any(|&(bit, others)| {
+                    (bit == a && others.contains(&b)) || (bit == b && others.contains(&a))
+                }),
+                "{} and {} are kept apart with no rule in this test",
+                name(a),
+                name(b)
+            );
+        }
+    }
+
+    #[test]
     fn vertex_formats_place_each_attribute_after_the_ones_before_it() {
         use vertex::ATTRIBUTES;
         assert_eq!(vertex::stride(0), 24);
-        assert_eq!(vertex::stride(vertex::ALL), 100);
+        assert_eq!(vertex::stride(vertex::ALL), 108);
         assert_eq!(vertex::offset(vertex::UV0, 2), Some(24));
         assert_eq!(vertex::offset(vertex::UV1, 3), Some(24));
         assert_eq!(vertex::offset(vertex::UV0 | vertex::TANGENT, 4), Some(32));

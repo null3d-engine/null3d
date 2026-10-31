@@ -9,6 +9,6 @@
 
 ## Known issues
 
-The cloud phone's screen ran at 24 to 30 Hz, so the engine pages' frame checks failed and the timing figures are unreliable.
+The cloud phone's screen runs at 24 to 30 Hz, so its frame rates top out at 30 fps ([run](20261004-earlier-runs.md)).
+So the engine pages' frame checks fail, and the runner marks the timing figures unreliable.
 Its debug view images match the S24+'s own references, but the test names only the S24+'s model.
-The cloud phone's screen runs at 30 Hz, so its frame rates top out at 30 fps.

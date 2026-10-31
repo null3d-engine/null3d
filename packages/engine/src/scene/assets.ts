@@ -1,7 +1,7 @@
 // The sketch's loading calls, `ctx.assets`: files downloaded with fetch and decoded by the browser,
 // by the KTX2 transcoder (ktx2.ts), by the color grading table makers (lut-files.ts), by the
 // environment map reader (environment-file.ts) or by the HDR file readers (panorama.ts), outside
-// the sketch's frames, and a count of the downloads for loading screens. Built-in environments need
+// the sketch's frames, and the bytes of the downloads for loading screens. Built-in environments need
 // no file: the GPU makes them (builtin-environments.ts), as it filters HDR files. Relative addresses resolve against the page's address, in every thread
 // mode. Files that `preload` downloaded wait in memory until a load takes them, and loads of one
 // address at the same time share one download; the HTTP cache keeps everything else.
@@ -80,10 +80,11 @@ export interface LoadGltfOptions {
 	rewriteUrl?: (address: URL) => URL | string | null;
 	/**
 	 * The most levels of detail to load from a file that stores its levels as separate downloads,
-	 * counting the level in the file itself. The default loads every level, and the loader skips a
-	 * level that the camera never draws. A page whose objects never come close enough to show the
-	 * finest level sets 1, or the number of levels that show, and downloads less. A file whose
-	 * levels are all in the file itself ignores the option.
+	 * counting the level in the file itself. A band of a cluster tree counts as a level. The
+	 * default loads every level, and the loader skips a level that the camera never draws. A page
+	 * whose objects never come close enough to show the finest level sets 1, or the number of
+	 * levels that show, and downloads less. A file whose levels are all in the file itself ignores
+	 * the option.
 	 */
 	maxLevels?: number;
 }
@@ -209,8 +210,11 @@ export interface ModelMakers {
 }
 
 /**
- * Called each time a download finishes or fails. It gets the files downloaded so far, the files
- * asked for so far, and the address of the file that finished.
+ * Called as a download's bytes arrive and when one finishes or fails. It gets the bytes downloaded
+ * so far, the bytes expected so far, and the address whose bytes moved. The second is the lengths
+ * of the responses that gave one, and 0 while none has. A response with no length still counts
+ * into the bytes downloaded, so a page that draws a fraction takes
+ * `Math.min(1, loaded / Math.max(total, loaded))`.
  *
  * @category api/assets
  */
@@ -230,8 +234,9 @@ export class Assets {
 	/** Downloads under way, by address, which loads at the same time share. */
 	private readonly pending = new Map<string, Promise<Blob>>();
 	private readonly handlers = new Set<ProgressHandler>();
-	private loaded = 0;
-	private total = 0;
+	/** Bytes that have arrived, and the bytes of the responses whose length is known so far. */
+	private loadedBytes = 0;
+	private totalBytes = 0;
 
 	/** @internal */
 	constructor(
@@ -769,8 +774,9 @@ export class Assets {
 	}
 
 	/**
-	 * Calls `handler` each time a download finishes or fails, with the files downloaded so far and
-	 * the files asked for so far. Loads that take a file that `preload` downloaded count no
+	 * Calls `handler` as a download's bytes arrive and when one finishes or fails, with the bytes
+	 * downloaded so far, the bytes expected so far and the address whose bytes moved, as
+	 * `ProgressHandler` describes. Loads that take a file that `preload` downloaded report no
 	 * further. Returns a function that removes the handler.
 	 */
 	onProgress(handler: ProgressHandler): () => void {
@@ -806,9 +812,11 @@ export class Assets {
 		return download;
 	}
 
-	/** Downloads a file, counts it for the progress handlers, and gives failures their codes. */
+	/** Downloads a file, counts its bytes for the progress handlers, and gives failures their codes. */
 	private async download(address: URL, call: string): Promise<Blob> {
-		this.total++;
+		// The bytes this download's response announced, and whether it delivered them.
+		let announced = 0;
+		let delivered = false;
 		try {
 			let response: Response;
 			try {
@@ -831,8 +839,25 @@ export class Assets {
 					'E1411',
 					`${call}() could not download ${address}: HTTP ${response.status}.`,
 				);
+			const length = Number(response.headers.get('content-length'));
+			if (Number.isFinite(length) && length > 0) {
+				this.totalBytes += length;
+				announced = length;
+			}
 			try {
-				return await response.blob();
+				// A page that watches progress reads the body in chunks, which is the only way to see
+				// the bytes before the whole file arrives. With no handler the browser makes the blob
+				// in one step, as before.
+				if (this.handlers.size > 0 && response.body) {
+					const streamed = await this.read(response, address);
+					delivered = true;
+					return streamed;
+				}
+				const blob = await response.blob();
+				this.loadedBytes += blob.size;
+				this.report(address.href);
+				delivered = true;
+				return blob;
 			} catch (error) {
 				throw new EngineError(
 					'E1411',
@@ -840,15 +865,50 @@ export class Assets {
 				);
 			}
 		} finally {
-			this.loaded++;
-			this.report(address.href);
+			// A file that failed counts as done, so a loading bar reaches its end: the bytes its
+			// response announced still count, and a failure that announced none counts one byte. A
+			// file that arrived reported as its last bytes came, so it reports nothing here.
+			if (!delivered) {
+				if (announced > 0) this.loadedBytes += announced;
+				else {
+					this.loadedBytes += 1;
+					this.totalBytes += 1;
+				}
+				this.report(address.href);
+			}
 		}
 	}
 
+	/** Reads a response's body in chunks, counting each as it arrives. */
+	private async read(response: Response, address: URL): Promise<Blob> {
+		const reader = response.body?.getReader();
+		if (!reader) {
+			const blob = await response.blob();
+			this.loadedBytes += blob.size;
+			return blob;
+		}
+		const chunks: Uint8Array[] = [];
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			chunks.push(value);
+			this.loadedBytes += value.byteLength;
+			this.report(address.href);
+		}
+		return new Blob(chunks as BlobPart[]);
+	}
+
+	/** The bytes, total and address that the handlers last saw, so a repeat reports nothing. */
+	private reported = '';
+
 	private report(url: string): void {
+		// A chunk's report and the download's end can hold the same numbers; the handlers see one.
+		const line = `${this.loadedBytes}/${this.totalBytes} ${url}`;
+		if (line === this.reported) return;
+		this.reported = line;
 		for (const handler of this.handlers)
 			try {
-				handler(this.loaded, this.total, url);
+				handler(this.loadedBytes, this.totalBytes, url);
 			} catch (error) {
 				console.error(error);
 			}

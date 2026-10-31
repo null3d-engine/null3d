@@ -3,7 +3,7 @@
 // of frames: before a sky layer arrives, with the layer installed, and after it is removed. Each
 // capture also reports the stage of the stretch, so a test can tell when each place took the layer.
 import { createEngine } from '@null3d/engine';
-import { run } from './lib/result';
+import { progress, run } from './lib/result';
 
 const [WIDTH, HEIGHT] = [480, 270];
 /** The camera's field of view and distance, and where the sketch puts each sphere. */
@@ -51,6 +51,7 @@ run('sky-layer-light', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	progress('the first frame');
 	const frames: Capture[] = [];
 	const capture = async (stretch: number, frame: number) => {
 		const { width, height, pixels } = await engine.captureFrame();
@@ -61,6 +62,7 @@ run('sky-layer-light', async () => {
 			mirror: mean(pixels, pixel(MIRROR)),
 			rough: mean(pixels, pixel(ROUGH)),
 		});
+		progress(`stretch ${stretch}, capture ${frame}`);
 	};
 	for (let k = 0; k < CAPTURES; k++) await capture(0, k);
 	engine.postToSketch('layer');
