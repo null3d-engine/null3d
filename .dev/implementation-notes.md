@@ -1292,7 +1292,7 @@ manifest now makes 62,334 GLSL builds and 24,517 WGSL builds, and `BUILD_BUDGET`
 figures. The vegetation add-on draws its trees in batches, and the row bit is what
 lets such a batch take alpha to coverage.
 
-The screen-space bounce light (D-282) adds one shader with its trace and denoise pipelines, so 2
+The screen-space bounce light (D-284) adds one shader with its trace and denoise pipelines, so 2
 GLSL builds and 2 WGSL builds. It loads on first use with ambient occlusion's steps, which the
 bounce reads. `BUILD_BUDGET` records 62,343 GLSL builds and 24,527 WGSL builds.
 

@@ -220,7 +220,7 @@ export const QUALITY_SETTINGS = {
 	// keep the environment's light alone, and High and Ultra draw 4 and 8 rays. The light draws on
 	// ambient occlusion's grid at half the render size, so its cost follows the render scale. At
 	// 1920 x 1080 on the Mac's M5 Max it added 2.5 ms at High and 1.3 ms at Ultra on WebGPU, and
-	// 0.8 ms at WebGL2's Medium. D-282 gives the figures.
+	// 0.8 ms at WebGL2's Medium. D-284 gives the figures.
 	bounceRays: {
 		presets: [0, 0, 4, 8],
 		webgl2: [0, 4, 4, 8],

@@ -1,4 +1,4 @@
-# D-282: Screen-space bounce light
+# D-284: Screen-space bounce light
 
 Status: decided by task M3-F12. The feature draws on High and Ultra, and on WebGL2's Medium,
 which is that path's highest preset. It takes one bounce of the indirect light that the camera's
@@ -147,4 +147,13 @@ green wall is 4.5 levels greener. The baked grid moves those boxes by 7.7 and 1.
 way. The light moves 48% of the frame's pixels by two steps or more. It differs from the baked room
 over 9.4% of the frame past the image tests' threshold, within the test's limit of 45%.
 
-A separate reviewer judges the pictures against the plain room's.
+The test holds what the eye can see and what it cannot. A screen estimate and a bake differ in the
+soft edges of the light and where the screen cannot see, so the test does not demand equality. It
+holds the bake's signs on both floor boxes, the share of the frame that the light moves, and a limit
+on the share that differs past one tenth of full scale, about 13 levels in a channel. A step that
+small disappears into the gradient of a lit wall, while a missing, swapped or wrongly colored bleed
+fails the signs and the moved share.
+
+The look reviewer approved the pictures against the plain room's. It measured the floor's bleed
+within about two levels of the bake at most sampled points, and the worst differences, about six
+levels, in the intended direction.
