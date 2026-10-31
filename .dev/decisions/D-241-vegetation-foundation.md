@@ -250,10 +250,13 @@ is the one the head carries, and the time column is what the page needed. An ear
 light-shafts limit, to five minutes. The other three keep their limits: each needs a measurement on
 the commit that draws it, and a limit lifted without one would hide how long the page takes.
 
-The pictures behind two of the rows also differ on this tree, not only in CI:
-demo-contact-shadows differs by 5.286 to 5.384 per cent and demo-light-shafts by 6.892 to 46.826
-per cent, measured at `58e8e982f`, with the same percentages at `83d1d71a9` and `fc8775f4c`. Those
-are changes to the pictures, and they need their own record; a page limit cannot hide them.
+The pictures behind two of the rows differ in this Mac's software run: demo-contact-shadows by
+5.286 to 5.384 per cent and demo-light-shafts by 6.892 to 46.826 per cent, measured at
+`58e8e982f`, with the same percentages at `83d1d71a9` and `fc8775f4c`. That is a gap between two
+software rasterisers, this Mac's and CI's Linux SwiftShader, and not a change in what the demos
+draw: on the real GPU both pages draw byte-identical to their references, which a fresh pair proves
+by hash. The test's own message says as much, that a drawing on macOS is not CI's software set and
+that CI's software run judges it.
 
 ## Options rejected
 
