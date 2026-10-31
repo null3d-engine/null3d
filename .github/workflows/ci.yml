@@ -1771,7 +1771,7 @@ jobs:
       # healthy runner page went at most 36 s without writing in CI, and a stop otherwise waited out
       # the page's whole time limit, up to 235 s on a shaders page.
       - &real-browser-run
-        name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.shards }}
+        name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.browser == 'Safari' && 49 || 41 }}
         run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu ${{ matrix.browser == 'Safari' && '--shaders sampled' || '' }} --prebuilt ${{ env.PREBUILT }} --quiet-cap 90 --shard ${{ matrix.shard }}/${{ matrix.browser == 'Safari' && 49 || 41 }} ${{ matrix.browser }}
       # Every shard keeps its runs, whose page times set the shards' model of each page's time, and a
       # failed shard's candidates beside them.
