@@ -1,8 +1,8 @@
 # D-277: Skyway's driven hover car, its traffic and the demos' key help
 
 Status: decided by the owner. Built: the driven hover car with its two views, the stacked
-right-hand traffic and the key help panel. Pending: the owner's look review, and the software-GPU
-references of `demo-skyway`, which come from a CI run. Task: M3-C1.
+right-hand traffic and the key help panel. Pending: the owner's look review of `demo-skyway` and
+`demo-instances`, and their software-GPU references, which come from a CI run. Task: M3-C1.
 
 Summary: In Skyway's Manual mode the user drives the hero car with W, A, S, D, R and F. V switches
 the view from behind the car to its seat. The sky lanes keep to the right on 12 heights, with one
