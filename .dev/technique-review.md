@@ -53,8 +53,7 @@ Terms on this page:
 
 ### Shadows and ambient occlusion
 
-- AO's method. AO runs three.js's GTAO horizon search and Poisson denoise at a fraction of the render size (`ao.wgsl`). The lit pass reads it with a depth-weighted read of 4 texels. Three changes remain:
-  - The bitmask variant of GTAO, which removes the dark halos behind thin objects (task M3-R8). Bevy's version needs 5 storage textures per stage, where WebGPU gives 4, so copy Filament's fragment-shader version.
+- AO's method. AO runs three.js's GTAO horizon search and Poisson denoise at a fraction of the render size (`ao.wgsl`). The lit pass reads it with a depth-weighted read of 4 texels. The bitmask variant of GTAO removes the dark halos behind thin objects. At the same slices and steps it costs no more than the horizon search. That holds on both GPU paths, at half and at quarter size. Filament's fragment form needs no storage texture ([D-280](decisions/D-280-bitmask-ambient-occlusion.md)). The engine change that replaces the search is not built. Two changes remain:
   - Filament's separable bilateral denoise.
   - A plain bilinear upsample. Filament measured its depth-aware upsample at about 2 ms on a Pixel 4 (S-03).
 - AO on phones. AO stays off on Low and Medium until prototype S3 meets its pass rules ([D-53](decisions/D-53-technique-defaults.md) ruling 14). Filament measured 7.5 to 14.4 ms for AO at half size on a Pixel 7 Pro (S-03).
