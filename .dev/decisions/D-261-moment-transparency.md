@@ -137,8 +137,12 @@ The color builds read the moment store in the frame's bind group. The frame grou
 the view's copy of the opaque color at binding 15, and every lit build declares that binding,
 because the lit shader imports the screen-space reflection module, which reads the copy: the chain
 `lit` to `ssr` to the copy is not conditional on a material. The moment store therefore takes
-binding 19, and the layout has to be one entry smaller somewhere else to stay within WebGPU's 16
-sampled textures in the fragment stage.
+binding 10, the light probe grid's binding: no moment build reads the grid, so the layout leaves
+that entry out and the layout has to be one entry smaller somewhere else to stay within WebGPU's
+16 sampled textures in the fragment stage. The binding is not 19, the first free number after the
+frame's own: WebGL2 maps a group's binding to a slot by adding the group's base, and the
+background group's six bindings take the slots that the frame group's last numbers reach. The
+store's slot would have been the background group's third table's.
 
 The first attempt removed binding 15 and gave it to the store. WebGPU refused the first draw with
 E1408: a layout may not leave out a binding that its shader declares, read or not. WebGL2 binds by

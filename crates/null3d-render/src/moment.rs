@@ -38,11 +38,12 @@ use crate::frame::{LINEAR_LEVEL, RecordError, UploadArena, clamp_sampler};
 pub(crate) mod tables;
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
-/// The binding of the moment store in the frame group of the colour builds. It comes after the
-/// frame's own bindings, whose last is the copy of the opaque color at 15: the shader composer
-/// keeps every module's globals, so every lit build declares the refraction module's texture at
-/// 15, and WebGPU rejects a pipeline whose layout lacks it (decision record D-261).
-pub(crate) const STORE_BINDING: u32 = 19;
+/// The binding of the moment store in the frame group of the colour builds. It takes the light
+/// probe grid's binding: no moment build reads the grid, so the layer's frame layout leaves that
+/// entry out and the store takes its place. The copy of the opaque color stays at 15, which every
+/// lit build declares through the refraction module, and WebGPU rejects a pipeline whose layout
+/// lacks it (decision record D-261).
+pub(crate) const STORE_BINDING: u32 = 10;
 /// The format of the moment store: four 16-bit floats, which add.
 pub(crate) const STORE_FORMAT: u32 = format::RGBA16_FLOAT;
 /// The format of the colour sum: four 16-bit floats, which add.
