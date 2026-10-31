@@ -2,20 +2,23 @@
 
 Status: decided. The bitmask variant passes the prototype's cost rule on the Mac's two GPU paths,
 at half and at quarter size. It removes the dark halos that three.js's two-horizon search draws
-behind thin objects, and its contacts stay continuous. The engine adopts it in a fragment shader,
+behind thin objects. Its contacts follow the touch points, though the farthest sphere-pair contacts
+are faint and the sphere-floor line is beaded. The engine adopts it in a fragment shader,
 which needs no storage texture. The engine change is not built yet. It keeps three.js's denoise,
 wider. The iPad's and the phone's figures stay with prototype S3. Task: M3-R8.
 
-Summary: The bitmask uses the same 3 slices of 6 steps. It turns its sample pattern by an integer
-hash per texel, and shortens each sample's sector span by the distance falloff. Its denoise is the
-same 16 taps at a wider radius. In four quiet-window runs its AO cost 0.13 to 0.16 ms less than the
+Summary: The bitmask keeps the same 3 slices of 6 steps. It turns its sample pattern by an
+integer hash per texel. It shortens each sample's sector span by the distance falloff. Its denoise
+is the same 16 taps at a wider radius. In four quiet-window runs its AO cost 0.13 to 0.16 ms less than the
 current technique on WebGPU at half size. At quarter size it cost 0.02 to 0.04 ms less. On WebGL2
 the four runs spread from 0.62 ms more to 0.72 ms less at half size. At quarter size they spread
-from 0.18 ms more to 0.23 ms less. The two are equal there within the run's spread. The fragment path binds no storage texture, so it fits WebGPU's default
-limit of four everywhere. A compute design would need four textures at the reduced sizes. At full
-size it would need five, over the default. On the prototype's scene the bitmask removes the gray
-bands behind the thin poles and the rings around the spheres. Its contacts are continuous, and the
-wall-floor seam, the screen-period hatch and the hard marks are gone.
+from 0.18 ms more to 0.23 ms less. The two are equal there within the run's spread. The fragment
+path binds no storage texture, so it fits WebGPU's default limit of four everywhere. A compute
+design would need four textures at the reduced sizes. At full size it would need five, over the
+default. On the prototype's scene the bitmask removes the gray bands behind the thin poles and the
+rings around the spheres. The fixed hatch and the star splats are gone. Short ribbed teeth remain on
+the wall-base marks, the box's right edge and the table line. The table's back edge is deeper than
+the current technique's.
 
 ## Question
 
@@ -102,24 +105,31 @@ and `tests/proto-s3-run.ts`.
 
 The pictures show the difference at the same frame, camera and preset, on both paths at both sizes.
 They show the occlusion view. The current technique draws a broad gray band on the wall behind each
-thin pole. It also draws a dark ring around each sphere's silhouette. The bitmask removes both. It
-keeps the contact darkening continuous: a stacked pair gives one smooth band, and each sphere rests
-on one smooth patch. Its wall-floor seam is a thin line, like the current one.
+thin pole. It also draws a dark ring around each sphere's silhouette. The bitmask removes both. The
+contact darkening follows the touch points, and the nearest contacts read as one band. The contact
+between the two receding spheres is much fainter, and breaks into a trace and a few specks. The
+sphere-floor contact is a dark line with a beaded edge, under a fan of fine specks. The wall-floor
+seam is a thin line. The table's back edge is darker and harder than the current technique's, so
+that segment is not like it.
 
 The first revision broke the contacts into detached wedges, drew hard rectangles above the rows,
 and put a screen-period hatch on the structure render. Three changes fix them. The sample pattern
 turns with an integer hash per texel. No flat surface then shows a screen-period hatch. Each
 sample's sector span is shortened by the distance falloff. A wall beside a surface then does not
-mark its whole height, and the seam keeps the current width. The denoise takes a wider 8-texel radius,
-which smooths the wedges into continuous bands. The hatch itself came from the structure pass's
-16-bit distance: its quantization flips the binary mask on flat surfaces. The structure pass now
-writes 32-bit distances. The quarter-size star splats and the box's ink outline are gone with the
-wider denoise.
+mark its whole height. The seam's width comes back to the current one, except at the table's back
+edge. The denoise takes a wider 8-texel radius, which smooths the wedges into continuous bands.
+The hatch itself came from the structure pass's 16-bit distance: its quantization flips the binary
+mask on flat surfaces. The structure pass now writes 32-bit distances. The quarter-size star splats
+are gone, and the box no longer has an ink outline. Short ribbed teeth remain on its right edge, on
+the wall-base marks and along the table line.
 
 Against the current technique at half size on WebGPU, 11.8% of the occlusion picture's pixels move
 by more than 8 steps of 255. Of those, 5.2% grow darker and 6.6% grow lighter. At quarter size the
 shares are 12.6%, 4.3% and 8.3%. The shaded scene moves by 0.27% of its pixels at half size and
-0.12% at quarter. WebGL2 moves the same way, within 0.1 percentage points of those figures.
+0.12% at quarter, by the page's measure. That measure counts a pixel by its largest channel step,
+against the three.js variant of the current technique. The look reviewer compared the bitmask with
+the GTAO variant. It measured 0.07% of the shaded scene's pixels at half size, 0.14% at quarter and
+0.08% on WebGL2, by per-pixel luminance. Both support a small change.
 
 Pictures: `tests/image/references/*/webgpu|webgl2/proto-ao-{current,bitmask}-{half,quarter}.png`.
 They were drawn on the Mac's GPU and on SwiftShader. `target/proto-s3/pictures/` holds the larger
@@ -131,7 +141,8 @@ and does not pass its own look.
 The engine adopts the bitmask variant, in a fragment shader:
 
 - It removes the dark halos behind thin objects, which is the fault the variant exists to fix. Its
-  contacts stay continuous, and its seam keeps the current width.
+  contacts follow the touch points, and the seam's width comes back, except at the table's back
+  edge.
 - At the same slices, steps and 16-tap denoise, it costs less than the current technique. On
   WebGPU at half size the gap is 0.13 to 0.16 ms. On WebGL2 the two are equal within the run's
   spread.
