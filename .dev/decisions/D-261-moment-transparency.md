@@ -296,7 +296,15 @@ It also holds that an unused layer declares and records nothing.
 
 ## Remaining work
 
-1. The run on an S24-class phone, which gives the cost figure that decides the preset.
+1. The run on an S24-class phone, which gives the cost figure that decides the preset. The cloud
+   runner reached the session three times and measured nothing. It refused first while another
+   BrowserStack session was in use. It refused next because the port it serves on belonged to
+   another checkout, and because a worktree has no development certificate of its own: the run
+   needs ports of its own and the machine's certificate copied into the checkout. It refused last
+   because the engine's core was built from other Rust sources than the merged tree holds, so the
+   checkout needs its build run before the pages load. The command is `bun run devices:cloud
+   --only bsgalaxys24-chrome --plan bench -- --only bench-s1-null3d-webgl2-1 --allow-no-webgpu`,
+   once with `--switches weighted=on` and once with `--switches weighted=on&moments=on`.
 2. The owner's ruling on whether a preset turns the layer on, and which. Every preset leaves it off
    today, and the cost figure above is what a preset would pay.
 3. The steps at the far panes' edges, if the owner wants them gone: a fit of three atoms takes more
