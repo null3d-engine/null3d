@@ -31,7 +31,7 @@ In pipelined mode the render worker draws frame N while the sketch worker comput
 
 Sketch code is usually the largest CPU cost, so tune it first. In the S1 benchmark (100,000 boxes that `onUpdate` moves every frame, Chrome, MacBook Pro), the sketch's update took 2.18 ms per frame. The engine's own steps took 0.14 ms on the sketch worker, the render worker 0.15 ms, and 16 job workers 0.45 ms together. The engine docs page `guides/performance` has the full split.
 
-Put performance-sensitive work in Rust. The engine's per-frame loops run in Rust, and your TypeScript is an interface to them: it writes arrays and makes calls. For work that grows with the scene, use the engine's bulk calls, which cover every object in one call. For a loop that no engine call covers, build a Rust WebAssembly module and run it on the job workers with `runTask` (`api/tasks`). Keep setup, wiring and page logic in TypeScript.
+Put performance-sensitive work in Rust. The engine's per-frame loops run in Rust, and your TypeScript is an interface to them: it writes arrays and makes calls. For work that grows with the scene, use the engine's bulk calls, which cover every object in one call. For a loop that no engine call covers, build a Rust WebAssembly module and run it on the job workers with `runTask` (`api/tasks`). A task answers between frames, so a loop that must affect the current frame belongs in the engine's own calls. Keep setup, wiring and page logic in TypeScript.
 
 ## 2. Budgets
 
