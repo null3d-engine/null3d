@@ -146,17 +146,17 @@ change is inside the noise.
 The image test draws the room at the reference preset, with the sketch setting 8 samples itself. On
 WebGPU, the floor under the red wall is 6.5 levels redder than the plain room's. The floor under the
 green wall is 4.5 levels greener. The baked grid moves those boxes by 7.7 and 1.6 levels the same
-way. The light moves 48% of the frame's pixels by two steps or more. It differs from the baked room
-over 9.4% of the frame past the image tests' threshold; the test does not cap that share, because
-the two lights are not equal by design.
+way. The light moves 48.35% of the frame's pixels by two steps or more on WebGPU, and 46.75% on
+WebGL2. It differs from the baked room over 9.4% of the frame past the image tests' threshold; the
+test does not cap that share, because the two lights are not equal by design.
 
 The owner amended the clause, so the test holds what the technique can do rather than an equality
 that a screen estimate cannot reach. The floor under each wall must take the bake's color in the
 bake's direction, within four levels of the bake's strength. The measured gaps are 1.2 levels at
-the left box and 3.0 at the right, and the two GPU paths agree within half a level, so four levels
-covers both with a level to spare. The test also records the share of the frame that the light
-moves past the two-step bar, 48%, rather than requiring it to match the bake's share. A missing,
-swapped or wrongly colored bleed fails the signs and the moved share.
+the left box, and 2.9 at the right on WebGPU and 3.0 on WebGL2, so four levels covers both paths
+with a level to spare. The test also prints the share of the frame that the light moves past the
+two-step bar, 48.35% on WebGPU and 46.75% on WebGL2, rather than requiring it to match the bake's
+share. A missing, swapped or wrongly colored bleed fails the signs and the moved share.
 
 The two lights are not equal. On the green-wall floor the bounce reaches about -8 where the bake
 reaches -5.2, a stronger green spill over a wider reach. That is a difference of design, not of

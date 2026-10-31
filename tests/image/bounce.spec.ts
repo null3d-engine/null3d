@@ -29,8 +29,8 @@ const MOVED = 1 / 255;
 const MOVES = 0.05;
 /**
  * How far one floor box's bleed may lie from the bake's, in 8-bit levels. The measured gaps are
- * 1.2 levels at the left box and 3.0 at the right, and the two GPU paths agree within half a
- * level, so four levels covers both boxes on both paths with a level to spare.
+ * 1.2 levels at the left box, and 2.9 at the right on WebGPU and 3.0 on WebGL2, so four levels
+ * covers both boxes on both paths with a level to spare.
  */
 const BLEED_MATCH = 4;
 /** The most that the picture's own light may move one floor box's red-minus-green, in 8-bit levels. */
@@ -102,10 +102,11 @@ for (const tier of ['webgpu', 'webgl2'] as const)
 
 		const bounceLeft = redder(bounce, off, LEFT);
 		const bounceRight = redder(bounce, off, RIGHT);
+		const moved = share(bounce, off, MOVED);
 		expect(bounceLeft).toBeGreaterThan(BLEED);
 		// The green wall takes red away from the right floor, so its figure is negative.
 		expect(bounceRight).toBeLessThan(-BLEED);
-		expect(share(bounce, off, MOVED)).toBeGreaterThan(MOVES);
+		expect(moved).toBeGreaterThan(MOVES);
 
 		// The probe-lit room bakes the same one bounce. Its light lands on the same side. The
 		// bake's green bleed is weaker than its red one, because the green wall's surface is
@@ -113,6 +114,11 @@ for (const tier of ['webgpu', 'webgl2'] as const)
 		// within the stated number of levels of it.
 		const gridLeft = redder(grid, off, LEFT);
 		const gridRight = redder(grid, off, RIGHT);
+		console.log(
+			`${tier}: the light moves ${(moved * 100).toFixed(2)} per cent of the frame past the two-step bar; ` +
+				`the left box is ${bounceLeft.toFixed(2)} levels against the bake's ${gridLeft.toFixed(2)}, ` +
+				`the right ${bounceRight.toFixed(2)} against ${gridRight.toFixed(2)}`,
+		);
 		expect(gridLeft).toBeGreaterThan(0.3);
 		expect(gridRight).toBeLessThan(-0.3);
 		expect(Math.abs(bounceLeft - gridLeft)).toBeLessThanOrEqual(BLEED_MATCH);
