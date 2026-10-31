@@ -203,6 +203,27 @@ run('wind-field-cost', async () => {
 		});
 		engine.postToSketch('graph');
 	});
+	// A small summary of the field read back once the timing is done: the wait for its answer and
+	// the frames of delay that the read reports. The real cycle runs while it is asked.
+	let read: Record<string, unknown> | null = null;
+	if (real) {
+		await settle({ label: 'read', mode: 'real', steps: 0, drag: 0 });
+		await new Promise((resolve) => setTimeout(resolve, 250));
+		read = await new Promise((resolve) => {
+			let off = (): void => {};
+			const timer = setTimeout(() => {
+				off();
+				resolve({ error: 'no answer within 10 s' });
+			}, 10_000);
+			off = engine.onSketchMessage((name, data) => {
+				if (name !== 'read') return;
+				clearTimeout(timer);
+				off();
+				resolve(data as Record<string, unknown>);
+			});
+			engine.postToSketch('read');
+		});
+	}
 	const wasmBytes = (await engine.measure(0.5)).memory.wasmBytes;
 	engine.stats(true);
 	const ready = await waitForOverlay('gpu-textures');
@@ -222,6 +243,7 @@ run('wind-field-cost', async () => {
 		window: [innerWidth, innerHeight],
 		devicePixelRatio,
 		sides,
+		read,
 		graph,
 		memory,
 		/** The two states of a history pass over the tile, in bytes. */

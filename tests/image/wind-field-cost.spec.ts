@@ -42,6 +42,13 @@ interface FieldResult {
 	};
 	fieldBytes: number;
 	real: boolean;
+	read: {
+		ms?: number;
+		frames?: number;
+		width?: number;
+		height?: number;
+		error?: string;
+	} | null;
 	graph: string;
 	failures: string[];
 }
@@ -115,6 +122,13 @@ for (const gpu of gpus) {
 							: '';
 						return `  ${count} chain steps: field ${ms(field(side))} ms (${ms(field(side) / count)} each), frame delta ${ms(frameDelta(side))} ms${drag}`;
 					}),
+					...(result.read
+						? [
+								result.read.error
+									? `  read: ${result.read.error}`
+									: `  read of ${result.read.width} x ${result.read.height}: ${ms(result.read.ms ?? null)} ms to answer, ${result.read.frames} frames late`,
+							]
+						: []),
 					`  memory: textures ${gib(result.memory.gpuTextureBytes)} MiB, buffers ${gib(result.memory.gpuBufferBytes)} MiB, wasm ${gib(result.memory.wasmBytes)} MiB, total ${gib(result.memory.totalBytes)} MiB, field ${gib(result.fieldBytes)} MiB expected`,
 					`  failures: ${result.failures.join('; ') || 'none'}`,
 				].join('\n'),
