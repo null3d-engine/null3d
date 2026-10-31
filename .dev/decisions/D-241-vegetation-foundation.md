@@ -738,6 +738,14 @@ that depends on another add-on. [D-173](D-173-addon-hooks.md) gives the rule for
   keep their state between frames.
 - M3-V15 builds the wind add-on, and M3-V16 declares the wind's feature in it.
 
+## The wind add-on's cost and budget
+
+The wind's own cost at each preset, and the rows and the budget that each preset proposes, are in
+[D-283](D-283-fluid-wind-cost.md). That record is the plan's addendum for the fluid wind: it gives
+the field's cost on the Mac, the iPhone 17 and the Galaxy S24, the readers on the grove, and what
+each figure is, whether measured, modelled from measured parts or a bound. It also names the rows
+that M3-V16 declares, and what the look runs and the owner's ruling still owe.
+
 ## The grass's first slice, and the edge its compute half waits on
 
 M3-V8's first slice builds the CPU half of the plan's two paths: `createGrass` places tufts on a
