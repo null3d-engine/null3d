@@ -97,15 +97,17 @@ instead of a band of cars over the low streets. The owner judges the final look.
 - **The views.** Behind: the camera eases to 13 m behind the car and 4.4 m above it. It looks 22 m
   ahead while it sits at its usual distance, and two metres past the car once it has pulled in,
   and it keeps out of the towers as the car does. It also pulls in before a tower that would stand
-  between it and the car, and sits lower as it closes. The pull stands no closer than 9 m from
-  the car, so the car cannot fill the frame, and it swings to the nearer side that still sees the
-  car when the tower leaves no room straight back. The pull follows the tower's edge, and the chase
-  easing carries the camera back out once the tower clears. Because a turn can bring a tower across
-  the line in a single frame, the camera also looks a short way along the car's path and starts
-  closing at a limited rate before the tower arrives. The car grows on screen as it closes: about a
-  third of the frame's width at the usual distance, and a little under half at the closest
-  standoff, with the road ahead still in the frame. The proof's control leaves the tower out of the
-  camera's tower list, so it shows the camera at rest rather than a second blocked view. Inside:
+  between it and the car, and sits lower as it closes. The pull stands no closer than 10 m from
+  the car, so the whole car stays in the frame with a margin, and it swings to the nearer side that
+  still sees the car when the tower leaves no room straight back. The swing eases onto that side
+  and holds it while the tower stays, so a car at rest gets a still shot. The pull follows the
+  tower's edge, and the chase easing carries the camera back out once the tower clears. Because a
+  turn can bring a tower across the line in a single frame, the camera also looks a short way along
+  the car's path and starts closing at a limited rate before the tower arrives. The car grows on
+  screen as it closes: about a third of the frame's width at the usual distance, and a little
+  under half at the closest standoff, with the road ahead still in the frame. The proof's control
+  leaves the tower out of the camera's tower list, so it shows the camera at rest rather than a
+  second blocked view. Inside:
   the camera sits in the driver's seat
   and turns with the car, and the speed blur keeps a quarter of its strength, so the dashboard
   stays readable. V and the View buttons switch the two, in Auto too: there the car carries the
