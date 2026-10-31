@@ -276,17 +276,14 @@ function ordered(tufts: readonly GrassTuft[], high: number): GrassTuft[] {
 }
 
 /**
- * The far edges of the default bands, as fractions of the area's side. The first band ends at the
- * distance where a blade's shape stops showing, and the second carries the hill to its far corner.
+ * The far edge of the default band, as a fraction of the area's side. The default draws the hill as
+ * one band, so it costs what a plain batch of tufts costs. A look review of a split hill found the
+ * far band's cheaper tuft either worse looking or worth no saving at all, so the split is a page's
+ * choice rather than the default: D-241 records the review and the figures.
  */
-const DEFAULT_BAND_EDGES = [0.5, 1.6] as const;
-/**
- * The default bands' tufts, as shares of the near band's. The default keeps every band's tufts and
- * blade width, so a band changes its blades' geometry alone and no contour of density shows on the
- * ground. A page that thins a band widens its blades by the same factor, which the review of this
- * work found turns them into sticks past a small widening, so the default does not thin.
- */
-const DEFAULT_BAND_SHARES = [1, 1] as const;
+const DEFAULT_BAND_EDGES = [1.6] as const;
+/** The default band's tufts, as a share of the near band's, which is all of them. */
+const DEFAULT_BAND_SHARES = [1] as const;
 /** The floats of one row: its place, its turn, its size, its values and its two distances. */
 const ROW_FLOATS = 3 + 4 + 3 + 4 + 2;
 /**
@@ -434,6 +431,9 @@ export function createGrass(ctx: SketchContext, options: GrassOptions): Grass {
 		batches: InstanceBatch[];
 	}[] = [];
 	const plans = grassBands(options);
+	// A page that names no bands draws one band over the whole hill, exactly as a plain batch does:
+	// no row ranges, so no fade dithers among the tufts.
+	const ranged = (options.bands?.length ?? 0) > 0;
 	for (let index = 0; index < plans.length; index++) {
 		const plan = plans[index] as GrassBandPlan;
 		const bandHigh = plan.counts.high;
@@ -451,25 +451,27 @@ export function createGrass(ctx: SketchContext, options: GrassOptions): Grass {
 					castShadows: false,
 					receiveShadows: true,
 					values: true,
-					ranges: true,
+					ranges: ranged,
 				},
 			);
 			const positions = batch.positions;
 			const rotations = batch.rotations;
 			const scales = batch.scales;
 			const values = batch.values as Float32Array;
-			const ranges = batch.ranges as Float32Array;
+			const ranges = batch.ranges as Float32Array | undefined;
 			rows.forEach((tuft, row) => {
 				positions.set([tuft.x, tuft.y, tuft.z], row * 3);
 				rotations.set(quat.fromEuler(spin, 0, tuft.turn, 0), row * 4);
 				scales.set([tuft.size, tuft.size, tuft.size], row * 3);
 				// The shader reads the tint from the row's second value.
 				values[row * 4 + 1] = tuft.tint;
-				// The row draws between the band's distances. The engine fades each edge over a
-				// share of the range, so the two bands' tufts cross-fade along the boundary instead
-				// of one set of blades stopping where the next starts.
-				ranges[row * 2] = plan.near;
-				ranges[row * 2 + 1] = plan.far;
+				// With bands, the row draws between the band's distances. The engine fades each edge
+				// over a share of the range, so two bands' tufts cross-fade along the boundary
+				// instead of one set of blades stopping where the next starts.
+				if (ranges) {
+					ranges[row * 2] = plan.near;
+					ranges[row * 2 + 1] = plan.far;
+				}
 			});
 			batch.markDirty();
 			batches.push(batch);

@@ -218,8 +218,8 @@
 	"chromium-swiftshader/compat/vegetation-grass.png": {
 		"test": "vegetation-grass",
 		"tier": "compat",
-		"date": "2026-10-31",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that drew the grass in three distance bands, before the branch was pushed; CI's own software set replaces it when the branch lands"
+		"date": "2026-10-30",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 for the hill that the grass draws as one band, before the branch was pushed; CI's own software set replaces it when the branch lands"
 	},
 	"chromium-swiftshader/compat/vegetation-rush.png": {
 		"test": "vegetation-rush",
@@ -476,8 +476,8 @@
 	"chromium-swiftshader/webgl2/vegetation-grass.png": {
 		"test": "vegetation-grass",
 		"tier": "webgl2",
-		"date": "2026-10-31",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that drew the grass in three distance bands, before the branch was pushed; CI's own software set replaces it when the branch lands"
+		"date": "2026-10-30",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 for the hill that the grass draws as one band, before the branch was pushed; CI's own software set replaces it when the branch lands"
 	},
 	"chromium-swiftshader/webgl2/vegetation-meadow-grass.png": {
 		"test": "vegetation-meadow-grass",
@@ -752,8 +752,8 @@
 	"chromium-swiftshader/webgpu/vegetation-grass.png": {
 		"test": "vegetation-grass",
 		"tier": "webgpu",
-		"date": "2026-10-31",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that drew the grass in three distance bands, before the branch was pushed; CI's own software set replaces it when the branch lands"
+		"date": "2026-10-30",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 for the hill that the grass draws as one band, before the branch was pushed; CI's own software set replaces it when the branch lands"
 	},
 	"chromium-swiftshader/webgpu/water-bounds.png": {
 		"test": "water-bounds",
