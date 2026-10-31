@@ -240,11 +240,7 @@ A large scene need not place every plant at once. `EcoScatter` takes tiles with 
 
 The blades bend in the wind add-on's field, the same field that the leaf material reads. Give `createGrass` its `wind` field, and call `grass.setWindLayer(field)` in each frame with the field's newest state, as the leaf material takes it. A page that gives no field grows grass that stands still.
 
-The default draws the hill as one band, so it costs what a plain batch of tufts costs. Pass `bands` to split it by distance. Each band then covers the whole square and draws only between its distances from the camera, so a far band culls the rows that are out of range. A band beyond the first can give its blades fewer segments with `segments`, fewer tufts with `share` and wider blades with `widen`. A band thinned far out loses the ground's cover unless its blades widen by the same factor, and a wide blade reads as a stick past a small widening, so weigh a split band's saving against its look.
-
-`grassBands(options)` gives that plan without building anything: each band's distances, its tufts at every preset, the triangles of one tuft, and the rows and bytes it allocates. `grass.bands` gives the bands as the call built them, and `grass.batches` holds every batch of every band. The rows are built for Ultra's share once, so a preset change only changes how many rows each batch draws, not the memory.
-
-The CPU tile path draws on WebGPU and WebGL2, with one instance batch for each tuft shape in each band. The compute path, which builds and culls blades on the GPU for the denser presets, is not built yet.
+The CPU tile path draws on WebGPU and WebGL2, with one instance batch for each tuft shape. The rows are built for Ultra's share once, so a preset change only changes how many rows each batch draws, not the memory. The compute path, which builds and culls blades on the GPU for the denser presets, is not built yet.
 
 The blades receive the sun's shadows. The ground's own colour and the blades' root colours should meet at the hill's foot.
 

@@ -13,10 +13,7 @@ const COUNT = 20_000;
 /** The height of the hill at a point, in meters. */
 const hill = (x: number, z: number) => 4.5 * Math.exp(-(x * x + z * z) / 220);
 
-/**
- * The grass that this page grows. The measurement page reads it to report the hill's bands, their
- * tufts, triangles and rows, without reaching into the sketch's own frame.
- */
+/** The grass that this page grows, which the sketch and its measurement page share. */
 export const GRASS: GrassOptions = {
 	height: hill,
 	area: { x: 0, z: 0, size: SIZE },

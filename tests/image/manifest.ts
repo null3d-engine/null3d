@@ -2987,9 +2987,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [640, 360],
 	},
 	// The first grass picture: a hill of tufts grown by the add-on, placed and tinted by integer
-	// hash, drawn in three distance bands that thin and widen their blades as the distance grows.
-	// The blades read the wind add-on's field, which this picture holds still; the camera and the
-	// light are fixed, so two runs draw the same frame.
+	// hash, drawn as one band. The blades read the wind add-on's field, which this picture holds
+	// still; the camera and the light are fixed, so two runs draw the same frame.
 	{
 		name: 'vegetation-grass',
 		sketch: 'tests/pages/sketches/vegetation-grass-sketch.ts',

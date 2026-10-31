@@ -731,18 +731,13 @@ that depends on another add-on. [D-173](D-173-addon-hooks.md) gives the rule for
 
 ## The grass's first slice, and the edge its compute half waits on
 
-M3-V8's first slice builds the CPU half of the plan's two paths, and the second slice gives it
-distance bands. `createGrass` places tufts on a height function by integer hash. The hill draws in
-two bands, each covering the whole square and drawing only between its distances from the camera.
-Both bands place the same tufts at the same blade width, and the band beyond the first gives each
-blade one fewer segment, so the far ground costs fewer triangles and no contour of a changed density
-crosses the hill. A preset draws its share of every band: 0.35, 0.6, 1 or 1.25. The engine culls each
-batch's rows in groups and drops the rows outside their band. The blades read the wind add-on's field
-at their roots, so one field moves the grass and the leaves together. The field's steady-air and
-sampling blocks are copied verbatim from the leaf material's `plant.wgsl`, and a test fails when one
-copy is edited alone. The material takes the field's newest layer each frame through
-`grass.setWindLayer`, which the page calls in its update. `grassBands(options)` gives the same plan
-without building it.
+M3-V8's first slice builds the CPU half of the plan's two paths: `createGrass` places tufts on a
+height function by integer hash and draws the hill in one instance batch for each tuft shape. A
+preset draws its share: 0.35, 0.6, 1 or 1.25. The engine culls each batch's rows in groups. The
+blades read the wind add-on's field at their roots, so one field moves the grass and the leaves
+together. The field's steady-air and sampling blocks are copied verbatim from the leaf material's
+`plant.wgsl`, and a test fails when one copy is edited alone. The material takes the field's newest
+layer each frame through `grass.setWindLayer`, which the page calls in its update.
 
 **The far band's first build thinned, and a look review rejected it.** That build placed a quarter of
 the near band's tufts past the first edge, gave their blades a single segment and widened them by
@@ -757,14 +752,15 @@ the same two faults: single-segment blades are sub-pixel at the crest and raster
 pixels, and every far row began to draw at one distance, so the engine's ordered fade dither fell in
 one ring.
 
-**The second build looked right and saved nothing, so the default keeps the one band.** That build
-placed every band's tufts at the same blade width and took the saving from the segments alone, 39
-triangles a tuft past the first edge against 65. It drew the hill at 3.54 ms at High on the Mac, a
-little above the 3.47 ms of one band, because the far rows fell only to 60 per cent of the triangles
-while the second batch and its band test cost the frame its own share. The review's rule was that a
-saving that cannot hold the hill's look at its price is not taken, and this one cannot hold its price
-at all. So `createGrass` draws one band unless a page passes `bands`: the default is the plain hill,
-and a page that splits it takes the same trade knowingly.
+**The second build looked right and saved nothing, so the split left the code.** That build placed
+every band's tufts at the same blade width and took the saving from the segments alone, 39 triangles
+a tuft past the first edge against 65. It drew the hill at 3.54 ms at High on the Mac, a little
+above the 3.47 ms of one band, because the far rows fell only to 60 per cent of the triangles while
+the second batch and its band test cost the frame their own share. The review's rule was that a
+saving which cannot hold the hill's look at its price is not taken, and this one cannot hold its
+price at all. So the distance bands were removed rather than shipped unused: no page asked for them,
+and a picture of the split would have recorded the rejected look as expected output. The record of
+both attempts stays, because the arithmetic is the value that the work produced.
 
 **What it costs.** The default hill holds 20,000 tufts at the High count, and Chrome on the Mac drew
 it at 960 by 540 drawing pixels at each preset and path that its tier offers
