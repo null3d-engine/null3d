@@ -408,19 +408,18 @@ The runs, before and after each device:
 [20261030-150954-bench](tested-devices/galaxy-s25-sm-s931b-chrome/20261030-150954-bench.md) and
 [20261030-162243-bench](tested-devices/galaxy-s25-sm-s931b-chrome/20261030-162243-bench.md).
 
-## The sky's cloud tier on an iPad and an S24, 24 October 2026
+## The sky's cloud tier on an iPad and an S24
 
 The clouds plan drew the sky alone, with the tier off and on in turn. Each page sets the step count
 itself, so the tier draws on a path whose preset stops at Medium. The pages ran through BrowserStack
 Automate, and each folder's README holds the device's facts.
 
-| Device | Browser | Date | Preset | Figure | Measured against | Run |
-| --- | --- | --- | --- | --- | --- | --- |
-| iPad (10th generation), A14 | Safari 27.0 | 24 October 2026 | Medium, a tablet's start preset; the page sets the steps | The tier stays within about 1 ms of the flat layer on WebGPU, at 16 and 32 steps and render scales 1 and 0.5 | The flat layer in the same session, in turn | [20261024-152404-clouds](tested-devices/ipad-10th-generation-safari/20261024-152404-clouds.md) |
-| iPad (10th generation), A14 | Safari 27.0 | 24 October 2026 | Medium, a tablet's start preset; the page sets the steps | WebGL2's largest frame difference is 0.13 ms, and both sides hold the 60 Hz frame | The flat layer in the same session, in turn | [20261024-152404-clouds](tested-devices/ipad-10th-generation-safari/20261024-152404-clouds.md) |
-| Galaxy S24 (SM-S921B), Xclipse 940 | Chrome 152.0.7977.54, Android 16 | 24 October 2026 | Low, a phone's start preset; the page sets the steps | A 64-step frame holds 33.33 ms at pixel ratio 3, at render scales 1 and 0.5, so 32 steps cost under half a frame | The High preset's 16.7 ms budget at 60 frames a second | [20261024-154026-clouds](tested-devices/galaxy-s24-sm-s921b-chrome/20261024-154026-clouds.md) |
+| Device | Browser | Preset | Figure | Measured against | Run |
+| --- | --- | --- | --- | --- | --- |
+| iPad (10th generation), A14 | Safari 27.0 | Medium, a tablet's start preset; the page sets the steps | The tier's 32-step WebGPU frame stays within Safari's timer noise of the flat layer, 6.10 against 4.04 ms at render scale 1, and the 64-step page is within 0.14 ms of it | The flat layer in the same session, in turn | [20261031-233224-clouds](tested-devices/ipad-10th-generation-safari/20261031-233224-clouds.md) |
+| iPad (10th generation), A14 | Safari 27.0 | Medium, a tablet's start preset; the page sets the steps | WebGL2's largest frame difference is 0.67 ms across the three step counts and both render scales | The flat layer in the same session, in turn | [20261031-233224-clouds](tested-devices/ipad-10th-generation-safari/20261031-233224-clouds.md) |
+| Galaxy S24 (SM-S921B), Xclipse 940 | Chrome 152.0.7977.54, Android 16 | Low, a phone's start preset; the page sets the steps | The device has no WebGPU path, so its six WebGL2 pages ran. Every page held the 30 Hz display's 33.3 ms, including 64 steps, so 32 steps cost under half a frame | The High preset's 16.7 ms budget at 60 frames a second | [20261031-234019-clouds](tested-devices/galaxy-s24-sm-s921b-chrome/20261031-234019-clouds.md) |
 
-Two other S24 runs in the same folder carry no figure. The phone gives WebGL2 no GPU timer, and its
-display ran at 30 Hz, so a frame interval could not separate the sides. A third run asked for 128
-steps, which the setting refuses. The iPad rows compare the tier with the flat layer within one session. An absolute cost
-against the High preset's budget still wants the owner's iPad.
+The S24's display ran at 30 Hz, so its frame intervals are not a cost and its 64-step page is a
+bound: a cost that grows with the steps puts 32 steps under half of the frame, which the page holds.
+The iPad rows compare the tier with the flat layer within one session.

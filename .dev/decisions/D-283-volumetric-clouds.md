@@ -1,8 +1,8 @@
 # D-283: The sky's volumetric cloud tier
 
-Status: decided by the helper of M3-F11 on 24 October 2026, for the owner's review. Built: the cloud
+Status: decided by the helper of M3-F11, for the owner's review. Built: the cloud
 march, its noise field, the background draws of both skies, the sky map's steps, the `cloudSteps`
-quality setting and the image tests. Date: 2026-10-24. Task: M3-F11.
+quality setting and the image tests. Task: M3-F11.
 
 Summary: On the High and Ultra presets the sky draws volumetric clouds in place of the flat layer:
 a ray marched through a noise volume, drawn as a second blended draw over the sky and in the sky's
@@ -13,8 +13,8 @@ and lets a page reach it on a GPU path that caps its preset lower.
 
 ## Question
 
-D-173's ruling of 21 October 2026 says that the sky's High tier and above draw volumetric clouds,
-behind the same cloud settings that draw the flat layer on Low and Medium. What draws them, where
+D-173's cloud ruling says that the sky's High tier and above draw volumetric clouds, behind the
+same cloud settings that draw the flat layer on Low and Medium. What draws them, where
 does its cost sit, how do the tiers differ without two places for one feature, and what keeps a page
 that never draws them from paying?
 
@@ -24,8 +24,8 @@ that never draws them from paying?
   drive both layers: `cloudScale`, `cloudSpeed`, `cloudCoverage`, `cloudDensity`, `cloudElevation`
   and `time`. A setting keeps its meaning on every tier: coverage still bounds the share of the sky
   that clouds cover, density their solidity, elevation their height, scale their size, speed and time
-  their drift. The flat layer's coverage goes to zero in the shader values while the tier draws, so
-  no frame draws both.
+  their drift. The sky's block keeps the page's coverage, because the march reads it, and each sky
+  shader leaves its flat layer out from the step count, so no frame draws both.
 - **The flat tiers download nothing.** The tier is four shaders of its own. The manifest's
   `[first_use.clouds]` family holds the two backgrounds, and the two sky-map steps are first-use
   entries of their own. The noise field is a 64-cube that the renderer generates and uploads on
@@ -114,8 +114,8 @@ simpler light of the panorama costs nothing that a viewer can see.
 
 ## Alternatives rejected
 
-- **An add-on that draws its own clouds.** Rejected by D-173's addendum of 21 October 2026: two
-  places for one feature, with two sets of settings.
+- **An add-on that draws its own clouds.** Rejected by D-173's cloud ruling: two places for one
+  feature, with two sets of settings.
 - **The march inside the sky's own shader.** A flat-tier page downloads the sky's first-use file, so
   it would download the march and its noise with it.
 - **A marching cloud that ignores the flat layer's pattern.** The tier would move every cloud when a
