@@ -1344,6 +1344,11 @@ slots. A new binding would fail every standard material. The screen texture ther
 light in a second layer, and the frame's binding 11 is a 2D array. Ambient occlusion's denoise
 reads the reflections' trace, or a blank array while they draw none, so every texture of that
 binding is an array. The first texture of the screen steps stays a 2D image.
+The sky's volumetric cloud tier adds four shaders in M3-F11, and 6 GLSL builds and 6 WGSL builds
+with them. The analytic and physical skies' cloud draws build both targets with the `TONE_MAP`
+permutation, and the two sky-map steps build both targets once each. All four load on the tier's
+first use, so a page on Low or Medium downloads none of them (D-297). The merge makes 66,530 GLSL
+builds and 25,794 WGSL builds, and `BUILD_BUDGET` records those figures.
 
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this

@@ -76,3 +76,44 @@ test('clouds-steps: the Ultra tier draws a finer march than the High tier', asyn
 		expect(share).toBeGreaterThan(LEAST_CHANGED);
 	}
 });
+
+/**
+ * The least change that the march makes against the flat layer of the same scene: a floor well
+ * under the figures that a Mac and CI's software GPU measured, so a tier that quietly drew the
+ * flat layer's picture fails by the whole floor.
+ */
+const LEAST_FROM_FLAT = 0.01;
+
+/**
+ * Pairs of a tier and the flat layer of the same scene: the sky's own picture, and the sky's
+ * environment map on the spheres that show whether the map holds the clouds.
+ */
+const FLAT_PAIRS = [
+	['clouds-volume', 'clouds-flat'],
+	['clouds-environment', 'clouds-environment-flat'],
+] as const;
+
+test('clouds-flat: each tier draws a different sky from the flat layer', async ({ page }) => {
+	test.setTimeout(FLAT_PAIRS.length * 3 * 2 * PAGE_MS);
+	for (const [volumeName, flatName] of FLAT_PAIRS) {
+		const volume = IMAGE_RUNS.filter((run) => run.test === volumeName);
+		const flat = IMAGE_RUNS.filter((run) => run.test === flatName);
+		expect(volume, `${volumeName} runs`).toHaveLength(3);
+		expect(flat, `${flatName} runs`).toHaveLength(3);
+		for (const run of volume) {
+			const plain = flat.find((other) => other.tier === run.tier);
+			expect(plain, `a flat page on ${run.tier}`).toBeDefined();
+			const marched = await imageOf(page, run.path);
+			const layer = await imageOf(page, (plain as (typeof flat)[number]).path);
+			expect(marched.length).toBe(layer.length);
+			const mean = difference(marched, layer);
+			const share = changed(marched, layer, 1 / 255);
+			console.log(
+				`CLOUDSFLAT ${volumeName} ${run.tier}: mean ${mean.toFixed(5)}, changed by a step ${share.toFixed(5)}`,
+			);
+			expect(mean, `${volumeName} against ${flatName} on ${run.tier}`).toBeGreaterThan(
+				LEAST_FROM_FLAT,
+			);
+		}
+	}
+});

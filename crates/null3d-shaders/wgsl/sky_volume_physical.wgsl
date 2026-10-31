@@ -76,6 +76,7 @@ fn fs(in: CloudOut) -> @location(0) vec4f {
         null3d::tonemap::finish(
             clouds.rgb * scale,
             in.clip.xy,
+            frame.occlusion.y,
             frame.output,
             frame.target_size.xy,
             frame.vignette,
