@@ -40,6 +40,14 @@ The engine's own add-ons leave the range out and pin the engine version exactly 
 
 Every shipped file may import `@null3d/engine` and `@null3d/engine/stats`. The check refuses any other engine entry point, and the engine's source files. When the add-on needs something that the API lacks, that is a hook to build in the engine, so another developer can build the same add-on.
 
+## Put the hot path in Rust
+
+An add-on's hot path is the code that its frames run. Where that work runs on the CPU, write it in Rust, compiled to WebAssembly. Run it on the job workers through `runTask` ([Tasks on the job workers](../api/tasks.md)). The add-on's TypeScript is the interface: it declares the task, passes the shared buffers, and reads the answers between frames.
+
+Use the engine's own calls first. The engine's per-frame loops already run in Rust, and many of them cover every object in one call. A loop of TypeScript over the scene costs more than the same work in Rust. Add a task for the loops that no engine call covers.
+
+Keep setup, options, the public API and event handling in TypeScript. They run once or rarely, and TypeScript is the flexible place for them.
+
 ## Follow the preset and show the cost
 
 A feature declares the value that each quality preset gives it, and the engine resolves the value for the preset in use. The frame-budget governor's steps reach it too, so an add-on that costs too much lightens its own work. `FeatureHost` carries these values from the sketch's quality, and reports the feature's figures to the stats overlay. A page that imports no add-on feature downloads none of that code.
