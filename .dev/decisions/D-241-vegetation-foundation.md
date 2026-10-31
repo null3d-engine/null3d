@@ -222,6 +222,29 @@ default, and this record recommends no change. The pose method's two wins are in
 the devices it was measured on, and its cost is clear wherever many trees stand near the camera or
 the WebGL2 form runs. The trees' own figures above are the ceiling that each preset keeps.
 
+**What the demos' pages need.** Four demos draw groves on the software GPU, and their pages pay for
+the plants' setup, so a page time sets each page's limit. These times were taken with one test at a
+time on this Mac, and each is the whole test, so it includes opening the page and its hold. The
+limit is the one that the commit carried.
+
+| Demo | Limit (s) | In CI run 41158902325 | Here, one at a time (s) |
+| --- | --- | --- | --- |
+| demo-atmosphere | 60 | all three tiers timed out | compatibility 72, WebGL2 144, WebGPU still running at 300 |
+| demo-contact-shadows | 60 | none; it drew, and the picture differs by 5.3 per cent | WebGPU 37, compatibility 78, WebGL2 84 |
+| demo-light-shafts | 60 | WebGPU and compatibility timed out; WebGL2 drew, 7.120 per cent different | WebGPU 96, compatibility 78, WebGL2 120 |
+| demo-impostors | 120 | WebGPU timed out | WebGPU 51, compatibility 36, WebGL2 45 |
+
+All four rows come from `fc8775f4c`. The impostors page is measured again at `295dd9b89`, because
+the impostor work that landed between them moves the band that page draws; that figure replaces its
+row when it is in. The branch raises only the light-shafts limit, to five minutes. The other three
+keep their limits: each needs a measurement on the commit that draws it, and a limit lifted without
+one would hide how long the page takes.
+
+The pictures behind the last two rows also differ on the landed head, not only in CI:
+demo-contact-shadows differs by 5.286 to 5.384 per cent and demo-light-shafts by 6.892 to 46.826
+per cent, measured here against the same references. Those are changes to the pictures, and they
+need their own record; a page limit cannot hide them.
+
 ## Options rejected
 
 - **Creek-only vegetation.** It is the fastest path to a better Creek. But it would make a sixth pine generator, a fourth grass and a fourth leaf mesh, where rule 11 asks for one place.
