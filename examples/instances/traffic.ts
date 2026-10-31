@@ -19,27 +19,44 @@ export const CARS: Record<QualityPreset, number> = {
 
 /** The lines that carry lanes, in meters from the field's middle, and the cars' size. */
 const LINES = [-75, -55, -35, 35, 55, 75];
-const SIZE = { halfWidth: 0.95, height: 0.51, halfLength: 1.62 };
+const SIZE = { halfWidth: 0.7, height: 0.38, halfLength: 1.2 };
 
-/** How far a lane sits from its line, so the two directions keep to their own side. */
-const SIDE = 2;
-/** How many levels each line carries. */
-const LEVELS = 5;
+/** How far a lane sits from its line, so every direction keeps to its own side. */
+const SIDE = 4;
+/**
+ * The height of each level, in meters. The gaps grow with height, so the lanes sit closer
+ * together low down and the rows pack toward the horizon.
+ */
+const HEIGHTS = [16, 17.2, 18.7, 20.6, 23, 26, 29.5, 34];
 
 /**
- * The lanes of the field's sky, listed one by one: each line carries two directions at each of
- * `LEVELS` heights, each direction keeping to its own side, and each lane has one speed so its
- * cars keep their gaps.
+ * The four directions, each on its own right-hand side of a line: the heading's index and the sign
+ * of the side it keeps to.
+ */
+const HEADINGS = [
+	{ heading: 0, side: 1 },
+	{ heading: 1, side: -1 },
+	{ heading: 2, side: -1 },
+	{ heading: 3, side: 1 },
+] as const;
+
+/**
+ * The lanes of the field's sky, listed one by one: each line carries four directions at each of
+ * `HEIGHTS` levels, each direction keeping to its own side, and each lane has one speed so its
+ * cars keep their gaps. Every heading lists its own rows, so the cars spread as widely as the grid
+ * plan spread them and stay short against the sky.
  */
 function laneList(): Lane[] {
 	const lanes: Lane[] = [];
 	for (const [i, line] of LINES.entries()) {
 		const inner = 1 - i / Math.max(1, LINES.length - 1);
-		for (let level = 0; level < LEVELS; level++) {
-			const altitude = 16 + (level * (34 - 16)) / (LEVELS - 1);
-			const speed = 26 + inner * 8 - level * 1.5;
-			lanes.push({ heading: 0, across: line - SIDE, altitude, speed });
-			lanes.push({ heading: 1, across: line + SIDE, altitude, speed });
+		for (const [level, height] of HEIGHTS.entries()) {
+			// A small lift that changes from line to line keeps the rows from aligning.
+			const lift = (((i * 5 + level * 3) % 7) - 3) * 0.25;
+			for (const { heading, side } of HEADINGS) {
+				const speed = 24 + inner * 10 + ((level * 3 + i) % 5) - (heading % 2) * 1.5;
+				lanes.push({ heading, across: line + side * SIDE, altitude: height + lift, speed });
+			}
 		}
 	}
 	return lanes;
@@ -50,8 +67,8 @@ export function createTraffic(ctx: SketchContext): TrafficLanes {
 	return createTrafficLanes(ctx, {
 		mesh: createVehicleHull(ctx, SIZE),
 		// The lanes are listed rather than laid out as a grid, so each keeps to its own side of a
-		// line and carries one speed: the inner lines run faster, and each line's level above the
-		// field is a little slower than the one below it.
+		// line and carries one speed: the inner lines run faster, and the four directions keep
+		// their own pace.
 		plan: { from: -1300, to: 1300, lanes: laneList() },
 		counts: CARS,
 		look: {
@@ -59,7 +76,7 @@ export function createTraffic(ctx: SketchContext): TrafficLanes {
 			tail: '#ff5a3c',
 			nose: '#dfe9ff',
 			skirt: '#3a7fb0',
-			glow: 2,
+			glow: 0.5,
 			size: [SIZE.halfWidth, SIZE.height, SIZE.halfLength],
 		},
 		// The four nearest cars carry a real light, so the traffic washes the field below it.
