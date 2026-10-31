@@ -13,6 +13,7 @@ import {
 import { BENCH_SCENES, isNull3dPage, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
 import type { TraceSecond } from '../pages/lib/trace';
 import { S5_BACKGROUND } from '../scenes/s5';
+import { S7_COUNT } from '../scenes/s7';
 import {
 	BACKGROUND,
 	createS4,
@@ -58,6 +59,7 @@ const MIN_DRAWN_SHARE: Record<(typeof SCENES)[number], number> = {
 	s4: 0.5,
 	s5: 0.3,
 	s6: 0.1,
+	s7: 0.01,
 };
 /**
  * Each scene's background color. S4's is its fog's color. S6's sky covers its background, so its
@@ -72,6 +74,7 @@ const BACKGROUNDS: Record<(typeof SCENES)[number], string | null> = {
 	s4: S4_FOG.color,
 	s5: S5_BACKGROUND,
 	s6: null,
+	s7: null,
 };
 /**
  * Pages whose renderer cannot draw their scene on the GPU that the tests draw with. WebGLRenderer's
@@ -170,7 +173,9 @@ const shortRunCount = (scene: (typeof SCENES)[number]): number =>
 		? s2Trees(SHORT_RUN_COUNT) * S2_NODES_PER_TREE
 		: scene === 's4'
 			? createS4().count
-			: shortRunAsked(scene);
+			: scene === 's7'
+				? S7_COUNT
+				: shortRunAsked(scene);
 
 /**
  * The most that a page may take to start on SwiftShader, by the page's name without its switches.

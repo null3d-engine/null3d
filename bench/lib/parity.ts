@@ -173,7 +173,17 @@ export interface ImageComparison {
 // The scenes and the pages that draw their hold frames.
 
 /** Every benchmark scene. The benchmark runs, the page tests and the image tests cover each one. */
-export const BENCH_SCENES = ['s1', 's1-static', 's1-cells', 's2', 's3', 's4', 's5', 's6'] as const;
+export const BENCH_SCENES = [
+	's1',
+	's1-static',
+	's1-cells',
+	's2',
+	's3',
+	's4',
+	's5',
+	's6',
+	's7',
+] as const;
 export type BenchScene = (typeof BENCH_SCENES)[number];
 
 /**
@@ -203,6 +213,9 @@ export const LEFT_OUT_OF_PARITY: Readonly<Record<BenchScene, readonly string[]>>
 	// says for S6: null3D's mip-chain bloom against UnrealBloomPass, and occlusion that darkens only
 	// ambient light against GTAOPass, which darkens the whole image.
 	s6: ['on every tier, bloom and ambient occlusion that each engine draws with its own technique'],
+	// A sky layer belongs to null3D's sky templates, and three.js has no equivalent: the twin draws
+	// the sky without the layer, so the two frames differ by the layer's bands.
+	s7: ["on every tier, the sky layer, which three.js's twin does not draw"],
 };
 
 /** The benchmark scenes whose hold frames the parity checks compare with three.js's. */
@@ -227,8 +240,9 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * behind S1 (the benchmarks guide lists them), for those that end in -first, a background drawn
  * before the objects, for those that end in -box, a small box that writes depth, for those with
  * -skin-, a way of skinning that ?skinning= picks, for those that end in -timed, the time of each
- * WebGL call, and for those that end in -synced, that time with a wait for the browser's GPU
- * process after each call, and the GPU interface it draws with.
+ * WebGL call, for those that end in -synced, that time with a wait for the browser's GPU process
+ * after each call, for those that end in -reflection-off, a scene with no environment map, and the
+ * GPU interface it draws with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -324,6 +338,16 @@ const PAGES = {
 	'null3d-webgl2-synced': {
 		folder: 'null3d',
 		switches: 'gpu=webgl2&gl-timing=sync',
+		api: 'webgl2',
+	},
+	'null3d-webgpu-reflection-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&reflection=off',
+		api: 'webgpu',
+	},
+	'null3d-webgl2-reflection-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgl2&reflection=off',
 		api: 'webgl2',
 	},
 } as const satisfies Record<string, { folder: string; switches: string; api: 'webgpu' | 'webgl2' }>;
