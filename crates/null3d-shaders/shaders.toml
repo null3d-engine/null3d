@@ -885,7 +885,7 @@ variants.webgl2 = { defs = ["RESOLVE", "WEBGL2"], targets = ["glsl"] }
 # MOMENT builds write the moment store; their colour builds are the six moment colour entries above
 # the mesh templates, one for each template that has them, because a build's first-use file takes
 # the names of its bits and a second shared value would pull another template's builds into these
-# files (decision record D-260). The OUTLINE_VISIBLE bit takes only the six mesh templates' builds:
+# files (decision record D-261). The OUTLINE_VISIBLE bit takes only the six mesh templates' builds:
 # the outline mask lists that value for its own visible parts and keeps them in the device modules.
 [first_use.moment]
 shaders = [

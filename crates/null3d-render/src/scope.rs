@@ -100,6 +100,18 @@ pub const OUTPUT: u32 = 43;
 pub const OUTPUT_BLOOM: u32 = 44;
 /// Reduces the camera view's depth, for the next frame's fitted light clusters.
 pub const LIGHT_DEPTH: u32 = 45;
+/// Draws the camera's blended surfaces into the moment layer's moment store.
+pub const MOMENT: u32 = 46;
+/// Draws the same surfaces again into the moment layer's color sum.
+pub const MOMENT_COLOUR: u32 = 47;
+/// Blends the moment layer over the scene color.
+pub const MOMENT_COMPOSITE: u32 = 48;
+/// Marks the moment layer's edges for SMAA.
+pub const MOMENT_SMAA_EDGES: u32 = 49;
+/// Finds the ends and areas of those edges.
+pub const MOMENT_SMAA_BLEND: u32 = 50;
+/// Mixes each pixel with the neighbour that its weights name.
+pub const MOMENT_SMAA_RESOLVE: u32 = 51;
 
 /// A scope of `kind` for a step by its place, such as the fourth step of bloom's chain.
 pub fn of(kind: u32, index: u32) -> u32 {
