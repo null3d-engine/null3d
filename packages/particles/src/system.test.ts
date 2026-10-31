@@ -37,6 +37,7 @@ function fakeBuffer(capacity = 64) {
 			state.emitted += 1;
 		},
 		emitBurst(count: number, at?: Vec3Like, velocity?: Vec3Like) {
+			state.emitted += count;
 			const row = [count];
 			if (at) for (let k = 0; k < 3; k++) row.push(at[k] as number);
 			if (velocity) for (let k = 0; k < 3; k++) row.push(velocity[k] as number);
