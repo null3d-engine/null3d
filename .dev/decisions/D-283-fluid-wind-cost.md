@@ -246,10 +246,15 @@ parts. Low's phone figure is a bound, not a measurement, as the Data section say
 
 | Preset | Field | Grid | Pressure steps | Field steps a second | WebGPU (ms) | WebGL2 (ms) | Budget (ms) |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Low | analytic, or the smallest flat grid | none, or 32x32 | none, or 8 | none, or 15 | 0, or 0.04 | 0 | 0.5 |
+| Low | analytic, or the smallest flat grid | none, or 32x32 | none, or 8 | none, or 15 | 0, or 0.04 | 0, or 0.43 | 0.5 |
 | Medium | flat grid | 64x64 | 16 | 30, and 15 on WebGL2 | 0.10 | 0.77 | 1.2 |
 | High | flat grid now, 4 layers later | 128x128, or 4 layers of 128x128 | 24 | 30 | 0.14 | not drawn | 4.9 |
 | Ultra | flat grid now, a volume later | 256x256, or 64x24x64 | 40 | 60 | 0.65 | not drawn | 6.25 |
+
+Every figure in this table is modelled from the measured parts, and the budget column is a proposed
+ceiling. None of these figures is a phone measurement. Low's 0.5 ms is the planning ceiling for the
+field. The phone rows in the Data section bound Low's cost with the frame interval, and no phone
+read 0.5 ms there. A reader must not take 0.5 ms for a phone figure.
 
 - The grid's size is not the cost knob. The pressure count and the field rate set the cost, and both
   halve it when they halve. A row that needs less should take fewer steps a second before it takes a
