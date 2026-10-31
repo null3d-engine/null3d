@@ -44,7 +44,7 @@ add-on own them? What do the three-view blend and the relight still need?
 | The demo atlas's bytes | 262,144 bytes a texture in RGBA8, 524,288 for the two | the size above, four bytes a texel |
 | The preset atlases | 5 by 5 at 800 KiB, 7 by 7 at 1,568 KiB, 9 by 9 at 2,592 KiB, and 12 by 12 at 4,608 KiB, both atlases in RGBA8, the same on every device | the bake page at every grid, runs `20261030-071918-impostor-bake`, `20261030-071952-impostor-bake` and `20261030-072140-impostor-bake`. The bake packs four bytes a texel, an sRGB color and three surface codes, so the far-tree task's estimate of about 1.6 MB and 9 MB counted eight bytes a texel (RGBA16F) and is twice the atlas that a preset builds |
 | The card against the mesh at the switch | not measured | the image test `impostor-turn` |
-| The hand-over's dithers | one: the mesh's range edge. A custom material takes no fading build, so the card switches at full coverage behind it | `fades_its_way` in `levels.rs`, and `handOverToCards` |
+| The hand-over's dithers | one visible: the mesh's range edge. A custom material fades at its band edges too, so the cards start a fifth of the switch early and finish their own fade-in before the mesh's fade-out begins | `fades_its_way` in `levels.rs`, `FADE_BAND` in `null3d-core`, and `handOverToCards` |
 | The bake at each preset on the MacBook Pro M3 Max | conifer, birch and oak: Low 177, 44 and 60 ms; Medium 313, 84 and 118; High 518, 138 and 195; Ultra 924, 241 and 342. The page took 3.16 s for all twelve bakes | `impostor-bake` plan, run `20261030-071918-impostor-bake`, Chrome 156 on WebGPU |
 | The bake at each preset on the iPad Pro 13 | Low 112, 39 and 41 ms; Medium 221, 54 and 77; High 303, 87 and 124; Ultra 535, 155 and 217. The page took 1.96 s | `impostor-bake` plan, run `20261030-071952-impostor-bake`, Safari 26.6.1 on WebGPU |
 | The bake at each preset on the Galaxy S25 | Low 150, 36 and 50 ms; Medium 245, 66 and 94; High 411, 111 and 157; Ultra 740, 200 and 283. The page took 2.54 s | the same run, Chrome 152 on WebGPU |
@@ -82,32 +82,19 @@ The demo reference `demo-impostors` shows a pine forest at sunset, with the far 
 The far trees read as trees, and no seam between the middle band and the cards shows at 320 by 180
 pixels. The picture is a still, so it cannot show a hop, a shimmer or a change of light.
 
-No picture puts a card beside the mesh it replaces at the demo's switch distance. `impostor-turn`
-puts the two side by side at one camera, and `impostor-turn-azimuth` does at a camera 65 degrees
-around the row. Every card there sees the eye far from the world's forward, so a card that turned
-its stored normal by the card's own frame lights a different side of its crown than its mesh does,
-and the pair no longer matches.
-
-The references that this change redraws moved for one reason, and the earlier commit's message
-described it wrongly; this paragraph corrects that description. A card's stored normal used to turn
-with the camera's bearing as well as the tree's, so a card whose eye lay off the world's forward,
-or whose tree was turned, lit a different side than its mesh did. The pictures that moved are those
-whose cards are large on screen and see the eye off that forward: the card grid, which sets no turn
-at all, moved by 1.002 to 1.012 per cent of its pixels, and the single plant by 0.207 to 0.269. The
-two turned rows moved less, from 0.146 to 0.356 per cent, and the demo, which turns every tree and
-draws its cards far and small, stayed under the 0.100 per cent line. The earlier message said that
-the turned scenes moved and that the demo's cards were why one did not; the runs show the reverse
-of its first half, and the grid it did not name is the picture that moved most.
-
-Drawing both faces was reasoned rather than measured: a camera-facing card shows its front face,
-whose shading path the change does not touch, so the picture that a camera draws cannot change. The
-earlier message called that a measured comparison, and no run in the tree holds one, so this line
-withdraws the claim.
+`impostor-handover` puts each card beside the mesh it replaces, inside the hand-over band, so the
+pair can be compared at the switch. `impostor-turn` puts the two side by side at one camera, and
+`impostor-turn-azimuth` does at a camera 65 degrees around the row. Every card there sees the eye
+far from the world's forward, so a card that turned its stored normal by the card's own frame would
+light a different side of its crown than its mesh does. The stored normal turns with the tree's turn
+alone, so the pair matches at every camera.
 
 The image reference `impostor-handover` shows a row of pines at the hand-over distance: each draws
 as its mesh and as its card at one place, the mesh's pixels dither out over the card's full crown,
-and no background shows through a crown. A card that faded as well would drop the pixels that its
-mesh's dither drops too, and the picture would hold dots of the background.
+and no background shows through a crown. A card that faded at the same time as its mesh would drop
+the pixels that its mesh's dither drops too, and the picture would hold dots of the background. The
+cards start early enough that their own fade finishes behind the full mesh, so the reference holds
+only the mesh's dither.
 
 The demo's cards stand past its sun's 120 m reach, which is decision 7's rule and the reason its
 picture has no card shadow: the cards begin at 420 m. The picture test below shows the method at a
@@ -211,16 +198,21 @@ that darkens itself.
    takes its flat quad for a solid wall. The vertex offset reads the frame's camera the way the lit
    template does, so an orthographic cascade turns the card toward the light and a perspective
    camera turns it toward the eye.
-10. The hand-over moves a tree with one dither, not two. `handOverToCards` ends the mesh batch's
-    range at the switch distance and starts the card batch a fade band before it. The engine gives
-    the mesh's last eighth of its range the `LOD_FADE` builds, whose 4 x 4 dither thins the mesh
-    out, and it gives no such build to a custom material: the card material takes none, so the
-    cards stand at full coverage behind the meshes while the mesh's pixels dither away. Each pixel
-    that the mesh drops shows its card, and the background never shows through. The engine's dither
-    phase is a hash of each copy's source, and the mesh and the card are different sources, so
-    their phases differ. Were both to fade, each would drop part of the pixels that the other
-    drops too, and about a quarter of the band would show the background. The helper therefore
-    takes a card batch whose material does not fade, and its documentation says so.
+10. The hand-over moves a tree with one visible dither. `handOverToCards` ends the mesh batch's
+    range at the switch distance and starts the card batch a fifth of the switch before it. The
+    engine gives a draw range's edges a dithered fade over the last eighth of each edge's distance.
+    A custom material takes that fade as the engine's own templates do, because a custom material's
+    levels fade too. The mesh and the card are different sources, and the dither's phase is a hash of
+    each copy's source, so their phases differ. Were the two bands to overlap, each would drop part
+    of the pixels that the other drops too, and about a third of the crown would show the background.
+    The card's lead therefore ends the card's own fade-in at 0.864 of the switch, before the mesh's
+    fade-out begins at 0.926. From there the card stands at full coverage behind the mesh. The
+    mesh's dither alone thins the tree out, and each pixel that the mesh drops shows its card. The
+    lead also covers the difference between the two batches' bounding spheres, since a card's corner
+    lies farther from its origin than the plant's own vertices do. The demo that draws the cards
+    keeps its held picture within its reference's 0.1 per cent line, so the added far shell changes
+    fewer than one pixel in a thousand of it, and the frame figures that this record lists keep
+    their headroom.
 
 ## Ruled out
 
@@ -253,9 +245,12 @@ that darkens itself.
   settles that one dither moves the tree, and each card shows the turn that its tree has.
   `impostor-handover-strip.spec.ts` walks the camera through the band and compares each card with
   the crown of its mesh: the card that shows the tree's own turn sits closer to the mesh than a card
-  turned 60 degrees further, and the two card pictures differ. The Rust test
-  `a_custom_material_never_fades_so_a_handed_over_card_does_not_dither` holds the fact that makes
-  it so.
+  turned 60 degrees further, and the two card pictures differ. The unit test
+  `draws the cards from far enough before the switch that their fade ends first` in
+  `packages/vegetation/src/impostor.test.ts` holds the arithmetic of the lead against the engine's
+  fade band. The Rust test `a_custom_material_fades_its_own_levels_and_a_handed_over_card_dithers`
+  holds the fact that makes the lead necessary: a custom material's distance-band edge fades, so
+  the card would dither at the same time as the mesh.
 - The Rust tests `a_still_card_in_a_far_cascade_leaves_its_layer_cached` count the far cascade's
   draws over eight frames, on the WebGPU builder and on the WebGL2 one. A card that claims to be
   still draws it exactly as often as a caster that never moves, and a card that does not claim it
