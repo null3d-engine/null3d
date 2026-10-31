@@ -241,7 +241,7 @@ S7 draws one paved surface under a sky with a layer over it. Its two runs differ
 | 2026-10-31 | bsipadpro13-safari, Safari 26.6.1 | WebGPU | High | 2.72 / 2.52 | 0.20 ms, 8% | 8d2fb64a | 20261031-023430-bench |
 | 2026-10-31 | bsgalaxys25-chrome, Chrome 152.0.7977.54 | WebGPU | High | 5.44 / 4.98 | 0.46 ms, 8% | 8d2fb64a | 20261031-024942-bench |
 
-The WebGL2 timer's rounds on the Mac differ by more than the reflection costs, so its row measures no difference: the off run read slower in that run. The iPad and the Galaxy S25 give no GPU timer on WebGL2 either: their CPU times do not separate the two runs. The Galaxy S25's display ran at 30 Hz, so its frame figures are unreliable; its GPU times do not depend on the screen. The reflection's own memory comes from the `?memory-figures` run 20261031-032342-bench: 6.90 MiB of GPU textures and 3.50 MiB of buffers, and the page's memory rises by 10.80 MiB ([D-280](decisions/D-280-ground-reflection-cost.md)).
+The WebGL2 timer's rounds on the Mac differ by more than the reflection costs, so its row measures no difference: the off run read slower in that run. The iPad and the Galaxy S25 give no GPU timer on WebGL2 either: their CPU times do not separate the two runs. The Galaxy S25's display ran at 30 Hz, so its frame figures are unreliable; its GPU times do not depend on the screen. The reflection's own memory comes from the `?memory-figures` run 20261031-032342-bench: 6.90 MiB of GPU textures and 3.50 MiB of buffers, and the page's memory rises by 10.80 MiB ([D-281](decisions/D-281-ground-reflection-cost.md)).
 
 ## Feature GPU costs on phones
 
