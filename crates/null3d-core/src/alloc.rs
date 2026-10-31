@@ -39,10 +39,9 @@ pub fn reserve_keeping<T: Copy>(
     Ok(())
 }
 
-/// The room in bytes that a frame that changes the scene must have, under the memory's maximum or
-/// free on the heap, before it records. A frame's fixed small requests, which a plain `push` makes,
-/// add up to less than this.
-pub const FRAME_HEADROOM: usize = 8 << 20;
+/// The room at the top of the memory that only small requests may take, in bytes. They cannot report
+/// a refusal, so the heap keeps this for them, and a frame then stops with E1109 once they have used it.
+pub const HEAP_RESERVE: u64 = 8 << 20;
 
 /// The memory's maximum in bytes that this core's page declared, or 0 where the memory has none. It
 /// and the sizes it meets are 64-bit, since 4 GiB, the largest maximum, does not fit a 32-bit word.
@@ -56,6 +55,11 @@ pub fn set_memory_maximum(mib: u32) {
 /// The bytes in `mib` MiB.
 fn mib_bytes(mib: u32) -> u64 {
     u64::from(mib) << 20
+}
+
+/// The memory's declared maximum in bytes, or 0 where it has none.
+pub fn memory_maximum() -> u64 {
+    MEMORY_MAXIMUM.load(Ordering::Relaxed)
 }
 
 /// Whether the pages under the memory's maximum hold `bytes`, so that the heap can grow to give them.

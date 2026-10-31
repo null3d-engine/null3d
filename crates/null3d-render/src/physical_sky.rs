@@ -398,9 +398,6 @@ pub(crate) struct PhysicalSkyPass {
 }
 
 impl PhysicalSkyPass {
-    /// Bytes a frame may copy into its arena: the uniform block.
-    pub(crate) const UPLOAD_BYTES: usize = UNIFORM_BYTES as usize;
-
     pub(crate) fn new(ids: PhysicalSkyIds) -> Self {
         Self {
             ids,

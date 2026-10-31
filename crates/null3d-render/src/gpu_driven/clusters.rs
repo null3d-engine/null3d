@@ -77,15 +77,6 @@ struct ViewBuffers {
 }
 
 impl Clusters {
-    /// The bytes that the cluster tables and one view's parameters take from the frame's uploads:
-    /// the scene's patches, its mesh records and its indices, when the layout holds them.
-    pub(super) fn upload_bytes(layout: &Layout) -> usize {
-        let patches = layout.cluster_patches.len() * PATCH_WORDS as usize;
-        let meshes = layout.clusters.len() * MESH_WORDS as usize;
-        let indices = layout.cluster_indices.len();
-        (patches + meshes + indices) * 4 + (PARAMS_STRIDE * STAGES) as usize
-    }
-
     /// Records the creation of the cluster pass's one pipeline.
     pub(super) fn create_pipeline(list: &mut DrawList) -> Result<(), RecordError> {
         list.push(
@@ -357,7 +348,7 @@ mod tests {
             let layout = Layout::with_cluster_tables(patches, 4);
             let mut list = DrawList::with_capacity(64);
             let mut arena = UploadArena::default();
-            arena.reset(1 << 16);
+            arena.begin_frame().unwrap();
             let mut clusters = Clusters::default();
             let outcome = clusters.apply_tables(&mut list, &mut arena, &layout, true, binding);
             (outcome, made(&list))

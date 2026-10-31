@@ -1812,95 +1812,6 @@ impl FrameGraph {
             .flatten()
     }
 
-    /// Bytes that one frame may copy into its arena for the graph's own passes. The final pass can
-    /// start to run in any frame, once the render scale can drop.
-    pub(crate) fn upload_bound(&self) -> usize {
-        let bloom = if self.bloom_pass.is_some() {
-            BloomPass::UPLOAD_BYTES
-        } else {
-            0
-        };
-        let ao = if self.screen_draws() || self.ssr_draws() {
-            AoPass::UPLOAD_BYTES
-        } else {
-            0
-        };
-        let ssr = if self.ssr_draws() {
-            SsrPass::UPLOAD_BYTES
-        } else {
-            0
-        };
-        let effects = if self.effect_count > 0 {
-            EffectPass::UPLOAD_BYTES
-        } else {
-            0
-        };
-        let dof = if self.dof.is_some() {
-            DofPass::UPLOAD_BYTES
-        } else {
-            0
-        };
-        let subsurface = if self.subsurface.is_some() {
-            SubsurfacePass::UPLOAD_BYTES
-        } else {
-            0
-        };
-        let motion = if self.motion_view {
-            motion::VIEW_UPLOAD_BYTES
-        } else {
-            0
-        };
-        let fog = if self.fog.is_some() {
-            FogVolumePass::UPLOAD_BYTES
-        } else {
-            0
-        };
-        let fullscreen = if self.fullscreen_views != 0 {
-            FullscreenPasses::UPLOAD_BYTES + self.fullscreen.upload_bound(&self.declared_views)
-        } else {
-            0
-        };
-        let compute = if self.compute_views != 0 {
-            ComputePasses::UPLOAD_BYTES
-        } else {
-            0
-        };
-        let exposure = if self.exposure.is_some() {
-            ExposurePass::UPLOAD_BYTES
-        } else {
-            0
-        };
-        let still = if self.still_declared {
-            accumulate::UPLOAD_BYTES + FinalPass::UPLOAD_BYTES
-        } else {
-            0
-        };
-        let taa = if self.taa.is_some() {
-            TaaPass::UPLOAD_BYTES
-        } else {
-            0
-        };
-        FinalPass::UPLOAD_BYTES
-            + still
-            + if self.two_step_declared {
-                FinalPass::UPLOAD_BYTES
-            } else {
-                0
-            }
-            + bloom
-            + ao
-            + ssr
-            + effects
-            + dof
-            + subsurface
-            + motion
-            + fog
-            + fullscreen
-            + compute
-            + exposure
-            + taa
-    }
-
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
     /// pass does. The resolve pass resolves the scene color into the canvas alone, so the copy
     /// for surfaces that let light through, which reads it before the transparent pass, needs the
@@ -6671,7 +6582,7 @@ mod tests {
             .prepare(&mut list, (64, 48), RenderScale::FULL)
             .unwrap();
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -6713,7 +6624,7 @@ mod tests {
             .prepare(&mut list, (64, 48), RenderScale::FULL)
             .unwrap();
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -6794,7 +6705,7 @@ mod tests {
         assert_eq!(created[4], format::RGBA16_FLOAT);
         // The frame creates the pass's pipeline and its group, and dispatches it over the target.
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -6894,7 +6805,7 @@ mod tests {
         // Its own scratch texture reads the state that a run does not write, and the two views
         // draw into one state each.
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -6994,7 +6905,7 @@ mod tests {
         // The pass takes the layout that binds the state of the run before. Two state textures hold
         // the states, and each state's group writes one and reads the other.
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -7275,7 +7186,7 @@ mod tests {
         );
         // The pass's shader fills the texture that the frame made, not a share of the canvas.
         let mut arena = UploadArena::default();
-        arena.reset(4096);
+        arena.begin_frame().unwrap();
         frames.upload_fullscreen(&mut list, &mut arena).unwrap();
         assert_eq!(frames.fullscreen.drawn(1), Some([16.0, 12.0, 12.0, 1.0]));
         assert!(
@@ -7366,7 +7277,7 @@ mod tests {
         assert!(frames.particle_depth_declared);
 
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -7837,14 +7748,6 @@ mod tests {
                 assert_eq!(graph.find_pass(name).is_some(), declared, "{name}");
             }
             assert_eq!(frames.still_declared, declared);
-            // The blend's weight and the still build's settings each take a block of the frame's
-            // upload arena, so the bound grows by both where the graph declares them.
-            let moving = frame_graph(format, Antialias::Msaa, true, false).upload_bound();
-            let blocks = accumulate::UPLOAD_BYTES + FinalPass::UPLOAD_BYTES;
-            assert_eq!(
-                frames.upload_bound(),
-                moving + if declared { blocks } else { 0 }
-            );
             // Without a built pipeline no frame may blend yet.
             assert!(!frames.still_eligible());
             frames.set_still_enabled(false);
@@ -7966,12 +7869,6 @@ mod tests {
                 Some(Surface::Texture(_))
             ));
             assert_eq!(plan.steps().len(), 2);
-            // This graph draws as a moving view's does, so the accumulation's blocks are not in
-            // the bound.
-            assert_eq!(
-                frames.upload_bound(),
-                FinalPass::UPLOAD_BYTES + BloomPass::UPLOAD_BYTES
-            );
         }
     }
 
@@ -8037,16 +7934,6 @@ mod tests {
                 for step in plan.steps() {
                     assert!(plan.attachments(step).iter().all(|a| a.resolve.is_none()));
                 }
-                let bloom = if scene_color == format::CANVAS {
-                    0
-                } else {
-                    BloomPass::UPLOAD_BYTES
-                };
-                assert_eq!(
-                    frames.upload_bound(),
-                    FinalPass::UPLOAD_BYTES + bloom,
-                    "a moving view's frames"
-                );
             }
         }
     }
@@ -8446,7 +8333,7 @@ mod tests {
         // new settings.
         let mut arena = UploadArena::default();
         let output = Output::default();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         frames
             .upload(&mut list, &mut arena, output, Grading::default())
             .unwrap();
@@ -8458,7 +8345,7 @@ mod tests {
                 frames
                     .prepare(list, canvas, RenderScale::from_thousandths(500))
                     .unwrap();
-                arena.reset(frames.upload_bound());
+                arena.begin_frame().unwrap();
                 frames
                     .upload(list, arena, output, Grading::default())
                     .unwrap();
@@ -8472,7 +8359,7 @@ mod tests {
         frames
             .prepare(&mut list, canvas, RenderScale::from_thousandths(700))
             .unwrap();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         frames
             .upload(&mut list, &mut arena, output, Grading::default())
             .unwrap();
@@ -8613,7 +8500,7 @@ mod tests {
         let (sources, _) = frames.bloom_textures();
         assert_eq!(sources[0], left, "the chain reads the effects' output");
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -8674,7 +8561,6 @@ mod tests {
         let without = steps(&frames);
         let textures = frames.graph().plan().unwrap().textures().len();
         let keys = pipelines.keys().len();
-        let bound = frames.upload_bound();
 
         // Off, the frame declares, asks for and uploads nothing of depth of field.
         frames.set_dof(None);
@@ -8684,7 +8570,6 @@ mod tests {
             .unwrap();
         assert_eq!(steps(&frames), without);
         assert_eq!(pipelines.keys().len(), keys);
-        assert_eq!(frames.upload_bound(), bound);
 
         let effect = Effect {
             template: CUSTOM,
@@ -8726,7 +8611,7 @@ mod tests {
         assert!(with <= with_bloom + 3, "{with} textures");
         // The setup and the composite read the multisampled depth through their layouts.
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -8816,7 +8701,7 @@ mod tests {
             "{names:?}"
         );
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -8894,7 +8779,7 @@ mod tests {
             );
             assert_eq!(frames.scene_output(), TAA_COLOR);
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena.begin_frame().unwrap();
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -8955,10 +8840,9 @@ mod tests {
             .unwrap();
         let without = steps(&frames);
         let keys = pipelines.keys().len();
-        let bound = frames.upload_bound();
         let record = |frames: &mut FrameGraph, list: &mut DrawList| {
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena.begin_frame().unwrap();
             list.clear();
             frames
                 .upload(list, &mut arena, Output::default(), Grading::default())
@@ -8985,7 +8869,6 @@ mod tests {
         frames.set_exposure(None);
         frames.request_pipelines(&mut pipelines, 1);
         assert_eq!(pipelines.keys().len(), keys);
-        assert_eq!(frames.upload_bound(), bound);
         let commands = record(&mut frames, &mut list);
         assert!(
             !commands
@@ -9213,7 +9096,7 @@ mod tests {
             .expect("the group asked for its pipeline");
         assert_eq!(group.permutation, permutation::DEPTH_MULTISAMPLED);
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -9239,7 +9122,7 @@ mod tests {
             .expect("the final pass asked for its fold build") as u32
             + 1;
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -9477,7 +9360,7 @@ mod tests {
             );
 
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena.begin_frame().unwrap();
             list.clear();
             let output = Output::default();
             frames
@@ -9686,7 +9569,7 @@ mod tests {
 
             // A lower scale draws a smaller corner of the same targets.
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena.begin_frame().unwrap();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
                 .unwrap();
@@ -9776,7 +9659,7 @@ mod tests {
                 .prepare(&mut list, (320, 180), RenderScale::FULL)
                 .unwrap();
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena.begin_frame().unwrap();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
                 .unwrap();
@@ -9944,7 +9827,7 @@ mod tests {
 
             // The steps record into the corners of their targets.
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena.begin_frame().unwrap();
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10005,7 +9888,7 @@ mod tests {
                     frames.ao_texture(),
                     frames.sampled_id(AO_TARGETS[ao::STEPS - 1])
                 );
-                arena.reset(frames.upload_bound());
+                arena.begin_frame().unwrap();
                 list.clear();
                 frames
                     .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10170,7 +10053,7 @@ mod tests {
 
             // A new reach or a new direction only uploads the steps' settings.
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena.begin_frame().unwrap();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
                 .unwrap();
@@ -10275,7 +10158,7 @@ mod tests {
         assert_eq!(frames.effects_output(), EFFECT_TARGETS[0]);
         // The skin pass draws in a render pass of its own, which clears its light to zero.
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10410,7 +10293,7 @@ mod tests {
             assert!(at("Transparent1").is_some());
 
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena.begin_frame().unwrap();
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10556,7 +10439,7 @@ mod tests {
             let copy = frames.transmission_texture();
             assert_ne!(copy, IDS.transmission.blank);
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena.begin_frame().unwrap();
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10678,7 +10561,7 @@ mod tests {
             );
 
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena.begin_frame().unwrap();
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10769,7 +10652,7 @@ mod tests {
             .prepare(&mut prepared, canvas, RenderScale::FULL)
             .unwrap();
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena.begin_frame().unwrap();
         let mut uploaded = DrawList::with_capacity(65536);
         frames
             .upload(

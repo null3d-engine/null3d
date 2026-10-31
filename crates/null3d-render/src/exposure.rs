@@ -269,9 +269,6 @@ impl ExposurePass {
         }
     }
 
-    /// Bytes a frame may copy into its arena: the block.
-    pub(crate) const UPLOAD_BYTES: usize = BLOCK_BYTES as usize;
-
     /// The meter that `meter` asks for runs as: the histogram only where the builder has compute.
     pub(crate) fn path(&self, meter: Meter) -> Meter {
         match (meter, self.ids.compute) {
@@ -675,7 +672,7 @@ mod tests {
     fn metered(pass: &mut ExposurePass, meter: Meter) -> Vec<(Op, Vec<u32>)> {
         let mut list = DrawList::with_capacity(512);
         let mut arena = UploadArena::default();
-        arena.reset(ExposurePass::UPLOAD_BYTES);
+        arena.begin_frame().unwrap();
         let mut pipelines = PipelineCache::default();
         pass.request_pipelines(&mut pipelines, meter, 0);
         pass.prepare(

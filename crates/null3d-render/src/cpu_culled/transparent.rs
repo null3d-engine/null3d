@@ -144,14 +144,6 @@ impl Transparent {
         draws * OFFSET_ALIGNMENT + tail
     }
 
-    /// The most bytes that one frame copies into its arena for the passes: the records, and each
-    /// multi-draw call's three arrays.
-    pub(super) fn upload_bound(layout: &SortedLayout, views: usize, multi_draw: bool) -> usize {
-        let arrays = if multi_draw { 12 } else { 0 };
-        views
-            * (Self::records_bound(layout, multi_draw) as usize + Self::most_parts(layout) * arrays)
-    }
-
     /// Gives each of `views` views room for the layout's draws.
     pub(super) fn reserve(
         &mut self,

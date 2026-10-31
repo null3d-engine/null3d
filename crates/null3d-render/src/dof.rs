@@ -333,9 +333,6 @@ impl DofPass {
         }
     }
 
-    /// Bytes a frame may copy into its arena: the whole uniform buffer.
-    pub(crate) const UPLOAD_BYTES: usize = BUFFER_BYTES;
-
     /// Asks `pipelines` for the steps' pipelines, once.
     pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
         for (step, slot) in self.pipelines.iter_mut().enumerate() {
@@ -708,7 +705,7 @@ mod tests {
         };
         let mut run = |pass: &mut DofPass, list: &mut DrawList, frame: DofFrame| {
             list.clear();
-            arena.reset(DofPass::UPLOAD_BYTES);
+            arena.begin_frame().unwrap();
             pass.prepare(
                 list,
                 &mut arena,

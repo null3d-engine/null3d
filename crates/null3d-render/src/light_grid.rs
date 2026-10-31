@@ -1093,12 +1093,6 @@ impl ViewLights {
             + self.lights_bytes().len()
     }
 
-    /// The room to keep in a frame's arena for the upload, at least [`ViewLights::upload_bytes`]
-    /// once the frame's lights are assigned.
-    pub(crate) fn upload_room(&self) -> usize {
-        self.room
-    }
-
     /// Forgets what the GPU holds, after the thread that draws replaced the GPU.
     pub(crate) fn forget_gpu(&mut self) {
         self.held = false;
@@ -1144,14 +1138,6 @@ impl LightGrids {
     /// The grid of camera view `view`, or `None` before the view first sees a light.
     pub(crate) fn get(&self, view: ViewId) -> Option<&ViewLights> {
         self.views.get(view.index())?.as_ref()
-    }
-
-    /// Each camera view that has a grid, with it.
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (ViewId, &ViewLights)> {
-        self.views
-            .iter()
-            .enumerate()
-            .filter_map(|(index, lights)| Some((ViewId::from_index(index), lights.as_ref()?)))
     }
 
     /// Each camera view that has a grid, with it, to change.
@@ -1212,11 +1198,6 @@ impl LightGrids {
         for (_, lights) in self.iter_mut() {
             lights.set_area_light_cap(cap);
         }
-    }
-
-    /// The room to keep in a frame's arena for every grid's upload.
-    pub(crate) fn upload_room(&self) -> usize {
-        self.iter().map(|(_, lights)| lights.upload_room()).sum()
     }
 
     /// Forgets what the GPU holds of every grid, after the thread that draws replaced the GPU.

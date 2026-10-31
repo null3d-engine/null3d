@@ -236,9 +236,6 @@ impl AoPass {
         }
     }
 
-    /// Bytes a frame may copy into its arena: the whole uniform buffer.
-    pub(crate) const UPLOAD_BYTES: usize = BLOCK_BYTES;
-
     /// The ids of the steps' pipelines, once the pass asked for them.
     pub(crate) fn pipeline_ids(&self) -> impl Iterator<Item = u32> + '_ {
         self.pipelines.iter().flatten().copied()
@@ -529,7 +526,7 @@ mod tests {
         let lens = (Mat4::default(), Mat4::default());
         let mut frame = |pass: &mut AoPass, list: &mut DrawList, scale, ao_scale| {
             list.clear();
-            arena.reset(AoPass::UPLOAD_BYTES);
+            arena.begin_frame().unwrap();
             pass.prepare(
                 list,
                 &mut arena,

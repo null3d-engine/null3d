@@ -204,9 +204,6 @@ impl SsrPass {
         }
     }
 
-    /// Bytes a frame may copy into its arena: the whole uniform buffer.
-    pub(crate) const UPLOAD_BYTES: usize = BUFFER_BYTES as usize;
-
     /// The ids of the steps' pipelines that the pass asked for.
     pub(crate) fn pipeline_ids(&self) -> impl Iterator<Item = u32> + '_ {
         self.pipelines.iter().flatten().copied()
@@ -482,7 +479,7 @@ mod tests {
         let frame = trace_frame();
         let mut prepare = |pass: &mut SsrPass, list: &mut DrawList, grid| {
             list.clear();
-            arena.reset(SsrPass::UPLOAD_BYTES);
+            arena.begin_frame().unwrap();
             pass.prepare(
                 list,
                 &mut arena,

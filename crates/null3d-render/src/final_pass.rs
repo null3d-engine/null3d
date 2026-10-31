@@ -344,9 +344,6 @@ impl FinalPass {
         }
     }
 
-    /// Bytes the pass may copy into a frame's arena: its settings.
-    pub(crate) const UPLOAD_BYTES: usize = SETTINGS_BYTES as usize;
-
     /// Asks `pipelines` for the pass's pipeline, once, and for its bloom build's once a frame has
     /// `bloom`. A builder asks before it records the pipelines that its frame creates, so the list
     /// creates them with the others, at its start.
@@ -739,7 +736,7 @@ mod tests {
         let mut pass = FinalPass::new(IDS, SceneColor::from_format(format), antialias);
         let mut list = DrawList::with_capacity(256);
         let mut arena = UploadArena::default();
-        arena.reset(FinalPass::UPLOAD_BYTES);
+        arena.begin_frame().unwrap();
         let mut pipelines = PipelineCache::default();
         pass.request_pipeline(&mut pipelines, false);
         pass.prepare(&mut list, &mut arena, &inputs(grading), true, true)
@@ -796,7 +793,7 @@ mod tests {
         let mut list = DrawList::with_capacity(256);
         let mut arena = UploadArena::default();
         // Two steps, so two settings blocks fit.
-        arena.reset(2 * FinalPass::UPLOAD_BYTES);
+        arena.begin_frame().unwrap();
         // The first step draws at the render size and leaves the dither to the second.
         let mut first = FinalPass::new(
             IDS,
@@ -857,7 +854,7 @@ mod tests {
         assert_eq!(flags & OutputUniform::RESOLVE, 0);
 
         // Back at the whole canvas the pass uploads its own settings and makes no group.
-        arena.reset(2 * FinalPass::UPLOAD_BYTES);
+        arena.begin_frame().unwrap();
         let mut list = DrawList::with_capacity(256);
         second
             .prepare(&mut list, &mut arena, &read, false, true)

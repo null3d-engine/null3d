@@ -147,14 +147,6 @@ impl ParticleSystem {
             *range = (range.0.min(start), range.1.max(end));
         }
     }
-
-    /// Bytes of records to upload in the next frame.
-    fn marked_bytes(&self) -> usize {
-        self.ranges[..self.range_count]
-            .iter()
-            .map(|r| (r.1 - r.0) as usize * RECORD_BYTES as usize)
-            .sum()
-    }
 }
 
 /// The scene's particle systems, by id from 1.
@@ -397,25 +389,6 @@ impl ParticlePass {
             camera_depth: 0,
             blank: false,
         }
-    }
-
-    /// Bytes that a frame may copy into its arena for the systems, with `views` views: the
-    /// records of a system whose buffer the GPU lacks, else its marked records, its values, and a
-    /// block for each view.
-    pub(crate) fn upload_bound(&self, table: &ParticleTable, views: usize) -> usize {
-        table
-            .ids()
-            .filter_map(|id| Some((id, table.get(id)?)))
-            .map(|(id, s)| {
-                let made = self.made.get(id as usize - 1).map_or(0, |m| m.records);
-                let records = if made < s.capacity * RECORD_BYTES {
-                    (s.capacity * RECORD_BYTES) as usize
-                } else {
-                    s.marked_bytes()
-                };
-                records + PARAM_FLOATS * 4 + views * VIEW_WRITTEN_BYTES
-            })
-            .sum()
     }
 
     /// Makes the GPU objects that the scene's systems need, uploads their marked records and
@@ -842,9 +815,7 @@ mod tests {
         system.mark(990, 2000);
         assert_eq!(system.range_count, 4);
         assert_eq!(system.ranges[3], (300, 1000));
-        assert_eq!(system.marked_bytes(), (20 + 10 + 10 + 700) * 32);
         table.clear_marks();
-        assert_eq!(table.get(id).unwrap().marked_bytes(), 0);
     }
 
     #[test]

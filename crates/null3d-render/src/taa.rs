@@ -304,9 +304,6 @@ impl TaaPass {
         }
     }
 
-    /// Bytes a frame may copy into its arena: the resolve's block.
-    pub(crate) const UPLOAD_BYTES: usize = BLOCK;
-
     /// Asks `pipelines` for the steps' pipelines, once.
     pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
         for (step, slot) in self.pipelines.iter_mut().enumerate() {
