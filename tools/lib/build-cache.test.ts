@@ -279,6 +279,22 @@ describe("a waiter's watch on a lock's holder", () => {
 		return child;
 	};
 
+	/**
+	 * A child's priority once `taskpolicy` has applied it. The tool sets the priority shortly after
+	 * the child starts, so a single read can land in the window before it does; this waits that
+	 * window out and returns whatever the child settles at.
+	 */
+	const settledPriority = async (pid: number | undefined, timeoutMs = 5_000) => {
+		if (pid === undefined) return undefined;
+		const deadline = Date.now() + timeoutMs;
+		let priority = processPriority(pid);
+		while (priority !== BACKGROUND_PRIORITY && Date.now() < deadline) {
+			await new Promise((resolve) => setTimeout(resolve, 25));
+			priority = processPriority(pid);
+		}
+		return priority;
+	};
+
 	it("reads ps's processor time in both of its forms", () => {
 		expect(cpuSeconds('0:37.90')).toBeCloseTo(37.9);
 		expect(cpuSeconds('147:22.29')).toBeCloseTo(147 * 60 + 22.29);
@@ -395,7 +411,7 @@ rm -rf '${lock}'`;
 			const holder = await heldBySleeper(lock, ['taskpolicy', '-b', 'sleep', '30']);
 			const ended = new Promise((resolve) => holder.on('exit', resolve));
 			try {
-				expect(processPriority(holder.pid)).toBe(BACKGROUND_PRIORITY);
+				expect(await settledPriority(holder.pid)).toBe(BACKGROUND_PRIORITY);
 				const release = acquireLock(lock, { watch: QUICK_WATCH });
 				expect(readFileSync(join(lock, 'pid'), 'utf8')).toBe(String(process.pid));
 				release();
