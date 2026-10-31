@@ -17,6 +17,8 @@ import {
 } from '../pages/lib/motion-vectors.ts';
 
 const SKETCH = 'tests/pages/sketches/compute-vertex-offset-sketch.ts';
+/** The sketch module's address from the server root, which the first-use page requires. */
+const SKETCH_PATH = `/${SKETCH}`;
 
 /** How far a decoded motion may stray from the expected one, in pixels. */
 const TOLERANCE = 0.5;
@@ -77,7 +79,7 @@ for (const gpu of TIERS)
 	}) => {
 		// The first pick loads the picking shader files and builds their pipelines.
 		test.setTimeout(120_000);
-		const sketch = encodeURIComponent(`${SKETCH}?case=pick`);
+		const sketch = encodeURIComponent(`${SKETCH_PATH}?case=pick`);
 		await page.goto(`first-use-live.html?gpu=${gpu}&sketch=${sketch}`);
 		const result = await pageResult<PickResult>(page, 90_000);
 		expect(result.error).toBeUndefined();
