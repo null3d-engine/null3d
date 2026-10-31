@@ -171,6 +171,7 @@ use null3d_gpu::pass_role::{self, PassRole};
 use crate::accumulate::{self, AccumulateIds, AccumulatePass};
 use crate::ao::{self, Ao, AoIds, AoPass, Contact, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
+use crate::bounce::{self, BounceFrame, BounceIds, BouncePass};
 use crate::camera::Mat4;
 use crate::compute::{ComputePassIds, ComputePasses};
 use crate::dof::{self, DofFrame, DofIds, DofPass, DofSources};
@@ -252,6 +253,8 @@ pub(crate) struct GraphIds {
     /// The motion debug view's step.
     pub(crate) motion: MotionIds,
     pub(crate) ssr: SsrIds,
+    /// The uniform buffer and bind groups of screen-space bounce light's steps.
+    pub(crate) bounce: BounceIds,
     /// The composite and the depth copy of the camera's weighted layer.
     pub(crate) weighted: WeightedIds,
     /// The bind group of the copy of the camera's opaque depth that soft particles read.
@@ -452,6 +455,10 @@ const PICK_RESOLVED: &str = "pickResolved";
 /// the denoise, whose target the camera's opaque pass reads.
 const AO_PASSES: [&str; ao::STEPS] = ["AoDepth", "AoHorizon", "AoDenoise"];
 const AO_TARGETS: [&str; ao::STEPS] = ["aoDepth", "aoHorizon", "aoResult"];
+/// Screen-space bounce light's steps: the trace and the denoise.
+const BOUNCE_PASSES: [&str; bounce::STEPS] = ["BounceTrace", "BounceDenoise"];
+/// Screen-space bounce light's traced target, which only its denoise reads.
+const BOUNCE_RAW: &str = "bounceRaw";
 /// The motion view's culling pass on WebGPU, and the buffer of its compacted instances and
 /// indirect draws.
 const MOTION_CULLING: &str = "MotionCulling";
@@ -645,6 +652,9 @@ pub(crate) enum Role {
     /// A step of screen-space reflections, by its place: a level of the depth pyramid, then the
     /// trace. The graph records it itself.
     Ssr(u8),
+    /// A step of screen-space bounce light, by its place: the trace, then the denoise. The graph
+    /// records it itself.
+    Bounce(u8),
     /// A pass of the custom effects, a lone effect or a group, by its place among the effects'
     /// passes. The graph records it itself.
     Effect(u8),
@@ -1090,6 +1100,15 @@ pub(crate) struct FrameGraph {
     /// True once screen-space reflections' pipelines, ambient occlusion's depth step's and the
     /// color copy's are built.
     ssr_built: bool,
+    /// Screen-space bounce light's steps and their GPU objects, once they first draw.
+    bounce_pass: Option<BouncePass>,
+    /// The GPU objects that screen-space bounce light's steps take.
+    bounce_ids: BounceIds,
+    /// What screen-space bounce light's steps draw with, while it draws.
+    bounce: Option<BounceFrame>,
+    /// True once screen-space bounce light's pipelines, ambient occlusion's steps' and the color
+    /// copy's are built.
+    bounce_built: bool,
     /// The camera's view in the frame whose color copy the next frame's reflections read, with the
     /// copy's texture as that frame made it, or `None` before a frame copied for them.
     last_view: Option<(LastView, MadeTexture)>,
@@ -1367,6 +1386,10 @@ impl FrameGraph {
             ssr: None,
             ssr_scale: ao::MAX_SCALE,
             ssr_built: false,
+            bounce_pass: None,
+            bounce_ids: ids.bounce,
+            bounce: None,
+            bounce_built: false,
             last_view: None,
             views: 0,
             debug_lines: None,
@@ -1544,9 +1567,11 @@ impl FrameGraph {
         self.prepass || self.screen_steps() || self.ssr.is_some()
     }
 
-    /// True while ambient occlusion's steps run: while ambient occlusion or contact shadows draw.
+    /// True while ambient occlusion's steps run: while ambient occlusion, contact shadows or
+    /// screen-space bounce light draw, as the bounce light reads the depth copy and the normals
+    /// that the steps leave.
     fn screen_steps(&self) -> bool {
-        self.ao.is_some() || self.contact.is_some()
+        self.ao.is_some() || self.contact.is_some() || self.bounce.is_some()
     }
 
     /// Sets ambient occlusion's settings and the main directional light's contact shadows for the
@@ -1634,10 +1659,34 @@ impl FrameGraph {
         self.ssr.is_some() && self.ssr_built
     }
 
+    /// Turns screen-space bounce light on with what its steps draw with, or off with `None`, for
+    /// the next frames. The passes are declared again only when it turns on or off. The light
+    /// draws on the screen texture's grid, which ambient occlusion's steps leave, so it keeps
+    /// those steps running too.
+    pub(crate) fn set_bounce(&mut self, frame: Option<BounceFrame>) {
+        if frame.is_some() != self.bounce.is_some() {
+            self.declared = false;
+        }
+        self.bounce = frame;
+    }
+
+    /// True while screen-space bounce light draws: the quality settings asked for it, and its
+    /// pipelines, ambient occlusion's steps' and the color copy's are built. Until then the
+    /// prepass runs, so its pipelines build too.
+    pub(crate) fn bounce_draws(&self) -> bool {
+        self.bounce.is_some() && self.bounce_built
+    }
+
+    /// Screen-space bounce light's steps, made when first asked for.
+    fn bounce_steps(&mut self) -> &mut BouncePass {
+        self.bounce_pass
+            .get_or_insert_with(|| BouncePass::new(self.bounce_ids))
+    }
+
     /// True while the frame copies the camera's opaque color: for surfaces that let light through,
-    /// or for screen-space reflections, which read it in the next frame.
+    /// or for screen-space reflections and bounce light, which read it in the next frame.
     fn copy_wanted(&self) -> bool {
-        self.transmission_wanted || self.ssr.is_some()
+        self.transmission_wanted || self.ssr.is_some() || self.bounce.is_some()
     }
 
     /// Writes the screen texture's grid and screen-space reflections' values into the camera's
@@ -1645,7 +1694,7 @@ impl FrameGraph {
     /// `eye` is this frame's camera position in the world. It then keeps this frame's view, whose
     /// copy the next frame reads. Call it once a frame, after [`FrameGraph::prepare`].
     pub(crate) fn write_screen_values(&mut self, uniform: &mut FrameUniform, eye: [f64; 3]) {
-        if self.screen_draws() || self.ssr_draws() {
+        if self.screen_draws() || self.ssr_draws() || self.bounce_draws() {
             let strength = if self.screen_draws() {
                 uniform.occlusion[0]
             } else {
@@ -1661,6 +1710,13 @@ impl FrameGraph {
             _ => None,
         };
         ssr::write_frame_values(uniform, self.ssr.map(|frame| frame.ssr), last, eye);
+        // The light's layer exists only while its steps draw, so its strength is 0 until then.
+        bounce::write_frame_values(
+            uniform,
+            self.bounce
+                .filter(|_| self.bounce_draws())
+                .map(|frame| frame.bounce),
+        );
         self.last_view = copy.map(|made| {
             let view = LastView {
                 view_proj: uniform.view_proj,
@@ -1862,6 +1918,11 @@ impl FrameGraph {
         } else {
             0
         };
+        let bounce = if self.bounce_draws() {
+            BouncePass::UPLOAD_BYTES
+        } else {
+            0
+        };
         let effects = if self.effect_count > 0 {
             EffectPass::UPLOAD_BYTES
         } else {
@@ -1922,6 +1983,7 @@ impl FrameGraph {
             + bloom
             + ao
             + ssr
+            + bounce
             + effects
             + dof
             + subsurface
@@ -2916,8 +2978,9 @@ impl FrameGraph {
             };
             self.graph.keep(SHADOW_ATLAS, atlas, size);
         }
-        if self.ssr_draws() && !views.is_empty() {
-            // Screen-space reflections read the color copy that the frame before made.
+        if (self.ssr_draws() || self.bounce_draws()) && !views.is_empty() {
+            // Screen-space reflections and bounce light read the color copy that the frame before
+            // made.
             let target = Target::color(self.copy_format()).mipmapped();
             let size = view_size(&views[ViewId::CAMERA.index()]);
             self.graph.keep(TRANSMISSION_COLOR, target, size);
@@ -3213,7 +3276,8 @@ impl FrameGraph {
             self.add(copy, Role::Taa(taa::OPAQUE_STEP as u8));
         }
         self.transmission_declared =
-            (self.transmission_draws() || self.ssr_draws()) && !views.is_empty();
+            (self.transmission_draws() || self.ssr_draws() || self.bounce_draws())
+                && !views.is_empty();
         if self.transmission_declared {
             // The copy reads the scene color and depth as the opaque pass and the debug lines
             // leave them, before the transparent pass draws into them. For screen-space
@@ -3225,7 +3289,7 @@ impl FrameGraph {
                 .size(size)
                 .reads_so_far(SCENE_COLOR)
                 .reads_so_far(SCENE_DEPTH);
-            let copy = if self.ssr_draws() {
+            let copy = if self.ssr_draws() || self.bounce_draws() {
                 copy.writes(TRANSMISSION_COLOR)
             } else {
                 copy.optional().creates(TRANSMISSION_COLOR, target)
@@ -3907,20 +3971,34 @@ impl FrameGraph {
             for level in &SSR_TARGETS[..ssr::LEVELS] {
                 trace = trace.reads(*level);
             }
-            let trace = trace.creates(SSR_TARGETS[ssr::LEVELS], Target::color(ssr::TRACE_FORMAT));
+            let trace = trace.creates(
+                SSR_TARGETS[ssr::LEVELS],
+                Target::color(ssr::TRACE_FORMAT).array(),
+            );
             self.add(trace, Role::Ssr(ssr::LEVELS as u8));
         }
         if !self.screen_draws() {
             return;
         }
         for step in 1..ao::STEPS {
-            let target = Target::color(ao::FORMATS[step]);
+            let last = step == ao::STEPS - 1;
+            // The last target holds the bounce light's layer while the bounce light draws. The
+            // target is an array either way, so the opaque pass binds one shape of texture.
+            let two_layers = last && self.bounce_draws();
+            let mut target = Target::color(ao::FORMATS[step]);
+            if last {
+                target = target.layers(if two_layers { 2 } else { 1 }).array();
+            }
             let pass = Pass::new(AO_PASSES[step], PassKind::Fullscreen).size(ao::SIZE);
             let mut pass = if no_clear {
                 pass.creates_overwriting(AO_TARGETS[step], target)
             } else {
                 pass.creates(AO_TARGETS[step], target)
             };
+            if two_layers {
+                // The bounce light's denoise draws into the target's second layer.
+                pass = pass.writes_layer(AO_TARGETS[step], 0);
+            }
             pass = pass.reads(AO_TARGETS[0]);
             if step == 2 {
                 pass = pass.reads(AO_TARGETS[1]);
@@ -3929,6 +4007,24 @@ impl FrameGraph {
                 }
             }
             self.add(pass, Role::Ao(step as u8));
+        }
+        if self.bounce_draws() {
+            // The trace reads the color copy as the frame before left it, and the denoise writes
+            // the light into the screen texture's second layer.
+            let trace = Pass::new(BOUNCE_PASSES[0], PassKind::Fullscreen)
+                .size(ao::SIZE)
+                .reads(AO_TARGETS[0])
+                .reads(AO_TARGETS[1])
+                .reads_so_far(TRANSMISSION_COLOR)
+                .creates(BOUNCE_RAW, Target::color(bounce::FORMAT).array());
+            self.add(trace, Role::Bounce(0));
+            let denoise = Pass::new(BOUNCE_PASSES[1], PassKind::Fullscreen)
+                .size(ao::SIZE)
+                .reads(BOUNCE_RAW)
+                .reads(AO_TARGETS[0])
+                .reads(AO_TARGETS[1])
+                .writes_layer(AO_TARGETS[ao::STEPS - 1], 1);
+            self.add(denoise, Role::Bounce(1));
         }
     }
 
@@ -4521,6 +4617,21 @@ impl FrameGraph {
                 self.declared = false;
             }
         }
+        let bounce_built = self.bounce.is_some()
+            && {
+                let steps = self.bounce_steps();
+                steps.request_pipelines(pipelines);
+                pipelines.all_built(steps.pipeline_ids(), pipelines_built)
+            }
+            && steps_built
+            && transmission_built;
+        if bounce_built != self.bounce_built {
+            let was = self.bounce_draws();
+            self.bounce_built = bounce_built;
+            if self.bounce_draws() != was {
+                self.declared = false;
+            }
+        }
         let weighted_built = self.weighted_wanted && {
             let composite =
                 self.weighted
@@ -4636,6 +4747,7 @@ impl FrameGraph {
     ) -> Result<(), RecordError> {
         self.upload_ao(list, arena)?;
         self.upload_ssr(list, arena)?;
+        self.upload_bounce(list, arena)?;
         self.upload_subsurface(list, arena)?;
         self.upload_effects(list, arena)?;
         self.upload_fullscreen(list, arena)?;
@@ -5414,7 +5526,7 @@ impl FrameGraph {
     /// Records the objects and settings of ambient occlusion's steps while the screen texture's
     /// steps draw, and binds each step to the textures it reads. While only screen-space
     /// reflections draw, the depth step alone runs, and the other steps' groups bind the depth
-    /// copy.
+    /// copy where the steps read it, and the blank array where a step reads the reflections.
     fn upload_ao(
         &mut self,
         list: &mut DrawList,
@@ -5437,16 +5549,27 @@ impl FrameGraph {
         };
         let depth = id(AO_TARGETS[0]);
         let reflects = self.ssr_draws();
+        // The reflections' binding is an array of layers, so the blank array stands in while the
+        // reflections draw none.
+        let blank = self.ao_ids.blank;
         let sources: StepSources = if screen {
             let horizon = id(AO_TARGETS[1]);
             let trace = if reflects {
                 id(SSR_TARGETS[ssr::LEVELS])
             } else {
-                depth
+                blank
             };
-            [[id(SCENE_DEPTH); 3], [depth; 3], [depth, horizon, trace]]
+            [
+                [id(SCENE_DEPTH); 3],
+                [depth, depth, blank],
+                [depth, horizon, trace],
+            ]
         } else {
-            [[id(SCENE_DEPTH); 3], [depth; 3], [depth; 3]]
+            [
+                [id(SCENE_DEPTH); 3],
+                [depth, depth, blank],
+                [depth, depth, blank],
+            ]
         };
         let (canvas, scale, grid, made) = (
             self.canvas,
@@ -5486,6 +5609,31 @@ impl FrameGraph {
         let (canvas, scale, made) = (self.canvas, self.scale, self.textures_made);
         self.ssr_steps()
             .prepare(list, arena, &frame, canvas, scale, grid, &sources, made)
+    }
+
+    /// Records screen-space bounce light's objects and settings while it draws, and binds its steps
+    /// to the depth copy, the horizon step's target and the color copy or the traced light.
+    fn upload_bounce(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        let Some(frame) = self.bounce.filter(|_| self.bounce_draws()) else {
+            return Ok(());
+        };
+        let id = |name: &str| {
+            self.sampled_id(name)
+                .expect("each step of screen-space bounce light reads a planned texture")
+        };
+        let depth = id(AO_TARGETS[0]);
+        let normals = id(AO_TARGETS[1]);
+        let copy = id(TRANSMISSION_COLOR);
+        let raw = id(BOUNCE_RAW);
+        let sources = [[depth, normals, copy], [depth, normals, raw]];
+        let corner = ao::corner(self.canvas, self.scale, self.screen_scale());
+        let (canvas, scale, made) = (self.canvas, self.scale, self.textures_made);
+        self.bounce_steps()
+            .prepare(list, arena, &frame, canvas, scale, corner, &sources, made)
     }
 
     /// Makes each texture of the plan whose shape or size differs from what the draw lists made,
@@ -5854,6 +6002,15 @@ impl FrameGraph {
                                     .expect("screen-space reflections' passes run once declared")
                                     .record(list, step, corner)?
                             }
+                            Role::Bounce(step) => self
+                                .bounce_pass
+                                .as_ref()
+                                .expect("screen-space bounce light's passes run once declared")
+                                .record(
+                                    list,
+                                    usize::from(step),
+                                    ao::corner(self.canvas, self.scale, self.screen_scale()),
+                                )?,
                             Role::Effect(index) => {
                                 let unit = self.effect_units[usize::from(index)];
                                 self.effect_pass
@@ -5991,6 +6148,7 @@ impl FrameGraph {
             Role::Subsurface(step) => (P::Subsurface, u32::from(step)),
             Role::Ao(step) => (P::Ao, u32::from(step)),
             Role::Ssr(step) => (P::Ssr, u32::from(step)),
+            Role::Bounce(step) => (P::Bounce, u32::from(step)),
             Role::Effect(step) => (P::Effect, u32::from(step)),
             Role::Dof(step) => (P::Dof, u32::from(step)),
             Role::FogLight(parity) => (P::FogLight, u32::from(parity)),
@@ -6259,6 +6417,9 @@ impl FrameGraph {
         if let Some(ssr) = self.ssr_pass.as_mut() {
             ssr.reset_gpu();
         }
+        if let Some(bounce) = self.bounce_pass.as_mut() {
+            bounce.reset_gpu();
+        }
         self.last_view = None;
         self.fullscreen.reset_gpu();
         self.compute.reset_gpu();
@@ -6444,6 +6605,7 @@ fn role_scope(role: Role) -> u32 {
         Role::Subsurface(step) => scope::of(scope::SUBSURFACE, u32::from(step)),
         Role::Ao(step) => scope::of(scope::AO, u32::from(step)),
         Role::Ssr(step) => scope::of(scope::SSR, u32::from(step)),
+        Role::Bounce(step) => scope::of(scope::BOUNCE, u32::from(step)),
         Role::Effect(step) => scope::of(scope::EFFECT, u32::from(step)),
         Role::Dof(step) => scope::of(scope::DOF, u32::from(step)),
         Role::FogLight(step) => scope::of(scope::FOG_LIGHT, u32::from(step)),
@@ -7527,6 +7689,7 @@ mod tests {
         ao: AoIds {
             buffer: 11,
             first_group: 30,
+            blank: 913,
         },
         effects: EffectIds {
             buffer: 12,
@@ -7602,6 +7765,10 @@ mod tests {
         ssr: SsrIds {
             buffer: 21,
             first_group: 220,
+        },
+        bounce: BounceIds {
+            buffer: 25,
+            first_group: 230,
         },
         weighted: WeightedIds { first_group: 140 },
         particle_depth: 121,
@@ -7769,7 +7936,18 @@ mod tests {
             IDS.ssr.first_group,
             ssr::STEPS as u32,
         ));
+        buffers.push(("the bounce light's block".to_string(), IDS.bounce.buffer, 1));
+        groups.push((
+            "the bounce light's groups".to_string(),
+            IDS.bounce.first_group,
+            bounce::STEPS as u32,
+        ));
         groups.push(("the particle depth copy".to_string(), IDS.particle_depth, 1));
+        textures.push((
+            "the ambient occlusion blank array".to_string(),
+            IDS.ao.blank,
+            1,
+        ));
         groups.push((
             "the materials' scene groups".to_string(),
             IDS.material_scene,
@@ -9814,7 +9992,14 @@ mod tests {
                 };
                 let made = plan.textures()[usize::from(index)];
                 assert_eq!(made.size, ao::SIZE);
-                assert_eq!(made.target, Target::color(ao::FORMATS[step]));
+                // The last target is an array, whose second layer carries screen-space bounce
+                // light while it draws, so the opaque pass binds one shape of texture.
+                let expected = if step == AO_TARGETS.len() - 1 {
+                    Target::color(ao::FORMATS[step]).array()
+                } else {
+                    Target::color(ao::FORMATS[step])
+                };
+                assert_eq!(made.target, expected);
             }
             // On WebGL2, every read clamps inside the corner that the step draws, so a step's
             // target starts from what the texture holds rather than a clear, which Safari can make

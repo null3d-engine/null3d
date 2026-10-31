@@ -160,6 +160,7 @@ use crate::accumulate::AccumulateIds;
 use crate::ao::{self, AoIds};
 use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
+use crate::bounce::BounceIds;
 use crate::cells::CellCulling;
 use crate::compute::ComputePassIds;
 use crate::data_texture::DataTexture;
@@ -456,8 +457,10 @@ mod ids {
     pub const FULLSCREEN: u32 = PHYSICAL_SKY + 1;
     /// The uniform buffer of screen-space reflections' steps.
     pub const SSR: u32 = FULLSCREEN + 1;
+    /// The uniform buffer of screen-space bounce light's steps.
+    pub const BOUNCE: u32 = SSR + 1;
     /// The uniform buffer of the volumetric fog's steps (see [`crate::fog_volume`]).
-    pub const FOG_VOLUME: u32 = SSR + 1;
+    pub const FOG_VOLUME: u32 = BOUNCE + 1;
     /// The automatic exposure's meter: its uniform buffer, its histogram and its stored exposure.
     pub const EXPOSURE: u32 = FOG_VOLUME + 1;
     pub const EXPOSURE_HISTOGRAM: u32 = EXPOSURE + 1;
@@ -735,9 +738,11 @@ mod ids {
     pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
     /// The bind group of each step of screen-space reflections, after the full-screen passes'.
     pub const SSR_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The bind group of each step of screen-space bounce light, after screen-space reflections'.
+    pub const BOUNCE_GROUPS: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
     /// The bind group of the motion debug view's step, and of the blank map of the motion view,
-    /// after screen-space reflections'.
-    pub const MOTION_VIEW_GROUP: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
+    /// after screen-space bounce light's.
+    pub const MOTION_VIEW_GROUP: u32 = BOUNCE_GROUPS + crate::bounce::STEPS as u32;
     pub const BLANK_MAP_GROUP: u32 = MOTION_VIEW_GROUP + 1;
     /// The bind group of the still-camera accumulation's blend, after the motion view's.
     pub const ACCUMULATE_GROUP: u32 = BLANK_MAP_GROUP + 1;
@@ -1147,6 +1152,11 @@ impl GpuDrivenRenderer {
                         ao: AoIds {
                             buffer: ids::AO,
                             first_group: ids::AO_GROUPS,
+                            blank: ids::BLANK_AO,
+                        },
+                        bounce: BounceIds {
+                            buffer: ids::BOUNCE,
+                            first_group: ids::BOUNCE_GROUPS,
                         },
                         effects: EffectIds {
                             buffer: ids::EFFECTS,
@@ -1603,6 +1613,7 @@ impl GpuDrivenRenderer {
         );
         self.graph
             .set_ssr(settings.ssr_frame(input.canvas), settings.ssr_scale());
+        self.graph.set_bounce(settings.bounce_frame(input.canvas));
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
             .chain(self.sorted.waiting())
@@ -4103,7 +4114,7 @@ impl FrameBuilder for GpuDrivenRenderer {
     }
 
     fn reads_last_frame(&self) -> bool {
-        self.graph.ssr_draws()
+        self.graph.ssr_draws() || self.graph.bounce_draws()
     }
 
     fn graph_message(&self, error: GraphError) -> String {

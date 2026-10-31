@@ -4591,6 +4591,18 @@ pub fn set_ssr_quality(thousandths: u32, steps: u32) -> u32 {
     })
 }
 
+/// Sets the rays that each texel of screen-space bounce light casts, from the quality settings,
+/// from the next frame on: 0 draws none. The light draws on ambient occlusion's grid, and the
+/// steps of each ray's march are the engine's default.
+#[wasm_bindgen(js_name = setBounceRays)]
+pub fn set_bounce_rays(rays: u32) -> u32 {
+    with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        settings.set_bounce_rays(rays);
+        0
+    })
+}
+
 /// Sets the steps of each march of the main directional light's contact shadows, from the next
 /// frame on: 0 draws none.
 #[wasm_bindgen(js_name = setContactSteps)]

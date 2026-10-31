@@ -465,6 +465,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'bounce-light',
+		group: 'Light, materials and effects',
+		sketch: new URL('./bounce-light/sketch.ts', import.meta.url),
+		code: 'bounce-light/',
+		title: 'Screen-space bounce light',
+		scene: 'Red and green room',
+		summary:
+			"One bounce of indirect light in a room with a red wall at the left and a green one at the right. Each wall's light lands on the white floor and on the white back wall, which the environment's uniform light cannot show. Every few seconds the bounce turns off and on again.",
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'auto-exposure',
 		group: 'Light, materials and effects',
 		sketch: new URL('./auto-exposure/sketch.ts', import.meta.url),

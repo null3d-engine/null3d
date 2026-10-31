@@ -983,6 +983,9 @@ pub mod layout {
     /// [`LIGHT_DEPTH`] for a multisampled depth target, whose sample 0 it reads. Only WebGPU has
     /// it.
     pub const LIGHT_DEPTH_MS: u32 = 64;
+    /// Group 0 of screen-space bounce light's steps: the steps' uniform block, the depth copy, the
+    /// horizon step's target, which holds the normal, and the color copy or the traced light.
+    pub const BOUNCE: u32 = 65;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1739,8 +1742,8 @@ pub mod sizes {
     /// still view's jitter, which the scene's vertex shaders add, the physical sky's aerial
     /// perspective's six vectors, the vignette that the 8-bit path's fragment shaders apply, and
     /// the camera's view-projection, target size and eye, which a masked custom material's caster
-    /// reads in a light's view.
-    pub const FRAME_UNIFORM_BYTES: u32 = 1104;
+    /// reads in a light's view, and screen-space bounce light's strength.
+    pub const FRAME_UNIFORM_BYTES: u32 = 1120;
     /// Bytes of the output settings: the exposure, the tone mapping, the flags and the render
     /// size.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
@@ -2166,6 +2169,13 @@ pub mod template {
     /// Light clustering's fit: one thread that fits the slices to the measured depth and writes
     /// the grid's header, before the counting dispatch. WebGPU only.
     pub const LIGHT_FIT: u32 = 88;
+    /// Screen-space bounce light's trace: one triangle over the screen texture's grid, which casts
+    /// each texel's rays through the depth copy and writes the light that the frame before showed
+    /// at their hits, with the share that hit.
+    pub const BOUNCE_TRACE: u32 = 89;
+    /// Screen-space bounce light's denoise: one triangle over the grid, which blurs the traced
+    /// light over a disk of taps that keeps to each texel's own surface.
+    pub const BOUNCE_DENOISE: u32 = 90;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2173,7 +2183,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 88] = [
+    pub const NAMES: [(&str, u32); 90] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2261,6 +2271,8 @@ pub mod template {
         ("LIGHT_DEPTH_CLEAR", LIGHT_DEPTH_CLEAR),
         ("LIGHT_DEPTH_CLEAR_MS", LIGHT_DEPTH_CLEAR_MS),
         ("LIGHT_FIT", LIGHT_FIT),
+        ("BOUNCE_TRACE", BOUNCE_TRACE),
+        ("BOUNCE_DENOISE", BOUNCE_DENOISE),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2399,6 +2411,8 @@ pub mod groups {
         (template::AO_DEPTH_MS, own!(layout::AO_DEPTH_MS)),
         (template::AO, own!(layout::AO)),
         (template::AO_DENOISE, own!(layout::AO)),
+        (template::BOUNCE_TRACE, own!(layout::BOUNCE)),
+        (template::BOUNCE_DENOISE, own!(layout::BOUNCE)),
         (template::BACKGROUND_CUBE, BACKGROUND),
         (template::BACKGROUND_SKY, BACKGROUND),
         (template::SHADOW_CUTOUT, MESH),
@@ -2697,6 +2711,7 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("MOTION_FRAME", layout::MOTION_FRAME),
     ("SSR_REDUCE", layout::SSR_REDUCE),
     ("SSR_TRACE", layout::SSR_TRACE),
+    ("BOUNCE", layout::BOUNCE),
     ("WEIGHTED_COMPOSITE", layout::WEIGHTED_COMPOSITE),
     ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
     ("TRANSMISSION_COPY_MS", layout::TRANSMISSION_COPY_MS),

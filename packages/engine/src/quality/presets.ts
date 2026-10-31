@@ -215,6 +215,18 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [16, 24, 32, 48, 64],
 	},
+	// The rays that each texel of screen-space bounce light casts over its hemisphere, which draws
+	// one bounce of the indirect light that the camera's view showed. 0 draws none: Low and Medium
+	// keep the environment's light alone, and High and Ultra draw 4 and 8 rays. The light draws on
+	// ambient occlusion's grid at half the render size, so its cost follows the render scale. At
+	// 1920 x 1080 on the Mac's M5 Max it added 2.5 ms at High and 1.3 ms at Ultra on WebGPU, and
+	// 0.8 ms at WebGL2's Medium. D-282 gives the figures.
+	bounceRays: {
+		presets: [0, 0, 4, 8],
+		webgl2: [0, 4, 4, 8],
+		changes: 'live',
+		values: [0, 4, 8, 16],
+	},
 	// How automatic exposure meters the scene while a sketch turns it on: `histogram` bins a grid of
 	// 128 samples on the short side in compute shaders, on WebGPU; `downsample` draws 16 x 16 cells
 	// and meters them in one texel, on every GPU path. WebGL2 has no compute shaders, so it always
@@ -570,6 +582,13 @@ export interface QualitySettings {
 	 * farther objects and cost more. It changes during play.
 	 */
 	ssrSteps: 16 | 24 | 32 | 48 | 64;
+	/**
+	 * The rays that each texel of screen-space bounce light casts: 0, 4, 8 or 16. 0 draws no bounce
+	 * light, which leaves the environment's indirect light alone. Each ray marches through the
+	 * depth that the frame saw and takes the light that the frame before showed where it lands, so
+	 * more rays make the light smoother and cost more. It changes during play.
+	 */
+	bounceRays: 0 | 4 | 8 | 16;
 	/**
 	 * How automatic exposure meters the scene's brightness while `post.set` turns it on:
 	 * `histogram` bins a grid of samples in compute shaders, on WebGPU, and `downsample` averages
