@@ -1764,6 +1764,8 @@ const VEGETATION_GRASS_PATHS = [
  * What the grass on one hill costs at each preset that a GPU path draws, for M3-V8: the frame's
  * GPU time, its per-pass breakdown where the device times passes, the CPU time and the draw calls.
  * The page places 20,000 tufts at High, draws a preset's share of them, and measures five seconds.
+ * Each of the hill's three distance bands also runs alone at High on WebGPU, so the far bands'
+ * cheaper draws read as figures of their own rather than as one hill's average.
  */
 export function vegetationGrassPlan(): PlanItem<Check>[] {
 	const items: PlanItem<Check>[] = [];
@@ -1780,6 +1782,20 @@ export function vegetationGrassPlan(): PlanItem<Check>[] {
 					},
 				),
 			);
+	// One page for each band alone, so the near band's dense blades and the far band's cheap ones
+	// take their own frames rather than one average over the hill.
+	for (const band of [0, 1, 2])
+		items.push(
+			pageItem(
+				`vegetation-grass-band-${band}-high-webgpu`,
+				'vegetation-grass',
+				{ kind: 'probe', tier: 'webgpu' },
+				{
+					switches: ['gpu=webgpu', 'preset=high', 'seconds=5', `band=${band}`],
+					timeoutSeconds: 600,
+				},
+			),
+		);
 	return items;
 }
 

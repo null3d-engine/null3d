@@ -236,11 +236,17 @@ A large scene need not place every plant at once. `EcoScatter` takes tiles with 
 
 ## Grass on the ground
 
-`createGrass(ctx, { height, area, count, seed })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)` and skip ground steeper than `maxSlope`. Their turn, size and tint come from integer hashes, so one seed places the same grass on every device. Each tuft's row values carry its wind phase, its tint and its turn, which its shader reads. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
+`createGrass(ctx, { height, area, count, seed, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)` and skip ground steeper than `maxSlope`. Their turn, size and tint come from integer hashes, so one seed places the same grass on every device. Each tuft's row values carry its tint, which its shader reads. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
 
-The CPU tile path draws on WebGPU and WebGL2, with one instance batch for each tuft shape. The compute path, which builds and culls blades on the GPU for the denser presets, is not built yet.
+The blades bend in the wind add-on's field, the same field that the leaf material reads. Give `createGrass` its `wind` field, and call `grass.setWindLayer(field)` in each frame with the field's newest state, as the leaf material takes it. A page that gives no field grows grass that stands still.
 
-The blades sway in the add-on's shader, and they receive the sun's shadows. The ground's own colour and the blades' root colours should meet at the hill's foot.
+The hill draws in distance bands. Each band covers the whole square and draws only between its distances from the camera, so one set of tufts covers the ground wherever the camera stands. The near band is dense and detailed; each band beyond it places fewer tufts, gives its blades one fewer segment, and widens them, so the ground stays covered while the far rows cost fewer triangles. The default is three bands, ending at 0.5, 0.9 and 1.6 times the area's side, with 1, a half and a quarter of the near band's tufts. Pass `bands` to set your own.
+
+`grassBands(options)` gives that plan without building anything: each band's distances, its tufts at every preset, the triangles of one tuft, and the rows and bytes it allocates. `grass.bands` gives the bands as the call built them, and `grass.batches` holds every batch of every band. The rows are built for Ultra's share once, so a preset change only changes how many rows each batch draws, not the memory.
+
+The CPU tile path draws on WebGPU and WebGL2, with one instance batch for each tuft shape in each band. The compute path, which builds and culls blades on the GPU for the denser presets, is not built yet.
+
+The blades receive the sun's shadows. The ground's own colour and the blades' root colours should meet at the hill's foot.
 
 ## Speed and memory
 

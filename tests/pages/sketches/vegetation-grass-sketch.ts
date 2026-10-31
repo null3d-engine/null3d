@@ -1,8 +1,10 @@
 // The first GPU grass picture: a hill of tufts grown by the vegetation add-on. The grass stands on
-// a height function, turns and tints itself by integer hash, and sways in the add-on's shader. The
-// camera and the light are fixed, so two runs draw the same frame.
+// a height function, turns and tints itself by integer hash, and bends in the wind add-on's field,
+// which this picture holds still. The camera and the light are fixed, so two runs draw the same
+// frame.
 import { defineSketch, type MeshArrays } from '@null3d/engine';
-import { createGrass } from '@null3d/vegetation';
+import { createGrass, type GrassOptions } from '@null3d/vegetation';
+import { createWind } from '@null3d/wind';
 
 /** The hill's width and depth, in meters. */
 const SIZE = 34;
@@ -10,6 +12,22 @@ const SIZE = 34;
 const COUNT = 20_000;
 /** The height of the hill at a point, in meters. */
 const hill = (x: number, z: number) => 4.5 * Math.exp(-(x * x + z * z) / 220);
+/** The band that a measurement page draws alone, or null to draw every band. */
+const BAND = (() => {
+	const value = new URL(import.meta.url).searchParams.get('band');
+	return value === null ? null : Number(value);
+})();
+
+/**
+ * The grass that this page grows. The measurement page reads it to report each band's tufts,
+ * triangles and rows without reaching into the sketch's own frame.
+ */
+export const GRASS: GrassOptions = {
+	height: hill,
+	area: { x: 0, z: 0, size: SIZE },
+	count: COUNT,
+	seed: 7,
+};
 
 /** The hill's ground as a grid of vertices, with its normals from the height's slope. */
 function ground(size: number, segments: number): MeshArrays {
@@ -61,13 +79,33 @@ export default defineSketch((ctx) => {
 		material: groundMaterial,
 		receiveShadows: true,
 	});
-	const grass = createGrass(ctx, {
-		height: hill,
-		area: { x: 0, z: 0, size: SIZE },
-		count: COUNT,
-		seed: 7,
+	// The same field that the leaf material reads, held still for this first picture: the grass
+	// samples it in every frame, so a later slice switches the air on instead of rewriting the
+	// shader.
+	const wind = createWind(ctx, {
+		camera,
+		box: 128,
+		grid: 64,
+		air: { speed: 0, gustStrength: 0, swirl: 0 },
 	});
+	const grass = createGrass(ctx, { ...GRASS, wind: wind.field });
+	// A page that measures one band gives this sketch `?band=`, and every other band draws nothing,
+	// so the frame's cost is that band's own.
+	const show = () => {
+		grass.fit(ctx.quality.preset);
+		if (BAND === null) return;
+		grass.bands.forEach((band, index) => {
+			if (index === BAND) return;
+			for (const batch of band.batches) batch.setActiveCount(0);
+		});
+	};
 	// The preset's share draws from the first frame; a change of preset takes its share then.
-	ctx.quality.onChange(() => grass.fit(ctx.quality.preset));
-	return {};
+	ctx.quality.onChange(show);
+	show();
+	return {
+		onUpdate() {
+			wind.update();
+			grass.setWindLayer(wind.field);
+		},
+	};
 });

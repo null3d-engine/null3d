@@ -219,7 +219,7 @@
 		"test": "vegetation-grass",
 		"tier": "compat",
 		"date": "2026-10-30",
-		"reason": "the first grass picture, drawn on this Mac before a CI run, to judge the shape; replace with CI's software set when the shape is fixed"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made the grass read the wind add-on's field; the branch was not pushed when the set was drawn"
 	},
 	"chromium-swiftshader/compat/vegetation-rush.png": {
 		"test": "vegetation-rush",
@@ -477,7 +477,7 @@
 		"test": "vegetation-grass",
 		"tier": "webgl2",
 		"date": "2026-10-30",
-		"reason": "the first grass picture, drawn on this Mac before a CI run, to judge the shape; replace with CI's software set when the shape is fixed"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made the grass read the wind add-on's field; the branch was not pushed when the set was drawn"
 	},
 	"chromium-swiftshader/webgl2/vegetation-meadow-grass.png": {
 		"test": "vegetation-meadow-grass",
@@ -753,7 +753,7 @@
 		"test": "vegetation-grass",
 		"tier": "webgpu",
 		"date": "2026-10-30",
-		"reason": "the first grass picture, drawn on this Mac before a CI run, to judge the shape; replace with CI's software set when the shape is fixed"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made the grass read the wind add-on's field; the branch was not pushed when the set was drawn"
 	},
 	"chromium-swiftshader/webgpu/water-bounds.png": {
 		"test": "water-bounds",

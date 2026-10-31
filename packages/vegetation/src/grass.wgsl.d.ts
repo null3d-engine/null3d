@@ -4,9 +4,11 @@ import type { CompiledMaterial } from '@null3d/vite-plugin';
 
 declare const shader: CompiledMaterial<
 	{
-		readonly wind: 'vec2f';
+		readonly windBox: 'f32';
+		readonly windStrength: 'f32';
+		readonly windLayer: 'f32';
 		readonly sway: 'f32';
 	},
-	never
+	'wind' | 'airSettings'
 >;
 export default shader;

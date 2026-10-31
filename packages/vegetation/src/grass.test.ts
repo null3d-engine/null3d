@@ -2,7 +2,8 @@
 // ground is left bare, a tuft's blades have the shape the mesh takes, and a preset draws its share.
 import { describe, expect, test } from 'bun:test';
 import type { QualityPreset, SketchContext } from '@null3d/engine';
-import { createGrass, placeTufts, tuftMesh } from './grass';
+import type { WindField } from '@null3d/wind';
+import { createGrass, grassBands, placeTufts, tuftMesh } from './grass';
 
 /** A place that accepts every tuft: a flat ground. */
 const flat = () => 1;
@@ -70,6 +71,7 @@ describe('the grass batches', () => {
 			rotations: new Float32Array(capacity * 4),
 			scales: new Float32Array(capacity * 3),
 			values: new Float32Array(capacity * 4),
+			ranges: new Float32Array(capacity * 2),
 			active: capacity,
 			setActiveCount(count: number) {
 				this.active = count;
@@ -81,25 +83,46 @@ describe('the grass batches', () => {
 	/** A sketch context that makes batches and a material, with no engine behind it. */
 	function context(preset: QualityPreset) {
 		const made: ReturnType<typeof batch>[] = [];
+		const meshes: { positions: Float32Array }[] = [];
+		const materials: Record<string, unknown>[] = [];
+		const uploads: Record<string, unknown>[] = [];
+		const layers: number[] = [];
 		const ctx = {
-			materials: { shader: () => ({}) },
+			materials: {
+				shader: (options: Record<string, unknown>) => {
+					materials.push(options);
+					return {
+						setUniform: (name: string, value: number) => {
+							if (name === 'windLayer') layers.push(value);
+						},
+					};
+				},
+			},
 			geometry: { fromArrays: (arrays: unknown) => arrays },
 			scene: {
-				createInstances: (_mesh: unknown, count: number) => {
+				createInstances: (mesh: { positions: Float32Array }, count: number) => {
 					const b = batch(count);
+					meshes.push(mesh);
 					made.push(b);
 					return b;
 				},
 			},
+			textures: {
+				fromData: (options: Record<string, unknown>) => {
+					uploads.push(options);
+					return {};
+				},
+			},
 			quality: { preset, onChange: () => () => {} },
 		} as unknown as SketchContext;
-		return { ctx, made };
+		return { ctx, made, meshes, materials, uploads, layers };
 	}
 
-	test('the High count fills the batches and each preset draws its share', () => {
+	test('the High count fills the near band and each preset draws its share', () => {
 		const { ctx, made } = context('high');
 		const grass = createGrass(ctx, field);
-		expect(grass.batches.length).toBe(1);
+		expect(grass.bands.length).toBe(3);
+		expect(grass.batches.length).toBe(3);
 		const b = made[0] as ReturnType<typeof batch>;
 		// The capacity also holds Ultra's extra quarter.
 		expect(b.count).toBe(125);
@@ -113,5 +136,113 @@ describe('the grass batches', () => {
 		expect(b.active).toBe(60);
 		grass.fit('ultra');
 		expect(b.active).toBe(125);
+	});
+	test('each band thins its tufts, widens its blades and draws in its own distance window', () => {
+		const { ctx, made } = context('high');
+		const grass = createGrass(ctx, field);
+		// The defaults place the edges at 0.5, 0.9 and 1.6 times the area's ten meters, with 1, a half
+		// and a quarter of the tufts, and blades of 3, 2 and 1 segments.
+		expect(grass.bands.map((band) => band.far)).toEqual([5, 9, 16]);
+		expect(grass.bands.map((band) => band.near)).toEqual([0, 5, 9]);
+		expect(grass.bands.map((band) => band.count)).toEqual([100, 50, 25]);
+		expect(grass.bands.map((band) => band.triangles)).toEqual([65, 39, 13]);
+		// A band's rows fade in at the edge before it and out past its own, so no line around the
+		// camera shows where one band hands over to the next.
+		for (let index = 0; index < grass.bands.length; index++) {
+			const band = grass.bands[index] as (typeof grass.bands)[number];
+			const rows = made[index] as ReturnType<typeof batch>;
+			const near = band.near;
+			for (let row = 0; row < rows.count; row++) {
+				expect(rows.ranges[row * 2]).toBe(near);
+				const far = rows.ranges[row * 2 + 1] as number;
+				expect(far).toBeGreaterThanOrEqual(band.far);
+				expect(far).toBeLessThanOrEqual(band.far * 1.06 + 1e-6);
+			}
+		}
+	});
+	test('a band beyond the first grows wider blades for the tufts it thins', () => {
+		const { ctx, meshes } = context('high');
+		createGrass(ctx, field);
+		// The two side vertices of a blade's root are its width.
+		const width = (mesh: { positions: Float32Array }) =>
+			Math.hypot(
+				(mesh.positions[0] as number) - (mesh.positions[3] as number),
+				(mesh.positions[1] as number) - (mesh.positions[4] as number),
+				(mesh.positions[2] as number) - (mesh.positions[5] as number),
+			);
+		const near = width(meshes[0] as { positions: Float32Array });
+		const middle = width(meshes[1] as { positions: Float32Array });
+		// The middle band places half the tufts, so its blades are wider by the square root of two.
+		expect(middle / near).toBeCloseTo(Math.SQRT2, 5);
+	});
+	test('a preset thins each band by its share', () => {
+		const { ctx, made } = context('high');
+		const grass = createGrass(ctx, field);
+		const middle = made[1] as ReturnType<typeof batch>;
+		// The middle band's High count is 50, and Low draws 0.35 of it.
+		expect(middle.active).toBe(50);
+		grass.fit('low');
+		expect(middle.active).toBe(18);
+		grass.fit('ultra');
+		expect(middle.active).toBe(Math.ceil(50 * 1.25));
+	});
+	test('a band edge that does not stand beyond the one before it is refused', () => {
+		const { ctx } = context('high');
+		expect(() => createGrass(ctx, { ...field, bands: [{ far: 5 }, { far: 4 }] })).toThrow(/band 1/);
+	});
+	test('the plan gives each band its tufts, triangles and rows', () => {
+		const plans = grassBands(field);
+		expect(plans.map((plan) => plan.counts.high)).toEqual([100, 50, 25]);
+		expect(plans.map((plan) => plan.counts.low)).toEqual([35, 18, 9]);
+		expect(plans.map((plan) => plan.triangles)).toEqual([65, 39, 13]);
+		// The rows hold the Ultra preset's share of each band's High count.
+		expect(plans.map((plan) => plan.rows)).toEqual([125, 63, 32]);
+		expect(plans.map((plan) => plan.rowBytes)).toEqual([125 * 64, 63 * 64, 32 * 64]);
+		// Two shapes split each band's tufts, and the rows of the split round up. A page that sizes
+		// its memory from the plan therefore sizes what `createGrass` builds.
+		expect(grassBands({ ...field, shapes: 2 }).map((plan) => plan.rows)).toEqual([126, 64, 34]);
+	});
+	test('the grass reads the field it is given, and takes its newest layer', () => {
+		const { ctx, materials, uploads, layers } = context('high');
+		const air = {
+			base: [2, 0.5, 0.3, 7],
+			gust: [1, 10, 0.4, 8],
+			swirl: [0.5, 20, 0.1, 0],
+		};
+		const wind = {
+			texture: { layer: 3 },
+			origin: [0, 0],
+			size: 128,
+			air,
+		} as unknown as WindField;
+		const grass = createGrass(ctx, { ...field, wind });
+		const options = materials[0] as {
+			uniforms: { windStrength: number; windBox: number };
+			textures: { wind: unknown };
+		};
+		expect(options.uniforms.windStrength).toBe(1);
+		expect(options.uniforms.windBox).toBe(128);
+		expect(options.textures.wind).toBe(wind.texture);
+		// The air's three vectors travel as the reading texture the shader samples. The texture
+		// holds them as 16-bit floats, so the test rounds the expected values the same way.
+		const reading = uploads.find((upload) => upload.width === 3);
+		const data = (reading?.data ?? new Float32Array()) as Float32Array;
+		expect([...data]).toEqual([...new Float32Array([...air.base, ...air.gust, ...air.swirl])]);
+		grass.setWindLayer(wind);
+		expect(layers).toEqual([3]);
+	});
+	test('the grass that names no field binds the slots and stands still', () => {
+		const { ctx, materials, uploads } = context('high');
+		createGrass(ctx, field);
+		const options = materials[0] as {
+			uniforms: { windStrength: number; windBox: number };
+			textures: Record<string, unknown>;
+		};
+		expect(options.uniforms.windStrength).toBe(0);
+		expect(options.uniforms.windBox).toBe(0);
+		// A tiny still texture for the field and its settings, so both GPU paths bind the same
+		// shapes whether or not a page gives a field.
+		expect(uploads.map((upload) => upload.width)).toEqual([1, 1]);
+		expect(Object.keys(options.textures).sort()).toEqual(['airSettings', 'wind']);
 	});
 });
