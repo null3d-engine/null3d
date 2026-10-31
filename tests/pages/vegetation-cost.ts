@@ -17,6 +17,10 @@ run('vegetation-cost', async () => {
 	// Without a sway switch the sketch takes its distance from the preset, which is the look that
 	// costs the page its budget.
 	if (params.has('sway')) sketch.searchParams.set('sway', String(params.get('sway')));
+	// The field switch lets a cost run set the plants' field reader beside the steady field.
+	if (params.has('field')) sketch.searchParams.set('field', String(params.get('field')));
+	// The motion view runs the plants' vertex offset twice, so its cost is measured apart.
+	if (params.has('motion')) sketch.searchParams.set('motion', '1');
 	const engine = await createEngine({
 		canvas,
 		sketch,

@@ -227,6 +227,26 @@ fn effect(input: EffectInput) -> vec4f {
 			page.post('graph', render.dumpGraph());
 			return;
 		}
+		if (name === 'read') {
+			// A small region of the field, read back through the promise that M3-V13 adds. The
+			// sketch reports the wait and the frames of delay, and the page adds them to its result.
+			if (!real) {
+				page.post('read', { error: 'this shape keeps no real pass' });
+				return;
+			}
+			const started = performance.now();
+			render.readPass(real, { x: 0, y: 0, width: 16, height: 16 }).then(
+				(region) =>
+					page.post('read', {
+						ms: performance.now() - started,
+						frames: region.frames,
+						width: region.width,
+						height: region.height,
+					}),
+				(error: unknown) => page.post('read', { error: String(error) }),
+			);
+			return;
+		}
 		if (name !== 'config') return;
 		const command = data as StepCommand;
 		if (!command || typeof command !== 'object') return;
