@@ -764,6 +764,7 @@ the band test and the culling of 43,750 rows. Each band places over the whole sq
 the camera's band stand undrawn and a tile built around the camera would place fewer. The High
 reading sits inside the add-on's 49.0 ms budget on the Apple devices. The iPad, the S24 class and
 the Tab A9 Plus rows are owed. The picture holds the air still, so its blades stand straight, and
+its references hold the three tiers of both sets, drawn on the tree that carries the bands.
 `createGrass` draws on WebGL2 too, where the field's grid costs extra draws.
 
 **What its compute half waits on.** The plan's V8 line names M3-E8 and M3-E9 with shadow views. It
