@@ -17,8 +17,15 @@
 import type { ShaderVariant } from '../../generated/shaders';
 import type { GeneratorSource } from '../../shared/images';
 import {
+	CAPTURE_BYTES,
+	CAPTURE_FACE,
+	CAPTURE_TEXELS,
 	chainLevels,
 	environmentSteps,
+	LAYER_BYTES,
+	LAYER_VALUES,
+	LAYER_WORD,
+	LIGHT_BUFFER_WORD,
 	levelOffsets,
 	SKY_BYTES,
 	SKY_FILTER,
@@ -66,6 +73,8 @@ export interface CubeGenerator {
 		at: number,
 		memory: GpuMemory,
 		panorama: GPUTexture | undefined,
+		layer: ShaderVariant<Pipeline> | undefined,
+		readback: GPUBuffer | undefined,
 	): void;
 	/**
 	 * Frees what the sky map in `target` keeps between its stages, if it is one, and takes its
@@ -82,9 +91,26 @@ const ALIGNMENT = 256;
  * cube, of the step that reads the panorama and of the step that draws the sky, and the samplers.
  */
 interface Kept {
-	layouts: { cube: GPUBindGroupLayout; panorama: GPUBindGroupLayout; sky: GPUBindGroupLayout };
+	layouts: {
+		cube: GPUBindGroupLayout;
+		panorama: GPUBindGroupLayout;
+		sky: GPUBindGroupLayout;
+		/** The sky's group and the layer's values, for the builds that draw a layer. */
+		layerSky: GPUBindGroupLayout;
+		/** The panorama's group and the layer's values. */
+		layerPanorama: GPUBindGroupLayout;
+	};
 	pipelines: Record<Pipeline, GPURenderPipeline>;
 	samplers: { cube: GPUSampler; panorama: GPUSampler };
+	/** The layer's own pipelines, by the shader that the page sent. */
+	layers: Map<ShaderVariant<Pipeline>, LayerKept>;
+}
+
+/** What a page's sky layer builds on the device: its module and the pipelines that a map uses. */
+interface LayerKept {
+	module: GPUShaderModule;
+	pipelines: Partial<Record<Pipeline, GPURenderPipeline>>;
+	builds?: LayerBuilds;
 }
 
 /** The generator of environment maps, from the environment shader's WGSL build. */
@@ -104,33 +130,58 @@ export function environmentGenerator(
 			visibility: fragment,
 			buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: STEP_BYTES },
 		};
+		const cube: GPUBindGroupLayoutEntry = {
+			binding: 1,
+			visibility: fragment,
+			texture: { viewDimension: 'cube' },
+		};
+		const cubeSampler: GPUBindGroupLayoutEntry = {
+			binding: 2,
+			visibility: fragment,
+			sampler: {},
+		};
+		const layer: GPUBindGroupLayoutEntry = {
+			binding: 6,
+			visibility: fragment,
+			buffer: { type: 'uniform', minBindingSize: LAYER_BYTES },
+		};
+		const panoramaTexture: GPUBindGroupLayoutEntry = {
+			binding: 3,
+			visibility: fragment,
+			texture: {},
+		};
+		const panoramaSampler: GPUBindGroupLayoutEntry = {
+			binding: 4,
+			visibility: fragment,
+			sampler: {},
+		};
+		const skySettings: GPUBindGroupLayoutEntry = {
+			binding: 5,
+			visibility: fragment,
+			buffer: { type: 'uniform', minBindingSize: SKY_BYTES },
+		};
 		const layouts = {
 			cube: device.createBindGroupLayout({
 				label: 'environment',
-				entries: [
-					uniforms,
-					{ binding: 1, visibility: fragment, texture: { viewDimension: 'cube' } },
-					{ binding: 2, visibility: fragment, sampler: {} },
-				],
+				entries: [uniforms, cube, cubeSampler],
 			}),
 			panorama: device.createBindGroupLayout({
 				label: 'environment panorama',
-				entries: [
-					uniforms,
-					{ binding: 3, visibility: fragment, texture: {} },
-					{ binding: 4, visibility: fragment, sampler: {} },
-				],
+				entries: [uniforms, panoramaTexture, panoramaSampler],
 			}),
 			sky: device.createBindGroupLayout({
 				label: 'environment sky',
-				entries: [
-					uniforms,
-					{
-						binding: 5,
-						visibility: fragment,
-						buffer: { type: 'uniform', minBindingSize: SKY_BYTES },
-					},
-				],
+				entries: [uniforms, skySettings],
+			}),
+			// A layer's builds read the same values and add the layer's own: the core sky's cloud
+			// settings, the share of the sun that it hides, its opacity and its clock.
+			layerSky: device.createBindGroupLayout({
+				label: 'environment layer sky',
+				entries: [uniforms, skySettings, layer],
+			}),
+			layerPanorama: device.createBindGroupLayout({
+				label: 'environment layer panorama',
+				entries: [uniforms, panoramaTexture, panoramaSampler, layer],
 			}),
 		};
 		const module = device.createShaderModule({ label: 'environment', code: wgsl.source });
@@ -155,6 +206,7 @@ export function environmentGenerator(
 		const made: Kept = {
 			layouts,
 			pipelines: {} as Record<Pipeline, GPURenderPipeline>,
+			layers: new Map(),
 			samplers: {
 				cube: device.createSampler({ ...linear, mipmapFilter: 'linear' }),
 				// The panorama wraps around across its width and stops at its top and bottom rows.
@@ -178,6 +230,27 @@ export function environmentGenerator(
 			kept.set(device, made);
 		}
 		return made;
+	};
+	/**
+	 * The pipelines of a page's sky layer, built at a map's first fill with it: the draws of the
+	 * sky's texels with the layer over them, and the capture that sums the map's light.
+	 */
+	const layerPipelines = (
+		device: GPUDevice,
+		kept: Kept,
+		shader: ShaderVariant<Pipeline>,
+	): LayerBuilds => {
+		let made = kept.layers.get(shader);
+		if (!made) {
+			const module = device.createShaderModule({
+				label: 'sky layer map',
+				code: shader.wgsl?.source ?? '',
+			});
+			made = { module, pipelines: {} };
+			kept.layers.set(shader, made);
+		}
+		made.builds ??= layerBuilds(device, kept, made);
+		return made.builds;
 	};
 	const prepare = (device: GPUDevice): Promise<void> => {
 		let ready = preparing.get(device);
@@ -305,6 +378,8 @@ export function environmentGenerator(
 		at,
 		memory,
 		panorama,
+		layer,
+		readback,
 	) => {
 		let map = skyMaps.get(target);
 		if (!map) {
@@ -313,7 +388,17 @@ export function environmentGenerator(
 			memory.addTextures(map.textureBytes);
 			memory.addBuffers(map.bufferBytes);
 		}
-		map.stage(encoder, words[at + 2] as number, floats, at + 4, panorama);
+		const builds = layer && words[at + LAYER_WORD] !== 0 ? layer : undefined;
+		map.stage(encoder, {
+			stage: words[at + 2] as number,
+			settings: floats,
+			at: at + 4,
+			panorama,
+			layer: builds && layerPipelines(device, keep(device), builds),
+			values: floats,
+			valuesAt: at + LAYER_VALUES,
+			readback: words[at + LIGHT_BUFFER_WORD] === 0 ? undefined : readback,
+		});
 	};
 	const release = (target: GPUTexture, memory: GpuMemory) => {
 		const map = skyMaps.get(target);
@@ -331,18 +416,28 @@ function rowBytes(size: number): number {
 	return Math.ceil((6 * size * 4) / ALIGNMENT) * ALIGNMENT;
 }
 
+/** What one stage of a sky map draws, as the draw list's command names it. */
+interface SkyStage {
+	readonly stage: number;
+	/** The sky's settings, as the command holds them from `at` on. */
+	readonly settings: Float32Array;
+	readonly at: number;
+	readonly panorama: GPUTexture | undefined;
+	/** The page's sky layer, once its shader is on the device, else undefined. */
+	readonly layer: LayerBuilds | undefined;
+	/** The layer's values, as the command holds them from `valuesAt` on. */
+	readonly values: Float32Array;
+	readonly valuesAt: number;
+	/** The buffer that this stage sums the map's light into, when it draws a layer's light. */
+	readonly readback: GPUBuffer | undefined;
+}
+
 /** What a sky map keeps between its stages, and how it records each. */
 interface SkyMap {
 	/** The GPU bytes of the textures and of the buffers that the map keeps. */
 	readonly textureBytes: number;
 	readonly bufferBytes: number;
-	stage(
-		encoder: GPUCommandEncoder,
-		stage: number,
-		settings: Float32Array,
-		at: number,
-		panorama: GPUTexture | undefined,
-	): void;
+	stage(encoder: GPUCommandEncoder, stage: SkyStage): void;
 	destroy(): void;
 }
 
@@ -382,7 +477,22 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 	const uniforms = buffer('sky steps', values.byteLength, uniform);
 	device.queue.writeBuffer(uniforms, 0, values);
 	const sky = buffer('sky settings', SKY_BYTES, uniform);
+	// The layer's values, written at the first stage of each fill that draws one.
+	const layerValues = buffer('sky layer values', LAYER_BYTES, uniform);
+	const layerBinding = { binding: 6, resource: { buffer: layerValues } };
 	const block = { binding: 0, resource: { buffer: uniforms, size: STEP_BYTES } };
+	/**
+	 * The group that draws the analytic sky with the layer over it, made at the first stage that
+	 * draws one.
+	 */
+	let layerSkyGroup: GPUBindGroup | undefined;
+	const layerSky = (): GPUBindGroup => {
+		layerSkyGroup ??= device.createBindGroup({
+			layout: layouts.layerSky,
+			entries: [block, { binding: 5, resource: { buffer: sky } }, layerBinding],
+		});
+		return layerSkyGroup;
+	};
 	const groups: Partial<Record<StepSource, GPUBindGroup>> = {
 		sky: device.createBindGroup({
 			layout: layouts.sky,
@@ -405,21 +515,51 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 	 * panorama it binds, made again only when the panorama changes.
 	 */
 	let panoramaGroup: GPUBindGroup | undefined;
+	let layerPanoramaGroup: GPUBindGroup | undefined;
 	let panoramaBound: GPUTexture | undefined;
-	const readPanorama = (panorama: GPUTexture): GPUBindGroup => {
-		if (panoramaBound !== panorama || !panoramaGroup) {
+	const readPanorama = (panorama: GPUTexture, layer: boolean): GPUBindGroup => {
+		if (panoramaBound !== panorama) {
+			const view = panorama.createView();
 			panoramaGroup = device.createBindGroup({
 				layout: layouts.panorama,
 				entries: [
 					block,
-					{ binding: 3, resource: panorama.createView() },
+					{ binding: 3, resource: view },
 					{ binding: 4, resource: samplers.panorama },
+				],
+			});
+			layerPanoramaGroup = device.createBindGroup({
+				layout: layouts.layerPanorama,
+				entries: [
+					block,
+					{ binding: 3, resource: view },
+					{ binding: 4, resource: samplers.panorama },
+					layerBinding,
 				],
 			});
 			panoramaBound = panorama;
 		}
-		return panoramaGroup;
+		return (layer ? layerPanoramaGroup : panoramaGroup) as GPUBindGroup;
 	};
+	// The target that a capture sums the map's light into, one row of 32-bit words: the texels wait
+	// for the GPU between the draw and the copy into the readback buffer.
+	let capture: GPUTexture | undefined;
+	let captureGroup: GPUBindGroup | undefined;
+	// The capture reads the chain's finest level of a face of `CAPTURE_FACE` texels, which holds
+	// the sky's broad light in more directions than the nine coefficients need.
+	const captureStep = buffer('sky light capture step', STEP_BYTES, uniform);
+	{
+		const values = new Float32Array(STEP_BYTES / 4);
+		values[4] = Math.max(0, Math.round(Math.log2(size / CAPTURE_FACE)));
+		device.queue.writeBuffer(captureStep, 0, values);
+	}
+	const captureTarget = (): GPUTexture =>
+		(capture ??= device.createTexture({
+			label: 'sky light capture',
+			size: [CAPTURE_TEXELS, 1],
+			format: 'rgba32uint',
+			usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+		}));
 	const dynamicOffset = new Uint32Array(1);
 	const stagingOrigin: GPUOrigin3DDict = { x: 0, y: 0, z: 0 };
 	const fromStaging: GPUTexelCopyTextureInfo = { texture: staging, origin: stagingOrigin };
@@ -463,21 +603,63 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 		encoder: GPUCommandEncoder,
 		parts: readonly SkyPart[],
 		panorama: GPUTexture | undefined,
+		layer: LayerBuilds | undefined,
 	) => {
 		const render = encoder.beginRenderPass(pass);
 		for (let p = 0; p < parts.length; p++) {
 			const { step: k, first, faces } = parts[p] as SkyPart;
 			const step = steps[k] as Step;
 			const reread = panorama !== undefined && step.source === 'sky';
+			// A layer draws the sky's own texels with itself over them, both of the analytic sky
+			// and of the panorama that the physical sky draws.
+			const drawn = layer !== undefined && step.source === 'sky';
 			render.setViewport(first * step.size, step.row, faces * step.size, step.size, 0, 1);
-			render.setPipeline(pipelines[reread ? 'panorama' : step.pipeline]);
+			render.setPipeline(
+				drawn
+					? layer.pipeline(reread ? 'panorama' : 'sky')
+					: pipelines[reread ? 'panorama' : step.pipeline],
+			);
 			dynamicOffset[0] = k * ALIGNMENT;
-			const group = reread ? readPanorama(panorama) : (groups[step.source] as GPUBindGroup);
+			const group = reread
+				? readPanorama(panorama, drawn)
+				: drawn
+					? layerSky()
+					: (groups[step.source] as GPUBindGroup);
 			render.setBindGroup(0, group, dynamicOffset, 0, 1);
 			render.draw(3);
 		}
 		render.end();
 		for (let p = 0; p < parts.length; p++) copyOut(encoder, parts[p] as SkyPart);
+	};
+
+	/**
+	 * Draws the map's light onto the nine coefficients of its diffuse light, and copies them into
+	 * the readback buffer, which the engine reads back into its memory over the next frames. The
+	 * chain holds every level by the stage that this follows, so the level that it reads is whole.
+	 */
+	const captureLight = (encoder: GPUCommandEncoder, layer: LayerBuilds, readback: GPUBuffer) => {
+		captureGroup ??= device.createBindGroup({
+			layout: layouts.cube,
+			entries: [
+				{ binding: 0, resource: { buffer: captureStep, size: STEP_BYTES } },
+				{ binding: 1, resource: chain.createView({ dimension: 'cube' }) },
+				{ binding: 2, resource: samplers.cube },
+			],
+		});
+		const render = encoder.beginRenderPass({
+			colorAttachments: [{ view: captureTarget().createView(), loadOp: 'clear', storeOp: 'store' }],
+		});
+		render.setPipeline(layer.pipeline('feedback'));
+		// The layout keeps the step's block dynamic so that one buffer holds every stage's values,
+		// and this draw reads the block of its own buffer at the start.
+		render.setBindGroup(0, captureGroup, [0]);
+		render.draw(3);
+		render.end();
+		encoder.copyTextureToBuffer(
+			{ texture: captureTarget() },
+			{ buffer: readback, bytesPerRow: CAPTURE_BYTES },
+			[CAPTURE_TEXELS, 1, 1],
+		);
 	};
 	/** Copies a part's texels into the chain and into the finished levels. */
 	const copyOut = (encoder: GPUCommandEncoder, { step: k, first, faces }: SkyPart) => {
@@ -502,17 +684,85 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 	for (let level = 0; level < chained; level++) texels += 6 * (size >> level) ** 2;
 	return {
 		textureBytes: 4 * (texels + 6 * size * skyRows(size)),
-		bufferBytes: strip.size + finished.size + uniforms.size + sky.size,
-		stage(encoder, stage, settings, at, panorama) {
+		bufferBytes:
+			strip.size + finished.size + uniforms.size + sky.size + layerValues.size + captureStep.size,
+		stage(encoder, { stage, settings, at, panorama, layer, values, valuesAt, readback }) {
 			const parts = stages[stage] as readonly SkyPart[];
-			if (stage === 0) device.queue.writeBuffer(sky, 0, settings, at, SKY_BYTES / 4);
-			if (parts.length > 0) draw(encoder, parts, panorama);
+			if (stage === 0) {
+				device.queue.writeBuffer(sky, 0, settings, at, SKY_BYTES / 4);
+				if (layer) {
+					// The layer's four cloud values, the share of the sun that it hides, its opacity
+					// and its clock, which its shader reads as `SkyLayerValues`.
+					device.queue.writeBuffer(layerValues, 0, values, valuesAt, (LAYER_BYTES - 4) / 4);
+				}
+			}
+			if (parts.length > 0) draw(encoder, parts, panorama, layer);
 			else
 				for (let level = 0; level < levels; level++)
 					copyFaces(encoder, finished, offsets[level] as number, target, level, 0, 6);
+			// The stage that the page names sums the map's light, and the engine reads it back
+			// before the copy's frame publishes the levels that it lights.
+			if (layer && readback) captureLight(encoder, layer, readback);
 		},
 		destroy() {
-			for (const resource of [chain, staging, strip, finished, uniforms, sky]) resource.destroy();
+			for (const resource of [
+				chain,
+				staging,
+				strip,
+				finished,
+				uniforms,
+				sky,
+				layerValues,
+				captureStep,
+			])
+				resource.destroy();
+			capture?.destroy();
+		},
+	};
+}
+
+/** A page's sky layer on the device: the pipelines that draw a map's texels with it. */
+interface LayerBuilds {
+	pipeline(name: Pipeline): GPURenderPipeline;
+}
+
+/**
+ * The pipelines of `made`, building one at its first call: a map draws the analytic sky, the
+ * panorama that the physical sky made, and the capture of its own light, each with the layer's
+ * WGSL.
+ */
+function layerBuilds(device: GPUDevice, kept: Kept, made: LayerKept): LayerBuilds {
+	const { layouts } = kept;
+	/** The layouts of the layer's three draws, made once: a map's stages reuse them. */
+	const pipelineLayouts: Partial<Record<Pipeline, GPUPipelineLayout>> = {};
+	const layoutOf = (name: Pipeline) =>
+		(pipelineLayouts[name] ??= device.createPipelineLayout({
+			bindGroupLayouts: [
+				name === 'feedback'
+					? layouts.cube
+					: name === 'panorama'
+						? layouts.layerPanorama
+						: layouts.layerSky,
+			],
+		}));
+	return {
+		pipeline(name) {
+			let pipeline = made.pipelines[name];
+			if (!pipeline) {
+				pipeline = device.createRenderPipeline({
+					label: `environment layer ${name}`,
+					layout: layoutOf(name),
+					vertex: { module: made.module, entryPoint: 'vs_main' },
+					fragment: {
+						module: made.module,
+						entryPoint:
+							name === 'feedback' ? 'fs_feedback' : name === 'panorama' ? 'fs_panorama' : 'fs_sky',
+						targets: [{ format: name === 'feedback' ? 'rgba32uint' : 'rgba8unorm' }],
+					},
+				});
+				made.pipelines[name] = pipeline;
+			}
+			return pipeline;
 		},
 	};
 }

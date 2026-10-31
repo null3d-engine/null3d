@@ -104,14 +104,19 @@ run('replay', async () => {
 	materials.set([0.8, 0.1, 0.1, 1], 0);
 	materials.set([0.1, 0.3, 0.9, 1], G.SIZE_MATERIAL_BYTES / 4);
 	// The planes, the instance count, the view's layers, the run count and the view's row of the
-	// cell offsets texture, the level choice's inputs, then the runs of the cell order, then room
-	// for the occlusion phases' values, which this view leaves unset. Every instance here lies in
-	// cell 0, whose zero offset in row 0 keeps the positions in world space, and no run is listed,
-	// so thread i culls instance i. A level factor of 0 draws each bucket as it is.
-	const cull = new Float32Array(32 + 4 * G.SIZE_MAX_CULL_RANGES + G.SIZE_CULL_OCCLUSION_BYTES / 4);
+	// cell offsets texture, the level choice's inputs, the debug view's word, then the runs of the
+	// cell order, then room for the occlusion phases' values, which this view leaves unset. Every
+	// instance here lies in cell 0, whose zero offset in row 0 keeps the positions in world space,
+	// and no run is listed, so thread i culls instance i. A level factor of 0 draws each bucket as
+	// it is, and a zero debug word writes no level codes.
+	const cull = new Float32Array(36 + 4 * G.SIZE_MAX_CULL_RANGES + G.SIZE_CULL_OCCLUSION_BYTES / 4);
 	cull.set(frustumPlanes(viewProj), 0);
 	new Uint32Array(cull.buffer).set([positions.length, viewLayers, 0, 0], 24);
 	const indirect = new Uint32Array([36, 0, 0, 0, 0, 36, 0, 0, 0, 0]);
+	// The start and the end distance of each source, which the culling group reads: no band here,
+	// so every source holds 0 and infinity.
+	const ranges = new Float32Array(positions.length * 4);
+	for (let i = 1; i < ranges.length; i += 4) ranges[i] = Number.POSITIVE_INFINITY;
 	const mesh = boxMesh(BOX);
 
 	const memory = new TestMemory(1 << 20, 4096);
@@ -126,6 +131,7 @@ run('replay', async () => {
 		buckets: memory.put(bucketInfo),
 		indirect: memory.put(indirect),
 		cull: memory.put(cull),
+		ranges: memory.put(ranges),
 		// Three.js's table of the split-sum terms of specular light, which the frame group binds in
 		// the materials' custom values: every entry holds the scale and bias of a smooth surface
 		// seen head on, which keeps the specular light finite at every roughness and view angle.
@@ -362,6 +368,34 @@ run('replay', async () => {
 		1,
 		G.VIEW_2D,
 	);
+	// The distances between which each source draws, which the culling group binds: one texel for
+	// each source, holding the start and the end. This view sets no band, so each source holds 0
+	// and infinity, as a source without a band does. A zero end would hide every source.
+	memory.push(
+		G.OP_CREATE_TEXTURE,
+		22,
+		positions.length,
+		1,
+		1,
+		G.FORMAT_RGBA32_FLOAT,
+		GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		1,
+		1,
+		G.VIEW_2D,
+	);
+	memory.push(
+		G.OP_WRITE_TEXTURE,
+		22,
+		0,
+		0,
+		0,
+		0,
+		positions.length,
+		1,
+		1,
+		blobs.ranges,
+		positions.length * 16,
+	);
 	// The blank array of reflection probes, one texel, which the frame group binds at binding 3
 	// while the view lists no probe.
 	memory.push(
@@ -424,7 +458,7 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		2,
 		G.LAYOUT_CULL,
-		11,
+		12,
 		...[10, 5, 6, 7, 8, 9, 11, 12, 17].flatMap((buffer, binding) => [
 			binding,
 			G.RESOURCE_BUFFER,
@@ -434,8 +468,10 @@ run('replay', async () => {
 		]),
 		...[9, G.RESOURCE_TEXTURE, 7, 0, 0],
 		// The first joint of each source of a shared skinned bucket. This view draws no skinned
-		// object, but the culling group's last binding must still be filled.
+		// object, but the culling group's bindings must all be filled.
 		...[10, G.RESOURCE_TEXTURE, 9, 0, 0],
+		// The distance band of each source, which every row outside hides in.
+		...[11, G.RESOURCE_TEXTURE, 22, 0, 0],
 	);
 	memory.push(G.OP_BEGIN_BUNDLE, 1, G.FORMAT_CANVAS, G.FORMAT_DEPTH32_FLOAT, SAMPLES);
 	memory.push(G.OP_SET_PIPELINE, 1);

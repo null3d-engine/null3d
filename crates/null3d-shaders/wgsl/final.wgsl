@@ -15,6 +15,17 @@
 // with FXAA, and leaves the dither to the second. The second build reads that target as display
 // color and scales it up as the pass above does.
 //
+// The second build sharpens its display color, at the whole canvas's scale as well, while the
+// sketch asks for it: FidelityFX's RCAS over the four texels that cross each pixel, after the
+// output transform and the upscale, and before the color table, the outline and the dither. At the
+// whole canvas's scale a sketch that sharpens draws the two steps, so one output transform runs
+// for each pixel and the sharpening reads display color.
+//
+// Only the UPSCALE build holds the upscale and the sharpening, and only the second step draws it.
+// Every other build reads the texel under each pixel. A software GPU, such
+// as CI's, pays in every frame for the code of a loop that no pixel enters: S1 drew four to six
+// times faster on it without the two loops (decision record D-236).
+//
 // The scene color holds color multiplied by its coverage. Where it is only partly covered, as over
 // a transparent canvas's background, the pass maps the color that covers it and keeps the coverage
 // as the canvas's premultiplied alpha. WebGL2 keeps GL's row order, bottom row first, in the scene
@@ -71,6 +82,12 @@ const DISPLAY_COLOR: u32 = 1u;
 const VIGNETTE: u32 = 2u;
 /// The settings flag that turns the color grading table on.
 const LUT: u32 = 4u;
+/// The settings flag that grades the display color with the built-in grading table.
+const GRADE: u32 = 256u;
+/// The settings flag that skips the tone curve where the mask marks a surface that keeps its color
+/// as the display shows it.
+const UNMAPPED: u32 = 512u;
+
 /// The settings flag that draws the outline's line.
 const OUTLINE: u32 = 8u;
 /// The settings flag that multiplies the HDR color by the automatic exposure's texel.
@@ -83,18 +100,31 @@ const RESOLVE: u32 = 32u;
 /// sets it when the first step's target came from high dynamic range color, since that path would
 /// otherwise dither in the first step.
 const DITHER: u32 = 64u;
+/// The settings flag that sharpens the display color at the whole canvas's render scale. The second
+/// step sets it while the sketch asks for sharpening.
+const SHARPEN: u32 = 128u;
 /// GSR 1's constants: the edge vote's threshold, the tap's weight, the sharpness, and the most the
 /// sharpening may move a pixel from its bilinear color.
 const GSR_EDGE: f32 = 8.0 / 255.0;
 const GSR_TAP: f32 = 0.55;
 const GSR_SHARPNESS: f32 = 2.0;
 const GSR_DELTA_LIMIT: f32 = 23.0 / 255.0;
+/// The least that a value which divides may take, so no division reads a zero or a subnormal on a
+/// device that keeps a shader's values at half precision.
+const RCAS_LEAST: f32 = 0.0001;
+/// The most influence that RCAS's lobe takes at an edge, as FidelityFX limits it.
+const RCAS_LIMIT: f32 = 0.25 - (1.0 / 16.0);
+/// The texels along each side of the built-in grading table, and the scale and the offset that
+/// place a color in it: the domain's ends land on the centers of the first and last texels.
+const GRADE_SIZE: f32 = 32.0;
+const GRADE_SCALE: f32 = 1.0 - 1.0 / GRADE_SIZE;
+const GRADE_OFFSET: f32 = 0.5 / GRADE_SIZE;
 
 /// The pass's settings: the output settings, then the vignette's intensity, size, falloff and
 /// roundness, then the scale and the offset that place a display color in the table, with the
 /// table's intensity in the scale's last value, then the outline's display colors: the visible one
 /// with the line's width in pixels of the canvas, then the hidden one with 1 where the line draws
-/// around hidden parts.
+/// around hidden parts, then the sharpening's strength and three spare values.
 struct Settings {
     output: null3d::tonemap::Output,
     vignette: vec4f,
@@ -102,6 +132,7 @@ struct Settings {
     lut_offset: vec4f,
     outline: vec4f,
     outline_hidden: vec4f,
+    sharpen: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> settings: Settings;
@@ -110,6 +141,7 @@ struct Settings {
 @group(0) @binding(10) var lut_sampler: sampler;
 @group(0) @binding(11) var outline_mask: texture_2d<f32>;
 @group(0) @binding(12) var exposure_texel: texture_2d<f32>;
+@group(0) @binding(13) var grade_table: texture_3d<f32>;
 
 /// The factor of the automatic exposure for this frame, or 1 while the flag is clear. The fragment
 /// shader reads it once, at its start.
@@ -144,6 +176,16 @@ fn level_uv(size: vec2u, halvings: u32, uv: vec2f, render: vec2f) -> vec2f {
 fn mask_at(uv: vec2f, render: vec2f) -> vec2f {
     let at = level_uv(textureDimensions(outline_mask), 0u, uv, render);
     return textureSampleLevel(outline_mask, lut_sampler, at, 0.0).rg;
+}
+
+/// The share of the pixel at `uv` on the drawn corner whose surface keeps its color as the display
+/// shows it, from the mask's blue channel. It reads nothing while the flag is clear.
+fn unmapped_at(uv: vec2f, render: vec2f) -> f32 {
+    if (settings.output.flags & UNMAPPED) == 0u {
+        return 0.0;
+    }
+    let at = level_uv(textureDimensions(outline_mask), 0u, uv, render);
+    return textureSampleLevel(outline_mask, lut_sampler, at, 0.0).b;
 }
 
 /// Canvas color `color`, multiplied by its coverage, with the outline's line painted over it at
@@ -264,6 +306,8 @@ struct EffectInput {
     pixel: vec2f,
     size: vec2f,
     time: f32,
+    /// The array layer that this draw writes, from 0. An effect writes 0.
+    layer: u32,
 }
 
 /// Vector `part` of the uniforms in the block at `slot`.
@@ -376,6 +420,7 @@ fn effected_texel(texel: vec2i) -> vec4f {
     input.pixel = from_top;
     input.uv = from_top / first.size.xy;
     input.time = first.clock.x;
+    input.layer = 0u;
     let color = effect_chain(input);
     return vec4f(limit_hdr(color.rgb * eye_factor), color.a);
 }
@@ -521,10 +566,12 @@ fn pixel_color(position: vec2f) -> vec4f {
 }
 #endif
 
-/// Scene color `texel` as the canvas shows it before the dither: tone mapped and encoded, and
-/// multiplied by its coverage. Display color stays as it is.
-fn display(texel: vec4f) -> vec4f {
-    if (settings.output.flags & DISPLAY_COLOR) != 0u {
+/// Scene color `texel` at `uv` on the drawn corner as the canvas shows it before the dither: tone
+/// mapped and encoded, and multiplied by its coverage. Display color stays as it is, and so does
+/// the color of a surface that the tone mask marks, which skips the curve.
+fn display(texel: vec4f, uv: vec2f, render: vec2f) -> vec4f {
+    let flags = settings.output.flags;
+    if (flags & DISPLAY_COLOR) != 0u {
         return texel;
     }
     // Additive blending adds coverage too, past 1 over a covered pixel, which covers it whole.
@@ -532,16 +579,20 @@ fn display(texel: vec4f) -> vec4f {
     if coverage <= 0.0 {
         return vec4f(0.0);
     }
+    let exposed = texel.rgb / coverage;
 #ifdef CUSTOM_TONE_CURVE
-    let mapped = saturate(toneCurve(texel.rgb / coverage));
+    let mapped = saturate(toneCurve(exposed));
 #else
 #ifdef EFFECT_CHAIN
-    let mapped = tone_curve_hook(texel.rgb / coverage);
+    let mapped = tone_curve_hook(exposed);
 #else
-    let mapped = null3d::tonemap::tone_map(texel.rgb / coverage, settings.output);
+    let mapped = null3d::tonemap::tone_map(exposed, settings.output);
 #endif
 #endif
-    let encoded = saturate(linear_to_srgb(mapped));
+    // The mask's fraction mixes a surface that keeps its display color with one that takes the
+    // curve, which keeps the edges of a marked surface anti-aliased.
+    let shown = mix(mapped, saturate(exposed), unmapped_at(uv, render));
+    let encoded = saturate(linear_to_srgb(shown));
     return vec4f(encoded * coverage, coverage);
 }
 
@@ -550,13 +601,19 @@ fn display(texel: vec4f) -> vec4f {
 /// the pass grades nothing.
 fn finish(color: vec4f, position: vec2f) -> vec4f {
     let flags = settings.output.flags;
-    let grades = (flags & (LUT | VIGNETTE)) != 0u;
+    let grades = (flags & (LUT | GRADE | VIGNETTE)) != 0u;
     // A pass that holds display color and grades nothing leaves the color as it is, unless the
     // second step of the high dynamic range path asks for the dither (DITHER).
     if (display_color() && !grades && (flags & DITHER) == 0u) || color.a <= 0.0 {
         return color;
     }
     var c = color.rgb / color.a;
+    if (flags & GRADE) != 0u {
+        // The table's texels lie closer together toward black, where a grade's curve is steepest:
+        // the lookup takes the color's square root first.
+        let at = sqrt(saturate(c)) * GRADE_SCALE + GRADE_OFFSET;
+        c = textureSampleLevel(grade_table, lut_sampler, at, 0.0).rgb;
+    }
     if (flags & LUT) != 0u {
         let at = c * settings.lut_scale.xyz + settings.lut_offset.xyz;
         let graded = textureSampleLevel(lut, lut_sampler, at, 0.0).rgb;
@@ -589,7 +646,7 @@ fn corner_display(place: vec2f, render: vec2f, size: vec2f, light: vec4f, shade:
 #else
     let texel_color = with_glow(scene_texel(texel), light);
 #endif
-    return display(shaded(texel_color, shade));
+    return display(shaded(texel_color, shade), place / render, render);
 }
 
 /// GSR 1's window over a tap's distance, after Qualcomm's fast Lanczos 2.
@@ -598,6 +655,55 @@ fn gsr_lanczos(x: f32) -> f32 {
     let b = x * a - a;
     a *= a;
     return b * a;
+}
+
+/// The brightness that RCAS compares, which weighs green most.
+fn rcas_luma(c: vec4f) -> f32 {
+    return c.b * 0.5 + (c.r * 0.5 + c.g);
+}
+
+/// Display color `color` of the texel at `centre`, sharpened by FidelityFX's RCAS over the four
+/// texels that cross it. The lobe grows where the ring around the pixel is an edge and shrinks
+/// where it is noise, and `strength`, from 0 to 1, scales it. The weights always sum to one, so a
+/// flat area keeps its color. Coverage stays as it is.
+fn sharpened(
+    color: vec4f,
+    centre: vec2f,
+    render: vec2f,
+    size: vec2f,
+    light: vec4f,
+    shade: f32,
+    strength: f32,
+) -> vec4f {
+    let up = corner_display(centre + vec2f(0.0, -1.0), render, size, light, shade);
+    let down = corner_display(centre + vec2f(0.0, 1.0), render, size, light, shade);
+    let left = corner_display(centre + vec2f(-1.0, 0.0), render, size, light, shade);
+    let right = corner_display(centre + vec2f(1.0, 0.0), render, size, light, shade);
+    let here = rcas_luma(color);
+    let above = rcas_luma(up);
+    let below = rcas_luma(down);
+    let before = rcas_luma(left);
+    let after = rcas_luma(right);
+    // How far the ring's mean sits from the pixel, against the block's spread: noise keeps it
+    // small, and the sharpening then stays back.
+    let ring = (above + below + before + after) * 0.25 - here;
+    let highest = max(max(max(max(above, below), max(before, after)), here), RCAS_LEAST);
+    let lowest = min(min(min(min(above, below), min(before, after)), here), RCAS_LEAST);
+    let noise = 1.0 - 0.5 * clamp(abs(ring) / max(highest - lowest, RCAS_LEAST), 0.0, 1.0);
+    // The room that each channel has before it would clip, on the side that the ring pushes the
+    // color toward. A denominator near zero keeps its sign, so no division reads zero.
+    let low4 = min(min(up.rgb, down.rgb), min(left.rgb, right.rgb));
+    let high4 = max(max(up.rgb, down.rgb), max(left.rgb, right.rgb));
+    let toward_low = min(low4, color.rgb) / max(vec3f(4.0) * high4, vec3f(RCAS_LEAST));
+    let room = vec3f(4.0) * low4 - vec3f(4.0);
+    let sign_of_room = select(vec3f(-RCAS_LEAST), vec3f(RCAS_LEAST), room >= vec3f(0.0));
+    let guarded_room = select(sign_of_room, room, abs(room) > vec3f(RCAS_LEAST));
+    let toward_high = (vec3f(1.0) - max(high4, color.rgb)) / guarded_room;
+    let most = max(vec3f(0.0) - toward_low, toward_high);
+    let lobe = clamp(max(max(most.r, most.g), most.b), -RCAS_LIMIT, 0.0) * strength * noise;
+    let scale = 1.0 / (4.0 * lobe + 1.0);
+    let blended = lobe * (up.rgb + down.rgb + left.rgb + right.rgb) + color.rgb;
+    return vec4f(saturate(blended * scale), color.a);
 }
 
 /// GSR 1's weight of one tap: the distance from the sharpened place, and the tap's color's distance
@@ -633,6 +739,16 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let uv = local / size;
     let light = glow(uv);
     let shade = vignette(local, size);
+    // The pixel's place in the corner, in texels from the center of its top-left texel. It stays
+    // within the corner's texel centers, so no tap reads past the corner.
+#ifdef WEBGL2
+    let from_top = vec2f(position.x, size.y - position.y);
+#else
+    let from_top = position.xy;
+#endif
+    let place = clamp(from_top / size * render - 0.5, vec2f(0.0), render - 1.0);
+    let first = floor(place);
+    let share = place - first;
     var color = vec4f(0.0);
     if whole {
 #ifdef FXAA
@@ -640,24 +756,31 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
         // inside: this step drew that corner only.
         let corner_first = vec2i(origin);
         let corner_last = vec2i(origin + render - 1.0);
-        color = display(shaded(
-            with_glow(pixel_color(position.xy, corner_first, corner_last), light),
-            shade,
-        ));
+        color = display(
+            shaded(
+                with_glow(pixel_color(position.xy, corner_first, corner_last), light),
+                shade,
+            ),
+            uv,
+            render,
+        );
 #else
-        color = display(shaded(with_glow(pixel_color(position.xy), light), shade));
+        color = display(
+            shaded(with_glow(pixel_color(position.xy), light), shade),
+            uv,
+            render,
+        );
 #endif
     }
-#ifdef WEBGL2
-    let from_top = vec2f(position.x, size.y - position.y);
-#else
-    let from_top = position.xy;
-#endif
-    // The pixel's place in the corner, in texels from the center of its top-left texel. It stays
-    // within the corner's texel centers, so no tap reads past the corner.
-    let place = clamp(from_top / size * render - 0.5, vec2f(0.0), render - 1.0);
-    let first = floor(place);
-    let share = place - first;
+#ifdef UPSCALE
+    // At the whole canvas's scale the second step sharpens the display color that the first step
+    // drew. Below it the upscale sharpens its own taps, so the value adds nothing there. The call
+    // sits in a loop of no rounds while the sketch asks for no sharpening: a software GPU runs both
+    // sides of a branch, so a plain test would still read the four texels that the sharpening needs.
+    let sharpen_rounds = select(0u, 1u, whole && (settings.output.flags & SHARPEN) != 0u);
+    for (var sharp_round = 0u; sharp_round < sharpen_rounds; sharp_round++) {
+        color = sharpened(color, first, render, size, light, shade, settings.sharpen.x);
+    }
     // The upscale runs in a loop of no rounds at the whole canvas's scale, so a software GPU, such
     // as CI's, skips its cost there. A phone's driver stalls while it links the form that indexes
     // arrays of vectors inside a loop, so the taps and the weights stay straight-line code inside
@@ -725,5 +848,6 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
             color = bilinear;
         }
     }
+#endif
     return finish(outlined(color, uv, size, render), position.xy);
 }

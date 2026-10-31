@@ -1,5 +1,5 @@
 // The night town's own geometry must not overlap ([D-170](../../../.dev/decisions/D-170-showcase-camera.md),
-// owner, 14 October 2026): two pieces that cross or lie coplanar over one another z-fight and
+// owner's ruling): two pieces that cross or lie coplanar over one another z-fight and
 // shimmer. The test builds every house at its lot, with its roof and a chimney, and fails when a
 // pair overlaps, apart from the chimney sunk through the roof on purpose.
 import { expect, test } from 'bun:test';

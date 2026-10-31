@@ -9,6 +9,11 @@
 //! A further view runs only while some running pass reads its target: the camera's passes read
 //! the target of each view that a texture shows, and a view reads the targets that it lists.
 //!
+//! A view can draw into a rectangle of the canvas instead, after the camera's view: it draws into
+//! the camera's scene color and a depth target of its own, through the viewport and the scissor.
+//! Such a view always runs, and its rectangle covers the camera's image there, as a split screen
+//! or a picture in picture does.
+//!
 //! A view never draws an object whose material shows the target of a view that it does not read,
 //! its own included, since a pass cannot sample a texture that it draws into.
 //!
@@ -41,8 +46,8 @@ pub const MAX_VIEWS: usize = 32;
 /// The most views of every kind: the views of cameras, then the cascades of the directional
 /// light's shadows, then the tiles of the point and spot lights' shadow atlas, which cull and draw
 /// as views do, then the view of the outline effect's mask, then the view of the subsurface blur's
-/// skin pass, and the motion view.
-pub const MAX_VIEW_IDS: usize = MAX_VIEWS + MAX_CASCADES + MAX_TILES + 3;
+/// skin pass, the motion view, and the view of the tone mask.
+pub const MAX_VIEW_IDS: usize = MAX_VIEWS + MAX_CASCADES + MAX_TILES + 4;
 
 /// The first id of the shadow atlas's tiles.
 const FIRST_TILE: usize = MAX_VIEWS + MAX_CASCADES;
@@ -66,6 +71,11 @@ impl ViewId {
     /// The motion view: the camera's view, which culls and draws only the objects that move, into
     /// the motion target (see [`crate::motion`]).
     pub const MOTION: ViewId = ViewId((FIRST_TILE + MAX_TILES + 2) as u16);
+
+    /// The view of the tone mask: the camera's view, which culls and draws only the objects whose
+    /// material keeps its color as the display shows it, into the blue channel of the outline
+    /// mask, after the motion view.
+    pub const TONE: ViewId = ViewId((FIRST_TILE + MAX_TILES + 3) as u16);
 
     /// The view's place in the list, from 0.
     pub const fn index(self) -> usize {
@@ -147,6 +157,9 @@ pub struct ViewTarget {
     /// The views whose targets this view reads, as a mask of view places: the objects it draws
     /// may show them.
     pub reads: u32,
+    /// The rectangle of the canvas that the view draws into, in place of a target of its own: it
+    /// draws into the camera's scene color there, with a depth target of its own.
+    pub rect: Option<CanvasRect>,
 }
 
 impl Default for ViewTarget {
@@ -165,7 +178,37 @@ impl Default for ViewTarget {
             made: (0, 0),
             shown: false,
             reads: 0,
+            rect: None,
         }
+    }
+}
+
+/// The rectangle of the canvas that a view draws into, as fractions of the canvas's width and
+/// height from its top-left corner: `x` and `y` place it, and `width` and `height` size it. A
+/// rectangle covers part of the canvas, so `x + width` and `y + height` are at most 1, and each
+/// of `width` and `height` is above 0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CanvasRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl CanvasRect {
+    /// The rectangle in texels of a canvas of `canvas` pixels: its place from the top-left
+    /// corner, then its size. Each side is rounded to a whole texel, and the rectangle lies
+    /// inside the canvas and covers at least one texel each way.
+    pub fn area(self, canvas: (u32, u32), scale: RenderScale) -> (u32, u32, u32, u32) {
+        let width = scale.of(canvas.0.max(1));
+        let height = scale.of(canvas.1.max(1));
+        let texels =
+            |fraction: f32, side: u32| (fraction.clamp(0.0, 1.0) * side as f32).round() as u32;
+        let x = texels(self.x, width).min(width - 1);
+        let y = texels(self.y, height).min(height - 1);
+        let x_end = texels(self.x + self.width, width).max(x + 1).min(width);
+        let y_end = texels(self.y + self.height, height).max(y + 1).min(height);
+        (x, y, x_end - x, y_end - y)
     }
 }
 
@@ -190,8 +233,13 @@ impl ViewTarget {
     }
 
     /// The size of the render graph's target: its own size, or the render size halved, which a
-    /// target that the view fills whole takes as its texture's size.
+    /// target that the view fills whole takes as its texture's size. A view that draws into a
+    /// rectangle of the canvas writes the camera's scene color and its own depth, which take the
+    /// render size.
     pub fn graph_size(&self) -> Size {
+        if self.rect.is_some() {
+            return Size::Full;
+        }
         match (self.size, self.halvings) {
             (Some((width, height)), _) => Size::Fixed { width, height },
             (None, halvings) if self.whole => Size::Scaled(halvings),
@@ -227,6 +275,79 @@ pub struct View {
     probe_face: Option<u8>,
     /// What a full-screen pass draws, or `None` for a view of a scene.
     fullscreen: Option<Fullscreen>,
+    /// What a compute pass runs, or `None` for another view.
+    compute: Option<Compute>,
+}
+
+/// What a compute pass runs in place of a scene: the sketch's WGSL, as a compute pipeline, which
+/// fills its whole target as a storage texture. Materials, effects and other passes sample that
+/// target in the same frame, and the render graph orders the pass before them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Compute {
+    /// The compute pipeline template of the WGSL.
+    pub template: u32,
+    /// The invocations along each axis of a workgroup, as the shader declares them.
+    pub workgroup: [u32; 3],
+    /// The workgroup counts along each axis, or `None` to cover the target: its size divided by
+    /// the workgroup size, rounding up.
+    pub dispatch: Option<[u32; 3]>,
+    /// The format of the storage texture that the pass writes, or 0 for a pass that writes the
+    /// two buffers of an instance draw.
+    pub format: u32,
+    /// True when the pass records after the camera's passes: it reads the scene color, which
+    /// orders it there.
+    pub after_scene: bool,
+    /// Its uniforms.
+    pub values: [f32; EFFECT_FLOATS],
+    /// The textures that it samples.
+    pub maps: EffectMaps,
+    /// The instance draw's two buffers that the pass writes, or `None` for a storage texture.
+    pub buffers: Option<ComputeBuffers>,
+    /// True when the pass keeps two states in its target's layers: a run writes one state as its
+    /// storage texture and reads the state of the run before, and the frame swaps them between
+    /// runs. Readers see the two states as two ranges of the target's layers.
+    pub history: bool,
+    /// The array layers of each state, 1 by default. The target has twice as many layers with
+    /// history.
+    pub layers: u32,
+    /// The dispatches that a frame runs, 1 by default, swapping the states between them. A run of
+    /// no steps keeps the state where it is.
+    pub steps: u32,
+    /// Counts the page's requests to clear the pass's states. A builder that sees the count rise
+    /// clears both states and starts again from the first.
+    pub reset: u32,
+}
+
+/// The two buffers of an instance draw that a compute pass writes: the draw's count word and its
+/// per-instance rows, which the draw reads in the same frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ComputeBuffers {
+    /// The buffer of the draw's count word, one 32-bit word.
+    pub counts: u32,
+    /// The buffer of the draw's per-instance rows.
+    pub instances: u32,
+    /// The instance buffer's size in bytes.
+    pub instances_bytes: u32,
+}
+
+impl Compute {
+    /// The workgroup counts that fill a target of `size` texels: the explicit counts, or the size
+    /// divided by the workgroup size, rounding up, with one run along z for each state layer.
+    pub fn workgroups(&self, size: (u32, u32)) -> [u32; 3] {
+        match self.dispatch {
+            Some(counts) => counts,
+            None => [
+                size.0.div_ceil(self.workgroup[0].max(1)),
+                size.1.div_ceil(self.workgroup[1].max(1)),
+                self.layers.max(1).div_ceil(self.workgroup[2].max(1)),
+            ],
+        }
+    }
+
+    /// The array layers of the pass's target: each state's layers, twice when it keeps two states.
+    pub fn target_layers(&self) -> u32 {
+        self.layers.max(1) * if self.history { 2 } else { 1 }
+    }
 }
 
 /// What a full-screen pass draws in place of a scene: the sketch's WGSL, built as a custom
@@ -236,6 +357,17 @@ pub struct View {
 pub struct Fullscreen {
     /// The render pipeline template of the WGSL.
     pub template: u32,
+    /// True for the fragment form of a compute pass, which runs in its place on WebGL2.
+    pub fallback: bool,
+    /// True when the pass keeps two states in its target's layers, as a compute pass with history
+    /// does: a run draws one state and reads the state of the run before.
+    pub history: bool,
+    /// The array layers of each state, 1 by default.
+    pub layers: u32,
+    /// The runs that a frame draws, 1 by default, swapping the states between them.
+    pub steps: u32,
+    /// Counts the page's requests to clear the pass's states.
+    pub reset: u32,
     /// The image of the camera's view that it reads as its input.
     pub source: PassSource,
     /// True when the WGSL reads the scene's depth.
@@ -288,6 +420,7 @@ impl Default for View {
             mirror: None,
             probe_face: None,
             fullscreen: None,
+            compute: None,
         }
     }
 }
@@ -339,11 +472,47 @@ impl View {
         }
     }
 
+    /// A view that draws the scene into `rect`, a rectangle of the canvas, on top of the
+    /// camera's image, into the camera's scene color and a depth target of its own.
+    pub fn canvas(rect: CanvasRect) -> Self {
+        Self {
+            target: ViewTarget {
+                rect: Some(rect),
+                ..ViewTarget::default()
+            },
+            ..Self::default()
+        }
+    }
+
+    /// The rectangle of the canvas that the view draws into, or `None` for a view that draws
+    /// into a target of its own.
+    pub fn canvas_rect(&self) -> Option<CanvasRect> {
+        self.target.rect
+    }
+
+    /// Sets the rectangle of the canvas that the view draws into, from the next frame on.
+    pub fn set_canvas_rect(&mut self, rect: CanvasRect) {
+        self.target.rect = Some(rect);
+    }
+
     /// A full-screen pass, which draws `fullscreen` over the whole of `target`: of its own size, or
     /// of the render size halved as many times as it says.
     pub fn fullscreen(fullscreen: Fullscreen, target: ViewTarget) -> Self {
         Self {
             fullscreen: Some(fullscreen),
+            target: ViewTarget {
+                whole: true,
+                ..target
+            },
+            ..Self::default()
+        }
+    }
+
+    /// A compute pass, which fills the whole of `target` as a storage texture: of its own size, or
+    /// of the render size halved as many times as it says.
+    pub fn compute(compute: Compute, target: ViewTarget) -> Self {
+        Self {
+            compute: Some(compute),
             target: ViewTarget {
                 whole: true,
                 ..target
@@ -364,6 +533,15 @@ impl View {
 
     pub(crate) fn fullscreen_pass_mut(&mut self) -> Option<&mut Fullscreen> {
         self.fullscreen.as_mut()
+    }
+
+    /// What a compute pass runs, or `None` for another view.
+    pub fn compute_pass(&self) -> Option<&Compute> {
+        self.compute.as_ref()
+    }
+
+    pub(crate) fn compute_pass_mut(&mut self) -> Option<&mut Compute> {
+        self.compute.as_mut()
     }
 
     /// The plane that a mirror view mirrors the camera's view across, or `None` for another view.
@@ -391,6 +569,11 @@ impl View {
         &self.target
     }
 
+    /// The size this view draws in texels, for a canvas of `canvas` device pixels at `scale`.
+    pub fn drawn_size(&self, canvas: (u32, u32), scale: crate::graph::RenderScale) -> (u32, u32) {
+        self.target.graph_size().made(canvas, scale)
+    }
+
     pub(crate) fn target_mut(&mut self) -> &mut ViewTarget {
         &mut self.target
     }
@@ -402,8 +585,13 @@ impl View {
     }
 
     /// The size the view draws at in texels, for a canvas of `canvas` pixels at render scale
-    /// `scale`: its target's own size, or the render size or a share of it.
+    /// `scale`: the rectangle of the canvas that it draws into at that scale, its target's own
+    /// size, or the render size or a share of it.
     pub fn draw_size(&self, canvas: (u32, u32), scale: RenderScale) -> (u32, u32) {
+        if let Some(rect) = self.target.rect {
+            let (_, _, width, height) = rect.area(canvas, scale);
+            return (width, height);
+        }
         match self.target.size {
             Some(size) => size,
             None => self.target.graph_size().viewport(canvas, scale),
@@ -581,6 +769,48 @@ mod tests {
     }
 
     #[test]
+    fn a_canvas_view_draws_at_a_rectangle_of_the_canvas_at_the_render_size() {
+        let rect = CanvasRect {
+            x: 0.5,
+            y: 0.0,
+            width: 0.5,
+            height: 1.0,
+        };
+        let view = View::canvas(rect);
+        assert_eq!(view.canvas_rect(), Some(rect));
+        assert_eq!(
+            view.target().graph_size(),
+            Size::Full,
+            "the view writes the camera's scene color and a depth at the render size"
+        );
+        assert_eq!(view.draw_size((1001, 600), RenderScale::FULL), (500, 600));
+        let canvas = (1001, 600);
+        assert_eq!(
+            rect.area(canvas, RenderScale::FULL),
+            (501, 0, 500, 600),
+            "the rectangle reaches the canvas's right edge"
+        );
+        assert_eq!(
+            rect.area(canvas, RenderScale::from_thousandths(500)),
+            (251, 0, 250, 300),
+            "the area follows the render scale"
+        );
+        assert_eq!(
+            view.draw_size(canvas, RenderScale::from_thousandths(500)),
+            (250, 300),
+            "the view draws at the rectangle's size at the render scale"
+        );
+        // A rectangle at the far edge still covers a texel and stays inside the canvas.
+        let edge = CanvasRect {
+            x: 1.0,
+            y: 1.0,
+            width: 0.0,
+            height: 0.0,
+        };
+        assert_eq!(edge.area(canvas, RenderScale::FULL), (1000, 599, 1, 1));
+    }
+
+    #[test]
     fn a_mirror_view_takes_the_presets_size_and_the_cameras_layers_unless_it_has_its_own() {
         let mirror = Mirror::new([0.0, 1.0, 0.0], [0.0; 3]).unwrap();
         let mut follows = View::mirror(mirror, None, None);
@@ -601,5 +831,29 @@ mod tests {
             "a view that mirrors nothing keeps its size"
         );
         assert_eq!(plain.layers(), DEFAULT_LAYERS);
+    }
+
+    #[test]
+    fn a_compute_pass_covers_its_target_or_dispatches_the_counts_it_gives() {
+        let mut pass = Compute {
+            template: 0,
+            workgroup: [8, 4, 1],
+            dispatch: None,
+            format: 0,
+            after_scene: false,
+            values: [0.0; EFFECT_FLOATS],
+            maps: EffectMaps::NONE,
+            buffers: None,
+            history: false,
+            layers: 1,
+            steps: 1,
+            reset: 0,
+        };
+        // The counts round up, so the last workgroup of a row or column writes past the target's
+        // edge, which the shader tests against its own size.
+        assert_eq!(pass.workgroups((64, 48)), [8, 12, 1]);
+        assert_eq!(pass.workgroups((65, 1)), [9, 1, 1]);
+        pass.dispatch = Some([2, 3, 1]);
+        assert_eq!(pass.workgroups((64, 48)), [2, 3, 1]);
     }
 }

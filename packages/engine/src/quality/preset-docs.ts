@@ -74,6 +74,7 @@ export const SETTING_DOCS: {
 	},
 	shadowTiles: { label: 'Spot and point light shadow tiles' },
 	shadowTileSize: { label: 'Shadow tile size in texels' },
+	heroTileSize: { label: 'Hero shadow tile size in texels' },
 	pointLightShadows: { label: 'Point light shadows', print: yesNo },
 	bloomSize: { label: "Bloom's largest level in texels on the short side" },
 	aoScale: {
@@ -120,12 +121,13 @@ export const SETTING_DOCS: {
 		print: (value) => `${value} x ${value}`,
 	},
 	areaLights: { label: 'Area lights per frame' },
+	lightFit: { label: 'Depth-fitted light clusters (WebGPU)', print: yesNo },
 	lodThreshold: {
 		label: 'Level of detail threshold',
 		print: (value) => (Number(value) > 0 ? `${value} px` : 'base levels only'),
 	},
 	lodShadowFactor: { label: 'Level of detail threshold in shadows', print: (value) => `${value}x` },
-	lodFade: { label: 'Level of detail fades', print: yesNo },
+	lodFade: { label: 'Distance band fades', print: yesNo },
 	physicalSky: {
 		label: 'Physical sky',
 		print: (value) => (value ? 'from its tables' : 'the analytic sky stands in'),

@@ -1,6 +1,6 @@
 # D-117: Showcase engine features move before 1.0
 
-Status: decided by the owner on 8 October 2026. The features are tasks M2-EX13 to M2-EX18. Each one's design and figures go into a record of its own when it is built. [D-132](D-132-showcase-look-and-features-2026-10-11.md) extends it on 11 October 2026 with a look bar and more features, the particles add-on among them.
+Status: decided by the owner. The features are tasks M2-EX13 to M2-EX18. Each one's design and figures go into a record of its own when it is built. [D-132](D-132-showcase-look-and-features.md) extends it with a look bar and more features, the particles add-on among them.
 
 Summary: The showcase scenes must reach the quality of the "Cozy creek" reference. So every engine feature they need moves before 1.0. These are per-row values in instance batches, environment light from the sky with time of day, planar reflections, transmission and depth of field. A temporal anti-aliasing prototype comes too.
 
@@ -10,9 +10,9 @@ The showcase scenes should look as good as the best three.js scenes that people 
 
 ## Rule
 
-The owner rules. The input is what a reference scene needs and what the engine has today.
+The owner rules. The input is what a reference scene needs and what the engine has.
 
-The reference is "Cozy creek", a three.js scene shared on 8 October 2026. It shows:
+The reference is "Cozy creek", a shared three.js scene. It shows:
 
 - clear water over a stony bed, with glints and floating leaves;
 - dense grass and leafy plants with soft shadows;
@@ -22,33 +22,33 @@ The reference is "Cozy creek", a three.js scene shared on 8 October 2026. It sho
 
 ## Data
 
-The engine on main on 8 October 2026, against what the reference needs:
+The engine before this decision, against what the reference needs:
 
-| Need | State on 8 October | Roadmap before this decision | Task now |
+| Need | Engine before this decision | Roadmap before this decision | Task |
 | --- | --- | --- | --- |
 | Grass and plants that cast and receive shadows | Instance batches neither cast nor receive shadows | M2-R6, with its record D-115 | M2-R6, no change |
-| Grass that sways out of step, with per-blade tint | Batch row colours are stored but not drawn; surface and vertex functions read no per-row values | Not planned | M2-EX13 |
+| Grass that sways out of step, with per-blade tint | Batch row colors are stored but not drawn; surface and vertex functions read no per-row values | Not planned | M2-EX13 |
 | Light and reflections that follow the time of day | The generated sky lights nothing; only the built-in room makes an environment | Not planned | M2-EX14 |
 | Water that reflects its banks | Scene passes can mirror the scene by hand, but have no clip plane | M3 | M2-EX15 |
 | Water that shows its bed, bent by its ripples | No transmission | After 1.0 | M2-EX16 |
 | Depth of field | Not built; custom effects read one pixel, so they cannot blur | After 1.0 | M2-EX17 |
 | Dense grass without shimmer in motion | MSAA and alpha to coverage, with no temporal anti-aliasing | After 1.0 | M2-EX18, a prototype first |
-| Spray, falling leaves, fireflies | Sprites | The particles add-on, M3 | M3, no change; M2-EX20 since [D-132](D-132-showcase-look-and-features-2026-10-11.md) |
+| Spray, falling leaves, fireflies | Sprites | The particles add-on, M3 | M2-EX20, from [D-132](D-132-showcase-look-and-features.md) |
 
 Caustics, glints, foam, water flow and wind are recipes on top of these features: surface functions and vertex offsets. They are not engine features of their own.
 
-How the data was produced: an inventory of the engine's rendering features, made on 8 October 2026 from the docs and the code. The needs come from frames of the reference's video.
+How the data was produced: an inventory of the engine's rendering features, from the docs and the code. The needs come from frames of the reference's video.
 
 ## Decision
 
-All the features above move before 1.0. The owner said: "we should move ahead whatever engine features we need for this into pre1.0 work."
+All the features above move before 1.0, by the owner's ruling.
 
-The temporal anti-aliasing work starts as a prototype. It measures whether dense grass shimmers without it, and what a temporal pass costs. The owner then rules on shipping it, from that data.
+The temporal anti-aliasing work starts as a prototype. It measures whether dense grass shimmers without it, and what a temporal pass costs. The owner rules on shipping it from that data.
 
 ## Consequences
 
-- **Tasks:** `m2-breakdown.md` gains tasks M2-EX13 to M2-EX18. The roadmap's M3 row lists the pulled features.
-- **Technique review:** the rows for transmission, depth of field, temporal anti-aliasing and planar reflections in [Technique review, October 2026](../technique-review-2026-10.md) point here.
+- **Tasks:** `m2-breakdown.md` holds tasks M2-EX13 to M2-EX18. The roadmap's M3 row lists the features that move.
+- **Technique review:** the rows for transmission, depth of field, temporal anti-aliasing and planar reflections in the [technique review](../technique-review.md) point here.
 - **Each feature:** it ships the way any engine feature does:
   - a design note and a decision record with its figures;
   - tests and image references on all three GPU paths;

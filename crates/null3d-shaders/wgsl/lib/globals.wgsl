@@ -30,6 +30,9 @@ struct Frame {
     /// The light grid's tiles across, tiles up, slices, and slices per doubling of the slice
     /// depth. The slices are 0 when no point or spot light reaches the view.
     cluster_grid: vec4f,
+    /// 1 while the view's slices may be fitted to the measured depth, so a fragment finds its
+    /// slice in the grid's header, and 0 while it reads cluster_depth and cluster_grid.
+    cluster_fit: vec4f,
     /// The sketch time in seconds, the seconds since the frame before, the frame's number as the
     /// bits of a `u32`, and a spare.
     clock: vec4f,
@@ -39,11 +42,13 @@ struct Frame {
     /// The size of the render target in pixels, and one over each.
     target_size: vec4f,
     /// The distances of the camera's near and far planes, then the change in normalized device
-    /// coordinates across one CSS pixel of the canvas, along x and along y.
+    /// coordinates across one CSS pixel of the canvas, along x and along y. In the views of lights
+    /// they are the scene camera's, which a material's surface reads.
     camera_range: vec4f,
-    /// Ambient occlusion's strength, 0 when the view draws none, the scene target's height in
-    /// pixels, and the texels of its texture per pixel of the scene, across and down (see
-    /// null3d::gtao).
+    /// Ambient occlusion's strength, 0 when the view draws none, the view's target height in
+    /// pixels, which custom materials turn their pixel rows by on WebGL2 and the vignette measures
+    /// its distance from, and the texels of its texture per pixel of the scene, across and down
+    /// (see null3d::gtao).
     occlusion: vec4f,
     /// The scene's environment, which null3d::ibl reads.
     environment: EnvironmentLight,
@@ -61,10 +66,12 @@ struct Frame {
     /// this view's camera. It is 0 in the main camera's view.
     shadow_origin: vec4f,
     /// The view matrix for positions relative to the camera: the camera's rotation alone, as the
-    /// camera sits at the origin. `projection * view` is `view_proj`. Zero in the views of lights.
+    /// camera sits at the origin. `projection * view` is `view_proj`. In the views of lights it
+    /// holds the scene camera's view matrix, which a material's surface reads.
     view: mat4x4f,
     /// The projection matrix, into the clip space of the engine's reversed depth: 1 at the near
-    /// plane and 0 at the far plane. Zero in the views of lights.
+    /// plane and 0 at the far plane. In the views of lights it holds the scene camera's projection,
+    /// which a material's surface reads.
     projection: mat4x4f,
     /// Takes a position relative to this frame's camera into the clip space of the camera's view in
     /// the frame before, which screen-space reflections read the color of (see null3d::ssr).
@@ -86,6 +93,17 @@ struct Frame {
     /// The vignette's intensity, size, falloff and roundness, which fragment shaders apply before
     /// the tone mapping on the 8-bit path, in the camera's view. Zero elsewhere, which applies none.
     vignette: vec4f,
+    /// The camera that a material's surface reads: this view's own camera, and the scene camera in
+    /// the views of lights, whose own `view_proj` and `target_size` belong to the light. A masked
+    /// custom material's caster reads the view-projection and the render target's size in pixels
+    /// with one over each, to place its fragment in the camera's pixel.
+    camera_view_proj: mat4x4f,
+    camera_target: vec4f,
+    /// The camera's place as a homogeneous point, as `camera_position` holds it in its view:
+    /// `(0, 0, 0, 1)` for a perspective camera, and the direction toward it with `w` of 0 for an
+    /// orthographic one. A masked custom material's caster reads it for the direction toward the
+    /// camera.
+    camera_eye: vec4f,
 }
 
 /// The clip position of `relative_position` through `view_proj`, with the frame's sub-pixel jitter
@@ -145,7 +163,8 @@ struct ProbeGrid {
 /// then the values of a material that lets light through, which only the builds that let light
 /// through read, then the clear coat and sheen of a layered material, then the values of a
 /// material that lets light through a thin surface, then the scatter distances of the subsurface
-/// blur. Colors are linear.
+/// blur, then the thin film's values and the anisotropy's, then the light map's transform. Colors
+/// are linear.
 struct MaterialRow {
     color: vec4f,
     emissive: vec4f,
@@ -157,7 +176,7 @@ struct MaterialRow {
     more_maps: vec4f,
     specular: vec4f,
     /// The transmission, the thickness of the volume in the mesh's own units, the index of
-    /// refraction, and a spare.
+    /// refraction, and the layer of the light map's direction map, which is negative without one.
     transmission: vec4f,
     /// The color that white light takes after it travels the attenuation distance through the
     /// volume, and that distance, 0 for a volume that absorbs nothing.
@@ -172,6 +191,28 @@ struct MaterialRow {
     /// Each channel's share of the scatter radius under the surface, linear, and the radius in
     /// world units, which only the skin pass's builds read.
     subsurface: vec4f,
+    /// How much of the specular reflection a thin film above the surface tints, the film's index
+    /// of refraction, and the film's thickness where its map is 0 and where it is 1, in
+    /// nanometers.
+    iridescence: vec4f,
+    /// The anisotropy's strength, its rotation from the tangent in radians, the family of maps that
+    /// each group of shared slots holds (two bits each: 0 for the light map's slot, 2 for the
+    /// specular intensity map's and 4 for the specular color map's; 0 is the clear coat's and the
+    /// sheen's, and 1 iridescence's and the anisotropy's; bits 6 and 7 say that the transmission
+    /// and thickness maps read the second texture coordinates), and the volume's dispersion.
+    anisotropy: vec4f,
+    /// The scale of a light map's texture coordinates along u and v, then their offset along u
+    /// and v. The identity leaves the coordinates as the mesh gives them.
+    light_map_uv: vec4f,
+    /// The layers of the transmission and thickness maps in the texture arrays of the specular
+    /// slots, which the shader samples through those slots' bindings: the transmission map's layer,
+    /// then the thickness map's, each a negative value where the map draws nothing.
+    volume: vec4f,
+    /// The transforms of the maps of the row slots from the second up, two `vec4f`s each: the 2 x 3
+    /// matrix's row that gives u, then the row that gives v. The base color map's two rows are
+    /// `Material::uv_u` and `Material::uv_v`, in the values that every shader reads. A map whose
+    /// transform is the identity reads the coordinates as the mesh gives them.
+    map_uv: array<vec4f, 18>,
 }
 
 /// The values of a material that lets light through: its row's `transmission` and `attenuation`.

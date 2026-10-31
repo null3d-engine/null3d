@@ -4,7 +4,8 @@
 // sketch thread (gltf.ts) makes engine resources from: each mesh's vertex arrays, tightly packed in
 // the types the file holds them in, the node tree with parents first, the materials as the
 // engine's options, the textures each material uses with their color space and texture
-// coordinates, the lights and the nodes with instancing. It decodes no image: the worker decodes
+// coordinates, the lights, the nodes with instancing, and the primitives that an add-on's
+// extension handler reads, with every attribute as floats. It decodes no image: the worker decodes
 // the images that the file holds, and the loader those it names by address. It allocates only what
 // it returns, so a file with huge counts fails with E1416 before it allocates anything.
 //
@@ -56,17 +57,63 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_materials_ior',
 	'KHR_materials_transmission',
 	'KHR_materials_volume',
+	'KHR_materials_dispersion',
 	'KHR_materials_diffuse_transmission',
 	'KHR_materials_volume_scatter',
 	'KHR_materials_clearcoat',
 	'KHR_materials_sheen',
+	'KHR_materials_iridescence',
+	'KHR_materials_anisotropy',
 	'KHR_lights_punctual',
+	'KHR_animation_pointer',
+	'KHR_node_visibility',
 	'EXT_mesh_gpu_instancing',
 	'MSFT_lod',
 	'KHR_meshopt_compression',
 	'EXT_meshopt_compression',
 	'KHR_draco_mesh_compression',
+	'NEEDLE_lightmaps',
+	'NEEDLE_components',
+	// The asset tool's own extensions, which sit on a primitive: the stored tree that raycasts
+	// walk, the blocker that hides what lies behind it, and the tree of cluster patches.
+	'NULL3D_mesh_bvh',
+	'NULL3D_occluder',
+	'NULL3D_clusters',
 ];
+
+/**
+ * The glTF extensions that an add-on reads, with the package that reads it. A file that requires
+ * one of them without that add-on fails with E1417, whose message names the package to import.
+ * An add-on that registers a handler reads its extensions, and no message names it. A file that
+ * only uses one of them draws without its data, and development builds name the package that
+ * reads it.
+ */
+export const ADDON_EXTENSIONS: Readonly<Record<string, string>> = {
+	KHR_gaussian_splatting: '@null3d/splats',
+};
+
+/**
+ * The extensions that a file lists in `extensionsUsed` and that neither the loader nor a
+ * registered add-on reads, each with the add-on's package where one reads it. A name that the file
+ * lists twice comes once. The loader warns about them in development builds alone.
+ */
+function unreadExtensions(
+	json: Json,
+	handled: readonly string[],
+): { name: string; addon?: string }[] | undefined {
+	let unread: { name: string; addon?: string }[] | undefined;
+	const seen = new Set<string>();
+	for (const value of list(json.extensionsUsed, 'extensionsUsed')) {
+		const name = typeof value === 'string' ? value : String(value);
+		if (READ_EXTENSIONS.includes(name) || handled.includes(name) || seen.has(name)) continue;
+		seen.add(name);
+		const addon = ADDON_EXTENSIONS[name];
+		const found = addon ? { name, addon } : { name };
+		if (unread) unread.push(found);
+		else unread = [found];
+	}
+	return unread;
+}
 
 /**
  * The extensions that give a texture an image in another format, in the order the loader takes
@@ -236,6 +283,9 @@ interface LayerTextures {
 	coatNormal?: unknown;
 	sheenColor?: unknown;
 	sheenRoughness?: unknown;
+	iridescence?: unknown;
+	iridescenceThickness?: unknown;
+	anisotropy?: unknown;
 }
 
 /** True when two texture infos read one texture the same way: its index, coordinates and transform. */
@@ -251,9 +301,18 @@ function sameTexture(a: Entry, b: Entry): boolean {
  * The texture infos of a layered material's maps. glTF packs the clear coat and its roughness into
  * the red and green of one texture, and the sheen's color and roughness into the color and alpha
  * of one. The engine draws each pair from one texture, so a pair of two textures keeps the first,
- * and `notes` says so.
+ * and `notes` says so. The layers' maps take the same places, so a material keeps the coat's and
+ * the sheen's maps or the iridescence's, and the anisotropy's map takes the sheen's place, and
+ * `notes` says what it leaves out.
  */
-function layerTextures(coat: Entry, sheen: Entry, what: string, notes: string[]): LayerTextures {
+function layerTextures(
+	coat: Entry,
+	sheen: Entry,
+	film: Entry,
+	anisotropy: Entry,
+	what: string,
+	notes: string[],
+): LayerTextures {
 	const pair = (first: unknown, second: unknown, name: string): [unknown, unknown] => {
 		if (first === undefined || second === undefined) return [first, second];
 		if (sameTexture(entry(first, what), entry(second, what))) return [first, first];
@@ -270,59 +329,103 @@ function layerTextures(coat: Entry, sheen: Entry, what: string, notes: string[])
 		sheen.sheenRoughnessTexture,
 		'sheenRoughnessTexture',
 	);
+	const coatSheen = [
+		coatMap,
+		coatRoughness,
+		coat.clearcoatNormalTexture,
+		sheenColor,
+		sheenRoughness,
+	].some((texture) => texture !== undefined);
+	const iridescence = film.iridescenceTexture;
+	const iridescenceThickness = film.iridescenceThicknessTexture;
+	const map = anisotropy.anisotropyTexture;
+	if (coatSheen && (iridescence ?? iridescenceThickness ?? map) !== undefined)
+		notes.push(
+			`${what}'s iridescence or anisotropy textures, which the engine does not draw beside a clear coat's or a sheen's`,
+		);
 	return {
 		coat: coatMap,
 		coatRoughness,
 		coatNormal: coat.clearcoatNormalTexture,
 		sheenColor,
 		sheenRoughness,
-	};
-}
-
-/** A layered material's values from its KHR_materials_clearcoat and KHR_materials_sheen extensions. */
-function layersOf(coat: Entry, sheen: Entry, what: string): LayersData {
-	const color = numbers(sheen.sheenColorFactor, 3, [0, 0, 0], `${what}'s sheenColorFactor`);
-	if (color.some((c) => c < 0 || c > 1))
-		broken(`${what}'s sheenColorFactor has a component outside 0 to 1`);
-	return {
-		clearcoat: unit(coat.clearcoatFactor ?? 0, `${what}'s clearcoatFactor`),
-		clearcoatRoughness: unit(
-			coat.clearcoatRoughnessFactor ?? 0,
-			`${what}'s clearcoatRoughnessFactor`,
-		),
-		clearcoatNormalScale: finite(
-			(coat.clearcoatNormalTexture as Entry | undefined)?.scale ?? 1,
-			`${what}'s clearcoat normal scale`,
-		),
-		sheenColor: [color[0] as number, color[1] as number, color[2] as number],
-		sheenRoughness: unit(sheen.sheenRoughnessFactor ?? 0, `${what}'s sheenRoughnessFactor`),
+		iridescence: coatSheen ? undefined : iridescence,
+		iridescenceThickness: coatSheen ? undefined : iridescenceThickness,
+		anisotropy: coatSheen ? undefined : map,
 	};
 }
 
 /**
- * How a material lets light through, from its KHR_materials_transmission and KHR_materials_volume
- * extensions, or none for a transmission factor of 0. A masked material lets no light through, as
- * the engine draws such a material with no mask. The maps of transmission and thickness are not
- * drawn yet: the factors stand alone, and `notes` says so.
+ * A layered material's values from its glTF material extensions. An extension that the material
+ * does not have gives no values, so a material pays nothing for another layer's effect.
  */
-function transmissionOf(
-	extensions: Entry,
+function layersOf(
+	coat: Entry | undefined,
+	sheen: Entry | undefined,
+	film: Entry | undefined,
+	anisotropy: Entry | undefined,
 	what: string,
-	masked: boolean,
-	notes: string[],
-): TransmissionData | undefined {
+): LayersData {
+	const color = numbers(sheen?.sheenColorFactor, 3, [0, 0, 0], `${what}'s sheenColorFactor`);
+	if (color.some((c) => c < 0 || c > 1))
+		broken(`${what}'s sheenColorFactor has a component outside 0 to 1`);
+	const layers: LayersData = {
+		clearcoat: unit(coat?.clearcoatFactor ?? 0, `${what}'s clearcoatFactor`),
+		clearcoatRoughness: unit(
+			coat?.clearcoatRoughnessFactor ?? 0,
+			`${what}'s clearcoatRoughnessFactor`,
+		),
+		clearcoatNormalScale: finite(
+			(coat?.clearcoatNormalTexture as Entry | undefined)?.scale ?? 1,
+			`${what}'s clearcoat normal scale`,
+		),
+		sheenColor: [color[0] as number, color[1] as number, color[2] as number],
+		sheenRoughness: unit(sheen?.sheenRoughnessFactor ?? 0, `${what}'s sheenRoughnessFactor`),
+	};
+	if (film !== undefined) {
+		const ior =
+			film.iridescenceIor === undefined
+				? 1.3
+				: finite(film.iridescenceIor, `${what}'s iridescenceIor`);
+		if (ior < 1) broken(`${what}'s iridescenceIor is ${ior}, and it takes 1 or more`);
+		const least = unit(
+			film.iridescenceThicknessMinimum ?? 100,
+			`${what}'s iridescenceThicknessMinimum`,
+			Infinity,
+		);
+		const most = unit(
+			film.iridescenceThicknessMaximum ?? 400,
+			`${what}'s iridescenceThicknessMaximum`,
+			Infinity,
+		);
+		if (least > most)
+			broken(
+				`${what}'s iridescenceThicknessMinimum is ${least} and its maximum ${most}, and the minimum takes no more than the maximum`,
+			);
+		layers.iridescence = unit(film.iridescenceFactor ?? 0, `${what}'s iridescenceFactor`);
+		layers.iridescenceIor = ior;
+		layers.iridescenceThicknessRange = [least, most];
+	}
+	if (anisotropy !== undefined) {
+		layers.anisotropy = unit(anisotropy.anisotropyStrength ?? 0, `${what}'s anisotropyStrength`);
+		layers.anisotropyRotation = finite(
+			anisotropy.anisotropyRotation ?? 0,
+			`${what}'s anisotropyRotation`,
+		);
+	}
+	return layers;
+}
+
+/**
+ * How a material lets light through, from its KHR_materials_transmission and KHR_materials_volume
+ * extensions, or none for a transmission factor of 0. A masked material keeps its transmission:
+ * its cut-out leaves the pixels that let light through, as three.js draws one.
+ */
+function transmissionOf(extensions: Entry, what: string): TransmissionData | undefined {
 	const transmission = extensions.KHR_materials_transmission as Entry | undefined;
 	const factor = unit(transmission?.transmissionFactor ?? 0, `${what}'s transmissionFactor`);
 	if (factor === 0) return undefined;
-	if (masked) {
-		notes.push(
-			`${what} lets light through with the alpha mode MASK, which the engine does not draw`,
-		);
-		return undefined;
-	}
 	const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
-	if (transmission?.transmissionTexture !== undefined || volume.thicknessTexture !== undefined)
-		notes.push(`${what}'s transmission and thickness textures, which the engine does not draw yet`);
 	return { factor, ...volumeOf(volume, what) };
 }
 
@@ -346,6 +449,16 @@ function volumeOf(volume: Entry, what: string): VolumeData {
 }
 
 /**
+ * The volume's dispersion, from KHR_materials_dispersion: 20 divided by the Abbe number, 0 or more,
+ * and 0 for a material without the extension.
+ */
+function dispersionOf(extension: Entry | undefined, what: string): number {
+	const dispersion = finite(extension?.dispersion ?? 0, `${what}'s dispersion`);
+	if (dispersion < 0) broken(`${what}'s dispersion is ${dispersion}, and it takes 0 or more`);
+	return dispersion;
+}
+
+/**
  * How a material lets light through to its other side, from its
  * KHR_materials_diffuse_transmission and KHR_materials_volume extensions, or none without the
  * extension. KHR_materials_transmission wins where the material lets light through that way too,
@@ -366,7 +479,7 @@ function diffuseTransmissionOf(
 	}
 	if (layered) {
 		notes.push(
-			`${what}'s diffuse transmission, which the engine does not draw beside a clear coat or a sheen`,
+			`${what}'s diffuse transmission, which the engine does not draw beside a clear coat, a sheen, iridescence or anisotropy`,
 		);
 		return undefined;
 	}
@@ -380,7 +493,9 @@ function diffuseTransmissionOf(
 		broken(`${what}'s diffuseTransmissionColorFactor has a component outside 0 to 1`);
 	const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
 	if (volume.thicknessTexture !== undefined)
-		notes.push(`${what}'s thickness texture, which the engine does not draw yet`);
+		notes.push(
+			`${what}'s thickness texture, which the engine does not draw for a material that lets light through to its other side`,
+		);
 	return {
 		factor: unit(diffuse.diffuseTransmissionFactor ?? 0, `${what}'s diffuseTransmissionFactor`),
 		color: [color[0] as number, color[1] as number, color[2] as number],
@@ -456,6 +571,13 @@ export interface VertexData {
 
 /** One primitive of a mesh: its vertex arrays, its triangles and its material. */
 export interface PrimitiveData {
+	/**
+	 * The file accessor that each attribute reads, by glTF name such as `POSITION`, for a primitive
+	 * that reads the file's accessors. Undefined for a Draco primitive, whose attributes come from
+	 * Draco's own ids. Two primitives that name one accessor read the same vertices, which the
+	 * asset tool's levels do: each names its base mesh's accessors.
+	 */
+	accessors?: Readonly<Record<string, number>>;
 	positions: VertexData;
 	normals?: VertexData;
 	uvs?: VertexData;
@@ -488,6 +610,25 @@ export interface PrimitiveData {
 	 * with the blocker to draw in its place when the file holds one.
 	 */
 	occluder?: true | BlockerData;
+	/**
+	 * The tree of cluster patches over the primitive's triangles (`NULL3D_clusters`), which views
+	 * draw patch by patch where their error lets them.
+	 */
+	patches?: PatchesData;
+}
+
+/**
+ * A tree of cluster patches: every patch's triangles, its bounding sphere and its error, as the
+ * asset tool builds them. `indices` holds every patch's triangles one patch after another, and
+ * each patch's `first` and `count` name its run of them. `words` holds each patch's first index,
+ * index count, its parent's place plus one (0 for the root) and its error's bits, four integers
+ * each; `bounds` holds its centre and radius, four floats each.
+ */
+export interface PatchesData {
+	indices: Uint32Array;
+	bounds: Float32Array;
+	words: Uint32Array;
+	root: number;
 }
 
 /**
@@ -510,10 +651,33 @@ export interface BlockerData {
 export const MESH_BVH = 'NULL3D_mesh_bvh';
 /** The extension that makes a primitive block the view, with a blocker mesh or with its own. */
 export const OCCLUDER = 'NULL3D_occluder';
+/** The extension that holds a primitive's tree of cluster patches. */
+export const CLUSTERS = 'NULL3D_clusters';
+
+/**
+ * A primitive that carries an extension which an add-on's handler reads. The loader hands the
+ * primitive to the handler, and draws only the parts that the handler returns for it.
+ */
+export interface ExtensionPrimitiveData {
+	/** Each claimed extension on the primitive, with its JSON from the file. */
+	extensions: { name: string; json: Entry }[];
+	/** Every attribute's values as floats, by the file's name, such as `POSITION`. */
+	attributes: Record<string, Float32Array>;
+	/** The number of elements in each attribute. */
+	count: number;
+	/** The primitive's indices, which name triangles, or none when it gives none. */
+	indices?: Uint16Array | Uint32Array;
+	/** glTF's mode of the primitive, such as 0 for points and 4 for triangles. */
+	mode: number;
+	/** The material's index in the file, or -1 for glTF's default material. */
+	material: number;
+}
 
 export interface MeshData {
 	name: string;
 	primitives: PrimitiveData[];
+	/** The primitives that an add-on's extension handler reads, when the mesh has any. */
+	extensionPrimitives?: ExtensionPrimitiveData[];
 	/** The weight of each morph target when no clip sets it, when the primitives have targets. */
 	weights?: number[];
 	/** The targets' names, from the file's `extras.targetNames`, or none. */
@@ -570,7 +734,8 @@ export interface ScatterData {
 	color: [number, number, number];
 }
 
-/** A material's layers above its base, as KHR_materials_clearcoat and KHR_materials_sheen give them. */
+/** A material's layers above its base, as KHR_materials_clearcoat, KHR_materials_sheen,
+ * KHR_materials_iridescence and KHR_materials_anisotropy give them. */
 export interface LayersData {
 	/** The clear coat factor, from 0 to 1. */
 	clearcoat: number;
@@ -582,6 +747,16 @@ export interface LayersData {
 	sheenColor: [number, number, number];
 	/** The sheen roughness factor, from 0 to 1. */
 	sheenRoughness: number;
+	/** How much of the thin film's reflection shows, from 0 to 1, for a material with the film. */
+	iridescence?: number;
+	/** The thin film's index of refraction, 1 or more. */
+	iridescenceIor?: number;
+	/** The film's least and greatest thickness, in nanometers. */
+	iridescenceThicknessRange?: [number, number];
+	/** How far the specular reflection stretches, from 0 to 1, for a material with the stretch. */
+	anisotropy?: number;
+	/** The direction that it stretches along, in radians from the tangent. */
+	anisotropyRotation?: number;
 }
 
 /** Where a material's maps sit on the texture coordinates, as KHR_texture_transform gives it. */
@@ -589,6 +764,20 @@ export interface UvTransformData {
 	offset: [number, number];
 	repeat: [number, number];
 	rotation: number;
+}
+
+/** The maps of a material that a file places with a transform of their own, by the map's key. */
+export type MapUvTransformsData = Partial<Record<keyof MaterialData['maps'], UvTransformData>>;
+
+/** Where a texture info's `KHR_texture_transform` places its map on the texture coordinates. */
+function textureTransform(transform: Entry, what: string): UvTransformData {
+	const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);
+	const scale = numbers(transform.scale, 2, [1, 1], `${what}'s texture transform scale`);
+	return {
+		offset: [offset[0] as number, offset[1] as number],
+		repeat: [scale[0] as number, scale[1] as number],
+		rotation: finite(transform.rotation ?? 0, `${what}'s texture transform rotation`),
+	};
 }
 
 /** A material as the engine's options, with its maps as indices into the texture uses. */
@@ -614,6 +803,8 @@ export interface MaterialData {
 	specularIntensity: number;
 	/** KHR_materials_specular's specular color factor: linear RGB, which may exceed 1. */
 	specularColor: [number, number, number];
+	/** KHR_materials_dispersion's strength, 0 or more: 20 divided by the Abbe number. */
+	dispersion: number;
 	/**
 	 * KHR_materials_transmission's factor, with KHR_materials_volume's values, for a material
 	 * that lets light through: none for a factor of 0.
@@ -638,13 +829,22 @@ export interface MaterialData {
 		specularColorMap?: number;
 		diffuseTransmissionMap?: number;
 		diffuseTransmissionColorMap?: number;
+		transmissionMap?: number;
+		thicknessMap?: number;
 		clearcoatMap?: number;
 		clearcoatRoughnessMap?: number;
 		clearcoatNormalMap?: number;
 		sheenColorMap?: number;
 		sheenRoughnessMap?: number;
+		iridescenceMap?: number;
+		iridescenceThicknessMap?: number;
+		anisotropyMap?: number;
 	};
-	uvTransform?: UvTransformData;
+	/**
+	 * The maps that the file places with a transform of their own, by the map's key. A map without
+	 * one reads the texture coordinates as the mesh gives them.
+	 */
+	uvTransforms?: MapUvTransformsData;
 }
 
 /** A light of KHR_lights_punctual, in the units that glTF and three.js share. */
@@ -679,6 +879,11 @@ export interface NodeData {
 	mesh: number;
 	/** The light's index in the light list, or -1. */
 	light: number;
+	/**
+	 * False when `KHR_node_visibility` hides the node. The copy draws nothing on it until a clip
+	 * shows it.
+	 */
+	visible?: false;
 	instancing?: InstancingData;
 	/** The skin's index in the file, or -1. */
 	skin: number;
@@ -704,18 +909,50 @@ export interface NodeData {
 	weights?: number[];
 	/** The levels of detail of the node's mesh, from `MSFT_lod`, when it gives any. */
 	levels?: NodeLevels;
+	/** The levels of detail that the node's mesh downloads after the file, when it gives any. */
+	stages?: NodeStages;
+	/**
+	 * The light map that the node's Needle `MeshRenderer` names: its index among the file's light
+	 * maps, and the scale and offset of the coordinates at which it reads the map.
+	 */
+	lightMap?: {
+		index: number;
+		scale: [number, number];
+		offset: [number, number];
+	};
 }
 
 /**
  * The lower levels of detail of a node's mesh, as `MSFT_lod` names them: the mesh of each lower
  * level's node, from the most detailed down, and each level's error from the asset tool's
- * `NULL3D_lod_error`, or else the screen coverage of each level from `MSFT_screencoverage`, the
- * node's own first.
+ * `NULL3D_lod_error` beside the screen coverage of each level from `MSFT_screencoverage`, the
+ * node's own first. The tool writes the coverage that its measured error implies beside the error;
+ * a file that holds the errors alone holds levels whose author set the switch, and the loader
+ * fades those.
  */
 export interface NodeLevels {
 	meshes: number[];
 	errors?: number[];
 	coverage?: number[];
+}
+
+/**
+ * The levels of detail that a node's mesh downloads after the file, from the asset tool's
+ * `NULL3D_stages`: the error of the level that the file itself holds, and each further stage's
+ * file, its length in bytes and the error of the level it holds, in the units of the mesh's
+ * positions. The stages run from the level after the file's own down to the finest, and each
+ * replaces the triangles of the mesh that the stage before left.
+ *
+ * A tree of cluster patches streams its bands through the same list: `bands` names each band's
+ * file by the primitive whose tree it extends, and each band appends its patches below the ones
+ * that arrived before it.
+ */
+export interface NodeStages {
+	/** The error of the level that the file's own triangles measure, for staged levels. */
+	error?: number;
+	levels: { url: string; bytes: number; error: number }[];
+	/** The bands of each cluster tree, in the order they extend the tree that the file holds. */
+	bands?: { primitive: number; url: string; bytes: number }[];
 }
 
 /** An image: its bytes when the file holds it, or its address when the file names it. */
@@ -745,6 +982,18 @@ export interface GltfData {
 	animation?: AnimationData;
 	/** What the parser left out, such as points and lines, for a warning in development builds. */
 	notes: string[];
+	/**
+	 * The extensions that the file uses and that neither the loader nor a registered add-on reads,
+	 * in the file's order, for a warning in development builds. Each entry names the extension and,
+	 * when a foundation add-on reads it, the package to import.
+	 */
+	unread?: { name: string; addon?: string }[];
+	/**
+	 * The texture use of each light map that `NEEDLE_lightmaps` registers, by the map's index, or
+	 * -1 for an entry that the engine does not take. A node's Needle `MeshRenderer` names one by
+	 * its index.
+	 */
+	lightMaps: number[];
 	/** True when the file holds Draco data, which development builds warn about. */
 	draco?: true;
 	/**
@@ -759,7 +1008,11 @@ export interface GltfData {
 interface Json {
 	asset?: { version?: unknown; extras?: unknown };
 	extensionsRequired?: unknown;
-	extensions?: { KHR_lights_punctual?: { lights?: unknown } };
+	extensionsUsed?: unknown;
+	extensions?: {
+		KHR_lights_punctual?: { lights?: unknown };
+		NEEDLE_lightmaps?: unknown;
+	};
 	scene?: unknown;
 	scenes?: unknown;
 	nodes?: unknown;
@@ -786,8 +1039,16 @@ export interface GltfContainer {
 	bytes: number;
 }
 
-/** Reads a .glb or .gltf file's container and JSON, and lists the buffers it names by address. */
-export function readContainer(file: Uint8Array, url: string): GltfContainer {
+/**
+ * Reads a file's container and JSON, and lists the buffers that it names by address. `handled`
+ * names the extensions that the add-ons' handlers read, which a file may require as it requires
+ * the engine's own.
+ */
+export function readContainer(
+	file: Uint8Array,
+	url: string,
+	handled: readonly string[] = [],
+): GltfContainer {
 	let text: Uint8Array;
 	let bin: Uint8Array | undefined;
 	const view = new DataView(file.buffer, file.byteOffset, file.byteLength);
@@ -826,9 +1087,18 @@ export function readContainer(file: Uint8Array, url: string): GltfContainer {
 			version ? `it is glTF ${version}, and the engine reads glTF 2.0` : 'it names no glTF version',
 		);
 	const required = list(json.extensionsRequired, 'extensionsRequired');
-	for (const name of required)
-		if (typeof name !== 'string' || !READ_EXTENSIONS.includes(name))
+	for (const name of required) {
+		if (typeof name !== 'string')
 			throw new GltfError('E1417', `it requires ${String(name)}, which the engine does not read`);
+		if (READ_EXTENSIONS.includes(name) || handled.includes(name)) continue;
+		const addon = ADDON_EXTENSIONS[name];
+		throw new GltfError(
+			'E1417',
+			addon
+				? `it requires ${name}, which the engine does not read. Import ${addon}, which reads it`
+				: `it requires ${name}, which the engine does not read`,
+		);
+	}
 	const external = new Map<number, string>();
 	list(json.buffers, 'buffers').forEach((buffer, k) => {
 		const uri = entry(buffer, `buffer ${k}`).uri;
@@ -857,10 +1127,12 @@ export function parseGltf(
 	externalBuffers: ReadonlyMap<number, Uint8Array>,
 	url: string,
 	decoders: GltfDecoders = {},
+	handled: readonly string[] = [],
 ): GltfData {
 	const { json } = container;
 	const decode = decoders.meshopt;
 	const notes: string[] = [];
+	const unread = unreadExtensions(json, handled);
 	let sourceBytes = container.bytes;
 	for (const bytes of externalBuffers.values()) sourceBytes += bytes.length;
 	const budget = new FileBudget(sourceBytes, broken);
@@ -1114,12 +1386,21 @@ export function parseGltf(
 	const meshes = list(json.meshes, 'meshes').map((value, k): MeshData => {
 		const mesh = entry(value, `mesh ${k}`);
 		const primitives: PrimitiveData[] = [];
+		const extensionPrimitives: ExtensionPrimitiveData[] = [];
 		list(mesh.primitives, `mesh ${k}'s primitives`).forEach((p, j) => {
 			const what = `mesh ${k}'s primitive ${j}`;
-			const primitive = parsePrimitive(entry(p, what), what, read, budget, notes, dracoOf);
+			const definition = entry(p, what);
+			// A primitive that a handler reads draws only what the handler returns for it.
+			const claimed = parseExtensionPrimitive(definition, what, read, budget, handled);
+			if (claimed) {
+				extensionPrimitives.push(claimed);
+				return;
+			}
+			const primitive = parsePrimitive(definition, what, read, budget, notes, dracoOf);
 			if (primitive) primitives.push(primitive);
 		});
 		const data: MeshData = { name: text(mesh.name), primitives };
+		if (extensionPrimitives.length > 0) data.extensionPrimitives = extensionPrimitives;
 		if (primitives.some((p) => p.morph))
 			Object.assign(data, morphWeights(mesh, primitives, `mesh ${k}`));
 		return data;
@@ -1197,14 +1478,75 @@ export function parseGltf(
 		const diffuse = (extensions.KHR_materials_diffuse_transmission ?? {}) as Entry;
 		const coat = extensions.KHR_materials_clearcoat as Entry | undefined;
 		const sheen = extensions.KHR_materials_sheen as Entry | undefined;
-		const layered = coat !== undefined || sheen !== undefined;
+		const film = extensions.KHR_materials_iridescence as Entry | undefined;
+		const anisotropy = extensions.KHR_materials_anisotropy as Entry | undefined;
+		const layered =
+			coat !== undefined || sheen !== undefined || film !== undefined || anisotropy !== undefined;
 		// A layered material's maps take the slots of the specular maps and of the diffuse
 		// transmission maps, which it then goes without.
 		if (layered && (specular.specularTexture ?? specular.specularColorTexture) !== undefined)
 			notes.push(
-				`${what}'s specular textures, which the engine does not draw beside a clear coat or a sheen`,
+				`${what}'s specular textures, which the engine does not draw beside a clear coat, a sheen, iridescence or anisotropy`,
 			);
-		const layerMaps = layered ? layerTextures(coat ?? {}, sheen ?? {}, what, notes) : {};
+		const layerMaps = layered
+			? layerTextures(coat ?? {}, sheen ?? {}, film ?? {}, anisotropy ?? {}, what, notes)
+			: {};
+		const unlit = extensions.KHR_materials_unlit !== undefined;
+		const alphaMode = String(material.alphaMode ?? 'OPAQUE');
+		if (alphaMode !== 'OPAQUE' && alphaMode !== 'MASK' && alphaMode !== 'BLEND')
+			broken(`${what} has the alpha mode ${alphaMode}`);
+		const transmission = transmissionOf(extensions, what);
+		// The transmission and thickness textures keep row slots of their own beside the specular
+		// textures, each sampling the specular slot's texture array at its own layer. A layered
+		// material's specular textures stay out, since its layer maps fill those slots: its
+		// transmission and thickness textures fit beside the one layer map of the light slot, but
+		// not beside a layer map that fills their slot.
+		const transmissionExtension = extensions.KHR_materials_transmission as Entry | undefined;
+		const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
+		const intensityTaken =
+			layered && (layerMaps.coatNormal ?? layerMaps.iridescenceThickness) !== undefined;
+		const colorTaken =
+			layered &&
+			(layerMaps.sheenColor ?? layerMaps.sheenRoughness ?? layerMaps.anisotropy) !== undefined;
+		// A specular texture is linear, like the transmission texture, so the two share a texture
+		// array when their images have one size and format. A specular color texture is sRGB, so a
+		// thickness texture never shares its array: the two stay apart.
+		const colorTexture = !layered && specular.specularColorTexture !== undefined;
+		const takesTransmissionMap =
+			transmission !== undefined &&
+			transmissionExtension?.transmissionTexture !== undefined &&
+			!intensityTaken;
+		const takesThicknessMap =
+			transmission !== undefined &&
+			volume.thicknessTexture !== undefined &&
+			!colorTaken &&
+			!colorTexture;
+		const intensityOwner =
+			layerMaps.coatNormal !== undefined
+				? "the clear coat's normal texture"
+				: 'the iridescence thickness texture';
+		const colorOwner =
+			layerMaps.sheenColor !== undefined || layerMaps.sheenRoughness !== undefined
+				? "the sheen's texture"
+				: 'the anisotropy texture';
+		if (
+			transmission !== undefined &&
+			transmissionExtension?.transmissionTexture !== undefined &&
+			intensityTaken
+		)
+			notes.push(
+				`${what}'s transmissionTexture, which it leaves out where ${intensityOwner} fills the same slot`,
+			);
+		if (transmission !== undefined && volume.thicknessTexture !== undefined) {
+			if (colorTaken)
+				notes.push(
+					`${what}'s thicknessTexture, which it leaves out where ${colorOwner} fills the same slot`,
+				);
+			else if (colorTexture)
+				notes.push(
+					`${what}'s thicknessTexture, which it leaves out beside a specular color texture, whose sRGB texels never share its texture array`,
+				);
+		}
 		const slots = {
 			map: useTexture(pbr.baseColorTexture, 'srgb', `${what}'s baseColorTexture`),
 			metalnessRoughnessMap: useTexture(
@@ -1221,6 +1563,17 @@ export function parseGltf(
 			specularColorMap: layered
 				? undefined
 				: useTexture(specular.specularColorTexture, 'srgb', `${what}'s specularColorTexture`),
+			// The KHR_materials_transmission and KHR_materials_volume extensions give these two.
+			transmissionMap: takesTransmissionMap
+				? useTexture(
+						transmissionExtension?.transmissionTexture,
+						'linear',
+						`${what}'s transmissionTexture`,
+					)
+				: undefined,
+			thicknessMap: takesThicknessMap
+				? useTexture(volume.thicknessTexture, 'linear', `${what}'s thicknessTexture`)
+				: undefined,
 			clearcoatMap: useTexture(layerMaps.coat, 'linear', `${what}'s clearcoatTexture`),
 			clearcoatRoughnessMap: useTexture(
 				layerMaps.coatRoughness,
@@ -1240,6 +1593,13 @@ export function parseGltf(
 				'srgb',
 				`${what}'s sheenRoughnessTexture`,
 			),
+			iridescenceMap: useTexture(layerMaps.iridescence, 'linear', `${what}'s iridescenceTexture`),
+			iridescenceThicknessMap: useTexture(
+				layerMaps.iridescenceThickness,
+				'linear',
+				`${what}'s iridescenceThicknessTexture`,
+			),
+			anisotropyMap: useTexture(layerMaps.anisotropy, 'linear', `${what}'s anisotropyTexture`),
 			diffuseTransmissionMap: layered
 				? undefined
 				: useTexture(
@@ -1256,18 +1616,14 @@ export function parseGltf(
 					),
 		};
 		const maps: MaterialData['maps'] = {};
-		let transform: Entry | undefined;
+		const uvTransforms: MapUvTransformsData = {};
 		for (const key of Object.keys(slots) as (keyof typeof slots)[]) {
 			const slot = slots[key];
 			if (!slot) continue;
 			maps[key] = slot.use;
-			transform ??= slot.transform;
+			// A file places each map with its own transform, as three.js gives each texture its own.
+			if (slot.transform) uvTransforms[key] = textureTransform(slot.transform, what);
 		}
-		const unlit = extensions.KHR_materials_unlit !== undefined;
-		const alphaMode = String(material.alphaMode ?? 'OPAQUE');
-		if (alphaMode !== 'OPAQUE' && alphaMode !== 'MASK' && alphaMode !== 'BLEND')
-			broken(`${what} has the alpha mode ${alphaMode}`);
-		const transmission = transmissionOf(extensions, what, alphaMode === 'MASK', notes);
 		const diffuseTransmission = diffuseTransmissionOf(
 			extensions,
 			what,
@@ -1285,6 +1641,8 @@ export function parseGltf(
 			}
 		for (const key of ['diffuseTransmissionMap', 'diffuseTransmissionColorMap'] as const)
 			if (!translucent) delete maps[key];
+		for (const key of Object.keys(uvTransforms) as (keyof typeof uvTransforms)[])
+			if (maps[key] === undefined) delete uvTransforms[key];
 		const data: MaterialData = {
 			name: text(material.name),
 			unlit,
@@ -1312,26 +1670,19 @@ export function parseGltf(
 				specularColor[1] as number,
 				specularColor[2] as number,
 			],
+			dispersion: dispersionOf(extensions.KHR_materials_dispersion as Entry | undefined, what),
 			maps,
 		};
 		if (transmission) data.transmission = transmission;
 		if (diffuseTransmission) data.diffuseTransmission = diffuseTransmission;
 		const scatter = scatterOf(extensions, what, notes);
 		if (scatter) data.scatter = scatter;
-		if (layered) data.layers = layersOf(coat ?? {}, sheen ?? {}, what);
-		if (transform) {
-			const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);
-			const scale = numbers(transform.scale, 2, [1, 1], `${what}'s texture transform scale`);
-			data.uvTransform = {
-				offset: [offset[0] as number, offset[1] as number],
-				repeat: [scale[0] as number, scale[1] as number],
-				rotation: finite(transform.rotation ?? 0, `${what}'s texture transform rotation`),
-			};
-		}
+		if (layered) data.layers = layersOf(coat, sheen, film, anisotropy, what);
+		if (Object.keys(uvTransforms).length > 0) data.uvTransforms = uvTransforms;
 		return data;
 	});
 	for (const mesh of meshes)
-		for (const primitive of mesh.primitives)
+		for (const primitive of [...mesh.primitives, ...(mesh.extensionPrimitives ?? [])])
 			if (primitive.material >= materials.length)
 				broken(
 					`a primitive of mesh "${mesh.name}" names material ${primitive.material}, and the file has ${materials.length}`,
@@ -1358,6 +1709,8 @@ export function parseGltf(
 			: undefined;
 		return { bytes: bytes.slice(), mimeType, source };
 	});
+	// The Needle light maps add texture uses of their own, which the checks cover too.
+	const lightMaps = parseNeedleLightMaps(json, useTexture);
 	checkImages(images, textureUses);
 
 	const lightDefs = list(json.extensions?.KHR_lights_punctual?.lights, 'lights');
@@ -1386,8 +1739,27 @@ export function parseGltf(
 	});
 
 	const { nodes, place } = parseNodes(json, meshes, lights.length, read, budget);
-	const animation = parseAnimation(json, nodes, meshes, place, read, budget, notes);
-	const data: GltfData = { nodes, meshes, materials, textures: textureUses, images, lights, notes };
+	const animation = parseAnimation(
+		json,
+		nodes,
+		meshes,
+		place,
+		{ materials: materials.length, lights: lights.length },
+		read,
+		budget,
+		notes,
+	);
+	const data: GltfData = {
+		nodes,
+		meshes,
+		materials,
+		textures: textureUses,
+		images,
+		lights,
+		notes,
+		lightMaps,
+	};
+	if (unread) data.unread = unread;
 	if (animation) data.animation = animation;
 	if (draco) data.draco = true;
 	const shaders = parseShaders(json);
@@ -1510,7 +1882,7 @@ const ATTRIBUTES: readonly [
 	name: string,
 	field: Exclude<
 		keyof PrimitiveData,
-		'indices' | 'material' | 'min' | 'max' | 'rest' | 'bvh' | 'occluder'
+		'accessors' | 'indices' | 'material' | 'min' | 'max' | 'rest' | 'bvh' | 'occluder' | 'patches'
 	>,
 	components: readonly number[],
 	types: Readonly<Record<number, boolean | undefined>>,
@@ -1567,6 +1939,62 @@ type DracoReader = (
 	what: string,
 ) => { read: Reader; indices: Uint16Array | Uint32Array } | undefined;
 
+/**
+ * A primitive's data for an add-on's extension handler, when it carries one of the extensions that
+ * a handler reads: every attribute as floats, whatever its name, its indices, and each claimed
+ * extension's JSON. Undefined for a primitive that no handler claims.
+ */
+function parseExtensionPrimitive(
+	primitive: Entry,
+	what: string,
+	read: Reader,
+	budget: FileBudget,
+	handled: readonly string[],
+): ExtensionPrimitiveData | undefined {
+	const extensions = primitive.extensions as Entry | undefined;
+	if (!extensions) return undefined;
+	const held: ExtensionPrimitiveData['extensions'] = [];
+	for (const name of handled) {
+		const json = extensions[name];
+		if (json === undefined) continue;
+		held.push({ name, json: entry(json, `${what}'s ${name}`) });
+	}
+	if (held.length === 0) return undefined;
+	const attributes = (primitive.attributes ?? {}) as Entry;
+	const out: Record<string, Float32Array> = {};
+	let elements = -1;
+	for (const name of Object.keys(attributes)) {
+		const data = read(Number(attributes[name]), `${what}'s ${name}`);
+		if (elements < 0) elements = data.count;
+		else if (data.count !== elements)
+			broken(`${what}'s ${name} has ${data.count} values, and another attribute has ${elements}`);
+		out[name] = toFloats(data.array, data.normalized, budget, `${what}'s ${name}`);
+	}
+	let indices: Uint16Array | Uint32Array | undefined;
+	if (primitive.indices !== undefined) {
+		const data = read(Number(primitive.indices), `${what}'s indices`);
+		if (
+			data.components !== 1 ||
+			!(
+				data.array instanceof Uint8Array ||
+				data.array instanceof Uint16Array ||
+				data.array instanceof Uint32Array
+			)
+		)
+			broken(`${what}'s indices are not unsigned integers`);
+		indices = data.array instanceof Uint8Array ? Uint16Array.from(data.array) : data.array;
+	}
+	return {
+		extensions: held,
+		attributes: out,
+		count: Math.max(elements, 0),
+		...(indices && { indices }),
+		mode: Number(primitive.mode ?? TRIANGLES),
+		material:
+			primitive.material === undefined ? -1 : count(primitive.material, `${what}'s material`),
+	};
+}
+
 /** One primitive's vertex arrays and triangles, or undefined for points and lines, which it notes. */
 function parsePrimitive(
 	primitive: Entry,
@@ -1588,10 +2016,14 @@ function parsePrimitive(
 	const attributes = entry(primitive.attributes, `${what}'s attributes`);
 	if (attributes.POSITION === undefined) broken(`${what} has no POSITION attribute`);
 	const out: Partial<PrimitiveData> = {};
+	/** The accessor behind each attribute: a level names its base mesh's, which shares its vertices. */
+	const accessors: Record<string, number> = {};
 	let vertices = -1;
 	for (const [name, field, components, types] of ATTRIBUTES) {
 		if (attributes[name] === undefined) continue;
-		const data = read(Number(attributes[name]), `${what}'s ${name}`);
+		const at = Number(attributes[name]);
+		accessors[name] = at;
+		const data = read(at, `${what}'s ${name}`);
 		const normalized = types[data.componentType];
 		if (
 			!(data.componentType in types) ||
@@ -1644,7 +2076,13 @@ function parsePrimitive(
 	if (morph) out.morph = morph;
 	const material =
 		primitive.material === undefined ? -1 : count(primitive.material, `${what}'s material`);
-	const data: PrimitiveData = { ...(out as PrimitiveData), indices, material };
+	const data: PrimitiveData = {
+		...(out as PrimitiveData),
+		indices,
+		material,
+		// Draco names its attributes by its own ids, which no other primitive shares.
+		...(draco ? {} : { accessors }),
+	};
 	const extensions = primitive.extensions as Entry | undefined;
 	if (extensions?.[MESH_BVH] !== undefined)
 		data.bvh = storedTree(entry(extensions[MESH_BVH], `${what}'s ${MESH_BVH}`), what, read);
@@ -1653,6 +2091,14 @@ function parsePrimitive(
 			entry(extensions[OCCLUDER], `${what}'s ${OCCLUDER}`),
 			what,
 			read,
+			budget,
+		);
+	if (extensions?.[CLUSTERS] !== undefined)
+		data.patches = patchesOf(
+			entry(extensions[CLUSTERS], `${what}'s ${CLUSTERS}`),
+			what,
+			read,
+			vertices,
 			budget,
 		);
 	return data;
@@ -1665,6 +2111,53 @@ function storedTree(extension: Entry, what: string, read: Reader): Uint8Array {
 		broken(`${what}'s stored tree is not an accessor of unsigned 32-bit integers`);
 	const { buffer, byteOffset, byteLength } = data.array;
 	return new Uint8Array(buffer, byteOffset, byteLength);
+}
+
+/**
+ * A primitive's tree of cluster patches: its indices, the patches' spheres and their records.
+ * The tree is refused when it does not cover the primitive's vertices or its own patches, so a
+ * broken file draws the whole mesh instead of patches that name nothing.
+ */
+function patchesOf(
+	extension: Entry,
+	what: string,
+	read: Reader,
+	vertices: number,
+	budget: FileBudget,
+): PatchesData {
+	const indices = read(Number(extension.indices), `${what}'s patch indices`);
+	const bounds = read(Number(extension.bounds), `${what}'s patch bounds`);
+	const words = read(Number(extension.patches), `${what}'s patches`);
+	if (indices.componentType !== UNSIGNED_INT || indices.components !== 1)
+		broken(`${what}'s patch indices are not an accessor of unsigned 32-bit integers`);
+	if (bounds.componentType !== FLOAT || bounds.components !== 4)
+		broken(`${what}'s patch bounds are not four floats per patch`);
+	if (words.componentType !== UNSIGNED_INT || words.components !== 4)
+		broken(`${what}'s patches are not four unsigned integers per patch`);
+	if (bounds.count !== words.count)
+		broken(`${what} has ${words.count} patches and ${bounds.count} patch bounds`);
+	const root = count(Number(extension.root), `${what}'s patch root`);
+	if (words.count === 0 || root >= words.count)
+		broken(`${what}'s patch tree has no root among its patches`);
+	budget.take(indices.count * 4 + words.count * 32, `${what}'s patches`);
+	const patch = words.array as Uint32Array;
+	for (let k = 0; k < words.count; k++) {
+		const first = patch[k * 4] as number;
+		const size = patch[k * 4 + 1] as number;
+		const parent = patch[k * 4 + 2] as number;
+		if (size === 0 || size % 3 !== 0 || first + size > indices.count)
+			broken(`${what}'s patch ${k} names no whole triangles of its tree`);
+		if (parent > words.count || parent === k + 1)
+			broken(`${what}'s patch ${k} names the patch ${parent} as its parent`);
+	}
+	for (const i of indices.array)
+		if (i >= vertices) broken(`${what} has the patch index ${i}, past its ${vertices} vertices`);
+	return {
+		indices: indices.array as Uint32Array,
+		bounds: bounds.array as Float32Array,
+		words: patch,
+		root,
+	};
 }
 
 /** A primitive's blocker, or true when the primitive blocks with its own mesh. */
@@ -1721,6 +2214,76 @@ function toTriangles(
 		out[o + 2] = fan || even ? at(i + 2) : at(i);
 	}
 	return out;
+}
+
+/**
+ * The light maps that `NEEDLE_lightmaps` registers, by the index that a node's `MeshRenderer`
+ * names: each entry of the light map kind points at a texture of the file, which the engine reads
+ * in linear color, as Needle's viewer does before it decodes the RGBM texels. Entries of the
+ * other kinds, the skybox's and a reflection's, pointers to a file rather than to a texture, and
+ * indices that are not whole numbers are left out.
+ *
+ * @internal
+ */
+export function parseNeedleLightMaps(
+	json: Json,
+	useTexture: (
+		info: unknown,
+		colorSpace: 'srgb' | 'linear',
+		what: string,
+	) => { use: number } | undefined,
+): number[] {
+	const extension = json.extensions?.NEEDLE_lightmaps as Entry | undefined;
+	const entries = extension?.textures;
+	if (!Array.isArray(entries)) return [];
+	const maps: number[] = [];
+	for (const [k, value] of entries.entries()) {
+		const lightMap = value as Entry;
+		if (typeof lightMap !== 'object' || lightMap === null) continue;
+		// 0 is a light map; 1 is a skybox and 2 a reflection map, which a material does not take.
+		if ((lightMap.type ?? 0) !== 0) continue;
+		const index = lightMap.index;
+		if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) continue;
+		const pointer = lightMap.pointer;
+		const match = typeof pointer === 'string' ? /^\/?textures\/(\d+)$/.exec(pointer) : null;
+		if (!match) continue;
+		// The map reads the second texture coordinates, and keeps the file's bytes as they are:
+		// the shader decodes the RGBM texels itself.
+		const made = useTexture(
+			{ index: Number(match[1]), texCoord: 1 },
+			'linear',
+			`NEEDLE_lightmaps entry ${k}`,
+		);
+		if (made) maps[index] = made.use;
+	}
+	return Array.from({ length: maps.length }, (_, k) => maps[k] ?? -1);
+}
+
+/**
+ * The light map that a node's Needle `MeshRenderer` names, from `NEEDLE_components`: its index
+ * among the file's light maps, and the scale and offset of its coordinates. A renderer without a
+ * light map, whose index is negative, gives none.
+ *
+ * @internal
+ */
+export function needleLightMap(extensions: Entry): NodeData['lightMap'] {
+	const components = (extensions.NEEDLE_components as Entry | undefined)?.builtin_components;
+	if (!Array.isArray(components)) return undefined;
+	for (const value of components) {
+		const component = value as Entry;
+		if (component?.name !== 'MeshRenderer') continue;
+		const index = component.lightmapIndex;
+		if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return undefined;
+		const held = (component.lightmapScaleOffset ?? {}) as Entry;
+		const number = (value: unknown, fallback: number) =>
+			typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+		return {
+			index,
+			scale: [number(held.x, 1), number(held.y, 1)],
+			offset: [number(held.z, 0), number(held.w, 0)],
+		};
+	}
+	return undefined;
 }
 
 /**
@@ -1804,6 +2367,8 @@ function parseNodes(
 			light: lightRef === undefined ? -1 : index(lightRef, lights, `${what}'s light`),
 			skin: node.skin === undefined ? -1 : index(node.skin, skins, `${what}'s skin`),
 		};
+		const visibility = (extensions.KHR_node_visibility as Entry | undefined)?.visible;
+		if (visibility === false) data.visible = false;
 		const instancing = extensions.EXT_mesh_gpu_instancing as Entry | undefined;
 		if (instancing && data.mesh >= 0)
 			data.instancing = parseInstancing(instancing, what, read, budget);
@@ -1813,6 +2378,11 @@ function parseNodes(
 		}
 		const lod = extensions.MSFT_lod as Entry | undefined;
 		if (lod && data.mesh >= 0) data.levels = parseLevels(lod, node, defs, meshes.length, what);
+		if (data.mesh >= 0) {
+			data.stages = parseStages((node.extras as Entry | undefined)?.NULL3D_stages);
+			const lightMap = needleLightMap(extensions);
+			if (lightMap) data.lightMap = lightMap;
+		}
 		return data;
 	});
 	return { nodes, place };
@@ -1821,8 +2391,8 @@ function parseNodes(
 /**
  * A node's levels of detail from its `MSFT_lod` extension: the meshes of the level nodes it names,
  * which need not be in the scene, and their errors or screen coverage from the node's extras. A
- * level node without a mesh ends the list there. Errors or coverage of the wrong length are left
- * out, and the loader then gives the mesh no levels.
+ * level node without a mesh ends the list there. An error or a coverage list of the wrong length is
+ * left out, and a node that then gives neither gives the mesh no levels.
  */
 function parseLevels(
 	lod: Entry,
@@ -1844,8 +2414,75 @@ function parseLevels(
 			? (value.slice(0, length) as number[])
 			: undefined;
 	const errors = read(extras.NULL3D_lod_error, meshes.length);
-	const coverage = errors ? undefined : read(extras.MSFT_screencoverage, meshes.length);
+	const coverage = read(extras.MSFT_screencoverage, meshes.length);
 	return { meshes, errors, coverage };
+}
+
+/** The longest stage address that a file may name, in characters: enough for any URL a server gives. */
+const MAX_STAGE_URL = 2048;
+
+/**
+ * A node's staged levels and cluster bands from its extras' `NULL3D_stages`: the error of the
+ * level that the file holds, then each stage's address, its length in bytes and the error of the
+ * level it holds, then each band's primitive, address and length. A stage without an address, a
+ * whole length or a real error is left out, and the stages after it go with it, since each one
+ * replaces the triangles that the stage before left. A band without an address, a whole length or
+ * a primitive is left out alone, and the bands after it of that primitive go with it, since each
+ * one appends below the band before it.
+ */
+function parseStages(value: unknown): NodeStages | undefined {
+	if (value === null || typeof value !== 'object') return undefined;
+	const { error: given, levels: listed, bands: banded } = value as Entry;
+	const error =
+		typeof given === 'number' && given > 0 && Number.isFinite(given) ? given : undefined;
+	const levels: NodeStages['levels'] = [];
+	if (error !== undefined && Array.isArray(listed))
+		for (const entry of listed) {
+			const { url, bytes, error: levelError } = (entry ?? {}) as Entry;
+			if (
+				typeof url !== 'string' ||
+				url.length === 0 ||
+				url.length > MAX_STAGE_URL ||
+				!Number.isInteger(bytes) ||
+				(bytes as number) <= 0 ||
+				typeof levelError !== 'number' ||
+				!(levelError >= 0) ||
+				!Number.isFinite(levelError)
+			)
+				break;
+			levels.push({ url, bytes: bytes as number, error: levelError });
+		}
+	const bands: NodeStages['bands'] = [];
+	/** Each primitive whose band list a bad entry cut off, whose later entries are left out. */
+	const broken = new Set<number>();
+	if (Array.isArray(banded))
+		for (const entry of banded) {
+			const { primitive, url, bytes } = (entry ?? {}) as Entry;
+			if (
+				typeof primitive !== 'number' ||
+				!Number.isInteger(primitive) ||
+				primitive < 0 ||
+				broken.has(primitive)
+			)
+				continue;
+			if (
+				typeof url !== 'string' ||
+				url.length === 0 ||
+				url.length > MAX_STAGE_URL ||
+				!Number.isInteger(bytes) ||
+				(bytes as number) <= 0
+			) {
+				broken.add(primitive);
+				continue;
+			}
+			bands.push({ primitive, url, bytes: bytes as number });
+		}
+	if (levels.length === 0 && bands.length === 0) return undefined;
+	return {
+		...(error !== undefined && { error }),
+		levels,
+		...(bands.length > 0 && { bands }),
+	};
 }
 
 /** A node's position, rotation and scale, from its matrix or its own values. */

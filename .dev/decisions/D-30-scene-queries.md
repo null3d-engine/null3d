@@ -1,8 +1,8 @@
 # D-30: Raycasts and overlap queries over the scene
 
-Status: decided, 2026-10-03; input checks in every build added on 2026-10-04. Date: 2026-10-03. Task: M2-D2.
+Status: decided and built, with input checks in every build. Not built yet: the capsule test for skinned characters, so queries test a skinned character in its bind pose. Task: M2-D2.
 
-Summary: Queries write into the caller's hit objects and arrays and allocate nothing. Overlap queries test triangles. Each item's box comes from its mesh, instance rows join the trees, and mesh trees build on the first query. Raycasts give three.js's Raycaster hits, with its layer default and face rules. Every build refuses query input that is not finite in 32 bits, at no cost the Mac could measure.
+Summary: Queries write into the caller's hit objects and arrays, allocate nothing, and give three.js's `Raycaster` hits with its layer default and face rules. Overlap queries test triangles, each item's box comes from its mesh, and mesh trees build on the first query. Every build refuses query input that is not finite in 32 bits, at no cost the Mac could measure.
 
 ## Question
 
@@ -33,11 +33,11 @@ The browser test in `tests/image/raycast.spec.ts` builds the same scene in null3
 
 ### Allocation
 
-The test in `crates/null3d-core/tests/bvh_no_alloc.rs` counts allocator calls on the test thread and four job workers over 57 frames. Each frame moves 5,000 dynamic objects and 3,000 dynamic rows, and syncs the trees. Then it runs 100 rays of each raycast, 200 overlap queries and a batch of 500 rays. The count is 0, and 0 again with no job workers. The first version counted one allocation in frame 36. A ray crossed more objects than any ray before it, so the list of every hit grew once. Lists grow and never shrink, so a sketch reaches its steady state after its largest query. The call `SceneQueries::reserve` gives a test, or the engine, room up front.
+The test in `crates/null3d-core/tests/bvh_no_alloc.rs` counts allocator calls on the test thread and four job workers over 57 frames. Each frame moves 5,000 dynamic objects and 3,000 dynamic rows, and syncs the trees. Then it runs 100 rays of each raycast, 200 overlap queries and a batch of 500 rays. The count is 0, and 0 again with no job workers. Lists grow and never shrink, so a sketch reaches its steady state after its largest query. Until then, a ray that crosses more objects than any ray before it grows the list of every hit once. The call `SceneQueries::reserve` gives a test, or the engine, room up front.
 
 ### Costs
 
-`bench_scene_queries` in `crates/null3d-core/tests/bench.rs` builds 20,000 static objects, 2,000 dynamic ones and a static batch of 10,000 rows in a square of 1 km. Half the objects are boxes of 12 triangles, and half are spheres of 960. Its 10,000 rays run from 30 m up toward random points on the ground, and 9,896 of them hit something. Two runs on the MacBook Pro, on 3 October 2026, at load averages of 55 to 79 while other helpers built:
+`bench_scene_queries` in `crates/null3d-core/tests/bench.rs` builds 20,000 static objects, 2,000 dynamic ones and a static batch of 10,000 rows in a square of 1 km. Half the objects are boxes of 12 triangles, and half are spheres of 960. Its 10,000 rays run from 30 m up toward random points on the ground, and 9,896 of them hit something. Two runs on the MacBook Pro, at load averages of 55 to 79 while other helpers built:
 
 | Measure | First run | Second run |
 | --- | --- | --- |
@@ -58,13 +58,27 @@ How the data was produced: `cargo test -p null3d-core --release --test bench -- 
 
 `tests/image/raycast.spec.ts` also runs a loop of every query on the page's own thread, with every call finding something. Chrome's heap profiler finds no allocation in the query calls, the scene, the engine memory's views or the core's glue over 20,000 sampled iterations.
 
+### The cost of the input checks
+
+A quick check on the MacBook Pro, while other helpers built and tested (load averages of 27 to 71). The query loop page's production build ran in Chrome on the Mac's GPU, with the sketch on the page's thread. A timing loop was added for the run only. Each page load timed 100,000 calls of each kind 9 times. Loads of a build without the checks and a build with them took turns, 16 times each.
+
+| 100,000 calls | Without the checks: median, best | With them: median, best |
+| --- | --- | --- |
+| `raycast` | 74.4 ms, 50.9 ms | 84.9 ms, 54.0 ms |
+| `overlapBox` | 119.6 ms, 80.3 ms | 132.8 ms, 87.2 ms |
+| `raycastBatch`, 1,000 rays a call | 66.2 ms, 45.1 ms | 76.1 ms, 48.9 ms |
+
+The ratio of each pair of loads ran from 0.86 to 1.19, with a median of 1.05. All three kinds moved together in each pair. A third build had the checks in TypeScript but a core without the guards. It was no slower than the build without checks: its best `raycast` took 57.1 ms against 65.3 ms in the same 6 rounds. The core's own benchmark ran 6 times each in turns, as `bench_scene_queries` in a native release build. Its median `raycast` took 1.92 µs without the guards and 1.82 µs with them, and `overlapBox` 23.4 µs and 23.8 µs. So the guards cost no time that this Mac could measure, at most a few hundredths of a microsecond per call. A sketch that casts 1,000 rays in a frame would spend under 0.05 ms more.
+
+How the data was produced: `bun run build` at a commit without the checks and at one with them, then `NULL3D_BUILD_PAGE=query-loop bunx vite build`. `vite preview` served each build's pages. A Playwright script timed `scene.raycast`, `scene.overlapBox` and `scene.raycastBatch` through a hook in the query loop sketch. The native runs used `cargo test -p null3d-core --release --test bench -- --ignored --nocapture --test-threads=1 bench_scene_queries` at both commits.
+
 ## Decision
 
 ### Results go into the caller's objects
 
 The call `scene.raycast(origin, direction, options, hit)` writes the closest hit into `hit` and returns true or false. The calls `raycastAll`, `overlapSphere` and `overlapBox` fill the caller's array and return a count. They add hit objects only when the array is too short. The call `raycastBatch` fills typed arrays that the caller passes. In three.js, `intersectObjects` returns a new array of new objects for every ray. A sketch that casts in every frame would pay for them in every frame.
 
-The core writes hit records of 11 numbers into one array of 64-bit floats, which TypeScript reads through a view. A query passes no fraction as an argument: TypeScript writes the ray into an input array first. Chrome's headless build boxes fraction arguments of calls that it does not inline, and the core's calls are never inlined. The hit array moves when it grows, so TypeScript reads its address again only when a query returns more hits than the view holds.
+The core writes hit records of 14 numbers into one array of 64-bit floats, which TypeScript reads through a view. A query passes no fraction as an argument: TypeScript writes the ray into an input array first. Chrome's headless build boxes fraction arguments of calls that it does not inline, and the core's calls are never inlined. The hit array moves when it grows, so TypeScript reads its address again only when a query returns more hits than the view holds.
 
 A hit names its object by slot and its batch by id. TypeScript keeps the wrapper of each slot and batch slot, and checks a batch's full id. A slot cannot hold a new object before the frame that applies the old one's destroy. So a slot's wrapper is always the object that the core found.
 
@@ -77,13 +91,13 @@ The layer mask defaults to layer 0 alone, as `Raycaster.layers` does. A material
 
 ### Overlap queries test triangles
 
-An overlap query finds the objects with a triangle within a sphere, or inside or crossing an axis-aligned box. Testing bounding spheres would be cheaper, but a long wall's sphere reaches far past the wall, so an explosion would hit walls metres away. The trees already reach the few triangles near the volume: the query moves the volume's box into each object's space and walks the mesh tree. The sphere test takes the closest point of each triangle. The box test is Akenine-Möller's separating axis test of 2001. Both run in 64-bit floats in the cell's frame, and treat a triangle with no area as its edges.
+An overlap query finds the objects with a triangle within a sphere, or inside or crossing an axis-aligned box. Testing bounding spheres would be cheaper, but a long wall's sphere reaches far past the wall, so an explosion would hit walls meters away. The trees already reach the few triangles near the volume: the query moves the volume's box into each object's space and walks the mesh tree. The sphere test takes the closest point of each triangle. The box test is Akenine-Möller's separating axis test of 2001. Both run in 64-bit floats in the cell's frame, and treat a triangle with no area as its edges.
 
 A volume entirely inside a closed mesh touches none of its triangles, so it does not find the mesh. Physics engines' mesh colliders behave the same way.
 
 ### Boxes come from the mesh
 
-D-27's sync gave each object the box around its world bounding sphere. The trees now take the mesh's own box, moved by the object's world matrix. The sphere is the wrong box for two reasons. A sketch can give an object smaller bounds of its own (`setBounds`), and triangles outside them would then never be hit. And an unculled object has a sphere of radius 10^30, which every ray would visit. The mesh's box is also tighter for long objects. Moving a box costs a matrix product per object, inside the dynamic tree's budget of 0.1 µs per object.
+The trees take the mesh's own box, moved by the object's world matrix, not the box around the object's world bounding sphere. The sphere is the wrong box for two reasons. A sketch can give an object smaller bounds of its own (`setBounds`), and triangles outside them would then never be hit. And an unculled object has a sphere of radius 10^30, which every ray would visit. The mesh's box is also tighter for long objects. Moving a box costs a matrix product per object, inside the dynamic tree's budget of 0.1 µs per object.
 
 The moved box grows by 2^-20 of its size and position and by 0.24 mm, four float steps at half a cell. A hit found in the mesh's space then lies in the box, so the trees find every hit that brute force finds.
 
@@ -93,80 +107,42 @@ Each active row of a batch, as its last update wrote it, is one item. Rows of st
 
 ### Mesh trees build on the first query
 
-The renderer keeps every mesh's vertices and indices in its pages, which it needs again after a GPU loss. Queries read triangles from those pages, so a mesh costs no second copy, only its tree of about 20 bytes per triangle. The first sync after new meshes builds their trees on the job workers, one mesh per job. A sketch that never queries never builds them. Loaded models will bring stored trees, as D-27 says.
+The renderer keeps every mesh's vertices and indices in its pages, which it needs again after a GPU loss. Queries read triangles from those pages, so a mesh costs no second copy, only its tree of about 20 bytes per triangle. The first sync after new meshes builds their trees on the job workers, one mesh per job. A sketch that never queries never builds them. Loaded models bring stored trees for large meshes, as D-27 says.
 
 ### Positions of the last update
 
 A query sees the world output of the last transform update. That is the last frame's output in `onUpdate`, and this frame's in `onLateUpdate`. Batch rows update after `onLateUpdate`, so they are a frame older there. The scene counts its transform updates (`SceneStorage::world_version`). So a query after a late update syncs again, and looks at every object stamped in the frame. The call getWorldPosition reads the same output. three.js's raycaster reads `matrixWorld`, which also changes only when the scene updates.
 
+A sketch can raycast in `onLateUpdate` and then move a static object, such as a door. The next frame copies the door's row without a new stamp. A sync that looked only at stamps newer than its last one would never see the move. The static tree would then keep the door where it stood. The sync therefore always looks again at the stamps of the last sync's frame. Only a box or a cell that changed refits the tree. A static object that moved once costs one box comparison more, in one later sync.
+
 ### Batches of rays
 
 The call `raycastBatch` splits the rays into chunks of 64 across the job workers. Each chunk writes its own rays' results, and the results are the same as one `raycast` per ray. TypeScript copies the rays into the core's ray array, and copies the results out into the caller's arrays. A copy of 10,000 rays costs microseconds, against milliseconds for the rays themselves.
 
-## Consequences
-
-- `crates/null3d-core/src/bvh/query.rs` holds `SceneQueries`. `SceneBvh::sync` takes the batch table and each mesh's box, and `SceneBvh::source` names an item's object or row. `SceneStorage` gained `world_version`, and `InstanceBatch` gained `version`.
-- `crates/null3d-render/src/queries.rs` gives the queries each mesh's triangles and each material's faces. `MeshStorage::triangles` reads a mesh's triangles through its parts.
-- The WebAssembly entry point adds `queryArrays`, `reserveRays`, `raycast`, `raycastBatch` and `overlap`, and the generated constants add `QUERY_*`.
-- `packages/engine/src/scene/queries.ts` holds the calls behind `scene.raycast`, `raycastAny`, `raycastAll`, `raycastBatch`, `overlapSphere` and `overlapBox`, and the types `RaycastHit`, `OverlapHit`, `RaycastOptions`, `QueryOptions` and `RaycastBatchHits`.
-- `docs/api/raycast` is experimental. Pointer events on objects (M2-D4), `camera.screenToRay` (M2-D3) and GPU picking (M2-D6) are not built yet. Skinned characters get their capsules with the skinning tasks.
-
-## Addendum, 2026-10-04: input checks in every build, and late moves
-
-The code review of 4 October 2026 found three ways for a query to go wrong in a production build. This addendum records the fixes and what they cost.
-
-### Input that aborted the engine
-
-The checks of query input ran in development builds only. A production build passed a ray with a direction of length 0, or with NaN in it, straight to the core. The core divided by the length, and the direction became NaN on every axis. A NaN ray passes every four-box test, the boxes of empty children too. So does a ray whose origin rounds to infinity in 32 bits, such as 1e39, and a box that reaches infinity. The walk then took the empty child word, `u32::MAX`, as a node index. The index panicked, and the panic aborted the WebAssembly module and the engine with it. A direction such as `[1e-200, 0, 0]` did the same, because its squared length rounds to 0 in 64 bits. A `rays` array whose length was not a multiple of 6 could write past the core's ray array. A radius past the range of 32-bit floats made the sphere's box NaN, so the query found nothing.
-
-Three changes close these paths:
+### Input checks in every build
 
 - Every query checks its input in every build. A number that is not finite throws E1203. A direction of length 0, a point or radius past ±3.4 × 10^38, and a `rays` array of the wrong length throw E1108. The other checks, of `maxDistance`, layers, box corners and output lengths, run in every build too.
 - The tree walks never follow an empty child, whatever its box test gives. A query that bypasses the checks is still safe, and so is a stored tree whose empty slots hold damaged boxes.
-- The core makes each ray's unit direction with `WorldRay::toward`, which scales a direction too small or too large to square in 64 bits. It returns no ray for a direction of length 0 or a part that is not finite, and such a ray hits nothing. A direction of the usual sizes gives the same bits as before, so the hits of the parity test stay those of three.js.
+- The core makes each ray's unit direction with `WorldRay::toward`, which scales a direction too small or too large to square in 64 bits. It returns no ray for a direction of length 0 or a part that is not finite, and such a ray hits nothing. A direction of the usual sizes gives the same bits as a plain division by its length. So the hits of the parity test stay those of three.js.
 
-The rule "A query fails only with an error code that says how to fix the call" now holds in production builds as well.
-
-### Late moves
-
-A sketch could raycast in `onLateUpdate` and then move a static object, such as a door. The static tree then kept the door at its old place. The sync after a late update looked again at the objects stamped in that frame. The next frame copies the door's row without a new stamp. So the next sync, which looked only at newer stamps, never saw the move. The sync now always looks again at the stamps of the last sync's frame. Only a box or a cell that changed refits the tree. A static object that moved once costs one box comparison more, in one later sync.
+Without these, bad input aborts the engine in a production build. The core divides a direction by its length, so a direction of length 0, or with NaN in it, becomes NaN on every axis. A NaN ray passes every four-box test, the boxes of empty children too. So does a ray whose origin rounds to infinity in 32 bits, such as 1e39, and a box that reaches infinity. A walk would then take the empty child word, `u32::MAX`, as a node index. The index panics, and the panic aborts the WebAssembly module and the engine with it. A direction such as `[1e-200, 0, 0]` does the same, because its squared length rounds to 0 in 64 bits. A `rays` array whose length is not a multiple of 6 could write past the core's ray array. A radius past the range of 32-bit floats makes the sphere's box NaN, so the query finds nothing. With the checks, the rule on error codes holds in production builds as well. [The cost of the input checks](#the-cost-of-the-input-checks) gives their cost.
 
 ### Skinned characters
 
-Queries test a skinned character's mesh in its bind pose, moved by its object's matrix. three.js's `Raycaster` tests the posed vertices of a `SkinnedMesh`. The capsules per bone of the decision above stay planned, and `api/raycast` and the three.js mapping state the difference until they land.
+Queries test a skinned character's mesh in its bind pose, moved by its object's matrix. three.js's `Raycaster` tests the posed vertices of a `SkinnedMesh`. The capsules per bone of [D-27](D-27-bvh.md#skinned-characters) are not built yet, and `api/raycast` and the three.js mapping state the difference. GPU picking draws each character as it is posed.
 
-### Cost
+### Picking
 
-A quick check on the MacBook Pro, on 4 October 2026, while other helpers built and tested (load averages of 27 to 71). The query loop page's production build ran in Chrome on the Mac's GPU, with the sketch on the page's thread. A timing loop was added for the run only. Each page load timed 100,000 calls of each kind 9 times. Loads of the build before the fixes and after them took turns, 16 times each.
+`scene.pick(x, y)` answers which object a pixel shows, as [D-166](D-166-gpu-picking.md) records. The pass draws the camera's opaque objects into an id target after the opaque pass. WebGPU tests the depth for equality. WebGL2 tests for a nearer depth with a small bias. A multisampled id target cannot be copied, so a resolve pass copies the resolved ids into one sample per pixel first.
 
-| 100,000 calls | Before: median, best | After: median, best |
-| --- | --- | --- |
-| `raycast` | 74.4 ms, 50.9 ms | 84.9 ms, 54.0 ms |
-| `overlapBox` | 119.6 ms, 80.3 ms | 132.8 ms, 87.2 ms |
-| `raycastBatch`, 1,000 rays a call | 66.2 ms, 45.1 ms | 76.1 ms, 48.9 ms |
+The picking template draws each object with the camera's view-projection as the shading templates do. Its depth test keeps a pixel only where the two positions agree to the last bit. It therefore moves a vertex with every bit that moves one on that target: `SKIN` on both paths, and `MORPH` on WebGL2. There the vertex shader adds the morph targets' deltas before it skins. WebGPU needs no morph build: its skinning pass moves the vertices already.
 
-The ratio of each pair of loads ran from 0.86 to 1.19, with a median of 1.05. All three kinds moved together in each pair. A third build had the checks in TypeScript but the core from before the fixes. It was no slower than the build before them: its best `raycast` took 57.1 ms against 65.3 ms in the same 6 rounds. The core's own benchmark ran 6 times each in turns, as `bench_scene_queries` in a native release build. Its median `raycast` took 1.92 µs before and 1.82 µs after, and `overlapBox` 23.4 µs and 23.8 µs. So the guards cost no time that this Mac could measure, at most a few hundredths of a microsecond per call. A sketch that casts 1,000 rays in a frame would spend under 0.05 ms more.
+A mesh drawn with a custom material that moves its vertices has no picking build. The material's own WGSL cannot join the picking shader: the manifest allows one custom-material template, and the mesh templates hold it. A scene with a source that has no pick build answers with the ray tests this record describes. The picking shader's own comment says so. A manifest test refuses a picking variant that moves fewer bits than the shading templates of the same target do.
 
-How the data was produced: `bun run build` at the branch's base commit and with the fixes, then `NULL3D_BUILD_PAGE=query-loop bunx vite build`. `vite preview` served each build's pages. A Playwright script timed `scene.raycast`, `scene.overlapBox` and `scene.raycastBatch` through a hook in the query loop sketch. The native runs used `cargo test -p null3d-core --release --test bench -- --ignored --nocapture --test-threads=1 bench_scene_queries` at both commits.
+## Consequences
 
-### Addendum: picking a mesh that a material's own WGSL moves
-
-17 October 2026. The GPU picking template (M2-D6, still to ship) draws each object with the
-camera's view-projection as the shading templates do. Its depth test keeps a pixel only where the two
-positions agree to the last bit. It therefore moves a vertex with every bit that moves one on that
-target: `SKIN` on both paths, and `MORPH` on WebGL2. There the vertex shader adds the morph targets'
-deltas before it skins. WebGPU needs no morph build: its skinning pass moves the vertices already.
-
-A mesh drawn with a custom material that moves its vertices has no picking build. The material's own
-WGSL cannot join the picking shader: the manifest allows one custom-material template, and the mesh
-templates hold it. Picking finds such a mesh on the CPU, through the ray tests this record describes,
-and the picking shader's own comment says so. A manifest test refuses a picking variant that moves
-fewer bits than the shading templates of the same target do.
-
-### Addendum, 18 October 2026: GPU picking shipped
-
-`scene.pick(x, y)` now answers which object a pixel shows, as [D-166](D-166-gpu-picking.md)
-records. The pass draws the camera's opaque objects into an id target after the opaque pass. WebGPU
-tests the depth for equality. WebGL2 tests for a nearer depth with a small bias. A multisampled id
-target cannot be copied, so a resolve pass copies the resolved ids into one sample per pixel first.
-A scene with a source that has no pick build answers with the ray tests this record describes.
+- `crates/null3d-core/src/bvh/query.rs` holds `SceneQueries`. `SceneBvh::sync` takes the batch table and each mesh's box, and `SceneBvh::source` names an item's object or row. `SceneStorage` has `world_version`, and `InstanceBatch` has `version`.
+- `crates/null3d-render/src/queries.rs` gives the queries each mesh's triangles and each material's faces. `MeshStorage::triangles` reads a mesh's triangles through its parts.
+- The WebAssembly entry point adds `queryArrays`, `reserveRays`, `raycast`, `raycastBatch` and `overlap`, and the generated constants add `QUERY_*`.
+- `packages/engine/src/scene/queries.ts` holds the calls behind `scene.raycast`, `raycastAny`, `raycastAll`, `raycastBatch`, `overlapSphere` and `overlapBox`, and the types `RaycastHit`, `OverlapHit`, `RaycastOptions`, `QueryOptions` and `RaycastBatchHits`.
+- `docs/api/raycast` is experimental. Pointer events on objects (M2-D4, [D-39](D-39-pointer-events.md)), `camera.screenToRay` (M2-D3, [D-31](D-31-frame-cameras.md)) and GPU picking (M2-D6, [D-166](D-166-gpu-picking.md)) are built.

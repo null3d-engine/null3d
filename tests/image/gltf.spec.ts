@@ -1,38 +1,13 @@
 // glTF files in a live engine, in every thread mode on both GPU paths: a model loads into a prefab
 // that instantiate, clone and createInstances copy, and files that break the rules fail with their
-// codes and never hang. The glTF loader and its worker download once, with the first glTF file,
-// and a page without glTF files downloads neither. The meshopt and Draco decoders each download
-// once, with the first file that holds their data, and a page without such files does not
-// download them.
-import { expect, type Page, test } from '@playwright/test';
+// codes and never hang. The glTF loader and its worker download once, with the first glTF file.
+// The meshopt and Draco decoders each download once, with the first file that holds their data,
+// and a page without such files does not download them. The engine test page's tests check that a
+// page without glTF files downloads no part of the loader.
+import { expect, test } from '@playwright/test';
 import { ENGINE_MODES, modeProblems } from '../lib/engine-checks.ts';
+import { gltfDownloads, recordRequests } from '../lib/gltf-loader-files.ts';
 import { pageResult } from '../lib/page-result.ts';
-
-/** The files of the glTF loader, by their addresses on the dev server and in a production build. */
-const GLTF_FILES: Record<string, RegExp> = {
-	loader: /\/scene\/gltf\.ts$|\/gltf-[\w-]{8}\.js$/,
-	worker: /\/gltf-worker(\.ts|-[\w-]{8}\.js)$/,
-	meshopt: /\/scene\/gltf-meshopt\.ts$|\/gltf-meshopt-[\w-]{8}\.js$/,
-	draco: /\/scene\/gltf-draco\.ts$|\/gltf-draco-[\w-]{8}\.js$/,
-	dracoWasm: /\/draco_decoder_gltf(-[\w-]{8})?\.wasm$/,
-};
-
-/** Records the address of every request that the page and its workers make. */
-function recordRequests(page: Page): string[] {
-	const urls: string[] = [];
-	page.context().on('request', (request) => urls.push(new URL(request.url()).pathname));
-	return urls;
-}
-
-/** How many of the requests fetched each file of the glTF loader. */
-function gltfDownloads(urls: readonly string[]): Record<string, number> {
-	return Object.fromEntries(
-		Object.entries(GLTF_FILES).map(([file, path]) => [
-			file,
-			urls.filter((url) => path.test(url)).length,
-		]),
-	);
-}
 
 /** What the glTF files page reports. */
 interface GltfResult {
@@ -58,8 +33,12 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 	for (const mode of ENGINE_MODES)
 		test(`glTF files load, copy and fail with their codes, on ${gpu}, ${mode.name}`, async ({
 			page,
-		}) => {
+		}, testInfo) => {
 			const requests = recordRequests(page);
+			const warnings: string[] = [];
+			page.on('console', (message) => {
+				if (message.type() === 'warning') warnings.push(message.text());
+			});
 			await page.goto(`gltf-files.html?gpu=${gpu}&${mode.query}`);
 			const result = await pageResult<GltfResult>(page, 60_000);
 			expect(result.error).toBeUndefined();
@@ -77,6 +56,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			expect(recorded.codes).toEqual({
 				broken: 'E1416',
 				required: 'E1417',
+				used: 'none',
 				missing: 'E1411',
 				loop: 'E1416',
 				huge: 'E1416',
@@ -92,6 +72,14 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				claimsHuge: 'E1416',
 				brokenAvif: 'E1412',
 			});
+			// A development build notes the used extension that nothing reads, and a release build
+			// prints nothing.
+			const unread = warnings.filter((text) => text.includes('KHR_materials_variants'));
+			if (testInfo.project.name === 'production build') expect(unread).toEqual([]);
+			else
+				expect(unread).toEqual([
+					expect.stringContaining('an extension that the engine does not read'),
+				]);
 			// One thread loads every file, so the loader and its worker download once. No file holds
 			// meshopt or Draco data, so no decoder downloads.
 			expect(gltfDownloads(requests)).toEqual({
@@ -191,21 +179,3 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			const draco = warnings.filter((text) => text.includes('bunx @null3d/cli assets optimize'));
 			expect(draco.length).toBe(testInfo.project.name === 'production build' ? 0 : 3);
 		});
-
-// The engine test page, whose start the startup benchmark times, loads no glTF file.
-for (const mode of ENGINE_MODES)
-	test(`a page without glTF files downloads no part of the glTF loader, ${mode.name}`, async ({
-		page,
-	}) => {
-		const requests = recordRequests(page);
-		await page.goto(`engine.html?gpu=webgl2&seconds=1&${mode.query}`);
-		const result = await pageResult<{ error?: string }>(page, 30_000);
-		expect(result.error).toBeUndefined();
-		expect(gltfDownloads(requests)).toEqual({
-			loader: 0,
-			worker: 0,
-			meshopt: 0,
-			draco: 0,
-			dracoWasm: 0,
-		});
-	});

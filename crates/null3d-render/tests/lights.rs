@@ -10,7 +10,7 @@ use common::World;
 use null3d_core::handle::Handle;
 use null3d_core::lights::{LightTable, color, kind, value};
 use null3d_core::scene::{Command, flags};
-use null3d_gpu::drawlist::{Op, format, layout};
+use null3d_gpu::drawlist::{Op, format, layout, sizes};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_view::DebugView;
 use null3d_render::fog::{self, Fog};
@@ -19,9 +19,10 @@ use null3d_render::frame_data::FrameUniform;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::RenderScale;
 use null3d_render::light_tables::FIRST_IMAGE_LAYER;
+use null3d_render::mirror::Mirror;
 use null3d_render::output::{Output, ToneMapping};
 use null3d_render::probes;
-use null3d_render::view::ViewId;
+use null3d_render::view::{View, ViewId, ViewTarget};
 
 /// Adds a light object at `position`, turned `angle` radians about X, in the world's current
 /// frame, and its row in `lights`.
@@ -249,6 +250,55 @@ fn the_clock_the_camera_and_the_target_reach_the_frame() {
     assert_eq!(half.view_proj, u.view_proj);
 }
 
+/// A view that draws into a target of its own turns a custom material's pixel rows by that target's
+/// height, which is the size the target is made at. The camera's target keeps the canvas's height at
+/// every scale, and another view's target is the size its pass draws at.
+#[test]
+fn a_views_own_target_height_reaches_the_frame() {
+    let mut world = World::new();
+    let mirror = Mirror::new([0.0, 0.0, 1.0], [0.0; 3]).unwrap();
+    let view = View::mirror(mirror, None, None).with_target(ViewTarget {
+        whole: true,
+        halvings: 1,
+        ..ViewTarget::default()
+    });
+    let reflection = world
+        .renderer
+        .settings_mut()
+        .add_view(view)
+        .expect("the world has room for a second view");
+    // The mirror reads the camera's place from the scene's world matrices, which the frame's own
+    // update fills.
+    world.scene.begin_frame(world.frame);
+    world.scene.update_transforms(&world.jobs);
+    let parity = world.scene.parity();
+    let height = |view, scale| {
+        world
+            .renderer
+            .settings()
+            .view_frame(view, &world.scene, parity, world.canvas, scale)
+            .expect("the view draws the scene")
+            .uniform
+            .occlusion[1]
+    };
+    // The canvas is 640 by 360. The mirror's target halves the render size once, so it is 320 by
+    // 180 at the whole scale and 160 by 90 at half of it. The camera's target keeps the canvas's
+    // height at both scales.
+    assert_eq!(height(reflection, RenderScale::FULL), 180.0);
+    let half_reflection = height(reflection, RenderScale::from_thousandths(500));
+    assert_eq!(half_reflection, 90.0);
+    // A custom material turns a fragment's row by this height: the last row of the mirror's target
+    // turns to 0.5, where it turned to -89.5 while the height was 0.
+    assert!(
+        half_reflection - 89.5 > 0.0,
+        "a reflection's rows must not turn negative"
+    );
+    assert_eq!(
+        height(ViewId::CAMERA, RenderScale::from_thousandths(500)),
+        360.0
+    );
+}
+
 /// A frame that finds the area lights' tables lists a rectangle light, when no pipeline of the
 /// device has been built yet: such a frame waits for every pipeline its own list creates, so the
 /// renderer's area shading is on for it however early in the frame its light list is made. Hold
@@ -300,6 +350,46 @@ fn a_frame_that_finds_the_area_tables_lists_its_area_light_on_webgl2() {
     a_frame_that_finds_the_area_tables_lists_its_area_light(World::build(CpuCulledRenderer::new(
         CpuCulledConfig::default(),
     )));
+}
+
+/// The light data texture that WebGL2 reads holds each light's record as five texels of four
+/// values: the last vector carries the up axis and the map layer that a spot light's map needs.
+#[test]
+fn the_webgl2_light_texture_holds_five_texels_for_each_light() {
+    let mut world = World::build(CpuCulledRenderer::new(CpuCulledConfig::default()));
+    world.add_spot([0.0, 3.0, -2.0], 8.0);
+    // The first frame lists the light, and the frame after it writes the records: the texture
+    // moves on only once the light grid has listed what the shaders read.
+    world.record(true);
+    let lit = world
+        .lights
+        .first()
+        .copied()
+        .expect("one spot light is visible");
+    world
+        .light_table
+        .as_mut()
+        .unwrap()
+        .set_value(lit.light, value::IMAGE, 6.0)
+        .unwrap();
+    world.frame += 1;
+    world.record(true);
+    let commands = world.commands();
+    let writes = operands(&commands, Op::WriteTexture);
+    let records: Vec<Vec<u32>> = writes
+        .iter()
+        .filter(|o| {
+            o[3] == 0 && o[5] == sizes::LIGHT_RECORD_TEXELS && o[9] == sizes::LIGHT_RECORD_BYTES
+        })
+        .cloned()
+        .collect();
+    assert_eq!(
+        records.len(),
+        1,
+        "one light record of {} texels and {} bytes, among {writes:?}",
+        sizes::LIGHT_RECORD_TEXELS,
+        sizes::LIGHT_RECORD_BYTES
+    );
 }
 
 /// The operands of each command of `op`.

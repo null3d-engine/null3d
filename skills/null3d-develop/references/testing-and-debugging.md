@@ -20,11 +20,15 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 | --- | --- |
 | `bunx vite` | Dev server; the null3D Vite plugin adds the cross-origin isolation headers and compiles WGSL. Editing only WGSL updates the running page without a reload (0.2) |
 | `bunx @null3d/cli shot --out shot.png [--time 2.0] [--size 1280x720] [--gpu webgl2] [--page /other.html]` | Draws one held frame of the page headless and saves it, plus `shot.json` with the frame's time, number and GPU tier and the page's errors and warnings. When no frame is drawn, it says why and exits with 1 |
+| `bunx @null3d/cli shot --script drive.script --out tour.png` | Drives the page through the timed script's states, and draws each `shot` step: `tour-start.png`, `tour-<state>.png`, and a JSON file beside each. Key, pointer and property steps land at their sketch times. A failing step fails the command |
+| `bunx @null3d/cli shot --replay bug.n3dr --out bug.png` | Replays a recording, which a page makes with `?record`, and draws its last frame. The recording holds each frame's step and the input that the sketch read, from the session's first frame, so the frames are the ones the session drew. `--time` and `--script` cannot be given with it |
 | `bunx @null3d/cli test` | Type checks with the project's TypeScript, runs its `lint` script, and draws each image test in `null3d.json` headless on each of its tiers, against its reference. Prints one line per result with the image files, and exits with 1 when one fails |
 | `bunx @null3d/cli test --gpu webgpu,webgl2` | Draws the image tests on these GPU tiers only |
 | `bunx @null3d/cli test --update-references` | Keeps each new or changed image as its reference; check the images before committing them |
 | `bunx @null3d/cli bench [--gpu webgpu,webgl2] [--page /other.html]` | Builds the project for production and measures the page headless: 5 fresh runs of 30 seconds, each after 5 seconds of warm-up. Prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves every run's figures in `bench.json` |
 | `bunx @null3d/cli bench --runs 3 --seconds 10 --warmup 5 --size 390x844` | Measures with fewer or shorter runs, or in another window size in CSS pixels. Compare only runs made with the same options on the same computer |
+| `bunx @null3d/cli check-addon [folder] [--page /demo.html] [--skip-browser]` | Runs the engine's gates on one add-on package: its public imports, its plugin interface range, a build of its shaders for both GPU paths, the size of its first-use files (a file over budget warns, and does not fail), and, with a page, its start from another origin under the strict policy, its cost per quality preset, and the bytes per frame that its own code allocates. Prints one line per gate and exits with 1 when one fails |
+| `bunx @null3d/cli upgrade [--to 0.2.0] [--dry-run]` | Moves every `@null3d` package in `package.json` to one version: the installed engine's, or the one `--to` names. Writes the manifest only, and edits no code; run `bun install` after it |
 | `bunx @null3d/cli doctor` (0.3, not built yet) | Checks versions, headers, asset CORS, and the capabilities of the local browser |
 | `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` (0.3, not built yet) | Prints docs for the installed engine version |
 
@@ -79,10 +83,17 @@ List the image tests that `bunx @null3d/cli test` runs in `null3d.json` in the p
 
 ## 3. Behavior tests
 
-The engine has no runner yet for sketch logic with scripted input. Until it does, test logic in two ways:
+Test logic in three ways:
 
+- Drive the sketch with a timed script: `bunx @null3d/cli shot --script` and a `test` entry that gives `script` put keys, pointer events and property writes at exact sketch times, and each `shot` step draws that state (`cli/null3d`, "Timed scripts"). This is the way to draw a state that input causes.
 - Keep game rules in plain modules that take numbers and arrays and import nothing from the engine, and test them with `bun test`. The sketch calls them from `onUpdate` or `onFixedUpdate`.
-- Put a scene into a state for an image test through the sketch module's address, such as `sketch.ts?score=90`, and check the held frame. Hold mode gives the sketch no input.
+- Put a scene into a state for an image test through the sketch module's address, such as `sketch.ts?score=90`, and check the held frame. A hold without a script gives the sketch no input.
+
+Before you believe a picture that judges a change, prove the page read the change:
+
+- A sketch reads its address with `new URL(import.meta.url).searchParams`. Settings that a page puts on the sketch's address are silently lost if the query does not reach the module, and the sketch then draws its own defaults, so every variant is one picture. Have the sketch post back the values it built and print them beside the frame.
+- A dev server answers a sketch address whose query carries a `v=` value with `Cache-Control: max-age=31536000, immutable`, while any other address, with or without a query, answers `no-cache`. The plugin's immutable rule covers only hashed files under `/assets/`. A browser may therefore keep the first module it fetched for a `v=` address. When a value changes between runs, open the page twice with two markers, have the sketch report the one it read, and compare before trusting any difference.
+- When two variants look identical, suspect the pipeline first: the sketch not being re-read, the wrong module, or a stale server. The material is the last explanation, not the first.
 
 ## 4. Testing on real devices
 
@@ -135,12 +146,14 @@ Engine docs: `api/debug`, `guides/debugging`.
 
 | Tool | Shows | Builds |
 | --- | --- | --- |
-| `debug.stats(true)` in the sketch; (0.2) `createEngine({ stats: true })`, `engine.stats(true)` or `?stats` on the page | An overlay over the canvas with the GPU path, the preset, the render scale, the frame rates and the CPU time per thread and phase. In 0.2 a header with the frame rate, and a card of work bars against the target frame rate, GPU time, memory, and triangles and objects drawn | Every build |
+| `debug.stats(true)` in the sketch; (0.2) `createEngine({ stats: true })`, `engine.stats(true)` or `?stats` on the page | An overlay over the canvas with the GPU path, the preset, the render scale, the frame rates and the CPU time per thread and phase. In 0.2 a header with the frame rate, and a card of four tabs with a fixed 360 by 396 pixel size. Frame holds the work bars against the target frame rate and the triangles and objects drawn, Memory the parts of memory, Steps the add-ons and the GPU's timed passes, and Systems the memory register that a development build reports, with each engine table's and allocator's bytes used, reserved and peak | Every build |
 | `debug.frameStats()` | The overlay's figures for the sketch, as means over about half a second. It allocates nothing, so read it every frame if you need to | Every build |
 | `await engine.measure(5)` on the page | Every figure of section 3 of `references/performance.md`: CPU, GPU, frame rates, uploads, rebuilds, pipelines, memory | Every build |
-| `debug.view('normals')`, `'depth'`, `'wireframe'`, `'overdraw'`; `'lit'` to go back | The whole scene with one debug shading in place of every material. Views ignore maps, alpha and custom shaders | Development only |
+| `debug.view('normals')`, `'depth'`, `'wireframe'`, `'overdraw'`, `'shadows'`, `'motion'`, `'levels'`; `'lit'` to go back. `?view=<name>` on any page does the same | The whole scene with one debug shading in place of every material. Views ignore maps, alpha and custom shaders. `'levels'` colors each draw by its level of detail, dithers the two colors of a fading band, and marks a source that the size rule or a draw range hid. An add-on adds a view of its own through the `debugViews` field of its feature description | Development only |
 | `debug.line`, `box`, `sphere`, `arrow`, `axes`, `grid`, `frustum`, `light` | Lines for one frame, so call them in `onUpdate` in every frame that needs them | Development only |
+| `debug.cullingSpheres(true)` | The bounding sphere that culling tests for each object whose mesh has levels, for the first 128 objects, until `false`. Use it beside `debug.view('levels')`. `debug.cullingSpheresDrawn()` gives the count that the last frame drew: 0 while the switch is off, so a test can tell the switch drew them rather than nothing | Development only |
 | `debug.skeleton` (0.2) | The bones of a skinned mesh | Development only |
+| `?record` on the page, then `?replay=<file>` or `shot --replay <file>` | A bug report from a phone. `?record` records each frame's step and the input that the sketch read, and shows a save button; the file replays here to the same frames. A sketch that reads the quality preset can differ, because the replay picks this computer's preset (`guides/testing`) | Every build |
 
 In a production build, the debug drawing calls and `debug.view` do nothing, but the code that computes their arguments still runs. Wrap work that only feeds them in `if (import.meta.env.DEV)`. A debug view's first frame builds its pipelines, so objects can be missing for a few frames after a change.
 
@@ -175,16 +188,19 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Symptom | Likely cause | Fix | Docs |
 | --- | --- | --- | --- |
 | Blank canvas; console mentions `SharedArrayBuffer` or `crossOriginIsolated` | No isolation headers | The null3D Vite plugin, or set COOP `same-origin` and COEP `require-corp` on the host | `getting-started/hosting` |
+| The production build's worker files are tens of MB each, or Vite warns that workers do not build as ES modules | The build runs without the null3D Vite plugin, or another setting replaced its worker format | Add the plugin to `vite.config.ts`, and leave `worker.format` unset | `getting-started/install` |
 | Offline, the engine runs single-threaded, or a development build warns that a service worker controls a page that is not isolated | The service worker answers the page without its COOP and COEP headers | Cache the page's own response with `cache.addAll`, which keeps the headers, or copy them into the response the worker makes | `getting-started/hosting` |
 | Offline, the start or a feature's first use fails to download a file | The service worker caches no copy of that feature's files | Cache the `start` group and each feature that the game uses from `null3d-files.json` | `getting-started/hosting` |
 | Blank canvas; console shows CORS errors for models or textures | Assets from another origin without CORS or CORP headers | Serve them with `Access-Control-Allow-Origin` or `Cross-Origin-Resource-Policy` | `getting-started/hosting` |
 | E1422 or E1423 at the start, with the build's files on a CDN | The policy lacks `blob:` or the CDN in `worker-src`, or the CDN in `connect-src`, or the CDN sends no CORS header | Add the policy items and `Access-Control-Allow-Origin` on every build file; `Cross-Origin-Resource-Policy` alone does not serve | `getting-started/hosting` |
 | Canvas works, nothing visible | No active camera, camera inside an object, or objects outside near and far | `scene.setActiveCamera`; check positions with `debug.axes`; widen near and far | `api/cameras` |
 | Objects draw black | No light reaches them: standard materials need a directional or ambient light | `scene.createDirectionalLight` and `scene.createAmbientLight`; check that the lights share a layer with the camera | `api/lights` |
+| Parts of a custom material draw black | The shader computes NaN there, such as from `normalize` of a zero vector or `pow` of a negative number | Guard the math; the engine draws NaN as black, so it cannot spread through bloom | `guides/debugging` |
 | An object does not move, or a development build logs E1110 | A static object's values changed without a setter | The setter, or `dynamic: true` | `concepts/static-dynamic` |
 | A row of an instance, sprite or point batch does not move, or a development build logs E1110 naming a row | A static batch's row written without `markDirty` | `markDirty(start, count)`, or `dynamic: true` on the batch | `concepts/static-dynamic` |
 | Error: stale handle | The object was destroyed earlier | Drop your reference when you destroy; check the frame number in the message | `concepts/handles` |
 | Colors too dark or washed out | Texture color space | `'srgb'` for color maps, `'linear'` for data maps | `concepts/color-management` |
+| A video surface shows its material's color and no picture | The video never played, an element that `display: none` hides gives no frame in some browsers, the two names differ, or the video's origin sent no CORS headers | Play it muted or from a click; keep the element in the layout out of sight; give `engine.registerVideo` and `textures.fromVideo` the same name; set `crossOrigin = 'anonymous'` and send CORS headers | `guides/video-textures` |
 | Lighting much brighter or darker than expected | Light units (physical, like three.js r155+) or exposure | Retune intensities; check `post.set({ exposure })` | `concepts/lighting` |
 | The background differs from the page's CSS color | Exposure and tone mapping change the background too | `post.set({ toneMapping: 'none' })`, or `createEngine({ transparent: true })` over a CSS background | `concepts/color-management` |
 | Shadows missing | A light or object not casting, a receiver not receiving, or out of range; a caster on a layer that the light lacks; a spot or point light without a tile, past the preset's `shadowTiles`; point lights on a preset without `pointLightShadows` | `castShadows` on light and caster, `receiveShadows` on the receiver, the caster's layer in the light's `layers`, `shadowTiles`, `pointLightShadows` | `concepts/shadows`, `concepts/render-layers` |
@@ -204,9 +220,11 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Tab reloads or crashes on a phone | Memory limit | Fewer and smaller assets, and textures destroyed when unused. The next start runs one preset lower (`engine.mode.crashedStarts`) | `guides/phones` |
 | `document is not defined` or `window is not defined` | DOM code in `sketch.ts` | Move it to `page.ts`; send data with messages. A DOM-heavy app can run the sketch on the main thread with `sketchThread: 'main'` | `api/page`, `concepts/architecture` |
 | `assets.loadGltf` rejects with E1416, or `loadTexture` with E1412, on a file that users upload | The file is broken, or passes a limit on what one file may decode to. Loaders check each file's limits before they allocate (0.2) | Catch the error and tell the user; check the file in the Khronos glTF Validator; split a model that is too large | `concepts/assets` |
-| Drawing stops with E1424 after a custom material appears | A file of the material's builds (`material-*.js`, which `vite build` writes) did not download, or comes from another build | Deploy every file that `vite build` writes, from one build; let `script-src` allow them | `guides/custom-shaders` |
+| Drawing stops with E1424 after a custom material, effect or tone curve appears | A file of the shader's builds (`material-*.js`, `effect-*.js` or `curve-*.js`, which `vite build` writes) did not download, or comes from another build | Deploy every file that `vite build` writes, from one build; let `script-src` allow them | `guides/custom-shaders` |
 | `createEngine` rejects with E1410 | The sketch module did not load, at the first import or at the second, which the engine makes after a console warning: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
 | Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, as `ctx.engine.viewport` gives the canvas size | `api/input` |
+| E1432 at the start of a sketch that imports an add-on | The add-on and the engine are at different versions, and each add-on pins the engine version it was built for | `bunx @null3d/cli upgrade`, then `bun install`, so every null3D package takes one version | `errors/E1432`, `cli/null3d` |
+| E1433 at the start of a sketch that imports an add-on from another developer | The add-on declares a plugin interface range that this engine's interface is outside | Install the add-on release that matches the engine's plugin interface, or run the engine version that the add-on declares | `errors/E1433`, `api/engine` |
 
 ## 9. Before you ship
 

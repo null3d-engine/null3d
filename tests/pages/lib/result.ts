@@ -5,6 +5,7 @@
 // steps the page notes itself.
 
 import { MEMORY_REFUSED } from './room';
+import { startCalibration, watchStartTimings } from './start-timings';
 
 declare global {
 	interface Window {
@@ -18,6 +19,9 @@ declare global {
 
 const trail: string[] = [];
 window.__null3dProgress = trail;
+// One line of the trail follows where the page's start went, so a page that stalls names the
+// phase that held it.
+watchStartTimings(trail);
 
 /**
  * The files that the page's timeline keeps. The runner page reads them to name the page's last load
@@ -48,6 +52,11 @@ export function expectEnd(seconds: number): void {
 /** Notes a step of the page's work in its trail. */
 export function progress(step: string): void {
 	trail.push(`${Math.round(performance.now())} ms ${step}`);
+}
+
+/** The page's steps so far, each with the time since the page started, as the trail records them. */
+export function progressTrail(): readonly string[] {
+	return trail;
 }
 
 /**
@@ -181,6 +190,8 @@ export async function publish(name: string, result: Record<string, unknown>): Pr
 		page: name,
 		userAgent: navigator.userAgent,
 		url: location.href,
+		// The page's own speed, which the run's results keep so a page that stood out names itself.
+		calibrationMs: startCalibration(),
 		...result,
 		...(fellBack && !('trail' in result) ? { trail: [...trail] } : {}),
 	};
@@ -192,7 +203,13 @@ export async function publish(name: string, result: Record<string, unknown>): Pr
 		status.textContent = demo
 			? `${document.title}: running`
 			: JSON.stringify(
-					{ ...report, pixels: undefined, images: undefined, frame: undefined },
+					{
+						...report,
+						pixels: undefined,
+						images: undefined,
+						frame: undefined,
+						frames: undefined,
+					},
 					null,
 					2,
 				);

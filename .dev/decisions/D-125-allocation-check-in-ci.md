@@ -1,16 +1,16 @@
 # D-125: The per-frame allocation check runs in CI on SwiftShader
 
-Status: decided by the owner on 2026-10-09: "yes add it". The settings below come from six trial runs on CI's machines on 9 and 10 October 2026. The warm-up of 1,200 frames is set from the sixth. In the run of #467, which added the job, each job took about 4 minutes. Date: 2026-10-10. Task: CI.
+Status: decided by the owner, and built. The settings come from trial runs on CI's machines (below). Task: CI.
 
-Summary: CI's `allocation` job runs `bun run bench:allocation` on S1, once on WebGPU and once on WebGL2. It runs on each push to main, and on each ready pull request that changes what the check covers. On SwiftShader it draws 1,000 boxes and counts the frames that S1 steps. It keeps its own budgets for three places that the browser fills between frames. The browser optimizes after fewer calls there, so 1,200 frames of warm-up do the work of 3,600. A job takes about 4 minutes, against 17 to 18 with the full warm-up.
+Summary: CI's `allocation` job runs `bun run bench:allocation` on S1, once on WebGPU and once on WebGL2. It runs in every full CI run: each push to main and each run started by hand. On SwiftShader it draws 1,000 boxes and counts the frames that S1 steps. It keeps its own budgets for three places that the browser fills between frames. The browser optimizes after fewer calls there, so 1,200 frames of warm-up do the work of 3,600. A job takes about 4 minutes, against 17 to 18 with the full warm-up.
 
 ## Question
 
-Before, the check ran only by hand and in the Mac's gate. On 9 October 2026, #457 moved each GPU path's drawing step to a file of its own. The check then failed on main, and nobody saw it. Should CI run the check, and how, when CI has no real GPU?
+Without a CI job, the check runs only by hand and in the Mac's gate. A change can then make it fail on main without anyone seeing it. Pull request #457 did so when it moved each GPU path's drawing step to a file of its own. Should CI run the check, and how, when CI has no real GPU?
 
 ## Rule
 
-The job must catch a place of the engine's frame code that starts to allocate each frame, on each GPU path. It must pass when the engine's frame code allocates nothing, so a red job means a real fault. It must take no longer than the browser test shards, 8 to 12 minutes, so it does not hold back CI on engine pull requests. It must not run on pull requests that cannot change the figures.
+The job must catch a place of the engine's frame code that starts to allocate each frame, on each GPU path. It must pass when the engine's frame code allocates nothing, so a red job means a real fault. It must take no longer than the browser test shards, 8 to 12 minutes, so it does not hold back CI.
 
 ## Data
 
@@ -41,10 +41,10 @@ The browser's optimizing compiler takes a function after 3,000 calls by default,
 - The page runs as a demo, which runs until the page closes, so no timer of the page stops the engine.
 - Each call to the browser after the warm-up has a time limit of one minute, and names its step when it runs out. A stalled run fails fast and says where.
 - A mouse or key press that never returns gives a warning, not a failure. It stopped 3 of 12 trial jobs after their samples, while S1 went on stepping. The summary line counts the input steps in the samples.
-- The job runs on pushes to main and on ready pull requests that change `packages/engine/src/render/`, `gpu/` or `sketch/`, the check and its files, or the CI workflow.
+- The job runs in every full CI run: each push to main and each run started by hand ([D-157](D-157-direct-pushes-to-main.md)). A push to a milestone branch runs only the quick checks, so the job skips there ([D-249](D-249-milestone-push-runs.md)).
 
 ## Consequences
 
-- `.github/workflows/ci.yml` has the `allocation` job, and `ci-passed` lets it skip when the job that reads the changed paths says so. That job was `allocation-paths`, and is `changes` from 11 October 2026.
+- `.github/workflows/ci.yml` has the `allocation` job, and `ci-passed` lets it skip in a quick run.
 - `bench/allocation.ts` holds `SWIFTSHADER_COUNT`, `SWIFTSHADER_JS_FLAGS`, `SWIFTSHADER_WARMUP_FRAMES` and `SWIFTSHADER_BUDGETS`. The job's time limit is 15 minutes. The benchmark page's `frames` switch publishes the count of frames that S1 steps.
 - [Benchmarks](../benchmarks.md#allocation-and-profiling) and [Branches and parallel work](../pull-requests.md#cis-jobs) describe the job.

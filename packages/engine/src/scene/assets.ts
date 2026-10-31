@@ -1,7 +1,7 @@
 // The sketch's loading calls, `ctx.assets`: files downloaded with fetch and decoded by the browser,
 // by the KTX2 transcoder (ktx2.ts), by the color grading table makers (lut-files.ts), by the
 // environment map reader (environment-file.ts) or by the HDR file readers (panorama.ts), outside
-// the sketch's frames, and a count of the downloads for loading screens. Built-in environments need
+// the sketch's frames, and the bytes of the downloads for loading screens. Built-in environments need
 // no file: the GPU makes them (builtin-environments.ts), as it filters HDR files. Relative addresses resolve against the page's address, in every thread
 // mode. Files that `preload` downloaded wait in memory until a load takes them, and loads of one
 // address at the same time share one download; the HTTP cache keeps everything else.
@@ -10,12 +10,16 @@ import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import { reasonOf } from '../errors/message';
 import { Cubemap, writeSkyDefaults } from './background';
+import type { BakedLight, LightMapData } from './baked-light';
 import { type BuiltinEnvironmentName, Environment } from './environment';
 import { FILE_LIMITS, imageSize, imageTooLarge } from './file-limits';
+import { GltfExtensions } from './gltf-extensions';
+import { toHalfFloat } from './half-float';
+import type { LightProbeGridData, LightProbeGridOptions } from './light-probes';
 import { Lut, type LutData } from './lut';
 import type { CoreMemory } from './memory';
 import type { Prefab } from './prefab';
-import type { Geometry, Materials } from './resources';
+import type { Geometry, Material, Materials, MeshGeometry } from './resources';
 import type { Scene } from './scene';
 import type { Texture, TextureColorSpace, TextureOptions, Textures } from './textures';
 
@@ -74,6 +78,117 @@ export interface LoadGltfOptions {
 	 * the same for its loaders.
 	 */
 	rewriteUrl?: (address: URL) => URL | string | null;
+	/**
+	 * The most levels of detail to load from a file that stores its levels as separate downloads,
+	 * counting the level in the file itself. A band of a cluster tree counts as a level. The
+	 * default loads every level, and the loader skips a level that the camera never draws. A page
+	 * whose objects never come close enough to show the finest level sets 1, or the number of
+	 * levels that show, and downloads less. A file whose levels are all in the file itself ignores
+	 * the option.
+	 */
+	maxLevels?: number;
+}
+
+/**
+ * A part that a glTF extension handler draws in place of a primitive that it reads.
+ *
+ * @category api/assets
+ */
+export interface GltfExtensionPart {
+	/** The mesh to draw at the primitive's node. The model frees it with its other meshes. */
+	readonly mesh: MeshGeometry;
+	/** The material to draw it with. The model frees it with its other materials. */
+	readonly material: Material;
+}
+
+/**
+ * One primitive that carries a glTF extension which an add-on reads, as a handler gets it.
+ *
+ * @category api/assets
+ */
+export interface GltfExtensionPrimitive {
+	/**
+	 * Each attribute's values as floats, by the file's name. The loader reads every attribute,
+	 * including names that the engine does not know, such as `KHR_gaussian_splatting:ROTATION`.
+	 */
+	readonly attributes: Readonly<Record<string, Float32Array>>;
+	/** The number of elements in each attribute. */
+	readonly count: number;
+	/** The primitive's indices, which name triangles, or undefined when it gives none. */
+	readonly indices: Uint16Array | Uint32Array | undefined;
+	/** glTF's mode of the primitive: 0 for points, 4 for triangles. */
+	readonly mode: number;
+	/** The material that the file gives the primitive, or undefined when it gives none. */
+	readonly material: Material | undefined;
+}
+
+/**
+ * The node that holds a primitive which an extension handler reads.
+ *
+ * @category api/assets
+ */
+export interface GltfExtensionNode {
+	/** The node's name in the file. */
+	readonly name: string;
+	/** The position relative to the node's parent. */
+	readonly position: readonly [number, number, number];
+	/** The rotation relative to the node's parent, as a quaternion (x, y, z, w). */
+	readonly rotation: readonly [number, number, number, number];
+	/** The scale relative to the node's parent. */
+	readonly scale: readonly [number, number, number];
+}
+
+/**
+ * What the loader hands a glTF extension handler for one primitive.
+ *
+ * @category api/assets
+ */
+export interface GltfExtensionData {
+	/** The extension's name, one of the handler's `extensions`. */
+	readonly extension: string;
+	/** The extension's JSON, as the file gives it. */
+	readonly json: Readonly<Record<string, unknown>>;
+	/** The node that holds the primitive. */
+	readonly node: GltfExtensionNode;
+	/** The primitive that carries the extension. */
+	readonly primitive: GltfExtensionPrimitive;
+}
+
+/**
+ * The engine's makers, which an extension handler uses to make the parts that it returns.
+ *
+ * @category api/assets
+ */
+export interface GltfExtensionContext {
+	/** Makes the meshes that the handler returns, as the loader makes the file's own meshes. */
+	readonly geometry: Geometry;
+	/** Makes the materials that the handler returns. */
+	readonly materials: Materials;
+}
+
+/**
+ * A handler for the glTF extensions that an add-on reads, as three.js's `GLTFLoader.register()`
+ * takes one. Register it with `assets.registerGltfExtension` before the first load of a model that
+ * carries the extension.
+ *
+ * @category api/assets
+ */
+export interface GltfExtensionHandler {
+	/** The extension names that the handler reads, such as `'KHR_gaussian_splatting'`. */
+	readonly extensions: readonly string[];
+	/**
+	 * Makes the parts that draw one primitive that carries one of `extensions`. The loader calls it
+	 * once for each such primitive, and draws only the parts that it returns for that primitive.
+	 * Return nothing to draw nothing. It may return a promise, for work that takes time.
+	 */
+	load(
+		data: GltfExtensionData,
+		context: GltfExtensionContext,
+	):
+		| GltfExtensionPart
+		| readonly GltfExtensionPart[]
+		| void
+		| Promise<GltfExtensionPart | readonly GltfExtensionPart[] | undefined>;
 }
 
 /**
@@ -95,8 +210,11 @@ export interface ModelMakers {
 }
 
 /**
- * Called each time a download finishes or fails. It gets the files downloaded so far, the files
- * asked for so far, and the address of the file that finished.
+ * Called as a download's bytes arrive and when one finishes or fails. It gets the bytes downloaded
+ * so far, the bytes expected so far, and the address whose bytes moved. The second is the lengths
+ * of the responses that gave one, and 0 while none has. A response with no length still counts
+ * into the bytes downloaded, so a page that draws a fraction takes
+ * `Math.min(1, loaded / Math.max(total, loaded))`.
  *
  * @category api/assets
  */
@@ -116,8 +234,9 @@ export class Assets {
 	/** Downloads under way, by address, which loads at the same time share. */
 	private readonly pending = new Map<string, Promise<Blob>>();
 	private readonly handlers = new Set<ProgressHandler>();
-	private loaded = 0;
-	private total = 0;
+	/** Bytes that have arrived, and the bytes of the responses whose length is known so far. */
+	private loadedBytes = 0;
+	private totalBytes = 0;
 
 	/** @internal */
 	constructor(
@@ -125,6 +244,11 @@ export class Assets {
 		/** The page's address, which relative addresses resolve against. */
 		base: string,
 		private readonly makers?: ModelMakers,
+		/**
+		 * The handlers of glTF extensions that a sketch registered. They live outside the loader so
+		 * that a registration answers at once, before the loader has loaded.
+		 */
+		private readonly extensions = new GltfExtensions(),
 	) {
 		this.base = base;
 	}
@@ -191,6 +315,19 @@ export class Assets {
 	}
 
 	/**
+	 * Registers a handler for glTF extensions that an add-on reads, as three.js's
+	 * `GLTFLoader.register()` does. A file that carries one of the handler's extensions hands each
+	 * primitive that holds one to the handler, and draws the parts that it returns. A file that
+	 * requires such an extension loads with the handler and fails with E1417 without it. Register
+	 * the handler before the first load that needs it. Returns a function that unregisters it.
+	 * Throws E1213 for a handler without a list of extension names or a `load` function, and for one
+	 * that reads an extension which another handler reads.
+	 */
+	registerGltfExtension(handler: GltfExtensionHandler): () => void {
+		return this.extensions.register(handler);
+	}
+
+	/**
 	 * Downloads a glTF 2.0 model, a `.glb` file or a `.gltf` file with the files it names, and
 	 * makes a prefab of it: its meshes, materials, textures, lights and nodes, made once, which
 	 * `scene.instantiate` copies. A worker parses the file off the sketch's frames, and the first
@@ -228,10 +365,12 @@ export class Assets {
 					);
 				},
 				error: (code, message) => new EngineError(code, message),
+				extensionHandlers: this.extensions.all(),
 			},
 			file,
 			address,
 			call,
+			options,
 		);
 	}
 
@@ -399,9 +538,9 @@ export class Assets {
 	 */
 	async skyEnvironment(): Promise<Environment> {
 		const call = 'assets.skyEnvironment';
-		const { size, levels, stages, sh } = (await builtinEnvironments(call)).SKY_MAP;
+		const { size, levels, stages, capture, sh } = (await builtinEnvironments(call)).SKY_MAP;
 		const texture = await this.textures.fromGenerator('sky', size, levels, call);
-		this.textures.addSkyMap(texture, stages, call, writeSkyDefaults);
+		this.textures.addSkyMap(texture, stages, capture, call, writeSkyDefaults);
 		return new Environment(texture, size, levels, 'rgb9e5ufloat', sh);
 	}
 
@@ -469,6 +608,126 @@ export class Assets {
 	}
 
 	/**
+	 * Downloads a probe grid that a tool outside the engine baked, in the [baked light
+	 * file](../../guides/baked-light-data.md) format, and makes the texture and the placement that
+	 * `scene.setLightProbeGrid` takes. The grid's coefficients are the four RGB values of L1
+	 * spherical harmonics per probe, in the shader's order. The first grid loads the reader, about
+	 * 2 KB after Brotli. Throws E1411 or E1413 as `loadTexture` does, E1434 when the file is not a
+	 * probe grid that this engine reads, and E1406 when the reader does not load.
+	 */
+	async loadLightProbeGrid(url: string | URL): Promise<LightProbeGridOptions> {
+		const call = 'assets.loadLightProbeGrid';
+		const address = this.resolve(url);
+		const text = await (await this.file(address, call)).text();
+		const file = await bakedLightFile(text, address, call);
+		if (file.kind !== 'probe-grid') wrongKind(address, call, file.kind, 'probe-grid');
+		const { grid } = file;
+		return {
+			texture: grid.toTexture(this.textures),
+			origin: grid.origin,
+			spacing: grid.spacing,
+			counts: grid.counts,
+		};
+	}
+
+	/**
+	 * Downloads a light map that a tool outside the engine baked, in the [baked light
+	 * file](../../guides/baked-light-data.md) format. It gives the radiance as a texture for a
+	 * material's `lightMap`, and, for a directional light map, the light's direction at each texel
+	 * as a second texture for the same material's `lightMapDirection`. The first light map loads
+	 * the reader, about 2 KB after Brotli. Throws E1411 or E1413 as `loadTexture` does, E1434 when
+	 * the file is not a light map that this engine reads, and E1406 when the reader does not load.
+	 */
+	async loadLightMap(url: string | URL): Promise<LightMapData> {
+		const call = 'assets.loadLightMap';
+		const address = this.resolve(url);
+		const text = await (await this.file(address, call)).text();
+		const file = await bakedLightFile(text, address, call);
+		if (file.kind !== 'light-map') wrongKind(address, call, file.kind, 'light-map');
+		const { width, height, encoding, radiance, direction } = file;
+		let texture: Texture;
+		let directionTexture: Texture | undefined;
+		if (encoding === 'rgb8') {
+			// A texture holds four channels, so the radiance's three bytes gain an opaque alpha.
+			const data = new Uint8Array(width * height * 4);
+			for (let at = 0, from = 0; at < data.length; at += 4, from += 3) {
+				data[at] = radiance[from] as number;
+				data[at + 1] = radiance[from + 1] as number;
+				data[at + 2] = radiance[from + 2] as number;
+				data[at + 3] = 255;
+			}
+			texture = this.textures.fromData({ width, height, colorSpace: 'srgb', data });
+			if (direction) {
+				// The direction shares the radiance's texture array, so that a shader reads it
+				// through the light map's binding. It therefore takes the radiance's sRGB format,
+				// and each byte is the one whose decoded value comes closest to the axis's.
+				const closest = sRGBBytes();
+				const texels = new Uint8Array(width * height * 4);
+				for (let at = 0, from = 0; at < texels.length; at += 4, from += 3) {
+					for (let c = 0; c < 3; c++) {
+						// A file may hold the one signed byte past -1, which the table's first entry takes.
+						const entry = Math.max(0, Math.min(254, (direction[from + c] as number) + 127));
+						texels[at + c] = closest[entry] as number;
+					}
+					texels[at + 3] = 255;
+				}
+				directionTexture = this.textures.fromData({
+					width,
+					height,
+					colorSpace: 'srgb',
+					data: texels,
+				});
+			}
+		} else {
+			const halves = new Uint16Array(radiance.buffer, radiance.byteOffset, radiance.byteLength / 2);
+			texture = this.textures.fromData({
+				width,
+				height,
+				format: 'rgba16float',
+				colorSpace: 'linear',
+				data: halves,
+			});
+			if (direction) {
+				// Linear texels keep each axis at half precision, which needs no sRGB round trip.
+				const texels = new Uint16Array(width * height * 4);
+				for (let at = 0, from = 0; at < texels.length; at += 4, from += 3) {
+					for (let c = 0; c < 3; c++)
+						texels[at + c] = toHalfFloat((direction[from + c] as number) / 127 / 2 + 0.5);
+					texels[at + 3] = toHalfFloat(1);
+				}
+				directionTexture = this.textures.fromData({
+					width,
+					height,
+					format: 'rgba16float',
+					colorSpace: 'linear',
+					data: texels,
+				});
+			}
+		}
+		return { width, height, texture, direction, directionTexture };
+	}
+
+	/**
+	 * Makes the file of a probe grid that `bakeProbes` made, in the [baked light
+	 * file](../../guides/baked-light-data.md) format, as bytes to save or send. The file holds the
+	 * same values that `loadLightProbeGrid` reads, so a bake in the browser and a bake in another
+	 * tool give one format. The first call loads the writer, about 2 KB after Brotli. Throws E1108
+	 * when the grid's coefficients do not hold 12 numbers for each probe in its counts, and E1406
+	 * when the writer does not load.
+	 */
+	async lightProbeGridFile(grid: LightProbeGridData): Promise<Uint8Array> {
+		const call = 'assets.lightProbeGridFile';
+		const files = await bakedLightReader(`${call}()`);
+		let text: string;
+		try {
+			text = files.writeBakedProbeGrid(grid);
+		} catch (error) {
+			throw new EngineError('E1108', `${call}() got ${reasonOf(error)}.`);
+		}
+		return new TextEncoder().encode(text);
+	}
+
+	/**
 	 * Downloads a JSON file and parses it. Throws E1411 or E1413 as `loadTexture` does, and E1412
 	 * when the file is not valid JSON.
 	 */
@@ -515,8 +774,9 @@ export class Assets {
 	}
 
 	/**
-	 * Calls `handler` each time a download finishes or fails, with the files downloaded so far and
-	 * the files asked for so far. Loads that take a file that `preload` downloaded count no
+	 * Calls `handler` as a download's bytes arrive and when one finishes or fails, with the bytes
+	 * downloaded so far, the bytes expected so far and the address whose bytes moved, as
+	 * `ProgressHandler` describes. Loads that take a file that `preload` downloaded report no
 	 * further. Returns a function that removes the handler.
 	 */
 	onProgress(handler: ProgressHandler): () => void {
@@ -552,9 +812,11 @@ export class Assets {
 		return download;
 	}
 
-	/** Downloads a file, counts it for the progress handlers, and gives failures their codes. */
+	/** Downloads a file, counts its bytes for the progress handlers, and gives failures their codes. */
 	private async download(address: URL, call: string): Promise<Blob> {
-		this.total++;
+		// The bytes this download's response announced, and whether it delivered them.
+		let announced = 0;
+		let delivered = false;
 		try {
 			let response: Response;
 			try {
@@ -577,8 +839,25 @@ export class Assets {
 					'E1411',
 					`${call}() could not download ${address}: HTTP ${response.status}.`,
 				);
+			const length = Number(response.headers.get('content-length'));
+			if (Number.isFinite(length) && length > 0) {
+				this.totalBytes += length;
+				announced = length;
+			}
 			try {
-				return await response.blob();
+				// A page that watches progress reads the body in chunks, which is the only way to see
+				// the bytes before the whole file arrives. With no handler the browser makes the blob
+				// in one step, as before.
+				if (this.handlers.size > 0 && response.body) {
+					const streamed = await this.read(response, address);
+					delivered = true;
+					return streamed;
+				}
+				const blob = await response.blob();
+				this.loadedBytes += blob.size;
+				this.report(address.href);
+				delivered = true;
+				return blob;
 			} catch (error) {
 				throw new EngineError(
 					'E1411',
@@ -586,15 +865,50 @@ export class Assets {
 				);
 			}
 		} finally {
-			this.loaded++;
-			this.report(address.href);
+			// A file that failed counts as done, so a loading bar reaches its end: the bytes its
+			// response announced still count, and a failure that announced none counts one byte. A
+			// file that arrived reported as its last bytes came, so it reports nothing here.
+			if (!delivered) {
+				if (announced > 0) this.loadedBytes += announced;
+				else {
+					this.loadedBytes += 1;
+					this.totalBytes += 1;
+				}
+				this.report(address.href);
+			}
 		}
 	}
 
+	/** Reads a response's body in chunks, counting each as it arrives. */
+	private async read(response: Response, address: URL): Promise<Blob> {
+		const reader = response.body?.getReader();
+		if (!reader) {
+			const blob = await response.blob();
+			this.loadedBytes += blob.size;
+			return blob;
+		}
+		const chunks: Uint8Array[] = [];
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			chunks.push(value);
+			this.loadedBytes += value.byteLength;
+			this.report(address.href);
+		}
+		return new Blob(chunks as BlobPart[]);
+	}
+
+	/** The bytes, total and address that the handlers last saw, so a repeat reports nothing. */
+	private reported = '';
+
 	private report(url: string): void {
+		// A chunk's report and the download's end can hold the same numbers; the handlers see one.
+		const line = `${this.loadedBytes}/${this.totalBytes} ${url}`;
+		if (line === this.reported) return;
+		this.reported = line;
 		for (const handler of this.handlers)
 			try {
-				handler(this.loaded, this.total, url);
+				handler(this.loadedBytes, this.totalBytes, url);
 			} catch (error) {
 				console.error(error);
 			}
@@ -714,6 +1028,36 @@ async function lutMakers(what: string): Promise<typeof import('./lut-files')> {
 	}
 }
 
+/** The baked light file reader, which loads on the first call that reads one. */
+async function bakedLightReader(what: string): Promise<typeof import('./baked-light')> {
+	try {
+		return await import('./baked-light');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the baked light file reader did not download for ${what}: ${reasonOf(error)}.`,
+		);
+	}
+}
+
+/** Reads a downloaded file as a baked light file, or throws E1434 that names the fault. */
+async function bakedLightFile(text: string, address: URL, call: string): Promise<BakedLight> {
+	const files = await bakedLightReader(`${call}() of ${address}`);
+	try {
+		return files.readBakedLight(text);
+	} catch (error) {
+		throw new EngineError('E1434', `${call}() could not read ${address}: ${reasonOf(error)}.`);
+	}
+}
+
+/** Throws E1434 for a file of the other kind, which names both kinds. */
+function wrongKind(address: URL, call: string, found: string, wanted: string): never {
+	throw new EngineError(
+		'E1434',
+		`${call}() could not read ${address}: its kind is "${found}", and this call reads a "${wanted}" file.`,
+	);
+}
+
 /**
  * Imports the built-in environments' module, which also makes the sky's environment, on the first
  * call that needs it. Throws E1406 when it does not download.
@@ -816,4 +1160,32 @@ async function decode(
 			`${call}() could not decode ${address} as an image: ${reasonOf(error)}.`,
 		);
 	}
+}
+
+/** The decoded value of each sRGB byte, as the sampler gives it, and the byte closest to each of
+ * 255 evenly spaced linear values. Built once, when a light map with a direction first loads. */
+let srgbBytes: Uint8Array | undefined;
+
+function sRGBBytes(): Uint8Array {
+	if (srgbBytes) return srgbBytes;
+	const linear = Float32Array.from({ length: 256 }, (_, byte) => {
+		const c = byte / 255;
+		return c < 0.04045 ? c * 0.0773993808 : (c * 0.9478672986 + 0.0521327014) ** 2.4;
+	});
+	const closest = new Uint8Array(255);
+	for (let entry = 0; entry < 255; entry++) {
+		const target = entry / 254;
+		let best = 0;
+		let error = Math.abs((linear[0] as number) - target);
+		for (let byte = 1; byte < 256; byte++) {
+			const next = Math.abs((linear[byte] as number) - target);
+			if (next < error) {
+				error = next;
+				best = byte;
+			}
+		}
+		closest[entry] = best;
+	}
+	srgbBytes = closest;
+	return closest;
 }

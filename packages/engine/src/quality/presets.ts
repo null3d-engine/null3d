@@ -273,7 +273,9 @@ export const QUALITY_SETTINGS = {
 	},
 	// The error in pixels under which a mesh's coarser level of detail draws: Godot's rule of one
 	// pixel, and two on Low, where phones draw. The render scale counts in the pixels, so a lower
-	// scale picks coarser levels too. 0 draws every mesh's base level. D-137 gives the figures.
+	// scale picks coarser levels too. A bound that covers fewer pixels than this draws nothing, and
+	// the levels' hiding fades out with the same band. 0 draws every mesh's base level. D-137 gives
+	// the figures.
 	lodThreshold: {
 		presets: [2, 1, 1, 1],
 		changes: 'live',
@@ -286,8 +288,10 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 1, max: 16, heavierBelow: true },
 	},
-	// Whether two levels hand over in a short dithered band past each switch distance. Low switches
-	// at once: the dither's discard costs tile GPUs their hidden-surface removal in the band.
+	// Whether a source's distance band fades at each edge, through a short dithered band. A level's
+	// own hand-over follows the level, whatever this setting: a hand-set level fades because its
+	// switch shows, and a measured one switches at once because it does not. Low cuts distance
+	// bands: the dither's discard costs tile GPUs their hidden-surface removal in the band.
 	lodFade: {
 		presets: [false, true, true, true],
 		changes: 'live',
@@ -362,6 +366,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'start',
 		values: [256, 512, 1024, 2048],
 	},
+	// Texels on each side of the tile that holds the sun's hero object. The tile is a layer of the
+	// atlas, so every layer takes its size: the number that keeps a car's shadow four times finer
+	// than the nearest cascade's grows the whole atlas. High takes 2,048 and Ultra 4,096, where the
+	// cascades' texels are finer.
+	heroTileSize: {
+		presets: [1024, 2048, 2048, 4096],
+		changes: 'start',
+		values: [1024, 2048, 4096],
+	},
 	// Point lights cast shadows into six tiles each, so only the heavier presets turn them on.
 	pointLightShadows: {
 		presets: [false, false, true, true],
@@ -381,10 +394,19 @@ export const QUALITY_SETTINGS = {
 	// Two-phase occlusion culling on WebGPU: objects that marked occluders hide do not draw. It
 	// costs a depth-only draw of the occluders, a depth pyramid and a second culling dispatch in
 	// each frame with marked occluders. On the Mac those passes cost more GPU time than skipping
-	// hidden objects saved, in every scene measured, so every preset leaves it off (D-22).
+	// hidden objects saves, in every scene measured, so every preset leaves it off (D-22).
 	gpuOcclusion: {
 		presets: [false, false, false, false],
 		changes: 'start',
+		values: 'flag',
+	},
+	// The light clustering's slices follow the depth that the frame before measured. On WebGPU a
+	// fitted slice lists about half the lights per shaded fragment, but every fragment reads the
+	// grid's header to find its slice. That read costs more on a weak phone than the shorter light
+	// loop saves, so Low keeps the CPU's slicing there. Medium and above fit it (D-264).
+	lightFit: {
+		presets: [false, true, true, true],
+		changes: 'live',
 		values: 'flag',
 	},
 	// The most morph weights of each object that WebGL2 draws. Its vertex shaders morph in every
@@ -584,6 +606,13 @@ export interface QualitySettings {
 	 */
 	areaLights: number;
 	/**
+	 * Whether the light clustering fits its depth slices to the depth that the frame before
+	 * measured, on WebGPU. A fitted slice lists fewer lights per shaded fragment, and every
+	 * fragment reads the grid's header to find its slice. False keeps the CPU's slicing and its
+	 * lookup in the frame uniform. It changes during play.
+	 */
+	lightFit: boolean;
+	/**
 	 * The error in pixels under which a mesh's coarser level of detail draws (see
 	 * `mesh.setLevels`). Each object and instance row draws the coarsest level whose error covers
 	 * fewer pixels than this on the screen, at the render scale. A larger number draws coarser
@@ -598,9 +627,11 @@ export interface QualitySettings {
 	 */
 	lodShadowFactor: number;
 	/**
-	 * Whether two levels of detail hand over in a short band past each switch distance, where a
-	 * dither pattern shares the pixels between them, so a switch does not pop. False switches at
-	 * once. It changes during play.
+	 * Whether a mesh's distance band, from `setDrawRange`, fades at each edge over a short band
+	 * where a dither pattern drops a growing share of the pixels, so the mesh does not pop. False
+	 * cuts each edge at once. A level of detail's own hand-over follows the level: a hand-set
+	 * level fades whatever this setting, and a measured one switches at once. It changes during
+	 * play.
 	 */
 	lodFade: boolean;
 	/**
@@ -610,16 +641,17 @@ export interface QualitySettings {
 	 */
 	physicalSky: boolean;
 	/**
-	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
-	 * toward `minRenderScale`. Then it raises `lodThreshold` up to four times while a mesh has
-	 * levels of detail. Then it lowers how often far shadow cascades draw, the shadow filter,
-	 * bloom's size while bloom is on, ambient occlusion's scale while it draws, the scale of
-	 * screen-space reflections while they draw, the steps of contact shadows, how often far
-	 * characters' poses update, and the volumetric fog's slices while it draws. It raises them
-	 * again, in the reverse order, once frames have time to spare. `quality.governor`
-	 * reports its steps. False keeps the render scale at
-	 * `maxRenderScale` and the other settings as set, as benchmarks and captures need. It changes
-	 * during play.
+	 * Whether the frame-budget governor runs. When frames take too long, it lowers the settings one
+	 * step at a time: a sketch's budget and the render scale in turn, a budget's step first, so a
+	 * sketch's system scales down before the render scale reaches `minRenderScale`; once the scale
+	 * is at its floor, the budgets' remaining steps come first. Then it raises `lodThreshold` up to
+	 * four times while a mesh has levels of detail. Then it lowers how often far shadow cascades
+	 * draw, the shadow filter, bloom's size while bloom is on, ambient occlusion's scale while it
+	 * draws, the scale of screen-space reflections while they draw, the steps of contact shadows,
+	 * how often far characters' poses update, and the volumetric fog's slices while it draws. It
+	 * raises them again, in the reverse order, once frames have time to spare.
+	 * `quality.governor` reports its steps. False keeps the render scale at `maxRenderScale` and the
+	 * other settings as set, as benchmarks and captures need. It changes during play.
 	 */
 	governor: boolean;
 	/**
@@ -657,6 +689,13 @@ export interface QualitySettings {
 	 * `createEngine` sets it, and `set` does not take it.
 	 */
 	shadowTileSize: number;
+	/**
+	 * Texels on each side of the tile that holds a directional light's hero shadow, for each light
+	 * whose `shadow` options name no `heroTileSize`: 1,024, 2,048 or 4,096. The tile is a layer of
+	 * the shadow atlas, so every layer takes its size and a larger one takes more memory, 4 bytes
+	 * per texel. The `heroTileSize` option of `createEngine` sets it, and `set` does not take it.
+	 */
+	heroTileSize: number;
 	/**
 	 * True when point lights cast shadows. Each point light that casts them takes six tiles of the
 	 * shadow atlas, one for each face of a cube around it, within `shadowTiles`. The

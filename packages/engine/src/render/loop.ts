@@ -381,20 +381,30 @@ export class Presenter {
 		);
 	}
 
-	/** True when a frame's draw list was recorded for a GPU device that the browser took away. */
-	private stale(frame: number): boolean {
-		const recordedFor = Atomics.load(this.slots, Slot.FrameEpoch0 + (frame & 1));
-		return recordedFor !== Atomics.load(this.slots, Slot.GpuEpoch);
+	/**
+	 * True when a frame's draw list was recorded for a GPU device that the browser took away. Frames
+	 * draw in the order the sketch recorded them, so a plan that a later frame changed leaves an
+	 * earlier list safe: its list carries the textures it makes and releases. The frame loop judges a
+	 * frame before it wakes the sketch, because the sketch may record a frame of a newer plan during
+	 * that wake. A capture replays a list long after its frame was recorded, and it checks the plan's
+	 * generation as well (`FrameReplay.drawable`).
+	 */
+	deviceStale(frame: number): boolean {
+		return (
+			Atomics.load(this.slots, Slot.FrameEpoch0 + (frame & 1)) !==
+			Atomics.load(this.slots, Slot.GpuEpoch)
+		);
 	}
 
 	/**
 	 * True when a frame may draw. The first call for a frame starts to build the pipelines that its
 	 * list creates, and the frame waits for them until the renderer has drawn a frame with every
 	 * pipeline built. A stale frame never waits, since it draws nothing. Once no pipeline is building,
-	 * the frame's number goes to the sketch thread, whose warm-ups wait for it.
+	 * the frame's number goes to the sketch thread, whose warm-ups wait for it. A caller that judges
+	 * the frame's staleness itself passes that answer, so that a wake inside the call cannot change it.
 	 */
-	ready(frame: number): boolean {
-		if (this.stale(frame)) return true;
+	ready(frame: number, stale = this.deviceStale(frame)): boolean {
+		if (stale) return true;
 		const ready = this.renderer.prepare(frame);
 		if ((this.lastPresented[0] as number) < 0) this.record.markWarmUp(this.renderer.building);
 		if (!this.renderer.building && frameAfter(frame, this.builtFrame)) {
@@ -408,10 +418,15 @@ export class Presenter {
 	/**
 	 * Draws a frame and records its CPU time and the interval since the previous one, and gives the
 	 * page the frame's labels. A frame whose draw list was recorded for a GPU device the browser took
-	 * away is skipped: its list names objects the new device lacks.
+	 * away is skipped: its list names objects that the new device lacks. A caller that judged the
+	 * frame's staleness itself passes that answer, so that a wake cannot change it after the frame
+	 * was taken.
 	 */
-	draw(frame: number, timestamp: number): void {
-		if (this.stale(frame)) return;
+	draw(frame: number, timestamp: number, stale = this.deviceStale(frame)): void {
+		if (stale) {
+			Atomics.add(this.slots, Slot.FramesSkipped, 1);
+			return;
+		}
 		// A still view that has accumulated enough frames submits no draw work: the callers take the
 		// frame anyway, so the sketch keeps stepping and can see the change that ends the rest, and
 		// the canvas keeps the converged image.
@@ -478,13 +493,17 @@ export class HoldLoop implements RenderLoop {
 				else if (published === 0) reject(new Error('the sketch thread published no held frame'));
 				else
 					try {
-						if (!this.presenter.ready(frame)) {
+						// The held frames draw in the order they were recorded, so a plan that a later
+						// held frame changed leaves an earlier one safe. Only a list of an older GPU
+						// device is skipped, and the work that only it records is lost with it.
+						const stale = this.presenter.deviceStale(frame);
+						if (!this.presenter.ready(frame, stale)) {
 							requestAnimationFrame(attempt);
 							return;
 						}
 						this.presenter.applyResize();
 						Atomics.store(this.slots, Slot.FramesTaken, frame);
-						this.presenter.draw(frame, timestamp);
+						this.presenter.draw(frame, timestamp, stale);
 						drawn = frame;
 						if (frame < published) requestAnimationFrame(attempt);
 						else resolve();
@@ -523,11 +542,18 @@ export function runRenderLoop(
 		presenter.wakeBeforeNextFrame();
 		presenter.applyResize();
 		const published = Atomics.load(slots, Slot.FramesPublished);
-		if (frameAfter(published, taken) && presenter.ready(published) && presenter.due(timestamp)) {
-			taken = published;
-			Atomics.store(slots, Slot.FramesTaken, taken);
-			notifySlot(slots, Slot.FramesTaken, wake);
-			presenter.draw(taken, timestamp);
+		if (frameAfter(published, taken)) {
+			// Judge the frame before any wake below. The sketch records no frame after one that the
+			// loop has not taken, so this answer holds until the frame draws, though the sketch may
+			// record the next frame as soon as the wake reaches it. A skipped list never draws again,
+			// so the work that only it records, such as a probe's capture, would be lost.
+			const stale = presenter.deviceStale(published);
+			if (presenter.ready(published, stale) && presenter.due(timestamp)) {
+				taken = published;
+				Atomics.store(slots, Slot.FramesTaken, taken);
+				notifySlot(slots, Slot.FramesTaken, wake);
+				presenter.draw(taken, timestamp, stale);
+			}
 		}
 		requestAnimationFrame(frame);
 	}, fault);

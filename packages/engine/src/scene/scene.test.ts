@@ -9,21 +9,32 @@ import {
 	Vector2,
 	Vector3,
 } from 'three';
+import { boxPrimitive, GltfBuilder } from '../../../../tests/pages/lib/gltf-files';
 import type { EngineError } from '../errors/engine-error';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
-import { LabelLoop } from '../page/label-loop';
-import { LabelSlots, labelCapacity, PageLabels } from '../page/labels';
+import { SIZE_MAP_ROWS } from '../generated/gpu';
+import { cameraTransform, LabelLoop } from '../page/label-loop';
+import { LabelSlots, labelCapacity, labelCapacity3d, PageLabels } from '../page/labels';
 import { controlLabels, controlViews, createControlBuffer, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { type LabelRegion, labelSequence, presentLabels } from '../shared/labels';
 import { Ui } from '../sketch/ui';
+import { PropertyPlayer } from './animation';
 import { Cubemap } from './background';
 import { Environment } from './environment';
 import { withCallValues } from './fake-call-values';
 import { FrameCameras } from './frame-cameras';
+import { propertyAnimation } from './gltf';
+import { parseGltf, readContainer } from './gltf-parse';
 import { CoreMemory } from './memory';
+import {
+	PROPERTY_MATERIAL,
+	PropertyAnimation,
+	type PropertyBinding,
+	type SlotSource,
+} from './property-animation';
 import { Material, MeshGeometry } from './resources';
 import { type Object3D, Scene } from './scene';
 import { Texture, type Textures } from './textures';
@@ -80,8 +91,30 @@ function fakeCore(largeWorld = false) {
 		[C.RING_FIELD_READ_INDEX]: AT.read,
 	};
 	const backgrounds: (number | number[])[] = [];
+	/** The sky layer calls: the shader's template, the share of the sun it hides and its opacity. */
+	const skyLayers: number[][] = [];
+	const overrides: number[] = [];
+	/** The calls that make and change views: the rectangle's numbers, by call. */
+	const viewCalls = { added: [] as number[][], rects: [] as number[][], removed: [] as number[] };
+	/** The lens that each camera sent: its target, its handle, its layers, then its values. */
+	const lenses: number[][] = [];
+	/** Each material value that the core received: its material, its parameter and its numbers. */
+	const materialValues: number[][] = [];
+	let nextView = 1;
 	const glue = {
 		sceneCapacity: () => CAPACITY,
+		addSceneView: (...values: number[]) => {
+			viewCalls.added.push(values);
+			return nextView++;
+		},
+		setSceneViewRect: (place: number, ...values: number[]) => {
+			viewCalls.rects.push([place, ...values]);
+			return 0;
+		},
+		removeSceneView: (place: number) => {
+			viewCalls.removed.push(place);
+			return 0;
+		},
 		sceneArrays: (field: number) => fields[field],
 		commandRing: (field: number) => ring[field],
 		worldMatrixAddress: () => AT.matrix,
@@ -95,8 +128,10 @@ function fakeCore(largeWorld = false) {
 			failure = { code: 1101, details: [handle & SLOT_MASK, FRAME] };
 			return failure.code;
 		},
-		setPerspectiveCamera: () => 0,
-		setOrthographicCamera: () => 0,
+		setPerspectiveCamera: (handle: number, layers: number, target: number, ...values: number[]) =>
+			lenses.push([target, handle, layers, ...values]) - 1,
+		setOrthographicCamera: (handle: number, layers: number, target: number, ...values: number[]) =>
+			lenses.push([target, handle, layers, ...values]) - 1,
 		setBackground: (r: number, g: number, b: number) => backgrounds.push([r, g, b]) && 0,
 		backgroundValues: () => AT.background,
 		setBackgroundSource: (kind: number, texture: number) => {
@@ -104,6 +139,13 @@ function fakeCore(largeWorld = false) {
 			failure = { code: 1101, details: [texture & SLOT_MASK, FRAME] };
 			return failure.code;
 		},
+		setSkyLayer: (template: number, map: number, sun: number, opacity: number) => {
+			skyLayers.push([template, sun, opacity, map]);
+			return 0;
+		},
+		setOverrideMaterial: (material: number) => overrides.push(material) && 0,
+		setMaterialValue: (material: number, param: number, x: number, y: number, z: number) =>
+			materialValues.push([material, param, x, y, z]) && 0,
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
@@ -139,11 +181,21 @@ function fakeCore(largeWorld = false) {
 		 * handle (0 for none).
 		 */
 		backgrounds,
+		/** The sky layer calls: each shader's template, the sun it hides and its opacity. */
+		skyLayers,
 		/** The block of the background's values. */
 		backgroundValues: () => [...f32(AT.background, C.BACKGROUND_VALUE_COUNT)],
+		/** The calls that make and change views. */
+		viewCalls,
+		/** The lens that each camera sent: its target, handle, layers, then its values. */
+		lenses,
 		box,
 		ball,
 		paint,
+		/** Each material value that the core received: its material, its parameter and its numbers. */
+		materialValues,
+		/** The override material ids that the core received, in order, with 0 for none. */
+		overrides,
 		/** Sets the world matrix that the core gives an object, from a three.js matrix. */
 		setWorld(object: Object3D, matrix: Matrix4) {
 			const e = matrix.elements;
@@ -324,6 +376,25 @@ describe('structural changes', () => {
 		]);
 	});
 
+	test('getParent names the parent, and null for a root object', () => {
+		const { scene } = fakeCore();
+		const arm = scene.createGroup();
+		const hand = scene.createGroup({ parent: arm });
+		expect(hand.getParent()).toBe(arm);
+		expect(arm.getParent()).toBeNull();
+		hand.setParent(null);
+		expect(hand.getParent()).toBeNull();
+	});
+
+	test('getLayers reads the mask that the create options and setLayers set', () => {
+		const { scene } = fakeCore();
+		const object = scene.createGroup({ layers: 1 | (1 << 3) });
+		expect(object.getLayers()).toBe(1 | (1 << 3));
+		object.setLayers(1 | (1 << 30));
+		expect(object.getLayers()).toBe(1 | (1 << 30));
+		expect(scene.createGroup().getLayers()).toBe(1);
+	});
+
 	test('createMesh passes the shadow options with the create command', () => {
 		const { scene, box, paint, take } = fakeCore();
 		const plain = scene.createMesh({ mesh: box, material: paint });
@@ -383,6 +454,12 @@ describe('structural changes', () => {
 		const bits = new Uint32Array(new Float32Array([-2.5]).buffer)[0];
 		expect(take()).toEqual([[C.COMMAND_SET_RENDER_ORDER, rock.handle, bits as number, 0]]);
 
+		// The bias of the threshold that picks the levels travels the same way.
+		rock.setLevelBias(0.5);
+		expect(take()).toEqual([[C.COMMAND_SET_LEVEL_BIAS, rock.handle, 0x3f000000, 0]]);
+		expect(rock.levelBias).toBe(0.5);
+		expect(() => rock.setLevelBias(0)).toThrow(/above 0/);
+
 		rock.setBounds([0, 1.5, -1], 4);
 		expect(row(rock, 'centers')).toEqual([0, 1.5, -1]);
 		expect(row(rock, 'radii')).toEqual([4]);
@@ -397,6 +474,19 @@ describe('structural changes', () => {
 });
 
 describe('scene.find', () => {
+	test('bounds belong to every object, so a group can carry the sphere a hero shadow reads', () => {
+		const { scene, row, take } = fakeCore();
+		const car = scene.createGroup();
+		expect(row(car, 'radii')).toEqual([0]);
+		take();
+		car.setBounds([0, 1, -0.5], 2.5);
+		expect(row(car, 'centers')).toEqual([0, 1, -0.5]);
+		expect(row(car, 'radii')).toEqual([2.5]);
+		expect(take()).toEqual([
+			[C.COMMAND_SET_FLAGS, car.handle, C.FLAG_CUSTOM_BOUNDS, C.FLAG_CUSTOM_BOUNDS],
+		]);
+	});
+
 	test('finds the first live object with a name, in the order of creation', () => {
 		const { scene } = fakeCore();
 		const first = scene.createGroup({ name: 'crate' });
@@ -415,6 +505,407 @@ describe('scene.find', () => {
 		expect(scene.find('lamp')).toBeUndefined();
 		const third = scene.createGroup({ name: 'crate' });
 		expect(scene.find('crate')).toBe(third);
+	});
+});
+
+describe('hold script property paths', () => {
+	test('writes a property that a script sets, and reads it back after the frame', () => {
+		const { scene } = fakeCore();
+		const car = scene.createGroup({ name: 'car' });
+		scene.setScriptPath(car, 'position', [1, 2, 3]);
+		scene.setScriptPath(car, 'scale', [2, 2, 2]);
+		scene.setScriptPath(car, 'visible', [0]);
+		expect(scene.readScriptPath(car, 'position')).toEqual([1, 2, 3]);
+		expect(scene.readScriptPath(car, 'scale')).toEqual([2, 2, 2]);
+		expect(scene.readScriptPath(car, 'visible')).toEqual([0]);
+	});
+
+	test('takes the property paths of animateProperty, and says what a wrong one misses', () => {
+		const { scene } = fakeCore();
+		const car = scene.createGroup({ name: 'car' });
+		expect(() => scene.setScriptPath(car, 'speed', [1])).toThrow('set() got "speed"');
+		expect(() => scene.setScriptPath(car, 'position', [1])).toThrow('which takes 3');
+		expect(() => scene.readScriptPath(car, 'intensity')).toThrow('which it does not take');
+	});
+
+	test("animates a material's maps offset and scale, and keeps their other numbers", () => {
+		const { scene, paint, materialValues } = fakeCore();
+		scene.animateProperty(paint, 'uvOffset', {
+			times: [0, 1],
+			values: [0, 0, 0.5, 0.25],
+			time: 1,
+			loop: false,
+		});
+		scene.animateProperty(paint, 'uvScale', {
+			times: [0, 1],
+			values: [1, 1, 2, 3],
+			time: 1,
+			loop: false,
+		});
+		const start = materialValues.length;
+		scene.propertySystem().step(0);
+		const written = materialValues.slice(start);
+		// Each write sends one map transform's two rows: their scale and turn, then the offset. A
+		// sketch's own animation moves every map of the material together.
+		const last = (param: number) => written.filter((values) => values[1] === param).at(-1);
+		// A zero turn gives -0 in one row, which is a zero.
+		const row = (values: number[] | undefined) => values?.map((value) => value || 0);
+		expect(row(last(C.MATERIAL_PARAM_UV_U))).toEqual([1, C.MATERIAL_PARAM_UV_U, 2, 0, 0.5]);
+		expect(row(last(C.MATERIAL_PARAM_UV_V))).toEqual([1, C.MATERIAL_PARAM_UV_V, 0, 3, 0.25]);
+		// Every map's transform, two rows each, for both animations.
+		expect(written).toHaveLength(SIZE_MAP_ROWS * 4);
+		// The last map that the material keeps takes both animations, so neither stops short of it.
+		const [scaleRow, offsetRow] = written.slice(-2);
+		const scaleParam = scaleRow?.[1] ?? 0;
+		expect(offsetRow?.[1]).toBe(scaleParam + C.MATERIAL_PARAM_MAP_UV_STRIDE / 2);
+		expect(row(scaleRow)).toEqual([1, scaleParam, 2, 0, 0.5]);
+		expect(row(offsetRow)).toEqual([
+			1,
+			scaleParam + C.MATERIAL_PARAM_MAP_UV_STRIDE / 2,
+			0,
+			3,
+			0.25,
+		]);
+	});
+
+	test('a property track moves only its own map of a material', () => {
+		const { scene, paint, materialValues } = fakeCore();
+		const system = scene.propertySystem();
+		// A file's pointer names one map, so its track writes that map's transform alone.
+		const track = (slot: number, name: 'uvOffset' | 'uvScale', values: number[]) => {
+			const binding: PropertyBinding = {
+				what: PROPERTY_MATERIAL,
+				name,
+				components: 2,
+				base: new Float32Array(2),
+				slot,
+			};
+			system.add(
+				new PropertyAnimation(
+					system,
+					paint,
+					binding,
+					{
+						binding: 0,
+						interpolation: 'linear',
+						times: new Float32Array([0, 1]),
+						values: new Float32Array(values),
+					},
+					{ times: [0, 1], values, time: 1, loop: false },
+				),
+			);
+		};
+		track(C.MAP_SLOT_BASE_COLOR, 'uvOffset', [0, 0, 0.5, 0.25]);
+		track(C.MAP_SLOT_EMISSIVE, 'uvScale', [1, 1, 2, 3]);
+		const start = materialValues.length;
+		system.step(0);
+		const written = materialValues.slice(start);
+		const rowOf = (param: number) => written.find((values) => values[1] === param);
+		const base =
+			C.MATERIAL_PARAM_MAP_UV + (C.MAP_SLOT_EMISSIVE - 1) * C.MATERIAL_PARAM_MAP_UV_STRIDE;
+		// The base color map's offset reached its own two rows.
+		expect(rowOf(C.MATERIAL_PARAM_UV_U)?.map((value) => value || 0)).toEqual([
+			1,
+			C.MATERIAL_PARAM_UV_U,
+			1,
+			0,
+			0.5,
+		]);
+		expect(rowOf(C.MATERIAL_PARAM_UV_V)?.map((value) => value || 0)).toEqual([
+			1,
+			C.MATERIAL_PARAM_UV_V,
+			0,
+			1,
+			0.25,
+		]);
+		// The emissive map's scale reached the rows of its own slot.
+		expect(rowOf(base)?.map((value) => value || 0)).toEqual([1, base, 2, 0, 0]);
+		expect(rowOf(base + 4)?.map((value) => value || 0)).toEqual([1, base + 4, 0, 3, 0]);
+		// No other map moved.
+		expect(written).toHaveLength(4);
+	});
+
+	test('reads a camera lens, and names the objects that are close to a name', () => {
+		const { scene } = fakeCore();
+		scene.createGroup({ name: 'car' });
+		scene.createGroup({ name: 'crate' });
+		const camera = scene.createPerspectiveCamera({ fov: 60 });
+		expect(scene.readScriptPath(camera, 'fov')).toEqual([60]);
+		expect(scene.nearNames('cr')).toEqual(['crate']);
+		expect(scene.nearNames('zzz')).toEqual(['car', 'crate']);
+	});
+});
+
+describe("a model's clip that moves two maps", () => {
+	/** The animation table's sample slots, which the job workers advance. */
+	class Slots implements SlotSource {
+		readonly sources = new Uint32Array(C.ANIMATION_MAX_BLEND).fill(C.ANIMATION_NO_SOURCE);
+		readonly times = new Float32Array(C.ANIMATION_MAX_BLEND);
+		readonly weights = new Float32Array(C.ANIMATION_MAX_BLEND);
+
+		slotSources(): Uint32Array {
+			return this.sources;
+		}
+		slotTimes(): Float32Array {
+			return this.times;
+		}
+		slotWeights(): Float32Array {
+			return this.weights;
+		}
+		/** Plays `clip` in `slot` at `time` seconds, with `weight`. */
+		play(slot: number, clip: number, time: number, weight: number): void {
+			this.sources[slot] = clip;
+			this.times[slot] = time;
+			this.weights[slot] = weight;
+		}
+	}
+
+	/**
+	 * A file whose clip moves a base color map's offset from its first key to `base`, and an emissive
+	 * map's from its own first key to `emissive`, so a time between the keys gives each a value.
+	 */
+	function movingFile(base: readonly number[], emissive: readonly number[]): Uint8Array {
+		const b = new GltfBuilder().uses('KHR_animation_pointer').uses('KHR_texture_transform');
+		b.json.images = [{ uri: 'tex/base.png' }];
+		b.json.textures = [{ source: 0 }];
+		b.json.materials = [
+			{
+				pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+				emissiveTexture: { index: 0 },
+			},
+		];
+		b.node({ name: 'Box', mesh: b.mesh([boxPrimitive(b, 0)], 'box') });
+		const at = b.accessor(new Float32Array([0, 1]), 1, { min: [0], max: [1] });
+		const pairs = (values: readonly number[]) => b.accessor(new Float32Array(values), 2);
+		const pointer = (path: string) => ({
+			path: 'pointer',
+			extensions: { KHR_animation_pointer: { pointer: path } },
+		});
+		const offset = (texture: string) =>
+			pointer(`/materials/0/${texture}/extensions/KHR_texture_transform/offset`);
+		b.json.animations = [
+			{
+				name: 'Move',
+				samplers: [
+					{ input: at, output: pairs([0, 0, ...base]) },
+					{ input: at, output: pairs([2, 2, ...emissive]) },
+				],
+				channels: [
+					{ sampler: 0, target: offset('pbrMetallicRoughness/baseColorTexture') },
+					{ sampler: 1, target: offset('emissiveTexture') },
+				],
+			},
+		];
+		return b.glb();
+	}
+
+	/** The row that the material `id` last sent for parameter `param`, from its offsets on. */
+	const writtenRow = (materialValues: number[][], id: number, param: number) =>
+		materialValues
+			.filter((values) => values[0] === id && values[1] === param)
+			.at(-1)
+			// A zero turn gives -0 in one row, which is a zero.
+			?.slice(2)
+			.map((value) => value || 0);
+
+	test("writes each map's own offset to the rows of its own transform", () => {
+		const { core, scene, materialValues } = fakeCore();
+		const url = 'https://example.com/models/two-maps.glb';
+		// The base color map's offset runs from 0 to 1, and the emissive map's from 2 to 4.
+		const data = parseGltf(readContainer(movingFile([1, 1], [4, 4]), url), new Map(), url);
+		// The material that the file's primitives draw, which both maps' tracks write.
+		const both = new Material(2, core, 'materials.standard.set');
+		const made = propertyAnimation(
+			data,
+			{ variants: () => [both] } as unknown as Parameters<typeof propertyAnimation>[1],
+			[],
+			[],
+			{ clips: new Map([['Move', 1]]) } as unknown as Parameters<typeof propertyAnimation>[4],
+			data.notes,
+		);
+		if (!made) throw new Error('the file made no property tracks');
+		const slots = new Slots();
+		const system = scene.propertySystem();
+		system.addPlayer(
+			new PropertyPlayer(slots, 0, made.bindings, made.clips, made.targets, made.keys),
+		);
+		// Halfway between the keys, the base color map sits at 0.5 and the emissive map at 3. The
+		// first clip's id is 1, and the sample table names a clip by its id less one.
+		slots.play(0, 0, 0.5, 1);
+		system.step(0);
+		const emissive =
+			C.MATERIAL_PARAM_MAP_UV + (C.MAP_SLOT_EMISSIVE - 1) * C.MATERIAL_PARAM_MAP_UV_STRIDE;
+		// The base color map's two rows carry its own offset.
+		expect(writtenRow(materialValues, 2, C.MATERIAL_PARAM_UV_U)).toEqual([1, 0, 0.5]);
+		expect(writtenRow(materialValues, 2, C.MATERIAL_PARAM_UV_V)).toEqual([0, 1, 0.5]);
+		// The emissive map's two rows carry its own offset, which differs.
+		expect(writtenRow(materialValues, 2, emissive)).toEqual([1, 0, 3]);
+		expect(writtenRow(materialValues, 2, emissive + 4)).toEqual([0, 1, 3]);
+	});
+});
+
+describe('scene.createView', () => {
+	/** A camera of the scene, from the fake core. */
+	const camera = (scene: Scene) => scene.createPerspectiveCamera({ fov: 60 });
+
+	test('makes a view with a camera and a rectangle, and gives the core the rectangle', () => {
+		const { scene, viewCalls, lenses } = fakeCore();
+		const view = camera(scene);
+		const made = scene.createView({ camera: view, rect: [0.5, 0, 0.5, 1] });
+		expect(made.live).toBe(true);
+		expect(made.camera).toBe(view);
+		expect(made.rect).toEqual([0.5, 0, 0.5, 1]);
+		expect(viewCalls.added).toEqual([[0.5, 0, 0.5, 1]]);
+		// The view's lens goes to the engine's pass view at its place, with the camera's layers.
+		expect(lenses.at(-1)?.slice(0, 4)).toEqual([
+			C.CAMERA_TARGET_PASS_VIEWS + made.place,
+			view.handle,
+			view.layers,
+			60,
+		]);
+	});
+
+	test('setCamera and setRect change the view, and a lens change reaches its place', () => {
+		const { scene, viewCalls, lenses } = fakeCore();
+		const first = camera(scene);
+		const second = scene.createOrthographicCamera({ height: 4 });
+		const made = scene.createView({ camera: first, rect: [0, 0, 0.5, 1] });
+		made.setCamera(second);
+		expect(made.camera).toBe(second);
+		expect(lenses.at(-1)?.slice(0, 4)).toEqual([
+			C.CAMERA_TARGET_PASS_VIEWS + made.place,
+			second.handle,
+			second.layers,
+			4,
+		]);
+		second.setOrthoHeight(8);
+		expect(lenses.at(-1)?.slice(0, 4)).toEqual([
+			C.CAMERA_TARGET_PASS_VIEWS + made.place,
+			second.handle,
+			second.layers,
+			8,
+		]);
+		made.setRect([0.25, 0.25, 0.5, 0.5]);
+		expect(made.rect).toEqual([0.25, 0.25, 0.5, 0.5]);
+		expect(viewCalls.rects).toEqual([[made.place, 0.25, 0.25, 0.5, 0.5]]);
+	});
+
+	test('destroy removes the view, and its calls then throw', () => {
+		const { scene, viewCalls } = fakeCore();
+		const made = scene.createView({ camera: camera(scene), rect: [0, 0, 1, 1] });
+		const place = made.place;
+		made.destroy();
+		expect(made.live).toBe(false);
+		expect(viewCalls.removed).toEqual([place]);
+		expect(thrown(() => made.destroy()).message).toStartWith('E1101: destroy()');
+		expect(thrown(() => made.setRect([0, 0, 1, 1])).message).toStartWith('E1101: setRect()');
+	});
+
+	test('refuses a rectangle outside the canvas, a missing camera and a number that is not finite', () => {
+		const { scene } = fakeCore();
+		const view = camera(scene);
+		for (const rect of [
+			[-0.1, 0, 0.5, 1],
+			[0, 0, 0, 1],
+			[0.5, 0, 0.6, 1],
+			[0, 0.75, 1, 0.5],
+		] as const)
+			expect(thrown(() => scene.createView({ camera: view, rect })).message).toStartWith(
+				'E1213: createView() got the rect',
+			);
+		expect(
+			thrown(() => scene.createView({ camera: view, rect: [0, 0, Number.NaN, 1] })).message,
+		).toStartWith('E1203: createView() got NaN');
+		expect(
+			thrown(() => scene.createView({ camera: {} as never, rect: [0, 0, 1, 1] })).message,
+		).toStartWith('E1213: createView() got no camera');
+	});
+});
+
+describe('scene.setSkyLayer', () => {
+	/** Compiled WGSL of a sky layer, as the plugin gives it. */
+	const layer = {
+		kind: 'skyLayer',
+		variants: {},
+		map: {},
+	} as unknown as Parameters<Scene['setSkyLayer']>[1]['wgsl'];
+	/** The description that places a sky layer. */
+	const placed = {
+		name: 'test-layer',
+		frame: 'background',
+		kind: 'draw',
+		provides: ['sky'],
+		views: ['main', 'scenePass', 'reflection'],
+	} as const;
+
+	test('a layer takes its values, a later call changes them, and a clear removes it', () => {
+		const { scene, skyLayers } = fakeCore();
+		const installed = scene.setSkyLayer(placed, { wgsl: layer, sun: 0.25 });
+		const first = skyLayers[0] as number[];
+		expect(first[0]).toBeGreaterThanOrEqual(C.SHADING_CUSTOM_FIRST);
+		expect(first.slice(1, 3)).toEqual([0.25, 1]);
+		// The map's build of the layer takes the template after the layer's own.
+		expect(first[3]).toBe((first[0] as number) + 1);
+		installed.set({ opacity: 0.5 });
+		expect((skyLayers[1] as number[]).slice(1, 3)).toEqual([0.25, 0.5]);
+		installed.set({ sun: 0.75 });
+		expect((skyLayers[2] as number[]).slice(1, 3)).toEqual([0.75, 0.5]);
+		scene.clearSkyLayer();
+		expect((skyLayers[3] as number[]).slice(0, 3)).toEqual([0, 0, 1]);
+		// A second clear sends nothing: no layer is installed.
+		scene.clearSkyLayer();
+		expect(skyLayers).toHaveLength(4);
+	});
+
+	test('a second install replaces the layer with a template of its own', () => {
+		const { scene, skyLayers } = fakeCore();
+		scene.setSkyLayer(placed, { wgsl: layer });
+		const other = { kind: 'skyLayer', variants: {}, map: {} } as unknown as typeof layer;
+		scene.setSkyLayer(placed, { wgsl: other });
+		// Each layer takes two templates: its box, and the sky map's draws with it.
+		expect((skyLayers[1] as number[])[0]).toBe(((skyLayers[0] as number[])[0] as number) + 2);
+		expect((skyLayers[1] as number[]).slice(1, 3)).toEqual([0, 1]);
+	});
+
+	test('a description that the engine cannot place throws E1223', () => {
+		const { scene } = fakeCore();
+		const options = { wgsl: layer };
+		for (const [key, value, message] of [
+			['frame', 'opaque', 'with the frame "opaque"; a sky layer records at \'background\''],
+			['kind', 'fullscreen', 'with the kind "fullscreen"; a sky layer draws'],
+			['provides', [], "with the provides []; a sky layer provides 'sky'"],
+			['views', ['main'], 'with the views ["main"]; a sky layer draws in'],
+		] as const)
+			expect(
+				thrown(() => scene.setSkyLayer({ ...placed, [key]: value } as never, options)).message,
+			).toContain(message);
+		expect(thrown(() => scene.setSkyLayer(undefined as never, options)).message).toStartWith(
+			'E1223: setSkyLayer() got undefined',
+		);
+	});
+
+	test('WGSL that the plugin did not compile as a sky layer throws E1215', () => {
+		const { scene } = fakeCore();
+		expect(
+			thrown(() => scene.setSkyLayer(placed, { wgsl: 'fn skyLayer() {}' as never })).message,
+		).toStartWith('E1215: setSkyLayer() got WGSL as text');
+		expect(
+			thrown(() => scene.setSkyLayer(placed, { wgsl: { kind: 'effect' } as never })).message,
+		).toStartWith('E1215: setSkyLayer() got "effect", which is not a sky layer');
+	});
+
+	test('a value outside 0 to 1 throws E1108', () => {
+		const { scene } = fakeCore();
+		expect(
+			thrown(() => scene.setSkyLayer(placed, { wgsl: layer, opacity: 1.5 })).message,
+		).toStartWith('E1108: setSkyLayer() got 1.5 for opacity; it takes 0 to 1');
+		const installed = scene.setSkyLayer(placed, { wgsl: layer });
+		expect(thrown(() => installed.set({ sun: -0.2 })).message).toStartWith(
+			'E1108: SkyLayer.set() got -0.2 for sun; it takes 0 to 1',
+		);
+		expect(thrown(() => scene.setSkyLayer(placed, undefined as never)).message).toStartWith(
+			'E1213: setSkyLayer() got undefined',
+		);
 	});
 });
 
@@ -920,21 +1411,27 @@ describe('labels', () => {
 	 * A sketch's labels and a page's, joined as the engine joins them: the sketch's slots reach the
 	 * page at once, and `show` presents a frame as the thread that draws does.
 	 */
-	const setup = (capacity = 8, drawsHere = true) => {
+	const setup = (capacity = 8, capacity3d = 8, drawsHere = true) => {
 		const fake = fakeCore();
 		fake.setCanvas(DEVICE[0], DEVICE[1], CSS[0], CSS[1]);
-		const buffer = createControlBuffer(false, capacity);
+		const buffer = createControlBuffer(false, capacity, capacity3d);
 		const views = controlViews(buffer);
 		views.slots[Slot.Running] = 1;
 		views.slotFloats[Slot.CanvasCssWidth] = CSS[0];
 		views.slotFloats[Slot.CanvasCssHeight] = CSS[1];
 		const region = controlLabels(buffer) as LabelRegion;
 		const page = new LabelLoop(views, drawsHere, new LabelSlots());
-		const sent: [string, number, number][] = [];
-		const ui = new Ui(region, fake.scene, fake.core, fake.scene.frameCameras, (id, slot, gen) => {
-			sent.push([id, slot, gen]);
-			page.setSlot(id, slot, gen);
-		});
+		const sent: [string, number, number, number][] = [];
+		const ui = new Ui(
+			region,
+			fake.scene,
+			fake.core,
+			fake.scene.frameCameras,
+			(id, table, slot, gen) => {
+				sent.push([id, table, slot, gen]);
+				page.setSlot(id, table, slot, gen);
+			},
+		);
 		return {
 			...fake,
 			ui,
@@ -1095,9 +1592,10 @@ describe('labels', () => {
 		ui.untrackLabel('a');
 		ui.trackLabel(second, 'b');
 		expect(sent).toEqual([
-			['a', 0, 0],
-			['a', -1, 0],
-			['b', 0, 1],
+			['a', 0, 0, 0],
+			['a', 0, -1, 0],
+			// The freed slot passes to 'b' under a new generation.
+			['b', 0, 0, 1],
 		]);
 		// The page still binds 'a', which now has no slot, while 'b' takes slot 0.
 		const b = element();
@@ -1110,7 +1608,7 @@ describe('labels', () => {
 		second.destroy();
 		record(3);
 		show(3);
-		expect(sent.at(-1)).toEqual(['b', -1, 0]);
+		expect(sent.at(-1)).toEqual(['b', 0, -1, 0]);
 		expect(placeOf(b)).toBeNull();
 	});
 
@@ -1134,7 +1632,7 @@ describe('labels', () => {
 	});
 
 	test('the page runs a frame loop only while an element is bound, where a worker draws', () => {
-		const { scene, ui, page } = setup(8, false);
+		const { scene, ui, page } = setup(8, 0, false);
 		ui.trackLabel(scene.createGroup(), 'a');
 		expect(callbacks).toHaveLength(0);
 		const a = element();
@@ -1186,7 +1684,7 @@ describe('labels', () => {
 		const buffer = createControlBuffer(false, 4);
 		const views = controlViews(buffer);
 		const page = new PageLabels(views, true);
-		page.setSlot('a', 2, 5);
+		page.setSlot('a', 0, 2, 5);
 		const a = element();
 		const b = element();
 		page.bind('a', a);
@@ -1200,6 +1698,246 @@ describe('labels', () => {
 		expect(b.style.position).toBeUndefined();
 	});
 
+	/** The numbers of a CSS matrix3d, in the order that CSS takes them. */
+	const matrixOf = (transform: string) => {
+		const match = /matrix3d\(([^)]+)\)/.exec(transform);
+		if (!match) throw new Error(`unexpected transform ${transform}`);
+		return (match[1] as string).split(',').map(Number);
+	};
+	/** The numbers that three.js's CSS3DRenderer writes for an object's world matrix. */
+	const css3dObject = (matrix: Matrix4) => {
+		const e = matrix.elements;
+		return [
+			e[0],
+			e[1],
+			e[2],
+			e[3],
+			-(e[4] as number),
+			-(e[5] as number),
+			-(e[6] as number),
+			-(e[7] as number),
+			e[8],
+			e[9],
+			e[10],
+			e[11],
+			e[12],
+			e[13],
+			e[14],
+			e[15],
+		] as number[];
+	};
+	/** The numbers that three.js's CSS3DRenderer writes for a camera's view matrix. */
+	const css3dCamera = (inverse: Matrix4) => {
+		const e = inverse.elements;
+		return [
+			e[0],
+			-(e[1] as number),
+			e[2],
+			e[3],
+			e[4],
+			-(e[5] as number),
+			e[6],
+			e[7],
+			e[8],
+			-(e[9] as number),
+			e[10],
+			e[11],
+			e[12],
+			-(e[13] as number),
+			e[14],
+			e[15],
+		] as number[];
+	};
+
+	test("a 3D label's element takes the matrix that three.js's CSS3DRenderer gives it", () => {
+		const { scene, setWorld, ui, page, record, show } = setup();
+		const cameraMatrix = world([2, 1, 10], [-0.2, 0.3, 0.05]);
+		const perspective = scene.createPerspectiveCamera({ fov: 50, near: 0.5, far: 30 });
+		const half = (8 * CSS[0]) / CSS[1] / 2;
+		const orthographic = scene.createOrthographicCamera({ height: 8, near: 0.5, far: 30 });
+		setWorld(perspective, cameraMatrix);
+		setWorld(orthographic, cameraMatrix);
+		const pairs = [
+			[perspective, new ThreePerspectiveCamera(50, CSS[0] / CSS[1], 0.5, 30)],
+			[orthographic, new ThreeOrthographicCamera(-half, half, 4, -4, 0.5, 30)],
+		] as const;
+		// A turned and scaled object, whose offset turns and scales with it.
+		const objectMatrix = world([1, 2, 3], [0.4, -0.7, 0.2], 1.5);
+		const object = scene.createGroup();
+		setWorld(object, objectMatrix);
+		const offset: [number, number, number] = [0, 2, 0.5];
+		ui.trackLabel(object, 'plate', { transform: 'world', offset });
+		const plate = element();
+		page.bind('plate', plate);
+		let frame = 0;
+		for (const [mine, theirs] of pairs) {
+			theirs.matrixWorld.copy(cameraMatrix);
+			theirs.matrixWorldInverse.copy(cameraMatrix).invert();
+			theirs.updateProjectionMatrix();
+			scene.setActiveCamera(mine);
+			record(++frame);
+			show(frame);
+			// The element's center sits at the label's anchor, and it turns with the object.
+			const expected = new Matrix4().copy(objectMatrix);
+			const anchor = new Vector3(...offset).applyMatrix4(objectMatrix);
+			expected.setPosition(anchor);
+			expectClose(matrixOf(plate.style.transform as string), css3dObject(expected), 4);
+		}
+	});
+
+	test("a billboard label's element faces the camera, as three.js's CSS3DSprite does", () => {
+		const { scene, setWorld, ui, page, record, show } = setup();
+		const cameraMatrix = world([2, 1, 10], [-0.2, 0.3, 0.05]);
+		const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.5, far: 30 });
+		const theirs = new ThreePerspectiveCamera(50, CSS[0] / CSS[1], 0.5, 30);
+		setWorld(camera, cameraMatrix);
+		theirs.matrixWorld.copy(cameraMatrix);
+		theirs.matrixWorldInverse.copy(cameraMatrix).invert();
+		theirs.updateProjectionMatrix();
+		scene.setActiveCamera(camera);
+		const objectMatrix = world([1, 2, 3], [0.4, -0.7, 0.2], 1.5);
+		const object = scene.createGroup();
+		setWorld(object, objectMatrix);
+		const offset: [number, number, number] = [0.5, 1, 0];
+		const turn = 0.4;
+		ui.trackLabel(object, 'face', { transform: 'billboard', rotation: turn, offset });
+		const face = element();
+		page.bind('face', face);
+		record(1);
+		show(1);
+		// three.js's CSS3DSprite takes the camera's own turn, turns it in the element's plane, and
+		// places and scales it as the object is.
+		const expected = new Matrix4().copy(theirs.matrixWorldInverse).transpose();
+		expected.multiply(new Matrix4().makeRotationZ(turn));
+		const scale = new Vector3();
+		objectMatrix.decompose(new Vector3(), new Quaternion(), scale);
+		expected.setPosition(new Vector3(...offset).applyMatrix4(objectMatrix));
+		expected.scale(scale);
+		// three.js clears the view's turn from the element's last row, which makes the matrix affine.
+		for (const k of [3, 7, 11]) expected.elements[k] = 0;
+		expected.elements[15] = 1;
+		expectClose(matrixOf(face.style.transform as string), css3dObject(expected), 4);
+	});
+
+	test('a 3D label hides with its object, the layers the camera draws and beyond the far plane', () => {
+		const { scene, setWorld, ui, page, record, show, take } = setup();
+		const camera = scene.createPerspectiveCamera({ fov: 60, near: 0.5, far: 30 });
+		setWorld(camera, world([0, 0, 10], [0, 0, 0]));
+		scene.setActiveCamera(camera);
+		const object = scene.createGroup();
+		setWorld(object, world([0, 0, 0], [0, 0, 0]));
+		ui.trackLabel(object, 'plate', { transform: 'world' });
+		const plate = element();
+		page.bind('plate', plate);
+		let frame = 0;
+		const placed = () => {
+			take();
+			record(++frame);
+			show(frame);
+			return plate.style.visibility === 'hidden' ? null : plate.style.transform;
+		};
+		expect(placed()).toContain('matrix3d(');
+		object.setVisible(false);
+		expect(placed()).toBeNull();
+		object.setVisible(true);
+		object.setLayers(1 << 3);
+		expect(placed()).toBeNull();
+		object.setLayers(1);
+		setWorld(object, world([0, 0, -40], [0, 0, 0]));
+		expect(placed()).toBeNull();
+		setWorld(object, world([1, 0, 0], [0, 0, 0]));
+		expect(placed()).toContain('matrix3d(');
+	});
+
+	test("the containers take the frame's camera, as three.js's CSS3DRenderer builds it", () => {
+		const { scene, setWorld, ui, record, region, page } = setup();
+		const cameraMatrix = world([2, 1, 10], [-0.2, 0.3, 0.05]);
+		const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.5, far: 30 });
+		const half = (8 * CSS[0]) / CSS[1] / 2;
+		const orthographic = scene.createOrthographicCamera({ height: 8, near: 0.5, far: 30 });
+		// A view whose centre is off the camera's axis, as three.js's edges give it.
+		const offset = scene.createOrthographicCamera({
+			left: -3,
+			right: 5,
+			top: 2,
+			bottom: -4,
+			near: 0.5,
+			far: 30,
+		});
+		setWorld(camera, cameraMatrix);
+		setWorld(orthographic, cameraMatrix);
+		setWorld(offset, cameraMatrix);
+		const object = scene.createGroup();
+		setWorld(object, world([0, 0, 0], [0, 0, 0]));
+		ui.trackLabel(object, 'plate', { transform: 'world' });
+		page.bind('plate', element());
+		const pairs = [
+			[camera, new ThreePerspectiveCamera(50, CSS[0] / CSS[1], 0.5, 30), undefined],
+			[orthographic, new ThreeOrthographicCamera(-half, half, 4, -4, 0.5, 30), undefined],
+			// three.js puts the view's centre back before its turn, as (-1, -1) for these edges.
+			[offset, new ThreeOrthographicCamera(-3, 5, 2, -4, 0.5, 30), [-1, -1]],
+		] as const;
+		let frame = 0;
+		for (const [mine, theirs, center] of pairs) {
+			theirs.matrixWorld.copy(cameraMatrix);
+			theirs.matrixWorldInverse.copy(cameraMatrix).invert();
+			theirs.updateProjectionMatrix();
+			scene.setActiveCamera(mine);
+			record(++frame);
+			presentLabels(region, frame);
+			const text = cameraTransform(region.presentedCamera, CSS[0], CSS[1]);
+			// The focal length is the projection matrix's scale across half the view's height.
+			const focal = (theirs.projectionMatrix.elements[5] as number) * (CSS[1] / 2);
+			const focalText = /^(?:perspective|scale)\(([-\d.e+]+)/.exec(text)?.[1];
+			expect(Number(focalText)).toBeCloseTo(focal, 3);
+			expectClose(matrixOf(text), css3dCamera(theirs.matrixWorldInverse), 4);
+			// An orthographic view's centre comes before the turn.
+			if (center) expect(text).toContain(`translate(${center[0]}px,${center[1]}px)`);
+			// The view's center on the canvas comes last.
+			expect(text).toEndWith(`translate(${CSS[0] / 2}px,${CSS[1] / 2}px)`);
+		}
+	});
+
+	test('a label that becomes a plane of the scene takes a slot in the other table', () => {
+		const { scene, setWorld, ui, sent } = setup(4, 2);
+		const object = scene.createGroup();
+		setWorld(object, world([0, 0, 0], [0, 0, 0]));
+		ui.trackLabel(object, 'a');
+		ui.trackLabel(object, 'a', { transform: 'world' });
+		expect(sent).toEqual([
+			['a', 0, 0, 0],
+			['a', 0, -1, 0],
+			['a', 1, 0, 0],
+		]);
+		ui.trackLabel(object, 'a');
+		expect(sent.at(-2)).toEqual(['a', 1, -1, 0]);
+		expect(sent.at(-1)).toEqual(['a', 0, 0, 1]);
+	});
+
+	test('a full table of 3D labels fails with E1219, which names maxLabels3d', () => {
+		const { scene, ui } = setup(4, 2);
+		const object = scene.createGroup();
+		ui.trackLabel(object, 'one', { transform: 'world' });
+		ui.trackLabel(object, 'two', { transform: 'billboard' });
+		expect(
+			thrown(() => ui.trackLabel(object, 'three', { transform: 'world' })).message,
+		).toStartWith(
+			'E1219: trackLabel() could not track "three": the engine already tracks 2 labels of the scene. Raise createEngine()\'s maxLabels3d option for more.',
+		);
+		ui.untrackLabel('two');
+		ui.trackLabel(object, 'three', { transform: 'world' });
+	});
+
+	test('createEngine takes from 0 to 65,536 3D labels, 256 by default', () => {
+		expect(labelCapacity3d(undefined)).toBe(256);
+		expect(labelCapacity3d(0)).toBe(0);
+		expect(labelCapacity3d(65_536)).toBe(65_536);
+		for (const bad of [-1, 1.5, 65_537, Number.NaN])
+			expect(thrown(() => labelCapacity3d(bad)).message).toStartWith(
+				`E1213: createEngine() got ${bad} for maxLabels3d`,
+			);
+	});
+
 	test('createEngine takes from 1 to 65,536 labels, 4,096 by default', () => {
 		expect(labelCapacity(undefined)).toBe(4096);
 		expect(labelCapacity(65_536)).toBe(65_536);
@@ -1207,5 +1945,46 @@ describe('labels', () => {
 			expect(thrown(() => labelCapacity(bad)).message).toStartWith(
 				`E1213: createEngine() got ${bad} for maxLabels`,
 			);
+	});
+});
+
+describe('overrideMaterial', () => {
+	test('sets and clears the material that every mesh of the main pass draws with', () => {
+		const { scene, paint, overrides } = fakeCore();
+		expect(scene.overrideMaterial).toBeNull();
+		scene.overrideMaterial = paint;
+		expect(scene.overrideMaterial).toBe(paint);
+		expect(overrides).toEqual([1]);
+		// The same material again reaches no core call.
+		scene.overrideMaterial = paint;
+		expect(overrides).toEqual([1]);
+		scene.overrideMaterial = null;
+		expect(scene.overrideMaterial).toBeNull();
+		expect(overrides).toEqual([1, 0]);
+	});
+
+	test('refuses a sprite, point or line material with E1224 and keeps the override as it was', () => {
+		const { scene, paint, core, overrides } = fakeCore();
+		scene.overrideMaterial = paint;
+		for (const [shading, kind] of [
+			[C.SHADING_SPRITE, 'sprite'],
+			[C.SHADING_PARTICLE, 'particle'],
+			[C.SHADING_LINE, 'line'],
+			[C.SHADING_LINE_LIT, 'line'],
+		] as const) {
+			const material = new Material(2, core, 'materials.standard.set', shading);
+			expect(thrown(() => (scene.overrideMaterial = material)).message).toStartWith(
+				`E1224: scene.overrideMaterial got a ${kind} material.`,
+			);
+			expect(scene.overrideMaterial).toBe(paint);
+		}
+		expect(overrides).toEqual([1]);
+	});
+
+	test('refuses a material of another engine with E1103', () => {
+		const { scene } = fakeCore();
+		const foreign = new Material(2, {} as unknown as CoreMemory, 'materials.standard.set');
+		expect(thrown(() => (scene.overrideMaterial = foreign)).code).toBe('E1103');
+		expect(scene.overrideMaterial).toBeNull();
 	});
 });

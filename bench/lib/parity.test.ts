@@ -271,6 +271,10 @@ describe('feature scenes', () => {
 		expect(featureScene('alpha-mask-shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		// Coverage flips a sample at some cut edges, so its scene takes a small limit of its own.
 		expect(featureScene('alpha-coverage')?.limit).toBe(ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT);
+		// The masked glass's WebGL2 pane edge takes the same sample flip as the coverage scene.
+		expect(featureScene('gltf-transmission-mask')?.limit).toBe(
+			ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT,
+		);
 		// null3D's integer hash draws its own pattern, so the hash scene is a sanity comparison.
 		expect(featureScene('alpha-hash')?.limit).toBe(ALPHA_HASH_MAX_DIFFERENT_PERCENT);
 		// The strong bloom is a sanity comparison; the soft one keeps three.js's rule.
@@ -305,8 +309,8 @@ describe('feature scenes', () => {
 			expect(featureScene(scene)?.compatLimit).toBeGreaterThan(
 				featureScene(scene)?.limit ?? MAX_DIFFERENT_PERCENT,
 			);
-		// Their other tiers keep three.js's own rule, so a scene that needed 2.5% in compatibility
-		// mode alone no longer passes there with it.
+		// Their other tiers keep three.js's own rule, so a scene that needs 2.5% in compatibility
+		// mode alone does not pass there with it.
 		expect(featureScene('shadow-catcher')?.limit).toBeUndefined();
 		expect(featureScene('morph')?.limit).toBeUndefined();
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
@@ -326,6 +330,13 @@ describe('feature scenes', () => {
 			'gltf-ktx2',
 			'gltf-specular',
 			'gltf-ior',
+			'gltf-iridescence',
+			'gltf-iridescence-dielectric',
+			'gltf-iridescence-metallic',
+			'gltf-iridescence-suzanne',
+			'gltf-anisotropy',
+			'gltf-anisotropy-strength',
+			'gltf-transmission-mask',
 			'gltf-clearcoat',
 			'gltf-toy-car',
 			'shadows',
@@ -340,6 +351,7 @@ describe('feature scenes', () => {
 		expect(featureScene('morph-closeup')?.limit).toBeUndefined();
 		// three.js's WebGPURenderer draws the Khronos meshopt test wrong, so WebGLRenderer is its reference.
 		expect(featureScene('gltf-meshopt-khr')?.webglOnly).toBe(true);
+		expect(featureScene('gltf-iridescence-metallic')?.webglOnly).toBe(true);
 		expect(featureScene('gltf-meshopt-ext')?.webglOnly).toBeUndefined();
 		for (const scene of looser) expect(scene.limit).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
 		const tone = featureScene('tone-agx');
@@ -511,6 +523,8 @@ describe('the pages', () => {
 			'null3d-webgpu-skin-narrow',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
+			'null3d-webgpu-reflection-off',
+			'null3d-webgl2-reflection-off',
 		]);
 		expect(TIERS.map(gpuApiOf)).toEqual(['webgpu', 'webgpu', 'webgl2']);
 	});
@@ -638,6 +652,8 @@ describe('the pages', () => {
 			'null3d-webgpu-skin-narrow',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
+			'null3d-webgpu-reflection-off',
+			'null3d-webgl2-reflection-off',
 		]);
 		expect(isNull3dPage('scene-code')).toBe(false);
 		expect(PAGE_KINDS.map(gpuApiOfPage)).toEqual([
@@ -679,6 +695,8 @@ describe('the pages', () => {
 			'webgpu',
 			'webgpu',
 			'webgl2',
+			'webgl2',
+			'webgpu',
 			'webgl2',
 		]);
 		expect(gpuApiOfPage('scene-code')).toBe('webgl2');
@@ -812,7 +830,7 @@ describe('parseParityArgs', () => {
 
 	test('refuses unknown names, a pair that is not two pages, and --tier with --pair', () => {
 		expect(() => parseParityArgs(['--scene', 's9'])).toThrow(
-			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4, s5, s6, standard-grid,',
+			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4, s5, s6, s7, standard-grid,',
 		);
 		expect(() => parseParityArgs(['--tier', 'webgl1'])).toThrow('"webgl1" is not a tier.');
 		expect(() => parseParityArgs(['--pair', 'threejs-webgl'])).toThrow(

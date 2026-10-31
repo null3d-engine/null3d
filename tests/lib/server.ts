@@ -7,6 +7,7 @@ import { constants } from 'node:os';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import { localHostName } from '../../tools/lib/host.ts';
+import { refuseInQuietWindow } from '../../tools/lib/quiet-window.ts';
 import { RUNS_DIR } from './report-collector.ts';
 
 /**
@@ -19,6 +20,36 @@ export const HTTP_PORT = devServerPort(process.env.NULL3D_PORT);
 export const HTTPS_PORT = HTTP_PORT + 1;
 /** Where `vite preview` serves the production build of the test pages. */
 export const PREVIEW_PORT = HTTP_PORT + 2;
+/**
+ * The switch of the production build of the test pages. With the value `skip` a browser run starts
+ * no production server and has no production build project. With `prebuilt` the server serves the
+ * pages that `bun run build:test-pages` built, and builds none. Unset, the server builds them.
+ */
+export const PRODUCTION_PAGES_SWITCH = 'NULL3D_PRODUCTION_PAGES';
+/**
+ * The test pages of the production build, each built on its own (see vite.config.ts), in build
+ * order: the engine test page's build empties the build's folder, and each other page adds its own.
+ */
+export const PRODUCTION_BUILD_PAGES = [
+	'engine',
+	'errors',
+	'sketch-shaders',
+	'ktx2-files',
+	'texture-cache',
+	'gltf-files',
+	'stats',
+] as const;
+/** The production build project's test files, which load the pages of the production build. */
+export const PRODUCTION_BUILD_TESTS = [
+	'content-security-policy.spec.ts',
+	'cdn.spec.ts',
+	'engine.spec.ts',
+	'errors.spec.ts',
+	'sketch-shaders.spec.ts',
+	'ktx2.spec.ts',
+	'gltf.spec.ts',
+	'stats.spec.ts',
+] as const;
 /**
  * Chrome's debugging port for the benchmark tools that drive Chrome through its debugging protocol:
  * a Chrome they start here, or Chrome on a phone that adb forwards here. Each copy of the repository
@@ -233,6 +264,7 @@ export async function refuseOtherCopy(url: string, root = REPO_ROOT): Promise<vo
  * and waits until it answers.
  */
 export async function startServer(https = false): Promise<DevServer> {
+	refuseInQuietWindow('The dev server');
 	const url = https
 		? `https://${localHostName()}.local:${HTTPS_PORT}`
 		: `http://localhost:${HTTP_PORT}`;
@@ -268,6 +300,7 @@ export async function startPreview(
 	probe: string,
 	root = REPO_ROOT,
 ): Promise<DevServer> {
+	refuseInQuietWindow('The preview server');
 	const url = `http://localhost:${port}`;
 	await refuseTaken(url);
 	const args = ['preview', '--outDir', outDir, '--port', String(port), '--strictPort'];

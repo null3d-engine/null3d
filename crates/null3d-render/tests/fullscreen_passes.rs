@@ -72,6 +72,11 @@ fn add_fullscreen<B: FrameBuilder>(
 ) -> ViewId {
     let pass = Fullscreen {
         template: PASS_TEMPLATE,
+        fallback: false,
+        history: false,
+        layers: 1,
+        steps: 1,
+        reset: 0,
         source,
         depth: source == PassSource::SceneColor,
         values: [0.0; EFFECT_FLOATS],
@@ -134,6 +139,7 @@ fn chain<B: FrameBuilder>(world: &mut World<B>) -> (ViewId, ViewId) {
     let effect = Effect {
         template: PASS_TEMPLATE,
         depth: false,
+        bloom: None,
         values: [0.0; EFFECT_FLOATS],
         maps: one_texture(echo_texture),
     };

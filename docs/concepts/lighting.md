@@ -107,7 +107,9 @@ Colors that you set in the scene's units take the exposure too: a background col
 
 ## Clustered forward shading
 
-A scene can hold hundreds of point, spot and area lights, but a surface only needs the few whose ranges reach it. The engine therefore cuts the camera's view into clusters. The screen splits into 16 tiles across and 9 up, and the depth splits into 24 slices. Slices grow with distance, from the near plane out to where the farthest light ends. Near the camera, where each meter covers more of the screen, slices are thin.
+A scene can hold hundreds of point, spot and area lights, but a surface only needs the few whose ranges reach it. The engine therefore cuts the camera's view into clusters. The screen splits into 16 tiles across and 9 up, and the depth splits into 24 slices. Slices grow with distance. Near the camera, where each meter covers more of the screen, slices are thin.
+
+On WebGPU at Medium and above, the slices fit the depth that the surfaces in view span. A small compute pass after the opaque pass samples the depth sparsely and keeps the nearest and farthest surface. The next frame fits its slices to that range, so a slice covers a shorter part of the view and lists fewer lights. The first slice still starts at the near plane. The last still ends where the farthest light ends. A surface outside the measured range therefore keeps every light that reaches it. Low keeps the CPU's slicing, from the near plane to the farthest light's end. WebGL2 keeps that slicing at every preset.
 
 Each frame the engine lists, for each cluster, the lights whose range spheres reach it. Each pixel of a standard material then finds its cluster and loops over that cluster's lights alone. The test is conservative: a cluster may list a light that ends just before it, but never misses a light that reaches it. Each light fades smoothly to nothing at its range, so a listed light that does not reach a pixel adds nothing.
 
@@ -124,10 +126,10 @@ flowchart LR
 
 Where the lists come from depends on the GPU path:
 
-- On WebGPU, a compute pass on the GPU lists each cluster's lights, before the scene draws. The CPU only picks the frame's lights, cuts the view into slices and uploads the light list. Its work per frame stays small with hundreds of lights.
+- On WebGPU at Medium and above, a compute pass on the GPU fits the slices to the measured depth range and lists each cluster's lights, before the scene draws. At Low the pass lists the lights with the CPU's slicing and reads no measured depth. The CPU only picks the frame's lights, records a slicing and uploads the light list. Its work per frame stays small with hundreds of lights.
 - On WebGL2, which has no compute shaders, the job workers list them on the CPU, and the frame uploads the lists as data textures.
 
-Both paths use the same tests in the same order, so they list the same lights in each cluster.
+Both paths use the same tests in the same order. At Low the two paths list the same lights. A fitted slice at Medium and above lists fewer lights, because it covers a shorter depth. A light that a pixel does not reach adds nothing, so the pictures match.
 
 The engine shades each surface in the pass that draws it. A deferred renderer would light the whole screen in a later pass instead. Forward shading favors phones and tablets:
 
@@ -256,11 +258,11 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 - An HDR map keeps its panorama on the thread that draws, up to 8 MB for an image of 2,048 x 1,024 texels or more. A new GPU device makes the map again from it. `environment.destroy()` frees both.
 - The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 12 KB after Brotli. The shaders compile in the background while the scene loads, and `builtinEnvironment` resolves once they are ready. The GPU then makes the whole map in the next frame, before that frame draws. So no frame shows the scene without the room's light. That frame takes longer by the map's GPU time, which the table below gives.
 - Ask for the room while the scene loads. A call during play makes one long frame: on a phone, the time of 3 to 7 frames at 60 frames per second.
-- The sky's environment loads the same code and shaders as the room. The GPU makes its whole map in the next frame, in about 14 ms on a MacBook Pro. After each change of the sky, it makes the map again in 20 stages, one a frame. Each stage takes about 1 ms of GPU time on a MacBook Pro. The scene draws with the old map until the last stage, so no frame waits for a whole map. A sky that changes in every frame pays one stage in every frame.
+- The sky's environment loads the same code and shaders as the room. The GPU makes its whole map in the next frame, in about 14 ms on a MacBook Pro. After a change of the sky that shows, it makes the map again in 20 stages, one a frame. A sun that turns less than half a degree leaves the map as it is, and so does a color value that drifts by less than 2%. Slowly drifting clouds wait too, and their changes add up. One last refresh captures the sky exactly once it stops changing. Each stage takes about 1 ms of GPU time on a MacBook Pro. The scene draws with the old map until the last stage, so no frame waits for a whole map. A sun that turns in every frame pays a stage only while it crosses those steps.
 - A map of the default size takes 2 MB of GPU memory. The sky's environment keeps about 9 MB more for its steps. A file's map uploads in the frames after the load, within the frame's upload budget. The scene draws without an environment until its map is on the GPU.
 - The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline, and each pixel of a standard material pays one branch while the scene has none.
 - With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
-- On WebGL2 a fragment shader may use 16 texture units. The standard material uses at most 13 of them, the cube map, the area lights' tables and the reflection probes' maps, which share one array, and the copy of the opaque colors that screen-space reflections read included, so three stay free. A material's maps share six units. A material with more maps than that leaves out its specular intensity map first, then its specular color map, then its light map. WebGPU has no such limit.
+- On WebGL2 a fragment shader may use at least 16 texture units, as many as the device reports. The standard material uses at most 13 of them, the cube map, the area lights' tables and the reflection probes' maps, which share one array, and the copy of the opaque colors that screen-space reflections read included, so three stay free on a device with 16. A material's maps share six units. A material with more maps than that leaves out its specular intensity map first, then its specular color map, then its light map. A custom material's own textures take the units that the lighting leaves, and the engine refuses one that would pass the stage's units with E1209 before the device fails to link its shader. WebGPU has no such limit.
 
 The tests of the room's generator measured these times in Chrome. The phones ran in a device cloud, on a page with no shader cache. On WebGPU the map's time is the GPU's own. On WebGL2 it runs from the call until the GPU has finished.
 
@@ -304,7 +306,7 @@ The engine captures the scene from the probe's point on the GPU, through six squ
 - **Box projection.** A reflection ray meets the box's sides, and the probe reads its light in the direction from its point to that place. So a wall reflects in the floor at its own distance, and a reflection moves right as the camera moves. `boxProjection: false` reads the probe as light from far away, for open ground.
 - **Blending.** A probe lights its whole box, a floor on its bottom side included, and fades out over `blend` meters beyond its sides. So make each box the shape of its room or street. Where boxes overlap, the probe with the higher `priority` lights the surface, or the smaller box at the same priority, and the next probe takes the rest. A surface takes light from at most two probes. The environment lights what the probes leave.
 - **Diffuse light.** A probe also gives the diffuse light of its surfaces, from its roughest level, as three.js reads an environment map's.
-- **Refresh.** `refresh: 'once'` captures when the probe is made or moved, and when `probe.capture()` asks. `refresh: 'always'` captures again and again, so moving objects show. One probe captures per frame, in turns.
+- **Refresh.** `refresh: 'once'` captures when the probe is made or moved, and when `probe.capture()` asks. `refresh: 'always'` captures again and again, so moving objects show. One probe captures per frame, in turns. A capture whose pipelines are still building keeps its request, so that probe takes the next frame's turn too.
 - **What a capture sees.** Objects on the probe's `layers`, the sun and its shadows, the ambient, hemisphere and environment light, fog and the background. A probe sees the environment, not other probes.
 
 Mirror reflections win over probes: a [reflection pass](../api/render.md#reflection-passes) lights the surfaces that read it, and probes and the environment light the rest.
@@ -341,9 +343,9 @@ Such a mesh keeps the environment's diffuse light, and takes no light from the g
 ### Limits and cost
 
 - The grid's texture is a 3D texture of half floats, at most 256 texels along each side on every device. `LightProbeGridData.toTexture()` makes it.
-- A grid holds at most 256 probes along x, 256 along y and 83 along z. The z side is smaller because the texture holds one sub-volume for each direction of L1. Each sub-volume has a padding slice at either end.
+- A grid holds at most 256 probes along x, 256 along y and 83 along z. The z side is smaller because the texture is cut into sub-volumes that hold the coefficients, and each sub-volume has a padding slice at either end.
 - `counts` takes whole numbers of 2 or more, and `spacing` must be above 0. Development builds throw E1108 for a grid too large for the texture, and the error names the limit. Use a larger spacing, or a smaller box.
-- The grid takes 24 bytes of GPU memory for each probe, the 12 half floats of its coefficients. A grid of 24 x 8 x 24 probes (4,608 probes, one per metre over a 24 m hall) takes 110 KB.
+- The grid takes 24 bytes of GPU memory for each probe, the 12 half floats of its coefficients, plus two padding slices along z. A grid of 24 x 8 x 24 probes (4,608 probes, one per metre over a 24 m hall) takes about 117 KiB.
 - Each lit pixel of a standard material reads the grid three times.
 - The grid's shaders load on first use, so a page that sets no grid downloads none of it. To load them before the first frame, list `'probe_grid'` in `createEngine`'s `preload` option: [Loading screens](../guides/loading-screens.md#loading-everything-up-front).
 
@@ -395,8 +397,8 @@ export default defineSketch(async ({ scene, assets, time }) => {
 `assets.skyEnvironment()` resolves once the code and the shaders that make the map are ready. The next frame makes the whole map before it draws. From then on the map shows the sky of the last `setBackground({ sky })` call, or the sky's defaults before the first.
 
 - The map shows the same sun, air and clouds as the background. It leaves out the sun's disc: the directional light gives the sun's own light, and a disc in the map would light every surface twice.
-- After a change of the sky, the engine makes the map again in 20 short steps, one a frame. The first six draw the sky, one face of the cube each. The next thirteen filter the levels, one level or part of one each. The last step puts every new level into the map. The scene draws with the old map until then. The diffuse light changes in the same frame as the reflections.
-- So the light follows a moved sun 19 frames after the frame of the move, about 320 ms at 60 frames per second. A change during a refresh waits until it ends: then it takes up to 39 frames.
+- After a change of the sky that shows, the engine makes the map again in 20 short steps, one a frame. The first six draw the sky, one face of the cube each. The next thirteen filter the levels, one level or part of one each. The last step puts every new level into the map. The scene draws with the old map until then. The diffuse light changes in the same frame as the reflections.
+- So the light follows a sun that turned half a degree 19 frames later, about 320 ms at 60 frames per second. A smaller turn waits, and the map captures the sun exactly once it stops. A change during a refresh waits until it ends: then it takes up to 39 frames.
 - The steps are short so that a phone keeps its frame rate. On a software GPU, the longest step takes under 6 ms.
 - The engine works out the diffuse light on the CPU, from the same sky model, in about 0.1 ms on a MacBook Pro.
 - three.js's sky is about 5 at the horizon by day, while a sun light of about 3 is bright. Lit by the sky at full intensity, a scene looks brighter than three.js's examples with their exposure of 0.5. Lower the environment's `intensity`, or the exposure. [Time of day](#time-of-day) gives values that match each other.

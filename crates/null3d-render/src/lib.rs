@@ -10,6 +10,8 @@
 //! - `camera`: perspective and orthographic lenses with reversed depth, and view matrices
 //! - `cells`: grid-cell culling, which both frame builders share: still objects in cell order, a
 //!   box per cell, and the cells each view can see
+//! - `compute`: compute passes, which run a sketch's WGSL into a storage texture that materials,
+//!   effects and passes sample in the same frame
 //! - `cpu_culled`: the WebGL2 frame builder, with culling on the job workers and an index list per
 //!   view
 //! - `debug_lines`: the lines that a sketch draws for one frame, and the pass that draws them
@@ -69,6 +71,7 @@ pub mod background;
 pub mod bloom;
 pub mod camera;
 mod cells;
+pub mod compute;
 pub mod cpu_culled;
 mod data_texture;
 pub mod debug_lines;
@@ -78,6 +81,7 @@ pub mod dof;
 pub mod effects;
 pub mod environment;
 pub mod exposure;
+pub mod feature_instances;
 mod final_pass;
 pub mod fog;
 pub mod fog_volume;
@@ -99,10 +103,12 @@ pub mod morph;
 pub mod motion;
 pub mod object_ranges;
 pub mod occlusion;
+pub mod offset_alloc;
 pub mod outline;
 pub mod output;
 pub mod parallel_record;
 pub mod particles;
+pub mod patches;
 pub mod physical_sky;
 pub mod physical_sky_light;
 pub mod pick;
@@ -111,6 +117,8 @@ pub mod probe_grid;
 pub mod probe_shading;
 pub mod probes;
 pub mod queries;
+pub mod readback;
+pub mod scope;
 pub mod shadow_tiles;
 pub mod shadows;
 pub mod skinning;
@@ -120,8 +128,11 @@ pub mod sorted;
 pub mod ssr;
 pub mod still;
 pub mod subsurface;
+pub mod taa;
 pub mod textures;
+pub mod tone_mask;
 mod transmission;
+pub mod vertex_draws;
 pub mod view;
 mod view_copy;
 mod weighted;

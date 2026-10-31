@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
+import { setWakeByMessage } from '../shared/wake';
 import type { SketchRunner } from '../sketch/runner';
 import { runDirectLoop } from './direct-loop';
 import {
@@ -158,6 +159,41 @@ describe('the render loop', () => {
 		expect(Atomics.load(slots, Slot.FramesTaken)).toBe(1);
 		expect(drawn).toEqual([]);
 		expect(prepared).toEqual([]);
+		expect(Atomics.load(slots, Slot.FramesSkipped)).toBe(1);
+	});
+
+	it('draws the frame it took when the next frame records a new plan during the wake', () => {
+		const { control, metrics, slots, drawn, renderer } = setup();
+		// The sketch thread's wake messages reach their sketched frames here, in place of another
+		// worker that records the next frame as the wake reaches it.
+		setWakeByMessage(true);
+		try {
+			const wake = {
+				postMessage: () => {
+					if (Atomics.load(slots, Slot.FramesTaken) !== 1) return;
+					if (Atomics.load(slots, Slot.FramesPublished) !== 1) return;
+					// The next frame's plan made its targets again, so its generation differs.
+					Atomics.store(slots, Slot.PlanEpoch, 2);
+					Atomics.store(slots, Slot.FramePlan0, 2);
+					Atomics.store(slots, Slot.FramesPublished, 2);
+				},
+			};
+			loop = runRenderLoop(renderer, control, metrics, {}, wake);
+			// Frame 1 was recorded under the plan's first generation.
+			Atomics.store(slots, Slot.PlanEpoch, 1);
+			Atomics.store(slots, Slot.FramePlan0 + 1, 1);
+			Atomics.store(slots, Slot.FramesPublished, 1);
+			refresh(DISPLAY_HZ, 1);
+			// The frame draws, though the wake recorded a newer plan before the loop drew it. The
+			// capture that only that frame records would be lost otherwise.
+			expect(drawn).toEqual([1]);
+			expect(Atomics.load(slots, Slot.FramePresented)).toBe(1);
+			expect(Atomics.load(slots, Slot.FramesSkipped)).toBe(0);
+			refresh(DISPLAY_HZ, 1);
+			expect(drawn).toEqual([1, 2]);
+		} finally {
+			setWakeByMessage(false);
+		}
 	});
 });
 
@@ -174,6 +210,24 @@ describe('the hold loop', () => {
 		await held;
 		expect(drawn).toEqual([7]);
 		expect(Atomics.load(slots, Slot.FramesTaken)).toBe(7);
+	});
+
+	it('draws both held frames when the later one records a newer plan', async () => {
+		const { metrics, slots, drawn, renderer } = setup();
+		const hold = new HoldLoop(slots, renderer, metrics);
+		// The held scene recorded two frames. The first captures a probe, and the second turns the
+		// capture views off, which changes the plan's texture list. Both draw, in that order: a held
+		// frame that is skipped would lose the capture and the textures that only it made.
+		Atomics.store(slots, Slot.HeldFrom, 1);
+		Atomics.store(slots, Slot.FramePlan0 + 1, 1);
+		Atomics.store(slots, Slot.FramePlan0, 2);
+		Atomics.store(slots, Slot.PlanEpoch, 2);
+		Atomics.store(slots, Slot.FramesPublished, 2);
+		const held = hold.drawHeld();
+		refresh(DISPLAY_HZ, 2);
+		await held;
+		expect(drawn).toEqual([1, 2]);
+		expect(Atomics.load(slots, Slot.FramesSkipped)).toBe(0);
 	});
 });
 

@@ -1,8 +1,10 @@
 import { describe, expect, it, spyOn } from 'bun:test';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { messageOf } from '../errors/message';
 import * as C from '../generated/core';
 import { FORMAT_CANVAS, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
+import type { HoldScript } from '../page/hold';
 import type { CoreDevice } from '../page/limits';
 import { presetSettings } from '../quality/presets';
 import { callValueArguments } from '../scene/fake-call-values';
@@ -10,10 +12,13 @@ import type { Material, MeshGeometry } from '../scene/resources';
 import {
 	controlViews,
 	createControlBuffer,
+	EVENT_KEY_DOWN,
+	EVENT_KEY_UP,
 	frameAfter,
 	frameReached,
 	nextFrame,
 	Slot,
+	writeInputEvent,
 } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { onEngineStop } from '../shared/helper-workers';
@@ -25,6 +30,7 @@ import {
 	Role,
 	sampleFrames,
 } from '../shared/metrics';
+import { decodeRecording, type ReplayProgram } from '../shared/recording';
 import { jobAsker } from '../shared/task-host';
 import { defineSketch, type SketchContext, type SketchOptions } from './define-sketch';
 import type { QualityStart, QualityUpdate } from './quality';
@@ -209,6 +215,10 @@ async function start(
 		drawing,
 		grows = false,
 		holdSeconds,
+		holdScript,
+		replay,
+		record = false,
+		keyCodes = [],
 		shared = false,
 		cellsRefused,
 		control = controlViews(createControlBuffer(shared)),
@@ -220,6 +230,10 @@ async function start(
 		drawing?: FakeDrawing;
 		grows?: boolean;
 		holdSeconds?: number;
+		holdScript?: HoldScript;
+		replay?: ReplayProgram;
+		record?: boolean;
+		keyCodes?: readonly string[];
 		shared?: boolean;
 		cellsRefused?: () => number;
 		control?: ReturnType<typeof controlViews>;
@@ -249,14 +263,16 @@ async function start(
 			glue: fakeGlue(log, memory, calls, grows, cellsRefused, jobs),
 			memory,
 			control,
-			keyCodes: [],
+			keyCodes,
 			jobWorkers: jobs.most,
 			device: {
 				webgl2: true,
+				softwareRenderer: false,
 				storageBindingBytes: 0,
 				capabilities: 0,
 				maxTextureSize: 4096,
 				sharedUploads: false,
+				multiDraw: false,
 				depth: 'reversed',
 				parallelCompile: true,
 				freshShaders: false,
@@ -271,6 +287,7 @@ async function start(
 				cellCulling: true,
 				joinEffects: true,
 				depthPrepass: false,
+				prepassColor: C.PREPASS_COLOR_LOAD,
 				skinning: C.SKINNING_VERTEX,
 				indexInstances: false,
 				shadowDepthBits: 16,
@@ -294,13 +311,18 @@ async function start(
 			sendPreload: () => {},
 			onAskBuilds: () => {},
 			pageUrl: 'http://localhost/',
+			sketchUrl: 'http://localhost/sketch.ts',
 			maxTargetFps,
 			threads: [['sketch-worker', [Role.Sketch, Role.Render]]],
 			showStats: (show) => log.push(`stats ${show}`),
+			twoStepProbe: false,
 			wantJobs: jobAsker(jobs.most, (count) => jobs.asked.push(count)),
 			sendLabelSlot: () => {},
 		},
 		holdSeconds,
+		holdScript,
+		replay,
+		record,
 	);
 	let context: SketchContext | undefined;
 	try {
@@ -589,12 +611,13 @@ describe('SketchRunner', () => {
 		expect(moves(page.calls)).toHaveLength(1);
 	});
 
-	it("gives new directional lights the preset's shadow cascades and map size before the setup", async () => {
+	it("gives new directional lights the preset's shadow cascades, map size and hero tile size", async () => {
 		const { calls } = await start(() => ({}));
 		const medium = presetSettings('medium');
 		expect(calls.filter((call) => call[0] === 'setLightDefault')).toEqual([
 			['setLightDefault', C.LIGHT_VALUE_SHADOW_CASCADES, medium.shadowCascades],
 			['setLightDefault', C.LIGHT_VALUE_SHADOW_MAP_SIZE, medium.shadowMapSize],
+			['setLightDefault', C.LIGHT_VALUE_HERO_SIZE, medium.heroTileSize],
 		]);
 	});
 
@@ -1042,46 +1065,54 @@ describe('SketchRunner and quality presets', () => {
 		expect(check?.rounds).toEqual([{ preset: 'medium', presentedFps: 62.5, completedFps: 60.6 }]);
 	});
 
-	it('lowers the preset when the GPU finishes too few frames, down to Low', async () => {
-		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
-			quality: { ...MEDIUM, check: true },
-			drawing: { presentedMs: 16, completedMs: 40 },
-		});
-		stopDrawing();
-		expect(context.quality.preset).toBe('low');
-		expect(context.quality.settings.maxPixelRatio).toBe(1.5);
-		const last = updates.at(-1);
-		expect(last?.preset).toBe('low');
-		expect(last?.check?.rounds.map((round) => [round.preset, round.completedFps])).toEqual([
-			['medium', 25],
-			['low', 25],
-		]);
-	}, 10_000);
+	it(
+		'lowers the preset when the GPU finishes too few frames, down to Low',
+		async () => {
+			const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
+				quality: { ...MEDIUM, check: true },
+				drawing: { presentedMs: 16, completedMs: 40 },
+			});
+			stopDrawing();
+			expect(context.quality.preset).toBe('low');
+			expect(context.quality.settings.maxPixelRatio).toBe(1.5);
+			const last = updates.at(-1);
+			expect(last?.preset).toBe('low');
+			expect(last?.check?.rounds.map((round) => [round.preset, round.completedFps])).toEqual([
+				['medium', 25],
+				['low', 25],
+			]);
+		},
+		scaledBudget(10_000),
+	);
 
-	it("keeps the settings that the sketch's setup chose when the check lowers the preset", async () => {
-		const { context, log, stopDrawing } = await start(
-			(ctx, log) => {
-				ctx.textures.setUploadBudget(2048);
-				ctx.quality.set({ maxAnisotropy: 16 });
-				log.length = 0;
-				return {};
-			},
-			undefined,
-			{ quality: { ...MEDIUM, check: true }, drawing: { presentedMs: 16, completedMs: 40 } },
-		);
-		stopDrawing();
-		expect(context.quality.preset).toBe('low');
-		// Low's pixel ratio cap and texture memory budget apply, and the sketch's own anisotropy cap
-		// and upload budget stay.
-		expect(context.quality.settings.maxPixelRatio).toBe(1.5);
-		expect(context.quality.settings.maxAnisotropy).toBe(16);
-		expect(log.filter((line) => line.startsWith('setTextureOption'))).toEqual([
-			textureOption(
-				C.TEXTURE_OPTION_MEMORY_BUDGET_KIB,
-				presetSettings('low').textureMemoryMiB * 1024,
-			),
-		]);
-	}, 10_000);
+	it(
+		"keeps the settings that the sketch's setup chose when the check lowers the preset",
+		async () => {
+			const { context, log, stopDrawing } = await start(
+				(ctx, log) => {
+					ctx.textures.setUploadBudget(2048);
+					ctx.quality.set({ maxAnisotropy: 16 });
+					log.length = 0;
+					return {};
+				},
+				undefined,
+				{ quality: { ...MEDIUM, check: true }, drawing: { presentedMs: 16, completedMs: 40 } },
+			);
+			stopDrawing();
+			expect(context.quality.preset).toBe('low');
+			// Low's pixel ratio cap and texture memory budget apply, and the sketch's own anisotropy cap
+			// and upload budget stay.
+			expect(context.quality.settings.maxPixelRatio).toBe(1.5);
+			expect(context.quality.settings.maxAnisotropy).toBe(16);
+			expect(log.filter((line) => line.startsWith('setTextureOption'))).toEqual([
+				textureOption(
+					C.TEXTURE_OPTION_MEMORY_BUDGET_KIB,
+					presetSettings('low').textureMemoryMiB * 1024,
+				),
+			]);
+		},
+		scaledBudget(10_000),
+	);
 
 	it('asks for no more than the highest target that the page and ?fps= allow', async () => {
 		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
@@ -1092,5 +1123,221 @@ describe('SketchRunner and quality presets', () => {
 		stopDrawing();
 		expect(context.quality.preset).toBe('medium');
 		expect(updates.at(-1)?.check?.targetFps).toBe(30);
+	});
+});
+
+describe('hold mode with a timed script', () => {
+	/** A hold of `seconds` that performs `steps`, with a group named Car in the scene. */
+	const holdOf = (
+		steps: HoldScript['steps'],
+		seconds = 0.5,
+		keyCodes: readonly string[] = [],
+		log: (context: SketchContext, seconds: number) => object = () => ({}),
+	) =>
+		start(
+			(context) => {
+				context.scene.createGroup({ name: 'Car' });
+				return log(context, seconds);
+			},
+			undefined,
+			{ holdSeconds: seconds, holdScript: { steps }, keyCodes },
+		);
+
+	it('writes a property before the frame at its time, and dumps it after', async () => {
+		const { runner } = await holdOf([
+			{ at: 0, verb: 'set', target: 'Car', path: 'position', value: [1, 2, 3] },
+			{ at: 0.25, verb: 'set', target: 'Car', path: 'visible', value: [0] },
+			{ at: 0.25, verb: 'dump', target: 'Car', path: 'position' },
+			{ at: 0.5, verb: 'dump', target: 'Car' },
+		]);
+		const result = runner.holdScriptResult;
+		expect(result?.problems).toEqual([]);
+		expect(result?.dumps[0]).toEqual({
+			at: 0.25,
+			target: 'Car',
+			path: 'position',
+			value: [1, 2, 3],
+		});
+		expect(result?.dumps[1]).toMatchObject({
+			at: 0.5,
+			target: 'Car',
+			value: { name: 'Car', kind: 'object', position: [1, 2, 3], visible: false },
+		});
+	});
+
+	it('gives a key pressed at its time to the frames that follow, and releases it', async () => {
+		/** The key's state at each frame from a third of a second to a half. */
+		const states: boolean[] = [];
+		const { runner } = await holdOf(
+			[
+				{ at: 0, verb: 'key', code: 'KeyW', down: true },
+				{ at: 0.4, verb: 'key', code: 'KeyW', down: false },
+			],
+			0.5,
+			['KeyW'],
+			({ input, time }) => ({
+				onUpdate: () => {
+					if (time.now > 0.3 && time.now < 0.5) states.push(input.isDown('KeyW'));
+				},
+			}),
+		);
+		expect(runner.holdScriptResult?.problems).toEqual([]);
+		expect(states.length).toBeGreaterThan(3);
+		expect(states.slice(0, -2)).toContain(true);
+		expect(states.slice(-1)).toEqual([false]);
+	});
+
+	it('moves and presses the pointer, which the frames read as the mouse', async () => {
+		/** The pointer's position and main button in the frame at a half second. */
+		let seen: [number, number, number] = [0, 0, 0];
+		const { runner } = await holdOf(
+			[
+				{ at: 0, verb: 'pointer', action: 'move', x: 100, y: 50 },
+				// A press without a place keeps the pointer where it is.
+				{ at: 0.2, verb: 'pointer', action: 'down' },
+			],
+			0.5,
+			[],
+			({ input, time }) => ({
+				onUpdate: () => {
+					if (time.now === 0.5) seen = [input.pointer.x, input.pointer.y, input.pointer.buttons];
+				},
+			}),
+		);
+		expect(runner.holdScriptResult?.problems).toEqual([]);
+		expect(seen).toEqual([100, 50, 1]);
+	});
+
+	it('says why a target is not in the scene, and names those that are close', async () => {
+		const { runner } = await holdOf([
+			{ at: 0.1, verb: 'set', target: 'Cr', path: 'position', value: [0, 0, 0] },
+		]);
+		expect(runner.holdScriptResult?.problems).toEqual([
+			{
+				at: 0.1,
+				step: 'set "Cr".position',
+				error: 'the scene has no object named "Cr". Names that are close: "Car".',
+			},
+		]);
+	});
+
+	it('says why a property is not one that the object takes', async () => {
+		const { runner } = await holdOf([
+			{ at: 0, verb: 'set', target: 'Car', path: 'speed', value: [1] },
+		]);
+		const problem = runner.holdScriptResult?.problems[0];
+		expect(problem?.step).toBe('set "Car".speed');
+		expect(problem?.error).toContain('set() got "speed" on "Car"');
+		expect(problem?.error).toContain('position');
+	});
+
+	it('says why a key is not one that the engine reads, and goes on', async () => {
+		const { runner } = await holdOf([
+			{ at: 0, verb: 'key', code: 'KeyZ', down: true },
+			{ at: 0.5, verb: 'dump', target: 'Car', path: 'position' },
+		]);
+		expect(runner.holdScriptResult?.problems).toEqual([
+			{
+				at: 0,
+				step: 'key KeyZ down',
+				error:
+					'the engine reads no key named "KeyZ". Name a key by its code on a standard keyboard, such as KeyA, Space or ArrowLeft.',
+			},
+		]);
+		expect(runner.holdScriptResult?.dumps).toHaveLength(1);
+	});
+});
+
+describe('recording a session and replaying it', () => {
+	/** The key that the session presses, as the harness numbers it. */
+	const KEYS = ['KeyW'];
+
+	/** What a frame showed the sketch: its time, its step and whether the key was down. */
+	const seenLine = (now: number, dt: number, down: boolean) =>
+		`${now.toFixed(6)} ${dt.toFixed(6)} ${down ? 1 : 0}`;
+
+	/** A sketch that logs what each frame gave it: its time, its step and the key that drove it. */
+	const logging = (lines: string[]) => (context: SketchContext) => {
+		const { input, time } = context;
+		return {
+			onUpdate(dt: number) {
+				lines.push(seenLine(time.now, dt, input.isDown('KeyW')));
+			},
+		};
+	};
+
+	it('records each frame’s step and the input it read, and replays them to the same states', async () => {
+		/** What the live session's frames gave the sketch. */
+		const live: string[] = [];
+		const session = await start(logging(live), undefined, { keyCodes: KEYS, record: true });
+		session.runner.step(0);
+		// A key press lands before the second frame, then a long frame, then a release.
+		writeInputEvent(session.control, EVENT_KEY_DOWN, 0, 0, 0, 0, 0, 0, 0);
+		session.runner.step(1000 / 60);
+		session.runner.step(1000 / 60 + 200);
+		writeInputEvent(session.control, EVENT_KEY_UP, 0, 0, 0, 0, 0, 0, 0);
+		session.runner.step(1000 / 60 + 216);
+		session.runner.step(1000 / 60 + 232);
+
+		const bytes = await session.runner.saveRecording();
+		expect(bytes).toBeDefined();
+		const program = decodeRecording(bytes as Uint8Array);
+		expect(program.fixedRate).toBe(60);
+		expect(program.steps.length).toBe(5);
+
+		/** What the replay's frames gave the sketch. */
+		const replayed: string[] = [];
+		const replay = await start(logging(replayed), undefined, { keyCodes: KEYS, replay: program });
+		expect(replayed).toEqual(live);
+		expect(replay.runner.replayOutcome).toEqual({
+			frames: 5,
+			seconds: program.steps.reduce((sum, step) => sum + step, 0),
+			sketch: 'http://localhost/sketch.ts',
+			stopped: false,
+		});
+	});
+
+	it('runs no recording when the page does not record, and no replay when it gives none', async () => {
+		const lines: string[] = [];
+		const session = await start(logging(lines), undefined, { keyCodes: KEYS });
+		session.runner.step(0);
+		expect(await session.runner.saveRecording()).toBeUndefined();
+		expect(session.runner.replayOutcome).toBeUndefined();
+	});
+
+	it('refuses a recording of a sketch with another fixed rate, naming both rates', async () => {
+		const program = {
+			seed: 1,
+			fixedRate: 30,
+			sketch: 'http://localhost/sketch.ts',
+			stopped: false,
+			steps: new Float64Array([0]),
+			starts: new Uint32Array([0]),
+			counts: new Uint32Array([0]),
+			events: new Float64Array(0),
+			keyNames: [],
+			stride: 7,
+		} satisfies ReplayProgram;
+		await expect(
+			start(logging([]), undefined, { keyCodes: KEYS, replay: program }),
+		).rejects.toThrow('the recording runs 30 fixed steps a second, and this sketch runs 60');
+	});
+
+	it('refuses a recording that names a key that this engine does not have', async () => {
+		const program = {
+			seed: 1,
+			fixedRate: 60,
+			sketch: 'http://localhost/sketch.ts',
+			stopped: false,
+			steps: new Float64Array([0]),
+			starts: new Uint32Array([0]),
+			counts: new Uint32Array([1]),
+			events: new Float64Array([EVENT_KEY_DOWN, 0, 0, 0, 0, 0, 0]),
+			keyNames: ['KeyZ'],
+			stride: 7,
+		} satisfies ReplayProgram;
+		await expect(
+			start(logging([]), undefined, { keyCodes: KEYS, replay: program }),
+		).rejects.toThrow('the recording used the key "KeyZ"');
 	});
 });

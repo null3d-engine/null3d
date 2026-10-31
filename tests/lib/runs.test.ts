@@ -9,6 +9,7 @@ import { inShaderSet, type ShaderSet, variantInShaderSet } from '../pages/lib/sh
 import {
 	braveShieldsOf,
 	deviceChecklist,
+	loadsPrebuilt,
 	parseArgs,
 	planItems,
 	QuietRecovery,
@@ -50,6 +51,7 @@ const NO_WEBGPU = { webgpu: true, webgl2: false };
 import { RUNS_DIR } from './report-collector.ts';
 import {
 	batchTimeoutMs,
+	cappedQuietLimitMs,
 	currentItem,
 	handovers,
 	type ItemResult,
@@ -186,6 +188,57 @@ describe('waitForRunners', () => {
 			expect(finished).toEqual(['slow-ipad']);
 		}));
 
+	it("reports a runner's longest silence that its runner page ended by writing again", () =>
+		withRun(['a'], async (plan) => {
+			// The wait reads the files twice a second, so the writes lie further apart than that.
+			writeRunnerFile(plan.run, 'mac-safari', 'device', {});
+			setTimeout(() => writeRunnerFile(plan.run, 'mac-safari', HEARTBEAT_NAME, {}), 1100);
+			setTimeout(() => {
+				writeRunnerFile(plan.run, 'mac-safari', 'a', { ok: true });
+				writeRunnerFile(plan.run, 'mac-safari', 'done', {});
+			}, 1700);
+			const silences: [string, number, string | undefined][] = [];
+			await waitForRunners(plan, ['mac-safari'], {
+				quietMs: () => 5000,
+				onSilence: (runner, ms, at) => silences.push([runner, ms, at]),
+			});
+			expect(silences).toHaveLength(1);
+			const [[runner, ms, at] = ['', 0, undefined]] = silences;
+			expect(runner).toBe('mac-safari');
+			expect(ms).toBeGreaterThanOrEqual(1000);
+			expect(ms).toBeLessThan(1500);
+			expect(at).toBe('a');
+		}));
+
+	it('leaves out of the longest silence the stop that a new runner page ended', () =>
+		withRun(['a'], async (plan) => {
+			writeRunnerFile(plan.run, 'mac-safari', 'device', {});
+			const silences: number[] = [];
+			await waitForRunners(plan, ['mac-safari'], {
+				quietMs: () => 50,
+				onQuiet: (runner) => {
+					setTimeout(() => {
+						writeRunnerFile(plan.run, runner, 'a', { ok: true });
+						writeRunnerFile(plan.run, runner, 'done', {});
+					}, 300);
+					return true;
+				},
+				onSilence: (_, ms) => silences.push(ms),
+			});
+			expect(silences).toHaveLength(1);
+			expect(silences[0]).toBeLessThan(250);
+		}));
+
+	it('caps the quiet time of every page but one that sets its own', () => {
+		const capped = cappedQuietLimitMs(90);
+		expect(capped(item('long', 600))).toBe(90_000);
+		// A page whose own limit is shorter keeps it.
+		expect(capped(item('short', 10))).toBe((10 + 30) * 1000);
+		// A page that ends its tab waits its own quiet time for the tab to come back.
+		const ends = { ...item('ends', 600), quietSeconds: 400 };
+		expect(capped(ends)).toBe((400 + 30) * 1000);
+	});
+
 	it('gives the whole plan the most time that each page may get', () => {
 		const plan = { run: 'r', createdAt: '', items: [item('a', 220), item('b', 30)] };
 		expect(batchTimeoutMs(plan)).toBeGreaterThanOrEqual((220 + 30) * MOST_TIME_SHARE * 1000);
@@ -279,9 +332,19 @@ describe('waitForRunners', () => {
 		const module =
 			'E1405: the sketch worker did not start: error loading dynamically imported module: http://localhost:5173/packages/engine/dist/wasm/threaded/null3d.js. Read the message: it names the worker that did not start, and why.';
 		const script =
-			'E1405: the render worker did not start: its script or a file it imports did not load. Read the message: it names the worker that did not start, and why.';
+			'E1405: the render worker did not start: its script at http://localhost:5173/packages/engine/src/workers/render-worker.ts, or a file that it imports, did not load, and a second copy failed too. Read the message: it names the worker that did not start, and why.';
+		const thrown =
+			"E1405: the render worker did not start: Failed to load script (the render worker's script is http://localhost:5173/packages/engine/src/workers/render-worker.ts). Read the message: it names the worker that did not start, and why.";
+		// CI's Firefox 39 of 41 in run 40248658928 failed so, and passed in a rerun of the job.
+		const job =
+			'E1405: the job worker did not start: error loading dynamically imported module: http://localhost:5173/packages/engine/dist/wasm/threaded/null3d.js. Read the message: it names the worker that did not start, and why.';
+		// The engine names each job worker by its number (`job ${index}` in page/engine.ts).
+		const jobScript =
+			'E1405: the job 2 worker did not start: its script at http://localhost:5173/packages/engine/src/workers/job-worker.ts, or a file that it imports, did not load, and a second copy failed too. Read the message: it names the worker that did not start, and why.';
+		const jobThrown =
+			"E1405: the job 2 worker did not start: Failed to load script (the job 2 worker's script is http://localhost:5173/packages/engine/src/workers/job-worker.ts). Read the message: it names the worker that did not start, and why.";
 		for (const browser of ['Firefox', 'Chrome', 'Safari'])
-			for (const problem of [module, script])
+			for (const problem of [module, script, thrown, job, jobScript, jobThrown])
 				expect(rerunsInNewTab(browser, ['another problem', problem])).toBe(true);
 		// A worker that started and then failed in the sketch's own setup is the sketch's fault.
 		expect(
@@ -289,10 +352,24 @@ describe('waitForRunners', () => {
 				'E1405: the sketch worker did not start: TypeError: setup is not a function',
 			]),
 		).toBe(false);
+		// A job worker that loaded and then failed is the engine's fault, not a load that may pass.
+		expect(
+			rerunsInNewTab('Firefox', [
+				'E1405: the job 2 worker did not start: RuntimeError: unreachable',
+			]),
+		).toBe(false);
 		expect(unloadedModule([module])).toBe(
 			'http://localhost:5173/packages/engine/dist/wasm/threaded/null3d.js',
 		);
-		expect(unloadedModule([script])).toBeUndefined();
+		expect(unloadedModule([script])).toBe(
+			'http://localhost:5173/packages/engine/src/workers/render-worker.ts',
+		);
+		expect(unloadedModule([job])).toBe(
+			'http://localhost:5173/packages/engine/dist/wasm/threaded/null3d.js',
+		);
+		expect(unloadedModule([jobScript])).toBe(
+			'http://localhost:5173/packages/engine/src/workers/job-worker.ts',
+		);
 	});
 
 	it('runs a page once more in a new runner page on iOS, whatever the browser is called', () => {
@@ -782,6 +859,9 @@ describe('the checks plan', () => {
 				expanded: 'true',
 				offset: [0, 0],
 				pointerEvents: 'none',
+				tabs: ['Frame', 'Memory', 'Steps', 'Systems'],
+				tab: 'Frame',
+				card: { width: 360, height: 396 },
 			},
 			figures: {
 				frames: 30,
@@ -894,12 +974,13 @@ describe('the checks plan', () => {
 	});
 
 	/** The checks plan's shards in CI's Safari, as `--shard <i>/<count>` gives each. */
-	const shardsOf = (count: number) =>
+	const shardsOf = (count: number, extra: readonly string[] = []) =>
 		Array.from(
 			{ length: count },
 			(_, i) =>
-				planItems(parseArgs(['--shaders', 'sampled', '--shard', `${i + 1}/${count}`, 'Safari'])) ??
-				[],
+				planItems(
+					parseArgs(['--shaders', 'sampled', ...extra, '--shard', `${i + 1}/${count}`, 'Safari']),
+				) ?? [],
 		);
 	const sampled = checksPlan({ shaders: 'sampled' });
 	const secondsOf = (shard: { id: string }[]) =>
@@ -939,25 +1020,64 @@ describe('the checks plan', () => {
 	// and about 2 more go to its setup, the dev server's start and the judging. .dev/devices.md says
 	// what to do when the pages need more. Safari compiles the sampled set of the shaders page, which
 	// this model counts.
-	it("keeps each of CI's shards at or under 10 minutes of pages in Safari", () => {
+	/** A job's own lines of CI's workflow, from its name to the next job's. */
+	const workflowJob = (name: string) => {
 		const workflow = readFileSync(
 			join(import.meta.dirname, '../../.github/workflows/ci.yml'),
 			'utf8',
 		);
-		// The real-browser job's own lines, from its name to the next job: other jobs have shard
-		// lists of their own.
-		const start = workflow.indexOf('\n  real-browsers:\n');
+		const start = workflow.indexOf(`\n  ${name}:\n`);
 		expect(start).toBeGreaterThan(0);
 		const end = workflow.slice(start + 1).search(/\n {2}[\w-]+:\n/);
-		const job = end < 0 ? workflow.slice(start) : workflow.slice(start, start + 1 + end);
+		return end < 0 ? workflow.slice(start) : workflow.slice(start, start + 1 + end);
+	};
+
+	it("keeps each of CI's shards at or under 10 minutes of pages in Safari and in Firefox", () => {
+		// The real-browser job's own lines: other jobs have shard lists of their own. Its shards
+		// leave out the pages of the prebuilt job.
+		const job = workflowJob('real-browsers');
 		expect(job).toContain("matrix.browser == 'Safari' && '--shaders sampled'");
-		const count = Number(/^\s+shards: \[(\d+)\]$/m.exec(job)?.[1]);
-		expect(count).toBeGreaterThan(0);
-		// The matrix must list every shard from 1 to the count, or a shard never runs.
-		const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(job)?.[1]?.split(',').map(Number);
-		expect(listed).toEqual(Array.from({ length: count }, (_, i) => i + 1));
-		const minutes = shardsOf(count).map((shard) => secondsOf(shard) / 60);
+		expect(job).toMatch(/--prebuilt \$\{\{ env\.PREBUILT \}\}/);
+		expect(job).toMatch(/^\s+PREBUILT: none$/m);
+		// Each browser has a job of its own, because a job's condition cannot read `matrix` and the
+		// two counts differ. Each job's own shard list is its count, from one.
+		const shardCount = (name: string) => {
+			const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(workflowJob(name))?.[1];
+			const shards = listed?.split(',').map(Number) ?? [];
+			expect(shards, name).toEqual(Array.from({ length: shards.length }, (_, i) => i + 1));
+			expect(workflowJob(name), name).toContain('${{ matrix.shards }}');
+			return shards.length;
+		};
+		const count = shardCount('real-browsers');
+		const firefoxCount = shardCount('real-browsers-firefox');
+		expect(count).toBeGreaterThan(firefoxCount);
+		expect(firefoxCount).toBeGreaterThan(0);
+		const minutes = shardsOf(count, ['--prebuilt', 'none']).map((shard) => secondsOf(shard) / 60);
 		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
+		// Firefox compiles every build of the shaders page, by its own measured times.
+		const firefox = Array.from(
+			{ length: firefoxCount },
+			(_, i) =>
+				planItems(
+					parseArgs(['--prebuilt', 'none', '--shard', `${i + 1}/${firefoxCount}`, 'Firefox']),
+				) ?? [],
+		).map((shard) => shard.reduce((sum, item) => sum + expectedSeconds(item, 'Firefox'), 0) / 60);
+		expect(Math.max(...firefox)).toBeLessThanOrEqual(10);
+	});
+
+	it("runs every page that loads the load pages job's builds in CI's prebuilt shard, and no other", () => {
+		const job = workflowJob('real-browsers-prebuilt');
+		expect(job).toMatch(/^\s+PREBUILT: only$/m);
+		expect(job).toContain('needs: [build, load-pages, load-startup-pages]');
+		const [prebuilt = []] = shardsOf(1, ['--prebuilt', 'only']);
+		expect(prebuilt[0]?.id).toBe('capabilities');
+		const others = new Set(shardsOf(1, ['--prebuilt', 'none'])[0]?.map(({ id }) => id));
+		const picked = new Set(prebuilt.map(({ id }) => id));
+		// Each item runs in one of the two jobs, and the capabilities page in both.
+		for (const { id } of sampled)
+			expect(others.has(id) !== picked.has(id) || id === 'capabilities', id).toBe(true);
+		expect(prebuilt.slice(1).every(loadsPrebuilt)).toBe(true);
+		expect(secondsOf(prebuilt) / 60).toBeLessThanOrEqual(10);
 	});
 
 	it('skips a WebGPU page on a browser without WebGPU only when allowed', () => {
@@ -1157,8 +1277,8 @@ describe('the checks plan', () => {
 				// needs the whole set: that check runs in a process of its own
 				// (`bun run test:heavy`, [Test memory](../../.dev/tests.md)).
 				// A part downloads its share of every module whatever its set holds, so a set of few
-				// programs in one part downloaded every module: 2.5 GB, which Safari on CI's Mac had not
-				// loaded after 205 s (20 October 2026).
+				// programs in one part downloads every module: 2.5 GB, which Safari on CI's Mac has not
+				// loaded after 205 s.
 				expect([set, shaderFileBytes() / parts.length < MOST_BYTES_PER_PART]).toEqual([set, true]);
 				for (const part of parts) {
 					expect(part.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);

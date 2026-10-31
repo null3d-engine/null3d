@@ -5,13 +5,24 @@
 // templates of the debug lines and the debug views, so release builds hold none of their code.
 
 import {
+	FORMAT_R32_FLOAT,
+	FORMAT_RGBA8_UNORM,
 	LAYOUT_ACCUMULATE,
 	LAYOUT_AO,
 	LAYOUT_AO_DEPTH,
 	LAYOUT_AO_DEPTH_MS,
 	LAYOUT_ATMOSPHERE,
 	LAYOUT_BACKGROUND,
+	LAYOUT_BACKGROUND_LAYER,
 	LAYOUT_BLOOM,
+	LAYOUT_CLUSTER_CULL,
+	LAYOUT_COMPUTE_HISTORY_R32_FLOAT,
+	LAYOUT_COMPUTE_HISTORY_RGBA8_UNORM,
+	LAYOUT_COMPUTE_HISTORY_RGBA16_FLOAT,
+	LAYOUT_COMPUTE_INSTANCE_BUFFERS,
+	LAYOUT_COMPUTE_R32_FLOAT,
+	LAYOUT_COMPUTE_RGBA8_UNORM,
+	LAYOUT_COMPUTE_RGBA16_FLOAT,
 	LAYOUT_CULL,
 	LAYOUT_DECAL_DEPTH,
 	LAYOUT_DECAL_DEPTH_MS,
@@ -21,8 +32,11 @@ import {
 	LAYOUT_DOF_COMPOSITE,
 	LAYOUT_DOF_COMPOSITE_MS,
 	LAYOUT_EFFECT,
+	LAYOUT_EFFECT_BLOOM,
+	LAYOUT_EFFECT_BLOOM_DEPTH_MS,
 	LAYOUT_EFFECT_DEPTH_MS,
 	LAYOUT_EXPOSURE,
+	LAYOUT_FEATURE_ROWS,
 	LAYOUT_FINAL,
 	LAYOUT_FINAL_BLOOM,
 	LAYOUT_FINAL_EFFECTS,
@@ -32,8 +46,12 @@ import {
 	LAYOUT_INSTANCE_INDEX,
 	LAYOUT_JOINTS,
 	LAYOUT_LIGHT_CLUSTERS,
+	LAYOUT_LIGHT_DEPTH,
+	LAYOUT_LIGHT_DEPTH_MS,
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_MATERIAL_MAPS_PARALLAX,
+	LAYOUT_MATERIAL_MAPS_SCENE,
+	LAYOUT_MATERIAL_SCENE,
 	LAYOUT_MOTION_FRAME,
 	LAYOUT_PARTICLE,
 	LAYOUT_PARTICLE_DEPTH_MS,
@@ -44,6 +62,8 @@ import {
 	LAYOUT_SUBSURFACE_BLUR,
 	LAYOUT_SUBSURFACE_COMPOSITE,
 	LAYOUT_SUBSURFACE_COMPOSITE_MS,
+	LAYOUT_TAA,
+	LAYOUT_TAA_MS,
 	LAYOUT_TEXTURES,
 	LAYOUT_TRANSMISSION_COPY_MS,
 	LAYOUT_VIEW_COPY,
@@ -56,6 +76,7 @@ import {
 	PERMUTATION_INSTANCE_INDEX,
 	PERMUTATION_MOTION,
 	PERMUTATION_PARALLAX,
+	PERMUTATION_PICK,
 	PERMUTATION_PREPASS,
 	PERMUTATION_SKIN,
 	PERMUTATION_VERTEX_COLOR,
@@ -88,6 +109,7 @@ import {
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
+	TEMPLATE_CLUSTER,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
@@ -104,6 +126,7 @@ import {
 	TEMPLATE_EXPOSURE_ADAPT_HISTOGRAM,
 	TEMPLATE_EXPOSURE_HISTOGRAM,
 	TEMPLATE_EXPOSURE_LUMINANCE,
+	TEMPLATE_FEATURE_ROWS,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
 	TEMPLATE_FOG_APPLY,
@@ -117,6 +140,11 @@ import {
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
 	TEMPLATE_LIGHT_COUNT,
+	TEMPLATE_LIGHT_DEPTH,
+	TEMPLATE_LIGHT_DEPTH_CLEAR,
+	TEMPLATE_LIGHT_DEPTH_CLEAR_MS,
+	TEMPLATE_LIGHT_DEPTH_MS,
+	TEMPLATE_LIGHT_FIT,
 	TEMPLATE_LIGHT_PLACE,
 	TEMPLATE_LIGHT_WRITE,
 	TEMPLATE_LINE,
@@ -150,6 +178,10 @@ import {
 	TEMPLATE_SUBSURFACE_COMPOSITE,
 	TEMPLATE_SUBSURFACE_COMPOSITE_MS,
 	TEMPLATE_SUBSURFACE_MAPS,
+	TEMPLATE_TAA_COPY,
+	TEMPLATE_TAA_RESOLVE,
+	TEMPLATE_TAA_RESOLVE_MS,
+	TEMPLATE_TONE_MASK,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_VIEW_COPY,
 	TEMPLATE_WEIGHTED_COMPOSITE,
@@ -176,7 +208,7 @@ import {
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
 import { PARTICLE_RECORDS } from '../particle-records';
-import { variantFor } from '../variants';
+import { missingVariant, variantFor } from '../variants';
 import {
 	plainScale,
 	type VertexAttribute,
@@ -252,6 +284,61 @@ export interface RenderTemplate {
 }
 
 /**
+ * The shader of an add-on's compute pass: a whole WGSL module with a `@compute` entry point, whose
+ * pipelines run it once for each workgroup of a dispatch.
+ */
+export interface ComputeTemplate {
+	/** The shader's builds, which hold the module for WebGPU. */
+	readonly shader: ShaderVariants;
+}
+
+/**
+ * The bit of a compute pass's format code that says the pass samples textures at group 1. The core
+ * sets it when the pass has textures, and clears it otherwise, since a pipeline layout with a
+ * group that nothing binds fails its dispatch.
+ */
+export const COMPUTE_MAPS_BIT = 1 << 8;
+
+/**
+ * The bit of a compute pass's format code that says the pass keeps two states: each run writes one
+ * state as its storage texture and reads the other, so its group 0 also binds the other state as a
+ * sampled texture.
+ */
+export const COMPUTE_HISTORY_BIT = 1 << 9;
+
+/**
+ * The bind group layout of an add-on compute pass's group 0 for the target's format code: its
+ * block of uniforms, then the storage texture that it fills. A format code of 0 names a pass that
+ * fills an instance draw's two buffers instead, with no texture. The maps bit says the pass also
+ * samples textures at group 1. The history bit names the layout that also binds the previous
+ * state.
+ */
+export function layoutOfComputeFormat(code: number): number {
+	const format = code & ~(COMPUTE_MAPS_BIT | COMPUTE_HISTORY_BIT);
+	const history = (code & COMPUTE_HISTORY_BIT) !== 0;
+	if (format === 0) return LAYOUT_COMPUTE_INSTANCE_BUFFERS;
+	if (history) {
+		if (format === FORMAT_R32_FLOAT) return LAYOUT_COMPUTE_HISTORY_R32_FLOAT;
+		if (format === FORMAT_RGBA8_UNORM) return LAYOUT_COMPUTE_HISTORY_RGBA8_UNORM;
+		return LAYOUT_COMPUTE_HISTORY_RGBA16_FLOAT;
+	}
+	if (format === FORMAT_R32_FLOAT) return LAYOUT_COMPUTE_R32_FLOAT;
+	if (format === FORMAT_RGBA8_UNORM) return LAYOUT_COMPUTE_RGBA8_UNORM;
+	return LAYOUT_COMPUTE_RGBA16_FLOAT;
+}
+
+/**
+ * The name of the `@compute` entry point of a whole WGSL module: the function that the attribute
+ * precedes, or `main` for a module without one.
+ */
+export function computeEntryPoint(source: string): string {
+	const at = source.search(/@\s*compute\b/u);
+	if (at < 0) return 'main';
+	const name = /fn\s+([A-Za-z_][A-Za-z0-9_]*)/u.exec(source.slice(at))?.[1];
+	return name ?? 'main';
+}
+
+/**
  * The binding of the row values texture of instance batches in the frame group and in the depth
  * template's group, as the frame builder binds it and the mesh shaders declare it.
  */
@@ -304,6 +391,7 @@ export const SKIN_BUILDS = [
 
 /** The compute templates of light clustering: each one's entry point in the light clustering shader. */
 const LIGHT_ENTRY_POINTS: Readonly<Record<number, string>> = {
+	[TEMPLATE_LIGHT_FIT]: 'fit_lights',
 	[TEMPLATE_LIGHT_COUNT]: 'count_lights',
 	[TEMPLATE_LIGHT_PLACE]: 'place_lights',
 	[TEMPLATE_LIGHT_WRITE]: 'write_lights',
@@ -537,6 +625,10 @@ export class Pipelines {
 	/** The layouts that only some devices bind, which the first pipeline or bind group to use them makes. */
 	private readonly laterLayouts: (GPUBindGroupLayoutDescriptor | undefined)[] = [];
 	private readonly templates: (RenderTemplate | undefined)[] = [];
+	/** The add-on compute passes' shaders, by their compute pipeline template. */
+	private readonly computeTemplates = new Map<number, ComputeTemplate>();
+	/** Each compute pass's pipeline layout, by the layout of its group 0. */
+	private readonly computeLayouts = new Map<number, GPUPipelineLayout>();
 	/**
 	 * Each template's pipeline layouts, made for their first pipelines, by the groups after the
 	 * template's own: the joint texture's for the builds that skin in the vertex shader, then the
@@ -554,8 +646,26 @@ export class Pipelines {
 	private readonly cullMotion: ShaderVariants;
 	private readonly pyramid: ShaderVariants;
 	private readonly pyramidLayout: GPUPipelineLayout;
+	/**
+	 * The conversion of a feature-instance draw's world rows to camera-relative rows, which the
+	 * engine dispatches once for each draw in a frame that holds one (D-229).
+	 */
+	private readonly featureRows: ShaderVariants;
+	/** The conversion's pipeline layout, made at its first pipeline. */
+	private featureRowsLayout: GPUPipelineLayout | undefined;
+	/**
+	 * The cluster pass's builds, which arrive with the cluster levels feature's shader file. It is
+	 * read by name so that a build whose generated modules are older than the manifest still type
+	 * checks, and the pipeline reports the shader as missing instead.
+	 */
+	private readonly cluster: ShaderVariants | undefined;
+	private readonly clusterLayout: GPUPipelineLayout;
 	private readonly lightLayout: GPUPipelineLayout;
 	private readonly lightClusters: WgslShader | undefined;
+	private readonly lightDepth: WgslShader | undefined;
+	private readonly lightDepthMs: WgslShader | undefined;
+	private readonly lightDepthLayout: GPUPipelineLayout;
+	private readonly lightDepthMsLayout: GPUPipelineLayout;
 	private readonly skinLayout: GPUPipelineLayout;
 	/** The skinning pass's builds, which arrive with the skinning feature's shader file. */
 	private readonly skin: ShaderVariants;
@@ -600,8 +710,10 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_DEPTH, 'depth', [
 			...frameEntries,
 			{
+				// A custom material's caster reads its row of values in the vertex stage, and its
+				// fragment stage, where it declares a coverage function, reads that row too.
 				binding: 2,
-				visibility: GPUShaderStage.VERTEX,
+				visibility: GPUShaderStage.VERTEX | fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},
 			rowValues,
@@ -684,12 +796,14 @@ export class Pipelines {
 		);
 		// The motion pass's frame group: the depth group's entries, then the motion block and the last
 		// frame's joints, which vertex shaders read, and the table of object ranges for custom
-		// materials that read object ids.
+		// materials that read object ids. A custom material's fragment stage reads its row of custom
+		// values, where it tests its own coverage, so that texture reaches both stages as it does in
+		// the depth group.
 		this.defineLayout(LAYOUT_MOTION_FRAME, 'motion frame', [
 			...frameEntries,
 			{
 				binding: 2,
-				visibility: GPUShaderStage.VERTEX,
+				visibility: GPUShaderStage.VERTEX | fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},
 			{ binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
@@ -706,10 +820,11 @@ export class Pipelines {
 			{ binding: 1, visibility: fragment, sampler: {} },
 		]);
 		// A texture array for each map slot, then each slot's sampler, then the displacement map's
-		// array and sampler. Custom materials' vertex stages sample their textures too. The
-		// displacement map is the vertex stage's alone, so the fragment stage keeps a sampled
-		// texture free, apart from the layout of parallax, whose fragment stage reads it too.
-		const maps = GPUShaderStage.VERTEX | fragment;
+		// array and sampler. Custom materials' vertex stages sample their textures too, and an
+		// add-on's compute pass samples them in its own stage. The displacement map is the vertex
+		// stage's alone, so the fragment stage keeps a sampled texture free, apart from the layout
+		// of parallax, whose fragment stage reads it too.
+		const maps = GPUShaderStage.VERTEX | fragment | GPUShaderStage.COMPUTE;
 		const mapEntries = (height: GPUShaderStageFlags): GPUBindGroupLayoutEntry[] => [
 			...MAP_SLOTS.map(
 				(binding): GPUBindGroupLayoutEntry => ({
@@ -734,12 +849,33 @@ export class Pipelines {
 			'material maps with parallax',
 			mapEntries(maps),
 		);
+		// A custom material that reads the copy of the scene's depth takes the maps' group with the
+		// last slot and the displacement map left out, which no custom material reads. Its fragment
+		// stage then holds the frame group's eight sampled textures, this group's seven and the
+		// copy, within the sixteen that every device allows.
+		const sceneMaps = MAP_SLOTS.slice(0, MAP_SLOTS.length - 1);
+		this.defineLayout(LAYOUT_MATERIAL_MAPS_SCENE, 'material maps with scene depth', [
+			...sceneMaps.map(
+				(binding): GPUBindGroupLayoutEntry => ({
+					binding,
+					visibility: maps,
+					texture: { viewDimension: '2d-array' },
+				}),
+			),
+			...sceneMaps.map(
+				(slot): GPUBindGroupLayoutEntry => ({
+					binding: MAP_SLOTS.length + slot,
+					visibility: maps,
+					sampler: {},
+				}),
+			),
+		]);
 		const compute = GPUShaderStage.COMPUTE;
 		// The culling pipelines' parameters, the scene's tables, the compacted instances and indirect
 		// draws, then the depth pyramid of occlusion culling, whose first word counts the frame's
-		// occluders, the cell offsets, and the first joint of each skinned source. Their history
-		// shares the buffer of the indirect draws, as eight storage buffers is all that every device
-		// allows a shader stage.
+		// occluders, the cell offsets, the first joint of each skinned source, and the distances
+		// between which each source draws. Their history shares the buffer of the indirect draws, as
+		// eight storage buffers is all that every device allows a shader stage.
 		this.defineLayout(LAYOUT_CULL, 'cull', [
 			{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: compute, buffer: { type: 'read-only-storage' } },
@@ -752,6 +888,21 @@ export class Pipelines {
 			{ binding: 8, visibility: compute, buffer: { type: 'storage' } },
 			{ binding: 9, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
 			{ binding: 10, visibility: compute, texture: { sampleType: 'uint' } },
+			{ binding: 11, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
+		]);
+		// The cluster levels' pass: one dispatch's parameters at a dynamic offset, the scene's
+		// patches and indices, the view's compacted instances and indirect draws, then the view's
+		// runs, offsets, index list and draws.
+		this.defineLayout(LAYOUT_CLUSTER_CULL, 'cluster cull', [
+			{ binding: 0, visibility: compute, buffer: { type: 'uniform', hasDynamicOffset: true } },
+			{ binding: 1, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 2, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 3, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 4, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 5, visibility: compute, buffer: { type: 'storage' } },
+			{ binding: 6, visibility: compute, buffer: { type: 'storage' } },
+			{ binding: 7, visibility: compute, buffer: { type: 'storage' } },
+			{ binding: 8, visibility: compute, buffer: { type: 'storage' } },
 		]);
 		// A batch's parameters at a dynamic offset, the pyramid, and the occluders' depth, read with
 		// textureLoad as a float texture: compatibility mode forbids depth textures in textureLoad.
@@ -777,11 +928,33 @@ export class Pipelines {
 			],
 			true,
 		);
-		// Light clustering's parameters, the light list, and the light grid that it fills.
+		// Light clustering's parameters, the light list, the light grid that it fills, and the
+		// depth reduction that its fit reads.
 		this.defineLayout(LAYOUT_LIGHT_CLUSTERS, 'light clusters', [
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+		]);
+		// The light clusters' depth reduction: its blocks, the light grid whose header it writes,
+		// and the view's depth as a float texture. The multisampled layout reads sample 0.
+		this.defineLayout(LAYOUT_LIGHT_DEPTH, 'light depth', [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{
+				binding: 2,
+				visibility: GPUShaderStage.COMPUTE,
+				texture: { sampleType: 'unfilterable-float' },
+			},
+		]);
+		this.defineLayout(LAYOUT_LIGHT_DEPTH_MS, 'light depth ms', [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{
+				binding: 2,
+				visibility: GPUShaderStage.COMPUTE,
+				texture: { sampleType: 'unfilterable-float', multisampled: true },
+			},
 		]);
 		// The joint texture, which the builds that skin in the vertex shader read.
 		this.defineLayout(LAYOUT_JOINTS, 'joints', [
@@ -803,6 +976,91 @@ export class Pipelines {
 			{ binding: 4, visibility: GPUShaderStage.COMPUTE, texture: computeData },
 			{ binding: 5, visibility: GPUShaderStage.COMPUTE, texture: computeData },
 		]);
+		// Group 0 of an add-on's compute pass: its block of uniforms, then the storage texture that
+		// it fills. The storage texture's format is part of the layout, so a pass of another
+		// format takes the layout of that format. Shaders read the target as an array of one
+		// layer, as they sample every pass's target.
+		const computeEntries = (format: GPUTextureFormat): GPUBindGroupLayoutEntry[] => [
+			{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
+			{
+				binding: 1,
+				visibility: compute,
+				storageTexture: { access: 'write-only', format, viewDimension: '2d-array' },
+			},
+		];
+		this.defineLayout(
+			LAYOUT_COMPUTE_RGBA16_FLOAT,
+			'compute rgba16float',
+			computeEntries('rgba16float'),
+			true,
+		);
+		this.defineLayout(
+			LAYOUT_COMPUTE_R32_FLOAT,
+			'compute r32float',
+			computeEntries('r32float'),
+			true,
+		);
+		this.defineLayout(
+			LAYOUT_COMPUTE_RGBA8_UNORM,
+			'compute rgba8unorm',
+			computeEntries('rgba8unorm'),
+			true,
+		);
+		// Group 0 of a compute pass that keeps two states: its block of uniforms, the state that
+		// this run writes as a storage texture, and the state of the run before, which the shader
+		// reads. Each run binds a view of one state's layers, so no subresource is both written
+		// and read in one dispatch.
+		const historyEntries = (
+			format: GPUTextureFormat,
+			sampleType: GPUTextureSampleType,
+		): GPUBindGroupLayoutEntry[] => [
+			...computeEntries(format),
+			{ binding: 2, visibility: compute, texture: { sampleType, viewDimension: '2d-array' } },
+		];
+		this.defineLayout(
+			LAYOUT_COMPUTE_HISTORY_RGBA16_FLOAT,
+			'compute history rgba16float',
+			historyEntries('rgba16float', 'float'),
+			true,
+		);
+		this.defineLayout(
+			LAYOUT_COMPUTE_HISTORY_R32_FLOAT,
+			'compute history r32float',
+			historyEntries('r32float', 'unfilterable-float'),
+			true,
+		);
+		this.defineLayout(
+			LAYOUT_COMPUTE_HISTORY_RGBA8_UNORM,
+			'compute history rgba8unorm',
+			historyEntries('rgba8unorm', 'float'),
+			true,
+		);
+		// Group 0 of an add-on's compute pass that fills an instance draw: its block of uniforms,
+		// the draw's count word and its per-instance rows, both read and written as storage.
+		this.defineLayout(
+			LAYOUT_COMPUTE_INSTANCE_BUFFERS,
+			'compute instance buffers',
+			[
+				{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
+				{ binding: 1, visibility: compute, buffer: { type: 'storage' } },
+				{ binding: 2, visibility: compute, buffer: { type: 'storage' } },
+			],
+			true,
+		);
+		// Group 0 of the conversion of a feature-instance draw's world rows: its block of
+		// uniforms, which holds the camera's world position, the draw's count word and world rows,
+		// which it reads, and the camera-relative rows that it writes.
+		this.defineLayout(
+			LAYOUT_FEATURE_ROWS,
+			'feature rows',
+			[
+				{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
+				{ binding: 1, visibility: compute, buffer: { type: 'read-only-storage' } },
+				{ binding: 2, visibility: compute, buffer: { type: 'read-only-storage' } },
+				{ binding: 3, visibility: compute, buffer: { type: 'storage' } },
+			],
+			true,
+		);
 		// The final pass reads the scene color with textureLoad, which takes any float format, and
 		// its color grading table, a 3D texture, with a linear filter, which reads the outline mask
 		// too.
@@ -818,6 +1076,8 @@ export class Pipelines {
 			{ binding: 11, visibility: fragment, texture: {} },
 			// The automatic exposure's texel, in 32-bit floats, which no device need filter.
 			{ binding: 12, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
+			// The built-in grading table, a 3D texture that a job worker baked.
+			{ binding: 13, visibility: fragment, texture: { viewDimension: '3d' } },
 		];
 		this.defineLayout(LAYOUT_FINAL, 'final', finalEntries);
 		// The base level of bloom's chain, which the final pass's bloom build reads with a linear
@@ -865,6 +1125,11 @@ export class Pipelines {
 			{ binding: 1, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 2, visibility: fragment, sampler: {} },
 		]);
+		// A sky layer's values: its uniform block alone, which its template's fragment stage
+		// reads.
+		this.defineLayout(LAYOUT_BACKGROUND_LAYER, 'background layer', [
+			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
+		]);
 		// The physical sky's group: its values, its three tables, which it reads with a linear
 		// filter, a sampler that clamps and one that repeats across the width.
 		this.defineLayout(LAYOUT_ATMOSPHERE, 'atmosphere', [
@@ -906,6 +1171,23 @@ export class Pipelines {
 			...effectEntries,
 			unfiltered(3, true),
 		]);
+		// An effect that reads a level of bloom's chain binds the level after its depth, which it
+		// samples with its linear sampler.
+		const bloomLevel: GPUBindGroupLayoutEntry = {
+			binding: 4,
+			visibility: fragment,
+			texture: {},
+		};
+		this.defineLayout(LAYOUT_EFFECT_BLOOM, 'effect bloom', [
+			...effectEntries,
+			unfiltered(3),
+			bloomLevel,
+		]);
+		this.defineLayout(LAYOUT_EFFECT_BLOOM_DEPTH_MS, 'effect bloom depth ms', [
+			...effectEntries,
+			unfiltered(3, true),
+			bloomLevel,
+		]);
 		// Depth of field's composite: an effect's entries with the scene's depth, then the blurred
 		// image, which it reads with the linear sampler.
 		const blurred: GPUBindGroupLayoutEntry = { binding: 4, visibility: fragment, texture: {} };
@@ -915,6 +1197,21 @@ export class Pipelines {
 			unfiltered(3, true),
 			blurred,
 		]);
+		// Temporal anti-aliasing's resolve: its block, the scene's color, depth and motion, each
+		// read with textureLoad, the two histories, which it samples with the linear sampler, and
+		// the sampler at binding 6. The multisampled build reads the scene depth's samples.
+		const taa = (depthMultisampled: boolean): GPUBindGroupLayoutEntry[] => [
+			aoSettings,
+			unfiltered(1),
+			unfiltered(2, depthMultisampled),
+			unfiltered(3),
+			{ binding: 4, visibility: fragment, texture: {} },
+			{ binding: 5, visibility: fragment, texture: {} },
+			{ binding: 6, visibility: fragment, sampler: {} },
+			{ binding: 7, visibility: fragment, texture: {} },
+		];
+		this.defineLayout(LAYOUT_TAA, 'taa', taa(false));
+		this.defineLayout(LAYOUT_TAA_MS, 'taa ms', taa(true));
 		// The subsurface blur's steps read every texture with textureLoad: the across step the skin
 		// pass's light, and the down step that, the across step's light, the scene color and the
 		// scene's depth as plain floats.
@@ -1023,6 +1320,7 @@ export class Pipelines {
 				[LAYOUT_DEPTH, LAYOUT_TEXTURES],
 			],
 			[TEMPLATE_OUTLINE_MASK, 'outline mask', shaders.outline_mask, [0, 1], [LAYOUT_DEPTH]],
+			[TEMPLATE_TONE_MASK, 'tone mask', shaders.tone_mask, [0, 1], [LAYOUT_DEPTH]],
 			[TEMPLATE_SUBSURFACE, 'subsurface', shaders.subsurface, [0, 1], [LAYOUT_FRAME]],
 			[
 				TEMPLATE_SUBSURFACE_MAPS,
@@ -1073,6 +1371,10 @@ export class Pipelines {
 		// read the position of the box's corners alone.
 		this.defineLayout(LAYOUT_DECAL_DEPTH, 'decal depth', [unfiltered(0)]);
 		this.defineLayout(LAYOUT_DECAL_DEPTH_MS, 'decal depth ms', [unfiltered(0, true)]);
+		// A custom material that reads the scene's depth binds the copy of the camera's opaque
+		// depth after the maps' group, or after the frame's when it has no textures. The copy is
+		// one sample whatever the scene's antialiasing, so it needs no multisampled layout.
+		this.defineLayout(LAYOUT_MATERIAL_SCENE, 'material scene depth', [unfiltered(0)]);
 		for (const [id, label, shader, maps] of [
 			[TEMPLATE_DECAL, 'decal', shaders.decal, []],
 			[TEMPLATE_DECAL_MAPS, 'decal maps', shaders.decal_maps, [LAYOUT_MATERIAL_MAPS]],
@@ -1196,6 +1498,29 @@ export class Pipelines {
 			layouts: [LAYOUT_VIEW_COPY],
 			vertexBuffers: [],
 		});
+		// Temporal anti-aliasing's resolve binds the scene's color, depth and motion and both
+		// histories; its copy binds as the copy of a view's image does.
+		this.defineTemplate(TEMPLATE_TAA_RESOLVE, {
+			label: 'taa resolve',
+			shader: shaders.taa,
+			pipeline: 'resolve',
+			layouts: [LAYOUT_TAA],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_TAA_RESOLVE_MS, {
+			label: 'taa resolve ms',
+			shader: shaders.taa_ms,
+			pipeline: 'resolve',
+			layouts: [LAYOUT_TAA_MS],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_TAA_COPY, {
+			label: 'taa copy',
+			shader: shaders.taa_copy,
+			pipeline: 'main',
+			layouts: [LAYOUT_VIEW_COPY],
+			vertexBuffers: [],
+		});
 		this.defineTemplate(TEMPLATE_ACCUMULATE, {
 			label: 'accumulate',
 			shader: shaders.accumulate,
@@ -1305,10 +1630,23 @@ export class Pipelines {
 		this.pyramidLayout = device.createPipelineLayout({
 			bindGroupLayouts: [this.layout(LAYOUT_DEPTH_PYRAMID)],
 		});
+		this.featureRows = shaders.feature_rows;
+		this.cluster = (shaders as unknown as Record<string, ShaderVariants | undefined>).cluster_cull;
+		this.clusterLayout = device.createPipelineLayout({
+			bindGroupLayouts: [this.layout(LAYOUT_CLUSTER_CULL)],
+		});
 		this.lightLayout = device.createPipelineLayout({
 			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_CLUSTERS)],
 		});
 		this.lightClusters = variantFor(shaders.light_clusters, 0, 'wgsl')?.wgsl ?? undefined;
+		this.lightDepth = variantFor(shaders.light_depth, 0, 'wgsl')?.wgsl ?? undefined;
+		this.lightDepthMs = variantFor(shaders.light_depth_ms, 0, 'wgsl')?.wgsl ?? undefined;
+		this.lightDepthLayout = device.createPipelineLayout({
+			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_DEPTH)],
+		});
+		this.lightDepthMsLayout = device.createPipelineLayout({
+			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_DEPTH_MS)],
+		});
 		this.skinLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_SKIN)] });
 		this.skin = shaders.skin;
 		this.exposureHistogram = shaders.exposure_histogram;
@@ -1363,10 +1701,31 @@ export class Pipelines {
 	 */
 	defineCustom(id: number, shader: CustomShader): void {
 		const { kind } = shader;
+		if (kind === 'compute') {
+			this.computeTemplates.set(id, { shader: shader.variants });
+			return;
+		}
+		// A sky layer's build of the sky map's shader draws no pipeline of the scene: the map's
+		// generator builds its pipelines, so the template needs nothing here.
+		if (kind === 'skyLayerMap') return;
+		// A sky layer draws the template's box around the camera, with the frame's group and its
+		// own values in the background layer's group.
+		if (kind === 'skyLayer') {
+			this.defineTemplate(id, {
+				label: `sky layer ${id}`,
+				shader: shader.variants,
+				pipeline: 'main',
+				layouts: [LAYOUT_FRAME, LAYOUT_BACKGROUND_LAYER],
+				vertexBuffers: [],
+			});
+			return;
+		}
 		if (kind !== undefined) {
 			const effect = kind === 'effect' || kind === 'effectGroup';
 			const [layout, multisampled, label] = effect
-				? [LAYOUT_EFFECT, LAYOUT_EFFECT_DEPTH_MS, `custom effect ${id}`]
+				? shader.bloom
+					? [LAYOUT_EFFECT_BLOOM, LAYOUT_EFFECT_BLOOM_DEPTH_MS, `custom effect ${id}`]
+					: [LAYOUT_EFFECT, LAYOUT_EFFECT_DEPTH_MS, `custom effect ${id}`]
 				: kind === 'effectFold'
 					? [LAYOUT_FINAL_EFFECTS, LAYOUT_FINAL_EFFECTS_DEPTH_MS, `folded effects ${id}`]
 					: [
@@ -1386,14 +1745,28 @@ export class Pipelines {
 			});
 			return;
 		}
+		// A material that reads the scene's depth binds the copy after its maps, or after the
+		// frame's group when it has none. Its maps' group leaves a slot free for the copy.
+		const scene = shader.sceneDepth === true ? [LAYOUT_MATERIAL_SCENE] : [];
+		const maps = shader.sceneDepth === true ? LAYOUT_MATERIAL_MAPS_SCENE : LAYOUT_MATERIAL_MAPS;
+		// A draw shader makes every vertex itself, so its pipelines read no vertex buffer and have
+		// no prepass: its object has no mesh and no depth to write before the shading.
 		this.defineTemplate(id, {
 			label: `custom material ${id}`,
 			shader: shader.variants,
 			pipeline: 'main',
-			layouts: shader.textures > 0 ? [LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS] : [LAYOUT_FRAME],
-			meshLocations: shader.locations,
-			vertexBuffers: INSTANCE_BUFFERS,
-			ownPrepass: true,
+			layouts: [...(shader.textures > 0 ? [LAYOUT_FRAME, maps] : [LAYOUT_FRAME]), ...scene],
+			// A material that declares its shadow caster's coverage, or whose WGSL sets the
+			// surface's alpha, draws its casters' depth with a fragment stage, which drops the
+			// pixels that its cutoff leaves out.
+			depthFragment: shader.coverage === true || shader.alpha === true,
+			...(shader.meshless === true
+				? { vertexBuffers: [] }
+				: {
+						meshLocations: shader.locations,
+						vertexBuffers: INSTANCE_BUFFERS,
+						ownPrepass: true,
+					}),
 		});
 	}
 
@@ -1402,6 +1775,10 @@ export class Pipelines {
 	 * of its old shader. The pipelines that `render` describes from then on use the new shader.
 	 */
 	replaceCustom(id: number, shader: CustomShader): void {
+		if (shader.kind === 'compute') {
+			this.computeTemplates.set(id, { shader: shader.variants });
+			return;
+		}
 		const old = this.templates[id];
 		for (const variant of Object.values(old?.shader ?? {}))
 			if (variant.wgsl) this.modules.delete(variant.wgsl);
@@ -1411,7 +1788,7 @@ export class Pipelines {
 
 	/** True when a template has this id. */
 	has(id: number): boolean {
-		return this.templates[id] !== undefined;
+		return this.templates[id] !== undefined || this.computeTemplates.has(id);
 	}
 
 	/** The shader variants of a template that exists. */
@@ -1443,6 +1820,23 @@ export class Pipelines {
 		if (!later) throw new Error(`unknown bind group layout ${id}`);
 		const made = this.device.createBindGroupLayout(later);
 		this.layouts[id] = made;
+		return made;
+	}
+
+	/**
+	 * The pipeline layout of an add-on compute pass whose code names its target's format: group 0
+	 * binds the pass's block and its storage texture, and when the pass samples textures, group 1
+	 * binds them as an effect's own textures bind.
+	 */
+	private computePipelineLayout(code: number): GPUPipelineLayout {
+		const layout = layoutOfComputeFormat(code);
+		let made = this.computeLayouts.get(code);
+		if (!made) {
+			const groups = [this.layout(layout)];
+			if ((code & COMPUTE_MAPS_BIT) !== 0) groups.push(this.layout(LAYOUT_MATERIAL_MAPS));
+			made = this.device.createPipelineLayout({ bindGroupLayouts: groups });
+			this.computeLayouts.set(code, made);
+		}
 		return made;
 	}
 
@@ -1484,8 +1878,7 @@ export class Pipelines {
 		const ownPrepass = places && (permutation & PERMUTATION_PREPASS) !== 0;
 		const build = ownPrepass ? (permutation & ~PERMUTATION_PREPASS) >>> 0 : permutation;
 		const shader = variantFor(t.shader, build, 'wgsl')?.wgsl;
-		if (!shader)
-			throw new Error(`render template ${template} has no variant for permutation ${permutation}`);
+		if (!shader) throw new Error(`render template ${template}: ${missingVariant(permutation)}`);
 		const module = this.module(t.label, shader);
 		const entryPoints = shader.pipelines[t.pipeline];
 		const skins = (permutation & PERMUTATION_SKIN) !== 0;
@@ -1522,8 +1915,13 @@ export class Pipelines {
 					)
 				: listed;
 			const first = caster ? LAYOUT_DEPTH : motion ? LAYOUT_MOTION_FRAME : undefined;
+			// A caster, motion or pick build shades no surface, so its shader binds no scene
+			// depth. Its layout leaves that group out, and its draws bind no group there.
+			const pick = (permutation & PERMUTATION_PICK) !== 0;
+			const shaded =
+				caster || motion || pick ? own.filter((id) => id !== LAYOUT_MATERIAL_SCENE) : own;
 			const groups = [
-				...(first === undefined ? own : [first, ...own.slice(1)]),
+				...(first === undefined ? shaded : [first, ...shaded.slice(1)]),
 				...(skins ? [LAYOUT_JOINTS] : []),
 				...(byIndex ? [LAYOUT_INSTANCE_INDEX] : []),
 			];
@@ -1548,7 +1946,7 @@ export class Pipelines {
 						entryPoint: ownPrepass ? 'fs' : entryPoints?.fragment,
 						targets: colorTargets(colorFormat, template, permutation, stateFlags),
 					}
-				: t.depthFragment
+				: t.depthFragment && !ownPrepass
 					? { module, entryPoint: entryPoints?.fragment, targets: [] }
 					: undefined,
 			primitive: {
@@ -1636,8 +2034,12 @@ export class Pipelines {
 	 * the start holds.
 	 */
 	computeVariants(template: number, permutation = 0): ShaderVariants | undefined {
+		const custom = this.computeTemplates.get(template);
+		if (custom) return custom.shader;
 		if (template === TEMPLATE_SKIN) return this.skin;
 		if (template === TEMPLATE_DEPTH_PYRAMID) return this.pyramid;
+		if (template === TEMPLATE_FEATURE_ROWS) return this.featureRows;
+		if (template === TEMPLATE_CLUSTER) return this.cluster;
 		if (template === TEMPLATE_CULL && permutation & PERMUTATION_MOTION) return this.cullMotion;
 		if (EXPOSURE_ENTRY_POINTS[template] !== undefined) return this.exposureHistogram;
 		return OCCLUSION_ENTRY_POINTS[template] !== undefined ? this.occlusion : undefined;
@@ -1649,6 +2051,19 @@ export class Pipelines {
 	 * its permutation bits (see `SKIN_BUILDS`).
 	 */
 	compute(template: number, permutation: number): GPUComputePipelineDescriptor {
+		const custom = this.computeTemplates.get(template);
+		if (custom) {
+			const shader = variantFor(custom.shader, 0, 'wgsl')?.wgsl;
+			if (!shader) throw new Error(`the compute pass's shader has not arrived`);
+			return {
+				label: `compute pass ${template}`,
+				layout: this.computePipelineLayout(permutation),
+				compute: {
+					module: this.module('compute pass', shader),
+					entryPoint: computeEntryPoint(shader.source),
+				},
+			};
+		}
 		if (template === TEMPLATE_SKIN) {
 			const tangent = (permutation & PERMUTATION_VERTEX_TANGENT) !== 0 ? ' tangent' : '';
 			const color = (permutation & PERMUTATION_VERTEX_COLOR) !== 0 ? ' color' : '';
@@ -1688,6 +2103,15 @@ export class Pipelines {
 				compute: { module: this.module('occlusion', shader), entryPoint: phase },
 			};
 		}
+		if (template === TEMPLATE_CLUSTER) {
+			const shader = this.cluster ? variantFor(this.cluster, 0, 'wgsl')?.wgsl : undefined;
+			if (!shader) throw new Error("the device's shader modules have no cluster shader");
+			return {
+				label: 'cluster cull',
+				layout: this.clusterLayout,
+				compute: { module: this.module('cluster cull', shader), entryPoint: 'main' },
+			};
+		}
 		if (template === TEMPLATE_DEPTH_PYRAMID) {
 			const shader = variantFor(this.pyramid, 0, 'wgsl')?.wgsl;
 			if (!shader) throw new Error("the device's shader modules have no depth pyramid shader");
@@ -1695,6 +2119,18 @@ export class Pipelines {
 				label: 'depth pyramid',
 				layout: this.pyramidLayout,
 				compute: { module: this.module('depth pyramid', shader), entryPoint: 'main' },
+			};
+		}
+		if (template === TEMPLATE_FEATURE_ROWS) {
+			const shader = variantFor(this.featureRows, 0, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader modules have no feature rows shader");
+			this.featureRowsLayout ??= this.device.createPipelineLayout({
+				bindGroupLayouts: [this.layout(LAYOUT_FEATURE_ROWS)],
+			});
+			return {
+				label: 'feature rows',
+				layout: this.featureRowsLayout,
+				compute: { module: this.module('feature rows', shader), entryPoint: 'main' },
 			};
 		}
 		const exposureEntry = EXPOSURE_ENTRY_POINTS[template];
@@ -1708,6 +2144,27 @@ export class Pipelines {
 				label: `exposure ${exposureEntry}`,
 				layout: this.exposureLayout,
 				compute: { module: this.module('exposure histogram', shader), entryPoint: exposureEntry },
+			};
+		}
+		if (
+			template === TEMPLATE_LIGHT_DEPTH ||
+			template === TEMPLATE_LIGHT_DEPTH_MS ||
+			template === TEMPLATE_LIGHT_DEPTH_CLEAR ||
+			template === TEMPLATE_LIGHT_DEPTH_CLEAR_MS
+		) {
+			const multisampled =
+				template === TEMPLATE_LIGHT_DEPTH_MS || template === TEMPLATE_LIGHT_DEPTH_CLEAR_MS;
+			const clear =
+				template === TEMPLATE_LIGHT_DEPTH_CLEAR || template === TEMPLATE_LIGHT_DEPTH_CLEAR_MS;
+			const shader = multisampled ? this.lightDepthMs : this.lightDepth;
+			if (!shader) throw new Error("the device's shader modules have no light depth shader");
+			return {
+				label: clear ? 'light depth clear' : 'light depth',
+				layout: multisampled ? this.lightDepthMsLayout : this.lightDepthLayout,
+				compute: {
+					module: this.module('light depth', shader),
+					entryPoint: clear ? 'clear_reduction' : 'reduce_depth',
+				},
 			};
 		}
 		const entryPoint = LIGHT_ENTRY_POINTS[template];

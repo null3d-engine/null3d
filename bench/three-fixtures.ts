@@ -18,6 +18,8 @@
 //   content, so run `bun run samples:fetch` first.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { GLTFAnimationPointerExtension } from '@needle-tools/three-animation-pointer';
 import {
 	type AnimationAction,
 	AnimationClip,
@@ -36,6 +38,7 @@ import {
 	InterpolateLinear,
 	type KeyframeTrack,
 	LoopOnce,
+	type Material,
 	Matrix4,
 	type Object3D,
 	PlaneGeometry,
@@ -57,6 +60,13 @@ import {
 	poseTime,
 	SAMPLES_PREFIX,
 } from '../tests/pages/lib/gltf-poses';
+import {
+	builtFile,
+	PROPERTY_MODELS,
+	type PropertyCase,
+	type PropertyFixture,
+	propertyTime,
+} from '../tests/pages/lib/gltf-properties';
 import { repositoryRoot, samplesDir } from '../tools/lib/samples';
 
 const FIXTURES = join(import.meta.dirname, '../crates/null3d-render/tests/fixtures');
@@ -1136,6 +1146,121 @@ async function gltfPosesFixture(): Promise<string> {
 	return `${JSON.stringify(fixture)}\n`;
 }
 
+/** A two-number vector, as three.js's texture offset and repeat are. */
+interface Vec2 {
+	x: number;
+	y: number;
+}
+
+/**
+ * What three.js's GLTFLoader, its animation-pointer plugin and AnimationMixer give for the case of
+ * `gltf-properties.ts`: the value that each property held at each sampled time.
+ */
+async function gltfPropertiesFixture(): Promise<string> {
+	// three.js's file loader reads a .gltf file's buffers by address.
+	const scope = globalThis as {
+		ProgressEvent?: unknown;
+		createImageBitmap?: (source: unknown) => Promise<unknown>;
+	};
+	scope.ProgressEvent ??= class extends Event {
+		constructor(type: string, init: Record<string, unknown> = {}) {
+			super(type);
+			Object.assign(this, init);
+		}
+	};
+	// A texture track binds to the texture itself, and a texture whose image failed leaves its map
+	// out, so the mixer cannot bind the track. The test reads values, not pixels, so an image
+	// becomes a stand-in of one texel.
+	scope.createImageBitmap ??= async () => ({ width: 1, height: 1, close() {} });
+	const root = repositoryRoot();
+	type Parser = { getDependency(kind: string, index: number): Promise<unknown> };
+	const read = async (gltf: { parser: Parser; scene: Object3D }, key: string) => {
+		const { parser, scene } = gltf;
+		const [kind, index, value] = key.split('/') as [string, string, string];
+		const at = Number(index);
+		if (kind === 'materials') {
+			const source = (await parser.getDependency('material', at)) as Material;
+			// A primitive that the file gives vertex colours, no tangents or no normals draws with a
+			// variant of the material, which the pointer's track moves in place of the file's own.
+			let material = source as Material & {
+				color: { r: number; g: number; b: number };
+				opacity: number;
+				map?: { offset: Vec2; repeat: Vec2 };
+				emissiveMap?: { offset: Vec2; repeat: Vec2 };
+			};
+			scene.traverse((object) => {
+				const mesh = object as Object3D & { material?: Material };
+				if (mesh.material?.name === source.name && mesh.material.uuid !== source.uuid)
+					material = mesh.material as typeof material;
+			});
+			if (value === 'color') return [material.color.r, material.color.g, material.color.b];
+			if (value === 'opacity') return [material.opacity];
+			const pair = (v: Vec2 | undefined, what: string) => {
+				if (!v) throw new Error(`${key}: three.js gives the material no ${what}`);
+				return [v.x, v.y];
+			};
+			if (value === 'baseColorOffset') return pair(material.map?.offset, 'base color map');
+			if (value === 'baseColorScale') return pair(material.map?.repeat, 'base color map');
+			if (value === 'emissiveOffset') return pair(material.emissiveMap?.offset, 'emissive map');
+			if (value === 'emissiveScale') return pair(material.emissiveMap?.repeat, 'emissive map');
+		} else if (kind === 'nodes') {
+			const node = (await parser.getDependency('node', at)) as { visible: boolean };
+			return [node.visible ? 1 : 0];
+		} else if (kind === 'lights') {
+			const light = (await parser.getDependency('light', at)) as {
+				intensity: number;
+				color: { r: number; g: number; b: number };
+				distance: number;
+			};
+			if (value === 'intensity') return [light.intensity];
+			if (value === 'color') return [light.color.r, light.color.g, light.color.b];
+			if (value === 'range') return [light.distance];
+		}
+		throw new Error(`no reader for the property ${key}`);
+	};
+	const fixture: PropertyFixture = { revision: REVISION, models: [] };
+	for (const model of PROPERTY_MODELS) {
+		const loader = new GLTFLoader();
+		loader.register((parser) => new GLTFAnimationPointerExtension(parser));
+		let source: ArrayBuffer;
+		let base: string;
+		if (model.url.startsWith('/samples/')) {
+			const path = join(samplesDir(root), model.url.slice('/samples/'.length));
+			source = readFileSync(path).buffer as ArrayBuffer;
+			base = pathToFileURL(`${dirname(path)}/`).href;
+		} else if (model.url) {
+			const path = join(root, 'tests/pages', model.url);
+			source = readFileSync(path).buffer as ArrayBuffer;
+			base = pathToFileURL(`${dirname(path)}/`).href;
+		} else {
+			const bytes = builtFile();
+			source = bytes.buffer.slice(
+				bytes.byteOffset,
+				bytes.byteOffset + bytes.byteLength,
+			) as ArrayBuffer;
+			base = '';
+		}
+		const gltf = await loader.parseAsync(source, base);
+		const clip = gltf.animations.find((a) => a.name === model.clip);
+		if (!clip) throw new Error(`${model.id} has no clip named ${model.clip}`);
+		const mixer = new AnimationMixer(gltf.scene);
+		const action = mixer.clipAction(clip);
+		action.play();
+		const cases: PropertyCase[] = [];
+		for (const seconds of model.times) {
+			const time = propertyTime(seconds);
+			action.time = time;
+			mixer.update(0);
+			const values: Record<string, number[]> = {};
+			for (const key of model.keys)
+				values[key] = await read(gltf as unknown as { parser: Parser; scene: Object3D }, key);
+			cases.push({ time, values });
+		}
+		fixture.models.push({ id: model.id, cases });
+	}
+	return `${JSON.stringify(fixture)}\n`;
+}
+
 mkdirSync(FIXTURES, { recursive: true });
 mkdirSync(CORE_FIXTURES, { recursive: true });
 for (const [folder, file, text] of [
@@ -1153,3 +1278,6 @@ for (const [folder, file, text] of [
 const poses = join(import.meta.dirname, '../tests/pages/lib/gltf-poses.json');
 writeFileSync(poses, await gltfPosesFixture());
 console.log(`wrote ${poses}`);
+const properties = join(import.meta.dirname, '../tests/pages/lib/gltf-properties.json');
+writeFileSync(properties, await gltfPropertiesFixture());
+console.log(`wrote ${properties}`);

@@ -109,12 +109,14 @@ scene.createMesh({ mesh: quad, material: materials.unlit({ color: '#ffffff' }) }
 | `tangents` | 4: the direction in which u grows, then 1 or -1 for the direction of v | `tangent` |
 | `joints` | 4 joint indices, for skinned meshes | `skinIndex` |
 | `weights` | 4: how much each joint moves the vertex, which add up to 1 | `skinWeight` |
+| `targets` | 4: the position that the vertex takes at a coarser level of detail, and that level's error, which a generated shape's material reads | None |
 
 The arrays follow these rules:
 
 - `positions` is required. Give `normals`, or set `computeNormals: true`.
 - `indices` takes a `Uint16Array`, a `Uint32Array` or an array of numbers, with three indices per triangle. Without indices, each three vertices in a row make one triangle.
 - `joints` and `weights` come together. A mesh keeps them for [skinning](animation.md#skinned-meshes). No call skins a mesh that you build yet, so it draws in the pose that its positions give.
+- `targets` takes floats only, and a mesh takes it or `morphTargets`, never both: the two share one vertex record.
 - A triangle's front face has its vertices in counter-clockwise order.
 - Each array's length must fit the vertex count, and its type must be one that its attribute takes. Each index must name a vertex, and each value must be a finite number. Otherwise the call throws [E1206](../errors/E1206.md).
 - The engine copies the arrays. You can change or drop them after the call.
@@ -130,6 +132,7 @@ Integers read in one of two ways. Normalized integers read as fractions: from 0 
 | `positions`, `uvs`, `uvs1` | Floats, or any of the four integer arrays | Plain whole numbers, or fractions with `normalized: true` |
 | `normals`, `tangents` | Floats, `Int8Array` or `Int16Array` | Fractions from -1 to 1 |
 | `colors`, `weights` | Floats, `Uint8Array` or `Uint16Array` | Fractions from 0 to 1 |
+| `targets` | Floats | Not integers |
 | `joints` | `Uint8Array`, `Uint16Array`, or a plain array of whole numbers from 0 to 65,535 | Whole numbers |
 
 Floats come as a `Float32Array` or a plain array of numbers. The four integer arrays are `Int8Array`, `Uint8Array`, `Int16Array` and `Uint16Array`.
@@ -214,23 +217,26 @@ A mesh keeps the attributes that you give it, each in the type that it came in. 
 | Position, normal | 12 each | 8 each | 4 each |
 | `uvs`, `uvs1` | 8 each | 4 each | 4 each |
 | `tangents`, `colors`, `weights` | 16 each | 8 each | 4 each |
+| `targets` | 16 | Not taken | Not taken |
 | `joints` | Not taken | 8 | 4 |
 
 Meshes of one vertex format share GPU buffers, so the engine draws them with few changes of GPU state. Meshes of different formats draw apart, so keep the meshes of a scene in few formats. Give a mesh only the attributes that its materials use. The generators' meshes all have one format: a position, a normal and `uvs` as floats, 32 bytes per vertex.
 
 ## Levels of detail
 
-`mesh.setLevels` gives a mesh simpler copies of itself, from the most detailed down. Each has its error: the largest distance between its surface and the mesh's, in the units of the mesh's positions. Every object and instance batch that draws the mesh then picks one level per frame. It draws the coarsest level whose error covers fewer pixels on the screen than the `lodThreshold` quality setting:
+`mesh.setLevels` gives a mesh simpler copies of itself, from the most detailed down. Each level gives the distance at which it switches in. That is an `error` in the units of the mesh's positions, a `distance` in meters for an object of scale 1, or a screen `coverage` from 0 to 1. Every object and instance batch that draws the mesh then picks one level per frame:
 
 ```ts
 const rock = geometry.fromArrays(rockArrays(2000));
 rock.setLevels([
 	{ mesh: geometry.fromArrays(rockArrays(500)), error: 0.01 },
-	{ mesh: geometry.fromArrays(rockArrays(120)), error: 0.05 },
+	{ mesh: geometry.fromArrays(rockArrays(120)), distance: 90 },
 ]);
 ```
 
-Each level must have the mesh's vertex attributes, as it draws with the same material and shading. A level can give the `distance` at which it switches in, as three.js's `LOD.addLevel` does, in place of its error. An empty list takes the levels away, and destroying a level's mesh takes every level away. `mesh.levels` lists them, each with its error. Wrong levels throw [E1221](../errors/E1221.md). [Levels of detail](../concepts/lod.md) explains the rule, the fading bands and the shadows, and how glTF files from the asset tool bring their levels.
+An `error` level draws while it covers fewer pixels than the `lodThreshold` quality setting. A `distance` level draws while the camera lies nearer than that distance. A `coverage` level draws while the bounds cover less than that share of the render's height. A level given by a distance, by a coverage or by a hand-set error fades over a short band. A level with a measured error switches at once. A glTF file marks a measured error with the screen coverage that the asset tool writes beside it. An error alone is hand-set, and it fades. `setLevels(levels, { fade: false })` switches every level at once.
+
+Each level must have the mesh's vertex attributes, as it draws with the same pipelines. A level may name a `material` of its own, so a far level shades more cheaply. A level without one draws with the material of the level before it. The base level draws with the object's or the instance batch's material. An empty list takes the levels away, and destroying a level's mesh takes every level away. `mesh.levels` lists them as you gave them. A mesh whose bound covers fewer pixels than the threshold draws nothing: its last level holds no geometry. Wrong levels throw [E1221](../errors/E1221.md). [Levels of detail](../concepts/lod.md) explains the three measures, the hide distance, the fading bands and the shadows. It also explains how glTF files from the asset tool bring their levels.
 
 ## Destroying a mesh
 

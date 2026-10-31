@@ -1,17 +1,30 @@
 import { describe, expect, it } from 'bun:test';
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
 	addReleaseInstance,
 	artifactFiles,
+	artifactsKey,
+	type BuildJob,
+	baseTreeDamaged,
 	buildCodeHash,
+	buildLog,
+	cargoHomeRemap,
 	cargoTargetBase,
 	checkHeapStart,
+	checkNoMachineFolders,
+	compilerOptions,
+	currentArtifactKeys,
+	keepOnlyArtifacts,
+	librarySourceRemap,
 	lockedVersion,
+	machineFolders,
 	parseOptions,
 	readArtifacts,
 	releaseTarget,
+	runBuilds,
 	sizeCheckLock,
 	type ToolVersions,
 	toolInputs,
@@ -36,6 +49,8 @@ describe('parseOptions', () => {
 			pagesOnly: false,
 			prebuilt: false,
 			printBase: false,
+			cacheKey: false,
+			keepCurrent: false,
 			noCache: false,
 		});
 		expect(parseOptions(['--check-size', '--base', 'origin/main'])).toEqual({
@@ -46,6 +61,8 @@ describe('parseOptions', () => {
 			pagesOnly: false,
 			prebuilt: false,
 			printBase: false,
+			cacheKey: false,
+			keepCurrent: false,
 			noCache: false,
 		});
 		expect(parseOptions(['--check-size', '--prebuilt'])).toMatchObject({
@@ -54,16 +71,22 @@ describe('parseOptions', () => {
 		});
 		expect(parseOptions(['--print-base', '--base', 'HEAD^'])).toMatchObject({
 			printBase: true,
+			cacheKey: false,
 			base: 'HEAD^',
 		});
 		expect(parseOptions(['--sizes-only']).sizesOnly).toBe(true);
 		expect(parseOptions(['--names']).keepNames).toBe(true);
 		expect(parseOptions(['--no-cache']).noCache).toBe(true);
+		expect(parseOptions(['--keep-current']).keepCurrent).toBe(true);
 		expect(parseOptions(['--pages-only', '--names', '--no-cache'])).toMatchObject({
 			pagesOnly: true,
 			keepNames: true,
 			noCache: true,
 		});
+	});
+
+	it('reads the key of the artifacts that CI keeps', () => {
+		expect(parseOptions(['--cache-key']).cacheKey).toBe(true);
 	});
 
 	it('rejects unknown options, a base without a commit or a check, and builds that exclude each other', () => {
@@ -204,6 +227,73 @@ describe('checkHeapStart', () => {
 	});
 });
 
+describe('librarySourceRemap', () => {
+	const sysroot = '/Users/someone/.rustup/toolchains/nightly-2026-09-26-aarch64-apple-darwin';
+
+	it("names the library source by the toolchain's own fixed path", () => {
+		const version = 'rustc 1.92.0-nightly\nbinary: rustc\ncommit-hash: 5ceaf6608eb3\nhost: x\n';
+		expect(librarySourceRemap(sysroot, version)).toBe(
+			`--remap-path-prefix=${sysroot}/lib/rustlib/src/rust=/rustc/5ceaf6608eb3`,
+		);
+	});
+
+	it('fails when the compiler names no commit, rather than build bytes that differ by machine', () => {
+		expect(() => librarySourceRemap(sysroot, 'rustc 1.92.0\ncommit-hash: unknown\n')).toThrow(
+			'no commit hash',
+		);
+	});
+});
+
+describe('cargoHomeRemap', () => {
+	it("names cargo's home, where the downloaded crates' sources live, by a fixed path", () => {
+		expect(cargoHomeRemap('/home/runner/.cargo')).toBe(
+			'--remap-path-prefix=/home/runner/.cargo=/cargo',
+		);
+	});
+});
+
+describe('machineFolders', () => {
+	it('gives each folder one trailing slash, so a path inside it matches', () => {
+		expect(machineFolders(['/home/runner/.cargo/', '/home/runner//', '/srv/null3d'])).toEqual([
+			'/home/runner/.cargo/',
+			'/home/runner/',
+			'/srv/null3d/',
+		]);
+	});
+
+	it('leaves out the root folder, which starts every absolute path', () => {
+		expect(machineFolders(['/', '/home/runner'])).toEqual(['/home/runner/']);
+	});
+});
+
+describe('compilerOptions', () => {
+	it("hands cargo a variant's options in order, then the added ones, each whole", () => {
+		const added = ['--remap-path-prefix=/Users/some one/.cargo=/cargo'];
+		const options = compilerOptions(VARIANTS[1]!.rustflags, added).CARGO_ENCODED_RUSTFLAGS;
+		expect(options?.split('\x1f')).toEqual([...VARIANTS[1]!.rustflags.split(' '), ...added]);
+		expect(compilerOptions(VARIANTS[0]!.rustflags, []).CARGO_ENCODED_RUSTFLAGS).toBe(
+			VARIANTS[0]!.rustflags.split(' ').join('\x1f'),
+		);
+	});
+});
+
+describe('checkNoMachineFolders', () => {
+	const folders = ['/home/runner/.rustup/toolchains/x/', '/home/runner/'];
+	const module = (text: string) => new TextEncoder().encode(`\0asm${text}`);
+
+	it('passes a module whose paths are all fixed or relative', () => {
+		const paths = '/rustc/5ceaf66/library/core/src/str.rs crates/null3d-render/src/taa.rs';
+		expect(() => checkNoMachineFolders(module(paths), folders, 'the core')).not.toThrow();
+	});
+
+	it('names each folder of the build machine that the module holds', () => {
+		const path = '/home/runner/.rustup/toolchains/x/lib/rustlib/src/rust/library/core/src/str.rs';
+		expect(() => checkNoMachineFolders(module(path), folders, 'the core')).toThrow(
+			"the core holds the build machine's folder /home/runner/.rustup/toolchains/x/ and /home/runner/",
+		);
+	});
+});
+
 const TOOLS: ToolVersions = {
 	rust: 'channel = "nightly-2026-09-26"',
 	bindgen: '0.2.129-aarch64-apple-darwin',
@@ -224,11 +314,42 @@ describe('variantKey', () => {
 	});
 });
 
+describe('artifactsKey', () => {
+	it("is one key of this checkout's artifacts, the same at each call", () => {
+		const key = artifactsKey();
+		expect(key).toMatch(/^[0-9a-f]{64}$/);
+		expect(artifactsKey()).toBe(key);
+	});
+
+	it('names an entry for each core variant and one for the tools, each its own key', () => {
+		const keys = currentArtifactKeys();
+		expect(keys).toHaveLength(VARIANTS.length + 1);
+		expect(new Set(keys).size).toBe(keys.length);
+	});
+});
+
+describe('keepOnlyArtifacts', () => {
+	it('removes every entry but the named ones, and leaves a lock and an entry that a build is writing', () => {
+		const base = mkdtempSync(join(tmpdir(), 'null3d-artifacts-'));
+		try {
+			for (const name of ['a', 'b', 'c', 'd.123.partial']) mkdirSync(join(base, name));
+			writeFileSync(join(base, 'e.lock'), '');
+			expect(keepOnlyArtifacts(base, new Set(['a'])).sort()).toEqual(['b', 'c']);
+			expect(readdirSync(base).sort()).toEqual(['a', 'd.123.partial', 'e.lock']);
+			expect(keepOnlyArtifacts(join(base, 'missing'), new Set())).toEqual([]);
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+			rmSync(`${base}.prune.lock`, { recursive: true, force: true });
+		}
+	});
+});
+
 describe('buildCodeHash', () => {
 	it('changes with this script or with the module that rewrites the glue', () => {
 		// Both decide what an entry holds: the script sets the flags and the staging, and the glue
 		// module rewrites every built module. Neither is a Rust source, so neither reaches the
-		// sources' stamp, and without this an edit here kept serving an entry an earlier version wrote.
+		// sources' stamp, and without this an edit here would keep serving an entry an earlier version
+		// wrote.
 		const root = mkdtempSync(join(tmpdir(), 'null3d-code-'));
 		try {
 			for (const file of ['tools/build-wasm.ts', 'tools/lib/core-sources.ts']) {
@@ -379,15 +500,162 @@ describe('the artifact cache', () => {
 		});
 	});
 
-	it('does not throw when the cache cannot be written', () => {
+	it('returns false, and does not throw, when the cache cannot be written', () => {
 		withBase((base) => {
 			const source = join(base, 'source.bin');
 			writeFileSync(source, 'bytes');
 			// A base that is a file, not a folder, cannot hold an entry.
 			const blocked = join(base, 'blocked');
 			writeFileSync(blocked, 'a file, not a folder');
-			expect(() => writeArtifacts(blocked, 'key', [['a.bin', source]])).not.toThrow();
+			expect(writeArtifacts(blocked, 'key', [['a.bin', source]])).toBe(false);
 			expect(readArtifacts(blocked, 'key', ['a.bin'])).toBeNull();
+			expect(writeArtifacts(base, 'key', [['a.bin', source]])).toBe(true);
 		});
+	});
+});
+
+describe('buildLog', () => {
+	it("prints each line at once with the build's name, keeps it, and names a command that failed", async () => {
+		const printed: [string, boolean][] = [];
+		const log = buildLog('tools', (line, stderr) => printed.push([line, stderr]));
+		log.say('building');
+		await log.run('sh', ['-c', 'echo compiled; echo warned >&2']);
+		await expect(log.run('sh', ['-c', 'echo broke; exit 2'])).rejects.toThrow(
+			'sh -c echo broke; exit 2 failed: its exit status was 2',
+		);
+		expect(printed[0]).toEqual(['[tools] building', false]);
+		// Each output's lines arrive through a pipe of its own, so only each one's own order is certain.
+		expect(printed.slice(1, 3).sort()).toEqual([
+			['[tools] compiled', false],
+			['[tools] warned', true],
+		]);
+		expect(printed.slice(3)).toEqual([
+			[expect.stringMatching(/^\[tools\] sh took \d+ s$/), false],
+			['[tools] broke', false],
+		]);
+		expect(log.text()).toBe(
+			`${printed.map(([line]) => line.slice('[tools] '.length)).join('\n')}\n`,
+		);
+	});
+});
+
+describe('baseTreeDamaged', () => {
+	/** Runs git in the test tree, with an identity of its own and no hooks or signing. */
+	const git = (cwd: string, ...args: string[]) =>
+		execFileSync(
+			'git',
+			[
+				'-c',
+				'user.email=test@example.com',
+				'-c',
+				'user.name=test',
+				'-c',
+				'commit.gpgsign=false',
+				'-c',
+				'core.hooksPath=/dev/null',
+				...args,
+			],
+			{ cwd, stdio: 'ignore' },
+		);
+
+	it('is true for a tree that is gone or has lost a file, and false for a whole checkout', () => {
+		const tree = mkdtempSync(join(tmpdir(), 'null3d-base-tree-'));
+		try {
+			expect(baseTreeDamaged(tree)).toBe(true);
+			git(tree, 'init', '--quiet');
+			writeFileSync(join(tree, 'a.txt'), 'a\n');
+			git(tree, 'add', 'a.txt');
+			git(tree, 'commit', '--quiet', '-m', 'first');
+			expect(baseTreeDamaged(tree)).toBe(false);
+			rmSync(join(tree, 'a.txt'));
+			expect(baseTreeDamaged(tree)).toBe(true);
+		} finally {
+			rmSync(tree, { recursive: true, force: true });
+		}
+	});
+});
+
+describe('runBuilds', () => {
+	it('prints every line as it comes, runs every build to its end, then prints a failed log whole', async () => {
+		const printed: [string, boolean][] = [];
+		const run = runBuilds(
+			[
+				{
+					name: 'slow',
+					work: async (log) => {
+						log.say('slow starts');
+						await Bun.sleep(40);
+						log.say('slow ends');
+					},
+				},
+				{
+					name: 'broken',
+					work: async (log) => {
+						log.say('broken starts');
+						await Bun.sleep(15);
+						throw new Error('cargo build failed');
+					},
+				},
+				{
+					name: 'quick',
+					work: async (log) => {
+						log.say('quick starts');
+						await Bun.sleep(1);
+						log.say('quick ends');
+					},
+				},
+			],
+			(line, stderr) => printed.push([line.replace(/\d+ s/, 'N s'), stderr]),
+		);
+		await expect(run).rejects.toThrow('the broken build failed; its whole log is above');
+		// The builds run at once, so their lines may mix in any order. Each build's own lines keep
+		// the order that it emits them, after its start, and the failed build's whole log prints
+		// once, after every build has ended.
+		const lines = printed.map(([line]) => line);
+		const ofBuild = (name: string) => lines.filter((line) => line.startsWith(`[${name}] `));
+		expect(ofBuild('slow')).toEqual([
+			'[slow] slow starts',
+			'[slow] slow ends',
+			'[slow] done in N s',
+		]);
+		expect(ofBuild('broken')).toEqual([
+			'[broken] broken starts',
+			'[broken] error: cargo build failed',
+			'[broken] failed after N s',
+		]);
+		expect(ofBuild('quick')).toEqual([
+			'[quick] quick starts',
+			'[quick] quick ends',
+			'[quick] done in N s',
+		]);
+		const whole = printed.at(-1);
+		expect(whole?.[1]).toBe(true);
+		expect(whole?.[0]).toContain('the whole log of the broken build, which failed after N s:');
+		expect(whole?.[0]).toContain('broken starts');
+		expect(whole?.[0]).toContain('error: cargo build failed');
+		// The whole log comes last, so no build's own line follows it.
+		expect(lines.slice(0, -1).every((line) => /^\[(slow|broken|quick)\] /.test(line))).toBe(true);
+		// The error lines go to stderr, and the progress lines do not.
+		const stderrOf = (line: string) => printed.find(([text]) => text === line)?.[1];
+		expect(stderrOf('[broken] error: cargo build failed')).toBe(true);
+		expect(stderrOf('[broken] failed after N s')).toBe(true);
+		expect(stderrOf('[slow] done in N s')).toBe(false);
+	});
+
+	it('names every build that failed, in the order of the builds', async () => {
+		const failing = (name: string, ms: number): BuildJob => ({
+			name,
+			work: async () => {
+				await Bun.sleep(ms);
+				throw new Error('cargo build failed');
+			},
+		});
+		const builds = [failing('threaded', 20), failing('single', 1), failing('tools', 10)];
+		await expect(runBuilds(builds, () => {})).rejects.toThrow(
+			'the threaded, single and tools builds failed; their whole logs are above',
+		);
+		await expect(runBuilds([{ name: 'tools', work: async () => {} }], () => {})).resolves.toBe(
+			undefined,
+		);
 	});
 });

@@ -12,6 +12,7 @@ dist/
 packages/engine/src/generated/shaders*.ts
 packages/engine/src/generated/shaders-*.js
 packages/engine/src/generated/shader-features.ts
+packages/engine/src/generated/shader-permutations.ts
 # Each GPU path's shared table of shader paragraphs, which the device modules import by name.
 packages/engine/src/generated/shader-paragraphs-*.js
 
@@ -26,7 +27,7 @@ playwright-report/
 *.log
 
 # What a package's pack step makes: the built JavaScript and declarations, the license copies and
-# the engine's copy of the docs (tools/lib/packages.ts)
+# the engine's copy of the docs (tools/lib/packages.ts and tools/lib/pack.ts)
 packages/*/lib/
 packages/*/LICENSE-MIT
 packages/*/LICENSE-APACHE
@@ -52,10 +53,7 @@ docs/shaders/library.md
 skills/null3d-port-threejs/references/api-mapping.md
 skills/null3d-port-threejs/references/threejs-mapping.json
 # Placeholder pages of planned pages. Take a page off this list when you write it.
-docs/getting-started/project-structure.md
 docs/guides/deploying.md
-docs/guides/multiple-views.md
-docs/guides/video-textures.md
 docs/porting/react-three-fiber.md
 docs/porting/threejs-loop-and-threads.md
 docs/porting/threejs-materials.md

@@ -233,7 +233,7 @@ export const COMPARISONS: readonly Comparison[] = [
 	{
 		name: 'night-town',
 		code: 'compare/night-town/',
-		title: 'Night town',
+		title: 'Night effects',
 		summary:
 			'A rainy downtown under the moon: lit windows, neon signs over shops, street lamps and cars with their headlights on, mirrored in wet streets. Each block adds 12 lights.',
 		countUnit: 'lights',

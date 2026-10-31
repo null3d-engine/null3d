@@ -3,19 +3,30 @@
 // `bun run examples:preview` serves the build with the isolation headers and the sample files
 // under /samples/, which the demos that load files read. A website that ships the demos builds
 // the same page with its own config: .dev/examples.md says how.
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig } from 'vite';
 import null3d from '../packages/vite-plugin/src/index.ts';
+import { refuseStaleCore } from '../tools/lib/core-sources.ts';
 import { samplesServer } from '../tools/lib/samples.ts';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
 import { sourceResolve } from '../tools/lib/source-condition.ts';
 
 const repo = join(import.meta.dirname, '..');
+/** The words that the demos draw with, which this build compiles instead of every word. */
+const PERMUTATIONS = join(import.meta.dirname, 'shader-permutations.txt');
 
 export default defineConfig(({ isPreview }) => {
 	// The engine imports the shader modules, which git does not keep. A preview serves a build that
 	// already holds them.
-	if (!isPreview) ensureShaderModules(repo);
+	if (!isPreview) {
+		refuseStaleCore(repo);
+		// The production build of the showcases compiles only the words that the demos draw with. A
+		// caller that names another list, or names one as empty for a full build, decides for itself.
+		if (existsSync(PERMUTATIONS) && process.env.NULL3D_SHADER_PERMUTATIONS === undefined)
+			process.env.NULL3D_SHADER_PERMUTATIONS = PERMUTATIONS;
+		ensureShaderModules(repo);
+	}
 	return {
 		root: import.meta.dirname,
 		base: './',

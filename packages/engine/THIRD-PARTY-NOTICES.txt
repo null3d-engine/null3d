@@ -313,12 +313,16 @@ Licensed under the Apache License, Version 2.0, whose text the Basis Universal s
 gives in full.
 
 ==============================================================================
-three.js: the table of specular terms in the engine core (null3d_bg.wasm), and the OpenEXR
-decoders in the HDR file reader (panorama-worker.js)
+three.js: the table of specular terms and the math in the engine core, the tone curves, the
+ambient occlusion and wide line shaders, and the HDR and OpenEXR file readers
 ==============================================================================
 
 The values of three.js's DFG table, from three.js 0.186.1, https://github.com/mrdoob/three.js.
-The ports of EXRLoader's decoders, from the same release.
+The vector, matrix and quaternion arithmetic, and the tone, color and blending code, whose
+curves, formulas and blend order follow its own. The ports of its GTAOPass and
+PoissonDenoiseShader into ao.wgsl, and of its Line2 and LineSegments2 geometry and shader into
+line.wgsl. The ports of HDRLoader and EXRLoader's readers into panorama-worker.js, which maps
+the file's columns and holds its spherical harmonics in the order that three.js uses.
 
 The MIT License
 
@@ -341,6 +345,125 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+==============================================================================
+Filament: the specular anti-aliasing kernel, the anisotropic highlight, and AgX's punchy look
+==============================================================================
+
+The specular anti-aliasing kernel, the anisotropic GGX highlight and the two constants of AgX's
+punchy look follow Filament's, from https://github.com/google/filament. The kernel and the
+highlight are in the shader library, and the punchy look is in the tone mapping shader.
+
+Copyright 2023 The Android Open Source Project.
+
+Apache License, Version 2.0, whose text the Basis Universal section above gives in full.
+
+==============================================================================
+KinoBokeh and Unity's post-processing stack v1: the depth of field (dof.wgsl)
+==============================================================================
+
+The depth-of-field gather and the setup that finds each pixel's blur size are a port of KinoBokeh,
+by Keijiro Takahashi, from https://github.com/keijiro/KinoBokeh. The engine changes three things
+that the image tests found: the smallest blur wins in the setup, the taps form a Vogel spiral, and
+a sharp texel keeps its own color. The composite's alpha union and its four-tap tent follow the
+depth of field that Unity's post-processing stack v1 ships, from
+https://github.com/Unity-Technologies/PostProcessing. The code is in the depth-of-field shader,
+which the engine's shader modules carry.
+
+The MIT License
+
+KinoBokeh: Copyright (C) 2016 Unity Technologies and Copyright (C) 2015 Keijiro Takahashi
+Unity's post-processing stack v1: Copyright (c) 2014-2017, Unity Technologies
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+==============================================================================
+AMD FidelityFX: FSR 1's RCAS sharpening (final.wgsl) and SSSR's ray march (ssr.wgsl)
+==============================================================================
+
+The sharpening that the final pass draws at the whole canvas's scale is a translation of FidelityFX
+Super Resolution 1's RCAS filter, from https://github.com/GPUOpen-Effects/FidelityFX-FSR. The
+screen-space reflection's hierarchical ray march follows the structure of FidelityFX Stochastic
+Screen Space Reflections, from https://github.com/GPUOpen-Effects/FidelityFX-SSSR, with its own
+grid units, guard and exit tests. Both are in the shader library.
+
+The MIT License
+
+Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+==============================================================================
+Qualcomm Snapdragon Game Super Resolution 1: the render-scale upscale (final.wgsl)
+==============================================================================
+
+The upscale that the final pass draws below the whole canvas's scale is a port of Snapdragon Game
+Super Resolution 1's fragment shader, from
+https://github.com/SnapdragonStudios/snapdragon-gsr. The port reads each tap with an explicit texel
+fetch in place of the shader's gather, and keeps Qualcomm's lanczos window, weighted taps, edge
+vote and delta clamp.
+
+BSD 3-Clause License
+
+Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
 Linearly transformed cosines: the area lights' tables (area-light-tables.bin)
@@ -457,6 +580,7 @@ or the Apache License 2.0. null3D takes them under the MIT License.
 - The Rust standard library: Copyright (c) The Rust Project Contributors
 - bumpalo 3.20.3: Copyright (c) 2019 Nick Fitzgerald
 - cfg-if 1.0.5: Copyright (c) 2014 Alex Crichton
+- dlmalloc 0.2.14: Copyright (c) 2014 Alex Crichton, the threaded build's heap
 - once_cell 1.21.4: Copyright (c) Aleksey Kladov
 - wasm-bindgen 0.2.129: Copyright (c) 2014 Alex Crichton
 

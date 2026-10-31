@@ -10,11 +10,13 @@ describe('parseSwitches', () => {
 			sketchThread: undefined,
 			latency: undefined,
 			copyUploads: false,
+			multiDraw: true,
 			depth: undefined,
 			compression: undefined,
 			parallelCompile: true,
 			freshShaders: false,
 			freshCheck: false,
+			twoStep: false,
 			wakeByMessage: false,
 			displayChecks: true,
 			hdr: true,
@@ -22,6 +24,7 @@ describe('parseSwitches', () => {
 			half: undefined,
 			cells: true,
 			prepass: undefined,
+			prepassColor: undefined,
 			occlusion: undefined,
 			occlusionBuffer: undefined,
 			skinning: 'vertex',
@@ -37,9 +40,13 @@ describe('parseSwitches', () => {
 			memoryMiB: undefined,
 			preset: undefined,
 			hold: undefined,
+			replay: undefined,
+			record: false,
 			still: true,
 			bench: false,
+			view: undefined,
 			stats: undefined,
+			permutations: undefined,
 			glTiming: undefined,
 			replayDelay: undefined,
 		});
@@ -50,6 +57,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?occlusion-buffer=256x144').occlusionBuffer).toBe(256 * 144);
 		for (const bad of ['384', '384x', 'x216', '384x216x2', '0x216', '2048x1024', 'big'])
 			expect(parseSwitches(`?occlusion-buffer=${bad}`).occlusionBuffer).toBeUndefined();
+	});
+
+	it('withholds WEBGL_multi_draw with ?multidraw=off, and offers it otherwise', () => {
+		expect(parseSwitches('?multidraw=off').multiDraw).toBe(false);
+		expect(parseSwitches('?multidraw=on').multiDraw).toBe(true);
+		expect(parseSwitches('').multiDraw).toBe(true);
 	});
 
 	it('picks how WebGPU skins with ?skinning=, and the vertex shaders otherwise', () => {
@@ -91,6 +104,13 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?prepass=yes').prepass).toBeUndefined();
 	});
 
+	it('picks how the prepass starts its stand-in color with ?prepass-color=', () => {
+		expect(parseSwitches('?prepass-color=load').prepassColor).toBe('load');
+		expect(parseSwitches('?prepass-color=clear').prepassColor).toBe('clear');
+		expect(parseSwitches('?prepass-color=none').prepassColor).toBe('none');
+		expect(parseSwitches('?prepass-color=other').prepassColor).toBeUndefined();
+	});
+
 	it('turns GPU occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {
 		expect(parseSwitches('?occlusion=on').occlusion).toBe(true);
 		expect(parseSwitches('?occlusion=off').occlusion).toBe(false);
@@ -107,6 +127,17 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?half=on').half).toBe(true);
 		expect(parseSwitches('?half=off').half).toBe(false);
 		expect(parseSwitches('?half=yes').half).toBeUndefined();
+	});
+
+	it('reads the recording that ?replay= names, and ?record with or without a value', () => {
+		expect(parseSwitches('?replay=/bug.n3dr').replay).toBe('/bug.n3dr');
+		expect(parseSwitches('?replay=https://example.com/bug.n3dr').replay).toBe(
+			'https://example.com/bug.n3dr',
+		);
+		expect(parseSwitches('').replay).toBeUndefined();
+		expect(parseSwitches('?record').record).toBe(true);
+		expect(parseSwitches('?record=on').record).toBe(true);
+		expect(parseSwitches('').record).toBe(false);
 	});
 
 	it('reads ?bench with or without a value', () => {
@@ -246,6 +277,13 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?gpu=webgl2&cells=off').cells).toBe(false);
 		expect(parseSwitches('?cells=on').cells).toBe(true);
 		expect(parseSwitches('?cells=no').cells).toBe(true);
+	});
+
+	it('reads a debug view name from ?view=, and no name from an empty switch', () => {
+		expect(parseSwitches('?view=levels').view).toBe('levels');
+		expect(parseSwitches('?view=terrain-levels').view).toBe('terrain-levels');
+		expect(parseSwitches('?view=').view).toBeUndefined();
+		expect(parseSwitches('').view).toBeUndefined();
 	});
 
 	it('reads the quality preset, and ignores a name that is no preset', () => {

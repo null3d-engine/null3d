@@ -5,7 +5,7 @@ mod common;
 
 use std::collections::HashMap;
 
-use common::{BATCH_ROWS, SCENE_CAPACITY, World, count, far_out};
+use common::{BATCH_ROWS, SCENE_CAPACITY, World, base_sphere, count, far_out};
 use null3d_core::handle::Handle;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
@@ -22,7 +22,7 @@ use null3d_render::view::ViewId;
 const MATRIX_BYTES: u32 = 48;
 /// Where a view's culling parameters hold the runs of the cell order: after the planes and the
 /// level choice's inputs.
-const RANGES: u32 = 128;
+const RANGES: u32 = 144;
 /// The builder's buffers of world matrices, of the bucket of every source, and of the layer
 /// mask of every source.
 const MATRICES: u32 = 2;
@@ -137,10 +137,11 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
     // textures that stand in for ambient occlusion and for the copy that surfaces which let light
     // through sample, the views' cell offsets, the white texel that the side view's texture shows
     // until it draws, the row values texture of instance batches, one texel row while no batch has
-    // row values, and the first joints of skinned objects, one texel row while nothing is skinned.
+    // row values, the first joints of skinned objects, one texel row while nothing is skinned, and
+    // the distance ranges of every source.
     assert_eq!(camera.pass[1], 0);
     assert_ne!(other.pass[1], NO_TARGET);
-    assert_eq!(count(&commands, Op::CreateTexture), 18);
+    assert_eq!(count(&commands, Op::CreateTexture), 19);
     // Each view writes its cell offsets into a row of its own.
     let rows: Vec<u32> = offsets_writes(&commands, offsets_texture(&commands))
         .iter()
@@ -257,17 +258,20 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
 
     // Lit and unlit, and the final pass's, made for frames whose render scale drops.
     assert_eq!(count(&commands, Op::CreateRenderPipeline), 3);
-    // Culling, and the three steps of light clustering.
-    assert_eq!(count(&commands, Op::CreateComputePipeline), 4);
+    // Culling, the fit and the three steps of light clustering, and the depth reduction's clear
+    // and reduce for each of its two depth builds. The cluster levels' pass waits for a tree of
+    // cluster patches before it builds its pipeline, whose shader loads on first use, and this
+    // world holds none.
+    assert_eq!(count(&commands, Op::CreateComputePipeline), 9);
     assert_eq!(count(&commands, Op::ResizeCanvas), 1);
     // The color and depth targets, the shadow map and the shadow atlas, one texel each while no
     // light casts shadows, the blank array that holds the light tables and the probes' maps, the
     // materials' custom values, the environment's blank cube, the blank textures that stand in for
     // ambient occlusion and for the copy that surfaces which let light through sample, the views'
     // cell offsets, the row values texture of instance batches, the first joints of skinned
-    // objects, and the blank 3D texture that the frame groups bind while the scene has no light
-    // probe grid.
-    assert_eq!(count(&commands, Op::CreateTexture), 15);
+    // objects, the distance ranges of every source, and the blank 3D texture that the frame groups
+    // bind while the scene has no light probe grid.
+    assert_eq!(count(&commands, Op::CreateTexture), 16);
     // Buckets: box lit (one object and the batch), box unlit, ball lit; the hidden ball draws
     // nowhere.
     assert_eq!(count(&commands, Op::DrawIndexedIndirect), 3);
@@ -328,6 +332,24 @@ fn after_a_gpu_reset_the_next_frame_replays_on_a_new_device() {
             .collect::<std::collections::BTreeSet<u32>>()
     };
     assert_eq!(writes(&again), writes(&first));
+    // A new device lacks every texture the frame writes, so the frame must make each of them
+    // again. The replay above already refuses a write into a texture that it does not hold.
+    let textures = |commands: &[(Op, Vec<u32>)]| {
+        commands
+            .iter()
+            .filter(|(op, _)| *op == Op::WriteTexture)
+            .map(|(_, o)| o[0])
+            .collect::<std::collections::BTreeSet<u32>>()
+    };
+    assert_eq!(textures(&again), textures(&first));
+    for texture in textures(&again) {
+        assert!(
+            again
+                .iter()
+                .any(|(op, o)| *op == Op::CreateTexture && o[0] == texture),
+            "the frame writes texture {texture} without making it again"
+        );
+    }
 }
 
 #[test]
@@ -513,12 +535,15 @@ fn the_source_limit_follows_the_device_storage_binding() {
         one_dispatch * sizes::INSTANCE_STRIDE,
         MAX_USEFUL_BINDING_BYTES
     );
-    // Buffers grow with room to spare, but never past the binding, and never below the need.
-    assert_eq!(grown_size(1000, portable), 1536);
+    // Buffers grow with room to spare, but never past the binding.
+    assert_eq!(grown_size(1000, portable), Some(1536));
     for binding in [portable, MAX_USEFUL_BINDING_BYTES] {
         let full = max_sources(binding) * sizes::INSTANCE_STRIDE;
-        assert_eq!(grown_size(full, binding), binding);
-        assert_eq!(grown_size(full - 1000, binding), binding);
+        assert_eq!(grown_size(full, binding), Some(binding));
+        assert_eq!(grown_size(full - 1000, binding), Some(binding));
+        // A need past the binding is refused, never rounded up into a buffer the device cannot
+        // bind.
+        assert_eq!(grown_size(full + 256, binding), None);
     }
 }
 
@@ -583,9 +608,11 @@ fn pipelines_follow_the_shading_model_and_objects_sharing_a_mesh_and_material_sh
     world.record(true);
     let first = world.commands();
     // Pipelines depend on the shading model, not on materials: lit, unlit, the final pass, the
-    // culling pass and light clustering's three.
+    // culling pass, light clustering's fit and three steps, and the depth reduction's clear and
+    // reduce for each of its two depth builds. The cluster levels' pass waits for a tree, and this
+    // world holds none.
     assert_eq!(count(&first, Op::CreateRenderPipeline), 3);
-    assert_eq!(count(&first, Op::CreateComputePipeline), 4);
+    assert_eq!(count(&first, Op::CreateComputePipeline), 9);
     // One draw per mesh and material: the world's three, one for the ten boxes, one per ball.
     assert_eq!(count(&first, Op::DrawIndexedIndirect), 3 + 1 + 10);
 
@@ -1072,6 +1099,7 @@ fn the_gpu_lists_the_lights_in_frames_whose_lights_changed() {
         kind: kind::POINT,
         light: 1,
         shadow: 0.0,
+        ..VisibleLight::default()
     };
     let dispatches = |world: &World| -> Vec<Vec<u32>> {
         world
@@ -1096,20 +1124,24 @@ fn the_gpu_lists_the_lights_in_frames_whose_lights_changed() {
             .map(|pair| [pair[0], pair[1]])
             .collect()
     };
-    let both = vec![[CLUSTER_PARAMS_BYTES, 2 * 64]];
+    let both = vec![[CLUSTER_PARAMS_BYTES, 2 * sizes::LIGHT_RECORD_BYTES]];
     let mut world = World::new();
     let mut mock = MockBackend::default();
     world.lights = vec![light(-5.0), light(-9.0)];
     world.record(true);
     mock.replay(world.renderer.list(1).words()).unwrap();
-    // The CPU uploads the light list and the parameters, and the GPU fills the grid in three
-    // steps, before the culling pass: a run of tiles of each slice, then every cluster in one
-    // workgroup, then the runs of tiles again.
+    // The CPU uploads the light list and the parameters. The GPU fits the slices in one
+    // workgroup, fills the grid in three steps (a run of tiles of each slice, then every cluster
+    // in one workgroup, then the runs of tiles again), reduces the depth in a clear and a
+    // dispatch, and culls the view.
     assert_eq!(uploads(&world), both);
     let tiles = [DEFAULT_GRID.tiles().div_ceil(128), DEFAULT_GRID.slices, 1];
     let found = dispatches(&world);
-    assert_eq!(found.len(), 4);
-    assert_eq!(found[..3], [tiles.to_vec(), vec![1, 1, 1], tiles.to_vec()]);
+    assert_eq!(found.len(), 7);
+    assert_eq!(
+        found[..4],
+        [vec![1, 1, 1], tiles.to_vec(), vec![1, 1, 1], tiles.to_vec()]
+    );
 
     // Nothing uploads while the lights and the view stay, but the GPU fills the grid again, in
     // case the thread that draws skipped the dispatches of pipelines it was still building.
@@ -1117,7 +1149,7 @@ fn the_gpu_lists_the_lights_in_frames_whose_lights_changed() {
     world.record(false);
     mock.replay(world.renderer.list(2).words()).unwrap();
     assert!(uploads(&world).is_empty());
-    assert_eq!(dispatches(&world).len(), 4);
+    assert_eq!(dispatches(&world).len(), 7);
 
     // A light that moves uploads the list again.
     world.frame = 3;
@@ -1125,7 +1157,7 @@ fn the_gpu_lists_the_lights_in_frames_whose_lights_changed() {
     world.record(false);
     mock.replay(world.renderer.list(3).words()).unwrap();
     assert_eq!(uploads(&world), both);
-    assert_eq!(dispatches(&world).len(), 4);
+    assert_eq!(dispatches(&world).len(), 7);
 
     // Without lights the shaders skip the grid, and the GPU fills none.
     world.frame = 4;
@@ -1228,12 +1260,12 @@ fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_
                 })
                 .collect()
         };
-        // Each view's culling group binds the same nine buffers, the cell offsets texture and the
-        // skin firsts texture with the switch or without: the indices share the compacted
-        // instance buffer.
+        // Each view's culling group binds the same nine buffers, the cell offsets texture, the
+        // skin firsts texture and the distance ranges texture with the switch or without: the
+        // indices share the compacted instance buffer.
         let culling = groups_of(layout::CULL);
         assert_eq!(culling.len(), 3, "the camera and two cascades: {culling:?}");
-        assert!(culling.iter().all(|group| group.len() == 1 + 11));
+        assert!(culling.iter().all(|group| group.len() == 1 + 12));
         // With the switch, each view's index group binds its culling parameters, the matrices, the
         // bucket tables of the layout it draws and the cell offsets texture, as its culling group
         // does.
@@ -1382,5 +1414,187 @@ fn the_direct_path_uploads_each_bucket_s_visible_copies() {
     for (offset, size) in writes {
         assert_eq!(offset % sizes::INSTANCE_STRIDE, 0, "{offset}");
         assert_eq!(size % sizes::INSTANCE_STRIDE, 0, "{size}");
+    }
+}
+
+/// The direct path's instance buffer binds at vertex slot 1 and no group reads it, so the device's
+/// largest buffer bounds it, not its largest storage binding. A batch that draws inside a distance
+/// band takes a fading bucket beside its bucket, which doubles its rows: the compacted layout then
+/// passes the binding, while the sources still fit the binding that they must obey.
+#[test]
+fn the_direct_path_sizes_its_instance_buffer_past_the_storage_binding() {
+    /// The box mesh that the world's first objects draw, by engine id.
+    const BOX: u32 = 1;
+    let binding = 1024 * 1024;
+    let rows = 10_000;
+    let mut world = World::with_config(RendererConfig {
+        direct_draws: true,
+        storage_binding_bytes: binding,
+        ..RendererConfig::default()
+    });
+    let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+    let material = world.scene.materials()[slot];
+    let batch = world
+        .batches
+        .create(rows, false, false, BOX, material, 0.9)
+        .unwrap();
+    let batch = world.batches.get_mut(batch).unwrap();
+    batch.set_active_count(rows).unwrap();
+    batch.set_draw_range(0.0, 100.0);
+    world.record(true);
+    let commands = world.commands();
+    let visible = commands
+        .iter()
+        .find(|(op, o)| *op == Op::SetVertexBuffer && o[0] == 1)
+        .map(|(_, o)| o[1])
+        .expect("a draw binds its view's instances");
+    let size = commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateBuffer && o[0] == visible)
+        .map(|(_, o)| o[1])
+        .next_back()
+        .expect("the frame makes the buffer that the draw reads");
+    // The compacted layout reaches past the binding, so its buffer must hold more than a binding
+    // may.
+    let written = commands
+        .iter()
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == visible)
+        .map(|(_, o)| o[1] + o[3])
+        .max()
+        .expect("the frame uploads the copies that the draws read");
+    assert!(
+        written > binding,
+        "the compacted layout ends at {written} bytes, inside the {binding}-byte storage binding"
+    );
+    assert!(
+        size > binding,
+        "the instance buffer holds {size} bytes, past the {binding}-byte storage binding"
+    );
+}
+
+/// The cluster pass binds the scene's patch table and its indices whole, so the storage binding
+/// bounds them. The direct path records no cluster pass and reads neither table, so it builds
+/// neither and draws the tree's mesh from its whole triangle list. A tree whose index table passes
+/// the binding still records there, while the culled path refuses it at the binding.
+#[test]
+fn a_direct_path_frame_builds_no_cluster_table() {
+    use null3d_render::frame::RecordError;
+    use null3d_render::gpu_driven::cluster_table_buffers;
+    use null3d_render::materials::Shading;
+    use null3d_render::patches::PatchTree;
+
+    /// The indices of one patch, past the binding below at four bytes each.
+    const INDICES: u32 = 300_000;
+    let binding = 1024 * 1024;
+    let tree = || {
+        PatchTree::new(
+            [0, 1, 2].repeat(INDICES as usize / 3),
+            vec![[0.0, 0.0, 0.0, 1.0]],
+            vec![[0, INDICES, 0, 0]],
+            0,
+            4,
+        )
+        .expect("a tree over the grid's four vertices")
+    };
+    let world = |direct_draws: bool| {
+        let mut world = World::with_config(RendererConfig {
+            direct_draws,
+            storage_binding_bytes: binding,
+            ..RendererConfig::default()
+        });
+        let mesh = world.add_object(&common::grid(1, 1), Shading::Lit);
+        world
+            .renderer
+            .set_mesh_patches(mesh, Some(tree()))
+            .expect("a tree of one patch, which the mesh's bucket draws");
+        world
+    };
+    let (patches, indices) = cluster_table_buffers();
+
+    let mut direct = world(true);
+    direct
+        .try_record(true)
+        .expect("the direct path builds no cluster table, so its size does not bound the frame");
+    assert!(
+        !direct
+            .commands()
+            .iter()
+            .any(|(op, o)| *op == Op::CreateBuffer && (o[0] == patches || o[0] == indices)),
+        "the direct path made a cluster table"
+    );
+
+    let mut culled = world(false);
+    assert_eq!(
+        culled.try_record(true),
+        Err(RecordError::BufferFull { bytes: binding }),
+        "the culled path binds the tables whole, so a table past the binding fails its frame"
+    );
+}
+
+#[test]
+fn a_material_that_keeps_its_display_color_draws_the_tone_mask() {
+    use null3d_gpu::drawlist::template;
+    use null3d_render::frame::CanvasOutput;
+    use null3d_render::gpu_driven::view_frame;
+    use null3d_render::materials::{Shading, feature};
+    use null3d_render::output::{Antialias, SceneColor};
+
+    // The HDR path, whose final pass reads the mask. The 8-bit path applies the flag in the
+    // material's own shader and draws no mask.
+    let config = RendererConfig {
+        canvas: CanvasOutput {
+            scene_color: SceneColor::from_format(format::RGBA16_FLOAT),
+            antialias: Antialias::None,
+            transparent: false,
+        },
+        ..RendererConfig::default()
+    };
+    for direct_draws in [false, true] {
+        let config = RendererConfig {
+            direct_draws,
+            ..config
+        };
+        let mut world = World::build_sized(GpuDrivenRenderer::new(config), 64);
+        world.add_object_with(
+            &base_sphere(0.5, [8, 6]),
+            Shading::Unlit,
+            feature::NO_TONE_MAP,
+        );
+        let mut mock = MockBackend::default();
+        let mut made = Vec::new();
+        let mut drew = false;
+        let mut uploaded = false;
+        // The tone view's frame uniform, asked of the builder rather than pinned here, so the
+        // numbering can move without this test reading the wrong buffer.
+        let frame = view_frame(ViewId::TONE);
+        for _ in 0..4 {
+            let commands = world.step(&mut mock, true);
+            made = commands
+                .iter()
+                .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == template::TONE_MASK)
+                .map(|(_, o)| o[0])
+                .collect();
+            drew = commands
+                .iter()
+                .any(|(op, o)| *op == Op::SetPipeline && made.contains(&o[0]));
+            uploaded = commands
+                .iter()
+                .any(|(op, o)| *op == Op::WriteBuffer && o[0] == frame);
+            if drew {
+                break;
+            }
+        }
+        assert!(
+            !made.is_empty(),
+            "the engine makes the tone mask's pipeline for the material's bucket, direct draws {direct_draws}"
+        );
+        assert!(
+            drew,
+            "the mask pass draws the material's bucket with the tone mask's pipeline, direct draws {direct_draws}"
+        );
+        assert!(
+            uploaded,
+            "the tone view reads the camera's frame, so its vertices reach the scene's places, direct draws {direct_draws}"
+        );
     }
 }

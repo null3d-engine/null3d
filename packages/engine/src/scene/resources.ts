@@ -4,6 +4,19 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import {
+	MAP_ROW_SLOT_ANISOTROPY,
+	MAP_ROW_SLOT_BUMP,
+	MAP_ROW_SLOT_COAT,
+	MAP_ROW_SLOT_COAT_NORMAL,
+	MAP_ROW_SLOT_COAT_ROUGHNESS,
+	MAP_ROW_SLOT_DISPLACEMENT,
+	MAP_ROW_SLOT_IRIDESCENCE,
+	MAP_ROW_SLOT_IRIDESCENCE_THICKNESS,
+	MAP_ROW_SLOT_SHEEN_COLOR,
+	MAP_ROW_SLOT_SHEEN_ROUGHNESS,
+	MAP_ROW_SLOT_THICKNESS,
+	MAP_ROW_SLOT_TRANSMISSION,
+	MAP_SLOT_ANISOTROPY,
 	MAP_SLOT_BASE_COLOR,
 	MAP_SLOT_BUMP,
 	MAP_SLOT_COAT,
@@ -13,7 +26,10 @@ import {
 	MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR,
 	MAP_SLOT_DISPLACEMENT,
 	MAP_SLOT_EMISSIVE,
+	MAP_SLOT_IRIDESCENCE,
+	MAP_SLOT_IRIDESCENCE_THICKNESS,
 	MAP_SLOT_LIGHT,
+	MAP_SLOT_LIGHT_MAP_DIRECTION,
 	MAP_SLOT_METAL_ROUGH,
 	MAP_SLOT_NORMAL,
 	MAP_SLOT_OCCLUSION,
@@ -21,23 +37,34 @@ import {
 	MAP_SLOT_SHEEN_ROUGHNESS,
 	MAP_SLOT_SPECULAR_COLOR,
 	MAP_SLOT_SPECULAR_INTENSITY,
+	MAP_SLOT_THICKNESS,
+	MAP_SLOT_TRANSMISSION,
 	MATERIAL_FEATURE_ADDITIVE,
 	MATERIAL_FEATURE_ALPHA_HASH,
 	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
+	MATERIAL_FEATURE_ANISOTROPY,
 	MATERIAL_FEATURE_BLEND,
+	MATERIAL_FEATURE_CASTER_COVERAGE,
 	MATERIAL_FEATURE_COAT_SHEEN,
 	MATERIAL_FEATURE_DECAL,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
+	MATERIAL_FEATURE_IRIDESCENCE,
+	MATERIAL_FEATURE_LIGHT_MAP_RGBM,
+	MATERIAL_FEATURE_MOVING_VERTICES,
 	MATERIAL_FEATURE_MULTIPLY,
+	MATERIAL_FEATURE_NO_COLOR_WRITE,
 	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
+	MATERIAL_FEATURE_NO_TONE_MAP,
 	MATERIAL_FEATURE_PARALLAX,
+	MATERIAL_FEATURE_SCENE_DEPTH,
 	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
+	MATERIAL_FEATURE_STILL_CASTER,
 	MATERIAL_FEATURE_SUBSURFACE,
 	MATERIAL_FEATURE_TRANSLUCENCY,
 	MATERIAL_FEATURE_TRANSMISSION,
@@ -45,6 +72,8 @@ import {
 	MATERIAL_FEATURE_WEIGHTED,
 	MATERIAL_FEATURE_WIREFRAME,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
+	MATERIAL_PARAM_ANISOTROPY,
+	MATERIAL_PARAM_ANISOTROPY_ROTATION,
 	MATERIAL_PARAM_ATTENUATION_COLOR,
 	MATERIAL_PARAM_ATTENUATION_DISTANCE,
 	MATERIAL_PARAM_CLEARCOAT,
@@ -56,11 +85,20 @@ import {
 	MATERIAL_PARAM_DECAL_FADE_START,
 	MATERIAL_PARAM_DIFFUSE_TRANSMISSION,
 	MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
+	MATERIAL_PARAM_DISPERSION,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
 	MATERIAL_PARAM_IOR,
+	MATERIAL_PARAM_IRIDESCENCE,
+	MATERIAL_PARAM_IRIDESCENCE_IOR,
+	MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX,
+	MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN,
 	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
+	MATERIAL_PARAM_LIGHT_MAP_OFFSET,
+	MATERIAL_PARAM_LIGHT_MAP_SCALE,
+	MATERIAL_PARAM_MAP_UV,
+	MATERIAL_PARAM_MAP_UV_STRIDE,
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_NORMAL_SCALE,
 	MATERIAL_PARAM_OCCLUSION_STRENGTH,
@@ -100,19 +138,25 @@ import {
 import {
 	PERMUTATION_CASTER,
 	PERMUTATION_COAT_SHEEN,
+	PERMUTATION_MOTION,
 	PERMUTATION_ROW_VALUES,
 	PERMUTATION_TRANSLUCENCY,
 	PERMUTATION_TRANSMISSION,
+	SIZE_MAP_ROWS,
+	SIZE_MAP_SLOTS,
 } from '../generated/gpu';
 import type { ShaderVariants } from '../generated/shaders';
 import type { CustomShader } from '../shared/images';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { type ColorInput, linearColor, writeLinearColor } from './color';
+import type { SceneInput } from './features';
 import type { CoreMemory } from './memory';
 import {
 	arraysProblem,
 	meshFromArrays,
+	meshFromLevel,
 	morphTargetCount,
+	replaceMeshIndices,
 	updateVertices,
 	type VertexLayout,
 } from './mesh-arrays';
@@ -135,15 +179,19 @@ export interface ResourceUsers {
 }
 
 /**
- * A lower level of detail of a mesh: a simpler mesh that draws in the base mesh's place where the
- * level's error covers less than the `lodThreshold` quality setting's pixels on the screen. Give
- * the level's `error`, or the `distance` at which it switches in, as three.js's `LOD.addLevel`
- * takes it.
+ * A lower level of detail of a mesh: a simpler mesh that draws in the base mesh's place. Give its
+ * `error`, the `distance` at which it switches in, or the screen `coverage` under which it draws.
+ * A level with a measured error, which the asset tool writes, changes the picture by under a pixel
+ * at its switch and switches at once. A level given by a distance, by a coverage or by a hand-set
+ * error fades over a short band, so its switch does not pop.
  *
  * @category api/geometry
  */
 export interface MeshLevel {
-	/** The simpler mesh. It has the base mesh's vertex attributes, and draws with its material. */
+	/**
+	 * The simpler mesh. It has the base mesh's vertex attributes, and draws with the object's
+	 * material or the level's own.
+	 */
 	mesh: MeshGeometry;
 	/**
 	 * The level's error: the largest distance between its surface and the base mesh's, in the
@@ -152,12 +200,32 @@ export interface MeshLevel {
 	 */
 	error?: number;
 	/**
-	 * The distance from the camera at which the level switches in, for an object of scale 1, on a
-	 * screen 1,080 pixels high, at the field of view of `fov` in the options. The engine turns it
-	 * into an error, so on a taller screen, or at a higher render scale, the level switches in
-	 * farther away.
+	 * The distance from the camera to the nearest point of the object's bounds at which the level
+	 * switches in, for an object of scale 1. The switch stays there on every screen height and at
+	 * every render scale.
 	 */
 	distance?: number;
+	/**
+	 * The share of the render's height that the object's bounds cover where the level switches in,
+	 * from 0 to 1: it draws while they cover less. This is `MSFT_screencoverage` in a glTF file.
+	 * It stays the same on every screen height.
+	 */
+	coverage?: number;
+	/**
+	 * True to hand over between two levels in a short band past each switch distance, where a
+	 * dither pattern shares the pixels between them, so a switch does not pop. False to switch at
+	 * once. The default is `fade` in the options. A level with a measured error changes the picture
+	 * by under a pixel at its switch, so its band only costs. The glTF reader switches a file's
+	 * measured error at once and fades an error that comes alone, which its author set by hand.
+	 */
+	fade?: boolean;
+	/**
+	 * The material that the level's surface draws with, where it shades more cheaply than the base
+	 * mesh's. A level without one draws with the material of the level before it, and the base
+	 * level draws with the object's or the batch's own material. Give a far level a material
+	 * without a normal map, or with an opaque mask in place of an alpha-tested one.
+	 */
+	material?: Material;
 }
 
 /**
@@ -169,20 +237,25 @@ export interface MeshLevelOptions {
 	/**
 	 * True to hand over between two levels in a short band past each switch distance, where a
 	 * dither pattern shares the pixels between them, so a switch does not pop. False to switch at
-	 * once. The default is true. The `lodFade` quality setting turns the bands off on Low.
+	 * once. The default is true. A level's own `fade` overrides it.
 	 */
 	fade?: boolean;
 	/**
-	 * The vertical field of view, in degrees, at which a level given by `distance` switches in at
-	 * that distance. The default is 50, three.js's default for a perspective camera.
+	 * The vertical field of view, in degrees, at which a level given by its error covers the
+	 * threshold's pixels, and a level given by its coverage covers that share of the screen. The
+	 * default is 50, three.js's default for a perspective camera.
 	 */
 	fov?: number;
 }
 
-/** The screen height in pixels at which a level given by its distance switches in there. */
+/** The screen height in pixels at which the engine compares a level's error and coverage. */
 const LEVEL_REFERENCE_HEIGHT = 1080;
-/** The field of view in degrees at which a level given by its distance switches in there. */
+/** The field of view in degrees at which the engine compares a level's error and coverage. */
 const LEVEL_REFERENCE_FOV = 50;
+/** The level's switch measures, as the engine core names them: error, distance and coverage. */
+const LEVEL_SWITCH_ERROR = 0;
+const LEVEL_SWITCH_DISTANCE = 1;
+const LEVEL_SWITCH_COVERAGE = 2;
 /** The most lower levels a mesh takes. */
 const MAX_LOWER_LEVELS = 7;
 
@@ -195,8 +268,8 @@ const MAX_LOWER_LEVELS = 7;
 export class MeshGeometry {
 	/** The engine core's id, or 0 once the mesh is destroyed. */
 	private liveId: number;
-	/** The mesh's lower levels of detail, with their errors. */
-	private lowerLevels: readonly Required<Pick<MeshLevel, 'mesh' | 'error'>>[] = [];
+	/** The mesh's lower levels of detail, as `setLevels` gave them. */
+	private lowerLevels: readonly MeshLevel[] = [];
 	/** The vertex count and format, read from the engine core at the first update. */
 	private layout: VertexLayout | undefined;
 
@@ -234,19 +307,26 @@ export class MeshGeometry {
 	/**
 	 * Destroys the mesh, like three.js's `geometry.dispose()`. The engine frees its GPU memory and
 	 * its other data at once, and later meshes take its room. Destroy the objects and instance
-	 * batches that use it first, in the same frame or before. Throws E1111 while one
+	 * batches that use it first, in the same frame or before. Its lower levels go with it, since a
+	 * level draws its base's vertices. Throws E1111 while one
 	 * still uses it, and E1101 for a mesh that is destroyed already. Later calls that pass the mesh
 	 * throw E1101.
 	 */
 	destroy(): void {
 		const call = 'mesh.destroy';
-		const user = this.maker?.users?.userOf(new Set([this]));
+		// A level draws its base mesh's vertices, so the base takes it along. A level that the
+		// sketch destroyed itself is gone already.
+		const meshes = [
+			this,
+			...this.lowerLevels.filter((level) => level.mesh.live).map((level) => level.mesh),
+		];
+		const user = this.maker?.users?.userOf(new Set(meshes));
 		if (user)
 			throw new EngineError(
 				'E1111',
 				`${call}() was called on a mesh that ${user} still uses. Destroy the objects and instance batches that use it first.`,
 			);
-		destroyMeshes(this.core, [this], call);
+		destroyMeshes(this.core, meshes, call);
 	}
 
 	/**
@@ -256,9 +336,11 @@ export class MeshGeometry {
 	 * vertices `start` to `start + count - 1` change, which the next frame uploads. The defaults
 	 * update every vertex. Colors take three or four values per vertex: three keep each vertex's
 	 * alpha. The mesh keeps the bounding sphere it was made with, so give objects that draw
-	 * vertices outside it bounds with `setBounds`. Joints, weights, and a mesh with joints or morph
-	 * targets take no updates. Throws E1206 for values that do not fit the mesh, and E1101 for a
-	 * destroyed mesh. Allocates nothing, so a call in every frame makes no garbage.
+	 * vertices outside it bounds with `setBounds`. The four-number vertex record takes updates as
+	 * `targets`. Joints, weights, and a mesh with joints or morph targets take no updates. A level
+	 * that draws its base mesh's vertices writes them, so the base and every level of it draw the
+	 * new values. Throws E1206 for values that do not fit the mesh,
+	 * and E1101 for a destroyed mesh. Allocates nothing, so a call in every frame makes no garbage.
 	 */
 	updateVertices(
 		name: UpdatableAttribute,
@@ -271,7 +353,11 @@ export class MeshGeometry {
 		let layout = this.layout;
 		if (layout === undefined) {
 			const { glue } = this.core;
-			layout = { count: glue.meshVertexCount(id), format: glue.meshFormat(id) };
+			layout = {
+				count: glue.meshVertexCount(id),
+				format: glue.meshFormat(id),
+				posed: this.morphTargets > 0,
+			};
 			this.layout = layout;
 		}
 		const vertices = count ?? layout.count - start;
@@ -285,10 +371,10 @@ export class MeshGeometry {
 	}
 
 	/**
-	 * The mesh's lower levels of detail, from the most detailed down, each with its error. A
+	 * The mesh's lower levels of detail, from the most detailed down, as `setLevels` gave them. A
 	 * destroyed level takes every level away, as the engine does.
 	 */
-	get levels(): readonly Required<Pick<MeshLevel, 'mesh' | 'error'>>[] {
+	get levels(): readonly MeshLevel[] {
 		if (!this.lowerLevels.every((level) => level.mesh.live)) this.lowerLevels = [];
 		return this.lowerLevels;
 	}
@@ -297,9 +383,13 @@ export class MeshGeometry {
 	 * Gives the mesh lower levels of detail, from the most detailed down, like three.js's
 	 * `LOD.addLevel`. Every object and instance batch that draws the mesh then picks one level per
 	 * frame. It draws the coarsest level whose error covers fewer pixels on the screen than the
-	 * `lodThreshold` quality setting. The shadow maps pick a coarser level still. An empty list takes the levels
-	 * away. Skinned and morphed objects, and materials that blend or let light through, draw the
-	 * base mesh. Destroying a level's mesh takes every level away. Throws E1221 for levels the mesh
+	 * `lodThreshold` quality setting. A level may name a material of its own, so a far level shades
+	 * more cheaply; a level without one draws with the level before's material. A bound that
+	 * covers fewer pixels than the threshold draws nothing, so the mesh's last level holds no
+	 * geometry. The shadow maps pick a coarser level still. An empty list takes the levels away.
+	 * Morphed objects, and materials that blend or let light through, draw the base mesh. A
+	 * skinned object draws a level while the level names the base mesh's own vertices.
+	 * Destroying a level's mesh takes every level away. Throws E1221 for levels the mesh
 	 * cannot take, and E1101 for a destroyed mesh.
 	 */
 	setLevels(levels: readonly MeshLevel[], options: MeshLevelOptions = {}): void {
@@ -313,46 +403,93 @@ export class MeshGeometry {
 			);
 		if (!(fov > 0 && fov < 180))
 			throw new EngineError('E1221', `${call}() got a fov of ${fov}, not between 0 and 180.`);
-		// A distance becomes the error that covers one pixel at that distance, at the reference.
-		const perDistance = (2 * Math.tan((fov * Math.PI) / 360)) / LEVEL_REFERENCE_HEIGHT;
-		const errors = levels.map((level, k) => {
-			const { error, distance } = level;
-			if ((error === undefined) === (distance === undefined))
+		// The reference view turns every measure into the distance at which its level switches, so
+		// that the levels of one set compare with each other.
+		const p11 = 1 / Math.tan((fov * Math.PI) / 360);
+		const radius = this.radius;
+		const defaultFade = options.fade ?? true;
+		let fades = 0;
+		let before = 0;
+		const values: number[] = [];
+		const switches: number[] = [];
+		for (const [k, level] of levels.entries()) {
+			const { error, distance, coverage } = level;
+			const given = [error, distance, coverage].filter((value) => value !== undefined);
+			if (given.length !== 1)
 				throw new EngineError(
 					'E1221',
-					`${call}() got level ${k + 1} with ${error === undefined ? 'neither an error nor' : 'both an error and'} a distance. Give one of them.`,
-				);
-			const value = error ?? (distance as number) * perDistance;
-			if (!(Number.isFinite(value) && value > 0))
-				throw new EngineError(
-					'E1221',
-					`${call}() got ${error === undefined ? `a distance of ${distance}` : `an error of ${error}`} for level ${k + 1}, not a number above 0.`,
+					`${call}() got level ${k + 1} with ${given.length === 0 ? 'none of an error, a distance and a coverage' : 'more than one of an error, a distance and a coverage'}. Give one of them.`,
 				);
 			if (level.mesh.core !== this.core || level.mesh === this)
 				throw new EngineError(
 					'E1221',
 					`${call}() got level ${k + 1} with ${level.mesh === this ? 'the base mesh itself' : 'a mesh from another engine'}.`,
 				);
-			return value;
-		});
-		for (let k = 1; k < errors.length; k++)
-			if ((errors[k] as number) <= (errors[k - 1] as number))
+			const value = given[0] as number;
+			if (!(Number.isFinite(value) && value > 0))
 				throw new EngineError(
 					'E1221',
-					`${call}() got level ${k + 1} with an error of ${errors[k]}, not above the ${errors[k - 1]} of level ${k}. Errors grow from level to level.`,
+					`${call}() got ${error !== undefined ? `an error of ${error}` : distance !== undefined ? `a distance of ${distance}` : `a coverage of ${coverage}`} for level ${k + 1}, not a number above 0.`,
 				);
+			const switchValue =
+				error !== undefined
+					? LEVEL_SWITCH_ERROR
+					: distance !== undefined
+						? LEVEL_SWITCH_DISTANCE
+						: LEVEL_SWITCH_COVERAGE;
+			// The distance at which the level switches on the reference view, which grows from
+			// level to level.
+			const at =
+				switchValue === LEVEL_SWITCH_ERROR
+					? (value * LEVEL_REFERENCE_HEIGHT * p11) / 2
+					: switchValue === LEVEL_SWITCH_DISTANCE
+						? value
+						: (radius * p11) / value;
+			if (k > 0 && at <= before)
+				throw new EngineError(
+					'E1221',
+					`${call}() got level ${k + 1} with a switch at ${at.toFixed(3)} m, not past the ${before.toFixed(3)} m of level ${k}. The switch distances grow from level to level.`,
+				);
+			before = at;
+			values.push(value);
+			switches.push(switchValue);
+			if (level.fade ?? defaultFade) fades |= 1 << (k + 1);
+		}
 		const count = levels.length;
 		const ids = levels.map((level) => level.mesh.id);
-		const at = this.core.checkGrowth(this.core.glue.meshArrays(2 * count), call);
+		const materials = levels.map((level, k) => {
+			const { material } = level;
+			if (!material) return 0;
+			if (!material.live)
+				throw new EngineError(
+					'E1221',
+					`${call}() got level ${k + 1} with a material that is destroyed.`,
+				);
+			if (material.core !== this.core)
+				throw new EngineError(
+					'E1221',
+					`${call}() got level ${k + 1} with a material from another engine.`,
+				);
+			return material.id;
+		});
+		const at = this.core.checkGrowth(this.core.glue.meshArrays(4 * count), call);
 		this.core.u32(at, count).set(ids);
-		this.core.f32(at + 4 * count, count).set(errors);
-		this.core.check(
-			this.core.glue.setMeshLevels(id, count, options.fade ?? true),
-			call,
-			'a mesh',
-			true,
-		);
-		this.lowerLevels = levels.map((level, k) => ({ mesh: level.mesh, error: errors[k] as number }));
+		this.core.f32(at + 4 * count, count).set(values);
+		this.core.u32(at + 8 * count, count).set(switches);
+		this.core.u32(at + 12 * count, count).set(materials);
+		this.core.check(this.core.glue.setMeshLevels(id, count, fades), call, 'a mesh', true);
+		this.lowerLevels = levels.map((level) => ({ ...level }));
+	}
+
+	/**
+	 * @internal Gives the mesh the triangles `indices` in place of the ones it draws, which name its
+	 * own vertices. A staged level uses it to make its base the finer level as it arrives, so the
+	 * objects that draw the base draw the new geometry at once. Returns false when the mesh cannot
+	 * take another triangle list. It changes nothing else about the mesh: its vertices, bounds and
+	 * levels stay.
+	 */
+	replaceTriangles(indices: Uint16Array | Uint32Array | readonly number[]): boolean {
+		return replaceMeshIndices(this.core, this.id, indices, 'mesh.replaceTriangles');
 	}
 }
 
@@ -640,7 +777,14 @@ const RING: Required<RingOptions> = {
  *
  * @category api/geometry
  */
-export type UpdatableAttribute = 'positions' | 'normals' | 'uvs' | 'uvs1' | 'colors' | 'tangents';
+export type UpdatableAttribute =
+	| 'positions'
+	| 'normals'
+	| 'uvs'
+	| 'uvs1'
+	| 'colors'
+	| 'tangents'
+	| 'targets';
 
 /**
  * The integer typed arrays that vertex attributes take: 8-bit and 16-bit, signed and unsigned.
@@ -765,6 +909,14 @@ export interface MeshArrays {
 	 * whose integers read as fractions from 0 to 1.
 	 */
 	weights?: VertexValues;
+	/**
+	 * Four numbers per vertex for a shape that a custom material moves between levels of detail:
+	 * the position that the vertex takes at the next coarser level, and that level's error in
+	 * meters. The material's `vertexOffset` reads them as `input.vertexRecord`. Takes floats. The
+	 * vertex record also holds a morphed mesh's morph data, so a mesh takes `targets` or
+	 * `morphTargets`, never both.
+	 */
+	targets?: VertexValues;
 	/**
 	 * Three vertex indices per triangle, counter-clockwise when you look at its front. 16-bit and
 	 * 32-bit indices both work. Without indices, each three vertices in a row make a triangle.
@@ -916,6 +1068,21 @@ export class Geometry {
 			this,
 		);
 	}
+
+	/**
+	 * @internal A level that draws `base`'s vertices with the given triangles, or undefined when the
+	 * engine cannot share them and the caller gives the level its own arrays. Files whose levels
+	 * keep the base's vertex streams load every level this way, so a level costs indices alone.
+	 */
+	fromLevel(
+		base: MeshGeometry,
+		indices: Uint16Array | Uint32Array | readonly number[],
+	): MeshGeometry | undefined {
+		const call = 'geometry.fromLevel';
+		const id = meshFromLevel(this.core, base.id, indices, call);
+		if (id === undefined) return undefined;
+		return new MeshGeometry(id, this.core.glue.meshRadius(id), this.core, 0, [], this);
+	}
 }
 
 /**
@@ -1057,13 +1224,19 @@ export interface StandardValues extends MaterialOptions {
 	/** Where the maps sit on the texture coordinates. The default leaves them as they are. */
 	uvTransform?: UvTransform;
 	/**
+	 * Each map's own transform, for the maps whose transform differs from `uvTransform`. A file
+	 * keeps one transform for each of its textures, so the loader places each map with its own.
+	 */
+	mapUvTransforms?: MapUvTransforms;
+	/**
 	 * How much of the light behind the surface passes through it, from 0 to 1, for glass and clear
 	 * water, as three.js's `MeshPhysicalMaterial.transmission`. That share of the diffuse light
 	 * becomes the light from behind, and the reflections stay. Roughness blurs what shows through.
 	 * Give it when you create the material, even as 0, to change it later. A material created
 	 * without it lets no light through. Such a material draws after the opaque objects, with the
-	 * blended ones, and only opaque objects show through it. It takes the `opaque` or `blend` alpha
-	 * mode. The default is 0.
+	 * blended ones, and only opaque objects show through it. It takes the `opaque`, `mask` or
+	 * `blend` alpha mode. A mask decides which pixels draw, and the light from behind fills the
+	 * pixels that remain, as three.js's `alphaTest` does. The default is 0.
 	 */
 	transmission?: number;
 	/**
@@ -1085,6 +1258,15 @@ export interface StandardValues extends MaterialOptions {
 	 */
 	attenuationDistance?: number;
 	/**
+	 * The strength of the volume's dispersion, 0 or more, as three.js's
+	 * `MeshPhysicalMaterial.dispersion` and glTF's `KHR_materials_dispersion`: 20 divided by the
+	 * Abbe number, so a diamond's 0.36 is weak and rutile's 2.04 is strong. The light from behind
+	 * bends by a slightly different index of refraction for each color, so a prism or a gem
+	 * separates it into colors at its edges. 0 bends every color alike. It shows only with
+	 * `transmission`, and the default is 0.
+	 */
+	dispersion?: number;
+	/**
 	 * How much of the surface's diffuse light passes through it to its other side, from 0 to 1, as
 	 * glTF's `KHR_materials_diffuse_transmission` gives it. Light that reaches the back, such as the
 	 * sun behind a leaf, a petal or an ear, then shows on the front through
@@ -1103,7 +1285,7 @@ export interface StandardValues extends MaterialOptions {
 	diffuseTransmissionColor?: ColorInput;
 	/**
 	 * How far light spreads under the surface before it leaves it, in world units taken as
-	 * metres, 0 or more, as in skin, wax or marble. The subsurface blur spreads the surface's
+	 * meters, 0 or more, as in skin, wax or marble. The subsurface blur spreads the surface's
 	 * diffuse light over this distance, so the edges of its shadows and the detail of its maps
 	 * soften, and its highlights stay sharp. Skin takes about 0.01. Give it when you create the
 	 * material, even as 0, to change it later. A material created without it draws no blur. The
@@ -1142,6 +1324,39 @@ export interface StandardValues extends MaterialOptions {
 	sheenColor?: ColorInput;
 	/** How rough the sheen is, from 0 to 1, as three.js's `sheenRoughness`: rougher sheens spread wider. The default is 1. */
 	sheenRoughness?: number;
+	/**
+	 * How much a thin film above the surface tints its reflection, from 0 to 1, as three.js's
+	 * `iridescence`: soap bubbles, oil and beetle shells show the colors of the film's thickness.
+	 * Give it, or another option of iridescence, when you create the material, to change it later.
+	 * The default is 0.
+	 */
+	iridescence?: number;
+	/**
+	 * The thin film's index of refraction, 1 or more, as three.js's `iridescenceIOR`: 1 makes the
+	 * film reflect as the surface does, and a value near 2 shows its colors most strongly. The
+	 * default is 1.3.
+	 */
+	iridescenceIor?: number;
+	/**
+	 * The thinnest and thickest parts of the film, in nanometers, as three.js's
+	 * `iridescenceThicknessRange`: the map's green channel mixes between them. The default is
+	 * `[100, 400]`.
+	 */
+	iridescenceThicknessRange?: readonly [number, number];
+	/**
+	 * How far the specular reflection stretches along one direction of the surface, from 0 (round)
+	 * to 1, as three.js's `anisotropy`: brushed metal shows a highlight across its grooves rather
+	 * than around. A material with a map takes the stretch's direction from the mesh's tangents or
+	 * from the map's coordinates; a material without one takes a frame square to the surface.
+	 * Give it, or `anisotropyRotation`, when you create the material, to change it later.
+	 * The default is 0.
+	 */
+	anisotropy?: number;
+	/**
+	 * The direction along which the reflection stretches, in radians from the surface's tangent,
+	 * as three.js's `anisotropyRotation`. The default is 0.
+	 */
+	anisotropyRotation?: number;
 }
 
 /**
@@ -1163,7 +1378,8 @@ export interface UvTransform {
 /**
  * The texture maps of a standard material. They are fixed when the material is created, because
  * each set of maps draws with a pipeline of its own. A map reads the texture coordinates that its
- * texture's `uvSet` names, through the material's `uvTransform`. Meshes need texture coordinates to
+ * texture's `uvSet` names, through its own transform where `mapUvTransforms` gives it one and the
+ * material's `uvTransform` otherwise. Meshes need texture coordinates to
  * show maps, and the material draws without a map until its texture's image is on the GPU.
  *
  * @category api/materials
@@ -1223,6 +1439,23 @@ export interface StandardMaps {
 	 */
 	diffuseTransmissionColorMap?: Texture;
 	/**
+	 * The share of the light behind the surface that passes through it, in red, in linear color.
+	 * Its red multiplies `transmission`. Only a material created with `transmission` takes it. It
+	 * keeps a row slot of its own and samples the specular intensity map's texture array at its own
+	 * layer, so a specular intensity map may draw beside it when the two textures share an array.
+	 * A material with layers keeps it unless a layer map fills that slot: a clear coat's normal map
+	 * and iridescence's thickness map do.
+	 */
+	transmissionMap?: Texture;
+	/**
+	 * The thickness of the volume under the surface, in green, in linear color. Its green
+	 * multiplies `thickness`. Only a material created with `transmission` takes it. It keeps a row
+	 * slot of its own and samples the specular color map's texture array at its own layer, so a
+	 * specular color map may draw beside it when the two textures share an array. A material with
+	 * layers keeps it unless a layer map fills that slot: the sheen's maps and an anisotropy map do.
+	 */
+	thicknessMap?: Texture;
+	/**
 	 * The clear coat in red, in linear color, which multiplies `clearcoat`. A material with a clear
 	 * coat or a sheen takes no light map and no specular maps, since its layers' maps take their
 	 * places.
@@ -1242,6 +1475,23 @@ export interface StandardMaps {
 	 * the same texture, as glTF packs them: an sRGB texture keeps its alpha linear.
 	 */
 	sheenRoughnessMap?: Texture;
+	/**
+	 * How much of the thin film's reflection shows, in red, in linear color, which multiplies
+	 * `iridescence`. A material with iridescence or anisotropy takes no light map and no specular
+	 * maps, since its maps take their places.
+	 */
+	iridescenceMap?: Texture;
+	/**
+	 * The film's thickness in green, in linear color, which mixes `iridescenceThicknessRange`. A
+	 * material with both iridescence maps takes no light map and no specular maps.
+	 */
+	iridescenceThicknessMap?: Texture;
+	/**
+	 * The anisotropy's direction in red and green and its strength in blue, in linear color: red
+	 * and green are a direction in the tangent plane, and blue multiplies `anisotropy`. A material
+	 * with it takes no light map, no specular maps and no clear coat or sheen map.
+	 */
+	anisotropyMap?: Texture;
 }
 
 /**
@@ -1260,13 +1510,24 @@ export interface MaterialFeatures {
 	vertexColors?: boolean;
 	/** Takes the scene's fog. False keeps the material's color at every distance. The default is true. */
 	fog?: boolean;
+	/**
+	 * Keeps the color as the display shows it, as three.js's `toneMapped: false` does. The tone
+	 * curve leaves it alone: the 8-bit path decides that in the shader of the material's own build,
+	 * and the HDR path's final pass reads a mask of these surfaces and skips the curve where one
+	 * draws. A blended surface keeps the curve on the HDR path, since a blended pixel mixes two
+	 * surfaces. The vignette and the sRGB encoding still apply, and the exposure already scales
+	 * the material's colors, so the color shows brighter than the same color tone mapped. The
+	 * default is true.
+	 */
+	toneMapped?: boolean;
 	/** How the material uses its alpha. The default is `opaque`. */
 	alphaMode?: AlphaMode;
 	/**
 	 * With the `mask` alpha mode, smooths the cut edges with MSAA, as three.js's
 	 * `alphaToCoverage` does: the alpha fades over about one pixel above `alphaCutoff`, and covers
 	 * that share of the pixel. Without MSAA the mask cuts as without it. False gives three.js's hard
-	 * cut edges of `alphaTest`. Custom materials do not take it. The default is true.
+	 * cut edges of `alphaTest`. A custom material takes it where its WGSL sets or reads the
+	 * surface's `alpha`, and a development build throws E1217 otherwise. The default is true.
 	 */
 	alphaToCoverage?: boolean;
 	/**
@@ -1285,6 +1546,15 @@ export interface MaterialFeatures {
 	 * in three.js's WebGL renderer. The default is true.
 	 */
 	depthTest?: boolean;
+	/**
+	 * False to write no color, so the surface shows nothing itself and hides what lies behind it
+	 * by the depth it writes, as three.js's `colorWrite: false` does. Its objects draw before the
+	 * opaque objects that write color, so nothing behind it shows through. With the `mask` or
+	 * `hash` alpha mode, the parts that the alpha drops write no depth either, so the surface cuts
+	 * a shape out of the space it holds. A blended surface keeps its place among the blended
+	 * objects, which `setRenderOrder` orders. The default is true.
+	 */
+	colorWrite?: boolean;
 	/** Moves the surface's depth, as three.js's polygon offset does. The default is no bias. */
 	depthBias?: DepthBias;
 	/**
@@ -1294,6 +1564,16 @@ export interface MaterialFeatures {
 	 */
 	wireframe?: boolean;
 }
+
+/**
+ * Each map's own transform, by the map's option name, for the maps whose transform differs from
+ * the material's. A map without one keeps the transform that `uvTransform` gives it, or the
+ * identity. A file keeps one transform for each of its textures, so the loader places each map
+ * with its own.
+ *
+ * @category api/materials
+ */
+export type MapUvTransforms = Partial<Record<Exclude<keyof StandardMaps, 'parallax'>, UvTransform>>;
 
 /**
  * The options of `materials.standard` besides its texture maps. Custom materials take them too.
@@ -1306,6 +1586,33 @@ export interface StandardBaseOptions extends StandardValues, MaterialFeatures {
 	 * is fixed when the material is created. The default is false.
 	 */
 	flatShading?: boolean;
+	/**
+	 * Where a light map's texture coordinates start, as three.js's `texture.offset`. A bake places
+	 * each light map on a mesh with its own scale and offset, apart from the other maps. It takes
+	 * two numbers, and needs a `lightMap`. The default leaves the coordinates alone.
+	 */
+	lightMapOffset?: readonly [number, number];
+	/**
+	 * How a light map's texture coordinates stretch, as three.js's `texture.repeat`. It takes two
+	 * numbers, and needs a `lightMap`. The default is `[1, 1]`.
+	 */
+	lightMapRepeat?: readonly [number, number];
+	/**
+	 * How the engine reads the light map's texels: `srgb` (the default) takes the texture as sRGB
+	 * color, which the sampler turns linear, or `rgbm` multiplies each texel's color by its alpha
+	 * times 8 and then decodes it as sRGB, as Needle's viewer reads its light maps. With `rgbm`,
+	 * give a texture in linear color, whose raw bytes the shader decodes. It needs a `lightMap`.
+	 */
+	lightMapDecode?: 'srgb' | 'rgbm';
+	/**
+	 * The direction of the light that a directional light map stores at each texel, in linear
+	 * color: red, green and blue map the direction's x, y and z from -1 to 1. A normal map then
+	 * bends the light that the bake stored, instead of lighting it evenly. Give the texture that
+	 * `assets.loadLightMap` returns beside the radiance: the engine reads the direction through
+	 * the light map's own texture binding, so both must have one size, format and color space,
+	 * as `loadLightMap` makes them. Needs a `lightMap`.
+	 */
+	lightMapDirection?: Texture;
 	/**
 	 * Takes the main directional light's contact shadows. False leaves them off this surface,
 	 * which keeps the shadow map's shadows. Set it on thin surfaces that crowd together or sway,
@@ -1331,6 +1638,8 @@ export interface StandardOptions extends StandardBaseOptions, StandardMaps {}
 export interface UnlitValues extends MaterialOptions {
 	/** Where the map sits on the texture coordinates. The default leaves it as it is. */
 	uvTransform?: UvTransform;
+	/** The map's own transform, where a file gives it one, as it does each of its textures. */
+	mapUvTransforms?: MapUvTransforms;
 }
 
 /**
@@ -1346,6 +1655,7 @@ export interface DecalValues
 		| 'lightMapIntensity'
 		| 'transmission'
 		| 'thickness'
+		| 'dispersion'
 		| 'attenuationColor'
 		| 'attenuationDistance'
 	> {
@@ -1371,7 +1681,9 @@ export interface DecalValues
  *
  * @category api/materials
  */
-export interface DecalOptions extends DecalValues, Omit<StandardMaps, 'lightMap'> {}
+export interface DecalOptions
+	extends DecalValues,
+		Omit<StandardMaps, 'lightMap' | 'transmissionMap' | 'thicknessMap'> {}
 
 /**
  * Options of `materials.unlit`.
@@ -1416,9 +1728,16 @@ export interface ShadowCatcherOptions extends ShadowCatcherValues {
 export interface CompiledWgsl {
 	/**
 	 * `'material'` for the functions of a custom material, `'effect'` for a custom effect,
-	 * `'toneCurve'` for a custom tone curve, and `'shader'` for a whole shader.
+	 * `'toneCurve'` for a custom tone curve, `'skyLayer'` for a sky layer, and `'shader'` for a
+	 * whole shader.
 	 */
-	readonly kind: 'material' | 'effect' | 'toneCurve' | 'shader';
+	readonly kind: 'material' | 'effect' | 'toneCurve' | 'skyLayer' | 'shader';
+	/**
+	 * True for a draw shader: a custom material's `@vertex` entry point takes the vertex and
+	 * instance indices and no mesh attribute, and `scene.createVertexDraw` draws it from a vertex
+	 * count.
+	 */
+	readonly meshless?: boolean;
 }
 
 /**
@@ -1452,8 +1771,9 @@ export interface ShaderOptions<Wgsl extends string | CompiledWgsl = string | Com
 	 * `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and
 	 * which can start from `defaultSurface(input)`. The engine lights the surface that it returns.
 	 * It can declare `struct Uniforms`, whose fields the surface function reads from `material`,
-	 * and `fn vertexOffset`, which moves the mesh's vertices. A full shader has a `@vertex` entry
-	 * point that takes an `InstanceIn`, and a `@fragment` one, instead. Materials made from the
+	 * `fn vertexOffset`, which moves the mesh's vertices, and `fn lobe(input: LobeInput) -> vec3f`,
+	 * which adds specular for the main light beside the base lobe. A full shader has a `@vertex`
+	 * entry point that takes an `InstanceIn`, and a `@fragment` one, instead. Materials made from the
 	 * same WGSL share their shader.
 	 */
 	wgsl: Wgsl;
@@ -1468,14 +1788,42 @@ export interface ShaderOptions<Wgsl extends string | CompiledWgsl = string | Com
 			: UniformValues<Wgsl>
 	>;
 	/**
-	 * The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name. The WGSL
-	 * samples it as `textureSample(name, nameSampler, uv)`, with the sampler of the texture's
-	 * `wrap` and `filter` options. A texture samples as white until its image is on the GPU, and a
-	 * declared texture without one stays white. The textures are fixed when the material is
-	 * created. When TypeScript can see the WGSL, a name that it does not declare fails the type
-	 * check.
+	 * The texture of each `var name: texture_2d<f32>;` or `var name: texture_2d_array<f32>;` that
+	 * the WGSL declares, by name. The WGSL samples a 2D texture as
+	 * `textureSample(name, nameSampler, uv)`, with the sampler of the texture's `wrap` and `filter`
+	 * options, and a texture array as `textureSample(name, nameSampler, uv, layer)`, where it picks
+	 * the layer of a texture of several layers. A texture samples as white until its image is on
+	 * the GPU, and a declared texture without one stays white. The textures are fixed when the
+	 * material is created. When TypeScript can see the WGSL, a name that it does not declare fails
+	 * the type check.
 	 */
 	textures?: NoInfer<TextureValues<Wgsl>>;
+	/**
+	 * The scene inputs that the material's surface function reads. Today that is `'sceneDepth'`:
+	 * the WGSL calls `sceneDepth(uv)` or `sceneDistance(uv)`, and the engine binds the copy of the
+	 * opaque scene's depth. A material that declares it draws after that copy exists, so it reads
+	 * it in the transparent pass; a surface that draws earlier reads 0, the far plane. A material
+	 * that declares it takes at most seven textures of its own: its maps' group gives up one slot,
+	 * so that the copy fits the fragment stage beside the maps under WebGPU's limit of sixteen
+	 * sampled textures. The engine checks that the declaration and the WGSL agree.
+	 */
+	sceneInputs?: readonly SceneInput[];
+	/**
+	 * True when the vertex offset follows the view that draws the object and nothing else moves it,
+	 * as a card that turns toward the camera does. A caster that only shadow passes draw then holds
+	 * the shadow that the light's layer drew until the light turns, so the far shadow cascades stay
+	 * cached. Leave it out for an offset that moves with time, such as wind: the shadow of such a
+	 * caster follows it in every frame, and a far cascade must draw again for each one.
+	 */
+	castsStill?: boolean;
+	/**
+	 * How far from the camera the vertex offset moves, in meters, for an offset that fades out with
+	 * distance such as wind. The material's WGSL fades its offset to nothing by this distance, and
+	 * the engine counts a caster of the material as moving only while its bounding sphere reaches
+	 * within it, so a far shadow cascade that only the sway reaches keeps the layer it holds. Zero,
+	 * the default, moves the offset at every distance, as an offset that follows time alone does.
+	 */
+	swayDistance?: number;
 }
 
 /** A uniform of a custom material: its type, and the float of the row of custom values it starts at. */
@@ -1504,9 +1852,19 @@ interface CompiledMaterial extends CompiledWgsl {
 	readonly baseColor: boolean;
 	/** True when the WGSL reads an instance's index or an object's id. */
 	readonly objectIds?: boolean;
+	/** True when the WGSL reads the copy of the scene's depth through `sceneDepth`. */
+	readonly sceneDepth?: boolean;
+	/** The functions that the WGSL declares for the engine to call, such as `surface`. */
+	readonly functions: readonly string[];
+	/** True when the WGSL sets or reads the surface's alpha. */
+	readonly alpha?: boolean;
 	readonly uniforms: readonly CompiledUniform[];
 	/** The textures that the WGSL declares, in the order of their map slots. */
-	readonly textures: readonly { readonly name: string }[];
+	readonly textures: readonly {
+		readonly name: string;
+		/** True for a declaration of a texture array, whose layers the WGSL picks. */
+		readonly array?: boolean;
+	}[];
 	/** On the dev server, the key of the WGSL's hot updates. */
 	readonly hot?: string;
 }
@@ -1520,6 +1878,10 @@ function customShader(compiled: CompiledMaterial): CustomShader {
 		variants: compiled.variants,
 		locations: compiled.locations,
 		textures: compiled.textures.length,
+		...(compiled.meshless === true && { meshless: true }),
+		...(compiled.sceneDepth === true && { sceneDepth: true }),
+		...(compiled.functions.includes('coverage') && { coverage: true }),
+		...(compiled.alpha === true && { alpha: true }),
 		...(compiled.builds && { builds: true }),
 	};
 }
@@ -1551,11 +1913,14 @@ type Ranged =
 	| 'envIntensity'
 	| 'transmission'
 	| 'thickness'
+	| 'dispersion'
 	| 'diffuseTransmission'
 	| 'subsurfaceRadius'
 	| 'clearcoat'
 	| 'clearcoatRoughness'
 	| 'sheenRoughness'
+	| 'iridescence'
+	| 'anisotropy'
 	| 'edgeFade';
 
 /** Each value that is a number, and the most it takes, or none above 0. */
@@ -1571,13 +1936,19 @@ const RANGED: readonly (readonly [Ranged, number])[] = [
 	['envIntensity', Number.POSITIVE_INFINITY],
 	['transmission', 1],
 	['thickness', Number.POSITIVE_INFINITY],
+	['dispersion', Number.POSITIVE_INFINITY],
 	['diffuseTransmission', 1],
 	['subsurfaceRadius', Number.POSITIVE_INFINITY],
 	['clearcoat', 1],
 	['clearcoatRoughness', 1],
 	['sheenRoughness', 1],
+	['iridescence', 1],
+	['anisotropy', 1],
 	['edgeFade', 1],
 ];
+
+/** The highest value that each ranged value takes, by its name. */
+const ONE_VALUE_MAX: ReadonlyMap<string, number> = new Map(RANGED);
 
 /** Each whole-number value's name, in `RANGED`'s order, for the development checks. */
 const RANGED_NAMES: readonly string[] = [
@@ -1592,11 +1963,14 @@ const RANGED_NAMES: readonly string[] = [
 	'envIntensity',
 	'transmission',
 	'thickness',
+	'dispersion',
 	'diffuseTransmission',
 	'subsurfaceRadius',
 	'clearcoat',
 	'clearcoatRoughness',
 	'sheenRoughness',
+	'iridescence',
+	'anisotropy',
 	'edgeFade',
 ];
 
@@ -1612,12 +1986,97 @@ const MAP_OPTIONS: readonly (readonly [Exclude<keyof StandardMaps, 'parallax'>, 
 	['specularColorMap', MAP_SLOT_SPECULAR_COLOR],
 	['diffuseTransmissionMap', MAP_SLOT_DIFFUSE_TRANSMISSION],
 	['diffuseTransmissionColorMap', MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR],
+	['transmissionMap', MAP_SLOT_TRANSMISSION],
+	['thicknessMap', MAP_SLOT_THICKNESS],
 	['clearcoatMap', MAP_SLOT_COAT],
 	['clearcoatRoughnessMap', MAP_SLOT_COAT_ROUGHNESS],
 	['clearcoatNormalMap', MAP_SLOT_COAT_NORMAL],
 	['sheenColorMap', MAP_SLOT_SHEEN_COLOR],
 	['sheenRoughnessMap', MAP_SLOT_SHEEN_ROUGHNESS],
+	['iridescenceMap', MAP_SLOT_IRIDESCENCE],
+	['iridescenceThicknessMap', MAP_SLOT_IRIDESCENCE_THICKNESS],
+	['anisotropyMap', MAP_SLOT_ANISOTROPY],
 ];
+
+/**
+ * The row slot that holds the texture of each map whose core slot is not a row slot: a layer map
+ * keeps its texture in one of the light and specular slots, the transmission and thickness maps
+ * keep row slots after them, and a bump or displacement map in the normal map's slot. The row keeps
+ * a texture coordinate transform for each row slot, so a map's transform goes to its own slot.
+ */
+const MAP_ROW_SLOTS: ReadonlyMap<number, number> = new Map<number, number>([
+	[MAP_SLOT_COAT, MAP_ROW_SLOT_COAT],
+	[MAP_SLOT_COAT_ROUGHNESS, MAP_ROW_SLOT_COAT_ROUGHNESS],
+	[MAP_SLOT_COAT_NORMAL, MAP_ROW_SLOT_COAT_NORMAL],
+	[MAP_SLOT_SHEEN_COLOR, MAP_ROW_SLOT_SHEEN_COLOR],
+	[MAP_SLOT_SHEEN_ROUGHNESS, MAP_ROW_SLOT_SHEEN_ROUGHNESS],
+	[MAP_SLOT_IRIDESCENCE, MAP_ROW_SLOT_IRIDESCENCE],
+	[MAP_SLOT_IRIDESCENCE_THICKNESS, MAP_ROW_SLOT_IRIDESCENCE_THICKNESS],
+	[MAP_SLOT_ANISOTROPY, MAP_ROW_SLOT_ANISOTROPY],
+	[MAP_SLOT_TRANSMISSION, MAP_ROW_SLOT_TRANSMISSION],
+	[MAP_SLOT_THICKNESS, MAP_ROW_SLOT_THICKNESS],
+	[MAP_SLOT_BUMP, MAP_ROW_SLOT_BUMP],
+	[MAP_SLOT_DISPLACEMENT, MAP_ROW_SLOT_DISPLACEMENT],
+]);
+
+/** The row slot that holds a map's texture, whose transform places it. */
+function mapRowSlot(slot: number): number {
+	return MAP_ROW_SLOTS.get(slot) ?? slot;
+}
+
+/** The map that fills each row slot, from the base color map's at 0, or undefined for a free slot. */
+type SlotOwners = readonly (keyof MapUvTransforms | undefined)[];
+
+/**
+ * The map that fills each row slot of `options`, by the rules that choose which maps draw. The row
+ * keeps one transform for each slot, so only a map that the material keeps may place it: a map
+ * that a production build leaves out places nothing, and a normal map wins over a bump map. A
+ * displacement map places the normal map's slot where no other map does, since its vertex stage
+ * reads that slot's transform even where no texture fills it.
+ *
+ * @internal
+ */
+export function slotOwners(
+	options: StandardOptions,
+	features: number,
+	layered: boolean,
+): SlotOwners {
+	const owners: (keyof MapUvTransforms | undefined)[] = new Array<
+		keyof MapUvTransforms | undefined
+	>(MAP_SLOT_COUNT).fill(undefined);
+	for (const [key, slot] of MAP_OPTIONS) {
+		if (!options[key]) continue;
+		if (skipsMap(key, features) || skipsTransmissionMap(options, key)) continue;
+		if (layered && skipsLayerMap(options, key)) continue;
+		// A map that fills a slot leaves the map before it in the list out, as the map writes do.
+		owners[mapRowSlot(slot)] = key;
+	}
+	const height = mapRowSlot(MAP_SLOT_NORMAL);
+	if (owners[height] === undefined) {
+		// The bump map takes the normal map's slot where the normal map leaves it, and a
+		// displacement map reads that slot where neither takes it.
+		if (bumps(options)) owners[height] = 'bumpMap';
+		else if (options.displacementMap) owners[height] = 'displacementMap';
+	}
+	return owners;
+}
+
+/** Writes each row slot's transform from the map that fills it, and none from a map left out. */
+function writeMapUvTransforms(
+	core: CoreMemory,
+	id: number,
+	transforms: MapUvTransforms | undefined,
+	owners: SlotOwners | undefined,
+	call: string,
+): void {
+	if (transforms === undefined || owners === undefined) return;
+	for (let slot = 0; slot < owners.length; slot++) {
+		const key = owners[slot];
+		if (key === undefined) continue;
+		const transform = transforms[key];
+		if (transform !== undefined) writeUvTransform(core, id, slot, transform, call);
+	}
+}
 
 /** The maps that share their slots with the diffuse transmission maps. */
 const SPECULAR_MAPS: ReadonlySet<keyof StandardMaps> = new Set([
@@ -1632,6 +2091,15 @@ const TRANSLUCENCY_MAPS: ReadonlySet<keyof StandardMaps> = new Set([
 ]);
 
 /**
+ * The maps that share their slots with the specular maps, of a material that lets light through:
+ * the slots of the one hold the maps of the other.
+ */
+const TRANSMISSION_MAPS: ReadonlySet<keyof StandardMaps> = new Set([
+	'transmissionMap',
+	'thicknessMap',
+]);
+
+/**
  * True when a map option does not fit a material with `features`: the diffuse transmission maps
  * without diffuse transmission, and the specular maps with it, which would take the same slots.
  */
@@ -1640,13 +2108,29 @@ function skipsMap(key: keyof StandardMaps, features: number): boolean {
 	return translucent ? SPECULAR_MAPS.has(key) : TRANSLUCENCY_MAPS.has(key);
 }
 
-/** The values of a clear coat and a sheen, any of which gives a material its layers. */
+/**
+ * True for a transmission or thickness map that a material leaves out, because it gives no
+ * transmission or lets light through to its other side: each of those takes the specular maps'
+ * slots. A material may keep the specular maps beside these two. Development builds refuse these
+ * with E1217 instead.
+ */
+function skipsTransmissionMap(options: StandardOptions, key: keyof StandardMaps): boolean {
+	if (!TRANSMISSION_MAPS.has(key)) return false;
+	return options.transmission === undefined || options.diffuseTransmission !== undefined;
+}
+
+/** The values of a clear coat, a sheen, iridescence or anisotropy, any of which gives a material its layers. */
 const LAYER_VALUES = [
 	'clearcoat',
 	'clearcoatRoughness',
 	'clearcoatNormalScale',
 	'sheenColor',
 	'sheenRoughness',
+	'iridescence',
+	'iridescenceIor',
+	'iridescenceThicknessRange',
+	'anisotropy',
+	'anisotropyRotation',
 ] as const;
 
 /** The maps of a clear coat and a sheen. */
@@ -1656,24 +2140,105 @@ const LAYER_MAPS = [
 	'clearcoatNormalMap',
 	'sheenColorMap',
 	'sheenRoughnessMap',
+	'iridescenceMap',
+	'iridescenceThicknessMap',
+	'anisotropyMap',
 ] as const;
+
+/** The layer maps that hold a clear coat or a sheen. */
+const COAT_SHEEN_MAPS: readonly (keyof StandardMaps)[] = [
+	'clearcoatMap',
+	'clearcoatRoughnessMap',
+	'clearcoatNormalMap',
+	'sheenColorMap',
+	'sheenRoughnessMap',
+];
+
+/** The layer maps that hold iridescence. */
+const IRIDESCENCE_MAPS: readonly (keyof StandardMaps)[] = [
+	'iridescenceMap',
+	'iridescenceThicknessMap',
+];
+
+/** The layer maps that fill the specular intensity map's slot, which a transmission map takes. */
+const SPECULAR_INTENSITY_LAYER_MAPS: readonly (keyof StandardMaps)[] = [
+	'clearcoatNormalMap',
+	'iridescenceThicknessMap',
+];
+
+/** The layer maps that fill the specular color map's slot, which a thickness map takes. */
+const SPECULAR_COLOR_LAYER_MAPS: readonly (keyof StandardMaps)[] = [
+	'sheenColorMap',
+	'sheenRoughnessMap',
+	'anisotropyMap',
+];
+
+/**
+ * The layer map that fills the texture array that a transmission or a thickness map samples, or
+ * none: the transmission map samples the specular intensity slot's array and the thickness map the
+ * specular color slot's. A material with layers may keep the two maps beside the one layer map of
+ * the light map's slot, so this names the clash that remains.
+ */
+function volumeSlotOwner(
+	options: StandardOptions,
+	key: keyof StandardMaps,
+): keyof StandardMaps | undefined {
+	const owners =
+		key === 'transmissionMap'
+			? SPECULAR_INTENSITY_LAYER_MAPS
+			: key === 'thicknessMap'
+				? SPECULAR_COLOR_LAYER_MAPS
+				: undefined;
+	return owners?.find((owner) => options[owner] !== undefined);
+}
+
+/** True when `options` give any map of `keys`. */
+function takesAnyMap(options: StandardOptions, keys: readonly (keyof StandardMaps)[]): boolean {
+	return keys.some((key) => options[key] !== undefined);
+}
+
+/** True when `options` give the material a thin film above its surface. */
+function takesIridescence(options: StandardOptions): boolean {
+	return (
+		options.iridescence !== undefined ||
+		options.iridescenceIor !== undefined ||
+		options.iridescenceThicknessRange !== undefined ||
+		options.iridescenceMap !== undefined ||
+		options.iridescenceThicknessMap !== undefined
+	);
+}
+
+/** True when `options` give the material a stretched specular lobe. */
+function takesAnisotropy(options: StandardOptions): boolean {
+	return (
+		options.anisotropy !== undefined ||
+		options.anisotropyRotation !== undefined ||
+		options.anisotropyMap !== undefined
+	);
+}
 
 /**
  * True for a map that a layered material leaves out, which development builds refuse with E1217:
- * a map whose slot the layers' maps take, and the second map of a pair that is not the texture of
- * the first. Production builds skip the check, so the material draws without the map rather than
- * read it as a layer's.
+ * a map whose slot another layer's maps take, and the second map of a pair that is not the texture
+ * of the first. A material takes its layer maps from one family: the coat's and the sheen's, or
+ * iridescence's and the anisotropy's. Production builds skip the check, so the material draws
+ * without the map rather than read it as another layer's.
  */
 function skipsLayerMap(options: StandardOptions, key: keyof StandardMaps): boolean {
 	if (key === 'lightMap' || SPECULAR_MAPS.has(key) || TRANSLUCENCY_MAPS.has(key)) return true;
+	// A transmission map takes the specular intensity map's slot and a thickness map the specular
+	// color map's, so each stays out only where a layer map fills that slot.
+	if (TRANSMISSION_MAPS.has(key)) return volumeSlotOwner(options, key) !== undefined;
 	if (key === 'clearcoatRoughnessMap')
 		return !!options.clearcoatMap && options.clearcoatMap !== options.clearcoatRoughnessMap;
 	if (key === 'sheenRoughnessMap')
 		return !!options.sheenColorMap && options.sheenColorMap !== options.sheenRoughnessMap;
+	if (takesAnyMap(options, COAT_SHEEN_MAPS))
+		return IRIDESCENCE_MAPS.includes(key) || key === 'anisotropyMap';
 	return false;
 }
 
-/** True when `options` give the material a clear coat or a sheen. */
+/** True when `options` give the material layers above its base. */
 function hasLayers(options: StandardOptions): boolean {
 	return (
 		LAYER_VALUES.some((key) => options[key] !== undefined) ||
@@ -1701,10 +2266,17 @@ function checkNumbers(values: AnyValues, call: string): void {
 		displacementScale ?? 0,
 		displacementBias ?? 0,
 	];
+	for (const transform of Object.values(values.mapUvTransforms ?? {}))
+		if (transform !== undefined)
+			numbers.push(
+				...(transform.offset ?? []),
+				...(transform.repeat ?? []),
+				transform.rotation ?? 0,
+			);
 	if (!numbers.every(Number.isFinite))
 		throw new EngineError(
 			'E1108',
-			`${call}() got a normalScale, clearcoatNormalScale, uvTransform, bumpScale, displacementScale or displacementBias that is not finite.`,
+			`${call}() got a normalScale, clearcoatNormalScale, uvTransform, mapUvTransforms, bumpScale, displacementScale or displacementBias that is not finite.`,
 		);
 }
 
@@ -1712,6 +2284,37 @@ function checkNumbers(values: AnyValues, call: string): void {
 function checkValues(values: AnyValues, call: string): void {
 	checkNumbers(values, call);
 	const { ior, attenuationDistance: distance, angleFade } = values;
+	const { iridescenceIor, iridescenceThicknessRange, anisotropyRotation } = values as {
+		iridescenceIor?: number;
+		iridescenceThicknessRange?: readonly [number, number];
+		anisotropyRotation?: number;
+	};
+	if (
+		iridescenceIor !== undefined &&
+		!(iridescenceIor >= 1 && iridescenceIor < Number.POSITIVE_INFINITY)
+	)
+		throw new EngineError(
+			'E1108',
+			`${call}() got the iridescenceIor ${iridescenceIor}; it takes a finite 1 or more.`,
+		);
+	if (
+		iridescenceThicknessRange !== undefined &&
+		!(
+			iridescenceThicknessRange.length === 2 &&
+			iridescenceThicknessRange[0] >= 0 &&
+			iridescenceThicknessRange[0] <= iridescenceThicknessRange[1] &&
+			Number.isFinite(iridescenceThicknessRange[1])
+		)
+	)
+		throw new EngineError(
+			'E1108',
+			`${call}() got the iridescenceThicknessRange ${JSON.stringify(iridescenceThicknessRange)}; it takes two thicknesses in nanometers, the first no larger than the second.`,
+		);
+	if (anisotropyRotation !== undefined && !Number.isFinite(anisotropyRotation))
+		throw new EngineError(
+			'E1108',
+			`${call}() got the anisotropyRotation ${anisotropyRotation}; it takes a finite number of radians.`,
+		);
 	if (
 		angleFade !== undefined &&
 		!(
@@ -1855,6 +2458,13 @@ function writeValues(
 			sendValue(core, id, MATERIAL_PARAM_THICKNESS, call);
 		}
 	}
+	if ('dispersion' in values) {
+		const value = values.dispersion;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_DISPERSION, call);
+		}
+	}
 	if ('diffuseTransmission' in values) {
 		const value = values.diffuseTransmission;
 		if (value !== undefined) {
@@ -1889,6 +2499,43 @@ function writeValues(
 			numbers[0] = value;
 			sendValue(core, id, MATERIAL_PARAM_SHEEN_ROUGHNESS, call);
 		}
+	}
+	if ('iridescence' in values) {
+		const value = values.iridescence;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_IRIDESCENCE, call);
+		}
+	}
+	if ('iridescenceIor' in values) {
+		const value = values.iridescenceIor;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_IRIDESCENCE_IOR, call);
+		}
+	}
+	if ('anisotropy' in values) {
+		const value = values.anisotropy;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_ANISOTROPY, call);
+		}
+	}
+	if ('anisotropyRotation' in values) {
+		const value = values.anisotropyRotation;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_ANISOTROPY_ROTATION, call);
+		}
+	}
+	// The film's thickness at each end of its map's green channel.
+	const thickness = (values as { iridescenceThicknessRange?: readonly [number, number] })
+		.iridescenceThicknessRange;
+	if (thickness) {
+		numbers[0] = thickness[0];
+		sendValue(core, id, MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN, call);
+		numbers[0] = thickness[1];
+		sendValue(core, id, MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX, call);
 	}
 	if ('edgeFade' in values) {
 		const value = values.edgeFade;
@@ -1932,21 +2579,75 @@ function writeValues(
 		sendValue(core, id, MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE, call);
 	}
 	if (uvTransform) {
-		// three.js's texture matrix with its center at the origin, by rows.
-		const { offset, repeat, rotation = 0 } = uvTransform;
-		const u = repeat ? repeat[0] : 1;
-		const v = repeat ? repeat[1] : 1;
-		const c = Math.cos(rotation);
-		const s = Math.sin(rotation);
-		numbers[0] = u * c;
-		numbers[1] = u * s;
-		numbers[2] = offset ? offset[0] : 0;
-		sendValue(core, id, MATERIAL_PARAM_UV_U, call);
-		numbers[0] = -v * s;
-		numbers[1] = v * c;
-		numbers[2] = offset ? offset[1] : 0;
-		sendValue(core, id, MATERIAL_PARAM_UV_V, call);
+		for (let slot = 0; slot < MAP_SLOT_COUNT; slot++)
+			writeUvTransform(core, id, slot, uvTransform, call);
 	}
+}
+
+/** The map row slots that a material's row keeps a transform for, from the base color map's at 0. */
+const MAP_SLOT_COUNT = SIZE_MAP_ROWS;
+
+/** The floats between the two rows of one map's transform in a material's row. */
+const UV_ROW_STRIDE = 4;
+
+/** Numbers that one map's recorded transform takes: its offset, its scale and its turn. */
+const UV_VALUES_LENGTH = 5;
+
+/**
+ * Writes where material `id`'s map in `slot` sits on the texture coordinates, as three.js's texture
+ * matrix with its center at the origin, by rows. It allocates nothing.
+ */
+function writeUvMatrix(
+	core: CoreMemory,
+	id: number,
+	slot: number,
+	offsetU: number,
+	offsetV: number,
+	scaleU: number,
+	scaleV: number,
+	rotation: number,
+	call: string,
+): void {
+	const numbers = core.callValues();
+	const c = Math.cos(rotation);
+	const s = Math.sin(rotation);
+	// The base color map's two rows sit with the values that every shader reads, and the other
+	// slots' pairs sit in the row's block of map transforms, 4 floats apart.
+	const u =
+		slot === 0
+			? MATERIAL_PARAM_UV_U
+			: MATERIAL_PARAM_MAP_UV + (slot - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+	const v = slot === 0 ? MATERIAL_PARAM_UV_V : u + UV_ROW_STRIDE;
+	numbers[0] = scaleU * c;
+	numbers[1] = scaleU * s;
+	numbers[2] = offsetU;
+	sendValue(core, id, u, call);
+	numbers[0] = -scaleV * s;
+	numbers[1] = scaleV * c;
+	numbers[2] = offsetV;
+	sendValue(core, id, v, call);
+}
+
+/** Writes `transform`, with the defaults of the values that it leaves out, to map `slot`'s rows. */
+function writeUvTransform(
+	core: CoreMemory,
+	id: number,
+	slot: number,
+	transform: UvTransform,
+	call: string,
+): void {
+	const { offset, repeat, rotation = 0 } = transform;
+	writeUvMatrix(
+		core,
+		id,
+		slot,
+		offset ? offset[0] : 0,
+		offset ? offset[1] : 0,
+		repeat ? repeat[0] : 1,
+		repeat ? repeat[1] : 1,
+		rotation,
+		call,
+	);
 }
 
 /** Sets material `id`'s value `param` to the core's call values. */
@@ -1977,11 +2678,16 @@ const ONE_VALUE_PARAMS: ReadonlyMap<string, number> = new Map<string, number>([
 	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY],
 	['transmission', MATERIAL_PARAM_TRANSMISSION],
 	['thickness', MATERIAL_PARAM_THICKNESS],
+	['dispersion', MATERIAL_PARAM_DISPERSION],
 	['diffuseTransmission', MATERIAL_PARAM_DIFFUSE_TRANSMISSION],
 	['subsurfaceRadius', MATERIAL_PARAM_SUBSURFACE_RADIUS],
 	['clearcoat', MATERIAL_PARAM_CLEARCOAT],
 	['clearcoatRoughness', MATERIAL_PARAM_CLEARCOAT_ROUGHNESS],
 	['sheenRoughness', MATERIAL_PARAM_SHEEN_ROUGHNESS],
+	['iridescence', MATERIAL_PARAM_IRIDESCENCE],
+	['iridescenceIor', MATERIAL_PARAM_IRIDESCENCE_IOR],
+	['anisotropy', MATERIAL_PARAM_ANISOTROPY],
+	['anisotropyRotation', MATERIAL_PARAM_ANISOTROPY_ROTATION],
 	['edgeFade', MATERIAL_PARAM_DECAL_EDGE_FADE],
 ]);
 
@@ -1993,6 +2699,25 @@ const COLOR_VALUES: ReadonlySet<string> = new Set([
 	'attenuationColor',
 	'sheenColor',
 ]);
+
+/**
+ * The material values that take a pair of numbers: where the maps sit on the texture coordinates.
+ * Every map of a material shares the transform, so a pair moves them all.
+ */
+const UV_VALUES: ReadonlySet<string> = new Set(['uvOffset', 'uvScale']);
+
+/**
+ * Numbers per key that a material value takes: 3 for a color, 2 for the maps' offset or scale, 1
+ * for a number, and 0 for a name that the value has none. It reads the tables that `setUniform`
+ * uses, so a name that it takes is a name that `setUniform` takes.
+ *
+ * @internal
+ */
+export function materialValueComponents(name: string): number {
+	if (UV_VALUES.has(name)) return 2;
+	if (!ONE_VALUE_PARAMS.has(name)) return 0;
+	return COLOR_VALUES.has(name) ? 3 : 1;
+}
 
 /** The name that messages give `setUniform`, from a material's `set` call string. */
 function setUniformCall(call: string): string {
@@ -2140,6 +2865,58 @@ const BLENDINGS: Readonly<Record<Blending, number>> = {
 function checkFeatures(options: StandardOptions, call: string): void {
 	const { alphaMode, blending, depthBias, transmission } = options;
 	const features = featureBits(options);
+	for (const [name, pair] of [
+		['lightMapOffset', options.lightMapOffset],
+		['lightMapRepeat', options.lightMapRepeat],
+	] as const) {
+		if (pair === undefined) continue;
+		if (!(pair.length === 2 && pair.every(Number.isFinite)))
+			throw new EngineError(
+				'E1108',
+				`${call}() got the ${name} ${JSON.stringify(pair)}; it takes two finite numbers.`,
+			);
+	}
+	for (const [name, given] of [
+		['lightMapDirection', options.lightMapDirection !== undefined],
+		['lightMapOffset', options.lightMapOffset !== undefined],
+		['lightMapRepeat', options.lightMapRepeat !== undefined],
+		['lightMapDecode', options.lightMapDecode !== undefined],
+	] as const) {
+		if (given && options.lightMap === undefined)
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${name} without lightMap; it sets how the engine reads a light map that the material does not have. Give the material a lightMap.`,
+			);
+	}
+	if (
+		options.lightMapDecode !== undefined &&
+		options.lightMapDecode !== 'srgb' &&
+		options.lightMapDecode !== 'rgbm'
+	)
+		throw new EngineError(
+			'E1217',
+			`${call}() got the lightMapDecode ${JSON.stringify(options.lightMapDecode)}; it takes 'srgb' or 'rgbm'.`,
+		);
+	for (const key of ['transmissionMap', 'thicknessMap'] as const) {
+		if (options[key] === undefined) continue;
+		if (transmission === undefined)
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${key} without transmission; give transmission, even as 0, to create a material that lets light through.`,
+			);
+		if (options.diffuseTransmission !== undefined)
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${key} with diffuseTransmission; a material that lets light through to its other side keeps its diffuse transmission maps in the same slots. Give the material one kind of map or the other.`,
+			);
+		// A thickness map samples the specular color map's texture array, and an sRGB texture never
+		// shares an array with a linear one, so the two cannot draw together.
+		if (key === 'thicknessMap' && options.specularColorMap !== undefined)
+			throw new EngineError(
+				'E1217',
+				`${call}() got thicknessMap with specularColorMap; the thickness map samples the specular color map's texture array, and an sRGB texture never shares an array with a linear one. Give the material one map of that slot or the other.`,
+			);
+	}
 	for (const [key] of MAP_OPTIONS)
 		if (options[key] && skipsMap(key, features))
 			throw new EngineError(
@@ -2174,10 +2951,10 @@ function checkFeatures(options: StandardOptions, call: string): void {
 			'E1217',
 			`${call}() got parallax with ${transmission !== undefined ? 'transmission' : options.diffuseTransmission !== undefined ? 'diffuseTransmission' : "the alpha mode 'blend'"}; parallax takes an opaque or masked surface. Leave parallax out to keep the displacement alone.`,
 		);
-	if (transmission !== undefined && (alphaMode === 'mask' || alphaMode === 'hash'))
+	if (transmission !== undefined && alphaMode === 'hash')
 		throw new EngineError(
 			'E1217',
-			`${call}() got transmission with the alpha mode '${alphaMode}'; a material that lets light through takes 'opaque' or 'blend'.`,
+			`${call}() got transmission with the alpha mode 'hash'; a material that lets light through takes 'opaque', 'mask' or 'blend'.`,
 		);
 	if (transmission !== undefined && blending === 'weighted')
 		throw new EngineError(
@@ -2202,11 +2979,12 @@ function checkFeatures(options: StandardOptions, call: string): void {
 }
 
 /**
- * Throws E1217 for a layered material with a map whose slot its layers take, and for a pair of
- * layer maps that glTF packs into one texture but that are two. Call it inside `if (DEV)`.
+ * Throws E1217 for a layered material with a map whose slot its layers take, for a transmission
+ * or a thickness map beside the layer map of its own slot, and for a pair of layer maps that glTF
+ * packs into one texture but that are two. Call it inside `if (DEV)`.
  */
 function checkLayerMaps(options: StandardOptions, call: string): void {
-	const displaced =
+	const sharedSlot =
 		options.lightMap !== undefined
 			? 'lightMap'
 			: options.specularIntensityMap !== undefined
@@ -2214,11 +2992,23 @@ function checkLayerMaps(options: StandardOptions, call: string): void {
 				: options.specularColorMap !== undefined
 					? 'specularColorMap'
 					: undefined;
-	if (displaced)
+	if (sharedSlot)
 		throw new EngineError(
 			'E1217',
-			`${call}() got ${displaced} with a clear coat or a sheen, whose maps take its place. Bake its light or specular values into the other maps, or use a material without layers.`,
+			`${call}() got ${sharedSlot} with a clear coat, a sheen, iridescence or anisotropy, whose maps take its place. Bake its light or specular values into the other maps, or use a material without layers.`,
 		);
+	// The transmission and thickness maps sample the specular slots' texture arrays, which a layer
+	// map fills only when the material gives one of that slot: the light map's slot stays free for
+	// its layer map beside them.
+	for (const key of TRANSMISSION_MAPS) {
+		if (options[key] === undefined) continue;
+		const owner = volumeSlotOwner(options, key);
+		if (owner)
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${key} with ${owner}, which fills the array that it samples. Give the material one map of that slot or the other.`,
+			);
+	}
 	for (const [first, second, packed] of [
 		['clearcoatMap', 'clearcoatRoughnessMap', 'the roughness in the green of the clear coat map'],
 		['sheenColorMap', 'sheenRoughnessMap', 'the roughness in the alpha of the sheen color map'],
@@ -2229,6 +3019,20 @@ function checkLayerMaps(options: StandardOptions, call: string): void {
 			throw new EngineError(
 				'E1217',
 				`${call}() got a ${first} and a ${second} that are two textures. Give one texture for both, with ${packed}, as glTF packs them.`,
+			);
+	}
+	// A material's maps come from one family of layers, since the maps of each take the same slots.
+	// The layers' values may mix freely: the row says which family's maps the slots hold.
+	if (takesAnyMap(options, COAT_SHEEN_MAPS)) {
+		const clash =
+			(options.iridescenceMap !== undefined && 'iridescenceMap') ||
+			(options.iridescenceThicknessMap !== undefined && 'iridescenceThicknessMap') ||
+			(options.anisotropyMap !== undefined && 'anisotropyMap') ||
+			'';
+		if (clash)
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${clash} with the maps of a clear coat or a sheen, which take the same slots. Give a material either the coat's and the sheen's maps, or iridescence's and the anisotropy's, and keep the other layers' values alone.`,
 			);
 	}
 }
@@ -2247,7 +3051,9 @@ function featureBits(options: StandardOptions): number {
 		BLENDINGS[options.blending ?? 'normal'] |
 		(options.depthWrite === false ? MATERIAL_FEATURE_NO_DEPTH_WRITE : 0) |
 		(options.depthTest === false ? MATERIAL_FEATURE_NO_DEPTH_TEST : 0) |
+		(options.colorWrite === false ? MATERIAL_FEATURE_NO_COLOR_WRITE : 0) |
 		(options.fog === false ? MATERIAL_FEATURE_NO_FOG : 0) |
+		(options.toneMapped === false ? MATERIAL_FEATURE_NO_TONE_MAP : 0) |
 		(options.contactShadows === false ? MATERIAL_FEATURE_NO_CONTACT_SHADOWS : 0) |
 		(options.alphaMode === 'mask' && options.alphaToCoverage !== false
 			? MATERIAL_FEATURE_ALPHA_TO_COVERAGE
@@ -2257,9 +3063,75 @@ function featureBits(options: StandardOptions): number {
 		(options.diffuseTransmission !== undefined ? MATERIAL_FEATURE_TRANSLUCENCY : 0) |
 		(options.subsurfaceRadius !== undefined ? MATERIAL_FEATURE_SUBSURFACE : 0) |
 		(hasLayers(options) ? MATERIAL_FEATURE_COAT_SHEEN : 0) |
+		(takesIridescence(options) ? MATERIAL_FEATURE_IRIDESCENCE : 0) |
+		(takesAnisotropy(options) ? MATERIAL_FEATURE_ANISOTROPY : 0) |
 		(options.wireframe ? MATERIAL_FEATURE_WIREFRAME : 0) |
-		(options.parallax ? MATERIAL_FEATURE_PARALLAX : 0)
+		(options.parallax ? MATERIAL_FEATURE_PARALLAX : 0) |
+		(options.lightMapDecode === 'rgbm' ? MATERIAL_FEATURE_LIGHT_MAP_RGBM : 0)
 	);
+}
+
+/** The scene inputs that a material or a feature may declare. */
+const SCENE_INPUTS: readonly SceneInput[] = [
+	'sceneColor',
+	'sceneDepth',
+	'normals',
+	'motionVectors',
+];
+
+/**
+ * The most textures a material that reads the scene's depth takes. Its maps' group leaves out the
+ * last slot, so the frame group's eight sampled textures, the maps' and the copy stay within the
+ * sixteen that WebGPU's fragment stage allows.
+ */
+const MAX_SCENE_DEPTH_TEXTURES = SIZE_MAP_SLOTS - 1;
+
+/**
+ * Checks the scene inputs that a custom material declares against the ones its WGSL reads. Today
+ * the engine binds the copy of the opaque scene's depth alone; a feature declares the other scene
+ * resources in its reads, which the render graph orders.
+ */
+function checkSceneInputs(
+	declared: readonly SceneInput[],
+	sceneDepth: boolean,
+	textures: number,
+	call: string,
+): void {
+	const seen = new Set<string>();
+	for (const input of declared as readonly string[]) {
+		if (!SCENE_INPUTS.includes(input as SceneInput))
+			throw new EngineError(
+				'E1217',
+				`${call}() got the scene input ${JSON.stringify(input)}; it takes 'sceneColor', 'sceneDepth', 'normals' or 'motionVectors'.`,
+			);
+		if (seen.has(input))
+			throw new EngineError(
+				'E1217',
+				`${call}() got the scene input '${input}' twice in sceneInputs; give each one once.`,
+			);
+		seen.add(input);
+		if (input !== 'sceneDepth')
+			throw new EngineError(
+				'E1217',
+				`${call}() got the scene input '${input}', which custom materials do not read yet. Read the scene's depth with 'sceneDepth', or declare '${input}' in a feature's reads.`,
+			);
+	}
+	const wantsDepth = seen.has('sceneDepth');
+	if (wantsDepth && !sceneDepth)
+		throw new EngineError(
+			'E1217',
+			`${call}() got the scene input 'sceneDepth', but its WGSL never calls sceneDepth or sceneDistance. Read it in fn surface, such as let behind = sceneDistance(uv).`,
+		);
+	if (sceneDepth && !wantsDepth)
+		throw new EngineError(
+			'E1217',
+			`${call}() got WGSL that reads the scene's depth, but sceneInputs does not declare it. Add sceneInputs: ['sceneDepth'].`,
+		);
+	if (sceneDepth && textures > MAX_SCENE_DEPTH_TEXTURES)
+		throw new EngineError(
+			'E1217',
+			`${call}() got WGSL that reads the scene's depth and declares ${textures} textures. A material that reads the depth takes at most ${MAX_SCENE_DEPTH_TEXTURES}: its maps' group gives up one slot so that the copy of the depth fits the fragment stage beside them. Drop ${textures - MAX_SCENE_DEPTH_TEXTURES} of the textures, or read the depth another way.`,
+		);
 }
 
 /** The numbers each type of uniform takes. */
@@ -2411,11 +3283,14 @@ function writeUniforms(
 
 /**
  * The texture of each slot that a custom material's or effect's WGSL declares, from its `textures`
- * option, with none where the option gives none. Throws E1216 for a name that the WGSL does not
- * declare, and for a value that is not a texture of one layer.
+ * option, with none where the option gives none. A slot that the WGSL declares as
+ * `texture_2d_array<f32>` takes a texture of one or more layers, whose layers the WGSL picks; a
+ * slot that it declares as `texture_2d<f32>` takes a texture of one layer. Throws E1216 for a name
+ * that the WGSL does not declare, and for a value that is not a texture of the layers that the
+ * slot takes.
  */
 export function textureSlots(
-	declared: readonly { readonly name: string }[],
+	declared: readonly { readonly name: string; readonly array?: boolean }[],
 	given: Readonly<Record<string, unknown>>,
 	call: string,
 ): (Texture | undefined)[] {
@@ -2431,10 +3306,18 @@ export function textureSlots(
 				`${call}() got the texture ${name}, which the WGSL does not declare. Its textures: ${names}.`,
 			);
 		}
-		if (!(value instanceof Texture) || value.depth !== 1)
+		const array = declared[slot]?.array === true;
+		if (!(value instanceof Texture))
 			throw new EngineError(
 				'E1216',
-				`${call}() got ${value instanceof Texture ? `a texture of ${value.depth} layers` : String(value)} for the texture ${name}; it takes a texture of one layer, from textures or assets.`,
+				array
+					? `${call}() got ${String(value)} for the texture array ${name}; it takes a texture of several layers, from textures or assets.`
+					: `${call}() got ${String(value)} for the texture ${name}; it takes a texture of one layer, from textures or assets.`,
+			);
+		if (!array && value.depth !== 1)
+			throw new EngineError(
+				'E1216',
+				`${call}() got a texture of ${value.depth} layers for the texture ${name}; a texture declared \`var ${name}: texture_2d<f32>;\` takes one layer. Declare \`var ${name}: texture_2d_array<f32>;\`, and pick the layer in the shader.`,
 			);
 		slots[slot] = value;
 	}
@@ -2465,13 +3348,31 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	/** The displacement map's scale and bias, which `set` changes one at a time, where it has one. */
 	private displacement: [number, number] | undefined;
 
+	/**
+	 * Where each map sits on the texture coordinates, as `set` last gave them: for every slot, the
+	 * offset's two numbers, the scale's two and the rotation, so an animation can change one pair
+	 * of one map and keep the rest.
+	 */
+	private uv: number[] | undefined;
+
+	/**
+	 * The map that fills each row slot, which alone may place it, or undefined for a material whose
+	 * maps a sketch never places one by one.
+	 */
+	private readonly owners: SlotOwners | undefined;
+
 	/** @internal */
 	constructor(
 		id: number,
 		/** @internal */ readonly core: CoreMemory,
 		/** The name that errors from `set` give the call, such as 'materials.standard.set'. */
 		protected readonly call: string,
+		/** @internal The engine core's shading code, which decides what the material draws. */
+		readonly shading: number = SHADING_LIT,
+		/** @internal The map that fills each row slot: see `slotOwners`. */
+		owners?: SlotOwners,
 	) {
+		this.owners = owners;
 		this.liveId = id;
 		this.oneCall = setUniformCall(call);
 	}
@@ -2512,6 +3413,10 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		const sheen = linearOrNone(values.sheenColor, call, SHEEN);
 		// A bump map's strength takes the normal scale's place.
 		const kept = this.bump && values.normalScale ? { ...values, normalScale: undefined } : values;
+		// A later part write keeps the rest of each map's transform, so a value that this call sets
+		// is recorded before `writeValues` writes it, in the order that it writes them.
+		if (values.uvTransform !== undefined) this.recordUv(values.uvTransform);
+		this.recordMapUv(values.mapUvTransforms);
 		writeValues(
 			core,
 			id,
@@ -2525,6 +3430,7 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 			scatter,
 			sheen,
 		);
+		writeMapUvTransforms(core, id, values.mapUvTransforms, this.owners, call);
 		this.writeHeights(values);
 	}
 
@@ -2595,6 +3501,104 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	}
 
 	/**
+	 * @internal Writes one value by name, for a property animation: a number, or a linear color as
+	 * three numbers. A number stays within the range that the value takes, because a cubic key can
+	 * overshoot. It allocates nothing, so a track writes a value in every frame.
+	 */
+	writeUniform(name: string, value: number | readonly [number, number, number]): void {
+		if (typeof value === 'number') {
+			const most = ONE_VALUE_MAX.get(name) ?? Number.POSITIVE_INFINITY;
+			writeOneValue(this.core, this.id, this.oneCall, name, Math.max(0, Math.min(value, most)));
+			return;
+		}
+		writeOneValue(this.core, this.id, this.oneCall, name, value);
+	}
+
+	/**
+	 * @internal Changes the offset or the scale of the maps' transforms, for a property animation,
+	 * and keeps the rest of each transform. `slot` names one map's transform, and leaving it out
+	 * moves every map's together, as a sketch's own animation does. It allocates nothing, so a
+	 * track writes a pair in every frame.
+	 */
+	writeUvPair(name: 'uvOffset' | 'uvScale', u: number, v: number, slot?: number): void {
+		const uv = this.uvValues();
+		const first = slot === undefined ? 0 : mapRowSlot(slot);
+		const last = slot === undefined ? MAP_SLOT_COUNT : first + 1;
+		const offset = name === 'uvOffset';
+		for (let k = first; k < last; k++) {
+			const at = k * UV_VALUES_LENGTH;
+			if (offset) {
+				uv[at] = u;
+				uv[at + 1] = v;
+			} else {
+				uv[at + 2] = u;
+				uv[at + 3] = v;
+			}
+			writeUvMatrix(
+				this.core,
+				this.id,
+				k,
+				uv[at] as number,
+				uv[at + 1] as number,
+				uv[at + 2] as number,
+				uv[at + 3] as number,
+				uv[at + 4] as number,
+				this.call,
+			);
+		}
+	}
+
+	/** @internal Keeps where `values` puts every map on the texture coordinates. */
+	recordUv(values: UvTransform): void {
+		for (let k = 0; k < MAP_SLOT_COUNT; k++) this.recordUvSlot(k, values);
+	}
+
+	/**
+	 * @internal Keeps where each of `values`' maps puts it on the texture coordinates: only the map
+	 * that fills a row slot places it, as a bump map gives way to a normal map.
+	 */
+	recordMapUv(values: MapUvTransforms | undefined): void {
+		const owners = this.owners;
+		if (values === undefined || owners === undefined) return;
+		for (let slot = 0; slot < owners.length; slot++) {
+			const key = owners[slot];
+			if (key === undefined) continue;
+			const transform = values[key];
+			if (transform !== undefined) this.recordUvSlot(slot, transform);
+		}
+	}
+
+	/** Keeps one map's transform, which a value makes where the material has none. */
+	private recordUvSlot(slot: number, values: UvTransform): void {
+		const uv = this.uvValues();
+		const at = slot * UV_VALUES_LENGTH;
+		const { offset, repeat, rotation = 0 } = values;
+		uv[at] = offset ? offset[0] : 0;
+		uv[at + 1] = offset ? offset[1] : 0;
+		uv[at + 2] = repeat ? repeat[0] : 1;
+		uv[at + 3] = repeat ? repeat[1] : 1;
+		uv[at + 4] = rotation;
+	}
+
+	/** Each map's transform, which a value makes where the material has none. */
+	private uvValues(): number[] {
+		let uv = this.uv;
+		if (uv === undefined) {
+			uv = new Array<number>(MAP_SLOT_COUNT * UV_VALUES_LENGTH);
+			for (let k = 0; k < MAP_SLOT_COUNT; k++) {
+				const at = k * UV_VALUES_LENGTH;
+				uv[at] = 0;
+				uv[at + 1] = 0;
+				uv[at + 2] = 1;
+				uv[at + 3] = 1;
+				uv[at + 4] = 0;
+			}
+			this.uv = uv;
+		}
+		return uv;
+	}
+
+	/**
 	 * Destroys the material, like three.js's `material.dispose()`. Objects and instance batches that
 	 * still use it draw nothing until `setMaterial` gives them another material. Once no object uses
 	 * it, its place in the engine's table of materials goes to the next material. When the last
@@ -2618,8 +3622,9 @@ class ShaderMaterial extends Material<ShaderValues> {
 		call: string,
 		/** The uniforms that the material's WGSL declares, by name. */
 		private readonly uniforms: ReadonlyMap<string, CompiledUniform>,
+		shading: number,
 	) {
-		super(id, core, call);
+		super(id, core, call, shading);
 	}
 
 	/**
@@ -2676,6 +3681,11 @@ export class Materials {
 		readonly shaders: ShaderPreloads = new ShaderPreloads(),
 	) {}
 
+	/** @internal The templates of compiled WGSL, which each shader a page writes goes to once. */
+	get shaderTemplates(): ShaderTemplates {
+		return this.templates;
+	}
+
 	/**
 	 * @internal Creates a material that shades as the engine core's shading code says, with the
 	 * features and values of `options`.
@@ -2686,18 +3696,18 @@ export class Materials {
 		call: string,
 		features = 0,
 	): Material<Values> {
-		const material = new Material<Values>(
-			this.createId(shading, options, call, hasLayers(options), features),
-			this.core,
-			`${call}.set`,
-		);
+		const { id, owners } = this.createId(shading, options, call, hasLayers(options), features);
+		const material = new Material<Values>(id, this.core, `${call}.set`, shading, owners);
+		if (options.uvTransform !== undefined) material.recordUv(options.uvTransform);
+		material.recordMapUv(options.mapUvTransforms);
 		if (options.bumpMap || options.displacementMap) material.heights(options);
 		return material;
 	}
 
 	/**
 	 * Creates a material in the engine core, with its standard options and the feature bits
-	 * `extra` and its layers, and returns its id.
+	 * `extra` and its layers, and returns its id. `sway` is the distance from the camera out to
+	 * which a custom material's vertex offset moves, in meters, or 0 for every distance.
 	 */
 	private createId(
 		shading: number,
@@ -2705,7 +3715,8 @@ export class Materials {
 		call: string,
 		layered = hasLayers(options),
 		extra = 0,
-	): number {
+		sway = 0,
+	): { id: number; owners: SlotOwners } {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
 		const emissive = linearOrNone(options.emissive, call, EMISSIVE);
 		const specular = specularOrNone(options.specularColor, call);
@@ -2737,16 +3748,26 @@ export class Materials {
 		const { constant = 0, slopeScale = 0 } = options.depthBias ?? {};
 		const { core } = this;
 		const id = core.checkGrowth(
-			core.glue.createMaterial(shading, features, r, g, b, opacity, constant, slopeScale),
+			core.glue.createMaterial(shading, features, r, g, b, opacity, constant, slopeScale, sway),
 			call,
 		);
 		const values = { ...options, color: undefined, opacity: undefined };
 		const colors = [undefined, emissive, specular, attenuation, through, scatter, sheen] as const;
 		writeValues(core, id, call, values, ...colors);
+		// A map whose file gives it a transform of its own keeps it over the material's, as three.js
+		// gives each texture its own. Only the map that fills a slot may place it.
+		const owners = slotOwners(options, features, layered);
+		writeMapUvTransforms(core, id, options.mapUvTransforms, owners, call);
 		for (const [key, slot] of MAP_OPTIONS) {
 			const map = options[key];
 			// A production build leaves out a map that would take another map's slot.
-			if (!map || skipsMap(key, features) || (layered && skipsLayerMap(options, key))) continue;
+			if (
+				!map ||
+				skipsMap(key, features) ||
+				skipsTransmissionMap(options, key) ||
+				(layered && skipsLayerMap(options, key))
+			)
+				continue;
 			const second = map.uvSet === 1 ? 1 : 0;
 			core.checkGrowth(
 				core.glue.setMaterialMap(id, slot, map.handle, second),
@@ -2755,7 +3776,34 @@ export class Materials {
 				true,
 			);
 		}
-		return id;
+		// A direction map needs the light map whose binding reads it, and a production build leaves
+		// out both where the layers take the light map's slot.
+		if (options.lightMapDirection && options.lightMap && !layered) {
+			core.checkGrowth(
+				core.glue.setMaterialMap(
+					id,
+					MAP_SLOT_LIGHT_MAP_DIRECTION,
+					options.lightMapDirection.handle,
+					0,
+				),
+				call,
+				undefined,
+				true,
+			);
+		}
+		const { lightMapOffset, lightMapRepeat } = options;
+		if (lightMapOffset || lightMapRepeat) {
+			const numbers = core.callValues();
+			const [repeatU, repeatV] = lightMapRepeat ?? [1, 1];
+			const [offsetU, offsetV] = lightMapOffset ?? [0, 0];
+			numbers[0] = repeatU;
+			numbers[1] = repeatV;
+			sendValue(core, id, MATERIAL_PARAM_LIGHT_MAP_SCALE, call);
+			numbers[0] = offsetU;
+			numbers[1] = offsetV;
+			sendValue(core, id, MATERIAL_PARAM_LIGHT_MAP_OFFSET, call);
+		}
+		return { id, owners };
 	}
 
 	/**
@@ -2816,14 +3864,17 @@ export class Materials {
 	 * A custom material: the standard material with a surface function in WGSL, which changes how
 	 * each pixel of the surface looks before the engine lights it, or a full shader of your own. It
 	 * takes every option of `materials.standard` but the texture maps, the first values of the
-	 * uniforms that its WGSL declares, and the textures that its WGSL samples. `set` changes the
+	 * uniforms that its WGSL declares, and the textures that its WGSL samples, a texture of
+	 * several layers among them for a declaration of a texture array. `set` changes the
 	 * standard values and the uniforms. Meshes need texture coordinates to draw with a surface
 	 * function, and the attributes that a full shader reads. Throws E1215 for WGSL that the null3D
 	 * Vite plugin did not compile, and for a whole shader whose `@vertex` entry point takes no
 	 * `InstanceIn`. Throws E1216 for a uniform or a texture that the WGSL does not declare, for a
-	 * value of the wrong kind, and for a uniform named as a standard value, such as `color`. Throws
-	 * E1217 for the `hash` alpha mode and for `alphaToCoverage`, which custom materials do not take,
-	 * for `transmission` where the WGSL never sets the surface's `transmission`, and for
+	 * value of the wrong kind, and for a uniform named as a standard value, such as `color`. A
+	 * development build throws E1217 for the `hash` alpha mode and for `alphaToCoverage` where the
+	 * WGSL never sets or reads the surface's `alpha`: only WGSL that does has the builds that cut
+	 * the material's shape, and its shadow caster and motion build test that alpha. It also throws
+	 * E1217 for `transmission` where the WGSL never sets the surface's `transmission`, and for
 	 * `diffuseTransmission` where it never names the surface's `diffuseTransmission` or
 	 * `diffuseTransmissionColor`: only WGSL that does has the builds that let light through.
 	 * When
@@ -2834,17 +3885,31 @@ export class Materials {
 		options: ShaderOptions<Wgsl>,
 	): Material<ShaderValues<Wgsl>> {
 		const call = 'materials.shader';
-		if (DEV && (options.alphaMode === 'hash' || options.alphaToCoverage === true))
-			throw new EngineError(
-				'E1217',
-				`${call}() got ${options.alphaMode === 'hash' ? "the alpha mode 'hash'" : 'alphaToCoverage'}; a custom material takes 'opaque', 'mask' or 'blend', and tests its alpha against alphaCutoff.`,
-			);
 		if (DEV && options.blending === 'weighted')
 			throw new EngineError(
 				'E1217',
 				`${call}() got the 'weighted' blending, which custom materials do not take. Give it the 'normal' blending, which draws back to front.`,
 			);
 		const compiled = this.compiledMaterial(options.wgsl, call);
+		const sceneDepth = compiled.sceneDepth === true;
+		// A custom material cuts its own shape only where its WGSL sets or reads the surface's
+		// alpha: only that WGSL has the builds of alpha to coverage, the alpha hash and the masked
+		// shadow, and the other materials keep their builds as few as before.
+		const alpha = compiled.alpha === true;
+		if (DEV && !alpha && (options.alphaMode === 'hash' || options.alphaToCoverage === true))
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${
+					options.alphaMode === 'hash' ? "the alpha mode 'hash'" : 'alphaToCoverage'
+				}, but its WGSL never sets or reads the surface's alpha, so it has no builds that cut its shape. Set the alpha in fn surface, such as s.alpha = texel.a, and keep the mask.`,
+			);
+		if (DEV && compiled.functions.includes('coverage') && options.alphaMode !== 'mask')
+			throw new EngineError(
+				'E1217',
+				`${call}() declared fn coverage but got ${options.alphaMode === undefined ? 'no alpha mode' : `the alpha mode '${options.alphaMode}'`}; its caster tests that coverage under a mask, so give it alphaMode: 'mask' and its alphaCutoff.`,
+			);
+		if (DEV)
+			checkSceneInputs(options.sceneInputs ?? [], sceneDepth, compiled.textures.length, call);
 		if (DEV && options.transmission !== undefined && !lets(compiled))
 			throw new EngineError(
 				'E1217',
@@ -2865,7 +3930,16 @@ export class Materials {
 		if (DEV && !layered && hasLayers(options))
 			throw new EngineError(
 				'E1217',
-				`${call}() got a clear coat or a sheen, but its WGSL never names the surface's layers, so it has no builds that light them. Set them in fn surface, such as s.clearcoat = 1.0 or s.sheenColor = vec3f(1.0).`,
+				`${call}() got a clear coat, a sheen or iridescence, but its WGSL never names the surface's layers, so it has no builds that light them. Set them in fn surface, such as s.clearcoat = 1.0 or s.sheenColor = vec3f(1.0).`,
+			);
+		if (
+			DEV &&
+			options.swayDistance !== undefined &&
+			!(Number.isFinite(options.swayDistance) && options.swayDistance >= 0)
+		)
+			throw new EngineError(
+				'E1108',
+				`${call}() got the swayDistance ${options.swayDistance}; it takes a finite 0 or more, and leaves it out for an offset that moves at every distance.`,
 			);
 		const uniforms = new Map(compiled.uniforms.map((u) => [u.name, u]));
 		for (const name of uniforms.keys())
@@ -2890,13 +3964,30 @@ export class Materials {
 		// A production build draws such a material without the light through it, as it has no
 		// builds for it.
 		const diffuseTransmission = translucent ? options.diffuseTransmission : undefined;
-		const id = this.createId(
+		const { id } = this.createId(
 			shading,
-			{ ...options, alphaToCoverage: false, diffuseTransmission, subsurfaceRadius: undefined },
+			{
+				...options,
+				// A production build draws such a material at its cutoff, as it has no builds of the
+				// hash or of alpha to coverage.
+				alphaMode: !alpha && options.alphaMode === 'hash' ? 'mask' : options.alphaMode,
+				alphaToCoverage: alpha ? options.alphaToCoverage : false,
+				diffuseTransmission,
+				subsurfaceRadius: undefined,
+			},
 			call,
 			layered,
+			(sceneDepth ? MATERIAL_FEATURE_SCENE_DEPTH : 0) |
+				(builds(compiled, PERMUTATION_MOTION) ? MATERIAL_FEATURE_MOVING_VERTICES : 0) |
+				(alpha || compiled.functions.includes('coverage') ? MATERIAL_FEATURE_CASTER_COVERAGE : 0) |
+				(options.castsStill ? MATERIAL_FEATURE_STILL_CASTER : 0),
+			options.swayDistance ?? 0,
 		);
-		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
+		// The copy of the opaque depth draws with the particle depth shaders, so the file loads
+		// with the material, before its first frame.
+		if (sceneDepth) this.shaders.need('particles');
+		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms, shading);
+		if (options.uvTransform !== undefined) material.recordUv(options.uvTransform);
 		const { core } = this;
 		writeUniforms(core, id, uniforms, uniformValues, call);
 		textures.forEach((texture, slot) => {

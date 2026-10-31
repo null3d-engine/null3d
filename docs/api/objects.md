@@ -66,7 +66,7 @@ The world getters read the engine's last transform update. A change that you mak
 
 ## Parents
 
-An object gets a parent from the `parent` option, or later from `setParent(parent)`. `setParent(null)` makes it a root object.
+An object gets a parent from the `parent` option, or later from `setParent(parent)`. `setParent(null)` makes it a root object. `getParent()` returns the parent, or null for a root object.
 
 By default the object keeps its position, rotation and scale relative to the parent, as three.js's `add` does. Its place in the world then changes with the new parent. `setParent(parent, { keepWorld: true })` keeps its place, rotation and size in the world instead, as three.js's `attach` does. The engine gives the object the position, rotation and scale that do that under the new parent.
 
@@ -100,7 +100,7 @@ In development builds, every call on an object apart from `describe` throws E110
 
 ## Layers
 
-`setLayers(mask)` puts the object on the layers of a 32-bit mask: bit n puts it on layer n. A camera draws the object only when their masks share a bit. New objects are on layer 0, which every new camera draws. The `layers` option sets the mask when you create the object.
+`setLayers(mask)` puts the object on the layers of a 32-bit mask: bit n puts it on layer n. A camera draws the object only when their masks share a bit. New objects are on layer 0, which every new camera draws. The `layers` option sets the mask when you create the object. `getLayers()` returns the mask that the object has now, which a sketch reads before it adds a layer of its own.
 
 The mask belongs to the object alone, so its children keep their own. Like `setVisible`, `setLayers` takes effect when the engine processes the frame, and it rebuilds nothing. In development builds, a mask that is not a whole number of 32 bits throws E1207. [Render layers](../concepts/render-layers.md) explains masks in full.
 
@@ -115,10 +115,12 @@ A mesh has these calls besides the ones above. Like the structural calls, they t
 - `setRenderOrder(order)` sets the order in which blended objects draw, lower first, as three.js's `renderOrder` does. Objects of one order draw farthest first. The engine orders opaque and masked objects itself, for speed, as the depth test decides what shows. The order costs nothing: the engine sorts blended objects in every frame anyway. [Materials and pipelines](../concepts/materials.md#the-transparent-pass) explains the sort.
 - `setMorphWeight(nameOrIndex, weight)` and `getMorphWeight(nameOrIndex)` set and read a morph target's weight: [Morph targets](animation.md#morph-targets).
 - `setFrustumCulled(false)` makes the engine draw the mesh even when its bounds are out of view, as three.js's `frustumCulled = false` does.
-- `setBounds(center, radius)` gives the mesh a bounding sphere of its own, which culling tests instead of the mesh's sphere. The center is relative to the object's origin, and both values are before the object's scale. Use it when a shader moves vertices outside the mesh's sphere: bounds that cover the moved vertices keep culling at work, where `setFrustumCulled(false)` turns it off. A negative radius throws E1108 in development builds.
+- `setBounds(center, radius)` gives the object a bounding sphere of its own, which culling tests instead of the mesh's sphere. The center is relative to the object's origin, and both values are before the object's scale. Use it when a shader moves vertices outside the mesh's sphere: bounds that cover the moved vertices keep culling at work, where `setFrustumCulled(false)` turns it off. A group has no sphere of its own, so it needs one wherever a sphere is read, as a directional light's [hero shadow](../concepts/shadows.md#a-hero-shadow) reads it. A negative radius throws E1108 in development builds.
+- `setLevelBias(bias)` raises or lowers the threshold that picks this object's levels of detail, as Godot's `lod_bias` does. A bias above 1 draws coarser levels, and one below 1 keeps the object's detail. The same factor moves the distance at which the object hides. The bias is 1 by default, and does nothing without a mesh that has levels. [Levels of detail](../concepts/lod.md#the-bias-of-one-object) shows it.
+- `setDrawRange(start, end)` draws the mesh only between those distances from the camera to its nearest point, fading at each edge. [Distance bands](../concepts/lod.md#distance-bands) shows it.
 - `setOccluder(true)` makes the mesh block the view: the objects wholly behind it skip the GPU, on WebGL2 and on WebGPU. The `occluder` option of `createMesh` and `instantiate` sets it at the start. It is false by default, and needs no rebuild. Occlusion culling itself is off on every preset: the `softwareOcclusion` and `gpuOcclusion` options of `createEngine` turn it on. A model that `assets optimize` gave blockers starts with its meshes that have one blocking. On WebGL2, each such mesh draws its blocker in place of its mesh. Mark large, solid meshes of up to 4,096 triangles, such as buildings. Meshes that blend, use an alpha mask or a custom material, or are skinned never block on WebGL2. [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains both methods.
 
-`setMaterial`, `setMesh`, `setBounds`, `setFrustumCulled`, `setCastShadows`, `setReceiveShadows` and `setOutlined` rebuild the draw tables, so call them at setup or behind a loading screen. A click that outlines the picked object rebuilds them once, which is fine. The [performance guide](../guides/performance.md#objects-during-play) lists the cost of each call. [Culling](../concepts/culling.md#bounds-that-you-set) explains how the engine culls with your bounds.
+`setMaterial`, `setMesh`, `setBounds`, `setFrustumCulled`, `setCastShadows`, `setReceiveShadows`, `setLevelBias`, `setDrawRange` and `setOutlined` rebuild the draw tables, so call them at setup or behind a loading screen. A click that outlines the picked object rebuilds them once, which is fine. The [performance guide](../guides/performance.md#objects-during-play) lists the cost of each call. [Culling](../concepts/culling.md#bounds-that-you-set) explains how the engine culls with your bounds.
 
 ## Animation
 

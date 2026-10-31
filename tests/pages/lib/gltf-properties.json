@@ -1,0 +1,161 @@
+{
+	"revision": "186",
+	"models": [
+		{
+			"id": "animated-colors-cube",
+			"cases": [
+				{
+					"time": 0,
+					"values": {
+						"materials/0/color": [0.800000011920929, 0.019999999552965164, 0.019999999552965164],
+						"materials/0/opacity": [1]
+					}
+				},
+				{
+					"time": 0.75,
+					"values": {
+						"materials/0/color": [0.019999999552965164, 0.800000011920929, 0.019999999552965164],
+						"materials/0/opacity": [1]
+					}
+				},
+				{
+					"time": 1.5,
+					"values": {
+						"materials/0/color": [0.019999999552965164, 0.019999999552965164, 0.800000011920929],
+						"materials/0/opacity": [1]
+					}
+				},
+				{
+					"time": 2.25,
+					"values": {
+						"materials/0/color": [0.019999999552965164, 0.800000011920929, 0.019999999552965164],
+						"materials/0/opacity": [1]
+					}
+				},
+				{
+					"time": 2.9000000953674316,
+					"values": {
+						"materials/0/color": [0.800000011920929, 0.019999999552965164, 0.019999999552965164],
+						"materials/0/opacity": [1]
+					}
+				}
+			]
+		},
+		{
+			"id": "light-visibility",
+			"cases": [
+				{ "time": 0, "values": { "nodes/5/visible": [1] } },
+				{ "time": 0.44999998807907104, "values": { "nodes/5/visible": [1] } },
+				{ "time": 0.8999999761581421, "values": { "nodes/5/visible": [0] } },
+				{ "time": 1.5, "values": { "nodes/5/visible": [0] } },
+				{ "time": 2.0999999046325684, "values": { "nodes/5/visible": [1] } }
+			]
+		},
+		{
+			"id": "cube-visibility",
+			"cases": [
+				{ "time": 0, "values": { "nodes/5/visible": [1] } },
+				{ "time": 0.25, "values": { "nodes/5/visible": [1] } },
+				{ "time": 0.5, "values": { "nodes/5/visible": [0] } },
+				{ "time": 0.75, "values": { "nodes/5/visible": [0] } },
+				{ "time": 1.2000000476837158, "values": { "nodes/5/visible": [1] } },
+				{ "time": 1.600000023841858, "values": { "nodes/5/visible": [0] } }
+			]
+		},
+		{
+			"id": "animation-pointer-uvs",
+			"cases": [
+				{
+					"time": 0,
+					"values": {
+						"materials/10/baseColorOffset": [0, 0],
+						"materials/11/baseColorScale": [1, 1],
+						"materials/19/emissiveOffset": [0, 0],
+						"materials/20/emissiveScale": [1, 1]
+					}
+				},
+				{
+					"time": 1.5,
+					"values": {
+						"materials/10/baseColorOffset": [-0.25, 0.25],
+						"materials/11/baseColorScale": [1.5, 1.5],
+						"materials/19/emissiveOffset": [-0.25, 0.25],
+						"materials/20/emissiveScale": [1.5, 1.5]
+					}
+				},
+				{
+					"time": 3,
+					"values": {
+						"materials/10/baseColorOffset": [-0.5, 0.5],
+						"materials/11/baseColorScale": [2, 2],
+						"materials/19/emissiveOffset": [-0.5, 0.5],
+						"materials/20/emissiveScale": [2, 2]
+					}
+				},
+				{
+					"time": 4.5,
+					"values": {
+						"materials/10/baseColorOffset": [-0.75, 0.75],
+						"materials/11/baseColorScale": [2.5, 2.5],
+						"materials/19/emissiveOffset": [-0.75, 0.75],
+						"materials/20/emissiveScale": [2.5, 2.5]
+					}
+				},
+				{
+					"time": 5.900000095367432,
+					"values": {
+						"materials/10/baseColorOffset": [-0.9833333492279053, 0.9833333492279053],
+						"materials/11/baseColorScale": [2.9666666984558105, 2.9666666984558105],
+						"materials/19/emissiveOffset": [-0.9833333492279053, 0.9833333492279053],
+						"materials/20/emissiveScale": [2.9666666984558105, 2.9666666984558105]
+					}
+				}
+			]
+		},
+		{
+			"id": "pointer-light",
+			"cases": [
+				{
+					"time": 0,
+					"values": {
+						"lights/0/intensity": [1],
+						"lights/0/color": [1, 0, 0],
+						"lights/0/range": [4]
+					}
+				},
+				{
+					"time": 0.5,
+					"values": {
+						"lights/0/intensity": [3],
+						"lights/0/color": [0.5, 0.5, 0],
+						"lights/0/range": [4]
+					}
+				},
+				{
+					"time": 1,
+					"values": {
+						"lights/0/intensity": [5],
+						"lights/0/color": [0, 1, 0],
+						"lights/0/range": [8]
+					}
+				},
+				{
+					"time": 1.5,
+					"values": {
+						"lights/0/intensity": [3],
+						"lights/0/color": [0, 0.5, 0.5],
+						"lights/0/range": [8]
+					}
+				},
+				{
+					"time": 1.899999976158142,
+					"values": {
+						"lights/0/intensity": [1.4000000953674316],
+						"lights/0/color": [0, 0.10000002384185791, 0.8999999761581421],
+						"lights/0/range": [8]
+					}
+				}
+			]
+		}
+	]
+}

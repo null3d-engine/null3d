@@ -4,6 +4,7 @@ import null3d from './packages/vite-plugin/src/index.ts';
 import { loadServer } from './tests/lib/load-server.ts';
 import { reportCollector } from './tests/lib/report-collector.ts';
 import { checkoutServer, HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
+import { splatStreamServer } from './tests/lib/splat-stream.ts';
 import { tunnelServer } from './tests/lib/tunnel-server.ts';
 import { coreSourcesServer } from './tools/lib/core-sources.ts';
 import { sampleEnvironmentsServer } from './tools/lib/sample-environments.ts';
@@ -15,9 +16,10 @@ import { watchIgnored } from './tools/lib/watch-ignored.ts';
 
 // One dev server for every browser page in the repository: the test pages under tests/pages, the
 // benchmark pages under bench/pages and the demos under examples, with the isolation headers.
-// Plain HTTP stays on localhost, which phones reach through adb. NULL3D_HTTPS=1 serves HTTPS on the
-// local network instead, on its own port, for tablets and phones that reach the Mac by its .local
-// name. The dev server and `vite preview` also serve the startup build of the engine test page, one
+// Plain HTTP binds every interface, so a demo is reachable from outside this machine as well as from
+// a phone over USB, whose forwarding rule reaches the loopback that such a server also answers.
+// NULL3D_HTTPS=1 serves HTTPS on its own port, for tablets and phones that reach the Mac by its
+// .local name. The dev server and `vite preview` also serve the startup build of the engine test page, one
 // address prefix per load, and the pinned sample content under /samples/ from the shared cache,
 // with the environment maps of its HDR files under /sample-environments/ and the KTX2 files of its
 // images under /sample-textures/, and S6's model files, built from the sample content's city
@@ -79,12 +81,16 @@ const config: UserConfig = {
 		sampleTexturesServer(import.meta.dirname),
 		coreSourcesServer(import.meta.dirname),
 		cityServer(import.meta.dirname),
+		splatStreamServer(),
 		checkoutServer(import.meta.dirname),
 		indexRedirect,
 	],
 	// The pages take the packages' source, not the files that their pack step builds.
 	resolve: sourceResolve,
 	server: {
+		// Both servers bind every interface, so a demo is reachable from outside this machine. A phone
+		// over USB reaches the loopback, which such a server answers too.
+		host: true,
 		port: https ? HTTPS_PORT : HTTP_PORT,
 		strictPort: true,
 		fs: { strict: true, allow: [searchForWorkspaceRoot(import.meta.dirname)], deny: DENIED },

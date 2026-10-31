@@ -114,6 +114,9 @@ struct RenderPipeline {
     /// The template the pipeline was made from.
     template: u32,
     formats: Formats,
+    /// True when the pipeline writes no color: its fragment stage has no output, so the pass's
+    /// color target, or its absence, does not apply to it.
+    ignores_color: bool,
 }
 
 /// A bind group: the layout it was made with, and the buffers and textures it binds.
@@ -210,6 +213,8 @@ pub struct MockBackend {
     reading: HashSet<u32>,
     textures: HashMap<u32, Texture>,
     views: HashMap<u32, View>,
+    /// The texture that each bind view of a layer range names, by the view's id.
+    bind_views: HashMap<u32, u32>,
     /// How many times each texture id was made or released, so a view can tell that its texture
     /// is gone.
     generations: HashMap<u32, u32>,
@@ -675,6 +680,18 @@ impl MockBackend {
         Ok(())
     }
 
+    /// Names a range of one texture's array layers, which a bind group binds as the texture.
+    fn create_bind_view(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
+        let texture = self.texture(op, o[1])?;
+        check(
+            o[3] >= 1 && o[2] + o[3] <= texture.layers,
+            op,
+            "a bind view names layers inside its texture",
+        )?;
+        self.bind_views.insert(o[0], o[1]);
+        Ok(())
+    }
+
     fn write_texture(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
         let at = Location::read(o);
         let texture = self.texel_box(op, at, o[5], o[6], o[7])?;
@@ -967,13 +984,14 @@ impl MockBackend {
                     resources.push(Resource::Buffer(id));
                 }
                 resource_kind::TEXTURE => {
-                    let texture = self.texture(op, id)?;
+                    let base = self.bind_views.get(&id).copied().unwrap_or(id);
+                    let texture = self.texture(op, base)?;
                     check(
                         texture.usage & texture_usage::TEXTURE_BINDING != 0,
                         op,
                         "a bound texture needs TEXTURE_BINDING usage",
                     )?;
-                    resources.push(Resource::Texture(id));
+                    resources.push(Resource::Texture(base));
                 }
                 resource_kind::SAMPLER => {
                     Self::require(self.samplers.contains(&id), op, "sampler", id)?;
@@ -1049,9 +1067,20 @@ impl MockBackend {
             }
         };
         let (color, resolve, depth) = (optional(o[0])?, optional(o[1])?, optional(o[2])?);
-        let second = match o.get(9) {
-            Some(&id) => Some(self.target(op, id)?),
-            None => None,
+        // The second color target's word, the pass's label and its scope follow the flags. A pass
+        // without a second target leaves its word out, and a list that a test makes by hand may
+        // name even fewer.
+        check(
+            o.len() <= 12,
+            op,
+            "a render pass names its targets, its label and its scope",
+        )?;
+        let second = match o.len() {
+            0..=11 => None,
+            _ => match o[9] {
+                NO_TARGET => None,
+                id => Some(self.target(op, id)?),
+            },
         };
         if let Some(second) = second {
             let Some(color) = color else {
@@ -1178,6 +1207,7 @@ impl MockBackend {
             Op::DestroyTexture => {
                 self.textures.remove(&o[0]);
                 self.views.remove(&o[0]);
+                self.bind_views.remove(&o[0]);
                 *self.generations.entry(o[0]).or_default() += 1;
             }
             Op::UploadImage => self.upload_image(op, o)?,
@@ -1190,7 +1220,7 @@ impl MockBackend {
             Op::SkyMapStep => {
                 self.generate_texture(op, o)?;
                 self.texture(op, o[0])?;
-                check(o.len() == 20, op, "a sky map's stage takes 20 words")?;
+                check(o.len() == 29, op, "a sky map's stage takes 29 words")?;
                 if o[3] != 0 {
                     self.texture(op, o[3])?;
                 }
@@ -1290,6 +1320,11 @@ impl MockBackend {
                                 format::NONE
                             },
                         },
+                        // A prepass pipeline draws with a shading build whose fragment stage writes
+                        // nothing. WebGL2 draws it into the opaque pass's color, or into a
+                        // depth-only pass of its own, and one build fits both (D-269).
+                        ignores_color: o[3] == format::NONE
+                            && o[6] & state_flags::NO_COLOR_WRITE != 0,
                     },
                 );
             }
@@ -1297,6 +1332,20 @@ impl MockBackend {
                 self.compute_pipelines.insert(o[0], o[1]);
             }
             Op::CreateBindGroup => self.create_bind_group(op, o)?,
+            Op::CreateBindView => self.create_bind_view(op, o)?,
+            Op::ClearTexture => {
+                let texture = self.texture(op, o[0])?;
+                check(
+                    texture.usage & texture_usage::RENDER_ATTACHMENT != 0,
+                    op,
+                    "a cleared texture needs RENDER_ATTACHMENT usage",
+                )?;
+                check(
+                    o[2] >= 1 && o[1] + o[2] <= texture.layers,
+                    op,
+                    "a clear names layers inside its texture",
+                )?;
+            }
             Op::BeginRenderPass => self.begin_render_pass(op, o)?,
             Op::BeginBundle => {
                 self.outside_passes(op)?;
@@ -1334,7 +1383,10 @@ impl MockBackend {
                     None => self.pass.expect("in a render pass").formats,
                 };
                 check(
-                    pipeline.formats == drawn,
+                    pipeline.formats.samples == drawn.samples
+                        && pipeline.formats.depth == drawn.depth
+                        && pipeline.formats.second == drawn.second
+                        && (pipeline.formats.color == drawn.color || pipeline.ignores_color),
                     op,
                     "a pipeline draws into the formats and sample count of its pass or bundle",
                 )?;
@@ -1943,6 +1995,57 @@ mod tests {
             ),
             "the one-sample canvas cannot pair with multisampled depth"
         );
+    }
+
+    #[test]
+    fn a_pipeline_that_names_no_color_fits_a_pass_with_or_without_one() {
+        // The WebGL2 prepass draws with a shading build that writes nothing: into the opaque
+        // pass's color, or into a depth-only pass of its own when a screen step splits them
+        // (D-269).
+        let run = |pipeline: [u32; 10], pass: [u32; 9]| {
+            let mut list = DrawList::with_capacity(256);
+            setup(&mut list);
+            list.push(Op::CreateRenderPipeline, &pipeline).unwrap();
+            list.push(Op::BeginRenderPass, &pass).unwrap();
+            list.push(Op::SetPipeline, &[pipeline[0]]).unwrap();
+            MockBackend::default().replay(list.words())
+        };
+        let prepass = [
+            2,
+            template::INSTANCED_LIT,
+            permutation::PREPASS,
+            format::NONE,
+            format::DEPTH32_FLOAT,
+            4,
+            state_flags::NO_COLOR_WRITE,
+            0,
+            0,
+            0,
+        ];
+        let depth_only = [NO_TARGET, NO_TARGET, MSAA_DEPTH, 0, 0, 0, 0, 0, 0];
+        let with_color = [MSAA_COLOR, NO_TARGET, MSAA_DEPTH, 0, 0, 0, 0, 0, 0];
+        assert!(run(prepass, depth_only).is_ok());
+        assert!(run(prepass, with_color).is_ok());
+        // A pipeline that does write color still needs the pass to name that color.
+        let shading = [
+            2,
+            template::INSTANCED_LIT,
+            0,
+            format::CANVAS,
+            format::DEPTH32_FLOAT,
+            4,
+            0,
+            0,
+            0,
+            0,
+        ];
+        assert!(matches!(
+            run(shading, depth_only),
+            Err(MockError::Invalid {
+                op: Op::SetPipeline,
+                ..
+            })
+        ));
     }
 
     // Ids of the texture test below.

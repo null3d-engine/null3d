@@ -9,6 +9,7 @@ import { ENGINE_MODES, type EngineMode } from './engine-checks.ts';
 import {
 	borrowedRun,
 	type CandidateFacts,
+	ciRunOf,
 	clearCandidate,
 	clearCandidates,
 	compareWithReference,
@@ -110,7 +111,11 @@ const engineFacts = (
 let dirs: HarnessDirs;
 beforeEach(() => {
 	const root = mkdtempSync(join(tmpdir(), 'null3d-images-'));
-	dirs = { references: join(root, 'references'), candidates: join(root, 'candidates') };
+	dirs = {
+		references: join(root, 'references'),
+		candidates: join(root, 'candidates'),
+		drawn: join(root, 'drawn'),
+	};
 });
 afterEach(() => rmSync(join(dirs.references, '..'), { recursive: true, force: true }));
 
@@ -408,6 +413,22 @@ describe('the files in the folder of references', () => {
 		]);
 	});
 
+	it('give the command of a run that the image page does not draw, without and with CI', () => {
+		const command =
+			'{ci}bun run test:browser image/cli-script.spec.ts -g "cli on webgl2", then bun run images:review --accept cli';
+		const cli = {
+			...run('boxes-webgl2-pipelined'),
+			id: 'cli-webgl2',
+			test: 'cli',
+			reference: { test: 'cli', tier: 'webgl2' as const, devices: [] },
+			make: command,
+		};
+		expect(referenceFileProblems([cli], [])).toEqual([
+			`chrome-real-gpu/webgl2/cli.png is missing. Make it: ${command.replace('{ci}', '')}`,
+			`chromium-swiftshader/webgl2/cli.png is missing. Make it: ${command.replace('{ci}', 'CI=1 ')}`,
+		]);
+	});
+
 	it('name every missing reference of a new test, both sets', () => {
 		const problems = referenceFileProblems(
 			RUNS,
@@ -539,8 +560,17 @@ describe('comparing an image with its reference', () => {
 			status: 'new',
 			reference: 'chrome-real-gpu/webgpu/boxes.png',
 			tolerance: TOLERANCE,
+			// CI's own drawing names its run, which a software-GPU reference needs.
+			...(ciRunOf(process.env) && { ciRun: ciRunOf(process.env) }),
 		});
 		expect(readPng(`${saved}.png`)).toEqual(image([10, 20, 30]));
+	});
+
+	it('names the CI run that drew an image only inside GitHub Actions, not in a local CI=1 run', () => {
+		expect(ciRunOf({ GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '40109903483' })).toBe('40109903483');
+		expect(ciRunOf({ CI: '1' })).toBeUndefined();
+		expect(ciRunOf({ CI: 'true', GITHUB_RUN_ID: '1' })).toBeUndefined();
+		expect(ciRunOf({ GITHUB_ACTIONS: 'true' })).toBeUndefined();
 	});
 
 	it('passes an image within the tolerance, and saves nothing', () => {
@@ -580,6 +610,49 @@ describe('comparing an image with its reference', () => {
 		expect(compareWithReference(boxes(), REAL, image([1, 2, 3]), dirs)[0]).toContain(
 			'the image is 4 x 2, and the reference chrome-real-gpu/webgpu/boxes.png is 2 x 2',
 		);
+	});
+
+	/** Runs `save` with the request for drawings on, and puts the setting back afterwards. */
+	const asking = (save: () => void) => {
+		const kept = process.env.NULL3D_TAKE_IMAGES;
+		process.env.NULL3D_TAKE_IMAGES = '1';
+		try {
+			save();
+		} finally {
+			if (kept === undefined) delete process.env.NULL3D_TAKE_IMAGES;
+			else process.env.NULL3D_TAKE_IMAGES = kept;
+		}
+	};
+
+	it('keeps no drawing of a passing image unless the run asks for it', () => {
+		writePng(join(dirs.references, 'chrome-real-gpu/webgpu/boxes.png'), image([10, 20, 30]));
+		expect(compareWithReference(boxes(), REAL, image([10, 20, 30]), dirs)).toEqual([]);
+		expect(existsSync(dirs.drawn as string)).toBe(false);
+	});
+
+	it('keeps the image that a passing run drew when the run asks for its drawings', () => {
+		writePng(join(dirs.references, 'chrome-real-gpu/webgpu/boxes.png'), image([10, 20, 30]));
+		asking(() => {
+			expect(compareWithReference(boxes(), REAL, image([10, 20, 30]), dirs)).toEqual([]);
+		});
+		const saved = join(dirs.drawn as string, 'chrome-real-gpu', 'webgpu', 'boxes');
+		// A drawing holds the image and its facts, and no diff or reference copy.
+		expect(readdirSync(join(saved, '..')).sort()).toEqual(['boxes.json', 'boxes.png']);
+		expect(facts(`${saved}.json`)).toMatchObject({ status: 'drawn', share: 0 });
+		expect(readPng(`${saved}.png`)).toEqual(image([10, 20, 30]));
+	});
+
+	it('keeps a drawing that differs from its reference, and none that cannot become one', () => {
+		writePng(join(dirs.references, 'chrome-real-gpu/webgpu/boxes.png'), image([10, 20, 30]));
+		const drawn = image([10, 20, 30], { at: 5, rgb: [250, 20, 30] });
+		asking(() => {
+			compareWithReference(boxes(), REAL, drawn, dirs);
+			// The copy borrows boxes's reference, so it makes no reference of its own.
+			compareWithReference(borrowedRun(boxes(), 'boxes-copied'), REAL, drawn, dirs);
+		});
+		const saved = join(dirs.drawn as string, 'chrome-real-gpu', 'webgpu');
+		expect(readdirSync(saved).sort()).toEqual(['boxes.json', 'boxes.png']);
+		expect(facts(join(saved, 'boxes.json'))).toMatchObject({ status: 'drawn', share: 0.125 });
 	});
 
 	it('keeps the candidate of the first mode that differs, until the test runs again', () => {

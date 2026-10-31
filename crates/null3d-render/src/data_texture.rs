@@ -67,6 +67,9 @@ pub(crate) fn write_rows(
     source: u32,
 ) -> Result<(), RecordError> {
     let end = rows.first + rows.count;
+    // An address is an offset into the frame's memory, so a run advances it by wrapping as that
+    // offset space does. A write's size shares the same width, so a rectangle whose bytes cannot
+    // be named is a fault rather than a number that silently wraps.
     let (mut item, mut at) = (rows.first, source);
     while item < end {
         let column = item % rows.per_row;
@@ -76,6 +79,8 @@ pub(crate) fn write_rows(
             ((rows.per_row - column).min(end - item), 1)
         };
         let items = width * height;
+        let size = u32::try_from(u64::from(items) * u64::from(rows.bytes))
+            .map_err(|_| RecordError::OutOfMemory { bytes: u32::MAX })?;
         list.push(
             Op::WriteTexture,
             &[
@@ -88,11 +93,11 @@ pub(crate) fn write_rows(
                 height,
                 1,
                 at,
-                items * rows.bytes,
+                size,
             ],
         )?;
         item += items;
-        at += items * rows.bytes;
+        at = at.wrapping_add(size);
     }
     Ok(())
 }
@@ -159,6 +164,16 @@ impl DataTexture {
         }
     }
 
+    /// The textures of sources' distance ranges: each start distance then its end distance.
+    pub(crate) const fn ranges(first_id: u32, count: u32) -> Self {
+        Self {
+            first_id,
+            count,
+            width: sizes::RANGES_PER_TEXTURE_ROW * sizes::RANGE_TEXELS,
+            format: format::RGBA32_FLOAT,
+        }
+    }
+
     /// Makes the textures again when `rows`, the rows they hold, is fewer than `needed`, with room
     /// to grow but at most `limit`. Returns true when it made them.
     pub(crate) fn grow(
@@ -200,20 +215,32 @@ impl DataTexture {
 mod tests {
     use super::*;
 
-    fn rectangles(first: u32, count: u32) -> Vec<Vec<u32>> {
-        let mut list = DrawList::with_capacity(64);
-        let rows = TextureRows {
-            first,
-            count,
+    fn source() -> TextureRows {
+        TextureRows {
+            first: 0,
+            count: 0,
             column: 0,
             per_row: 512,
             texels: 3,
             bytes: 48,
+        }
+    }
+
+    fn rectangles_from(first: u32, count: u32, at: u32) -> Vec<Vec<u32>> {
+        let mut list = DrawList::with_capacity(64);
+        let rows = TextureRows {
+            first,
+            count,
+            ..source()
         };
-        write_rows(&mut list, 9, rows, 1000).unwrap();
+        write_rows(&mut list, 9, rows, at).unwrap();
         null3d_gpu::drawlist::decode(list.words())
             .map(|c| c.unwrap().operands.to_vec())
             .collect()
+    }
+
+    fn rectangles(first: u32, count: u32) -> Vec<Vec<u32>> {
+        rectangles_from(first, count, 1000)
     }
 
     #[test]
@@ -242,5 +269,24 @@ mod tests {
             vec![9, 0, 0, 3, 0, 21, 1, 1, 1000 + 1036 * 48, 7 * 48]
         );
         assert!(rectangles(7, 0).is_empty());
+    }
+
+    #[test]
+    fn a_run_that_crosses_the_top_of_the_address_space_wraps() {
+        let parts = rectangles_from(500, 12 + 1024, u32::MAX - 100);
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0][8], u32::MAX - 100);
+        assert_eq!(parts[1][8], 475);
+    }
+
+    #[test]
+    fn a_rectangle_too_large_to_name_reports_the_memory() {
+        let mut list = DrawList::with_capacity(64);
+        let rows = TextureRows {
+            count: 90_000_000,
+            ..source()
+        };
+        let error = write_rows(&mut list, 9, rows, 1000).unwrap_err();
+        assert!(matches!(error, RecordError::OutOfMemory { .. }));
     }
 }

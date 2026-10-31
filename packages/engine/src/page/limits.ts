@@ -19,9 +19,11 @@ import {
 } from '../generated/gpu';
 import type { QualitySettings } from '../quality/presets';
 import type { Tier } from '../render/renderer';
+import { softwareRenderer } from '../shared/software';
 import type {
 	CompressionFamily,
 	DepthMode,
+	PrepassColor,
 	ShadowDepthBits,
 	SkinningSwitch,
 	Switches,
@@ -46,6 +48,13 @@ const ANTIALIAS_CODES: Record<AntialiasMode, number> = {
 	msaa: C.ANTIALIAS_MSAA,
 };
 
+/** The core's code of each way that a prepass starts its stand-in color, and the default. */
+const PREPASS_COLOR_CODES: Record<PrepassColor, number> = {
+	load: C.PREPASS_COLOR_LOAD,
+	clear: C.PREPASS_COLOR_CLEAR,
+	none: C.PREPASS_COLOR_NONE,
+};
+
 /** The parts of the capability report that decide how the engine uses the device. */
 export interface DeviceReport {
 	webgpu: {
@@ -53,12 +62,21 @@ export interface DeviceReport {
 		features: string[];
 		transientAttachments: boolean;
 		directDraws: boolean;
+		/** The adapter's reported names, which tell a software renderer (D-174, D-237). */
+		adapterInfo?: {
+			vendor: string;
+			architecture: string;
+			device: string;
+			description: string;
+		} | null;
 	};
 	webgl2: {
 		extensions: Record<string, boolean>;
 		maxTextureSize: number | null;
 		maxRenderbufferSize: number | null;
 		maxViewportDims: [width: number, height: number] | null;
+		/** The renderer that the browser reports, which tells a software renderer (D-237). */
+		renderer?: string | null;
 		sharedMemoryUploads: {
 			bufferSubData: boolean;
 			texSubImage2D: boolean;
@@ -90,6 +108,11 @@ export interface CoreDevice {
 	 * thread that draws copies the data out first.
 	 */
 	sharedUploads: boolean;
+	/**
+	 * WebGL2: true when the context draws many ranges in one call, so a cluster mesh draws its
+	 * chosen patches; false draws the whole levels that its tree was cut into.
+	 */
+	multiDraw: boolean;
 	/** How the GPU path stores depth: always `reversed` on WebGPU. */
 	depth: DepthMode;
 	/**
@@ -109,6 +132,11 @@ export interface CoreDevice {
 	 * its indirect draws, so the core culls on the CPU and draws each bucket directly.
 	 */
 	directDraws: boolean;
+	/**
+	 * True when the device's reported names say that the browser draws on the CPU, which keeps the
+	 * whole render scale once a step below it failed (D-237).
+	 */
+	softwareRenderer: boolean;
 	/** The anti-aliasing mode's code in the core. */
 	antialias: number;
 	/**
@@ -147,6 +175,11 @@ export interface CoreDevice {
 	 * True when each camera view draws its opaque objects' depth before it shades them.
 	 */
 	depthPrepass: boolean;
+	/**
+	 * How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
+	 * that it never draws, from the ?prepass-color= switch (`PREPASS_COLOR_*`).
+	 */
+	prepassColor: number;
 	/**
 	 * The core's code of WebGPU's skinning mode: the vertex shader of each pass, or the skinning
 	 * pass, with or without its savings.
@@ -229,6 +262,7 @@ export type DeviceOptions = Pick<
 	| 'compression'
 	| 'cells'
 	| 'join'
+	| 'prepassColor'
 	| 'skinning'
 	| 'indexInstances'
 	| 'direct'
@@ -427,6 +461,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		directDraws:
 			tier !== 'webgl2' &&
 			(options.direct === 'on' || (options.direct === 'auto' && report.webgpu.directDraws)),
+		softwareRenderer: softwareRenderer(report),
 		antialias: ANTIALIAS_CODES[options.antialias],
 		effectsSceneColor: effects.sceneColor,
 		effectsAntialias: ANTIALIAS_CODES[effects.antialias],
@@ -436,6 +471,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		cellCulling: options.cells,
 		joinEffects: options.join,
 		depthPrepass: options.depthPrepass,
+		prepassColor: PREPASS_COLOR_CODES[options.prepassColor ?? 'none'],
 		skinning: SKINNING_CODES[options.skinning],
 		shadowDepthBits: options.shadowDepthBits,
 		largeWorld: options.largeWorld,
@@ -454,6 +490,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 				C.CAPABILITY_FLOAT16_TARGETS,
 			maxTextureSize: 0,
 			sharedUploads: true,
+			multiDraw: false,
 			depth: 'reversed',
 			shaderBits: toneMap | half,
 			indexInstances: tier === 'webgpu' && options.indexInstances,
@@ -473,6 +510,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
 		sharedUploads:
 			!options.copyUploads && uploads !== null && uploads.bufferSubData && uploads.texSubImage2D,
+		multiDraw,
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, options.depth),
 		shaderBits: (multiDraw ? PERMUTATION_DRAW_INDEX : 0) | toneMap | half,
 		indexInstances: false,

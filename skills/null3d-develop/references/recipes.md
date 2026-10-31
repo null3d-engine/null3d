@@ -18,14 +18,16 @@ Each recipe states the goal, gives the code, explains why it is written that way
 12. Minimap with a second camera (0.2)
 13. Screenshots
 14. Video on a surface, with frames from the page
-15. Custom full-screen effect (0.2)
-16. Very large worlds (0.2)
-17. Move a player with keys, a gamepad or touch
-18. Camera that follows a moving object
-19. Water and mirror floors with a reflection
-20. Fire, smoke and sparks with particles
-21. Terrain from a height field
-22. Outdoor land with an edge the camera never sees
+15. A screen drawn on a canvas (0.2)
+16. Custom full-screen effect (0.2)
+17. Very large worlds (0.2)
+18. Move a player with keys, a gamepad or touch
+19. Camera that follows a moving object
+20. Water and mirror floors with a reflection
+21. Fire, smoke and sparks with particles
+22. Terrain from a height field
+23. Outdoor land with an edge the camera never sees
+24. Trees, shrubs and grass from a species record
 
 ## 1. Start a new project
 
@@ -222,17 +224,31 @@ if (input.wasPressed('Mouse0')) {
 
 The ray tests units and the walls and terrain on `WORLD`, and returns the nearest hit. Effects stay off both layers, so they never block the ray. Create `ray`, `hit` and `unitSet` once. Docs: `api/input` (pointer events on objects), `api/raycast`, `concepts/render-layers`, `api/post`.
 
+A hit on a mesh with texture coordinates also carries `uv`, where on the surface the ray landed, and `hasUv` says whether to read it. So a click on an in-world screen becomes a pixel of the image it shows, with no plane maths in the sketch:
+
+```ts
+screen.on('click', (event) => {
+  if (!event.hasUv) return;
+  const px = Math.floor((event.uv[0] as number) * IMAGE_WIDTH);
+  const py = Math.floor((1 - (event.uv[1] as number)) * IMAGE_HEIGHT);   // uv's y runs up
+  page.post('screenTap', { px, py });
+});
+```
+
 For a pixel-exact pick, use `scene.pick`. It tests the pixel that the camera draws, such as a thin wire or a leaf with a cut-out mask. It answers one or more frames later:
 
 ```ts
 if (input.wasPressed('Mouse0')) {
   void scene.pick(input.pointer.x, input.pointer.y).then((hit) => {
-    if (hit?.object === target) { /* the click landed on the target's pixels */ }
+    if (hit?.object !== target || !hit.hasUv || !hit.uv) return;
+    // The mesh's own texture coordinates, as a raycast on the same point gives them.
+    const u = hit.uv[0] as number;
+    const v = hit.uv[1] as number;
   });
 }
 ```
 
-A scene with a whole shader of your own answers its picks with a raycast instead. So does a scene with a blended or transmissive material, or a sprite, point or line. A raycast tests triangles, so it ignores masks. Docs: `api/raycast#pixel-exact-picking`.
+The hit carries `uv` and `hasUv` as a raycast's hit does. Repeated textures give values past 1, and a material's `uvTransform` leaves them alone. A scene with a whole shader of your own answers its picks with a raycast instead. So does a scene with a blended or transmissive material, or a sprite, point or line. A raycast tests triangles, so it ignores masks. A pick that waits for its read when the browser takes the GPU away rejects with E1436: ask again on the new device. Docs: `api/raycast#pixel-exact-picking`.
 
 ## 7. HTML labels above objects (0.2)
 
@@ -254,11 +270,22 @@ engine.onSketchMessage((type, d) => { if (type === 'hp') document.getElementById
 
 The sketch places each label with each frame's camera. The page moves the element over it in the frame on screen, so labels never run ahead of the image. Only value changes travel as messages. The engine sets `visibility: hidden` while the object is hidden, off the camera's layers, or outside its near and far planes. The offset turns and scales with the object, like a `CSS2DObject` child in three.js. The engine holds 4,096 labels by default (`createEngine({ maxLabels })`); more fail with E1219. Docs: `guides/ui-overlays`, `api/ui`.
 
+For a panel that turns with the scene, or text that always faces the camera, give the label a transform. The element is then a plane of the scene, and the scene's units are its CSS pixels, as with three.js's `CSS3DRenderer`. The page binds it the same way.
+
+```ts
+ui.trackLabel(panel, 'panel-name', { transform: 'world', offset: [0, 1.4, 0] });   // turns with the panel
+ui.trackLabel(head, 'title', { transform: 'billboard', rotation: 0.1 });           // faces the camera
+```
+
+The engine moves a plane's element into a container of its own inside the element's parent, and writes its matrix. Keep that parent over the canvas. Planes count against `createEngine({ maxLabels3d })`, 256 by default.
+
+To show a page under the drawn scene, start the engine with `createEngine({ transparent: true })`, put the labels' layer below the canvas, and set no background. A plane at the page writes its depth and no color with `materials.unlit({ colorWrite: false })`, so the scene behind the page never draws over it, while a glass object in front still shows the page through itself. Size the plane like the label: an element's CSS pixels are the scene's units. Docs: `guides/ui-overlays#a-page-under-the-scene`, `api/materials#invisible-surfaces-that-hide`.
+
 ## 8. Loading screen with progress and warm-up
 
 ```ts
 // sketch.ts
-assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+assets.onProgress((loaded, total) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));
 await assets.preload(['/levels/one.json', '/tex/terrain.png', '/tex/rocks.png']);
 const level = await assets.loadJson<Level>('/levels/one.json');   // from memory: preload downloaded it
 const terrain = await assets.loadTexture('/tex/terrain.png', { wrap: 'repeat', anisotropy: 8 });
@@ -406,7 +433,7 @@ const map = materials.unlit({ map: textures.fromPass(pass) });
 // Show `map` on a screen in the world. The pass leaves the screen out of the map by itself.
 ```
 
-To save GPU time, draw the map every few frames: `render.setPassEnabled(pass, frame % 4 === 0)`. Several full views, such as split screens, come in 0.3 (`guides/multiple-views`). Docs: `guides/custom-passes`, `api/render`.
+To save GPU time, draw the map every few frames: `render.setPassEnabled(pass, frame % 4 === 0)`. For a view of the scene shown on the canvas itself, use `scene.createView({ camera, rect })` instead. It draws after the camera's view, into a rectangle of the canvas, for a split screen or a picture in picture. Each view culls the scene again and costs one more scene draw at its rectangle's pixels. Docs: `guides/multiple-views`, `guides/custom-passes`, `api/render`.
 
 ## 13. Screenshots
 
@@ -421,41 +448,57 @@ shotButton.onclick = async () => {
 
 The thread that draws reads the frame back and encodes it, so the canvas needs no `preserveDrawingBuffer`. After `destroy()` the call fails with E1414. For tests, use `bunx @null3d/cli shot` or hold-mode tests instead (`references/testing-and-debugging.md`). Docs: `api/engine`.
 
-## 14. Video on a surface, with frames from the page
+## 14. Video on a surface (0.3)
 
-Video textures (`engine.registerVideo` with `textures.fromVideo`) come in 0.3. Until then, the page can send frames as `ImageBitmap` objects, which transfer to the sketch without a copy. The sketch's half shows them with an unlit material's map:
+A video element lives on the page. `engine.registerVideo` follows it there, and `textures.fromVideo` in the sketch shows it. The page sends one `ImageBitmap` per frame that the video presents, scaled to `maxSize`. The engine closes the image once it is on the GPU:
 
 ```ts
 // page.ts
 const video = Object.assign(document.createElement('video'), { src: '/intro.mp4', muted: true, loop: true, playsInline: true });
-await video.play();
-const sendFrame = async () => {
-  // flipY: textures take their first row at the bottom, as three.js flips them
-  const bitmap = await createImageBitmap(video, { resizeWidth: 640, resizeHeight: 360, imageOrientation: 'flipY' });
-  engine.postToSketch('video-frame', bitmap, [bitmap]);   // transfer, do not copy
-  video.requestVideoFrameCallback(sendFrame);           // or requestAnimationFrame where this is missing
-};
-video.requestVideoFrameCallback(sendFrame);
+// In the page but out of sight: an element that display: none hides may give no frame.
+Object.assign(video.style, { position: 'absolute', left: '-10000px', width: '1px', height: '1px' });
+document.body.append(video);
+engine.registerVideo(video, { name: 'intro', maxSize: 512 });   // 512 x 288: 576 KiB a frame
+await video.play();                                             // muted, so no click is needed
 ```
 
 ```ts
 // sketch.ts
 import { defineSketch } from '@null3d/engine';
 
-export default defineSketch(({ scene, geometry, materials, textures, page }) => {
+export default defineSketch(({ scene, geometry, materials, textures }) => {
   scene.setActiveCamera(scene.createPerspectiveCamera({ fov: 50, position: [0, 0, 1.6], target: [0, 0, 0] }));
-  // One dark texel until the first frame arrives. Create the material at setup, so no pipeline compiles during play.
-  const screen = textures.fromData({ width: 1, height: 1, format: 'rgba8unorm', colorSpace: 'srgb', data: new Uint8Array([24, 24, 24, 255]) });
+  // The first frame gives the texture its size. Create it at setup, so no pipeline compiles during play.
+  const screen = textures.fromVideo('intro', { mipmaps: false });
   scene.createMesh({ mesh: geometry.plane({ width: 16 / 9, height: 1 }), material: materials.unlit({ map: screen }) });
-  page.onMessage((type, bitmap) => {
-    if (type === 'video-frame') screen.update(bitmap as ImageBitmap);   // a new size is fine
-  });
 });
 ```
 
-Each frame costs one decode-and-resize on the page and one upload in the render worker, so keep frames small. Docs: `guides/video-textures`, `api/textures`.
+Keep a frame within the preset's upload budget, 2 MiB on Low: a frame larger than that drops the frames that come during its upload. A video with sound needs a click before it plays. `texture.destroy()` or the function that `registerVideo` returns stops the frames. A cross-origin video needs `video.crossOrigin = 'anonymous'` and the server's CORS headers. Docs: `guides/video-textures`, `api/textures`.
 
-## 15. Custom full-screen effect (0.2)
+## 15. A screen drawn on a canvas (0.2)
+
+An `OffscreenCanvas` is a texture, and a refresh uploads only the rectangle that changed. A score board is 512 square texels, and the score's rectangle refreshes at most 30 times a second.
+
+```ts
+const canvas = new OffscreenCanvas(512, 512);
+const context = canvas.getContext('2d', { willReadFrequently: true })!;   // cheap pixel reads
+const board = textures.fromCanvas(canvas, { refreshHz: 30 });
+context.fillStyle = '#0c1420';
+context.fillRect(0, 0, 512, 512);
+context.font = 'bold 88px sans-serif';
+scene.createMesh({ mesh: geometry.plane({ width: 2.2, height: 2.2 }), material: materials.unlit({ map: board }) });
+// In onUpdate, when the score changes, paint the score's rectangle and refresh only that part:
+context.fillRect(32, 32, 448, 96);
+context.fillText(String(score), 32, 32);
+board.refresh({ x: 32, y: 32, width: 448, height: 96 });                  // uploads only those texels
+```
+
+The rectangle counts from the canvas's top-left corner. `fromCanvas` puts the canvas's last row at the bottom of a plane, so the canvas stands upright. `refreshHz` caps the canvas reads. A call that comes sooner reads nothing. The next read covers both rectangles. A 256 x 256 rectangle is 256 KiB, well within the upload budget at 30 Hz. Ask for the 2D context with `willReadFrequently: true`. Docs: `api/textures#canvases`, `cookbook/index`.
+
+The screens example add-on in `examples/addons/screens` wraps this pattern: `createScreen` draws its first picture in the setup, adds a refresh rate per screen, an LCD look by distance, a boot glitch, and `screen.pointOf(event)` for a click on the canvas. A screen's mesh is a plane with texture coordinates, so a click on it lands on a canvas pixel without plane maths. Docs: `guides/screens`.
+
+## 16. Custom full-screen effect (0.2)
 
 ```ts
 const pixelate = /* wgsl */ `
@@ -473,7 +516,7 @@ post.setEffectUniform(blocks, 'size', 8);
 
 The effect runs on HDR color before bloom and the tone curve. The engine joins an effect that reads only its own pixel into the pass of the effect before it, and folds the last pass into the final pass when bloom and FXAA are off, so per-pixel looks can stay separate effects. An effect that calls `effectDepth` or `effectDistance` reads the scene's depth. Docs: `guides/custom-passes`, `api/post`, `references/shaders.md` section 6.
 
-## 16. Very large worlds (0.2)
+## 17. Very large worlds (0.2)
 
 ```ts
 // page.ts
@@ -492,7 +535,7 @@ const trees = scene.createInstances(treeMesh, 5000, { material: bark, origin: ti
 
 The engine stores positions relative to cells 1,024 m wide, and each frame it sends the GPU one camera-to-cell offset per cell in use. So objects millions of meters from the origin do not jitter, and static objects stay on the GPU without re-uploads. With `largeWorld: true`, setters keep each position exact: without it, a position you set moves in steps of 0.5 m at the Earth's radius. Batch origins work in both modes. Vertex positions must be small offsets from their object's center, and batch rows small offsets from the batch origin. At most 512 cells are in use at once: keep thinly spread content under a few parents, which share their root's cell. When they run out, the console warns once, and new far content jitters. Docs: `concepts/large-worlds`.
 
-## 17. Move a player with keys, a gamepad or touch
+## 18. Move a player with keys, a gamepad or touch
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -532,7 +575,7 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 
 An action names the keys and buttons for one move, so keyboard and gamepad players share one code path. With `value`, a stick pushed part of the way steers slowly, and a key steers at full speed. Touch has no keys: the first finger presses `Mouse0` and moves `input.pointer`, and `input.touches` lists every finger. Give the canvas `touch-action: none` in the page's CSS, or the browser scrolls the page and cancels the touches. Input changes once per frame, before `onUpdate`, and a tap shorter than a frame still counts as a press. Docs: `api/input`.
 
-## 18. Camera that follows a moving object
+## 19. Camera that follows a moving object
 
 ```ts
 import { defineSketch, vec3 } from '@null3d/engine';
@@ -569,7 +612,7 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 
 `onLateUpdate` runs after the engine updates transforms and before it culls and draws. So `getWorldPosition` gives the player's place in this frame, and the camera's move shows in the same frame. In `onUpdate` the same code reads the previous frame's place. The camera then trails the player by a frame, which shows as jitter at speed. For a softer follow, keep the camera's own position in a vector. Ease it toward `eye` with `vec3.lerp` and the factor `1 - Math.exp(-lambda * dt)`, where `dt` is the argument that `onLateUpdate` gets. Docs: `api/sketch`, `api/time`.
 
-## 19. Water and mirror floors with a reflection
+## 20. Water and mirror floors with a reflection
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -594,7 +637,7 @@ fn surface(input: SurfaceInput) -> Surface {
 `;
 
 export default defineSketch(({ scene, geometry, materials, textures, render }) => {
-  scene.setBackground({ sky: { sunPosition: [0.4, 0.35, -0.85] } });
+  scene.setBackground({ sky: { sunPosition: [0.4, 1, 0.5] } });
   scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 2.5, 8], target: [0, 0.5, 0] }));
   scene.createDirectionalLight({ direction: [-0.4, -1, -0.5], intensity: 2.5 });
   scene.createMesh({ mesh: geometry.box(), material: materials.standard({ color: '#e03030' }), position: [0, 0.5, 0] });
@@ -613,9 +656,9 @@ export default defineSketch(({ scene, geometry, materials, textures, render }) =
 });
 ```
 
-The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint and foam: the water recipe in `guides/custom-passes`. For a camera that dips under the water, see "Water that the camera can go under" in `references/shaders.md` section 7. Docs: `api/render`, `shaders/surface-functions`.
+The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint, foam and soft shores: read the depth behind the sheet with `sceneInputs: ['sceneDepth']` (0.3). The water's depth is the gap between the sheet and the surface behind it: convert `input.fragCoord.z` with `engine_frame.camera_range` and subtract it from `sceneDistance(uv)`. Fade the alpha over the end of that gap and the shore ends softly. Or use the height-field water recipe in `guides/custom-passes`. For a river or a lake, use `createWater` from `@null3d/water` instead: one shape gives either body, with waves that the current carries, foam, a soft shore or a bed of the shape's own, caustics, a reflection whose cadence follows the preset, and `createUnderwater` for the view from below. Build water by hand only for a shape the add-on does not take. A sheet that reads the depth takes up to seven textures of its own, so the mirror joins it. Docs: `api/water`, `api/render`, `shaders/surface-functions`.
 
-## 20. Fire, smoke and sparks with particles
+## 21. Fire, smoke and sparks with particles
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -685,7 +728,7 @@ export default defineSketch(async (ctx) => {
 
 Additive blending (the default) suits fire, sparks and glows, which need no order. Smoke takes `blending: 'normal'`. `softness` fades particles where they meet the ground. With `follow: object`, a system emits from a moving object, and its particles stay in the world, as a torch's smoke trail does. Bursts, sub-emitters for fireworks and splashes, and the ground: `api/particles`.
 
-## 21. Terrain from a height field
+## 22. Terrain from a height field
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -710,13 +753,13 @@ export default defineSketch((ctx) => {
     height: ground,
     resolution: 256,
     layers: [
-      { map: layers.grass, tile: 6, roughness: 1 },
-      { map: layers.soil, tile: 10, roughness: 1 },
-      { map: layers.rock, tile: 7, roughness: 0.85 },
-      { map: layers.snow, tile: 12, roughness: 0.7 },
+      { map: layers.grass, tile: 6, roughness: 1, heightFrom: 'alpha' },
+      { map: layers.soil, tile: 10, roughness: 1, heightFrom: 'alpha' },
+      { map: layers.rock, tile: 7, roughness: 0.85, heightFrom: 'alpha' },
+      { map: layers.snow, tile: 12, roughness: 0.7, heightFrom: 'alpha' },
     ],
     maxLevel: 6,
-    split: 2.1,
+    camera,
   });
 
   // Seat an object on the ground with heightAt, since the terrain carries no collision.
@@ -740,9 +783,9 @@ export default defineSketch((ctx) => {
 });
 ```
 
-The quadtree splits a block only when the camera comes near it, so a still camera costs no work. Read `heightAt` and `normalAt` to place objects, and call `terrain.destroy()` to free the ground. The layers blend by a splat map that the add-on fills from the height and the slope by default. Give `splat` to paint the weights yourself. Docs: `api/terrain`.
+The quadtree splits a block by the screen error of its cells. The camera's position, field of view and the preset's `lodThreshold` set that error, so a still camera costs no work. Every pixel lights from normals that the add-on bakes over the ground, so the far hills keep their relief. Set `bakedNormals: false` to light from the mesh's own normals. Read `heightAt` and `normalAt` to place objects, and call `terrain.destroy()` to free the ground. The layers blend by a splat map that the add-on fills from the height and the slope by default. Each layer's own height pushes it through its neighbours at a boundary, and `contrast` sets how strongly. Give `splat` to paint the weights yourself. Each block also morphs toward its parent block's surface before it hands over, so the ground does not pop as the camera moves; `morph: false` switches each block at once. Docs: `api/terrain`.
 
-## 22. Outdoor land with an edge the camera never sees
+## 23. Outdoor land with an edge the camera never sees
 
 The background takes no fog. So past the edge of the land, the camera sees the plain background below the horizon, and fog cannot hide it. Hide the edge with geometry, and keep the camera inside it:
 
@@ -763,3 +806,70 @@ const controls = createOrbitControls(ctx, camera, {
 - Give far scenery `receiveShadows: false`. The automatic shadow distance measures to the far side of each receiver's bounds, so a far mountain that receives shadows makes the near shadows coarse.
 
 Docs: `concepts/lighting` (Where the land ends) has the ground clamp and the haze sheets in code, `api/controls`, `concepts/shadows`.
+
+## 24. Trees, shrubs and grass from a species record
+
+```ts
+import { defineSketch } from '@null3d/engine';
+import {
+  ALL_SPECIES,
+  bakePlantAtlases,
+  generateVariantSet,
+  leafCellFor,
+  plantMaterial,
+} from '@null3d/vegetation';
+
+export default defineSketch((ctx) => {
+  const { scene, geometry } = ctx;
+  const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.1, far: 500, position: [18, 8, 26] });
+  camera.lookAt(0, 5, 0);
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 3, castShadows: true });
+  scene.createAmbientLight({ intensity: 0.45 });
+
+  // The bark and leaf atlases, which the GPU paints at first use, and one material for each part.
+  const atlases = bakePlantAtlases(ctx);
+  const bark = plantMaterial(ctx, { atlases, part: 'wood', color: '#4a3a2a' });
+  const leaves = plantMaterial(ctx, {
+    atlases,
+    part: 'leaves',
+    cell: leafCellFor(ALL_SPECIES[0]!),
+    color: '#3f5a2a',
+  });
+
+  let x = 0;
+  for (const species of ALL_SPECIES.slice(0, 5)) {
+    for (const asset of generateVariantSet(species, { seed: 7 })) {
+      for (const part of asset.levels[0]?.parts ?? []) {
+        const mesh = geometry.fromArrays(part.arrays);
+        scene.createMesh({
+          mesh,
+          material: part.name === 'wood' ? bark : leaves,
+          position: [x, 0, 0],
+          castShadows: true,
+        });
+        // The lower levels hold the same plant with fewer rings and cards, so the engine picks
+        // one by distance without the crown changing shape.
+        const lower = asset.levels.slice(1).flatMap((level) => {
+          const match = level.parts.find((candidate) => candidate.name === part.name);
+          return match ? [{ mesh: geometry.fromArrays(match.arrays), error: level.error }] : [];
+        });
+        if (lower.length > 0) mesh.setLevels(lower);
+      }
+      x += (asset.crown.max[0] - asset.crown.min[0]) * 1.6;
+    }
+  }
+  return {};
+});
+```
+
+Call `generatePlantInTask` in place of `generateVariantSet` when a scene grows many plants: it runs in a job worker, so the first frames do not wait. A species record is plain data, so a themed set is a list of records and needs no code. The package draws no texture and no material of its own yet, so give its parts materials of your own. Docs: `api/vegetation`.
+
+To place the plants rather than set them out by hand, read the ground once with `groundMaps`, take `builtinRules` for the species, and call `scatterVegetation`. It returns flat point arrays, one record for each plant, so a page looks up the variant and draws a copy at each point. The same seed places the same plants on every device. Pass `EcoScatter` and `addTile` when a scene should place its ground in tiles beside the frames.
+Call `generatePlantInTask` in place of `generateVariantSet` when a scene grows many plants: it runs in a job worker, so the first frames do not wait. A species record is plain data, so a themed set is a list of records and needs no code.
+
+`bakePlantAtlases` paints the bark and the leaf atlases in the browser the first time a page asks for them, and `plantMaterial` draws a part from them: the species' colour multiplies the atlas's own, the normal map bends the light, and the leaf's coverage cuts its outline. `leafCellFor(species)` picks the leaf shape that suits a record, so give each species its own leaf material when a scene draws more than one. Call it once in the setup: it paints four textures and keeps them, and no image file is downloaded. Docs: `api/vegetation`.
+
+To cover a hill with grass, call `createGrass(ctx, { height, area, count, seed, wind })`. It places tufts of bent blades on the ground by integer hash, so one seed gives the same grass on every device, and `grass.fit(preset)` draws a preset's share. Give `wind` the wind add-on's field, the one the leaf material reads, and call `grass.setWindLayer(field)` in each frame, so the grass bends with the trees and answers the same gusts. A page that gives no field grows grass that stands still. The CPU tile path draws on WebGPU and WebGL2. Docs: `api/vegetation` (Grass on the ground).
+
+A tree's leaf cards morph toward the next level, so a card that the level drops shrinks and a kept one grows before the switch. Give the leaves a material with `morph: { crownRadius }`, and give the object or batch that draws the tree the same radius with `setBounds([0, 0, 0], crownRadius)` or `batch.setBoundingRadius(crownRadius)`. Read the radius from the asset, such as the crown's radius plus the distance to its middle. One material serves plants of one crown size. Set the levels with `{ fade: false }`, since the generator measures each error and the morph covers the change. Docs: `api/vegetation` (Detail levels).

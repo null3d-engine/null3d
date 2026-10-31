@@ -3,11 +3,12 @@
 
 mod common;
 
-use common::{BATCH_ROWS, LENS, World, count, far_out, grid};
+use common::{BATCH_ROWS, LENS, World, base_sphere, count, far_out, grid};
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::clusters::{CLUSTER_ROWS, CLUSTER_SHIFT};
 use null3d_core::handle::Handle;
 use null3d_core::layers::DEFAULT_LAYERS;
+use null3d_core::levels::Switch;
 use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
@@ -18,6 +19,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, MERGE_GAP_ROWS, NO_MESH, RecordError};
 use null3d_render::graph::ALL_LAYERS;
 use null3d_render::materials::{Shading, feature};
+use null3d_render::patches::PatchTree;
 use null3d_render::view::{View, ViewId};
 
 /// The builder's data texture ids: resident, then the streamed ring, the cluster texture, and the
@@ -43,6 +45,44 @@ fn world(multi_draw: bool) -> World<CpuCulledRenderer> {
         multi_draw,
         ..CpuCulledConfig::default()
     }))
+}
+
+/// The first id that a tree's index buffer takes, which sits above every other id.
+const PATCH_INDEX: u32 = 1 << 22;
+
+/// A tree of one exact patch over a grid's six indices, which every view draws.
+fn one_patch() -> PatchTree {
+    PatchTree::new(
+        vec![0, 1, 2, 0, 2, 3],
+        vec![[0.0, 0.0, 0.0, 1.0]],
+        vec![[0, 6, 0, 0]],
+        0,
+        4,
+    )
+    .unwrap()
+}
+
+/// A tree of `count` exact patches, each the grid's first triangle and none above another. Every
+/// view draws all of them, which fills multi-draw calls of more than one range.
+fn separate_patches(count: u32) -> PatchTree {
+    let count = count as usize;
+    PatchTree::new(
+        (0..count).flat_map(|_| [0, 1, 2]).collect(),
+        vec![[0.0, 0.0, 0.0, 1.0]; count],
+        vec![[0, 3, 0, 0]; count],
+        0,
+        4,
+    )
+    .unwrap()
+}
+
+/// The index buffers that a frame binds, in order.
+fn bound_indices(commands: &[(Op, Vec<u32>)]) -> Vec<u32> {
+    commands
+        .iter()
+        .filter(|(op, _)| *op == Op::SetIndexBuffer)
+        .map(|(_, o)| o[0])
+        .collect()
 }
 
 /// The texture writes of a frame, by texture id: x, y, width, height, and bytes.
@@ -1060,10 +1100,13 @@ fn cell_culling_lists_exactly_the_casters_that_each_cascade_lists_without_it() {
         map_size: 1024,
         bias: 0.5,
         normal_bias: 1.0,
+        intensity: 1.0,
         distance: 300.0,
         auto: false,
         contact: 0.0,
         layers: DEFAULT_LAYERS,
+        hero: None,
+        hero_size: 0,
     };
     let [mut on, mut off] = [true, false].map(|cell_culling| {
         let (mut world, _) = spread_world(cell_culling, OBJECTS, 256);
@@ -1261,4 +1304,277 @@ fn a_static_batch_off_the_view_layers_lists_none_of_its_clusters() {
     world.batches.get_mut(batch).unwrap().set_layers(0b101);
     step(&mut world, &mut mock, false);
     assert_eq!(bucket_counts(&world)[0], (1, clusters));
+}
+
+#[test]
+fn a_tree_draws_its_ranges_from_the_trees_own_index_list() {
+    let mut world = world(true);
+    let mesh = world.add_object(&grid(1, 1), Shading::Lit);
+    world
+        .renderer
+        .set_mesh_patches(mesh, Some(one_patch()))
+        .unwrap();
+    world.record(true);
+    let commands = world.commands();
+    let tree = PATCH_INDEX + mesh;
+    // The draw binds the tree's index list, not the mesh page's, and draws it as one range.
+    assert!(
+        bound_indices(&commands).contains(&tree),
+        "the frame binds no tree buffer: {:?}",
+        bound_indices(&commands)
+    );
+    let calls = commands
+        .iter()
+        .filter(|(op, _)| *op == Op::MultiDrawIndexed)
+        .map(|(_, o)| o[0])
+        .collect::<Vec<_>>();
+    assert!(
+        calls.contains(&1),
+        "the tree's one patch takes one call: {calls:?}"
+    );
+}
+
+#[test]
+fn a_tree_draws_in_multi_draw_calls_of_the_most_ranges() {
+    let mut world = world(true);
+    let mesh = world.add_object(&grid(1, 1), Shading::Lit);
+    world
+        .renderer
+        .set_mesh_patches(mesh, Some(separate_patches(300)))
+        .unwrap();
+    world.record(true);
+    let calls = world
+        .commands()
+        .iter()
+        .filter(|(op, _)| *op == Op::MultiDrawIndexed)
+        .map(|(_, o)| o[0])
+        .collect::<Vec<_>>();
+    // The tree's 300 exact patches fill calls of the most ranges, one call after another.
+    assert!(
+        calls.windows(2).any(|calls| calls == [256, 44]),
+        "the ranges fill two calls: {calls:?}"
+    );
+}
+
+#[test]
+fn a_tree_draws_whole_where_the_device_draws_one_range_a_call() {
+    let mut world = world(false);
+    let mesh = world.add_object(&grid(1, 1), Shading::Lit);
+    world
+        .renderer
+        .set_mesh_patches(mesh, Some(one_patch()))
+        .unwrap();
+    world.record(true);
+    let commands = world.commands();
+    // The device has no `WEBGL_multi_draw`, so the tree's ranges never draw: the mesh draws its
+    // whole index list, and no tree buffer exists.
+    assert!(!bound_indices(&commands).contains(&(PATCH_INDEX + mesh)));
+    let whole = commands
+        .iter()
+        .find(|(op, o)| *op == Op::DrawIndexed && o[0] == 6);
+    assert!(whole.is_some(), "the whole mesh draws");
+}
+
+#[test]
+fn a_tree_draws_no_whole_level_where_the_device_draws_many_ranges() {
+    let mut counts = Vec::new();
+    for multi_draw in [true, false] {
+        let mut world = world(multi_draw);
+        let mesh = world.add_object(&base_sphere(0.5, [6, 4]), Shading::Lit);
+        let settings = world.renderer.settings_mut();
+        let lower = [base_sphere(0.5, [4, 3]), base_sphere(0.5, [3, 2])]
+            .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+        settings
+            .set_mesh_levels(mesh, &lower, &[0.01, 0.05], &[Switch::Error; 2], &[0, 0], 0)
+            .unwrap();
+        world
+            .renderer
+            .set_mesh_patches(mesh, Some(one_patch()))
+            .unwrap();
+        world.record(true);
+        // With many ranges a call, the tree covers the mesh and its whole levels add no bucket.
+        // Without them the levels still draw, as the fallback.
+        counts.push(bucket_counts(&world).len());
+    }
+    let [with_tree, with_levels] = counts[..] else {
+        unreachable!()
+    };
+    assert!(with_tree < with_levels, "{with_tree} < {with_levels}");
+    assert_eq!(with_levels - with_tree, 2, "the mesh's two lower levels");
+}
+
+#[test]
+fn a_frame_reports_the_tree_ranges_it_walked_and_none_where_it_draws_levels() {
+    let mut ranges = Vec::new();
+    for multi_draw in [true, false] {
+        let mut world = world(multi_draw);
+        let mesh = world.add_object(&grid(1, 1), Shading::Lit);
+        world
+            .renderer
+            .set_mesh_patches(mesh, Some(separate_patches(3)))
+            .unwrap();
+        world.record(true);
+        ranges.push(world.renderer.patch_ranges(world.frame).unwrap());
+    }
+    let [with_tree, with_levels] = ranges[..] else {
+        unreachable!()
+    };
+    assert!(with_tree > 0, "the walk chose ranges: {ranges:?}");
+    assert_eq!(with_levels, 0, "the whole levels draw no range: {ranges:?}");
+}
+
+/// Adds a mesh of `geometry`, a material, `copies` objects of it, and two lower levels. Returns
+/// the engine mesh id and the material's.
+fn copies_with_levels(
+    world: &mut World<CpuCulledRenderer>,
+    geometry: &null3d_render::geometry::Geometry,
+    copies: usize,
+) -> (u32, u32) {
+    let settings = world.renderer.settings_mut();
+    let mesh = settings.meshes_mut().add(geometry).unwrap() + 1;
+    let material = settings
+        .materials_mut()
+        .create(Shading::Lit, 0, [1.0, 1.0, 1.0, 1.0])
+        .unwrap()
+        + 1;
+    let lower =
+        [grid(2, 2), grid(1, 1)].map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+    settings
+        .set_mesh_levels(mesh, &lower, &[0.01, 0.05], &[Switch::Error; 2], &[0, 0], 0)
+        .unwrap();
+    for _ in 0..copies {
+        let object = world.scene.reserve().unwrap();
+        world.scene.set_local_radius(object, 1.0).unwrap();
+        world
+            .scene
+            .apply_commands(
+                &[
+                    Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+                    Command::set_material(object, material),
+                ],
+                world.frame,
+            )
+            .unwrap();
+    }
+    (mesh, material)
+}
+
+/// The number of key buckets after the world gives mesh `mesh` the tree `tree` and records again.
+/// A tree that draws takes its mesh's whole-level buckets away; a tree that does not draw keeps
+/// them.
+fn buckets_with_tree(
+    world: &mut World<CpuCulledRenderer>,
+    mesh: u32,
+    tree: PatchTree,
+) -> (usize, bool) {
+    world.renderer.set_mesh_patches(mesh, Some(tree)).unwrap();
+    world.frame += 1;
+    world.record(true);
+    let after = bucket_counts(world).len();
+    let commands = world.commands();
+    let bound = bound_indices(&commands).contains(&(PATCH_INDEX + mesh));
+    (after, bound)
+}
+
+#[test]
+fn a_tree_with_two_copies_keeps_its_whole_levels() {
+    let mut world = world(true);
+    let (mesh, _) = copies_with_levels(&mut world, &grid(1, 1), 2);
+    world.record(true);
+    let keys = bucket_counts(&world).len();
+    let (after, bound) = buckets_with_tree(&mut world, mesh, one_patch());
+    // Two objects share the bucket, so the walk has no single matrix: its levels stay and no
+    // tree buffer is bound.
+    assert_eq!(after, keys);
+    assert!(!bound);
+}
+
+#[test]
+fn a_tree_split_into_parts_keeps_its_whole_levels() {
+    let mut world = world(true);
+    let (mesh, _) = copies_with_levels(&mut world, &grid(256, 256), 1);
+    let settings = world.renderer.settings();
+    let parts = settings
+        .meshes()
+        .parts(settings.meshes().mesh(mesh - 1).unwrap(), false)
+        .len();
+    assert!(parts > 1, "the mesh of the test fills {parts} parts");
+    world.record(true);
+    let keys = bucket_counts(&world).len();
+    let (after, bound) = buckets_with_tree(&mut world, mesh, one_patch());
+    // A patch's indices name one part's vertices, so a split mesh draws its whole levels.
+    assert_eq!(after, keys);
+    assert!(!bound);
+}
+
+#[test]
+fn a_one_row_batch_keeps_its_whole_levels() {
+    let mut world = world(true);
+    let settings = world.renderer.settings_mut();
+    let mesh = settings.meshes_mut().add(&grid(1, 1)).unwrap() + 1;
+    let material = settings
+        .materials_mut()
+        .create(Shading::Lit, 0, [1.0, 1.0, 1.0, 1.0])
+        .unwrap()
+        + 1;
+    let lower =
+        [grid(2, 2), grid(1, 1)].map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+    settings
+        .set_mesh_levels(mesh, &lower, &[0.01, 0.05], &[Switch::Error; 2], &[0, 0], 0)
+        .unwrap();
+    world
+        .batches
+        .create(1, false, false, mesh, material, 0.9)
+        .unwrap();
+    world.record(true);
+    let keys = bucket_counts(&world).len();
+    let (after, bound) = buckets_with_tree(&mut world, mesh, one_patch());
+    // The walk takes a scene object's matrix, and a batch row carries its own, so its levels stay.
+    assert_eq!(after, keys);
+    assert!(!bound);
+}
+
+#[test]
+fn two_trees_in_one_run_bind_their_own_index_buffers() {
+    let mut world = world(true);
+    let settings = world.renderer.settings_mut();
+    let first = settings.meshes_mut().add(&grid(1, 1)).unwrap() + 1;
+    let second = settings.meshes_mut().add(&grid(1, 1)).unwrap() + 1;
+    let material = settings
+        .materials_mut()
+        .create(Shading::Lit, 0, [1.0, 1.0, 1.0, 1.0])
+        .unwrap()
+        + 1;
+    for mesh in [first, second] {
+        let object = world.scene.reserve().unwrap();
+        world.scene.set_local_radius(object, 1.0).unwrap();
+        world
+            .scene
+            .apply_commands(
+                &[
+                    Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+                    Command::set_material(object, material),
+                ],
+                world.frame,
+            )
+            .unwrap();
+    }
+    world
+        .renderer
+        .set_mesh_patches(first, Some(one_patch()))
+        .unwrap();
+    world
+        .renderer
+        .set_mesh_patches(second, Some(one_patch()))
+        .unwrap();
+    world.record(true);
+    // The two meshes share a page and a material, so their trees share one run, and each draw
+    // binds its own tree's index buffer.
+    let bound = bound_indices(&world.commands());
+    for mesh in [first, second] {
+        assert!(
+            bound.contains(&(PATCH_INDEX + mesh)),
+            "tree {mesh} is not bound: {bound:?}"
+        );
+    }
 }

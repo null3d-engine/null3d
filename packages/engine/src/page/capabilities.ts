@@ -6,7 +6,7 @@ import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import { TEXTURE_USAGE_TRANSIENT_ATTACHMENT } from '../generated/gpu';
 import type { DeviceHints } from '../quality/chooser';
-import { spawnWorker } from '../shared/worker-start';
+import { spawnWorker, watchWorkerError } from '../shared/worker-start';
 import type { ProbeMessage, WorkerProbe } from '../workers/probe-worker';
 
 /** Limits the engine reads, from its portable WebGPU budget. */
@@ -379,7 +379,11 @@ export function probeFloatTarget(
 	return { complete, readsBack, samples };
 }
 
-function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
+/**
+ * What a WebGL2 context offers. `multiDraw` false reports the context as a device without
+ * `WEBGL_multi_draw`, which a page switch uses to draw the fallback that such a device takes.
+ */
+function probeWebGL2(powerPreference?: PowerPreference, multiDraw = true): WebGL2Report {
 	const empty: WebGL2Report = {
 		available: false,
 		extensions: {},
@@ -402,11 +406,14 @@ function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
 		if (!gl) return empty;
 		const extensions: Record<string, boolean> = {};
 		for (const name of WEBGL2_EXTENSIONS) extensions[name] = gl.getExtension(name) !== null;
+		if (!multiDraw) extensions.WEBGL_multi_draw = false;
 		const debug = gl.getExtension('WEBGL_debug_renderer_info');
 		const report: WebGL2Report = {
 			available: true,
 			extensions,
-			supportedExtensions: gl.getSupportedExtensions() ?? [],
+			supportedExtensions: (gl.getSupportedExtensions() ?? []).filter(
+				(name) => multiDraw || name !== 'WEBGL_multi_draw',
+			),
 			maxSamples: gl.getParameter(gl.MAX_SAMPLES) as number,
 			maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
 			maxRenderbufferSize: gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number,
@@ -518,11 +525,12 @@ function probeWorkerOnce(timeoutMs: number): Promise<WorkerProbe | WorkerProbeFa
 				timeoutMs,
 			);
 		};
-		worker.onerror = (event) =>
+		watchWorkerError(worker, (message) =>
 			finish({
 				failure: 'failed-to-start',
-				error: event.message || 'the probe worker failed to start',
-			});
+				error: message || 'the probe worker failed to start',
+			}),
+		);
 	});
 }
 
@@ -548,11 +556,13 @@ export function readDeviceHints(): DeviceHints {
 
 /**
  * Probes the browser and device, on the GPU that `powerPreference` picks. Runs on the page's main
- * thread. `hints` are the device hints when the page has read them already.
+ * thread. `hints` are the device hints when the page has read them already. `multiDraw` false
+ * reports WebGL2 without `WEBGL_multi_draw`, as the ?multidraw=off switch asks.
  */
 export async function probeCapabilities(
 	powerPreference?: PowerPreference,
 	hints: DeviceHints = readDeviceHints(),
+	multiDraw = true,
 ): Promise<CapabilityReport> {
 	const [webgpu, worker] = await Promise.all([probeWebGPU(powerPreference), pageWorkerProbe()]);
 	// The probe worker measures the draw paths on a device of its own, which the render worker's
@@ -570,7 +580,7 @@ export async function probeCapabilities(
 			typeof HTMLCanvasElement === 'function' &&
 			'transferControlToOffscreen' in HTMLCanvasElement.prototype,
 		webgpu: { ...webgpu, directDraws: webgpu.available && directDraws },
-		webgl2: probeWebGL2(powerPreference),
+		webgl2: probeWebGL2(powerPreference, multiDraw),
 		worker,
 	};
 }

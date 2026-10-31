@@ -2,6 +2,7 @@
 // page that draws with another engine, such as three.js, can print its own figures in the same
 // layout. `@null3d/engine/stats` exports them.
 
+import type { FeatureStats } from '../scene/features';
 import type { PageMemory } from './page-meters';
 
 /**
@@ -63,6 +64,34 @@ export interface StatsMemory {
 }
 
 /**
+ * One area of the memory register, in `StatsFigures.memoryAreas`.
+ *
+ * @category api/debug
+ */
+export interface StatsMemoryArea {
+	/** The area's name, such as `scene` or `upload arenas`. */
+	readonly name: string;
+	/** The bytes that the area's tables reserve. */
+	readonly reservedBytes: number;
+	/** The bytes of them that hold values. */
+	readonly usedBytes: number;
+	/** The most bytes that the area has used since the engine started. */
+	readonly peakBytes: number;
+}
+
+/**
+ * One step of the frame's GPU work, in `StatsFigures.gpuSteps`.
+ *
+ * @category api/debug
+ */
+export interface StatsGpuStep {
+	/** The step's name, such as `shadows`, `bloom 2` or a sketch pass's own name. */
+	readonly name: string;
+	/** The step's GPU time per frame in milliseconds. */
+	readonly ms: number;
+}
+
+/**
  * The figures that the stats overlay shows, in the form that `statsText` lays out. Means per frame
  * are over the last window of frames, about half a second.
  *
@@ -88,6 +117,11 @@ export interface StatsFigures {
 	readonly threads: readonly StatsThread[];
 	/** Mean GPU time per frame, in milliseconds, or null where the GPU path cannot time frames. */
 	readonly gpuMs: number | null;
+	/**
+	 * The GPU time per frame of each step of the frame that the GPU timed, in its order. A page
+	 * that times no pass leaves it out.
+	 */
+	readonly gpuSteps?: readonly StatsGpuStep[];
 	/** Mean draw calls per frame. */
 	readonly drawCalls: number;
 	/** Mean bytes uploaded to the GPU per frame, or null where the page does not know it. */
@@ -98,8 +132,18 @@ export interface StatsFigures {
 	readonly objects: number | null;
 	/** The memory figures. */
 	readonly memory: StatsMemory;
+	/**
+	 * The memory register's areas: the bytes that each engine table and allocator reserves, uses
+	 * and has used at most. A page that shows no development figures leaves it out.
+	 */
+	readonly memoryAreas?: readonly StatsMemoryArea[];
 	/** The page's own thread, or null where the browser does not report long tasks. */
 	readonly mainThread: StatsMainThread | null;
+	/**
+	 * The add-on features' figures, each with the feature's GPU time, its settings, its budget and
+	 * its memory. A page with no add-on feature leaves it out.
+	 */
+	readonly features?: readonly FeatureStats[];
 }
 
 /** A phase's time per frame below which the overlay leaves the phase out. */
@@ -172,12 +216,74 @@ export function statsText(figures: StatsFigures): string {
 		`gpu ${figures.gpuMs === null ? NONE : `${ms(figures.gpuMs)} per frame`}`,
 		`draw calls ${Math.round(figures.drawCalls)}${upload}`,
 		`triangles ${count(figures.triangles)}  objects ${count(figures.objects)}`,
-		`memory  wasm ${mib(memory.wasmBytes)}  js heap ${mib(memory.jsHeapBytes)}`,
+	);
+	for (const step of figures.gpuSteps ?? [])
+		if (step.ms >= SHOWN_MS) lines.push(`  ${step.name}  ${ms(step.ms)}`);
+	for (const feature of figures.features ?? []) lines.push(featureLine(feature));
+	lines.push(`memory  wasm ${mib(memory.wasmBytes)}  js heap ${mib(memory.jsHeapBytes)}`);
+	if (figures.memoryAreas && figures.memoryAreas.length > 0) {
+		lines.push('memory register  used / reserved / peak');
+		for (const area of figures.memoryAreas)
+			lines.push(
+				`  ${area.name.padEnd(14)}  ${mib(area.usedBytes)}  ${mib(area.reservedBytes)}  ${mib(area.peakBytes)}`,
+			);
+	}
+	lines.push(
 		`gpu memory  textures ${mib(memory.gpuTextureBytes)}  buffers ${mib(memory.gpuBufferBytes)}`,
 		pageLine(memory.page),
 		mainThreadLine(mainThread),
 	);
 	return lines.join('\n');
+}
+
+/** One feature's GPU figure: the time that it measured, or that it measures none. */
+export function featureGpu(feature: FeatureStats): string {
+	return feature.gpuMs === null ? 'gpu not measured' : `gpu ${ms(feature.gpuMs)}`;
+}
+
+/** One labelled figure that a feature reports. */
+export interface FeatureFact {
+	/** Names the cell, so a setting called `budget` keeps a cell of its own beside the budget's. */
+	readonly key: string;
+	/** The words above the value. */
+	readonly label: string;
+	readonly value: string;
+}
+
+/**
+ * One feature's labelled figures: each of its settings by name, its budget and the memory that it
+ * reports, in reading order.
+ */
+export function featureFacts(feature: FeatureStats): FeatureFact[] {
+	const facts: FeatureFact[] = [];
+	for (const name of Object.keys(feature.settings))
+		facts.push({ key: `setting:${name}`, label: name, value: String(feature.settings[name]) });
+	if (feature.allowedMs !== null && feature.budgetMs !== null)
+		facts.push({
+			key: 'budget',
+			label: 'budget',
+			value: `${feature.allowedMs.toFixed(1)} of ${feature.budgetMs.toFixed(1)} ms`,
+		});
+	if (feature.bytes !== null)
+		facts.push({ key: 'memory', label: 'memory', value: mib(feature.bytes) });
+	return facts;
+}
+
+/**
+ * One feature's labelled figures as one line, or an empty string where it reports none of them.
+ */
+export function featureDetails(feature: FeatureStats): string {
+	return featureFacts(feature)
+		.map(({ label, value }) => `${label} ${value}`)
+		.join(' · ');
+}
+
+/**
+ * One feature's figures as one line: its name and GPU time, then its details where it reports any.
+ */
+export function featureLine(feature: FeatureStats): string {
+	const details = featureDetails(feature);
+	return `${feature.name}  ${featureGpu(feature)}${details === '' ? '' : `  ${details}`}`;
 }
 
 /** The main thread line: its long tasks and its longest input delay over the last few seconds. */

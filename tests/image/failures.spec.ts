@@ -48,6 +48,21 @@ for (const mode of ENGINE_MODES) {
 	});
 }
 
+// An engine can fail before a page attaches its handler, as a page that does its own work first
+// does. The first handler that attaches must still hear the failure.
+for (const mode of ENGINE_MODES) {
+	test(`a failure reported before the page listens reaches onFailure, ${mode.name}`, async ({
+		page,
+	}) => {
+		await page.goto(`failures.html?case=late-handler&${mode.query}`);
+		const result = await pageResult<FailureResult>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		expect(result.codes[0]).toBe('E1404');
+		expect(result.messages[0]).toContain('the frame step failed on purpose');
+		expect(result.ticks).toBeGreaterThan(0);
+	});
+}
+
 for (const mode of ENGINE_MODES) {
 	test(`a custom material whose builds do not download reaches onFailure as E1424, ${mode.name}`, async ({
 		page,
@@ -58,7 +73,7 @@ for (const mode of ENGINE_MODES) {
 		const result = await pageResult<FailureResult>(page, 30_000);
 		expect(result.error).toBeUndefined();
 		expect(result.codes[0]).toBe('E1424');
-		expect(result.messages[0]).toContain('the builds of a custom material did not load: ');
+		expect(result.messages[0]).toContain('the builds of a custom shader did not load: ');
 		expect(result.ticks).toBeGreaterThan(0);
 	});
 }
@@ -67,9 +82,13 @@ for (const mode of THREADED_MODES) {
 	test(`a job worker that fails reaches onFailure, and the page never hangs, ${mode.name}`, async ({
 		page,
 	}) => {
+		// The engine starts job workers only once its frames show enough parallel work, and a slow
+		// GPU draws those frames slowly: the page waits for one before its own wait for the failure,
+		// so a slow run reports late rather than not at all.
+		test.setTimeout(150_000);
 		await failingJobWorker(page);
 		await page.goto(`failures.html?case=job-fault&jobs=2&${mode.query}`);
-		const result = await pageResult<FailureResult>(page, 60_000);
+		const result = await pageResult<FailureResult>(page, 140_000);
 		expect(result.error).toBeUndefined();
 		// E1404 after the start; on a slow GPU the failure can come during the start's setup, which
 		// then fails with E1405, as a setup that throws does.

@@ -16,7 +16,7 @@ import {
 	type GlTimingReport,
 } from '../../../packages/engine/src/gpu/webgl2/call-timing';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
-import { CANVAS, MEASURE_SECONDS, PARITY_CANVAS, WARMUP_SECONDS } from '../../scenes/spec';
+import { CANVAS, PARITY_CANVAS } from '../../scenes/spec';
 import { soakEngine } from '../lib/device-soak';
 import { fillWindow, fitToWindow, showPageName } from '../lib/fit';
 import type { GlTiming } from '../lib/gl-timing';
@@ -76,7 +76,8 @@ export interface Null3dPageOptions {
  *   the decoders' work in the engine's workers.
  * - `sky` draws a background behind S1, and `backgroundFirst` makes it draw before S1's objects.
  * - `extraBox` adds a small box to S1.
- * - `reflection` puts water under S1's swarm that a reflection pass mirrors S1 into.
+ * - `reflection` puts water under S1's swarm that a reflection pass mirrors S1 into, and
+ *   `reflection=off` leaves S7's surface without the sky's environment map, so it reflects nothing.
  * - `transmission` puts clear water under S1's swarm that lets light through.
  * - `translucency` makes S1's boxes let light through to their other side.
  * - `subsurface` adds spheres whose light spreads under their surface and gives the blur its taps.
@@ -100,6 +101,9 @@ export interface Null3dPageOptions {
  * - `terrain` puts the terrain add-on's ground under S1, whose blocks follow the camera every frame.
  * - `impostors` puts a field of the impostors add-on's cards around S1, which pick their views from
  *   the camera every frame.
+ * - `splats` puts a cloud of the splats add-on's Gaussians above S1, whose chunks a job worker
+ *   selects for the camera every frame.
+ * - `wind` gives S1 the wind add-on's field, with a gust, a push and a sample in every frame.
  * - `reflectionProbes` places two reflection probes over S1, and `reflectionProbes=always`
  *   captures them again every frame.
  * - `setters` calls each per-frame setter in S1, colors included.
@@ -124,6 +128,7 @@ const SKETCH_SWITCHES = [
 	'sides',
 	'alpha',
 	'effects',
+	'canvas',
 	'decode',
 	'sky',
 	'backgroundFirst',
@@ -143,6 +148,8 @@ const SKETCH_SWITCHES = [
 	'inertial',
 	'terrain',
 	'impostors',
+	'splats',
+	'wind',
 	'batchShadows',
 	'rowValues',
 	'levels',
@@ -204,14 +211,14 @@ export function runNull3dPage(
 		}
 
 		// A bare `?hold` holds at the scene's hold time, which the page passes as the engine's option.
-		// A page that fills the window leaves the pixel ratio's cap to the quality preset, unless
-		// `?maxPixelRatio=` names one.
+		// `?maxPixelRatio=` caps the pixel ratio. Without it, a page that fills the window leaves the
+		// cap to the quality preset, and a page of the protocol's size draws at its pixel ratio.
+		const maxPixelRatio = options.maxPixelRatio ?? (filled ? undefined : CANVAS.pixelRatio);
 		const engine = await createEngine({
 			...pageOptions.engine,
 			canvas,
 			sketch: sketchUrl,
-			...(!filled && { maxPixelRatio: CANVAS.pixelRatio }),
-			...(filled && options.maxPixelRatio !== null && { maxPixelRatio: options.maxPixelRatio }),
+			...(maxPixelRatio !== undefined && { maxPixelRatio }),
 			antialias: options.antialias ?? undefined,
 			shadowCascades: options.shadowCascades ?? undefined,
 			shadowMapSize: options.shadowMapSize ?? undefined,
@@ -271,12 +278,8 @@ export function runNull3dPage(
 			await firstFrameOrFailure(engine);
 			const own = pageOptions.measure?.(engine, log);
 			if (own) return { ...report, ...(await own), userAgent: navigator.userAgent };
-			const measureSeconds = options.seconds ?? MEASURE_SECONDS;
-			const timed = await timedRun({
-				engine,
-				warmupSeconds: options.seconds ?? WARMUP_SECONDS,
-				measureSeconds,
-			});
+			const { warmupSeconds, measureSeconds } = options;
+			const timed = await timedRun({ engine, warmupSeconds, measureSeconds });
 			const glTiming = params.has('gl-timing') ? await requestGlTiming() : undefined;
 			const trace =
 				log &&

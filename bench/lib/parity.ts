@@ -36,9 +36,9 @@ export const SHADOW_MAX_DIFFERENT_PERCENT = 0.5;
  * softness sets the material's alpha. Core WebGPU and WebGL2 match three.js closely, under three.js's
  * own rule. Compatibility mode runs at its Medium ceiling, whose FXAA smooths the shadow's edge; the
  * smoothing then shows across the whole penumbra, where an opaque surface would show only a
- * brightness change. The `shadows` scene's limit of 0.5% therefore does not hold there. On 15 October
- * 2026 with the 3 x 3 filter, on the Mac's GPU, 0.019% of the pixels differed on core WebGPU and
- * 0.017% on WebGL2, and 2.382% in compatibility mode. `.dev/image-tests.md` records the figures.
+ * brightness change. The `shadows` scene's limit of 0.5% therefore does not hold there. With the
+ * 3 x 3 filter, on the Mac's GPU, 0.019% of the pixels differ on core WebGPU and 0.017% on WebGL2,
+ * and 2.382% in compatibility mode. `.dev/image-tests.md` records the figures.
  */
 export const SHADOW_CATCHER_MAX_DIFFERENT_PERCENT = 2.5;
 
@@ -77,11 +77,10 @@ export const ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT = 0.25;
 export const ALPHA_HASH_MAX_DIFFERENT_PERCENT = 6;
 
 /**
- * The glass scene's limit in compatibility mode alone, in percent of the pixels. Measured on
- * 15 October 2026, on the Mac and under SwiftShader: 0.048% and 0.048% of the pixels differ from
- * three.js on core WebGPU, 0.044% on WebGL2, and 0.126% and 0.124% in compatibility mode, whose
- * 8-bit path averages the edge samples of the tinted ball and the wall after it encodes them, all on
- * those edges. Under three.js's own rule on the other tiers.
+ * The glass scene's limit in compatibility mode alone, in percent of the pixels. Measured on the
+ * Mac and under SwiftShader: 0.048% and 0.048% of the pixels differ from three.js on core WebGPU,
+ * 0.044% on WebGL2, and 0.126% and 0.124% in compatibility mode, whose 8-bit path averages the edge
+ * samples of the tinted ball and the wall after it encodes them, all on those edges. Under three.js's own rule on the other tiers.
  */
 export const TRANSMISSION_MAX_DIFFERENT_PERCENT = 0.2;
 
@@ -109,7 +108,8 @@ export const VIGNETTE_MAX_DIFFERENT_PERCENT = 2;
  * the rims of glossy spheres differ. The other lighting terms match. Each limit sits just above the
  * scene's largest share on SwiftShader and on the Mac's GPU, which `.dev/image-tests.md` records.
  * The toy car's chrome trim, window frames and lamp covers are the same case, on a model that also
- * carries a clear coat, a sheen and glass.
+ * carries a clear coat, a sheen and glass. The thin film and the stretched lobe draw highlights
+ * thinner and longer than a round one, so their rims move more pixels than any other scene's.
  */
 export const SPECULAR_AA_LIMITS = {
 	'standard-grid': 0.25,
@@ -122,14 +122,22 @@ export const SPECULAR_AA_LIMITS = {
 	'gltf-metal-rough': 0.34,
 	'gltf-specular': 0.16,
 	'gltf-ior': 0.21,
+	'gltf-iridescence': 0.3,
+	'gltf-iridescence-dielectric': 0.6,
+	'gltf-iridescence-metallic': 2.7,
+	'gltf-iridescence-suzanne': 0.4,
+	'gltf-anisotropy': 0.6,
+	// The Khronos grid of the stretched lobe, whose highlights cross more of the anti-aliasing
+	// kernels than a round one.
+	'gltf-anisotropy-strength': 0.6,
 	'gltf-toy-car': 0.32,
 } as const;
 
 /**
  * The compatibility tier's share for the environment scenes whose 8-bit path smooths edges with
  * FXAA and averages its samples after encoding them, so they differ from three.js there alone.
- * Measured on 15 October 2026, on the Mac and under SwiftShader: the room 0.51% and 0.50%, and the
- * room with a hemisphere light 0.53% and 0.51%, against 0.20% on the other tiers.
+ * Measured on the Mac and under SwiftShader: the room 0.51% and 0.50%, and the room with a
+ * hemisphere light 0.53% and 0.51%, against 0.20% on the other tiers.
  */
 const ENVIRONMENT_COMPAT_LIMITS: Partial<Record<string, number>> = {
 	room: 0.7,
@@ -165,7 +173,17 @@ export interface ImageComparison {
 // The scenes and the pages that draw their hold frames.
 
 /** Every benchmark scene. The benchmark runs, the page tests and the image tests cover each one. */
-export const BENCH_SCENES = ['s1', 's1-static', 's1-cells', 's2', 's3', 's4', 's5', 's6'] as const;
+export const BENCH_SCENES = [
+	's1',
+	's1-static',
+	's1-cells',
+	's2',
+	's3',
+	's4',
+	's5',
+	's6',
+	's7',
+] as const;
 export type BenchScene = (typeof BENCH_SCENES)[number];
 
 /**
@@ -195,6 +213,9 @@ export const LEFT_OUT_OF_PARITY: Readonly<Record<BenchScene, readonly string[]>>
 	// says for S6: null3D's mip-chain bloom against UnrealBloomPass, and occlusion that darkens only
 	// ambient light against GTAOPass, which darkens the whole image.
 	s6: ['on every tier, bloom and ambient occlusion that each engine draws with its own technique'],
+	// A sky layer belongs to null3D's sky templates, and three.js has no equivalent: the twin draws
+	// the sky without the layer, so the two frames differ by the layer's bands.
+	s7: ["on every tier, the sky layer, which three.js's twin does not draw"],
 };
 
 /** The benchmark scenes whose hold frames the parity checks compare with three.js's. */
@@ -219,8 +240,9 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * behind S1 (the benchmarks guide lists them), for those that end in -first, a background drawn
  * before the objects, for those that end in -box, a small box that writes depth, for those with
  * -skin-, a way of skinning that ?skinning= picks, for those that end in -timed, the time of each
- * WebGL call, and for those that end in -synced, that time with a wait for the browser's GPU
- * process after each call, and the GPU interface it draws with.
+ * WebGL call, for those that end in -synced, that time with a wait for the browser's GPU process
+ * after each call, for those that end in -reflection-off, a scene with no environment map, and the
+ * GPU interface it draws with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -316,6 +338,16 @@ const PAGES = {
 	'null3d-webgl2-synced': {
 		folder: 'null3d',
 		switches: 'gpu=webgl2&gl-timing=sync',
+		api: 'webgl2',
+	},
+	'null3d-webgpu-reflection-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&reflection=off',
+		api: 'webgpu',
+	},
+	'null3d-webgl2-reflection-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgl2&reflection=off',
 		api: 'webgl2',
 	},
 } as const satisfies Record<string, { folder: string; switches: string; api: 'webgpu' | 'webgl2' }>;
@@ -422,8 +454,11 @@ const NO_TONE = 'tone=none';
 /**
  * The limits of the glTF model scenes whose images three.js's rule would fail for reasons outside
  * the loader, with the largest share measured on the Mac (`.dev/image-tests.md` records them). The
- * lamp's stained glass takes its transmission from a map, which null3D does not draw: 0.16% to
- * 0.18% of the pixels differ, all on the glass. The instanced cubes have black faces beside white
+ * lamp's masked glass keeps its transmission map now, so it differs from three.js in 0.107% to
+ * 0.118% of its pixels, against the 0.093% by which three.js's two renderers differ, in fine marks
+ * on the clear-coated metal rim and the beads, and on the glass's own highlights. The masked glass scene differs in 0.220% on WebGL2,
+ * in a one-pixel column at each pane's outer edge, where alpha to coverage takes a whole sample at
+ * each step, as the alpha-coverage scene does. The instanced cubes have black faces beside white
  * ones at hundreds of edges, which compatibility mode's 8-bit path averages after it encodes the
  * colors: 0.41% differ there, and none on the other tiers. The same cubes compressed with meshopt
  * take the same limit, for the same edges. The clear coat test's tiles that show the coat alone
@@ -432,20 +467,27 @@ const NO_TONE = 'tone=none';
  * limits, and the toy car's glossy trim, glass and coat take it too.
  */
 const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
-	ktx2: 0.5,
+	ktx2: 0.13,
+	'transmission-mask': ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT,
 	clearcoat: 0.15,
 	'metal-rough': SPECULAR_AA_LIMITS['gltf-metal-rough'],
 	specular: SPECULAR_AA_LIMITS['gltf-specular'],
 	ior: SPECULAR_AA_LIMITS['gltf-ior'],
+	iridescence: SPECULAR_AA_LIMITS['gltf-iridescence'],
+	'iridescence-dielectric': SPECULAR_AA_LIMITS['gltf-iridescence-dielectric'],
+	'iridescence-metallic': SPECULAR_AA_LIMITS['gltf-iridescence-metallic'],
+	'iridescence-suzanne': SPECULAR_AA_LIMITS['gltf-iridescence-suzanne'],
+	anisotropy: SPECULAR_AA_LIMITS['gltf-anisotropy'],
+	'anisotropy-strength': SPECULAR_AA_LIMITS['gltf-anisotropy-strength'],
 	'toy-car': SPECULAR_AA_LIMITS['gltf-toy-car'],
 };
 
 /**
  * The limits of those model scenes in compatibility mode alone, which are looser than the scene's
  * own: its 8-bit path averages edge samples after it encodes them, so bright edges on black differ
- * from three.js only there. Measured on 15 October 2026 on the Mac and under SwiftShader: the
- * instanced cubes 0.40% and 0.40% against nothing on the other tiers, meshopt's the same cubes
- * 0.40% and 0.40%, and the clear coat test's tiles 0.20% and 0.20% against 0.07% elsewhere.
+ * from three.js only there. Measured on the Mac and under SwiftShader: the instanced cubes 0.40%
+ * and 0.40% against nothing on the other tiers, meshopt's the same cubes 0.40% and 0.40%, and the
+ * clear coat test's tiles 0.20% and 0.20% against 0.07% elsewhere.
  */
 const MODEL_COMPAT_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	instancing: 0.5,
@@ -458,11 +500,13 @@ const MODEL_COMPAT_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>>
  * the reference on every tier. In the Khronos meshopt test, it draws the column of cubes with 16-bit
  * attributes black, and its WebGLRenderer draws them as null3D does. It also leaves out color morph
  * targets: r186 packs them into its morph texture, but its vertex stage adds only the positions'
- * and the normals' deltas.
+ * and the normals' deltas. On the Khronos metal iridescence grid it draws the film as no colour,
+ * and its two renderers then differ in 5.929% of the pixels on the Mac.
  */
 const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set([
 	'meshopt-khr',
 	'morph-colors',
+	'iridescence-metallic',
 ]);
 
 /**

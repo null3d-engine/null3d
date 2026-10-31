@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
 	chooseBase,
 	compareSizes,
+	failingSize,
 	grownFiles,
 	growthLines,
 	growthOf,
@@ -9,7 +10,10 @@ import {
 	growthSummary,
 	growthText,
 	MIN_GROWTH_BYTES,
+	nearLimit,
+	nearLimitWarnings,
 	overLimit,
+	warningLine,
 } from './size-check';
 
 /** A size record with the given Brotli sizes. */
@@ -102,6 +106,14 @@ describe('growthProblems', () => {
 		expect(growthProblems(firstUse, new Map())).toEqual([]);
 	});
 
+	it('passes a grown file that loads only on a feature’s first use', () => {
+		const grown = compareSizes(
+			record({ 'js/shaders-wgsl-combos-bump.js': 400, 'js/shader-paragraphs-glsl-bump.js': 400 }),
+			record({ 'js/shaders-wgsl-combos-bump.js': 900, 'js/shader-paragraphs-glsl-bump.js': 900 }),
+		);
+		expect(growthProblems(grown, new Map())).toEqual([]);
+	});
+
 	it('passes the files that a trailer explains', () => {
 		const explained = new Map([
 			['js/page.js', 'a1b2c3d4e5'],
@@ -149,39 +161,39 @@ describe('chooseBase', () => {
 	});
 
 	it("compares a push to main with main's commit before the push, not the merge's first parent", () => {
-		const env = { GITHUB_EVENT_NAME: 'push', GITHUB_BASE_REF: '', PUSH_BEFORE: '3c8d23afb0' };
+		const env = {
+			GITHUB_EVENT_NAME: 'push',
+			GITHUB_REF: 'refs/heads/main',
+			PUSH_BEFORE: '3c8d23afb0',
+		};
 		expect(chooseBase(undefined, env)).toEqual({
 			ref: '3c8d23afb0',
 			why: "main's commit before this push",
 		});
 	});
 
-	it('compares a push that names no commit before with the commit before on the branch', () => {
+	it('compares a push to main that names no commit before with the commit before on the branch', () => {
 		const why = 'the commit before on the branch, as the push names none';
 		for (const before of [undefined, '', '0000000000000000000000000000000000000000'])
-			expect(chooseBase(undefined, { GITHUB_EVENT_NAME: 'push', PUSH_BEFORE: before })).toEqual({
-				ref: 'HEAD^',
-				why,
-			});
+			expect(
+				chooseBase(undefined, {
+					GITHUB_EVENT_NAME: 'push',
+					GITHUB_REF: 'refs/heads/main',
+					PUSH_BEFORE: before,
+				}),
+			).toEqual({ ref: 'HEAD^', why });
 	});
 
-	it('compares a merge queue run with the commit that its group builds on', () => {
-		const env = { GITHUB_EVENT_NAME: 'merge_group', GITHUB_BASE_REF: '' };
-		expect(chooseBase(undefined, env)).toEqual({
-			ref: 'HEAD^',
-			why: 'the commit that the merge group builds on, with the pull requests ahead of it',
-		});
-	});
-
-	it('compares a pull request with its merge base with the branch it targets', () => {
-		const env = { GITHUB_EVENT_NAME: 'pull_request', GITHUB_BASE_REF: 'main' };
+	it('compares a push to a milestone branch with its merge base with main, not its last push', () => {
+		// A newer push can drop the branch's waiting run, whose push a check of each push would miss.
+		const env = {
+			GITHUB_EVENT_NAME: 'push',
+			GITHUB_REF: 'refs/heads/m3-start',
+			PUSH_BEFORE: '3c8d23afb0',
+		};
 		expect(chooseBase(undefined, env)).toEqual({
 			branch: 'main',
 			why: 'the merge base with origin/main',
-		});
-		expect(chooseBase(undefined, { ...env, GITHUB_BASE_REF: 'feat/cells' })).toEqual({
-			branch: 'feat/cells',
-			why: 'the merge base with origin/feat/cells',
 		});
 	});
 
@@ -190,5 +202,42 @@ describe('chooseBase', () => {
 			branch: 'main',
 			why: 'the merge base with origin/main',
 		});
+	});
+});
+
+describe('nearLimitWarnings', () => {
+	it('names a file that grew to just under the limit, as CI can fail it', () => {
+		// The render worker's WebGL2 file, measured: 22 bytes under the limit on the Mac, and over it
+		// in CI's build of the same commit.
+		const changes = compareSizes(
+			record({ 'js/render-worker-webgl2.js': 14_138 }),
+			record({ 'js/render-worker-webgl2.js': 14_399 }),
+		);
+		expect(failingSize(14_138)).toBe(14_421);
+		expect(nearLimitWarnings(changes, new Map())).toEqual([
+			"js/render-worker-webgl2.js grew +1.8% after Brotli, to 14,399 bytes, 22 under the limit, and another machine's build can differ by up to 64: CI may fail it unless a Size-Growth trailer names it",
+		]);
+		expect(nearLimitWarnings(changes, new Map([['js/render-worker-webgl2.js', 'abc']]))).toEqual(
+			[],
+		);
+	});
+
+	it('leaves out a file far under the limit, a file over it and a small file', () => {
+		const changes = compareSizes(
+			record({ 'js/page.js': 28_000, 'js/over.js': 14_000, 'js/early-core.js': 231 }),
+			record({ 'js/page.js': 28_200, 'js/over.js': 14_400, 'js/early-core.js': 290 }),
+		);
+		expect(changes.filter(nearLimit)).toEqual([]);
+		expect(nearLimitWarnings(changes, new Map())).toEqual([]);
+	});
+});
+
+describe('warningLine', () => {
+	it('prints a plain warning, and an annotation for the run page under GitHub Actions', () => {
+		const warning = 'js/a.js is 1,830,000 bytes uncompressed, past 97% of its budget';
+		expect(warningLine(warning, {})).toBe(`warning: ${warning}`);
+		expect(warningLine(`${warning}\nnext`, { GITHUB_ACTIONS: 'true' })).toBe(
+			'::warning title=Size check::js/a.js is 1,830,000 bytes uncompressed, past 97%25 of its budget%0Anext',
+		);
 	});
 });

@@ -2,14 +2,17 @@ import { describe, expect, it } from 'bun:test';
 import {
 	type BuiltFile,
 	budgetProblems,
+	budgetWarnings,
 	COMBOS_BUDGET,
 	DOWNLOADS,
 	downloadSizes,
 	ENGINE_PARTS,
 	ENGINE_SOURCE,
 	FIRST_USE_SHADER_BUDGET,
+	FIRST_USE_SHADER_RAW_RAISE,
 	findEngineParts,
 	findFirstUseFiles,
+	firstUseShaderBudget,
 	isFirstUseShaderPart,
 	isParagraphTable,
 	isSizePartFile,
@@ -26,6 +29,7 @@ import {
 	type SizeEntry,
 	type SizePart,
 	START_BUDGET,
+	sizeMemo,
 	sizePartFile,
 } from './size-report';
 
@@ -134,6 +138,52 @@ describe('a measuring split into parts', () => {
 	});
 });
 
+describe('the size memo', () => {
+	const bytes = (length: number, step: number) =>
+		Buffer.from(Array.from({ length }, (_, i) => (i * step) % 251));
+	const file = (name: string, content: Buffer): ReportFile => ({
+		name,
+		built: name,
+		weight: content.length,
+		read: () => content,
+	});
+	const a = bytes(5_000, 3);
+	const b = bytes(7_000, 5);
+
+	it('compresses the files that it lacks, and gives the sizes that a measuring without it gives', async () => {
+		const files = [file('a.js', a), file('b.js', b)];
+		const memo = sizeMemo();
+		expect([...(await measureFiles(files, undefined, memo))]).toEqual([
+			...(await measureFiles(files)),
+		]);
+		expect(memo.compressed).toBe(2);
+		expect(memo.met.size).toBe(2);
+	});
+
+	it('takes the sizes of known bytes from the memo, under any name, without compressing them', async () => {
+		const first = sizeMemo();
+		await measureFiles([file('a.js', a), file('b.js', b)], undefined, first);
+		// Sizes that no compressor gives, so a size that the memo did not serve shows.
+		const known = Object.fromEntries(
+			[...first.met].map(([hash, size]) => [hash, { ...size, brotli: size.brotli + 1 }]),
+		);
+		const second = sizeMemo(known);
+		const sizes = await measureFiles([file('renamed-a.js', a), file('b.js', b)], undefined, second);
+		expect(second.compressed).toBe(0);
+		expect(sizes.get('renamed-a.js')?.brotli).toBe(measure(a).brotli + 1);
+		expect(second.met.size).toBe(2);
+	});
+
+	it('compresses equal bytes once, and keeps only the entries of the files that it met', async () => {
+		const stale = '0'.repeat(64);
+		const memo = sizeMemo({ [stale]: measure(b) });
+		await measureFiles([file('a.js', a), file('copy-of-a.js', Buffer.from(a))], undefined, memo);
+		expect(memo.compressed).toBe(1);
+		expect([...memo.met.keys()]).not.toContain(stale);
+		expect(memo.met.size).toBe(1);
+	});
+});
+
 describe('REPORTED_FILES', () => {
 	it("names each core build's module and glue, then each part of the engine's JavaScript", () => {
 		expect(REPORTED_FILES.slice(0, 4)).toEqual([
@@ -225,6 +275,85 @@ describe('findEngineParts', () => {
 		expect(() => findEngineParts([page, worker, stray], parts)).toThrow(
 			'stray-S1.js holds engine code that the size report does not name',
 		);
+	});
+
+	it("gives each part the same file in any order, and not a worker's bundled copy", () => {
+		// The reader and the worker are listed before the files that load them, as in the engine's
+		// list. The assets file names the reader and a panorama file, and the panorama file names a
+		// worker that bundles a copy of the reader, two steps down from the assets file. Linux and
+		// macOS list the build's files in different orders, and in one of them the reader can take
+		// the worker.
+		const ordered = [
+			{ name: 'page.js', module: 'page/engine.ts' },
+			{ name: 'page-reader.js', module: 'scene/reader.ts', loadedBy: 'page-assets.js' },
+			{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page.js' },
+			{ name: 'page-worker.js', module: 'workers/worker.ts', loadedBy: 'page-panorama.js' },
+			{ name: 'page-panorama.js', module: 'scene/panorama.ts', loadedBy: 'page-assets.js' },
+		];
+		const start = built('src-A1.js', ['page/engine.ts'], 'import("./assets-B2.js")');
+		const assets = built(
+			'assets-B2.js',
+			['scene/assets.ts'],
+			'"./reader-C3.js","./panorama-E5.js"',
+		);
+		const panorama = built('panorama-E5.js', ['scene/panorama.ts'], 'new URL("./worker-D4.js")');
+		const reader = built('reader-C3.js', ['scene/reader.ts']);
+		const worker = built('worker-D4.js', ['workers/worker.ts', 'scene/reader.ts', 'math/vec.ts']);
+		const files = [start, worker, assets, panorama, reader];
+		for (const order of [files, [...files].reverse()]) {
+			const found = findEngineParts(order, ordered);
+			expect(found.get('page-reader.js')?.file).toBe('reader-C3.js');
+			expect(found.get('page-worker.js')?.file).toBe('worker-D4.js');
+		}
+	});
+
+	it('takes the file that a loader names over a smaller bundle further down', () => {
+		// The feature's loader is found through the wider search. Its reader's own file holds two
+		// helpers beside the reader, and a worker two steps down holds the reader and one module.
+		const nested = [
+			{ name: 'page.js', module: 'page/engine.ts' },
+			{ name: 'page-mid.js', module: 'scene/mid.ts', loadedBy: 'page.js' },
+			{ name: 'page-feature.js', module: 'scene/feature.ts', loadedBy: 'page.js' },
+			{ name: 'page-reader.js', module: 'scene/reader.ts', loadedBy: 'page-feature.js' },
+			{ name: 'page-worker.js', module: 'workers/worker.ts', loadedBy: 'page-sub.js' },
+			{ name: 'page-sub.js', module: 'scene/sub.ts', loadedBy: 'page-feature.js' },
+		];
+		const files = [
+			built('engine-A1.js', ['page/engine.ts'], '"./mid-B2.js"'),
+			built('mid-B2.js', ['scene/mid.ts'], '"./feature-C3.js"'),
+			built('feature-C3.js', ['scene/feature.ts'], '"./reader-D4.js","./sub-E5.js"'),
+			built('reader-D4.js', ['scene/reader.ts', 'scene/one.ts', 'scene/two.ts']),
+			built('sub-E5.js', ['scene/sub.ts'], '"./worker-F6.js"'),
+			built('worker-F6.js', ['workers/worker.ts', 'scene/reader.ts']),
+		];
+		for (const order of [files, [...files].reverse()]) {
+			const found = findEngineParts(order, nested);
+			expect(found.get('page-reader.js')?.file).toBe('reader-D4.js');
+			expect(found.get('page-worker.js')?.file).toBe('worker-F6.js');
+		}
+	});
+
+	it("takes the module's own file over a worker's copy that holds fewer modules", () => {
+		// The worker's part is listed before the assets part that loads both files, so the reader
+		// looks first, while the worker's file is unclaimed. The worker holds its own part's module and
+		// a copy of the reader, two modules against the reader's three.
+		const listed = [
+			{ name: 'page.js', module: 'page/engine.ts' },
+			{ name: 'page-worker.js', module: 'workers/worker.ts', loadedBy: 'page-assets.js' },
+			{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page.js' },
+			{ name: 'page-reader.js', module: 'scene/reader.ts', loadedBy: 'page-assets.js' },
+		];
+		const files = [
+			built('engine-A1.js', ['page/engine.ts'], '"./assets-B2.js"'),
+			built('assets-B2.js', ['scene/assets.ts'], '"./reader-C3.js",new URL("./worker-D4.js")'),
+			built('reader-C3.js', ['scene/reader.ts', 'scene/one.ts', 'scene/two.ts']),
+			built('worker-D4.js', ['workers/worker.ts', 'scene/reader.ts']),
+		];
+		for (const order of [files, [...files].reverse()]) {
+			const found = findEngineParts(order, listed);
+			expect(found.get('page-reader.js')?.file).toBe('reader-C3.js');
+			expect(found.get('page-worker.js')?.file).toBe('worker-D4.js');
+		}
 	});
 
 	it("names a vendored script of the engine package by its path from the engine's source", () => {
@@ -397,6 +526,15 @@ describe('DOWNLOADS', () => {
 	});
 });
 
+describe('ENGINE_PARTS', () => {
+	it('names each part once', () => {
+		// The report keeps each part that it finds by name, and skips a part whose name it already
+		// holds, so a second part of one name is never looked for.
+		const names = ENGINE_PARTS.map(({ name }) => name);
+		expect(names.filter((name, at) => names.indexOf(name) !== at)).toEqual([]);
+	});
+});
+
 describe('LATER_PARTS', () => {
 	it('holds the parts that load on first use or after the first frame, and no part of a start', () => {
 		const names = LATER_PARTS.map(({ name }) => name);
@@ -436,8 +574,9 @@ describe('budgetProblems', () => {
 		);
 
 	it("passes a start and a later part at their budgets, with the owner's Brotli figures", () => {
-		expect(START_BUDGET.brotli).toBe(176 * 1024);
-		expect(LATER_BUDGET.brotli).toBe(16 * 1024);
+		// The owner raised the start's Brotli budget so the milestone's work fits.
+		expect(START_BUDGET.brotli).toBe(256 * 1024);
+		expect(LATER_BUDGET.brotli).toBe(18 * 1024);
 		expect(budgetProblems(sizes(START_BUDGET, LATER_BUDGET), downloads, later)).toEqual([]);
 	});
 
@@ -467,13 +606,54 @@ describe('budgetProblems', () => {
 	});
 
 	it("names a feature's shader module over its budget in a column, which no start counts", () => {
-		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(49 * 1024);
+		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(56 * 1024);
 		const within = sizes(START_BUDGET, LATER_BUDGET);
 		within.set('shaders-bloom-wgsl.js', FIRST_USE_SHADER_BUDGET);
 		expect(budgetProblems(within, downloads, later)).toEqual([]);
 		within.set('shaders-bloom-wgsl.js', plus(FIRST_USE_SHADER_BUDGET, { brotli: 1 }));
 		expect(budgetProblems(within, downloads, later)).toEqual([
-			'js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is 50,177 bytes after Brotli, over its 49 KB budget set in tools/lib/size-report.ts',
+			`js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is ${(FIRST_USE_SHADER_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${FIRST_USE_SHADER_BUDGET.brotli / 1024} KB budget set in tools/lib/size-report.ts`,
+		]);
+	});
+
+	it('gives two first-use shader files more uncompressed room, and no other file', () => {
+		// The owner raised these two figures for the generated GLSL of the directional lights' loop.
+		const drawIndex =
+			'shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-draw-index-tone-map-half.js';
+		const noDrawIndex =
+			'shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-tone-map-half.js';
+		const other = 'shaders-area-lights-glsl-draw-index-half.js';
+		const raisedRaw = FIRST_USE_SHADER_BUDGET.raw + 16 * 1024;
+		expect(FIRST_USE_SHADER_BUDGET.raw).toBe(1_792 * 1024);
+		expect(Object.keys(FIRST_USE_SHADER_RAW_RAISE).sort()).toEqual([drawIndex, noDrawIndex].sort());
+		for (const name of [drawIndex, noDrawIndex])
+			expect(firstUseShaderBudget(name)).toEqual({
+				...FIRST_USE_SHADER_BUDGET,
+				raw: raisedRaw,
+			});
+		expect(firstUseShaderBudget(other)).toEqual(FIRST_USE_SHADER_BUDGET);
+
+		// A file at the raised figure passes for the two, and the same figure fails for the rest.
+		const within = new Map([
+			[drawIndex, size(raisedRaw, 1, 1)],
+			[noDrawIndex, size(raisedRaw, 1, 1)],
+			[other, size(raisedRaw, 1, 1)],
+		]);
+		expect(budgetProblems(within, downloads, [])).toEqual([
+			`js/${other}, the shader builds of a feature that loads on first use, is ${raisedRaw.toLocaleString('en-US')} bytes uncompressed, over its ${FIRST_USE_SHADER_BUDGET.raw / 1024} KB budget set in tools/lib/size-report.ts`,
+		]);
+
+		// The compressed figures stay at the standard limits, and the raise stops at its figure.
+		const over = new Map([
+			[
+				drawIndex,
+				size(raisedRaw + 1, FIRST_USE_SHADER_BUDGET.gzip + 1, FIRST_USE_SHADER_BUDGET.brotli + 1),
+			],
+		]);
+		expect(budgetProblems(over, downloads, [])).toEqual([
+			`js/${drawIndex}, the shader builds of a feature that loads on first use, is ${(raisedRaw + 1).toLocaleString('en-US')} bytes uncompressed, over its ${raisedRaw / 1024} KB budget set in tools/lib/size-report.ts`,
+			`js/${drawIndex}, the shader builds of a feature that loads on first use, is ${(FIRST_USE_SHADER_BUDGET.gzip + 1).toLocaleString('en-US')} bytes after gzip, over its ${FIRST_USE_SHADER_BUDGET.gzip / 1024} KB budget set in tools/lib/size-report.ts`,
+			`js/${drawIndex}, the shader builds of a feature that loads on first use, is ${(FIRST_USE_SHADER_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${FIRST_USE_SHADER_BUDGET.brotli / 1024} KB budget set in tools/lib/size-report.ts`,
 		]);
 	});
 
@@ -486,8 +666,8 @@ describe('budgetProblems', () => {
 			},
 		];
 		expect(COMBOS_BUDGET.raw).toBe(96 * 1024);
-		expect(COMBOS_BUDGET.gzip).toBe(LATER_BUDGET.gzip);
-		expect(COMBOS_BUDGET.brotli).toBe(LATER_BUDGET.brotli);
+		expect(COMBOS_BUDGET.gzip).toBe(24 * 1024);
+		expect(COMBOS_BUDGET.brotli).toBe(16 * 1024);
 		// A table past the shared raw figure is within its own, which is what the translucency
 		// builds asked for.
 		const within = new Map([
@@ -526,7 +706,49 @@ describe('budgetProblems', () => {
 			plus(FIRST_USE_SHADER_BUDGET, { brotli: 1 }),
 		);
 		expect(budgetProblems(within, downloads, later)).toEqual([
-			'js/shader-paragraphs-glsl-draw-index.js, the shader builds of a feature that loads on first use, is 50,177 bytes after Brotli, over its 49 KB budget set in tools/lib/size-report.ts',
+			`js/shader-paragraphs-glsl-draw-index.js, the shader builds of a feature that loads on first use, is ${(FIRST_USE_SHADER_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${FIRST_USE_SHADER_BUDGET.brotli / 1024} KB budget set in tools/lib/size-report.ts`,
 		]);
+	});
+});
+
+describe('budgetWarnings', () => {
+	const downloads = [{ mode: 'pipelined', parts: ['page.js'], shaders: 'shaders-' }];
+	/** A size map whose start holds `brotli` bytes. */
+	const start = (brotli: number) =>
+		new Map([['page.js', size(brotli - 5_000, brotli - 5_000, brotli)]]);
+	const near = Math.floor(START_BUDGET.brotli * 0.97);
+
+	it('warns about a start past 97% of its budget, and leaves a smaller one alone', () => {
+		expect(budgetWarnings(start(Math.floor(START_BUDGET.brotli * 0.5)), downloads)).toEqual([]);
+		expect(budgetWarnings(start(near), downloads)).toEqual([]);
+		expect(budgetWarnings(start(near + 1), downloads)).toEqual([
+			`the engine JavaScript that a page downloads at its start in pipelined mode is ${(near + 1).toLocaleString('en-US')} bytes after Brotli, past 97% of its ${START_BUDGET.brotli / 1024} KB budget, with ${(START_BUDGET.brotli - near - 1).toLocaleString('en-US')} bytes left`,
+		]);
+	});
+
+	it('leaves a start over its budget to budgetProblems', () => {
+		expect(budgetWarnings(start(START_BUDGET.brotli + 1), downloads)).toEqual([]);
+	});
+
+	it('warns about each budgeted file past 97% of its budget in a column, as for a start', () => {
+		const file = 'shaders-area-lights-glsl-draw-index-half.js';
+		const raw = Math.floor(FIRST_USE_SHADER_BUDGET.raw * 0.998);
+		const sizes = new Map([
+			...start(Math.floor(START_BUDGET.brotli * 0.5)),
+			[file, size(raw, FIRST_USE_SHADER_BUDGET.gzip / 2, FIRST_USE_SHADER_BUDGET.brotli / 2)],
+		]);
+		expect(budgetWarnings(sizes, downloads, [])).toEqual([
+			`js/${file}, the shader builds of a feature that loads on first use, is ${raw.toLocaleString('en-US')} bytes uncompressed, past 97% of its ${FIRST_USE_SHADER_BUDGET.raw / 1024} KB budget, with ${(FIRST_USE_SHADER_BUDGET.raw - raw).toLocaleString('en-US')} bytes left`,
+		]);
+		sizes.set(
+			file,
+			size(
+				FIRST_USE_SHADER_BUDGET.raw + 1,
+				FIRST_USE_SHADER_BUDGET.gzip / 2,
+				FIRST_USE_SHADER_BUDGET.brotli / 2,
+			),
+		);
+		expect(budgetWarnings(sizes, downloads, [])).toEqual([]);
+		expect(budgetProblems(sizes, downloads, [])).toHaveLength(1);
 	});
 });

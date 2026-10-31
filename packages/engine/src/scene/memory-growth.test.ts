@@ -56,7 +56,7 @@ function growingCore() {
 		lastErrorDetail: () => 0,
 	};
 	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
-	const time = { frame: 1 };
+	const time = { frame: 1, now: 0 };
 	const scene = new Scene(core, time, false);
 	const materials = new Materials(core);
 	const textures = new Textures(core, () => {}, time, 0);

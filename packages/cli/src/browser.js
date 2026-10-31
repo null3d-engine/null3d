@@ -32,6 +32,15 @@ export const SWIFTSHADER_ARGS = [
 export const WEBGPU_DEVELOPER_FEATURES = '--enable-webgpu-developer-features';
 
 /**
+ * Chromium flags for a run that measures GPU time: WebGPU's developer features, and Dawn's
+ * timestamp quantization off, so a short pass is not rounded to the privacy grid before it is read.
+ */
+export const GPU_TIMING_ARGS = [
+	WEBGPU_DEVELOPER_FEATURES,
+	'--disable-dawn-features=timestamp_quantization',
+];
+
+/**
  * How Playwright starts an environment's browser. On a Mac, Playwright's own headless Chromium
  * falls back to SwiftShader, so the real GPU needs the installed Google Chrome.
  *

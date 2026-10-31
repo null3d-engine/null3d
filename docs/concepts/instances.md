@@ -71,7 +71,7 @@ Row `i` starts at index `i * 3` in an array of 3 floats per row, and at `i * 4` 
 
 The arrays are `Float32Array` views of engine memory. The engine's memory can grow when the scene grows: new meshes, batches, materials and lights, and textures made or updated from data. In the single-threaded build, growth empties every older view, and a write to an empty view does nothing. So read the arrays from the batch each time you use them, such as at the start of `onUpdate`. Do not keep them from the setup. A read allocates nothing while the memory keeps its size.
 
-To turn rows, write quaternions. The [math helpers](../api/math.md) make them without allocating:
+To turn rows, write quaternions. The engine scales a rotation whose length is more than about one per cent from unit length. A quaternion inside that band is used exactly as written, so a rounded rotation is not moved, but one that is wrong all the same can shear its row by up to about four per cent. Well outside the band, a mistyped quaternion is scaled and only turns its row. The [math helpers](../api/math.md) make them without allocating:
 
 ```ts
 import { defineSketch, quat } from '@null3d/engine';
@@ -165,7 +165,7 @@ Keep each row's own data, such as a velocity, in your own typed arrays in the sa
 
 ## Culling
 
-Each row has its own bounding sphere. The sphere's center is the row's position, and its radius is the mesh's radius times the row's largest scale. The engine culls row by row in each view, and skips the rows outside the view. On WebGPU a compute pass on the GPU culls. On a device that draws directly, the job workers cull on the CPU there too. The rows of a batch whose material blends are the exception. On both paths, the job workers cull them one by one and sort them back to front. On WebGL2 the job workers cull. They test a static batch at rest in groups of 64 nearby rows, each group inside one grid cell. A group that is partly in view draws whole, and the GPU clips the rows outside. In a scene over several grid cells, both paths skip the rows of static batches in the cells out of view ([Culling](culling.md)). On WebGL2, a frame where you mark a static batch's rows tests the batch row by row, with no cell skipped. So does the frame after it.
+Each row has its own bounding sphere. The sphere's center is the row's position, and its radius is the mesh's radius times the row's largest scale. `setBoundingRadius(r)` gives one batch's rows a radius of their own (0.2). Use it for a vertex shader that moves rows far from their origins, as traffic along a lane does. Without it, the engine culls rows that are still on the screen. A call builds the engine's draw tables again, so make it at setup. The engine culls row by row in each view, and skips the rows outside the view. On WebGPU a compute pass on the GPU culls. On a device that draws directly, the job workers cull on the CPU there too. The rows of a batch whose material blends are the exception. On both paths, the job workers cull them one by one and sort them back to front. On WebGL2 the job workers cull. They test a static batch at rest in groups of 64 nearby rows, each group inside one grid cell. A group that is partly in view draws whole, and the GPU clips the rows outside. In a scene over several grid cells, both paths skip the rows of static batches in the cells out of view ([Culling](culling.md)). On WebGL2, a frame where you mark a static batch's rows tests the batch row by row, with no cell skipped. So does the frame after it.
 
 ## Automatic batching
 
@@ -189,6 +189,7 @@ Some calls change the scene's structure: creating or destroying a batch or an ob
 - Each row takes about 210 bytes of engine memory, or about 300 with colors or values. When the engine cannot get more memory, `createInstances` throws [E1109](../errors/E1109.md). Rows with colors or values also take 32 bytes each of GPU memory.
 - On WebGL2 the limit follows the largest texture the device allows. A device whose textures reach only 2,048 pixels, the least that WebGL2 allows, draws 1,048,576. That leaves 1,047,552 rows for batches beside a scene of up to 1,023 objects. [GPU tiers and backends](backends.md#the-portable-budget) gives the numbers.
 - Development builds warn once in the console when a scene passes the number that every device of its GPU path draws. On WebGPU that is 2,097,152, the most that devices with WebGPU's default limits draw. On WebGL2 it is 1,048,576. The engine picks the GPU path for each device, so test a scene past 1,048,576 on both paths.
+- A row costs the mesh's vertices in every pass that draws it. Many rows of a detailed mesh therefore cost more than their pixels suggest. A hull of 72 vertices drawn 30,000 times is 2,165,760 vertex shader runs for one pass, and a depth prepass draws the rows again: the reflections and ambient occlusion turn one on. Share each vertex between the faces that meet at it where the shading allows a smooth surface: the same mesh with 24 vertices does a third of that work.
 
 ## Per-row colors
 
@@ -254,7 +255,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 A batch that casts shadows casts them with its material's vertex offset, so the shadows of the grass sway with the grass. The shadows of such a material draw again in every frame, as the shadows of moving objects do.
 
-Rows with colors or values draw with shader builds of their own, which a page downloads with its first such batch. The rows show from the frame after the builds arrive. With colors or values, a masked material tests its alpha against its cutoff, with neither alpha to coverage nor the alpha hash.
+Rows with colors or values draw with shader builds of their own, which a page downloads with its first such batch. The rows show from the frame after the builds arrive. A masked batch tests its alpha as the same material does without rows: against its cutoff, by alpha to coverage, or by the alpha hash.
 
 ### A row's place and its batch's id
 

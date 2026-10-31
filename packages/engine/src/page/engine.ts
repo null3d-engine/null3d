@@ -9,6 +9,7 @@ import { EngineError, errorFixesReady, errorOfMessage } from '../errors/engine-e
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
+import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
 import { maxTargetFps, type PresetCheck, type TargetFps } from '../quality/check';
 import {
 	choosePreset,
@@ -32,20 +33,24 @@ import type { DrawingSetup } from '../render/draw';
 import { type DrawModule, loadDrawModule, preloadDeviceFiles } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer, Tier } from '../render/renderer';
+import type { FeatureStats } from '../scene/features';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
 import { URL_SWITCHES } from '../shared/dev';
+import { FEATURE_STATS_MESSAGE, mergeFeatureStats } from '../shared/feature-stats';
 import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { memoryBytes } from '../shared/memory-views';
 import { createMetricsBuffer, MetricsReader, threadRoles } from '../shared/metrics';
 import { addMeasurementRelease } from '../shared/page-measurement';
+import type { ReplayProgram, ReplayResult } from '../shared/recording';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
+import { VIDEO_FOLLOW, type VideoFollowMessage } from '../shared/videos';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { WGSL_UPDATE_EVENT, type WgslUpdate } from '../shared/wgsl-updates';
-import { spawnWorker } from '../shared/worker-start';
+import { spawnWorker, startedWorkerScript, watchWorkerError } from '../shared/worker-start';
 import { loadSketch } from '../sketch/define-sketch';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
 import type { SketchRunner } from '../sketch/runner';
@@ -73,10 +78,17 @@ import {
 import { CheckStore, checkConditions } from './check-store';
 import { watchDisplay } from './display';
 import type { FrameMetrics } from './frame-stats';
-import { holdFailure, holdSeconds, publishHold } from './hold';
+import {
+	type HoldScript,
+	type HoldScriptResult,
+	holdFailure,
+	holdSeconds,
+	publishHold,
+	holdScript as readHoldScript,
+} from './hold';
 import { captureInput } from './input';
 import { lostIsolationWarning, pageIsolation } from './isolation-check';
-import { type EngineLabels, labelCapacity, PageLabels } from './labels';
+import { type EngineLabels, labelCapacity, labelCapacity3d, PageLabels } from './labels';
 import { coreDevice, keepTextureCopiesOption, maxCanvasSize, maxInstances } from './limits';
 import { expectedObjectCount, loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
@@ -90,6 +102,7 @@ import {
 	takeParkedWorker,
 	takeWhenFree,
 } from './ownership';
+import { PermutationRecording } from './permutation-recording';
 import { type PointerLockOptions, requestPointerLock } from './pointer-lock';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
@@ -109,6 +122,9 @@ import {
 	type SketchThread,
 	type Switches,
 } from './switches';
+// The video support loads at the first call that needs it, so a page that shows no video downloads
+// none of its code.
+import type { PageVideos, VideoOptions } from './videos';
 
 /**
  * Options for `createEngine`.
@@ -190,6 +206,12 @@ export interface EngineOptions {
 	 */
 	shadowTileSize?: number;
 	/**
+	 * Texels on each side of the tile that holds a directional light's hero shadow, for each light
+	 * whose `shadow` options name no `heroTileSize`: 1,024, 2,048 or 4,096. Without it, the quality
+	 * preset sets it. Another value fails with E1213.
+	 */
+	heroTileSize?: number;
+	/**
 	 * True makes point lights cast shadows, false keeps them from it. Without it, the quality
 	 * preset decides: High and Ultra turn them on. Another value fails with E1213.
 	 */
@@ -252,6 +274,14 @@ export interface EngineOptions {
 	 */
 	transparent?: boolean;
 	/**
+	 * False draws the scene into 8-bit color, where each material's shader applies the output
+	 * transform, instead of HDR color, which the final pass tone maps. Both paths honour a
+	 * material's `toneMapped: false`, and the 8-bit path also honours it on a blended surface. The
+	 * default lets the engine pick the path from the device, which draws HDR color wherever it
+	 * can. The `?hdr=off` switch takes the 8-bit path too.
+	 */
+	hdr?: boolean;
+	/**
 	 * True for scenes that reach far beyond a city, such as a planet. Object positions then keep the
 	 * precision of JavaScript's numbers at any distance from the origin: 0.03 mm or better. Without
 	 * it, positions are 32-bit floats, which move in steps of 6 cm at 1,000 km from the origin and
@@ -285,12 +315,19 @@ export interface EngineOptions {
 	 */
 	maxLabels?: number;
 	/**
+	 * The most labels that the sketch can track at once with `ui.trackLabel` whose `transform` is
+	 * `'world'` or `'billboard'`: a whole number from 0 to 65,536, 256 by default. Another value
+	 * fails with E1213. Each of them is a plane of the scene, which takes three tables of 52 bytes
+	 * per label, so 256 of them take 40 KB. A sketch that tracks one more fails with E1219.
+	 */
+	maxLabels3d?: number;
+	/**
 	 * The number of objects that the scene will hold at most, when the sketch knows it: a whole
 	 * number from 1 to 1,048,575. Another value fails with E1213. The scene then starts with room
 	 * for that many, so it never grows during play. Without it, the scene starts with room for
 	 * 1,023 objects. A scene grows on its own when it needs more: it doubles its room at the start
 	 * of a frame once it is three quarters full. A create call that finds it full doubles it at once.
-	 * Each growth copies the scene's tables, about 263 bytes per object, in one short pause. Set
+	 * Each growth copies the scene's tables, about 267 bytes per object, in one short pause. Set
 	 * this option for a scene that creates many objects during play, so they never wait for one.
 	 */
 	expectedObjects?: number;
@@ -317,6 +354,14 @@ export interface EngineOptions {
 	 * error also reaches the console.
 	 */
 	onSketchError?: (error: Error) => void;
+	/**
+	 * Called when a worker's script did not load before the worker's first message, and the engine
+	 * started a second copy of it. The fault comes and goes, so the engine recovers on its own: the
+	 * call names the worker, such as `render` or `job 2`, and the address of its script. The engine
+	 * also warns in the console. Without a second copy that loads, the start fails with E1405, which
+	 * names the worker and its script.
+	 */
+	onWorkerRetry?: (worker: string, script: string) => void;
 	/**
 	 * Cancels a start in progress, for example when the user leaves the page. `createEngine` then
 	 * stops the engine's threads and rejects with the signal's reason.
@@ -523,6 +568,16 @@ let warnedFallback = false;
 let warnedIsolation = false;
 
 /**
+ * The page's video calls. The video support's code loads at the first call, and the calls that come
+ * before it lands run in their order once it does.
+ */
+interface PageVideoCalls {
+	register(video: HTMLVideoElement, options: VideoOptions): () => void;
+	follow(name: string, follow: boolean): void;
+	dispose(): void;
+}
+
+/**
  * A running engine, as `createEngine` returns it.
  *
  * @category api/engine
@@ -541,6 +596,17 @@ export interface Engine {
 	readonly firstFrame: Promise<void>;
 	/** The HTML elements that follow the labels the sketch tracks with `ui.trackLabel`. */
 	readonly labels: EngineLabels;
+	/**
+	 * Shows a video element on the page as a texture in the sketch, which makes it with
+	 * `textures.fromVideo(name)`. The page sends the image of each frame that the video presents,
+	 * as an `ImageBitmap` of the size that the options allow, and the sketch uploads it in its
+	 * turn, within the frame's upload budget. The sketch asks for the frames when its texture
+	 * follows the video, so a video that no texture shows sends none, and a paused video presents
+	 * no frame, so it costs nothing. Returns a function that stops the frames, which the video's
+	 * texture then keeps the last frame of. Throws E1213 for a name that another video holds, or
+	 * an option out of range.
+	 */
+	registerVideo(video: HTMLVideoElement, options: VideoOptions): () => void;
 	/** Sends a message to the sketch, which receives it through `ctx.page.onMessage`. */
 	postToSketch(name: string, data?: unknown, transfer?: Transferable[]): void;
 	/**
@@ -551,12 +617,14 @@ export interface Engine {
 	onSketchMessage(handler: (name: string, data: unknown) => void): () => void;
 	/**
 	 * Receives a failure after the engine started: the browser took the GPU away and the engine could
-	 * not carry on with a new device (E1302), or an engine thread failed (E1404). A custom material's
+	 * not carry on with a new device (E1302), or an engine thread failed (E1404). A custom shader's
 	 * builds that a pipeline needs and that did not download fail the thread that draws with E1424.
 	 * After E1404 or E1424 the engine draws no new frames: destroy it and start a new one. On WebGPU,
 	 * the GPU can also run out of memory (E1304) or reject the engine's work (E1305), and the engine
-	 * draws on without the objects that failed. The engine reports each failure once. Without a
-	 * handler, it logs the failure to the console. Returns a function that removes the handler.
+	 * draws on without the objects that failed. The engine reports each failure once. A failure that
+	 * no handler listened for when the engine reported it reaches the first handler that listens, so
+	 * a failure that the app could not hear yet still arrives, and the engine also logs it to the
+	 * console. Returns a function that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
 	/**
@@ -618,13 +686,24 @@ export interface Engine {
 	 * Resolves with the pixels of the next frame that the engine draws, as RGBA8 rows, top row
 	 * first, for tests. The thread that draws waits until its frame loop has taken a new frame, then
 	 * draws that frame again offscreen and reads it back, so captures back to back give newer frames
-	 * even where each readback holds that thread up. In hold mode, and while the engine is paused,
+	 * even where each readback holds that thread up. `frame` is the sketch frame that the capture
+	 * drew: a capture that follows a scene change can hold the frame recorded before it, and a test
+	 * that measures frames aligns them by this number. In hold mode, and while the engine is paused,
 	 * it returns the frame on the canvas. A hidden page draws no frames, so its pixels come once the
 	 * page shows again. When no new frame comes within a second or two, as after a
 	 * sketch error, it returns the frame drawn last. It fails when the thread that draws gives no
 	 * answer within the engine's wait, rather than waiting with no end.
 	 */
-	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array }>;
+	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array; frame: number }>;
+	/**
+	 * Resolves with the recording of the session so far, or undefined when the page does not record
+	 * one. A page records with the `?record` switch, which also puts a save button on the page. The
+	 * file holds each frame's step and the input that the sketch read in it, from the session's
+	 * first frame, so a `?replay` of it draws the same frames. Its format is the engine's own; save
+	 * it to a file and open `?replay=<file>` to run it. Recording seeds the sketch thread's random
+	 * numbers, so a recorded session draws the same frames when it replays.
+	 */
+	saveRecording(): Promise<Uint8Array | undefined>;
 	/**
 	 * Acts out a loss of the GPU, as a driver reset causes. The engine starts a new GPU device and
 	 * draws the whole scene again, as it does after a real loss. Use it to test how your page
@@ -672,9 +751,9 @@ const MAX_EARLY_MESSAGES = 256;
  * The longest that a request may wait for a worker's answer, in milliseconds. The slowest answer is
  * a capture: the thread that draws waits for a frame's pipelines for up to `BUILD_WAIT_LIMIT_MS`
  * before it draws, reads the frame back and encodes it. On a software renderer that work costs
- * minutes, and the forest demo's held frame passed a minute on CI's SwiftShader, so this figure
- * sits well above the slowest frame that was measured and below the image tests' own limit. A
- * thread that stops taking messages then fails the request with a named error instead of leaving
+ * minutes, and the forest demo's held frame takes more than a minute on CI's SwiftShader, so this
+ * figure sits well above the slowest frame that was measured and below the image tests' own limit.
+ * A thread that stops taking messages then fails the request with a named error instead of leaving
  * the page to wait with no end.
  */
 export const WORKER_REPLY_LIMIT_MS = 300_000;
@@ -772,10 +851,18 @@ interface WorkerEvents {
 	quality(update: QualityUpdate): void;
 	/** The sketch asked to show or hide the stats overlay, or to change its options. */
 	stats(show: StatsRequest): void;
-	/** The slot in the label table of a label's id, or -1 once it has none. */
+	/** The table and slot in the label tables of a label's id, or a slot of -1 once it has none. */
 	labelSlot: LabelSlotSender;
 	/** The sketch thread asked for this many job workers, as its parallel work grew. */
 	jobsWanted(count: number): void;
+	/** A worker's script did not load, so the engine started a second copy from the same address. */
+	workerRestart?(role: string, script: string): void;
+	/** What a timed script's steps gave, after the sketch thread performed them in a hold. */
+	holdScript?(result: HoldScriptResult | undefined): void;
+	/** The recording of the session so far, which the page saves as a file. */
+	recording?(bytes: Uint8Array): void;
+	/** What a replay gave, after the sketch thread ran the recording's frames. */
+	replay?(result: ReplayResult): void;
 }
 
 /**
@@ -788,9 +875,6 @@ export function gpuFailure(thread: string, outOfMemory: boolean, message: string
 		: new EngineError('E1305', `${thread}'s GPU rejected a command: ${message}.`);
 }
 
-/** What a worker's error event says when its script, or a file that the script imports, did not load. */
-const NO_SCRIPT = 'its script or a file it imports did not load';
-
 /**
  * A worker whose replies are routed: events to the page's handlers, answers to the oldest request.
  * A failure that a started worker reports, or that ends it, reaches the page as E1404, or with its
@@ -801,6 +885,11 @@ export class EngineWorker {
 	private readyPromise: Promise<WorkerReply>;
 	private readonly stoppedPromise: Promise<void>;
 	private worker: Worker;
+	/**
+	 * The recording that gathers the words of each thread that draws, when the page records them.
+	 * Set before the page waits for any worker's ready reply.
+	 */
+	recording?: PermutationRecording;
 	private started = false;
 	/** True once the worker reported that its script, and the files it imports, loaded. */
 	private scriptLoaded = false;
@@ -817,10 +906,17 @@ export class EngineWorker {
 	private stoppedCleanly = false;
 	/** Settles the wait for the worker's answer to a stop of its drawing. */
 	private answerStop: (() => void) | undefined;
+	/** Removes the current worker's error listener, for a copy or for a worker that the page keeps. */
+	private unwatch: (() => void) | undefined;
 
 	constructor(
 		worker: Worker,
 		private readonly role: string,
+		/**
+		 * The script that the worker runs, which a failure to start names in its error. Absent for a
+		 * worker that started for an engine before, whose script did not load this time.
+		 */
+		private readonly script: URL | string | undefined,
 		events: WorkerEvents,
 		/**
 		 * Starts another copy of the worker, for the one retry of a script that did not load. Absent
@@ -855,6 +951,11 @@ export class EngineWorker {
 			worker.onmessage = (event: MessageEvent<WorkerReply>) => {
 				const reply = event.data;
 				switch (reply.type) {
+					case 'recorded':
+						// A recording publishes the drawing thread's words, which it gives once the held
+						// frame has built the scene's pipelines.
+						this.recording?.answered(reply.role, reply.permutations);
+						return;
 					case 'sketch-message':
 						events.sketchMessage(reply.name, reply.data);
 						return;
@@ -868,10 +969,19 @@ export class EngineWorker {
 						events.stats(reply.show);
 						return;
 					case 'label':
-						events.labelSlot(reply.id, reply.slot, reply.generation);
+						events.labelSlot(reply.id, reply.table, reply.slot, reply.generation);
 						return;
 					case 'jobs-wanted':
 						events.jobsWanted(reply.count);
+						return;
+					case 'hold-script':
+						events.holdScript?.(reply.result);
+						return;
+					case 'replay-done':
+						events.replay?.(reply.result);
+						return;
+					case 'recording':
+						events.recording?.(reply.bytes);
 						return;
 					case 'lost':
 						forgetWorkerProbe();
@@ -914,28 +1024,59 @@ export class EngineWorker {
 				if (reply.type === 'error') pending.reject(startError(reply.role, reply.message));
 				else pending.resolve(reply);
 			};
-			worker.onerror = (event) => {
-				// A browser sends an error event without a message when the worker's script, or a
-				// file that the script imports, did not load. That fault comes and goes, so a worker
-				// whose script has not run gets one more copy before the page reports it.
-				if (!event.message && !this.scriptLoaded && this.restart && !this.retried) {
+			this.unwatch?.();
+			this.unwatch = watchWorkerError(worker, (message) => {
+				// A worker whose script, or a file that the script imports, did not load fails before
+				// it reports its first step. That fault comes and goes, so the worker gets one more
+				// copy before the page reports it, whatever the browser's message says. A failure
+				// that the engine already named, such as a policy that blocks the script, would fail
+				// the copy the same way, so it is reported at once.
+				if (!this.scriptLoaded && this.restart && !this.retried && !errorOfMessage(message)) {
 					this.retried = true;
 					worker.terminate();
 					try {
 						const copy = this.restart();
 						this.worker = copy;
 						listen(copy);
+						events.workerRestart?.(this.role, this.script === undefined ? '' : String(this.script));
 						return;
 					} catch {
 						// The browser refused the copy too, so the page reports the first failure.
 					}
 				}
 				markStopped();
-				failed(event.message || NO_SCRIPT);
+				// A worker that ran its script fails with its own message; one that never ran names
+				// its script, which a wrong path or a host that does not serve it makes wrong.
+				failed(this.scriptLoaded ? message || 'its script failed' : this.startFailure(message));
 				this.answerStop?.();
-			};
+			});
 		};
 		listen(worker);
+	}
+
+	/**
+	 * What the page reports for a worker that did not start. The message names the worker's script,
+	 * so a page that loads the engine's files from a wrong path, or a host that does not serve them,
+	 * shows which file failed.
+	 */
+	private startFailure(message: string): string {
+		const script = this.script === undefined ? '' : String(this.script);
+		if (message)
+			return script ? `${message} (the ${this.role} worker's script is ${script})` : message;
+		const at = script
+			? `its script at ${script}, or a file that it imports, did not load`
+			: 'its script, or a file that it imports, did not load';
+		return this.retried ? `${at}, and a second copy failed too` : at;
+	}
+
+	/**
+	 * Drops the handlers that reach this engine, so a worker that the page keeps, such as a drawing
+	 * worker parked with its canvas, holds none of the engine or its shared memory alive.
+	 */
+	detach(): void {
+		this.unwatch?.();
+		this.unwatch = undefined;
+		this.worker.onmessage = null;
 	}
 
 	/**
@@ -1075,6 +1216,80 @@ interface EngineWorkers {
 	jobs: EngineWorker[];
 }
 
+/** The two-step probe's line: the answers, the compile state, and the browser. */
+function twoStepText(answers: readonly number[], compiling: number, parallel: boolean): string {
+	const [wanted, declared, built, runs, scale] = answers;
+	return `two-step probe: ${navigator.userAgent} | wanted ${wanted} declared ${declared} built ${built} runs ${runs} scale ${scale} | compiling ${compiling} parallel ${parallel ? 1 : 0}`;
+}
+
+/**
+ * Shows the probe's line, and keeps it for the page to publish among its own figures. Every number
+ * comes from the control block: the thread that runs the sketch writes the pass's answers after
+ * each frame, and the thread that draws writes the compile state of the WebGL2 path, which is the
+ * programs that may still compile and whether its context has the extension.
+ */
+function sayTwoStep(slots: Int32Array): void {
+	const answers = [
+		Slot.TwoStepWanted,
+		Slot.TwoStepDeclared,
+		Slot.TwoStepBuilt,
+		Slot.TwoStepRuns,
+		Slot.TwoStepScale,
+	].map((slot) => Atomics.load(slots, slot)) as number[];
+	const compiling = Atomics.load(slots, Slot.WebglCompiling);
+	const parallel = Atomics.load(slots, Slot.WebglParallel) !== 0;
+	const line = twoStepText(answers, compiling, parallel);
+	(globalThis as { __null3dTwoStep?: string }).__null3dTwoStep = line;
+	console.warn(line);
+}
+
+/**
+ * Prints the two-step pass's answers for `?two-step=report`: the browser's user agent, whether a
+ * frame wanted the pass, declared it, had its second step built and drew it, the render scale in
+ * thousandths, and the WebGL2 path's compile state. A development tool that says which answer a
+ * browser loses.
+ *
+ * `held` reads the answers once, after the held frame that they are about. A live page turns its
+ * effect on a moment into the scene, so the first presented frame asks for nothing: the probe then
+ * watches the frames, keeps the largest answer of each, waits a second after the pass is first
+ * wanted, and prints what it saw. A page whose pass never wants prints the zeros it kept, after ten
+ * seconds.
+ */
+function logTwoStep(slots: Int32Array, held: boolean): void {
+	if (held) {
+		sayTwoStep(slots);
+		return;
+	}
+	const end = performance.now() + 10_000;
+	const best = [0, 0, 0, 0, 0];
+	let wantedAt = 0;
+	const check = () => {
+		const answers = [
+			Slot.TwoStepWanted,
+			Slot.TwoStepDeclared,
+			Slot.TwoStepBuilt,
+			Slot.TwoStepRuns,
+			Slot.TwoStepScale,
+		].map((slot) => Atomics.load(slots, slot)) as number[];
+		for (let i = 0; i < 5; i++) best[i] = Math.max(best[i] ?? 0, answers[i] as number);
+		const now = performance.now();
+		if (answers[0]) {
+			if (wantedAt === 0) wantedAt = now;
+			// A second of frames after the pass is wanted covers a pipeline that builds in the
+			// background, which the frame that wanted it may have missed.
+			if (now - wantedAt < 1000) {
+				requestAnimationFrame(check);
+				return;
+			}
+		} else if (now < end) {
+			requestAnimationFrame(check);
+			return;
+		}
+		sayTwoStep(slots);
+	};
+	requestAnimationFrame(check);
+}
+
 /** Every worker of a set, in the order the page stops them. */
 function allWorkers(workers: EngineWorkers | undefined): EngineWorker[] {
 	if (!workers) return [];
@@ -1107,8 +1322,13 @@ function startJobWorker(
 			name: `null3d-job-${index}`,
 		});
 	try {
-		const job = new EngineWorker(startEngineWorker(start), `job ${index}`, events, () =>
-			startEngineWorker(start),
+		const first = startEngineWorker(start);
+		const job = new EngineWorker(
+			first.worker,
+			`job ${index}`,
+			first.script,
+			events,
+			() => startEngineWorker(start).worker,
 		);
 		job.ready().then(
 			() => started(index),
@@ -1125,8 +1345,9 @@ function startJobWorker(
  * Starts an engine worker from a start function, with the engine's own error codes for a failure
  * of a worker's bootstrap from another origin.
  */
-function startEngineWorker(start: () => Worker): Worker {
-	return spawnWorker(start, (code, message) => new EngineError(code, message));
+function startEngineWorker(start: () => Worker): { worker: Worker; script: URL | undefined } {
+	const worker = spawnWorker(start, (code, message) => new EngineError(code, message));
+	return { worker, script: startedWorkerScript() };
 }
 
 /**
@@ -1152,19 +1373,22 @@ function startWorkers(
 	 */
 	const kept = (start: () => Worker) => {
 		const first = startEngineWorker(start);
-		made.push(first);
+		made.push(first.worker);
 		return {
-			worker: first,
+			worker: first.worker,
+			script: first.script,
 			restart: () => {
 				const copy = startEngineWorker(start);
-				made.push(copy);
-				return copy;
+				made.push(copy.worker);
+				return copy.worker;
 			},
 		};
 	};
 	/** A worker that ran for an engine before keeps its script: there is nothing to load again. */
 	const keptBefore = (role: DrawingRole) =>
-		reused?.role === role ? { worker: reused.worker, restart: undefined } : undefined;
+		reused?.role === role
+			? { worker: reused.worker, script: undefined, restart: undefined }
+			: undefined;
 	try {
 		const sketchStart = sketchWorker
 			? (keptBefore('sketch') ??
@@ -1187,10 +1411,22 @@ function startWorkers(
 				))
 			: undefined;
 		const sketch = sketchStart
-			? new EngineWorker(sketchStart.worker, 'sketch', events, sketchStart.restart)
+			? new EngineWorker(
+					sketchStart.worker,
+					'sketch',
+					sketchStart.script,
+					events,
+					sketchStart.restart,
+				)
 			: undefined;
 		const render = renderStart
-			? new EngineWorker(renderStart.worker, 'render', events, renderStart.restart)
+			? new EngineWorker(
+					renderStart.worker,
+					'render',
+					renderStart.script,
+					events,
+					renderStart.restart,
+				)
 			: undefined;
 		return { sketch, render, jobs: [] };
 	} catch (thrown) {
@@ -1199,6 +1435,65 @@ function startWorkers(
 		const reason = thrown instanceof Error ? thrown.message : String(thrown);
 		throw new EngineError('E1405', `the browser refused to start an engine worker: ${reason}.`);
 	}
+}
+
+/** The path of an address, which names a sketch across the machines that serve it. */
+function pathOf(address: string): string {
+	try {
+		return new URL(address, globalThis.location?.href).pathname;
+	} catch {
+		return address;
+	}
+}
+
+/**
+ * The recording that `address` names, downloaded and read before the engine starts, so a file that
+ * is not a recording fails the start with a message rather than a page that runs nothing. The
+ * recording must be of the sketch that this page runs, or its frames mean nothing.
+ */
+async function readReplay(address: string, sketchUrl: string): Promise<ReplayProgram> {
+	let url: URL;
+	try {
+		url = new URL(address, globalThis.location?.href);
+	} catch {
+		throw new EngineError(
+			'E1435',
+			`?replay=${address} is not an address. Give the address of a recording file, such as ?replay=/bug.n3dr.`,
+		);
+	}
+	let response: Response;
+	try {
+		response = await fetch(url);
+	} catch (error) {
+		throw new EngineError(
+			'E1435',
+			`createEngine() could not download the recording ${url.href}: ${messageOf(error)}. Check the address, and that the file's server sends it to this page's origin.`,
+		);
+	}
+	if (!response.ok)
+		throw new EngineError(
+			'E1435',
+			`the server answered ${response.status} for the recording ${url.href}. Check that the file is there, and that its server sends it to this page's origin.`,
+		);
+	const bytes = new Uint8Array(await response.arrayBuffer());
+	const { decodeRecording } = await import('../shared/recording');
+	let program: ReplayProgram;
+	try {
+		program = decodeRecording(bytes);
+	} catch (error) {
+		throw new EngineError(
+			'E1435',
+			`createEngine() could not read the recording ${url.href}: ${messageOf(error)}`,
+		);
+	}
+	// The recording's own origin is the machine that made it, which a replay never shares. The
+	// sketch's path is what names the scene.
+	if (pathOf(program.sketch) !== pathOf(sketchUrl))
+		throw new EngineError(
+			'E1435',
+			`the recording was made with the sketch ${program.sketch}, and this page runs ${sketchUrl}. Open the page with the sketch that recorded the session.`,
+		);
+	return program;
 }
 
 /**
@@ -1223,7 +1518,8 @@ function prefetch(url: string): void {
  */
 export async function createEngine(options: EngineOptions): Promise<Engine> {
 	const switches = parseSwitches(URL_SWITCHES ? (globalThis.location?.search ?? '') : '');
-	const holding = options.hold !== undefined || switches.hold !== undefined;
+	const holding =
+		options.hold !== undefined || switches.hold !== undefined || switches.replay !== undefined;
 	const place = placement(options, switches);
 	if (DEV && !warnedIsolation) {
 		const warning = lostIsolationWarning(pageIsolation());
@@ -1244,6 +1540,9 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	try {
 		checkPreload(options.preload);
 		const hold = holdSeconds(options.hold, switches.hold);
+		// A test tool may set a timed script before the page loads. Only hold mode performs it, so a
+		// live engine ignores one left on the page.
+		const holdScript = hold === undefined ? undefined : readHoldScript();
 		if (holding) publishHold(undefined);
 		if (place.sketchThread === 'main')
 			await takeWhenFree(
@@ -1273,7 +1572,15 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				'E1419',
 				`createEngine() got a canvas that no engine can draw on again: ${canvas.dead}.`,
 			);
-		return await startEngine(options, switches, hold, place, canvas, holder, release);
+		return await startEngine(
+			options,
+			switches,
+			{ hold, holdScript, replay: switches.replay, record: switches.record },
+			place,
+			canvas,
+			holder,
+			release,
+		);
 	} catch (error) {
 		release();
 		// A coded error's fix arrives in a file of its own, and a failed start reports it whole.
@@ -1316,19 +1623,32 @@ function placement(options: EngineOptions, switches: Switches): Placement {
 	return { threaded, sketchThread: main ? 'main' : 'worker' };
 }
 
+/** How a start runs: a live page, a hold at a sketch time, or a replay of a recording. */
+interface StartModes {
+	/** Hold mode's sketch time in seconds, or undefined for a live page or a replay. */
+	hold?: number;
+	/** A timed script that hold mode performs as it steps the sketch. */
+	holdScript?: HoldScript;
+	/** The address of a recording that the start plays, from ?replay=, or undefined for a live page. */
+	replay?: string;
+	/** True when the page records the session's frames and input. */
+	record: boolean;
+}
+
 /**
- * Starts the engine with the page's switches. With a hold time, it resolves once the held frame
- * is read back, and publishes it.
+ * Starts the engine with the page's switches. With a hold time or a replay, it resolves once the
+ * last frame is read back, and publishes it.
  */
 async function startEngine(
 	options: EngineOptions,
 	switches: Switches,
-	hold: number | undefined,
+	modes: StartModes,
 	{ threaded, sketchThread }: Placement,
 	canvasHold: CanvasHold,
 	holder: Holder,
 	release: () => void,
 ): Promise<Engine> {
+	const { hold, holdScript } = modes;
 	const startedAt = performance.now();
 	const { signal } = options;
 	// A page's progress handler that throws is the page's error: the console shows it, and the
@@ -1343,11 +1663,16 @@ async function startEngine(
 	signal?.throwIfAborted();
 	const pageUrl = globalThis.location?.href;
 	const sketchUrl = new URL(options.sketch, pageUrl).href;
+	const replay = modes.replay === undefined ? undefined : await readReplay(modes.replay, sketchUrl);
+	// A replay records nothing of its own: it runs a file that already holds the frames and input.
+	const record = modes.record && replay === undefined;
 	// The quality preset follows the device hints and the crash marker, which the page has at once,
 	// so its memory maximum is known before the core loads. Hold mode and the ?preset= switch fix
 	// the preset for tests, so they neither read nor write the marker.
 	const marker =
-		hold === undefined && switches.preset === undefined ? new StartMarker(sketchUrl) : undefined;
+		hold === undefined && replay === undefined && switches.preset === undefined
+			? new StartMarker(sketchUrl)
+			: undefined;
 	const history = marker?.read() ?? NO_HISTORY;
 	const optionPreset = presetOption(options.preset);
 	// The highest frame rate that the preset check, the governor and the stats overlay aim for.
@@ -1360,6 +1685,7 @@ async function startEngine(
 		shadowMapSize: options.shadowMapSize,
 		shadowTiles: options.shadowTiles,
 		shadowTileSize: options.shadowTileSize,
+		heroTileSize: options.heroTileSize,
 		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
 		gpuOcclusion: switches.occlusion ?? options.gpuOcclusion,
@@ -1414,10 +1740,23 @@ async function startEngine(
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
 	if (options.onSketchMessage) messageHandlers.add(options.onSketchMessage);
+	// The add-on features' figures, which the stats overlay shows beside the engine's own. Each
+	// add-on keeps its list, so two add-ons show side by side and one that stops leaves the other's.
+	const featureLists = new Map<string, readonly FeatureStats[]>();
+	let features: readonly FeatureStats[] = [];
 	// Messages sent before the page listens wait for the first handler. The newest are kept when a
 	// sketch sends many.
 	let earlyMessages: [string, unknown][] | undefined = options.onSketchMessage ? undefined : [];
 	const onSketchMessage = (name: string, data: unknown) => {
+		if (name === FEATURE_STATS_MESSAGE) {
+			features = mergeFeatureStats(featureLists, data);
+			return;
+		}
+		if (name === VIDEO_FOLLOW) {
+			const message = data as VideoFollowMessage | null;
+			if (typeof message?.name === 'string') videos?.follow(message.name, message.follow === true);
+			return;
+		}
 		if (earlyMessages) {
 			if (earlyMessages.push([name, data]) > MAX_EARLY_MESSAGES) earlyMessages.shift();
 			return;
@@ -1426,6 +1765,11 @@ async function startEngine(
 	};
 	const failureHandlers = new Set<(error: EngineError) => void>();
 	const sketchErrorHandlers = new Set<(error: Error) => void>();
+	/**
+	 * The failures that the engine reported while no handler listened, for the first handler that
+	 * does: a failure that reaches nothing is worse than a slow path.
+	 */
+	const earlyFailures: EngineError[] = [];
 	const reported = new Set<string>();
 	const onSketchError = (error: Error) => {
 		for (const handler of sketchErrorHandlers) handler(error);
@@ -1449,7 +1793,11 @@ async function startEngine(
 			start.abort(error);
 			return;
 		}
-		if (failureHandlers.size === 0) console.error(error);
+		if (failureHandlers.size === 0) {
+			earlyFailures.push(error);
+			console.error(error);
+			return;
+		}
 		for (const handler of failureHandlers) handler(error);
 	};
 	// The GPU path, the mode and the threads, which the start sets once the probe has run. The
@@ -1457,6 +1805,12 @@ async function startEngine(
 	let tier!: Tier;
 	let mode!: EngineMode;
 	let engineThreads!: [string, number[]][];
+	/** What a timed script's steps gave in the sketch worker, which the held result publishes. */
+	let scriptResult: HoldScriptResult | undefined;
+	/** What a replay gave in the sketch worker, which the held result publishes. */
+	let replayResult: ReplayResult | undefined;
+	/** The calls that wait for the session's recording, which the sketch thread answers together. */
+	const recordingWaiters: ((bytes: Uint8Array | undefined) => void)[] = [];
 	const events: WorkerEvents = {
 		sketchMessage: onSketchMessage,
 		sketchError: onSketchError,
@@ -1472,31 +1826,59 @@ async function startEngine(
 			checkStore?.save(update.check, maxTarget);
 		},
 		stats: (show) => statsSwitch.show(show),
-		labelSlot: (id, slot, generation) => pageLabels?.setSlot(id, slot, generation),
+		labelSlot: (id, table, slot, generation) => pageLabels?.setSlot(id, table, slot, generation),
 		jobsWanted: (count) => growJobs?.(count),
+		holdScript: (result) => {
+			scriptResult = result;
+		},
+		// A recovered worker is not a failure, so the page hears it here and in the console, never
+		// through onFailure.
+		workerRestart: (role, script) => {
+			console.warn(
+				`null3D: the ${role} worker did not load its script at ${script}, so the engine started a second copy.`,
+			);
+			options.onWorkerRetry?.(role, script);
+		},
+		replay: (result) => {
+			replayResult = result;
+		},
+		recording: (bytes) => {
+			for (const resolve of recordingWaiters.splice(0)) resolve(bytes);
+		},
 	};
 	/** Starts job workers up to a count, once the core is ready to hand them. */
 	let growJobs: ((count: number) => void) | undefined;
 	/** The page's labels, once the page knows which thread draws. */
 	let pageLabels: PageLabels | undefined;
+	/** The page's video calls, which load the video support's code at their first call. */
+	let videos: PageVideoCalls | undefined;
 
 	const jobWorkers = threaded
 		? jobWorkerCount(switches.jobs, navigator.hardwareConcurrency ?? 1)
 		: 0;
-	const control = createControlBuffer(threaded, labelCapacity(options.maxLabels));
+	const control = createControlBuffer(
+		threaded,
+		labelCapacity(options.maxLabels),
+		labelCapacity3d(options.maxLabels3d),
+	);
 	const expectedObjects = expectedObjectCount(options.expectedObjects);
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
+	// The frame figures go on the page as the start makes them, so a test tool can time a start
+	// that stalls before it publishes anything, and read the sketch's growth, the first draw's
+	// pipelines and the first frame beside the steps it has noted.
+	(globalThis as { __null3dMetrics?: ArrayBufferLike }).__null3dMetrics = metrics;
 	const views = controlViews(control);
 	const { slots } = views;
 	if (switches.replayDelay !== undefined)
 		Atomics.store(slots, Slot.ReplayDelayMs, switches.replayDelay);
-	// Hold mode and the image tests draw each frame as it is: a still view there must not accumulate
-	// or rest, so a captured frame is the frame the sketch drew once.
+	// Hold mode, a replay and the image tests draw each frame as it is: a still view there must not
+	// accumulate or rest, so a captured frame is the frame the sketch drew once.
 	if (
 		!switches.still ||
 		options.still === false ||
 		options.hold !== undefined ||
-		switches.hold !== undefined
+		switches.hold !== undefined ||
+		switches.replay !== undefined
 	)
 		Atomics.store(slots, Slot.StillOff, 1);
 	const statsSwitch = new StatsSwitch(() => ({
@@ -1513,6 +1895,7 @@ async function startEngine(
 		maxTargetFps: maxTarget,
 		gpuFeatures,
 		mode,
+		features: () => features,
 	}));
 	Atomics.store(slots, Slot.Running, 1);
 	/**
@@ -1597,6 +1980,54 @@ async function startEngine(
 	let canvasWorker = movedTo === 'render' ? threads?.render : movedTo ? threads?.sketch : undefined;
 	let localDrawing: Drawing<Renderer> | undefined;
 	let localRunner: SketchRunner | undefined;
+	/** Sends the sketch a message, here where the page runs it, or through its worker. */
+	const sendToSketch = (name: string, data: unknown, transfer: Transferable[] = []) => {
+		if (localRunner) localRunner.receive(name, data);
+		else threads?.sketch?.send({ type: 'post', name, data }, transfer);
+	};
+	// The sketch asks for a video's frames from its setup, before the page registers the video, so
+	// the calls wait for the code and then run in the order that the page and the sketch made them.
+	let videoSupport: PageVideos | undefined;
+	let videoSupportLoading: Promise<void> | undefined;
+	let videoSupportStopped = false;
+	const videoCalls: (() => void)[] = [];
+	const loadVideoSupport = (): void => {
+		if (videoSupport || videoSupportStopped) return;
+		videoSupportLoading ??= import('./videos').then(({ PageVideos }) => {
+			if (videoSupportStopped) return;
+			videoSupport = new PageVideos(sendToSketch);
+			for (const call of videoCalls.splice(0)) call();
+		});
+	};
+	videos = {
+		register(video, options) {
+			let stop: (() => void) | undefined;
+			let stopped = false;
+			const call = () => {
+				if (!stopped) stop = videoSupport?.register(video, options);
+			};
+			if (videoSupport) call();
+			else videoCalls.push(call);
+			loadVideoSupport();
+			return () => {
+				stopped = true;
+				stop?.();
+			};
+		},
+		follow(name, follow) {
+			const call = () => {
+				videoSupport?.follow(name, follow);
+			};
+			if (videoSupport) call();
+			else videoCalls.push(call);
+			loadVideoSupport();
+		},
+		dispose() {
+			videoSupportStopped = true;
+			videoCalls.length = 0;
+			videoSupport?.dispose();
+		},
+	};
 	/**
 	 * The page's core, when the page runs the sketch. The page keeps the single-threaded build's core
 	 * for the next engine it starts. The threaded build's core lives in the engine's own shared
@@ -1666,6 +2097,7 @@ async function startEngine(
 				notifySlot(slots, slot, threads?.sketch?.handle);
 			await localDrawing?.stop();
 			localRunner?.dispose();
+			videos?.dispose();
 			input?.listen(false);
 			// A stopped engine reads no input, so it gives the pointer back.
 			if (globalThis.document?.pointerLockElement === options.canvas) document.exitPointerLock();
@@ -1730,10 +2162,14 @@ async function startEngine(
 			return;
 		}
 		canvasWorker.send({ type: 'park' } satisfies RendererRequest);
+		canvasWorker.detach();
 		parkWorker(options.canvas, canvasHold, canvasWorker.handle, canvasHold.movedTo);
 	};
 	try {
-		const report = await abortable(probeCapabilities(powerPreference, presetRequest.hints), signal);
+		const report = await abortable(
+			probeCapabilities(powerPreference, presetRequest.hints, switches.multiDraw),
+			signal,
+		);
 		const probeMs = performance.now() - startedAt;
 		const requested = switches.gpu !== 'auto' ? switches.gpu : (options.gpu ?? 'auto');
 		// After starts that crashed on WebGPU, WebGL2 comes first, unless the page names a GPU path.
@@ -1824,6 +2260,38 @@ async function startEngine(
 		};
 		/** Each engine thread's name and the roles it runs, for the frame figures. */
 		engineThreads = [...threadRoles(mode)];
+		// A recording run gathers the words of every thread that draws, and publishes them where the
+		// tool that writes the build's list reads them.
+		const recording =
+			switches.permutations === 'record'
+				? new PermutationRecording(
+						renderThread === 'render-worker'
+							? 'render'
+							: renderThread === 'sketch-worker'
+								? 'sketch'
+								: 'page',
+					)
+				: undefined;
+		if (recording) for (const worker of allWorkers(threads)) worker.recording = recording;
+		/**
+		 * Ends the recording and lets the drawing thread answer with its words. A held page runs it
+		 * once its frame has drawn the scene's pipelines, and a live page when the tool that records
+		 * has driven the page through its states.
+		 */
+		const stopRecording = () => {
+			if (!recording) return;
+			if (renderThread === 'main') {
+				recording.answered('page', stopRecordingPermutations());
+				return;
+			}
+			const worker = renderThread === 'render-worker' ? threads?.render : threads?.sketch;
+			worker?.send({ type: 'stop-recording' } satisfies RendererRequest);
+		};
+		// A live page has no held frame to end its recording, so the tool that records calls the
+		// page's stop once the page has shown every state that it offers.
+		if (recording && hold === undefined)
+			(globalThis as { __null3dStopRecording?: () => void }).__null3dStopRecording = stopRecording;
+		if (recording && renderThread === 'main') recordPermutations();
 		// What the thread that draws needs besides its canvas, whichever thread that is.
 		const rendererSetup: Omit<RendererSetup, 'canvas'> = {
 			tier,
@@ -1835,10 +2303,14 @@ async function startEngine(
 			hold: hold !== undefined,
 			glTiming: switches.glTiming,
 			preload: options.preload,
+			// The recording run lists the words that the scene draws with, for a narrowed build.
+			recordPermutations: switches.permutations === 'record',
 		};
 
 		const device = coreDevice(tier, report, {
 			...switches,
+			// The switch and the option can both only take the 8-bit path, and the switch wins.
+			hdr: switches.hdr && options.hdr !== false,
 			antialias: quality.settings.antialias,
 			transparent: options.transparent === true,
 			depthPrepass: quality.settings.depthPrepass,
@@ -1899,7 +2371,7 @@ async function startEngine(
 		canvasWatch = watch;
 		watch.listen(true);
 		// Hold mode keeps input out, so a held frame never depends on it.
-		const takesInput = hold === undefined;
+		const takesInput = hold === undefined && replay === undefined;
 		const pageInput = captureInput(options.canvas, control);
 		input = pageInput;
 		pageInput.listen(takesInput);
@@ -1984,11 +2456,13 @@ async function startEngine(
 				// The sketch thread hears which of a batch of job workers run once the whole batch has
 				// settled, so it never takes a worker for running before the batch is known. A batch
 				// that started no worker, because the browser refused them or the engine is stopping,
-				// stays unheard: the thread then uses the workers it asked for.
+				// stays unheard: the thread then uses the workers it asked for. A sketch on this page
+				// reads the news itself, since no sketch worker carries it.
 				if (starting.length === 0) return;
 				void Promise.allSettled(starting).then(() => {
 					running.sort((a, b) => a - b);
 					threads?.sketch?.send({ type: 'job-workers', running: [...running] });
+					if (jobTaskHost) jobTaskHost.running = [...running];
 				});
 			};
 			return taskPorts.map((tasks) => tasks.port2);
@@ -2081,14 +2555,20 @@ async function startEngine(
 					capabilities,
 					...senders,
 					pageUrl: pageUrl ?? sketchUrl,
+					sketchUrl,
 					maxTargetFps: maxTarget,
 					threads: engineThreads,
+					twoStepProbe: DEV && switches.twoStep,
 					showStats: events.stats,
 					wantJobs,
 					sendLabelSlot: events.labelSlot,
 					reportSketchError: (message) => events.sketchError(new Error(message)),
 				},
 				hold,
+				holdScript,
+				replay,
+				record,
+				switches.view,
 			);
 			// In hold mode the sketch module loads only now, after the runner seeded the random
 			// numbers. The renderer starts before the setup, so a warm-up in the setup has a renderer
@@ -2112,9 +2592,11 @@ async function startEngine(
 							);
 				});
 			await abortable(setup, start.signal);
+			scriptResult = localRunner?.holdScriptResult;
+			replayResult = localRunner?.replayOutcome;
 			if (render) {
 				await abortable(render.ready(), start.signal);
-				if (hold === undefined)
+				if (hold === undefined && replay === undefined)
 					void runPipelined(localRunner, control, (error) =>
 						onFailure(
 							new EngineError('E1404', `the sketch on the page failed: ${messageOf(error)}.`),
@@ -2134,9 +2616,14 @@ async function startEngine(
 				jobWorkers,
 				capabilities,
 				hold,
+				holdScript,
+				replay,
+				record,
+				debugView: switches.view,
 				quality,
 				maxTargetFps: maxTarget,
 				threads: engineThreads,
+				twoStepProbe: DEV && switches.twoStep,
 			};
 			withCore.add(sketch);
 			if (renderThread === 'sketch-worker') {
@@ -2183,6 +2670,7 @@ async function startEngine(
 			requestAnimationFrame(check);
 		});
 		marker?.endAfter(firstFrame);
+		if (DEV && switches.twoStep) void firstFrame.then(() => logTwoStep(slots, false));
 		/** Hold mode's frame, read back once. */
 		let held: CapturedFrame | undefined;
 		/** The error of a thread that draws when it could not capture a frame. */
@@ -2195,7 +2683,12 @@ async function startEngine(
 			if (localDrawing && draw) return draw.captureFrame(localDrawing, slots);
 			const reply = await rendererHost?.request({ type: 'capture' });
 			if (reply?.type === 'captured')
-				return { width: reply.width, height: reply.height, pixels: reply.pixels };
+				return {
+					width: reply.width,
+					height: reply.height,
+					pixels: reply.pixels,
+					frame: reply.frame,
+				};
 			throw captureFailure(reply);
 		};
 		/**
@@ -2217,10 +2710,9 @@ async function startEngine(
 			mode,
 			firstFrame,
 			labels,
-			postToSketch(name, data, transfer = []) {
-				if (localRunner) localRunner.receive(name, data);
-				else threads?.sketch?.send({ type: 'post', name, data }, transfer);
-			},
+			postToSketch: sendToSketch,
+			registerVideo: (video, videoOptions) =>
+				(videos as PageVideoCalls).register(video, videoOptions),
 			onSketchMessage(handler) {
 				messageHandlers.add(handler);
 				const early = earlyMessages;
@@ -2230,6 +2722,7 @@ async function startEngine(
 			},
 			onFailure(handler) {
 				failureHandlers.add(handler);
+				for (const error of earlyFailures.splice(0)) handler(error);
 				return () => failureHandlers.delete(handler);
 			},
 			onSketchError(handler) {
@@ -2310,6 +2803,16 @@ async function startEngine(
 			async captureFrame() {
 				return held ? { ...held, pixels: held.pixels.slice() } : capture();
 			},
+			async saveRecording() {
+				if (stopped()) return undefined;
+				if (localRunner !== undefined) return localRunner.saveRecording();
+				const worker = threads?.sketch;
+				if (worker === undefined) return undefined;
+				return await new Promise<Uint8Array | undefined>((resolve) => {
+					recordingWaiters.push(resolve);
+					worker.send({ type: 'save-recording' });
+				});
+			},
 			simulateGpuLoss() {
 				if (localDrawing) localDrawing.simulateLoss();
 				else rendererHost?.send({ type: 'lose-gpu' });
@@ -2322,7 +2825,11 @@ async function startEngine(
 				if (destroyOptions?.release) releaseMemories();
 			},
 		};
-		if (hold === undefined) {
+		if (record && hold === undefined)
+			void import('./record-button')
+				.then(({ showRecordButton }) => showRecordButton(engine))
+				.catch((error) => console.warn('null3D could not show the save-recording button:', error));
+		if (hold === undefined && replay === undefined) {
 			if (switches.bench) (globalThis as Record<string, unknown>)[BENCH_GLOBAL] = engine;
 			// The switch's start state goes on top of the option's corner.
 			if (switches.stats !== false) {
@@ -2333,20 +2840,36 @@ async function startEngine(
 		}
 		try {
 			held = await abortable(holdFrame(capture, failureHandlers), signal);
+			// The held frame built every pipeline that the scene draws with, so its words are
+			// complete here, before the page publishes the frame the tool waits on.
+			stopRecording();
 		} catch (error) {
 			await stop();
 			throw error;
 		}
+		if (DEV && switches.twoStep) logTwoStep(slots, true);
 		const { summarizeFrames } = await loadFrameStats();
+		const frame = Atomics.load(slots, Slot.FramesTaken);
+		const patchFrame = Atomics.load(slots, Slot.ClusterPatchFrame);
+		const patchRanges = Atomics.load(slots, Slot.ClusterPatches);
 		publishHold({
 			ok: true,
-			time: hold,
-			frame: Atomics.load(slots, Slot.FramesTaken),
+			time: hold ?? replayResult?.seconds ?? 0,
+			...held,
+			frame,
 			tier,
 			directDraws: device.directDraws,
-			...held,
+			// What the frame builder recorded: the patch ranges that its tree walk chose, or none
+			// where it drew the trees' whole levels. A negative count is a path that picks the
+			// patches on the GPU, and a count from another frame tells nothing about this one.
+			clusterPatches: patchFrame === frame && patchRanges >= 0 ? patchRanges > 0 : null,
 			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
+			...(scriptResult !== undefined && { script: scriptResult }),
+			...(replayResult !== undefined && { replay: replayResult }),
 		});
+		// A replay ends on its last frame: the sketch stops there, rather than running on past the
+		// session that the file holds.
+		if (replay !== undefined) engine.setPaused(true);
 		return engine;
 	} catch (e) {
 		starting = false;

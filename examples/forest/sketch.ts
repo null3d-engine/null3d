@@ -10,12 +10,14 @@
 import { defineSketch, timeOfDay } from '@null3d/engine';
 import { interact } from '../lib/interact';
 import {
+	addHero,
 	BUSH,
 	bushRows,
 	cardArrays,
 	cardTexture,
 	countRows,
 	fillRows,
+	fitCounts,
 	ground,
 	KINDS,
 	landArrays,
@@ -33,6 +35,8 @@ const RADIUS = 650;
 const BUSHES = 30_000;
 const BUSH_NEAR = 12_000;
 const BUSH_RADIUS = 360;
+/** How far out the understory draws, in meters, where the trees hide the ground beyond it. */
+const UNDERSTORY_EDGE = 300;
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, quality, input, time } = ctx;
@@ -83,7 +87,8 @@ export default defineSketch(async (ctx) => {
 	const kinds = KINDS.map((kind, n) => {
 		const count = all[n] as number;
 		const near = before[n] as number;
-		const trees = scene.createInstances(meshOf(geometry, kind), count, {
+		const mesh = meshOf(geometry, kind);
+		const trees = scene.createInstances(mesh, count, {
 			material: bark,
 			castShadows: true,
 			receiveShadows: true,
@@ -99,7 +104,7 @@ export default defineSketch(async (ctx) => {
 			},
 		);
 		fillRows(cards, rows, n, near);
-		return { trees, cards, count, near };
+		return { mesh, trees, cards, count, near };
 	});
 	// The understory: broad bushes that cover the ground between the trunks, at their own levels.
 	const undergrowth = scene.createInstances(meshOf(geometry, BUSH), BUSHES, {
@@ -109,14 +114,14 @@ export default defineSketch(async (ctx) => {
 		colors: true,
 	});
 	fillRows(undergrowth, bushRows(BUSHES, BUSH_RADIUS), 0);
-	const fit = () => {
-		const low = quality.preset === 'low';
-		for (const { trees, cards, count, near } of kinds) {
-			trees.setActiveCount(low ? near : count);
-			cards.setActiveCount(low ? count - near : 0);
-		}
-		undergrowth.setActiveCount(low ? BUSH_NEAR : BUSHES);
-	};
+	// The understory's far rows cost nothing past the distance where the trunks hide the ground,
+	// and the dither fades the last bushes out instead of popping them away.
+	undergrowth.setDrawRange(0, UNDERSTORY_EDGE);
+	// One hero fir stands beside the flight: a bias keeps its finer levels where the trees around
+	// it turn coarse, and B gives it the threshold of the rest.
+	const hero = addHero(scene, kinds[0], bark, ground);
+	const fit = () =>
+		fitCounts(kinds, undergrowth, quality.preset === 'low', { all: BUSHES, near: BUSH_NEAR });
 	fit();
 	quality.onChange(fit);
 	// L draws every tree's base level, and the preset's threshold again on the next press.
@@ -124,6 +129,8 @@ export default defineSketch(async (ctx) => {
 
 	return {
 		onUpdate(dt) {
+			if (input.wasPressed('KeyB')) hero.setBias();
+
 			if (input.wasPressed('KeyL')) {
 				const levels = quality.settings.lodThreshold > 0;
 				if (levels) threshold = quality.settings.lodThreshold;

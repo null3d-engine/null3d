@@ -53,6 +53,14 @@ export default defineSketch(async (ctx) => {
 	scene.setActiveCamera(camera);
 	const limits = { maxPolarAngle: Math.PI * 0.42, minDistance: 4, maxDistance: 18 };
 	const view = interact(ctx, camera, { target: TARGET, ...limits, groundY: 1.4, bounds: BOUNDS });
+	// A second view close to the ring, on a knight's face, so the head that the look-at turns shows
+	// where the wide camera cannot see it. Its rectangle is the canvas's top-right corner.
+	const close = scene.createPerspectiveCamera({
+		fov: 50,
+		position: [0.05, 1.6, 1.15],
+		target: [0.6, 1.55, 2.9],
+	});
+	scene.createView({ camera: close, rect: [0.69, 0.02, 0.29, 0.32] });
 
 	// The courtyard, and a round dais of worn stone in its middle where the knights stand.
 	const torches = courtyard(ctx);

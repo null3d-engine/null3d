@@ -1,165 +1,170 @@
-// The impostor batch: camera-facing cards that show the stored view nearest the camera. The batch
-// is the engine's sprite batch, so it culls, sorts and fades as any sprite does, and draws on
-// WebGPU and WebGL2 with the sprite shader. This module only picks each card's frame from the
-// camera's direction, once a frame. The batch is static: a frame that changes marks its row dirty,
-// so a still camera uploads nothing and a moving one uploads only the cards whose view changed.
+// The impostor cards: one quad per card, drawn by the package's own material. Each quad faces the
+// screen, and the material blends the three atlas views nearest the direction from the card toward
+// the eye and lights the blend with the normal that the bake stored. So a scene whose sun moves
+// relights its cards as it relights its meshes, and no card data changes as the camera moves: the
+// shader reads the eye from the frame's camera.
 
-import type { ColorInput, Scene, SpriteBatch, Texture, Vec3Like } from '@null3d/engine';
-import { frameOf, type OctahedralAtlas } from './octahedral';
+import type {
+	ColorInput,
+	InstanceBatch,
+	Materials,
+	MeshArrays,
+	MeshGeometry,
+	Scene,
+	Texture,
+} from '@null3d/engine';
+import cardsShader from './cards.wgsl';
+import type { OctahedralAtlas } from './octahedral';
 
 /**
- * Options of `createImpostors`: the atlas, the cards and their look.
+ * What `createImpostors` needs of the sketch: the scene, and the factories it draws with.
+ *
+ * @category api/impostors
+ */
+export interface ImpostorContext {
+	/** The scene that the cards join, and that the material reads the frame's camera from. */
+	readonly scene: Scene;
+	/** The sketch's materials factory, which makes the card material. */
+	readonly materials: Materials;
+	/** The sketch's geometry factory, which makes the quad that every card draws. */
+	readonly geometry: { fromArrays(arrays: MeshArrays): MeshGeometry };
+}
+
+/**
+ * Options of `createImpostors`: the atlases, the cards and their look.
  *
  * @category api/impostors
  */
 export interface ImpostorOptions {
-	/** The batch's atlas texture, in sRGB: every view of the object, in the cells of `atlas`. */
-	readonly texture: Texture;
-	/** The cells of the atlas: the frames across and down. */
+	/** The colour of every view, in sRGB: one cell per view, in the cells of `atlas`. */
+	readonly color: Texture;
+	/**
+	 * The surface of every view, in the same cells as `color`: red and green hold the octahedral
+	 * code of the normal in the object's frame, blue its depth from the view's front to its back,
+	 * and alpha its coverage. `bakeImpostorAtlas` writes one.
+	 */
+	readonly surface: Texture;
+	/** The cells of the atlases: the frames across and down. */
 	readonly atlas: OctahedralAtlas;
 	/**
-	 * The cards: three numbers each, x, y and z, relative to `origin`, which is the world's origin
-	 * by default. Their count is the batch's size.
+	 * The cards: three numbers each, x, y and z, in world units. Each stands on its position, like
+	 * a tree on the ground. Their count is the batch's size.
 	 */
 	readonly positions: ArrayLike<number>;
+	/**
+	 * The turn of each card about the world's up, in radians, one number a card. A bake draws each
+	 * view in the tree's local frame, so a turned copy picks the views its turned mesh would show
+	 * and lights from the normal that the turn gives it. The default turns every card by 0.
+	 */
+	readonly turn?: ArrayLike<number>;
 	/**
 	 * The width and height of every card, in world units. One number makes a square card. The
 	 * default is the atlas's cells, one unit each, which suits a bake at one unit per cell.
 	 */
 	readonly size?: number | readonly [number, number];
-	/**
-	 * The point of each card that sits at its position, as a fraction of its width and height from
-	 * its bottom left corner, like three.js's `Sprite.center`. The default, `[0.5, 0]`, stands a
-	 * card on its position, as a tree stands on the ground.
-	 */
-	readonly center?: readonly [number, number];
-	/** Linear RGBA colors, four numbers per card, which multiply the atlas's color. Default white. */
-	readonly colors?: ArrayLike<number>;
-	/** How the cards use their alpha: `blend` by default, as sprites, or `mask` to cut them out. */
+	/** A color that multiplies every card's view. */
+	readonly tint?: ColorInput;
+	/** The roughness that the cards light with, as the standard material's. */
+	readonly roughness?: number;
+	/** The metalness that the cards light with, as the standard material's. */
+	readonly metalness?: number;
+	/** How the cards use their alpha: `mask` by default, since a bake cuts its object out. */
 	readonly alphaMode?: 'opaque' | 'blend' | 'mask';
-	/** A color that multiplies the atlas, which `set` changes at any time. */
-	readonly color?: ColorInput;
-	/** The point that every card's position is relative to, for precision far from the origin. */
-	readonly origin?: readonly [number, number, number];
+	/** The alpha under which a masked card draws nothing. The default is 0.5. */
+	readonly alphaCutoff?: number;
 	/** The layers every card is on, as a 32-bit mask. The default, 1, is layer 0. */
 	readonly layers?: number;
+	/**
+	 * The object's depth along a view, in world units: the distance that the surface atlas's stored
+	 * depth spans. A card that receives shadows reads them where that depth puts the surface that
+	 * it shows, rather than on its own plane, so its own cast does not fall on it. The default is
+	 * the card's width, the widest horizontal reach that the bake fits into it.
+	 */
+	readonly depth?: number;
+	/**
+	 * True makes the cards cast the sun's shadow, cut to the crown's shape that the bake stored. A
+	 * card batch that only casts draws on a layer that the light sees and no camera does, so it
+	 * costs nothing in the camera's view. The default is false.
+	 */
+	readonly castShadows?: boolean;
+	/** True makes the shadows of other objects fall on the cards. The default is false. */
+	readonly receiveShadows?: boolean;
+	/**
+	 * True keeps the cards' casters in place while the sun stands still, so a far shadow cascade
+	 * stays cached. The default is true, which suits a card that turns to the eye of each pass. A
+	 * scene that turns a card whose batch casts from frame to frame moves its caster while the light
+	 * stands still, and the far cascades then keep a stale shadow: pass false for such a scene.
+	 */
+	readonly castsStill?: boolean;
 }
 
 /**
- * A batch of impostor cards, which `createImpostors` makes. It wraps the engine's sprite batch,
- * which draws the cards, and adds `update`, which picks each card's view from the camera. The
- * sprite batch is static: after you change cards' positions, sizes or colors through `sprites`,
- * call `markDirty` on this batch for those cards.
+ * A batch of impostor cards, which `createImpostors` makes. The cards need no per-frame work: the
+ * material reads the eye from the frame's camera and picks each card's views itself. Write the
+ * cards' positions, sizes, turns or colors through `batch`, then call `markDirty` for those cards.
  *
  * @category api/impostors
  */
 export class ImpostorBatch {
-	/** The eye that the last `update` picked views for, relative to the origin. */
-	private eyeX = 0;
-	private eyeY = 0;
-	private eyeZ = 0;
-	/** True until an `update` picks every card's view again. */
-	private stale = true;
-
 	/** @internal */
 	constructor(
-		/** The sprite batch that draws the cards. Its `frames` hold each card's view. */
-		readonly sprites: SpriteBatch,
-		/** The atlas's cells. */
-		readonly atlas: OctahedralAtlas,
-		/** The point that the cards' positions are relative to. */
-		readonly origin: readonly [number, number, number] = [0, 0, 0],
+		/** The instance batch whose rows are the cards. */
+		readonly batch: InstanceBatch,
+		/** Writes the number of views that the material draws each card from into its uniforms. */
+		private readonly writeViews: (views: 1 | 3) => void,
 	) {}
 
 	/** The number of cards. */
 	get count(): number {
-		return this.sprites.count;
+		return this.batch.count;
 	}
 
 	/**
-	 * Picks the view each card shows, from where the eye is: the card shows the stored view whose
-	 * direction is nearest the direction from the card toward the eye. Call it once a frame with the
-	 * camera's position in the world, written into an array you keep. A camera with no parent
-	 * reports that at once with `camera.getPosition(eye)`; `camera.getWorldPosition(eye)` reports
-	 * the frame that last ran, which is the world's origin on a sketch's first frame, and every
-	 * card then shows the view from there. It marks dirty only the cards whose view changed, does
-	 * nothing while the eye stays where it was, and allocates nothing.
+	 * Sets how many atlas views a card draws: the three nearest it, which blend so no seam shows as
+	 * the eye turns, or its nearest view alone, which is cheaper and hops from view to view. The
+	 * default is three.
 	 */
-	update(eye: Vec3Like): void {
-		const origin = this.origin;
-		const ex = (eye[0] as number) - origin[0];
-		const ey = (eye[1] as number) - origin[1];
-		const ez = (eye[2] as number) - origin[2];
-		if (!this.stale && ex === this.eyeX && ey === this.eyeY && ez === this.eyeZ) return;
-		this.stale = false;
-		this.eyeX = ex;
-		this.eyeY = ey;
-		this.eyeZ = ez;
-		const { sprites } = this;
-		const { positions, frames } = sprites;
-		const { columns, rows } = this.atlas;
-		const count = frames.length;
-		// Changed cards close together share one dirty range, so a moving camera marks a few ranges
-		// rather than one per card.
-		let start = -1;
-		let last = -1;
-		for (let i = 0; i < count; i++) {
-			const frame = frameOf(
-				ex - (positions[i * 3] as number),
-				ey - (positions[i * 3 + 1] as number),
-				ez - (positions[i * 3 + 2] as number),
-				columns,
-				rows,
-			);
-			if (frame === frames[i]) continue;
-			frames[i] = frame;
-			if (start >= 0 && i - last > DIRTY_GAP) {
-				sprites.markDirty(start, last + 1 - start);
-				start = -1;
-			}
-			if (start < 0) start = i;
-			last = i;
-		}
-		if (start >= 0) sprites.markDirty(start, last + 1 - start);
+	setViews(views: 1 | 3): void {
+		if (views !== 1 && views !== 3)
+			throw new RangeError(`setViews() got ${views}; it takes 1 or 3 views.`);
+		this.writeViews(views);
 	}
 
 	/**
-	 * Marks `count` cards from `start` as changed, after you write their positions, sizes, rotations
-	 * or colors through `sprites`. The sprite batch uploads them, and the next `update` picks every
-	 * card's view again. The default marks every card.
+	 * Marks `count` cards from `start` as changed, after you write their positions, sizes or colors
+	 * through `batch`. The default marks every card.
 	 */
-	markDirty(start = 0, count = this.sprites.count - start): void {
-		this.sprites.markDirty(start, count);
-		this.stale = true;
+	markDirty(start = 0, count = this.batch.count - start): void {
+		this.batch.markDirty(start, count);
 	}
 
-	/**
-	 * Removes the batch and frees its cards, as a sprite batch's `destroy`.
-	 */
+	/** Removes the cards and frees their rows, as an instance batch's `destroy`. */
 	destroy(): void {
-		this.sprites.destroy();
+		this.batch.destroy();
 	}
 }
 
-/**
- * The unchanged cards that may sit between two changed cards in one dirty range. Uploading a few
- * unchanged rows costs less than one more range.
- */
-const DIRTY_GAP = 16;
+/** A card's quad: one unit square standing on its bottom edge, facing +z, with its texture
+ * coordinates from (0, 0) at the bottom left to (1, 1) at the top right. */
+const QUAD: MeshArrays = {
+	positions: new Float32Array([-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0]),
+	normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]),
+	uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
+	indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
+};
 
 /**
- * Makes a batch of impostor cards: one card per position, each showing the atlas cell nearest the
- * camera's direction. The cards stand on their positions with `center: [0.5, 0]`. The batch is
- * static, so it uploads a card only when `update` changes its view or `markDirty` names it. Call
- * `update` once a frame.
+ * Makes a batch of impostor cards: one card per position, drawn from the three atlas views nearest
+ * the direction from the card toward the eye, and lit by the scene's lights. The cards need no
+ * `update` call: the material reads the eye from the frame's camera. A card's turn, in `turn`,
+ * turns its views and its light by the same angle about the world's up, so a turned tree hands
+ * over to a card whose crown matches it. A batch that casts the sun's shadow cuts that shadow to
+ * the crown's shape, and a batch that receives shadows reads them at the surface that it shows.
  *
  * @category api/impostors
  */
-export async function createImpostors(
-	scene: Scene,
-	options: ImpostorOptions,
-): Promise<ImpostorBatch> {
-	const { texture, atlas, positions } = options;
+export function createImpostors(ctx: ImpostorContext, options: ImpostorOptions): ImpostorBatch {
+	const { atlas, positions } = options;
 	if (!(Number.isInteger(atlas.columns) && atlas.columns >= 1))
 		throw new RangeError(
 			`createImpostors() got ${atlas.columns} columns, not a whole number from 1.`,
@@ -173,26 +178,56 @@ export async function createImpostors(
 	const count = positions.length / 3;
 	if (count === 0)
 		throw new RangeError('createImpostors() got no positions. Give at least one card.');
+	if (options.turn !== undefined && options.turn.length !== count)
+		throw new RangeError(
+			`createImpostors() got ${options.turn.length} turns for ${count} cards. Give one turn a card.`,
+		);
 	const [width, height] =
 		typeof options.size === 'number'
 			? [options.size, options.size]
 			: (options.size ?? [atlas.columns, atlas.rows]);
-	const sprites = await scene.createSprites({
-		count,
-		map: texture,
-		atlas: { columns: atlas.columns, rows: atlas.rows },
-		center: options.center ?? [0.5, 0],
-		alphaMode: options.alphaMode ?? 'blend',
-		color: options.color,
-		origin: options.origin,
-		layers: options.layers,
+	const depth = options.depth ?? width;
+	const material = ctx.materials.shader({
+		wgsl: cardsShader,
+		textures: { impostorColor: options.color, impostorSurface: options.surface },
+		uniforms: { cells: [atlas.columns, atlas.rows, 0, depth] },
+		alphaMode: options.alphaMode ?? 'mask',
+		// A card is one flat quad, so a caster must draw it from either side: the shadow pass
+		// culls front faces of single-sided geometry and would drop the card whole.
+		doubleSided: true,
+		...(options.alphaCutoff !== undefined && { alphaCutoff: options.alphaCutoff }),
+		...(options.tint !== undefined && { color: options.tint }),
+		...(options.roughness !== undefined && { roughness: options.roughness }),
+		...(options.metalness !== undefined && { metalness: options.metalness }),
+		// A card turns toward the view that draws it, so its casters hold their place while the
+		// light stands still, and the far shadow cascades stay cached. A scene that turns its cards
+		// every frame moves them, and withdraws the claim.
+		castsStill: options.castsStill ?? true,
+		// The contact shadows' march takes a flat card for a solid wall, as it takes a leaf card,
+		// so the card takes the shadow map's shadows alone.
+		contactShadows: false,
 	});
-	sprites.positions.set(positions);
+	const batch = ctx.scene.createInstances(ctx.geometry.fromArrays(QUAD), count, {
+		material,
+		values: true,
+		...(options.layers !== undefined && { layers: options.layers }),
+		...(options.castShadows === true && { castShadows: true }),
+		...(options.receiveShadows === true && { receiveShadows: true }),
+	});
+	batch.positions.set(positions);
+	const values = batch.values as Float32Array;
 	for (let i = 0; i < count; i++) {
-		sprites.sizes[i * 2] = width;
-		sprites.sizes[i * 2 + 1] = height;
+		batch.scales[i * 3] = width;
+		batch.scales[i * 3 + 1] = height;
+		batch.scales[i * 3 + 2] = 1;
+		values[i * 4] = options.turn?.[i] ?? 0;
 	}
-	if (options.colors) sprites.colors.set(options.colors);
-	sprites.markDirty();
-	return new ImpostorBatch(sprites, atlas, options.origin);
+	batch.markDirty();
+	const cellValues = (drawn: 1 | 3): readonly [number, number, number, number] => [
+		atlas.columns,
+		atlas.rows,
+		drawn === 1 ? 1 : 0,
+		depth,
+	];
+	return new ImpostorBatch(batch, (drawn) => material.setUniform('cells', cellValues(drawn)));
 }

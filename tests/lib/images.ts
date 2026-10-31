@@ -7,9 +7,18 @@
 // a device's own references where a test records that the device's GPU draws it differently. An
 // image without a reference, or one that differs from its reference, becomes a candidate under
 // test-results/images/, with its diff. Only the review step (tests/review-images.ts) turns a
-// candidate into a reference.
+// candidate into a reference. A run that asks for its drawings keeps every image that it drew
+// under test-results/drawn/, whether the image matched its reference or not, so a reference can
+// come from a shard that passed.
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	copyFileSync,
+	existsSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { join, relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import {
@@ -57,6 +66,9 @@ export {
 /** The environment whose references other browsers and devices compare with. */
 export const REAL_GPU: Environment = 'chrome-real-gpu';
 
+/** The software environment: CI's Linux SwiftShader draws and judges its set. */
+export const SWIFTSHADER: Environment = 'chromium-swiftshader';
+
 /**
  * The tolerance of other browsers and devices against the real-GPU references, for GPUs that
  * rasterize edges a little differently. SwiftShader differs from the Mac's GPU in up to 0.35% of
@@ -93,8 +105,8 @@ export const SKETCH_SIZE = [320, 180] as const;
 
 /**
  * How long a page may take to publish its image, unless its entry gives another time. CI's software
- * GPU compiles a custom shader's pipelines for WebGPU on its CPU: a page that took 18.5 seconds on a
- * passing run gave no result within 30 on a slower runner on 17 October 2026.
+ * GPU compiles a custom shader's pipelines for WebGPU on its CPU: a page that takes 18.5 seconds on
+ * a passing run can give no result within 30 on a slower runner.
  */
 const TIMEOUT_SECONDS = 60;
 
@@ -197,6 +209,12 @@ export interface ImageRun {
 	reference: { test: string; tier: Tier; devices: readonly string[] };
 	/** Another test of the same scene whose reference is the same picture as this run's. */
 	samePicture?: string;
+	/**
+	 * The command that makes this run's reference, for a run that the image page does not draw, such
+	 * as one that the command-line tool makes. `{ci}` becomes `CI=1 ` where the place draws on
+	 * SwiftShader. Without it, the command is the image tests' own.
+	 */
+	make?: string;
 	tolerance: Tolerance;
 	/** The tolerance against SwiftShader's references, where it differs from `tolerance`. */
 	swiftShaderTolerance?: Tolerance;
@@ -452,12 +470,35 @@ function makeCommand(run: ImageRun, place: Place): string {
 	if ('device' in place)
 		return `run the checks plan on ${place.device} (.dev/devices.md), then ${accept}`;
 	const ci = place.environment === REAL_GPU ? '' : 'CI=1 ';
+	if (run.make) return run.make.replace('{ci}', ci);
 	return `${ci}bun run test:images -g "${test} on ${tier}", then ${accept}`;
 }
 
 /** Each reference that a run needs, with the place that drew it. */
 function* neededReferences(run: ImageRun): Generator<{ place: Place; file: string }> {
 	for (const place of placesNeeding(run)) yield { place, file: referenceOf(run, place).file };
+}
+
+/**
+ * What is wrong with the references on disk, without a browser: the missing and the unused files
+ * and the pictures that two tests of one scene share, with the count of files that it read. The
+ * unit check (`bun run check`) and the report of every fixed limit (`bun run limits`) both call it,
+ * so the two can never disagree about the reference set.
+ */
+export function referenceProblemsOnDisk(runs: readonly ImageRun[]): {
+	files: number;
+	problems: string[];
+} {
+	const files = readdirSync(HARNESS_DIRS.references, { recursive: true, withFileTypes: true })
+		.filter((entry) => entry.isFile())
+		.map((entry) => relative(HARNESS_DIRS.references, `${entry.parentPath}/${entry.name}`));
+	return {
+		files: files.length,
+		problems: [
+			...referenceFileProblems(runs, files),
+			...sharedReferenceProblems(runs, referenceDigest),
+		],
+	};
 }
 
 /**
@@ -486,8 +527,8 @@ export function referenceFileProblems(
 /**
  * What is wrong with the references of tests that draw one scene: no two of the scene's tests may
  * keep the same picture. Tests of a scene differ by the switches that turn its features on, so a
- * picture that two of them share is a picture of neither feature: the bench's four area-light
- * scenes once shared one black image, and every one of them passed. A test whose picture must match
+ * picture that two of them share is a picture of neither feature: four area-light scenes that share
+ * one black image would all pass. A test whose picture must match
  * another's says so with `reference`, and then owns no reference of its own, which the check leaves
  * alone; so does a pair that records one picture with `samePicture`, and so do the tiers of one
  * test.
@@ -544,16 +585,26 @@ export function referenceDigest(file: string): string | undefined {
 	}
 }
 
-/** The folders of references and of candidates. */
+/** The folders of references and of candidates, and of the drawings that a run was asked to keep. */
 export interface HarnessDirs {
 	references: string;
 	candidates: string;
+	/** Overrides the folder of the drawings that an asked run saves, which a test points elsewhere. */
+	drawn?: string;
 }
+
+/** Where a run that was asked for its drawings keeps every image that its tests drew. */
+export const DRAWN_IMAGES = join(REPO_ROOT, 'test-results/drawn');
 
 export const HARNESS_DIRS: HarnessDirs = {
 	references: join(REPO_ROOT, 'tests/image/references'),
 	candidates: join(REPO_ROOT, 'test-results/images'),
+	drawn: DRAWN_IMAGES,
 };
+
+/** Whether the run asks for every image that its tests draw, as CI's picture run does. */
+export const takingDrawnImages = (env: Readonly<Record<string, string | undefined>>): boolean =>
+	env.NULL3D_TAKE_IMAGES === '1';
 
 /** What a candidate's JSON file records, beside its image. */
 export interface CandidateFacts {
@@ -563,8 +614,11 @@ export interface CandidateFacts {
 	mode?: string;
 	/** The environment or the runner that drew it. */
 	drawnIn: string;
-	/** New: the image has no reference. Changed: it differs from its reference beyond the tolerance. */
-	status: 'new' | 'changed';
+	/**
+	 * New: the image has no reference. Changed: it differs from its reference beyond the tolerance.
+	 * Drawn: an asked run kept an image that matched its comparison, or failed it, without a diff.
+	 */
+	status: 'new' | 'changed' | 'drawn';
 	/** The reference it was compared with, from the folder of references. */
 	reference: string;
 	/** For a changed image, the share of its pixels that differ, from 0 to 1. */
@@ -572,6 +626,17 @@ export interface CandidateFacts {
 	tolerance: Tolerance;
 	/** Why the image cannot become the reference, when it cannot. */
 	fixed?: string;
+	/**
+	 * The CI run whose job drew the image, when GitHub Actions drew it. A software-GPU reference
+	 * comes only from CI's own drawing, so the review accepts one only with this run, or from a run
+	 * that it fetched itself.
+	 */
+	ciRun?: string;
+}
+
+/** The CI run that draws in this process, from GitHub Actions' own variables, or none elsewhere. */
+export function ciRunOf(env: Readonly<Record<string, string | undefined>>): string | undefined {
+	return env.GITHUB_ACTIONS === 'true' && env.GITHUB_RUN_ID ? env.GITHUB_RUN_ID : undefined;
 }
 
 /** The files of one candidate, which differ in their endings. */
@@ -598,6 +663,38 @@ export function clearCandidates(place: Place, dirs = HARNESS_DIRS): void {
 }
 
 /**
+ * Saves the image that the renderer drew, with the facts that the review reads, under the folder
+ * of drawings. A run asked for its drawings keeps one picture for each test and tier that it drew
+ * in, whichever thread mode drew it first. A run whose image cannot become a reference keeps
+ * nothing, since the artifact exists to hand references on.
+ */
+export function saveDrawnImage(
+	run: ImageRun,
+	place: Place,
+	image: RgbaImage,
+	share: number | undefined,
+	dirs = HARNESS_DIRS,
+): void {
+	const reference = referenceOf(run, place);
+	if (reference.fixed) return;
+	const base = join(dirs.drawn ?? DRAWN_IMAGES, drawnIn(place), run.tier, run.test);
+	if (existsSync(`${base}${CANDIDATE_FILES.facts}`)) return;
+	const facts: CandidateFacts = {
+		test: run.test,
+		tier: run.tier,
+		...(run.mode && { mode: run.mode.name }),
+		drawnIn: drawnIn(place),
+		status: 'drawn',
+		reference: reference.file,
+		...(share !== undefined && { share }),
+		tolerance: reference.tolerance,
+		...(ciRunOf(process.env) && { ciRun: ciRunOf(process.env) }),
+	};
+	writePng(`${base}${CANDIDATE_FILES.image}`, image);
+	writeFileSync(`${base}${CANDIDATE_FILES.facts}`, `${JSON.stringify(facts, null, '\t')}\n`);
+}
+
+/**
  * Compares a run's image with its reference in the place that drew it. An image without a
  * reference, or beyond the tolerance, is saved as a candidate with the facts of the comparison, and
  * with the reference and the diff when there is one. Returns what is wrong, or nothing.
@@ -611,6 +708,7 @@ export function compareWithReference(
 	const reference = referenceOf(run, place);
 	const referencePath = join(dirs.references, reference.file);
 	const base = candidateBase(run, place, dirs);
+	const keepDrawn = takingDrawnImages(process.env);
 	const facts: CandidateFacts = {
 		test: run.test,
 		tier: run.tier,
@@ -620,6 +718,7 @@ export function compareWithReference(
 		reference: reference.file,
 		tolerance: reference.tolerance,
 		...(reference.fixed && { fixed: reference.fixed }),
+		...(ciRunOf(process.env) && { ciRun: ciRunOf(process.env) }),
 	};
 	// The first mode that differs keeps its candidate: the later modes of a test on a tier draw the
 	// same pixels, or fail for that on their own. The facts go last, so they mark a whole candidate.
@@ -638,21 +737,61 @@ export function compareWithReference(
 	const shown = relative(REPO_ROOT, `${base}${CANDIDATE_FILES.image}`);
 	if (!existsSync(referencePath)) {
 		save({});
+		if (keepDrawn) saveDrawnImage(run, place, image, undefined, dirs);
 		return [`there is no reference ${reference.file} yet. The new image is ${shown}`];
 	}
 	const expected = readPng(referencePath);
 	if (expected.width !== image.width || expected.height !== image.height) {
 		save({ status: 'changed', share: 1 });
+		if (keepDrawn) saveDrawnImage(run, place, image, 1, dirs);
 		return [
 			`the image is ${image.width} x ${image.height}, and the reference ${reference.file} is ${expected.width} x ${expected.height}. The new image is ${shown}`,
 		];
 	}
-	const { share, diff } = compareImages(expected, image, reference.tolerance.threshold);
-	if (share <= reference.tolerance.maxDiffRatio) return [];
+	const tolerance = toleranceFor(place, reference.tolerance);
+	const { share, diff } = compareImages(expected, image, tolerance.threshold);
+	if (keepDrawn) saveDrawnImage(run, place, image, share, dirs);
+	if (share <= tolerance.maxDiffRatio) return [];
 	save({ status: 'changed', share }, diff);
 	return [
-		`${percent(share)} of pixels differ from the reference ${reference.file}, and at most ${percent(reference.tolerance.maxDiffRatio)} may. The new image is ${shown}, and the diff ${relative(REPO_ROOT, `${base}${CANDIDATE_FILES.diff}`)}`,
+		`${percent(share)} of pixels differ from the reference ${reference.file}, and at most ${percent(tolerance.maxDiffRatio)} may. The new image is ${shown}, and the diff ${relative(REPO_ROOT, `${base}${CANDIDATE_FILES.diff}`)}${elsewhereHint(place)}`,
 	];
+}
+
+/** The name a platform takes in a message: `macOS`, `win32`, `linux`. */
+const platformName = () => (process.platform === 'darwin' ? 'macOS' : process.platform);
+
+/**
+ * The software set is CI's Linux SwiftShader's drawing, and a run of it on another platform is a
+ * smoke test: the same tests against the same committed set, with the tolerance widened to a per
+ * cent. A renderer's own edge rule lays a softened edge, a cut-out mask's boundary or a shape a few
+ * pixels wide a little differently, and the differences measured when the sets were drawn were 0.167,
+ * 0.224, 0.354 and 0.540 per cent: a per cent covers them with room, and a change that really alters
+ * a picture reads at several per cent and still fails. What this cannot do is tell a platform
+ * difference from a small real change between those two figures, so a local run is a check that
+ * nothing broke, and CI's own run at a tenth of a per cent is the judge.
+ */
+export const LOCAL_SOFTWARE_TOLERANCE = 0.01;
+
+/** The tolerance a comparison uses: the test's own, widened on a local software run. */
+function toleranceFor(place: Place, tolerance: Tolerance): Tolerance {
+	if (!('environment' in place) || place.environment !== SWIFTSHADER) return tolerance;
+	if (process.platform === 'linux') return tolerance;
+	return {
+		...tolerance,
+		maxDiffRatio: Math.max(tolerance.maxDiffRatio, LOCAL_SOFTWARE_TOLERANCE),
+	};
+}
+
+/**
+ * What a local software run's failure means. It is against CI's Linux SwiftShader drawing, at the
+ * widened tolerance, so a difference at this size is either the platform or a change too small for
+ * the smoke test to separate: read the diff, and let CI judge the set.
+ */
+function elsewhereHint(place: Place): string {
+	if (!('environment' in place) || place.environment !== SWIFTSHADER) return '';
+	if (process.platform === 'linux') return '';
+	return `. This run drew the software set on ${platformName()} against CI's Linux SwiftShader drawing, where the tolerance widens to ${percent(LOCAL_SOFTWARE_TOLERANCE)} for that reason: read the diff, and let CI's run judge the set`;
 }
 
 /** The image in a page's result, or what is wrong with it. */

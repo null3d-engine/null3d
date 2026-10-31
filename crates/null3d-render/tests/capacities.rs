@@ -136,9 +136,9 @@ fn a_draw_list_that_starts_small_grows_once_on_both_builders() {
 }
 
 /// Steps a world of `builder` past its draw list's limit, part way through a frame, and checks
-/// the frame publishes nothing, later frames fail the same way while the GPU holds what the frame
-/// never made, and a new GPU device records the scene whole again.
-fn fails_whole_until_a_new_gpu<B: FrameBuilder>(builder: impl Fn(usize) -> B) {
+/// that the frame publishes nothing and that a frame whose scene changed records again, with
+/// every object created anew.
+fn fails_whole_until_the_scene_changes<B: FrameBuilder>(builder: impl Fn(usize) -> B) {
     const OBJECTS: u32 = 1_000;
     let capacity = OBJECTS + 64;
     // The words of the frame that adds the objects, with no limit.
@@ -156,24 +156,20 @@ fn fails_whole_until_a_new_gpu<B: FrameBuilder>(builder: impl Fn(usize) -> B) {
     let error = refused(&mut world);
     assert_eq!(error, RecordError::DrawListFull { megabytes: 0 });
 
-    // The builder's state no longer matches the GPU's, so it records nothing, even for a scene
-    // that fits again.
+    // The builder's state no longer matches the GPU's. A frame whose scene changed records again
+    // from the start, and its list replaces every object that the failed frame would have made.
     destroy(&mut world, &objects);
-    assert_eq!(refused(&mut world), error);
-
-    world.renderer.reset_gpu();
-    let mut fresh = MockBackend::default();
-    let whole = world.step(&mut fresh, true);
+    let whole = world.step(&mut mock, true);
     assert!(count(&whole, Op::Submit) > 0);
-    world.step(&mut fresh, false);
+    world.step(&mut mock, false);
 }
 
 #[test]
-fn a_frame_that_fails_part_way_draws_nothing_and_a_new_gpu_records_again() {
+fn a_frame_that_fails_part_way_draws_nothing_and_a_changed_scene_records_again() {
     // With `WEBGL_multi_draw`, a thousand more meshes add only a few words, so the WebGL2
     // builder fails here without it.
-    fails_whole_until_a_new_gpu(|limit| webgpu(16 * 1024, limit));
-    fails_whole_until_a_new_gpu(|limit| webgl2(false, 64 * 1024, limit));
+    fails_whole_until_the_scene_changes(|limit| webgpu(16 * 1024, limit));
+    fails_whole_until_the_scene_changes(|limit| webgl2(false, 64 * 1024, limit));
 }
 
 /// A crowd of `n` skinned columns of `around` vertices per ring, one mesh between them, on the
@@ -274,6 +270,29 @@ fn a_crowd_of_1000_characters_spreads_its_skinned_vertices_over_storage_bindings
     let (dispatches, buffers) = skins_every_vertex(1_000, 1_654, 64 * MIB);
     assert_eq!(buffers.len(), 2);
     assert!(dispatches.len() >= 2);
+}
+
+#[test]
+fn a_skinning_pass_past_the_default_binding_checks_the_device_limit_and_falls_back() {
+    use null3d_gpu::drawlist::sizes;
+    // WebGPU's default storage binding holds 128 MiB. About 140 MB of skinned vertices is past it,
+    // so the pass keeps every buffer within the limit the device reports and spills the rest into
+    // another binding.
+    let default = sizes::PORTABLE_STORAGE_BINDING_BYTES;
+    let (tight, tight_buffers) = skins_every_vertex(1_200, 1_654, default);
+    assert!(tight_buffers.len() >= 2, "{tight_buffers:?}");
+    assert!(tight.len() >= 2);
+    assert!(tight_buffers.iter().all(|&bytes| bytes <= default));
+    // The same crowd on a device that offers twice the binding needs fewer bindings and no more
+    // dispatches, and every buffer stays within what that device reports.
+    let roomy = 2 * default;
+    let (roomy_dispatches, roomy_buffers) = skins_every_vertex(1_200, 1_654, roomy);
+    assert!(
+        roomy_buffers.len() < tight_buffers.len(),
+        "{roomy_buffers:?} against {tight_buffers:?}"
+    );
+    assert!(roomy_dispatches.len() <= tight.len());
+    assert!(roomy_buffers.iter().all(|&bytes| bytes <= roomy));
 }
 
 #[test]

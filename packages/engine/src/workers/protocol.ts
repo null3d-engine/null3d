@@ -4,12 +4,14 @@ import type { StatsRequest } from '../debug/stats-options';
 import { messageOf } from '../errors/message';
 import type { PowerPreference } from '../page/capabilities';
 import type { EngineCapabilities } from '../page/engine';
+import type { HoldScript, HoldScriptResult } from '../page/hold';
 import type { CoreDevice } from '../page/limits';
 import type { GlTimingMode } from '../page/switches';
 import type { FramePacing } from '../render/loop';
 import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { type Build, loadGlue, type StartedCore, startCore } from '../shared/core';
+import type { ReplayProgram, ReplayResult } from '../shared/recording';
 import type { WAKE } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
@@ -44,6 +46,12 @@ export interface CapturedFrame {
 	width: number;
 	height: number;
 	pixels: Uint8Array;
+	/**
+	 * The sketch frame that the capture drew, as the frame numbers the sketch posts. A capture can
+	 * hold a frame recorded before a scene change, so a page that measures frames reads this number
+	 * rather than the latest one it saw.
+	 */
+	frame: number;
 }
 
 /** What the thread that draws needs: its canvas, the GPU path and how it paces its frames. */
@@ -58,6 +66,11 @@ export interface RendererSetup extends FramePacing {
 	glTiming?: GlTimingMode;
 	/** The features whose shader files load before the first frame, as `createEngine` lists them. */
 	preload?: readonly string[];
+	/**
+	 * True when the page records the permutation words that its pipelines ask for, as a build of a
+	 * narrowed shader set lists, through the `?permutations=record` switch.
+	 */
+	recordPermutations?: boolean;
 }
 
 export type SketchWorkerInit = CoreHandoff & {
@@ -81,10 +94,20 @@ export type SketchWorkerInit = CoreHandoff & {
 	renderer?: DrawingWorkerSetup;
 	/** Hold mode's sketch time in seconds, which the sketch worker steps the sketch to after setup. */
 	hold?: number;
+	/** A timed script that hold mode performs as it steps the sketch. */
+	holdScript?: HoldScript;
+	/** A recording whose frames the sketch runs, one per frame, with the input that it read. */
+	replay?: ReplayProgram;
+	/** True when the page records the session's frames and input, for a bug report. */
+	record?: boolean;
+	/** The debug view that the page's `?view` switch asks for, from the start. */
+	debugView?: string;
 	/** The quality preset and settings that the page chose. */
 	quality: QualityStart;
 	/** The highest target frame rate, as the sketch runner's options give it. */
 	maxTargetFps: number;
+	/** True when the page asked for the development probe of the two-step pass. */
+	twoStepProbe: boolean;
 	/** The port that texture images go through to the thread that draws, when that is another. */
 	imagePort?: MessagePort;
 	/** One port to each job worker, by index, for the on-demand loader's tasks. */
@@ -120,7 +143,9 @@ export type RendererRequest =
 	| { type: 'capture'; image?: boolean }
 	| { type: 'lose-gpu' }
 	| { type: 'stop-drawing' }
-	| { type: 'park' };
+	| { type: 'park' }
+	/** Gives the permutation words that the drawing thread's pipelines asked for while it recorded. */
+	| { type: 'stop-recording' };
 
 /**
  * Sent to the worker that draws as soon as the probe has chosen the GPU path, before the core
@@ -143,6 +168,11 @@ export type WorkerReply =
 			version?: string;
 			tier?: Tier;
 	  }
+	/**
+	 * The drawing thread's answer to a recording's stop: the permutation words that its pipelines
+	 * asked for. A thread that does not draw never answers.
+	 */
+	| { type: 'recorded'; role: 'sketch' | 'render'; permutations: number[] }
 	| { type: 'error'; role: 'sketch' | 'render' | 'job'; message: string }
 	/**
 	 * A thread's loop failed after the start, such as the sketch's frame loop, the render loop or a
@@ -175,10 +205,19 @@ export type WorkerReply =
 	| { type: 'quality'; update: QualityUpdate }
 	/** The sketch asked to show or hide the stats overlay, which the page draws. */
 	| { type: 'stats'; show: StatsRequest }
-	/** The slot in the label table of a label's id and its generation, or -1 once it has none. */
-	| { type: 'label'; id: string; slot: number; generation: number }
+	/**
+	 * The table and slot in the label tables of a label's id, and the slot's generation, or a slot of
+	 * -1 once the id has none.
+	 */
+	| { type: 'label'; id: string; table: number; slot: number; generation: number }
 	/** The sketch worker asks the page to start job workers up to `count`, as its parallel work grew. */
 	| { type: 'jobs-wanted'; count: number }
+	/** What a timed script's steps gave, after the sketch worker performed them in a hold. */
+	| { type: 'hold-script'; result: HoldScriptResult }
+	/** What a replay gave, after the sketch worker ran the recording's frames. */
+	| { type: 'replay-done'; result: ReplayResult }
+	/** The recording of the session so far, which the page saves as a file. */
+	| { type: 'recording'; bytes: Uint8Array }
 	| ({ type: 'captured' } & CapturedFrame)
 	| { type: 'captured-image'; image: Blob }
 	| { type: 'capture-failed'; message: string };
@@ -190,6 +229,8 @@ export type SketchWorkerMessage =
 	| ShaderPreload
 	| RendererRequest
 	| { type: 'post'; name: string; data: unknown }
+	/** Asks the sketch worker to save the recording of the session so far. */
+	| { type: 'save-recording' }
 	/** Hot updates of the project's WGSL on the dev server, for the sketch's custom materials. */
 	| { type: 'wgsl'; updates: readonly WgslUpdate[] }
 	/**

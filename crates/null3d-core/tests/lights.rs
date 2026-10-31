@@ -188,6 +188,7 @@ fn point_and_spot_lights_that_cast_shadows_list_where_they_stand_in_view_or_not(
             range: 1.0,
             bias: 0.01,
             normal_bias: 0.02,
+            intensity: 1.0,
             layers: DEFAULT_LAYERS,
         }
     );
@@ -234,6 +235,8 @@ fn records_hold_colors_times_intensities_and_the_cones_of_spot_lights() {
             kind: kind::POINT,
             light: point,
             shadow: 0.0,
+            up: [0.0; 3],
+            image: 0.0,
         }
     );
     // A quarter turn back about X points the spot light straight down.
@@ -242,7 +245,7 @@ fn records_hold_colors_times_intensities_and_the_cones_of_spot_lights() {
     assert_eq!((s.range, s.decay), (6.0, 1.0));
     assert!((s.cone_cos - FRAC_PI_4.cos()).abs() < 1e-6);
     assert!((s.penumbra_cos - FRAC_PI_8.cos()).abs() < 1e-6);
-    assert_eq!(size_of::<VisibleLight>(), 64);
+    assert_eq!(size_of::<VisibleLight>(), 80);
 }
 
 #[test]
@@ -698,7 +701,7 @@ fn area_lights_start_one_meter_wide_and_high_with_a_thin_tube() {
 }
 
 #[test]
-fn a_rectangle_light_s_record_holds_its_image_layer_where_a_spot_light_holds_its_tile() {
+fn a_rectangle_light_s_record_holds_its_image_layer_and_a_tube_takes_none() {
     let mut world = World::new();
     let rect = world.ranged(kind::RECT, [0.0, 0.0, -5.0], 8.0);
     let tube = world.ranged(kind::TUBE, [0.0, 1.0, -5.0], 8.0);
@@ -706,9 +709,50 @@ fn a_rectangle_light_s_record_holds_its_image_layer_where_a_spot_light_holds_its
     world.lights.set_value(tube, value::IMAGE, 4.0).unwrap();
     world.lights.set_area_ready(true);
     world.frame(Some(&origin_view()));
-    let shadows: Vec<f32> = world.lights.visible().iter().map(|l| l.shadow).collect();
-    // Tubes take no image.
-    assert_eq!(shadows, [4.0, 0.0]);
+    let images: Vec<f32> = world.lights.visible().iter().map(|l| l.image).collect();
+    assert_eq!(images, [4.0, 0.0]);
+}
+
+/// A spot light with a map holds the map's layer, and the up axis that the map reads with: the
+/// frame that a camera looking along the light with the world's up axis holds, as three.js turns the
+/// camera that projects a spot light's map.
+#[test]
+fn a_spot_light_s_record_holds_its_map_s_layer_and_the_up_axis_it_reads_with() {
+    let mut world = World::new();
+    let (_, spot) = world.light(
+        kind::SPOT,
+        [0.0, 0.0, -5.0],
+        turn([1.0, 0.0, 0.0], -FRAC_PI_2),
+    );
+    world.lights.set_value(spot, value::RANGE, 8.0).unwrap();
+    world.lights.set_value(spot, value::IMAGE, 6.0).unwrap();
+    world.frame(Some(&origin_view()));
+    let [lit] = world.lights.visible() else {
+        panic!("one spot light is visible")
+    };
+    assert_eq!(lit.image, 6.0);
+    // The light points straight down: the world's up axis would tilt the frame, as three.js does,
+    // so the map's up axis runs toward -Z, with the same thousandth of a tilt.
+    assert!(
+        lit.up[0].abs() < 1e-3 && lit.up[1].abs() < 1e-3 && (lit.up[2] + 1.0).abs() < 1e-3,
+        "{:?}",
+        lit.up
+    );
+
+    // A light turned to travel along +X keeps the world's +Y as its map's up axis.
+    world
+        .scene
+        .set_rotation(
+            world.lights.object(spot).unwrap(),
+            turn([0.0, 1.0, 0.0], -FRAC_PI_2),
+        )
+        .unwrap();
+    world.frame(Some(&origin_view()));
+    let [lit] = world.lights.visible() else {
+        panic!("one spot light is visible")
+    };
+    assert_close(lit.direction, [1.0, 0.0, 0.0]);
+    assert_close(lit.up, [0.0, 1.0, 0.0]);
 }
 
 #[test]
@@ -800,6 +844,6 @@ fn another_view_gathers_area_lights_once_their_tables_arrive() {
     assert_eq!((seen[0].kind, seen[1].kind), (kind::RECT, kind::TUBE));
     assert_close(seen[0].position, [0.0, 2.0, -10.0]);
     // The rectangle keeps its image's layer, and the tube its radius in the decay's place.
-    assert_eq!((seen[0].shadow, seen[1].shadow), (3.0, 0.0));
+    assert_eq!((seen[0].image, seen[1].image), (3.0, 0.0));
     assert_eq!(seen[1].decay, 0.025);
 }

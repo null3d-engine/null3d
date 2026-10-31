@@ -1,9 +1,9 @@
 // Pull request guard for the `GPU-Checked:` trailer (AGENTS.md, "Commit gates"). CI's benchmark job
 // has no GPU timer, so a pull request that changes shaders or how the engine draws runs the GPU
 // check on a computer with a GPU of its own, and puts the line it prints on a commit. The trailer
-// must sit on the last commit that changes such files or on a later one, so the check measured the
-// pull request's final code. CI reads it through check-trailers.ts, over the whole pull request,
-// since each commit need not carry a check of its own.
+// may sit on any commit of the range, since one measurement of the branch's build answers for all
+// of it. CI reads it through check-trailers.ts, over the whole range, since each commit need not
+// carry a check of its own.
 import {
 	bearingFiles,
 	effectiveMessage,
@@ -43,12 +43,16 @@ export function gpuCheckProblem(commits: readonly CommitWithFiles[]): string | n
 	const last = commits.findIndex((commit) => gpuBearingFiles(commit.files).length > 0);
 	const changing = commits[last];
 	if (!changing) return null;
-	const values = commits
-		.slice(0, last + 1)
-		.flatMap((commit) => findAckValues(effectiveMessage(commit.message), GPU_CHECK_TRAILER));
+	// The line may sit on any commit of the pull request, not only on the newest one that touches
+	// the GPU's code. A branch that lands a dozen features a night would otherwise go red on every
+	// landing, which says nothing about whether a check was taken. The measurement covers the whole
+	// branch's build, so one line answers for all of it; a later drawing change re-takes it.
+	const values = commits.flatMap((commit) =>
+		findAckValues(effectiveMessage(commit.message), GPU_CHECK_TRAILER),
+	);
 	if (values.some((value) => !isBareAck(value))) return null;
 	const commit = `${changing.sha.slice(0, 8)} ${changing.message.split('\n')[0]}`;
 	return values.length > 0
 		? `GPU-Checked value "${values[0]}" records no check: put the line that bun run bench:gpu-check prints on the commit`
-		: `${commit} changes how the GPU draws (${summarizeBearing(gpuBearingFiles(changing.files))}), but neither it nor a later commit has a GPU-Checked: trailer. Run bun run bench:gpu-check on a computer with a GPU of its own, and put the line it prints on a plain commit; an empty commit is fine (.dev/pull-requests.md).`;
+		: `${commit} changes how the GPU draws (${summarizeBearing(gpuBearingFiles(changing.files))}), but no commit of the range has a GPU-Checked: trailer. Run bun run bench:gpu-check on a computer with a GPU of its own, and put the line it prints on a plain commit; an empty commit is fine (.dev/pull-requests.md).`;
 }

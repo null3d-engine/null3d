@@ -29,7 +29,7 @@ The targets use them as follows ([D-06](decisions/D-06-success-targets.md)):
 - GPU path is null3D's path, and its variant where it has one, such as low latency.
 - three.js is the renderer with the lower median in that run, named in brackets. It can differ between the two measures. "failed" means that no three.js page drew the scene.
 - Share is null3D's median as a percentage of three.js's.
-- fps is the frames per second that each engine presented. three.js's pages did not report it before 29 September.
+- fps is the frames per second that each engine presented. An empty three.js figure means that its page did not report it.
 - GPU ms is null3D's GPU time per frame, where the browser gives a GPU timer. Chrome on the Mac has none on WebGL2.
 - Commit is the engine commit that the run measured. The gate and comparisons record it. For other runs it is the commit that the checkout held when the run started, from git's reflog. Edits that were not committed do not show.
 - Source is the run's name, and its record is `bench/results/<run>.json`. A row from a guide links to it.
@@ -63,10 +63,10 @@ S1 moves 100,000 boxes every frame with the same scene code in both engines. It 
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGPU | 100,000 | 1.67 / 2.81 (WebGL) | 59% | 0.14 / 1.50 (WebGL) | 10% | 144.0 / 144.0 | 1.94 | 21de365f | 20261003-171051-bench |
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGPU | 100,000 | 2.10 / 2.98 (WebGL) | 70% | 0.15 / 1.07 (WebGL) | 14% | 143.9 / 144.0 | 1.94 | 21de365f | 20261003-173411-bench |
 
-- The rows of 27 and 28 September name the engine by its earlier name in their run folders. The archive gives their pages null3D's names.
-- Rows without three.js's own work come from runs that had no scene-code page yet.
-- The gate rehearsal's desktop target is 20261003-053621-bench: 0.35 ms against 3.25 ms of own work, 11%. Other work loaded the Mac in that run ([Releases](releases.md#rehearsal-on-the-mac-3-october-2026)).
-- A later full run of `bun run gate`, on 3 October at 21de365f, measured the desktop target in 20261003-173411-bench: 14%. That commit was not on main.
+- The run folders of the rows of 27 and 28 September name the engine by another name. The archive gives their pages null3D's names.
+- Rows without three.js's own work come from runs without a scene-code page.
+- The gate rehearsal's desktop target is 20261003-053621-bench: 0.35 ms against 3.25 ms of own work, 11%. Other work loaded the Mac in that run ([Releases](releases.md#rehearsal-on-the-mac)).
+- A full run of `bun run gate` at 21de365f, a commit that is not on main, measured the desktop target in 20261003-173411-bench: 14%.
 
 ## S1 at phone scale
 
@@ -110,8 +110,8 @@ S1 at the count where three.js holds about 30 frames per second on a phone or a 
 | 2026-10-04 | ipad-safari, Safari 26.6.2 | WebGPU | 256,000 | 16.44 / 31.32 (WebGPU) | 52% | 2.40 / 17.56 (WebGPU) | 14% | 28.0 / 28.4 | 28.03 | 5309dba5 | 20261004-125547-bench |
 | 2026-10-04 | ipad-safari, Safari 26.6.2 | WebGL2 | 256,000 | 17.18 / 31.32 (WebGPU) | 55% | 4.14 / 17.56 (WebGPU) | 24% | 27.3 / 28.4 | n/a | 5309dba5 | 20261004-125547-bench |
 
-- Heat moves the S24+'s figures a lot. The controlled rerun of 29 September measured 100%, and the sustained run 60% ([D-06](decisions/D-06-success-targets.md#addendum-2026-09-30-the-controlled-rerun-on-the-s24)).
-- The rows of 4 October on the iPad are the gate commit, 5309dba5. 20261004-125547-bench is the gate's item 3 on the iPad.
+- Heat moves the S24+'s figures a lot. The controlled rerun measured 100%, and the sustained run 60% ([D-06](decisions/D-06-success-targets.md#the-controlled-rerun)).
+- The iPad's rows at 5309dba5 are the M1 gate commit's. 20261004-125547-bench is the gate's item 3 on the iPad.
 - On the iPad the GPU limits null3D's frame rate at this count, at about 28 ms of GPU time per frame.
 
 ## S1-static
@@ -126,7 +126,7 @@ S1-static draws S1's boxes standing still, so only the camera moves.
 | 2026-09-29 | Apple M5 Max, Chrome 153 | WebGL2 | 100,000 | 0.33 / 0.08 (WebGL) | 413% | 0.30 / 0.08 (WebGL) | 381% | 144.0 / n/a | n/a | 99af952b | 20260929-031330-bench |
 | 2026-09-29 | Apple M5 Max, Chrome 153 | WebGPU | 100,000 | 0.13 / 0.08 (WebGL) | 156% | 0.13 / 0.08 (WebGL) | 156% | 144.0 / n/a | 0.41 | 99af952b | 20260929-031330-bench |
 
-- These rows are from the WebGL2 path's first branch, before its upload changes. three.js's WebGL renderer draws still boxes very cheaply, and the owner accepted ties or small losses there on 29 September ([D-06](decisions/D-06-success-targets.md#addendum-2026-09-29-faster-than-threejs-in-every-kind-of-scene)). The final sweep of that branch is 20260929-055234-sweep.
+- These rows measure the WebGL2 path's first branch, without its upload changes. three.js's WebGL renderer draws still boxes very cheaply, and the owner accepts ties or small losses there ([D-06](decisions/D-06-success-targets.md#faster-than-threejs-in-every-kind-of-scene)). The final sweep of that branch is 20260929-055234-sweep.
 
 ## S1-cells
 
@@ -145,7 +145,7 @@ S1-cells spreads S1-static's boxes over 8 x 8 grid cells, and the camera flies l
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGL2 | 100,000 | 0.07 / 0.07 (WebGL) | 108% | 0.06 / 0.07 (WebGL) | 92% | 144.0 / 144.0 | n/a | 21de365f | 20261003-174604-bench |
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGPU | 100,000 | 0.08 / 0.07 (WebGL) | 123% | 0.08 / 0.07 (WebGL) | 123% | 144.0 / 144.0 | 0.22 | 21de365f | 20261003-174604-bench |
 
-- Every figure here is under 0.15 ms, near the browser timer's step of 5 microseconds. The two rows of 30 September come from the benchmarks guide. Their run folder is no longer on disk, so the archive has no record of them.
+- Every figure here is under 0.15 ms, near the browser timer's step of 5 microseconds. The two rows of 30 September come from the benchmarks guide. Their run folder is not kept, so the archive has no record of them.
 
 ## S2
 
@@ -188,11 +188,11 @@ S3 lights 20,000 still boxes with 256 moving point lights ([Benchmarks](benchmar
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGL2 | 20,000 | 0.27 / 0.57 (WebGPU) | 47% | 0.25 / 0.56 (WebGPU) | 44% | 143.8 / 144.0 | n/a | 21de365f | 20261003-174604-bench |
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGPU | 20,000 | 0.12 / 0.57 (WebGPU) | 21% | 0.10 / 0.56 (WebGPU) | 17% | 143.9 / 144.0 | 2.99 | 21de365f | 20261003-174604-bench |
 
-- The iPad's WebGL2 rows of 2 October are from before the WebGL2 path stopped waiting for the GPU ([#212](https://github.com/null3d-engine/null3d/pull/212)). The rows of 3 October measure after it.
+- The iPad's WebGL2 rows of 2 October measure a WebGL2 path that waits for the GPU. The rows of 3 October include [#212](https://github.com/null3d-engine/null3d/pull/212), which removes that wait.
 
 ## S4
 
-S4 is the phone scene: a town of 5,000 still objects and 200 cars, with shadows, street lights and fog ([Benchmarks](benchmarks.md#the-phone-scene)). Its frame rate target is in each record's traces, and [D-06](decisions/D-06-success-targets.md#addendum-2026-10-02-s3-s4-and-s1-at-phone-scale-on-each-device) gives the seconds that held it.
+S4 is the phone scene: a town of 5,000 still objects and 200 cars, with shadows, street lights and fog ([Benchmarks](benchmarks.md#the-phone-scene)). Its frame rate target is in each record's traces, and [D-06](decisions/D-06-success-targets.md#s3-s4-and-s1-at-phone-scale-on-each-device) gives the seconds that held it.
 
 | Date | Device and browser | GPU path | Objects | Whole frame, ms: null3D / three.js | Share | Own work, ms: null3D / three.js | Share | fps: null3D / three.js | GPU ms, null3D | Commit | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -214,11 +214,11 @@ S4 is the phone scene: a town of 5,000 still objects and 200 cars, with shadows,
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGL2 | 5,000 | 0.33 / 1.77 (WebGL) | 19% | 0.32 / 1.76 (WebGL) | 18% | 143.9 / 144.0 | n/a | 21de365f | 20261003-174604-bench |
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGPU | 5,000 | 0.13 / 1.77 (WebGL) | 7% | 0.10 / 1.76 (WebGL) | 5% | 144.0 / 144.0 | 1.74 | 21de365f | 20261003-174604-bench |
 
-- The iPad's WebGL2 rows of 2 October are from before [#212](https://github.com/null3d-engine/null3d/pull/212), as in S3.
+- The iPad's WebGL2 rows of 2 October measure the path without [#212](https://github.com/null3d-engine/null3d/pull/212), as in S3.
 
 ## S5
 
-S5 draws animated characters, 500 by default, with shadows. Its scene and pages are on a branch that has not merged yet, so these rows measure that branch.
+S5 draws animated characters, 500 by default, with shadows. These rows measure commits of the branch that brought S5.
 
 | Date | Device and browser | GPU path | Objects | Whole frame, ms: null3D / three.js | Share | Own work, ms: null3D / three.js | Share | fps: null3D / three.js | GPU ms, null3D | Commit | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -229,13 +229,27 @@ S5 draws animated characters, 500 by default, with shadows. Its scene and pages 
 | 2026-10-04 | Apple M5 Max, Chrome 154 | WebGL2 | 500 | 1.25 / 54.02 (WebGL) | 2% | 1.20 / 54.00 (WebGL) | 2% | 120.0 / 18.4 | n/a | 5711b3b4 | 20261004-112928-bench |
 | 2026-10-04 | Apple M5 Max, Chrome 154 | WebGPU | 500 | 2.32 / 54.02 (WebGL) | 4% | 2.32 / 54.00 (WebGL) | 4% | 60.0 / 18.4 | 7.38 | 5711b3b4 | 20261004-112928-bench |
 
+## S7
+
+S7 draws one paved surface under a sky with a layer over it. Its two runs differ by the reflection alone ([Benchmarks](benchmarks.md#the-reflection)). The cost is the GPU time per frame with the reflection less the time without it. A path whose browser gives no GPU timer has no figure. The runs are of null3D's pages alone, so `bun run bench:archive` keeps their record and prints no row. The cells below come from the record and the run's own log.
+
+| Date | Device and browser | GPU path | Preset | GPU ms: on / off | Difference | Commit | Source |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-31 | Apple M3 Max, Chrome 156 | WebGPU | High | 2.30 / 1.96 | 0.34 ms, 15% | 8d2fb64a | 20261031-020842-bench |
+| 2026-10-31 | Apple M3 Max, Chrome 156 | WebGPU | Medium | 2.29 / 1.95 | 0.34 ms, 15% | 8d2fb64a | 20261031-021400-bench |
+| 2026-10-31 | Apple M3 Max, Chrome 156 | WebGL2 | Medium | 4.10 / 4.24 | no measurement | 8d2fb64a | 20261031-020842-bench |
+| 2026-10-31 | bsipadpro13-safari, Safari 26.6.1 | WebGPU | High | 2.72 / 2.52 | 0.20 ms, 8% | 8d2fb64a | 20261031-023430-bench |
+| 2026-10-31 | bsgalaxys25-chrome, Chrome 152.0.7977.54 | WebGPU | High | 5.44 / 4.98 | 0.46 ms, 8% | 8d2fb64a | 20261031-024942-bench |
+
+The WebGL2 timer's rounds on the Mac differ by more than the reflection costs, so its row measures no difference. The off run read slower in that run. The iPad and the Galaxy S25 give no GPU timer on WebGL2 either: their CPU times do not separate the two runs. The Galaxy S25's display ran at 30 Hz, so its frame figures are unreliable; its GPU times do not depend on the screen. The reflection's own memory comes from the `?memory-figures` run 20261031-032342-bench. It adds 6.90 MiB of GPU textures and 3.50 MiB of buffers, and the page's memory rises by 10.80 MiB ([D-281](decisions/D-281-ground-reflection-cost.md)). The run's record, `bench/results/20261031-032342-bench.json`, keeps the byte figures under each page's `memory` field.
+
 ## Feature GPU costs on phones
 
 These tables give what single features cost on cloud phones, from BrowserStack Automate. They are not comparisons with three.js. Each figure is GPU time from the browser's GPU timer, on WebGPU, unless a row says otherwise. Chrome on these phones has no GPU timer for WebGL2. The Galaxy S25's screen ran at 30 Hz in these runs, so the device runner marks its frame figures unreliable. Its GPU times do not depend on the screen. The archive in `bench/results` keeps no runs of these plans, so the run folders' names are the sources.
 
 ### Bloom by base size
 
-Bloom's cost is the GPU time per frame with bloom on, less the time with it off, on the same page. The base is the height of the mip chain's first level, in rows ([D-21](decisions/D-21-effect-chain.md)). Commit fb9d0b1d, on the branch `feat/m2-f7-mip-bloom`, on 5 October 2026. Sources: the `bloom-sizes` plan's runs 20261005-010104-bloom-sizes (Galaxy S25, Pixel 9) and 20261005-010847-bloom-sizes (Pixel 11).
+Bloom's cost is the GPU time per frame with bloom on, less the time with it off, on the same page. The base is the height of the mip chain's first level, in rows ([D-21](decisions/D-21-effect-chain.md)). Commit fb9d0b1d, on the branch `feat/m2-f7-mip-bloom`. Sources: the `bloom-sizes` plan's runs 20261005-010104-bloom-sizes (Galaxy S25, Pixel 9) and 20261005-010847-bloom-sizes (Pixel 11).
 
 | Device and browser | Render scale | Base 512 | Base 256 | Base 128 | Base 64 |
 | --- | --- | --- | --- | --- | --- |
@@ -256,7 +270,7 @@ The presets' chains: Low has a base of 128 rows; Medium, High and Ultra 512. The
 
 The Galaxy S25's and the Pixel 11's figures match the 128-row base of Low. The Pixel 9's figures vary by about 0.3 ms between runs of one size, so they do not show its chain. With WebGL2, every page held the screen's frame rate with bloom on and off.
 
-On 11 October 2026 the phones timed the built chain again, with the base on the canvas's shorter side, at commit f854dd72d of main. The old steps of `UnrealBloomPass` ran in the same sittings, as the `unreal` items of the `bloom-p2` plan on the prototype's branch, `proto/p2-bloom` at commit 0c5f5d0e. Every phone ran Chrome 152.0.7977.54. Two figures in a cell come from two rounds of the same page. The sources are these runs:
+The phones also timed the built chain with the base on the canvas's shorter side, at commit f854dd72d of main. The steps of `UnrealBloomPass` ran in the same sittings, as the `unreal` items of the `bloom-p2` plan on the prototype's branch, `proto/p2-bloom` at commit 0c5f5d0e. Every phone ran Chrome 152.0.7977.54. Two figures in a cell come from two rounds of the same page. The sources are these runs:
 
 - `bloom-sizes`: 20261011-064442 and 20261011-065957 (Pixel 11), 20261011-070545 (Galaxy S25 at 128, Pixel 9), 20261011-071143 (Galaxy S25 at 64).
 - `bloom-p2`: 20261011-065037 and 20261011-070326 (Pixel 11), 20261011-071313 (Galaxy S25, Pixel 9).
@@ -270,11 +284,11 @@ On 11 October 2026 the phones timed the built chain again, with the base on the 
 | Pixel 11 (PowerVR C-Series), Chrome 152 | 1 | 2.88, 2.75 ms | 4.39 ms | 4.52 ms | 3.93, 4.00 ms | 3.28, 3.28 ms |
 | Pixel 11 (PowerVR C-Series), Chrome 152 | 0.5 | 2.75, 2.75 ms | 4.46 ms | 4.52 ms | 3.74, 3.74 ms | 3.47, 3.47 ms |
 
-On the Pixel 11 no base meets the rule that bloom costs no more than `UnrealBloomPass`'s steps did. [D-21](decisions/D-21-effect-chain.md#the-built-chain-on-the-phones) records it as a known exception, and gives the reasons.
+On the Pixel 11 no base meets the rule that bloom costs no more than `UnrealBloomPass`'s steps. [D-21](decisions/D-21-effect-chain.md#the-built-chain-on-the-phones) records it as a known exception, and gives the reasons.
 
 ### The room's prefilter
 
-The prototype of M2-E2's built-in room makes the room's environment map on the GPU, in steps across frames. The table gives the first map of the packed path (`rgb9e5ufloat` packed into RGBA8), with steps sized by the kind of draw. The limits that the prototype tests are under 8 ms for each step and under 200 ms in all. Commit 0a0a7d90, on the branch `proto/l1-room`, on 5 October 2026. Sources: runs 20261005-004323-prefilter (Galaxy S25), 20261005-004623-prefilter (Pixel 9), 20261005-005022-prefilter (Pixel 10) and 20261005-005528-prefilter (Pixel 11). With WebGL2 the times are wall times from the call to the finish, because there is no GPU timer.
+The prototype of M2-E2's built-in room makes the room's environment map on the GPU, in steps across frames. The table gives the first map of the packed path (`rgb9e5ufloat` packed into RGBA8), with steps sized by the kind of draw. The limits that the prototype tests are under 8 ms for each step and under 200 ms in all. Commit 0a0a7d90, on the branch `proto/l1-room`. Sources: runs 20261005-004323-prefilter (Galaxy S25), 20261005-004623-prefilter (Pixel 9), 20261005-005022-prefilter (Pixel 10) and 20261005-005528-prefilter (Pixel 11). With WebGL2 the times are wall times from the call to the finish, because there is no GPU timer.
 
 | Device and browser | GPU path | Total | Steps | Largest step | Steps over 8 ms | Map matches the asset tool's file |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -300,7 +314,7 @@ The whole map in one step took this GPU time:
 
 The largest WebGL2 steps of 101 to 256 ms are single stalls. The same runs found two faults. The 11-11-10 format misses D-19's tolerance on every path. WebGL2 cannot write half floats straight into the cube (GL error 0x502).
 
-The second run of the prototype, at commit c0c104e4 on 5 October 2026, timed the design that M2-E9 takes. The engine makes the whole map in one step at load (`load=1`), right after the warm-up draws. Sources: runs 20261005-024553-prefilter (Galaxy S25, Pixel 9, Pixel 10) and 20261005-025041-prefilter (Pixel 11). WebGL2 gives wall time from the call to the finish. The pipelines build first, in the background.
+A second run of the prototype, at commit c0c104e4, timed the design that M2-E9 takes. The engine makes the whole map in one step at load (`load=1`), right after the warm-up draws. Sources: runs 20261005-024553-prefilter (Galaxy S25, Pixel 9, Pixel 10) and 20261005-025041-prefilter (Pixel 11). WebGL2 gives wall time from the call to the finish. The pipelines build first, in the background.
 
 | Device and browser | Map at load, WebGPU | Map at load, WebGL2 | Pipelines, WebGPU | Pipelines, WebGL2 |
 | --- | --- | --- | --- | --- |
@@ -309,13 +323,13 @@ The second run of the prototype, at commit c0c104e4 on 5 October 2026, timed the
 | Pixel 10 (PowerVR D-Series), Chrome 149 | 87.2 ms | 57.7 ms | 128.2 ms | 225.5 ms |
 | Pixel 11 (PowerVR C-Series), Chrome 149 | 47.8 ms | 72.5 ms | 111.5 ms | 100.3 ms |
 
-The same day, held sessions timed the engine's generator on the branch `feat/m2-e9-room-at-load` (commit 0d49786c). On the Galaxy S25 its first map at load took 92.7 ms on WebGPU, 89.7 ms in compatibility mode and 94.3 ms with WebGL2. On the Pixel 9 it took 126.2, 120.6 and 127.1 ms. Its map matched the asset tool's on every path.
+Held sessions also timed the engine's generator on the branch `feat/m2-e9-room-at-load` (commit 0d49786c). On the Galaxy S25 its first map at load took 92.7 ms on WebGPU, 89.7 ms in compatibility mode and 94.3 ms with WebGL2. On the Pixel 9 it took 126.2, 120.6 and 127.1 ms. Its map matched the asset tool's on every path.
 
 ### Two commits on one cloud device
 
 Each comparison ran in one held Automate session, which moved between two dev servers, one per commit, in turns A, B, A, B. Each turn measured 30 s of S4 at Low with the governor off.
 
-The gate fix's GPU time on the cloud iPad (iPad 10th, Safari 27.0, WebGPU, screen at 60 Hz), 5 October 2026:
+The gate fix's GPU time on the cloud iPad (iPad 10th, Safari 27.0, WebGPU, screen at 60 Hz):
 
 | Turn | Commit | Run | GPU ms | Draw calls | fps |
 | --- | --- | --- | --- | --- | --- |
@@ -326,7 +340,7 @@ The gate fix's GPU time on the cloud iPad (iPad 10th, Safari 27.0, WebGPU, scree
 
 The cloud iPad draws S4 at about 22 fps on WebGPU and 33 fps with WebGL2. Its screen runs at 60 Hz, and its video recording makes no difference. The page's GPU work takes 12 to 15 ms a frame, but each frame waits 44 to 60 ms for the GPU. So its frame rates do not compare with the owner's iPad. Its GPU times do compare between commits in one session.
 
-The shadow fix's cost with WebGL2 on the Galaxy S25 (Chrome 149, screen at 24 to 30 Hz, no GPU timer), 5 October 2026:
+The shadow fix's cost with WebGL2 on the Galaxy S25 (Chrome 149, screen at 24 to 30 Hz, no GPU timer):
 
 | Turn | Commit | Run | fps, seconds at 30 fps | Frame interval p95 | CPU ms per frame, median / p95 |
 | --- | --- | --- | --- | --- | --- |
@@ -342,7 +356,7 @@ Both commits held the screen's rate, so the fix's extra shadow reads fit in the 
 The archive also keeps runs that compare no engine with three.js. Their records hold the figures that the guides and decision records cite.
 
 - Comparisons of two builds (`-compare`): each page's medians in both builds, the change, the verdict, and each run.
-- Sweeps (`-sweep`): one run of each page at each object count. [D-06](decisions/D-06-success-targets.md#addendum-2026-09-29-faster-than-threejs-in-every-kind-of-scene) gives their tables.
+- Sweeps (`-sweep`): one run of each page at each object count. [D-06](decisions/D-06-success-targets.md#faster-than-threejs-in-every-kind-of-scene) gives their tables.
 - Scale searches (`-scale`): the counts that each three.js renderer held, step by step.
 - Governor, soak and startup runs: the device runner's report of each runner, and each page's result without images and long lists.
 - Gate runs (`-gate`): each step's figure and verdict, and the benchmark runs that the timing steps made.

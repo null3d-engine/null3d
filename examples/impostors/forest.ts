@@ -1,12 +1,11 @@
 // The impostors demo's scenery, made in code: the shared pine generator on rolling hills, split by
 // distance from the middle into three bands. The nearest band stands as level-of-detail meshes in
 // one instance batch, the middle band as one merged mesh per grid cell, and the farthest as cards
-// of the octahedral atlas. The atlas is drawn here too: each cell holds the pine as a cut-out seen
-// from that cell's direction, lit by the sun from that side, so a card's picture changes as the
-// camera moves around it.
-import { math } from '@null3d/engine';
-import { frameDirection, type OctahedralAtlas, octahedralAtlas } from '@null3d/impostors';
-import { ground } from '../lib/pines';
+// of the octahedral atlas. The atlases are baked here from the pine's own mesh, so the cards show
+// the tree's colour and normals and a moving sun lights them as it lights the mesh.
+import { type DirectionalLight, math, type PerspectiveCamera } from '@null3d/engine';
+import { bakeImpostorAtlas, type OctahedralAtlas, octahedralAtlas } from '@null3d/impostors';
+import { ground, pineArrays } from '../lib/pines';
 
 export { ground, hills, pineArrays, pineWithLevels } from '../lib/pines';
 
@@ -16,6 +15,11 @@ export const SIDE = 1600;
 export const RADIUS = 620;
 /** Where the near band ends and the merged band begins, and where the cards begin. */
 export const NEAR_EDGE = 140;
+/**
+ * How far the near band and the merged far cells reach past each other's edge, so the two bands
+ * overlap and each fades through the other's edge rather than meeting on a line.
+ */
+export const BAND_OVERLAP = 40;
 export const CARD_EDGE = 360;
 /** The trees in each band. */
 const COUNT = { near: 3600, middle: 5400, far: 3000 } as const;
@@ -60,10 +64,29 @@ function ring(count: number, from: number, to: number): Tree[] {
 export function bands(): Bands {
 	math.seed(17);
 	return {
-		near: ring(COUNT.near, 0, NEAR_EDGE),
-		middle: ring(COUNT.middle, NEAR_EDGE, CARD_EDGE),
+		near: ring(COUNT.near, 0, NEAR_EDGE + BAND_OVERLAP),
+		middle: ring(COUNT.middle, NEAR_EDGE - BAND_OVERLAP, CARD_EDGE),
 		far: ring(COUNT.far, CARD_EDGE, RADIUS),
 	};
+}
+
+/** The part of an instance batch that a tree writes to. */
+interface Batch {
+	positions: Float32Array;
+	rotations: Float32Array;
+	scales: Float32Array;
+	markDirty(first: number, count: number): void;
+}
+
+/** Puts each tree in `trees` into `batch` from copy `first`, and marks that range changed. */
+export function fillTrees(batch: Batch, trees: readonly Tree[], first = 0): void {
+	for (const [k, tree] of trees.entries()) {
+		const at = first + k;
+		batch.positions.set([tree.x, tree.y, tree.z], at * 3);
+		batch.rotations.set([0, Math.sin(tree.turn / 2), 0, Math.cos(tree.turn / 2)], at * 4);
+		batch.scales.fill(tree.scale, at * 3, at * 3 + 3);
+	}
+	batch.markDirty(first, trees.length);
 }
 
 /** A copy's transform, column-major: moved to the tree, turned about y and scaled. */
@@ -73,71 +96,82 @@ export function place({ x, y, z, turn, scale }: Tree): number[] {
 }
 
 /** The texels on each side of an atlas cell, and the cells of the atlas. */
-const TEXELS = 32;
+const TEXELS = 64;
 const CELLS = octahedralAtlas(16);
 
-/** The pine's tiers: each one's base height, radius and height, in units of a tree 1 high. */
-const TIERS = [
-	[0.12, 0.34, 0.5],
-	[0.32, 0.27, 0.43],
-	[0.52, 0.2, 0.36],
-] as const;
-
-/** The canopy's half width at height `y` of a pine 1 high, from the tiers of the shared generator. */
-function canopy(y: number): number {
-	let widest = 0;
-	for (const [base, radius, height] of TIERS) {
-		if (y < base || y > base + height) continue;
-		widest = Math.max(widest, radius * (1 - (y - base) / height) ** 1.5);
-	}
-	return widest;
+/**
+ * The two octahedral atlases of the pine, baked from its most detailed mesh. The bake draws the
+ * pine from every cell's direction with its own vertex colours, and stores each point's normal in
+ * the tree's own frame, so a card lights as the mesh does and a turned copy lights from its turned
+ * side. The bake runs on the CPU, so every GPU path draws the same card.
+ */
+export function impostorAtlases(): {
+	atlas: OctahedralAtlas;
+	color: { width: number; height: number; data: Uint8Array };
+	surface: { width: number; height: number; data: Uint8Array };
+	size: readonly [number, number];
+	depth: number;
+} {
+	const arrays = pineArrays(0);
+	const bounds = boundsOf(arrays.positions);
+	const bake = bakeImpostorAtlas({
+		atlas: CELLS,
+		texels: TEXELS,
+		parts: [
+			{
+				positions: arrays.positions,
+				colors: arrays.colors,
+				indices: arrays.indices,
+				// The near material draws both sides, so the bake does too.
+				doubleSided: true,
+			},
+		],
+		min: bounds.min,
+		max: bounds.max,
+	});
+	return {
+		atlas: bake.atlas,
+		color: bake.color,
+		surface: bake.surface,
+		size: bake.size,
+		depth: bake.depth,
+	};
 }
 
-/**
- * The octahedral atlas of a pine whose near band stands as meshes: every cell holds the tree's
- * cut-out seen from the cell's direction, shaded for the sun's side and height. `light` is the
- * direction the sunlight travels, so the sun sits opposite it. The rows run from the bottom up, as
- * `textures.fromData` reads them, and the cells count from the top left, as sprites show them.
- */
-export function impostorAtlas(light: readonly [number, number, number]): {
-	atlas: OctahedralAtlas;
-	width: number;
-	height: number;
-	data: Uint8Array;
+/** The smallest and largest corner of a list of positions. */
+function boundsOf(positions: readonly number[]): {
+	min: [number, number, number];
+	max: [number, number, number];
 } {
-	const { columns, rows } = CELLS;
-	const width = columns * TEXELS;
-	const height = rows * TEXELS;
-	const data = new Uint8Array(width * height * 4);
-	const sunAzimuth = Math.atan2(-(light[0] as number), -(light[2] as number));
-	const direction: [number, number, number] = [0, 0, 0];
-	for (let frame = 0; frame < columns * rows; frame++) {
-		frameDirection(frame, CELLS, direction);
-		const [dx, dy, dz] = direction;
-		// A view toward the sun sees the dark side of the canopy, and one away from it the lit side.
-		const fromSun = 0.5 - 0.5 * Math.cos(Math.atan2(dx, dz) - sunAzimuth);
-		const lit = (0.5 + 0.5 * fromSun) * (0.85 + 0.15 * dy);
-		const left = (frame % columns) * TEXELS;
-		const bottom = (rows - 1 - Math.floor(frame / columns)) * TEXELS;
-		for (let y = 0; y < TEXELS; y++)
-			for (let x = 0; x < TEXELS; x++) {
-				// The texel's place across the tree, and its height from the ground.
-				const [across, up] = [((x + 0.5) / TEXELS - 0.5) * 2, (y + 0.5) / TEXELS];
-				const edge = 1 - 2 / TEXELS;
-				const canopyEdge = canopy(up) * (1 + 0.06 * Math.sin(up * 40));
-				const foliage = Math.abs(across) < canopyEdge && up > 0.1 && up < 0.99;
-				const bole = Math.abs(across) < 0.035 && up < 0.72;
-				const at = ((bottom + y) * width + left + x) * 4;
-				if (!foliage && !bole) continue;
-				// Darker toward the outline, as a needle canopy is, and green deep inside.
-				const inside = foliage ? 1 - Math.abs(across) / Math.max(canopyEdge, 0.001) : 1;
-				const shade = (foliage ? 0.55 + 0.45 * inside : 0.5) * lit * (0.75 + 0.35 * up) * edge;
-				const color = foliage ? [26, 74, 34] : [58, 44, 32];
-				data[at] = Math.min(255, (color[0] as number) * shade);
-				data[at + 1] = Math.min(255, (color[1] as number) * shade);
-				data[at + 2] = Math.min(255, (color[2] as number) * shade);
-				data[at + 3] = 255;
-			}
-	}
-	return { atlas: CELLS, width, height, data };
+	const min: [number, number, number] = [
+		Number.POSITIVE_INFINITY,
+		Number.POSITIVE_INFINITY,
+		Number.POSITIVE_INFINITY,
+	];
+	const max: [number, number, number] = [
+		Number.NEGATIVE_INFINITY,
+		Number.NEGATIVE_INFINITY,
+		Number.NEGATIVE_INFINITY,
+	];
+	for (let at = 0; at < positions.length; at += 3)
+		for (let axis = 0; axis < 3; axis++) {
+			const value = positions[at + axis] as number;
+			if (value < (min[axis] as number)) min[axis] = value;
+			if (value > (max[axis] as number)) max[axis] = value;
+		}
+	return { min, max };
+}
+
+/** Turns the sun to the hour's angle, about the world's z axis. */
+export function turnSun(sun: DirectionalLight, hour: number): void {
+	const turn = hour * Math.PI;
+	sun.setRotation(0, 0, Math.sin(turn / 2), Math.cos(turn / 2));
+}
+
+/** Flies the camera slowly round the middle, looking out over the three bands. */
+export function fly(camera: PerspectiveCamera, time: number): void {
+	const t = time * 0.05;
+	const [x, z] = [Math.sin(t) * 60, Math.cos(t) * 60];
+	camera.setPosition(x, ground(x, z) + 32, z);
+	camera.lookAt(Math.sin(t + 0.7) * CARD_EDGE * 1.6, 6, Math.cos(t + 0.7) * CARD_EDGE * 1.6);
 }

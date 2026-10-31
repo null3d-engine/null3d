@@ -1,8 +1,8 @@
 # D-37: Sprites and points
 
-Status: decided, 2026-10-04; points decided 2026-10-05. Date: 2026-10-04. Tasks: M2-G1, M2-G2 ([Points](#points)).
+Status: decided and built, for sprites and for points. Pending: a timed run of S1 with sprites, for the cost per sprite. Tasks: M2-G1, M2-G2 ([Points](#points)).
 
-Summary: A sprite batch is an instance batch whose update packs each sprite's size, rotation, color and atlas frame into its row's world matrix, so culling, sorting and both GPU paths take sprites unchanged. Sizes without attenuation are in CSS pixels. The sprite code loads on first use, so `scene.createSprites` returns a promise. The parity scene differs from three.js's `Sprite` in 0.000% to 0.033% of the pixels. Points are sprites of one size, with sizes in world units, and their parity scene takes a limit of 0.2% for WebGPU's sample pattern and compatibility mode's 8-bit edges.
+Summary: A sprite batch is an instance batch whose update packs each sprite's size, rotation, color and frame into the row's world matrix. So culling, sorting and both GPU paths take sprites unchanged, sizes without attenuation are in CSS pixels, and the code loads on first use. Points are sprites of one size, and the parity scenes differ from three.js in at most 0.033% of the pixels (sprites) and 0.119% (points).
 
 ## Question
 
@@ -17,13 +17,13 @@ Summary: A sprite batch is an instance batch whose update packs each sprite's si
 - 100,000 sprites draw on all three tiers, at a cost per sprite within S1's cost per row.
 - The parity scene passes three.js's rule against `Sprite` and `SpriteMaterial`. Under 0.1% of the pixels differ, or no more than between three.js's two renderers.
 - A frame that draws no sprites does no new work. The culling shader and the WebGL2 data textures, which every other row pays for, do not change.
-- A page without sprites downloads none of their code ([D-14](D-14-js-budget.md)'s rule for M2). The start stays within 140 KB after Brotli, and the sprite code's own file within 16 KB.
+- A page without sprites downloads none of their code ([D-14](D-14-js-budget.md)'s rule for M2). The start stays within D-14's budget, and the sprite code's own file within the budget of files that load later.
 
 ## Data
 
 ### Parity with three.js
 
-Pixels that differ from three.js by its rule, Chrome on the Mac's GPU, 4 October 2026:
+Pixels that differ from three.js by its rule, Chrome on the Mac's GPU:
 
 | Scene | Core WebGPU | Compatibility mode | WebGL2 | three.js's two renderers |
 | --- | --- | --- | --- | --- |
@@ -39,15 +39,15 @@ A sprite costs what an instance row costs on the GPU and in culling: the same 48
 
 ### Download size
 
-Sizes after Brotli from `bun run build:check-size`, against main at 9ef7c7a (#265), 4 October 2026. A pipelined page on main downloads 99.9 KB at its start, of the 100 KB budget that held before M2-R5.
+Sizes after Brotli from `bun run build:check-size`, against main at 9ef7c7a (#265):
 
 | Version of the sprite code | `sketch-worker.js` | `page-sketch-runner.js` | Largest shader file | Pipelined start |
 | --- | --- | --- | --- | --- |
-| main, no sprites | 28,552 bytes | 24,620 bytes | 23,285 bytes | 99.9 KB |
+| No sprites | 28,552 bytes | 24,620 bytes | 23,285 bytes | 99.9 KB |
 | All sprite code in the start, `createSprites` returns the batch | +623 bytes | +569 bytes | +692 bytes | 101.2 KB |
 | Sprite code on first use, `createSprites` returns a promise | +299 bytes | +340 bytes | +692 bytes | 100.9 KB |
 
-The sprite templates added their WGSL and GLSL to every shader file, as each feature's shaders did (D-13). That growth alone took the start past 100 KB, so sprites fit only with M2-R5's budget of 140 KB. Since [D-56](D-56-first-use-shader-files.md), the templates load on first use, in files of 2.9 to 4.7 KB after Brotli. The sprite code that loads on first use is one file of 641 bytes. The page and the sketch worker build the same file, so both threads load it from one address.
+In that build, the sprite templates add their WGSL and GLSL to every shader file (D-13). [D-56](D-56-first-use-shader-files.md) loads the templates on first use instead, in files of 2.9 to 4.7 KB after Brotli. The sprite code that loads on first use is one file, of 851 bytes with the points code. The page and the sketch worker build the same file, so both threads load it from one address.
 
 ## Decision
 
@@ -57,14 +57,14 @@ The sprite templates added their WGSL and GLSL to every shader file, as each fea
 3. Two templates draw sprites: `SPRITE` (22), with the material's color alone, and `SPRITE_MAP` (23), which samples the map at the sprite's frame. A sprite material with a live map draws with the second, as `UnlitMap` falls back to `Unlit`. The vertex shader moves each corner of a unit quad across the screen as three.js's sprite shader does. It scales the corner by the size and turns it by the rotation. Then it adds the corner to the center's clip position, times the projection's scale along x and y. That scale is the length of each of the first two rows of the view-projection matrix, because the camera's rotation keeps lengths.
 4. Without size attenuation, sizes are in CSS pixels. The frame uniform's spare `camera_range.zw` carries the change in normalized device coordinates across one CSS pixel. It comes from the pixel ratio that the sketch runner passes to the core (`setPixelRatio`). Such sprites have no bounds in the world. So the core gives them an unbounded sphere, and the GPU culling's bucket takes `UNCULLED_BOUNDS`.
 5. The anchor, three.js's `center`, moves the quad mesh: each batch's quad has its anchor at the origin, and batches with one anchor share the mesh. The mesh's radius then bounds the sprite at any rotation. The atlas sets the material's texture coordinate transform to one frame's size, and the frame's column and row move the coordinates in the vertex shader.
-6. Sprite batches stayed out of the depth prepass at first, which places vertices by the mesh's template. Since M2-F2 they draw their depth with their own vertex shader, as custom materials do ([D-43](D-43-webgl2-prepass.md#custom-materials-and-sprites)). They stay out of the scene's raycast trees too, whose items have boxes in the world. Batch rows cast shadows since M2-R6, but sprite batches take no shadow bits: their vertex shader turns each quad to the camera, so a depth pass with the mesh's own template would cast the flat quad. Sprites cast none.
+6. Sprite batches draw their depth in the prepass with their own vertex shader, as custom materials do ([D-43](D-43-webgl2-prepass.md#custom-materials-and-sprites)). They stay out of the scene's raycast trees, whose items have boxes in the world. Batch rows cast shadows (M2-R6), but sprite batches take no shadow bits. Their vertex shader turns each quad to the camera, so a depth pass with the mesh's own template would cast the flat quad. Sprites cast none.
 7. The sprite code loads on first use, as [D-14](D-14-js-budget.md)'s rule for M2 asks. The call `scene.createSprites` checks the options first, so a wrong atlas or center fails before any download. Then it imports `scene/sprites.ts` and returns a promise of the batch. That module holds the `SpriteBatch` class, and makes each batch's quad and material. Like the glTF loader, it imports only constants and types. A value that it shared with its thread's first file would go into a file of its own. Every page would then download that file at its start. So the sketch runner hands the scene the engine's geometry and materials, for the module to use. The size report lists the module's file apart from the start. The engine test of first-use files checks that a page without sprites downloads neither.
 
 ## Options rejected
 
 - A draw path of its own, as the debug lines have: a vertex buffer of sprites, uploaded from the typed arrays. It needs its own culling and its own cells for precision far from the origin. Its sort must also mix by hand with the transparent pass's. The instance path has all three on both GPU paths already.
 - Color and frame as an extra instance attribute. WebGPU reads each instance's ids from a fourth `vec4u`, whose last three words are free. But the culling shader would need a buffer of colors and frames to copy from. WebGL2 would need a fourth texel per row in its data textures, which every row of every batch would pay for in memory and uploads. M2-K2's custom attributes may take that route later.
-- `scene.createSprites` that returns the batch at once, with its code in every page's start, as three.js makes a `Sprite` at once. It cost a pipelined page's start 623 bytes, where the call and its checks cost 299. D-14's rule for M2 keeps a feature's code out of the start of pages that do not use it. The promise costs a page with sprites one round trip at its first batch, in the setup function. A sprite batch with a map waits for its texture's download too.
+- `scene.createSprites` that returns the batch at once, with its code in every page's start, as three.js makes a `Sprite` at once. It costs a pipelined page's start 623 bytes, where the call and its checks cost 299. D-14's rule for M2 keeps a feature's code out of the start of pages that do not use it. The promise costs a page with sprites one round trip at its first batch, in the setup function. A sprite batch with a map waits for its texture's download too.
 - Rotation as a quaternion about the view axis, written into the batch's rotations. Sketches would build a quaternion per sprite for one angle, and three.js's `SpriteMaterial.rotation` is an angle.
 - Colors in 8 bits. Linear 8-bit colors band in the dark. The packed floats keep full precision, and allow components up to 1,024 for bloom.
 - Sizes without attenuation as a fraction of the view's height, as three.js's sprites take them. Pixels are what markers and icons need, and points (M2-G2) take pixels as three.js's `PointsMaterial` does. The docs give the conversion.
@@ -94,7 +94,7 @@ The sprite templates added their WGSL and GLSL to every shader file, as each fea
 
 ### Data
 
-Pixels that differ from three.js's WebGLRenderer by its rule, 5 October 2026. three.js's WebGPURenderer draws `Points` one pixel wide, so it cannot be the reference:
+Pixels that differ from three.js's WebGLRenderer by its rule. three.js's WebGPURenderer draws `Points` one pixel wide, so it cannot be the reference:
 
 | Scene | Core WebGPU | Compatibility mode | WebGL2 |
 | --- | --- | --- | --- |
@@ -111,14 +111,14 @@ On WebGL2, SwiftShader matches three.js in all but 3 pixels. The edges of the fl
 
 So the parity scene takes a limit of 0.2%, as the morph scene does.
 
-Sizes after Brotli from `bun run build:check-size`, against main at 91c7d279d (#303), 5 October 2026:
+Sizes after Brotli from `bun run build:check-size`, against main at 91c7d279d (#303):
 
-| File | main | With points | Growth |
+| File | Without points | With points | Growth |
 | --- | --- | --- | --- |
 | `js/page-sprites.js`, the sprite code that loads on first use | 641 bytes | 851 bytes | +210 bytes |
 | `js/sketch-worker.js` | 37,547 bytes | 37,705 bytes | +158 bytes |
 | `js/page-sketch-runner.js` | 33,146 bytes | 33,273 bytes | +127 bytes |
-| A pipelined page's start | 121.5 KB | 121.6 KB | Within the 140 KB budget |
+| A pipelined page's start | 121.5 KB | 121.6 KB | Within the budget |
 
 The WebAssembly files and the shader files do not change. The start grows by `scene.createPoints` and its checks.
 

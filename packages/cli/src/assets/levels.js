@@ -5,11 +5,18 @@
 // as a distance in the units the mesh draws in, which the engine compares with the screen.
 import { MathUtils } from '@gltf-transform/core';
 import { MeshoptSimplifier } from 'meshoptimizer';
-import { cacheOrder, setIndices, triangleIndices, triangleLists } from './geometry.js';
+import {
+	cacheOrder,
+	reorderVertices,
+	setIndices,
+	triangleIndices,
+	triangleLists,
+} from './geometry.js';
 import { lodOf, MSFT_LOD, MSFTLod } from './lod-extension.js';
 
-/** @import { Accessor, Document, Mesh, Node, Primitive, Skin } from '@gltf-transform/core' */
+/** @import { Accessor, Buffer, Document, Mesh, Node, Primitive, Skin } from '@gltf-transform/core' */
 /** @import { SimplifierFlags } from 'meshoptimizer' */
+/** @import { ClusterPlan } from './clusters.js' */
 
 /** Meshes with fewer triangles get no levels of detail: they cost little to draw anyway. */
 export const LOD_MIN_TRIANGLES = 64;
@@ -168,7 +175,159 @@ function longestSide(positions) {
  * @property {Uint8Array} seams {@link SEAM} for each vertex where texture coordinates or colors
  *   change, else 0.
  * @property {Uint32Array} indices The triangles, each corner at its weld's first vertex.
+ * @property {Card[] | null} cards The list's cards, where it holds separate cards alone, in an
+ *   order that spreads them over the list; null for a list of any other shape.
+ * @property {boolean} posed True for a list that a skin poses, whose positions are in the scene's
+ *   units rather than its mesh's.
  */
+
+/**
+ * A card: a separate piece of a list, such as a leaf's quad, in one of {@link CARD_CORNERS}'
+ * shapes.
+ *
+ * @typedef {object} Card
+ * @property {number[]} vertices The card's welded vertices, by number.
+ * @property {number[]} triangles Its triangles, in threes.
+ * @property {number[]} centre The middle of its vertices.
+ * @property {number} size The longest distance between two of its vertices.
+ */
+
+/**
+ * The bits that each axis of a card's middle takes in its sorting key: three axes of 16 bits fit
+ * a number exactly.
+ */
+const CARD_KEY_BITS = 16;
+
+/**
+ * The number that orders a card's middle along a space-filling curve, so that every other card in
+ * that order spreads over the list.
+ *
+ * @param {number[]} centre
+ * @param {{ min: number[], side: number }} box
+ */
+function cardKey(centre, box) {
+	const scale = box.side > 0 ? (2 ** CARD_KEY_BITS - 1) / box.side : 0;
+	const at = centre.map((v, k) =>
+		Math.min(
+			2 ** CARD_KEY_BITS - 1,
+			Math.max(0, Math.round((v - /** @type {number} */ (box.min[k])) * scale)),
+		),
+	);
+	let key = 0;
+	for (let bit = CARD_KEY_BITS - 1; bit >= 0; bit--)
+		for (const axis of at) key = key * 2 + ((axis >> bit) & 1);
+	return key;
+}
+
+/**
+ * The triangle lists of a card, by its vertices: a quad of four vertices and two triangles, or a
+ * card folded along its middle, of six vertices and four triangles, as Creek makes its leaves.
+ */
+const CARD_CORNERS = new Map([
+	[4, 6],
+	[6, 12],
+]);
+
+/**
+ * The cards of a triangle list, where every separate piece of the list is one of {@link
+ * CARD_CORNERS}' shapes, as a leaf card is; otherwise null. The cards come in an order that
+ * spreads them over the list, so that each level keeps an even share of them.
+ *
+ * @param {Uint32Array} indices
+ * @param {Float32Array} positions
+ * @returns {Card[] | null}
+ */
+function cardsOf(indices, positions) {
+	const count = indices.length / 3;
+	if (count === 0) return null;
+	const parent = new Map();
+	/** @param {number} v */
+	const find = (v) => {
+		let root = v;
+		while (parent.get(root) !== root) root = /** @type {number} */ (parent.get(root));
+		let at = v;
+		while (at !== root) {
+			const next = /** @type {number} */ (parent.get(at));
+			parent.set(at, root);
+			at = next;
+		}
+		return root;
+	};
+	/** @param {number} a @param {number} b */
+	const union = (a, b) => {
+		const [ra, rb] = [find(a), find(b)];
+		if (ra !== rb) parent.set(ra, rb);
+	};
+	for (let i = 0; i < indices.length; i++)
+		parent.set(/** @type {number} */ (indices[i]), indices[i]);
+	for (let t = 0; t < count; t++) {
+		const [a, b, c] = [
+			/** @type {number} */ (indices[t * 3]),
+			/** @type {number} */ (indices[t * 3 + 1]),
+			/** @type {number} */ (indices[t * 3 + 2]),
+		];
+		union(a, b);
+		union(b, c);
+	}
+	/** @type {Map<number, { vertices: Set<number>, triangles: number[] }>} */
+	const groups = new Map();
+	for (let t = 0; t < count; t++) {
+		const corners = [
+			/** @type {number} */ (indices[t * 3]),
+			/** @type {number} */ (indices[t * 3 + 1]),
+			/** @type {number} */ (indices[t * 3 + 2]),
+		];
+		const root = find(/** @type {number} */ (corners[0]));
+		let group = groups.get(root);
+		if (!group) {
+			group = { vertices: new Set(), triangles: [] };
+			groups.set(root, group);
+		}
+		for (const corner of corners) group.vertices.add(corner);
+		group.triangles.push(...corners);
+	}
+	const min = [Infinity, Infinity, Infinity];
+	const max = [-Infinity, -Infinity, -Infinity];
+	/** @type {Card[]} */
+	const cards = [];
+	for (const { vertices, triangles } of groups.values()) {
+		// A piece of any other shape is no card. A flat-shaded surface splits every face into a
+		// piece of three vertices, so it stays out.
+		if (CARD_CORNERS.get(vertices.size) !== triangles.length) return null;
+		const list = [...vertices];
+		let size = 0;
+		for (let a = 0; a < list.length; a++)
+			for (let b = a + 1; b < list.length; b++) {
+				const i = /** @type {number} */ (list[a]);
+				const j = /** @type {number} */ (list[b]);
+				size = Math.max(
+					size,
+					Math.hypot(
+						/** @type {number} */ (positions[i * 3]) - /** @type {number} */ (positions[j * 3]),
+						/** @type {number} */ (positions[i * 3 + 1]) -
+							/** @type {number} */ (positions[j * 3 + 1]),
+						/** @type {number} */ (positions[i * 3 + 2]) -
+							/** @type {number} */ (positions[j * 3 + 2]),
+					),
+				);
+			}
+		const centre = [0, 0, 0];
+		for (const v of list)
+			for (let k = 0; k < 3; k++) {
+				const value = /** @type {number} */ (positions[v * 3 + k]);
+				centre[k] = /** @type {number} */ (centre[k]) + value / list.length;
+				if (value < /** @type {number} */ (min[k])) min[k] = value;
+				if (value > /** @type {number} */ (max[k])) max[k] = value;
+			}
+		cards.push({ vertices: list, triangles, centre, size });
+	}
+	const side = Math.max(0, ...max.map((v, k) => v - /** @type {number} */ (min[k])));
+	const box = { min, side };
+	return cards
+		.map((card) => ({ card, key: cardKey(card.centre, box) }))
+		.sort((a, b) => a.key - b.key)
+		.map(({ card }) => card);
+}
 
 /**
  * The text that a vertex's place and the values welding must keep equal give it.
@@ -196,9 +355,12 @@ function vertexKey(streams, sizes, v) {
  *
  * @param {Primitive} prim
  * @param {Float32Array} positions
+ * @param {boolean} posed
+ * @param {number} [side] The mesh's longest side, which a texture coordinate's unit weighs; 0
+ *   leaves the texture coordinates out of the error, for a caller that reads only the triangles.
  * @returns {PlanningList}
  */
-function weld(prim, positions) {
+export function weld(prim, positions, posed = false, side = 0) {
 	const count = positions.length / 3;
 	const stream = (/** @type {string} */ semantic) => {
 		const accessor = prim.getAttribute(semantic);
@@ -261,9 +423,16 @@ function weld(prim, positions) {
 		const length = Math.hypot(x, y, z) || 1;
 		welded.set([x / length, y / length, z / length], v * 3);
 	}
+	/**
+	 * The values that the simplifier keeps near the base mesh's, and their weights in the units of
+	 * its positions. A texture coordinate covers the texture across a UV unit, so it weighs a
+	 * sixty-fourth of the mesh's longest side: a slide of a large share of a texture counts like a
+	 * small distance, while a slide of a few texels stays under the geometry's own error.
+	 */
 	/** @type {{ values: Float32Array, size: number, take: number, weight: number }[]} */
 	const parts = [
 		...(normal ? [{ values: welded, size: 3, take: 3, weight: ATTRIBUTE_WEIGHT }] : []),
+		...texcoords.map((uv) => ({ .../** @type {typeof uv} */ (uv), take: 2, weight: side / 64 })),
 		...(color ? [{ ...color, take: 3, weight: ATTRIBUTE_WEIGHT }] : []),
 	];
 	const channels = parts.reduce((sum, part) => sum + part.take, 0);
@@ -290,6 +459,8 @@ function weld(prim, positions) {
 		weights: parts.flatMap(({ take, weight }) => Array(take).fill(weight)),
 		seams,
 		indices,
+		cards: posed ? null : cardsOf(indices, positions),
+		posed,
 	};
 }
 
@@ -314,14 +485,18 @@ const skinOf = (mesh) =>
 function planningLists(mesh, prims) {
 	const skin = skinOf(mesh);
 	let side = 0;
-	const lists = prims.map((prim) => {
+	const placed = prims.map((prim) => {
 		const own = floats(/** @type {Accessor} */ (prim.getAttribute('POSITION')));
 		const posed =
 			skin && prim.getAttribute('JOINTS_0') && prim.getAttribute('WEIGHTS_0')
 				? restPose(prim, own, skin)
 				: own;
 		side = Math.max(side, longestSide(posed));
-		return weld(prim, posed);
+		return { own, posed };
+	});
+	const lists = prims.map((prim, p) => {
+		const { own, posed } = /** @type {{ own: Float32Array, posed: Float32Array }} */ (placed[p]);
+		return weld(prim, posed, posed !== own, side);
 	});
 	return { lists, side };
 }
@@ -330,21 +505,61 @@ function planningLists(mesh, prims) {
 const TRIES = /** @type {const} */ ([[], ['Prune'], ['Permissive'], ['Permissive', 'Prune']]);
 
 /**
+ * A card list's level: the triangles of every `every`-th card, in the list's order, and the list's
+ * positions with each kept card grown about its middle, so that the cards cover the surface that
+ * the dropped ones covered. The error is the size of the largest card that the step drops.
+ *
+ * @param {PlanningList} list
+ * @param {number} every
+ * @returns {[Uint32Array, number, Float32Array]} The triangles, their error and the positions.
+ */
+function thinCards(list, every) {
+	const cards = list.cards ?? [];
+	const grow = Math.sqrt(every);
+	const indices = new Uint32Array(list.indices.length);
+	const positions = new Float32Array(list.positions);
+	let at = 0;
+	let error = 0;
+	for (let k = 0; k < cards.length; k++) {
+		const card = /** @type {Card} */ (cards[k]);
+		if (k % every !== 0) {
+			error = Math.max(error, card.size);
+			continue;
+		}
+		indices.set(card.triangles, at);
+		at += card.triangles.length;
+		for (const v of card.vertices)
+			for (let c = 0; c < 3; c++) {
+				const centre = /** @type {number} */ (card.centre[c]);
+				const value = /** @type {number} */ (list.positions[v * 3 + c]);
+				positions[v * 3 + c] = centre + (value - centre) * grow;
+			}
+	}
+	return [indices.subarray(0, at), error, positions];
+}
+
+/**
  * Simplifies a triangle list toward a share of its triangles, under an error limit in planning
  * units, in each of four ways, and keeps the result of least error among those that reach the
  * share or come within half the cut of it. Pruning lets small separate parts vanish. Permissive
  * simplification lets normal seams move but keeps texture and color seams: in a mesh of flat
  * faces every edge is a normal seam, so little simplifies without it. A list that no way brings
- * near its share keeps the result with the fewest triangles.
+ * near its share keeps the result with the fewest triangles. A list of separate cards thins its
+ * cards instead, at the level's own step, once `level` names one.
  *
  * @param {PlanningList} list
  * @param {Uint32Array} indices The triangles to simplify, a subset of the list's welded ones.
  * @param {number} share
  * @param {number} limit
  * @param {SimplifierFlags[]} flags
- * @returns {[Uint32Array, number]} The triangles and their error.
+ * @param {number} [level] The level of detail, counted from the base mesh's 0: a mesh's level
+ *   keeps one card of every `2^level`.
+ * @returns {[Uint32Array, number, Float32Array?]} The triangles, their error, and the positions
+ *   when the step moved vertices.
  */
-function simplifyList(list, indices, share, limit, flags) {
+function simplifyList(list, indices, share, limit, flags, level) {
+	if (level !== undefined && list.cards)
+		return thinCards(list, Math.min(2 ** level, Math.max(1, list.cards.length)));
 	const target = Math.floor((indices.length / 3) * share) * 3;
 	const enough = (indices.length * (1 + share)) / 2;
 	/** @type {[Uint32Array, number] | undefined} */
@@ -401,28 +616,33 @@ function simplifierFlags(prims) {
  * @param {number} share
  * @param {number} limit
  * @param {SimplifierFlags[]} flags
+ * @param {number} [level] The level of detail that the step makes, for a list of cards.
  */
-function simplifyStep(lists, from, share, limit, flags) {
+function simplifyStep(lists, from, share, limit, flags, level) {
 	const result = lists.map((list, p) =>
-		simplifyList(list, /** @type {Uint32Array} */ (from[p]), share, limit, flags),
+		simplifyList(list, /** @type {Uint32Array} */ (from[p]), share, limit, flags, level),
 	);
 	return {
 		indices: result.map(([indices]) => indices),
+		positions: result.map(([, , positions]) => positions),
 		error: Math.max(0, ...result.map(([, error]) => error)),
 		triangles: result.reduce((sum, [indices]) => sum + indices.length / 3, 0),
 	};
 }
 
 /**
- * The levels of detail of one mesh: each level's indices for each triangle list, and its error.
+ * The levels of detail of one mesh: each level's indices for each triangle list, its error, and
+ * the positions of the lists whose vertices a step moved.
  *
  * @typedef {object} MeshLevels
  * @property {Primitive[]} prims The mesh's triangle lists, in the order of each level's indices.
  * @property {number} side The mesh's longest side, in the units of its errors.
- * @property {{ indices: Uint32Array[], error: number, triangles: number }[]} levels The lower
- *   levels, from the most detailed down. The error is the largest distance between the level's
- *   surface and the full mesh's, in the units of the mesh's stored positions, or of the scene
- *   that holds its skeleton for a skinned mesh, in its rest pose.
+ * @property {{ indices: Uint32Array[], positions: (Float32Array | undefined)[], error: number,
+ *   triangles: number }[]} levels The lower levels, from the most detailed down. A list of cards
+ *   keeps its own positions, with each kept card grown; the other lists share the mesh's. The
+ *   error is the largest distance between the level's surface and the full mesh's, in the units of
+ *   the mesh's stored positions, or of the scene that holds its skeleton for a skinned mesh, in
+ *   its rest pose.
  */
 
 /**
@@ -440,21 +660,150 @@ const hasLevels = (mesh) =>
 					p.listParents().some((q) => q.propertyType === 'Lod')),
 		);
 
+/** Reads the bits of a patch's error as the float that the file stores. */
+const errorView = new DataView(new ArrayBuffer(4));
+const errorOf = (/** @type {number} */ bits) => {
+	errorView.setUint32(0, bits, true);
+	return errorView.getFloat32(0, true);
+};
+
 /**
- * Plans levels of detail for each mesh of enough triangles. Each level simplifies the level above
- * toward half its triangles, with no error limit short of the mesh's size: the engine draws a
- * level only where its error spans under a pixel, so a coarse level only draws far away. Each
- * level's error is at least 1.5 times the level above's. The levels stop when one keeps more than
- * three quarters of the triangles above it. They share the mesh's vertices: only their indices
- * are new. Meshes whose levels the file already has keep them.
+ * The triangles of a tree's cut at `threshold`: each patch whose own error passes the threshold
+ * and whose parent's does not, one patch after another. A cut covers the mesh once, so it is a
+ * whole triangle list at that depth.
+ *
+ * @param {ClusterPlan} plan
+ * @param {number} threshold
+ */
+function cutTriangles(plan, threshold) {
+	const { indices, patches } = plan;
+	const runs = [];
+	let total = 0;
+	for (let p = 0; p < patches.length / 4; p++) {
+		const error = errorOf(/** @type {number} */ (patches[p * 4 + 3]));
+		if (!(error <= threshold)) continue;
+		const parent = /** @type {number} */ (patches[p * 4 + 2]) - 1;
+		if (parent >= 0 && errorOf(/** @type {number} */ (patches[parent * 4 + 3])) <= threshold)
+			continue;
+		const first = /** @type {number} */ (patches[p * 4]);
+		const end = first + /** @type {number} */ (patches[p * 4 + 1]);
+		runs.push(indices.subarray(first, end));
+		total += end - first;
+	}
+	const out = new Uint32Array(total);
+	let at = 0;
+	for (const run of runs) {
+		out.set(run, at);
+		at += run.length;
+	}
+	return out;
+}
+
+/**
+ * The errors at which a mesh's trees lose enough triangles to pay for a level: each patch that
+ * replaces its children lowers the cut's triangle count, and the errors where it does so are
+ * applied in order. A cut is kept when it holds at most three quarters of the cut before it, so
+ * the levels fall like the levels that simplification makes, and the errors rise, so the levels
+ * switch in order.
+ *
+ * @param {readonly ClusterPlan[]} plans The trees whose cuts share one mesh's levels.
+ * @param {number} base The mesh's triangles.
+ */
+function cutErrors(plans, base) {
+	/** @type {{ error: number, triangles: number }[]} */
+	const events = [];
+	for (const plan of plans) {
+		const count = plan.patches.length / 4;
+		const children = new Float64Array(count);
+		for (let p = 0; p < count; p++) {
+			const parent = /** @type {number} */ (plan.patches[p * 4 + 2]) - 1;
+			if (parent < 0) continue;
+			const kept = /** @type {number} */ (children[parent]);
+			children[parent] = kept + /** @type {number} */ (plan.patches[p * 4 + 1]) / 3;
+		}
+		for (let p = 0; p < count; p++) {
+			const below = /** @type {number} */ (children[p]);
+			if (below === 0) continue;
+			events.push({
+				error: errorOf(/** @type {number} */ (plan.patches[p * 4 + 3])),
+				triangles: /** @type {number} */ (plan.patches[p * 4 + 1]) / 3 - below,
+			});
+		}
+	}
+	events.sort((a, b) => a.error - b.error);
+	/** @type {number[]} */
+	const errors = [];
+	let triangles = base;
+	let previous = base;
+	for (let i = 0; i < events.length && errors.length < LOD_MAX_LEVELS; ) {
+		const error = /** @type {{ error: number }} */ (events[i]).error;
+		while (i < events.length && /** @type {{ error: number }} */ (events[i]).error === error)
+			triangles += /** @type {{ triangles: number }} */ (events[i++]).triangles;
+		if (triangles > 0 && triangles <= previous * LOD_MAX_KEPT) {
+			errors.push(error);
+			previous = triangles;
+		}
+	}
+	return errors;
+}
+
+/**
+ * The whole levels that a mesh's trees cut into, for a viewer that draws no patches: each level
+ * draws the tree's cut at one error, a complete triangle list that gets coarser with the error.
+ * A primitive of the mesh without a tree draws its own triangles in every level. Returns null
+ * when no tree of the mesh cuts into a level.
+ *
+ * @param {Primitive[]} prims
+ * @param {Map<Primitive, ClusterPlan>} trees
+ * @returns {MeshLevels | null}
+ */
+function levelsFromTrees(prims, trees) {
+	const plans = prims.map((prim) => trees.get(prim));
+	const drawn = /** @type {ClusterPlan[]} */ (plans.filter((plan) => plan !== undefined));
+	if (drawn.length === 0) return null;
+	const counts = prims.map((prim) =>
+		triangleIndices(prim, /** @type {Accessor} */ (prim.getAttribute('POSITION')).getCount()),
+	);
+	const base = counts.reduce((sum, indices) => sum + indices.length / 3, 0);
+	const errors = cutErrors(drawn, base);
+	if (errors.length === 0) return null;
+	const side = Math.max(...drawn.map((plan) => plan.side));
+	/** @type {MeshLevels['levels']} */
+	const levels = errors.map((error) => {
+		const indices = prims.map((_, k) => {
+			const plan = plans[k];
+			return plan ? cutTriangles(plan, error) : /** @type {Uint32Array} */ (counts[k]);
+		});
+		return {
+			indices,
+			positions: prims.map(() => undefined),
+			error,
+			triangles: indices.reduce((sum, list) => sum + list.length / 3, 0),
+		};
+	});
+	return { prims, side, levels };
+}
+
+/**
+ * Plans levels of detail for each mesh of enough triangles. A mesh with a tree of cluster patches
+ * gets the levels that its tree cuts into, so a viewer that draws no patches draws the same mesh
+ * at a few depths. Each other mesh simplifies the level above toward half its triangles, with no
+ * error limit short of the mesh's size: the engine draws a level only where its error spans under
+ * a pixel, so a coarse level only draws far away. Each level's error is at least 1.5 times the
+ * level above's. The levels stop when one keeps more than three quarters of the triangles above
+ * it. They share the mesh's vertices: only their indices are new. Meshes whose levels the file
+ * already has keep them.
  *
  * Run after quantizing: the planning reads the positions as stored, so the errors are in the
  * units that the file's mesh has.
  *
  * @param {Document} doc
+ * @param {Map<Primitive, ClusterPlan>} [trees] The trees that the mesh's primitives draw, which
+ *   their levels cut into.
+ * @param {boolean} [simplify] Whether meshes without a tree get levels by simplification too.
  * @returns {Promise<Map<Mesh, MeshLevels>>}
  */
-export async function planLevels(doc) {
+export async function planLevels(doc, trees = new Map(), simplify = true) {
 	await MeshoptSimplifier.ready;
 	/** @type {Map<Mesh, MeshLevels>} */
 	const plans = new Map();
@@ -465,6 +814,12 @@ export async function planLevels(doc) {
 			return sum + (prim.getIndices()?.getCount() ?? count) / 3;
 		}, 0);
 		if (total < LOD_MIN_TRIANGLES || hasLevels(mesh)) continue;
+		const cut = levelsFromTrees(prims, trees);
+		if (cut) {
+			plans.set(mesh, cut);
+			continue;
+		}
+		if (!simplify) continue;
 		const { lists, side } = planningLists(mesh, prims);
 		if (side === 0) continue;
 		const flags = simplifierFlags(prims);
@@ -474,12 +829,13 @@ export async function planLevels(doc) {
 		let previous = total;
 		let error = 0;
 		while (levels.length < LOD_MAX_LEVELS) {
-			const step = simplifyStep(lists, from, LOD_STEP, side, flags);
+			const step = simplifyStep(lists, from, LOD_STEP, side, flags, levels.length + 1);
 			if (step.triangles === 0 || step.triangles > previous * LOD_MAX_KEPT) break;
 			error = Math.max(error * LOD_ERROR_GROWTH, step.error);
 			if (error >= side) break;
 			levels.push({
 				indices: step.indices.map(cacheOrder),
+				positions: step.positions,
 				error,
 				triangles: step.triangles,
 			});
@@ -489,6 +845,69 @@ export async function planLevels(doc) {
 		if (levels.length > 0) plans.set(mesh, { prims, side, levels });
 	}
 	return plans;
+}
+
+/**
+ * Orders each planned mesh's vertices so that a coarse level names a prefix of them, as
+ * meshoptimizer's README advises: the coarsest level's vertices first, then each finer level's new
+ * ones, then the base mesh's own, and any vertex that no triangle uses last. A viewer can then send
+ * a coarse level's part of the buffer first and add the finer parts as they download. The base and
+ * every level keep their triangles: only the vertex numbering changes.
+ *
+ * @param {Document} doc
+ * @param {Map<Mesh, MeshLevels>} plans
+ * @param {Map<Primitive, ClusterPlan>} [trees] The trees whose indices name the same vertices,
+ *   which the new numbering renames too.
+ */
+export function orderLevels(doc, plans, trees = new Map()) {
+	for (const [, plan] of plans) {
+		plan.prims.forEach((prim, p) => {
+			const count = /** @type {Accessor} */ (prim.getAttribute('POSITION')).getCount();
+			/** @type {number[]} */
+			const order = [];
+			const seen = new Uint8Array(count);
+			/** @param {Uint32Array} indices */
+			const take = (indices) => {
+				for (const vertex of indices)
+					if (!seen[vertex]) {
+						seen[vertex] = 1;
+						order.push(vertex);
+					}
+			};
+			// The coarsest level first, then each finer one, then the base mesh itself.
+			for (let k = plan.levels.length - 1; k >= 0; k--) {
+				const level = plan.levels[k];
+				if (level) take(/** @type {Uint32Array} */ (level.indices[p]));
+			}
+			take(triangleIndices(prim, count));
+			for (let vertex = 0; vertex < count; vertex++) if (!seen[vertex]) order.push(vertex);
+			const remap = new Uint32Array(count);
+			order.forEach((vertex, at) => {
+				remap[vertex] = at;
+			});
+			reorderVertices(doc, prim, remap);
+			for (const level of plan.levels) {
+				const indices = /** @type {Uint32Array} */ (level.indices[p]);
+				level.indices[p] = Uint32Array.from(
+					indices,
+					(vertex) => /** @type {number} */ (remap[vertex]),
+				);
+				const positions = level.positions[p];
+				if (!positions) continue;
+				const moved = new Float32Array(positions.length);
+				for (let vertex = 0; vertex < count; vertex++)
+					for (let c = 0; c < 3; c++)
+						moved[/** @type {number} */ (remap[vertex]) * 3 + c] = /** @type {number} */ (
+							positions[vertex * 3 + c]
+						);
+				level.positions[p] = moved;
+			}
+			const tree = trees.get(prim);
+			if (tree)
+				for (let i = 0; i < tree.indices.length; i++)
+					tree.indices[i] = /** @type {number} */ (remap[/** @type {number} */ (tree.indices[i])]);
+		});
+	}
 }
 
 /**
@@ -541,17 +960,267 @@ export function levelCoverage(levels, side) {
 }
 
 /**
- * Stores the planned levels in the document, as MSFT_lod gives them: a mesh for each level, whose
- * triangle lists share the mesh's vertex streams and materials, and a node for each level beside
- * each node that draws the mesh, with that node's transform, skin and instances. The node names
- * its levels and gives each level's error and screen coverage.
+ * A copy of a position accessor with new values, in the accessor's own component type, so that a
+ * mesh keeps one vertex format. Values outside the type's range take its ends.
+ *
+ * @param {Document} doc
+ * @param {Accessor} base
+ * @param {Float32Array} values
+ * @param {Buffer} buffer
+ */
+function positionAccessor(doc, base, values, buffer) {
+	const source = /** @type {Float32Array} */ (base.getArray());
+	const Type =
+		/** @type {Float32ArrayConstructor | Uint16ArrayConstructor | Int16ArrayConstructor | Uint8ArrayConstructor | Int8ArrayConstructor} */ (
+			source.constructor
+		);
+	const out = new Type(values.length);
+	if (Type === Float32Array) out.set(values);
+	else {
+		const normalized = base.getNormalized();
+		const unsigned = Type === Uint8Array || Type === Uint16Array;
+		const bits = 8 * Type.BYTES_PER_ELEMENT;
+		const max = normalized || unsigned ? 2 ** bits - 1 : 2 ** (bits - 1) - 1;
+		const min = normalized || unsigned ? 0 : -(2 ** (bits - 1));
+		for (let i = 0; i < values.length; i++)
+			out[i] = Math.min(max, Math.max(min, Math.round(/** @type {number} */ (values[i]))));
+	}
+	return doc
+		.createAccessor(base.getName())
+		.setType('VEC3')
+		.setNormalized(base.getNormalized())
+		.setArray(out)
+		.setBuffer(buffer);
+}
+
+/**
+ * The magic number that a stage file starts with, as the word `N3DS` counted little-endian.
+ * @type {number}
+ */
+export const STAGE_MAGIC = 0x5344334e;
+/** The version of the stage layout that the tool writes. */
+export const STAGE_VERSION = 1;
+/** The kind of a stage that holds a level's triangles, one list for each of a mesh's primitives. */
+export const STAGE_LEVELS = 0;
+/** The kind of a stage that holds one band of a tree of cluster patches. */
+export const STAGE_BAND = 1;
+/** The words of a stage file's header: its magic number, its version, its kind and a count. */
+export const STAGE_HEADER_SIZE = 4;
+
+/**
+ * A stage file: its header, then for each triangle list its index count, the number of bytes of
+ * each index, and its indices padded to a whole word. The lists follow the order of a mesh's
+ * primitives. Every number counts little-endian, as the engine reads it.
+ *
+ * @param {Uint32Array[]} lists
+ * @returns {Uint8Array}
+ */
+export function stageFile(lists) {
+	const placed = lists.map((indices) => {
+		const size = indices.some((index) => index > 0xffff) ? 4 : 2;
+		return { indices, size, bytes: Math.ceil((indices.length * size) / 4) * 4 };
+	});
+	const length = STAGE_HEADER_SIZE * 4 + placed.reduce((sum, list) => sum + 8 + list.bytes, 0);
+	const out = new Uint8Array(length);
+	const view = new DataView(out.buffer);
+	view.setUint32(0, STAGE_MAGIC, true);
+	view.setUint32(4, STAGE_VERSION, true);
+	view.setUint32(8, STAGE_LEVELS, true);
+	view.setUint32(12, lists.length, true);
+	let at = STAGE_HEADER_SIZE * 4;
+	for (const { indices, size, bytes } of placed) {
+		view.setUint32(at, indices.length, true);
+		view.setUint32(at + 4, size, true);
+		const array = size === 2 ? new Uint16Array(bytes / 2) : new Uint32Array(bytes / 4);
+		array.set(indices);
+		out.set(new Uint8Array(array.buffer), at + 8);
+		at += 8 + bytes;
+	}
+	return out;
+}
+
+/**
+ * A stage file of one band of a tree of cluster patches: the header with the band's kind and its
+ * count of 1, then the patch count, then each patch's sphere and record, then the band's indices as
+ * kind 0 frames a list. A record's first index counts from the band's own indices, and its parent
+ * names a patch that the model file or an earlier band holds. Every number counts little-endian,
+ * as the engine reads it.
+ *
+ * @param {Float32Array} bounds Each patch's centre and radius, as four floats.
+ * @param {Uint32Array} records Each patch's first index, index count, parent's place plus one, and
+ *   error's bits, as four integers.
+ * @param {Uint32Array} indices The band's indices.
+ * @returns {Uint8Array}
+ */
+export function bandFile(bounds, records, indices) {
+	const patches = records.length / 4;
+	const size = indices.some((index) => index > 0xffff) ? 4 : 2;
+	const bytes = Math.ceil((indices.length * size) / 4) * 4;
+	const length = (STAGE_HEADER_SIZE + 1) * 4 + patches * 32 + 8 + bytes;
+	const out = new Uint8Array(length);
+	const view = new DataView(out.buffer);
+	view.setUint32(0, STAGE_MAGIC, true);
+	view.setUint32(4, STAGE_VERSION, true);
+	view.setUint32(8, STAGE_BAND, true);
+	view.setUint32(12, 1, true);
+	view.setUint32(16, patches, true);
+	let at = (STAGE_HEADER_SIZE + 1) * 4;
+	// Eight words a patch: its sphere's four floats, then its record's four integers.
+	for (let k = 0; k < patches; k++) {
+		for (let c = 0; c < 4; c++) {
+			view.setFloat32(at, /** @type {number} */ (bounds[k * 4 + c]), true);
+			at += 4;
+		}
+		for (let c = 0; c < 4; c++) {
+			view.setUint32(at, /** @type {number} */ (records[k * 4 + c]), true);
+			at += 4;
+		}
+	}
+	view.setUint32(at, indices.length, true);
+	view.setUint32(at + 4, size, true);
+	const array = size === 2 ? new Uint16Array(bytes / 2) : new Uint32Array(bytes / 4);
+	array.set(indices);
+	out.set(new Uint8Array(array.buffer), at + 8);
+	return out;
+}
+
+/**
+ * A mesh's level as a new accessor of its triangles, in the type that holds its vertex count.
+ *
+ * @param {Document} doc
+ * @param {Accessor} positions
+ * @param {Uint32Array} indices
+ * @param {Buffer} buffer
+ */
+function indicesAccessor(doc, positions, indices, buffer) {
+	const count = positions.getCount();
+	return doc
+		.createAccessor()
+		.setType('SCALAR')
+		.setArray(count <= 0xffff ? Uint16Array.from(indices) : Uint32Array.from(indices))
+		.setBuffer(buffer);
+}
+
+/**
+ * A level's triangle lists as index arrays, one for each of the mesh's primitives.
+ *
+ * @param {MeshLevels['levels'][number]} level
+ * @returns {Uint32Array[]}
+ */
+function levelIndices(level) {
+	return level.indices.map((indices) => /** @type {Uint32Array} */ (indices));
+}
+
+/**
+ * Stores the planned levels as separate downloads, for a model that draws its coarse level first:
+ * each mesh's own triangles become its coarsest level, and each finer level goes into a stage file
+ * of its own beside the model. Every node that draws the mesh names its stages in
+ * `NULL3D_stages`, with the error of each level, so the engine downloads them from the coarsest
+ * down and draws each as it arrives.
+ *
+ * A mesh whose levels hold positions of their own, such as a level of cards, cannot share its
+ * vertices with a stage, so its levels stay in the file as `MSFT_lod` gives them. A mesh with one
+ * level has nothing to stream, and keeps its levels in the file too. A mesh with a tree of cluster
+ * patches keeps its whole levels in the file as well: the tree's bands are what stream, and the
+ * levels draw the mesh whole on the paths that draw no patches.
  *
  * @param {Document} doc
  * @param {Map<Mesh, MeshLevels>} plans
+ * @param {Map<string, Uint8Array>} stages The stage files by their address beside the model.
+ * @param {string} prefix The model's name, which the stages' names start with.
+ * @param {Map<Primitive, ClusterPlan>} [trees] The trees that the mesh's primitives draw.
+ * @returns {{ meshes: number, files: number, bytes: number, levels: number }} The staged meshes.
  */
-export function storeLevels(doc, plans) {
-	if (plans.size === 0) return;
+export function storeStages(doc, plans, stages, prefix, trees = new Map()) {
 	const extension = doc.createExtension(MSFTLod);
+	const buffer = doc.getRoot().listBuffers()[0] ?? doc.createBuffer();
+	const summary = { meshes: 0, files: 0, bytes: 0, levels: 0 };
+	const meshes = doc.getRoot().listMeshes();
+	plans.forEach((plan, mesh) => {
+		const { prims, levels } = plan;
+		if (prims.some((prim) => trees.has(prim))) {
+			storeLevels(doc, new Map([[mesh, plan]]), extension);
+			return;
+		}
+		const shared = levels.every((level) => level.positions.every((p) => p === undefined));
+		if (!shared || levels.length < 2) {
+			storeLevels(doc, new Map([[mesh, plan]]), extension);
+			return;
+		}
+		const own = prims.map((prim) => prim.getIndices()?.getArray());
+		if (own.some((values) => values === undefined)) {
+			storeLevels(doc, new Map([[mesh, plan]]), extension);
+			return;
+		}
+		const index = meshes.indexOf(mesh);
+		/** @type {{ url: string, bytes: number, error: number }[]} */
+		const names = [];
+		/**
+		 * Puts the triangles of one level, or of the mesh itself, into a stage file.
+		 *
+		 * @param {Uint32Array[]} lists
+		 * @param {number} error
+		 */
+		const stage = (lists, error) => {
+			const name = `${prefix}.m${index}.lod${names.length + 1}.bin`;
+			const file = stageFile(lists);
+			stages.set(name, file);
+			summary.files += 1;
+			summary.bytes += file.byteLength;
+			summary.levels += 1;
+			names.push({ url: name, bytes: file.byteLength, error });
+		};
+		// The file keeps the coarsest level. The stages follow from the next coarsest down to the
+		// mesh itself, so each one refines the triangles that the one before it drew, and the
+		// finest picture is the full mesh.
+		const coarsest = /** @type {MeshLevels['levels'][number]} */ (levels[levels.length - 1]);
+		prims.forEach((prim, p) => {
+			const positions = /** @type {Accessor} */ (prim.getAttribute('POSITION'));
+			prim.setIndices(
+				indicesAccessor(doc, positions, /** @type {Uint32Array} */ (coarsest.indices[p]), buffer),
+			);
+		});
+		for (let k = levels.length - 2; k >= 0; k--) {
+			const level = /** @type {MeshLevels['levels'][number]} */ (levels[k]);
+			stage(levelIndices(level), level.error);
+		}
+		stage(
+			own.map((indices) => Uint32Array.from(/** @type {Uint16Array | Uint32Array} */ (indices))),
+			0,
+		);
+		const staged = { error: coarsest.error, levels: names };
+		for (const node of mesh.listParents().filter((p) => p.propertyType === 'Node')) {
+			const base = /** @type {Node} */ (node);
+			base.setExtras({ ...base.getExtras(), NULL3D_stages: staged });
+		}
+		summary.meshes += 1;
+	});
+	// The extension stays only when some mesh keeps its levels in the file.
+	if (
+		!doc
+			.getRoot()
+			.listExtensionsUsed()
+			.some((e) => e.extensionName === MSFT_LOD)
+	)
+		extension.dispose();
+	return summary;
+}
+
+/**
+ * Stores the planned levels in the document, as MSFT_lod gives them: a mesh for each level, whose
+ * triangle lists share the mesh's vertex streams and materials, and a node for each level beside
+ * each node that draws the mesh, with that node's transform, skin and instances. A list of cards
+ * takes its own positions, with each kept card grown, which the level's primitive reads in place
+ * of the base mesh's. The node names its levels and gives each level's error and screen coverage.
+ *
+ * @param {Document} doc
+ * @param {Map<Mesh, MeshLevels>} plans
+ * @param {MSFTLod} [own] The extension to use, where a caller stores some meshes as downloads and
+ *   keeps others in the file.
+ */
+export function storeLevels(doc, plans, own) {
+	if (plans.size === 0) return;
+	const extension = own ?? doc.createExtension(MSFTLod);
 	const buffer = doc.getRoot().listBuffers()[0] ?? doc.createBuffer();
 	for (const [mesh, { prims, side, levels }] of plans) {
 		const meshes = levels.map((level, k) => {
@@ -571,8 +1240,16 @@ export function storeLevels(doc, plans) {
 							.setArray(count <= 0xffff ? Uint16Array.from(indices) : Uint32Array.from(indices))
 							.setBuffer(buffer),
 					);
-				for (const semantic of prim.listSemantics())
-					copy.setAttribute(semantic, prim.getAttribute(semantic));
+				const positions = level.positions[p];
+				for (const semantic of prim.listSemantics()) {
+					const base = /** @type {Accessor} */ (prim.getAttribute(semantic));
+					copy.setAttribute(
+						semantic,
+						semantic === 'POSITION' && positions
+							? positionAccessor(doc, base, positions, buffer)
+							: base,
+					);
+				}
 				for (const target of prim.listTargets()) copy.addTarget(target);
 				lower.addPrimitive(copy);
 			});

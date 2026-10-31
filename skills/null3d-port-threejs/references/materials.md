@@ -2,7 +2,7 @@
 
 Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `concepts/color-management`, `shaders/surface-functions`.
 
-Versions: a number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. Every `materials.standard` option in section 1 is built, and the material shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity`, `map` and `uvTransform`. Both take `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest` and `depthBias`, and the standard material also takes `flatShading`. Both take `alphaToCoverage`, `forceSinglePass` and the `hash` alpha mode (0.2) too. Custom materials (`materials.shader`) are built: surface functions, vertex offsets, uniforms and full shaders. They take every standard option but the texture maps. Textures in custom materials (0.2) are built, so the alpha map recipe works. The matcap recipe also needs `camera.view` (0.2, not built yet).
+Versions: a number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. Every `materials.standard` option in section 1 is built, and the material shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity`, `map` and `uvTransform`. Both take `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest`, `colorWrite` (0.3) and `depthBias`, and the standard material also takes `flatShading`. Both take `alphaToCoverage`, `forceSinglePass` and the `hash` alpha mode (0.2) too. Custom materials (`materials.shader`) are built: surface functions, vertex offsets, uniforms and full shaders. They take every standard option but the texture maps. Textures in custom materials (0.2) are built, so the alpha map recipe works. The matcap recipe also needs `camera.view` (0.2, not built yet).
 
 ## Contents
 
@@ -29,7 +29,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `normalMap`, `normalScale` | `normalMap`, `normalScale: [x, y]` | Tangent space only. The frame comes from the mesh's tangents where it has them, else from the pixels around it, as in three.js |
 | `normalMapType: ObjectSpaceNormalMap` | Not supported | Convert to tangent space offline |
 | `aoMap`, `aoMapIntensity` | `aoMap`, `aoMapIntensity` | three.js reads AO from the R channel; so does null3D |
-| `lightMap`, `lightMapIntensity` | `lightMap`, `lightMapIntensity` | Usually on the second UV set: the texture option `uvSet: 1` |
+| `lightMap`, `lightMapIntensity` | `lightMap`, `lightMapIntensity` | Usually on the second UV set: the texture option `uvSet: 1`. A texture's `offset` and `repeat` become `lightMapOffset` and `lightMapRepeat`. A directional light map's direction texture becomes `lightMapDirection` |
 | `emissive`, `emissiveIntensity` | Same names | `emissive` is an sRGB color, as in three.js |
 | `emissiveMap` | `emissiveMap` | Must be sRGB |
 | `envMap`, `envMapIntensity` | `scene.setEnvironment(env)`, `envIntensity` (0.2) | Per-material environment maps are not supported; one scene environment lights everything. An `envMap` from a `CubeCamera` becomes `scene.createReflectionProbe({ box, position })` (0.2), which lights every surface in its box. `envIntensity` multiplies the scene's `intensity`, where three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment |
@@ -46,20 +46,21 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `forceSinglePass` | Same name (0.2) | With `alphaMode: 'blend'` and `doubleSided`, one draw for both faces, in the mesh's triangle order |
 | `side: BackSide` | Flip the geometry | Not a material option: in `geometry.fromArrays`, reverse each triangle's indices and negate the normals |
 | `depthWrite`, `depthTest` | Same names | Fixed when the material is created. `depthTest: false` writes no depth either, as in three.js's WebGL renderer |
+| `colorWrite: false` | Same name (0.3) | Fixed when the material is created. Writes depth and no color, and its objects draw before the opaque objects that write color, so it hides the scene behind it. With `alphaTest`, the parts that the mask drops write no depth either. A plane with `blending: NoBlending` and `opacity: 0` that hides what lies behind a page becomes this |
 | `polygonOffset`, `polygonOffsetFactor`, `polygonOffsetUnits` | `depthBias: { constant, slopeScale }` | Keep the three.js intent; the engine converts signs for reversed depth |
 | `oitPass(scene, camera)` (`OITPassNode`) | `blending: 'weighted'` (0.2) with `alphaMode: 'blend'` on each material that the pass blended | three.js's pass takes every transparent material of normal blending without transmission; in null3D each material asks for it. Same weight, the paper's equation 9. Custom materials do not take it |
 | `blending: NormalBlending / AdditiveBlending / MultiplyBlending` | `blending: 'normal' / 'additive' / 'multiply'` with `alphaMode: 'blend'` | Subtractive and custom blending are not supported. three.js blends an opaque material with additive or multiply blending too; null3D needs `alphaMode: 'blend'`. null3D blends in linear color, as `WebGPURenderer` does; `WebGLRenderer` blends after tone mapping and sRGB encoding, so see-through surfaces look a little lighter in null3D |
 | `vertexColors`, `flatShading` | Same names | Fixed when the material is created: make one material for each combination. `vertexColors` needs a mesh with colors |
 | `wireframe` | Same name (0.2), on standard, unlit and custom materials | Fixed when the material is created. Lines one pixel wide with the material's shading, as in three.js. `wireframeLinewidth` has no effect. For the outline edges of `EdgesGeometry`, use `scene.createLines({ positions, mode: 'segments' })` |
 | `fog: false` | Same name | |
-| `toneMapped: false` | A flag per material (0.3) | Until then, no pass draws after post-processing. Tune the color so that tone mapping gives the wanted value, or draw the element in the page's HTML |
+| `toneMapped: false` | `toneMapped: false` (0.3) | Fixed when the material is created. The material keeps its color as the display shows it on both paths. On the HDR path a blended surface keeps the curve |
 | `dithering` | Always on in the final pass | |
 | `clippingPlanes`, `clipShadows` | A surface function with `alphaMode: 'mask'` (section 8) | Shadows keep the whole mesh |
 | `shadowSide`, `precision`, `premultipliedAlpha` | Not needed | To store a texture's colors multiplied by alpha: `loadTexture(url, { premultipliedAlpha: true })` |
 
 ## 2. MeshPhysicalMaterial
 
-`materials.standard` takes the index of refraction, specular, transmission, clear coat and sheen options of `MeshPhysicalMaterial` (0.2) with the same names and formulas:
+`materials.standard` takes the index of refraction, specular, transmission, dispersion, clear coat, sheen, iridescence and anisotropy options of `MeshPhysicalMaterial` with the same names and formulas (0.2, except iridescence, anisotropy and dispersion at 0.3):
 
 | three.js | null3D | Notes |
 | --- | --- | --- |
@@ -67,21 +68,17 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `reflectivity` | `ior` | Convert: `ior = (1 + 0.4 * reflectivity) / (1 - 0.4 * reflectivity)`, as three.js does |
 | `specularIntensity`, `specularIntensityMap` | Same names | The map's alpha multiplies the intensity; load it linear |
 | `specularColor`, `specularColorMap` | Same names | The map is sRGB. Linear components above 1 carry over |
-| `transmission`, `thickness`, `attenuationColor`, `attenuationDistance` | Same names | Give `transmission` at creation, even as 0, to change it later. `transmissionMap` and `thicknessMap` are not drawn. Only opaque objects show through: three.js also shows the back faces of double-sided glass. Where the bent ray lands on an opaque object in front of the surface, null3D shows what lies straight behind the surface, and three.js shows that object's color |
+| `transmission`, `thickness`, `attenuationColor`, `attenuationDistance` | Same names | Give `transmission` at creation, even as 0, to change it later. A masked material keeps its transmission and its cut-out, as three.js does; `alphaMode: 'hash'` has no three.js counterpart and throws. Only opaque objects show through: three.js also shows the back faces of double-sided glass. Where the bent ray lands on an opaque object in front of the surface, null3D shows what lies straight behind the surface, and three.js shows that object's color |
+| `dispersion` | Same name (0.3) | 20 divided by the Abbe number, and 0 bends every color alike. It shows only with `transmission`, and `set` changes it at any time. Each color takes its own bent ray, with red at the lowest index, as three.js draws it. Load `KHR_materials_dispersion` files as three.js's `GLTFLoader` does |
+| `transmissionMap`, `thicknessMap` | Same names (0.3) | The transmission map's red multiplies the transmission and the thickness map's green multiplies the thickness, as three.js reads them. Each keeps a row slot of its own and samples a specular slot's texture array, so a material may give the specular maps beside it. The two maps of a slot draw together only when their images have one size and format, and a thickness map never shares a specular color map's array, because one is linear and the other sRGB. A layered material keeps them beside its layers unless a layer map fills the array that one of them samples: `clearcoatNormalMap` and `iridescenceThicknessMap` fill the transmission map's array, and the sheen's maps and `anisotropyMap` the thickness map's |
 | `clearcoat`, `clearcoatRoughness`, `clearcoatNormalScale`, `clearcoatMap`, `clearcoatRoughnessMap`, `clearcoatNormalMap` | Same names | Give a clear coat option at creation, even as 0, to change it later. `clearcoatMap` and `clearcoatRoughnessMap` must be one texture (coat in red, roughness in green) |
 | `sheen`, `sheenColor`, `sheenRoughness`, `sheenColorMap`, `sheenRoughnessMap` | `sheenColor` times `sheen`, and the same other names | No `sheen` option: multiply it into `sheenColor`. three.js's `sheen` defaults to 0, so a material without it has no sheen: leave the sheen options out. The two maps must be one texture (roughness in alpha) |
+| `iridescence`, `iridescenceIOR`, `iridescenceThicknessRange`, `iridescenceMap`, `iridescenceThicknessMap` | `iridescence`, `iridescenceIor`, `iridescenceThicknessRange` and the same map names (0.3) | Same thin-film formulas. Give an iridescence option at creation to change it later. Its maps and the anisotropy's take the coat's slots, so a material takes one family's maps |
+| `anisotropy`, `anisotropyRotation`, `anisotropyMap` | Same names (0.3) | Same lobe, with or without a map. Give no map and the direction comes from the mesh's tangents, else the coordinates, as three.js builds it; a surface with neither takes a steady direction. Rectangle and tube lights shade it without the stretch, as three.js's do |
 
 A material with a clear coat or a sheen takes no `lightMap`, `specularIntensityMap`, `specularColorMap` or `diffuseTransmission`: the layers' maps take their places. Bake the light map into the base color, or split the object across two materials.
 
-glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_clearcoat` and `KHR_materials_sheen` load into these options. `KHR_materials_diffuse_transmission` loads into `diffuseTransmission` and `diffuseTransmissionColor` (0.2), which light leaves and petals from behind; three.js's `GLTFLoader` ignores that extension. The draft `KHR_materials_volume_scatter` loads into `subsurfaceRadius` and `subsurfaceColor` (0.2), whose blur spreads skin's light under its surface on the High and Ultra presets; three.js has no such blur. Iridescence, anisotropy and the transmission and thickness maps come in 0.3. Until then, these workarounds apply:
-
-| three.js property | Workaround | Visual cost |
-| --- | --- | --- |
-| `iridescence` | Surface function tinting by view angle | Approximate |
-| `anisotropy` | Not available | Brushed-metal streaks are lost |
-| `dispersion` | Not available | |
-
-Tell the user which of these a scene relies on before porting it. Glass and car-paint showcases depend on them heavily.
+glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_dispersion`, `KHR_materials_clearcoat`, `KHR_materials_sheen`, `KHR_materials_iridescence` and `KHR_materials_anisotropy` load into these options. `KHR_materials_diffuse_transmission` loads into `diffuseTransmission` and `diffuseTransmissionColor` (0.2), which light leaves and petals from behind; three.js's `GLTFLoader` ignores that extension. The draft `KHR_materials_volume_scatter` loads into `subsurfaceRadius` and `subsurfaceColor` (0.2), whose blur spreads skin's light under its surface on the High and Ultra presets; three.js has no such blur. The transmission and thickness textures load into `transmissionMap` and `thicknessMap`.
 
 ## 3. MeshBasicMaterial
 
@@ -115,6 +112,8 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | `DecalGeometry` (add-on), with a material that has `polygonOffset` | A mesh of `geometry.box()` with `materials.decal({ map, normalMap, ... })` (0.2): `DecalGeometry`'s position, orientation and size become the box's `position`, `rotation` and `scale`. No geometry is cut, and no target mesh is named: the box marks every opaque surface inside it, lit by every light. Drop `polygonOffset`, `depthWrite: false` and `transparent: true`. `angleFade` and `edgeFade` hide the stretching that `DecalGeometry` shows at steep surfaces (`api/materials`) |
 | `Reflector`, `Water`, `Water2` (add-ons) | A reflection pass, `render.addPass({ kind: 'reflection', writes, plane: { point, normal } })` (0.2), and a custom material whose surface function sets `s.reflection` from `reflection_uv` (`api/render`). `Reflector`'s `textureWidth` becomes the pass's `scale`, a share of the render size; its `color` becomes the material's `color` with `metalness: 1, roughness: 0`. `Water`'s `distortionScale` becomes the factor on `s.normal.xz` in `reflection_uv`'s offset, and `waterColor` and `sunColor` the material's color and the scene's sun. `Water`'s `waterNormals` texture becomes ripples from sine waves or `null3d::noise`, or a normal texture of the material. `Refractor` and `Water2`'s refraction become transmission: give the water's custom material `transmission`, `thickness` and `ior: 1.33`, and set `s.transmission` with the rippled normal (`api/materials`) |
 
+To draw the whole main pass with one material, as three.js's `scene.overrideMaterial` does, set `scene.overrideMaterial = material` (0.3). Each mesh and instance batch keeps its mesh, its place and its rows. This also turns a scene of many materials into one look for a mask, a silhouette or a loading transition. Sprites, points, lines and particle systems keep their own materials. The shadow maps also keep each object's material, so a masked object still cuts its shadow. A sprite, point or line material throws E1224. Set the property to `null` to draw each object's own material again. Either change rebuilds the engine's draw tables in the next frame. For the built-in debug views, use `debug.view('normals')` and the other views instead.
+
 ## 7. Texture settings
 
 | three.js | null3D `loadTexture` option |
@@ -123,7 +122,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | No color space (data textures) | `colorSpace: 'linear'` |
 | `flipY` (TextureLoader default true) | `flipY: true`; glTF textures always use `false` |
 | `wrapS`, `wrapT` | `wrap: 'repeat' | 'clamp' | 'mirror'`, or `[u, v]` |
-| `repeat`, `offset`, `rotation` | The material's `uvTransform: { repeat, offset, rotation }`. Every map of the material shares it, where three.js keeps one per texture |
+| `repeat`, `offset`, `rotation` | The material's `uvTransform: { repeat, offset, rotation }`, which places every map. `mapUvTransforms` gives one map its own, which is where three.js keeps each texture's |
 | `center` | Bake into `offset`: rotating about center c equals rotating about the origin, then offsetting by c minus the rotated c |
 | `anisotropy` | `anisotropy`, from 1 to 16 |
 | `magFilter`, `minFilter` (`NearestFilter`) | `filter: 'nearest'` |

@@ -37,16 +37,32 @@
 // the culling group within the eight storage buffers that every device allows a shader stage.
 //
 // A bucket of a mesh with levels of detail links to the bucket of its next coarser level, and each
-// level's bucket holds the level's error, in the units of the base mesh. An instance's entry names
-// its base level's bucket. The thread walks the links while the next level's error, times the
-// instance's largest axis scale and the view's level factor, stays under its distance from the
-// main camera, and appends the instance to the last level that passes. Every view places its
-// instances relative to the main camera, shadow views too, so they all pick by its distance. Past
-// each switch distance lies a band in which the level before still draws: there, the instance goes
-// to both levels' fade buckets, whose pipelines dither each pixel to one of them, and the copy's
-// fourth id holds the fade value, positive for the new level and negative for the old. A link of 0
-// means none, so a bucket record without levels holds zeros there, and a view whose level factor
-// is 0 draws every instance's base level.
+// level's bucket holds the level's switch measure: its error in the units of the base mesh, a
+// distance in meters at scale 1, or a share of the render's height that the bounds cover. An
+// instance's entry names its base level's bucket. The thread walks the links while the next
+// level's switch distance stays under its distance from the main camera to the nearest point of
+// its bounding sphere, and appends the instance to the last level that passes. Every view places its instances relative to the main camera, shadow views
+// too, so they all pick by its distance. Past each switch distance lies a band in which the level
+// before still draws: there, the instance goes to both levels' fade buckets, whose pipelines dither
+// each pixel to one of them, and the copy's fourth id holds the fade value, positive for the new
+// level and negative for the old. A link of 0 means none, so a bucket record without levels holds
+// zeros there, and a view whose level factor is 0 draws every instance's base level.
+//
+// An instance of a mesh with levels whose bounding sphere covers fewer pixels than the threshold
+// draws nothing: the last level holds no geometry. The sphere's world diameter times the level
+// factor measures the pixels it covers, so it hides while that product stays under its distance,
+// the same comparison that picks the levels. A mesh without levels has no such last level, so it
+// draws at every distance. Past the hide distance a band thins the coarsest level out with the
+// same dither, where a fading build exists, so the instance does not pop away.
+//
+// An instance tests the local sphere of its bucket, scaled by its own matrix, unless its source
+// gives a radius of its own: a batch whose vertex shader carries rows away from their origins sets
+// one, and every row then tests a sphere of that radius around its origin. The ranges texture holds
+// it beside the row's distance range.
+//
+// An instance also draws only inside its distance range, which the ranges texture holds for each
+// source as a start distance and an end distance. Both edges lie inside the range and fade over
+// the same band, through the fading build of the level that the instance would draw.
 //
 // When the CPU culls whole grid cells first, the parameters list runs of the cell order: the
 // instances of the cells in view, and the instances that move. The dispatch covers only those
@@ -96,6 +112,9 @@ const MAX_RANGES: u32 = 257u;
 const WORKGROUP_SIZE: u32 = 128u;
 /// Levels of the depth pyramid at most.
 const MAX_LEVELS: u32 = 16u;
+/// The smallest distance that the level rule compares, in meters. A camera inside an instance's
+/// bounds measures this distance, so the instance keeps its base level.
+const LEAST_DISTANCE: f32 = 1.0e-3;
 
 /// What the occlusion phases read: the view-projection matrix for positions relative to the
 /// camera, the render size, and the depth pyramid's levels. The levels' shapes follow from the
@@ -121,9 +140,12 @@ struct CullParams {
     /// The view's row of the cell offsets texture.
     offsets_row: u32,
     /// What the level choice reads: the level factor (0 for none), 1 for an orthographic camera,
-    /// whose distance counts as 1, the share of a switch distance that a fading band covers, and a
-    /// spare.
+    /// whose distance counts as 1, the share of a switch distance that a fading band covers, and
+    /// the projection's P[1][1].
     levels: vec4f,
+    /// The first word is 1 while the levels debug view draws, whose copies carry each source's
+    /// level code in place of the fade value. The rest are spare.
+    debug: vec4u,
     /// Each run: its first position in the cell order, its end, and its first workgroup.
     ranges: array<vec4u, MAX_RANGES>,
     /// What the occlusion phases read. Other views leave it unset.
@@ -149,12 +171,23 @@ struct Bucket {
     center_z: f32,
     first_joint: u32,
     indices: u32,
-    /// The error of the bucket's level of detail, 0 for a base level.
-    error: f32,
+    /// The switch value of the bucket's level of detail: its error, its distance or its screen
+    /// coverage, as `level_switch` says. 0 for a base level.
+    value: f32,
     /// The bucket of the next coarser level plus one, or 0 for none.
     next: u32,
     /// The fade bucket of the bucket's level plus one, or 0 for none.
     fade: u32,
+    /// The threshold bias that picks the bucket's levels: 1 for the quality settings' threshold,
+    /// above 1 for a coarser level, and below 1 for a finer one. A record that holds no level
+    /// keeps 0, which counts as 1.
+    bias: f32,
+    /// What the switch value measures: the level's error, a distance, or a share of the screen's
+    /// height.
+    level_switch: u32,
+    /// The level of detail that the bucket draws, from 0, which the levels debug view writes
+    /// beside each copy.
+    level: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: CullParams;
@@ -180,12 +213,43 @@ struct Bucket {
 /// cell x's offset for the view whose row is y.
 @group(0) @binding(9) var cell_offsets: texture_2d<f32>;
 
+/// Each source's distance range and own radius: texel x of row y holds source y * a row's width
+/// plus x's start distance and end distance, its own local radius, which scales by the instance's
+/// matrix as its bounding sphere, and a word that nothing reads. A source without a range holds 0
+/// and infinity, and a source without a radius of its own holds 0, which keeps its bucket's sphere.
+@group(0) @binding(11) var instance_ranges: texture_2d<f32>;
+
+/// What a level's switch value measures: its error in the mesh's units, a distance in meters for a
+/// source of scale 1, or the share of the render's height that the source's bounds cover.
+const SWITCH_ERROR: u32 = 0u;
+const SWITCH_DISTANCE: u32 = 1u;
+const SWITCH_COVERAGE: u32 = 2u;
+
 /// The first joint of each source that a bucket of skinned objects shares: texel x of row y holds
 /// source y << INDEX_ROW_SHIFT | x's.
 @group(0) @binding(10) var skin_firsts: texture_2d<u32>;
 
 /// The bucket of an instance that draws nowhere.
 const HIDDEN: u32 = 0xffffffffu;
+
+/// The bits of a level code, which the levels debug view reads in place of a copy's fade value:
+/// the level in the lowest bits, a mark for a source that the size rule or a draw range hid, the
+/// share of a fading band that the level keeps, and the sign that names the band's side. The
+/// levels view's shader reads the same bits.
+const LEVEL_CODE_LEVEL_MAX: u32 = 7u;
+const LEVEL_CODE_HIDDEN: u32 = 1u << 3u;
+const LEVEL_CODE_FADE_SHIFT: u32 = 4u;
+const LEVEL_CODE_FADE_MAX: u32 = 63u;
+const LEVEL_CODE_NEGATIVE: u32 = 1u << 10u;
+
+/// The code of a draw at level `level`, of a source that `hidden` hides, at fade `fade`.
+fn level_code(level: u32, hidden: bool, fade: f32) -> u32 {
+    let share = u32(round(clamp(abs(fade), 0.0, 1.0) * f32(LEVEL_CODE_FADE_MAX)));
+    return (level & LEVEL_CODE_LEVEL_MAX)
+        | select(0u, LEVEL_CODE_HIDDEN, hidden)
+        | (share << LEVEL_CODE_FADE_SHIFT)
+        | select(0u, LEVEL_CODE_NEGATIVE, fade < 0.0);
+}
 /// A bucket's first joint that sends each copy to its source's own in `skin_firsts`.
 const PER_SOURCE_JOINT: u32 = 0xffffffffu;
 /// Sources per row of the skin firsts texture are 1 << INDEX_ROW_SHIFT.
@@ -222,10 +286,17 @@ fn instance_of(group: u32, lane: u32) -> u32 {
     return order[position];
 }
 
+/// The ranges texture's texel of the source `index`: its distance range's start and end in x and
+/// y, its own local radius in z, and a word that nothing reads.
+fn ranges_of(index: u32) -> vec4f {
+    let row = (1u << 11u) - 1u;
+    return textureLoad(instance_ranges, vec2u(index & row, index >> 11u), 0);
+}
+
 /// An instance in the view: its bucket and its own index, whether the sketch marks it as an
-/// occluder, its matrix moved by its cell's offset, and its bounding sphere relative to the camera.
-/// The bucket is `HIDDEN` for an instance that draws nowhere in the view: hidden, on none of the
-/// view's layers, or outside the frustum.
+/// occluder, its matrix moved by its cell's offset, its bounding sphere relative to the camera, and
+/// the texel that holds its distance range. The bucket is `HIDDEN` for an instance that draws
+/// nowhere in the view: hidden, on none of the view's layers, or outside the frustum.
 struct Survivor {
     bucket: u32,
     index: u32,
@@ -237,6 +308,8 @@ struct Survivor {
     radius: f32,
     /// The largest axis scale of the instance's world matrix.
     scale: f32,
+    /// The source's distance range and own local radius (see `ranges_of`).
+    ranges: vec4f,
 }
 
 /// Instance `i`, tested against the view's layers and frustum.
@@ -261,7 +334,11 @@ fn survivor(i: u32) -> Survivor {
         length(vec3f(out.r0.x, out.r1.x, out.r2.x)),
         max(length(vec3f(out.r0.y, out.r1.y, out.r2.y)), length(vec3f(out.r0.z, out.r1.z, out.r2.z))),
     );
-    out.radius = bucket.radius * scale;
+    // A row that carries a bound of its own, as a batch whose vertex shader moves its rows does,
+    // tests that bound; a row without one tests its bucket's local sphere.
+    out.ranges = ranges_of(i);
+    let own = out.ranges.z;
+    out.radius = select(bucket.radius * scale, own * scale, own > 0.0);
     out.scale = scale;
     for (var p = 0u; p < 6u; p++) {
         let plane = params.planes[p];
@@ -273,56 +350,131 @@ fn survivor(i: u32) -> Survivor {
     return out;
 }
 
+/// The distance at which a level with `bucket` switches in, for an instance of largest axis scale
+/// `scale` and world radius `radius`, at the view's factor `factor` and threshold `bias`.
+fn switch_distance(bucket: Bucket, scale: f32, radius: f32, factor: f32, bias: f32) -> f32 {
+    if bucket.level_switch == SWITCH_DISTANCE {
+        return bucket.value * scale / bias;
+    }
+    if bucket.level_switch == SWITCH_COVERAGE {
+        // The bounds cover a share of the render's height while radius × P[1][1] / coverage
+        // exceeds the distance from the camera.
+        let p11 = params.levels.w;
+        if bucket.value <= 0.0 || p11 <= 0.0 {
+            return 1e38;
+        }
+        return radius * p11 / (bucket.value * bias);
+    }
+    return bucket.value * scale * factor;
+}
+
 /// The level of detail that an instance in view draws: its bucket, the bucket of the level before
-/// it, and how far past the level's switch distance the instance lies, as a share of that distance.
+/// it, how far past the level's switch distance the instance lies, as a share of that distance,
+/// how far past the hide distance it lies, as a share of the hide distance, whether its bounds
+/// cover fewer pixels than the threshold or lie outside its distance range, where nothing draws,
+/// and the distances the range reads.
 struct Level {
     bucket: u32,
     before: u32,
     past: f32,
+    hide_past: f32,
+    hidden: bool,
+    distance: f32,
+    start: f32,
+    end: f32,
 }
 
 /// The level of detail that an instance in view draws, its base level where the view picks none.
 fn level_of(s: Survivor) -> Level {
-    var out = Level(s.bucket, s.bucket, 0.0);
-    let factor = params.levels.x;
+    var out = Level(s.bucket, s.bucket, 0.0, 0.0, false, 0.0, s.ranges.x, s.ranges.y);
+    let whole = params.levels.x;
+    let bias = select(1.0, buckets[s.bucket].bias, buckets[s.bucket].bias > 0.0);
+    let factor = whole / bias;
+    let nearest = max(length(s.center) - s.radius, LEAST_DISTANCE);
+    let distance = select(nearest, 1.0, params.levels.y > 0.5);
+    out.distance = distance;
     var next = buckets[s.bucket].next;
-    if next == 0u || factor <= 0.0 {
-        return out;
+    if next != 0u && whole > 0.0 {
+        while next != 0u && switch_distance(buckets[next - 1u], s.scale, s.radius, factor, bias) < distance {
+            out.before = out.bucket;
+            out.bucket = next - 1u;
+            next = buckets[out.bucket].next;
+        }
+        if out.bucket != s.bucket {
+            out.past = distance / switch_distance(buckets[out.bucket], s.scale, s.radius, factor, bias) - 1.0;
+        }
     }
-    let reach = s.scale * factor;
-    let distance = select(length(s.center), 1.0, params.levels.y > 0.5);
-    while next != 0u && buckets[next - 1u].error * reach < distance {
-        out.before = out.bucket;
-        out.bucket = next - 1u;
-        next = buckets[out.bucket].next;
-    }
-    if out.bucket != s.bucket {
-        out.past = distance / (buckets[out.bucket].error * reach) - 1.0;
+    // A bound that covers fewer pixels than the threshold draws nothing: the last level holds no
+    // geometry. Only a mesh with levels has that last level, so a bucket with no coarser level
+    // keeps drawing at every distance. The view's level factor also carries the render height,
+    // the render scale and the threshold, so all of them move the hide distance.
+    let hide = 2.0 * s.radius * factor;
+    let small = buckets[s.bucket].next != 0u && hide > 0.0 && hide < distance;
+    out.hidden = small || distance < out.start || distance > out.end;
+    if small {
+        out.hide_past = distance / hide - 1.0;
     }
     return out;
 }
 
 /// Appends an instance in the view to the bucket of the level of detail it draws, and to the fade
-/// buckets of two levels inside a fading band. The draws start `draws_before` draws into the
-/// indirect draws.
-fn append(s: Survivor, draws_before: u32) {
-    let level = level_of(s);
+/// buckets of two levels inside a fading band. An instance that hides draws nothing, apart from the
+/// share of the pixels a fading level keeps as it thins the instance out. The draws start
+/// `draws_before` draws into the indirect draws.
+fn append(s: Survivor, level: Level, draws_before: u32) {
     let band = params.levels.z;
-    let fades = buckets[level.bucket].fade != 0u && buckets[level.before].fade != 0u;
-    if level.bucket != s.bucket && band > 0.0 && fades {
-        let t = level.past / band;
-        if t < 1.0 {
-            append_to(s, buckets[level.bucket].fade - 1u, draws_before, max(t, 1e-6));
-            append_to(s, buckets[level.before].fade - 1u, draws_before, -max(t, 0.0));
+    let new_fade = buckets[level.bucket].fade;
+    let old_fade = buckets[level.before].fade;
+    let debug = params.debug.x != 0u;
+    // A source outside its distance range draws nothing, apart from the mark that the levels
+    // debug view draws at its base level.
+    if level.distance < level.start || level.distance > level.end {
+        if debug {
+            append_to(s, s.bucket, draws_before, 0.0, true);
+        }
+        return;
+    }
+    // Inside each edge of it, the share of the pixels that the dither keeps grows to one, or falls
+    // to none, through the fading build of the level that the source would draw.
+    if band > 0.0 && new_fade != 0u {
+        if level.start > 0.0 && level.distance < level.start * (1.0 + band) {
+            let t = (level.distance / level.start - 1.0) / band;
+            append_to(s, new_fade - 1u, draws_before, max(t, 1e-6), false);
+            return;
+        }
+        if level.distance > level.end / (1.0 + band) {
+            let inner = level.end / (1.0 + band);
+            let t = (level.distance - inner) / (level.end - inner);
+            append_to(s, new_fade - 1u, draws_before, -max(t, 0.0), false);
             return;
         }
     }
-    append_to(s, level.bucket, draws_before, 0.0);
+    if level.bucket != s.bucket && band > 0.0 && new_fade != 0u && old_fade != 0u {
+        let t = level.past / band;
+        if t < 1.0 {
+            append_to(s, new_fade - 1u, draws_before, max(t, 1e-6), false);
+            append_to(s, old_fade - 1u, draws_before, -max(t, 0.0), false);
+            return;
+        }
+    }
+    if level.hidden {
+        if band > 0.0 && new_fade != 0u && level.hide_past < band {
+            append_to(s, new_fade - 1u, draws_before, -max(level.hide_past / band, 0.0), false);
+        } else if debug {
+            // The size rule hides the source, or its bounds cover fewer pixels than the
+            // threshold: the levels view draws its base level marked as hidden.
+            append_to(s, s.bucket, draws_before, 0.0, true);
+        }
+        return;
+    }
+    append_to(s, level.bucket, draws_before, 0.0, false);
 }
 
 /// Appends an instance in the view to bucket `b`'s slice with the fade value `fade`, and counts it
-/// in each of the bucket's draws, which start `draws_before` draws into the indirect draws.
-fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32) {
+/// in each of the bucket's draws, which start `draws_before` draws into the indirect draws. A
+/// source that `hidden` marks, and every source while the levels debug view draws, carries the
+/// level code that the view's shader reads in place of the fade value.
+fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32, hidden: bool) {
     let bucket = buckets[b];
     let first = (draws_before + bucket.first_draw) * INDIRECT_WORDS + 1u;
     let slot = atomicAdd(&indirect[first], 1u);
@@ -342,7 +494,11 @@ fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32) {
     visible[dst] = bitcast<vec4u>(s.r0);
     visible[dst + 1u] = bitcast<vec4u>(s.r1);
     visible[dst + 2u] = bitcast<vec4u>(s.r2);
-    visible[dst + 3u] = vec4u(bucket.material, first_joint, s.index, bitcast<u32>(fade));
+    var fourth = bitcast<u32>(fade);
+    if params.debug.x != 0u {
+        fourth = level_code(bucket.level, hidden, fade);
+    }
+    visible[dst + 3u] = vec4u(bucket.material, first_joint, s.index, fourth);
 }
 
 #ifdef MOTION
@@ -372,7 +528,12 @@ fn main(
     if s.bucket == HIDDEN {
         return;
     }
-    let bucket = buckets[level_of(s).bucket];
+    let level = level_of(s);
+    // An instance that hides draws no pixels, so it draws no motion either.
+    if level.hidden {
+        return;
+    }
+    let bucket = buckets[level.bucket];
     let now = array<vec4f, 3>(matrices[i * 3u], matrices[i * 3u + 1u], matrices[i * 3u + 2u]);
     let last = array<vec4f, 3>(previous[i * 3u], previous[i * 3u + 1u], previous[i * 3u + 2u]);
     let still = all(now[0] == last[0]) && all(now[1] == last[1]) && all(now[2] == last[2]);
@@ -416,7 +577,7 @@ fn main(
     }
     let s = survivor(i);
     if s.bucket != HIDDEN {
-        append(s, params.occlusion.info.y);
+        append(s, level_of(s), params.occlusion.info.y);
     }
 }
 
@@ -436,6 +597,11 @@ fn early(
     if s.bucket == HIDDEN || !s.occluder {
         return;
     }
+    let level = level_of(s);
+    // A bound that covers fewer pixels than the threshold draws no depth, so it cannot hide others.
+    if level.hidden {
+        return;
+    }
     // A sphere that reaches the camera's plane covers much of the screen.
     let bounds = screen_bounds(s.center, s.radius);
     let span = max(bounds.high.x - bounds.low.x, bounds.high.y - bounds.low.y);
@@ -443,7 +609,7 @@ fn early(
         return;
     }
     atomicAdd(&pyramid[0], 1u);
-    append(s, 0u);
+    append(s, level, 0u);
 }
 
 /// The second occlusion phase: tests every instance in view against the depth pyramid, keeps
@@ -458,10 +624,16 @@ fn late(
         return;
     }
     let s = survivor(i);
-    let seen = s.bucket != HIDDEN && !occluded(s.center, s.radius);
+    if s.bucket == HIDDEN {
+        atomicStore(&indirect[params.occlusion.info.z + i], 0u);
+        return;
+    }
+    let level = level_of(s);
+    // A hidden instance draws nothing, so its history says it did not draw.
+    let seen = !level.hidden && !occluded(s.center, s.radius);
     atomicStore(&indirect[params.occlusion.info.z + i], select(0u, 1u, seen));
     if seen {
-        append(s, params.occlusion.info.y);
+        append(s, level, params.occlusion.info.y);
     }
 }
 

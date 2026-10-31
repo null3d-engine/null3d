@@ -9,6 +9,8 @@ import { MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
 import { type DeviceFacts, webKitOnIos } from './device-record.ts';
 import type { GpuPath, MissingAllowed } from './gpu-paths.ts';
 import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
+import { neighbourNote } from './running-tests.ts';
+import { calibrationNote } from './start-calibrations.ts';
 
 export interface PlanItem<Check = unknown> {
 	/** The item's name, which is also its result's file name. */
@@ -104,12 +106,14 @@ const HELD_MEMORY_FAILURE =
 	/\bE1109\b|\bE1302\b|Out of memory|lost (its|the) (GPU|context)|context lost|did not get back the memory/i;
 
 /**
- * A worker that did not start because its script, or a module it imports, did not load (E1405). In
- * CI's Firefox on Linux, a worker's load failed now and then on pages that load the same files
- * every time, so a new runner page sorts a passing fault from a page that cannot load its files.
+ * A sketch, render or job worker that did not start because its script, or a module it imports, did
+ * not load (E1405). The engine names each job worker by its number, as `job 2`, and the one that
+ * failed in CI by its role alone. In CI's Firefox on Linux, a worker's load failed now and then on pages that load
+ * the same files every time, so a new runner page sorts a passing fault from a page that cannot load
+ * its files.
  */
 const MODULE_LOAD_FAILURE =
-	/\bE1405: the (sketch|render) worker did not start: (its script or a file it imports did not load|error loading dynamically imported module)/;
+	/\bE1405: the (sketch|render|job(?: \d+)?) worker did not start: (its script( at \S+?, or a file that it imports,)? did not load|error loading dynamically imported module|.+\(the (sketch|render|job(?: \d+)?) worker's script is )/;
 
 /**
  * Whether a page's failure earns one more run in a new runner page. A browser that draws with WebKit
@@ -136,11 +140,14 @@ export function rerunsInNewTab(
  */
 export function unloadedModule(verdict: readonly string[]): string | undefined {
 	for (const problem of verdict) {
+		const loadFailure =
+			/\bE1405: the \w+(?: \d+)? worker did not start: (?:error loading dynamically imported module: (\S+?)\.?(?:\s|$)|its script at (\S+?), or a file that it imports, did not load)/.exec(
+				problem,
+			);
 		const url =
 			/\bE1410: the sketch module (\S+) did not load/.exec(problem)?.[1] ??
-			/\bE1405: the \w+ worker did not start: error loading dynamically imported module: (\S+?)\.?(?:\s|$)/.exec(
-				problem,
-			)?.[1];
+			loadFailure?.[1] ??
+			loadFailure?.[2];
 		if (url) return url;
 	}
 	return undefined;
@@ -191,9 +198,12 @@ export function lastSteps(trail: unknown): string {
 	return steps.length > 0 ? `; the page's last steps: ${steps.slice(-LAST_STEPS).join('; ')}` : '';
 }
 
-/** What a failed page's result says went wrong, with the last steps the page got through. */
+/**
+ * What a failed page's result says went wrong: the page's last steps, where its start reading falls
+ * among the run's pages, and the tests that other workers ran beside it.
+ */
 export const failureText = (result: ItemResult) =>
-	`${result.error ?? 'the page failed without a message'}${lastSteps(result.trail)}`;
+	`${result.error ?? 'the page failed without a message'}${lastSteps(result.trail)}${calibrationNote(result.calibrationMs)}${neighbourNote()}`;
 
 /** How many of a runner's latest pages the out-of-memory guard looks at. */
 export const OOM_WINDOW_PAGES = 5;
@@ -472,6 +482,16 @@ const LOAD_SECONDS = 30;
 export const quietLimitMs = (item: PlanItem) =>
 	((item.quietSeconds ?? item.timeoutSeconds) + LOAD_SECONDS) * 1000;
 
+/**
+ * The quiet limit of each page, at most `capSeconds`, for runner pages that write their heartbeat
+ * on time, as a browser in front does: a stop then shows within the cap instead of the page's whole
+ * time limit. A page that sets a quiet time of its own, as one that ends its tab does, keeps it.
+ */
+export const cappedQuietLimitMs = (capSeconds: number) => (item: PlanItem) =>
+	item.quietSeconds === undefined
+		? Math.min(quietLimitMs(item), capSeconds * 1000)
+		: quietLimitMs(item);
+
 /** A plan item and its place in the plan. */
 export interface PlanPlace<Check = unknown> {
 	index: number;
@@ -529,6 +549,14 @@ export interface WaitOptions<Check = unknown> {
 	 * there, and says whether it opened. Without it, a handover ends the runner's turn.
 	 */
 	onHandover?: (runner: string, from: number) => boolean;
+	/**
+	 * Reports, once the wait ends, each runner's longest time between two writes of one runner page,
+	 * in milliseconds, and the page it was on: the longest silence after which a runner page wrote
+	 * again.
+	 * A silence that a new runner page ended is left out. It shows how long a working runner page
+	 * goes without a heartbeat, which the quiet time must exceed.
+	 */
+	onSilence?: (runner: string, ms: number, item: string | undefined) => void;
 }
 
 /**
@@ -548,6 +576,7 @@ export async function waitForRunners<Check>(
 		startMs,
 		onNoStart = () => {},
 		onHandover = () => false,
+		onSilence,
 	}: WaitOptions<Check> = {},
 ): Promise<string[]> {
 	const startedAt = Date.now();
@@ -558,9 +587,31 @@ export async function waitForRunners<Check>(
 	const reopenedAt = new Map<string, number>();
 	/** For each runner, the plan items at which its runner pages handed the run over. */
 	const handled = new Map<string, Set<number>>();
+	/** For each runner, its last write, the page it was on then, and its longest silence. */
+	const silences = new Map<string, { written: number; at?: string; ms: number; item?: string }>();
+	const noteWrite = (runner: string, written: number) => {
+		const silence = silences.get(runner);
+		const at = currentItem(plan, runner)?.item.id;
+		if (!silence) {
+			silences.set(runner, { written, at, ms: 0 });
+			return;
+		}
+		if (written > silence.written) {
+			const ms = written - silence.written;
+			// A new runner page ended the silence, so it was the old page's stop, not a working gap.
+			const reopened = (reopenedAt.get(runner) ?? 0) > silence.written;
+			if (!reopened && ms > silence.ms) {
+				silence.ms = ms;
+				silence.item = silence.at;
+			}
+			silence.written = written;
+		}
+		silence.at = at;
+	};
 	while (waiting.size > 0 && Date.now() < deadline) {
 		for (const runner of waiting) {
 			const written = lastWrite(plan.run, runner);
+			if (written !== undefined) noteWrite(runner, written);
 			const last =
 				written === undefined ? undefined : Math.max(written, reopenedAt.get(runner) ?? 0);
 			if (written !== undefined && endTurn(runner)) {
@@ -602,5 +653,6 @@ export async function waitForRunners<Check>(
 		}
 		if (waiting.size > 0) await new Promise((resolve) => setTimeout(resolve, 500));
 	}
+	if (onSilence) for (const [runner, { ms, item }] of silences) onSilence(runner, ms, item);
 	return done;
 }

@@ -16,10 +16,19 @@ import {
 import { MeshoptDecoder, MeshoptEncoder } from 'meshoptimizer';
 import { VERSION } from '../version.js';
 import { bakeClips, MeshoptWithRotationFilter } from './clips.js';
+import { NULL3D_CLUSTERS, Null3dClusters } from './cluster-extension.js';
+import { bandClusters, clusterSummary, planClusters, storeClusters } from './clusters.js';
 import { dedup, dedupAccessors } from './dedup.js';
 import { quantizeMeshes, reorderMeshes } from './geometry.js';
 import { MAX_TEXTURE_SIDE } from './images.js';
-import { planLevels, SIMPLIFY_MAX_ERROR, simplifyMeshes, storeLevels } from './levels.js';
+import {
+	orderLevels,
+	planLevels,
+	SIMPLIFY_MAX_ERROR,
+	simplifyMeshes,
+	storeLevels,
+	storeStages,
+} from './levels.js';
 import { lodOf, MSFTLod } from './lod-extension.js';
 import { modelReport } from './report.js';
 import { shaderList, writeShaderList } from './shaders.js';
@@ -40,6 +49,11 @@ import { encodeTextures, TEXTURE_FOLDER } from './textures.js';
 /**
  * @typedef {object} OptimizeOptions
  * @property {boolean} lod Make levels of detail.
+ * @property {boolean} stages Write the levels of detail as separate downloads beside the model,
+ *   so the engine draws the coarsest level first and refines it as the rest arrive. It needs
+ *   `lod`.
+ * @property {boolean} clusters Make trees of cluster patches, and the whole levels that each tree
+ *   cuts into for a viewer that draws no patches.
  * @property {number} simplify The share of each mesh's triangles to keep, from 0 to 1, as far
  *   as the error limit allows. 1 keeps them all.
  * @property {number} simplifyError The largest error of that simplification, as a share of each
@@ -60,6 +74,8 @@ import { encodeTextures, TEXTURE_FOLDER } from './textures.js';
 /** The options that a command gives when it says nothing. */
 export const DEFAULT_OPTIONS = /** @type {const} */ ({
 	lod: false,
+	stages: false,
+	clusters: false,
 	simplify: 1,
 	simplifyError: SIMPLIFY_MAX_ERROR,
 	maxTextureSize: MAX_TEXTURE_SIDE,
@@ -76,6 +92,8 @@ export const DEFAULT_OPTIONS = /** @type {const} */ ({
  * @property {Uint8Array} glb The binary glTF file.
  * @property {Map<string, Uint8Array>} files The texture files, by their names in the texture
  *   folder.
+ * @property {Map<string, Uint8Array>} stages The stage files of the levels, by their names beside
+ *   the model.
  * @property {ModelReport} report
  */
 
@@ -89,7 +107,7 @@ export const GENERATOR = `null3D asset tool ${VERSION}`;
 export async function glTFIO() {
 	await Promise.all([MeshoptDecoder.ready, MeshoptEncoder.ready]);
 	return new NodeIO()
-		.registerExtensions([...ALL_EXTENSIONS, MSFTLod, Null3dOccluder, Null3dMeshBvh])
+		.registerExtensions([...ALL_EXTENSIONS, MSFTLod, Null3dOccluder, Null3dMeshBvh, Null3dClusters])
 		.registerDependencies({ 'meshopt.decoder': MeshoptDecoder, 'meshopt.encoder': MeshoptEncoder });
 }
 
@@ -240,9 +258,13 @@ export async function optimizeModel(path, options, encode) {
 	// their own.
 	for (const extension of doc.getRoot().listExtensionsUsed())
 		if (
-			['EXT_meshopt_compression', DRACO, NULL3D_OCCLUDER, NULL3D_MESH_BVH].includes(
-				extension.extensionName,
-			)
+			[
+				'EXT_meshopt_compression',
+				DRACO,
+				NULL3D_OCCLUDER,
+				NULL3D_MESH_BVH,
+				NULL3D_CLUSTERS,
+			].includes(extension.extensionName)
 		)
 			extension.dispose();
 	bakeClips(doc);
@@ -250,8 +272,25 @@ export async function optimizeModel(path, options, encode) {
 	if (options.simplify < 1) await simplifyMeshes(doc, options.simplify, options.simplifyError);
 	await reorderMeshes(doc);
 	quantizeMeshes(doc);
-	const levels = options.lod ? await planLevels(doc) : new Map();
-	storeLevels(doc, levels);
+	// A tree of cluster patches is planned before the levels, because the tree cuts into the whole
+	// levels that a viewer without the patches draws.
+	const clusters = options.clusters ? await planClusters(doc) : new Map();
+	const levels =
+		options.lod || clusters.size > 0 ? await planLevels(doc, clusters, options.lod) : new Map();
+	if (levels.size > 0) orderLevels(doc, levels, clusters);
+	/** What each tree holds, which the report reads before the bands cut it away. */
+	const trees = clusterSummary([...clusters.values()]);
+	/** @type {Map<string, Uint8Array>} */
+	const stages = new Map();
+	const prefix = basename(path, extname(path));
+	if (options.stages) {
+		// Each tree streams its bands after the one that the file holds, so the file draws that first
+		// band at once. A mesh's whole levels stay in the file for the paths that draw it whole.
+		if (clusters.size > 0) bandClusters(doc, clusters, stages, prefix);
+		if (levels.size > 0) storeStages(doc, levels, stages, prefix, clusters);
+		else storeLevels(doc, levels);
+	} else storeLevels(doc, levels);
+	storeClusters(doc, clusters);
 	merged.accessors = dedupAccessors(doc);
 	const spatial = addSpatialData(doc, {
 		blockers: options.blockers,
@@ -285,11 +324,13 @@ export async function optimizeModel(path, options, encode) {
 		textures: records,
 		unbaked: skipped,
 		files,
+		stages,
 		levels: [...levels.values()],
+		clusters: trees,
 		merged,
 		spatial,
 		shaders,
 		ms: performance.now() - start,
 	});
-	return { glb, files, report };
+	return { glb, files, stages, report };
 }

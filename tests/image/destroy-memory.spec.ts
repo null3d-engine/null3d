@@ -23,8 +23,8 @@ interface MemoryResult {
 
 /**
  * The rounds in which the engine's start-up may still move the heap. A slower runner's start-up
- * arrives over more rounds: a run of 140 rounds settled at round 131 on 17 October 2026, which left
- * nine rounds of churn to test. Two hundred rounds keep fifty above this bound.
+ * arrives over more rounds: one run of 140 rounds settled at round 131, which left nine rounds of
+ * churn to test. Two hundred rounds keep fifty above this bound.
  */
 const WARM_ROUNDS = 150;
 
@@ -32,9 +32,12 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 	test(`loading and destroying models 200 times keeps the memory flat, on ${gpu}`, async ({
 		page,
 	}) => {
-		test.setTimeout(360_000);
+		test.setTimeout(690_000);
 		await page.goto(`destroy-memory.html?gpu=${gpu}`);
-		const result = await pageResult<MemoryResult>(page, 330_000);
+		// CI's software GPU took 216 seconds for this page on WebGPU and then more than 330 on a
+		// slower run, where WebGL2 took 102. The wait allows a run twice as slow as the first of
+		// those, and the test's limit clears the wait.
+		const result = await pageResult<MemoryResult>(page, 660_000);
 		expect(result.error).toBeUndefined();
 		expect(result.done.error).toBeUndefined();
 		expect(result.failures).toEqual([]);

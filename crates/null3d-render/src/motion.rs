@@ -25,7 +25,7 @@ use null3d_gpu::drawlist::{
 
 use crate::bloom::bytes_of;
 use crate::camera::{Mat4, invert, multiply};
-use crate::frame::{RecordError, UploadArena};
+use crate::frame::{RecordError, UploadArena, mask_bits};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache, PipelineKey};
 
 /// The format of the motion target.
@@ -170,25 +170,28 @@ pub(crate) fn motion_key(pipeline: DrawKey, masked: bool, sways: bool) -> Option
     let state = faces | state_flags::NO_DEPTH_WRITE | state_flags::DEPTH_OR_EQUAL;
     let deforms = pipeline.permutation & (permutation::SKIN | permutation::MORPH);
     if sways && pipeline.template >= template::CUSTOM_FIRST && deforms == 0 {
+        // A material whose WGSL sets the surface's alpha cuts its motion's holes as its caster
+        // cuts its shadow's, at the cutoff or by the alpha hash.
+        let mask = if masked {
+            mask_bits(pipeline.permutation)
+        } else {
+            0
+        };
         return Some(DrawKey {
             template: pipeline.template,
-            permutation: permutation::MOTION | (pipeline.permutation & permutation::ROW_VALUES),
+            permutation: permutation::MOTION
+                | (pipeline.permutation & permutation::ROW_VALUES)
+                | mask,
             vertex_format: pipeline.vertex_format,
             state,
             bias: MOTION_BIAS,
         });
     }
-    let mask = if masked {
-        pipeline.permutation
-            & (permutation::ALPHA_MASK | permutation::VERTEX_COLOR | permutation::ALPHA_HASH)
-    } else {
-        0
-    };
     // A mask's vertex alpha needs the mask.
-    let mask = if mask & permutation::ALPHA_MASK == 0 {
-        0
+    let mask = if masked && pipeline.permutation & permutation::ALPHA_MASK != 0 {
+        mask_bits(pipeline.permutation)
     } else {
-        mask
+        0
     };
     Some(DrawKey {
         template: template::MOTION,

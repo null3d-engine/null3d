@@ -4,9 +4,11 @@
 //! edges first. On the 8-bit path the scene shaders did the output transform, and the pass runs
 //! when the scene has one sample per pixel or the render scale can drop: it copies the scene color,
 //! or runs FXAA on it. Below the whole canvas's render scale, it scales the scene's corner of the
-//! scene color up to the canvas instead. With bloom (see [`crate::bloom`]), the pass draws with its
-//! bloom build, which blends the base level of bloom's chain into the scene color before the output
-//! transform. The vignette darkens HDR color before the output transform too. While objects are
+//! scene color up to the canvas instead. While the sketch sharpens, the second step sharpens the
+//! display color with RCAS, at the whole canvas's scale as well. With bloom (see
+//! [`crate::bloom`]), the pass draws with its bloom build, which blends the base level of bloom's
+//! chain into the scene color before the output transform. The vignette darkens HDR color before
+//! the output transform too. While objects are
 //! outlined, the pass paints the outline's line around them after the output transform (see
 //! [`crate::outline`]). Then it grades the canvas color with a color grading table while the sketch
 //! sets one (see [`crate::grading`]), and it dithers last. A custom tone curve takes the place of
@@ -32,8 +34,8 @@ use crate::output::{Antialias, Output, OutputUniform, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
 /// Bytes of the final pass's settings: the output settings, then the vignette's vector, the color
-/// grading table's two and the outline's two.
-const SETTINGS_BYTES: u32 = 96;
+/// grading table's two, the outline's two and the sharpening's one.
+const SETTINGS_BYTES: u32 = 112;
 /// The bindings of the color grading table and of its sampler in the final pass's group.
 const LUT_BINDING: u32 = 9;
 const LUT_SAMPLER_BINDING: u32 = 10;
@@ -41,6 +43,9 @@ const LUT_SAMPLER_BINDING: u32 = 10;
 const OUTLINE_BINDING: u32 = 11;
 /// The binding of the automatic exposure's texel in the final pass's group.
 const EXPOSURE_BINDING: u32 = 12;
+/// The binding of the built-in grading table, a 3D texture, in the final pass's group. The table's
+/// sampler reads it.
+const GRADE_BINDING: u32 = 13;
 /// The bindings of the effects' uniform buffer and of the scene's depth in the fold's group.
 const EFFECTS_BINDING: u32 = 4;
 const EFFECT_DEPTH_BINDING: u32 = 5;
@@ -59,6 +64,8 @@ struct FinalUniform {
     /// The outline's visible color and width, then its hidden color and whether it draws (see
     /// [`Outline::uniform`]).
     outline: [[f32; 4]; 2],
+    /// The sharpening's strength, then three spare values.
+    sharpen: [f32; 4],
 }
 
 const _: () = assert!(std::mem::size_of::<FinalUniform>() == SETTINGS_BYTES as usize);
@@ -81,8 +88,9 @@ impl FinalUniform {
 /// shader makes its triangle from the vertex index, so it reads no vertex buffer, and the triangle
 /// covers the canvas whichever way it winds. The FXAA build smooths edges, and the bloom build
 /// blends in bloom's base level. A custom tone curve's builds take the templates from `curve` on:
-/// the first binds as the pass does, and the next as its bloom build does.
-const fn pipeline(fxaa: bool, bloom: bool, curve: Option<u32>) -> PipelineKey {
+/// the first binds as the pass does, and the next as its bloom build does. The `upscale` build
+/// scales the corner up and sharpens it, for the second step of the two-step pass.
+const fn pipeline(fxaa: bool, bloom: bool, curve: Option<u32>, upscale: bool) -> PipelineKey {
     PipelineKey {
         template: match (curve, bloom) {
             (Some(first), false) => first,
@@ -91,7 +99,8 @@ const fn pipeline(fxaa: bool, bloom: bool, curve: Option<u32>) -> PipelineKey {
             (None, true) => template::FINAL_BLOOM,
         },
         permutation: if fxaa { permutation::FXAA } else { 0 }
-            | if bloom { permutation::BLOOM } else { 0 },
+            | if bloom { permutation::BLOOM } else { 0 }
+            | if upscale { permutation::UPSCALE } else { 0 },
         vertex_format: 0,
         color_format: format::CANVAS,
         depth_format: format::NONE,
@@ -191,13 +200,14 @@ pub(crate) struct FinalPass {
 }
 
 /// What the final pass's bind group reads: the scene color texture, bloom's inputs for the bloom
-/// build, the color grading table, the outline mask, and the inputs of the effects that fold into
-/// the pass.
+/// build, the color grading table, the built-in grading table, the outline mask, and the inputs of
+/// the effects that fold into the pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Bound {
     scene_color: u32,
     bloom: Option<BloomInputs>,
     lut: u32,
+    grade: u32,
     mask: u32,
     fold: Option<FoldInputs>,
     exposure: u32,
@@ -225,6 +235,9 @@ pub(crate) struct FinalInputs {
     pub(crate) bloom: Option<BloomInputs>,
     pub(crate) grading: Grading,
     pub(crate) outline: Option<OutlineInputs>,
+    /// The mask's texture while it marks surfaces that keep their display color, whose pixels skip
+    /// the tone curve.
+    pub(crate) tone_mask: Option<u32>,
     pub(crate) fold: Option<FoldInputs>,
     pub(crate) exposure: Option<u32>,
 }
@@ -322,7 +335,7 @@ impl FinalPass {
                     } else {
                         0
                     },
-                    ..pipeline(false, false, Some(template))
+                    ..pipeline(false, false, Some(template), false)
                 };
                 let id = pipelines.id(key);
                 self.fold_pipeline = Some((template, multisampled, id));
@@ -343,10 +356,11 @@ impl FinalPass {
         bloom: bool,
     ) -> Option<u32> {
         if self.pipeline.is_none() {
-            self.pipeline = Some(pipelines.id(pipeline(self.fxaa, false, self.tone_curve)));
+            self.pipeline = Some(pipelines.id(pipeline(self.fxaa, false, self.tone_curve, false)));
         }
         if bloom && self.bloom_pipeline.is_none() {
-            self.bloom_pipeline = Some(pipelines.id(pipeline(self.fxaa, true, self.tone_curve)));
+            self.bloom_pipeline =
+                Some(pipelines.id(pipeline(self.fxaa, true, self.tone_curve, false)));
         }
         self.bloom_pipeline
     }
@@ -357,7 +371,8 @@ impl FinalPass {
     }
 
     /// Asks `pipelines`, once, for the second step's plain pipeline, which scales the first step's
-    /// display color up to the canvas, and returns its id.
+    /// display color up to the canvas and sharpens it, and returns its id. It is the pass's only
+    /// build with the upscale.
     pub(crate) fn request_present(&mut self, pipelines: &mut PipelineCache) -> u32 {
         let present = self
             .present
@@ -365,7 +380,7 @@ impl FinalPass {
             .expect("only the plain final pass draws the second step");
         *present
             .pipeline
-            .get_or_insert_with(|| pipelines.id(pipeline(false, false, None)))
+            .get_or_insert_with(|| pipelines.id(pipeline(false, false, None, true)))
     }
 
     /// Makes the pass's own GPU objects when the GPU lacks them, and binds what `inputs` reads in
@@ -468,14 +483,25 @@ impl FinalPass {
             }
             None => ids.blank_lut,
         };
+        let grade = match inputs.grading.grade {
+            Some(texture) => {
+                // The table grades display color in this pass, after the tone curve.
+                settings.output.flags |= OutputUniform::GRADE;
+                texture
+            }
+            None => ids.blank_lut,
+        };
         let mask = match inputs.outline {
             Some(OutlineInputs { mask, outline }) => {
                 settings.output.flags |= OutputUniform::OUTLINE;
                 settings.outline = outline.uniform();
                 mask
             }
-            None => ids.blank_outline,
+            None => inputs.tone_mask.unwrap_or(ids.blank_outline),
         };
+        if inputs.tone_mask.is_some() {
+            settings.output.flags |= OutputUniform::UNMAPPED;
+        }
         let exposure = match inputs.exposure {
             Some(texel) => {
                 settings.output.flags |= OutputUniform::AUTO_EXPOSURE;
@@ -483,10 +509,15 @@ impl FinalPass {
             }
             None => ids.blank_outline,
         };
+        if let Some(strength) = inputs.grading.sharpen {
+            settings.output.flags |= OutputUniform::SHARPEN;
+            settings.sharpen[0] = strength;
+        }
         let bound = Bound {
             scene_color: inputs.color,
             bloom: inputs.bloom,
             lut,
+            grade,
             mask,
             fold: inputs.fold,
             exposure,
@@ -636,6 +667,7 @@ fn bind(
         0,
     );
     entry(OUTLINE_BINDING, resource_kind::TEXTURE, inputs.mask, 0, 0);
+    entry(GRADE_BINDING, resource_kind::TEXTURE, inputs.grade, 0, 0);
     entry(
         EXPOSURE_BINDING,
         resource_kind::TEXTURE,
@@ -707,7 +739,9 @@ mod tests {
         let mut pass = FinalPass::new(IDS, SceneColor::from_format(format), antialias);
         let mut list = DrawList::with_capacity(256);
         let mut arena = UploadArena::default();
-        arena.reset(FinalPass::UPLOAD_BYTES);
+        arena
+            .reset(FinalPass::UPLOAD_BYTES)
+            .expect("room for the test's uploads");
         let mut pipelines = PipelineCache::default();
         pass.request_pipeline(&mut pipelines, false);
         pass.prepare(&mut list, &mut arena, &inputs(grading), true, true)
@@ -724,6 +758,7 @@ mod tests {
             bloom: None,
             grading,
             outline: None,
+            tone_mask: None,
             fold: None,
             exposure: None,
         }
@@ -763,7 +798,9 @@ mod tests {
         let mut list = DrawList::with_capacity(256);
         let mut arena = UploadArena::default();
         // Two steps, so two settings blocks fit.
-        arena.reset(2 * FinalPass::UPLOAD_BYTES);
+        arena
+            .reset(2 * FinalPass::UPLOAD_BYTES)
+            .expect("room for the test's uploads");
         // The first step draws at the render size and leaves the dither to the second.
         let mut first = FinalPass::new(
             IDS,
@@ -787,8 +824,8 @@ mod tests {
         assert_eq!(flags & OutputUniform::DITHER, 0);
 
         // The second step reads the first step's display color and dithers it, since the first step
-        // read high dynamic range color. It draws with its own plain pipeline, and binds a group of
-        // its own beside the pass's, so a frame that crosses the whole canvas's scale makes none.
+        // read high dynamic range color. It draws with the pass's UPSCALE build, and binds a group
+        // of its own beside the pass's, so a frame that crosses the whole canvas's scale makes none.
         let mut second = FinalPass::new(
             IDS,
             SceneColor::from_format(format::RGBA16_FLOAT),
@@ -798,7 +835,10 @@ mod tests {
         let mut pipelines = PipelineCache::default();
         second.request_pipeline(&mut pipelines, false);
         let present = second.request_present(&mut pipelines);
-        assert_eq!(pipelines.keys()[present as usize - 1].permutation, 0);
+        assert_eq!(
+            pipelines.keys()[present as usize - 1].permutation,
+            permutation::UPSCALE
+        );
         let groups = |list: &DrawList| -> Vec<u32> {
             null3d_gpu::drawlist::decode(list.words())
                 .map(|command| command.unwrap())
@@ -821,7 +861,9 @@ mod tests {
         assert_eq!(flags & OutputUniform::RESOLVE, 0);
 
         // Back at the whole canvas the pass uploads its own settings and makes no group.
-        arena.reset(2 * FinalPass::UPLOAD_BYTES);
+        arena
+            .reset(2 * FinalPass::UPLOAD_BYTES)
+            .expect("room for the test's uploads");
         let mut list = DrawList::with_capacity(256);
         second
             .prepare(&mut list, &mut arena, &read, false, true)
@@ -868,6 +910,39 @@ mod tests {
     }
 
     #[test]
+    fn the_built_in_grading_table_sets_its_flag_and_binds_its_own_binding() {
+        check_flag("GRADE", OutputUniform::GRADE);
+        let bound = |list: &DrawList| {
+            let groups: Vec<Vec<u32>> = null3d_gpu::drawlist::decode(list.words())
+                .map(|command| command.unwrap())
+                .filter(|command| command.op == Op::CreateBindGroup)
+                .map(|command| command.operands.to_vec())
+                .collect();
+            let [group] = &groups[..] else {
+                panic!("one bind group: {groups:?}");
+            };
+            group[3..]
+                .chunks(5)
+                .find(|entry| entry[0] == GRADE_BINDING)
+                .expect("the group binds a grading table")[2]
+        };
+        let (_, settings, list) =
+            prepared(format::RGBA16_FLOAT, Antialias::Msaa, Grading::default());
+        assert_eq!(settings.output.flags & OutputUniform::GRADE, 0);
+        assert_eq!(bound(&list), IDS.blank_lut);
+        let (_, settings, list) = prepared(
+            format::RGBA16_FLOAT,
+            Antialias::Msaa,
+            Grading {
+                grade: Some(41),
+                ..Grading::default()
+            },
+        );
+        assert_ne!(settings.output.flags & OutputUniform::GRADE, 0);
+        assert_eq!(bound(&list), 41);
+    }
+
+    #[test]
     fn grading_sets_its_flags_and_values_and_binds_the_table_or_the_blank_one() {
         check_flag("VIGNETTE", OutputUniform::VIGNETTE);
         check_flag("LUT", OutputUniform::LUT);
@@ -895,12 +970,14 @@ mod tests {
         let offset = [0.01, 0.02, 0.03, 0.0];
         let grading = Grading {
             lut: Some((40, scale, offset)),
+            grade: None,
             vignette: Some(Vignette {
                 intensity: 0.7,
                 size: 1.2,
                 falloff: 2.0,
                 roundness: 0.5,
             }),
+            sharpen: None,
         };
         let (_, settings, list) = prepared(format::CANVAS, Antialias::Msaa, grading);
         assert_eq!(
@@ -910,5 +987,23 @@ mod tests {
         assert_eq!(settings.vignette, [0.7, 1.2, 2.0, 0.5]);
         assert_eq!((settings.lut_scale, settings.lut_offset), (scale, offset));
         assert_eq!(bound_table(&list), 40);
+    }
+
+    #[test]
+    fn the_sharpening_sets_its_flag_and_its_strength() {
+        check_flag("SHARPEN", OutputUniform::SHARPEN);
+        let (_, settings, _) = prepared(
+            format::RGBA16_FLOAT,
+            Antialias::Msaa,
+            Grading {
+                sharpen: Some(0.5),
+                ..Grading::default()
+            },
+        );
+        assert_ne!(settings.output.flags & OutputUniform::SHARPEN, 0);
+        assert_eq!(settings.sharpen, [0.5, 0.0, 0.0, 0.0]);
+        let (_, settings, _) = prepared(format::RGBA16_FLOAT, Antialias::Msaa, Grading::default());
+        assert_eq!(settings.output.flags & OutputUniform::SHARPEN, 0);
+        assert_eq!(settings.sharpen, [0.0; 4]);
     }
 }

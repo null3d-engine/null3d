@@ -1,17 +1,17 @@
 import { describe, expect, test } from 'bun:test';
-import type { Scene, SpriteBatch, SpriteOptions, Texture } from '@null3d/engine';
-import { createImpostors, ImpostorBatch } from './batch';
-import { frameDirection, impostorFrame, type OctahedralAtlas } from './octahedral';
+import type { InstanceBatch, MeshArrays, Texture } from '@null3d/engine';
+import { createImpostors, ImpostorBatch, type ImpostorContext } from './batch';
+import type { OctahedralAtlas } from './octahedral';
+import { encodeImpostorSurface } from './surface';
 
-/** A stand-in for the engine's sprite batch: its row arrays, and the ranges marked dirty. */
-function fakeSprites(count: number) {
+/** A stand-in for the engine's instance batch: its row arrays, and the ranges marked dirty. */
+function fakeBatch(count: number) {
 	const marks: [number, number][] = [];
 	return {
 		count,
 		positions: new Float32Array(count * 3),
-		sizes: new Float32Array(count * 2),
-		colors: new Float32Array(count * 4),
-		frames: new Uint32Array(count),
+		scales: new Float32Array(count * 3),
+		values: new Float32Array(count * 4),
 		marks,
 		markDirty(start = 0, rows = count - start) {
 			marks.push([start, rows]);
@@ -20,129 +20,207 @@ function fakeSprites(count: number) {
 	};
 }
 
-type FakeSprites = ReturnType<typeof fakeSprites>;
+/** A context whose factories record what they were given, over a stand-in batch. */
+function fakeContext(count: number) {
+	const batch = fakeBatch(count);
+	const seen: {
+		quad?: MeshArrays;
+		uniformCells?: readonly number[];
+		alphaMode?: string;
+		castsStill?: boolean;
+		doubleSided?: boolean;
+		instances?: Record<string, unknown>;
+		setCells?: readonly number[];
+	} = {};
+	const ctx: ImpostorContext = {
+		scene: {
+			createInstances: (_mesh: MeshArrays, _count: number, options: Record<string, unknown>) => {
+				seen.instances = options;
+				return batch as unknown as InstanceBatch;
+			},
+		} as unknown as ImpostorContext['scene'],
+		materials: {
+			shader: (options: {
+				uniforms?: { cells?: readonly number[] };
+				alphaMode?: string;
+				castsStill?: boolean;
+				doubleSided?: boolean;
+			}) => {
+				seen.uniformCells = options.uniforms?.cells;
+				seen.alphaMode = options.alphaMode;
+				seen.castsStill = options.castsStill;
+				seen.doubleSided = options.doubleSided;
+				return {
+					setUniform: (_name: string, value: readonly number[]) => {
+						seen.setCells = value;
+					},
+				} as never;
+			},
+		} as unknown as ImpostorContext['materials'],
+		geometry: {
+			fromArrays: (arrays: MeshArrays) => {
+				seen.quad = arrays;
+				return {} as never;
+			},
+		},
+	};
+	return { ctx, batch, seen };
+}
 
 const ATLAS: OctahedralAtlas = { columns: 3, rows: 3 };
 
-/** An impostor batch over a stand-in sprite batch, with the cards at `positions`. */
-function batchOf(
+/** An impostor batch over a stand-in context, with the cards at `positions`. */
+function cardsOf(
 	positions: readonly number[],
-	origin?: readonly [number, number, number],
-): { batch: ImpostorBatch; sprites: FakeSprites } {
-	const sprites = fakeSprites(positions.length / 3);
-	sprites.positions.set(positions);
-	const batch = new ImpostorBatch(sprites as unknown as SpriteBatch, ATLAS, origin);
-	return { batch, sprites };
+	atlas: OctahedralAtlas = ATLAS,
+	turn?: readonly number[],
+	castsStill?: boolean,
+) {
+	const { ctx, batch, seen } = fakeContext(positions.length / 3);
+	const cards = createImpostors(ctx, {
+		color: {} as Texture,
+		surface: {} as Texture,
+		atlas,
+		positions,
+		size: [2, 3],
+		...(turn !== undefined && { turn }),
+		...(castsStill !== undefined && { castsStill }),
+	});
+	return { cards, batch, seen };
 }
 
-describe('ImpostorBatch.update', () => {
-	test('shows each card the view from its direction toward the eye', () => {
-		// One card east of the eye, one west, one in front and one behind.
-		const { batch, sprites } = batchOf([10, 0, 0, -10, 0, 0, 0, 0, 10, 0, 0, -10]);
-		batch.update([0, 0, 0]);
-		expect(Array.from(sprites.frames)).toEqual([
-			impostorFrame([-1, 0, 0], ATLAS),
-			impostorFrame([1, 0, 0], ATLAS),
-			impostorFrame([0, 0, -1], ATLAS),
-			impostorFrame([0, 0, 1], ATLAS),
+describe('createImpostors', () => {
+	test('stands one card on each position, at the size it is given', () => {
+		const { cards, batch } = cardsOf([1, 2, 3, -4, 5, -6]);
+		expect(cards.count).toBe(2);
+		expect(Array.from(batch.positions)).toEqual([1, 2, 3, -4, 5, -6]);
+		expect(Array.from(batch.scales)).toEqual([2, 3, 1, 2, 3, 1]);
+		// Every card uploads once, after the setup writes.
+		expect(batch.marks).toEqual([[0, 2]]);
+	});
+
+	test("gives the material the atlas's cells and the mask that a bake needs", () => {
+		const { seen } = cardsOf([0, 0, 0]);
+		// The card's width spans the stored depth, so it places the card's shadow lookup, and the
+		// three nearest views blend until a sketch asks for one.
+		expect(seen.uniformCells).toEqual([3, 3, 0, 2]);
+		expect(seen.alphaMode).toBe('mask');
+		expect(seen.castsStill).toBe(true);
+		// A card is one flat quad: a single-sided one would be culled whole by the shadow pass,
+		// whose casters draw with front faces culled.
+		expect(seen.doubleSided).toBe(true);
+	});
+
+	test('lets a scene withdraw the still-caster claim for cards it turns itself', () => {
+		const { seen } = cardsOf([0, 0, 0], ATLAS, undefined, false);
+		expect(seen.castsStill).toBe(false);
+	});
+
+	test('draws the nearest view alone when a sketch asks for one', () => {
+		const { cards, seen } = cardsOf([0, 0, 0]);
+		cards.setViews(1);
+		expect(seen.setCells).toEqual([3, 3, 1, 2]);
+		cards.setViews(3);
+		expect(seen.setCells).toEqual([3, 3, 0, 2]);
+		expect(() => cards.setViews(2 as 1)).toThrow(RangeError);
+	});
+
+	test('makes a batch cast and receive the shadows that a sketch asks for', () => {
+		const { ctx, seen } = fakeContext(1);
+		createImpostors(ctx, {
+			color: {} as Texture,
+			surface: {} as Texture,
+			atlas: ATLAS,
+			positions: [0, 0, 0],
+			layers: 2,
+			castShadows: true,
+			receiveShadows: true,
+		});
+		expect(seen.instances).toMatchObject({ layers: 2, castShadows: true, receiveShadows: true });
+	});
+
+	test('draws one quad that stands on its bottom edge, with its texture coordinates', () => {
+		const { seen } = cardsOf([0, 0, 0]);
+		const quad = seen.quad as MeshArrays;
+		expect(Array.from(quad.positions as Float32Array)).toEqual([
+			-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0,
 		]);
-		// The view a card shows was drawn from the side that faces the eye.
-		expect(frameDirection(sprites.frames[0] as number, ATLAS)[0]).toBeLessThan(0);
-		expect(frameDirection(sprites.frames[1] as number, ATLAS)[0]).toBeGreaterThan(0);
+		expect(Array.from(quad.uvs as Float32Array)).toEqual([0, 0, 1, 0, 1, 1, 0, 1]);
+		expect(Array.from(quad.indices as Uint16Array)).toEqual([0, 1, 2, 0, 2, 3]);
 	});
 
-	test("reads the cards' positions relative to the batch's origin", () => {
-		// The card sits 10 units behind an origin far out along x, and the eye is at that origin.
-		const { batch, sprites } = batchOf([0, 0, -10], [10_000, 0, 0]);
-		batch.update([10_000, 0, 0]);
-		expect(sprites.frames[0]).toBe(impostorFrame([0, 0, 1], ATLAS));
-		expect(sprites.frames[0]).toBe(4);
+	test('refuses an atlas that is not a whole number of cells', () => {
+		const { ctx } = fakeContext(1);
+		expect(() =>
+			createImpostors(ctx, {
+				color: {} as Texture,
+				surface: {} as Texture,
+				atlas: { columns: 2.5, rows: 3 },
+				positions: [0, 0, 0],
+			}),
+		).toThrow(RangeError);
 	});
 
-	test('marks only the cards whose view changed', () => {
-		// Two cards far out east and west, whose views a small move of the eye keeps, and one card
-		// in front of the eye.
-		const { batch, sprites } = batchOf([1000, 0, 0, -1000, 0, 0, 0, 0, -10]);
-		batch.update([0, 0, 0]);
-		// Every card changed from frame 0, and the three share one range.
-		expect(sprites.marks).toEqual([[0, 3]]);
-		sprites.marks.length = 0;
-		// The eye moves up a little: no card's view changes, so nothing uploads.
-		batch.update([0, 0.01, 0]);
-		expect(sprites.marks).toEqual([]);
-		// The eye moves past the third card to its back: only that card turns.
-		batch.update([0, 0, -20]);
-		expect(sprites.marks).toEqual([[2, 1]]);
+	test('refuses positions that are not three numbers per card, or none at all', () => {
+		const { ctx } = fakeContext(1);
+		const options = { color: {} as Texture, surface: {} as Texture, atlas: ATLAS };
+		expect(() => createImpostors(ctx, { ...options, positions: [0, 0] })).toThrow(RangeError);
+		expect(() => createImpostors(ctx, { ...options, positions: [] })).toThrow(RangeError);
 	});
 
-	test('does nothing while the eye stays still, until markDirty', () => {
-		const { batch, sprites } = batchOf([10, 0, 0]);
-		batch.update([0, 0, 0]);
-		sprites.marks.length = 0;
-		// The card moves to the other side of the eye with no mark: the same eye skips the work.
-		sprites.positions[0] = -10;
-		batch.update([0, 0, 0]);
-		expect(sprites.frames[0]).toBe(impostorFrame([-1, 0, 0], ATLAS));
-		batch.markDirty(0, 1);
-		batch.update([0, 0, 0]);
-		expect(sprites.frames[0]).toBe(impostorFrame([1, 0, 0], ATLAS));
-		expect(sprites.marks).toEqual([
-			[0, 1],
-			[0, 1],
-		]);
+	test('writes each card its turn to the row values, and 0 where none is given', () => {
+		const { batch } = cardsOf([0, 0, 0, 1, 0, 0, 2, 0, 0], ATLAS, [0.5, 0, 0]);
+		// The shader reads each row's first value as the card's turn.
+		expect(Array.from(batch.values)).toEqual([0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 	});
 
-	test('joins changed cards close together into one range, and keeps far ones apart', () => {
-		const count = 64;
-		const positions = new Array<number>(count * 3).fill(0);
-		// Every card starts in front of the eye; cards 0, 5 and 60 then sit east of it.
-		for (let i = 0; i < count; i++) positions[i * 3 + 2] = -10;
-		const { batch, sprites } = batchOf(positions);
-		batch.update([0, 0, 0]);
-		sprites.marks.length = 0;
-		for (const i of [0, 5, 60]) {
-			sprites.positions[i * 3] = 10;
-			sprites.positions[i * 3 + 2] = 0;
-		}
-		batch.markDirty();
-		sprites.marks.length = 0;
-		batch.update([0, 0, 0]);
-		expect(sprites.marks).toEqual([
-			[0, 6],
-			[60, 1],
-		]);
+	test('refuses a turn count that does not match the cards', () => {
+		const { ctx } = fakeContext(1);
+		expect(() =>
+			createImpostors(ctx, {
+				color: {} as Texture,
+				surface: {} as Texture,
+				atlas: ATLAS,
+				positions: [0, 0, 0],
+				turn: [1, 2],
+			}),
+		).toThrow(RangeError);
+	});
+
+	test('marks the cards that a change names dirty', () => {
+		const { cards, batch } = cardsOf([0, 0, 0, 1, 0, 0, 2, 0, 0]);
+		batch.marks.length = 0;
+		cards.markDirty(1, 2);
+		expect(batch.marks).toEqual([[1, 2]]);
+	});
+
+	test('wraps the engine batch it draws with', () => {
+		const { cards, batch } = cardsOf([0, 0, 0]);
+		expect(cards).toBeInstanceOf(ImpostorBatch);
+		expect(cards.batch).toBe(batch as unknown as InstanceBatch);
+		cards.destroy();
 	});
 });
 
-describe('createImpostors', () => {
-	test('makes a static sprite batch with the origin, and fills the cards', async () => {
-		const sprites = fakeSprites(2);
-		let given: SpriteOptions | undefined;
-		const scene = {
-			async createSprites(options: SpriteOptions) {
-				given = options;
-				return sprites;
-			},
-		} as unknown as Scene;
-		const batch = await createImpostors(scene, {
-			texture: {} as Texture,
-			atlas: ATLAS,
-			positions: [1, 2, 3, 4, 5, 6],
-			size: [2, 4],
-			origin: [100, 0, 0],
-		});
-		expect(given?.dynamic).toBeFalsy();
-		expect(given?.origin).toEqual([100, 0, 0]);
-		expect(given?.center).toEqual([0.5, 0]);
-		expect(Array.from(sprites.positions)).toEqual([1, 2, 3, 4, 5, 6]);
-		expect(Array.from(sprites.sizes)).toEqual([2, 4, 2, 4]);
-		expect(batch.origin).toEqual([100, 0, 0]);
-		expect(batch.count).toBe(2);
+describe('encodeImpostorSurface', () => {
+	test('writes the octahedral code of a normal, its depth and its coverage', () => {
+		const out = encodeImpostorSurface([0, 0, 1], 0.5, 1);
+		// The front pole folds to the middle of the square, which is the byte 128 each way.
+		expect(Array.from(out)).toEqual([128, 128, 128, 255]);
 	});
 
-	test('refuses positions that are not three numbers per card', async () => {
-		const scene = {} as Scene;
-		const options = { texture: {} as Texture, atlas: ATLAS, positions: [1, 2] };
-		await expect(createImpostors(scene, options)).rejects.toThrow(RangeError);
+	test('folds a back direction into the atlas corners', () => {
+		const out = encodeImpostorSurface([0, 0, -1], 0, 0.5);
+		// The back pole lands on the corner (1, 1) of the octahedron's square.
+		expect(out[0]).toBe(255);
+		expect(out[1]).toBe(255);
+		expect(out[2]).toBe(0);
+		expect(out[3]).toBe(128);
+	});
+
+	test('clamps a depth or coverage outside 0 and 1', () => {
+		const out = encodeImpostorSurface([0, 1, 0], 2, -1);
+		expect(out[2]).toBe(255);
+		expect(out[3]).toBe(0);
 	});
 });

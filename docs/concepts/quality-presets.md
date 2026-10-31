@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the preset check; switching presets; t
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves the render scale and then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the [table of settings](quality-preset-tables.md#settings-of-each-preset) marks as planned are not built yet. Coding agents must not use them.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves a sketch's budgets and the render scale in turn, a budget's step first, then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the [table of settings](quality-preset-tables.md#settings-of-each-preset) marks as planned are not built yet. Coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -150,16 +150,16 @@ The [settings of each preset](quality-preset-tables.md#settings-of-each-preset) 
 
 The pixel ratio cap is the cheapest large saving on phones. The GPU fills each device pixel, and a screen's device pixels grow with the square of its ratio. So a ratio of 3 fills 2.25 times the pixels of a ratio of 2. The `maxPixelRatio` option of `createEngine` replaces the preset's cap, and `quality.set({ maxPixelRatio })` changes it during play.
 
-The shadow settings set the GPU memory that shadows take. The shadow map stores 2 bytes per texel, and the atlas of spot and point light tiles stores 4:
+The shadow settings set the GPU memory that shadows take. The shadow map stores 2 bytes per texel. The atlas stores 4: the tiles of spot and point lights, and the sun's hero tile.
 
 | Preset | Shadow map | Shadow atlas | Both |
 | --- | --- | --- | --- |
-| Low | 4 MiB | 4 MiB | 8 MiB |
-| Medium | 24 MiB | 8 MiB | 32 MiB |
-| High | 24 MiB | 64 MiB | 88 MiB |
-| Ultra | 128 MiB | 96 MiB | 224 MiB |
+| Low | 4 MiB | 5 MiB | 9 MiB |
+| Medium | 24 MiB | 9 MiB | 33 MiB |
+| High | 24 MiB | 68 MiB | 92 MiB |
+| Ultra | 128 MiB | 100 MiB | 228 MiB |
 
-The shadow map takes its memory once the directional light casts shadows, and the atlas once a spot or point light does. The atlas grows to the preset's tiles only as more lights cast. [Shadows](shadows.md#what-shadows-cost) gives the cost of each.
+The shadow map takes its memory once the directional light casts shadows. The atlas takes its own once a spot or point light casts, and one more layer while the sun names a [hero shadow](shadows.md#a-hero-shadow). The table counts that layer: 1 MiB at Low and Medium, 4 MiB at High and Ultra. [Shadows](shadows.md#what-shadows-cost) gives the cost of each.
 
 The anisotropic filtering cap limits the `anisotropy` option of every texture, so surfaces seen at a slant cost fewer texture reads on the lighter presets. The upload budget limits the texel bytes that one frame sends to the GPU, so loading many textures does not make one frame slow. A larger texture goes up over several frames. `quality.set({ maxAnisotropy, uploadBytesPerFrame })` changes either during play.
 
@@ -259,7 +259,7 @@ export default defineSketch(({ quality, page }) => {
 });
 ```
 
-A `minRenderScale` of 1 keeps the whole canvas. Hold mode draws at `maxRenderScale`, so tests draw the same image on every run. Some GPU paths draw the scene's color in 8 bits: WebGPU's compatibility mode, and WebGL2 devices that cannot draw multisampled float targets. There, with MSAA, a lowest scale below 1 adds the final pass, which copies the image to the canvas. At a lowest scale of 1, the scene's render pass writes straight to the canvas. Below a scale of 1, the final pass runs in two steps: the first draws at the render size and smooths edges with FXAA, which the pass at the whole canvas's scale always did, and the second scales the image up to the canvas with GSR 1, an edge-aware upscaler. [The post-processing chain](post-processing.md#below-the-whole-canvass-render-scale) describes both steps, and the two costs that a lowest scale of 1 avoids.
+A `minRenderScale` of 1 keeps the whole canvas. Hold mode draws at `maxRenderScale`, so tests draw the same image on every run. Some GPU paths draw the scene's color in 8 bits: WebGPU's compatibility mode, and WebGL2 devices that cannot draw multisampled float targets. There, with MSAA, a lowest scale below 1 adds the final pass, which copies the image to the canvas. At a lowest scale of 1, the scene's render pass writes straight to the canvas. Below a scale of 1, the final pass runs in two steps: the first draws at the render size and smooths edges with FXAA, which the pass at the whole canvas's scale always did, and the second scales the image up to the canvas with GSR 1, an edge-aware upscaler. [The post-processing chain](post-processing.md#below-the-whole-canvass-render-scale) describes both steps, and the two costs that a lowest scale of 1 avoids. A sketch that sets `post.set({ sharpen })` draws those two steps at every scale. Its image then sharpens at the whole canvas's scale too, and it pays the same two costs.
 
 ## The frame-budget governor
 
@@ -274,7 +274,7 @@ flowchart LR
 
 Dynamic resolution is the first part of the frame-budget governor. A sketch can register budgets for its own systems with `quality.setBudget`. Then a step of their scale comes before each step of the render scale, and their remaining steps come once the render scale is at `minRenderScale`. [Quality API](../api/quality.md#budgets-for-the-sketchs-own-systems) gives the rule. The scale can stop at `minRenderScale` while frames still take too long. The governor then lowers the detail, the live shadow settings and the effects' settings, one step at a time:
 
-1. The `lodThreshold` of the [levels of detail](lod.md) doubles, twice at most, so coarser levels draw nearer the camera. A level's error stays under the threshold, so two pixels look much as one does, while far objects lose most of their vertices. This step happens only while a mesh has levels.
+1. The `lodThreshold` of the [levels of detail](lod.md) doubles, twice at most, so coarser levels draw nearer the camera and small objects hide nearer it. A level's error stays under the threshold, so two pixels look much as one does, while far objects lose most of their vertices. This step happens only while a mesh has levels.
 2. The far shadow cascades draw half as often, for example every 4th frame instead of every 2nd, and at most every 8th frame. This step needs a directional light with two cascades or more.
 3. The shadow filter blends 3 x 3 texels instead of 5 x 5.
 4. Bloom's chain halves its base, once, while the base has more than 64 texels on the canvas's shorter side. Each level draws into a corner of half its target, so the chain loses its finest level. The glow keeps its size, with a softer core, and no target is made. This step happens only while bloom is on.
@@ -289,6 +289,10 @@ Each step follows the rules of dynamic resolution. Frames must stay over budget 
 Phones slow down as they heat up, often after a few minutes of play. The governor responds as it does to any slow frames: after a second over budget, it lowers the next setting. The target is the [target frame rate](#the-target-frame-rate): by default the display's refresh rate, at most 60 frames per second. When the browser lowers the rate of its frames to save battery, the rate that the engine measures falls, and the target falls with it.
 
 `quality.governor` reports what the governor lowered, and the `quality.onChange` handlers run after each shadow step. So a sketch can lighten its own work at the same time: [Quality API](../api/quality.md#the-frame-budget-governor) shows how. `quality.set({ governor: false })` turns the governor off. The scene then draws at `maxRenderScale`, with the shadow settings as set, as a benchmark or a recorded video needs. Hold mode has no governor.
+
+### Settings of an add-on's feature
+
+An add-on's feature declares its own settings in the same form as the engine's table: a value on each preset, an optional WebGL2 column, and the values it takes. The feature's budget joins the sketch's budgets. A step of the budgets' scale then lowers the feature's share of full quality with the sketch's own systems. A setting that names a `governor` follows that share: a count shrinks with it, and an interval doubles with each step. The stats overlay shows the feature's values and its budget beside the engine's figures. [Add-on feature descriptions](../api/features.md#preset-settings-and-the-frame-budget-governor) shows how a feature declares them.
 
 ## Related pages
 

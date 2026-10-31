@@ -20,7 +20,10 @@ import {
 	type Response,
 	type ShaderCompiler,
 	type ShaderSource,
+	type SkyLayerBuild,
+	type SkyLayerResult,
 	shaderResult,
+	skyLayerResult,
 } from './shader-compiler.ts';
 import type { ShaderVariant } from './shader-types.ts';
 
@@ -72,6 +75,11 @@ export class CompilerPool implements ShaderCompiler {
 	/** Compiles a custom effect or tone curve, whose few builds take one worker. */
 	async effect(effect: MaterialSource): Promise<EffectResult> {
 		return effectResult(await this.run<EffectBuild>('compile_effect', effect));
+	}
+
+	/** Compiles a sky layer, whose few builds take one worker. */
+	async skyLayer(layer: MaterialSource): Promise<SkyLayerResult> {
+		return skyLayerResult(await this.run<SkyLayerBuild>('compile_sky_layer', layer));
 	}
 
 	/** Stops every worker. A later compile starts them again. */

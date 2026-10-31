@@ -25,6 +25,7 @@ digraph "render graph" {
   "pass Transparent" [shape=box, style=dashed, label="Transparent\nscene pass, full size, all layers, off"];
   "pass MapTransparent" [shape=box, style=dashed, label="MapTransparent\nscene pass, 64 x 64, all layers, off"];
   "pass OutlineCulling" [shape=box, style=dashed, label="OutlineCulling\ncompute pass, off"];
+  "pass ToneCulling" [shape=box, style=dashed, label="ToneCulling\ncompute pass, off"];
   "pass OutlineMask" [shape=box, style=dashed, label="OutlineMask\nscene pass, full size, all layers, off"];
   "pass Final" [shape=box, style=dashed, label="Final\nfullscreen pass, canvas size, off"];
   "pass FinalOutline" [shape=box, style=dashed, label="FinalOutline\nfullscreen pass, canvas size, off"];
@@ -42,6 +43,7 @@ digraph "render graph" {
   "resource minimapImage" [shape=ellipse, label="minimapImage\ncanvas format, 64 x 64, 4 samples\ntexture 3: attachment\nresolves into texture 4: attachment, sampled"];
   "resource minimapDepth" [shape=ellipse, label="minimapDepth\ndepth32float, 64 x 64, 4 samples\ntexture 5: attachment"];
   "resource outlineVisible" [shape=note, label="outlineVisible\nbuffer"];
+  "resource toneVisible" [shape=note, label="toneVisible\nbuffer"];
   "resource outlineMask" [shape=ellipse, label="outlineMask\nrgba8unorm, full size, 4 samples\nnot used this frame"];
   "resource lights" -> "pass LightClusters";
   "pass LightClusters" -> "resource lightGrid" [label="creates"];

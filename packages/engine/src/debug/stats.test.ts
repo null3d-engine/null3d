@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'bun:test';
+import { SCOPE_BLOOM, SCOPE_FINAL, SCOPE_OPAQUE } from '../generated/core';
+import type { FeatureStats } from '../scene/features';
+import { MEMORY_AREA_COUNT, MEMORY_AREA_NAMES, MEMORY_AREA_VALUES } from '../shared/memory-area';
 import {
 	Counter,
 	createMetricsBuffer,
@@ -6,12 +9,24 @@ import {
 	MemoryFigure,
 	Phase,
 	Role,
+	UNTIMED,
 } from '../shared/metrics';
-import { rateLevel, workLevel } from './frame-target';
+import { featureLevel, rateLevel, workLevel } from './frame-target';
 import { overlayFigures, type PageFigures } from './overlay';
-import { codeMs, drawingMs, targetTip, tenthsOfMib, WorkThreads, widthStep } from './overlay-look';
+import {
+	codeMs,
+	drawingMs,
+	STATS_PANEL_WIDTH,
+	STATS_TABS,
+	TAB_LABELS,
+	TabSelection,
+	targetTip,
+	tenthsOfMib,
+	WorkThreads,
+	widthStep,
+} from './overlay-look';
 import { type FrameStats, FrameStatsWindow, STATS_WINDOW_MS } from './stats';
-import { statsText } from './stats-text';
+import { featureFacts, featureLine, statsText } from './stats-text';
 
 /** The threads of a pipelined engine with two job workers, as `engine.measure` names them. */
 const THREADS: [string, number[]][] = [
@@ -23,6 +38,8 @@ const THREADS: [string, number[]][] = [
 
 /** Presented time per frame: the window ends with its 30th frame. */
 const PRESENTED_MS = STATS_WINDOW_MS / 30 + 0.001;
+/** Bytes in a mebibyte. */
+const MIB = 1024 * 1024;
 
 /**
  * Writes one frame's records to every ring, with fractions as real frames have. Without `counted`,
@@ -107,8 +124,9 @@ describe('FrameStatsWindow', () => {
 		expect(stats.objects).toBe(40);
 		expect(stats.uploadBytes).toBe(3072);
 		expect(stats.wasmBytes).toBe(WASM_BYTES);
-		// No GPU timer wrote a record, so the GPU time is unknown.
+		// No GPU timer wrote a record, so the GPU time and its step are unknown.
 		expect(stats.gpuMs).toBeNull();
+		expect(stats.gpuStepMs).toBeNull();
 		expect(stats.tier).toBe('webgl2');
 		expect(stats.preset).toBe('high');
 		expect(stats.renderScale).toBe(0.75);
@@ -212,6 +230,129 @@ type FrameStatsThreads = [
 /** The page's own figures where the browser gives none. */
 const NO_PAGE_FIGURES: PageFigures = { jsHeapBytes: null, page: null };
 
+describe('a feature’s labelled figures', () => {
+	const feature = (over: Partial<FeatureStats> = {}): FeatureStats => ({
+		name: 'test-glow',
+		gpuMs: 0.5,
+		settings: { samples: 22, budget: 1 },
+		scope: [],
+		budgetMs: 4,
+		allowedMs: 2,
+		bytes: 1024 * 1024,
+		...over,
+	});
+
+	it('gives each setting its own cell, even where a setting shares a reserved name', () => {
+		const facts = featureFacts(feature());
+		expect(facts.map((fact) => fact.label)).toEqual(['samples', 'budget', 'budget', 'memory']);
+		expect(new Set(facts.map((fact) => fact.key)).size).toBe(4);
+		expect(facts.map((fact) => fact.value)).toEqual(['22', '1', '2.0 of 4.0 ms', '1.0 MiB']);
+	});
+
+	it('leaves out the figures that the feature does not report', () => {
+		const facts = featureFacts(
+			feature({ settings: {}, budgetMs: null, allowedMs: null, bytes: null }),
+		);
+		expect(facts).toEqual([]);
+	});
+
+	it('writes the same figures as one line for the text form', () => {
+		expect(featureLine(feature())).toBe(
+			'test-glow  gpu 0.50 ms  samples 22 · budget 1 · budget 2.0 of 4.0 ms · memory 1.0 MiB',
+		);
+		expect(featureLine(feature({ gpuMs: null }))).toContain('gpu not measured');
+	});
+});
+
+describe('a feature’s level', () => {
+	it('is green inside four fifths of its allowance, amber up to the allowance, and red past it', () => {
+		expect(featureLevel(0.8, 1)).toBe('ok');
+		expect(featureLevel(0.81, 1)).toBe('warn');
+		expect(featureLevel(1, 1)).toBe('warn');
+		expect(featureLevel(1.01, 1)).toBe('bad');
+		expect(featureLevel(1.6, 2)).toBe('ok');
+	});
+
+	it('is unset where the feature reports no time, or declares no allowance', () => {
+		expect(featureLevel(null, 1)).toBeUndefined();
+		expect(featureLevel(1, null)).toBeUndefined();
+		expect(featureLevel(null, null)).toBeUndefined();
+	});
+});
+
+describe('the overlay’s figures of a feature’s GPU scope', () => {
+	/** A window's figures with two GPU steps: the camera's opaque pass and a sketch pass. */
+	function stepFigures(): FrameStats {
+		return {
+			frames: 30,
+			seconds: 0.5,
+			presentedFps: 60,
+			completedFps: 60,
+			updateErrors: 0,
+			cpuMs: 2,
+			threads: [],
+			gpuMs: 4,
+			gpuStepMs: null,
+			gpuSteps: [
+				{ name: 'opaque', ms: 2, place: 0 },
+				{ name: 'opaque 3', ms: 1, place: 3 },
+			],
+			drawCalls: 12,
+			triangles: 0,
+			objects: 0,
+			uploadBytes: 0,
+			tier: 'webgpu',
+			preset: 'high',
+			renderScale: 1,
+			wasmBytes: 0,
+			textureBytes: 0,
+			textureBudgetBytes: 0,
+			droppedLevels: 0,
+			meshBytes: 0,
+			gpuTextureBytes: 0,
+			gpuBufferBytes: 0,
+			memoryAreas: [],
+		};
+	}
+
+	/** A feature with the scope of a pass at `place`, and the rest of its figures empty. */
+	function featureOn(place: number): FeatureStats {
+		return {
+			name: 'water',
+			settings: {},
+			gpuMs: null,
+			scope: [{ name: 'water', place }],
+			bytes: null,
+			budgetMs: null,
+			allowedMs: null,
+		};
+	}
+
+	it('adds up the steps that draw into a feature’s passes, and names those steps after it', () => {
+		const figures = overlayFigures(stepFigures(), NO_PAGE_FIGURES, [featureOn(3)]);
+		expect(figures.features?.[0]?.gpuMs).toBe(1);
+		expect(figures.gpuSteps).toEqual([
+			{ name: 'opaque', ms: 2 },
+			{ name: 'water', ms: 1 },
+		]);
+	});
+
+	it('leaves a feature’s GPU time unknown without a step of its own', () => {
+		const figures = overlayFigures(stepFigures(), NO_PAGE_FIGURES, [featureOn(5)]);
+		expect(figures.features?.[0]?.gpuMs).toBeNull();
+	});
+
+	it('keeps the figure of the window that last timed the feature’s pass', () => {
+		const known = new Map<string, number>();
+		overlayFigures(stepFigures(), NO_PAGE_FIGURES, [featureOn(3)], known);
+		expect(known.get('water')).toBe(1);
+		// A window whose timed frame left the pass out keeps the figure.
+		const quiet = { ...stepFigures(), gpuSteps: [{ name: 'opaque', ms: 2, place: 0 }] };
+		const figures = overlayFigures(quiet, NO_PAGE_FIGURES, [featureOn(3)], known);
+		expect(figures.features?.[0]?.gpuMs).toBe(1);
+	});
+});
+
 describe('statsText', () => {
 	it('waits for the first window', () => {
 		const { window } = setUp();
@@ -281,6 +422,40 @@ describe('statsText', () => {
 		]);
 	});
 
+	it('lists the memory register by area, with the bytes each reserves, uses and has used at most', () => {
+		const { recorders, window } = setUp();
+		const report = new Float64Array(MEMORY_AREA_COUNT * MEMORY_AREA_VALUES);
+		const scene = MEMORY_AREA_NAMES.indexOf('scene') * MEMORY_AREA_VALUES;
+		report.set([8 * MIB, 6 * MIB, 7 * MIB], scene);
+		const uploads = MEMORY_AREA_NAMES.indexOf('upload arenas') * MEMORY_AREA_VALUES;
+		report.set([1 * MIB, 0.5 * MIB, 1 * MIB], uploads);
+		recorders[0]?.publishMemoryRegister(report);
+		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
+		window.update();
+		expect(window.stats.memoryAreas).toEqual(Array.from(report));
+		const areas = overlayFigures(window.stats, NO_PAGE_FIGURES).memoryAreas;
+		expect(areas?.[MEMORY_AREA_NAMES.indexOf('scene')]).toEqual({
+			name: 'scene',
+			reservedBytes: 8 * MIB,
+			usedBytes: 6 * MIB,
+			peakBytes: 7 * MIB,
+		});
+		const lines = statsText(overlayFigures(window.stats, NO_PAGE_FIGURES)).split('\n');
+		expect(lines).toContain('memory register  used / reserved / peak');
+		expect(lines).toContain('  scene           6.0 MiB  8.0 MiB  7.0 MiB');
+		expect(lines).toContain('  upload arenas   0.5 MiB  1.0 MiB  1.0 MiB');
+	});
+
+	it('leaves the memory register out where no page asked for a report', () => {
+		const { recorders, window } = setUp();
+		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
+		window.update();
+		expect(overlayFigures(window.stats, NO_PAGE_FIGURES).memoryAreas).toBeUndefined();
+		expect(statsText(overlayFigures(window.stats, NO_PAGE_FIGURES))).not.toContain(
+			'memory register',
+		);
+	});
+
 	it('shows large counts in thousands and millions, and a page figure still being measured', () => {
 		const lines = statsText({
 			heading: 'three.js WebGLRenderer',
@@ -290,6 +465,7 @@ describe('statsText', () => {
 			cpuMs: 4,
 			threads: [{ name: 'main', busyMs: 4 }],
 			gpuMs: 3.25,
+			gpuSteps: [],
 			drawCalls: 120,
 			uploadBytes: null,
 			triangles: 2_345_678,
@@ -332,18 +508,88 @@ describe('FrameStatsWindow counts', () => {
 });
 
 describe('FrameStatsWindow GPU time', () => {
+	it('names each timed pass by its scope, over the frames that timed it', () => {
+		const { buffer, recorders, window } = setUp();
+		const gpu = new FrameRecorder(buffer, Role.Gpu);
+		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
+		gpu.begin(11);
+		gpu.gpuPasses(4, 0b1110);
+		gpu.gpuTick(1);
+		// Copies, then three passes: the opaque pass, bloom's second step, and the final pass. The
+		// frame's fourth pass left no time, and stays out of the list.
+		gpu.gpuTime(0, 0.2);
+		gpu.gpuTime(1, 2);
+		gpu.gpuScope(0, SCOPE_OPAQUE);
+		gpu.gpuTime(2, 1);
+		gpu.gpuScope(1, SCOPE_BLOOM | (1 << 16));
+		gpu.gpuTime(3, 3);
+		gpu.gpuScope(2, SCOPE_FINAL);
+		gpu.commit(4);
+		window.update();
+		expect(window.stats.gpuSteps.map((step) => step.name)).toEqual([
+			'copies',
+			'opaque',
+			'bloom 2',
+			'final',
+		]);
+		const times = window.stats.gpuSteps.map((step) => step.ms);
+		expect(times[0]).toBeCloseTo(0.2, 6);
+		expect(times.slice(1)).toEqual([2, 1, 3]);
+		// The opaque pass of the camera's view is place 0.
+		expect(window.stats.gpuSteps[1]?.place).toBe(0);
+	});
+
+	it('leaves an untimed pass out of its step’s mean, so a step never reads negative', () => {
+		const { buffer, recorders, window } = setUp();
+		const gpu = new FrameRecorder(buffer, Role.Gpu);
+		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
+		// Two records left the pass untimed and one timed it at 1 ms. The untimed figures add
+		// nothing to the mean, so the step reads 1 ms rather than a negative sum over one record.
+		for (const [frame, ms] of [
+			[10, UNTIMED],
+			[11, UNTIMED],
+			[12, 1],
+		] as const) {
+			gpu.begin(frame);
+			gpu.gpuPasses(1, 0b1);
+			gpu.gpuTime(1, ms);
+			gpu.gpuScope(0, SCOPE_OPAQUE);
+			gpu.commit(4);
+		}
+		window.update();
+		const step = window.stats.gpuSteps.find((figure) => figure.name === 'opaque');
+		expect(step?.ms).toBe(1);
+	});
+
 	it('keeps the GPU time of the last window that held a timed frame', () => {
 		const { buffer, recorders, window } = setUp();
 		const gpu = new FrameRecorder(buffer, Role.Gpu);
 		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
 		gpu.begin(11);
+		gpu.gpuTick(65_536);
 		gpu.commit(4);
 		window.update();
 		expect(window.stats.gpuMs).toBe(4);
+		// The step between the timestamps is the divisor of the per-frame steps.
+		expect(window.stats.gpuStepMs).toBeCloseTo(0.065536, 9);
 		for (let frame = 31; frame <= 60; frame++) writeFrame(recorders, frame);
 		window.update();
 		expect(window.stats.gpuMs).toBe(4);
-		expect(JSON.parse(JSON.stringify(window.stats)).gpuMs).toBe(4);
+		expect(window.stats.gpuStepMs).toBeCloseTo(0.065536, 9);
+		const logged = JSON.parse(JSON.stringify(window.stats));
+		expect(logged.gpuMs).toBe(4);
+		expect(logged.gpuStepMs).toBeCloseTo(0.065536, 9);
+	});
+
+	it('reports no step when the times look exact', () => {
+		const { buffer, recorders, window } = setUp();
+		const gpu = new FrameRecorder(buffer, Role.Gpu);
+		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
+		gpu.begin(11);
+		gpu.gpuTick(1);
+		gpu.commit(4);
+		window.update();
+		expect(window.stats.gpuStepMs).toBeNull();
 	});
 });
 
@@ -449,5 +695,44 @@ describe('the overlay target and colors', () => {
 		expect(threads.heldBackBy(25, 24)).toBe('outside the engine');
 		threads.update([{ name: 'main', busyMs: 30 }], 'main');
 		expect(threads.heldBackBy(16.7, null)).toBe('Sketch + drawing');
+	});
+});
+
+describe('the overlay tabs', () => {
+	it('names four sections in reading order', () => {
+		expect(STATS_TABS).toEqual(['frame', 'memory', 'steps', 'systems']);
+		expect(STATS_TABS.map((tab) => TAB_LABELS[tab])).toEqual([
+			'Frame',
+			'Memory',
+			'Steps',
+			'Systems',
+		]);
+	});
+
+	it('shows one section at a time, and leaves the others hidden', () => {
+		const tabs = new TabSelection();
+		const shown = () => STATS_TABS.filter((tab) => tabs.visible(tab));
+		expect(shown()).toEqual(['frame']);
+		expect(tabs.select('memory')).toBe(true);
+		expect(shown()).toEqual(['memory']);
+		// The chosen tab stays chosen when it is chosen again.
+		expect(tabs.select('memory')).toBe(false);
+		expect(tabs.tab).toBe('memory');
+		expect(tabs.select('systems')).toBe(true);
+		expect(shown()).toEqual(['systems']);
+	});
+
+	it('moves with the arrow keys and wraps at the ends', () => {
+		const tabs = new TabSelection();
+		expect(tabs.move(1)).toBe('memory');
+		expect(tabs.move(-1)).toBe('frame');
+		expect(tabs.move(-1)).toBe('systems');
+		expect(tabs.move(1)).toBe('frame');
+	});
+
+	it('keeps one panel width for every tab, and sets no height of its own', () => {
+		// The card's height is its tab's content, which the browser test measures; this pins the
+		// width that the style sheet sets.
+		expect(STATS_PANEL_WIDTH).toBe(360);
 	});
 });

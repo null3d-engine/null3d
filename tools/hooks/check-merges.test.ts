@@ -3,7 +3,15 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { analyseMerge, conflictsIn, mergeProblem, NEW_WORD_ALLOWANCE } from './check-merges';
+import { scaledBudget } from '../../tests/lib/run-budget.ts';
+import {
+	analyseMerge,
+	conflictsIn,
+	KNOWN_MERGES,
+	mergeProblem,
+	mergesToCheck,
+	NEW_WORD_ALLOWANCE,
+} from './check-merges';
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -58,6 +66,21 @@ function mergeWith(files: Record<string, string>, message = 'Merge branch side')
 
 const resolved = BASE.replace('LIMIT = 16', 'LIMIT = 32; // the default');
 
+describe('KNOWN_MERGES', () => {
+	it('names the nine merges that the owner let stand, by full ids', () => {
+		// A full id names one commit, so a merge with new work under another id is still refused.
+		expect(KNOWN_MERGES.size).toBe(9);
+		for (const sha of KNOWN_MERGES) expect(sha).toMatch(/^[0-9a-f]{40}$/);
+	});
+
+	it('leaves out only the named merges, and every other merge, by full id', () => {
+		const known = [...KNOWN_MERGES][0] as string;
+		const other = 'a'.repeat(40);
+		expect(mergesToCheck([known, other, ''])).toEqual([other]);
+		expect(mergesToCheck([known.slice(0, 9)])).toEqual([known.slice(0, 9)]);
+	});
+});
+
 describe('conflictsIn', () => {
 	it('finds each conflict and the lines of its sides', () => {
 		const text = 'a\n<<<<<<< ours\nb\n=======\nc\n>>>>>>> theirs\nd\n';
@@ -69,7 +92,7 @@ describe('conflictsIn', () => {
 describe('analyseMerge', () => {
 	// Each case builds a repository and merges in it, which starts many git processes. A loaded
 	// machine needs longer than the default test limit.
-	const gitCase = (name: string, fn: () => void) => it(name, fn, 30_000);
+	const gitCase = (name: string, fn: () => void) => it(name, fn, scaledBudget(30_000));
 
 	gitCase('passes a merge that only resolves its conflict from the two sides', () => {
 		const finding = analyseMerge(...mergeWith({ 'scene.ts': resolved }), '');

@@ -29,7 +29,7 @@ Custom materials with surface functions, uniforms, vertex offsets, the built-in 
 
 Choose the first row that works. Surface functions keep working when the engine's lighting, shadows or backends change. The docs pages' status says what is built: `shaders/surface-functions`, `shaders/builtins`, `guides/custom-shaders`.
 
-A custom material takes one `wgsl` option: WGSL that the Vite plugin compiled, from a template literal right after a `/* wgsl */` comment or from a `.wgsl` import. That one WGSL holds every function of the material (`fn surface`, `fn vertexOffset` or both), because the plugin compiles each literal on its own at build time. WGSL as plain text throws E1215.
+A custom material takes one `wgsl` option: WGSL that the Vite plugin compiled, from a template literal right after a `/* wgsl */` comment or from a `.wgsl` import. That one WGSL holds every function of the material (`fn surface`, `fn vertexOffset`, `fn lobe`, `fn coverage` or some of them), because the plugin compiles each literal on its own at build time. WGSL as plain text throws E1215.
 
 The tagged literal has three traps:
 
@@ -62,6 +62,7 @@ struct Surface {
   occlusion: f32,          // ambient occlusion, 0 to 1; darkens the ambient light and irradiance
   irradiance: vec3f,       // baked light added to the ambient light, zero by default
   reflection: vec4f,       // (0.2) light from the mirror direction in rgb, its share of the environment's reflection in a
+  shadowOffset: vec3f,     // (0.3) where the sun's shadow lookup reads, relative to the point and in world space; zero reads the point itself
   transmission: f32,       // (0.2) share of the light behind that passes through; WGSL that sets it builds the see-through shaders
   thickness: f32,          // (0.2) depth of the volume under the point, in the mesh's own units
   diffuseTransmission: f32,      // (0.2) share of the diffuse light that passes to the other side; WGSL that names it builds the shaders that light the back
@@ -71,6 +72,9 @@ struct Surface {
   clearcoatNormal: vec3f,  // (0.2) the coat's normal, world space; starts as the mesh's normal
   sheenColor: vec3f,       // (0.2) cloth and velvet glow, linear RGB; black gives none
   sheenRoughness: f32,     // (0.2) how wide the sheen spreads
+  iridescence: f32,        // (0.3) how much a thin film tints the reflection, 0 to 1; the film's fields count as a layer field
+  iridescenceIor: f32,     // (0.3) the film's index of refraction, 1 or more
+  iridescenceThickness: f32,  // (0.3) the film's thickness in nanometers
 };
 fn defaultSurface(input: SurfaceInput) -> Surface;  // the material's own options
 ```
@@ -106,11 +110,11 @@ stripes.set({ roughness: 0.4 });
 
 Materials from the same WGSL share one shader and its pipelines. Make one WGSL per look, and many materials from it.
 
-`s.alpha` works with the material's `alphaMode`: `'mask'` draws nothing below `alphaCutoff`, and `'blend'` blends the surface over what lies behind it, in the transparent pass.
+`s.alpha` works with the material's `alphaMode`: `'mask'` draws nothing below `alphaCutoff`, `'hash'` draws a share of the surface that the alpha sets, and `'blend'` blends the surface over what lies behind it, in the transparent pass. A masked material cuts its shadow and its motion too, because its caster and its motion build run the same surface function with the same inputs. `alphaToCoverage` and the `'hash'` mode need WGSL that sets or reads `s.alpha`; without it they throw E1217.
 
-`SurfaceInput` also has `uv1`, `fragCoord` and `instance` (0.2). `uv1` is the second texture coordinates, or the first on a mesh with one set. `fragCoord` (`vec3f`) is the pixel from the top left, and its depth, 1 at the near plane. `instance` (`u32`) is the row in its batch, 0 for scene objects. `VertexInput` has `uv1` and `instance` too. Only WGSL that reads `uv1`, `instance`, `object.id` or the object's matrices pays for them.
+`SurfaceInput` also has `uv1`, `fragCoord` and `instance` (0.2). `uv1` is the second texture coordinates, or the first on a mesh with one set. `fragCoord` (`vec3f`) is the pixel from the top left, and its depth, 1 at the near plane. `instance` (`u32`) is the row in its batch, 0 for scene objects. `VertexInput` has `uv1`, `instance` and `colors` too: `colors` is the mesh's vertex color, which a vertex offset reads as data, such as a branch index and a phase for wind. A mesh without vertex colors draws nothing with a material whose WGSL reads it. Only WGSL that reads `uv1`, `colors`, `instance`, `object.id` or the object's matrices pays for them.
 
-Names: your WGSL shares a file with the engine's standard material. Do not declare a name that the standard material declares or imports. The build stops at your line with a redefinition error. The names are `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs`, `fs` and `FLAT_SHADING`. They also include the library items it imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`, and where the WGSL reads them, `object_ids`, `affine_matrix` and `affine_normal_matrix`. Other library names, such as `brdf_ggx` or `PI`, stay free. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
+Names: your WGSL shares a file with the engine's standard material. Do not declare a name that the standard material declares or imports. The build stops at your line with a redefinition error. The names are `SurfaceInput`, `Surface`, `VertexInput`, `surface_place`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs`, `fs` and `FLAT_SHADING`. They also include the library items it imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`, and where the WGSL reads them, `object_ids`, `affine_matrix` and `affine_normal_matrix`. Other library names, such as `brdf_ggx` or `PI`, stay free. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
 
 ## 3. Built-in values
 
@@ -118,12 +122,12 @@ Globals that the vertex offset and the surface function both read (`shaders/buil
 
 | Name | Fields | Notes |
 | --- | --- | --- |
-| `frame` | `time`, `deltaTime` (seconds), `index` (u32, from 1), `resolution` (vec2f, pixels at the render scale, as `@builtin(position)` counts them) | The sketch's `time`; the held time in hold mode |
+| `frame` | `time`, `deltaTime` (seconds), `index` (u32, from 1), `lastFrame` (bool, true in the motion pass's call for the frame before), `resolution` (vec2f, pixels at the render scale, as `@builtin(position)` counts them) | The sketch's `time`; the held time in hold mode |
 | `camera` | `position` (absolute world position), `viewProjection` (`mat4x4f`, from positions relative to the camera to clip space); `view`, `projection` (`mat4x4f`), `near`, `far` (0.2) | `projection * view == viewProjection`; `view` is the rotation only; reversed depth, 1 at the near plane |
 | `object` | `position` (the object's or instance's origin in the world); `values` (`vec4f`), `worldMatrix` (`mat4x4f`), `normalMatrix` (`mat3x3f`), `id` (`u32`) (0.2) | `worldMatrix`'s translation is relative to the camera. `id` equals `mesh.shaderId` or `batch.shaderId`, and stays while the object lives |
 | `material` | Your uniforms, as `struct Uniforms` declares them | See section 4 |
 
-A vertex offset in a shadow pass reads zeros for `camera.view` and `camera.projection`. A full shader reads zeros for the object's matrices and id.
+A vertex offset and a surface function read the scene camera's `camera` and `frame.resolution` in a shadow pass, as they do on screen. A full shader reads zeros for the object's matrices and id.
 
 The engine renders relative to the camera. `input.relativePosition` is therefore exact near the camera, even in very large worlds. Use it for distances, fades and view-dependent effects. The world position of the input, `camera.position` and `object.position` are absolute. Far from the origin they hold fewer digits (1 mm steps at 10 km), so keep world-space patterns coarse there.
 
@@ -203,10 +207,12 @@ const worn = materials.shader({
 });
 ```
 
-- Pass a texture straight to a texture function. These take one: `textureSample`, `textureSampleLevel`, `textureSampleBias`, `textureSampleGrad`, `textureGather`, `textureLoad`, `textureDimensions`, `textureNumLevels`. The engine stores textures as layers of texture arrays and adds the layer to each call. So the build rejects a texture passed to a function of your own. `textureSampleBaseClampToEdge` does not work; use `textureSampleLevel` at level 0.
+- Pass a texture straight to a texture function. These take one: `textureSample`, `textureSampleLevel`, `textureSampleBias`, `textureSampleGrad`, `textureGather`, `textureLoad`, `textureDimensions`, `textureNumLevels`, `textureNumLayers`. The engine stores textures as layers of texture arrays and adds the layer to each call. So the build rejects a texture passed to a function of your own. `textureSampleBaseClampToEdge` does not work; use `textureSampleLevel` at level 0.
+- `textureGather` draws on WebGPU only: WebGL2's shader language has no gather, so a material that uses it fails to link there. Read four texels with `textureLoad` where a material must draw on both paths.
 - A vertex offset reads textures with `textureSampleLevel` or `textureLoad`, for height maps.
 - Until its image is on the GPU, a texture samples as white, and so does a declared texture that the option leaves out. Multiply by textures, so the material looks right while they load.
-- Up to 6 textures; each takes one of the uniforms' 32 numbers. Textures are fixed at creation. A texture has one layer.
+- Up to 6 textures; each takes one of the uniforms' 32 numbers. Textures are fixed at creation. A texture has one layer, unless its declaration is a texture array.
+- Texture arrays (0.3): declare `var name: texture_2d_array<f32>;` and pass a texture of several layers, such as `textures.fromData({ width, height, depth: 6, data })` or a KTX2 file of layers. The shader picks the layer after the coordinates: `textureSampleLevel(name, nameSampler, uv, layer, 0.0)`. The layers are the texture's own, from 0 to its depth less 1, so one array serves a set of facade or window images and each pixel picks one. `textureNumLayers(name)` gives the layer count. One array takes one slot and one uniform number, as a 2D texture does.
 - TypeScript checks the option's names against the WGSL's declarations; a wrong name or a value that is not a texture throws E1216 when it runs. Full shaders take no textures.
 
 ## 5. Vertex offsets and full shaders
@@ -225,8 +231,14 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 
 - Exactly this signature; the build rejects another.
 - Normals stay the mesh's own. Use `flatShading: true` to light faces by their moved positions, or bend `s.normal` in the surface function.
-- Shadows follow the moved vertices, and draw again in every frame.
+- Shadows follow the moved vertices, and draw again in every frame. A material whose offset follows only the view that draws the object, such as a card that turns toward the camera, takes `castsStill: true`: its casters then hold their shadow while the light stands still, and far shadow cascades stay cached.
 - Vertices that move outside the mesh's bounding sphere can be culled wrongly. Give the object a sphere that holds them with `mesh.setBounds(center, radius)`, at setup, because the call rebuilds the draw tables.
+
+### Shadows of a custom material (0.3)
+
+A masked custom material cuts its shadow where its WGSL declares `fn coverage(input: SurfaceInput) -> f32`, or where it sets or reads the surface's alpha. Return the opacity of the point; the engine calls it in the material's caster builds, binds the same uniforms and textures, and drops the shadow texels under the material's `alphaCutoff`. A card that shows a baked tree then casts the crown's shape, not its quad. WGSL that declares a coverage function, or that sets or reads the surface's alpha, gets the caster builds, with a fragment stage on both GPU paths; a material with none of these casts its whole shape. A flat caster draws both faces: the shadow pass culls the front faces of single-sided geometry, so a single-sided quad casts nothing. Set `doubleSided: true` for one. The coverage is tested under the material's `alphaCutoff`, so the material takes the `mask` alpha mode; a development build refuses coverage without one.
+
+A surface function moves where the sun's shadow lookup reads with `s.shadowOffset`, a world-space offset from the point. A stand-in card sets it to the surface that its stored depth shows, so its own cast does not fall on it. `defaultSurface` leaves it zero.
 
 A full shader is WGSL with one `@vertex` entry point that takes an `InstanceIn`, and one `@fragment` entry point:
 
@@ -277,12 +289,13 @@ post.removeEffect(vignette);
 ```
 
 - Exactly `fn effect(input: EffectInput) -> vec4f`; the build rejects another signature.
-- `EffectInput` has five fields:
+- `EffectInput` has six fields:
   - `color`: the pixel's linear HDR color, multiplied by coverage in alpha.
   - `uv`: (0, 0) at the top left, (1, 1) at the bottom right.
   - `pixel`: the pixel's center, in pixels from the top left.
   - `size`: the render size in pixels.
   - `time`: the sketch time in seconds.
+  - `layer`: the array layer the draw writes, from 0; an effect writes 0.
 - Other pixels: `effectColor(uv)` reads with a linear filter, and `effectPixel(vec2i)` reads one pixel exactly. Both clamp to the image's edge.
 - Depth: `effectDepth(uv)` (1 near, 0 far, 0 where nothing drew), `effectViewPosition(uv)` (z negative in front) and `effectDistance(uv)` (world units along the view). Calling one makes the effect read depth, on all three GPU paths.
 - Uniforms: `struct Uniforms`, read as `uniforms.name`, with the types and the 32-number limit of section 4. TypeScript types `uniforms` and `setEffectUniform` from the struct.
@@ -294,6 +307,26 @@ post.removeEffect(vignette);
 - Return premultiplied color: keep `input.color.a`, and multiply colors you mix in by it, as `mix(c.rgb, fogColor * c.a, t)` does.
 - A new effect starts to draw a few frames after `addEffect`, once its pipeline builds. An effect that must show at a moment, such as when the camera dips under water, is added a little before. For example, add it when the camera comes within 0.6 m of the water, and remove it once the camera is 1 m above.
 - An effect that depends on where the camera is, such as under water, decides per pixel. Find where the pixel's line of sight leaves the near plane, from the camera's position, axes, `fov` and `near` passed as uniforms, and test that point. A test of the camera's own height leaves a strip at the waterline without the effect. The full example: `guides/custom-passes`, "Example: under the water".
+
+### A lens look: grain, fringes, a streak and a speed blur (0.3)
+
+Four effects that draw their own neighboring reads cost four full-screen passes. Write them as one
+effect, or copy the lens-kit example add-on, which sets the core's grade, sharpening and vignette
+from one look and draws the marks in a single effect. Engine docs: `guides/lens-kit`.
+
+- Each mark reads a value that is 0 or more and off at 0, so a pixel costs only the marks that the
+  look uses. A look with every mark at 0 adds no effect, which is how a grade alone costs no pass.
+- The fringes and the speed blur call `effectColor`, so the effect draws a pass of its own. Keep it
+  last in the chain, where its neighbor reads land on the frame's finished color.
+- A streak must not blur the picture again. Bloom already thresholded and blurred the bright parts,
+  so read a level of its chain with `effectBloom` and spread that sideways: `post.addEffect({ wgsl,
+  bloomLevel: 2 })`. Without bloom the streak reads black.
+- Grain on linear HDR color reads weaker than the same value on display color, because the tone
+  curve lifts the shadows. Tune it against the final picture, not against a display-color reference.
+- Seed grain from an integer hash of `input.pixel` and the time, never from a sine, and step the
+  time at the film rate (`floor(input.time * 24.0)`) so the grain does not crawl with the frame rate.
+- A value that fixes the effect's shape, such as `bloomLevel`, is read when the effect is made.
+  Change it by removing the effect and adding it again.
 
 A custom tone curve replaces the built-in curves in the final pass:
 
@@ -321,7 +354,7 @@ const screen = materials.unlit({ map: textures.fromPass(map) });   // or a custo
 - The texture holds linear color after the exposure, upright with v = 0 at its bottom row, as three.js's render target texture.
 - A pass runs only while a texture shows it. It never draws objects that show its own texture, or a texture of a pass that it does not name in `reads`.
 - The graph checks every change at once: a missing `reads` name throws E1502, and a pass that reads its own texture E1504. `render.dumpGraph()` prints the compiled graph as Graphviz DOT text.
-- A full-screen pass (0.2) runs an effect's WGSL (`fn effect`) over a texture of its own: `render.addPass({ kind: 'fullscreen', wgsl, writes, size or scale, input, textures, uniforms })`. `input.uv`, `pixel` and `size` are the pass's own. `input: 'sceneColor'` or `'outlineMask'` gives `input.color`, `effectColor` and `effectPixel` an image. `effectInputSize()` gives that image's size. `render.setPassUniform` changes a uniform. Use a pass for blur steps, mask edges and GPU-painted textures that materials or effects read. Docs: `api/render`, `guides/custom-passes`.
+- A full-screen pass (0.2) runs an effect's WGSL (`fn effect`) over a texture of its own: `render.addPass({ kind: 'fullscreen', wgsl, writes, size or scale, input, textures, uniforms })`. `input.uv`, `pixel` and `size` are the pass's own. `input: 'sceneColor'` or `'outlineMask'` gives `input.color`, `effectColor` and `effectPixel` an image, and places the pass after the camera's passes; a pass with no input runs before them, so name the image on every pass of a chain that a scene image starts. `effectInputSize()` gives that image's size. `render.setPassUniform` changes a uniform. Use a pass for blur steps, mask edges and GPU-painted textures that materials or effects read. Docs: `api/render`, `guides/custom-passes`.
 
 A reflection pass (0.2) draws the camera's view mirrored across a plane, for water and polished floors. A surface function reads it where the surface shows on the screen:
 
@@ -343,6 +376,8 @@ fn surface(input: SurfaceInput) -> Surface {
 Grass and leaves lit from behind (0.2): give the custom material `diffuseTransmission` at creation and `doubleSided: true`, and set `s.diffuseTransmission` and `s.diffuseTransmissionColor` in the surface function, such as more at the blade's tip and the base color brightened. Shadows fall on that light. Docs: `api/materials` (Light through thin surfaces), `shaders/surface-functions`.
 
 Water that shows its bed (0.2): give the custom material `transmission: 1`, `thickness` (the water's depth), `ior: 1.33` and an `attenuationColor`, and set `s.transmission = 1.0` with a rippled `s.normal` in the surface function. The ripples bend the bed that shows through. Only opaque objects show through. Docs: `api/materials` (Transmission), `shaders/surface-functions`.
+
+Depth behind a blended sheet (0.3): declare `sceneInputs: ['sceneDepth']` and read `sceneDistance(uv)` or `sceneDepth(uv)` in the surface function, with `uv = input.fragCoord.xy / frame.resolution`. The water's depth is the gap between the sheet and the surface behind it: convert `input.fragCoord.z` with `engine_frame.camera_range` and subtract it from `sceneDistance(uv)`. Fade `s.alpha` over a band at the end of that gap, with foam where it closes, so the shore ends softly instead of on the sheet's edge. A sheet in the opaque pass, or in a scene or reflection pass, reads 0, the far plane. The material takes up to seven textures of its own, so a foam map or a mirror joins the depth. Docs: `api/materials` (The scene behind a surface), `shaders/surface-functions` (The scene's depth).
 
 Water that the camera can go under (0.2): give the material `doubleSided: true`, or the surface does not draw from below. Branch on `input.frontFacing`. On the back face, turn a ripple normal that the function built so it faces down. Set `s.reflection` to zero, since a reflection pass holds the world above. Use a thin `s.thickness`, such as 0.05, with `s.transmission` near 1. A custom effect gives the view under the water its tint (section 6). Docs: `shaders/surface-functions` (Water seen from below), `guides/custom-passes` (Example: under the water).
 

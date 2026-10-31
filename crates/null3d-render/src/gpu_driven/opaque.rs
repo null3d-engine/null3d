@@ -4,6 +4,10 @@
 //! layout or the mesh buffers change. The shadow passes record and replay their bundles the same
 //! way (see [`super::shadow`]).
 //!
+//! A bucket whose surface writes no color draws before the buckets that write color, so the depth
+//! it writes holds back their color. A no-color surface is a holdout: it shows nothing itself and
+//! hides what lies behind it.
+//!
 //! A bucket whose pipelines read their instances by index draws its slice of index entries, which
 //! follow the copies in the view's compacted instance buffer, and binds the view's index group
 //! after its other groups (see [`super::cull`]).
@@ -233,6 +237,9 @@ pub(super) enum Bundle {
     /// The outline view's objects into the outline mask: every bucket with the pipeline that marks
     /// every part, then every bucket again with the pipeline that marks the parts nothing hides.
     Outline,
+    /// The tone view's objects into the blue channel of the outline mask: each bucket with the
+    /// mask pipeline, which tests the scene's depth.
+    Tone,
     /// The casters' depth into a tile of the shadow atlas, each bucket with its pipeline for the
     /// tiles, whose depth format may differ from the cascades'.
     Tile,
@@ -247,7 +254,9 @@ pub(super) enum Bundle {
 impl Bundle {
     fn id(self, view: ViewId) -> u32 {
         match self {
-            Self::Opaque | Self::Outline | Self::Tile | Self::Subsurface => ids::bundle(view),
+            Self::Opaque | Self::Outline | Self::Tone | Self::Tile | Self::Subsurface => {
+                ids::bundle(view)
+            }
             Self::Prepass => ids::prepass_bundle(view),
             Self::Motion(parity) => ids::motion_bundle(parity),
         }
@@ -309,18 +318,34 @@ pub(super) fn record_bundle(
         hidden,
         counts: None,
         motion,
+        scene: ids::MATERIAL_SCENE_GROUPS,
     };
     match kind {
-        Bundle::Opaque | Bundle::Subsurface => {
-            draws.record(list, |b| b.pipeline, |_| true, |b| b.group)?
+        Bundle::Opaque => {
+            // The surfaces that write no color draw first, so the depth they write holds back the
+            // color of the surfaces behind them.
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group, |b| b.holdout)?;
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group, |b| !b.holdout)?;
         }
-        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own, |b| b.group)?,
-        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true, |b| b.group)?,
-        Bundle::Motion(_) => draws.record(list, |b| b.pipeline, |_| false, |b| b.group)?,
+        Bundle::Subsurface => {
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group, |_| true)?
+        }
+        Bundle::Prepass => draws.record(
+            list,
+            |b| b.prepass,
+            |b| b.prepass_own,
+            |b| b.group,
+            |_| true,
+        )?,
+        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true, |b| b.group, |_| true)?,
+        Bundle::Motion(_) => {
+            draws.record(list, |b| b.pipeline, |_| false, |b| b.group, |_| true)?
+        }
         Bundle::Outline => {
-            draws.record(list, |b| b.pipeline, |_| false, |_| 0)?;
-            draws.record(list, |b| b.prepass, |_| false, |_| 0)?;
+            draws.record(list, |b| b.pipeline, |_| false, |_| 0, |_| true)?;
+            draws.record(list, |b| b.prepass, |_| false, |_| 0, |_| true)?;
         }
+        Bundle::Tone => draws.record(list, |b| b.pipeline, |_| false, |_| 0, |_| true)?,
     }
     list.push(Op::EndBundle, &[])?;
     Ok(())
@@ -364,22 +389,38 @@ pub(super) fn record_direct(
         first_draw: 0,
         hidden,
         counts: Some(counts),
+        scene: ids::MATERIAL_SCENE_GROUPS,
         motion: match kind {
             Bundle::Motion(parity) => Some(parity),
             _ => None,
         },
     };
     match kind {
-        Bundle::Opaque | Bundle::Subsurface => {
-            draws.record(list, |b| b.pipeline, |_| true, |b| b.group)?
+        Bundle::Opaque => {
+            // The surfaces that write no color draw first, so the depth they write holds back the
+            // color of the surfaces behind them.
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group, |b| b.holdout)?;
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group, |b| !b.holdout)?;
         }
-        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own, |b| b.group)?,
-        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true, |b| b.group)?,
-        Bundle::Motion(_) => draws.record(list, |b| b.pipeline, |_| false, |b| b.group)?,
+        Bundle::Subsurface => {
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group, |_| true)?
+        }
+        Bundle::Prepass => draws.record(
+            list,
+            |b| b.prepass,
+            |b| b.prepass_own,
+            |b| b.group,
+            |_| true,
+        )?,
+        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true, |b| b.group, |_| true)?,
+        Bundle::Motion(_) => {
+            draws.record(list, |b| b.pipeline, |_| false, |b| b.group, |_| true)?
+        }
         Bundle::Outline => {
-            draws.record(list, |b| b.pipeline, |_| false, |_| 0)?;
-            draws.record(list, |b| b.prepass, |_| false, |_| 0)?;
+            draws.record(list, |b| b.pipeline, |_| false, |_| 0, |_| true)?;
+            draws.record(list, |b| b.prepass, |_| false, |_| 0, |_| true)?;
         }
+        Bundle::Tone => draws.record(list, |b| b.pipeline, |_| false, |_| 0, |_| true)?,
     }
     Ok(())
 }
@@ -410,6 +451,8 @@ pub(super) fn record_pick(
         hidden,
         counts,
         motion: None,
+        // A pick build shades no surface, so its pipeline takes no scene group.
+        scene: 0,
     };
     draws.record(
         list,
@@ -418,6 +461,7 @@ pub(super) fn record_pick(
         // the shading of the same draw does.
         |_| true,
         |bucket| if bucket.pick_maps { bucket.group } else { 0 },
+        |_| true,
     )
 }
 
@@ -439,19 +483,24 @@ struct Draws<'a> {
     counts: Option<&'a [u32]>,
     /// The frame parity whose last frame's data a motion bundle reads, or `None` for any other.
     motion: Option<usize>,
+    /// The group that a bucket whose material reads the scene's depth binds: the blank texel, or
+    /// 0 for a pass whose buckets bind none.
+    scene: u32,
 }
 
 impl Draws<'_> {
     /// Records the draws of every bucket of the layout with the pipeline that `pipeline_of` picks,
-    /// leaving out the buckets for which it gives 0. A bucket for which `own_of` is true draws with
-    /// its own template's vertex shader: it reads the view's frame group and its maps' group as its
-    /// shading does. The others read the depth group alone, as the depth and mask templates do.
+    /// leaving out the buckets for which it gives 0 and the buckets that `takes` refuses. A bucket
+    /// for which `own_of` is true draws with its own template's vertex shader: it reads the view's
+    /// frame group and its maps' group as its shading does. The others read the depth group alone,
+    /// as the depth and mask templates do.
     fn record(
         &self,
         list: &mut DrawList,
         pipeline_of: impl Fn(&Bucket) -> u32,
         own_of: impl Fn(&Bucket) -> bool,
         maps_of: impl Fn(&Bucket) -> u32,
+        takes: impl Fn(&Bucket) -> bool,
     ) -> Result<(), RecordError> {
         let Self {
             view,
@@ -464,14 +513,23 @@ impl Draws<'_> {
             hidden,
             counts,
             motion,
+            scene,
         } = *self;
         let (mut pipeline, mut vertices, mut indices) = (None, None, None);
         let mut last_vertices = None;
         let mut groups = DrawGroups::default();
         let mut bound = None;
         for (b, bucket) in layout.buckets.iter().enumerate() {
+            if !takes(bucket) {
+                continue;
+            }
             let id = pipeline_of(bucket);
-            if id == 0 || (bucket.group != 0 && hidden(bucket.group)) {
+            // A feature-instance draw whose feature does not draw now records nothing: the views
+            // take no room for it, and its count word is not copied either.
+            if id == 0
+                || (bucket.feature != 0 && !bucket.feature_ready)
+                || (bucket.group != 0 && hidden(bucket.group))
+            {
                 continue;
             }
             let own = own_of(bucket);
@@ -504,16 +562,52 @@ impl Draws<'_> {
             } else {
                 (layout.copy_stride(), 0)
             };
-            groups.set(list, maps, bucket.skins, index)?;
-            list.push(
-                Op::SetVertexBuffer,
-                &[
-                    1,
+            // A bucket whose material reads the scene's depth binds the group after its maps.
+            let scene = if own && bucket.scene_depth { scene } else { 0 };
+            groups.set(list, maps, scene, bucket.skins, index)?;
+            // A feature-instance draw reads the rows that the frame's conversion wrote from the
+            // add-on's world rows, from the buffer's first instance on.
+            let (instances, offset, bytes) = if bucket.feature != 0 {
+                (
+                    ids::feature_relative(bucket.feature),
+                    0,
+                    bucket.feature_capacity.max(1) * sizes::INSTANCE_STRIDE,
+                )
+            } else {
+                (
                     ids::visible(view),
                     bucket.base * stride,
                     bucket.capacity.max(1) * stride,
-                ],
-            )?;
+                )
+            };
+            list.push(Op::SetVertexBuffer, &[1, instances, offset, bytes])?;
+            // A cluster mesh draws the indices that the cluster pass copied for this view, in one
+            // draw that the pass sized, instead of its whole triangle list. The direct-draw path
+            // counts its own instances and records no cluster pass, so it draws the whole list.
+            if let Some(cluster) = bucket.cluster.filter(|_| self.counts.is_none()) {
+                let draw = layout.draws[bucket.first_draw as usize];
+                let (page_vertices, _) = meshes.ids(draw.page);
+                if vertices != Some((page_vertices, 0)) {
+                    list.push(Op::SetVertexBuffer, &[0, page_vertices, 0, 0])?;
+                    vertices = Some((page_vertices, 0));
+                }
+                let tree_indices = ids::cluster_list(view);
+                if indices != Some(tree_indices) {
+                    list.push(
+                        Op::SetIndexBuffer,
+                        &[tree_indices, index_format::UINT32, 0, 0],
+                    )?;
+                    indices = Some(tree_indices);
+                }
+                list.push(
+                    Op::DrawIndexedIndirect,
+                    &[
+                        ids::cluster_draws(view),
+                        super::clusters::Clusters::draw_offset(cluster),
+                    ],
+                )?;
+                continue;
+            }
             for index in bucket.first_draw..bucket.first_draw + bucket.draws {
                 let draw = layout.draws[index as usize];
                 let (page_vertices, page_indices) = meshes.ids(draw.page);

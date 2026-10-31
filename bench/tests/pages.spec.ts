@@ -13,6 +13,7 @@ import {
 import { BENCH_SCENES, isNull3dPage, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
 import type { TraceSecond } from '../pages/lib/trace';
 import { S5_BACKGROUND } from '../scenes/s5';
+import { S7_COUNT } from '../scenes/s7';
 import {
 	BACKGROUND,
 	createS4,
@@ -58,6 +59,7 @@ const MIN_DRAWN_SHARE: Record<(typeof SCENES)[number], number> = {
 	s4: 0.5,
 	s5: 0.3,
 	s6: 0.1,
+	s7: 0.01,
 };
 /**
  * Each scene's background color. S4's is its fog's color. S6's sky covers its background, so its
@@ -72,6 +74,7 @@ const BACKGROUNDS: Record<(typeof SCENES)[number], string | null> = {
 	s4: S4_FOG.color,
 	s5: S5_BACKGROUND,
 	s6: null,
+	s7: null,
 };
 /**
  * Pages whose renderer cannot draw their scene on the GPU that the tests draw with. WebGLRenderer's
@@ -170,14 +173,34 @@ const shortRunCount = (scene: (typeof SCENES)[number]): number =>
 		? s2Trees(SHORT_RUN_COUNT) * S2_NODES_PER_TREE
 		: scene === 's4'
 			? createS4().count
-			: shortRunAsked(scene);
+			: scene === 's7'
+				? S7_COUNT
+				: shortRunAsked(scene);
 
 /**
- * Where a short run on SwiftShader counts as far slower than usual. On CI's runners, null3D started
- * S4 in about 30 seconds, preset check included, and finished 0.3 to 0.4 frames a second. A start
- * of twice that, or a third of that frame rate, means that the page itself got slower.
+ * The most that a page may take to start on SwiftShader, by the page's name without its switches.
+ * On CI's runners S1 started in 60.9 and 63.4 seconds, so the shared figure is 90: a page that
+ * regresses from ten seconds to a minute and a half still fails it.
+ *
+ * A page earns an entry only from its own measured starts, and an entry is the last thing raised
+ * when a page drifts, never the first. The shared figure is what catches a page that got slower, so
+ * a page enters this map when its own measurements, not one slow run, show it needs the room.
+ *
+ * S3 is the one page that does. Its two pages started in 22.8, 25.2, 26.5, 43.0, 45.0 and 23.2
+ * seconds across runs, then in 70.5 and 84.8 seconds on a run where the rest of the shard was slow.
+ * The shared 90 would clear the slowest of those by six per cent, which is not the room that a run
+ * twice as slow needs.
  */
-const SWIFTSHADER_SLOWEST = { startMs: 60_000, completedFps: 0.1 };
+const SWIFTSHADER_START_MS: Readonly<Record<string, number>> = {
+	's3 on null3d-webgpu': 180_000,
+	's3 on null3d-webgpu-low': 180_000,
+};
+
+/** The most that any other page may take to start on SwiftShader. */
+const SWIFTSHADER_START_MS_DEFAULT = 90_000;
+
+/** The fewest frames a second that a short run may finish on SwiftShader. */
+const SWIFTSHADER_COMPLETED_FPS = 0.1;
 
 /** A run's frames, start time and frame rates, as one line for the log. */
 function runFigures(result: BenchReport): string {
@@ -191,28 +214,62 @@ function runFigures(result: BenchReport): string {
 	].join(', ');
 }
 
-/** Fails a run whose start or frame rate is far from the usual SwiftShader figures. */
-function expectUsualSpeed(name: string, result: BenchReport): void {
+/**
+ * Fails a run whose start or frame rate is far from the usual SwiftShader figures. `page` is the
+ * page without its switches, which its start's ceiling follows, and `name` is the run as the log
+ * and the failure name it.
+ */
+function expectUsualSpeed(page: string, name: string, result: BenchReport): void {
 	const start = result.stats?.load?.engineStartMs;
 	const fps = result.stats?.completedFps;
 	if (start !== undefined)
 		expect(start, `${name} took far longer than usual to start`).toBeLessThan(
-			SWIFTSHADER_SLOWEST.startMs,
+			SWIFTSHADER_START_MS[page] ?? SWIFTSHADER_START_MS_DEFAULT,
 		);
 	if (fps != null)
 		expect(fps, `${name} drew far fewer frames than usual`).toBeGreaterThan(
-			SWIFTSHADER_SLOWEST.completedFps,
+			SWIFTSHADER_COMPLETED_FPS,
 		);
+}
+
+/** The whole frames that a short run's second try on SwiftShader measures. */
+const SECOND_TRY_FRAMES = 5;
+
+/** How many first windows the second try spans when the first counted no frame at all. */
+const UNKNOWN_PACE_WINDOWS = 20;
+/** How many times the page's own start time the unknown-pace window spans. */
+const UNKNOWN_PACE_STARTS = 4;
+
+/**
+ * The measured seconds of a short run's second try on SwiftShader, after a first try of `seconds`
+ * that counted no frame: time for a few whole frames at the pace at which the first try finished
+ * its frames, from twice to eight times its window.
+ *
+ * A first try that finished no frame gives no pace to size by, and on the software renderer the
+ * two implementations of one scene can differ by many times — three.js's twin of a large mirrored
+ * plane draws several times slower than the engine's — so that case takes a generous ceiling, which
+ * grows with how long the page itself took to start. A page that draws nothing at all still fails
+ * on "no frame was measured" when its window ends, however long the window is.
+ */
+function secondTrySeconds(
+	seconds: number,
+	completedFps: number | null | undefined,
+	engineStartMs: number | null | undefined = null,
+): number {
+	const most = seconds * 8;
+	const fps = completedFps ?? 0;
+	if (fps > 0) return Math.min(most, Math.max(seconds * 2, Math.ceil(SECOND_TRY_FRAMES / fps)));
+	const fromStart = Math.ceil(((engineStartMs ?? 0) / 1000) * UNKNOWN_PACE_STARTS);
+	return Math.max(seconds * UNKNOWN_PACE_WINDOWS, fromStart);
 }
 
 /**
  * Runs a page's short benchmark with the switches after its seconds. A slow runner can make
  * SwiftShader take seconds over each frame, so that no frame both starts and finishes inside the
- * measured time, and the run counts none. The page then runs once more with a window long enough
- * for two whole frames at that pace: four times the time. Twice the time still fits only one frame
- * where a frame takes most of the window. Such a run prints both tries' figures as a warning, and
- * fails when either try was far slower than usual, so the second try never hides a slower page.
- * Runs on real GPUs never repeat.
+ * measured time, and the run counts none. The page then runs once more, with the same warm-up and a
+ * measured time long enough for a few whole frames at that pace (`secondTrySeconds`). Such a run
+ * prints both tries' figures as a warning, and fails when either try was far slower than usual, so
+ * the second try never hides a slower page. Runs on real GPUs never repeat.
  */
 async function runShortBenchmark(
 	page: Page,
@@ -220,23 +277,34 @@ async function runShortBenchmark(
 	kind: PageKind,
 	switches = `n=${shortRunAsked(scene)}`,
 ): Promise<BenchReport> {
-	const run = (seconds: number) =>
-		runPage<BenchReport>(page, pagePath(scene, kind, `seconds=${seconds}&${switches}`));
+	const run = (seconds: number, measure?: number) =>
+		runPage<BenchReport>(
+			page,
+			pagePath(
+				scene,
+				kind,
+				`seconds=${seconds}&${measure ? `measure=${measure}&` : ''}${switches}`,
+			),
+		);
 	const seconds = shortRunSeconds(scene, kind);
 	const first = await run(seconds);
 	if (!SWIFTSHADER) return first;
-	const name = `${scene} on ${kind} (${switches})`;
+	const pageKey = `${scene} on ${kind}`;
+	const name = `${pageKey} (${switches})`;
 	console.log(`${name} on SwiftShader: ${runFigures(first)}`);
 	if (first.frames > 0) return first;
 	test.slow();
-	// Five whole frames at the slowest pace that CI's software GPU draws these pages: a slower
-	// shard can spend four seconds on a frame that another does in two.
-	const second = await run(seconds * 8);
-	const message = `${name} counted no frame on SwiftShader in ${seconds} s, so it ran again for ${seconds * 8} s. First try: ${runFigures(first)}. Second try: ${runFigures(second)}.`;
+	const measure = secondTrySeconds(
+		seconds,
+		first.stats?.completedFps,
+		first.stats?.load?.engineStartMs,
+	);
+	const second = await run(seconds, measure);
+	const message = `${name} counted no frame on SwiftShader in ${seconds} s, so it measured again for ${measure} s. First try: ${runFigures(first)}. Second try: ${runFigures(second)}.`;
 	console.log(`::warning title=A second try on SwiftShader::${message}`);
 	test.info().annotations.push({ type: 'second try on SwiftShader', description: message });
-	expectUsualSpeed(`${name}'s first try`, first);
-	expectUsualSpeed(`${name}'s second try`, second);
+	expectUsualSpeed(pageKey, `${name}'s first try`, first);
+	expectUsualSpeed(pageKey, `${name}'s second try`, second);
 	return second;
 }
 
@@ -424,7 +492,7 @@ for (const kind of [
  */
 const S4_LOW_DRAW_CALLS = 63;
 /** The passes of S4's frames at Low: the culling, the cascades, the scene and the final pass. */
-const S4_LOW_PASSES = ['compute 1', 'render 1', 'render 2', 'render 3', 'render 4'];
+const S4_LOW_PASSES = ['compute', 'shadow cascade 0', 'shadow cascade 1', 'opaque', 'final'];
 
 function s4LowPassesTest(): void {
 	testInOwnBrowser(

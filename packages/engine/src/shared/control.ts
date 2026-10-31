@@ -3,13 +3,14 @@
 // lives in its own shared buffer, separate from WebAssembly memory, so it exists before any worker
 // has loaded the engine core.
 
-import { type LabelRegion, labelBytes, labelRegion } from './labels';
+import { type LabelRegion, labelBytes, labelRegion, setLabelCapacity3d } from './labels';
+import * as Slot from './slot';
 
 /** Int32 slots of the control block, read as `Slot.Running`. */
-export * as Slot from './slot';
+export { Slot };
 
-const SLOT_COUNT = 41;
-
+/** The Int32 slots at the start of the control block, one for every name in the slot table. */
+export const SLOT_COUNT = 60;
 /** Int32 values per input event record. */
 export const INPUT_EVENT_INTS = 8;
 /** Input events the ring holds, a power of two; older unread events are overwritten. */
@@ -95,11 +96,18 @@ export interface ControlViews {
 
 /**
  * A shared control buffer in threaded mode, or a plain one when the page is not isolated, with
- * label tables for `maxLabels` labels.
+ * label tables for `maxLabels` screen labels and `maxLabels3d` 3D labels.
  */
-export function createControlBuffer(shared: boolean, maxLabels = 0): ArrayBufferLike {
-	const bytes = CONTROL_BYTES + labelBytes(maxLabels);
-	return shared ? new SharedArrayBuffer(bytes) : new ArrayBuffer(bytes);
+export function createControlBuffer(
+	shared: boolean,
+	maxLabels = 0,
+	maxLabels3d = 0,
+): ArrayBufferLike {
+	const bytes = CONTROL_BYTES + labelBytes(maxLabels, maxLabels3d);
+	const buffer = shared ? new SharedArrayBuffer(bytes) : new ArrayBuffer(bytes);
+	// A buffer without label tables has no header to hold the 3D capacity.
+	if (bytes > CONTROL_BYTES) setLabelCapacity3d(buffer, CONTROL_BYTES, maxLabels3d);
+	return buffer;
 }
 
 /** The label tables of a control buffer, or undefined when it holds none. */
@@ -115,6 +123,46 @@ export function controlViews(buffer: ArrayBufferLike): ControlViews {
 		inputInts: new Int32Array(buffer, slotBytes, INPUT_RING_EVENTS * INPUT_EVENT_INTS),
 		inputFloats: new Float32Array(buffer, slotBytes, INPUT_RING_EVENTS * INPUT_EVENT_INTS),
 	};
+}
+
+/**
+ * Writes one input record at the ring's write index, where the sketch reads it at the start of its
+ * next frame. The page's input capture writes the user's events this way; hold mode writes a timed
+ * script's events this way, on the thread that runs the sketch.
+ *
+ * @param {ControlViews} views
+ * @param {InputEventType} type
+ * @param {number} x The pointer's distance from the canvas's left edge, or a wheel's scroll.
+ * @param {number} y The pointer's distance from the canvas's top edge, or a wheel's scroll.
+ * @param {number} code The key's number, or a mouse button's.
+ * @param {number} id The pointer's id.
+ * @param {number} buttons The pointer's buttons, as `PointerEvent.buttons` gives them.
+ * @param {number} flags The event's flags, as the `FLAG_` names give them.
+ * @param {number} frame The frame on screen at the event, in the engine's count.
+ */
+export function writeInputEvent(
+	views: ControlViews,
+	type: InputEventType,
+	x: number,
+	y: number,
+	code: number,
+	id: number,
+	buttons: number,
+	flags: number,
+	frame: number,
+): void {
+	const { slots, inputInts: ints, inputFloats: floats } = views;
+	const index = Atomics.load(slots, Slot.InputWrite);
+	const base = (index & (INPUT_RING_EVENTS - 1)) * INPUT_EVENT_INTS;
+	ints[base + FIELD_TYPE] = type;
+	ints[base + FIELD_FRAME] = frame;
+	floats[base + FIELD_X] = x;
+	floats[base + FIELD_Y] = y;
+	ints[base + FIELD_CODE] = code;
+	ints[base + FIELD_ID] = id;
+	ints[base + FIELD_BUTTONS] = buttons;
+	ints[base + FIELD_FLAGS] = flags;
+	Atomics.store(slots, Slot.InputWrite, (index + 1) | 0);
 }
 
 // The engine's frame numbers, as every thread and the core count them. The control slots hold them

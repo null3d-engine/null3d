@@ -7,7 +7,7 @@ mod common;
 
 use std::collections::HashMap;
 
-use common::{World, count};
+use common::{World, base_box, count};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
@@ -18,6 +18,7 @@ use null3d_gpu::drawlist::{
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
+use null3d_render::materials::{CustomShading, Shading, feature};
 use null3d_render::shadows::ShadowQuality;
 use null3d_render::view::ViewId;
 
@@ -27,10 +28,13 @@ const SUN: SunShadow = SunShadow {
     map_size: 1024,
     bias: 0.5,
     normal_bias: 1.0,
+    intensity: 1.0,
     distance: 60.0,
     auto: false,
     contact: 0.0,
     layers: DEFAULT_LAYERS,
+    hero: None,
+    hero_size: 0,
 };
 
 /// The common world on the WebGL2 builder, with the sun casting `shadow`. The lit box and the
@@ -443,4 +447,77 @@ fn a_batch_that_casts_lists_its_rows_in_each_cascade_and_one_that_receives_reads
             "the batch reads the shadow map"
         );
     }
+}
+
+/// A card's custom material: the standard template with the caster builds that its coverage
+/// function needs, and no vertex attributes beyond the mesh's own.
+fn card_shading() -> Shading {
+    Shading::Custom(CustomShading {
+        template: template::CUSTOM_FIRST,
+        attributes: 0,
+        base_color: true,
+        textures: 0,
+        transmission: false,
+        row_values: false,
+        caster: true,
+        object_ids: false,
+    })
+}
+
+/// Where the card stands: in the far cascade's box, about 50 m from the camera.
+const FAR_CARD: [f32; 3] = [0.0, 0.0, -30.0];
+
+/// How many of eight frames draw the far cascade, with a card of `features` at `position`.
+fn far_cascade_draws(features: u32, position: [f32; 3]) -> usize {
+    let quality = ShadowQuality {
+        filter: 3,
+        far_interval: 2,
+        follow_movers: true,
+        ..ShadowQuality::default()
+    };
+    let mut world = shadowed(SUN, true);
+    world.renderer.settings_mut().set_shadow_quality(quality);
+    let card = world.add_object_at(&base_box(), card_shading(), features, position);
+    world
+        .scene
+        .apply_commands(
+            &[Command::set_flags(
+                card,
+                flags::CAST_SHADOWS,
+                flags::CAST_SHADOWS,
+            )],
+            world.frame,
+        )
+        .unwrap();
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+    let layers: Vec<u32> = operands(&first, Op::CreateTextureView)
+        .iter()
+        .map(|view| view[0])
+        .collect();
+    let far = |commands: &[(Op, Vec<u32>)]| {
+        depth_passes(commands)
+            .iter()
+            .any(|&(target, _)| target == layers[2])
+    };
+    let mut count = usize::from(far(&first));
+    for _ in 1..8 {
+        count += usize::from(far(&world.step(&mut mock, false)));
+    }
+    count
+}
+
+#[test]
+fn a_still_card_in_a_far_cascade_leaves_its_layer_cached() {
+    let still = far_cascade_draws(feature::MOVING_VERTICES | feature::STILL_CASTER, FAR_CARD);
+    let fixed = far_cascade_draws(0, FAR_CARD);
+    let moving = far_cascade_draws(feature::MOVING_VERTICES, FAR_CARD);
+    assert_eq!(
+        still, fixed,
+        "a still card redraws the far cascade as often as a caster that never moves"
+    );
+    assert_eq!(
+        moving, 8,
+        "a moving card redraws the far cascade in every frame"
+    );
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import {
 	type ShaderVariant as EngineShaderVariant,
 	everyShader,
@@ -230,19 +231,24 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 		);
 	});
 
-	// A few of the engine's shaders, which is the scale a build tool passes: a project's own
+	// A few of the engine's small shaders, which is the scale a build tool passes: a project's own
 	// manifest. The whole engine manifest takes the module about twelve minutes, past this test's
-	// limit. `standard_maps` alone holds 11,456 builds. The shader crate's own test compares every
-	// entry of the repository through the module, one entry at a time, and the module hands an
-	// entry's answer over in pieces (`.dev/implementation-notes.md`).
-	const ENGINE_SHADERS = ['decal', 'final', 'line', 'texcoords', 'unlit', 'probe_grid'];
+	// limit. `standard_maps` alone holds 11,456 builds, and `probe_grid`, at 2.4% of the builds,
+	// would take most of this test's time. The shader crate's own test compares every entry of the
+	// repository through the module, one entry at a time, and the module hands an entry's answer
+	// over in pieces (`.dev/implementation-notes.md`).
+	const ENGINE_SHADERS = ['decal', 'final', 'line', 'texcoords', 'unlit'];
 
-	it("gives the native build's output for the engine's shaders", async () => {
-		const result = buildShaders(engineShaderInputs(ENGINE_SHADERS));
-		if (!result.ok) throw new Error(result.problems.map((p) => p.message).join('\n'));
-		const whole = await everyShader();
-		// Every name asked for is an entry of the engine's own manifest, so its variants are there.
-		const expected = Object.fromEntries(ENGINE_SHADERS.map((name) => [name, whole[name]!]));
-		expect(result.output.shaders).toEqual(expected);
-	}, 180_000);
+	it(
+		"gives the native build's output for the engine's shaders",
+		async () => {
+			const result = buildShaders(engineShaderInputs(ENGINE_SHADERS));
+			if (!result.ok) throw new Error(result.problems.map((p) => p.message).join('\n'));
+			const whole = await everyShader();
+			// Every name asked for is an entry of the engine's own manifest, so its variants are there.
+			const expected = Object.fromEntries(ENGINE_SHADERS.map((name) => [name, whole[name]!]));
+			expect(result.output.shaders).toEqual(expected);
+		},
+		scaledBudget(180_000),
+	);
 });

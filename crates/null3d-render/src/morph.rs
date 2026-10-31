@@ -232,15 +232,17 @@ impl<'a> MorphTargets<'a> {
     }
 }
 
-/// `geometry` with each vertex's morph attribute added after its other attributes: the morph
-/// attribute's location is the last.
+/// `geometry` with each vertex's record added after its other attributes: the record's location is
+/// the last. A morphed vertex's record holds its first morph-target texel and the count and
+/// attributes of its deltas, then two numbers that no morph reads.
 pub fn with_ranges(geometry: &Geometry, ranges: &[[f32; 2]]) -> Geometry {
     let stride = geometry.stride();
     let format = geometry.format | vertex::MORPH;
-    let mut vertices = Vec::with_capacity(geometry.vertices.len() + ranges.len() * 8);
+    let mut vertices = Vec::with_capacity(geometry.vertices.len() + ranges.len() * 16);
     for (v, range) in ranges.iter().enumerate() {
         vertices.extend_from_slice(&geometry.vertices[v * stride..(v + 1) * stride]);
         vertices.extend_from_slice(floats_as_bytes(range));
+        vertices.extend_from_slice(&[0u8; 8]);
     }
     Geometry {
         format,
@@ -800,7 +802,9 @@ mod tests {
         assert!(texture.size(&mut list, &meshes, true).unwrap());
         let weights = |texture: &mut MorphTexture| {
             let mut arena = UploadArena::default();
-            arena.reset(texture.upload_bound(&meshes));
+            arena
+                .reset(texture.upload_bound(&meshes))
+                .expect("room for the test's uploads");
             let mut list = DrawList::with_capacity(256);
             texture
                 .upload(&mut list, &mut arena, &morphs, None, &meshes)
@@ -865,8 +869,8 @@ mod tests {
         let g = Geometry::from_floats(0, &[1.0; 12], vec![0, 1, 0]);
         let morphed = with_ranges(&g, &[[0.0, 4.0], [1.0, 4.0]]);
         assert!(has_targets(morphed.format));
-        assert_eq!(morphed.stride(), 32);
-        assert_eq!(morphed.values(1, MORPH_LOCATION), vec![1.0, 4.0]);
+        assert_eq!(morphed.stride(), 40);
+        assert_eq!(morphed.values(1, MORPH_LOCATION), vec![1.0, 4.0, 0.0, 0.0]);
         assert_eq!(morphed.position(1), [1.0; 3]);
     }
 }

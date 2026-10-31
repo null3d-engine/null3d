@@ -3,8 +3,9 @@
 // the few places that allocate because the browser does each have a budget below. It opens the
 // null3d S1 page in Chrome, lets the browser optimize the frame code, attaches the heap profiler to
 // both workers through Chrome's debugging protocol, and samples allocations twice, a few seconds
-// each. It prints the bytes per frame of every place that allocated, and judges each place by the
-// sample where it allocated least, so an event that happens once fails no place. In each sample it
+// each. It prints the bytes per frame of every place that allocated, or the bytes per call of the
+// places whose worker counts calls, and judges each place by the sample where it allocated least,
+// so an event that happens once fails no place. In each sample it
 // sets aside one burst of objects per place: the browser makes one when it installs code that it
 // has just optimized, in whichever callback runs first, even an empty one. From the page's
 // start to the end of the samples, it moves the mouse over the canvas and presses a key and the
@@ -46,7 +47,9 @@
 // `--batch-shadows`, the rows cast with the material's own caster builds. `--levels` gives S1's
 // boxes levels of detail, so each frame picks a level for every row, and fades rows between two.
 // `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
-// changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
+// changes a uniform of each every frame. `--canvas` follows an OffscreenCanvas with a texture and
+// refreshes a rectangle of it every frame, so the sample holds the browser's image data and the
+// upload that the refresh makes. `--environment` lights S1 with the built-in room, and
 // turns it and changes its intensity every frame. `--probes` sets a small light probe grid over
 // S1, so the lit draws take the grid's templates and read it three times a pixel. `--hemisphere`
 // adds two hemisphere lights to S1,
@@ -81,7 +84,9 @@
 // uniform every frame, and keeps the pass on with `render.setPassEnabled` in every frame.
 // `--terrain` puts the terrain add-on's ground under S1, whose quadtree
 // follows the orbiting camera in every frame. `--impostors` puts a field of the impostors add-on's
-// cards around S1, which pick their views from the camera in every frame. `--inertial` makes the
+// cards around S1, which pick their views from the camera in every frame. `--splats` puts a cloud
+// of the splats add-on's Gaussians above S1, whose chunks a job worker selects for the camera's
+// position in every frame, through the engine's public task hook. `--inertial` makes the
 // animated characters that play one clip switch clips by inertial transitions, with 64 characters
 // unless `--animated` names a count. `--calls` makes, every frame, the
 // calls whose docs promise no allocation and that no other switch makes: a raycast, a mesh's vertex
@@ -91,10 +96,10 @@
 // that the first `timeOfDay` call made, for the allocation sample of the helper's per-frame form.
 // `--prepass` turns the depth prepass on, in any scene.
 // `--terrain` and `--impostors` fail the check while their add-ons stand as they are: measured on
-// the Mac on 15 October 2026, the terrain's update allocated 1908 bytes per frame in the heightfield
-// sampling, 1871 in the chunks it evicts and 1163 more in the same sampling, about 5 KB in all, and
-// the impostors' batch update allocated 187 KB per frame with 23 KB in the sampling beside it. Both
-// add-ons must stop allocating in their per-frame update, which their owners owe.
+// the Mac, the terrain's update allocates 1908 bytes per frame in the heightfield sampling, 1871 in
+// the chunks it evicts and 1163 more in the same sampling, about 5 KB in all, and the impostors'
+// batch update allocates 187 KB per frame with 23 KB in the sampling beside it. Both add-ons must
+// stop allocating in their per-frame update, which their owners owe.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -155,6 +160,7 @@
 //   bun run bench:allocation --atmosphere --gpu webgl2
 //   bun run bench:allocation --terrain --gpu webgl2
 //   bun run bench:allocation --impostors --gpu webgl2
+//   bun run bench:allocation --splats --gpu webgl2
 //   bun run bench:allocation --inertial --gpu webgl2
 //   bun run bench:allocation --time-of-day
 //   bun run bench:allocation --calls --gpu webgl2
@@ -165,16 +171,19 @@ import {
 	launchChromium,
 	SWIFTSHADER_ARGS,
 } from '../packages/cli/src/browser.js';
-import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
-import { DEBUG_PORT } from '../tests/lib/server.ts';
+import { HeapSampler } from '../packages/cli/src/devtools.js';
 import {
-	type HeapProfile,
+	countIn,
 	type ProfileNode,
+	perCall,
 	profilePlaces,
 	type Sample,
 	steadyPlaces,
 	totalSize,
-} from './lib/allocation';
+} from '../packages/cli/src/heap-profile.js';
+import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
+import { DEBUG_PORT } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { attachWorkers, DevTools, evaluate, pagesAt, sleep, within } from './lib/devtools';
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
@@ -201,6 +210,12 @@ const WARMUP_FRAMES = 3600;
  * engine code whatever the count.
  */
 const SWIFTSHADER_COUNT = 1000;
+/**
+ * The pixel ratio that S1 draws at on SwiftShader, which shades every pixel on the processor: half
+ * the protocol's, so a frame shades a quarter of the pixels and the warm-up reaches its frames
+ * sooner. A frame's engine code is the same at any size.
+ */
+const SWIFTSHADER_PIXEL_RATIO = 0.5;
 /**
  * On SwiftShader the browser's compilers take a function after fewer calls, so a shorter warm-up
  * reaches the code that a long one reaches. At 3,600 frames the warm-up took 8 to 18 minutes on
@@ -229,14 +244,15 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  * most bytes per frame each may allocate:
  * - frame timers, which get a new number object from the browser's clock at each reading;
  * - the sketch worker's frame wait in the frame loop, which the runner holds: the result and promise
- *   of `Atomics.waitAsync`, the await on that promise, and settling it between tasks;
+ *   of `Atomics.waitAsync`, the await on that promise, and settling it between tasks. The browser
+ *   counts the wait's objects in `slotChange` or in `runPipelined` as it inlines that call, so the
+ *   check counts both places in the loop (`COUNTED_IN_CALLER`), whose budget holds one wait a frame;
  * - the render worker's WebGPU objects: the command encoder, the passes, the command buffer, and
  *   the canvas texture and its view. Each render pass adds its encoder, about 17 bytes. S4's two
  *   shadow passes and nine more uploads per frame put its replay 46 to 48 bytes above S1's. The
- *   canvas hands out a new texture each frame, so the view of it must be made each frame too. The
- *   backend's `colorView` makes it, and the browser counts it there, about 34 bytes on S1. Where
- *   the browser does not inline `targetView` into it, as on SwiftShader's short warm-up, it counts
- *   the view in `targetView` instead;
+ *   canvas hands out a new texture each frame, so the view of it must be made each frame too, about
+ *   34 bytes on S1. The backend's `colorView` and `targetView` make them, and the check counts both
+ *   in the replay that calls them (`COUNTED_IN_CALLER`), whose budget holds them;
  * - the completion tracker's object for each frame: the queue's promise and its reaction on WebGPU,
  *   which the browser counts in the renderer's `drawFrame` where it inlines the tracker, or the fence
  *   on WebGL2. After a few minutes the browser compiles the render loop's `draw` with `drawFrame`
@@ -255,8 +271,6 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  * - the sketch worker's reading of pointer events. It runs at the input's rate, not the frame's,
  *   so the browser may keep it in a lower tier, where each fraction it computes is a new number.
  *   With a mouse move about every third frame, S5 and S6 took 2 to 11 bytes per frame there.
- * - the wake path's slot change, which the sketch worker reads each frame: measured on the Mac at
- *   High on 15 October 2026, it took 17.5 bytes per frame, up to 19.7;
  * - the frame's pending reads, which the render worker maps after it submits: each read makes a
  *   promise with its reactions, about 18 bytes, and S1 reads once a frame, so it took 18.2 bytes
  *   per frame, up to 20.4.
@@ -265,17 +279,15 @@ export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> =
 	'sketch-worker': {
 		'frame sketch/runner.ts': 240,
 		'runPipelined sketch/runner.ts': 128,
-		'slotChange shared/wake.ts': 20,
 		'(IDLE)': 96,
 		'(anonymous) null3d/sketch-common.ts': 48,
 		'views scene/scene.ts': 16,
 		'onPointer sketch/input.ts': 16,
 	},
 	'render-worker': {
-		'replay webgpu/backend.ts': 320,
+		// The passes' objects, and the canvas texture and its view at 48.
+		'replay webgpu/backend.ts': 368,
 		'commandEncoder webgpu/backend.ts': 32,
-		'colorView webgpu/backend.ts': 48,
-		'targetView webgpu/backend.ts': 48,
 		'draw render/loop.ts': 64,
 		'drawFrame render/webgpu-renderers.ts': 192,
 		'drawFrame render/webgl2-renderers.ts': 192,
@@ -378,6 +390,26 @@ const PROBE_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = 
 };
 
 /**
+ * Places that allocate with `--wind`, on top of `BUDGETS`: the browser's boxing of a fraction that
+ * one of the wind's functions works out and passes to another that it does not inline. S1's frame
+ * both runs the field's sample and inlines the large `pose` of the page, so the browser's inlining
+ * budget runs out before the field's small functions, and each fraction they hand on becomes an
+ * object. The places are the functions that receive and hand on the fractions, as the engine's own
+ * setters and S1's camera step do, and not the field's arrays or its ring, which are made once.
+ */
+export const WIND_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+	'sketch-worker': {
+		'analyticVelocity src/analytic.ts': 224,
+		'value3 src/analytic.ts': 48,
+		'lattice src/analytic.ts': 48,
+		'(anonymous) null3d/addons.ts': 32,
+		'sample src/wind.ts': 12,
+		'owedSteps src/wind.ts': 12,
+	},
+	'render-worker': {},
+};
+
+/**
  * Places that allocate with `--calls`, on top of `BUDGETS`: the sketch's own step, which makes the
  * calls that the engine's docs promise allocate nothing, and the figure places that its read of
  * `debug.frameStats` turns on, which are `STATS_BUDGETS`'.
@@ -395,6 +427,24 @@ export const CALLS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, numb
 export const DAY_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {},
 	'render-worker': {},
+};
+
+/**
+ * Places that allocate with `--canvas`, on top of `BUDGETS`: the browser's image data for the
+ * rectangle and the copy of it into engine memory, which the profiler attributes to the copy at
+ * each read, and the render passes that make the texture's mip levels again. In some runs the
+ * browser counts the image data in `refresh` instead, where it inlines the copy, so the check
+ * counts both places in `setRegion` (`COUNTED_IN_CALLER`) and this budget holds their sum. The
+ * refresh adds no place of its own, and the sketch changes one rectangle object in place, so the
+ * sample holds the browser's and the engine's work alone. Measured, the copy reads 145.1 bytes per
+ * frame on the Mac's WebGPU path, 140.7 on its WebGL2 and 131.3 on CI's SwiftShader, with the
+ * image data's 10.8 to 19.5 bytes on `refresh` in the runs that counted it there; the mip levels
+ * read 169.5 on the Mac's WebGPU path and 165.9 on SwiftShader, whose windows reach 202.7, and
+ * WebGL2 makes them without a render pass.
+ */
+export const CANVAS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+	'sketch-worker': { 'setRegion scene/textures.ts': 192 },
+	'render-worker': { 'generateMipmaps webgpu/backend.ts': 224 },
 };
 
 /**
@@ -434,12 +484,48 @@ const OTHER_BUDGET = 4;
  * frames, and the bytes each may allocate per call. The browser calls the render worker at the
  * display's rate, so a slow GPU steps fewer frames per call: on SwiftShader a frame that takes a
  * second takes about 50 calls, and the browser's own per-call objects then weigh about 50 times as
- * much per frame. On 20 October 2026 two runs read 865 and 965 bytes per frame at (IDLE) and 470
- * and 560 at (JS), while a run of the same code whose warm-up was 2.6 times faster read 698 in all.
+ * much per frame. Two runs read 865 and 965 bytes per frame at (IDLE) and 470 and 560 at (JS),
+ * while a run of the same code whose warm-up was 2.6 times faster read 698 in all.
  * Judging these two per call removes the runner's speed from the figure. The budgets equal the
  * per-frame budgets of a real GPU, where each call draws one frame.
  */
 const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 24 };
+
+/**
+ * Places on the sketch worker that allocate at each task call rather than at each frame, and the
+ * bytes each may allocate per call. A task's input and answer cross to a job worker and back as
+ * messages, and its promise settles between frames, so the engine's loader makes the browser's
+ * message and promise objects at each call, in `shared/tasks.ts`. The add-on's own code makes one
+ * promise for its `then`, which is `choose` here. A slow GPU steps fewer frames per task call, as on
+ * SwiftShader, so judging per frame would weigh one call many times; the check counts the thread's
+ * tasks (`__null3dTaskCalls`) and judges these places per call. The frame step itself carries the
+ * ask on SwiftShader, which keeps its sketch in the browser's middle tier: the profiler then charges
+ * a call's promise objects to the inlined frame step, `pose`, where the Mac charges them to the
+ * loader's places. So `pose` is judged per call here too. The figures come from the Mac's WebGL2 run
+ * and SwiftShader runs with `--splats` and the task asked about once a frame, with room above them.
+ * The add-on's frame step makes no array and no number object.
+ */
+const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
+	'pose null3d/s1-sketch.ts': 128,
+	'run shared/tasks.ts': 560,
+	'n.onmessage shared/tasks.ts': 240,
+	'Promise (built-in)': 160,
+	'delete (built-in)': 130,
+	'leastBusy shared/tasks.ts': 100,
+	'choose src/system.ts': 64,
+	'select src/select.ts': 64,
+	'runTask shared/run-task.ts': 64,
+	'(anonymous) shared/tasks.ts': 48,
+	'(JS)': 48,
+	'(V8 API)': 32,
+	'values (built-in)': 16,
+	'next (built-in)': 16,
+};
+
+/** The budget of `place` per call in `worker`, or undefined where the worker judges it per frame. */
+function callBudgetFor(worker: string, place: string): number | undefined {
+	return worker === 'render-worker' ? CALL_BUDGETS[place] : TASK_CALL_BUDGETS[place];
+}
 
 /**
  * The budget of `place` in `worker` for a run: the tables' figure, SwiftShader's own where it has
@@ -461,15 +547,40 @@ export function placeBudget(
 /** The place of the WebGPU replay, which makes the browser's objects of each pass. */
 const REPLAY = 'replay webgpu/backend.ts';
 
+/**
+ * Functions whose objects the check counts in their caller's place. The browser counts an object in
+ * the function that makes it, or in the caller where it inlines that function, so a change to the
+ * code's inlining moves the bytes between the two while their sum holds. Counted in the caller,
+ * they read the same whichever way the inlining fell.
+ *
+ * The canvas texture and its view moved between `colorView` and the replay from run to run: in five
+ * runs on SwiftShader, `colorView` read 7.3 to 52.8 bytes per frame and the replay 76.8 to 100.8,
+ * their sum 101.5 to 129.6. With samples of 420 frames, `colorView` read 30.5.
+ *
+ * The frame wait's result and promise move between `slotChange` and the frame loop that awaits
+ * them: readings put 20.4 and 56.2 bytes per frame at the two places, and 45.6 and 33.6 with a
+ * counter in the wait, while their sums held at 76.6 and 79.2.
+ *
+ * The canvas read's image data moves the same way: the browser may count it in `refresh` where it
+ * inlines the region's copy into the caller. Counted in `setRegion`, the two read the same
+ * whichever way the inlining falls, and the canvas budget holds their sum.
+ */
+export const COUNTED_IN_CALLER: ReadonlyMap<string, string> = new Map([
+	['colorView webgpu/backend.ts', REPLAY],
+	['targetView webgpu/backend.ts', REPLAY],
+	['slotChange shared/wake.ts', 'runPipelined sketch/runner.ts'],
+	['refresh scene/textures.ts', 'setRegion scene/textures.ts'],
+]);
+
 /** Budgets of places by worker, in bytes per frame. */
 type WorkerBudgets = Partial<Record<(typeof WORKERS)[number], Record<string, number>>>;
 
 /**
  * The bytes per frame that the WebGPU replay may allocate for each render pass or compute pass that
  * a switch or a scene adds on top of S1's: the browser's encoder of the pass, which it makes for
- * each pass. Measured on the Mac at High: (2026-10-15) the pass-heavy switches added 25.5 to 34.4
- * bytes per pass over S1's own figure — 24 for `--tile-shadows`, 28 for `--bloom`, 26 for `--dof`,
- * 34 for `--fog` and 25 for `--passes` — so 32 covers them with room for sampling noise.
+ * each pass. Measured on the Mac at High, the pass-heavy switches add 25.5 to 34.4 bytes per pass
+ * over S1's own figure: 24 for `--tile-shadows`, 28 for `--bloom`, 26 for `--dof`, 34 for `--fog`
+ * and 25 for `--passes`. So 32 covers them with room for sampling noise.
  */
 const PASS_REPLAY_BYTES = 32;
 
@@ -509,8 +620,8 @@ const SSR_BUDGETS: WorkerBudgets = {
 
 /**
  * What `--weighted` writes through the staging ring each frame: the blended rows' weights, which the
- * page uploads as its rows move. Measured on the Mac on 15 October 2026: the write took 123.5 bytes
- * per frame against the 96 that a page without the switch takes, up to 124.1.
+ * page uploads as its rows move. Measured on the Mac: the write takes 123.5 bytes per frame
+ * against the 96 that a page without the switch takes, up to 124.1.
  */
 const WEIGHTED_BUDGETS: WorkerBudgets = {
 	'render-worker': { 'write webgpu/staging.ts': 32 },
@@ -522,6 +633,8 @@ interface PageSwitch {
 	flag: string;
 	/** What the flag adds to the page's address. */
 	query: string;
+	/** What the flag adds to the page's address on SwiftShader, where a smaller scene runs. */
+	swiftShaderQuery?: string;
 	/** The render passes and compute passes that it adds to each WebGPU frame, if any. */
 	passes?: number;
 	/** What it allocates on top of `BUDGETS` beyond its passes, by place. */
@@ -550,8 +663,12 @@ interface PageSwitch {
  * - `--transmission`: the pass that copies the opaque color, with the passes of its mip levels;
  * - `--ssr`: the depth prepass, the depth copy, the six levels of the depth pyramid, the trace and
  *   the copy of the opaque colors, with the passes of the copy's mip levels;
+ * - `--wind`: the wind add-on's field, one compute pass that fills its grid;
  * - `--particles`: the pass that copies the opaque depth for the soft particles;
  * - `--decals`: the decal pass;
+ * - `--splats`: the pass that copies the opaque depth, which the splats' soft mix with meshes reads.
+ *   On SwiftShader the switch names a smaller cloud, 12,000 splats of which 4,800 draw, because
+ *   the software renderer draws the blended cards slowly. The selection's code is the same.
  * - `--passes`: the full-screen pass and the effect's pass;
  * - `--prepass`: the depth prepass.
  */
@@ -581,6 +698,7 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--area-lights', query: '&areaLights' },
 	{ flag: '--setters', query: '&setters', budgets: SETTER_BUDGETS },
 	{ flag: '--effects', query: '&effects', passes: 2 },
+	{ flag: '--canvas', query: '&canvas', budgets: CANVAS_BUDGETS },
 	{ flag: '--sky', query: '&sky' },
 	{ flag: '--sky-environment', query: '&sky=light', budgets: SKY_ENVIRONMENT_BUDGETS },
 	{ flag: '--atmosphere', query: '&sky=physical' },
@@ -613,6 +731,9 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--passes', query: '&passes', passes: 2 },
 	{ flag: '--terrain', query: '&terrain' },
 	{ flag: '--impostors', query: '&impostors' },
+	{ flag: '--splats', query: '&splats', swiftShaderQuery: '&splats=12000', passes: 1 },
+	// The wind's field: one compute pass that fills its grid.
+	{ flag: '--wind', query: '&wind', passes: 1, budgets: WIND_BUDGETS },
 	{ flag: '--inertial', query: '&inertial' },
 	{ flag: '--calls', query: '&calls', budgets: CALLS_BUDGETS },
 	{ flag: '--time-of-day', query: '&timeOfDay', budgets: DAY_BUDGETS },
@@ -726,6 +847,7 @@ async function reachFrames(frames: () => Promise<number>, target: number): Promi
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The allocation check');
 	const args = process.argv.slice(2);
 	const option = (name: string, fallback: number) => {
 		const at = args.indexOf(name);
@@ -792,7 +914,7 @@ async function main(): Promise<void> {
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples
 		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
-		const query = `keep&n=${n}${counts}${chosen.map((choice) => choice.query).join('')}${swiftShader ? '&frames' : ''}`;
+		const query = `keep&n=${n}${counts}${chosen.map((choice) => (swiftShader ? (choice.swiftShaderQuery ?? choice.query) : choice.query)).join('')}${swiftShader ? `&frames&maxPixelRatio=${SWIFTSHADER_PIXEL_RATIO}` : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
@@ -841,6 +963,20 @@ async function main(): Promise<void> {
 				'globalThis.__null3dBrowserCalls?.() ?? null',
 			).catch(() => null);
 		};
+		/**
+		 * The sketch worker's count of the tasks that it has run so far, or null where the engine
+		 * gives none. The check judges a task's own places per call, so a frame that runs many tasks,
+		 * as on SwiftShader, does not weigh them many times.
+		 */
+		const tasksSoFar = async (): Promise<number | null> => {
+			const session = sessions.get('sketch-worker');
+			if (!session) return null;
+			return evaluate<number | null>(
+				devtools,
+				session,
+				'globalThis.__null3dTaskCalls?.() ?? null',
+			).catch(() => null);
+		};
 		const devtools = await DevTools.connect(DEBUG_PORT);
 		const [target] = await pagesAt(devtools, url);
 		if (!target) throw new Error(`no page target for ${url}`);
@@ -863,59 +999,36 @@ async function main(): Promise<void> {
 		console.log(
 			`Warmed up: ${await framesSoFar()} frames in ${((performance.now() - warmupStart) / 1000).toFixed(0)} s`,
 		);
-		for (const [name, sessionId] of sessions)
-			await within(
-				devtools.send('HeapProfiler.enable', {}, sessionId),
-				STEP_MS,
-				`enabling the heap profiler in the ${name}`,
-			);
+		const sampler = new HeapSampler(devtools, sessions);
+		await sampler.enable();
 		const stepsBefore = driven.steps;
 		const samples = new Map<string, Sample[]>();
 		const bytes = new Map<string, number>();
 		let frames = 0;
 		for (let k = 0; k < SAMPLES; k++) {
-			for (const [name, sessionId] of sessions) {
-				// The profiler keeps the samples of objects that garbage collection frees, which
-				// per-frame garbage is; by default it reports only objects still alive when sampling
-				// stops.
-				await within(
-					devtools.send(
-						'HeapProfiler.startSampling',
-						{
-							samplingInterval: SAMPLING_INTERVAL,
-							includeObjectsCollectedByMajorGC: true,
-							includeObjectsCollectedByMinorGC: true,
-						},
-						sessionId,
-					),
-					STEP_MS,
-					`starting sample ${k + 1} in the ${name}`,
-				);
-			}
+			await sampler.start(SAMPLING_INTERVAL);
 			const startFrames = await framesSoFar();
 			const startCalls = await callsSoFar();
+			const startTasks = await tasksSoFar();
 			await sleep(seconds * 1000);
-			const profiles = new Map<string, HeapProfile>();
-			for (const [name, sessionId] of sessions) {
-				const { profile } = await within(
-					devtools.send<{ profile: HeapProfile }>('HeapProfiler.stopSampling', {}, sessionId),
-					STEP_MS,
-					`stopping sample ${k + 1} in the ${name}`,
-				);
+			const profiles = await sampler.stop();
+			for (const profile of profiles.values())
 				if (server.names) nameNodes(profile.head, server.names);
-				profiles.set(name, profile);
-			}
 			const sampleFrames = (await framesSoFar()) - startFrames;
 			const endCalls = await callsSoFar();
+			const endTasks = await tasksSoFar();
 			frames += sampleFrames;
 			const calls = startCalls === null || endCalls === null ? undefined : endCalls - startCalls;
+			const tasks = startTasks === null || endTasks === null ? undefined : endTasks - startTasks;
 			for (const [name, profile] of profiles) {
+				// Each worker counts the calls that its own places are judged by.
+				const counted = name === 'sketch-worker' ? tasks : calls;
 				samples.set(name, [
 					...(samples.get(name) ?? []),
 					{
 						places: profilePlaces(profile),
 						frames: sampleFrames,
-						...(calls !== undefined && { calls }),
+						...(counted !== undefined && { calls: counted }),
 					},
 				]);
 				bytes.set(name, (bytes.get(name) ?? 0) + totalSize(profile.head));
@@ -934,7 +1047,7 @@ async function main(): Promise<void> {
 			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${chosen.map(({ flag }) => ` ${flag}`).join('')}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames, ${inputSteps} input steps`,
 		);
 		console.log(
-			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
+			'Bytes per frame, or per call where the worker counts calls, in the sample where each place allocated least, its budget, and the most:',
 		);
 		// The passes that the switches add to each WebGPU frame, with the contact shadows' passes when
 		// the rows cast the sun's shadows and ambient occlusion does not run the same steps already.
@@ -957,7 +1070,9 @@ async function main(): Promise<void> {
 			// Each worker allocates in every frame, the sketch worker's frame wait and the replay's
 			// browser objects at least. A worker whose samples hold nothing was not sampled at all.
 			if (!bytes.get(worker)) unsampled.push(worker);
-			for (const [name, { perFrame, most, callers }] of steadyPlaces(workerSamples)) {
+			for (const [name, { perFrame, most, callers }] of steadyPlaces(
+				countIn(workerSamples, COUNTED_IN_CALLER),
+			)) {
 				const extra =
 					(name === REPLAY ? replayPasses * PASS_REPLAY_BYTES : 0) +
 					switchBudgets.reduce(
@@ -965,8 +1080,17 @@ async function main(): Promise<void> {
 						0,
 					) +
 					(sceneBudgets[name] ?? 0);
-				// Only the render worker counts the browser's calls, so only its places are judged so.
-				const callBudget = worker === 'render-worker' ? CALL_BUDGETS[name] : undefined;
+				// The render worker's browser calls and the sketch worker's tasks judge their own places.
+				const callBudget = callBudgetFor(worker, name);
+				if (callBudget !== undefined && worker === 'sketch-worker') {
+					const measured = perCall(workerSamples, name);
+					const figure = measured?.perCall ?? 0;
+					if (figure > callBudget) over.push(`${worker}: ${name}`);
+					console.log(
+						`  ${figure.toFixed(1).padStart(6)} of ${String(callBudget).padStart(3)} per call, ${String(measured?.calls ?? 0).padStart(4)} calls  ${name}${callers ? ` < ${callers}` : ''}`,
+					);
+					continue;
+				}
 				if (callBudget !== undefined && callsPerFrame !== null) {
 					const perCall = perFrame / callsPerFrame;
 					if (perCall > callBudget) over.push(`${worker}: ${name}`);
