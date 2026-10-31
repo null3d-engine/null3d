@@ -158,7 +158,18 @@ export class ParticleSystem {
 	/** False to stop emitting, as the rate and the bursts say; live particles live out their lives. */
 	emitting = true;
 	/** Seconds since the system started, as `update` adds them up. */
-	time = 0;
+	get time(): number {
+		return this.started[0] as number;
+	}
+
+	set time(value: number) {
+		this.started[0] = value;
+	}
+
+	/** The system's time in a typed array, so a frame's write to it is no boxed number. */
+	private readonly started = new Float64Array(1);
+	/** True once the system has run a frame or taken a burst, so a prewarm is decided once. */
+	private startedOnce = false;
 	private readonly lifetime: readonly [number, number];
 	private readonly options: ParticleSystemOptions;
 	/** True once the system is destroyed, so a parent's events skip it. */
@@ -226,12 +237,13 @@ export class ParticleSystem {
 	update(dt?: number): void {
 		const step = dt ?? this.clock.dt;
 		let prewarm = false;
-		if (this.time === 0 && this.buffer.emitted === 0 && this.options.prewarm) {
+		if (!this.startedOnce && this.started[0] === 0 && this.options.prewarm) {
 			// A prewarmed system emits its first span of the longest lifetime at once.
 			prewarm = true;
-			this.time = this.lifetime[1];
+			this.started[0] = this.lifetime[1];
 		}
-		const from = this.time;
+		this.startedOnce = true;
+		const from = this.started[0] as number;
 		const to = from + Math.max(step, 0);
 		this.readFollow();
 		this.readEvents();
@@ -242,7 +254,7 @@ export class ParticleSystem {
 		frame[3] = this.emitting ? 1 : 0;
 		frame[4] = prewarm ? 1 : 0;
 		this.buffer.emitFrame(frame);
-		this.time = to;
+		this.started[0] = to;
 	}
 
 	/**
@@ -251,6 +263,7 @@ export class ParticleSystem {
 	 * the system's `velocity` option. The core writes the records.
 	 */
 	burst(count: number, at?: Vec3Like, velocity?: Vec3Like): void {
+		this.startedOnce = true;
 		this.buffer.emitBurst(count, at, velocity);
 	}
 
