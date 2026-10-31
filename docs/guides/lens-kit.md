@@ -108,10 +108,12 @@ The grade and the vignette run inside the final pass and add no pass of their ow
 the whole canvas's render scale adds the first step of the two-step pass, as any `sharpen` value
 does. Below the whole canvas's render scale, effects do not join passes, so each draws one.
 
-On a MacBook Pro with an M3 Max, at a canvas of 3840 by 2160 CSS pixels with the pixel ratio held
-at 2, which draws 33 megapixels, the whole look costs about 3 to 4 ms of GPU time a frame. The cost
-follows the pixels: a megapixel costs about a tenth of a millisecond. The add-on's README holds the
-figure at each preset and for each mark.
+On a MacBook Pro with an M3 Max, the canvas is 3840 by 2160 CSS pixels with the pixel ratio held at
+2. That draws 33 megapixels. There the whole look costs about 3 to 4 ms of GPU time a frame, on
+WebGPU and in compatibility mode. The cost follows the pixels: a megapixel costs about a tenth of
+a millisecond. WebGL2 keeps no figure for the whole look, because its cleared frame moves by more
+than the look there. Its marks stand instead. The add-on's README holds the figure at each preset
+and for each mark.
 
 ## Limits
 
