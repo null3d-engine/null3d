@@ -2374,7 +2374,7 @@ const WARM_UP_TIMEOUT_SECONDS = 90;
 
 /** Each benchmark scene's count on its own page. */
 /** The sketches whose warm-up the plan times: each benchmark scene at its own count, then each demo. */
-function warmUpSketches(): { scene: string; sketch: string }[] {
+export function warmUpSketches(): { scene: string; sketch: string }[] {
 	return [
 		...(Object.keys(SCENE_COUNTS) as BenchScene[]).map((scene) => ({
 			scene,

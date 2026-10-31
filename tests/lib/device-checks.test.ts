@@ -3,7 +3,6 @@
 // choice of pages from the checks plan.
 import { describe, expect, it } from 'bun:test';
 import type { SoakMinute, SoakReport } from '../../bench/pages/lib/device-soak.ts';
-import { DEMOS } from '../../examples/demos.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { readGrowthSwitches, WASM_MOST_MIB } from '../pages/lib/tab-memory.ts';
 import { parseArgs, planItems } from '../real-browsers.ts';
@@ -22,6 +21,7 @@ import {
 	soakSummary,
 	tabMemoryPlan,
 	tabMemorySummary,
+	warmUpSketches,
 	warmUpTimePlan,
 	warmUpTimeSummary,
 } from './plans.ts';
@@ -405,7 +405,7 @@ describe('the warm-up time plan', () => {
 	const items = warmUpTimePlan();
 
 	it('loads each scene and demo on each path twice with fresh shaders, then twice as they ship', () => {
-		expect(items).toHaveLength(2 * (8 + DEMOS.length) * 4);
+		expect(items).toHaveLength(2 * warmUpSketches().length * 4);
 		expect(items.slice(0, 4).map((item) => item.id)).toEqual([
 			'warm-up-s1-webgpu-fresh-1',
 			'warm-up-s1-webgpu-fresh-2',
