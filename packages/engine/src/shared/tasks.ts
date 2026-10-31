@@ -18,6 +18,7 @@ import { onEngineStop } from './helper-workers';
 import { TaskFailure } from './task-failure';
 import { type JobTaskHost, jobTasks, taskTakers } from './task-host';
 import { moduleKey } from './task-modules';
+import { taskEnded, taskStarted } from './task-pending';
 import { compileWasm, type WasmError } from './wasm';
 import { bootstrapFailure, spawnWorker, watchWorkerError } from './worker-start';
 
@@ -107,8 +108,6 @@ interface Waiting {
 
 /** The task's compiled modules, which a task without WebAssembly matches. */
 const NO_MODULES: readonly WebAssembly.Module[] = [];
-/** The modules that a runner lacks, for a task without WebAssembly. */
-const NO_NEW_MODULES: readonly [string, WebAssembly.Module][] = [];
 /** A waiting record's settle function before a task fills it. */
 const NO_SETTLE = (): void => {};
 
@@ -141,14 +140,30 @@ class Runners {
 		error: WasmError,
 	): Promise<unknown> {
 		const files = task.wasm;
+		// One WebAssembly file is the usual case, and it needs no array, no map and no Promise.all.
+		const alone = files?.length === 1 ? files[0] : undefined;
+		const aloneModule = alone === undefined ? undefined : await compileOnce(alone, error);
 		const modules =
-			files && files.length > 0
-				? await Promise.all(files.map((file) => compileOnce(file, error)))
-				: NO_MODULES;
-		if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
+			alone !== undefined
+				? NO_MODULES
+				: files && files.length > 0
+					? await Promise.all(files.map((file) => compileOnce(file, error)))
+					: NO_MODULES;
+		// The files are compiled above, so a file that fails to load throws before the count starts.
+		// The count starts here, where the task is about to reach a worker, and `answer` or `end`
+		// clears it: hold mode then knows when every task that the sketch asked for has written
+		// what it draws.
+		taskStarted();
+		if (this.ended) {
+			taskEnded();
+			throw new TaskFailure('stopped', 'the engine stopped');
+		}
 		const starting = this.starting();
 		if (starting) await starting;
-		if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
+		if (this.ended) {
+			taskEnded();
+			throw new TaskFailure('stopped', 'the engine stopped');
+		}
 		const runner = this.leastBusy(error);
 		const id = ++this.next;
 		let request = runner.request;
@@ -161,17 +176,25 @@ class Runners {
 		request.input = input;
 		const script = task.script?.href;
 		request.script = script;
-		const newModules =
-			files && files.length > 0
-				? files.flatMap((file, k) =>
-						runner.modules.has(moduleKey(script, file.name))
-							? []
-							: [[moduleKey(script, file.name), modules[k]] as [string, WebAssembly.Module]],
-					)
-				: NO_NEW_MODULES;
-		request.modules =
-			newModules.length > 0 ? (newModules as [string, WebAssembly.Module][]) : undefined;
-		for (const [key] of newModules) runner.modules.add(key);
+		let newModules: [string, WebAssembly.Module][] | undefined;
+		if (alone !== undefined) {
+			const key = moduleKey(script, alone.name);
+			if (!runner.modules.has(key)) {
+				newModules = [[key, aloneModule as WebAssembly.Module]];
+				runner.modules.add(key);
+			}
+		} else if (files && files.length > 0) {
+			const added = files.flatMap((file, k) =>
+				runner.modules.has(moduleKey(script, file.name))
+					? []
+					: [[moduleKey(script, file.name), modules[k]] as [string, WebAssembly.Module]],
+			);
+			if (added.length > 0) {
+				newModules = added;
+				for (const [key] of added) runner.modules.add(key);
+			}
+		}
+		request.modules = newModules;
 		runner.running++;
 		taskCalls++;
 		const waiting = this.free.pop() ?? { resolve: NO_SETTLE, reject: NO_SETTLE, runner };
@@ -213,8 +236,13 @@ class Runners {
 
 	private leastBusy(error: WasmError): Runner {
 		this.runners ??= this.start(error);
-		let best = this.runners[0] as Runner;
-		for (const runner of this.runners) if (runner.running < best.running) best = runner;
+		const runners = this.runners;
+		let best = runners[0] as Runner;
+		// An index walk, because a `for...of` makes an iterator result for each of these runners.
+		for (let i = 1; i < runners.length; i++) {
+			const runner = runners[i] as Runner;
+			if (runner.running < best.running) best = runner;
+		}
 		// While every job worker has a task, the tasks ask for twice the job workers.
 		if (best.running > 0 && this.host) best = this.addJobRunners(this.host) ?? best;
 		return best;
@@ -289,6 +317,7 @@ class Runners {
 		const waiting = this.waiting.get(answer.id);
 		if (!waiting) return;
 		this.waiting.delete(answer.id);
+		taskEnded();
 		waiting.runner.running--;
 		if ('failed' in answer)
 			waiting.reject(new TaskFailure(answer.failed.stage, answer.failed.message));
@@ -331,7 +360,10 @@ class Runners {
 	/** Forgets these runners, so a later task starts afresh, and fails every waiting task. */
 	private end(reason: Error): void {
 		this.stopped();
-		for (const { reject } of this.waiting.values()) reject(reason);
+		for (const { reject } of this.waiting.values()) {
+			taskEnded();
+			reject(reason);
+		}
 		this.waiting.clear();
 	}
 }
