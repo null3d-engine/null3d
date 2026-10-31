@@ -99,6 +99,37 @@ This section says what wind driven by bones takes in null3D, and whether it is b
 
 No source gives phone figures for either method on the web. So M3-V10 builds branch poses beside the per-vertex wind of M3-V7 and measures both on the Mac, the iPad and an S24-class phone. The owner then picks the trees' default from the figures.
 
+## Wind by branch poses, built and measured
+
+M3-V10 builds the pass that "Wind by bones" asks for, and measures it beside the per-vertex sway.
+
+**What a page gives it.** A page makes the pass for a variant with `plantPoses`, and gives it the
+copies of that variant that the scene places and the most of them that stand within the sway
+distance at once. In each frame the page chooses a slot for each copy inside the distance and sends
+the pass the trees' places and normal matrices. The pass writes an instance header, the field's
+settings and one row of pose texels for each slot. The leaf and bark offsets read their own branch's
+turn from the row of their copy's slot, so a copy without a slot stands still. A device that keeps
+no 16-bit float target draws no poses, and the plants keep the per-vertex sway.
+
+**The spring.** A branch's turn follows the steady sway through a spring whose rate grows with the
+branch's level. The pass keeps its state in the two states that a compute pass keeps for the wind
+grid, so a branch reads the turn and the speed of the run before. A gust therefore leaves the branch
+lagging and overshooting, and the branch settles after the air stops. The pose table holds both
+states too, so the motion pass reads the frame before's pose and a leaf keeps its motion data.
+
+**What stays per vertex.** The trunk's cantilever bend and the leaves' flutter stay in the offset in
+either method, so the two methods differ only in the branch turns. The pass reads the air once at the
+tree's base and turns the whole tree from it, where the per-vertex method reads the air at each
+vertex.
+
+**What it does not gain.** Moving branches redraw their shadows every frame, as they do per vertex.
+Leaf flutter, grass and small plants stay per vertex. The pass adds a compute dispatch and a small
+upload in the frame, and the plants' pages pay those beside the vertex work that they save.
+
+**The trees' default stays open.** The figures below measure both methods on the same grove, and the
+owner picks the trees' default from them. A preset may switch only when its figure holds D-241's
+frame ceiling.
+
 ## Options rejected
 
 - **Creek-only vegetation.** It is the fastest path to a better Creek. But it would make a sixth pine generator, a fourth grass and a fourth leaf mesh, where rule 11 asks for one place.
