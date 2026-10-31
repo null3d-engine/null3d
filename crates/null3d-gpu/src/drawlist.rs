@@ -26,8 +26,6 @@
 //! WebGL2 keeps the rows of whatever a render pass draws in GL's order, bottom row first, so a
 //! shader that samples a rendered target by texture coordinates flips them on that path.
 
-use null3d_core::alloc::{FRAME_HEADROOM, keep_room};
-
 /// Command opcodes. The TypeScript replay loop uses the generated constants in
 /// `packages/engine/src/generated/gpu.ts`, which a test keeps equal to these values. Numbers group
 /// by kind: resources from 1, render pass commands from 16, bundles from 32, compute from 40,
@@ -2542,12 +2540,9 @@ impl DrawList {
             return Err(DrawListError::Full { limit: self.limit });
         }
         let grown = needed.max(self.words.capacity() * 2).min(self.limit);
-        let refused = |_| DrawListError::OutOfMemory { words: needed };
         self.words
             .try_reserve_exact(grown - self.words.len())
-            .map_err(refused)?;
-        // A longer list can take the last of the heap, and the rest of the frame needs some.
-        keep_room(FRAME_HEADROOM).map_err(refused)
+            .map_err(|_| DrawListError::OutOfMemory { words: needed })
     }
 
     /// Appends whole commands that another list recorded.

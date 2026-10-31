@@ -435,10 +435,6 @@ pub(crate) struct BackgroundPass {
 }
 
 impl BackgroundPass {
-    /// Bytes a frame may copy into its arena: both uniform blocks.
-    pub(crate) const UPLOAD_BYTES: usize =
-        sizes::BACKGROUND_UNIFORM_BYTES as usize + sizes::BACKGROUND_LAYER_UNIFORM_BYTES as usize;
-
     pub(crate) fn new(ids: BackgroundIds) -> Self {
         Self {
             ids,

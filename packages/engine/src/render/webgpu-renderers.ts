@@ -11,6 +11,7 @@ import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { FirstPass } from '../gpu/webgpu/first-pass';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
+import { DEV } from '../shared/dev';
 import type { ImageTable } from '../shared/images';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
 import { deviceLoss, type GpuErrorReport, GpuErrorWatch } from './loss';
@@ -236,8 +237,10 @@ class WebGPUSceneRenderer implements Renderer {
 		const { backend } = this;
 		backend.timer?.beginFrame(input.frame);
 		const figures = record.figures;
-		if (figures && !this.culledLoading) this.loadCulledCounts();
-		backend.culled?.beginFrame(figures);
+		// A development build always reads the culled counts, so a copy that the culling shader drops
+		// warns on a page with no stats card.
+		if ((figures || DEV) && !this.culledLoading) this.loadCulledCounts();
+		backend.culled?.beginFrame(figures || DEV);
 		this.firstPass.draw();
 		this.frames.replay(input.frame);
 		this.completions?.afterSubmit(input.frame);

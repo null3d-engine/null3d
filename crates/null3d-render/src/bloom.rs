@@ -583,9 +583,6 @@ impl BloomPass {
         }
     }
 
-    /// Bytes a frame may copy into its arena: the whole uniform buffer.
-    pub(crate) const UPLOAD_BYTES: usize = BUFFER_BYTES;
-
     /// True on WebGL2, which counts a texture's rows from the bottom.
     pub(crate) fn rows_from_bottom(&self) -> bool {
         self.rows_from_bottom
@@ -979,7 +976,7 @@ mod tests {
         let sources = [7; STEPS];
         let mut frame = |pass: &mut BloomPass, list: &mut DrawList, scale, halvings| {
             list.clear();
-            arena.reset(BloomPass::UPLOAD_BYTES);
+            arena.begin_frame().unwrap();
             let chain = ChainFrame {
                 size: 512,
                 halvings,

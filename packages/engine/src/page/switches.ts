@@ -231,6 +231,11 @@ export interface Switches {
 	 */
 	direct: DirectSwitch;
 	/**
+	 * True when ?memory-maximum=hidden keeps the memory's maximum from the core, so that its heap meets a
+	 * refused growth as it would from a browser that refuses growth before the maximum.
+	 */
+	hideMemoryMaximum: boolean;
+	/**
 	 * The bits per texel of the shadow cascades' depth: 32 when ?shadowdepth=32 asks for 32-bit
 	 * floats, to measure them against the 16-bit depth that the engine stores otherwise.
 	 */
@@ -422,6 +427,7 @@ export function parseSwitches(search: string): Switches {
 			oneOf(params.get('skinning'), ['compute', 'full', 'skip', 'narrow'] as const) ?? 'vertex',
 		indexInstances: params.get('instances') === 'index',
 		direct: oneOf(params.get('direct'), ['on', 'off'] as const) ?? 'auto',
+		hideMemoryMaximum: params.get('memory-maximum') === 'hidden',
 		shadowDepthBits: params.get('shadowdepth') === '32' ? 32 : 16,
 		textureCache: params.get('texture-cache') !== 'off',
 		fps: positive(params.get('fps')),

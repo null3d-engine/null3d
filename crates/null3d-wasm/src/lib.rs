@@ -17,7 +17,6 @@ use std::cell::{Cell, UnsafeCell};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
-use null3d_core::alloc::{FRAME_HEADROOM, keep_room};
 use null3d_core::animation::{
     AnimationError, Animations, Blend, Clip, MATRIX_FLOATS, MAX_BLEND, MAX_JOINTS, Play,
     REST_FLOATS, Skeleton, as_floats, resample, staged_tracks,
@@ -96,7 +95,7 @@ use null3d_render::view::{
 use wasm_bindgen::prelude::*;
 
 pub mod constants;
-#[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+#[cfg(target_arch = "wasm32")]
 mod heap;
 
 use constants::{
@@ -184,7 +183,6 @@ mod render_detail {
     pub const UNKNOWN_MATERIAL: u32 = 5;
     pub const UNKNOWN_MESH: u32 = 6;
     pub const BAD_MESH: u32 = 7;
-    pub const UPLOADS_FULL: u32 = 8;
     /// The second detail is the largest texture size the device allows.
     pub const TEXTURE_TOO_LARGE: u32 = 9;
     /// The second detail is the most textures that live at once.
@@ -423,7 +421,6 @@ fn record_failure(error: RecordError) -> u32 {
             (render_detail::SKINNED_VERTICES_FULL, megabytes)
         }
         RecordError::SkinnedPagesFull { limit } => (render_detail::SKINNED_PAGES_FULL, limit),
-        RecordError::UploadsFull => (render_detail::UPLOADS_FULL, 0),
         RecordError::BufferFull { bytes } => (render_detail::BUFFER_FULL, bytes),
         RecordError::ShadowAtlasTooLarge { megabytes } => {
             (render_detail::SHADOW_ATLAS_TOO_LARGE, megabytes)
@@ -557,6 +554,34 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// The scene starts with room for `expected_objects` objects, or for `START_OBJECTS` with 0, and
 /// grows when it needs more (`ensure_room`, `grow_ahead`). Every other capacity is fixed from here
 /// on.
+/// Fills the heap, for a test, until it refuses a request just too large for its reserve, and then
+/// makes plain requests, so that the reserve must carry them.
+#[wasm_bindgen(js_name = fillHeapForTest)]
+pub fn fill_heap_for_test() {
+    const CHUNK: usize = (4 << 20) + 1;
+    const PLAIN_BYTES: usize = 64 << 10;
+    const PLAIN_REQUESTS: usize = 80;
+    loop {
+        let mut chunk: Vec<u8> = Vec::new();
+        if chunk.try_reserve_exact(CHUNK).is_err() {
+            break;
+        }
+        std::mem::forget(chunk);
+    }
+    // Plain requests, which cannot report a refusal, up to more than the fill can have left free.
+    for _ in 0..PLAIN_REQUESTS {
+        std::mem::forget(vec![0u8; PLAIN_BYTES]);
+    }
+}
+
+/// True once a small request has taken the heap's reserve, so that a frame should stop with E1109.
+fn heap_reserve_spent() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    return heap::reserve_spent();
+    #[cfg(not(target_arch = "wasm32"))]
+    false
+}
+
 /// Notes the shared memory's declared maximum in MiB, ahead of `initEngine`. A build whose memory
 /// has none is left with 0.
 #[wasm_bindgen(js_name = setMemoryMaximum)]
@@ -588,6 +613,8 @@ pub fn init_engine(
     direct_draws: bool,
     shadow_depth_bits: u32,
 ) -> u32 {
+    #[cfg(target_arch = "wasm32")]
+    heap::hold_reserve();
     // A panic stops the core with a bare trap, so its message and place go to the console first.
     std::panic::set_hook(Box::new(|info| {
         console_error(&format!("null3D core: {info}"))
@@ -1182,17 +1209,17 @@ pub fn update_batches(frame: u32) -> u32 {
 /// so they must be the render size's, as `recordFrame`'s are.
 #[wasm_bindgen(js_name = cullFrame)]
 pub fn cull_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32) -> u32 {
+    if heap_reserve_spent() {
+        return record_failure(RecordError::OutOfMemory {
+            bytes: null3d_core::alloc::HEAP_RESERVE as u32,
+        });
+    }
     let Some(jobs) = JOBS.get() else {
         return fail(codes::NOT_READY, [0, 0]);
     };
     with_engine(|e| {
         let scale = RenderScale::from_thousandths(scale);
         e.renderer.settings_mut().set_level_scale(scale);
-        if e.structure_changed && keep_room(FRAME_HEADROOM).is_err() {
-            return record_failure(RecordError::OutOfMemory {
-                bytes: FRAME_HEADROOM as u32,
-            });
-        }
         let (renderer, input) = e.frame(frame, (width, height), scale, jobs, built);
         match renderer.cull(&input) {
             Ok(()) => 0,
@@ -1209,6 +1236,11 @@ pub fn cull_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32) -
 /// 1 to 1000.
 #[wasm_bindgen(js_name = recordFrame)]
 pub fn record_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32) -> u32 {
+    if heap_reserve_spent() {
+        return record_failure(RecordError::OutOfMemory {
+            bytes: null3d_core::alloc::HEAP_RESERVE as u32,
+        });
+    }
     let Some(jobs) = JOBS.get() else {
         return fail(codes::NOT_READY, [0, 0]);
     };

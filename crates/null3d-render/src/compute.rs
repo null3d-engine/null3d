@@ -170,9 +170,6 @@ pub(crate) struct ComputePasses {
 }
 
 impl ComputePasses {
-    /// Bytes a frame may copy into its arena: every view's block.
-    pub(crate) const UPLOAD_BYTES: usize = MAX_VIEWS * BLOCK_BYTES;
-
     /// The passes, with GPU objects from `ids`.
     pub(crate) fn new(ids: ComputePassIds) -> Self {
         Self {
