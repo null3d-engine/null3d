@@ -28,7 +28,7 @@ How the data was produced: the logs of the run's browser jobs, from the line tha
 
 ## Decision
 
-- `bun run build:test-pages` holds the build: each page, or the pages that it names, one at a time. The Playwright config runs it before the production server, unless `NULL3D_PRODUCTION_PAGES` says otherwise.
+- `bun run build:test-pages` holds the build, up to four pages at a time. Each page, or the pages that it names, writes into a folder of its own, and the folders merge into the output folder. The Playwright config runs it before the production server, unless `NULL3D_PRODUCTION_PAGES` says otherwise.
 - With `NULL3D_PRODUCTION_PAGES=skip`, a run starts no production server and has no production build project. The `browser`, `browser-alone`, `browser-city`, `showcase` and `skill-sketches` jobs set it.
 - `browser-production` builds the pages once. Then it runs the production build project, and then that project's tests that run alone, one at a time. Both runs set `NULL3D_PRODUCTION_PAGES=prebuilt`, which serves the built pages and builds none. Playwright runs projects side by side, so the tests that run alone need a run of their own to have the machine to themselves.
 - The job runs in two parts. Each part builds only the pages that its test files load, so no page builds twice ([Two parts, and no CDN build](#two-parts-and-no-cdn-build)).
@@ -48,11 +48,15 @@ As one job, in full run 39813231961, it took 18 minutes. The build took 314 s, t
 | Test time of the errors, sketch shaders and stats files | 242 s |
 
 - Only `cdn-script-tag.spec.ts` reads the CDN build, and it runs in the `browser` shards, which make the build themselves. So the job does not make it.
-- Two page builds at once would not fit the 16 GB of a CI machine. So the builds run one at a time, and the job splits by test file instead. A test file needs every page whose HTML it names. The files that load the engine test page hold most of the test time. They make one part, with the engine, KTX2 and texture cache pages. The errors, sketch shaders, stats and glTF files make the other, with their four pages.
+- A page's build reads about a gigabyte, so a part's pages build side by side, up to four at once. The job still splits by test file, so each part builds only the pages that its tests load and no page builds twice. A test file needs every page whose HTML it names. The files that load the engine test page hold most of the test time. They make one part, with the engine, KTX2 and texture cache pages. The errors, sketch shaders, stats and glTF files make the other, with their four pages.
 - Of the glTF tests, only one check loads the engine test page: a page without glTF files downloads no part of the loader. That check is about the engine test page, so it sits in `engine.spec.ts`, beside the check that such a page downloads no first-use file. The loader's file patterns sit in `tests/lib/gltf-loader-files.ts`, which both files read. Its test file, `gltf.spec.ts`, loads only `gltf-files.html`. So the glTF tests and their page run in the second part, and no page builds twice. The KTX2 tests stay in the first part, since the policy and CDN tests load the KTX2 page too.
 - In run 40056066922, with the glTF tests in the first part, the first part took 11.7 minutes and the second 5.5. The first part's tests took 580 s of test time on its 2 workers. Of that, the engine tests took 304 s, the glTF tests 179 s and the KTX2 tests 68 s. Its four page builds took 205 s.
 - Three parts would take each part under 9 minutes. But the KTX2 tests load the engine test page too, so two parts would each build it. The two-part split does each piece of work once ([D-218](D-218-efficient-ci-jobs.md)).
 - The production server waits for its port, not the engine test page, since one part builds no engine test page. A part's run names its test files before `--project`, which takes every name that follows it, and its run of the tests that run alone passes with no tests, since the second part has none.
+
+### The builds run side by side
+
+Measured on the owner's Mac at `02528d7dd` with the side-by-side build: one page's build took 9 s and read 1.0 GB at its peak. Four at once took 19 s and read 3.9 GB, and all seven took 22 s in two rounds of four and three. Each build writes into a folder of its own, and the folders merge by rename when the builds finish.
 
 ## Consequences
 
