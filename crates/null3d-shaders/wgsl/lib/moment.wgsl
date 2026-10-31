@@ -3,8 +3,9 @@
 // Order-independent transparency from a store of four depth moments (decision record D-261).
 //
 // Each fragment of the moment pass adds four power moments of its own optical depth: the depth's
-// total, then that total times the warped depth, its square and its cube, all relative to the
-// fragment's total. The store adds them with no weight, so the order of the draws does not matter.
+// total, then that total times the warped depth less its middle, its square and its cube, all
+// relative to the fragment's total. The store adds them with no weight, so the order of the draws
+// does not matter.
 //
 // The colour pass draws the same surfaces again and reads the store. The four moments fit two
 // atoms of optical depth in the warped depth, and the fit gives the transmittance from the eye to
@@ -24,6 +25,13 @@ const MOST_ALPHA: f32 = 0.9995;
 /// The least spread of the fitted atoms, below which the fit puts every atom at the mean depth: a
 /// store of one surface has none.
 const LEAST_SPREAD: f32 = 1e-6;
+/// The middle of the warped depth, about which the store keeps its moments. A moment taken about
+/// the eye is a small difference of larger values near the middle of the range, and the store keeps
+/// 16-bit floats: where the surfaces sit close together, their variance is lost to the rounding,
+/// and the fit moves its atoms by more than their spacing. Taken about the middle, the moments stay
+/// large enough for the fit to resolve, and a store of 16-bit floats keeps the accuracy that the
+/// model gives the fit (decision record D-261).
+const DEPTH_CENTER: f32 = 0.5;
 
 /// The optical depth of a fragment of `alpha`: minus the natural logarithm of the share that shows
 /// through it.
@@ -48,26 +56,27 @@ fn transmittance(b: vec4f, u: f32) -> f32 {
     if b.x <= 0.0 {
         return 1.0;
     }
+    let v = u - DEPTH_CENTER;
     let mean = b.y / b.x;
     let second = b.z / b.x;
     let third = b.w / b.x;
     let spread = second - mean * mean;
     // One surface, or several at one depth, has no spread: every atom sits at the mean depth.
     if spread < LEAST_SPREAD {
-        return exp(-b.x * select(0.0, 1.0, u > clamp(mean, 0.0, 1.0)));
+        return exp(-b.x * select(0.0, 1.0, v > clamp(mean, -DEPTH_CENTER, 1.0 - DEPTH_CENTER)));
     }
     let a0 = (mean * third - second * second) / spread;
     let a1 = (mean * second - third) / spread;
     let root = sqrt(max(a1 * a1 - 4.0 * a0, 0.0));
-    let low = clamp((-a1 - root) * 0.5, 0.0, 1.0);
-    let high = clamp((-a1 + root) * 0.5, 0.0, 1.0);
+    let low = clamp((-a1 - root) * 0.5, -DEPTH_CENTER, 1.0 - DEPTH_CENTER);
+    let high = clamp((-a1 + root) * 0.5, -DEPTH_CENTER, 1.0 - DEPTH_CENTER);
     // The two atoms met, so the fit puts them both at the mean depth.
     if high - low < LEAST_SPREAD {
-        return exp(-b.x * select(0.0, 1.0, u > clamp(mean, 0.0, 1.0)));
+        return exp(-b.x * select(0.0, 1.0, v > clamp(mean, -DEPTH_CENTER, 1.0 - DEPTH_CENTER)));
     }
     let near_share = clamp((high - mean) / (high - low), 0.0, 1.0);
     let far_share = 1.0 - near_share;
-    let absorbed = select(0.0, near_share, u > low) + select(0.0, far_share, u > high);
+    let absorbed = select(0.0, near_share, v > low) + select(0.0, far_share, v > high);
     return exp(-b.x * absorbed);
 }
 
@@ -79,9 +88,9 @@ fn coverage(b: vec4f) -> f32 {
 
 /// The four moments that a fragment of `alpha` adds, at `relative` from the camera.
 fn moment_fragment(alpha: f32, relative: vec3f) -> vec4f {
-    let u = warped_depth(relative);
+    let v = warped_depth(relative) - DEPTH_CENTER;
     let tau = optical_depth(alpha);
-    return vec4f(tau, tau * u, tau * u * u, tau * u * u * u);
+    return vec4f(tau, tau * v, tau * v * v, tau * v * v * v);
 }
 
 /// The colour sum that a fragment adds at `relative`, from the premultiplied `color` that its

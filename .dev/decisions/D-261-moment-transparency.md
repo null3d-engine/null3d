@@ -1,17 +1,14 @@
 # D-261: Moment transparency, and what it beats
 
-Status: decided, and neither the look nor the accuracy supports it yet. Built on both GPU paths,
-and the layer draws on all three GPU paths: WebGL2, WebGPU and its compatibility mode. The
-acceptance spec, `moment-transparency.spec.ts -g "nearer"`, fails on both paths: the moment image is
-farther from the exact one than the weighted blending's. The picture references are held back and
-the patches at overlapping edges stay under the Look section. The layer draws on a phone and a
-tablet, and the phone's cost figure is owed. Task: M3-F13.
+Status: decided. The moment layer is nearer the exact image than the weighted blending on both test
+scenes and both GPU paths, and it draws the same picture whatever order the surfaces add. The
+picture references and the phone's cost figure are owed. Task: M3-F13.
 
-Summary: Order-independent transparency from a store of four depth moments. Its accuracy is an
-envelope: where the surfaces spread over a few meters or more, it is about two and a half times
-nearer the exact image than the weighted blending; where five surfaces sit within a couple of
-meters of one another, it is slightly farther. It is built on both GPU paths, costs 0.58 ms of GPU
-time on the S1 benchmark at High on this computer, and is off on every preset.
+Summary: Order-independent transparency from a store of four depth moments. It is nearer an exact
+back-to-front blend than the weighted blending on both test scenes: about two and a half times where
+the surfaces spread over some meters, and more than twice where five panes sit within one room. It
+is built on both GPU paths, costs 0.58 ms of GPU time on the S1 benchmark at High on this computer,
+and is off on every preset.
 
 ## Question
 
@@ -51,10 +48,12 @@ about 11 meters. Within a room it therefore weighs every surface alike. What is 
 average of the surfaces' colors, with no term for which one is in front.
 
 The image test that settles the choice draws five panes of glass at different depths, and compares
-each approximation with the exact sorted image. On the 1280 plates its mean channel error is 1.683
-for the moment layer and 1.432 for the weighted blending, and the layer is 1.983 from the blend. The
-model's 78% does not hold on this scene: five panes at similar depth put the fit's two atoms close
-together, and the renormalized average then keeps too much of the nearest pane's color.
+each approximation with the exact sorted image. On the close-pane scene its mean channel error is
+0.60 for the moment layer and 1.43 for the weighted blending, and on the spread scene it is 1.57
+against 3.98. The model's fit gives both results once the store keeps its moments about the middle of
+the depth range. Taken about the eye, the rounding of the store's 16-bit floats doubles the close
+scene's error and puts the layer behind the blend (1.68 against 1.43), because five panes at a
+similar depth lose their variance to the rounding.
 
 A first attempt fitted the moments with a two-point Gaussian. It placed the atoms at the mean plus
 and minus one standard deviation. It did not beat weighted blending. That is why the store holds
@@ -66,7 +65,12 @@ no error at all.
 
 The record keeps the formula here because it is the part that takes work to derive. The moments
 `b` are `(b0, b1, b2, b3)`, where `b0` is the total optical depth. The depth `u` is warped into 0 to
-1 by a logarithm between the camera's planes. This gives the transmittance from the eye to `u`:
+1 by a logarithm between the camera's planes, and the store takes its moments of `v = u - 0.5`
+rather than of `u`. A 16-bit float keeps about a thousandth of its value, and the variance of five
+panes within a room is a ten-thousandth of the squared depth: taken about the eye, that variance is
+a difference of two larger numbers and rounds away, and the fitted atoms then move by more than the
+panes' spacing. Taken about the middle of the range, the same moments keep the variance within the
+floats' precision. This gives the transmittance from the eye to `v`:
 
 ```wgsl
 let mean = b.y / b.x;
@@ -76,11 +80,11 @@ let spread = second - mean * mean;          // the variance of the depth
 let a0 = (mean * third - second * second) / spread;
 let a1 = (mean * second - third) / spread;
 let root = sqrt(max(a1 * a1 - 4.0 * a0, 0.0));
-let low = clamp((-a1 - root) * 0.5, 0.0, 1.0);
-let high = clamp((-a1 + root) * 0.5, 0.0, 1.0);
+let low = clamp((-a1 - root) * 0.5, -0.5, 0.5);
+let high = clamp((-a1 + root) * 0.5, -0.5, 0.5);
 let near_share = clamp((high - mean) / (high - low), 0.0, 1.0);
 let far_share = 1.0 - near_share;
-let absorbed = select(0.0, near_share, u > low) + select(0.0, far_share, u > high);
+let absorbed = select(0.0, near_share, v > low) + select(0.0, far_share, v > high);
 let shown = exp(-b.x * absorbed);
 ```
 
@@ -192,20 +196,17 @@ frame. No other frame copies them, and no frame without the setting copies anyth
 ## Look
 
 The layer keeps a near pane's color where the weighted blending washes it toward what lies behind,
-and on the test scene it keeps too much of it: the front pane reads as though it were opaque, and
-in the close-pane scene the image is 0.25 to 0.30 steps farther from the exact one than the
-blend's, and in the spread scene it is two and a half times nearer. The edge patches below are the
-close-pane error at overlaps.
+and on both test scenes it is nearer the exact image: more than twice nearer on the close-pane
+scene, and about two and a half times on the spread scene.
 
-The layer has an edge of its own where several panes overlap: rectangular patches about a tenth of
-the picture's width show the panes behind mixed into the pane's own color. They come from the
-reconstruction, not from the anti-alias step or any target's size. The moment store's coverage is
-smooth across the same edge, and the color sum's weights step in the same rectangles: the fit's two
-atoms hold the transmittance constant between their depths, and where the panes' edges succeed one
-another the average takes a different weight in each rectangle. The patches scale with the picture
-because they are the panes' own overlaps. The weighted blending has no such patches and washes the
-near pane's color instead. Which look is better is the owner's ruling (hard rule 40): the mean
-error favors the moments, and the patches are the price of them at close, overlapping depths.
+The fit's two atoms hold the transmittance constant between their depths, so where several panes
+overlap the layer's weights step at those atoms. A store taken about the eye lost the variance of
+five close panes to the rounding of its 16-bit floats, and the steps then fell in the wrong places:
+the overlaps drew as rectangular patches of the wrong color, about a tenth of the picture's width.
+Taken about the middle of the depth range, the fit's atoms land where the model puts them, and the
+overlaps draw the bands that the sorted image draws. The weighted blending has no such steps, and it
+washes the near pane's color instead. Which look is better is the owner's ruling (hard rule 40), and
+the mean error favors the moments.
 
 ## Consequences
 
@@ -239,18 +240,19 @@ the same scene a third time with the weighted blending. The test measures each i
 from the sorted one, as the mean of every color channel over the whole picture. It passes when the
 moment image is nearer than the weighted image.
 
-On the tree of `e1fbc77f9`, with two scenes drawn at 480 by 270:
+On this computer, with two scenes drawn at 480 by 270:
 
 | Scene | Path | Weighted | Moments |
 | --- | --- | ---: | ---: |
-| five panes within about five meters | WebGPU | 1.427 | 1.680 |
-| five panes within about five meters | WebGL2 | 1.385 | 1.684 |
-| five panes spread over one to thirty meters | WebGPU | 4.007 | 1.602 |
-| five panes spread over one to thirty meters | WebGL2 | 3.949 | 1.562 |
+| five panes within about five meters | WebGPU | 1.427 | 0.597 |
+| five panes within about five meters | WebGL2 | 1.385 | 0.617 |
+| five panes spread over one to thirty meters | WebGPU | 4.007 | 1.585 |
+| five panes spread over one to thirty meters | WebGL2 | 3.949 | 1.552 |
 
 The spread scene is the model's range, and there the moment layer is nearer by about two and a half
-times. The close scene is the hard case for a two-atom fit, and there it is 0.25 to 0.30 steps
-farther. Both scenes stay in the manifest and the spec, and the close scene's failure stands.
+times. The close scene is the hard case for a two-atom fit: five panes put its two atoms close
+together. The centered moments keep that scene's variance, and the layer is more than twice nearer
+there too. Both scenes stay in the manifest and the spec.
 
 Two more tests guard the property that gives the feature its name. The same panes added in the
 opposite order draw the same picture, and both draw nearer the exact image than the weighted
