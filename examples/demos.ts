@@ -536,7 +536,9 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			"A path through a pine wood in haze, its conifers grown by the vegetation add-on and swaying in the wind add-on's field. The volumetric fog takes the light of the low sun between the trunks, so rays fall through the gaps and the trunks' shadows cut dark lanes. At dusk the lanterns light up, and each casts a glowing cone into the fog.",
 		hold: 2,
-		timeoutSeconds: 60,
+		// The wood and its cards come from the vegetation add-on, and the software GPU compiles their
+		// builds and draws the fog slowly.
+		timeoutSeconds: 300,
 	},
 	{
 		name: 'gltf-model',
