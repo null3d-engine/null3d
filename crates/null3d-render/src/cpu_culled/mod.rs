@@ -711,7 +711,7 @@ impl CpuCulledRenderer {
         );
         // The material texture's rows also hold the table of specular terms beside them.
         config.max_materials = config.max_materials.max(dfg::SIZE.div_ceil(2));
-        let mut textures = TextureStore::new(
+        let textures = TextureStore::new(
             TextureIds {
                 first_texture: ids::TEXTURE_ARRAYS,
                 first_sampler: ids::SAMPLERS,
@@ -721,9 +721,6 @@ impl CpuCulledRenderer {
                 .max_texture_size
                 .min(BUDGET[Limit::TextureDimension2D as usize]),
         );
-        // WebGL2 counts a texture's rows from the bottom, so a pass target's image is turned
-        // against the compute form's and its maps read their rows the other way.
-        textures.set_rows_from_bottom(true);
         let mut settings = SceneSettings::new(
             MeshStorage::new(Packing::Pages),
             config.max_materials,
@@ -2759,8 +2756,9 @@ impl CpuCulledRenderer {
             )?;
             self.settings.take_pick();
         }
-        // A read of a compute pass's region copies it once the pass's runs have finished. WebGL2's
-        // target stores its first row at the image's bottom edge.
+        // A read of a compute pass's region copies it once the pass's runs have finished. The
+        // target stores its texels in the order that the compute form numbers them, the fragment
+        // form included, so a copy of a region starts at the region's own row.
         if let Some(mut read) = self.settings.take_pass_read()
             && let Some((texture, size)) = self.graph.read_target(read.view as usize)
         {
@@ -2772,7 +2770,6 @@ impl CpuCulledRenderer {
                 &read,
                 texture,
                 ids::PASS_READ_BUFFERS + read.ring,
-                true,
                 size,
             )?;
         }

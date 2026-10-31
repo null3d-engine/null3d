@@ -123,6 +123,21 @@ run('compute-state', async () => {
 		await engine.destroy();
 		return { tier, mode, case: CASE, left, right, same };
 	}
+	if (CASE === 'rows-shown') {
+		// The sketch shows the pass image on a plane. Its first row must fill the frame's top, and
+		// its last the bottom, as a material that samples a pass's texture reads it.
+		await waitMessage('running');
+		const frame = await engine.captureFrame();
+		const red = (y: number): number => {
+			const column = Math.floor(frame.width / 2);
+			const at = (Math.floor(frame.height * y) * frame.width + column) * 4;
+			return frame.pixels[at] as number;
+		};
+		const top = red(0.05);
+		const bottom = red(0.95);
+		await engine.destroy();
+		return { tier, mode, case: CASE, top, bottom };
+	}
 	if (CASE === 'loss') {
 		// The sketch asks for the loss once it has read a value; the engine rebuilds every texture.
 		const off = engine.onSketchMessage((name) => {

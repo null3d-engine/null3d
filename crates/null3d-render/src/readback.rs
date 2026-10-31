@@ -63,36 +63,26 @@ pub fn record_region(
     read: &PassRead,
     texture: u32,
     buffer: u32,
-    rows_from_bottom: bool,
     size: (u32, u32),
 ) -> Result<bool, RecordError> {
     if !fits(read, size) {
         return Ok(false);
     }
-    record(list, read, texture, buffer, rows_from_bottom, size.1)?;
+    record(list, read, texture, buffer)?;
     Ok(true)
 }
 
 /// The copied rows of a read, and the buffer it reads: a copy of the region follows the pass, and
-/// the read raises the request's slot once its bytes land. `rows_from_bottom` is true on WebGL2,
-/// whose first stored row of a target that a pass drew is the image's bottom row. This mapping
-/// translates the region's image rows into the target's stored rows; it is not the turn that a
-/// mirrored pass needed, which a read no longer makes.
+/// the read raises the request's slot once its bytes land. A compute pass's target stores its
+/// texels in the order that the compute form numbers them, on both GPU paths and in the fragment
+/// form, so a copy of a region starts at the region's own row.
 pub fn record(
     list: &mut DrawList,
     read: &PassRead,
     texture: u32,
     buffer: u32,
-    rows_from_bottom: bool,
-    texture_height: u32,
 ) -> Result<(), RecordError> {
-    let y = if rows_from_bottom {
-        texture_height
-            .saturating_sub(read.y)
-            .saturating_sub(read.height)
-    } else {
-        read.y
-    };
+    let y = read.y;
     let row = row_bytes(read.width * read.texel_bytes);
     list.push(
         Op::CopyTextureToBuffer,
@@ -141,7 +131,7 @@ mod tests {
             destination: 128,
             texel_bytes: 8,
         };
-        record(&mut list, &read, 7, 9, false, 32).unwrap();
+        record(&mut list, &read, 7, 9).unwrap();
         let commands: Vec<_> = null3d_gpu::drawlist::decode(list.words())
             .map(|command| command.unwrap())
             .collect();
@@ -172,10 +162,10 @@ mod tests {
             texel_bytes: 8,
         };
         // The texture the read was asked against, and the smaller one a shrunken canvas leaves.
-        assert!(record_region(&mut list, &read, 7, 9, false, (4, 4)).unwrap());
+        assert!(record_region(&mut list, &read, 7, 9, (4, 4)).unwrap());
         assert_eq!(null3d_gpu::drawlist::decode(list.words()).count(), 2);
         list.clear();
-        assert!(!record_region(&mut list, &read, 7, 9, false, (2, 2)).unwrap());
+        assert!(!record_region(&mut list, &read, 7, 9, (2, 2)).unwrap());
         assert_eq!(list.len(), 0, "no copy past the edge reaches the frame");
         assert!(
             !fits(&read, (2, 4)),
@@ -184,7 +174,7 @@ mod tests {
     }
 
     #[test]
-    fn a_webgl2_copy_counts_the_row_from_the_bottom() {
+    fn a_copy_starts_at_the_regions_own_row_on_both_paths() {
         let mut list = DrawList::with_capacity(16);
         let read = PassRead {
             view: 1,
@@ -198,11 +188,14 @@ mod tests {
             destination: 0,
             texel_bytes: 4,
         };
-        record(&mut list, &read, 7, 9, true, 32).unwrap();
+        record(&mut list, &read, 7, 9).unwrap();
         let command = null3d_gpu::drawlist::decode(list.words())
             .next()
             .expect("a copy")
             .unwrap();
-        assert_eq!(command.operands[3], 24, "32 - 3 - 5");
+        assert_eq!(
+            command.operands[3], 3,
+            "the region starts at the row that the shader numbers it"
+        );
     }
 }
