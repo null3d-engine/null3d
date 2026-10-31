@@ -1298,8 +1298,9 @@ those templates gain the permutations that the layer carries. Its colour pass is
 of its own, one for each of those templates, because a first-use file takes the names of a build's
 bits and a shared value would pull another template's builds into the layer's files. The two parts
 add 4,181 GLSL builds and 1,261 WGSL builds, and all of them load on the layer's first use, so no
-page downloads them at its start. The manifest makes 66,515 GLSL builds and 25,778 WGSL builds, and
-`BUILD_BUDGET` records those figures.
+page downloads them at its start. The milestone's bitmask ambient occlusion prototype adds seven
+GLSL builds and eight WGSL builds of its own, which the merge brought beside the layer's. The
+manifest makes 66,522 GLSL builds and 25,786 WGSL builds, and `BUILD_BUDGET` records those figures.
 
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this
