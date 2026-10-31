@@ -1723,9 +1723,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: [Safari, Firefox]
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41]
-        shards: [41]
+        # Safari takes more shards than Firefox because it is the slower browser: measured on run
+        # 41059398975, its shards averaged 13.3 minutes and its slowest took 30, against Firefox's
+        # 8.5 and 13, and the slowest shard decides when a full run ends. The Enterprise plan runs
+        # at most 50 macOS jobs at once and only Safari's shards and the benchmark's 8 take them, so
+        # Safari stops at 49: one more would put its own prebuilt shard over the cap and make shards
+        # wait for machines, which costs more than the split saves.
+        include:
+          - browser: Safari
+            shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49]
+            shards: [49]
+          - browser: Firefox
+            shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41]
+            shards: [41]
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"

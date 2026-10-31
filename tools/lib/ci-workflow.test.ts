@@ -229,15 +229,23 @@ describe("CI's workflow", () => {
 			['browser', 'shard'],
 			['browser-alone', 'shard'],
 			['browser-heavy', 'shard'],
-			['real-browsers', 'shard'],
 			['shader-entries', 'shard'],
 		] as const) {
 			const shards = matrixOf(name)[key] as number[];
 			expect(shards, name).toEqual(oneTo(shards.length));
 		}
-		expect(matrixOf('real-browsers').shards).toEqual([
-			(matrixOf('real-browsers').shard as number[]).length,
-		]);
+		// The device job gives each browser its own count, so its shard lists live in the entries
+		// that name each browser rather than in one list both would share.
+		const entries = matrixOf('real-browsers').include as {
+			browser: string;
+			shard: number[];
+			shards: number[];
+		}[];
+		expect(entries.map(({ browser }) => browser).sort()).toEqual(['Firefox', 'Safari']);
+		for (const { browser, shard, shards } of entries) {
+			expect(shard, browser).toEqual(oneTo(shard.length));
+			expect(shards, browser).toEqual([shard.length]);
+		}
 	});
 
 	it('gives each browser shard one weight', () => {
