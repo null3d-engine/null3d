@@ -276,9 +276,6 @@ impl EffectPass {
         }
     }
 
-    /// Bytes a frame may copy into its arena: every effect's block.
-    pub(crate) const UPLOAD_BYTES: usize = MAX_EFFECTS * BLOCK_BYTES;
-
     /// True when one of `effects` reads depth from a multisampled texture.
     fn reads_multisampled(&self, effects: &[Effect]) -> bool {
         self.multisampled_depth && effects.iter().any(|effect| effect.depth)
@@ -683,7 +680,7 @@ mod tests {
     ) -> DrawList {
         let mut list = DrawList::with_capacity(512);
         let mut arena = UploadArena::default();
-        arena.reset(EffectPass::UPLOAD_BYTES);
+        arena.begin_frame().unwrap();
         let colors: Vec<u32> = (0..units.len() as u32).map(|k| 40 + 2 * k).collect();
         pass.prepare(
             &mut list,

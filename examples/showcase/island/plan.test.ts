@@ -4,6 +4,7 @@
 // their own ground with a graded drive, and the ground follows the roads without rising through them.
 import { describe, expect, it } from 'bun:test';
 import { fileURLToPath } from 'node:url';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import {
 	formHeight,
 	golfShare,
@@ -173,17 +174,21 @@ const failures = (list: string[], limit = 8) =>
 	`${list.length} failures, the first: ${list.slice(0, limit).join('; ')}`;
 
 describe('the stored plan', () => {
-	it('is what the tool writes, from the search on', () => {
-		for (const args of [['--check'], ['--search', '--check']]) {
-			const run = Bun.spawnSync([
-				process.execPath,
-				'--conditions=null3d-source',
-				fileURLToPath(new URL('./write-layout.ts', import.meta.url)),
-				...args,
-			]);
-			expect(run.exitCode, `${args.join(' ')}: ${run.stderr.toString()}`).toBe(0);
-		}
-	}, 60_000);
+	it(
+		'is what the tool writes, from the search on',
+		() => {
+			for (const args of [['--check'], ['--search', '--check']]) {
+				const run = Bun.spawnSync([
+					process.execPath,
+					'--conditions=null3d-source',
+					fileURLToPath(new URL('./write-layout.ts', import.meta.url)),
+					...args,
+				]);
+				expect(run.exitCode, `${args.join(' ')}: ${run.stderr.toString()}`).toBe(0);
+			}
+		},
+		scaledBudget(60_000),
+	);
 
 	it('is the plan that the fingerprint names', () => {
 		expect(planFingerprint()).toBe(PLAN_FINGERPRINT);

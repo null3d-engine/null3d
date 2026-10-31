@@ -197,9 +197,6 @@ impl SubsurfacePass {
         }
     }
 
-    /// Bytes a frame may copy into its arena: the whole uniform buffer.
-    pub(crate) const UPLOAD_BYTES: usize = BUFFER_BYTES;
-
     /// Asks `pipelines` for the steps' pipelines, once.
     pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
         for (step, slot) in self.pipelines.iter_mut().enumerate() {
@@ -491,7 +488,7 @@ mod tests {
         };
         let mut run = |pass: &mut SubsurfacePass, list: &mut DrawList, frame: SubsurfaceFrame| {
             list.clear();
-            arena.reset(SubsurfacePass::UPLOAD_BYTES);
+            arena.begin_frame().unwrap();
             let size = ((1920, 1080), RenderScale::FULL);
             pass.prepare(list, &mut arena, size, frame, sources, false)
                 .unwrap();

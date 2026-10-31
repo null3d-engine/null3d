@@ -134,7 +134,7 @@ use crate::frame_graph::{
 use crate::fullscreen::FullscreenIds;
 use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{LightGrid, LightGrids, LightLimits};
-use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
+use crate::materials::MATERIAL_TEXELS;
 use crate::meshes::{MeshMoves, MeshStorage, Packing};
 use crate::motion::MotionIds;
 use crate::occlusion::Occluders;
@@ -144,8 +144,8 @@ use crate::physical_sky::{self, PhysicalSkyIds, PhysicalSkyPass};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::probe_grid;
 use crate::probes::{self, ProbeTextures};
-use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
-use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
+use crate::shadow_tiles::{self, ShadowTiles};
+use crate::shadows::{self, CascadeDepth, CasterPasses, ShadowFrame, ShadowUniform};
 use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
 use crate::ssr::SsrIds;
 use crate::subsurface::SubsurfaceIds;
@@ -158,7 +158,7 @@ use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices, write_row_values};
 use layout::{BatchSlot, Clusters, Drawn, Layout, RESIDENT, STREAMED};
 use lights::LightTextures;
-use opaque::{LitTextures, OFFSETS_BYTES, Opaque, PatchView, Shading, ViewUpload};
+use opaque::{LitTextures, Opaque, PatchView, Shading, ViewUpload};
 use skin::Skins;
 use transparent::Transparent;
 
@@ -1399,12 +1399,6 @@ impl CpuCulledRenderer {
         self.tone_culling
             .reserve(self.tone.room, self.tone_views())
             .map_err(out_of_memory)?;
-        // Room for every static batch's cluster order, so a batch coming to rest later uploads
-        // its clusters without growing the arena.
-        let bound = self.upload_bound_without_clusters() + self.layout.cluster_rows as usize * 4;
-        for arena in self.lists.arenas_mut() {
-            arena.try_reserve(bound).map_err(out_of_memory)?;
-        }
         self.layout.built = true;
         self.layout.built_in = input.frame;
         Ok(())
@@ -1472,70 +1466,6 @@ impl CpuCulledRenderer {
         }
         self.decal_depth_bound = depth;
         Ok(())
-    }
-
-    /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the material table, three.js's table of specular terms, the light grid, each
-    /// view's, each shadow cascade's and each shadow tile's frame uniform, draw records and
-    /// multi-draw arrays, the shadow settings block's parts, the final pass's settings,
-    /// the skinned objects' first joints after a change, and the cluster orders not uploaded yet.
-    fn upload_bound(&self) -> usize {
-        self.upload_bound_without_clusters()
-            + self.clusters.pending_bytes(&self.layout, &self.casters)
-    }
-
-    /// [`Self::upload_bound`] without the cluster orders.
-    fn upload_bound_without_clusters(&self) -> usize {
-        let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
-        // A rebuilt scene uploads each mesh's tree of cluster patches again, when the device
-        // draws many ranges in one call.
-        let patches = if self.config.multi_draw {
-            self.settings
-                .patches()
-                .iter()
-                .map(|(_, tree)| tree.indices().len() * 2 + 256)
-                .sum()
-        } else {
-            0
-        };
-        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2
-            + dfg::BYTES
-            + ao::BLANK_BYTES;
-        let per_view = |layout: &Layout| {
-            (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize
-                + layout.draws_slot_bytes as usize
-                + layout.draws.len() * 12
-        };
-        let views = self.settings.views().len();
-        let tiles = (self.settings.tile_settings().tiles as usize).min(MAX_TILES);
-        let cascades = (MAX_CASCADES + tiles) * per_view(&self.casters);
-        let outline = per_view(&self.outlined) + per_view(&self.scattering) + per_view(&self.tone);
-        let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
-        meshes
-            + patches
-            + materials
-            + self.lights.upload_room()
-            + views * per_view(&self.layout)
-            + Transparent::upload_bound(&self.sorted, views, self.config.multi_draw)
-            + Transparent::upload_bound(&self.decal_layout, 1, self.config.multi_draw)
-            + Transparent::upload_bound(&self.redraw_layout, 1, self.config.multi_draw)
-            + cascades
-            + outline
-            + shadows
-            + self.skins.upload_bound(self.settings.meshes())
-            + self.graph.upload_bound()
-            + BackgroundPass::UPLOAD_BYTES
-            + self
-                .particles
-                .upload_bound(self.settings.particles(), views)
-            + PhysicalSkyPass::UPLOAD_BYTES
-            + sizes::OBJECT_RANGE_BYTES as usize
-            + if self.layouts_moving {
-                crate::motion::BLOCK_BYTES as usize
-            } else {
-                0
-            }
-            + views * probes::LIST_BYTES as usize
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
@@ -2072,7 +2002,7 @@ impl CpuCulledRenderer {
             Opaque::bind_frame(list, ViewId::SUBSURFACE, Some(lit_for(lit, ViewId::CAMERA)))?;
         }
         let rebuilt = self.layout.built_in == input.frame;
-        arena.begin_frame(self.upload_bound() + LinesPass::upload_bytes(&input.lines))?;
+        arena.begin_frame()?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::MATERIALS, MATERIAL_TEXELS)?;
             ao::upload_blank(list, arena, ids::BLANK_AO)?;
@@ -3505,7 +3435,7 @@ mod patch_tests {
         );
         let mut list = DrawList::with_capacity(64);
         let mut arena = UploadArena::default();
-        arena.reset(1 << 16);
+        arena.begin_frame().unwrap();
         let mut sizes = Vec::new();
         upload_patches(
             &mut sizes, &patches, &meshes, true, &mut list, &mut arena, true,

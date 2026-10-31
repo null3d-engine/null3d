@@ -17,7 +17,7 @@
 use std::collections::TryReserveError;
 use std::ops::Range;
 
-use null3d_core::alloc::{FRAME_HEADROOM, keep_room};
+use null3d_core::alloc::keep_room;
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::culling::{NO_BUCKET, RowRanges, batch_ranges};
 use null3d_core::handle::Handle;
@@ -720,26 +720,6 @@ impl Layout {
         self.buffer_sizes[0]
     }
 
-    /// The most that one frame copies into its arena for the tables: the bucket table, the layer
-    /// table, the bucket records, the cell order and the ranges texture.
-    pub(super) fn upload_bound(&self) -> usize {
-        let owned = self.owned(self.sources) as usize;
-        // Each source has a row of the bucket table. The layout that owns the tables gives each
-        // source a row of the layer table, a place in the cell order, and a texel of the ranges
-        // texture.
-        let rows = self.sources as usize * 4 + owned * (4 + 4 + RANGE_FLOATS * 4);
-        let firsts = self.skin_firsts.len() * 4;
-        // A frame that writes every record writes the skinned objects' bounds again after them.
-        let writes = if self.skinned.is_empty() { 1 } else { 2 };
-        // The scene's layout may build its table of object ranges in the frame, after this bound.
-        let object_ranges = if self.owns_sources() {
-            sizes::OBJECT_RANGE_BYTES as usize
-        } else {
-            0
-        };
-        rows + firsts + self.buckets.len() * BUCKET_BYTES as usize * writes + object_ranges
-    }
-
     /// Makes room for the bucket table, the layer table and the cell order of `sources` sources.
     pub(super) fn reserve(&mut self, sources: u32) -> Result<(), TryReserveError> {
         let owned = self.owned(sources);
@@ -927,11 +907,11 @@ impl Layout {
         // The tables below grow with plain pushes, which cannot report a refused request. They keep
         // their room between rebuilds, so a rebuild of no more sources asks for nothing new.
         if sources > self.room_for_sources {
-            keep_room(sources as usize * REBUILD_BYTES_PER_SOURCE + FRAME_HEADROOM).map_err(
-                |_| RecordError::OutOfMemory {
+            keep_room(sources as usize * REBUILD_BYTES_PER_SOURCE).map_err(|_| {
+                RecordError::OutOfMemory {
                     bytes: sources.saturating_mul(REBUILD_BYTES_PER_SOURCE as u32),
-                },
-            )?;
+                }
+            })?;
             self.room_for_sources = sources;
         }
         if self.owns_sources() && settings.materials().reads_object_ids() {
@@ -2095,7 +2075,7 @@ mod tests {
     fn uploaded_ranges(layout: &mut Layout) -> Vec<[f32; 4]> {
         let mut list = DrawList::with_capacity(4096);
         let mut arena = UploadArena::default();
-        arena.reset(1 << 16);
+        arena.begin_frame().unwrap();
         layout.apply(&mut list, &mut arena, u32::MAX).unwrap();
         let base = arena.bytes().as_ptr() as usize;
         let op = null3d_gpu::drawlist::decode(list.words())
@@ -2341,7 +2321,7 @@ mod tests {
             .unwrap();
         let mut list = DrawList::with_capacity(1 << 16);
         let mut arena = UploadArena::default();
-        arena.reset(layout.upload_bound());
+        arena.begin_frame().unwrap();
         layout
             .apply(&mut list, &mut arena, u32::MAX)
             .expect("the frame's tables fit the room the layout asked for");

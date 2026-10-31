@@ -200,7 +200,7 @@ use crate::transmission::{self, TransmissionIds};
 use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
 use crate::view_copy::ViewCopyIds;
 use crate::weighted::WeightedIds;
-use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES, Phase};
+use cull::{Culling, INDIRECT_BYTES, Phase};
 use direct::Direct;
 use feature_rows::FeatureRows;
 use layout::{Drawn, Layout};
@@ -2180,7 +2180,7 @@ impl GpuDrivenRenderer {
             )?;
         }
 
-        arena.begin_frame(self.upload_bound() + LinesPass::upload_bytes(&input.lines))?;
+        arena.begin_frame()?;
         let array = self.settings.probes().array().map_or(0, |(id, _)| id);
         let probe_layers = self.settings.probes().probe_layers();
         self.settings
@@ -3688,86 +3688,6 @@ impl GpuDrivenRenderer {
         self.decal_depth_bound = depth;
         Ok(())
     }
-
-    /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the whole material table, three.js's table of specular terms, both layouts'
-    /// tables, the light grid, each view's, each cascade's and each tile's frame uniform, culling
-    /// parameters and indirect draws, the cascades' and the tiles' uniforms, and the final pass's
-    /// settings.
-    fn upload_bound(&self) -> usize {
-        let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
-        // The cluster tables upload again whenever the layout changes, and every view uploads its
-        // three blocks of dispatch parameters. Both belong to the cluster pass, which the direct
-        // path does not record.
-        let clusters = if self.config.direct_draws {
-            0
-        } else {
-            clusters::Clusters::upload_bytes(&self.layout)
-                + clusters::Clusters::upload_bytes(&self.casters)
-        };
-        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2
-            + dfg::BYTES
-            + ao::BLANK_BYTES;
-        let per_view = |layout: &Layout| {
-            (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
-                + layout.draws.len() * INDIRECT_BYTES as usize
-                + if self.config.direct_draws {
-                    layout.compacted_bytes() as usize
-                } else {
-                    0
-                }
-        };
-        let camera_views = self.settings.views().len();
-        let pyramids = if self.graph.occlusion() {
-            Pyramids::UPLOAD_BYTES
-        } else {
-            0
-        };
-        let motion = if self.layouts_moving {
-            per_view(&self.moving) + crate::motion::BLOCK_BYTES as usize
-        } else {
-            0
-        };
-        let views = camera_views
-            * (per_view(&self.layout) + pyramids + probes::LIST_BYTES as usize)
-            + per_view(&self.outlined)
-            + per_view(&self.scattering)
-            + motion;
-        let tiles = self.settings.tile_settings().tiles as usize;
-        let cascades = (MAX_CASCADES + tiles.min(MAX_TILES)) * per_view(&self.casters);
-        let tables = self.layout.upload_bound()
-            + self.casters.upload_bound()
-            + self.outlined.upload_bound()
-            + self.scattering.upload_bound()
-            + self.moving.upload_bound();
-
-        let lights = self.lights.upload_room();
-        let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
-        let sorted = Transparent::upload_bound(&self.sorted, camera_views)
-            + Transparent::upload_bound(&self.decal_layout, 1)
-            + Transparent::upload_bound(&self.redraw_layout, 1);
-        let particles = self
-            .particles
-            .upload_bound(self.settings.particles(), camera_views);
-        let skinning = self.skinning.upload_bound(self.settings.meshes());
-        meshes
-            + skinning
-            + materials
-            + clusters
-            + tables
-            + lights
-            + views
-            + cascades
-            + shadows
-            + sorted
-            + particles
-            // The page's rows that this frame uploads, then the camera that the conversion reads.
-            + self.settings.feature_instances().pending_bytes()
-            + FeatureRows::UPLOAD_BYTES
-            + self.graph.upload_bound()
-            + BackgroundPass::UPLOAD_BYTES
-            + PhysicalSkyPass::UPLOAD_BYTES
-    }
 }
 
 impl GpuDrivenRenderer {
@@ -3823,11 +3743,6 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.scattering.reserve(sources)?;
         self.moving.reserve(sources)?;
 
-        let added = sources.saturating_sub(self.layout.sources);
-        let bound = self.upload_bound() + (added * TABLE_BYTES_PER_SOURCE) as usize;
-        for arena in self.lists.arenas_mut() {
-            arena.try_reserve(bound)?;
-        }
         Ok(())
     }
 

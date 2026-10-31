@@ -313,9 +313,6 @@ dependencies = [
 [[package]]
 name = "null3d-gpu"
 version = "0.0.0"
-dependencies = [
- "null3d-core",
-]
 
 [[package]]
 name = "null3d-render"

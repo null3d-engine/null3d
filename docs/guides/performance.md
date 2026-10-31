@@ -350,9 +350,9 @@ The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatenc
 
 ## Memory peak
 
-A scene's memory peaks in its first frame. That frame copies every mesh of the scene into one upload, which the engine asks for as a single request, and the frame stops with [E1109](../errors/E1109.md) when the engine's memory cannot give it. The request is largest on the direct draw path, which a start-up timing test picks on some devices and under some loads. So one page can peak at two different heights. A scene with 84 MiB of meshes peaks at about 510 MiB on the indirect path and about 710 MiB on the direct path at the High preset.
+A scene's memory peaks in its first frames, which copy every mesh of the scene to the GPU, and a moving camera adds to the peak in the frames after them. The peak differs by draw path, which a start-up timing test picks on some devices. A scene with 84 MiB of meshes peaks at about 205 MiB on the indirect path and about 270 MiB on the direct path at the High preset.
 
-WebAssembly memory never shrinks, so a reading after the first frames is the peak:
+WebAssembly memory never shrinks, so a reading after the camera has moved is the peak:
 
 ```ts
 const { memory } = await engine.measure(5);
@@ -360,9 +360,9 @@ const peak = (memory.wasmBytes ?? 0) / 2 ** 20;
 console.log(`${Math.round(peak)} of ${engine.mode.memoryMaximumMiB} MiB`);
 ```
 
-`?stats=open` in the page's address shows the same figure. Measure with `?direct=on` in the address as well, because that is the path that needs the most.
+`?stats=open` in the page's address shows the same figure. Measure with `?direct=on` in the address as well, because that path needs the most.
 
-A frame also needs 8 MiB of headroom, so a scene stops with E1109 once its peak leaves less than that under the limit, even though the peak itself fits. Keep the peak well under the limit on both paths, and test on the devices you ship to, because a browser can refuse memory before the limit.
+The engine keeps the last 8 MiB under the limit for its own small requests. A scene that reaches them stops with [E1109](../errors/E1109.md) in its next frame, even though the peak itself fits. So keep the peak well under the limit on both paths, and test on the devices you ship to, because a browser can refuse memory before the limit.
 
 When a scene comes too close:
 

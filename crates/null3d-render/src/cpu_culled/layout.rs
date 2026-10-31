@@ -14,7 +14,7 @@
 
 use std::collections::TryReserveError;
 
-use null3d_core::alloc::{FRAME_HEADROOM, keep_room};
+use null3d_core::alloc::keep_room;
 use null3d_core::clusters::{
     CLUSTER_ROWS, CLUSTER_SHIFT, ClusterScratch, NO_ROW, RowCells, RowClusters, cluster_room,
 };
@@ -414,11 +414,11 @@ impl Layout {
         let rows: u32 = batches.iter().map(|(_, batch)| batch.capacity()).sum();
         let sources = self.scene_rows.saturating_add(rows);
         if sources > self.room_for_sources {
-            keep_room(sources as usize * REBUILD_BYTES_PER_SOURCE + FRAME_HEADROOM).map_err(
-                |_| RecordError::OutOfMemory {
+            keep_room(sources as usize * REBUILD_BYTES_PER_SOURCE).map_err(|_| {
+                RecordError::OutOfMemory {
                     bytes: sources.saturating_mul(REBUILD_BYTES_PER_SOURCE as u32),
-                },
-            )?;
+                }
+            })?;
             self.room_for_sources = sources;
         }
         self.codes = self.drawn == Drawn::Scene && settings.debug_view() == DebugView::Levels;
@@ -1136,13 +1136,6 @@ impl Clusters {
         Self::clustered(layout, casters)
             .map(|slot| (slot, self.set(slot)))
             .filter(|(_, set)| set.current && !set.uploaded)
-    }
-
-    /// The bytes that the next [`Clusters::upload`] copies into the arena.
-    pub(super) fn pending_bytes(&self, layout: &Layout, casters: &Layout) -> usize {
-        self.uploads(layout, casters)
-            .map(|(_, set)| set.clusters.order().len() * 4)
-            .sum()
     }
 
     /// Writes the cluster order of each static batch whose clusters are new, or moved in the

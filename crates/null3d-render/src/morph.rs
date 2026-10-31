@@ -506,16 +506,6 @@ impl MorphTexture {
         Ok(made)
     }
 
-    /// The most that one frame copies into its arena: the deltas not uploaded yet, and the
-    /// weights.
-    pub(crate) fn upload_bound(&self, meshes: &MeshStorage) -> usize {
-        if !self.active() {
-            return 0;
-        }
-        let deltas = (meshes.morph_texels().len() as u32).saturating_sub(self.uploaded);
-        (deltas * DELTA_BYTES + self.weight_texels * WEIGHT_BYTES) as usize
-    }
-
     /// Uploads the deltas that the texture of deltas lacks, and every object's weights for the
     /// frame, at most `cap` of each. Marks each object whose weights differ from the last upload's.
     pub(crate) fn upload(
@@ -802,7 +792,7 @@ mod tests {
         assert!(texture.size(&mut list, &meshes, true).unwrap());
         let weights = |texture: &mut MorphTexture| {
             let mut arena = UploadArena::default();
-            arena.reset(texture.upload_bound(&meshes));
+            arena.begin_frame().unwrap();
             let mut list = DrawList::with_capacity(256);
             texture
                 .upload(&mut list, &mut arena, &morphs, None, &meshes)

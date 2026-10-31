@@ -2355,7 +2355,10 @@ async function startEngine(
 			memory: core.memory,
 			control,
 			metrics,
-			device: { ...device, memoryMaximumMiB: threaded ? maximumMiB : undefined },
+			device: {
+				...device,
+				memoryMaximumMiB: threaded && !switches.hideMemoryMaximum ? maximumMiB : undefined,
+			},
 			wakeByMessage,
 		};
 		// Only a canvas that no engine used before may need its CSS size fixed: the fix resizes the
