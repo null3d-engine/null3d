@@ -3,7 +3,7 @@ id: concepts/particle-buffer
 title: The particle buffer
 status: experimental
 since: "0.2"
-summary: "What a particle buffer holds: its 32-byte records, its values and its frame's values; how sketch code writes births into it; and the limits that it meets."
+summary: "What a particle buffer holds: its 32-byte records, its values and its frame's values; how an emitter or sketch code writes births into it; and the limits that it meets."
 ---
 
 # The particle buffer
@@ -12,16 +12,16 @@ summary: "What a particle buffer holds: its 32-byte records, its values and its 
 
 ```mermaid
 flowchart LR
-    write["Sketch code writes a record<br/>once for each particle born"] --> records[("The record table<br/>32 bytes for each particle")]
-    frame["Sketch code writes the<br/>time and the record count"] --> draw
+    emitter["The core's emitter, or sketch code,<br/>writes a record for each particle born"] --> records[("The record table<br/>32 bytes for each particle")]
+    frame["The frame's time and record count"] --> draw
     records --> draw["One instanced draw<br/>in the transparent pass"]
     draw --> vertex["The vertex shader works out<br/>each particle at its age"]
     vertex --> screen["Quads on screen"]
 ```
 
-A particle buffer is a scene object and a flat table of particle records. Sketch code writes one record when a particle is born. The GPU then works out where that particle is and how it looks at its age, in closed form. No pass moves the particles, so a frame at a given time looks the same whatever frames came before it, on WebGPU and on WebGL2.
+A particle buffer is a scene object and a flat table of particle records. A record is written once, when a particle is born. The GPU then works out where that particle is and how it looks at its age, in closed form. No pass moves the particles, so a frame at a given time looks the same whatever frames came before it, on WebGPU and on WebGL2.
 
-The `@null3d/particles` add-on builds its systems from buffers. Its emitters, bursts and sub-emitters decide where and when particles are born, then write the records. Use the add-on for most work. This page covers the buffer itself, for an emitter that the add-on does not fit.
+The `@null3d/particles` add-on builds its systems from buffers. Its emitters, bursts and sub-emitters decide where and when particles are born, then write the records in the engine's core. Use the add-on for most work. This page covers the buffer itself, for an emitter that the add-on does not fit.
 
 ## What the buffer holds
 
@@ -30,7 +30,8 @@ The `@null3d/particles` add-on builds its systems from buffers. Its emitters, bu
 | The object | one scene object | Its place, turn, scale, layers, visibility and bounds. Birth places are in its space, so moving the object moves every particle. |
 | The records | 32 bytes for each of `capacity` | One record for each particle that the buffer holds at once. |
 | The values | 512 bytes | The motion and the look of every particle of the buffer. It uploads when `set` changes it. |
-| The frame's values | 16 bytes | The time, the record count and the time shift, which the sketch writes in each frame. |
+| The frame's values | 16 bytes | The time, the record count and the time shift. The sketch writes them, or the core's emitter does. |
+| The emitter | a block of numbers | The settings and the frame's numbers of an emitter in the core, when the buffer has one. |
 
 The engine gives the object one material, with the particle shading. It blends and writes no depth. The material takes a `map` for the particles' texture, and without one each particle is a soft round dot. The `blending` option is additive or normal, and it defaults to additive. `layers` chooses the layers that the buffer draws on.
 
@@ -134,6 +135,30 @@ The birth time counts from `frame[0]`, which must rise with the frame's time. Ke
 
 `buffer.destroy()` frees the records, the GPU buffers and the object.
 
+## An emitter in the core
+
+A buffer can also emit. Configure an emitter once, and the core writes a frame's records in one call. The particles add-on uses this path. The core makes every record of the frame. It plans and fires the sub-emitters, and moves the time base. The sketch runs no loop over the births.
+
+```ts
+buffer.configureEmitter({
+  seed: 7,
+  shape: { type: 'sphere', radius: 0.1 },
+  speed: [2, 4],
+  lifetime: [0.6, 1],
+  bursts: [{ time: 0, count: 20 }],
+  subEmitters: [{ buffer: sparks, on: 'death', count: 4 }],
+});
+
+// In each frame, after the objects have their world places:
+buffer.emitFrame(time.now - dt, time.now, 200, true);
+```
+
+`configureEmitter` takes the seed and the shape: point, sphere, cone, box or disc. It also takes the direction and its spread, with the speed and lifetime ranges. A velocity, the bursts, the duration, the loop, the followed object and the sub-emitters follow. The engine keeps the motion and the values, so the core's events follow the same closed form as the shader.
+
+`emitFrame(from, to, rate, emitting, prewarm)` writes the rate's births and the bursts between the two times. It fires the sub-emitters that fall due by `to`. It moves the time base when the time calls for it. `emitBurst(count, at, velocity)` writes particles at once. `emitted` counts the particles that the emitter has made.
+
+The core gives the object its culling sphere after each frame. The sphere covers the births of the last two lifetimes, grown by how far a particle can move. A system such as the add-on's follows a moving object with `setEmitterFollow`, and gives each sub-emitter's world place with `setEmitterEvents`.
+
 ## What a frame sends
 
 - The records written since the last frame, in up to four ranges. The first frame after creation sends the whole table. A fifth range merges with the nearest of the four, so writes scattered across the table send a wider range.
@@ -149,7 +174,7 @@ A frame's upload therefore grows with the births it writes. The number of partic
 - The engine's memory holds 32 bytes for each record, and the GPU holds a copy of the same bytes. A buffer that cannot get its memory throws [E1109](../errors/E1109.md).
 - The count is rounded down to a whole number, at most the capacity. A count that is not finite, or that is 0 or less, draws nothing.
 - The lifetime is a 16-bit float with about three digits of precision, rounded down. One above 65,504 seconds stores as 65,504. One below about 0.00003 seconds stores as zero, so the particle never draws.
-- Birth times are 32-bit floats, so their precision falls as the buffer's clock grows. A buffer that runs for hours moves its time base. It rewrites the birth times at their new times and tells the shader how far that move has reached. The value in `frame[2]` is the first record that still counts from the old base, and `frame[3]` holds the seconds to take off it. The add-on does this after 1,024 seconds.
+- Birth times are 32-bit floats, so their precision falls as the buffer's clock grows. A buffer that runs for hours moves its time base. It rewrites the birth times at their new times and tells the shader how far that move has reached. The value in `frame[2]` is the first record that still counts from the old base, and `frame[3]` holds the seconds to take off it. An emitter does this after 1,024 seconds.
 - A buffer with a map draws nothing in a frame where the map's image is not yet on the GPU.
 - A softness above 0 makes the camera copy its opaque depth in each frame, which is one full-screen pass. The Low preset turns soft particles off.
 - The particles cast no shadow and lights do not light them. A raycast against the object tests its one triangle at the origin, which has no area, so it never hits a particle.

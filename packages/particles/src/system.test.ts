@@ -1,366 +1,247 @@
 import { describe, expect, test } from 'bun:test';
 import type {
 	Mat4Like,
+	Mesh,
 	Object3D,
 	ParticleBuffer,
+	ParticleEmitterOptions,
 	ParticleValues,
 	SketchTime,
+	Vec3Like,
 } from '@null3d/engine';
-import {
-	AGE,
-	FLIGHT_FLOATS,
-	GROUND_BOUNCE,
-	GROUND_KILL,
-	HIT,
-	impact,
-	type MotionValues,
-	PARTICLE_FLOATS,
-	particleState,
-	reach,
-	SEED,
-	simplex3,
-	stateAt,
-	T,
-} from './motion';
 import { ParticleSystem, type ParticleSystemOptions } from './system';
 
-/** A particle buffer that keeps its records in plain arrays, with an object at the origin. */
-function fakeBuffer(capacity: number) {
-	const records: number[][] = [];
-	const frames: [number, number][] = [];
-	/** Each frame's values, and the records written in each frame. */
-	const commits: { frame: number[]; writes: number }[] = [];
-	let writes = 0;
-	const frame = new Float32Array(4);
-	const bounds: number[][] = [];
-	const values: ParticleValues[] = [];
-	const identity = (out: Mat4Like) => {
-		for (let k = 0; k < 16; k++) out[k] = k % 5 === 0 ? 1 : 0;
+/** A particle buffer that logs the calls that the system makes into the core. */
+function fakeBuffer(capacity = 64) {
+	const state = {
+		emitted: 0,
+		configure: undefined as ParticleEmitterOptions | undefined,
+		frames: [] as number[][],
+		bursts: [] as number[][],
+		sets: [] as ParticleValues[],
+		follows: [] as Float64Array[],
+		events: [] as { world: Float64Array; children: Float64Array[] }[],
+		destroyed: false,
 	};
 	const buffer = {
 		capacity,
-		object: {
-			getWorldMatrix: identity,
-			setBounds: (center: number[], radius: number) => bounds.push([...center, radius]),
+		object: fakeObject() as unknown as Mesh,
+		get emitted() {
+			return state.emitted;
 		},
-		write: (index: number, record: ArrayLike<number>, seed: number) => {
-			records[index] = [...Array.from(record), seed];
-			writes++;
+		configureEmitter(options: ParticleEmitterOptions) {
+			state.configure = options;
 		},
-		writeRecords: (block: Float32Array, count: number, first: number) => {
-			for (let i = 0; i < count; i++) {
-				const at = i * 9;
-				const index = (first + i) % capacity;
-				records[index] = [...block.slice(at, at + 8), block[at + 8] as number];
-				writes++;
-			}
+		emitFrame(from: number, to: number, rate: number, emitting: boolean, prewarm: boolean) {
+			state.frames.push([from, to, rate, emitting ? 1 : 0, prewarm ? 1 : 0]);
+			state.emitted += 1;
 		},
-		shiftRecords: (from: number, to: number, seconds: number) => {
-			for (let i = from; i < to; i++) {
-				const record = records[i];
-				if (!record) continue;
-				record[3] = (record[3] as number) - seconds;
-				writes++;
-			}
+		emitBurst(count: number, at?: Vec3Like, velocity?: Vec3Like) {
+			const row = [count];
+			if (at) for (let k = 0; k < 3; k++) row.push(at[k] as number);
+			if (velocity) for (let k = 0; k < 3; k++) row.push(velocity[k] as number);
+			state.bursts.push(row);
 		},
-		read: (index: number, out: Float32Array) => out.set(records[index] ?? []),
-		frame,
-		commit: () => {
-			frames.push([frame[0] as number, frame[1] as number]);
-			commits.push({ frame: Array.from(frame), writes });
-			writes = 0;
+		set(values: ParticleValues) {
+			state.sets.push(values);
 		},
-		set: (v: ParticleValues) => values.push(v),
-		destroy: () => {},
+		setEmitterFollow(last: Mat4Like, now: Mat4Like, toLocal: Mat4Like) {
+			state.follows.push(
+				new Float64Array([
+					...(last as Float64Array),
+					...(now as Float64Array),
+					...(toLocal as Float64Array),
+				]),
+			);
+		},
+		setEmitterEvents(world: Mat4Like, children: readonly Mat4Like[]) {
+			state.events.push({
+				world: new Float64Array(world as Float64Array),
+				children: children.map((child) => new Float64Array(child as Float64Array)),
+			});
+		},
+		destroy() {
+			state.destroyed = true;
+		},
 	};
-	return { buffer: buffer as unknown as ParticleBuffer, records, frames, commits, bounds };
+	return { buffer: buffer as unknown as ParticleBuffer, state };
 }
+
+/** A scene object whose world matrix is the identity and which sits at `place`. */
+function fakeObject(place: readonly [number, number, number] = [0, 0, 0]) {
+	const object = {
+		getWorldMatrix: (out: Mat4Like) => {
+			const m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, place[0], place[1], place[2], 1];
+			for (let k = 0; k < 16; k++) out[k] = m[k] as number;
+		},
+		getWorldPosition: (out: number[]) => {
+			out[0] = place[0];
+			out[1] = place[1];
+			out[2] = place[2];
+		},
+	};
+	return object as unknown as Object3D;
+}
+
+const clock = { now: 0, dt: 0.1, frame: 0 } as SketchTime;
 
 function system(options: ParticleSystemOptions, capacity = 64) {
 	const fake = fakeBuffer(capacity);
-	const clock = { now: 0, dt: 0, frame: 0 } as SketchTime;
-	return { ...fake, system: new ParticleSystem(fake.buffer, options, clock) };
+	const system = new ParticleSystem(fake.buffer, options, clock);
+	return { ...fake, system };
 }
 
-describe('emission', () => {
-	test('a rate emits evenly spaced births, whatever the frame steps', () => {
-		const a = system({ rate: 10, lifetime: 2 });
-		for (let k = 0; k < 60; k++) a.system.update(1 / 60);
-		const b = system({ rate: 10, lifetime: 2 });
-		for (let k = 0; k < 4; k++) b.system.update(0.25);
-		expect(a.records.length).toBe(10);
-		expect(b.records.length).toBe(10);
-		for (let i = 0; i < 10; i++) {
-			expect(a.records[i]?.[3]).toBeCloseTo((i + 1) / 10, 5);
-			expect(b.records[i]).toEqual(a.records[i] as number[]);
-		}
-		expect(a.frames.at(-1)?.[1]).toBe(10);
-	});
-
-	test('bursts fire once at their time, and again at each interval', () => {
+describe('the emitter settings', () => {
+	test('the options go to the core once, with the ranges resolved', () => {
+		const follow = fakeObject([1, 2, 3]);
+		const childBuffer = fakeBuffer(16).buffer;
+		const child = { buffer: childBuffer, destroyed: false } as unknown as ParticleSystem;
 		const s = system({
-			bursts: [
-				{ time: 0, count: 5 },
-				{ time: 0.5, count: 2, interval: 1, cycles: 3 },
-			],
+			rate: 7,
+			speed: 2,
+			lifetime: [1, 3],
+			shape: { type: 'sphere', radius: 0.5, surface: true },
+			direction: [0, 1, 0],
+			spread: 0.2,
+			velocity: [0.1, 0.2, 0.3],
+			bursts: [{ time: 0.5, count: 4, interval: 1, cycles: 2 }],
+			duration: 5,
+			follow,
+			seed: 9,
+			subEmitters: [{ system: child, on: 'ground', count: 3, inheritVelocity: 0.5 }],
 		});
-		for (let k = 0; k < 40; k++) s.system.update(0.1);
-		// 5 at the start, then 2 at 0.5, 1.5 and 2.5 seconds.
-		expect(s.records.length).toBe(11);
-		expect(s.records[5]?.[3]).toBeCloseTo(0.5, 5);
-		expect(s.records[10]?.[3]).toBeCloseTo(2.5, 5);
+		const options = s.state.configure as ParticleEmitterOptions;
+		expect(options.seed).toBe(9);
+		expect(options.speed).toEqual([2, 2]);
+		expect(options.lifetime).toEqual([1, 3]);
+		expect(options.shape).toEqual({ type: 'sphere', radius: 0.5, surface: true });
+		expect(options.direction).toEqual([0, 1, 0]);
+		expect(options.spread).toBe(0.2);
+		expect(options.velocity).toEqual([0.1, 0.2, 0.3]);
+		expect(options.duration).toBe(5);
+		expect(options.loop).toBe(true);
+		expect(options.follow).toBe(true);
+		expect(options.bursts).toEqual([{ time: 0.5, count: 4, interval: 1, cycles: 2 }]);
+		expect(options.subEmitters).toEqual([
+			{ buffer: childBuffer, on: 'ground', count: 3, inheritVelocity: 0.5 },
+		]);
 	});
 
-	test('a system past its capacity reuses the oldest places', () => {
-		const s = system({ rate: 100, lifetime: 1 }, 16);
-		for (let k = 0; k < 10; k++) s.system.update(0.1);
-		expect(s.records.length).toBe(16);
-		expect(s.frames.at(-1)?.[1]).toBe(16);
+	test('the seed defaults to 1, and a system without a followed object says so', () => {
+		const s = system({ rate: 1 });
+		const options = s.state.configure as ParticleEmitterOptions;
+		expect(options.seed).toBe(1);
+		expect(options.follow).toBe(false);
+		expect(options.lifetime).toEqual([1, 1]);
+		expect(options.speed).toEqual([1, 1]);
 	});
+});
 
-	test('a cone emits within its angle, and a sphere outward from its center', () => {
-		const cone = system(
-			{ rate: 200, shape: { type: 'cone', radius: 0.5, angle: 0.3 }, speed: 2 },
-			256,
-		);
-		cone.system.update(1);
-		for (const r of cone.records) {
-			const [x, , z, , vx, vy, vz] = r as number[];
-			expect(Math.hypot(x as number, z as number)).toBeLessThanOrEqual(0.5 + 1e-9);
-			expect(
-				Math.acos((vy as number) / Math.hypot(vx as number, vy as number, vz as number)),
-			).toBeLessThanOrEqual(0.3 + 1e-6);
-		}
-		const ball = system(
-			{ rate: 200, shape: { type: 'sphere', radius: 1, surface: true }, speed: 1 },
-			256,
-		);
-		ball.system.update(1);
-		for (const r of ball.records) {
-			const [x, y, z, , vx, vy, vz] = r as number[];
-			expect(Math.hypot(x as number, y as number, z as number)).toBeCloseTo(1, 6);
-			expect(
-				(x as number) * (vx as number) +
-					(y as number) * (vy as number) +
-					(z as number) * (vz as number),
-			).toBeCloseTo(1, 6);
-		}
-	});
-
-	test('a direction with no spread sends every particle that way', () => {
-		const s = system({ rate: 10, direction: [1, 0, 0], speed: 3 });
-		s.system.update(1);
-		for (const r of s.records) {
-			expect(r[4]).toBeCloseTo(3, 9);
-			expect(r[5]).toBeCloseTo(0, 9);
-		}
-	});
-
-	test('the culling bounds hold the births and how far particles reach', () => {
-		const s = system({ rate: 10, speed: 2, lifetime: 1, gravity: [0, -10, 0] });
+describe('update', () => {
+	test('each frame gives the core its span, rate and emitting flag', () => {
+		const s = system({ rate: 12 });
 		s.system.update(0.5);
-		const [, , , radius] = s.bounds.at(-1) as number[];
-		expect(radius).toBeGreaterThanOrEqual(2 + 5);
+		s.system.update(0.25);
+		expect(s.state.frames).toEqual([
+			[0, 0.5, 12, 1, 0],
+			[0.5, 0.75, 12, 1, 0],
+		]);
+		expect(s.system.time).toBe(0.75);
+	});
+
+	test('a stopped emitter still moves on, and gives the core no births', () => {
+		const s = system({ rate: 12 });
+		s.system.emitting = false;
+		s.system.rate = 3;
+		s.system.update(0.5);
+		expect(s.state.frames).toEqual([[0, 0.5, 3, 0, 0]]);
+	});
+
+	test('a prewarmed system runs its first span at the longest lifetime', () => {
+		const s = system({ rate: 4, lifetime: [1, 2], prewarm: true });
+		s.system.update(0.25);
+		expect(s.state.frames).toEqual([[2, 2.25, 4, 1, 1]]);
+		expect(s.system.time).toBe(2.25);
+		s.system.update(0.25);
+		expect(s.state.frames[1]).toEqual([2.25, 2.5, 4, 1, 0]);
+	});
+
+	test('a system that emitted before its first update is not prewarmed', () => {
+		const s = system({ rate: 4, lifetime: [1, 2], prewarm: true });
+		s.state.emitted = 1;
+		s.system.update(0.25);
+		expect(s.state.frames[0]).toEqual([0, 0.25, 4, 1, 0]);
+	});
+
+	test('a negative step adds nothing to the system time', () => {
+		const s = system({ rate: 4 });
+		s.system.update(-1);
+		expect(s.state.frames[0]).toEqual([0, 0, 4, 1, 0]);
 	});
 });
 
-describe('sub-emitters', () => {
-	test('a particle that dies bursts its sub-emitter where it died', () => {
-		const child = system({ lifetime: 1 }, 64);
-		const parent = system({
-			bursts: [{ time: 0, count: 1 }],
-			speed: 4,
-			lifetime: 0.5,
-			subEmitters: [{ system: child.system, on: 'death', count: 8 }],
-		});
-		for (let k = 0; k < 6; k++) parent.system.update(0.1);
-		expect(child.records.length).toBe(8);
-		// Straight up at 4 m/s for half a second, with no gravity.
-		expect(child.records[0]?.[1]).toBeCloseTo(2, 5);
+describe('the rest of the system', () => {
+	test('burst gives the core the count, place and velocity', () => {
+		const s = system({ rate: 0 });
+		s.system.burst(5, [1, 2, 3], [0.5, 0, -0.5]);
+		s.system.burst(2);
+		expect(s.state.bursts).toEqual([[5, 1, 2, 3, 0.5, 0, -0.5], [2]]);
 	});
 
-	test('a particle that meets the ground bursts there', () => {
-		const child = system({ lifetime: 1 }, 64);
-		const parent = system({
-			bursts: [{ time: 0, count: 1 }],
-			direction: [0, -1, 0],
-			speed: 1,
-			lifetime: 5,
-			groundHeight: -1,
-			subEmitters: [{ system: child.system, on: 'ground', count: 3 }],
-		});
-		for (let k = 0; k < 20; k++) parent.system.update(0.1);
-		expect(child.records.length).toBe(3);
-		expect(child.records[0]?.[1]).toBeCloseTo(-1, 2);
-	});
-	test('a followed emitter places its births between the two frames’ places', () => {
-		let x = 0;
-		const follow = {
-			getWorldMatrix: (out: Mat4Like) => {
-				for (let k = 0; k < 16; k++) out[k] = k % 5 === 0 ? 1 : 0;
-				out[12] = x;
-			},
-		} as unknown as Object3D;
-		const { records, system: particles } = system({ follow, rate: 100, lifetime: 1 }, 128);
-		particles.update(0.1);
-		// The first frame's births stand where the emitter stood.
-		for (const record of records.filter((record) => (record[3] as number) < 0.105))
-			expect(record[0]).toBeCloseTo(0, 5);
-		x = 1;
-		particles.update(0.1);
-		// The second frame's births take the emitter's place at their share through the frame.
-		const second = records.filter((record) => (record[3] as number) > 0.105);
-		expect(second.length).toBeGreaterThan(5);
-		for (const record of second) {
-			const share = ((record[3] as number) - 0.1) / 0.1;
-			expect(record[0]).toBeCloseTo(share, 5);
-		}
-		expect(second[0]?.[0] as number).toBeGreaterThan(0.05);
-		expect(second.at(-1)?.[0] as number).toBeGreaterThan(0.85);
+	test('set changes the values through the buffer', () => {
+		const s = system({ rate: 0 });
+		const values = { drag: 2, gravity: [0, -9.8, 0] };
+		s.system.set(values);
+		expect(s.state.sets).toEqual([values]);
 	});
 
-	test('the table of pending events starts small and grows to hold every particle', () => {
-		const child = system({ lifetime: 1 }, 2048);
-		const parent = system(
-			{
-				bursts: [{ time: 0, count: 1000 }],
-				lifetime: 0.5,
-				subEmitters: [{ system: child.system, on: 'death', count: 1 }],
-			},
-			1000,
-		);
-		const table = () => (parent.system as unknown as { events: Float64Array }).events.length;
-		const first = table();
-		expect(first).toBeLessThan(1000 * 10);
-		for (let k = 0; k < 6; k++) parent.system.update(0.1);
-		expect(table()).toBeGreaterThan(first);
-		expect(child.records.length).toBe(1000);
-	});
-});
-
-describe('long runs', () => {
-	/** A particle's age as the GPU works it out from a record and the frame's values. */
-	function gpuAge(frame: number[], record: number[], index: number): number {
-		const shift = index >= (frame[2] as number) ? (frame[3] as number) : 0;
-		return Math.fround(frame[0] as number) - Math.fround((record[3] as number) - shift);
-	}
-
-	test('the time base moves over many frames, and every particle keeps its age meanwhile', () => {
-		const capacity = 40_000;
-		const rate = 40;
-		const s = system({ rate, lifetime: [8, 10] }, capacity);
-		const emitted = () => (s.system as unknown as { emitted: number }).emitted;
-		// The particle that a record holds is the newest of its places in the ring; the rate's
-		// stream gives particle n its birth at (n + 1) / rate seconds.
-		const age = (i: number) => {
-			const n = i + capacity * Math.floor((emitted() - 1 - i) / capacity);
-			return s.system.time - (n + 1) / rate;
-		};
-		let moving = 0;
-		let rewrote = 0;
-		for (let k = 0; k < 2400; k++) {
-			const born = emitted();
-			s.system.update(0.5);
-			const { frame, writes } = s.commits.at(-1) as { frame: number[]; writes: number };
-			const shifting = (frame[3] as number) !== 0;
-			if (shifting) moving++;
-			// The writes of a frame are its births and the records the move rewrites.
-			const rewrites = writes - (emitted() - born);
-			expect(rewrites).toBeLessThanOrEqual(16_384);
-			if (rewrites > 0) rewrote++;
-			if (rewrites > 0 || shifting || k % 100 === 0)
-				for (let i = 0; i < s.records.length; i += 97)
-					expect(gpuAge(frame, s.records[i] as number[], i)).toBeCloseTo(age(i), 2);
-		}
-		// 1,200 seconds pass one move. It rewrites 40,000 records over three updates; the last of
-		// them has finished by the time its values are written, so two updates tell the shader
-		// which records still count from the old base.
-		expect(rewrote).toBe(3);
-		expect(moving).toBe(2);
-		const last = s.commits.at(-1)?.frame as number[];
-		expect(last[3]).toBe(0);
-		expect(last[0] as number).toBeLessThan(1024);
-	});
-});
-
-describe('motion', () => {
-	const still: MotionValues = {
-		gx: 0,
-		gy: -9.8,
-		gz: 0,
-		drag: 0,
-		wx: 0,
-		wy: 0,
-		wz: 0,
-		turbulence: 0,
-		turbulenceScale: 1,
-		turbulenceSpeed: 1,
-		groundHeight: 0,
-		groundMode: 0,
-		restitution: 0.5,
-		friction: 0,
-	};
-
-	/** A particle's numbers: born at (x, y, z) with the velocity (vx, vy, vz), at `age`. */
-	const particle = (
-		x: number,
-		y: number,
-		z: number,
-		vx: number,
-		vy: number,
-		vz: number,
-		age: number,
-	) => {
-		const p = new Float64Array(PARTICLE_FLOATS);
-		p.set([x, y, z, vx, vy, vz]);
-		p[AGE] = age;
-		p[SEED] = 1;
-		return p;
-	};
-
-	test('drag eases the velocity toward the wind', () => {
-		const m = { ...still, gy: 0, drag: 2, wx: 3 };
-		const s = particleState();
-		stateAt(m, particle(0, 0, 0, 0, 0, 0, 10), s);
-		expect(s.vx).toBeCloseTo(3, 6);
+	test('the object is the buffer object', () => {
+		const s = system({ rate: 0 });
+		expect(s.system.object).toBe(s.buffer.object);
 	});
 
-	test('the ground stops, bounces and ends particles where the GPU does', () => {
-		const m = { ...still, groundMode: GROUND_BOUNCE };
-		const io = new Float64Array(FLIGHT_FLOATS);
-		io.set([0, 1, 0, 0, 0, 0]);
-		io[T] = 5;
-		impact(m, io);
-		const hit = io[HIT] as number;
-		expect(hit).toBeCloseTo(Math.sqrt(2 / 9.8), 3);
-		const s = particleState();
-		stateAt(m, particle(0, 1, 0, 0, 0, 0, hit + 1e-3), s);
-		expect(s.vy).toBeGreaterThan(0);
-		stateAt({ ...m, groundMode: GROUND_KILL }, particle(0, 1, 0, 0, 0, 0, hit + 1e-3), s);
-		expect(s.alive).toBe(false);
+	test('a followed emitter gives the core its matrices every frame', () => {
+		const s = system({ rate: 0, follow: fakeObject([1, 2, 3]) });
+		s.system.update(0.1);
+		s.system.update(0.1);
+		expect(s.state.follows.length).toBe(2);
+		// The inverse of the identity matrix is the identity.
+		expect([...s.state.follows[0]!.slice(32, 48)]).toEqual([
+			1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+		]);
 	});
 
-	test('simplex noise stays within about -1 to 1 and is 0 at lattice points', () => {
-		const io = new Float64Array(4);
-		simplex3(io);
-		expect(io[3]).toBe(0);
-		let most = 0;
-		for (let k = 0; k < 2000; k++) {
-			io.set([k * 0.137, k * 0.071, k * 0.293]);
-			simplex3(io);
-			most = Math.max(most, Math.abs(io[3] as number));
-		}
-		expect(most).toBeLessThan(1.1);
-		expect(most).toBeGreaterThan(0.3);
+	test('sub-emitters give the core their inverse world matrices', () => {
+		const childBuffer = fakeBuffer(16).buffer;
+		const child = {
+			buffer: childBuffer,
+			object: fakeObject([2, 0, 0]),
+			destroyed: false,
+		} as unknown as ParticleSystem;
+		const s = system({ rate: 0, subEmitters: [{ system: child, on: 'death', count: 1 }] });
+		s.system.update(0.1);
+		expect(s.state.events.length).toBe(1);
+		const { world, children } = s.state.events[0]!;
+		expect([...world.slice(12, 15)]).toEqual([0, 0, 0]);
+		expect([...children[0]!.slice(12, 15)]).toEqual([-2, 0, 0]);
 	});
 
-	test('the reach bounds the motion', () => {
-		const m = { ...still, drag: 0.5, wx: 2 };
-		const s = particleState();
-		const r = reach(m, 3, 2);
-		for (let k = 0; k <= 20; k++) {
-			stateAt(m, particle(0, 0, 0, 3, 0, 0, k / 10), s);
-			expect(Math.hypot(s.px, s.py, s.pz)).toBeLessThanOrEqual(r);
-		}
+	test('a destroyed child gives the core the identity in place of its matrix', () => {
+		const childBuffer = fakeBuffer(16).buffer;
+		const child = {
+			buffer: childBuffer,
+			object: fakeObject([2, 0, 0]),
+			destroyed: true,
+		} as unknown as ParticleSystem;
+		const s = system({ rate: 0, subEmitters: [{ system: child, on: 'death', count: 1 }] });
+		s.system.update(0.1);
+		expect([...s.state.events[0]!.children[0]!.slice(12, 15)]).toEqual([0, 0, 0]);
+	});
+
+	test('destroy marks the system and removes the buffer', () => {
+		const s = system({ rate: 0 });
+		s.system.destroy();
+		expect(s.state.destroyed).toBe(true);
+		expect((s.system as unknown as { destroyed: boolean }).destroyed).toBe(true);
 	});
 });

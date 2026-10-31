@@ -948,6 +948,19 @@ export interface CoreGlue extends CoreErrors {
 	 * that they count from, and marks them.
 	 */
 	shiftParticleRecords(id: number, from: number, to: number, seconds: number): number;
+	/**
+	 * Makes room for a particle system's emitter block of `floats` numbers and returns its
+	 * address, or 0 for no such system or when the memory cannot grow.
+	 */
+	particleEmitterBlock(id: number, floats: number): number;
+	/** Reads an emitter's settings from its block and starts its births and its time base again. */
+	configureParticleEmitter(id: number): number;
+	/** The address of a system's sub-emitter inverse world matrices, 16 numbers each, or 0. */
+	particleSubMatrices(id: number): number;
+	/** Emits a particle system's frame, fires its due sub-emitters, and moves its time base. */
+	emitParticleFrame(id: number): number;
+	/** Emits `count` particles of a system at once, at the place and velocity in its block. */
+	burstParticles(id: number, count: number): number;
 	/** Lets soft particles fade near the surfaces behind them, or draws them with hard edges. */
 	setSoftParticles(on: boolean): number;
 	/**
@@ -1469,6 +1482,11 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'particleRecordBlock',
 	'writeParticleRecords',
 	'shiftParticleRecords',
+	'particleEmitterBlock',
+	'configureParticleEmitter',
+	'particleSubMatrices',
+	'emitParticleFrame',
+	'burstParticles',
 	'setSoftParticles',
 	'createVertexDraw',
 	'destroyVertexDraw',

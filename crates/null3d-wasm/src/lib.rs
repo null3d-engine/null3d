@@ -4265,6 +4265,67 @@ pub fn shift_particle_records(id: u32, from: u32, to: u32, seconds: u32) -> u32 
     })
 }
 
+/// Makes room for a particle system's emitter block of `floats` numbers and returns its address,
+/// or 0 for no such system or when the memory cannot grow. The sketch writes the emitter's
+/// settings into the block and calls `configureParticleEmitter` once, then writes the frame's
+/// numbers and calls `emitParticleFrame` in every frame.
+#[wasm_bindgen(js_name = particleEmitterBlock)]
+pub fn particle_emitter_block(id: u32, floats: u32) -> u32 {
+    value_with_engine(|e| {
+        let address = e
+            .renderer
+            .settings_mut()
+            .particles_mut()
+            .emitter_block(id, floats as usize);
+        if address == 0 {
+            Err(out_of_memory(u64::from(floats) * 8))
+        } else {
+            Ok(address)
+        }
+    })
+}
+
+/// Reads a particle system's emitter settings from its block, which the sketch wrote, and starts
+/// its births and its time base again.
+#[wasm_bindgen(js_name = configureParticleEmitter)]
+pub fn configure_particle_emitter(id: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .particles_mut()
+            .configure_emitter(id);
+        0
+    })
+}
+
+/// The address of a particle system's sub-emitter inverse world matrices, 16 numbers each, or 0
+/// for none. The sketch writes them for the frame's events.
+#[wasm_bindgen(js_name = particleSubMatrices)]
+pub fn particle_sub_matrices(id: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.settings().particles().emitter_sub_matrices(id)))
+}
+
+/// Emits the births of a particle system's frame, fires the sub-emitters that fall due by its
+/// end, and moves its time base when the time calls for it. The sketch writes the frame's numbers
+/// into the emitter block first.
+#[wasm_bindgen(js_name = emitParticleFrame)]
+pub fn emit_particle_frame(id: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().particles_mut().emit_frame(id);
+        0
+    })
+}
+
+/// Emits `count` particles of a system at once, at the place and velocity in its emitter block,
+/// and plans their sub-emitter events.
+#[wasm_bindgen(js_name = burstParticles)]
+pub fn burst_particles(id: u32, count: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().particles_mut().burst(id, count);
+        0
+    })
+}
+
 /// Makes a draw of `vertices` vertices for each of `instances` copies for the object in scene slot
 /// `slot`, whose material is a full shader of the sketch's that makes its vertices from the vertex
 /// and instance indices, and returns its id: 0 when the scene holds the most draws already. No mesh
