@@ -229,6 +229,20 @@ S5 draws animated characters, 500 by default, with shadows. These rows measure c
 | 2026-10-04 | Apple M5 Max, Chrome 154 | WebGL2 | 500 | 1.25 / 54.02 (WebGL) | 2% | 1.20 / 54.00 (WebGL) | 2% | 120.0 / 18.4 | n/a | 5711b3b4 | 20261004-112928-bench |
 | 2026-10-04 | Apple M5 Max, Chrome 154 | WebGPU | 500 | 2.32 / 54.02 (WebGL) | 4% | 2.32 / 54.00 (WebGL) | 4% | 60.0 / 18.4 | 7.38 | 5711b3b4 | 20261004-112928-bench |
 
+## S7
+
+S7 draws one paved surface under a sky with a layer over it. Its two runs differ by the reflection alone ([Benchmarks](benchmarks.md#the-reflection)). The cost is the GPU time per frame with the reflection less the time without it. A path whose browser gives no GPU timer has no figure. The runs are of null3D's pages alone, so `bun run bench:archive` keeps their record and prints no row. The cells below come from the record and the run's own log.
+
+| Date | Device and browser | GPU path | Preset | GPU ms: on / off | Difference | Commit | Source |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-31 | Apple M3 Max, Chrome 156 | WebGPU | High | 2.30 / 1.96 | 0.34 ms, 15% | 8d2fb64a | 20261031-020842-bench |
+| 2026-10-31 | Apple M3 Max, Chrome 156 | WebGPU | Medium | 2.29 / 1.95 | 0.34 ms, 15% | 8d2fb64a | 20261031-021400-bench |
+| 2026-10-31 | Apple M3 Max, Chrome 156 | WebGL2 | Medium | 4.10 / 4.24 | no measurement | 8d2fb64a | 20261031-020842-bench |
+| 2026-10-31 | bsipadpro13-safari, Safari 26.6.1 | WebGPU | High | 2.72 / 2.52 | 0.20 ms, 8% | 8d2fb64a | 20261031-023430-bench |
+| 2026-10-31 | bsgalaxys25-chrome, Chrome 152.0.7977.54 | WebGPU | High | 5.44 / 4.98 | 0.46 ms, 8% | 8d2fb64a | 20261031-024942-bench |
+
+The WebGL2 timer's rounds on the Mac differ by more than the reflection costs, so its row measures no difference. The off run read slower in that run. The iPad and the Galaxy S25 give no GPU timer on WebGL2 either: their CPU times do not separate the two runs. The Galaxy S25's display ran at 30 Hz, so its frame figures are unreliable; its GPU times do not depend on the screen. The reflection's own memory comes from the `?memory-figures` run 20261031-032342-bench. It adds 6.90 MiB of GPU textures and 3.50 MiB of buffers, and the page's memory rises by 10.80 MiB ([D-281](decisions/D-281-ground-reflection-cost.md)). The run's record, `bench/results/20261031-032342-bench.json`, keeps the byte figures under each page's `memory` field.
+
 ## Feature GPU costs on phones
 
 These tables give what single features cost on cloud phones, from BrowserStack Automate. They are not comparisons with three.js. Each figure is GPU time from the browser's GPU timer, on WebGPU, unless a row says otherwise. Chrome on these phones has no GPU timer for WebGL2. The Galaxy S25's screen ran at 30 Hz in these runs, so the device runner marks its frame figures unreliable. Its GPU times do not depend on the screen. The archive in `bench/results` keeps no runs of these plans, so the run folders' names are the sources.
