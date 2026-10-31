@@ -1,9 +1,10 @@
 // What moving a grove's near trees costs at one preset and GPU path: the per-vertex sway, or a
 // compute pass's branch poses, which keep a spring. The page times the frames at a fixed preset and
 // GPU path and reports the GPU time with its parts, the CPU time and the draw calls (?method=,
-// ?preset= and ?gpu= choose them). ?scale=0.25 draws the same grove at a quarter of the render scale,
-// which leaves a sixteenth of the fragment work, so the frame's figure follows the vertex work that
-// the two methods differ in. The vegetation poses plan runs it on each device, and M3-V10 records
+// ?preset= and ?gpu= choose them). ?scale=0.25 draws the same grove at a quarter of the render
+// scale with the sun's shadows off, which leaves a sixteenth of the fragment work and none of the
+// shadow cascades' work, so the frame's figure follows the vertex work that the two methods differ
+// in. The vegetation poses plan runs it on each device, and M3-V10 records
 // the figures per preset and path.
 import { createEngine, type QualityPreset } from '@null3d/engine';
 import { progress, run } from './lib/result';
@@ -25,6 +26,9 @@ run('vegetation-poses-cost', async () => {
 	if (SCALE !== null) sketch.searchParams.set('scale', SCALE);
 	// The measurement stands the copies close, so a preset's sway distance takes many of them.
 	sketch.searchParams.set('dense', '1');
+	// A page at a small render scale turns the shadows off, so its frame follows the vertex work of
+	// the camera's passes rather than the shadow cascades, which keep their size.
+	if (SCALE !== null) sketch.searchParams.set('noshadow', '1');
 	const engine = await createEngine({
 		canvas,
 		sketch,

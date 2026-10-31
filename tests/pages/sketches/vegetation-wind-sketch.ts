@@ -39,6 +39,9 @@ const SCALE = params.has('scale') ? Number(params.get('scale')) : undefined;
 /** True to stand the copies close together, as Creek's near trees stand, so a preset's sway distance
  * takes many of them: a cost page that measures the two wind methods asks for it. */
 const DENSE = params.has('dense');
+/** True to draw without the sun's shadows, so a frame at a small render scale follows the vertex
+ * work of the camera's passes: a cost page that measures the two wind methods asks for it. */
+const NOSHADOW = params.has('noshadow');
 /** The scene's seed, which the plants' shapes and their tints come from. */
 const SEED = 12;
 const VARIANTS = 4;
@@ -66,7 +69,7 @@ export default defineSketch((ctx) => {
 		direction: [0.15, -0.3, 1],
 		color: '#fff3dc',
 		intensity: 2.7,
-		castShadows: true,
+		castShadows: !NOSHADOW,
 		shadow: { cascades: 3, mapSize: 2048, distance: 200 },
 	});
 	scene.createMesh({
