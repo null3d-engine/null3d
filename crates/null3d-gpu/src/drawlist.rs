@@ -2246,18 +2246,6 @@ pub mod template {
         }
     }
 
-    /// True for the moment layer's colour templates.
-    pub const fn is_moment_colour(template: u32) -> bool {
-        matches!(
-            template,
-            MOMENT_LIT
-                | MOMENT_STANDARD_MAPS
-                | MOMENT_UNLIT
-                | MOMENT_UNLIT_MAP
-                | MOMENT_SPRITE
-                | MOMENT_SPRITE_MAP
-        )
-    }
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
