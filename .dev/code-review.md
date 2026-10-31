@@ -36,14 +36,16 @@ form's row flipped 77.469% of its WebGL2 pixels. `compute-state`'s `rows` case g
 and its region, and its `rows-shown` case guards the image that a material displays, on all three
 paths.
 
-## A pass texture reads as not ready on WebGL2 (M3-V13)
+## A stopped pass keeps its texture on every GPU path (M3-V13)
 
-`compute-state`'s `a stopped pass keeps its image and its alpha` and `a cadence's skipped frame keeps
-the image a material samples` fail on WebGL2: the pass's texture reads black through a standard map
-and white through a custom shader's missing-map guard, so it reads as not ready while its pass drew.
-The two pass on WebGPU and in compatibility mode. The read's row order does not explain them: the
-pass writes one white texel everywhere, and a uniform image stays uniform under any turn. The fault
-lies between the pass's target and the texture that shows it.
+`compute-state`'s `a stopped pass keeps its image and its alpha` passes on WebGL2. So does `a stopped
+full-screen pass keeps its image and its alpha`. Both also pass on WebGPU and in compatibility mode.
+The pass's texture keeps the image that the pass drew, and the material that shows it draws that
+image and its alpha. An earlier note in this guide had them failing on WebGL2. It said the texture
+read black through a standard map, and white through a custom shader's missing-map guard. It also
+named a skipped-frame case that no test keeps. The runs on the Mac's GPU and on the software GPU show
+the two stopped cases passing on all three paths. No fault lies between the pass's target and the
+texture that shows it.
 
 ## Closed findings
 
