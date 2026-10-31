@@ -2986,6 +2986,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1,
 		size: [640, 360],
 	},
+	// The first grass picture: a hill of tufts grown by the add-on, placed and tinted by integer
+	// hash, drawn as one band. The blades read the wind add-on's field, which this picture holds
+	// still; the camera and the light are fixed, so two runs draw the same frame.
+	{
+		name: 'vegetation-grass',
+		sketch: 'tests/pages/sketches/vegetation-grass-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+	},
 	// A grove of grown oaks in the scene's one wind field: the leaf and bark materials sway, the
 	// leaves flutter and the sun's shadows follow. The two holds catch the trees at different points
 	// of their sway, the motion picture draws the sway's motion, and the still picture holds the air
