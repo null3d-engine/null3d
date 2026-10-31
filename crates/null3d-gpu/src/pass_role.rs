@@ -135,6 +135,8 @@ pub enum PassRole {
     MomentSmaaBlend = 58,
     /// The mix of each pixel with the neighbour that its weights name.
     MomentSmaaResolve = 59,
+    /// A step of screen-space bounce light.
+    Bounce = 60,
 }
 
 impl PassRole {
@@ -206,6 +208,7 @@ impl PassRole {
             Self::MomentSmaaEdges => "moment edges",
             Self::MomentSmaaBlend => "moment weights",
             Self::MomentSmaaResolve => "moment resolve",
+            Self::Bounce => "screen bounce",
         }
     }
 
@@ -233,7 +236,8 @@ impl PassRole {
             | Self::Dof
             | Self::FogLight
             | Self::Taa
-            | Self::Sky => Place::Always,
+            | Self::Sky
+            | Self::Bounce => Place::Always,
             _ => Place::Never,
         }
     }
@@ -300,6 +304,7 @@ impl PassRole {
         Self::MomentSmaaEdges,
         Self::MomentSmaaBlend,
         Self::MomentSmaaResolve,
+        Self::Bounce,
     ];
 }
 
