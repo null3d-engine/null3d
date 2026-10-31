@@ -1,8 +1,10 @@
 # D-261: Moment transparency, and what it beats
 
 Status: decided. The moment layer is nearer the exact image than the weighted blending on both test
-scenes and both GPU paths, and it draws the same picture whatever order the surfaces add. The
-picture references and the phone's cost figure are owed. Task: M3-F13.
+scenes and both GPU paths, and it draws the same picture whatever order the surfaces add. A look
+review measured faint steps at the far panes' edges that the exact image does not draw, and the
+owner has not ruled on them (hard rule 40). The picture references are in for this computer's GPU
+and owed for CI's software GPU, and the phone's cost figure is owed. Task: M3-F13.
 
 Summary: Order-independent transparency from a store of four depth moments. It is nearer an exact
 back-to-front blend than the weighted blending on both test scenes: about two and a half times where
@@ -203,10 +205,21 @@ The fit's two atoms hold the transmittance constant between their depths, so whe
 overlap the layer's weights step at those atoms. A store taken about the eye lost the variance of
 five close panes to the rounding of its 16-bit floats, and the steps then fell in the wrong places:
 the overlaps drew as rectangular patches of the wrong color, about a tenth of the picture's width.
-Taken about the middle of the depth range, the fit's atoms land where the model puts them, and the
-overlaps draw the bands that the sorted image draws. The weighted blending has no such steps, and it
-washes the near pane's color instead. Which look is better is the owner's ruling (hard rule 40), and
-the mean error favors the moments.
+Taken about the middle of the depth range, the fit's atoms land where the model puts them, and that
+patchwork is gone.
+
+The steps that remain fall at the panes' own edges, and a pane behind several other panes draws its
+edge more strongly than the exact image does. At 1280 by 720 the far panes' edges step by 18 to 20
+color levels where the exact image steps by 1 or 2, and the wide overlap carries average steps of
+5.9 levels against the exact image's 2.3. The layer is still nearer the exact image than the
+weighted blending on both test scenes, and at normal size it reads as the exact one. The steps are
+the two-atom fit's price. A fit of three atoms puts the far panes' weights much nearer the exact
+ones, and it would take more than half the step away. It needs the depth's fourth and fifth moments,
+and a store of 16-bit floats does not keep those moments where several surfaces sit close together:
+their higher moments round away and the fit falls back to two atoms. A store of 32-bit floats would
+keep them, with `float32-blendable` on WebGPU and `EXT_float_blend` on WebGL2, and twice the moment
+traffic a frame. Which look ships is the owner's ruling (hard rule 40), and the mean error favors
+the moments.
 
 ## Consequences
 
@@ -281,6 +294,9 @@ It also holds that an unused layer declares and records nothing.
 
 ## Remaining work
 
-1. The measured cost on this computer's GPU, which the S1 benchmark run fills in.
-2. The run on an S24-class phone, which replaces the phone figure.
-3. The SwiftShader references of the four image tests, which come from a CI run.
+1. The software set of the seven image tests' references, which comes from a CI run.
+2. The run on an S24-class phone, which gives the cost figure that decides the preset.
+3. The owner's ruling on the steps at the far panes' edges (hard rule 40). A fit of three atoms
+   takes more than half of them away, and it needs a store of 32-bit floats where the surfaces sit
+   close together. That store costs twice the moment traffic a frame and needs a device feature that
+   is not on every GPU.
