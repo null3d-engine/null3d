@@ -171,27 +171,34 @@ function upload(
 }
 
 /**
- * The share of the switch distance over which a mesh hands over to its cards: the engine's fade
- * band, over which a mesh's last few per cent of its draw range dithers out.
+ * The share of the switch distance that the cards start before it. The engine thins a draw range's
+ * edge out with a dither over the last 8 per cent of that edge's distance, and the dither's phase
+ * comes from each copy's own source. The mesh and the card are different sources, so their phases
+ * differ: a card that faded in while the mesh faded out would drop the pixels that both left out,
+ * and the background would show through the crown. Starting the cards this far ahead finishes their
+ * fade while the mesh still draws every pixel, so the card stands at full coverage from before the
+ * mesh's edge begins to thin. The lead covers the gap between the two batches' bounding spheres,
+ * whose radii differ because a card's corner lies farther from its origin than the plant's own
+ * vertices do.
  */
-const HAND_OVER_FADE = 0.08;
+const CARD_LEAD = 0.2;
 
 /** The far edge that a card batch draws to, in meters: farther than any camera's far plane. */
 const FAR = 1e9;
 
 /**
  * Hands a band of trees from their meshes to their cards. The meshes draw up to
- * `switchDistance`, and in the last share of that range the engine dithers their pixels out over
- * the cards, which stand at full coverage behind them from a little before that band starts. The
- * cards' material takes no fading build, so each dropped mesh pixel shows its card rather than
- * the background: one dither moves the tree from its mesh to its card, and no pixel needs the two
- * fades to line up. Write the cards' turns and sizes before this call, and call it at setup.
+ * `switchDistance`, and the engine dithers their last few per cent of that range out. The cards
+ * start a fifth of the switch before it, so their own dithered edge finishes before the mesh's edge
+ * begins to thin: each dropped mesh pixel shows its card at full coverage, one dither moves the
+ * tree from its mesh to its card, and the background never shows through the crown. Write the
+ * cards' turns and sizes before this call, and call it at setup.
  *
  * @param meshes The batch of near meshes, whose rows stand at the same trees.
- * @param cards The card batch, such as `ImpostorBatch.batch`. Give it a material that takes no
- *   fading build, as `createImpostors` makes: a batch that dithers as well would drop the pixels
- *   that its mesh's dither drops too, and the background would show through the crown.
- * @param switchDistance The distance from the camera at which a tree hands over, in meters.
+ * @param cards The card batch, such as `ImpostorBatch.batch`.
+ * @param switchDistance The distance from the camera at which a tree hands over, in meters. Give a
+ *   distance well beyond the plant's own size, so the card's lead is longer than the difference
+ *   between the two batches' bounds.
  * @category api/vegetation
  */
 export function handOverToCards(
@@ -204,5 +211,5 @@ export function handOverToCards(
 			`handOverToCards() got ${switchDistance} as the switch distance, not a number above 0.`,
 		);
 	meshes.setDrawRange(0, switchDistance);
-	cards.setDrawRange(switchDistance * (1 - HAND_OVER_FADE), FAR);
+	cards.setDrawRange(switchDistance * (1 - CARD_LEAD), FAR);
 }
