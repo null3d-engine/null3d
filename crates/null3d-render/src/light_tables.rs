@@ -668,6 +668,14 @@ mod tests {
             tables.image_records(0).collect::<Vec<_>>(),
             vec![(6, record)]
         );
+        // A held frame starts as after a GPU loss, which clears the flag that the array holds the
+        // texels. A finished picture from pixels still shows, because the frame that names it
+        // uploads it again before it draws.
+        tables.reset_gpu();
+        assert_eq!(
+            tables.image_records(0).collect::<Vec<_>>(),
+            vec![(6, record)]
+        );
     }
 
     #[test]
