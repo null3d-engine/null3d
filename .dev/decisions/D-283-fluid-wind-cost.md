@@ -7,9 +7,9 @@ falling leaves (M3-V17), branch poses (M3-V10, measured on its own branch), and 
 forest's plants on the add-on (M3-V11, M3-V12). The owner rules on the rows, on the budgets and on
 the Low grid. Task: M3-V14.
 
-Summary: On the Mac's WebGPU path the field costs 0.10 ms a frame at the Medium row and 0.74 ms at
+Summary: On the Mac's WebGPU path the field costs 0.10 ms a frame at the Medium row and 0.73 ms at
 the Ultra row, which is the volume's shape; the flat 256x256 grid that stands in until it is built
-costs 0.60. The grid's size moves the cost far less than the pressure count and the field rate do.
+costs 0.58. The grid's size moves the cost far less than the pressure count and the field rate do.
 WebGL2 pays a fixed cost per solver run, so its row sets the field rate. The record proposes
 budgets of 0.5, 1.2, 4.9 and 6.25 ms from Low to Ultra, one tenth of the vegetation add-on's own
 budget.
@@ -47,13 +47,14 @@ The real solver on this tree fixes its pressure count at twenty and its field ra
 a second. M3-V16 has not landed the settings. The preset rows are therefore modelled from the
 chain's step and the real cycle's floor, as the plan's cost runs allow.
 
-The measurements were taken at `c4504a038`, which the rebase removed from the branch's history. The
-harness files are byte-identical at `8e74d0dec`, where the audit checked them, and at the head that
-carries this text. The machine is the Mac's installed Chrome 156, on an Apple M3 Max with 36 GB of
-memory. The display is 60 Hz and the window is 640 by 400. The run began at a 1-minute load of 7.4
-and ended between 2.2 and 6.3. Each side is the median GPU time of three rounds, alternating the
-order. WebGPU and compatibility mode time each pass. WebGL2 on a phone has no pass timer, so its
-rows give the frame interval and the busiest thread's CPU time.
+The field's own figures in this section were measured again at `5e29e392c`, after the rebase. Its
+harness files are byte-identical to `c4504a038`'s, which the rebase removed, and to `8e74d0dec`,
+where the audit checked them. The readers' and the phones' figures come from the runs at
+`c4504a038`. The machine is the Mac's installed Chrome 156, on an Apple M3 Max with 36 GB of
+memory. The display is 60 Hz and the window is 640 by 400. The field runs began at a 1-minute load
+of 7.6 to 7.9 and ended between 3.6 and 19.7. Each side is the median GPU time of three rounds,
+alternating the order. WebGPU and compatibility mode time each pass. WebGL2 on a phone has no pass
+timer, so its rows give the frame interval and the busiest thread's CPU time.
 
 ### Measured, modelled and bounded
 
@@ -77,17 +78,17 @@ tile. `memory` is the pass's two states at eight bytes a texel.
 
 | Shape | Cells | Memory | Real cycle, 20 pressure (ms) | One chain step at 80 runs (ms) | 80 chain steps (ms) | Drag adds (ms) |
 | --- | --- | --- | --- | --- | --- | --- |
-| flat 32x32 | 1,024 | 16 KiB | 0.226 | 0.0067 | 0.532 | +0.091 |
-| flat 64x64 | 4,096 | 64 KiB | 0.230 | 0.0076 | 0.610 | noise |
-| flat 128x128 | 16,384 | 256 KiB | 0.244 | 0.0089 | 0.711 | noise |
-| flat 256x256 | 65,536 | 1.0 MiB | 0.369 | 0.0114 | 0.910 | +0.126 |
-| 4 layers of 64x64 | 16,384 | 256 KiB | not built | 0.0086 | 0.688 | +0.060 |
-| 8 layers of 64x64 | 32,768 | 512 KiB | not built | 0.0103 | 0.822 | +0.068 |
-| 4 layers of 128x128 | 65,536 | 1.0 MiB | not built | 0.0105 | 0.841 | +0.013 |
-| 8 layers of 128x128 | 131,072 | 2.0 MiB | not built | 0.0137 | 1.095 | noise |
-| volume 32x32x32 | 32,768 | 512 KiB | not built | 0.0102 | 0.815 | +0.067 |
-| volume 48x16x48 | 36,864 | 576 KiB | not built | 0.0105 | 0.838 | +0.081 |
-| volume 64x24x64 | 98,304 | 1.5 MiB | not built | 0.0162 | 1.292 | +0.139 |
+| flat 32x32 | 1,024 | 16 KiB | 0.220 | 0.0065 | 0.523 | +0.054 |
+| flat 64x64 | 4,096 | 64 KiB | 0.226 | 0.0067 | 0.538 | +0.051 |
+| flat 128x128 | 16,384 | 256 KiB | 0.241 | 0.0077 | 0.613 | +0.055 |
+| flat 256x256 | 65,536 | 1.0 MiB | 0.361 | 0.0109 | 0.874 | +0.112 |
+| 4 layers of 64x64 | 16,384 | 256 KiB | not built | 0.0085 | 0.677 | +0.053 |
+| 8 layers of 64x64 | 32,768 | 512 KiB | not built | 0.0102 | 0.815 | +0.066 |
+| 4 layers of 128x128 | 65,536 | 1.0 MiB | not built | 0.0131 | 1.048 | +0.122 |
+| 8 layers of 128x128 | 131,072 | 2.0 MiB | not built | 0.0201 | 1.605 | +0.196 |
+| volume 32x32x32 | 32,768 | 512 KiB | not built | 0.0112 | 0.894 | +0.120 |
+| volume 48x16x48 | 36,864 | 576 KiB | not built | 0.0105 | 0.843 | +0.078 |
+| volume 64x24x64 | 98,304 | 1.5 MiB | not built | 0.0161 | 1.287 | +0.146 |
 
 The task's pressure sweep comes from the real cycle's floor and the chain's step:
 `field step(p) = advect and project + p * chain step`. The floor is the real cycle less the twenty
@@ -96,33 +97,34 @@ second. At thirty a second they halve, and at fifteen they quarter.
 
 | Flat grid | 8 pressure | 16 | 20, the real cycle | 24 | 40 | 80 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 32x32 | 0.146 | 0.200 | 0.226 | 0.253 | 0.359 | 0.629 |
-| 64x64 | 0.138 | 0.199 | 0.230 | 0.260 | 0.382 | 0.687 |
-| 128x128 | 0.137 | 0.208 | 0.244 | 0.279 | 0.421 | 0.777 |
-| 256x256 | 0.232 | 0.323 | 0.369 | 0.414 | 0.596 | 1.053 |
+| 32x32 | 0.142 | 0.194 | 0.220 | 0.246 | 0.351 | 0.612 |
+| 64x64 | 0.145 | 0.199 | 0.226 | 0.253 | 0.361 | 0.630 |
+| 128x128 | 0.149 | 0.210 | 0.241 | 0.272 | 0.394 | 0.701 |
+| 256x256 | 0.227 | 0.314 | 0.361 | 0.402 | 0.577 | 1.014 |
 
 The least-squares line through the flat shapes' single steps gives 0.013 ms of fixed cost a step
-and 0.079 nanoseconds a cell. At 256x256 the cells make 0.005 ms of a 0.011 ms step. Below 128x128
+and 0.059 nanoseconds a cell. At 256x256 the cells make 0.004 ms of a 0.011 ms step. Below 128x128
 the step's fixed cost is nearly all of it.
 
-The real cycle shows the same shape. Its twenty-two runs cost 0.226 ms at 32x32 and 0.369 ms at
-256x256. Five times the cells add 0.14 ms. About 0.09 ms is the advection that evaluates the
-analytic field with five curl taps, with the projection and the dispatch beside it.
+The real cycle shows the same shape. Its twenty-two runs cost 0.220 ms at 32x32 and 0.361 ms at
+256x256. Five times the cells add 0.14 ms. About 0.09 ms at 32x32 is the advection that evaluates
+the analytic field with five curl taps, with the projection and the dispatch beside it. At 256x256
+the same floor is about 0.14 ms.
 
-Drag, one more read a cell a step, is inside the run-to-run spread on the middle grids. It shows
-where the cells dominate: +0.126 ms of the 256x256 chain's 0.910, and +0.139 of the volume's 1.292.
-That is about one read against the six a step already makes.
+Drag, one more read a cell a step, adds 0.051 to 0.055 ms on the flat grids up to 128x128 and 0.112
+at 256x256. On the tiled shapes it adds 0.053 to 0.196 ms, the larger figures where the cells
+dominate. That is one read against the six or eight that a step already makes.
 
 The volume's Ultra row takes the same floor: about 0.09 ms of advection and projection, plus forty
-steps at the volume's 0.0162 ms, is about 0.74 ms. The flat 256x256 grid that stands in until the
-volume is built costs 0.60 there, its floor of 0.141 ms plus forty steps at 0.0114 ms.
+steps at the volume's 0.0161 ms, is about 0.73 ms. The flat 256x256 grid that stands in until the
+volume is built costs 0.58 there, its floor of 0.140 ms plus forty steps at 0.0109 ms.
 
 ### Compatibility mode
 
 Compatibility mode runs the same WebGPU backend under the compatibility limits. Its per-pass figures
-match WebGPU within about 3 per cent. The real cycle costs 0.220, 0.225, 0.242 and 0.358 ms from
+match WebGPU within about 3 per cent. The real cycle costs 0.225, 0.227, 0.243 and 0.362 ms from
 32x32 to 256x256. The least-squares line through the flat shapes is 0.013 ms of fixed cost a step
-and 0.059 nanoseconds a cell. The machine's load rose from 6.9 to between 22 and 43 during that run
+and 0.075 nanoseconds a cell. The machine's load rose from 6.9 to between 22 and 43 during that run
 as other sessions worked. The per-pass figures stand on the GPU's own timestamps, and a frame-level
 figure from that run would not.
 
@@ -133,21 +135,21 @@ no per-pass timer, so the figure carries the field's pass as the frame's command
 
 | Shape | 1 step (ms) | 8 steps (ms) | 16 steps (ms) | 24 steps (ms) | 40 steps (ms) | 80 steps (ms) | Real cycle, 20 pressure (ms) |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| flat 32x32 | 0.919 | 1.513 | 3.359 | 5.864 | 12.638 | 25.716 | 5.781 |
-| flat 64x64 | 0.102 | 1.251 | 3.080 | 6.031 | 12.187 | 22.739 | 4.306 |
-| flat 128x128 | 0.079 | 1.279 | 3.019 | 6.263 | 11.731 | 23.303 | 4.315 |
-| flat 256x256 | 0.087 | 1.326 | 2.864 | 6.438 | 12.028 | 27.385 | 4.717 |
+| flat 32x32 | 0.073 | 1.261 | 2.956 | 6.553 | 12.238 | 27.364 | 4.836 |
+| flat 64x64 | 0.128 | 1.327 | 3.007 | 6.364 | 12.495 | 23.625 | 4.466 |
+| flat 128x128 | 0.113 | 1.289 | 2.618 | 5.851 | 12.563 | 23.920 | 4.371 |
+| flat 256x256 | 0.177 | 1.376 | 3.103 | 6.272 | 12.123 | 23.620 | 5.050 |
 
-The cost is fixed per run, not per cell. Eight runs cost 1.25 to 1.51 ms at every shape from 1,024
-to 65,536 cells, about 0.16 to 0.19 ms a run. Sixteen runs cost about twice that. From 24 runs a
+The cost is fixed per run, not per cell. Eight runs cost 1.26 to 1.38 ms at every shape from 1,024
+to 65,536 cells, about 0.16 to 0.17 ms a run. Sixteen runs cost about twice that. From 24 runs a
 frame the field's work passes the display's interval, so the GPU queues frames and the per-run
 figure climbs. The 24, 40 and 80 run rows are saturation points, not a clean cost. The add-on's
-shipped cycle, 22 runs at 60 cycles a second, costs 4.3 to 5.8 ms a frame. The one-step row at
-32x32, 0.919 ms, is an outlier against the other three grids' 0.08 to 0.10. The least-squares fit
-through the single steps is meaningless for the same reason.
+shipped cycle, 22 runs at 60 cycles a second, costs 4.4 to 5.1 ms a frame. The single-step rows
+scatter between 0.073 and 0.177 ms, and the least-squares line through them cannot separate a
+step's fixed part from its cells. The eight-run rows are the clean measure.
 
 Drag is one read in six and stays inside the run-to-run spread at every count. The 16 by 16 read
-answered after 62.6 to 66.4 ms, 4 frames late.
+answered after 65.5 to 67.0 ms, 4 frames late.
 
 Low's row is a cycle of ten runs at 15 cycles a second. That cycle is eight pressure steps, the
 advection and the projection. The rate is 2.5 runs a frame. At the Mac's 0.17 ms a run that is about
@@ -157,8 +159,8 @@ cycles a second and 1.53 ms at 30. So Medium takes 15 cycles a second on this pa
 
 ### The read of a small summary
 
-The real pass's 16 by 16 region reads back through `render.readPass`'s promise. The wait was 44.8
-to 52.4 ms on the two WebGPU paths, and the read answered 3 frames late. The wait covers the GPU
+The real pass's 16 by 16 region reads back through `render.readPass`'s promise. The wait was 47.1
+to 51.3 ms on the two WebGPU paths, and the read answered 3 frames late. The wait covers the GPU
 finishing the frame and the buffer mapping, so it is not GPU time. A page still cannot use the
 answer in the frame that asked.
 
@@ -255,8 +257,8 @@ parts. Low's phone figure is a bound, not a measurement, as the Data section say
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Low | analytic, or the smallest flat grid | none, or 32x32 | none, or 8 | none, or 15 | 0, or 0.04 | 0, or 0.43 | 0.5 |
 | Medium | flat grid | 64x64 | 16 | 30, and 15 on WebGL2 | 0.10 | 0.77 | 1.2 |
-| High | flat grid now, 4 layers later | 128x128, or 4 layers of 128x128 | 24 | 30 | 0.14 | not drawn | 4.9 |
-| Ultra | volume 64x24x64, and flat 256x256 until it is built | 64x24x64, or 256x256 | 40 | 60 | 0.74, or 0.60 on the flat grid | not drawn | 6.25 |
+| High | 4 layers of 128x128, and flat 128x128 until it is built | 4 layers of 128x128, or 128x128 | 24 | 30 | 0.20, or 0.14 on the flat grid | not drawn | 4.9 |
+| Ultra | volume 64x24x64, and flat 256x256 until it is built | 64x24x64, or 256x256 | 40 | 60 | 0.73, or 0.58 on the flat grid | not drawn | 6.25 |
 
 Every figure in this table is modelled from the measured parts, and the budget column is a proposed
 ceiling. None of these figures is a phone measurement. Low's 0.5 ms is the planning ceiling for the
@@ -279,10 +281,10 @@ read 0.5 ms there. A reader must not take 0.5 ms for a phone figure.
   without a float target. The owner may still choose the small grid on the look, which a
   side-by-side of the formula wind and the 32x32 field settles.
 - High and Ultra take the plan's own shapes, four layers of 128x128 at High and the volume 64x24x64
-  at Ultra. The layered and the volume grids look better where the air has height. They cost 0.16
-  and 0.74 ms at their rows on WebGPU, well inside their budgets, so the better look wins when it is
+  at Ultra. The layered and the volume grids look better where the air has height. They cost 0.20
+  and 0.73 ms at their rows on WebGPU, well inside their budgets, so the better look wins when it is
   built (hard rule 40). Until the solver builds them, the flat 128x128 and 256x256 grids stand in,
-  at 0.14 and 0.60 ms.
+  at 0.14 and 0.58 ms.
 - The budgets stay at one tenth of the vegetation add-on's own: 0.5, 1.2, 4.9 and 6.25 ms. Every
   measured row is far inside them on WebGPU, and the phones hold their intervals. The owner may
   trade the margin for a better flow.
