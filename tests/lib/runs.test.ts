@@ -1039,19 +1039,29 @@ describe('the checks plan', () => {
 		expect(job).toContain("matrix.browser == 'Safari' && '--shaders sampled'");
 		expect(job).toMatch(/--prebuilt \$\{\{ env\.PREBUILT \}\}/);
 		expect(job).toMatch(/^\s+PREBUILT: none$/m);
-		const count = Number(/^\s+shards: \[(\d+)\]$/m.exec(job)?.[1]);
-		expect(count).toBeGreaterThan(0);
-		// The matrix must list every shard from 1 to the count, or a shard never runs.
+		// Each browser's own count comes from the expression in the job's name, and the matrix keeps
+		// one shard axis of the larger count. A list in an `include` entry is assigned whole rather
+		// than expanded, which printed the job's name as `Array` and ran no split at all.
+		const counts = /matrix\.browser == 'Safari' && (\d+) \|\| (\d+)/.exec(job);
+		expect(counts).not.toBeNull();
+		const count = Number(counts?.[1]);
+		const firefoxCount = Number(counts?.[2]);
+		expect(count).toBeGreaterThan(firefoxCount);
+		expect(firefoxCount).toBeGreaterThan(0);
+		// The matrix must list every shard of the larger count from 1, or a shard never runs.
 		const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(job)?.[1]?.split(',').map(Number);
 		expect(listed).toEqual(Array.from({ length: count }, (_, i) => i + 1));
+		// Firefox's combinations past its count are skipped by the job's condition.
+		expect(job).toMatch(new RegExp(`matrix\\.shard <= ${firefoxCount}`));
 		const minutes = shardsOf(count, ['--prebuilt', 'none']).map((shard) => secondsOf(shard) / 60);
 		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
 		// Firefox compiles every build of the shaders page, by its own measured times.
 		const firefox = Array.from(
-			{ length: count },
+			{ length: firefoxCount },
 			(_, i) =>
-				planItems(parseArgs(['--prebuilt', 'none', '--shard', `${i + 1}/${count}`, 'Firefox'])) ??
-				[],
+				planItems(
+					parseArgs(['--prebuilt', 'none', '--shard', `${i + 1}/${firefoxCount}`, 'Firefox']),
+				) ?? [],
 		).map((shard) => shard.reduce((sum, item) => sum + expectedSeconds(item, 'Firefox'), 0) / 60);
 		expect(Math.max(...firefox)).toBeLessThanOrEqual(10);
 	});
