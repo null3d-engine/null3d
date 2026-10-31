@@ -16,10 +16,12 @@ interface Spring {
 }
 
 test('poses-spring: a branch springs back after the air stops', async ({ page }) => {
-	test.setTimeout(180_000);
+	// A software GPU starts this scene slowly, and each sample waits for a pass read, so the page
+	// can take minutes on a loaded shard.
+	test.setTimeout(360_000);
 	const problems = watchPageProblems(page);
 	await page.goto('/tests/pages/poses-spring.html');
-	const spring = await pageResult<Spring>(page, 120_000).catch((error: unknown) => {
+	const spring = await pageResult<Spring>(page, 300_000).catch((error: unknown) => {
 		throw new Error(`the page gave no series: ${String(error)}\n${problems.join('\n')}`);
 	});
 	const before = spring.samples.filter((sample) => sample.t < spring.stop);
