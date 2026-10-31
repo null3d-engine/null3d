@@ -59,23 +59,14 @@ export function runTask<T>(
 	input: unknown,
 	transfer: Transferable[] = NO_TRANSFER,
 ): Promise<T> {
-	// The count covers the whole call, the loader's own import included, so hold mode knows that a
-	// task is on its way even before its code has loaded.
+	// The loader counts a task from the call that sends it. While the loader's own code downloads,
+	// this count stands in for it, so hold mode waits for the first task too.
+	if (loaded) return loaded.runTaskWithError<T>(task, input, transfer, engineError);
 	taskStarted();
-	let answer: Promise<T>;
-	try {
-		if (loaded) {
-			answer = loaded.runTaskWithError<T>(task, input, transfer, engineError);
-		} else {
-			loader ??= import('./tasks');
-			answer = loader.then((module) => {
-				loaded = module;
-				return module.runTaskWithError<T>(task, input, transfer, engineError);
-			});
-		}
-	} catch (error) {
-		taskEnded();
-		throw error;
-	}
+	loader ??= import('./tasks');
+	const answer = loader.then((module) => {
+		loaded = module;
+		return module.runTaskWithError<T>(task, input, transfer, engineError);
+	});
 	return answer.finally(taskEnded);
 }
