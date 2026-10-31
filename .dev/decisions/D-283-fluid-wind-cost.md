@@ -52,6 +52,21 @@ of 7.4 and ended between 2.2 and 6.3. Each side is the median GPU time of three 
 the order. WebGPU and compatibility mode time each pass. WebGL2 on a phone has no pass timer, so its
 rows give the frame interval and the busiest thread's CPU time.
 
+### Measured, modelled and bounded
+
+Three kinds of figure appear below, and each table says which it holds.
+
+- **Measured:** a time that the device timed itself. The real cycle, the chain steps, the drag, the
+  per-pass reader deltas and every field figure on the Mac's WebGPU and WebGL2 paths are measured
+  this way.
+- **Modelled:** a preset's row, built from a measured floor and a measured step, because the solver
+  on this tree fixes twenty pressure steps and sixty cycles a second. The formula is
+  `field step(p) = advect and project + p * step`. Medium's, High's and Ultra's WebGPU figures, and
+  the WebGL2 figures at 15 and 30 cycles a second, are modelled.
+- **Bounded:** a figure that a device cannot time. The phones on WebGL2 have no pass timer, so their
+  rows bound the field's cost with the frame interval and the busiest thread. They do not measure
+  the 0.5 ms Low ceiling.
+
 ### The field on WebGPU
 
 The field's own pass, GPU milliseconds, median of three rounds. `Cells` counts the texels in the
@@ -154,6 +169,9 @@ busiest thread's CPU time.
 | Galaxy S24, 30 Hz | 32x32 | 33.32 | 33.33 | 1.90 | 2.11 | 2.29 | 2.24 | 123.8 ms, 4 frames |
 | Galaxy S24, 30 Hz | 64x64 | 33.33 | 33.33 | 1.81 | 1.95 | 1.87 | 1.92 | 117.7 ms, 4 frames |
 
+Every row in this section is a bound, not a measurement of the field's cost. The frame interval and
+the busiest thread are what the device reports without a pass timer.
+
 Neither display's interval moves under the shipped cycle. On the iPhone that cycle is 1,320 runs a
 second, 8.8 times the 150 runs a second that Low's row asks for. On the S24 it is 660 runs a second,
 4.4 times. The iPhone's busiest thread rises by 2.77 ms and stays about 12 ms inside the display's
@@ -205,11 +223,11 @@ so their passes and the reflections wait on M3-V11 and M3-V12.
 
 ### Branch poses with springs
 
-The pose method is measured on its own branch, not here. M3-V10's record gives the frame and the
-vertex view with per-vertex wind and with branch poses. The two methods ran in turns at each preset
-and path on the Mac, the iPad Pro 13 and the Galaxy S25, with the spring's figures and the pose
-pictures. This task does not repeat them. The count of trees that carry springs at each preset is
-the governor's setting, and the per-tree sweep waits on M3-V16.
+The pose method is measured on its own branch, not here. M3-V10's record covers the spring tree
+sweep. It gives the frame and the vertex view with per-vertex wind and with branch poses. The two
+methods ran in turns at each preset and path on the Mac, the iPad Pro 13 and the Galaxy S25, with
+the spring's figures and the pose pictures. This task does not repeat them. The count of trees that
+carry springs at each preset is the governor's setting, which M3-V16 declares.
 
 ### The leaves
 
@@ -223,7 +241,8 @@ build.
 ## Decision
 
 The rows below are proposed, and the owner rules on them. Each figure is the field's own GPU time a
-frame at that row, not a whole frame.
+frame at that row, not a whole frame. Each WebGPU and Mac WebGL2 figure is modelled from measured
+parts. Low's phone figure is a bound, not a measurement, as the Data section says.
 
 | Preset | Field | Grid | Pressure steps | Field steps a second | WebGPU (ms) | WebGL2 (ms) | Budget (ms) |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -263,7 +282,8 @@ frame at that row, not a whole frame.
 - The readers are measured on the grove. It is the only dressed plant scene the add-on draws on this
   tree. Creek's and the forest's readers, and the reflections, follow M3-V11 and M3-V12.
 - The two leaf forms wait on M3-V17. A leaf with its own speed needs the step that M3-V13 gives.
-- The spring tree sweep is M3-V10's, and this record does not repeat it.
+- The spring tree sweep is covered by M3-V10's record, which measured branch poses with springs
+  beside per-vertex wind. This record does not repeat it.
 - The flag and the water surface read the field through one texture. Their vertex read is not
   measured. The plant material uses four of its six texture slots, so two are free for the field's
   two states and the branch poses. The water material uses three of six, so three are free for a
