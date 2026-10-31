@@ -1246,8 +1246,8 @@ jobs:
     # The production build projects' tests, which serve the production build of the test pages: the
     # engine and its errors after bundling, the start under a strict Content-Security-Policy and from
     # another origin, and the KTX2, glTF and stats files that the build ships. Each page's build
-    # takes about half a minute and 10 GB of memory, so the pages build one at a time, and only in
-    # this job: every other browser job leaves them out. The job runs in two parts, each of which
+    # takes about half a minute and reads about a gigabyte, and up to four build at once. The pages
+    # build only in this job: every other browser job leaves them out. The job runs in two parts, each of which
     # builds only the pages that its test files load, so no page builds twice. The first holds the
     # test files of the engine test page, which hold most of the test time, and the second the glTF
     # tests, whose check of the engine test page lives with that page's tests. The tests that run alone
@@ -1295,7 +1295,7 @@ jobs:
         run: bun run build:test-pages ${{ matrix.pages }}
       # The CDN test loads one add-on from the part's build: its packed library, with its shader
       # compiled, is served from the second origin. The package packs in the background while the
-      # other tests run, after the page builds, which each take about 10 GB of memory: it took 61 s
+      # other tests run, after the page builds, which each read about a gigabyte: it took 61 s
       # before them in run 40066039696, on the part's longest chain.
       - name: The terrain add-on's package, which the CDN test loads, packed beside the tests
         if: matrix.later != ''
@@ -1656,9 +1656,9 @@ jobs:
 
   load-startup-pages:
     # The production build of the startup pages, which the prebuilt real-browser shards serve
-    # through the load routes, as the load pages job builds the benchmark pages. Each build takes
-    # about 10 GB of memory at its peak, so the two run on machines of their own, and each job that
-    # serves one waits only for its own.
+    # through the load routes, as the load pages job builds the benchmark pages. Each build reads
+    # about a gigabyte. The two jobs run on machines of their own, and each job that serves one
+    # waits only for its own.
     name: load startup pages
     needs: build
     if: *full-run
