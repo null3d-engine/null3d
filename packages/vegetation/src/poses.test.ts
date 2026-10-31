@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import type { Camera, InstanceBatch, Texture, Textures } from '@null3d/engine';
 import type { WindField } from '@null3d/wind';
 import type { PlantAsset } from './asset';
@@ -99,6 +100,44 @@ const camera = {
 		out[2] = 0;
 	},
 } as unknown as Camera;
+
+/** The text between two markers of a file, trimmed. */
+function marked(file: URL, name: string): string {
+	const text = readFileSync(file, 'utf8');
+	const start = text.indexOf(`// <${name}>`);
+	const end = text.indexOf(`// </${name}>`);
+	expect(start).toBeGreaterThanOrEqual(0);
+	expect(end).toBeGreaterThan(start);
+	return text.slice(start + `// <${name}>`.length, end).trim();
+}
+
+/** The pass's compute form. */
+const computeFile = new URL('./poses.wgsl', import.meta.url);
+/** The pass's WebGL2 form. */
+const fallbackFile = new URL('./poses.fallback.wgsl', import.meta.url);
+
+describe('the pass’s two forms', () => {
+	test('hold one spring and one set of turns', () => {
+		// The shader build resolves only the engine's library, so the two forms carry copies, and this
+		// keeps them equal.
+		for (const name of ['pose-spring', 'pose-turn']) {
+			const canonical = marked(computeFile, name);
+			expect(canonical.length).toBeGreaterThan(0);
+			expect(marked(fallbackFile, name)).toBe(canonical);
+		}
+	});
+
+	test('read one table, with the header, the air and three texels a branch', () => {
+		// The two forms index the table differently, so this test reads the numbers that both name.
+		for (const file of [computeFile, fallbackFile]) {
+			const text = readFileSync(file, 'utf8');
+			expect(text).toContain('const POSE_TEXELS: u32 = 3u;');
+			expect(text).toMatch(/const HEADER_ROW: (?:i32|u32) = 0(?:u)?;/);
+			expect(text).toMatch(/const AIR_ROW: (?:i32|u32) = 1(?:u)?;/);
+			expect(text).toMatch(/const FIRST_POSE_ROW: (?:i32|u32) = 2(?:u)?;/);
+		}
+	});
+});
 
 describe('the plant’s branch poses', () => {
 	test('makes no pass on a device that draws no 16-bit float target', () => {

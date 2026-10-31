@@ -196,6 +196,7 @@ const POSE_TEXELS: u32 = 3u;
 /// The most branch levels that a plant may hold, as the material's offset walks no further.
 const MAX_BRANCH_DEPTH: u32 = 8u;
 
+// <pose-spring>
 /// How far a branch turns about its pivot for each meter a second of wind, as the material's own
 /// sway gives it.
 const BRANCH_BEND: f32 = 0.02;
@@ -209,12 +210,14 @@ const SPRING_DAMPING: f32 = 0.35;
 const SPRING_STEP: f32 = 1.0 / 60.0;
 /// The most runs that one frame's spring takes, so a stalled page skips the air that it missed.
 const SPRING_MAX_RUNS: i32 = 8;
+// </pose-spring>
 
 /// One texel of a branch's record in the variant's table: a record is four texels.
 fn record(branch: u32, texel: u32) -> vec4f {
     return textureLoad(records, vec2i(i32(branch * POSE_TEXELS + texel), 0), 0, 0);
 }
 
+// <pose-turn>
 /// The quaternion that turns by `angle` radians about the unit `axis`.
 fn turn_quaternion(axis: vec3f, angle: f32) -> vec4f {
     let s = sin(angle * 0.5);
@@ -249,6 +252,7 @@ fn spring(angle: f32, speed: f32, wanted: f32, omega: f32, dt: f32) -> vec2f {
     }
     return vec2f(a, v);
 }
+// </pose-turn>
 
 /// True when the target holds no real work, such as a pass that the page has not filled yet.
 fn empty(pixels: vec2u) -> bool {
