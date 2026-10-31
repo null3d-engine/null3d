@@ -199,16 +199,17 @@ The iPad's and the S25's WebGL2 pages give the CPU time of the busiest thread in
 It does not separate the methods: 1.24 to 3.47 ms on the iPad and 0.71 to 0.99 ms on the S25, across
 both methods and both presets. The Mac's WebGL2 timer gives the answer there.
 
-**What the figures say.** The pose method wins twice, and not plainly. On the Mac's WebGPU at Low
-the frame is 4.13 ms against 4.52 ms, 8.7 per cent faster, and its vertex view is 11.5 per cent
-slower. At High the vertex view is 3.87 ms against 4.00 ms, 3.3 per cent faster. Its frame there is
-8.3 per cent slower. Everywhere else the pose method is level or slower. Its frame is 4.6 to 8.3
-per cent slower at the Mac's other WebGPU presets. It is 3 to 8.7 per cent slower on the iPad's. The
-S25's rows are marked unreliable, and they show no more: its vertex view is 5.4 and 1.0 per cent
-slower at Low and Medium, and 5.6 and 3.1 per cent faster at High and Ultra. The
-compatibility mode rows in the Mac's run read the same figure twice, within its timer's steps. On
-WebGL2 the pose method is clearly slower: 34 and 16.6 per cent on the frame, and 64 and 158 per cent
-in the vertex view.
+**What the figures say.** The pose method wins in some cells and loses in others, and the figures do
+not support a preset switch. On the Mac's WebGPU at Low its frame is 4.13 ms against 4.52 ms, 8.7
+per cent faster, while its vertex view is 11.5 per cent slower. At High its vertex view is 3.87 ms
+against 4.00 ms, 3.3 per cent faster, while its frame is 8.3 per cent slower. Its frame is 4.6 to
+8.3 per cent slower at the Mac's other WebGPU presets. On the iPad its frames are 1.9 to 8.3 per
+cent slower, and its vertex view is 23.9 and 1.0 per cent slower at Low and Medium, 4.6 per cent
+faster at High and 4.6 per cent slower at Ultra. The S25's rows are marked unreliable, and they
+show no more: its vertex view is 5.4 and 1.0 per cent slower at Low and Medium, and 5.6 and 3.1
+per cent faster at High and Ultra. The compatibility mode rows in the Mac's run read the same
+figure twice, within its timer's steps. On WebGL2 the pose method is clearly slower: 34 and 16.6
+per cent on the frame, and 63.6 and 158 per cent in the vertex view.
 
 The WebGL2 form explains its own cost. It draws one fragment for every pose texel. Each of the two
 texels that hold a branch's turn recomputes the whole ancestor chain, with a spring step at each
