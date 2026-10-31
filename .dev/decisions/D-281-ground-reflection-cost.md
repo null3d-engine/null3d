@@ -1,7 +1,9 @@
 # D-281: A ground surface's reflection of the sky costs about a third of a millisecond
 
-Status: decided, for the owner's review. Built: S7, the page switch that drops the reflection and
-the page's memory figures, with the Mac, tablet and phone rows recorded. Open: the software references
+Status: decided, and the owner has accepted the cost. Built: S7, the page switch that
+drops the reflection and the page's memory figures, with the Mac, tablet and phone rows recorded. The
+dedicated scene measures 0.343 ms at Medium on a 2.291 ms frame, so the accepted 0.35 ms stands.
+Open: the software references
 are CI's earlier drawing of the same scene, not a fresh run at this commit. Also open: the WebGL2 GPU
 cost has no figure because the timer cannot separate the effect. Task: M3-R26.
 
