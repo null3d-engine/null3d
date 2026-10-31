@@ -83,6 +83,10 @@ field, for a fault that belongs to the pass's target.
 - A sketch that reads a pass's texture through `textureLoad`, as the ocean, the wind add-on and
   `crowded-read` do, keeps its arithmetic on both paths. The turn is a runtime value of its map slot,
   so one compiled shader serves a map that a pass gives and one from data.
+- The turn is written where the texel read is, with the texture named directly. It is not a helper
+  that takes the texture: the shader rule refuses a texture passed into a function as a parameter,
+  because not every browser carries that language feature, and the build stops with the rule. Do not
+  reintroduce the helper shape.
 - The ocean's WebGL2 test drops its expected failure, and the demo's WebGL2 tier and its picture
   follow, when this fix lands.
 - The `kept` cases' not-ready texture on WebGL2 is a separate fault of the same path. The branch that

@@ -234,11 +234,11 @@ export class PassReads implements ViewHolder {
 		const pitch = alignRow(job.width * texelBytes(job.format));
 		const bytes = this.regionView(job.ring, pitch * job.height);
 		const out = new Float32Array(texels * 4);
-		for (let row = 0; row < job.height; row++) {
-			// WebGL2 stores a target's first row at the image's bottom edge.
-			const source = this.webgl2 ? job.height - 1 - row : row;
-			decodeRow(out, row * job.width * 4, bytes, source * pitch, job.width, job.format);
-		}
+		// The copy already took the region's image rows in the order the GPU stores them, which is
+		// bottom-up on WebGL2, and the core turns that into the image's rows. No second turn here:
+		// that flip served a pass whose fragment form stored its image upside down.
+		for (let row = 0; row < job.height; row++)
+			decodeRow(out, row * job.width * 4, bytes, row * pitch, job.width, job.format);
 		return out;
 	}
 
