@@ -94,6 +94,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"unticked by the 29 October audit: the owner's 26 October ruling is that cookies take any texture and larger sizes, and the head still resamples to 128 by 128 and takes pixels only",
 	'M3-F14':
 		"unticked by the 29 October audit: the entry gained a rule-42 bullet that the tick never covered. The per-frame terrain work, the quadtree select and the block build, is still in TypeScript and there is no terrain crate; that work is also what M3-R39's new bullet hands here by name, so R39 stands and this carries it",
+	'M3-V14':
+		"the cost runs are measured on the Mac's three paths and on the iPhone 17 and the Galaxy S24, and D-283 proposes the rows and the budgets. The task is held open for its look runs and the owner's ruling: no side-by-side of the tiers exists, with Creek's camera path, the close-up of one tree, the canopy drag on and off and the two leaf ways, and the phone rows bound Low's 0.5 ms rather than measure it, so the owner has not ruled on Low's row. The real canopy drag, Creek's and the forest's readers, the reflections and the layered and volume grids are owed as D-283 and the evidence entry say",
 	'M3-V8':
 		"the CPU path draws a hill through the add-on and is measured on this Mac's Chrome, and the task's Done-when is not met. Creek's sketch still imports its own `./grass`, so no hill of Creek draws through the add-on; the cost has a row only for this Mac, and the iPad, an S24-class phone and the Tab A9 Plus are owed; near grass shadows are not built; and the compute-built blade list waits on M3-E8's same-frame output, M3-E9's count in the near shadow views and M3-V3's graph edge, as the evidence entry says",
 	'M3-X1':
