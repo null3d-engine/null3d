@@ -679,6 +679,7 @@ export class Pipelines {
 	private emptyFragment: GPUShaderModule | undefined;
 	/** The pipelines that make mip levels, by the format they draw. */
 	private readonly mipPipelines = new Map<GPUTextureFormat, GPURenderPipeline>();
+	private readonly scalePipelines = new Map<GPUTextureFormat, GPURenderPipeline>();
 
 	/** `shaders` are the WGSL builds that the device loaded, with the bits that it fixes. */
 	constructor(
@@ -1992,13 +1993,20 @@ export class Pipelines {
 	 */
 	prebuildMipmaps(): void {
 		if (!this.mipmap) return;
-		for (const format of MIP_FORMATS)
-			this.device.createRenderPipelineAsync(this.mipDescriptor(format)).then(
+		for (const format of MIP_FORMATS) {
+			this.device.createRenderPipelineAsync(this.mipDescriptor(format, 'main')).then(
 				(pipeline) => {
 					if (!this.mipPipelines.has(format)) this.mipPipelines.set(format, pipeline);
 				},
 				() => {},
 			);
+			this.device.createRenderPipelineAsync(this.mipDescriptor(format, 'scale')).then(
+				(pipeline) => {
+					if (!this.scalePipelines.has(format)) this.scalePipelines.set(format, pipeline);
+				},
+				() => {},
+			);
+		}
 	}
 
 	/**
@@ -2006,22 +2014,41 @@ export class Pipelines {
 	 * when it is done, else one made at once.
 	 */
 	mipmaps(format: GPUTextureFormat): GPURenderPipeline {
-		let pipeline = this.mipPipelines.get(format);
+		return this.cachedPipeline(this.mipPipelines, format, 'main');
+	}
+
+	/**
+	 * The pipeline that draws a texture into the corner of a texture of `format`, at a size of its
+	 * own: the one built in the background when it is done, else one made at once.
+	 */
+	mipScale(format: GPUTextureFormat): GPURenderPipeline {
+		return this.cachedPipeline(this.scalePipelines, format, 'scale');
+	}
+
+	private cachedPipeline(
+		pipelines: Map<GPUTextureFormat, GPURenderPipeline>,
+		format: GPUTextureFormat,
+		entry: 'main' | 'scale',
+	): GPURenderPipeline {
+		let pipeline = pipelines.get(format);
 		if (!pipeline) {
-			pipeline = this.device.createRenderPipeline(this.mipDescriptor(format));
-			this.mipPipelines.set(format, pipeline);
+			pipeline = this.device.createRenderPipeline(this.mipDescriptor(format, entry));
+			pipelines.set(format, pipeline);
 		}
 		return pipeline;
 	}
 
-	/** How to build the pipeline that makes mip levels of textures of `format`. */
-	private mipDescriptor(format: GPUTextureFormat): GPURenderPipelineDescriptor {
+	/** How to build the pipeline of `entry` for textures of `format`. */
+	private mipDescriptor(
+		format: GPUTextureFormat,
+		entry: 'main' | 'scale',
+	): GPURenderPipelineDescriptor {
 		const shader = this.mipmap;
 		if (!shader) throw new Error("the device's shader module has no mip level shader");
 		const module = this.module('mipmaps', shader);
-		const entryPoints = shader.pipelines.main;
+		const entryPoints = shader.pipelines[entry];
 		return {
-			label: 'mipmaps',
+			label: entry === 'main' ? 'mipmaps' : 'mip scale',
 			layout: 'auto',
 			vertex: { module, entryPoint: entryPoints?.vertex },
 			fragment: { module, entryPoint: entryPoints?.fragment, targets: [{ format }] },

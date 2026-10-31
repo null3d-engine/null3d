@@ -10,7 +10,7 @@
 #import null3d::lighting::{direct_light}
 #endif
 #import null3d::mesh::{frame}
-#import null3d::tables::{IMAGE_LEVELS, IMAGE_SIZE, light_image}
+#import null3d::tables::{image_of, light_image}
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{light_shadow}
 #endif
@@ -65,7 +65,8 @@ struct PointLight {
     /// has none.
     penumbra: vec4f,
     /// The up axis that a spot light's image reads with, or zero for a light without one, then the
-    /// layer of the light's image in the light tables plus one, or 0 when it shows none.
+    /// image's place in the light tables: its layer plus one in the low bits, and the number of
+    /// its size above them (see null3d::tables's image_of), or 0 when the light shows none.
     up_image: vec4f,
 }
 
@@ -160,10 +161,8 @@ fn area_light(
     if kind == KIND_TUBE {
         return tube_light(m, terms, normal, to_view, toward, along, across.x, color);
     }
-    // A rectangle light keeps its image's layer plus one in the place of a spot light's up axis
-    // and image.
-    let image = i32(light.up_image.w) - 1;
-    return rectangle_light(m, terms, normal, to_view, toward, along, across, color, image);
+    // A rectangle light keeps its image's record in the place of a spot light's up axis and image.
+    return rectangle_light(m, terms, normal, to_view, toward, along, across, color, light.up_image.w);
 }
 #endif
 
@@ -242,13 +241,15 @@ fn spot_map(
     }
     // The map's texel at the surface covers a share of the cone's square. The level follows the
     // fragment's footprint on the surface against it: farther from the camera, and at a slant,
-    // the footprint covers more texels, and the map blurs.
-    let texel = 2.0 * depth * stretch / f32(IMAGE_SIZE);
+    // the footprint covers more texels, and the map blurs. A larger map has more texels, so its
+    // pictures stay sharp close up.
+    let texels = image_of(light.up_image.w).y;
+    let texel = 2.0 * depth * stretch / texels;
     let camera_distance = mix(1.0, length(relative), frame.camera_position.w);
     let pixel = 2.0 * camera_distance / (frame.projection[0][0] * frame.target_size.x);
     let footprint = pixel / max(abs(dot(normal, to_view)), 0.1);
-    let level = clamp(log2(max(footprint / texel, 1e-6)), 0.0, IMAGE_LEVELS - 1.0);
-    return light_image(i32(light.up_image.w) - 1, uv, level);
+    let level = log2(max(footprint / texel, 1e-6));
+    return light_image(light.up_image.w, uv, level);
 }
 
 /// One point or spot light of a cluster, ready for a surface to shade: the unit direction from the

@@ -919,12 +919,14 @@ shaders = ["motion", "cull_motion"]
 
 # The mip levels of a layer of a texture array, one render pass per level. It loads by device, as
 # the backends make the mip levels of textures that the scene uploads. The copy pipeline copies a
-# layer texel by texel, for the WebGL2 backend.
+# layer texel by texel, for the WebGL2 backend. The scale pipeline draws one texture into the
+# corner of another at a size of its own, which fills a light's image with a sketch's texture.
 [shaders.mipmap]
 file = "mipmap.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs_main", fragment = "fs_main" }
 pipelines.copy = { vertex = "vs_main", fragment = "fs_copy" }
+pipelines.scale = { vertex = "vs_scale", fragment = "fs_scale" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 

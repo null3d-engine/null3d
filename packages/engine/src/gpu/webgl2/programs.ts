@@ -395,9 +395,13 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 
 /**
  * A program of the mip shader, from the shaders the device loaded: `main` draws a mip level of a
- * texture array's layer from the level before it, and `copy` copies a level of a layer.
+ * texture array's layer from the level before it, `copy` copies a level of a layer, and `scale`
+ * draws a texture into a corner of another at a size of its own.
  */
-export function mipmapTemplate(shaders: DeviceShaders, pipeline: 'main' | 'copy'): GlslTemplate {
+export function mipmapTemplate(
+	shaders: DeviceShaders,
+	pipeline: 'main' | 'copy' | 'scale',
+): GlslTemplate {
 	return { shader: shaders.mipmap, pipeline };
 }
 

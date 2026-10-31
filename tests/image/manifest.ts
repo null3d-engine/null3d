@@ -2437,6 +2437,29 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// The same light with a larger picture, and a reflection probe made after the picture is in the
+	// light tables. The probe's layers come before the pictures', so the picture moves along the
+	// array: a picture or a light record that stays behind reads a probe's map instead, and the
+	// grid below breaks into a reflection.
+	{
+		name: 'spot-map-probe',
+		sketch: 'tests/pages/sketches/spot-map-probe-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The same light and picture as `spot-map-probe`, given as an engine texture instead of pixels.
+	// The frame copies the texture into the light's image, so a wrong corner, a turned row order,
+	// or a copy that stays in a moved layer draws another picture. It borrows that test's
+	// references, because the two forms of the same picture must draw the same image.
+	{
+		name: 'spot-map-texture',
+		sketch: 'tests/pages/sketches/spot-map-texture-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		tolerance: { maxDiffRatio: 0.005 },
+		reference: 'spot-map-probe',
+	},
 	// The hemisphere light as two halves, one turned upside down with its colors swapped, which take
 	// their intensities and colors in every frame. The frame sums them to the single light, so the
 	// test borrows its references.
@@ -3594,6 +3617,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			// The hero shadow is fine detail on one object, so its demo draws larger than the
 			// other demos, where the tile size's difference shows.
 			...(demo.name === 'hero-shadow' && { size: HERO_SIZE }),
+			// A projected picture's detail is fine, so its demo draws larger too, where the fine
+			// lines of the stained glass and the window's bars show at their own size.
+			...(demo.name === 'spot-cookies' && { size: [640, 360] as const }),
 		};
 	}),
 	// Creek on a near-square canvas at a render scale below the whole canvas, from the opening view
