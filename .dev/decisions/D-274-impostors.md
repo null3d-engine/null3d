@@ -200,7 +200,7 @@ that darkens itself.
    camera turns it toward the eye.
 10. The hand-over moves a tree with one visible dither. `handOverToCards` ends the mesh batch's
     range at the switch distance and starts the card batch a fifth of the switch before it. The
-    engine gives a draw range's edges a dithered fade over the last eighth of each edge's distance.
+    engine gives a draw range's edges a dithered fade over the last 8 per cent of each edge's distance.
     A custom material takes that fade as the engine's own templates do, because a custom material's
     levels fade too. The mesh and the card are different sources, and the dither's phase is a hash of
     each copy's source, so their phases differ. Were the two bands to overlap, each would drop part
