@@ -20,22 +20,30 @@ fn effect(input: EffectInput) -> vec4f {
     let toCenter = vec2f(0.5) - input.uv;
     var color = input.color.rgb;
 
-    // Chromatic aberration: the red and the blue channels move apart toward the edges.
+    // Chromatic aberration: the red and the blue channels move apart toward the edges, and blue
+    // moves outward: the direction a real lens fringes in. The outermost band of the frame keeps
+    // the direction that the picture had before the kit drew the mark, because a sample pulled
+    // outward there reads outside the picture, and the engine clamps it to the frame's own row.
+    // Blending the direction across the band leaves that edge as it was and the fringes inside
+    // the frame correct.
     if (uniforms.aberration > 0.0) {
-        let shift = toCenter * uniforms.aberration / input.size;
+        let edge = min(min(input.uv.x, input.uv.y), min(1.0 - input.uv.x, 1.0 - input.uv.y));
+        let band = smoothstep(0.0, 24.0, edge * input.size.y);
+        let shift = toCenter * uniforms.aberration * (band * 2.0 - 1.0) / input.size;
         color.r = effectColor(input.uv + shift).r;
         color.b = effectColor(input.uv - shift).b;
     }
 
-    // The anamorphic streak: bloom's own glow, spread sideways into a blue-white flare. The chain
-    // has thresholded and blurred the light already, so the streak never blurs the picture again.
+    // The anamorphic streak: bloom's own glow, spread sideways. The chain has thresholded and
+    // blurred the light already, so the streak never blurs the picture again, and it carries the
+    // color of the light that feeds it: a red reflection flares red.
     if (uniforms.streak > 0.0) {
         var glow = vec3f(0.0);
         for (var i = 1; i <= 5; i++) {
             let across = vec2f(f32(i) * 3.0 / input.size.x, 0.0);
             glow += effectBloom(input.uv - across) + effectBloom(input.uv + across);
         }
-        color += glow * 0.1 * uniforms.streak * vec3f(0.45, 0.65, 1.0);
+        color += glow * 0.1 * uniforms.streak;
     }
 
     // Speed: the picture smears toward the middle, so a moving camera reads as movement.

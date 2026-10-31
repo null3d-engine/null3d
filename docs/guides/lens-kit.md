@@ -68,11 +68,13 @@ the table that the final pass reads. The kit therefore keeps no color table of i
 that must show a surface's own color passes `grading: false`.
 
 The **color fringes** move the red and the blue channels apart toward the edges. The offset grows
-with the distance from the middle, so the center stays sharp.
+with the distance from the middle, so the center stays sharp. The outermost band of the frame keeps
+a smaller offset, because a sample pulled beyond the picture reads the frame's own edge row.
 
 The **streak** reads a level of bloom's chain with `effectBloom`. That level holds the light that
 passed bloom's threshold, already blurred. The streak spreads that light sideways, so it never
-blurs the picture a second time. Bloom must be on, or the streak adds nothing.
+blurs the picture a second time. The spread carries the light's own color, so a red reflection
+flares red rather than taking a tint of its own. Bloom must be on, or the streak adds nothing.
 
 The **speed blur** adds samples along the line from each pixel to the middle. It reads neighboring
 pixels, so it draws its own pass.

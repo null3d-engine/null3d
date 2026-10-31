@@ -38,7 +38,10 @@ lens.set({ vignette: false });
   raises a mark builds the effect then, and one that lowers every mark to 0 drops it again.
 - The streak reads a level of bloom's chain with `effectBloom`, so the chain holds the light that
   passed bloom's threshold, already blurred. The effect spreads that light sideways instead of
-  blurring the picture again. Bloom must be on, or the streak reads black.
+  blurring the picture again, and it carries the light's own color: a red reflection flares red.
+  Bloom must be on, or the streak reads black.
+- The color fringes hold a smaller offset in the frame's outermost band. A sample pulled beyond the
+  picture reads the frame's edge row, which paints a line of that color along the edge.
 - The aberration and the speed blur read the pixels around each one. The streak reads bloom's level,
   so the effect draws a pass of its own; at the whole canvas's render scale, effects that only read
   their pixels join one pass
