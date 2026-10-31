@@ -50,11 +50,12 @@ the bookkeeping that tells when its layer is stale.
 ### The measured cost
 
 Creek's showcase at its opening pose, Medium, WebGPU, in Chrome 156. The machine is a MacBook Pro
-with an Apple M3 Max, 36 GB of memory and macOS 26.2. The drawing buffer is 1920 by 1080. Every
-cascade draws in every frame on every side, so no pass rests and reads cheap.
+with an Apple M3 Max, 36 GB of memory and macOS 26.2, as [the device
+record](../tested-devices/macbook-pro-m3-max-chrome/README.md) gives it. The drawing buffer is 1920
+by 1080. Every cascade draws in every frame on every side, so no pass rests and reads cheap.
 The two sides are the scene as it draws, and the scene without the grass, whose shadow passes then
 draw only casters that stand still. The run is
-[the shadow-cache run](../tested-devices/macbook-pro-chrome/20261031-1425-shadow-cache.md), which
+[the shadow-cache run](../tested-devices/macbook-pro-m3-max-chrome/20261031-1425-shadow-cache.md), which
 gives the command, the loads and the per-pass figures. Every page there began and ended under a
 1-minute load below 8.
 
@@ -82,6 +83,9 @@ state for them. The still side differs by up to 25% between rounds. The movers' 
 still: 0.01 to 0.26 ms of the two cascades together at one state. That range reaches inside the
 still side's spread, so this run does not resolve the movers' share. The static share is 0.65 to
 0.74 ms of the two cascades. It is three to twelve times the cascade's own spread.
+
+The still side's spread does not change the ruling. The saving rests on the static share and the
+copy cost. It does not rest on separating the movers.
 
 The last Afternoon page ran while the GPU drew a much slower frame: 13.911 ms against 8.747 ms, and
 1.69 ms of cascades against 0.99. Its cascade share of the frame, 12.1%, matches the other pages'
