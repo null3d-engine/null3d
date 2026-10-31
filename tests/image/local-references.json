@@ -11,6 +11,24 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
 	},
+	"chromium-swiftshader/compat/bounce-bounce.png": {
+		"test": "bounce-bounce",
+		"tier": "compat",
+		"date": "2026-10-31",
+		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
+	},
+	"chromium-swiftshader/compat/bounce-grid.png": {
+		"test": "bounce-grid",
+		"tier": "compat",
+		"date": "2026-10-31",
+		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
+	},
+	"chromium-swiftshader/compat/bounce-off.png": {
+		"test": "bounce-off",
+		"tier": "compat",
+		"date": "2026-10-31",
+		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
+	},
 	"chromium-swiftshader/compat/car-paint-no-seams.png": {
 		"test": "car-paint-no-seams",
 		"tier": "compat",
@@ -64,6 +82,12 @@
 		"tier": "compat",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/compat/demo-bounce-light.png": {
+		"test": "demo-bounce-light",
+		"tier": "compat",
+		"date": "2026-10-31",
+		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
 	},
 	"chromium-swiftshader/compat/demo-creek.png": {
 		"test": "demo-creek",
@@ -233,6 +257,24 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
 	},
+	"chromium-swiftshader/webgl2/bounce-bounce.png": {
+		"test": "bounce-bounce",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
+	},
+	"chromium-swiftshader/webgl2/bounce-grid.png": {
+		"test": "bounce-grid",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
+	},
+	"chromium-swiftshader/webgl2/bounce-off.png": {
+		"test": "bounce-off",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
+	},
 	"chromium-swiftshader/webgl2/car-paint-no-seams.png": {
 		"test": "car-paint-no-seams",
 		"tier": "webgl2",
@@ -286,6 +328,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgl2/demo-bounce-light.png": {
+		"test": "demo-bounce-light",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
 	},
 	"chromium-swiftshader/webgl2/demo-creek.png": {
 		"test": "demo-creek",
@@ -479,6 +527,24 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
 	},
+	"chromium-swiftshader/webgpu/bounce-bounce.png": {
+		"test": "bounce-bounce",
+		"tier": "webgpu",
+		"date": "2026-10-31",
+		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
+	},
+	"chromium-swiftshader/webgpu/bounce-grid.png": {
+		"test": "bounce-grid",
+		"tier": "webgpu",
+		"date": "2026-10-31",
+		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
+	},
+	"chromium-swiftshader/webgpu/bounce-off.png": {
+		"test": "bounce-off",
+		"tier": "webgpu",
+		"date": "2026-10-31",
+		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
+	},
 	"chromium-swiftshader/webgpu/car-paint-no-seams.png": {
 		"test": "car-paint-no-seams",
 		"tier": "webgpu",
@@ -532,6 +598,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgpu/demo-bounce-light.png": {
+		"test": "demo-bounce-light",
+		"tier": "webgpu",
+		"date": "2026-10-31",
+		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
 	},
 	"chromium-swiftshader/webgpu/demo-creek.png": {
 		"test": "demo-creek",
