@@ -7,6 +7,8 @@
 // - forty-passes: one run a frame for 40 frames, then a read. The same value as forty-row.
 // - layers: a pass of three layers writes its layer's number into each, and a read of each layer
 //   gives what it wrote.
+// - map: a pass of two layers copies a map of two layers, whose texels name the layer and place
+//   they came from, so a map bound at the wrong layer or scale shows in the read.
 // - stopped: five runs, then the pass switches off, and a read keeps the last state.
 // - reset: the state starts again from zero, and a run then reads one.
 // - loss: two runs read two, the page loses the GPU, and one run then reads one.
@@ -113,6 +115,59 @@ fn effect(input: EffectInput) -> vec4f {
 }
 `;
 
+/** A pass of two layers that copies its map, which holds the values that the copy must keep. */
+const MAP = /* wgsl */ `
+struct ComputeBlock {
+    size: vec4f,
+    clock: vec4f,
+    inverseProjection: mat4x4f,
+    u0: vec4f,
+    u1: vec4f,
+    u2: vec4f,
+    u3: vec4f,
+    u4: vec4f,
+    u5: vec4f,
+    u6: vec4f,
+    u7: vec4f,
+    drawn: vec4f,
+    bloom: vec4f,
+}
+
+@group(0) @binding(0) var<uniform> block: ComputeBlock;
+@group(0) @binding(1) var output: texture_storage_2d_array<rgba16float, write>;
+@group(1) @binding(0) var source: texture_2d_array<f32>;
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+    let size = vec2u(block.drawn.xy);
+    if (id.x >= size.x || id.y >= size.y) { return; }
+    textureStore(output, vec2i(id.xy), id.z, textureLoad(source, vec2i(id.xy), id.z, 0));
+}
+`;
+
+/** The fragment form of the copy: the map's texel at the layer that the pass writes. */
+const MAP_FRAGMENTS = /* wgsl */ `
+var source: texture_2d_array<f32>;
+
+fn effect(input: EffectInput) -> vec4f {
+    let cell = vec2i(floor(vec2f(input.uv.x, 1.0 - input.uv.y) * input.size));
+    return textureLoad(source, cell, input.layer, 0);
+}
+`;
+
+/// The texels of the copy's map, in rows from its first: each texel names its layer and place.
+const MAP_SIDE = 8;
+const MAP_TEXELS = new Float32Array(MAP_SIDE * MAP_SIDE * 4 * 2);
+for (let layer = 0; layer < 2; layer++)
+	for (let y = 0; y < MAP_SIDE; y++)
+		for (let x = 0; x < MAP_SIDE; x++) {
+			const at = ((layer * MAP_SIDE + y) * MAP_SIDE + x) * 4;
+			MAP_TEXELS[at] = layer + 1;
+			MAP_TEXELS[at + 1] = x;
+			MAP_TEXELS[at + 2] = y;
+			MAP_TEXELS[at + 3] = 0;
+		}
+
 const LAYERS = /* wgsl */ `
 struct ComputeBlock {
     size: vec4f,
@@ -144,6 +199,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 export default defineSketch(({ scene, geometry, materials, textures, render, page }) => {
 	scene.setBackground('#000000');
 	const layered = CASE === 'layers';
+	const mapped = CASE === 'map';
 	const fullscreenKept = CASE === 'fs-kept';
 	const cadenceKept = CASE === 'cadence-kept';
 	const kept = CASE === 'kept' || fullscreenKept || cadenceKept;
@@ -157,6 +213,17 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 		);
 	}
 
+	const copyMap = mapped
+		? textures.fromData({
+				width: MAP_SIDE,
+				height: MAP_SIDE,
+				depth: 2,
+				format: 'rgba16float',
+				data: MAP_TEXELS,
+				filter: 'nearest',
+				colorSpace: 'linear',
+			})
+		: undefined;
 	const field = fullscreenKept
 		? render.addPass({
 				kind: 'fullscreen',
@@ -172,12 +239,21 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 					kind: 'compute',
 					outputs: { counter: { default: 'black' } },
 				}),
-				wgsl: kept ? CONSTANT : layered ? LAYERS : COMPUTE,
-				fallback: { wgsl: layered ? LAYERS_FRAGMENTS : kept ? CONSTANT_FRAGMENTS : FALLBACK },
+				wgsl: mapped ? MAP : kept ? CONSTANT : layered ? LAYERS : COMPUTE,
+				fallback: {
+					wgsl: mapped
+						? MAP_FRAGMENTS
+						: layered
+							? LAYERS_FRAGMENTS
+							: kept
+								? CONSTANT_FRAGMENTS
+								: FALLBACK,
+				},
 				format: 'rgba16float',
 				size: CASE === 'cost' ? [256, 256] : kept ? [64, 64] : [4, 4],
 				history: !kept && !layered,
-				layers: layered ? 3 : 1,
+				layers: mapped ? 2 : layered ? 3 : 1,
+				textures: mapped ? [copyMap] : undefined,
 				// The cadence case draws in one frame of two from its first frame on.
 				every: cadenceKept ? 2 : undefined,
 				// Every case starts without a run, and the sequence below asks for the runs that it counts.
@@ -306,6 +382,18 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 		} else if (CASE === 'layers') {
 			await wait(1);
 			for (let layer = 0; layer < 3; layer++) values[layer] = await read(layer);
+		} else if (CASE === 'map') {
+			await wait(1);
+			for (let layer = 0; layer < 2; layer++) values[layer] = await read(layer);
+			// A square away from the first row and column, so a wrong row, column or layer shows.
+			const region = await render.readPass(field, {
+				x: 3,
+				y: 5,
+				width: 2,
+				height: 2,
+				layer: 1,
+			});
+			texels = [...region.data];
 		} else if (CASE === 'stopped') {
 			render.setPassSteps(field, 1);
 			await wait(3);

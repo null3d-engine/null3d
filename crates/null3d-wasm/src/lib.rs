@@ -3270,8 +3270,9 @@ pub fn add_pass(
 /// each way, 1, 0.5 or 0.25. It reads the input image `source` (`constants::pass_source`), the
 /// scene's depth with the flag `constants::effect_flag::DEPTH`, its uniforms at `effectValues` and
 /// its textures at `effectTextures`, in one frame of every `every`. `fallback` says the pass runs
-/// in place of a compute pass: it then keeps `history`'s two states of `layers` layers each, and
-/// draws `steps` runs a frame. Returns the view's place, from 1, or 0 as `addPass` does.
+/// in place of a compute pass: it then keeps `history`'s two states of `layers` layers each, draws
+/// `steps` runs a frame, and writes a target of `format`, a draw list format code, or of the
+/// scene's views' format with 0. Returns the view's place, from 1, or 0 as `addPass` does.
 #[wasm_bindgen(js_name = addFullscreenPass)]
 #[allow(clippy::too_many_arguments)]
 pub fn add_fullscreen_pass(
@@ -3288,6 +3289,7 @@ pub fn add_fullscreen_pass(
     history: u32,
     layers: u32,
     steps: u32,
+    format: u32,
 ) -> u32 {
     let target = ViewTarget {
         size: (width > 0).then_some((width, height.max(1))),
@@ -3305,6 +3307,7 @@ pub fn add_fullscreen_pass(
             let content = Fullscreen {
                 template,
                 fallback: fallback != 0,
+                format,
                 history: fallback != 0 && history != 0,
                 layers: if fallback != 0 { layers.max(1) } else { 1 },
                 steps: if fallback != 0 { steps } else { 1 },
@@ -3693,10 +3696,21 @@ pub fn set_scene_pass_every(place: u32, every: u32) -> u32 {
 pub fn create_pass_texture(place: u32, width: u32, height: u32) -> u32 {
     value_with_engine(|e| {
         let settings = e.renderer.settings_mut();
-        // The canvas's format holds 8-bit color, which the store counts as such.
-        let format = match settings.canvas().scene_color.format() {
-            format::CANVAS => format::RGBA8_UNORM,
-            other => other,
+        // The store records the format that the pass writes: a compute pass's own, which its
+        // fragment form keeps on WebGL2, or the scene color's for a scene or reflection pass.
+        let declared = settings.views().get(place as usize).and_then(|view| {
+            view.compute_pass().map(|pass| pass.format).or_else(|| {
+                view.fullscreen_pass()
+                    .filter(|pass| pass.fallback)
+                    .map(|pass| pass.format)
+            })
+        });
+        let format = match declared {
+            Some(code) if code != 0 => code,
+            _ => match settings.canvas().scene_color.format() {
+                format::CANVAS => format::RGBA8_UNORM,
+                other => other,
+            },
         };
         let texture = settings
             .textures_mut()
@@ -6013,14 +6027,21 @@ pub fn request_pass_read(
             };
             (format, pass.target_layers())
         } else if let Some(pass) = declared.fullscreen_pass().filter(|pass| pass.fallback) {
-            // A full-screen pass's target has an alpha channel even where the scene color packs
-            // its color, and the canvas code names the 8-bit path's target.
-            let format = match settings.canvas().scene_color.format() {
-                null3d_gpu::drawlist::format::CANVAS => null3d_gpu::drawlist::format::RGBA8_UNORM,
-                null3d_gpu::drawlist::format::RG11B10_UFLOAT => {
-                    null3d_gpu::drawlist::format::RGBA16_FLOAT
+            // The fragment form writes its compute pass's own format, or the scene's when it
+            // declares none. A full-screen pass's target has an alpha channel even where the scene
+            // color packs its color, and the canvas code names the 8-bit path's target.
+            let format = if pass.format != 0 {
+                pass.format
+            } else {
+                match settings.canvas().scene_color.format() {
+                    null3d_gpu::drawlist::format::CANVAS => {
+                        null3d_gpu::drawlist::format::RGBA8_UNORM
+                    }
+                    null3d_gpu::drawlist::format::RG11B10_UFLOAT => {
+                        null3d_gpu::drawlist::format::RGBA16_FLOAT
+                    }
+                    other => other,
                 }
-                other => other,
             };
             (
                 format,

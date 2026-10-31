@@ -74,6 +74,7 @@ fn add_fullscreen<B: FrameBuilder>(
     let pass = Fullscreen {
         template: PASS_TEMPLATE,
         fallback: false,
+        format: 0,
         history: false,
         layers: 1,
         steps: 1,
@@ -292,6 +293,101 @@ fn a_cadenced_full_screen_pass_draws_in_one_frame_of_two() {
     let (webgpu, webgl2) = worlds(Antialias::None);
     cadence_draws(webgpu, "WebGPU");
     cadence_draws(webgl2, "WebGL2");
+}
+
+/// The format of the target that a fallback pass declaring `declared` draws into, on the WebGL2
+/// path with an 8-bit canvas, where the scene color cannot hold a compute pass's own values.
+fn fallback_target_format(declared: u32) -> u32 {
+    let canvas = CanvasOutput {
+        scene_color: SceneColor::EIGHT_BIT,
+        antialias: Antialias::None,
+        transparent: false,
+    };
+    let mut world = World::build(CpuCulledRenderer::new(CpuCulledConfig {
+        canvas,
+        multi_draw: true,
+        ..CpuCulledConfig::default()
+    }));
+    let pass = Fullscreen {
+        template: PASS_TEMPLATE,
+        fallback: true,
+        format: declared,
+        history: false,
+        layers: 1,
+        steps: 1,
+        reset: 0,
+        source: PassSource::None,
+        depth: false,
+        values: [0.0; EFFECT_FLOATS],
+        maps: EffectMaps::NONE,
+    };
+    let view = world
+        .renderer
+        .settings_mut()
+        .add_named_view(
+            View::fullscreen(
+                pass,
+                ViewTarget {
+                    shown: true,
+                    ..ViewTarget::default()
+                },
+            ),
+            ViewNames {
+                pass: "Fallback".into(),
+                target: "fallback".into(),
+                reads: Vec::new(),
+            },
+        )
+        .unwrap();
+    // A target that nothing shows is culled, so a screen reads this pass's texture.
+    let shown = world.show(view);
+    add_screen(&mut world, shown);
+    world.renderer.check_graph().unwrap();
+    let mut mock = MockBackend::default();
+    let mut commands = Vec::new();
+    for frame in 0..3 {
+        commands.extend(world.step(&mut mock, frame == 0));
+    }
+    let label = pass_role::label(PassRole::Fullscreen, view.index() as u32);
+    let target = commands
+        .iter()
+        .find_map(|(op, operands)| {
+            (*op == Op::BeginRenderPass
+                && operands.len() >= 2
+                && (operands[operands.len() - 1] == label || operands[operands.len() - 2] == label))
+                .then(|| operands[0])
+        })
+        .expect("the fallback pass draws");
+    // The pass draws into a view of the target's only layer, so a view names its texture.
+    let texture = commands
+        .iter()
+        .find_map(|(op, operands)| {
+            (*op == Op::CreateTextureView && operands[0] == target && operands.len() > 1)
+                .then(|| operands[1])
+        })
+        .unwrap_or(target);
+    commands
+        .iter()
+        .find_map(|(op, operands)| {
+            (*op == Op::CreateTexture && operands[0] == texture && operands.len() > 4)
+                .then(|| operands[4])
+        })
+        .expect("the pass's target is made")
+}
+
+#[test]
+fn a_fallback_pass_keeps_the_format_its_compute_pass_declares() {
+    assert_eq!(
+        fallback_target_format(format::RGBA16_FLOAT),
+        format::RGBA16_FLOAT,
+        "the fragment form writes its compute pass's format"
+    );
+    // A fragment form that declares no format keeps the scene's own.
+    assert_eq!(
+        fallback_target_format(0),
+        format::RGBA8_UNORM_SRGB,
+        "a pass without a declared format keeps the scene's"
+    );
 }
 
 /// Records warm-up frames of `world`'s chain, then frames in which the passes' uniforms and the

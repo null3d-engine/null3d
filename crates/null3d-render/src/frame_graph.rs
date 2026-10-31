@@ -3015,10 +3015,16 @@ impl FrameGraph {
                 match view.fullscreen_pass() {
                     // The fragment form of a compute pass keeps the states in the same layers that
                     // the compute pass's target holds, so a page reads its images on both paths.
-                    Some(pass) if pass.fallback => one_sample
-                        .layers(pass.layers.max(1) * if pass.history { 2 } else { 1 })
-                        .clearable()
-                        .copy_source(),
+                    // It keeps the compute pass's own format too: an 8-bit scene color rounds the
+                    // small values a compute pass writes, and clamps their sign away.
+                    Some(pass) if pass.fallback => Target::color(if pass.format == 0 {
+                        fullscreen_target_format(self.scene_color)
+                    } else {
+                        pass.format
+                    })
+                    .layers(pass.layers.max(1) * if pass.history { 2 } else { 1 })
+                    .clearable()
+                    .copy_source(),
                     _ => one_sample,
                 }
             } else {
@@ -6697,6 +6703,7 @@ mod tests {
         let pass = Fullscreen {
             template: 70,
             fallback: false,
+            format: 0,
             history: false,
             layers: 1,
             steps: 1,
@@ -6969,6 +6976,7 @@ mod tests {
         let pass = Fullscreen {
             template: 70,
             fallback: true,
+            format: 0,
             history: true,
             layers: 1,
             steps,

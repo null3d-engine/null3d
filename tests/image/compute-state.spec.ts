@@ -114,6 +114,14 @@ for (const { tier, query } of TIERS) {
 		expect(result.values[1]).toBe(8);
 	});
 
+	test(`a layered pass copies its map at each layer on ${tier}`, async ({ page }) => {
+		// The map's texels name their layer and place, so a map bound at the wrong layer, or a copy
+		// of the wrong row or column, shows in the read.
+		const result = await stateCase(page, query, 'map');
+		expect(result.values).toEqual([1, 2]);
+		expect(result.texels).toEqual([2, 3, 5, 0, 2, 4, 5, 0, 2, 3, 6, 0, 2, 4, 6, 0]);
+	});
+
 	test(`an out-of-range read is refused on ${tier}`, async ({ page }) => {
 		const result = await stateCase(page, query, 'refuse');
 		expect(result.values[0]).toBe(1);
