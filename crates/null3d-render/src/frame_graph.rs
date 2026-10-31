@@ -2194,7 +2194,17 @@ impl FrameGraph {
         let was = self.bloom_draws();
         self.bloom = bloom;
         if self.bloom_draws() != was {
-            self.enable_outputs();
+            self.bloom_switched();
+        }
+    }
+
+    /// Switches the passes for bloom starting or stopping to draw. An effect that reads a level of
+    /// bloom's chain declares that read only while the chain draws, so its passes are declared
+    /// again.
+    fn bloom_switched(&mut self) {
+        self.enable_outputs();
+        if self.effect_blooms.iter().any(|&level| level != 0) {
+            self.declared = false;
         }
     }
 
@@ -3790,8 +3800,13 @@ impl FrameGraph {
                 pass = pass.reads(SCENE_DEPTH);
             }
             // An effect that reads a level of bloom's chain runs after the step that fills it.
+            // While the frame draws no bloom, or no step fills that level, nothing writes it: the
+            // effect then reads the blank texture that its sources bind, and declares no read.
+            let declared = self.bloom_pass.as_ref().map_or(0, BloomPass::levels);
+            let fills = |level: usize| self.bloom_draws() && level < declared;
             for place in unit.places() {
                 if let Some(level) = self.effects.get(place).and_then(|effect| effect.bloom)
+                    && fills(level as usize)
                     && let Some(name) = BLOOM_LEVELS.get(level as usize)
                 {
                     pass = pass.reads(*name);
@@ -4573,7 +4588,7 @@ impl FrameGraph {
             && steps_built;
         let ao_built = steps_built && self.screen_steps();
         self.note_built(BuiltGroup::Screen, ao_built, FrameGraph::declare_again);
-        self.note_built(BuiltGroup::Bloom, built, FrameGraph::enable_outputs);
+        self.note_built(BuiltGroup::Bloom, built, FrameGraph::bloom_switched);
         let permutation = self.scene_color.permutation();
         let transmission_built = self.copy_wanted() && {
             // WebGL2 has no multisampled textures: its backend gives the copy a copy of one sample.
@@ -9408,6 +9423,9 @@ mod tests {
         frames.request_pipelines(&mut pipelines, 0);
         pipelines.create_new(&mut list, 1).unwrap();
         frames.request_pipelines(&mut pipelines, 1);
+        // As a frame does, the passes are declared after the pipelines are asked for, so the
+        // effect declares its read of the chain once bloom's pipelines are built.
+        frames.sync(&[View::default()]);
         frames
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
@@ -9446,6 +9464,7 @@ mod tests {
         frames.request_pipelines(&mut pipelines, 0);
         pipelines.create_new(&mut list, 1).unwrap();
         frames.request_pipelines(&mut pipelines, 1);
+        frames.sync(&[View::default()]);
         frames
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
@@ -9468,6 +9487,55 @@ mod tests {
             sources[0], scene,
             "the chain reads the scene, not the effect"
         );
+    }
+
+    #[test]
+    fn an_effect_that_reads_bloom_draws_while_bloom_is_off_and_reads_the_chain_once_it_is_on() {
+        let canvas = (1280, 720);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        let mut list = DrawList::with_capacity(8192);
+        let effect = Effect {
+            template: CUSTOM,
+            depth: false,
+            bloom: Some(2),
+            values: [0.0; effects::EFFECT_FLOATS],
+            maps: EffectMaps::NONE,
+        };
+        frames.set_effects(&[effect], &EffectJoins::default(), [0.0; 2], None);
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        frames.sync(&[View::default()]);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 0);
+        pipelines.create_new(&mut list, 1).unwrap();
+        frames.request_pipelines(&mut pipelines, 1);
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert!(frames.bloom_draws());
+        // Bloom turns off under the effect: the frame still draws, and the effect reads blank.
+        frames.set_bloom(None, ChainFrame::default());
+        frames.request_pipelines(&mut pipelines, 1);
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
+        assert!(names.iter().any(|name| name == "Effect0"), "{names:?}");
+        assert!(!names.iter().any(|name| name == BLOOM_DOWN[0]), "{names:?}");
+        assert_eq!(frames.effect_blooms()[0].texture, 0);
+        // Bloom turns on again: the effect waits for the chain and reads its level.
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        frames.request_pipelines(&mut pipelines, 1);
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
+        let place = |name: &str| names.iter().position(|n| n == name).unwrap();
+        assert!(place(BLOOM_UP[2]) < place("Effect0"));
+        assert_ne!(frames.effect_blooms()[0].texture, 0);
     }
 
     #[test]

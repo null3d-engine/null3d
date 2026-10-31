@@ -208,6 +208,11 @@ export interface StageOptions {
 	 * sky than the hour gives. The default is 1.
 	 */
 	skyScale?: number;
+	/**
+	 * A factor on the stars' brightness, for a scene whose own glow hides most of them, such as a
+	 * lit city. The faint stars drop out first. The default is 1.
+	 */
+	starScale?: number;
 	/** The minutes a whole day takes in Auto. The default is 4/3, a day in 80 seconds. */
 	minutesPerDay?: number;
 	/** The plain background color, in linear RGB, that shows while the sky is off. */
@@ -289,6 +294,7 @@ export function createMoods(
 		exposureScale = 1,
 		environmentScale = 1,
 		skyScale = 1,
+		starScale = 1,
 	} = options;
 	const perDay = options.minutesPerDay ?? MINUTES_PER_DAY;
 	/** The scene's own weather over the hour's look, which its HUD may change. */
@@ -403,7 +409,7 @@ export function createMoods(
 			blend(daylight, day.exposure, smoothstep(-0.05, -0.35, sunHeight)) * exposureScale;
 		target.sunLight = day.atmosphere.sunIntensity * weather.light;
 		target.moonLight = day.atmosphere.moonIntensity * weather.light;
-		target.stars = day.atmosphere.stars;
+		target.stars = day.atmosphere.stars * starScale;
 		target.clouds = weather.cloud ?? cloudCoverage;
 		targetHours = hours;
 	};

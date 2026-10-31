@@ -415,7 +415,14 @@ level with `bloomLevel`.
 - A level that the frame's chain does not draw, because the weights end before it, binds a one-texel
   texture instead, so the effect reads black rather than a stale level.
 - The level is drawn only while bloom is on. A sketch that reads a level with bloom off reads black,
-  which keeps the cost of the chain with the sketches that ask for it.
+  which keeps the cost of the chain with the sketches that ask for it. The effect's pass therefore
+  declares its read of the level only while the chain draws, and only for a level that the chain
+  declares. The passes are declared again when an effect reads the chain and bloom starts or stops
+  drawing. A read declared while bloom is off names a target whose writers are off, so the graph
+  refuses the frame with E1502. Skyway's lens streak reads level 2, so its Bloom
+  switch stopped every frame. The frame graph test
+  `an_effect_that_reads_bloom_draws_while_bloom_is_off_and_reads_the_chain_once_it_is_on` turns
+  bloom off and on under such an effect.
 
 ## The shader compiler
 
