@@ -150,6 +150,11 @@ const REFLECT_SCALE = Number(params.get('reflection-scale')) || undefined;
 /** The parts of the scene that the address leaves out, for the bisect of the Apple WebGPU stall. */
 const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean));
 /**
+ * True holds the route at its opening shot and draws every cascade in every frame, so a probe can
+ * time each cascade's pass on one view.
+ */
+const CASCADE_PROBE = params.has('cascade-probe');
+/**
  * The render scale that the address fixes, for the picture tests that draw below the whole canvas,
  * or undefined to leave the scale to the governor.
  */
@@ -241,6 +246,15 @@ export default defineSketch(async (ctx) => {
 			minRenderScale: RENDER_SCALE,
 			maxRenderScale: RENDER_SCALE,
 			governor: false,
+		});
+	// The cascade probe needs each cascade's pass in the frame's report, in every frame, and one
+	// frame size for every reading.
+	if (CASCADE_PROBE)
+		await quality.set({
+			farCascadeInterval: 1,
+			governor: false,
+			minRenderScale: 1,
+			maxRenderScale: 1,
 		});
 	const detail = DETAIL[quality.preset];
 	reportLoading(ctx);
@@ -460,7 +474,8 @@ export default defineSketch(async (ctx) => {
 				)
 					showLook(next);
 			}
-			film.update(dt);
+			// The cascade probe times one view, so its route holds the opening pose.
+			film.update(CASCADE_PROBE ? 0 : dt);
 			// After the camera moves, so the view under the water turns the frame the camera dips.
 			underwater?.update(t, stage.airColor, caustics);
 			const lens = controls.lens();
