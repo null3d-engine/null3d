@@ -1126,12 +1126,13 @@ export class Pipelines {
 		});
 		// The moment layer's colour builds keep the frame's copy of the opaque color at binding 15,
 		// which every lit build declares through the reflection code, and add the moment store at
-		// 19. They declare no light probe grid, so that entry leaves the layout: their maps' group
-		// already takes the fragment stage to the count of 16 without it.
+		// the light probe grid's binding, 10. They declare no light probe grid, so that entry
+		// leaves the layout: their maps' group already takes the fragment stage to the count of 16
+		// without it.
 		this.defineLayout(LAYOUT_MOMENT_FRAME, 'moment frame', [
 			...frame.filter((entry) => entry !== probeGrid),
 			{
-				binding: 19,
+				binding: 10,
 				visibility: fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},

@@ -293,9 +293,9 @@ fn pick_color(key: u32) -> vec4f {
 
 /// The moment store that the colour pass reads at each fragment's own pixel (decision record
 /// D-261): the four moments that the moment pass summed there, read with `textureLoad` as plain
-/// floats. Binding 19 is free in the frame's group: the composer keeps every module's globals,
-/// and the refraction module's own texture holds binding 15 in every build.
-@group(0) @binding(19) var moment_store: texture_2d<f32>;
+/// floats. It takes the light probe grid's binding, which the layer's own frame layout leaves out
+/// because no moment build reads the grid.
+@group(0) @binding(10) var moment_store: texture_2d<f32>;
 #endif
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
