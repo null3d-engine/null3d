@@ -3508,6 +3508,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: ['antialias=none', 'moments=on'],
 		hold: 0,
 		size: [480, 270],
+		// The panes added in the opposite order draw the layer's own picture: the store sums
+		// without regard to the order, which is the property that the test proves.
+		samePicture: 'moment-layer',
 	},
 	// Decals on a stone yard: a scorch mark, road paint through a ball's shadow, a puddle under a
 	// point light, cracks on a wall, moss that fades up the ball's side, and a batch of mud
