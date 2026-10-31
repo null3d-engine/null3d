@@ -755,6 +755,9 @@ pub struct TextureStore {
     /// saves the memory of one more copy of each image.
     keep_copies: bool,
     max_anisotropy: u32,
+    /// True on the path that counts a texture's rows from the bottom, where a pass target's image
+    /// is turned against the compute form's: its maps read their rows the other way.
+    rows_from_bottom: bool,
     /// True when a map became ready or stopped drawing since the last check.
     layers_changed: bool,
     stats: UploadStats,
@@ -790,6 +793,7 @@ impl TextureStore {
             unbudgeted: false,
             keep_copies: false,
             max_anisotropy: DEFAULT_MAX_ANISOTROPY,
+            rows_from_bottom: false,
             layers_changed: false,
             stats: UploadStats::default(),
             placeholder: Handle::NONE,
@@ -1548,6 +1552,27 @@ impl TextureStore {
             None => matches!(slot.state, State::Uploaded { .. }),
         };
         ready.then_some(slot.layer + array.pass_layer)
+    }
+
+    /// Sets whether this store's device counts a texture's rows from the bottom, as WebGL2 does.
+    /// A pass target's image is then turned against the compute form's, and the maps that sample
+    /// one read their rows the other way.
+    pub fn set_rows_from_bottom(&mut self, on: bool) {
+        self.rows_from_bottom = on;
+    }
+
+    /// The value that a custom shader's map slot holds for a texture, once its texels are on the
+    /// GPU: the layer to sample at, or -1 while its image is not there. On a device that counts a
+    /// texture's rows from the bottom, a pass target's layer is turned and written as `-(layer + 2)`,
+    /// so the shader build reads the rows that the fragment form wrote.
+    pub fn map_layer(&self, texture: Handle) -> Option<i32> {
+        let layer = self.ready_layer(texture)? as i32;
+        let turned = self.rows_from_bottom
+            && self
+                .slot(texture)
+                .ok()
+                .is_some_and(|slot| self.arrays[slot.array as usize].pass.is_some());
+        Some(if turned { -(layer + 2) } else { layer })
     }
 
     /// Gives the maps of view `view`'s target the first layer of the state that its pass wrote
@@ -2621,6 +2646,23 @@ mod tests {
         assert!(ops(&commands, Op::DestroyTexture).is_empty());
         // The white texel's array alone counts: its first four layers of one texel.
         assert_eq!(h.store.memory_bytes(), 4 * 4);
+    }
+
+    #[test]
+    fn a_pass_texture_is_turned_on_the_path_that_counts_rows_from_the_bottom() {
+        let mut h = Harness::new();
+        let texture = h.store.create_pass(3, 8, 8, format::RGBA16_FLOAT).unwrap();
+        assert_eq!(h.store.map_layer(texture), None, "no image yet");
+        // The graph makes the target, and a map names its first layer.
+        h.store.set_pass_target(3, Some(900), false);
+        assert_eq!(
+            h.store.map_layer(texture),
+            Some(0),
+            "the path that counts rows from the top samples the layer"
+        );
+        // On the path that counts them from the bottom, the value turns the read.
+        h.store.set_rows_from_bottom(true);
+        assert_eq!(h.store.map_layer(texture), Some(-2), "turned, at -(0 + 2)");
     }
 
     #[test]

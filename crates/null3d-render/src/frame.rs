@@ -4160,12 +4160,13 @@ fn resolve_maps(textures: &mut TextureStore, maps: &mut EffectMaps, values: &mut
 }
 
 /// Writes the layer of each texture of `maps` into its float of `values`, -1 while its image is
-/// not on the GPU. A slot without a texture leaves its float alone.
+/// not on the GPU, and a pass target's turned layer on the path that counts rows from the bottom.
+/// A slot without a texture leaves its float alone.
 fn write_layers(textures: &TextureStore, maps: &EffectMaps, values: &mut [f32]) {
     for (slot, &texture) in maps.textures.iter().enumerate() {
         if !texture.is_none() {
             values[EffectMaps::layer_float(slot)] = textures
-                .ready_layer(texture)
+                .map_layer(texture)
                 .map_or(-1.0, |layer| layer as f32);
         }
     }

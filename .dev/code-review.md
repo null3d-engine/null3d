@@ -22,38 +22,37 @@ The engine starts job workers only when its parallel loops take 0.2 ms or more p
 
 Godot found that MSAA crashed Mali-G52, G72 and G76 GPUs on its Vulkan mobile path. Its fix, [godot#114785](https://github.com/godotengine/godot/pull/114785), moved all uniforms to set 0. The engine binds its uniforms in several bind groups. A Mali phone with MSAA on must run the shadow and custom material image tests on WebGPU to rule the fault out ([implementation notes](implementation-notes.md#browser-faults)). The fault is a driver crash, so only a device run can show it.
 
-## A compute pass's fragment form stores its image upside down (M3-F9)
+## A compute pass's fragment form stores its image upside down (M3-V13)
 
 `@null3d/water`'s ocean transforms each band's spectrum with a chain of compute passes on WebGPU and
 with their fragment forms on WebGL2. On WebGPU and in compatibility mode the heights match the same
 transform on the page's thread within 0.004 m of a field of 0.73 m
 (`tests/image/ocean-waves.spec.ts`). On WebGL2 the field is the same field, but a read of the pass
-finds it mirrored top to bottom: the square from the image's row 6 holds the texels that the thread's
-transform gives at its row 118, and a read there matches that transform within 0.004 m. A material
-that samples the pass with `textureSampleLevel` sees the mirror too, so the ocean's surface draws the
-swell running the other way.
+finds it mirrored top to bottom: a read at the image's row 6 returns the texels that the thread's
+transform gives at its row 118, within 0.004 m. A material that samples the pass with
+`textureSampleLevel` sees the mirror too, so the ocean's surface draws the swell the other way.
 
-A pass's target keeps a row at the index that the shader gives it: a compute pass writes row `id.y`
-and its fragment form writes the row of `gl_FragCoord`. The two agree on the row's *index*, and the
-whole transform chain therefore agrees with itself and with the picture on WebGPU. They disagree on
-the row's *place in the image*. WebGPU counts a texture's rows from the top, and WebGL2 from the
-bottom, so the same index is the top row on one path and the bottom row on the other. The engine's
-read of a pass and its `fromPass` texture both use the image's rows, so both see the mirror on
-WebGL2 and neither does on WebGPU.
+A fragment form writes row `id.y` through `gl_FragCoord`, and a compute form writes the same index
+through `textureStore`. The two agree on the index and disagree on the image's row, because WebGL2
+counts a texture's rows from the bottom and WebGPU from the top. The engine's read of a pass and its
+`fromPass` texture both use the image's rows, so both see the mirror on WebGL2.
 
-The map is not at fault. `compute-state`'s `map` case binds a two-layer texture as a fallback pass's
-map and reads a texel of each layer back; the value, the column and the layer that the map gives all
-arrive right on every path. The engine's block, the pass's size, the layer of each draw and the
-sketch time are right too. What differs is only where in the image a row lands.
+The map is not at fault: `compute-state`'s `map` case copies a known two-layer texture through a
+fragment form and reads each layer back right on every path. The block, the size, the layer and the
+time are right too. [D-271](decisions/D-271-a-fallback-pass-writes-the-image.md) gives the rule and
+the fix, which the branch `fix/m3-v13-fallback-image` writes: the fragment form turns its row, the
+store marks a pass map's slot, and the shader build turns that map's `textureLoad` so a chain keeps the
+index it names. The runs that prove it on the three paths are owed until the machine's gate opens.
 
-The fix makes one row order hold for both forms. Either the fragment form writes the image's rows
-while its shaders read the previous pass's rows turned the same way, which the shader build could do
-for a map that a pass gives, and not for a texture from a file or data; or the engine keeps the row
-index and turns the read of a pass and its `fromPass` image on the one path that counts its rows from
-the other end. The first keeps every sketch's `textureLoad` arithmetic as it is, which is the shape
-the ocean, the wind add-on and `crowded-read` use. The second costs a mirrored read of a pass's
-texture wherever a material samples it with a `v` coordinate. `.dev/decisions/D-257-water-addon.md`
-records which path the demo draws and why the WebGL2 tier waits.
+## A pass texture reads as not ready on WebGL2 (M3-V13)
+
+`compute-state`'s `a stopped pass keeps its image and its alpha` and `a cadence's skipped frame keeps
+the image a material samples` fail on WebGL2: the pass's texture reads black through a standard map
+and white through a custom shader's missing-map guard, so it reads as not ready while its pass drew.
+The two pass on WebGPU and in compatibility mode. They fail with the branch's fragment-format change
+reverted, so they are older than it. The mirror above does not explain them: the pass writes one white
+texel everywhere, and a mirror keeps a uniform image uniform. The fault lies between the pass's target
+and the texture that shows it, and the branch that fixes the mirror names it without claiming it.
 
 ## Closed findings
 

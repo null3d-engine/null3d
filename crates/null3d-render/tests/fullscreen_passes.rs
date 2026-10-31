@@ -221,8 +221,9 @@ fn check_chain<B: FrameBuilder>(
             .is_some_and(Fullscreen::reads_scene)
     );
     assert!(count(&commands, Op::Draw) >= 3, "{path}");
-    // The textures are ready, and the effect and the pass read their layers in the frame.
-    let ready = |values: &[f32; EFFECT_FLOATS]| values[EffectMaps::layer_float(0)] >= 0.0;
+    // The textures are ready, and the effect and the pass read their layers in the frame. A pass
+    // map on the path that counts rows from the bottom holds its layer turned, below -1.
+    let ready = |values: &[f32; EFFECT_FLOATS]| values[EffectMaps::layer_float(0)] != -1.0;
     assert!(ready(&settings.effects()[0].values), "{path}");
     let pass = settings.views()[posterized.index()]
         .fullscreen_pass()

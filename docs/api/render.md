@@ -437,6 +437,8 @@ WebGL2 has no compute shaders. A WebGL2 page runs the `fallback` WGSL as a full-
 
 A pass of several layers draws each layer in a pass of its own. `input.layer` gives the layer that the draw writes, from 0. Up to 32 layers work on WebGL2, and a pass of more throws E1220. The WebGPU paths draw up to 128 with history and 256 without. The values keep their positions: the fields of the fragment form's `struct Uniforms` start at the same floats as the compute block's `u0`. Give no fallback when the work needs atomics or shared memory. A fragment shader cannot do those, and neither can it write to a place that the shader chooses. The call then throws E1220 on WebGL2. The engine draws a compute pass on WebGPU only.
 
+A fragment form writes the same image of the pass as the compute form: a read by `render.readPass` and a material that samples the texture with `v` see the texels where the compute form put them, on every path. A `textureLoad` that the fallback does on another pass's texture keeps the row index that the shader names, as the compute form's does; a texture from a file or data is read at the row that its texels were given.
+
 ### Switching and removing passes
 
 - `render.setPassEnabled(pass, false)` stops a pass from the next frame on. Its texture keeps the last image that it drew. Switching a pass marks the render graph for a compile, so a sketch switches a pass when a feature starts or stops, rather than to slow it down.

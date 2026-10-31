@@ -711,7 +711,7 @@ impl CpuCulledRenderer {
         );
         // The material texture's rows also hold the table of specular terms beside them.
         config.max_materials = config.max_materials.max(dfg::SIZE.div_ceil(2));
-        let textures = TextureStore::new(
+        let mut textures = TextureStore::new(
             TextureIds {
                 first_texture: ids::TEXTURE_ARRAYS,
                 first_sampler: ids::SAMPLERS,
@@ -721,6 +721,9 @@ impl CpuCulledRenderer {
                 .max_texture_size
                 .min(BUDGET[Limit::TextureDimension2D as usize]),
         );
+        // WebGL2 counts a texture's rows from the bottom, so a pass target's image is turned
+        // against the compute form's and its maps read their rows the other way.
+        textures.set_rows_from_bottom(true);
         let mut settings = SceneSettings::new(
             MeshStorage::new(Packing::Pages),
             config.max_materials,

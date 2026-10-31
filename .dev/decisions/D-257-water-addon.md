@@ -287,7 +287,7 @@ vertex's world place is the origin with its place in the mesh.
   at its row 118, within 0.004 m. The map, the layer, the size and the time all read right, so the
   fault is the row's place in the image and not the transform. A material that samples the pass with
   `textureSampleLevel` sees the mirror, so the surface draws the swell the other way. The review
-  holds it open ([the fragment form's image](../code-review.md#a-compute-passs-fragment-form-stores-its-image-upside-down-m3-f9)).
+  holds it open ([the fragment form's image](../code-review.md#a-compute-passs-fragment-form-stores-its-image-upside-down-m3-v13)).
   `ocean-waves` marks that path as an expected failure until then, the demo draws the two paths that
   draw one sea, and its WebGL2 picture waits for the fix.
 - The add-on's page holds 60 frames a second on WebGL2 when the transform and the reflection carry
