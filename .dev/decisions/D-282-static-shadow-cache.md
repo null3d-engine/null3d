@@ -2,7 +2,7 @@
 
 Status: decided for a build after 1.0, for the WebGPU path. Nothing is built yet. Task: M3-R11.
 
-Summary: In Creek at Medium, the two cascade draws cost 0.76 to 0.84 ms a frame. Of that, 0.65 to
+Summary: In Creek at Medium, the two cascade draws cost 0.74 to 0.84 ms a frame. Of that, 0.65 to
 0.74 ms draws casters that stand still. A whole 2,048-texel layer copies in 0.0108 ms. With a
 quarter-degree sun step, 6 frames in 7 keep. The cache then saves 0.576 ms, or 7.0% of an 8.19 ms
 frame, against a 3% bar.
@@ -65,8 +65,8 @@ larger. The run file gives that detail.
 
 | Hour | Side | Frame, ms | Cascade 0, ms | Cascade 1, ms |
 | --- | --- | --- | --- | --- |
-| Midday | all casters | 8.141 | 0.268 | 0.508 |
-| Midday | all casters again | 8.187 | 0.260 | 0.483 |
+| Midday | all casters | 8.141 | 0.267 | 0.508 |
+| Midday | all casters again | 8.187 | 0.260 | 0.482 |
 | Midday | still casters | 7.003 | 0.201 | 0.448 |
 | Midday | all casters again | 8.185 | 0.262 | 0.506 |
 | Midday | still casters | 7.286 | 0.251 | 0.488 |
@@ -78,18 +78,19 @@ larger. The run file gives that detail.
 | Afternoon | all casters again | 8.747 | 0.385 | 0.602 |
 | Afternoon | all casters | 13.911 | 0.644 | 1.042 |
 
-The two all-caster readings in a round differ by 1.5 to 5% of a cascade's time. The GPU kept one
+The two all-caster readings in a round differ by 0.4 to 5.3% of a cascade's time. The GPU kept one
 state for them. The still side differs by up to 25% between rounds. The movers' share is all minus
 still: 0.01 to 0.26 ms of the two cascades together at one state. That range reaches inside the
 still side's spread, so this run does not resolve the movers' share. The static share is 0.65 to
-0.74 ms of the two cascades. It is three to twelve times the cascade's own spread.
+0.74 ms of the two cascades. That is seven to eight times the still side's spread, and twenty to
+twenty-three times the all-caster repeat's.
 
 The still side's spread does not change the ruling. The saving rests on the static share and the
 copy cost. It does not rest on separating the movers.
 
 The last Afternoon page ran while the GPU drew a much slower frame: 13.911 ms against 8.747 ms, and
-1.69 ms of cascades against 0.99. Its cascade share of the frame, 12.1%, matches the other pages'
-10.3 to 12.2%, and the share is the figure to compare across GPU states.
+1.69 ms of cascades against 0.99. Its cascade share of the frame, 12.1%, is a little above the
+other pages' 9.1 to 11.3%. The share is the figure to compare across GPU states.
 
 ### The keep rate
 
@@ -168,8 +169,8 @@ back out of order.
 
 The probe never drew casters into its source layer, so that layer may copy faster than a live
 cascade layer whose depth varies. An uncompressed copy of the same 8 MiB at this machine's memory
-bandwidth is about 0.04 ms. The cache fails only above 0.20 ms a layer, so no content can flip the
-ruling.
+bandwidth is about 0.04 ms, and 0.08 ms at half that bandwidth. The cache fails only above 0.204 ms
+a layer, so no content can flip the ruling.
 
 ## Look
 
