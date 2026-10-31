@@ -166,9 +166,9 @@ describe('update', () => {
 		expect(s.state.frames[1]).toEqual([2.25, 2.5, 4, 1, 0]);
 	});
 
-	test('a system that emitted before its first update is not prewarmed', () => {
+	test('a system that burst before its first update is not prewarmed', () => {
 		const s = system({ rate: 4, lifetime: [1, 2], prewarm: true });
-		s.state.emitted = 1;
+		s.system.burst(1);
 		s.system.update(0.25);
 		expect(s.state.frames[0]).toEqual([0, 0.25, 4, 1, 0]);
 	});
