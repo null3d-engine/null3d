@@ -311,10 +311,18 @@ vertex's world place is the origin with its place in the mesh.
 - The page and allocation gates ran in the browser against E4a's engine: the water page starts from
   another origin under the strict policy, threaded and single-threaded, and the add-on's own code
   allocates zero bytes a frame on all four presets. That is E4a's first user, end to end.
-- The cost per preset is owed until a quiet window, because every attempt came at a machine load of
-  90 to 155. Its command is `bun packages/cli/bin/null3d.js check-addon packages/water`, which
-  measures the add-on's page on each preset; `--skip-cost` leaves that gate out and runs the page
-  and allocation gates.
+- The cost per preset is owed until a quiet window: the machine stood at a load of 33 in the last
+  attempt, and the earlier ones at 90 to 155. Its command is `bun packages/cli/bin/null3d.js
+  check-addon packages/water`, which measures the add-on's page on each preset; `--skip-cost`
+  leaves that gate out and runs the page and allocation gates.
+- The ocean's own GPU time does not come apart from the frame yet. A trial of
+  `ocean-cost.spec.ts` on WebGPU at Low, at a load of 33, read the frame's parts as `compute`
+  0.208 ms with the transform on and 0.132 with it off, a 0.076 ms difference inside the run-to-run
+  spread. The transform's 15 passes record in one compute step, which the GPU timer names by its
+  kind and not by a pass of its own, so a difference method cannot resolve the chain. An honest
+  figure needs a quiet window and either a per-pass scope for the transform's passes or many
+  alternating runs with the GPU timer; the design figure for three bands at 128 squared is 0.5 ms
+  ([D-179](D-179-technique-rulings.md) ruling 19).
 - The add-on's tests cover the shape, the mesh's coverage and winding, a shape's own current, bed
   and mesh, the carried wave set, the wave copies, the foam map and the size gates. The demo
   `examples/water` draws both bodies and the view from below. The package's own page
