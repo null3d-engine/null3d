@@ -83,6 +83,12 @@
 		"date": "2026-10-29",
 		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
 	},
+	"chromium-swiftshader/compat/demo-post-effects.png": {
+		"test": "demo-post-effects",
+		"tier": "compat",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
 	"chromium-swiftshader/compat/demo-terrain.png": {
 		"test": "demo-terrain",
 		"tier": "compat",
@@ -293,6 +299,12 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/webgl2/demo-post-effects.png": {
+		"test": "demo-post-effects",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
 	"chromium-swiftshader/webgl2/demo-terrain.png": {
 		"test": "demo-terrain",
 		"tier": "webgl2",
@@ -382,6 +394,18 @@
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgl2/lens-aberration.png": {
+		"test": "lens-aberration",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
+	"chromium-swiftshader/webgl2/lens-streak.png": {
+		"test": "lens-streak",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
 	"chromium-swiftshader/webgl2/sky-layer-scene-pass.png": {
 		"test": "sky-layer-scene-pass",
@@ -491,6 +515,12 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/webgpu/demo-post-effects.png": {
+		"test": "demo-post-effects",
+		"tier": "webgpu",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
 	"chromium-swiftshader/webgpu/demo-terrain.png": {
 		"test": "demo-terrain",
 		"tier": "webgpu",
@@ -580,6 +610,18 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgpu/lens-aberration.png": {
+		"test": "lens-aberration",
+		"tier": "webgpu",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
+	"chromium-swiftshader/webgpu/lens-streak.png": {
+		"test": "lens-streak",
+		"tier": "webgpu",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
 	"chromium-swiftshader/webgpu/row-colors.png": {
 		"test": "row-colors",

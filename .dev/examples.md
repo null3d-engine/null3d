@@ -743,22 +743,24 @@ and a hero car with two screens.
   then. One that lowers every mark to 0 drops it again. So a kit made with every mark at 0 still
   draws a mark that a later call sets.
 - **The lens's cost.** The add-on's README holds the look's cost per preset and each mark's. The
-  cost test times the whole look against the same scene without it. It draws at a canvas of
-  3840 x 2160 CSS pixels with the pixel ratio held at 2, a 7680 x 4320 buffer, with a render scale
-  of 1, and runs as `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. Each side takes
-  five rounds, in the opposite order on alternate rounds. The quiet run on the Mac's M3 Max in
-  Chrome 156 gives the look 2.00 ms at Low and 1.27 at Ultra on WebGPU, 5.42 and 2.00 in
-  compatibility mode, and 1.41 and 1.46 on WebGL2. Ten of the twelve cells keep their whole range
-  above zero; compatibility High's and WebGL2 Medium's cross it. The four cells that the earlier,
-  smaller run put at or below zero now read 3.41 at WebGPU Medium, 2.02 at WebGPU High, 1.64 at
-  WebGL2 Medium and 0.71 at WebGL2 High; three of the four keep their range above zero, and WebGL2
-  Medium's does not, its range running from -7.02 to 1.64. Seven of the twenty-one marks resolve
-  their own cost at the highest preset their path allows, between 0.38 and 1.58 ms. The add-on's
-  README holds every cell with its range
-  ([run](tested-devices/macbook-pro-m3-max-chrome/20261027-103454-lens-cost.md)). The core's
-  vignette and grade add nothing to a frame, since they run in the final pass; the sharpening value
-  adds the first step's pass at the whole render scale. A look that leaves all four of the effect's
-  values at 0 adds no effect at all.
+  look's work is a fraction of a millisecond, and a lit scene's own frame time moves by more than
+  that between rounds, so the cost test measures it above that movement: the page clears the scene
+  to its background and the bars that feed bloom, draws the marks' effect eight times in every
+  frame, and divides by eight. It draws at a canvas of 3840 x 2160 CSS pixels with the pixel ratio
+  held at 2, a 7680 x 4320 buffer, with a render scale of 1, and runs as
+  `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. Each side takes eight rounds of a
+  second, in the opposite order on alternate rounds, and the test reads the effect's own passes from
+  the GPU's per-pass timer where the device times them. The core's vignette and grade add nothing to
+  a frame, since they run in the final pass; the sharpening value adds the first step's pass at the
+  whole render scale. A look that leaves all four of the effect's values at 0 adds no effect at
+  all. The quiet run on the Mac's M3 Max in Chrome 156 reads the whole look at 3.1 to 3.9 ms at
+  every preset on WebGPU and in compatibility mode, and about a tenth of a millisecond for each
+  megapixel of the canvas. WebGL2 keeps no whole-look figure, because its own frame moves by about
+  a millisecond between rounds. Each of the effect's four marks resolves on every path, between 0.19
+  and 0.70 ms at the highest preset its path allows. The grade and the vignette stay inside the
+  final pass and read under what the method resolves, and the sharpening's first step reads 1.32 ms
+  on WebGPU and 1.09 in compatibility mode. The add-on's README holds every cell with its range
+  ([run](tested-devices/macbook-pro-m3-max-chrome/20261031-0700-lens-cost.md)).
 - **On a phone**, WebGL2 runs Medium at most. That preset draws 30,000 cars, about 900 towers, 180
   lights, the rain and reflections at a quarter of the render size. Medium doubles the cars and
   raises the reflection scale. A cloud Galaxy S24 measured two windows in a row at Low. The first 5
@@ -979,7 +981,8 @@ The rules that these demos follow, and why:
 - Picking turns its plinth and its pieces from `time.now`. Adding `dt` each frame would make the held frame depend on the frame rate.
 - Depth of field draws nothing on the Low preset, which phones start on, as [Post-processing](../docs/api/post.md#depth-of-field) says. The two demos look right without it.
 - Some demos make the room or the sky environment, or load large files. Their image tests may take 60 s, as the math, instances and generators demos do.
-- The post effects demo has screen-space reflections and the lens grade (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). Its puddles are almost mirror smooth, so the neon and the crates streak down into the asphalt while the dry ground stays matte. The lens grade adds color fringes, an anamorphic streak on light brighter than white, and grain that changes 24 times a second. The switch that turns the reflections on for a device that leaves them off lives in `examples/lib/ssr.ts`, which every demo with them shares.
+- The post effects demo has screen-space reflections and the lens kit (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). Its puddles are almost mirror smooth, so the neon and the crates streak down into the asphalt while the dry ground stays matte. The kit adds color fringes, an anamorphic streak read from bloom's chain, and grain that changes 24 times a second, and it owns the demo's grade, sharpening and vignette, so the demo writes no effect of its own. The switch that turns the reflections on for a device that leaves them off lives in `examples/lib/ssr.ts`, which every demo with them shares.
+- The comparison scenes keep a lens grade of their own, in `examples/lib/lens.ts`, with a three.js twin that draws the same effect in that engine's half. A comparison draws one description in both engines, so the effect they carry stays the same in the two, and neither takes the lens kit. A scene that is not a comparison takes the kit.
 - The security camera demo's monitor has the LCD look (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). Its shader lives in `monitor.ts` beside the sketch. It draws the panel's red, green and blue stripes when the screen is near enough to show them, and a few dead cells.
 - The area lights demo has screen-space reflections (M2-EX43). Its road is smooth where the puddles lie, so the glowing shop windows, the neon sign and the street around them mirror in it, beside each light's own shaped highlight. The reflections stop at a roughness of 0.35, so the dry asphalt stays matte.
 - The picking demo has a clickable plan on its wall (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). The module `screen.ts` beside the sketch draws it from code, with a grid and a square for each click. A click's event carries `uv` and `hasUv` (M3-A1), so the plan marks the square from the hit itself, where the pointer points. The texture changes only when a click adds a mark, so a held frame is the same on every run.
