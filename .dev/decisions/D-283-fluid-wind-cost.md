@@ -1,18 +1,20 @@
 # D-283: The fluid wind's cost, and its budget at each preset
 
-Status: proposed by the measurements of task M3-V14. Built: the wind add-on's field and its
-state-keeping solver (M3-V13, M3-V15). Built too: the plant material's vertex reader (M3-V7) and the
-cost pages that time them. Not built: the preset rows and budgets (M3-V16), the canopy drag and the
-falling leaves (M3-V17), branch poses (M3-V10, measured on its own branch), and Creek's and the
-forest's plants on the add-on (M3-V11, M3-V12). The owner rules on the rows, on the budgets and on
-the Low grid. Task: M3-V14.
+Status: decided by the owner. The owner accepted the rows and budgets that this record proposes:
+0.5, 1.2, 4.9 and 6.25 ms from Low to Ultra, with Medium on the flat 64x64 grid, High on four
+layers of 128x128, Ultra on the volume 64x24x64, and Low on the formula wind on phones until a
+phone measures the small grid. The one open item is the smallest-tier look: a side-by-side that the
+owner judges and has not named. Built: the wind add-on's field and its state-keeping solver
+(M3-V13, M3-V15). Built too: the plant material's vertex reader (M3-V7) and the cost pages that
+time them. Not built: the preset rows and budgets (M3-V16), the canopy drag and the falling leaves
+(M3-V17), branch poses (M3-V10, measured on its own branch), and Creek's and the forest's plants on
+the add-on (M3-V11, M3-V12). Task: M3-V14.
 
 Summary: On the Mac's WebGPU path the field costs 0.10 ms a frame at the Medium row and 0.73 ms at
 the Ultra row, which is the volume's shape; the flat 256x256 grid that stands in until it is built
 costs 0.58. The grid's size moves the cost far less than the pressure count and the field rate do.
-WebGL2 pays a fixed cost per solver run, so its row sets the field rate. The record proposes
-budgets of 0.5, 1.2, 4.9 and 6.25 ms from Low to Ultra, one tenth of the vegetation add-on's own
-budget.
+WebGL2 pays a fixed cost per solver run, so its row sets the field rate. The owner accepted budgets
+of 0.5, 1.2, 4.9 and 6.25 ms from Low to Ultra, one tenth of the vegetation add-on's own budget.
 
 ## Question
 
@@ -255,11 +257,18 @@ cannot carry a leaf along a gust. The second form is a compute pass with history
 leaf, which M3-V13 now makes possible. The comparison at 500, 2,000 and 10,000 leaves waits on that
 build.
 
+## Look
+
+The layered and the volume grids look better than the flat stand-ins, because the air gains height,
+and the record takes them where their cost fits ([hard rule 40](../../AGENTS.md#hard-rules)). The
+one look still open is the smallest tier's: a side-by-side of the formula wind and the 32x32 grid on
+a phone, which the owner has not judged.
+
 ## Decision
 
-The rows below are proposed, and the owner rules on them. Each figure is the field's own GPU time a
-frame at that row, not a whole frame. Each WebGPU and Mac WebGL2 figure is modelled from measured
-parts. Low's phone figure is a bound, not a measurement, as the Data section says.
+The rows below stand, as the owner ruled. Each figure is the field's own GPU time a frame at that
+row, not a whole frame. Each WebGPU and Mac WebGL2 figure is modelled from measured parts. Low's
+phone figure is a bound, not a measurement, as the Data section says.
 
 | Preset | Field | Grid | Pressure steps | Field steps a second | WebGPU (ms) | WebGL2 (ms) | Budget (ms) |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -268,10 +277,10 @@ parts. Low's phone figure is a bound, not a measurement, as the Data section say
 | High | 4 layers of 128x128, and flat 128x128 until it is built | 4 layers of 128x128, or 128x128 | 24 | 30 | 0.20, or 0.14 on the flat grid | not drawn | 4.9 |
 | Ultra | volume 64x24x64, and flat 256x256 until it is built | 64x24x64, or 256x256 | 40 | 60 | 0.73, or 0.58 on the flat grid | not drawn | 6.25 |
 
-Every figure in this table is modelled from the measured parts, and the budget column is a proposed
-ceiling. None of these figures is a phone measurement. Low's 0.5 ms is the planning ceiling for the
-field. The phone rows in the Data section bound Low's cost with the frame interval, and no phone
-read 0.5 ms there. A reader must not take 0.5 ms for a phone figure.
+Every figure in this table is modelled from the measured parts, and the budget column is the
+accepted ceiling. None of these figures is a phone measurement. Low's 0.5 ms is the planning
+ceiling for the field. The phone rows in the Data section bound Low's cost with the frame interval,
+and no phone read 0.5 ms there. A reader must not take 0.5 ms for a phone figure.
 
 - The grid's size is not the cost knob. The pressure count and the field rate set the cost, and both
   halve it when they halve. A row that needs less should take fewer steps a second before it takes a
@@ -286,16 +295,16 @@ read 0.5 ms there. A reader must not take 0.5 ms for a phone figure.
   not by 0.5 ms. The iPhone's busiest thread rises 2.77 ms for the 22 runs, which puts Low's rate
   near 0.3 ms of CPU there. On the Mac's WebGL2 the row costs about 0.43 ms at 0.17 ms a run, inside
   the ceiling. So the formula field stays the safe row, and it is also the fallback for a device
-  without a float target. The owner may still choose the small grid on the look, which a
-  side-by-side of the formula wind and the 32x32 field settles.
+  without a float target. The owner has not named the smallest-tier look, which a side-by-side of
+  the formula wind and the 32x32 field would settle.
 - High and Ultra take the plan's own shapes, four layers of 128x128 at High and the volume 64x24x64
   at Ultra. The layered and the volume grids look better where the air has height. They cost 0.20
   and 0.73 ms at their rows on WebGPU, well inside their budgets, so the better look wins when it is
   built (hard rule 40). Until the solver builds them, the flat 128x128 and 256x256 grids stand in,
   at 0.14 and 0.58 ms.
-- The budgets stay at one tenth of the vegetation add-on's own: 0.5, 1.2, 4.9 and 6.25 ms. Every
-  measured row is far inside them on WebGPU, and the phones hold their intervals. The owner may
-  trade the margin for a better flow.
+- The budgets are one tenth of the vegetation add-on's own: 0.5, 1.2, 4.9 and 6.25 ms. Every
+  measured row is far inside them on WebGPU, and the phones hold their intervals. The owner accepted
+  them as they stand.
 
 ## Consequences
 
