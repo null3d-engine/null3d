@@ -131,11 +131,15 @@ export default defineSketch((ctx) => {
 		return records;
 	};
 
+	/** Lets a frame update the world matrices of the objects that the systems follow. */
+	const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 100));
+
 	/** Runs one scenario's two systems frame by frame and compares their records. */
 	const run = async (scenario: Scenario, mismatches: Mismatch[]): Promise<number> => {
 		const { options, capacity, frames, dt, move } = scenario;
 		const old = await reference(options as unknown as ReferenceSystemOptions, capacity);
 		const live = await createParticles(ctx, { ...options, capacity });
+		await settle();
 		for (let frame = 0; frame < frames; frame++) {
 			move?.(frame);
 			old.system.update(dt);
@@ -202,6 +206,7 @@ export default defineSketch((ctx) => {
 			subEmitters: [{ system: childLive, on, count: 5, inheritVelocity: 0.5 }],
 			capacity,
 		});
+		await settle();
 		for (let frame = 0; frame < frames; frame++) {
 			parentOld.system.update(dt);
 			parentLive.update(dt);
