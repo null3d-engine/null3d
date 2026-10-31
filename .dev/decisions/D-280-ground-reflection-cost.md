@@ -38,6 +38,12 @@ The WebGL2 path gives no GPU figure on any machine of this sitting. The iPad and
 timer there, and the Mac's timer's rounds differ by more than the effect. Their CPU times do not
 separate the two runs either.
 
+The two runs draw the same camera, sky and material, and only the ground's environment map changes.
+The iPad's WebGPU on and off live frames show it. Above row 375 of 720 they are pixel-identical, and
+every differing pixel lies on the ground below the horizon. The plane draws in the held frame too.
+The held reference's bottom band holds 6.6% sharp edges, the paving's joints, where the sky's top
+band holds none. The ground-level plane fault that M3-R27 records does not appear here.
+
 How the data was produced: `bun run bench:run --scenes s7 --pages
 null3d-webgpu,null3d-webgpu-reflection-off,null3d-webgl2,null3d-webgl2-reflection-off --switches
 "preset=high&governor=off" --runs 5 --seconds 5`, and `bun run bench:run --scenes s7 --pages
