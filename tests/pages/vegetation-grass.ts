@@ -3,9 +3,7 @@
 // engine's ?gpu= choose them; ?seconds= the measured time. The vegetation grass plan runs it on
 // each device.
 import { createEngine, type QualityPreset } from '@null3d/engine';
-import { grassBands } from '@null3d/vegetation';
 import { progress, run } from './lib/result';
-import { GRASS } from './sketches/vegetation-grass-sketch';
 
 const params = new URLSearchParams(location.search);
 /** The seconds that the measurement runs for. */
@@ -34,16 +32,6 @@ run('vegetation-grass', async () => {
 	await engine.destroy();
 	return {
 		...mode,
-		// The hill's bands, from the add-on's own plan: each band's distances, its tufts at each
-		// preset, the triangles of one tuft, and the rows it allocates.
-		bands: grassBands(GRASS).map(({ near, far, counts, triangles, rows, rowBytes }) => ({
-			near,
-			far,
-			counts,
-			triangles,
-			rows,
-			rowBytes,
-		})),
 		frames: stats.frames,
 		gpuMs: stats.gpuMs,
 		gpuPassMs: stats.gpuPassMs,
