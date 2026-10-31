@@ -2311,6 +2311,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			timeoutSeconds: 60,
 		}),
 	),
+	// Screen-space bounce light in the room that the light probe grid's tests use (D-282): the
+	// neutral floor takes red light at the red wall and green at the green one, which the
+	// environment's uniform light cannot show. ?bounce draws the bounce light from the camera's view,
+	// ?grid bakes a light probe grid instead, and neither draws the room's environment alone. The
+	// bounce reads the frame before's color, so the held frame draws twice, and the room's
+	// environment makes its map in it, so the runs take the room's longer limit.
+	...(['off', 'bounce', 'grid'] as const).map(
+		(variant): ImageTest => ({
+			name: `bounce-${variant}`,
+			sketch: `tests/pages/sketches/bounce-sketch.ts${variant === 'off' ? '' : `?${variant}`}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+			// Compatibility mode draws the 8-bit path, where the light draws nothing, so there the
+			// bounce test draws the plain room's picture. The other tiers show the light.
+			...(variant === 'bounce' && { samePicture: 'bounce-off' }),
+		}),
+	),
 	// The room's light with a hemisphere light added, which the parity test compares with three.js:
 	// the hemisphere light adds to the environment's light, and the environment's intensity does
 	// not scale it.

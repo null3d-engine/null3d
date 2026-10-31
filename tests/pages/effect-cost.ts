@@ -62,6 +62,7 @@ const SKETCHES = {
 	subsurface: './sketches/subsurface-sketch.ts',
 	exposure: './sketches/exposure-sketch.ts',
 	contact: './sketches/contact-shadows-sketch.ts',
+	bounce: './sketches/bounce-cost-sketch.ts',
 	fog: './sketches/fog-volume-sketch.ts',
 	effects: './sketches/effects-cost-sketch.ts',
 	motion: './sketches/motion-cost-sketch.ts',
