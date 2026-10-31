@@ -8,7 +8,7 @@ summary: "Trees, conifers, shrubs, ferns, hostas and grass grown from a species 
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass's compute-built blades and its near shadows. This page covers the species generator, the scatter, the bark and leaf atlases that the browser paints at first use, the material that draws a plant from them, the far tree that a card draws, and the grass's CPU path.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass's compute-built blades and its near shadows. This page covers the species generator, the scatter, the bark and leaf atlases that the browser paints at first use, the material that draws a plant from them, the per-vertex wind and the branch poses that move it, the far tree that a card draws, and the grass's CPU path.
 
 ```mermaid
 flowchart LR
@@ -162,6 +162,23 @@ The offset has three layers. The trunk bends as a cantilever, most at its top. E
 A page takes the distance from the quality preset rather than choosing one: `swayDistanceFor(preset)` reads `PLANT_SWAY_DISTANCE`, which gives 8, 16, 24 and 32 meters from Low to Ultra, so a heavier preset moves more of the grove and a governor step that lowers the preset shortens the distance with it. The field keeps two states, and its texture names the one that its last run wrote, so call `setWindLayer(materials, wind.field)` in each frame with the leaf and bark materials that read the field; a material that reads the other layer sways by a frame of stale air.
 
 `treeValues(x, z, seed, autumn)` gives a copy's four row values: a tint from an integer hash of the copy's whole-meter place, and the autumn value. Give them to the batch that draws the copies, with `values: true`, so each tree differs and the same place gives the same tree on every device.
+
+### Wind by branch poses
+
+A page can move the branches by a compute pass instead of by every vertex. The pass turns each branch once in the frame, and keeps each branch's turn and its speed as a spring, so a branch lags a gust and springs back after it. The leaf and bark offsets then read their branch's turn. The trunk's bend and the leaves' flutter stay per vertex in either method.
+
+```ts
+const poses = plantPoses(ctx, windData, asset, wind.field, { trees: copies });
+const bark = plantMaterial(ctx, { atlases, part: 'wood', wind: windData, poses });
+const leaves = plantMaterial(ctx, { atlases, part: 'leaves', wind: windData, poses, cell: leafCellFor(oak) });
+poses?.attach(barkBatch);
+```
+
+The pass gives a slot to each copy that stands within the sway distance, and a copy past it stands still. Give `trees` the copies of the variant that the scene places, and `slots` the most of them that stand near the camera at once. Attach the batch whose rows are the variant's copies, and give the same `poses` to both parts. Call `poses.update(camera)` in each frame, after the wind field's own `update`, so the pass reads the box of this frame.
+
+The pass keeps two states, so the motion pass reads the frame before's pose and the leaves keep their motion data. The leaf and bark offsets read the pose from their own material, so both parts and the shadow casters move alike.
+
+On a device that cannot draw into a 16-bit float texture, `plantPoses` returns undefined and the plants keep the per-vertex sway. A page that reads the result handles that case, as the example does with `poses?.attach`.
 
 ## Generating in a worker
 

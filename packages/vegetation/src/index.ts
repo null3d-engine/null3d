@@ -86,6 +86,8 @@ export type { FarTree, FarTreeOptions } from './impostor';
 export { bakeFarTree, handOverToCards } from './impostor';
 export type { PlantWind, PlantWindOptions } from './plant';
 export { plantWind, setWindLayer, treeValues } from './plant';
+export type { PlantPoseOptions, PlantPoses } from './poses';
+export { plantPoses } from './poses';
 export {
 	builtinRules,
 	type SpeciesRuleFields,
