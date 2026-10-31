@@ -123,12 +123,14 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		docs: false,
 		required: ['THIRD-PARTY-NOTICES.txt'],
 	},
-	// The surface function lives in a .wgsl file, which the pack compiles into a module of its own.
+	// The surface function lives in a .wgsl file, which the pack compiles into a module of its own,
+	// and the selection and block build in a WebAssembly module that the pack ships beside `lib`.
 	terrain: {
 		compile: true,
 		shaders: false,
 		docs: false,
-		required: [],
+		required: ['dist/terrain.wasm'],
+		repositoryOnly: ['reference-builder.ts', 'quadtree.ts', 'chunk-vertices.ts'],
 	},
 	vegetation: {
 		compile: true,

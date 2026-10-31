@@ -37,8 +37,12 @@ import {
 import { CACHE_ROOT } from './lib/build-cache';
 import { inputFiles } from './lib/shader-modules';
 
-/** The crate folders of the build tools' modules, whose files key their cache entry. */
-const TOOL_FOLDERS = ['crates/null3d-shaders-wasm', 'crates/null3d-assets-wasm'];
+/** The crate folders of the modules that the tools and the add-ons load, whose files key their entry. */
+const TOOL_FOLDERS = [
+	'crates/null3d-shaders-wasm',
+	'crates/null3d-assets-wasm',
+	'crates/null3d-terrain',
+];
 
 describe('parseOptions', () => {
 	it('reads the size check, its base, the base build, the names build, the pages build, an earlier build and the base alone', () => {
@@ -406,22 +410,23 @@ describe('sizeCheckLock', () => {
 
 describe('toolsKey', () => {
 	it('is the same for the same crate inputs and differs for a changed crate input or toolchain', () => {
-		const key = toolsKey('shaders', 'assets', TOOLS);
-		expect(toolsKey('shaders', 'assets', TOOLS)).toBe(key);
-		expect(toolsKey('changed', 'assets', TOOLS)).not.toBe(key);
-		expect(toolsKey('shaders', 'changed', TOOLS)).not.toBe(key);
-		expect(toolsKey('shaders', 'assets', { ...TOOLS, rust: 'other' })).not.toBe(key);
+		const key = toolsKey(['shaders', 'assets', 'terrain'], TOOLS);
+		expect(toolsKey(['shaders', 'assets', 'terrain'], TOOLS)).toBe(key);
+		expect(toolsKey(['changed', 'assets', 'terrain'], TOOLS)).not.toBe(key);
+		expect(toolsKey(['shaders', 'changed', 'terrain'], TOOLS)).not.toBe(key);
+		expect(toolsKey(['shaders', 'assets', 'changed'], TOOLS)).not.toBe(key);
+		expect(toolsKey(['shaders', 'assets', 'terrain'], { ...TOOLS, rust: 'other' })).not.toBe(key);
 	});
 });
 
 describe('toolInputs', () => {
-	it('hashes each tool crate by the folder that holds it, which must exist', () => {
+	it('hashes each module crate by the folder that holds it, which must exist', () => {
 		// A crate named by its package instead of its folder throws here, which would fail every
 		// build before it could write or read an entry.
-		const [shaders, assets] = toolInputs(process.cwd());
-		expect(shaders).toMatch(/^[0-9a-f]{64}$/);
-		expect(assets).toMatch(/^[0-9a-f]{64}$/);
-		expect(shaders).not.toBe(assets);
+		const inputs = toolInputs(process.cwd());
+		expect(inputs.length).toBe(TOOL_FOLDERS.length);
+		for (const input of inputs) expect(input).toMatch(/^[0-9a-f]{64}$/);
+		expect(new Set(inputs).size).toBe(inputs.length);
 	});
 });
 

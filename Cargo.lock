@@ -344,6 +344,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "null3d-terrain"
+version = "0.0.0"
+dependencies = [
+ "libm",
+]
+
+[[package]]
 name = "null3d-wasm"
 version = "0.0.0"
 dependencies = [
