@@ -34,21 +34,29 @@ export default defineSketch(async (ctx) => {
 	});
 	// The central tower of the city's plan, the one the car hovers beside. Its box is the five
 	// numbers that the flight reads: centre x and z, half width and half depth, and the top.
-	const towers = cityTowers();
+	const all = cityTowers();
 	let at = 0;
 	let nearest = Number.POSITIVE_INFINITY;
-	for (let k = 0; k < towers.length; k += 5) {
-		const away = Math.abs(towers[k] as number) + Math.abs(towers[k + 1] as number);
+	for (let k = 0; k < all.length; k += 5) {
+		const away = Math.abs(all[k] as number) + Math.abs(all[k + 1] as number);
 		if (away < nearest) {
 			nearest = away;
 			at = k;
 		}
 	}
-	const cx = towers[at] as number;
-	const cz = towers[at + 1] as number;
-	const hx = towers[at + 2] as number;
-	const hz = towers[at + 3] as number;
-	const top = towers[at + 4] as number;
+	const cx = all[at] as number;
+	const cz = all[at + 1] as number;
+	const hx = all[at + 2] as number;
+	const hz = all[at + 3] as number;
+	const top = all[at + 4] as number;
+	// The control frame shows the camera at rest: the tower is left out of the drawing, and also
+	// out of the camera's tower list, or an unseen tower would still pull the camera in.
+	const quiet = params.has('quiet');
+	const towers = new Float32Array(quiet ? all.length - 5 : all.length);
+	if (quiet) {
+		towers.set(all.subarray(0, at), 0);
+		towers.set(all.subarray(at + 5), at);
+	} else towers.set(all);
 	// The ground and the tower, in plain materials, so the car's neon band stands out from them.
 	const flat = quat.create();
 	quat.fromEuler(flat, -Math.PI / 2, 0, 0);
@@ -58,7 +66,7 @@ export default defineSketch(async (ctx) => {
 		position: [cx, 0, cz],
 		rotation: [flat[0] as number, flat[1] as number, flat[2] as number, flat[3] as number],
 	});
-	if (!params.has('quiet'))
+	if (!quiet)
 		scene.createMesh({
 			mesh: geometry.box({ width: 2 * hx, height: top, depth: 2 * hz }),
 			material: materials.standard({ color: '#3a4048', roughness: 0.9 }),
@@ -92,10 +100,19 @@ export default defineSketch(async (ctx) => {
 	// The hero car draws on the showcase scenes' effect layer, so the camera must draw it.
 	camera.setLayers(CAMERA_LAYERS);
 	scene.setActiveCamera(camera);
-	const hero = createHero(ctx, camera, start, place);
+	const hero = createHero(ctx, camera, start, place, towers);
 	hero.take();
 	for (let frame = 0; frame < Math.round(SETTLE * 60); frame++)
 		hero.drive(1 / 60, (code) =>
 			RUN === 'turn' ? code === 'KeyW' || (code === 'KeyD' && frame >= STEER) : false,
 		);
+	// The strip reads the camera's distance from the car, so a reviewer can read the approach
+	// rather than infer it from how large the car looks. The distance is taken here, while the
+	// engine still runs: the image page stops the engine after it captures the frame.
+	const eye: [number, number, number] = [0, 0, 0];
+	const car: [number, number, number] = [0, 0, 0];
+	camera.getPosition(eye);
+	hero.group.getPosition(car);
+	const distance = Math.hypot(eye[0] - car[0], eye[1] - car[1], eye[2] - car[2]);
+	(globalThis as unknown as { sightDistance?: number }).sightDistance = distance;
 });
