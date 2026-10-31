@@ -285,6 +285,18 @@ fn pick_color(key: u32) -> vec4f {
 #ifdef WEIGHTED
 #import null3d::weighted::{WeightedFragment, weighted_fragment}
 #endif
+#ifdef MOMENT
+#import null3d::moment::{moment_fragment}
+#endif
+#ifdef MOMENT_COLOUR
+#import null3d::moment::{moment_colour_fragment}
+
+/// The moment store that the colour pass reads at each fragment's own pixel (decision record
+/// D-261): the four moments that the moment pass summed there, read with `textureLoad` as plain
+/// floats. It takes the light probe grid's binding, which the layer's own frame layout leaves out
+/// because no moment build reads the grid.
+@group(0) @binding(10) var moment_store: texture_2d<f32>;
+#endif
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
 const FLAT_SHADING: u32 = 1u;
@@ -2835,6 +2847,8 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) {
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
 #else ifdef WEIGHTED
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> WeightedFragment {
+#else ifdef MOMENT_COLOUR
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else ifdef PICK
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else
@@ -2918,6 +2932,14 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     return masked_fragment(shade(s, input, in.clip));
 #else ifdef WEIGHTED
     return weighted_fragment(shade(s, input, in.clip), in.relative);
+#else ifdef MOMENT
+    return moment_fragment(s.alpha, in.relative);
+#else ifdef MOMENT_COLOUR
+    return moment_colour_fragment(
+        shade(s, input, in.clip),
+        in.relative,
+        textureLoad(moment_store, vec2u(in.clip.xy), 0),
+    );
 #else
     return shade(s, input, in.clip);
 #endif

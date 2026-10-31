@@ -52,6 +52,12 @@ import {
 	LAYOUT_MATERIAL_MAPS_PARALLAX,
 	LAYOUT_MATERIAL_MAPS_SCENE,
 	LAYOUT_MATERIAL_SCENE,
+	LAYOUT_MOMENT_COMPOSITE,
+	LAYOUT_MOMENT_DEPTH_MS,
+	LAYOUT_MOMENT_FRAME,
+	LAYOUT_MOMENT_SMAA_BLEND,
+	LAYOUT_MOMENT_SMAA_EDGES,
+	LAYOUT_MOMENT_SMAA_RESOLVE,
 	LAYOUT_MOTION_FRAME,
 	LAYOUT_PARTICLE,
 	LAYOUT_PARTICLE_DEPTH_MS,
@@ -149,6 +155,17 @@ import {
 	TEMPLATE_LIGHT_WRITE,
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
+	TEMPLATE_MOMENT_COMPOSITE,
+	TEMPLATE_MOMENT_DEPTH,
+	TEMPLATE_MOMENT_LIT,
+	TEMPLATE_MOMENT_SMAA_BLEND,
+	TEMPLATE_MOMENT_SMAA_EDGES,
+	TEMPLATE_MOMENT_SMAA_RESOLVE,
+	TEMPLATE_MOMENT_SPRITE,
+	TEMPLATE_MOMENT_SPRITE_MAP,
+	TEMPLATE_MOMENT_STANDARD_MAPS,
+	TEMPLATE_MOMENT_UNLIT,
+	TEMPLATE_MOMENT_UNLIT_MAP,
 	TEMPLATE_MOTION,
 	TEMPLATE_MOTION_VIEW,
 	TEMPLATE_OCCLUSION_EARLY,
@@ -1107,6 +1124,38 @@ export class Pipelines {
 			visibility: fragment,
 			texture: { sampleType: 'unfilterable-float', multisampled },
 		});
+		// The moment layer's colour builds keep the frame's copy of the opaque color at binding 15,
+		// which every lit build declares through the reflection code, and add the moment store at
+		// the light probe grid's binding, 10. They declare no light probe grid, so that entry
+		// leaves the layout: their maps' group already takes the fragment stage to the count of 16
+		// without it.
+		this.defineLayout(LAYOUT_MOMENT_FRAME, 'moment frame', [
+			...frame.filter((entry) => entry !== probeGrid),
+			{
+				binding: 10,
+				visibility: fragment,
+				texture: { sampleType: 'unfilterable-float' },
+			},
+		]);
+		// The moment layer's steps read their images with textureLoad, and the anti-aliasing reads
+		// its lookup tables and its images with a linear sampler.
+		this.defineLayout(LAYOUT_MOMENT_COMPOSITE, 'moment composite', [unfiltered(0), unfiltered(1)]);
+		this.defineLayout(LAYOUT_MOMENT_DEPTH_MS, 'moment depth ms', [unfiltered(0, true)]);
+		this.defineLayout(LAYOUT_MOMENT_SMAA_EDGES, 'moment smaa edges', [
+			unfiltered(0),
+			unfiltered(1),
+		]);
+		this.defineLayout(LAYOUT_MOMENT_SMAA_BLEND, 'moment smaa blend', [
+			{ binding: 0, visibility: fragment, texture: {} },
+			{ binding: 1, visibility: fragment, texture: {} },
+			{ binding: 2, visibility: fragment, texture: {} },
+			{ binding: 3, visibility: fragment, sampler: { type: 'filtering' } },
+		]);
+		this.defineLayout(LAYOUT_MOMENT_SMAA_RESOLVE, 'moment smaa resolve', [
+			{ binding: 0, visibility: fragment, texture: {} },
+			{ binding: 1, visibility: fragment, texture: {} },
+			{ binding: 2, visibility: fragment, sampler: { type: 'filtering' } },
+		]);
 		this.defineLayout(LAYOUT_AO_DEPTH, 'ao depth', [aoSettings, unfiltered(1)]);
 		this.defineLayout(LAYOUT_AO_DEPTH_MS, 'ao depth ms', [aoSettings, unfiltered(1, true)]);
 		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2), unfiltered(3)]);
@@ -1345,6 +1394,36 @@ export class Pipelines {
 				[LAYOUT_FRAME, LAYOUT_TEXTURES],
 			],
 			[TEMPLATE_SPRITE, 'sprite', shaders.sprite, [0, 2], [LAYOUT_FRAME]],
+			[TEMPLATE_MOMENT_LIT, 'moment lit', shaders.moment_lit, [0, 1], [LAYOUT_MOMENT_FRAME]],
+			[
+				TEMPLATE_MOMENT_STANDARD_MAPS,
+				'moment standard maps',
+				shaders.moment_standard_maps,
+				[0, 1, 2, 3],
+				[LAYOUT_MOMENT_FRAME, LAYOUT_MATERIAL_MAPS],
+			],
+			[TEMPLATE_MOMENT_UNLIT, 'moment unlit', shaders.moment_unlit, [0], [LAYOUT_MOMENT_FRAME]],
+			[
+				TEMPLATE_MOMENT_UNLIT_MAP,
+				'moment unlit map',
+				shaders.moment_unlit_map,
+				[0, 2, 3],
+				[LAYOUT_MOMENT_FRAME, LAYOUT_TEXTURES],
+			],
+			[
+				TEMPLATE_MOMENT_SPRITE,
+				'moment sprite',
+				shaders.moment_sprite,
+				[0, 2],
+				[LAYOUT_MOMENT_FRAME],
+			],
+			[
+				TEMPLATE_MOMENT_SPRITE_MAP,
+				'moment sprite map',
+				shaders.moment_sprite_map,
+				[0, 2],
+				[LAYOUT_MOMENT_FRAME, LAYOUT_TEXTURES],
+			],
 			[TEMPLATE_LINE, 'line', shaders.line, [0], [LAYOUT_FRAME]],
 			[TEMPLATE_LINE_LIT, 'lit line', shaders.line_lit, [0], [LAYOUT_FRAME]],
 			[
@@ -1541,6 +1620,42 @@ export class Pipelines {
 			shader: shaders.weighted_composite,
 			pipeline: 'main',
 			layouts: [LAYOUT_WEIGHTED_COMPOSITE],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_MOMENT_COMPOSITE, {
+			label: 'moment composite',
+			shader: shaders.moment_composite,
+			pipeline: 'main',
+			layouts: [LAYOUT_MOMENT_COMPOSITE],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_MOMENT_DEPTH, {
+			label: 'moment depth',
+			shader: shaders.moment_depth,
+			pipeline: 'main',
+			layouts: [LAYOUT_MOMENT_DEPTH_MS],
+			vertexBuffers: [],
+			depthFragment: true,
+		});
+		this.defineTemplate(TEMPLATE_MOMENT_SMAA_EDGES, {
+			label: 'moment smaa edges',
+			shader: shaders.moment_smaa_edges,
+			pipeline: 'main',
+			layouts: [LAYOUT_MOMENT_SMAA_EDGES],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_MOMENT_SMAA_BLEND, {
+			label: 'moment smaa blend',
+			shader: shaders.moment_smaa_blend,
+			pipeline: 'main',
+			layouts: [LAYOUT_MOMENT_SMAA_BLEND],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_MOMENT_SMAA_RESOLVE, {
+			label: 'moment smaa resolve',
+			shader: shaders.moment_smaa_resolve,
+			pipeline: 'main',
+			layouts: [LAYOUT_MOMENT_SMAA_RESOLVE],
 			vertexBuffers: [],
 		});
 		this.defineTemplate(TEMPLATE_WEIGHTED_DEPTH, {

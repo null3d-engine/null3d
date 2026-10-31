@@ -136,6 +136,7 @@ use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{LightGrid, LightGrids, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshMoves, MeshStorage, Packing};
+use crate::moment::MomentIds;
 use crate::motion::MotionIds;
 use crate::occlusion::Occluders;
 use crate::output::{Antialias, SceneColor};
@@ -170,6 +171,7 @@ mod ids {
     use crate::bloom::STEPS;
     use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
+    use crate::moment::MomentIds;
     use crate::particles::ParticleIds;
     use crate::subsurface::STEPS as SUBSURFACE_STEPS;
     use crate::taa::STEPS as TAA_STEPS;
@@ -313,8 +315,11 @@ mod ids {
     /// The texture of one texel that the motion debug view reads in place of the motion target
     /// where the device draws none.
     pub const BLANK_MOTION: u32 = BLANK_SCENE_DEPTH + 1;
+    /// The moment layer's two lookup tables, which it makes at its first use.
+    pub const MOMENT_AREA: u32 = BLANK_MOTION + 1;
+    pub const MOMENT_SEARCH: u32 = MOMENT_AREA + 1;
     /// The physical sky's tables and panorama.
-    pub const SKY_TABLES: u32 = BLANK_MOTION + 1;
+    pub const SKY_TABLES: u32 = MOMENT_SEARCH + 1;
     /// The automatic exposure's cells, its texel, which the final pass reads, and its stored texel.
     pub const EXPOSURE_CELLS: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
     pub const EXPOSURE_TEXEL: u32 = EXPOSURE_CELLS + 1;
@@ -397,8 +402,10 @@ mod ids {
     /// The samplers of materials' maps.
     /// The linear sampler of temporal anti-aliasing's history.
     pub const TAA_SAMPLER: u32 = STILL_LUT_SAMPLER + 1;
+    /// The linear sampler of the moment layer's lookup tables and of its anti-aliasing steps.
+    pub const MOMENT_SAMPLER: u32 = TAA_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = TAA_SAMPLER + 1;
+    pub const SAMPLERS: u32 = MOMENT_SAMPLER + 1;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -488,8 +495,16 @@ mod ids {
     pub const COMPUTE_STATES: u32 = COMPUTE_VIEWS + 2 * MAX_VIEWS as u32;
     /// The bind groups of temporal anti-aliasing's resolve and copy, after the compute passes'.
     pub const TAA_GROUPS: u32 = COMPUTE_STATES + 2 * MAX_VIEWS as u32;
-    /// The bind groups of materials' maps, after temporal anti-aliasing's.
-    pub const TEXTURE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
+    /// The bind groups of the moment layer's steps, after temporal anti-aliasing's.
+    pub const MOMENT_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
+    /// Each camera view's frame group that carries the moment store, after the layer's steps'.
+    pub const MOMENT_FRAME_GROUPS: u32 = MOMENT_GROUPS + MomentIds::GROUPS;
+
+    pub const fn moment_frame_group(view: ViewId) -> u32 {
+        MOMENT_FRAME_GROUPS + view.index() as u32
+    }
+    /// The bind groups of materials' maps, after the moment layer's frame groups.
+    pub const TEXTURE_GROUPS: u32 = MOMENT_FRAME_GROUPS + MAX_VIEWS as u32;
 }
 
 /// The group index of the decal pass's scene depth in the decal templates on WebGL2: after the
@@ -689,6 +704,9 @@ pub struct CpuCulledRenderer {
     dfg_pending: bool,
     /// The cube texture that the camera views' frame groups bind: the environment's, or the
     /// blank one.
+    /// The moment store that the camera's moment frame group was made for, or 0 before it was
+    /// made.
+    moment_frame: u32,
     bound_environment: u32,
     /// The 3D texture that the frame groups bind: the grid's, or the blank one.
     bound_probe_grid: u32,
@@ -856,6 +874,12 @@ impl CpuCulledRenderer {
                         weighted: WeightedIds {
                             first_group: ids::WEIGHTED_GROUPS,
                         },
+                        moment: MomentIds {
+                            first_group: ids::MOMENT_GROUPS,
+                            sampler: ids::MOMENT_SAMPLER,
+                            area: ids::MOMENT_AREA,
+                            search: ids::MOMENT_SEARCH,
+                        },
                         particle_depth: ids::PARTICLE_DEPTH_COPY_GROUP,
                         material_scene: ids::MATERIAL_SCENE_GROUPS,
                         blank_scene_depth: ids::BLANK_SCENE_DEPTH,
@@ -863,6 +887,7 @@ impl CpuCulledRenderer {
                 );
                 graph.bind_shadow_map(config.cascade_depth);
                 graph.set_weighted_targets(config.float16_targets);
+                graph.set_moment_targets(config.float16_targets);
                 graph.set_depth_prepass(config.depth_prepass);
                 graph.set_prepass_color(config.prepass_color);
                 graph
@@ -941,6 +966,7 @@ impl CpuCulledRenderer {
             skins: Skins::default(),
             created: false,
             dfg_pending: false,
+            moment_frame: 0,
             bound_environment: ids::BLANK_ENVIRONMENT,
             bound_probe_grid: ids::BLANK_PROBE_GRID,
             bound_probes: None,
@@ -1275,6 +1301,18 @@ impl CpuCulledRenderer {
             (slot.base, if slot.dynamic { STREAMED } else { RESIDENT })
         };
         let skins = &self.skins;
+        // The moment layer draws every blended surface that it has a build for, so while the
+        // quality setting turns it on the weighted layer draws nothing.
+        let moment = if self.settings.moment_transparency() {
+            self.graph.moment_targets(targets)
+        } else {
+            None
+        };
+        let weighted = if moment.is_some() {
+            None
+        } else {
+            self.graph.weighted_targets(targets)
+        };
         self.sorted
             .rebuild(
                 &self.settings,
@@ -1286,7 +1324,8 @@ impl CpuCulledRenderer {
                 RESIDENT,
                 shadows.any(),
                 |slot, key| skins.sorted_pipeline(slot, key),
-                self.graph.weighted_targets(targets),
+                weighted,
+                moment,
                 &mut self.key_counts,
             )
             .map_err(out_of_memory)?;
@@ -1303,6 +1342,7 @@ impl CpuCulledRenderer {
                 RESIDENT,
                 shadows.any(),
                 |_, _| SkinnedPipeline::NotSkinned,
+                None,
                 None,
                 &mut self.key_counts,
             )
@@ -1324,6 +1364,7 @@ impl CpuCulledRenderer {
                     RESIDENT,
                     shadows.any(),
                     |slot, key| skins.sorted_pipeline(slot, key),
+                    None,
                     None,
                     &mut self.key_counts,
                 )
@@ -1901,6 +1942,7 @@ impl CpuCulledRenderer {
         };
         self.graph.set_motion(motion, motion_frame);
         self.graph.set_weighted(self.sorted.weighs());
+        self.graph.set_moment(self.sorted.moments());
         let skipped = self.settings.decal_skipped_layers();
         let redraws = self.redraws_built && skipped != 0;
         self.graph
@@ -2034,6 +2076,14 @@ impl CpuCulledRenderer {
             .light_tables_mut()
             .record(list, array, probe_layers)?;
         let textures_made = self.graph.textures_made();
+        // The colour pass binds the moment store in a frame group of its own, made wherever the
+        // camera's frame group is.
+        let moment_store = self.graph.moment_store();
+        // The group is made for the store that the plan holds, once; a frame that draws the layer
+        // after its pipelines were built needs it even when the frame groups keep theirs.
+        let make_moment = moment_store.is_some_and(|store| {
+            self.moment_frame != store || textures_made || probes_remade || lights_remade & 1 != 0
+        });
         for index in 0..self.opaque.views() {
             if index >= first_new
                 || textures_made
@@ -2041,7 +2091,15 @@ impl CpuCulledRenderer {
                 || lights_remade & (1 << index) != 0
             {
                 let view = ViewId::from_index(index);
-                Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
+                let textures = lit_for(lit, view);
+                Opaque::bind_frame(list, view, Some(textures))?;
+                if let Some(store) = moment_store
+                    && view == ViewId::CAMERA
+                    && make_moment
+                {
+                    Opaque::bind_moment_frame(list, view, textures, store)?;
+                    self.moment_frame = store;
+                }
             }
         }
         let cascades = self.cascades();
@@ -2385,6 +2443,7 @@ impl CpuCulledRenderer {
         )?;
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
         let weighted = self.graph.weighted_declared();
+        let moment_layer = self.graph.moment_declared();
         let (cascade_culling, cascade_draws) = (&self.cascade_culling, &self.cascade_draws);
         let (tile_culling, tile_draws) = (&self.tile_culling, &self.tile_draws);
         let (outline_culling, outline_draws) = (&self.outline_culling, &self.outline_draws);
@@ -2575,7 +2634,7 @@ impl CpuCulledRenderer {
                     )
                 }
                 Role::Transparent(view) if culling.frame(view).is_some() => {
-                    let rows = if weighted && view == ViewId::CAMERA {
+                    let rows = if (weighted || moment_layer) && view == ViewId::CAMERA {
                         SortedRows::Sorted
                     } else {
                         SortedRows::All
@@ -2610,6 +2669,51 @@ impl CpuCulledRenderer {
                     let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot, 0);
                     let hidden = hidden_in(view);
                     let (index, rows) = (view.index(), SortedRows::Weighted);
+                    transparent.record(
+                        list,
+                        arena,
+                        index,
+                        rows,
+                        draws,
+                        at,
+                        meshes,
+                        bind,
+                        &hidden,
+                        particles,
+                        vertex_draws,
+                    )
+                }
+                Role::Moment if culling.frame(ViewId::CAMERA).is_some() => {
+                    let view = ViewId::CAMERA;
+                    let at = opaque.sorted_records_at(view, layout);
+                    let draws = ids::draws_group(view);
+                    let light_slot = light_textures.slot(view);
+                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot, 0);
+                    let hidden = hidden_in(view);
+                    let (index, rows) = (view.index(), SortedRows::Moment);
+                    transparent.record(
+                        list,
+                        arena,
+                        index,
+                        rows,
+                        draws,
+                        at,
+                        meshes,
+                        bind,
+                        &hidden,
+                        particles,
+                        vertex_draws,
+                    )
+                }
+                Role::MomentColour if culling.frame(ViewId::CAMERA).is_some() => {
+                    let view = ViewId::CAMERA;
+                    let at = opaque.sorted_records_at(view, layout);
+                    let draws = ids::draws_group(view);
+                    let light_slot = light_textures.slot(view);
+                    let bind =
+                        |list: &mut DrawList| opaque.bind_moment_view(list, view, light_slot);
+                    let hidden = hidden_in(view);
+                    let (index, rows) = (view.index(), SortedRows::MomentColour);
                     transparent.record(
                         list,
                         arena,

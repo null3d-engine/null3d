@@ -118,6 +118,7 @@ describe('the preset table', () => {
 			'minRenderScale',
 			'maxRenderScale',
 			'antialias',
+			'momentTransparency',
 			'shadowCascades',
 			'shadowMapSize',
 			'shadowFilter',
@@ -211,6 +212,7 @@ describe('the preset table', () => {
 			'shadowTileSize',
 			'heroTileSize',
 			'pointLightShadows',
+			'momentTransparency',
 			'depthPrepass',
 			'gpuOcclusion',
 			'lightFit',
@@ -287,6 +289,7 @@ describe('presetSettings', () => {
 			maxRenderScale: 1,
 			governor: true,
 			depthPrepass: false,
+			momentTransparency: false,
 		};
 		expect(presetSettings('low')).toEqual({
 			maxPixelRatio: 1.5,
