@@ -220,6 +220,18 @@ describe('particle buffers', () => {
 	});
 });
 
+/** Emits one frame's numbers, as the add-on's system gives them. */
+function emitFrame(
+	buffer: { emitFrame(numbers: Float64Array): void },
+	from: number,
+	to: number,
+	rate: number,
+	emitting: boolean,
+	prewarm = false,
+): void {
+	buffer.emitFrame(new Float64Array([from, to, rate, emitting ? 1 : 0, prewarm ? 1 : 0]));
+}
+
 describe('the emitter', () => {
 	const IDENTITY = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
@@ -279,7 +291,7 @@ describe('the emitter', () => {
 		const b = configured();
 		b.particles.setEmitterFollow(IDENTITY, IDENTITY, IDENTITY);
 		b.particles.setEmitterEvents(IDENTITY, [IDENTITY]);
-		b.particles.emitFrame(0.5, 1, 12, true, false);
+		emitFrame(b.particles, 0.5, 1, 12, true);
 		expect(b.frames).toEqual([1]);
 		const block = b.core.f64(EMITTER, b.emitterFloats());
 		expect([...block.slice(0, 6)]).toEqual([12, 1, 0.5, 1, 1, 0]);
@@ -307,10 +319,10 @@ describe('the emitter', () => {
 
 	test('the emitter keeps its block after the memory grows', () => {
 		const b = configured();
-		b.particles.emitFrame(0, 0.5, 12, true, false);
+		emitFrame(b.particles, 0, 0.5, 12, true);
 		b.memory.grow(1);
 		expect(b.core.refresh()).toBe(true);
-		b.particles.emitFrame(0.5, 1, 9, false, true);
+		emitFrame(b.particles, 0.5, 1, 9, false, true);
 		// The block was asked for once, and the view was made again over the same place.
 		expect(b.blocks.length).toBe(1);
 		const block = b.core.f64(EMITTER, b.emitterFloats());
@@ -320,14 +332,14 @@ describe('the emitter', () => {
 
 	test("the frame's count is the emitted count, at most the capacity", () => {
 		const b = configured(4);
-		b.particles.emitFrame(0, 1, 12, true);
+		emitFrame(b.particles, 0, 1, 12, true);
 		// The fake core writes five emitted; the engine leaves the count to the core's frame values.
 		expect(b.particles.emitted).toBe(5);
 	});
 
 	test("a destroyed buffer forgets the emitter's views", () => {
 		const b = configured();
-		b.particles.emitFrame(0, 1, 12, true);
+		emitFrame(b.particles, 0, 1, 12, true);
 		b.particles.destroy();
 		const views = b.particles as unknown as Record<'emitterView' | 'subView', ArrayLike<number>>;
 		expect(views.emitterView.length).toBe(0);
