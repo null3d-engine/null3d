@@ -606,6 +606,8 @@ export interface CoreGlue extends CoreErrors {
 	setProbeSize(size: number): number;
 	/** 1 while a reflection probe waits for its first capture, and 0 otherwise. */
 	probesWaiting(): number;
+	/** 1 while a light's picture waits for its texture's texels to be copied, and 0 otherwise. */
+	lightImagesWaiting(): number;
 	/**
 	 * Returns the image id under which TypeScript sends the generator that runs reflection probes'
 	 * filters, once.
@@ -1399,6 +1401,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'captureReflectionProbe',
 	'setProbeSize',
 	'probesWaiting',
+	'lightImagesWaiting',
 	'probeGenerator',
 	'setTextureData',
 	'setTextureRegion',

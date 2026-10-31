@@ -126,7 +126,9 @@ side. The copy is a GPU pass shaped like the mip pass: it draws the source into 
 and makes its levels. A texture that changes every frame, such as a video's or a render pass's,
 throws E1112, because the copy shows one frame; a 3D or cube texture throws it too, because a cookie
 projects one image. The copy adds no binding and no sampler to the lit shaders, which stay inside
-the 16 sampled textures that a fragment stage allows.
+the 16 sampled textures that a fragment stage allows. A light shows the picture from the frame after
+the copy. A held frame therefore draws that frame too, as it does for a reflection probe's capture,
+so an image test shows the picture that a texture gives.
 
 **A probe moves the pictures.** A probe's layers come before the pictures' in the shared array. A
 probe that a scene adds after a picture therefore moves every picture along. A frame rewrites the
