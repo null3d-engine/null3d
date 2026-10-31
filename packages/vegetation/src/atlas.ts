@@ -8,6 +8,7 @@ import { type AtlasPixels, paintBark, paintLeaf } from './atlas-pixels';
 import type { PlantWind } from './plant';
 import plantShader from './plant.wgsl';
 import plantCardsShader from './plant-cards.wgsl';
+import type { PlantPoses } from './poses';
 import type { LeafKind, Species } from './species';
 
 /**
@@ -211,6 +212,12 @@ export interface PlantMaterialOptions {
 	 */
 	readonly wind?: PlantWind;
 	/**
+	 * The branch poses that a compute pass writes for the plant's near trees. Give it to move the
+	 * branches by the pass's turns, which let them spring back after a gust. Leave it out for the
+	 * per-vertex sway.
+	 */
+	readonly poses?: PlantPoses;
+	/**
 	 * The share of a leaf's diffuse light that passes through it, from the species' record. The
 	 * default is 0.35, the share that a measured leaf passes. It applies to the leaves alone.
 	 */
@@ -259,22 +266,17 @@ export function plantMaterial(
 	ctx: Pick<SketchContext, 'materials' | 'textures'>,
 	options: PlantMaterialOptions,
 ) {
-	const { atlases, part, wind } = options;
+	const { atlases, part, wind, poses } = options;
 	const leaves = part === 'leaves';
 	const cell = LEAF_CELLS_BY_KIND[options.cell ?? 'cluster-a'];
 	const crown = wind?.crown;
 	const crownCenter = crown
 		? ([crown.center[0], crown.center[1], crown.center[2]] as [number, number, number])
 		: ([0, 0, 0] as [number, number, number]);
+	const still = stillTextures(ctx.textures);
+	const branchData = poses?.texture ?? wind?.pivots ?? still.branchData;
+	const windTexture = wind?.field.texture ?? still.wind;
 	const look = {
-		textures: {
-			barkColor: atlases.bark.color.texture,
-			barkSurface: atlases.bark.surface.texture,
-			leafColor: atlases.leaf.color.texture,
-			leafSurface: atlases.leaf.surface.texture,
-			pivots: wind?.pivots ?? stillTextures(ctx.textures).pivots,
-			wind: wind?.field.texture ?? stillTextures(ctx.textures).wind,
-		},
 		alphaMode: (leaves ? 'mask' : 'opaque') as 'mask' | 'opaque',
 		alphaCutoff: options.alphaCutoff ?? 0.35,
 		doubleSided: leaves,
@@ -292,15 +294,13 @@ export function plantMaterial(
 	const fields = {
 		cells: [atlases.leaf.cells[0], atlases.leaf.cells[1]] as [number, number],
 		cell: [cell[0], cell[1]] as [number, number],
-		part: leaves ? 1 : 0,
-		tiles: options.barkTiles ?? 3,
 		tint: (options.color ?? [1, 1, 1]) as [number, number, number],
 		height: wind?.height ?? 1,
 		throughLeaf: leaves ? (options.transmission ?? 0.35) : 0,
 		swayDistance: wind?.swayDistance ?? 0,
 		branches: wind?.branches ?? 0,
 		windBox: wind?.field.size ?? 1,
-		windStrength: wind ? 1 : 0,
+		windStrength: poses ? 2 : wind ? 1 : 0,
 		windLayer: 0,
 		crownCenter,
 		crownBend: wind ? (options.crownBend ?? 0.35) : 0,
@@ -315,14 +315,40 @@ export function plantMaterial(
 		return ctx.materials.shader({
 			wgsl: plantCardsShader,
 			...look,
+			textures: {
+				barkColor: atlases.bark.color.texture,
+				barkSurface: atlases.bark.surface.texture,
+				leafColor: atlases.leaf.color.texture,
+				leafSurface: atlases.leaf.surface.texture,
+				branchData,
+				wind: windTexture,
+			},
 			uniforms: {
 				...fields,
+				part: leaves ? 1 : 0,
+				tiles: options.barkTiles ?? 3,
 				crownRadius: options.morph.crownRadius,
 				lodThreshold: options.morph.threshold ?? 1,
 			},
 		});
 	}
-	return ctx.materials.shader({ wgsl: plantShader, ...look, uniforms: fields });
+	return ctx.materials.shader({
+		wgsl: plantShader,
+		...look,
+		textures: {
+			barkColor: atlases.bark.color.texture,
+			barkSurface: atlases.bark.surface.texture,
+			leafColor: atlases.leaf.color.texture,
+			leafSurface: atlases.leaf.surface.texture,
+			branchData,
+			wind: windTexture,
+		},
+		uniforms: {
+			...fields,
+			part: leaves ? 1 : 0,
+			tiles: options.barkTiles ?? 3,
+		},
+	});
 }
 
 /**
@@ -339,14 +365,20 @@ export type PlantMaterial = ReturnType<typeof plantMaterial>;
  * no wind: a black pivot table and a single layer of still air. One pair serves every such material
  * of a page.
  */
-const STILL = new WeakMap<Textures, { pivots: Texture; wind: Texture }>();
+const STILL = new WeakMap<Textures, { branchData: Texture; wind: Texture }>();
 
-function stillTextures(textures: Textures): { pivots: Texture; wind: Texture } {
+function stillTextures(textures: Textures): { branchData: Texture; wind: Texture } {
 	const held = STILL.get(textures);
 	if (held) return held;
 	const black = new Float32Array(4);
 	const made = {
-		pivots: textures.fromData({ width: 1, height: 1, format: 'rgba16float', data: black }),
+		branchData: textures.fromData({
+			width: 1,
+			height: 1,
+			depth: 1,
+			format: 'rgba16float',
+			data: black,
+		}),
 		wind: textures.fromData({
 			width: 1,
 			height: 1,
