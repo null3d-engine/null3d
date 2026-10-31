@@ -21,6 +21,6 @@ declare const shader: CompiledMaterial<
 		readonly crownRadius: 'f32';
 		readonly lodThreshold: 'f32';
 	},
-	'barkColor' | 'barkSurface' | 'leafColor' | 'leafSurface' | 'pivots' | 'wind'
+	'barkColor' | 'barkSurface' | 'leafColor' | 'leafSurface' | 'branchData' | 'wind'
 >;
 export default shader;

@@ -24,7 +24,8 @@ export interface PlantWind {
 	 * The plant's branch records, one row of four texels for each branch: the pivot, the axis, the
 	 * parent, the stiffness, the flutter, the branch's level and length, and its sway phase. A
 	 * second row holds the wind field's steady settings, three texels of four numbers, which the
-	 * vertex offset reads beyond the field's box.
+	 * vertex offset reads beyond the field's box. It is a texture array of one layer, so a material
+	 * reads it in the same slot as a pose table.
 	 */
 	readonly pivots: Texture;
 	/** The branch records that {@link PlantWind.pivots} holds. */
@@ -100,7 +101,10 @@ export function plantWind(
  * @param field The wind field, from `createWind`.
  * @category api/vegetation
  */
-export function setWindLayer(materials: readonly PlantMaterial[], field: WindField): void {
+export function setWindLayer(
+	materials: readonly { setUniform(name: string, value: number): void }[],
+	field: WindField,
+): void {
 	const layer = field.texture.layer;
 	for (const material of materials) material.setUniform('windLayer', layer);
 }
@@ -123,7 +127,13 @@ function halfFloatTexture(
 	// The air sits at the start of the second row; the rest of it stays zero.
 	for (let i = 0; i < Math.min(air.length, columns * 4); i++)
 		packed[columns * 4 + i] = air[i] as number;
-	return textures.fromData({ width: columns, height: 2, format: 'rgba16float', data: packed });
+	return textures.fromData({
+		width: columns,
+		height: 2,
+		depth: 1,
+		format: 'rgba16float',
+		data: packed,
+	});
 }
 
 /**

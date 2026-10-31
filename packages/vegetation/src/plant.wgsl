@@ -8,6 +8,12 @@
 // flutter across the air, each from its stored phase. One field of air moves them all, read at the
 // vertex's own place, and the whole offset fades out by the plant's sway distance so a far plant
 // stands still and keeps its shadow in the far cascade's cached layer.
+//
+// The branch turns come from one of two sources. The vertex offset works each turn out itself, from
+// the branch records, which a plant's page blends into the picture at every distance. Or it reads
+// the turn that a compute pass wrote once for every branch of every near tree, which lets a branch
+// spring back after a gust. The wind's strength names which, and the branch data texture holds the
+// records in the first case and the pass's poses in the second.
 
 #import null3d::noise::{value3}
 
@@ -15,10 +21,11 @@ var barkColor: texture_2d<f32>;
 var barkSurface: texture_2d<f32>;
 var leafColor: texture_2d<f32>;
 var leafSurface: texture_2d<f32>;
-// The plant's branch records: four texels a record, fetched by the branch index that the vertex
-// colours carry. A data texture serves them, since a WebGL2 vertex shader reads no uniform array at
-// the draw's index.
-var pivots: texture_2d<f32>;
+// The plant's branch data: four texels of branch records for each branch, fetched by the branch
+// index that the vertex colours carry, or, when a compute pass writes the turns, the pose table
+// that the pass fills. A data texture serves it, since a WebGL2 vertex shader reads no uniform array
+// at the draw's index.
+var branchData: texture_2d_array<f32>;
 
 // The one sampling function for a reader of the wind field. A material that already has its own
 // WGSL, such as a plant's leaf material, copies the block between the markers into its own file.
@@ -190,7 +197,8 @@ struct Uniforms {
     branches: f32,
     /// The wind field's box, across the ground in meters.
     windBox: f32,
-    /// The wind's strength: 0 for a material that names no field, and 1 for one that does.
+    /// The wind's strength: 0 for a material that names no field, 1 for one that does, and 2 for one
+    /// whose branch turns come from a pose pass.
     windStrength: f32,
     /// The layer of the field's texture that holds the newest state, which a page sets in each frame.
     windLayer: f32,
@@ -216,8 +224,41 @@ const MAX_BRANCH_DEPTH: u32 = 8u;
 /// One texel of a branch's record. Four texels a record: the pivot and the axis's x, then the axis's
 /// y and z and the parent and stiffness, then the flutter's amplitude and frequency and the level and
 /// the branch's length, then its sway phase.
+/// The state of the pose table that this call reads, and the slot that the instance takes: the
+/// first number is the state's layer, or -1 for a copy that stands past the sway distance. A page
+/// may have written only one state, so the other state of a young page is empty. The motion build's
+/// second call moves each vertex as the frame before did, so it reads the state of the frame before.
+fn pose_place(instance: i32) -> vec2f {
+    let first = textureLoad(branchData, vec2i(instance, 0), 0, 0);
+    let second = textureLoad(branchData, vec2i(instance, 0), 1, 0);
+    var layer = 0;
+    var header = first;
+    if (first.x < 0.5 && second.x >= 0.5) {
+        layer = 1;
+        header = second;
+    }
+    if (header.x < 0.5) {
+        return vec2f(-1.0, 0.0);
+    }
+    if (frame.lastFrame) {
+        let other = 1 - layer;
+        let otherHeader = select(second, first, other == 0);
+        if (otherHeader.x >= 0.5) {
+            layer = other;
+            header = otherHeader;
+        }
+    }
+    return vec2f(f32(layer), header.x);
+}
+
 fn branch_record(branch: u32, texel: u32) -> vec4f {
-    return textureLoad(pivots, vec2i(i32(branch * 4u + texel), 0), 0);
+    return textureLoad(branchData, vec2i(i32(branch * 4u + texel), 0), 0, 0);
+}
+
+/// `point` turned by the unit quaternion `q`.
+fn quat_turn(q: vec4f, point: vec3f) -> vec3f {
+    let along = cross(q.xyz, point);
+    return point + 2.0 * (q.w * along + cross(q.xyz, along));
 }
 
 /// `point` turned about the line through `pivot` along the unit `axis` by `angle` radians.
@@ -246,11 +287,11 @@ fn wind_offset(input: VertexInput, leafPart: bool) -> vec3f {
     // The air at the vertex's place. The field's box follows the camera, so its near corner is half
     // a box behind the camera across the ground.
     let place = (object.worldMatrix * vec4f(input.position, 1.0)).xyz + camera.position;
-    // The steady settings sit in the records texture's second row, since a custom material's
+    // The steady settings sit in the branch data texture's second row, since a custom material's
     // uniforms hold 32 numbers and its textures 6, and the field's twelve fit in neither.
-    let base = textureLoad(pivots, vec2i(0, 1), 0);
-    let gust = textureLoad(pivots, vec2i(1, 1), 0);
-    let swirl = textureLoad(pivots, vec2i(2, 1), 0);
+    let base = textureLoad(branchData, vec2i(0, 1), 0, 0);
+    let gust = textureLoad(branchData, vec2i(1, 1), 0, 0);
+    let swirl = textureLoad(branchData, vec2i(2, 1), 0, 0);
     let reading = wind_reading(base, gust, swirl, frame.time);
     let at = wind_sample(
         place,
@@ -275,43 +316,64 @@ fn wind_offset(input: VertexInput, leafPart: bool) -> vec3f {
     // The trunk bends as a cantilever, most at its top.
     let rise = clamp(input.position.y / max(material.height, 0.001), 0.0, 1.0);
     offset += downwind * (rise * rise * speed * TRUNK_BEND);
-    // Each branch turns about its pivot, from the vertex's branch to the trunk, and the turns carry
-    // the branches above them.
     let own = u32(clamp(input.colors.r * 255.0 + 0.5, 0.0, material.branches - 1.0));
-    var point = input.position;
-    var branch = i32(own);
-    for (var level = 0u; level < MAX_BRANCH_DEPTH; level += 1u) {
-        if (branch < 0 || f32(branch) >= material.branches) {
-            break;
+    // The flutter's width and frequency, which the record and the pose hold alike.
+    var flutter = vec2f(0.0);
+    // <pose-offset>
+    if (material.windStrength > 1.5) {
+        // The pass wrote this tree's slot in the header, and every branch's turn in its row. A tree
+        // with no slot stands past the sway distance, and stands still.
+        let place = pose_place(i32(input.instance));
+        if (place.x < 0.0) {
+            return vec3f(0.0);
         }
-        let b = u32(branch);
-        let first = branch_record(b, 0u);
-        let second = branch_record(b, 1u);
-        let third = branch_record(b, 2u);
-        let fourth = branch_record(b, 3u);
-        let pivot = first.xyz;
-        let axis = normalize(vec3f(first.w, second.x, second.y) + vec3f(0.0, 1.0, 0.0) * 0.000001);
-        let across = cross(axis, downwind);
-        let cross_reach = length(across);
-        if (cross_reach > 0.001) {
-            // A branch turns across the air, so one that lies along the wind hardly moves.
-            let swing = sin(frame.time * third.y + fourth.x);
-            let angle = second.w * speed * BRANCH_BEND * swing;
-            point = turn_about(point, pivot, across / cross_reach, angle);
+        let layer = i32(place.x);
+        let row = 2 + i32(place.y - 0.5);
+        let turn = textureLoad(branchData, vec2i(i32(own * 3u), row), layer, 0);
+        let shifted = textureLoad(branchData, vec2i(i32(own * 3u + 1u), row), layer, 0);
+        let soft = textureLoad(branchData, vec2i(i32(own * 3u + 2u), row), layer, 0);
+        offset += quat_turn(turn, input.position) + shifted.xyz - input.position;
+        flutter = vec2f(soft.y, soft.z);
+    } else {
+        // Each branch turns about its pivot, from the vertex's branch to the trunk, and the turns
+        // carry the branches above them.
+        var point = input.position;
+        var branch = i32(own);
+        for (var level = 0u; level < MAX_BRANCH_DEPTH; level += 1u) {
+            if (branch < 0 || f32(branch) >= material.branches) {
+                break;
+            }
+            let b = u32(branch);
+            let first = branch_record(b, 0u);
+            let second = branch_record(b, 1u);
+            let third = branch_record(b, 2u);
+            let fourth = branch_record(b, 3u);
+            let pivot = first.xyz;
+            let axis = normalize(vec3f(first.w, second.x, second.y) + vec3f(0.0, 1.0, 0.0) * 0.000001);
+            let across = cross(axis, downwind);
+            let cross_reach = length(across);
+            if (cross_reach > 0.001) {
+                // A branch turns across the air, so one that lies along the wind hardly moves.
+                let swing = sin(frame.time * third.y + fourth.x);
+                let angle = second.w * speed * BRANCH_BEND * swing;
+                point = turn_about(point, pivot, across / cross_reach, angle);
+            }
+            branch = i32(second.z + 0.5);
         }
-        branch = i32(second.z + 0.5);
+        offset += point - input.position;
+        let theirs = branch_record(own, 2u);
+        flutter = vec2f(theirs.x, theirs.y);
     }
-    offset += point - input.position;
+    // </pose-offset>
     if (leafPart) {
         // Leaves flutter across the air, each with the phase that its vertex colour carries.
-        let theirs = branch_record(own, 2u);
-        let flap = sin(frame.time * theirs.y + input.colors.g * TURN);
+        let flap = sin(frame.time * flutter.y + input.colors.g * TURN);
         let sideways = cross(downwind, vec3f(0.0, 1.0, 0.0));
         let along = length(sideways);
         if (along > 0.001) {
             // The record's flutter is the distance a leaf moves in a brisk wind.
             let brisk = clamp(speed / 10.0, 0.0, 1.5);
-            offset += (sideways / along) * (theirs.x * brisk * flap);
+            offset += (sideways / along) * (flutter.x * brisk * flap);
         }
     }
     return offset * fade;

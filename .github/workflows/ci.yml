@@ -45,10 +45,11 @@ env:
   GIT_HTTP_LOW_SPEED_LIMIT: "1000"
   GIT_HTTP_LOW_SPEED_TIME: "30"
   # The browser tests that the browser-heavy job runs one at a time and the browser job's shards
-  # leave out, by title: the demos' and the environments' image tests, the moving-shadow presets and
-  # the coat and sheen check. Two of them side by side on a runner's four cores each took 2 to 4
-  # times as long as alone: the coat and sheen check took 96 s alone and 234 s in full run 40080490543.
-  HEAVY_TESTS: '\bdemo-[a-z0-9-]+ on |\benvironment-[a-z0-9-]+ on |shadow follows it at [a-z]+ with its own setting|coat-sheen: turned off they draw as none|\bvegetation-wind(-later|-motion|-still)? on '
+  # leave out, by title: the demos' and the environments' image tests, the moving-shadow presets,
+  # the coat and sheen check, and the grove's wind and branch-pose pictures. Two of them side by side
+  # on a runner's four cores each took 2 to 4 times as long as alone: the coat and sheen check took
+  # 96 s alone and 234 s in full run 40080490543.
+  HEAVY_TESTS: '\bdemo-[a-z0-9-]+ on |\benvironment-[a-z0-9-]+ on |shadow follows it at [a-z]+ with its own setting|coat-sheen: turned off they draw as none|\bvegetation-(wind|poses)(-later|-motion|-still)? on '
   # Anthropic's skill validator, pinned to one commit of anthropics/skills.
   SKILL_VALIDATOR_URL: https://raw.githubusercontent.com/anthropics/skills/1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563/skills/skill-creator/scripts/quick_validate.py
   # Every run saves its caches, and every run restores its own branch's first, then main's. A
