@@ -142,7 +142,7 @@ describe('the pass’s two forms', () => {
 describe('the plant’s branch poses', () => {
 	test('makes no pass on a device that draws no 16-bit float target', () => {
 		const { contexts } = fakeContext({ tier: 'webgl2' });
-		expect(plantPoses(contexts, windData(20), assetWith(20), field, { trees: 4 })).toBeUndefined();
+		expect(plantPoses(contexts, windData(20), assetWith(20), { trees: 4 })).toBeUndefined();
 	});
 
 	test('makes the pass on a WebGL2 device with a float target', () => {
@@ -150,13 +150,13 @@ describe('the plant’s branch poses', () => {
 			tier: 'webgl2',
 			features: ['EXT_color_buffer_float'],
 		});
-		expect(plantPoses(contexts, windData(20), assetWith(20), field, { trees: 4 })).toBeDefined();
+		expect(plantPoses(contexts, windData(20), assetWith(20), { trees: 4 })).toBeDefined();
 		expect(passes).toHaveLength(1);
 	});
 
 	test('sizes the table by the branches and the slots, and keeps two states', () => {
 		const { contexts, passes } = fakeContext({ tier: 'webgpu' });
-		plantPoses(contexts, windData(50), assetWith(50), field, { trees: 6, slots: 3 });
+		plantPoses(contexts, windData(50), assetWith(50), { trees: 6, slots: 3 });
 		const pass = passes[0];
 		expect(pass?.kind).toBe('compute');
 		// Three texels a branch, or one for each copy's row in the header, whichever is wider, and a
@@ -170,7 +170,7 @@ describe('the plant’s branch poses', () => {
 
 	test('gives a slot to each near copy, and to no copy past the sway distance', () => {
 		const { contexts, values, uploads } = fakeContext({ tier: 'webgpu' });
-		const poses = plantPoses(contexts, windData(10, 6), assetWith(10), field, {
+		const poses = plantPoses(contexts, windData(10, 6), assetWith(10), {
 			trees: 3,
 			slots: 3,
 		});
@@ -194,7 +194,7 @@ describe('the plant’s branch poses', () => {
 
 	test('gives every copy a slot when the plant sways at every distance', () => {
 		const { contexts, values } = fakeContext({ tier: 'webgpu' });
-		const poses = plantPoses(contexts, windData(10), assetWith(10), field, { trees: 3, slots: 3 });
+		const poses = plantPoses(contexts, windData(10), assetWith(10), { trees: 3, slots: 3 });
 		poses?.attach(batchOf(3, 4));
 		poses?.update(camera);
 		expect(values.at(-1)?.[15]).toBe(3);
@@ -202,7 +202,7 @@ describe('the plant’s branch poses', () => {
 
 	test('refuses a variant whose pose table is wider than the device’s largest texture', () => {
 		const { contexts } = fakeContext({ tier: 'webgpu', maxSize: 2048 });
-		expect(() => plantPoses(contexts, windData(700), assetWith(700), field, { trees: 4 })).toThrow(
+		expect(() => plantPoses(contexts, windData(700), assetWith(700), { trees: 4 })).toThrow(
 			'largest texture',
 		);
 	});

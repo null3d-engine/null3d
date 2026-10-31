@@ -267,6 +267,10 @@ export function plantMaterial(
 	options: PlantMaterialOptions,
 ) {
 	const { atlases, part, wind, poses } = options;
+	if (poses && !wind)
+		throw new Error(
+			'plantMaterial() got poses for a plant that names no wind. Give the material the wind data that its poses belong to.',
+		);
 	const leaves = part === 'leaves';
 	const cell = LEAF_CELLS_BY_KIND[options.cell ?? 'cluster-a'];
 	const crown = wind?.crown;
