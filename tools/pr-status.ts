@@ -23,10 +23,7 @@ const PLAN = '.internal/plan/m3-breakdown.md';
 const BASE = 'origin/main';
 
 /** Tasks whose work is partly on the branch: the part that landed, and the part that remains. */
-const PARTIAL: Readonly<Record<string, string>> = {
-	'M3-C1':
-		"the scene, its lanes, rain and the hero car are in, and so are the moods (`createMoods` in the skyway sketch) and the instances demo, which is registered and built on the traffic-lanes add-on. What remains is the owner's look approval: the device records are drawn, the iPad Pro 13's in `20261024-081340-skyway.md` and the Galaxy S24's beside it",
-};
+const PARTIAL: Readonly<Record<string, string>> = {};
 
 /** Tasks whose work is on a helper branch, whether or not part of it has reached this branch. */
 const ON_BRANCH = new Set(['M3-F9']);
@@ -73,6 +70,8 @@ const NOTES: Readonly<Record<string, string>> = {
  * because both describe the same task and only one of them can be true.
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
+	'M3-C1':
+		"the scene, its lanes, rain and the hero car are in, and so are the moods (`createMoods` in the skyway sketch) and the instances demo, which is registered and built on the traffic-lanes add-on; the owner approved the look. What remains is the chase camera's tower occlusion fix, held on `feat/skyway-camera` until its look review passes, and the frame rates against the target: the iPad Pro 13 drew 50.0 fps at Low on WebGPU and 54.2 on WebGL2, and the cloud S24 drew 11.7 at Low and 7.8 in the demos plan, all under 60",
 	'M3-E1':
 		"held by its own rule-42 bullet: the engine can now write a frame's birth records in Rust from a parameter block, which is built and proved, but the add-on still fills that block with one loop row per birth on the sketch thread, so the per-birth loop the bullet names is still there. The bullet stays open until the engine gains a function over the emitter's rate and births, or the plan is amended to put the add-on's own module in its place; either shape needs the per-birth maths to leave the sketch thread, with the emitter's settings passed across",
 	'M3-F4':
@@ -99,6 +98,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"unticked by the 29 October audit: the entry gained a rule-42 bullet that the tick never covered. The per-frame terrain work, the quadtree select and the block build, is still in TypeScript and there is no terrain crate; that work is also what M3-R39's new bullet hands here by name, so R39 stands and this carries it",
 	'M3-V8':
 		"the CPU path draws a hill through the add-on and is measured on this Mac's Chrome, and the task's Done-when is not met. Creek's sketch still imports its own `./grass`, so no hill of Creek draws through the add-on; the cost has a row only for this Mac, and the iPad, an S24-class phone and the Tab A9 Plus are owed; near grass shadows are not built; and the compute-built blade list waits on M3-E8's same-frame output, M3-E9's count in the near shadow views and M3-V3's graph edge, as the evidence entry says",
+	'M3-X1':
+		"held open by its own line: the vegetation add-on in Creek (M3-V11) is open, so Creek's plants are not drawn by a demo yet, and the demo budgets do not hold: the Skyway rates recorded for M3-C1 sit under the 60 fps target on the iPad Pro 13 (50.0 fps at Low on WebGPU, 54.2 on WebGL2) and the cloud S24 (11.7 at Low, 7.8 in the demos plan)",
 };
 
 /** The plan's groups, by the first letter of a task's part, in the plan's order. */

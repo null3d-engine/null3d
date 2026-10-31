@@ -4,7 +4,7 @@ An example add-on that draws tens of thousands of vehicles moving along straight
 cost per frame. The lanes are cut in the vertex shader: each row carries its lane's start offset,
 its speed and the lane's length, and the vertex offset wraps it at the far end.
 
-It also draws the vehicles' own lights, tail bars, a nose lamp and a glowing skirt under the belly,
+It also draws the vehicles' own lights, tail bars, a nose lamp and a neon band round the body's lower edge,
 from each row's place in its own hull. Every lane's rows are one instance batch per heading, so four
 draws carry a whole sky of traffic. The add-on gives each batch a bounding radius that covers its
 lane, so culling keeps the rows a shader moves away from their origins.
@@ -32,6 +32,12 @@ const traffic = createTrafficLanes(ctx, {
 traffic.update(eye, time.now);
 ```
 
+- A plan can list its lanes one by one instead: `plan: { from, to, lanes }`, where each lane gives
+  its heading (0 along +X, 1 along -X, 2 along +Z, 3 along -Z), its line across the way, its height
+  and its speed. Every vehicle of a listed lane flies at the lane's speed, so the gaps between them
+  hold and none flies through the one ahead. Use a list for traffic that keeps to its own side of
+  the street, or for crossing streets at other heights. Skyway builds its list in
+  `examples/showcase/skyway/layout.ts`.
 - `fit(preset)` draws the preset's count. `setCount(n)` picks any count. Both thin every lane alike,
   because the rows were shuffled once.
 - `update(eye, time)` moves the real lights to the vehicles nearest the camera, four times a second.
@@ -43,7 +49,7 @@ traffic.update(eye, time.now);
   hull at another preset builds the lanes again around it, and drops the old ones with this call.
 - `createVehicleHull(ctx, size)` builds a vehicle that fits the surface: its nose along local +Z,
   its belly just above y = 0. `look.size` gives its half width, its height and its half length,
-  which place the tail bars, the nose lamps and the skirt. A hull of your own may replace it, as
+  which place the tail bars, the nose lamps and the neon band. A hull of your own may replace it, as
   long as it keeps that space.
 - The hull takes a detail as its third argument. `full`, the default, gives every face its own
   vertices, so the body reads as faceted panels: 72 vertices and 36 triangles. `light` shares each
@@ -55,6 +61,13 @@ traffic.update(eye, time.now);
 - The rows take four values each, which the shader reads as `object.values`: the start offset, the
   speed, the lane's length and the tint. Use one material for the same heading; the add-on makes
   four, one for each.
+- `createFlyingCarHull(ctx, size, detail)` builds a smooth flying car in the same space: a body
+  with a cut-off tail and a pointed nose, a bubble canopy and, at `full` detail, two hover pods
+  along its flanks. `light` takes fewer points round each section and leaves out the pods.
+  `loftHull` lofts such parts from their sections, for a vehicle of your own. Skyway's traffic
+  and its hero car use them.
+- `look.windows` tints the canopy's glass: it then draws as dark, smooth glass with a faint glow
+  from the cabin. Without it the canopy takes the body's paint.
 - Put the rows on the effect layer when a showcase scene's route guard must not treat a moving
   vehicle as a wall.
 
@@ -73,8 +86,10 @@ traffic.update(eye, time.now);
   phone expectation, are in the [examples guide](../../../.dev/examples.md#skyway-m3-c1).
 - The lanes are straight and axis-aligned. A curved lane needs a route the vertex shader can
   evaluate, which this add-on does not build.
-- The vehicles keep clear of each other only by their start offsets. Two lanes at one height may
-  overlap when a lane's span differs from its neighbour's.
+- The vehicles keep clear of each other only by their start offsets. In the grid plan, each
+  vehicle takes a speed of its own, so a fast one can pass through a slow one in the same lane, and
+  the two headings of a street share their lanes. A listed lane has neither fault. Two lanes at one
+  height may overlap when a lane's span differs from its neighbour's.
 - The real lights cost a point light each, which a surface pays for as any point light. Six is a
   good look for a road near the camera; a hundred is not.
 

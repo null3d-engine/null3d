@@ -4,6 +4,7 @@
 import { createEngine, type Engine, type QualityPreset, type StartupStage } from '@null3d/engine';
 import type { Demo } from '../demos';
 import type { HudGroup } from './controls';
+import { createDrivePad } from './drive-pad';
 import { createHud } from './hud';
 
 /** The message that a demo posts to show a label, or to change its text. */
@@ -155,7 +156,9 @@ export async function startDemo({
 	// scene posts at its start. The same handler carries the loading progress that a scene posts.
 	const readers = [
 		...(labels ? [labelReader(engine, labels)] : []),
-		...(hud ? [hudReader(engine, hud, signal)] : []),
+		...(hud
+			? [hudReader(engine, hud, signal), padReader(engine, hud, signal), pressReader(engine)]
+			: []),
 	];
 	engine.onSketchMessage((type, data) => {
 		if (type === 'loading') {
@@ -431,6 +434,41 @@ function createBackdrop(): HTMLElement {
 			'radial-gradient(120% 90% at 50% 0%, #ffffff 0%, #f2eee6 38%, #dfe6f0 100%)',
 	});
 	return page;
+}
+
+/**
+ * Sends on a press that a scene's controls took in the world, such as on a vehicle's console, as
+ * the page's own controls panel sends a press: the scene answers both alike.
+ */
+function pressReader(engine: Engine): (type: string, data: unknown) => void {
+	return (type, data) => {
+		if (type !== 'hud-press') return;
+		const { name, value } = data as { name: string; value: string };
+		engine.postToSketch(name, value);
+	};
+}
+
+/**
+ * Shows the on-screen driving pad while a scene that the user drives asks for it, with a
+ * `drive-pad` message. The pad sits under the controls panel, which stays above it.
+ */
+function padReader(
+	engine: Engine,
+	hud: HTMLElement,
+	signal?: AbortSignal,
+): (type: string, data: unknown) => void {
+	let pad: ReturnType<typeof createDrivePad> | undefined;
+	signal?.addEventListener('abort', () => pad?.dispose());
+	return (type, data) => {
+		if (type !== 'drive-pad') return;
+		const on = (data as { visible: boolean }).visible;
+		// A scene that never drives makes no pad.
+		if (!pad && !on) return;
+		pad ??= createDrivePad(hud.parentElement ?? hud, hud, (name, value) =>
+			engine.postToSketch(name, value),
+		);
+		pad.show(on);
+	};
 }
 
 /** The message that a showcase scene posts with its controls. */
