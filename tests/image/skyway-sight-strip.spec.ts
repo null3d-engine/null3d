@@ -26,8 +26,9 @@ const OUT = join(
 );
 
 /** The seconds that the chase camera has to settle before each frame. The first steps show the
- * pull leaving the blocked rest, and the last two show the camera at rest once it has settled. */
-const TIMES = [0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1, 2, 4, 6, 8] as const;
+ * pull easing in from the usual chase, and the last two show the camera at rest. The placement
+ * before any simulated step is not a frame the simulation holds, so it is not drawn. */
+const TIMES = [0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1, 2, 4, 6, 8] as const;
 
 /** What the image page publishes: the frame's size and its pixels, base64. */
 interface FrameResult {
@@ -174,23 +175,14 @@ test('the chase camera keeps the car in sight past a tower', async ({ page }) =>
 			)
 			.join('\n'),
 	);
-	// The frame at rest, before any pull, is the blocked view that the owner reported: it names the
-	// state the pull cures, so it is logged and left out of the checks below. The older camera's run
-	// sets NULL3D_SKYWAY_SIGHT_OLD, so the frames that lose the car are kept for the comparison.
-	const rest = frames.find((one) => !one.quiet && one.t === 0);
-	expect(rest, 'the blocked rest frame').toBeDefined();
 	if (!process.env.NULL3D_SKYWAY_SIGHT_OLD) {
-		const control = frames.find((one) => one.quiet);
-		expect(control?.neon ?? 0, 'control').toBeGreaterThan(0);
-		expect(control?.margin ?? -1, 'control car margin').toBeGreaterThanOrEqual(4);
+		// Every drawn frame is judged, from the first simulated step: the pull never passes inside
+		// the car, and the whole car stays in frame with a real margin from that step on. The older
+		// camera's run sets NULL3D_SKYWAY_SIGHT_OLD, so the frames that lose the car are kept.
 		for (const one of frames) {
-			// The rest and the swing's own approach are logged, not judged here: the camera passes the
-			// tower's near side while it eases onto its held side, and the car fills the frame there.
-			if (one.quiet || one.t < 1) continue;
-			expect(one.neon, `t ${one.t}`).toBeGreaterThan(0);
-			// The car's coloured pixels, its band and its stripe, keep clear of every frame edge: the
-			// whole car shows, with a margin, rather than a tip clipped by the left edge.
-			expect(one.margin, `t ${one.t} car margin`).toBeGreaterThanOrEqual(4);
+			const label = one.quiet ? 'control' : `t ${one.t}`;
+			expect(one.margin, `${label} car margin`).toBeGreaterThanOrEqual(4);
+			expect(one.distance, `${label} camera distance`).toBeGreaterThanOrEqual(9.5);
 		}
 		// The camera holds the side it chose: two frames two seconds apart, after the swing has
 		// eased, show the same picture, as both earlier cameras did.

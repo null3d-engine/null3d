@@ -81,8 +81,8 @@ const SIGHT_LEAD = 2;
 const SIGHT_SWING = Math.PI / 2;
 /** How far apart the swings sit, in radians. */
 const SIGHT_STEP = Math.PI / 18;
-/** How quickly the camera eases onto the side it chose, per second. */
-const SIGHT_SWING_EASE = 6;
+/** How quickly the pull's distance eases from the usual chase to the standoff, per second. */
+const SIGHT_RADIUS_EASE = 4;
 /**
  * The distance at which the low pull gives way to the usual chase look, in meters. It sits just
  * past the standoff, so a camera pulled in looks a little past the car, and one at its usual
@@ -388,8 +388,9 @@ export function createHero(
 	/** How far round the car the camera holds its chosen side while a tower blocks it. */
 	let sightSide = 0;
 	let sightSideReach = 0;
-	/** The world angle the swing has reached on its way to the held side. */
+	/** The world angle of the held side, and how far the pull has eased in toward the standoff. */
 	let sightAngle = 0;
+	let sightRadius = 0;
 
 	const flight: Flight = { x: 0, y: 0, z: 0, yaw: 0, speed: 0, climb: 0, turning: 0 };
 	/** The car and camera where a look-ahead puts them, to test the line before a turn reaches it. */
@@ -553,7 +554,8 @@ export function createHero(
 					if (!clearSight(atX, atY, atZ, probeEye, towers, SIGHT_CLEARANCE)) {
 						sightSide = swing - around;
 						sightSideReach = reach;
-						sightAngle = back;
+						sightAngle = swing;
+						sightRadius = Math.hypot(chase.x - atX, chase.y - atY, chase.z - atZ);
 						break;
 					}
 				}
@@ -567,18 +569,31 @@ export function createHero(
 				return;
 			}
 		}
-		// Ease the swing angle itself onto the held side, not the camera's placed angle: the tower
-		// pushes aside each placed point, so reading that back would leave the swing short of its
-		// side and the camera pressed against the car.
+		// The tower's shadow spans the angles between the usual place and the clear side, so easing
+		// the angle across it would put the camera close to the car, or behind the tower. The camera
+		// takes the clear side at once and eases its distance from the usual chase to the standoff,
+		// so the pull reads as a pan and never passes inside the car.
 		const low = atY + SIGHT_LOW + (CHASE.above - SIGHT_LOW) * closenessAt(sightSideReach);
 		const target = around + sightSide;
-		const delta = Math.atan2(Math.sin(target - sightAngle), Math.cos(target - sightAngle));
-		sightAngle += delta * (1 - Math.exp(-SIGHT_SWING_EASE * dt));
-		probeEye.x = atX + Math.sin(sightAngle) * sightSideReach;
+		sightAngle = target;
+		sightRadius += (sightSideReach - sightRadius) * (1 - Math.exp(-SIGHT_RADIUS_EASE * dt));
+		probeEye.x = atX + Math.sin(sightAngle) * sightRadius;
 		probeEye.y = low;
-		probeEye.z = atZ + Math.cos(sightAngle) * sightSideReach;
+		probeEye.z = atZ + Math.cos(sightAngle) * sightRadius;
 		keepOut(probeEye, towers);
 		clearSight(atX, atY, atZ, probeEye, towers, SIGHT_CLEARANCE);
+		// The tower may have pushed the placed point toward the car. The standoff holds after that
+		// push too, so the camera never enters the car's body.
+		const dx = probeEye.x - atX;
+		const dy = probeEye.y - atY;
+		const dz = probeEye.z - atZ;
+		const away = Math.hypot(dx, dy, dz);
+		if (away < SIGHT_MIN && away > 1e-3) {
+			const out = SIGHT_MIN / away;
+			probeEye.x = atX + dx * out;
+			probeEye.y = atY + dy * out;
+			probeEye.z = atZ + dz * out;
+		}
 		chase.x = probeEye.x;
 		chase.y = probeEye.y;
 		chase.z = probeEye.z;
@@ -650,7 +665,10 @@ export function createHero(
 			chase.y - (at[1] as number),
 			chase.z - (at[2] as number),
 		);
-		const closeness = closenessAt(away);
+		// While the pull holds, the look stays just past the car and the camera low, whatever its
+		// easing distance, so the car stays framed as the pull closes. Once the pull releases, the
+		// look and height ease back to the usual chase down the road.
+		const closeness = sightSide !== 0 ? 0 : closenessAt(away);
 		if (closeness < 1)
 			chase.y = (at[1] as number) + SIGHT_LOW + (CHASE.above - SIGHT_LOW) * closeness;
 		const lead =
