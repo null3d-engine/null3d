@@ -74,6 +74,8 @@ export interface SketchTime {
 	readonly dt: number;
 	/** The frame number: 0 during the setup function, 1 in the first frame, and one more in each frame after it. */
 	readonly frame: number;
+	/** True while hold mode steps to its held frame, so work on a cadence draws in every frame. */
+	readonly held: boolean;
 }
 
 /**

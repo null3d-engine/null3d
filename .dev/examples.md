@@ -925,7 +925,7 @@ The demos' groups are the owner's ruling. In the sidebar's order, they are Showc
 
 | Group | Demos |
 | --- | --- |
-| Showcase | creek, night-town, skyway |
+| Showcase | creek, island, skyway |
 | Building scenes | generators, mesh-arrays, extra-shapes, vertex-updates, objects, layers |
 | Light, materials and effects | environment, aurora, canvas-screen, coat-and-sheen, iridescence-and-anisotropy, property-animation, translucency, subsurface, reflection-probes, shader-inputs, water, weighted-transparency, relief, multiple-views, time-of-day, decals, atmosphere, contact-shadows, hero-shadow, camera-lens, wet-street, auto-exposure, tone-mapped, light-shafts, gltf-model, post-effects, sprites-lines, rain, particles, security-camera, area-lights |
 | Motion and interaction | character, look-at, input, walk-and-fly, morph-flowers, css3d-labels, picking, gizmos, math |

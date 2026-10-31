@@ -52,6 +52,7 @@ function fakeContext(start: QualityPreset = 'medium') {
 	};
 	const ctx = {
 		quality,
+		time: { held: false },
 		// The tier picks a setting's WebGL2 column, which the cadence has none of.
 		engine: { capabilities: { tier: 'webgpu' } },
 		page: {
@@ -204,6 +205,31 @@ describe('the water’s figures in the stats overlay', () => {
 		expect(waterFigure(context)?.name).toBe('water');
 		water.destroy();
 		expect(context.figures()).toEqual([]);
+	});
+});
+
+describe('a held frame', () => {
+	it('draws the reflection in every frame, whatever the cadence', () => {
+		const context = fakeContext();
+		const water = createWater(
+			context.ctx as unknown as SketchContext,
+			{ shapes: RIVER, reflectionEvery: { high: 4, medium: 4, low: 4, ultra: 4 } } as WaterOptions,
+		);
+		(context.ctx as unknown as { time: { held: boolean } }).time.held = true;
+		const seen: boolean[] = [];
+		const { setPassEnabled } = context.ctx.render as unknown as {
+			setPassEnabled: (pass: unknown, on: boolean) => void;
+		};
+		(context.ctx.render as unknown as { setPassEnabled: unknown }).setPassEnabled = (
+			pass: unknown,
+			on: boolean,
+		) => {
+			seen.push(on);
+			setPassEnabled(pass, on);
+		};
+		for (let k = 0; k < 8; k++) water.update();
+		expect(seen.every(Boolean)).toBe(true);
+		water.destroy();
 	});
 });
 

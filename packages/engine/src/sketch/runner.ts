@@ -317,7 +317,7 @@ export class SketchRunner {
 	private resumes = -1;
 	private resumed = false;
 	/** The sketch's `time`, which each frame updates in place. Its frames are those that run the sketch. */
-	private readonly time = { now: 0, dt: 0, frame: 0 };
+	private readonly time = { now: 0, dt: 0, frame: 0, held: false };
 	/**
 	 * The engine's number of the frame it recorded last. The setup's frames, for warm-ups and the
 	 * preset check, count here but not in `time.frame`. The core, the draw lists and the thread that
@@ -475,6 +475,7 @@ export class SketchRunner {
 		);
 		const { glue, device } = sketch;
 		const { slots } = sketch.control;
+		glue.setMemoryMaximum(device.memoryMaximumMiB ?? 0);
 		const status = glue.initEngine(
 			sketch.jobWorkers,
 			device.expectedObjects,
@@ -1278,6 +1279,7 @@ export class SketchRunner {
 		let frame = 0;
 		let first = 0;
 		this.holding = true;
+		this.time.held = true;
 		try {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
@@ -1329,6 +1331,7 @@ export class SketchRunner {
 			);
 		} finally {
 			this.holding = false;
+			this.time.held = false;
 		}
 		if (script !== undefined) this.scriptResult = { dumps, problems };
 		Atomics.store(slots, Slot.HeldFrom, first);

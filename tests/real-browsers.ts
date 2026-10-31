@@ -79,7 +79,7 @@
 //                       MSAA and without on each GPU path, or canvas-cost, which times the frames
 //                       that refresh a canvas texture's rectangle against the same frames without
 //                       the refresh, or demos, which plays the Skyway and
-//                       Night town showcases at the chosen preset and at High on each GPU path,
+//                       Island showcases at the chosen preset and at High on each GPU path,
 //                       and reports their frame rate, display rate and first-frame time, or
 //                       splats, which draws a large splat
 //                       cloud on each GPU path and reports how much of it draws against the

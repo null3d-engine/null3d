@@ -393,7 +393,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 				for (const body of bodies)
 					ctx.debug.box([body.minX, level, body.minZ], [body.maxX, level, body.maxZ], '#4fc3f7');
 			}
-			if (every <= 1) {
+			if (every <= 1 || ctx.time.held) {
 				render.setPassEnabled(pass, true);
 				return;
 			}

@@ -22,7 +22,7 @@ use std::collections::TryReserveError;
 use std::ops::Range;
 use std::simd::prelude::*;
 
-use crate::alloc::reserve_keeping;
+use crate::alloc::{FRAME_HEADROOM, keep_room, reserve_keeping};
 use crate::cells::CELL_SHIFT;
 use crate::instances::{BatchTable, InstanceBatch};
 use crate::jobs::JobSystem;
@@ -1001,6 +1001,7 @@ impl BucketedCull {
             Ok(())
         }
         let (rows, runs, buckets) = (rows as usize, runs as usize, buckets as usize);
+        let held = self.indices.capacity();
         reserve_keeping(&mut self.indices, rows, &mut self.kept)?;
         grow(&mut self.indices, rows)?;
         grow(&mut self.scratch, rows)?;
@@ -1011,6 +1012,10 @@ impl BucketedCull {
         grow(&mut self.run_hidden, runs)?;
         grow(&mut self.run_positions, runs)?;
         grow(&mut self.histograms, by_row_runs as usize * buckets)?;
+        // Larger tables can take the last of the heap, and the rest of the frame needs some.
+        if self.indices.capacity() > held {
+            keep_room(FRAME_HEADROOM)?;
+        }
         Ok(())
     }
 

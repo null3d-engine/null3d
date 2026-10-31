@@ -123,6 +123,48 @@ fn a_level_that_names_a_material_draws_with_that_material() {
     assert!(masked_pipelines(&world) > 0);
 }
 
+/// The largest size of each compacted buffer, and the draws' ranges in them, from a frame's commands.
+fn instance_ranges(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32)> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::SetVertexBuffer && o[0] == 1)
+        .map(|(_, o)| (o[1], o[2], o[3]))
+        .collect()
+}
+
+#[test]
+fn a_slice_that_a_moving_source_outgrows_moves_with_its_draws() {
+    let mut world = World::new();
+    give_levels(&mut world, 0b110);
+    ball_at(&mut world, 20.0);
+    world.record(true);
+    let settled = copies(&world)[0];
+    // A still scene keeps its slices, and records no draw of the instances again.
+    world.frame += 1;
+    world.record(false);
+    assert!(instance_ranges(&world.commands()).is_empty());
+    assert_eq!(copies(&world)[0], settled);
+    // The ball moves into a band, so two fade slices grow past their room: the frame must name the
+    // new places in draws recorded this frame, in a buffer that holds them. Draws that kept the old
+    // places read other rows' matrices, as crowns over the sea, or fail on the GPU past the buffer.
+    ball_at(&mut world, 16.8);
+    world.frame += 1;
+    world.record(false);
+    let commands = world.commands();
+    let moved = instance_ranges(&commands);
+    assert!(!moved.is_empty(), "the moved slices need new draws");
+    let size = copies(&world)[0];
+    for (_, offset, bytes) in moved {
+        assert!(offset + bytes <= size, "{offset} + {bytes} is past {size}");
+    }
+    // Back at its first place the ball fits the room it left, so nothing moves.
+    ball_at(&mut world, 20.0);
+    world.frame += 1;
+    world.record(false);
+    assert!(instance_ranges(&world.commands()).is_empty());
+    assert_eq!(copies(&world)[0], size);
+}
+
 /// The indexed indirect draws that a frame of `world` records in its bundles.
 fn indirect_draws(world: &mut World) -> usize {
     world.record(true);
@@ -388,13 +430,14 @@ fn a_ball_inside_a_band_takes_one_copy_in_each_of_the_two_fade_buckets() {
     ball_at(&mut world, 20.0);
     world.record(true);
     let picked = copies(&world)[0];
-    // Inside level 2's band the ball draws both levels' fade buckets, so it takes two copies:
-    // one in each, and none elsewhere.
+    // Inside level 2's band the ball draws both levels' fade buckets, so it takes two copies, one
+    // in each. Its plain bucket keeps the place of the copy that the ball drew there, because the
+    // frame's draws name each slice's place, and a slice that shrank would move at the next change.
     ball_at(&mut world, 16.8);
     world.frame += 1;
     world.record(false);
     let band = copies(&world)[0];
-    assert_eq!(band, picked + 64, "{band} {picked}");
+    assert_eq!(band, picked + 2 * 64, "{band} {picked}");
 }
 
 #[test]

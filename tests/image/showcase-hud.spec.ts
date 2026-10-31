@@ -1,5 +1,5 @@
 // The showcase controls HUD names every change in a toast at the top centre of the view. Playwright
-// opens the night town's HUD, picks a button in each group, and checks the toast's text
+// opens the island's HUD, picks a button in each group, and checks the toast's text
 // ([D-171](../../.dev/decisions/D-171-showcase-controls-hud.md), owner's ruling). A toast alone
 // cannot show that a change took: the stage writes the sky, the fog and the environment light every
 // frame, and can undo a switch a frame after the toast names it. So the tests also read
@@ -175,7 +175,7 @@ function progress(stage: string): void {
 }
 
 /**
- * Opens the night town's HUD as a visitor finds it, once the engine has drawn its first frame, and
+ * Opens the island's HUD as a visitor finds it, once the engine has drawn its first frame, and
  * watches the page for problems from the start, in a window of `size` when given. Gives the list of
  * problems, which each test checks last.
  */
@@ -186,7 +186,7 @@ async function openHud(page: Page, size?: { width: number; height: number }): Pr
 	// A fresh page, the light preset, so CI's software GPU draws it quickly. The demo builds its own
 	// look from code, so the toast text does not depend on the preset. `bench` publishes the demo's
 	// engine on the page, which is how these tests read the canvas's frames.
-	await page.goto('/examples/index.html?demo=night-town&preset=low&bench');
+	await page.goto('/examples/index.html?demo=island&preset=low&bench');
 	const hud = page.locator('.hud');
 	// The sketch posts the HUD once its setup has run, which loads nothing but builds the town.
 	await expect(hud).toBeVisible({ timeout: 90_000 });
@@ -216,9 +216,6 @@ async function holdForSwitches(page: Page): Promise<void> {
 	await pick(page, 'Camera', 'camera', 'Manual', 'camera: manual');
 	// The town opens at a fixed hour, and Auto moves the hour through the day.
 	await pick(page, 'Time of day', 'hour', 'Auto', 'Auto: on');
-	// Atmosphere is a group of toggles: each names the effect, with its label's own case, and its
-	// new state.
-	await pick(page, 'Atmosphere', 'atmosphere', 'Snow', 'Snow: off');
 	progress('the scene held still for the switches');
 }
 

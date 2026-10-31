@@ -82,6 +82,9 @@ run('replay', async () => {
 	bucketFloats[2] = Math.sqrt(3) * (BOX / 2);
 	bucketInfo.set([capacity[0] as number, 1, 0, 1, 1], words);
 	bucketFloats[words + 2] = Math.sqrt(3) * (BOX / 2);
+	// The last word of a record holds the copies that its slice holds.
+	bucketInfo[words - 1] = capacity[0] as number;
+	bucketInfo[2 * words - 1] = capacity[1] as number;
 
 	const view = lookAt([0, 6, 10], [0, 0, 0]);
 	const viewProj = multiply(perspectiveReversed((60 * Math.PI) / 180, 1, 0.1, 100), view);

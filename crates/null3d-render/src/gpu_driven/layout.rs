@@ -17,6 +17,7 @@
 use std::collections::TryReserveError;
 use std::ops::Range;
 
+use null3d_core::alloc::{FRAME_HEADROOM, keep_room};
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::culling::{NO_BUCKET, RowRanges, batch_ranges};
 use null3d_core::handle::Handle;
@@ -37,8 +38,9 @@ use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
 use crate::data_texture::{self, DataTexture, TextureRows, write_row_values};
 use crate::debug_view::DebugView;
 use crate::frame::{
-    FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, address, bucket_of,
-    collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
+    FrameInput, HIDDEN, KeyCounts, REBUILD_BYTES_PER_SOURCE, RecordError, SceneSettings,
+    UploadArena, address, bucket_of, collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size,
+    joined_rows, words_as_bytes,
 };
 use crate::levels::{
     BucketKey, KeyLinks, expand_level_keys, is_fade_key, key_level, level_key, links_of,
@@ -403,6 +405,8 @@ pub(super) struct ClusterMesh {
 /// The source layout and bucket tables, rebuilt when the structure changes.
 #[derive(Default)]
 pub(super) struct Layout {
+    /// The most sources that a rebuild has checked the heap's room for.
+    room_for_sources: u32,
     /// What the buckets draw.
     drawn: Drawn,
     /// True when the buckets whose templates can read their instances by index do so.
@@ -477,6 +481,10 @@ pub(super) struct Layout {
     /// draw the layout: working space of [`Layout::fit_copies`](super::copies).
     pub(super) copy_counts: Vec<u32>,
     pub(super) copy_fits: Vec<u32>,
+    /// True once a level's slices hold the counts of a frame of this layout.
+    pub(super) slices_placed: bool,
+    /// True while a level's slice moved and the frame has not recorded its bundles again.
+    pub(super) slices_moved: bool,
     /// The most words that the CPU culling lists for one view: a source that fades between levels
     /// lists three words more than one that does not.
     cull_rows: u32,
@@ -916,6 +924,16 @@ impl Layout {
             return Err(RecordError::TooManySources { limit });
         }
         self.sources = sources;
+        // The tables below grow with plain pushes, which cannot report a refused request. They keep
+        // their room between rebuilds, so a rebuild of no more sources asks for nothing new.
+        if sources > self.room_for_sources {
+            keep_room(sources as usize * REBUILD_BYTES_PER_SOURCE + FRAME_HEADROOM).map_err(
+                |_| RecordError::OutOfMemory {
+                    bytes: sources.saturating_mul(REBUILD_BYTES_PER_SOURCE as u32),
+                },
+            )?;
+            self.room_for_sources = sources;
+        }
         if self.owns_sources() && settings.materials().reads_object_ids() {
             let bases = self.batch_bases.iter();
             let ranges = bases.map(|&(id, base)| (base, Handle::from_raw(id)));
@@ -1098,10 +1116,30 @@ impl Layout {
         // A level may name a material of its own, so its bucket key comes from the level's mesh and
         // material, while it keeps the fields of the bucket that names it: its bounds, and the
         // object's receive-shadows bit, which the base key's pipeline holds.
+        let depth_stand_in = |key: &BucketKey| {
+            key.4 == CASTER_MATERIAL
+                && (key.0.template == template::SHADOW_DEPTH
+                    || drawn == Drawn::Outlined
+                    || drawn == Drawn::Tone
+                    || (key.0.template == template::MOTION
+                        && key.0.permutation & permutation::ALPHA_MASK == 0))
+        };
         let level_bucket = |key: &BucketKey, level: usize| {
             let (base, _) = key_level(key.3);
             let set = levels.of(base)?;
             let mesh = set.mesh(level);
+            // A depth bucket holds a stand-in in place of its material, since it draws with none, so
+            // the stand-in names no pipeline. A level that names no material keeps the bucket's
+            // depth pipeline and takes its own mesh's vertex format.
+            if set.material(level) == 0 && depth_stand_in(key) {
+                let vertex_format = meshes.mesh(mesh - 1)?.format;
+                let page = meshes.parts(meshes.mesh(mesh - 1)?, false).first()?.page;
+                let pipeline = DrawKey {
+                    vertex_format,
+                    ..key.0
+                };
+                return Some((pipeline, key.1, page, level_key(base, level), key.4, key.5));
+            }
             let material = match set.material(level) {
                 0 => key.4,
                 own => own,
@@ -1414,6 +1452,7 @@ impl Layout {
             bucket.base += copied * INDEX_ENTRIES_PER_COPY;
         }
         (self.copied, self.indexed) = (copied, indexed);
+        self.slices_placed = false;
 
         let counts = &*key_counts;
         let bucket_of = |key: Option<BucketKey>| bucket_of(counts, key).unwrap_or(HIDDEN);
@@ -1569,6 +1608,7 @@ impl Layout {
                 // The level that the bucket draws, which the levels debug view writes beside each
                 // copy in place of the fade value.
                 bucket.level,
+                bucket.capacity,
             ]);
         }
         self.records_dirty = Some(0..self.buckets.len() as u32);

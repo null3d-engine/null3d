@@ -7,7 +7,7 @@
 // finds no free buffer goes unread, and the sums keep their last values. While nobody samples, the
 // sums are 0, so a frame counts only the draws that the CPU issued.
 
-import { SAMPLED_EVERY } from '../../shared/metrics';
+import { DROP_COUNTED_LABEL, SAMPLED_EVERY } from '../../shared/metrics';
 import { GpuMemory } from '../memory';
 
 /** Frames whose arguments can be on their way back at once. */
@@ -19,6 +19,8 @@ const DRAW_VALUES = 3;
 /** Draws and buffers that a slot holds before it first grows. */
 const FIRST_DRAWS = 64;
 const FIRST_SOURCES = 8;
+/** Bytes of the word at the end of a buffer of culled draws that counts the dropped copies. */
+const DROPPED_WORD_BYTES = 4;
 /** Readback buffers grow in steps of this many bytes. */
 const READBACK_STEP = 4096;
 
@@ -27,6 +29,9 @@ interface Slot {
 	/** Each draw's values, `DRAW_VALUES` each. */
 	draws: Int32Array;
 	drawCount: number;
+	/** The byte of the readback buffer where the dropped copies' words start, and where they end. */
+	droppedAt: number;
+	droppedEnd: number;
 	/** The buffers of draws that the frame read, each with the first and last byte it copies. */
 	sources: (GPUBuffer | undefined)[];
 	starts: Uint32Array;
@@ -45,6 +50,13 @@ export class CulledCounts {
 	triangles = 0;
 	/** Instances that the culled draws of the newest frame read back drew. */
 	instances = 0;
+	/**
+	 * The copies that the culling shader dropped since its buffers were made, because a slice had
+	 * no room for them: the CPU's count of a level's copies fell short of the GPU's. Above 0, it
+	 * shows as a missing object, so the first drop warns, once.
+	 */
+	dropped = 0;
+	private warned = false;
 	/**
 	 * True once a sampled frame's counts have come back since the page began to sample. Until then
 	 * a frame does not know what the GPU drew.
@@ -68,6 +80,8 @@ export class CulledCounts {
 			const slot: Slot = {
 				draws: new Int32Array(FIRST_DRAWS * DRAW_VALUES),
 				drawCount: 0,
+				droppedAt: 0,
+				droppedEnd: 0,
 				sources: [],
 				starts: new Uint32Array(FIRST_SOURCES),
 				ends: new Uint32Array(FIRST_SOURCES),
@@ -154,6 +168,9 @@ export class CulledCounts {
 			slot.at[k] = bytes;
 			bytes += (slot.ends[k] as number) - (slot.starts[k] as number);
 		}
+		slot.droppedAt = bytes;
+		for (let k = 0; k < slot.sourceCount; k++)
+			if (slot.sources[k]?.label === DROP_COUNTED_LABEL) bytes += DROPPED_WORD_BYTES;
 		if (!slot.readback || slot.readback.size < bytes) {
 			this.release(slot);
 			const size = Math.ceil(bytes / READBACK_STEP) * READBACK_STEP;
@@ -174,6 +191,20 @@ export class CulledCounts {
 				(slot.ends[k] as number) - start,
 			);
 		}
+		let at = slot.droppedAt;
+		for (let k = 0; k < slot.sourceCount; k++) {
+			const source = slot.sources[k] as GPUBuffer;
+			if (source.label !== DROP_COUNTED_LABEL) continue;
+			encoder.copyBufferToBuffer(
+				source,
+				source.size - DROPPED_WORD_BYTES,
+				slot.readback,
+				at,
+				DROPPED_WORD_BYTES,
+			);
+			at += DROPPED_WORD_BYTES;
+		}
+		slot.droppedEnd = at;
 	}
 
 	/** Maps the frame's readback buffer once the GPU has run its copies. Call it after the submit. */
@@ -191,7 +222,17 @@ export class CulledCounts {
 		if (this.destroyed || !readback) return;
 		const words = new Uint32Array(readback.getMappedRange());
 		const sums = sumDraws(slot, words);
+		let dropped = 0;
+		for (let at = slot.droppedAt; at < slot.droppedEnd; at += DROPPED_WORD_BYTES)
+			dropped += words[at / DROPPED_WORD_BYTES] as number;
 		readback.unmap();
+		if (dropped > 0 && !this.warned) {
+			this.warned = true;
+			console.warn(
+				`null3D: the culling shader dropped ${dropped} copies, because a level's slice had no room for them, so some objects are missing. This is a fault in the engine's count of a level's copies: report it with the scene, and draw with ?direct=on until it is fixed.`,
+			);
+		}
+		this.dropped = dropped;
 		for (let k = 0; k < slot.sourceCount; k++) slot.sources[k] = undefined;
 		// Sums that arrive after the page stopped sampling stay out, so the counts never go stale.
 		if (!this.sampling) return;
