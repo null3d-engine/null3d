@@ -103,6 +103,8 @@ So put per-object work, per-frame math over many objects, and any loop whose cos
 - Use the engine call that covers the whole batch. Write an instance batch's arrays, and let the engine's transform, animation, culling and sorting steps run.
 - No engine call covers some loops. Build a Rust WebAssembly module for those, and run it on the job workers through `runTask` ([Tasks on the job workers](../api/tasks.md)).
 
+A task's answer arrives between frames. A loop that must affect the frame it runs in belongs in the engine's own calls, not in a task.
+
 Keep setup, wiring and page logic in TypeScript. They run once or rarely, so they leave the frame budget alone. The engine's calls that rebuild scene tables cost the frame they take effect in, so make them at setup ([Objects during play](#objects-during-play)).
 
 ## Write per-frame code that allocates nothing
