@@ -56,6 +56,12 @@ of 7.6 to 7.9 and ended between 3.6 and 19.7. Each side is the median GPU time o
 alternating the order. WebGPU and compatibility mode time each pass. WebGL2 on a phone has no pass
 timer, so its rows give the frame interval and the busiest thread's CPU time.
 
+Each table names its run. The field's tables come from [the field run](../tested-devices/macbook-pro-m3-max-chrome/20261031-1022-wind-field-cost.md),
+which was taken again at `5e29e392c`. The readers' table comes from [the readers run](../tested-devices/macbook-pro-m3-max-chrome/20261031-1103-wind-readers.md)
+at `c4504a038`. The phone tables come from [the iPhone 17's run](../tested-devices/iphone-17-safari/20261031-104558-wind-field-cost.md)
+and [the Galaxy S24's run](../tested-devices/galaxy-s24-sm-s921b-chrome/20261031-104906-wind-field-cost.md),
+both at `c4504a038`.
+
 ### Measured, modelled and bounded
 
 Three kinds of figure appear below, and each table says which it holds.
