@@ -25,7 +25,7 @@ import { EFFECT_LAYER } from '../../lib/layers';
 import { COCKPIT, CONSOLE, createCanopy, createCanopyOverlay, createShell, FITTINGS } from './body';
 import { createCockpit } from './cockpit';
 import { createConsole } from './console';
-import { cityTowers, clearSight, type Flight, fly, keepOut, type Stick } from './drive';
+import { cityTowers, clearSight, FLIGHT, type Flight, fly, keepOut, type Stick } from './drive';
 import { HERO_LAYER } from './layout';
 
 /** The layers of the car's own meshes: the effect layer, as the rest of what flies, and the layer
@@ -50,6 +50,15 @@ const CHASE = { behind: 13, above: 4.4, ahead: 22, lift: 1.4 };
 const CHASE_FOLLOW = 7;
 /** How far before a tower the chase camera stops, so it does not skim a wall, in meters. */
 const SIGHT_CLEARANCE = 0.6;
+/**
+ * How far ahead of the car the camera looks for a tower that a turn will bring between them, in
+ * seconds, so the pull starts before the line crosses it.
+ */
+const SIGHT_LOOK = 0.3;
+/** How fast the camera may close on the car before a tower, in meters per second, so it eases. */
+const SIGHT_PULL = 60;
+/** How close the camera keeps to the car, in meters. */
+const SIGHT_NEAREST = 2;
 /** How close the camera must come to the car before it looks at the car rather than down the road,
  * in meters. A camera pulled in before a tower is close above the car, which would fall below the
  * frame if the look stayed far ahead. */
@@ -351,6 +360,11 @@ export function createHero(
 
 	const towers = cityTowers();
 	const flight: Flight = { x: 0, y: 0, z: 0, yaw: 0, speed: 0, climb: 0, turning: 0 };
+	/** The car and camera where a look-ahead puts them, to test the line before a turn reaches it. */
+	const probeCar: Flight = { x: 0, y: 0, z: 0, yaw: 0, speed: 0, climb: 0, turning: 0 };
+	const probeEye: Flight = { x: 0, y: 0, z: 0, yaw: 0, speed: 0, climb: 0, turning: 0 };
+	/** The yaw the last frame showed, so the camera reads how fast the car turns. */
+	let sightYaw = 0;
 	const stick: Stick = { throttle: 0, steer: 0, lift: 0 };
 	/** The on-screen pad's wishes, which a touch screen drives with. */
 	const pad: Stick = { throttle: 0, steer: 0, lift: 0 };
@@ -468,6 +482,8 @@ export function createHero(
 		const sx = Math.sin(yaw);
 		const sz = Math.cos(yaw);
 		const k = snap ? 1 : 1 - Math.exp(-CHASE_FOLLOW * dt);
+		const turnRate = math.clamp((yaw - sightYaw) / Math.max(dt, 1e-4), -FLIGHT.turn, FLIGHT.turn);
+		sightYaw = yaw;
 		const around = yaw + Math.PI + orbit.turn;
 		const tilt = CHASE_TILT + orbit.tilt;
 		const level = Math.cos(tilt) * orbit.distance;
@@ -493,6 +509,40 @@ export function createHero(
 			)
 				break;
 			keepOut(chase, towers);
+		}
+		// A turn can bring a tower across the line in a single frame, so the pull above would snap
+		// the camera in. Look a short way along the car's path and, while the line still clears,
+		// close on the car at a limited rate, so the pull starts before the tower arrives.
+		if (speed > 0.5) {
+			probeCar.x = (at[0] as number) + Math.sin(yaw) * speed * SIGHT_LOOK;
+			probeCar.y = at[1] as number;
+			probeCar.z = (at[2] as number) + Math.cos(yaw) * speed * SIGHT_LOOK;
+			const future = yaw + turnRate * SIGHT_LOOK + Math.PI + orbit.turn;
+			probeEye.x = probeCar.x + Math.sin(future) * level;
+			probeEye.y = probeCar.y + Math.sin(tilt) * orbit.distance;
+			probeEye.z = probeCar.z + Math.cos(future) * level;
+			if (clearSight(probeCar.x, probeCar.y, probeCar.z, probeEye, towers, SIGHT_CLEARANCE)) {
+				const dx = chase.x - (at[0] as number);
+				const dy = chase.y - (at[1] as number);
+				const dz = chase.z - (at[2] as number);
+				const away = Math.hypot(dx, dy, dz);
+				const target = Math.max(
+					SIGHT_NEAREST,
+					Math.hypot(
+						probeEye.x - (at[0] as number),
+						probeEye.y - (at[1] as number),
+						probeEye.z - (at[2] as number),
+					),
+				);
+				const reached = Math.max(target, away - SIGHT_PULL * dt);
+				if (reached < away) {
+					const share = reached / away;
+					chase.x = (at[0] as number) + dx * share;
+					chase.y = (at[1] as number) + dy * share;
+					chase.z = (at[2] as number) + dz * share;
+					keepOut(chase, towers);
+				}
+			}
 		}
 		// The look lies ahead of the car while the camera sits at its usual distance. A camera pulled
 		// in before a tower looks at the car instead, since the car is close below it and would
@@ -593,6 +643,7 @@ export function createHero(
 			flight.yaw = yaw;
 			flight.speed = speed;
 			flight.climb = 0;
+			sightYaw = yaw;
 			// The chase camera starts at the Auto camera's place and eases behind the car.
 			camera.getPosition(eye);
 			chase.x = eye[0] as number;

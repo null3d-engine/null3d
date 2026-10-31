@@ -1,8 +1,9 @@
 // A proof sketch for Skyway's chase camera: the hero car hovers just past a tower's corner, with
 // the chase camera behind it, inside the tower. The camera must not let the tower hide the car; it
 // pulls in before the corner instead. ?t= gives the seconds the chase camera has to settle, and
-// ?quiet= leaves out the tower, for a frame that shows the car alone. The strip spec draws the
-// frames for the owner's look; they are not references.
+// ?quiet= leaves out the tower, for a frame that shows the car alone. ?run=turn flies the car along
+// a face and turns it away, so the camera swings past the tower. The strip spec draws the frames
+// for the owner's look; they are not references.
 import { defineSketch, quat } from '@null3d/engine';
 import { CAMERA_LAYERS } from '../../../examples/lib/layers';
 import { cityTowers } from '../../../examples/showcase/skyway/drive';
@@ -13,6 +14,13 @@ const params = new URL(import.meta.url).searchParams;
 const SETTLE = Number(params.get('t') ?? 2);
 /** The car's height in the proof, below the tower's roof. */
 const HEIGHT = 40;
+/**
+ * Which proof to draw: `corner` hovers the car beside a tower, where the camera must pull in at
+ * once; `turn` flies the car along a face and turns away, so the camera swings past the tower.
+ */
+const RUN = params.get('run') ?? 'corner';
+/** The frame of the turn run where the car starts to steer away from the tower. */
+const STEER = 132;
 
 export default defineSketch(async (ctx) => {
 	const { scene, geometry, materials, quality, assets } = ctx;
@@ -58,16 +66,27 @@ export default defineSketch(async (ctx) => {
 		});
 	// The car just past the tower's +x face, at its +z corner, facing away along +x. The chase
 	// camera sits 12.9 m behind it, inside the tower's box, and must pull in before the corner.
-	const place: [number, number, number] = [cx + hx + 3.1, HEIGHT, cz + hz - 2];
-	const start = {
-		position: [place[0] - 26, place[1] + 5.2, place[2]] as [number, number, number],
-		target: [place[0] - 25, place[1] + 5.2, place[2]] as [number, number, number],
-	};
+	// The turn run starts the car south of the face and flies it north, then turns it away.
+	const place: [number, number, number] =
+		RUN === 'turn' ? [cx + hx + 3.1, HEIGHT, cz - 40] : [cx + hx + 3.1, HEIGHT, cz + hz - 2];
+	const start =
+		RUN === 'turn'
+			? {
+					position: [place[0], place[1] + 5.2, place[2] - 26] as [number, number, number],
+					target: [place[0], place[1] + 5.2, place[2] - 25] as [number, number, number],
+				}
+			: {
+					position: [place[0] - 26, place[1] + 5.2, place[2]] as [number, number, number],
+					target: [place[0] - 25, place[1] + 5.2, place[2]] as [number, number, number],
+				};
 	const camera = scene.createPerspectiveCamera({
 		fov: 58,
 		near: 0.1,
 		far: 1000,
-		position: [place[0] - 12.88, place[1] + 4.35, place[2]],
+		position:
+			RUN === 'turn'
+				? [place[0], place[1] + 4.35, place[2] - 12.88]
+				: [place[0] - 12.88, place[1] + 4.35, place[2]],
 		target: [place[0], place[1], place[2]],
 	});
 	// The hero car draws on the showcase scenes' effect layer, so the camera must draw it.
@@ -75,6 +94,8 @@ export default defineSketch(async (ctx) => {
 	scene.setActiveCamera(camera);
 	const hero = createHero(ctx, camera, start, place);
 	hero.take();
-	const noKeys = (): boolean => false;
-	for (let frame = 0; frame < Math.round(SETTLE * 60); frame++) hero.drive(1 / 60, noKeys);
+	for (let frame = 0; frame < Math.round(SETTLE * 60); frame++)
+		hero.drive(1 / 60, (code) =>
+			RUN === 'turn' ? code === 'KeyW' || (code === 'KeyD' && frame >= STEER) : false,
+		);
 });
