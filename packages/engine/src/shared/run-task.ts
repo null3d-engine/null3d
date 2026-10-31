@@ -3,6 +3,7 @@
 // worker.
 
 import { EngineError } from '../errors/engine-error';
+import { taskEnded, taskStarted } from './task-pending';
 import type { Task } from './tasks';
 import type { WasmError } from './wasm';
 
@@ -58,10 +59,23 @@ export function runTask<T>(
 	input: unknown,
 	transfer: Transferable[] = NO_TRANSFER,
 ): Promise<T> {
-	if (loaded) return loaded.runTaskWithError<T>(task, input, transfer, engineError);
-	loader ??= import('./tasks');
-	return loader.then((module) => {
-		loaded = module;
-		return module.runTaskWithError<T>(task, input, transfer, engineError);
-	});
+	// The count covers the whole call, the loader's own import included, so hold mode knows that a
+	// task is on its way even before its code has loaded.
+	taskStarted();
+	let answer: Promise<T>;
+	try {
+		if (loaded) {
+			answer = loaded.runTaskWithError<T>(task, input, transfer, engineError);
+		} else {
+			loader ??= import('./tasks');
+			answer = loader.then((module) => {
+				loaded = module;
+				return module.runTaskWithError<T>(task, input, transfer, engineError);
+			});
+		}
+	} catch (error) {
+		taskEnded();
+		throw error;
+	}
+	return answer.finally(taskEnded);
 }
