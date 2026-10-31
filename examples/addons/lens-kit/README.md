@@ -91,8 +91,8 @@ lens.set({ vignette: false });
   | Sharpening | 1.316 (0.560 to 2.940) | 1.094 (0.272 to 1.864) | not resolved |
 
   The compatibility cells repeat the Medium preset, which the quality chooser's cap makes their
-  highest. The color fringes' range in compatibility mode touches zero, so that cell is at the edge
-  of what the run tells apart. The sharpening draws the first step of the engine's two-step pass,
+  highest. The color fringes' range in compatibility mode crosses zero, from -0.080 to 0.417, so
+  that cell cannot be told apart from no mark at all. The sharpening draws the first step of the engine's two-step pass,
   which WebGL2's whole-frame timer does not separate from the frame's own movement. The grade and
   the vignette stay inside the final pass: their cells read between -0.38 and 0.14 ms across the
   paths, so they cost less than this method resolves, under about 0.2 ms.
