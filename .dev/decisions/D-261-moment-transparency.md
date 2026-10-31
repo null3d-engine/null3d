@@ -2,9 +2,10 @@
 
 Status: decided. The moment layer is nearer the exact image than the weighted blending on both test
 scenes and both GPU paths, and it draws the same picture whatever order the surfaces add. A look
-review measured faint steps at the far panes' edges that the exact image does not draw, and the
-owner has not ruled on them (hard rule 40). The picture references are in for this computer's GPU
-and owed for CI's software GPU, and the phone's cost figure is owed. Task: M3-F13.
+review approved the centered picture against the earlier one: the faint outline that remains at four
+pane edges is 6 to 7 times smaller than the earlier picture's, and invisible at half size. The
+picture references are in for this computer's GPU and owed for CI's software GPU, and the phone's
+cost figure is owed. Task: M3-F13.
 
 Summary: Order-independent transparency from a store of four depth moments. It is nearer an exact
 back-to-front blend than the weighted blending on both test scenes: about two and a half times where
@@ -209,17 +210,18 @@ Taken about the middle of the depth range, the fit's atoms land where the model 
 patchwork is gone.
 
 The steps that remain fall at the panes' own edges, and a pane behind several other panes draws its
-edge more strongly than the exact image does. At 1280 by 720 the far panes' edges step by 18 to 20
-color levels where the exact image steps by 1 or 2, and the wide overlap carries average steps of
-5.9 levels against the exact image's 2.3. The layer is still nearer the exact image than the
-weighted blending on both test scenes, and at normal size it reads as the exact one. The steps are
-the two-atom fit's price. A fit of three atoms puts the far panes' weights much nearer the exact
-ones, and it would take more than half the step away. It needs the depth's fourth and fifth moments,
-and a store of 16-bit floats does not keep those moments where several surfaces sit close together:
-their higher moments round away and the fit falls back to two atoms. A store of 32-bit floats would
-keep them, with `float32-blendable` on WebGPU and `EXT_float_blend` on WebGL2, and twice the moment
-traffic a frame. Which look ships is the owner's ruling (hard rule 40), and the mean error favors
-the moments.
+edge more strongly than the exact image does. A look review of the 1280 by 720 plates approved the
+change. Outside the deep overlap the picture matches the exact one byte for byte, and the deep
+overlap sits within 15 color levels of it (+14 red, -5 green and blue) against the weighted
+blending's 37. Four inner pane edges step 10 to 22 color levels, or 3 to 6 in luminance, where the
+exact image steps 0.5 to 0.7. That outline is invisible at half size and faint at full size, and the
+earlier picture drew the same edges 6 to 7 times stronger. The steps are the two-atom fit's price: a
+fit of three atoms puts the far panes' weights much nearer the exact ones and would take more than
+half of them away. It needs the depth's fourth and fifth moments, and a store of 16-bit floats does
+not keep those moments where several surfaces sit close together: the higher moments round away and
+the fit falls back to two atoms. A store of 32-bit floats would keep them, with `float32-blendable`
+on WebGPU and `EXT_float_blend` on WebGL2, and twice the moment traffic a frame. Which look ships is
+the owner's ruling (hard rule 40), and the mean error favors the moments.
 
 ## Consequences
 
@@ -296,7 +298,9 @@ It also holds that an unused layer declares and records nothing.
 
 1. The software set of the seven image tests' references, which comes from a CI run.
 2. The run on an S24-class phone, which gives the cost figure that decides the preset.
-3. The owner's ruling on the steps at the far panes' edges (hard rule 40). A fit of three atoms
-   takes more than half of them away, and it needs a store of 32-bit floats where the surfaces sit
-   close together. That store costs twice the moment traffic a frame and needs a device feature that
-   is not on every GPU.
+3. The owner's ruling on whether a preset turns the layer on, and which. Every preset leaves it off
+   today, and the cost figure above is what a preset would pay.
+4. The steps at the far panes' edges, if the owner wants them gone: a fit of three atoms takes more
+   than half of them away, and it needs a store of 32-bit floats where the surfaces sit close
+   together. That store costs twice the moment traffic a frame and needs a device feature that is
+   not on every GPU.
