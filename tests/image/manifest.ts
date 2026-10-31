@@ -3030,6 +3030,38 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [1280, 720],
 		timeoutSeconds: 600,
 	},
+	// The same grove with the branches turned by a compute pass's poses, which keep a spring, instead
+	// of by the per-vertex sway. Two held times show the branches move, ?motion draws the motion
+	// view, and a still air page must draw the per-vertex still picture, since no air moves either.
+	{
+		name: 'vegetation-poses',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?method=poses&sway=0',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+	},
+	{
+		name: 'vegetation-poses-later',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?method=poses&sway=0',
+		hold: 1.6,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+	},
+	{
+		name: 'vegetation-poses-motion',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?method=poses&motion&sway=0',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+	},
+	{
+		name: 'vegetation-poses-still',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?method=poses&still&sway=0',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+		reference: 'vegetation-wind-still',
+	},
 	// The wind add-on's own page: a field of cards that reads the air at each vertex. A gust
 	// crosses the field between the first hold and the second, so the pairs change where the gust
 	// has reached. The part test draws the same page with the gust and the swirl taken out, from the

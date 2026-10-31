@@ -99,6 +99,155 @@ This section says what wind driven by bones takes in null3D, and whether it is b
 
 No source gives phone figures for either method on the web. So M3-V10 builds branch poses beside the per-vertex wind of M3-V7 and measures both on the Mac, the iPad and an S24-class phone. The owner then picks the trees' default from the figures.
 
+## Wind by branch poses, built and measured
+
+M3-V10 builds the pass that "Wind by bones" asks for, and measures it beside the per-vertex sway.
+
+**What a page gives it.** A page makes the pass for a variant with `plantPoses`. It gives the pass
+the copies of that variant that the scene places. It also gives the most of them that stand within
+the sway distance at once. In each frame the page chooses a slot for each copy inside the distance. It also
+sends the pass the trees' places and normal matrices. The pass writes an instance header, the
+field's settings and one row of pose texels for each slot. The leaf and bark offsets read the turn
+of their own branch, from the row of their copy's slot. A copy without a slot therefore stands
+still. A device that keeps no 16-bit float target draws no poses, and the plants keep the
+per-vertex sway.
+
+**The spring.** A branch's turn follows the steady sway through a spring, whose rate grows with the
+branch's level. The pass keeps its state across runs, as the wind grid's pass does. A branch
+therefore reads the turn and the speed of the run before. A gust leaves the branch lagging and
+overshooting, and the branch settles after the air stops. The pose table keeps two states too, so
+the motion pass reads the frame before's pose and a leaf keeps its motion data.
+
+**What stays per vertex.** The trunk's cantilever bend and the leaves' flutter stay in the offset in
+either method. The two methods therefore differ only in the branch turns. The pass reads the air
+once at the tree's base and turns the whole tree from it. The per-vertex method reads the air at
+each vertex.
+
+**What it does not gain.** Moving branches redraw their shadows every frame, as they do per vertex.
+Leaf flutter, grass and small plants stay per vertex. The pass adds a compute dispatch and a small
+upload in the frame. A page pays those beside the vertex work that it saves.
+
+**The pictures.** Four tests draw the pose method on WebGPU, compatibility mode and WebGL2: the
+grove through the pose materials at two hold times, its motion view, and a still that borrows the
+per-vertex method's reference. The nine reference pictures pass in all 12 runs of
+`CI=1 bun run test:images -g "vegetation-poses"`. The spring test also reads the pose pass live, so
+it shows a branch turning on after the air stops and settling back.
+
+**The trees' default stays open.** The figures below measure both methods on the same grove, and the
+owner picks the trees' default from them. A preset may switch only when its figure holds D-241's
+frame ceiling.
+
+**Guides from a loaded machine.** These single runs were taken while other sessions used the Mac, so
+they direct the work and are not the record's figures. The grove was dense, as the page's measurement
+places it. The quarter-scale rows drew with the sun's shadows off.
+
+| Device, path, preset | Frame, per vertex (ms) | Frame, poses (ms) | Vertex view, per vertex (ms) | Vertex view, poses (ms) |
+| --- | --- | --- | --- | --- |
+| Mac, WebGPU, High | 6.75 | 6.62 | 3.87 | 2.85 |
+| Mac, WebGL2, Medium | 15.05 | 17.71 | - | - |
+| iPad, WebGPU, Low | 6.14 | 6.62 | 4.49 | 5.56 |
+| iPad, WebGPU, Medium | 33.91 | 34.93 | 6.24 | 6.30 |
+| iPad, WebGPU, High | 43.36 | 44.68 | 6.48 | 6.18 |
+| iPad, compatibility, Low | 6.40 | 6.38 | - | - |
+| iPad, compatibility, Medium | 38.01 | 51.74 | - | - |
+
+The Mac's vertex view is where the method saves the most, at High: 3.87 ms against 2.85 ms. Its
+opaque pass reads 2.92 against 1.41 ms. At Low on the iPad, few trees stand inside the eight meter
+sway distance. The pass's own work then costs more than the branches save, so the pose method is
+slower. The compatibility mode rows at Medium came from unpaired pages of the cancelled first plan.
+They are guides only, and the record's runs place the methods in turns.
+
+**The record's runs.** The Mac, the iPad Pro 13 and the Galaxy S25 ran both methods in turns at each
+preset and path. The Galaxy S25 stands in for the S24 class, by the owner's ruling. WebGL2 and
+compatibility mode cap the preset at Medium, so their rows stop there. Each figure is the median GPU
+time per frame over five seconds, after a three second settle. The vertex view is the same page at a
+quarter of the render scale with the sun's shadows off. Its frame then follows the vertex work that
+the two methods differ in. The Mac ran with the machine to itself. The iPad and the S25 are cloud
+sessions, whose heat and refresh rate are not controlled. Their rows are close comparisons in turns,
+not tight budgets. The run files are [the Mac's](../tested-devices/macbook-pro-m3-max-chrome/20261031-021631-vegetation-poses.md),
+[the iPad's](../tested-devices/ipad-pro-13-safari/20261031-020718-vegetation-poses.md) and
+[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261031-020718-vegetation-poses.md).
+
+| Device and path | Preset | Frame, per vertex (ms) | Frame, poses (ms) | Vertex view, per vertex (ms) | Vertex view, poses (ms) |
+| --- | --- | --- | --- | --- | --- |
+| Mac, WebGPU | Low | 4.52 | 4.13 | 3.41 | 3.80 |
+| Mac, WebGPU | Medium | 4.33 | 4.52 | 3.74 | 4.13 |
+| Mac, WebGPU | High | 4.72 | 5.11 | 4.00 | 3.87 |
+| Mac, WebGPU | Ultra | 4.85 | 5.18 | 4.13 | 4.13 |
+| Mac, compatibility | Low | 4.33 | 4.46 | - | - |
+| Mac, compatibility | Medium | 4.46 | 4.46 | - | - |
+| Mac, WebGL2 | Low | 7.82 | 10.47 | 2.41 | 3.95 |
+| Mac, WebGL2 | Medium | 14.44 | 16.84 | 2.60 | 6.71 |
+| iPad, WebGPU | Low | 6.14 | 6.62 | 4.49 | 5.56 |
+| iPad, WebGPU | Medium | 33.91 | 34.93 | 6.24 | 6.30 |
+| iPad, WebGPU | High | 43.36 | 44.68 | 6.48 | 6.18 |
+| iPad, WebGPU | Ultra | 43.90 | 47.54 | 5.95 | 6.22 |
+| iPad, compatibility | Low | 6.56 | 6.89 | - | - |
+| iPad, compatibility | Medium | 37.98 | 38.69 | - | - |
+| Galaxy S25, WebGPU | Low | 25.69 | 25.89 | 13.96 | 14.71 |
+| Galaxy S25, WebGPU | Medium | 328.53 | 335.15 | 26.61 | 26.87 |
+| Galaxy S25, WebGPU | High | 379.06 | 508.56 | 26.97 | 25.46 |
+| Galaxy S25, WebGPU | Ultra | 405.93 | 548.08 | 26.21 | 25.40 |
+| Galaxy S25, compatibility | Low | 25.76 | 25.85 | - | - |
+| Galaxy S25, compatibility | Medium | 406.06 | 372.97 | - | - |
+
+The S25's frames at Low sit near its 30 Hz display's period, and the higher presets run far past
+it, so the runner marks its timings unreliable; its rows compare the methods in turns only, and the
+pick does not rest on them.
+
+The iPad's and the S25's WebGL2 pages give the CPU time of the busiest thread instead of a GPU time.
+It does not separate the methods: 1.24 to 3.47 ms on the iPad and 0.71 to 0.99 ms on the S25, across
+both methods and both presets. The Mac's WebGL2 timer gives the answer there.
+
+**What the figures say.** The pose method wins in some cells and loses in others, and the figures do
+not support a preset switch. On the Mac's WebGPU at Low its frame is 4.13 ms against 4.52 ms, 8.7
+per cent faster, while its vertex view is 11.5 per cent slower. At High its vertex view is 3.87 ms
+against 4.00 ms, 3.3 per cent faster, while its frame is 8.3 per cent slower. Its frame is 4.6 to
+8.3 per cent slower at the Mac's other WebGPU presets. On the iPad its frames are 1.9 to 8.3 per
+cent slower, and its vertex view is 23.9 and 1.0 per cent slower at Low and Medium, 4.6 per cent
+faster at High and 4.6 per cent slower at Ultra. The S25's rows are marked unreliable, and they
+show no more: its vertex view is 5.4 and 1.0 per cent slower at Low and Medium, and 5.6 and 3.1
+per cent faster at High and Ultra. The compatibility mode rows in the Mac's run read the same
+figure twice, within its timer's steps. On WebGL2 the pose method is clearly slower: 34 and 16.6
+per cent on the frame, and 63.6 and 158 per cent in the vertex view.
+
+The WebGL2 form explains its own cost. It draws one fragment for every pose texel. Each of the two
+texels that hold a branch's turn recomputes the whole ancestor chain, with a spring step at each
+ancestor. A branch of depth four therefore pays eight integrations and its texture reads for each of
+the two texels. The grove's four variants then cost the 1.3 to 2.6 ms that the WebGL2 vertex views
+show. A history pass also keeps three copies of the table on WebGL2 and copies one state in each
+run. That is small beside the fragment work.
+
+**The owner's pick.** The figures do not support a preset switch. Wind per vertex stays the trees'
+default, and this record recommends no change. The pose method's two wins are inside the noise of
+the devices it was measured on, and its cost is clear wherever many trees stand near the camera or
+the WebGL2 form runs. The trees' own figures above are the ceiling that each preset keeps.
+
+**What the demos' pages need.** Four demos draw groves on the software GPU, and their pages pay for
+the plants' setup, so a page time sets each page's limit. These times were taken with one test at a
+time on this Mac, and each is the whole test, so it includes opening the page and its hold. The
+limit is the one that the commit carried.
+
+| Demo | Limit (s) | In CI run 41158902325 | Here, one at a time at `58e8e982f` (s) |
+| --- | --- | --- | --- |
+| demo-atmosphere | 60 | all three tiers timed out | compatibility 41, WebGL2 132, WebGPU 132 |
+| demo-contact-shadows | 60 | none; it drew, and the picture differs by 5.3 per cent | WebGPU 40, compatibility 37, WebGL2 42 |
+| demo-light-shafts | 300 | WebGPU and compatibility timed out; WebGL2 drew, 7.120 per cent different | WebGPU 38, compatibility 37, WebGL2 48 |
+| demo-impostors | 120 | WebGPU timed out | WebGPU 17, compatibility 16, WebGL2 15 |
+
+All four rows come from a run at the branch's rebased tree, head `58e8e982f` on the landing's
+`acf926cdc`, after that tree's own core was built, so each page drew the branch's code. The pages'
+limits were raised locally for the measurement only, so that a page could finish; the limit column
+is the one the head carries, and the time column is what the page needed. An earlier set measured at
+`83d1d71a9` and the first at `fc8775f4c` are replaced by this one. The branch raises only the
+light-shafts limit, to five minutes. The other three keep their limits: each needs a measurement on
+the commit that draws it, and a limit lifted without one would hide how long the page takes.
+
+The pictures behind two of the rows also differ on this tree, not only in CI:
+demo-contact-shadows differs by 5.286 to 5.384 per cent and demo-light-shafts by 6.892 to 46.826
+per cent, measured at `58e8e982f`, with the same percentages at `83d1d71a9` and `fc8775f4c`. Those
+are changes to the pictures, and they need their own record; a page limit cannot hide them.
+
 ## Options rejected
 
 - **Creek-only vegetation.** It is the fastest path to a better Creek. But it would make a sixth pine generator, a fourth grass and a fourth leaf mesh, where rule 11 asks for one place.
@@ -626,7 +775,9 @@ the iPad Pro 13 in Safari 26.6.1 read 36.7 ms for the bark and 78.3 for the leaf
 Galaxy S25 in Chrome 152, standing in for the S24 class, 56.0 and 104.1
 ([run](../tested-devices/ipad-pro-13-safari/20261031-110416-atlas-paint.md) and
 [run](../tested-devices/galaxy-s25-sm-s931b-chrome/20261031-110416-atlas-paint.md)). Both devices
-paint faster than the Mac does.
+paint faster than the Mac does. A Mac measures the same page
+without a cloud run with `NULL3D_ATLAS_PAINT_COST=1 bun run test:browser -- atlas-paint-cost.spec.ts`,
+which prints the machine's load beside the figures.
 
 **What the pictures show.** The `vegetation-atlas` picture's leaf card is a twig of lobed leaves that
 fills its square. The `vegetation-versus-creek` picture shows the generated oak beside Creek's

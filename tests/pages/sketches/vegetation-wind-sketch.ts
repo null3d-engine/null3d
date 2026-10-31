@@ -1,9 +1,10 @@
 // A grove of generated oaks in the scene's one wind field: the leaf and bark materials sway, the
 // leaves flutter, and the sun's shadows follow them. Two held times show the trees move, and
 // ?motion draws the motion view, whose pixels carry the sway's motion. ?still holds the air, for a
-// reference picture. ?sway=<metres> sets how far from the camera the plants move, ?far places every
-// row past the near shadow cascades, which the shadow redraw count reads, and ?autumn=<0 to 1>
-// turns their leaves.
+// reference picture. ?method=poses moves the branches by a compute pass's branch poses, which keep a
+// spring, instead of by the per-vertex sway. ?sway=<metres> sets how far from the camera the plants
+// move, ?far places every row past the near shadow cascades, which the shadow redraw count reads,
+// and ?autumn=<0 to 1> turns their leaves.
 import { defineSketch } from '@null3d/engine';
 import {
 	bakePlantAtlases,
@@ -12,6 +13,7 @@ import {
 	leafCellFor,
 	type PlantMaterial,
 	plantMaterial,
+	plantPoses,
 	plantWind,
 	setWindLayer,
 	swayDistanceFor,
@@ -24,12 +26,22 @@ const params = new URL(import.meta.url).searchParams;
 const MOTION = params.has('motion');
 /** True to draw the same grove with still air. */
 const STILL = params.has('still');
+/** True to move the branches by a compute pass's branch poses, which keep a spring. */
+const POSES = params.get('method') === 'poses';
 const AUTUMN = Math.min(1, Math.max(0, Number(params.get('autumn') ?? 0)));
 /** How far from the camera the plants sway, in meters, when the page asks: 0 moves them at every
  * distance. Without it, the preset's distance applies. */
 const SWAY = params.has('sway') ? Math.max(0, Number(params.get('sway'))) : undefined;
 /** True to place every row past the near shadow cascades, where only the far cascades reach them. */
 const FAR = params.has('far');
+/** The render scale that the page holds, or nothing for the preset's own, as a cost page fixes it. */
+const SCALE = params.has('scale') ? Number(params.get('scale')) : undefined;
+/** True to stand the copies close together, as Creek's near trees stand, so a preset's sway distance
+ * takes many of them: a cost page that measures the two wind methods asks for it. */
+const DENSE = params.has('dense');
+/** True to draw without the sun's shadows, so a frame at a small render scale follows the vertex
+ * work of the camera's passes: a cost page that measures the two wind methods asks for it. */
+const NOSHADOW = params.has('noshadow');
 /** The scene's seed, which the plants' shapes and their tints come from. */
 const SEED = 12;
 const VARIANTS = 4;
@@ -43,7 +55,11 @@ export default defineSketch((ctx) => {
 	if (MOTION) debug.view('motion');
 	// The far cascades take their turns, which the shadow redraw count reads, so the governor must
 	// not move the preset's interval under it.
-	void quality.set({ governor: false });
+	void quality.set(
+		SCALE === undefined
+			? { governor: false }
+			: { governor: false, minRenderScale: SCALE, maxRenderScale: SCALE },
+	);
 	scene.setBackground('#9fc0dd');
 	scene.createAmbientLight({ intensity: 0.5 });
 	// The sun stands in front of the camera, so the far cascades lie along its direction ahead of
@@ -53,7 +69,7 @@ export default defineSketch((ctx) => {
 		direction: [0.15, -0.3, 1],
 		color: '#fff3dc',
 		intensity: 2.7,
-		castShadows: true,
+		castShadows: !NOSHADOW,
 		shadow: { cascades: 3, mapSize: 2048, distance: 200 },
 	});
 	scene.createMesh({
@@ -88,16 +104,22 @@ export default defineSketch((ctx) => {
 	const atlases = bakePlantAtlases(ctx);
 	const cell = leafCellFor(species);
 	const plantMaterials: PlantMaterial[] = [];
+	/** Each variant's pose pass and the materials that read it. */
+	const poseLayers: { poses: ReturnType<typeof plantPoses>; materials: PlantMaterial[] }[] = [];
 	for (let variant = 0; variant < VARIANTS; variant++) {
 		const asset = generatePlant(species, { seed: SEED, variant, levels: 1 });
 		const field = plantWind(ctx, asset, wind.field, {
 			swayDistance: SWAY ?? swayDistanceFor(quality.preset),
 		});
+		const poses = POSES
+			? plantPoses(ctx, field, asset, { trees: COPIES, name: `grovePoses${variant}` })
+			: undefined;
 		const bark = plantMaterial(ctx, {
 			atlases,
 			part: 'wood',
 			color: species.color.bark,
 			wind: field,
+			poses,
 		});
 		plantMaterials.push(bark);
 		const leaves = plantMaterial(ctx, {
@@ -107,9 +129,12 @@ export default defineSketch((ctx) => {
 			color: species.color.leaf,
 			transmission: species.color.transmission,
 			wind: field,
+			poses,
 			morph: { crownRadius: asset.crown.radius },
 		});
 		plantMaterials.push(leaves);
+		const poseParts: PlantMaterial[] = [bark, leaves];
+		let attached = false;
 		for (const part of asset.levels[0]?.parts ?? []) {
 			const batch = scene.createInstances(geometry.fromArrays(part.arrays), COPIES, {
 				material: part.name === 'wood' ? bark : leaves,
@@ -117,12 +142,20 @@ export default defineSketch((ctx) => {
 				castShadows: true,
 				receiveShadows: true,
 			});
+			// One batch stands for the variant's rows, and both parts share their order.
+			if (poses && !attached) {
+				poses.attach(batch);
+				attached = true;
+			}
 			if (!batch.values) throw new Error('the batch of a plant carries no values');
 			for (let row = 0; row < COPIES; row++) {
 				// The rows stand behind one another along the view, so the near plants are inside
 				// the sway distance and the far ones past it.
-				const x = (variant - (VARIANTS - 1) / 2) * 7 + (row - (COPIES - 1) / 2) * 1.5;
-				const z = -3 - row * 16 - variant * 1.5 - (FAR ? 67 : 0);
+				const x =
+					(variant - (VARIANTS - 1) / 2) * 7 + (row - (COPIES - 1) / 2) * (DENSE ? 1.2 : 1.5);
+				const z = DENSE
+					? 2 - row * 4 - variant * 0.8
+					: -3 - row * 16 - variant * 1.5 - (FAR ? 67 : 0);
 				batch.positions.set([x, 0, z], row * 3);
 				const yaw = (row + variant) * 0.7;
 				batch.rotations.set([0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)], row * 4);
@@ -130,6 +163,7 @@ export default defineSketch((ctx) => {
 			}
 			batch.markDirty();
 		}
+		if (poses) poseLayers.push({ poses, materials: poseParts });
 	}
 
 	// The preset's distance also follows a step of the quality setting, so a governor that lowers
@@ -146,6 +180,7 @@ export default defineSketch((ctx) => {
 			wind.update();
 			// The pass keeps two states, so the plants read the one that this frame's run wrote.
 			setWindLayer(plantMaterials, wind.field);
+			for (const layer of poseLayers) layer.poses?.update(camera);
 		},
 	};
 });
