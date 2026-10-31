@@ -127,6 +127,12 @@ each vertex.
 Leaf flutter, grass and small plants stay per vertex. The pass adds a compute dispatch and a small
 upload in the frame. A page pays those beside the vertex work that it saves.
 
+**The pictures.** Four tests draw the pose method on WebGPU, compatibility mode and WebGL2: the
+grove through the pose materials at two hold times, its motion view, and a still that borrows the
+per-vertex method's reference. The nine reference pictures pass in all 12 runs of
+`CI=1 bun run test:images -g "vegetation-poses"`. The spring test also reads the pose pass live, so
+it shows a branch turning on after the air stops and settling back.
+
 **The trees' default stays open.** The figures below measure both methods on the same grove, and the
 owner picks the trees' default from them. A preset may switch only when its figure holds D-241's
 frame ceiling.
