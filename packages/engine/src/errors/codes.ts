@@ -100,6 +100,14 @@ const DOCS = {
 			'E1111: mesh.destroy() was called on a mesh that "Crate" (slot 7) still uses. Destroy the objects and instance batches that use it first.',
 		since: '0.2',
 	},
+	E1112: {
+		title: 'Unsupported cookie texture',
+		cause:
+			"A spot light's map copies its picture once, when the texture's texels reach the GPU. A video's texture and a render pass's texture change every frame, and a 3D or cube texture holds more than one image, so none of them fits the copy.",
+		example:
+			"E1112: setMap() got a texture that changes every frame on a spot light, which a spot light's map copies once. Give a still texture, such as one that assets.loadTexture loaded.",
+		since: '0.3',
+	},
 	E1203: {
 		title: 'Invalid number',
 		cause: 'A call received a number that is not finite, such as NaN or Infinity.',

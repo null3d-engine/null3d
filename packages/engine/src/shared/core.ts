@@ -795,10 +795,17 @@ export interface CoreGlue extends CoreErrors {
 	areaLightTables(): number;
 	/** Marks the area lights' tables as written, so frames light with area lights. */
 	finishAreaLightTables(): number;
-	/** Makes room for a light's image; the address of its half floats, or 0. */
-	lightImage(light: number): number;
+	/**
+	 * Makes room for a light's image of `size` texels a side; the address of its half floats, or 0.
+	 */
+	lightImage(light: number, size: number): number;
 	/** Marks a light's image as written, so frames show it. */
 	finishLightImage(light: number): number;
+	/**
+	 * Gives a light an image of `size` texels a side whose texels come from a texture, which a
+	 * frame copies into the image once the texture's texels are on the GPU.
+	 */
+	setLightMapTexture(light: number, texture: number, size: number): number;
 	/** Takes a light's image away. */
 	removeLightImage(light: number): number;
 	/** Draws the physical sky from its tables while `on`, else the analytic sky in its place. */
@@ -1424,6 +1431,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'finishAreaLightTables',
 	'lightImage',
 	'finishLightImage',
+	'setLightMapTexture',
 	'removeLightImage',
 	'setPhysicalSky',
 	'removeScenePass',

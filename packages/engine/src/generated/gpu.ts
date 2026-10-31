@@ -46,6 +46,7 @@ export const OP_SKY_MAP_STEP = 55;
 export const OP_PROBE_FILTER = 56;
 export const OP_CREATE_BIND_VIEW = 57;
 export const OP_CLEAR_TEXTURE = 58;
+export const OP_COPY_INTO_IMAGE = 59;
 export const OP_SUBMIT = 63;
 
 export const NO_TARGET = 4294967295;

@@ -203,6 +203,8 @@ mod render_detail {
     pub const SHADOW_ATLAS_TOO_LARGE: u32 = 18;
     /// The second detail is the most bytes that one buffer may take.
     pub const BUFFER_FULL: u32 = 19;
+    /// The second detail is the size that a light's image was given, which no image takes.
+    pub const BAD_IMAGE_SIZE: u32 = 20;
 }
 
 struct Engine {
@@ -338,6 +340,17 @@ impl Engine {
 }
 
 impl Engine {
+    /// Writes each light's image record, which the frame's lights read: its layer and size, or 0
+    /// while its texture still waits for its copy. A probe's layers come before the images', so a
+    /// probe that a scene adds or removes moves every image, and the records follow.
+    fn fix_image_layers(&mut self) {
+        let probe_layers = self.renderer.settings().probes().probe_layers();
+        let tables = self.renderer.settings_mut().light_tables_mut();
+        for (light, value) in tables.image_records(probe_layers) {
+            let _ = self.lights.set_value(light, light_value::IMAGE, value);
+        }
+    }
+
     /// The frame builder, and the frame's input for it. The frame's upload list and its lights are
     /// recorded once, by the frame's first step. `pipelines_built` is the newest frame that the
     /// thread that draws drew with every pipeline built.
@@ -353,6 +366,7 @@ impl Engine {
             .settings_mut()
             .set_last_frame_size(canvas, render_scale);
         if self.snapshot.frame() != frame {
+            self.fix_image_layers();
             self.snapshot.record(frame, &self.scene, &self.batches);
             self.renderer.settings_mut().gather_lights(
                 &mut self.lights,
@@ -3866,14 +3880,19 @@ pub fn finish_area_light_tables() -> u32 {
     })
 }
 
-/// Makes room for light `light`'s image, and returns the address of its half floats. Fails with
-/// E1501 when every place for an image is taken.
+/// Makes room for light `light`'s image of `size` texels a side, and returns the address of its
+/// half floats. The size is a power of two from `IMAGE_SIZE` to `MAX_IMAGE_SIZE` texels; a
+/// detailed picture keeps more of its detail. Fails with E1501 when every place for an image is
+/// taken, or when the size is one that no image takes.
 #[wasm_bindgen(js_name = lightImage)]
-pub fn light_image(light: u32) -> u32 {
+pub fn light_image(light: u32, size: u32) -> u32 {
     value_with_engine(|e| {
         e.lights.object(light).map_err(core_failure)?;
+        if light_tables::size_index(size).is_none() {
+            return Err(render_failure(render_detail::BAD_IMAGE_SIZE, size));
+        }
         let tables = e.renderer.settings_mut().light_tables_mut();
-        match tables.image_texels_mut(light) {
+        match tables.image_texels_mut(light, size) {
             Some(texels) => Ok(address(texels)),
             None => Err(render_failure(
                 render_detail::LIGHT_IMAGES_FULL,
@@ -3883,17 +3902,40 @@ pub fn light_image(light: u32) -> u32 {
     })
 }
 
+/// Gives light `light` an image of `size` texels a side whose texels come from texture `texture`.
+/// A frame copies the texture into the image once its texels are on the GPU, and the light shows
+/// the picture from the frame after. The copy is a snapshot: later changes to the texture do not
+/// reach the light. Fails with E1501 when every place for an image is taken, or when the size is
+/// one that no image takes.
+#[wasm_bindgen(js_name = setLightMapTexture)]
+pub fn set_light_map_texture(light: u32, texture: u32, size: u32) -> u32 {
+    value_with_engine(|e| {
+        e.lights.object(light).map_err(core_failure)?;
+        if light_tables::size_index(size).is_none() {
+            return Err(render_failure(render_detail::BAD_IMAGE_SIZE, size));
+        }
+        let tables = e.renderer.settings_mut().light_tables_mut();
+        if !tables.image_texture_mut(light, size, Handle::from_raw(texture)) {
+            return Err(render_failure(
+                render_detail::LIGHT_IMAGES_FULL,
+                light_tables::MAX_IMAGES as u32,
+            ));
+        }
+        Ok(0)
+    })
+}
+
 /// Marks light `light`'s image as written, so the next frame uploads it and the light shows it.
 #[wasm_bindgen(js_name = finishLightImage)]
 pub fn finish_light_image(light: u32) -> u32 {
     with_engine(|e| {
         let probe_layers = e.renderer.settings().probes().probe_layers();
-        let layer = e
+        let image = e
             .renderer
             .settings_mut()
             .light_tables_mut()
-            .finish_image(light, probe_layers);
-        let image = layer.map_or(0.0, |layer| (layer + 1) as f32);
+            .finish_image(light, probe_layers)
+            .unwrap_or(0.0);
         e.lights
             .set_value(light, light_value::IMAGE, image)
             .map_or_else(core_failure, |()| 0)

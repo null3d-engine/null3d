@@ -2251,8 +2251,7 @@ impl GpuDrivenRenderer {
         let array = self.settings.probes().array().map_or(0, |(id, _)| id);
         let probe_layers = self.settings.probes().probe_layers();
         self.settings
-            .light_tables_mut()
-            .record(list, array, probe_layers)?;
+            .record_light_images(list, array, probe_layers)?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::CUSTOM_VALUES, MATERIAL_TEXELS)?;
             ao::upload_blank(list, arena, ids::BLANK_AO)?;
@@ -2288,6 +2287,12 @@ impl GpuDrivenRenderer {
         let groups_remade =
             self.settings
                 .record_materials(input, list, arena, table, &self.physical_sky)?;
+        // The frame's texture work recorded the uploads, so a texture that a light's image copies
+        // from is on the GPU by the time the frame's passes run.
+        let array = self.settings.probes().array().map_or(0, |(id, _)| id);
+        let probe_layers = self.settings.probes().probe_layers();
+        self.settings
+            .record_light_images(list, array, probe_layers)?;
         self.graph.set_probe_filter(self.settings.probes().filter());
         // The frame's texture work made the passes' targets and uploads ready, so the textures
         // of the effects and the full-screen passes sample from this frame on.
