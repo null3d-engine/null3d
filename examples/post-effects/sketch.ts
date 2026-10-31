@@ -52,8 +52,8 @@ export default defineSketch(async (ctx) => {
 		sharpen: 0.5,
 		vignette: { intensity: 0.9, size: 1.1 },
 		bloomLevel: 3,
-		aberration: 6,
-		streak: 3,
+		aberration: 2,
+		streak: 3.5,
 		grain: 0.05,
 	});
 	scene.setBackground('#05060a');
