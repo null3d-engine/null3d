@@ -1,6 +1,7 @@
 Plans: wind-field-cost 2026-10-31, the fluid wind field's own cost at every grid shape. Each run
 also sweeps the pressure count and the field rate. The branch is `feat/m3-v14-wind-budget` at
-`c4504a038`. There are three runs of
+`c4504a038`, which a rebase removed from the branch. The harness files are byte-identical at
+`8e74d0dec`, where the audit checked them, and at this head. There are three runs of
 `NULL3D_WIND_FIELD_COST=1 bun run test:browser -- wind-field-cost.spec.ts`, one for each value of
 `NULL3D_WIND_GPU` (webgpu, compat, webgl2). Each run went through the heavy queue with its own dev
 server on port 6173 and `NULL3D_PRODUCTION_PAGES=skip`. The browser is the installed Chrome 156 on

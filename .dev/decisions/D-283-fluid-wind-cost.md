@@ -8,7 +8,8 @@ forest's plants on the add-on (M3-V11, M3-V12). The owner rules on the rows, on 
 the Low grid. Task: M3-V14.
 
 Summary: On the Mac's WebGPU path the field costs 0.10 ms a frame at the Medium row and 0.74 ms at
-the Ultra row. The grid's size moves it far less than the pressure count and the field rate do.
+the Ultra row, which is the volume's shape; the flat 256x256 grid that stands in until it is built
+costs 0.60. The grid's size moves the cost far less than the pressure count and the field rate do.
 WebGL2 pays a fixed cost per solver run, so its row sets the field rate. The record proposes
 budgets of 0.5, 1.2, 4.9 and 6.25 ms from Low to Ultra, one tenth of the vegetation add-on's own
 budget.
@@ -46,10 +47,12 @@ The real solver on this tree fixes its pressure count at twenty and its field ra
 a second. M3-V16 has not landed the settings. The preset rows are therefore modelled from the
 chain's step and the real cycle's floor, as the plan's cost runs allow.
 
-The measurements are at `c4504a038`, on the Mac's installed Chrome 156, on an Apple M3 Max with
-36 GB of memory. The display is 60 Hz and the window is 640 by 400. The run began at a 1-minute load
-of 7.4 and ended between 2.2 and 6.3. Each side is the median GPU time of three rounds, alternating
-the order. WebGPU and compatibility mode time each pass. WebGL2 on a phone has no pass timer, so its
+The measurements were taken at `c4504a038`, which the rebase removed from the branch's history. The
+harness files are byte-identical at `8e74d0dec`, where the audit checked them, and at the head that
+carries this text. The machine is the Mac's installed Chrome 156, on an Apple M3 Max with 36 GB of
+memory. The display is 60 Hz and the window is 640 by 400. The run began at a 1-minute load of 7.4
+and ended between 2.2 and 6.3. Each side is the median GPU time of three rounds, alternating the
+order. WebGPU and compatibility mode time each pass. WebGL2 on a phone has no pass timer, so its
 rows give the frame interval and the busiest thread's CPU time.
 
 ### Measured, modelled and bounded
@@ -109,6 +112,10 @@ analytic field with five curl taps, with the projection and the dispatch beside 
 Drag, one more read a cell a step, is inside the run-to-run spread on the middle grids. It shows
 where the cells dominate: +0.126 ms of the 256x256 chain's 0.910, and +0.139 of the volume's 1.292.
 That is about one read against the six a step already makes.
+
+The volume's Ultra row takes the same floor: about 0.09 ms of advection and projection, plus forty
+steps at the volume's 0.0162 ms, is about 0.74 ms. The flat 256x256 grid that stands in until the
+volume is built costs 0.60 there, its floor of 0.141 ms plus forty steps at 0.0114 ms.
 
 ### Compatibility mode
 
@@ -249,7 +256,7 @@ parts. Low's phone figure is a bound, not a measurement, as the Data section say
 | Low | analytic, or the smallest flat grid | none, or 32x32 | none, or 8 | none, or 15 | 0, or 0.04 | 0, or 0.43 | 0.5 |
 | Medium | flat grid | 64x64 | 16 | 30, and 15 on WebGL2 | 0.10 | 0.77 | 1.2 |
 | High | flat grid now, 4 layers later | 128x128, or 4 layers of 128x128 | 24 | 30 | 0.14 | not drawn | 4.9 |
-| Ultra | flat grid now, a volume later | 256x256, or 64x24x64 | 40 | 60 | 0.65 | not drawn | 6.25 |
+| Ultra | volume 64x24x64, and flat 256x256 until it is built | 64x24x64, or 256x256 | 40 | 60 | 0.74, or 0.60 on the flat grid | not drawn | 6.25 |
 
 Every figure in this table is modelled from the measured parts, and the budget column is a proposed
 ceiling. None of these figures is a phone measurement. Low's 0.5 ms is the planning ceiling for the
@@ -271,9 +278,11 @@ read 0.5 ms there. A reader must not take 0.5 ms for a phone figure.
   the ceiling. So the formula field stays the safe row, and it is also the fallback for a device
   without a float target. The owner may still choose the small grid on the look, which a
   side-by-side of the formula wind and the 32x32 field settles.
-- High and Ultra keep the flat grids that the solver builds today. The layered and the volume grids
-  look better where the air has height. They cost 0.16 and 0.74 ms at their rows on WebGPU, well
-  inside their budgets, so the better look wins when it is built (hard rule 40).
+- High and Ultra take the plan's own shapes, four layers of 128x128 at High and the volume 64x24x64
+  at Ultra. The layered and the volume grids look better where the air has height. They cost 0.16
+  and 0.74 ms at their rows on WebGPU, well inside their budgets, so the better look wins when it is
+  built (hard rule 40). Until the solver builds them, the flat 128x128 and 256x256 grids stand in,
+  at 0.14 and 0.60 ms.
 - The budgets stay at one tenth of the vegetation add-on's own: 0.5, 1.2, 4.9 and 6.25 ms. Every
   measured row is far inside them on WebGPU, and the phones hold their intervals. The owner may
   trade the margin for a better flow.
@@ -293,6 +302,8 @@ read 0.5 ms there. A reader must not take 0.5 ms for a phone figure.
   measured. The plant material uses four of its six texture slots, so two are free for the field's
   two states and the branch poses. The water material uses three of six, so three are free for a
   flag or a ripple.
-- The Mac here is an Apple M3 Max, not the M5 Max that the task names. The solver on this tree fixes
-  20 pressure steps and 60 cycles a second. The real cycles in the tables are that cycle, and the
-  other pressure counts and field rates are the chain's.
+- The device rows are measured on this Mac's Apple M3 Max, the iPhone 17 and the Galaxy S24. The
+  iPad Pro 13 (2025), the Galaxy S25 and the Galaxy Tab A9 Plus are owed, and so is the M5 Max that
+  the task names. The solver on this tree fixes 20 pressure steps and 60 cycles a second. The real
+  cycles in the tables are that cycle, and the other pressure counts and field rates are the
+  chain's.
