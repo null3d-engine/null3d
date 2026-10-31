@@ -1,8 +1,9 @@
 # D-271: A compute pass's fragment form writes the image, not the row index
 
-Status: decided by the measurement below. Built: the diagnosis and the rule. Owed: the fragment form's
-row turn, the turn of a pass map's read in the shader build, and the two `kept` pictures' WebGL2
-failure. Task: M3-V13.
+Status: decided by the measurement below. Built: the fragment form's row turn, the turn of a pass
+map's read in the shader build, and the value that the store writes for a turned map. Owed: the run
+that proves it on all three paths, and the two `kept` pictures' WebGL2 failure, which is a separate
+fault. Task: M3-V13.
 
 Summary: A compute pass's fragment form wrote each texel at the row index that the compute form uses.
 WebGL2 counts a texture's rows from the bottom and WebGPU from the top, so the form's image came out

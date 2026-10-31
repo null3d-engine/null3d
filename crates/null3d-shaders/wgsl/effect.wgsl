@@ -205,7 +205,13 @@ fn effect_fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     if drawn.w > 0.5 {
         // A pass texture keeps the image's bottom row first: WebGL2 counts rows from the bottom,
         // and WebGPU's first row, at the top, holds the image's last.
-        let from_top = vec2f(position.x, drawn.z - position.y);
+        var from_top = vec2f(position.x, drawn.z - position.y);
+        // A compute pass's fragment form writes the image's rows, so a read or a sample of its
+        // target finds each texel where the compute form put it. The fragment's own row counts
+        // from the target's bottom, so the row turns.
+        if effect_block.clock.w > 0.5 {
+            from_top = vec2f(position.x, position.y);
+        }
         input.size = drawn.xy;
         input.pixel = from_top;
         input.uv = from_top / drawn.xy;
