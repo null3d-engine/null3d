@@ -171,6 +171,8 @@ export class ParticleSystem {
 	/** This system's world matrix, and each sub-emitter's inverse world matrix. */
 	private readonly world = new Float64Array(16);
 	private readonly childMatrices: Float64Array[];
+	/** The frame's numbers: its start and end, its rate, and its two flags. */
+	private readonly frame = new Float64Array(5);
 
 	/** @internal */
 	constructor(
@@ -233,7 +235,13 @@ export class ParticleSystem {
 		const to = from + Math.max(step, 0);
 		this.readFollow();
 		this.readEvents();
-		this.buffer.emitFrame(from, to, this.rate, this.emitting, prewarm);
+		const frame = this.frame;
+		frame[0] = from;
+		frame[1] = to;
+		frame[2] = this.rate;
+		frame[3] = this.emitting ? 1 : 0;
+		frame[4] = prewarm ? 1 : 0;
+		this.buffer.emitFrame(frame);
 		this.time = to;
 	}
 

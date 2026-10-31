@@ -32,8 +32,8 @@ function fakeBuffer(capacity = 64) {
 		configureEmitter(options: ParticleEmitterOptions) {
 			state.configure = options;
 		},
-		emitFrame(from: number, to: number, rate: number, emitting: boolean, prewarm: boolean) {
-			state.frames.push([from, to, rate, emitting ? 1 : 0, prewarm ? 1 : 0]);
+		emitFrame(numbers: Float64Array) {
+			state.frames.push([...numbers]);
 			state.emitted += 1;
 		},
 		emitBurst(count: number, at?: Vec3Like, velocity?: Vec3Like) {

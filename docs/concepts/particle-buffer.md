@@ -149,13 +149,22 @@ buffer.configureEmitter({
   subEmitters: [{ buffer: sparks, on: 'death', count: 4 }],
 });
 
-// In each frame, after the objects have their world places:
-buffer.emitFrame(time.now - dt, time.now, 200, true);
+// In each frame, after the objects have their world places. The five numbers are the frame's
+// start and end, its rate, and 1 or 0 for whether it emits and whether it is a prewarmed first
+// frame. Make the array once: a fraction passed as a call argument is boxed.
+const frame = new Float64Array(5);
+
+frame[0] = time.now - dt;
+frame[1] = time.now;
+frame[2] = 200;
+frame[3] = 1;
+frame[4] = 0;
+buffer.emitFrame(frame);
 ```
 
 `configureEmitter` takes the seed and the shape: point, sphere, cone, box or disc. It also takes the direction and its spread, with the speed and lifetime ranges. A velocity, the bursts, the duration, the loop, the followed object and the sub-emitters follow. The engine keeps the motion and the values, so the core's events follow the same closed form as the shader.
 
-`emitFrame(from, to, rate, emitting, prewarm)` writes the rate's births and the bursts between the two times. It fires the sub-emitters that fall due by `to`. It moves the time base when the time calls for it. `emitBurst(count, at, velocity)` writes particles at once. `emitted` counts the particles that the emitter has made.
+`emitFrame(numbers)` writes the rate's births and the bursts between the frame's two times. It fires the sub-emitters that fall due by the end. It moves the time base when the time calls for it. `emitBurst(count, at, velocity)` writes particles at once. `emitted` counts the particles that the emitter has made.
 
 The core gives the object its culling sphere after each frame. The sphere covers the births of the last two lifetimes, grown by how far a particle can move. A system such as the add-on's follows a moving object with `setEmitterFollow`, and gives each sub-emitter's world place with `setEmitterEvents`.
 

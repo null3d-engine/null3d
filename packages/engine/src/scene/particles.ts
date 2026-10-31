@@ -841,13 +841,14 @@ export class ParticleBuffer implements ViewHolder {
 	}
 
 	/**
-	 * Emits the emitter's particles born after `from` and up to `to` seconds, fires the
-	 * sub-emitters that fall due by `to`, and moves the time base when the time calls for it. The
-	 * core writes the records, so this call runs no per-birth loop. Call it once per frame. With
-	 * `prewarm`, it first emits the span of the longest lifetime, as a system that had run that
-	 * long.
+	 * Emits the emitter's particles for one frame, fires the sub-emitters that fall due, and
+	 * moves the time base when the time calls for it. The core writes the records, so this call
+	 * runs no per-birth loop. Call it once per frame, after `numbers` holds the frame's start and
+	 * end in seconds, its rate, and 1 or 0 for whether it emits and whether it is the first frame
+	 * of a prewarmed system. The numbers cross in a typed array, so no fraction crosses as a
+	 * call argument, which the browser would box.
 	 */
-	emitFrame(from: number, to: number, rate: number, emitting: boolean, prewarm = false): void {
+	emitFrame(numbers: Float64Array): void {
 		this.views();
 		const e = this.emitterView;
 		// A buffer that the sketch destroyed bursts nothing, and its id may name a new system.
@@ -855,12 +856,12 @@ export class ParticleBuffer implements ViewHolder {
 			const child = this.subBuffers[k] as ParticleBuffer;
 			e[this.subRows + k * C.PARTICLE_EMITTER_ROW_FLOATS] = child.live ? child.id : 0;
 		}
-		e[E.rate] = rate;
-		e[E.emitting] = emitting ? 1 : 0;
-		e[E.from] = from;
-		e[E.to] = to;
-		e[E.time] = to;
-		e[E.prewarm] = prewarm ? 1 : 0;
+		e[E.rate] = numbers[2] as number;
+		e[E.emitting] = numbers[3] as number;
+		e[E.from] = numbers[0] as number;
+		e[E.to] = numbers[1] as number;
+		e[E.time] = numbers[1] as number;
+		e[E.prewarm] = numbers[4] as number;
 		this.core.glue.emitParticleFrame(this.id);
 		this.updateBounds();
 	}

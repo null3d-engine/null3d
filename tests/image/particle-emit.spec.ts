@@ -27,7 +27,8 @@ test('the core writes the records that the TypeScript emitter writes', async ({ 
 	const result = await pageResult<Checked>(page, 330_000);
 	expect(result.error).toBeUndefined();
 	expect(result.scenarios).toBeGreaterThanOrEqual(12);
-	expect(result.records).toBeGreaterThan(1_000);
+	// Every row of every buffer the page compares: 904 rows over its fourteen scenarios.
+	expect(result.records).toBe(904);
 	// The first differences name the scenario and the record, so a fault reads at once.
 	expect(result.mismatches.slice(0, 20)).toEqual([]);
 });
