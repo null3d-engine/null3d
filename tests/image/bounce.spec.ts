@@ -8,9 +8,11 @@
 // - The floor takes the red wall's light at the left and the green wall's at the right, which the
 //   environment's uniform light cannot give it. The two boxes are the floor under each wall, clear
 //   of the walls themselves.
-// - The bounce lands the bleed that the probe-lit room bakes. A screen-space estimate cannot equal
-//   a bake, so the bake's signs are the firm figure and the whole frame must stay within the image
-//   tolerance. A missing bounce, a swapped side or a wrong color fails this.
+// - The bounce lands the bleed that the probe-lit room bakes. The two lights are not equal: a
+//   screen-space estimate differs from a bake at the soft edges of the light and where the screen
+//   cannot see. The test therefore holds the bake's direction under each wall and a stated number
+//   of levels of its strength, and records the share of the frame that the light moves. A missing
+//   bounce, a swapped side or a wrong color fails this.
 import { expect, test } from '@playwright/test';
 import type { Tier } from '../../bench/lib/parity.ts';
 import { compareImages } from '../../packages/cli/src/compare.js';
@@ -26,14 +28,11 @@ const MOVED = 1 / 255;
 /** The share of the frame that the bounce light must move to count as drawn. */
 const MOVES = 0.05;
 /**
- * The share of the frame that may differ from the probe-lit room past the image tests' own
- * threshold, one tenth of full scale. A screen-space estimate differs at the soft edges of the
- * light and where the screen cannot see, so this is a guard that the two draw the same room with
- * the same light, not an equality.
+ * How far one floor box's bleed may lie from the bake's, in 8-bit levels. The measured gaps are
+ * 1.2 levels at the left box and 3.0 at the right, and the two GPU paths agree within half a
+ * level, so four levels covers both boxes on both paths with a level to spare.
  */
-const MATCHES = 0.45;
-/** The image tests' own threshold: a change smaller than about 13 steps counts as nothing. */
-const MATCH_THRESHOLD = 0.1;
+const BLEED_MATCH = 4;
 /** The most that the picture's own light may move one floor box's red-minus-green, in 8-bit levels. */
 const BLEED = 1.0;
 /** The floor under the red wall at the left, and under the green wall at the right. */
@@ -110,12 +109,14 @@ for (const tier of ['webgpu', 'webgl2'] as const)
 
 		// The probe-lit room bakes the same one bounce. Its light lands on the same side. The
 		// bake's green bleed is weaker than its red one, because the green wall's surface is
-		// darker, so the signs are the firm figure and the strength is the share below.
+		// darker. The floor under each wall must take the bake's colour in the bake's direction,
+		// within the stated number of levels of it.
 		const gridLeft = redder(grid, off, LEFT);
 		const gridRight = redder(grid, off, RIGHT);
 		expect(gridLeft).toBeGreaterThan(0.3);
 		expect(gridRight).toBeLessThan(-0.3);
-		expect(share(bounce, grid, MATCH_THRESHOLD)).toBeLessThan(MATCHES);
+		expect(Math.abs(bounceLeft - gridLeft)).toBeLessThanOrEqual(BLEED_MATCH);
+		expect(Math.abs(bounceRight - gridRight)).toBeLessThanOrEqual(BLEED_MATCH);
 	});
 
 test('the bounce light draws nothing on the 8-bit path, compat', async ({ page }) => {
