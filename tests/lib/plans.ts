@@ -1809,8 +1809,9 @@ export function vegetationWindPlan(): PlanItem<Check>[] {
 /**
  * What the per-vertex sway and the branch poses cost for the grove's near trees, at each preset and
  * GPU path, for M3-V10: the frame's GPU time and its parts. A page with `?scale=0.25` draws at a
- * quarter of the render scale, which leaves a sixteenth of the fragment work, so its figure follows
- * the vertex work of the branches, which is what the two methods differ in.
+ * quarter of the render scale with the sun's shadows off, which leaves a sixteenth of the fragment
+ * work and none of the shadow cascades' work, so its figure follows the vertex work of the branches,
+ * which is what the two methods differ in.
  */
 const VEGETATION_POSE_METHODS = ['vertex', 'poses'] as const;
 /** The paths whose figures the pose plan takes at the whole scale and at a tenth of it. */
@@ -1821,9 +1822,18 @@ const VEGETATION_POSE_SCALES = [
 
 export function vegetationPosesPlan(): PlanItem<Check>[] {
 	const items: PlanItem<Check>[] = [];
-	for (const method of VEGETATION_POSE_METHODS)
-		for (const preset of VEGETATION_PRESETS)
-			for (const [path, tier] of VEGETATION_WIND_PATHS)
+	for (const [path, tier] of VEGETATION_WIND_PATHS) {
+		// WebGL2 and compatibility mode cap the preset at Medium, so their pages above it would draw
+		// Medium again under another name.
+		const presets = path === 'webgpu' ? VEGETATION_PRESETS : VEGETATION_PRESETS.slice(0, 2);
+		presets.forEach((preset, index) => {
+			// The two methods run in turns at the same preset, and alternate their order, so a device
+			// that heats through the plan does not favour one of them.
+			const order =
+				(index + VEGETATION_WIND_PATHS.findIndex(([name]) => name === path)) % 2 === 0
+					? VEGETATION_POSE_METHODS
+					: [...VEGETATION_POSE_METHODS].reverse();
+			for (const method of order)
 				items.push(
 					pageItem(
 						`vegetation-poses-${method}-${preset}-${path}`,
@@ -1835,9 +1845,10 @@ export function vegetationPosesPlan(): PlanItem<Check>[] {
 						},
 					),
 				);
-	for (const method of VEGETATION_POSE_METHODS)
-		for (const preset of VEGETATION_PRESETS)
-			for (const [path, tier] of VEGETATION_POSE_SCALES)
+			// The vertex-bound view at a quarter of the render scale, on the two paths whose figures
+			// the record keeps.
+			if (path === 'compat') return;
+			for (const method of order)
 				items.push(
 					pageItem(
 						`vegetation-poses-${method}-${preset}-${path}-vertex`,
@@ -1849,12 +1860,15 @@ export function vegetationPosesPlan(): PlanItem<Check>[] {
 								`preset=${preset}`,
 								`method=${method}`,
 								'scale=0.25',
+								'noshadow=1',
 								'seconds=5',
 							],
 							timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
 						},
 					),
 				);
+		});
+	}
 	return items;
 }
 
