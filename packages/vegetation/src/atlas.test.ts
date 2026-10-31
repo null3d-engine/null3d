@@ -235,4 +235,19 @@ describe('the plant shaders', () => {
 		expect(plain).toContain('fn wind_offset');
 		expect(shared(read('./plant-cards.wgsl'))).toBe(plain);
 	});
+	it('read the wind field with one copy in the plant and grass shaders', () => {
+		// The grass copies the field's steady settings and its sampling function from the plant
+		// shader, so a change to the air rules in one file must reach the other.
+		const read = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8');
+		const block = (source: string, name: string) => {
+			const from = `// <${name}>`;
+			const to = `// </${name}>`;
+			return source.slice(source.indexOf(from), source.indexOf(to));
+		};
+		for (const name of ['wind-steady', 'wind-sample']) {
+			const plant = block(read('./plant.wgsl'), name);
+			expect(plant.length).toBeGreaterThan(0);
+			expect(block(read('./grass.wgsl'), name)).toBe(plant);
+		}
+	});
 });

@@ -415,7 +415,14 @@ level with `bloomLevel`.
 - A level that the frame's chain does not draw, because the weights end before it, binds a one-texel
   texture instead, so the effect reads black rather than a stale level.
 - The level is drawn only while bloom is on. A sketch that reads a level with bloom off reads black,
-  which keeps the cost of the chain with the sketches that ask for it.
+  which keeps the cost of the chain with the sketches that ask for it. The effect's pass therefore
+  declares its read of the level only while the chain draws, and only for a level that the chain
+  declares. The passes are declared again when an effect reads the chain and bloom starts or stops
+  drawing. A read declared while bloom is off names a target whose writers are off, so the graph
+  refuses the frame with E1502. Skyway's lens streak reads level 2, so its Bloom
+  switch stopped every frame. The frame graph test
+  `an_effect_that_reads_bloom_draws_while_bloom_is_off_and_reads_the_chain_once_it_is_on` turns
+  bloom off and on under such an effect.
 
 ## The shader compiler
 
@@ -1269,6 +1276,13 @@ material's vertex offset calls, and the other is the temporal helpers that its h
 Each is a case of the shader library, built for both targets. They add 2 GLSL builds and 2 WGSL
 builds. The library page compiles them as test cases. No page draws with them unless a material asks
 for them.
+
+The bitmask ambient occlusion prototype adds three shaders to the manifest. `proto_s3_scene` has its
+prepass, structure and lit pipelines. `proto_s3_ao` has nine pipelines. They are copy, sao, gtao,
+gtao_wide, bitmask, blur_x, blur_y, three_horizon and three_denoise. `proto_s3_ao_ms` has its copy
+pipeline. They add 7 GLSL builds and 8 WGSL builds. The main module holds them, which
+`tests/pages/proto-s3.ts` imports. No engine build and no shipped page draws them. The engine's
+start files do not grow. `BUILD_BUDGET` records 62,341 GLSL builds and 24,525 WGSL builds.
 
 The count rose again with M3-V2: an instance batch whose rows bring values takes its mask's own test, as a mesh without rows does, so `ROW_VALUES` left `APART` beside
 `ALPHA_COVERAGE` and `ALPHA_HASH` in the draw list. The lit templates then build each mask family
