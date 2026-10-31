@@ -48,6 +48,7 @@ export {
 	plantMaterial,
 } from './atlas';
 export type { AtlasPixels, PaintedAtlas } from './atlas-pixels';
+export { paintBark, paintLeaf } from './atlas-pixels';
 export type { PartArrays } from './builder';
 export {
 	ALL_SPECIES,
