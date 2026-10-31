@@ -2,7 +2,7 @@
 // the chase camera behind it. The camera must keep the car in sight, so a tower never hides it. The
 // strip draws the car's neon band, and a frame where the tower covers the camera's line to the car
 // leaves no band to count. Run it on a computer with a GPU of its own:
-//   NULL3D_SKYWAY_SIGHT_STRIP=1 bun run test:browser -- skyway-sight-strip.spec.ts
+//   NULL3D_SKYWAY_SIGHT_COST=1 bun run test:browser -- skyway-sight-strip.spec.ts
 // Set NULL3D_SKYWAY_SIGHT_OUT to name the folder, so frames drawn with the older camera and with
 // the new one sit apart.
 import { mkdirSync } from 'node:fs';
@@ -12,8 +12,8 @@ import { writePng } from '../../packages/cli/src/png.js';
 import { pageResult } from '../lib/page-result.ts';
 
 test.skip(
-	!process.env.NULL3D_SKYWAY_SIGHT_STRIP,
-	'set NULL3D_SKYWAY_SIGHT_STRIP to draw the filmstrip',
+	!process.env.NULL3D_SKYWAY_SIGHT_COST,
+	'set NULL3D_SKYWAY_SIGHT_COST to draw the filmstrip',
 );
 
 /** Where the frames go, from the repository the tests run in, under the set's own name. */
