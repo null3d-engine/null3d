@@ -10,10 +10,18 @@
 // refreshes at its own rate, and only the part of its picture that changed uploads, so a number, a
 // bar and a moving dot cost no frame work. Two spot lights at the nose light the rain ahead, and a
 // neon band round the body's lower edge marks the field that holds it up.
-import { math, type PerspectiveCamera, quat, type SketchContext, vec3 } from '@null3d/engine';
+import {
+	type Group,
+	math,
+	type PerspectiveCamera,
+	quat,
+	type SketchContext,
+	vec3,
+} from '@null3d/engine';
+import { createWindshield } from '../../addons/weather/index';
 import type { HudGroup } from '../../lib/controls';
 import { EFFECT_LAYER } from '../../lib/layers';
-import { COCKPIT, CONSOLE, createCanopy, createShell, FITTINGS } from './body';
+import { COCKPIT, CONSOLE, createCanopy, createCanopyOverlay, createShell, FITTINGS } from './body';
 import { createCockpit } from './cockpit';
 import { createConsole } from './console';
 import { cityTowers, type Flight, fly, keepOut, type Stick } from './drive';
@@ -112,6 +120,8 @@ fn surface(input: SurfaceInput) -> Surface {
 
 /** The hero car of the scene. */
 export interface Hero {
+	/** The car's world pose, which a splash or steam effect hangs under. */
+	readonly group: Group;
 	/** Where the camera sits now. */
 	readonly view: View;
 	/** Puts the camera behind the car or in its seat. */
@@ -123,6 +133,8 @@ export interface Hero {
 	canopy(out: Float32Array): void;
 	/** Shows the scene's controls on the console, as the page's panel shows them. */
 	showControls(groups: readonly HudGroup[]): void;
+	/** Sets how heavy the rain is on the car's glass, from 0 for a dry glass to 1. */
+	setRain(value: number): void;
 	/**
 	 * Takes the on-screen pad's wishes, each from -1 to 1: the throttle, the steer to the left and
 	 * the lift. The keys add to them.
@@ -192,8 +204,9 @@ export function createHero(
 		});
 	}
 	// The canopy: tinted glass, which shows the lit cockpit dimly from outside and the city from in.
+	const canopy = createCanopy(ctx);
 	scene.createMesh({
-		mesh: createCanopy(ctx),
+		mesh: canopy,
 		material: materials.standard({
 			color: '#0a1620',
 			roughness: 0.05,
@@ -205,6 +218,15 @@ export function createHero(
 		parent: body,
 		layers: BODY_LAYERS,
 		castShadows: false,
+	});
+	// The glass carries the weather add-on's drops: beads that slide and leave trails, and a wiper
+	// that clears them now and then. The overlay is a blended surface over the canopy, so the car's
+	// paint and reflections stay under it.
+	const shield = createWindshield(ctx, {
+		mesh: createCanopyOverlay(ctx),
+		parent: body,
+		layers: BODY_LAYERS,
+		wiper: { every: 7, duration: 0.9 },
 	});
 
 	// The engine's two nozzles, and the lamp that plays behind them.
@@ -485,6 +507,7 @@ export function createHero(
 	opening();
 
 	return {
+		group,
 		get view() {
 			return view;
 		},
@@ -511,6 +534,9 @@ export function createHero(
 		},
 		showControls(groups) {
 			touchscreen.show(groups);
+		},
+		setRain(value) {
+			shield.setRain(math.clamp(value, 0, 1));
 		},
 		setPad(throttle, steer, lift) {
 			pad.throttle = throttle;
@@ -623,6 +649,8 @@ export function createHero(
 			vec3.copy(before, at);
 			engine.set({ strength: 1.2 + Math.sin(t * 17) * 0.2 });
 			engineLight.setIntensity(60 + Math.sin(t * 17) * 12);
+			// The drops slide and the wiper sweeps.
+			shield.update(t);
 			// The panels read out the flight at their own rates.
 			cockpit.update(t, speed * 3.6, at[1] as number);
 			touchscreen.update();

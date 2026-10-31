@@ -7,7 +7,7 @@ references of `demo-skyway`, which come from a CI run. Task: M3-C1.
 Summary: In Skyway's Manual mode the user drives the hero car with W, A, S, D, R and F. V switches
 the view from behind the car to its seat. The sky lanes keep to the right on 12 heights, with one
 speed to a lane. They draw 6,000 to 16,000 cars, so a lane at High carries a car about every 96 m
-instead of every 20 m. Every demo's keys show as key caps in a panel beside its caption.
+instead of every 20 m. Every demo's keys show as key caps in a panel under its caption.
 
 ## Question
 
@@ -121,6 +121,12 @@ instead of a band of cars over the low streets. The owner judges the final look.
   the cockpit, and the rain streams past just outside the glass. A press posts
   `hud-press` to the page, which sends it on to the sketch as its own panel's button would. Both
   panels then show the change.
+- **The weather add-on.** The ground's water is the weather add-on's wet surface
+  (`createWetSurface`), which the city's surface function copies and calls. The scene reflects from
+  the screen, so the add-on binds no planar pass. The car's own mirror is added over that surface's
+  shading, where the water is, because the screen-space reflections never see the car's underside.
+  The hero car's bubble carries the add-on's windshield drops and wiper, and the splashes on its
+  roof and the vapour from its nozzles are the add-on's particle systems.
 - **The cars' bodies.** The traffic and the hero car are flying cars (`createFlyingCarHull` and
   `loftHull` in the traffic-lanes add-on): a smooth body lofted through eight rounded sections,
   with a cut-off tail where the tail lights sit and a nose that tapers to a point, a bubble

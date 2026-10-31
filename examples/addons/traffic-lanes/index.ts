@@ -206,6 +206,11 @@ export function vehicleCanopy(
 	return geometry.fromArrays({
 		positions: new Float32Array(positions),
 		uvs: new Float32Array(uvs),
+		indices: new Uint32Array(indices),
+		computeNormals: true,
+	});
+}
+
 /** One section of a lofted hull: where it stands along the length, its half width, its belly and its top. */
 export interface HullSection {
 	z: number;

@@ -11,6 +11,7 @@ import {
 	FLYING_CAR_POD,
 	FLYING_CAR_POD_X,
 	type HullSection,
+	type Loft,
 	loftHull,
 } from '../../addons/traffic-lanes/index';
 
@@ -68,12 +69,46 @@ export function createShell(ctx: SketchContext): MeshGeometry {
 	return ownSpace(ctx, positions, indices);
 }
 
+/** The glass bubble's places and triangles. */
+function bubbleLoft(): Loft {
+	return loftHull([{ sections: BUBBLE, ring: 16, squareness: 2.2, flatTail: false }]);
+}
+
 /** The glass bubble over the cockpit. */
 export function createCanopy(ctx: SketchContext): MeshGeometry {
-	const { positions, indices } = loftHull([
-		{ sections: BUBBLE, ring: 16, squareness: 2.2, flatTail: false },
-	]);
+	const { positions, indices } = bubbleLoft();
 	return ownSpace(ctx, positions, indices);
+}
+
+/**
+ * The glass bubble as an overlay mesh, with texture coordinates from 0 to 1 across its width and
+ * its height, for a pattern that keeps its size on the glass, such as the weather add-on's drops.
+ */
+export function createCanopyOverlay(ctx: SketchContext): MeshGeometry {
+	const { positions, indices } = bubbleLoft();
+	const count = positions.length / 3;
+	let [lowX, highX, lowY, highY] = [Infinity, -Infinity, Infinity, -Infinity];
+	for (let k = 0; k < count; k++) {
+		const x = positions[k * 3] as number;
+		const y = positions[k * 3 + 1] as number;
+		lowX = Math.min(lowX, x);
+		highX = Math.max(highX, x);
+		lowY = Math.min(lowY, y);
+		highY = Math.max(highY, y);
+	}
+	const uvs = new Float32Array(count * 2);
+	const across = Math.max(highX - lowX, 1e-6);
+	const up = Math.max(highY - lowY, 1e-6);
+	for (let k = 0; k < count; k++) {
+		uvs[k * 2] = ((positions[k * 3] as number) - lowX) / across;
+		uvs[k * 2 + 1] = ((positions[k * 3 + 1] as number) - lowY) / up;
+	}
+	return ctx.geometry.fromArrays({
+		positions: new Float32Array(positions),
+		uvs,
+		indices: new Uint32Array(indices),
+		computeNormals: true,
+	});
 }
 
 /** One block of the cockpit's inside: its middle and its size, in the body's units. */
