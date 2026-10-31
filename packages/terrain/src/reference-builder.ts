@@ -25,7 +25,14 @@ export class ReferenceTerrainBuilder implements TerrainBuilder {
 
 	constructor(options: TerrainBuilderOptions) {
 		this.options = options;
-		this.tree = new Quadtree(options.blocks);
+		// The tree reads the field itself: a tree made from another's settings alone would bound
+		// every block at zero height, and its selection would differ from the module's.
+		this.tree = new Quadtree({
+			size: options.size,
+			maxLevel: options.maxLevel,
+			quads: options.quads,
+			field: options.field,
+		});
 		this.shape = chunkShape(options.quads);
 		this.capacity = Math.max(1024, options.maxBlocks * 4);
 		this.batch = Math.min(this.capacity, Math.max(options.builds, 128));
