@@ -1,8 +1,9 @@
 // The built module against the TypeScript reference: one view's leaves and one build's vertices,
 // compared value for value. The crate is the shipped port, and `reference-builder.ts` is the
 // TypeScript that it replaces, so a change to either side that moves a number fails here. The
-// module comes from `bun run build`; a checkout without that build has nothing to drive, so the
-// test skips and says why.
+// module comes from `bun run build`, and CI's build job hands it to the unit tests. A checkout
+// without that build skips and says why; CI fails with the same words, so a broken upload cannot
+// leave the parity check silently unrun.
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -15,11 +16,17 @@ import { run, type TerrainInput } from './terrain-task';
 
 const WASM = fileURLToPath(new URL('../dist/terrain.wasm', import.meta.url));
 const built = existsSync(WASM);
+const inCI = Boolean(process.env.CI);
+const missing = `the built terrain module is missing at ${WASM}; run \`bun run build\` to run this test`;
 
-if (!built)
-	console.warn(
-		`the built terrain module is missing at ${WASM}; run \`bun run build\` to run this test.`,
-	);
+if (!built && !inCI) console.warn(`${missing}.`);
+
+// CI's build job uploads the module with the page's other WebAssembly, so a missing file there is
+// a broken upload rather than a checkout that has not built yet.
+test.skipIf(!inCI)('CI hands the unit tests the terrain module', () => {
+	if (!built)
+		throw new Error(`${missing}. CI's build job uploads it with the page's other WebAssembly.`);
+});
 
 const SIZE = 1024;
 const QUADS = 16;
