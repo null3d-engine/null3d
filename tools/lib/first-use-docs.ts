@@ -46,6 +46,8 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 	area_lights: 'with the first rectangle or tube light',
 	background: 'with the first texture, environment or cube map background',
 	sky: 'with the first sky background',
+	clouds:
+		"with the first frame that draws the sky's volumetric cloud tier: the preset's `cloudSteps` above 0, or `quality.set({ cloudSteps })`. A page that draws the flat layer downloads none of it. The noise field of its march is made in the browser then",
 	physical_sky:
 		'with the first physical sky background (`atmosphere`). The view shows the background color until the sky is built',
 	occlusion:

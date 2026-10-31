@@ -33,7 +33,7 @@ fn stages(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32, [f32; 3])> {
         .iter()
         .filter(|(op, _)| *op == Op::SkyMapStep)
         .map(|(_, o)| {
-            assert_eq!(o.len(), 29, "a stage takes 29 words");
+            assert_eq!(o.len(), 31, "a stage takes 31 words");
             assert_eq!(o[3], 0, "the analytic sky names no panorama");
             let sun = [4, 5, 6].map(|k| f32::from_bits(o[k]));
             (o[0], o[1], o[2], sun)

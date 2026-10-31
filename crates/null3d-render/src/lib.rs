@@ -71,6 +71,7 @@ pub mod background;
 pub mod bloom;
 pub mod camera;
 mod cells;
+pub mod cloud_noise;
 pub mod compute;
 pub mod cpu_culled;
 mod data_texture;

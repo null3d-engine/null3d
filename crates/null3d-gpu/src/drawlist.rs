@@ -887,6 +887,13 @@ pub mod layout {
     /// [`TAA`] with a multisampled scene depth, whose samples the resolve reads. Only WebGPU has
     /// it.
     pub const TAA_MS: u32 = 58;
+    /// Group 1 of the analytic sky's volumetric cloud draw: the background's own uniform block,
+    /// then the cloud noise atlas and its sampler at bindings 6 and 7. The numbers leave room for
+    /// [`CLOUDS_ATMOSPHERE`]'s tables, so the shared cloud module names one set of bindings.
+    pub const CLOUDS: u32 = 65;
+    /// Group 1 of the physical sky's volumetric cloud draw: its values block and tables exactly as
+    /// [`ATMOSPHERE`] binds them, then the cloud noise atlas and its sampler at bindings 6 and 7.
+    pub const CLOUDS_ATMOSPHERE: u32 = 66;
     /// The final pass with custom effects folded into it: [`FINAL`]'s bindings, then the effects'
     /// uniform buffer at binding 4 and the scene's depth, or a blank texture, at binding 5, as
     /// plain floats.
@@ -2166,6 +2173,14 @@ pub mod template {
     /// Light clustering's fit: one thread that fits the slices to the measured depth and writes
     /// the grid's header, before the counting dispatch. WebGPU only.
     pub const LIGHT_FIT: u32 = 88;
+    /// The analytic sky's volumetric clouds, drawn as [`BACKGROUND_CUBE`]'s box right after the
+    /// sky and blended over it. It binds the frame's group and the background's own group, of
+    /// layout [`CLOUDS`](super::layout::CLOUDS).
+    pub const BACKGROUND_CLOUDS: u32 = 89;
+    /// The physical sky's volumetric clouds, drawn as [`BACKGROUND_CLOUDS`] is, from the physical
+    /// sky's values and tables, of layout
+    /// [`CLOUDS_ATMOSPHERE`](super::layout::CLOUDS_ATMOSPHERE).
+    pub const BACKGROUND_CLOUDS_ATMOSPHERE: u32 = 90;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2173,7 +2188,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 88] = [
+    pub const NAMES: [(&str, u32); 90] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2261,6 +2276,8 @@ pub mod template {
         ("LIGHT_DEPTH_CLEAR", LIGHT_DEPTH_CLEAR),
         ("LIGHT_DEPTH_CLEAR_MS", LIGHT_DEPTH_CLEAR_MS),
         ("LIGHT_FIT", LIGHT_FIT),
+        ("BACKGROUND_CLOUDS", BACKGROUND_CLOUDS),
+        ("BACKGROUND_CLOUDS_ATMOSPHERE", BACKGROUND_CLOUDS_ATMOSPHERE),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2401,6 +2418,14 @@ pub mod groups {
         (template::AO_DENOISE, own!(layout::AO)),
         (template::BACKGROUND_CUBE, BACKGROUND),
         (template::BACKGROUND_SKY, BACKGROUND),
+        (
+            template::BACKGROUND_CLOUDS,
+            &[&[layout::FRAME], &[layout::CLOUDS]],
+        ),
+        (
+            template::BACKGROUND_CLOUDS_ATMOSPHERE,
+            &[&[layout::FRAME], &[layout::CLOUDS_ATMOSPHERE]],
+        ),
         (template::SHADOW_CUTOUT, MESH),
         (template::SHADOW_CUTOUT_MAP, MESH),
         (template::VIEW_COPY, own!(layout::VIEW_COPY)),
@@ -2682,6 +2707,8 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
     ("AO", layout::AO),
     ("BACKGROUND", layout::BACKGROUND),
+    ("CLOUDS", layout::CLOUDS),
+    ("CLOUDS_ATMOSPHERE", layout::CLOUDS_ATMOSPHERE),
     ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
     ("EFFECT", layout::EFFECT),
     ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
