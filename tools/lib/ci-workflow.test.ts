@@ -200,8 +200,11 @@ describe("CI's workflow", () => {
 		const step = jobNamed('ci-passed').steps?.find(({ name }) => name === 'Every job passed');
 		const list = /\[([^\]]*)\] as \$full/.exec(step?.run ?? '')?.[1] ?? '';
 		const skippable = [...list.matchAll(/"([\w-]+)"/g)].map(([, job]) => job).sort();
+		// A job may narrow the full run's condition for itself — the device job skips the shard axis
+		// values that Firefox does not use — so the test reads the condition as a part of the job's
+		// own rather than as the whole of it.
 		const full = needsOf(jobs['ci-passed'])
-			.filter((name) => jobNamed(name).if === FULL_RUN)
+			.filter((name) => String(jobNamed(name).if ?? '').includes(FULL_RUN))
 			.sort();
 		expect(skippable).toEqual(full);
 		expect(full.length).toBeGreaterThan(0);
@@ -234,18 +237,20 @@ describe("CI's workflow", () => {
 			const shards = matrixOf(name)[key] as number[];
 			expect(shards, name).toEqual(oneTo(shards.length));
 		}
-		// The device job gives each browser its own count, so its shard lists live in the entries
-		// that name each browser rather than in one list both would share.
-		const entries = matrixOf('real-browsers').include as {
-			browser: string;
-			shard: number[];
-			shards: number[];
-		}[];
-		expect(entries.map(({ browser }) => browser).sort()).toEqual(['Firefox', 'Safari']);
-		for (const { browser, shard, shards } of entries) {
-			expect(shard, browser).toEqual(oneTo(shard.length));
-			expect(shards, browser).toEqual([shard.length]);
-		}
+		// The device job gives each browser its own count from an expression beside the axis, because
+		// a list inside an `include` entry is assigned as a list rather than expanded.
+		const [axis] = [matrixOf('real-browsers').shard as number[]];
+		expect(axis, 'real-browsers').toEqual(oneTo(axis.length));
+		expect(matrixOf('real-browsers').browser).toEqual(['Safari', 'Firefox']);
+		const run = (jobNamed('real-browsers').steps ?? [])
+			.map(({ run }) => run ?? '')
+			.find((command) => command.includes('--shard'));
+		const counts = [...(run ?? '').matchAll(/&& (\d+) \|\| (\d+)/g)].flatMap((match) => [
+			Number(match[1]),
+			Number(match[2]),
+		]);
+		expect(counts.length, 'real-browsers').toBeGreaterThan(0);
+		for (const count of counts) expect(count).toBeLessThanOrEqual(axis.length);
 	});
 
 	it('gives each browser shard one weight', () => {
