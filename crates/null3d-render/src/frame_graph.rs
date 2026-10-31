@@ -7704,7 +7704,8 @@ mod tests {
         ao: AoIds {
             buffer: 11,
             first_group: 30,
-            blank: 913,
+            // The moment layer's area and search tables take 913 and 914.
+            blank: 915,
         },
         effects: EffectIds {
             buffer: 12,
