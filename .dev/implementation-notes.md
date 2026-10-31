@@ -1302,6 +1302,17 @@ page downloads them at its start. The milestone's bitmask ambient occlusion prot
 GLSL builds and eight WGSL builds of its own, which the merge brought beside the layer's. The
 manifest makes 66,522 GLSL builds and 25,786 WGSL builds, and `BUILD_BUDGET` records those figures.
 
+The screen-space bounce light (D-284) adds one shader with its trace and denoise pipelines, so 2
+GLSL builds and 2 WGSL builds. It loads on first use with ambient occlusion's steps, which the
+bounce reads. `BUILD_BUDGET` records 62,343 GLSL builds and 24,527 WGSL builds.
+
+The bounce light also shows the frame group's binding limit. The lit fragment stage already reads
+the sixteen sampled textures that every device allows: eight in the frame's group and eight map
+slots. A new binding would fail every standard material. The screen texture therefore carries the
+light in a second layer, and the frame's binding 11 is a 2D array. Ambient occlusion's denoise
+reads the reflections' trace, or a blank array while they draw none, so every texture of that
+binding is an array. The first texture of the screen steps stays a 2D image.
+
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this
 guard refuses.

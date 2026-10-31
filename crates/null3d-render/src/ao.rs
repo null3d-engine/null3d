@@ -181,6 +181,9 @@ pub(crate) struct AoIds {
     pub(crate) buffer: u32,
     /// The bind group of each step, from this id on.
     pub(crate) first_group: u32,
+    /// The blank array that the denoise reads in place of the reflections' trace while they draw
+    /// none: a texture of the screen texture's shape that changes no light.
+    pub(crate) blank: u32,
 }
 
 /// The texture that each step reads at binding 1, at binding 2 and at binding 3. The horizon step
@@ -370,15 +373,17 @@ impl AoPass {
     }
 }
 
-/// Bytes of the blank texture's one texel: four half floats.
-pub(crate) const BLANK_BYTES: usize = 8;
+/// Bytes of the blank texture's two texels: four half floats each.
+pub(crate) const BLANK_BYTES: usize = 16;
 
-/// The blank texture's texel, in half floats: no occlusion, no depth, no reflected ray, and the
-/// sun's light in full past contact shadows.
-const BLANK_TEXEL: [u16; 4] = [0x3c00, 0, 0, 0x3c00];
+/// The blank texture's texels, in half floats, layer by layer: no occlusion, no depth, no reflected
+/// ray, and the sun's light in full past contact shadows in the first, and no bounce light in the
+/// second.
+const BLANK_TEXEL: [u16; 8] = [0x3c00, 0, 0, 0x3c00, 0, 0, 0, 0];
 
 /// Records the creation of the texture that frame groups bind in place of the steps' result while
-/// they draw no frame: one texel, which [`upload_blank`] fills with values that change no light.
+/// they draw no frame: one texel in each of its two layers, which [`upload_blank`] fills with
+/// values that change no light.
 pub(crate) fn create_blank(list: &mut DrawList, id: u32) -> Result<(), RecordError> {
     use null3d_gpu::drawlist::texture_usage;
     list.push(
@@ -387,18 +392,18 @@ pub(crate) fn create_blank(list: &mut DrawList, id: u32) -> Result<(), RecordErr
             id,
             1,
             1,
-            1,
+            2,
             FORMATS[STEPS - 1],
             texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
             1,
             1,
-            null3d_gpu::drawlist::view::D2,
+            null3d_gpu::drawlist::view::D2_ARRAY,
         ],
     )?;
     Ok(())
 }
 
-/// Records the upload of the blank texture's texel, which [`create_blank`] made. A frame may read
+/// Records the upload of the blank texture's texels, which [`create_blank`] made. A frame may read
 /// it before the steps' pipelines are built, so it must leave every light as it is.
 pub(crate) fn upload_blank(
     list: &mut DrawList,
@@ -410,7 +415,7 @@ pub(crate) fn upload_blank(
         *bytes = half.to_le_bytes();
     }
     let (at, bytes) = arena.push(&texel)?;
-    list.push(Op::WriteTexture, &[id, 0, 0, 0, 0, 1, 1, 1, at, bytes])?;
+    list.push(Op::WriteTexture, &[id, 0, 0, 0, 0, 1, 1, 2, at, bytes])?;
     Ok(())
 }
 
@@ -519,6 +524,7 @@ mod tests {
         let ids = AoIds {
             buffer: 1,
             first_group: 2,
+            blank: 3,
         };
         let mut pass = AoPass::new(ids, 4);
         let mut pipelines = PipelineCache::default();

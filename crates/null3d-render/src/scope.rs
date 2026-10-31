@@ -112,6 +112,8 @@ pub const MOMENT_SMAA_EDGES: u32 = 49;
 pub const MOMENT_SMAA_BLEND: u32 = 50;
 /// Mixes each pixel with the neighbour that its weights name.
 pub const MOMENT_SMAA_RESOLVE: u32 = 51;
+/// A step of screen-space bounce light.
+pub const BOUNCE: u32 = 52;
 
 /// A scope of `kind` for a step by its place, such as the fourth step of bloom's chain.
 pub fn of(kind: u32, index: u32) -> u32 {
