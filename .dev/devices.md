@@ -373,7 +373,7 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - The `atlas-paint` plan times the bark and the leaf atlas paint, separately, for M3-V5's owed
   figures. The page paints each atlas in turn for three rounds, with the order swapped, and reports
   every round with the middle figure of each. The painters are the ones that `bakePlantAtlases`
-  runs, with no texture upload and no drawing between them. The paint runs on the page's thread, so
+  runs, with no texture upload and no drawing between them. The paint runs on the sketch thread, so
   one page reports both figures and no GPU path is asked of it.
 - Run it on the cloud iPad and S24-class phone:
   `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys25-chrome --plan atlas-paint`.
