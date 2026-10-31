@@ -87,7 +87,10 @@ freeze in the engine's API at 1.0, and its code would join every page's start, f
 - **The reference.** `packages/terrain/src/reference-builder.ts` runs the same selection and build
   in the thread that runs the sketch, so the package's unit tests drive them with no worker. The
   package build leaves that file out of the tarball, with the tree walk and the vertex writers that
-  it reads.
+  it reads. `packages/terrain/src/wasm-parity.test.ts` drives the built module through the shipped
+  task module on a view that mixes levels, and compares the leaves and every vertex with that
+  reference, so an edit to either side that moves a number fails. CI's build job hands the module to
+  the unit tests with the page's other WebAssembly.
 - **Hold mode.** A hold runs its frames with no frame loop, so a task that the sketch queued never
   answers while it steps. The held frame now waits for those tasks, then draws one more frame at
   the held time, as it already waits for textures and a grading table. Without that wait a held
