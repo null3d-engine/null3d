@@ -603,6 +603,10 @@ export class Render {
 			// after the camera's passes there, as the compute pass does.
 			const afterScene =
 				options.description.frame === 'resolve' || options.description.frame === 'post';
+			// The fragment form writes the format that the compute pass declares, so the values it
+			// keeps match the compute path's on an 8-bit page, where the scene color cannot hold
+			// them.
+			const targetFormat = FORMAT_CODE[options.format ?? 'rgba16float'];
 			const place = this.core.check(
 				this.core.glue.addFullscreenPass(
 					name,
@@ -618,6 +622,7 @@ export class Render {
 					keepsHistory ? 1 : 0,
 					states,
 					runs,
+					targetFormat,
 				),
 				call,
 			);
@@ -791,6 +796,7 @@ export class Render {
 				0,
 				1,
 				1,
+				0,
 			),
 			call,
 		);

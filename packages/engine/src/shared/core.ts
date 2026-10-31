@@ -728,7 +728,9 @@ export interface CoreGlue extends CoreErrors {
 	 * texels, or with a width of 0, of `scale` of the render size each way. It reads the input
 	 * image `source` (`PASS_SOURCE_*`), the scene's depth with the flag `EFFECT_DEPTH`, the
 	 * uniforms at `effectValues` and the textures at `effectTextures`, in one frame of every
-	 * `every`. Returns the view's place from 1, or 0 on failure, as `addPass` does.
+	 * `every`. A fragment form of a compute pass draws a target of `format`, a draw list format
+	 * code, or of the scene's views' format with 0. Returns the view's place from 1, or 0 on
+	 * failure, as `addPass` does.
 	 */
 	addFullscreenPass(
 		pass: string,
@@ -744,6 +746,7 @@ export interface CoreGlue extends CoreErrors {
 		history: number,
 		layers: number,
 		steps: number,
+		format: number,
 	): number;
 	/**
 	 * Adds a compute pass named `pass`, which runs the compiled WGSL of compute pipeline template
