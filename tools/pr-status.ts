@@ -93,7 +93,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-K3':
 		"unticked by the 29 October audit: the owner's 26 October ruling is that cookies take any texture and larger sizes, and the head still resamples to 128 by 128 and takes pixels only",
 	'M3-F13':
-		"the layer, its seven pictures and its speed line are in and its look is approved; three clauses stay open. The S24-class phone's cost figure decides the preset, and no attempt has measured it yet. The owner's ruling on whether a preset turns the layer on at all waits for the morning. The steps at the far panes' edges are a look choice waiting beside them: a fit of three atoms removes more than half of them and needs a 32-bit store, which is twice the moment traffic a frame",
+		"the layer, its seven pictures and its speed line are in and its look is approved; two clauses stay open. The S24-class phone's cost figure decides the preset and is a run to schedule. The steps at the far panes' edges are a look choice that the owner has not ruled: a fit of three atoms removes more than half of them and needs a 32-bit store, which is twice the moment traffic a frame",
 	'M3-F14':
 		"unticked by the 29 October audit: the entry gained a rule-42 bullet that the tick never covered. The per-frame terrain work, the quadtree select and the block build, is still in TypeScript and there is no terrain crate; that work is also what M3-R39's new bullet hands here by name, so R39 stands and this carries it",
 	'M3-V8':

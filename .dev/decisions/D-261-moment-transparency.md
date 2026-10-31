@@ -226,8 +226,9 @@ the owner's ruling (hard rule 40), and the mean error favors the moments.
 ## Consequences
 
 - The setting is one flag on the quality settings, and `createEngine`'s `momentTransparency` option
-  or the `?moments=` switch sets it. It is fixed at the start, and it is off on every preset. The
-  quality presets page gives its row and its cost, so a page sees what it pays.
+  or the `?moments=` switch sets it. It is fixed at the start. The owner ruled that every preset
+  leaves it off, so the layer is a per-scene opt-in that a page turns on for itself. The quality
+  presets page gives its row and its cost, so a page sees what it pays.
 - The setting covers every blended surface that a moment build covers, whether its material blends
   normally or with `'weighted'`, so only one layered pass draws. A material with a feature that the
   moment builds lack, such as a clear coat, transmission, parallax or a mask, keeps the transparent
@@ -296,7 +297,7 @@ It also holds that an unused layer declares and records nothing.
 
 ## Remaining work
 
-1. The run on an S24-class phone, which gives the cost figure that decides the preset. The cloud
+1. The run on an S24-class phone, which gives the cost figure that a preset would pay. The cloud
    runner reached the session three times and measured nothing. It refused first while another
    BrowserStack session was in use. It refused next because the port it serves on belonged to
    another checkout, and because a worktree has no development certificate of its own: the run
@@ -305,9 +306,7 @@ It also holds that an unused layer declares and records nothing.
    checkout needs its build run before the pages load. The command is `bun run devices:cloud
    --only bsgalaxys24-chrome --plan bench -- --only bench-s1-null3d-webgl2-1 --allow-no-webgpu`,
    once with `--switches weighted=on` and once with `--switches weighted=on&moments=on`.
-2. The owner's ruling on whether a preset turns the layer on, and which. Every preset leaves it off
-   today, and the cost figure above is what a preset would pay.
-3. The steps at the far panes' edges, if the owner wants them gone: a fit of three atoms takes more
+2. The steps at the far panes' edges, if the owner wants them gone: a fit of three atoms takes more
    than half of them away, and it needs a store of 32-bit floats where the surfaces sit close
    together. That store costs twice the moment traffic a frame and needs a device feature that is
    not on every GPU.
