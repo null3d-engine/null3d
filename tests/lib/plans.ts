@@ -1782,20 +1782,6 @@ export function vegetationGrassPlan(): PlanItem<Check>[] {
 					},
 				),
 			);
-	// One page for each band alone, so the near band's detailed blades and the far band's cheaper
-	// ones take their own frames rather than one average over the hill.
-	for (const band of [0, 1])
-		items.push(
-			pageItem(
-				`vegetation-grass-band-${band}-high-webgpu`,
-				'vegetation-grass',
-				{ kind: 'probe', tier: 'webgpu' },
-				{
-					switches: ['gpu=webgpu', 'preset=high', 'seconds=5', `band=${band}`],
-					timeoutSeconds: 600,
-				},
-			),
-		);
 	return items;
 }
 

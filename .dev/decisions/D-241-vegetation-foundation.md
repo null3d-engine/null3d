@@ -755,32 +755,27 @@ length, and only the width grew. The widening also lands where the ground hides 
 segment is a triangle that tapers to a point, so its extra width sits at its root. The lattice is
 the same two faults: single-segment blades are sub-pixel at the crest and rasterize as single
 pixels, and every far row began to draw at one distance, so the engine's ordered fade dither fell in
-one ring. The fixed bands keep the density and the width and take the saving from the segments alone,
-65 triangles a tuft at three segments against 39 at two, and the engine's own edge fades cross-fade
-the two bands' tufts along the boundary.
+one ring.
 
-**What it costs.** The picture's hill holds 20,000 tufts at the High count in the near band, and
-Chrome on the Mac drew it at 960 by 540 drawing pixels at each preset and path that its tier offers
-([its run](../tested-devices/macbook-pro-m3-max-chrome/20261030-145245-vegetation-grass.md)).
-WebGPU took 1.05, 1.97, 2.59 and 3.08 ms a frame from Low to Ultra at the median. The whole hill at
-High costs less than the same hill without bands, 2.59 against 3.47 ms
-([the run without them](../tested-devices/macbook-pro-m3-max-chrome/20261030-131312-vegetation-grass.md)),
-because the far ground draws 39 and 13 triangles a tuft where it drew 65.
+**The second build looked right and saved nothing, so the default keeps the one band.** That build
+placed every band's tufts at the same blade width and took the saving from the segments alone, 39
+triangles a tuft past the first edge against 65. It drew the hill at 3.54 ms at High on the Mac, a
+little above the 3.47 ms of one band, because the far rows fell only to 60 per cent of the triangles
+while the second batch and its band test cost the frame its own share. The review's rule was that a
+saving that cannot hold the hill's look at its price is not taken, and this one cannot hold its price
+at all. So `createGrass` draws one band unless a page passes `bands`: the default is the plain hill,
+and a page that splits it takes the same trade knowingly.
 
-| Band alone at High | Distances | Tufts | Triangles a tuft | GPU median (ms) | Opaque pass (ms) |
-| --- | --- | --- | --- | --- | --- |
-| near | 0 to 17 m | 20,000 | 65 | 1.84 | 1.44 |
-| middle | 17 to 30.6 m | 10,000 | 39 | 1.44 | 1.05 |
-| far | 30.6 to 54.4 m | 5,000 | 13 | 0.85 | 0.46 |
-
-The rows are allocated once for Ultra's share: 43,750 rows of 64 bytes, 2.8 MB. A preset draws
-12,250 rows at Low, 21,000 at Medium, 35,000 at High and all 43,750 at Ultra, so a preset change
-costs no memory. The sketch thread's median at High is 1.68 ms against 0.93 without bands, which is
-the band test and the culling of 43,750 rows. Each band places over the whole square, so rows beyond
-the camera's band stand undrawn and a tile built around the camera would place fewer. The High
-reading sits inside the add-on's 49.0 ms budget on the Apple devices. The iPad, the S24 class and
-the Tab A9 Plus rows are owed. The picture holds the air still, so its blades stand straight, and
-its references hold the three tiers of both sets, drawn on the tree that carries the bands.
+**What it costs.** The default hill holds 20,000 tufts at the High count, and Chrome on the Mac drew
+it at 960 by 540 drawing pixels at each preset and path that its tier offers
+([its run](../tested-devices/macbook-pro-m3-max-chrome/20261030-131312-vegetation-grass.md)).
+WebGPU took 1.38, 2.36, 3.47 and 4.19 ms a frame from Low to Ultra at the median, with the wind
+add-on's compute pass 0.07 to 0.13 ms of that, and the opaque pass at High carried about 1.3 million
+triangles. The split hill's own runs are the two above, 2.59 ms for the rejected thinning and
+3.54 ms for the look-preserving split, with their rows allocated once for Ultra's share: 43,750 rows
+of 64 bytes. The default's High reading sits inside the add-on's 49.0 ms budget on the Apple
+devices. The iPad, the S24 class and the Tab A9 Plus rows are owed. The picture holds the air still,
+so its blades stand straight, and its references hold the three tiers of both sets.
 `createGrass` draws on WebGL2 too, where the field's grid costs extra draws.
 
 **What its compute half waits on.** The plan's V8 line names M3-E8 and M3-E9 with shadow views. It
