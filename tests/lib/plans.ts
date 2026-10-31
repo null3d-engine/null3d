@@ -270,6 +270,11 @@ export type Check =
 	 * holds the figures, and nothing judges them.
 	 */
 	| { kind: 'probe'; tier: Tier }
+	/**
+	 * The atlas paint page: how long the bark and the leaf atlas take to paint, in turns. The paint
+	 * runs on the page's own thread, so the figures do not depend on a GPU path.
+	 */
+	| { kind: 'atlas-paint' }
 	/** The sky map cost page: each stage of a sky map's refresh, timed on one GPU path. */
 	| { kind: 'sky-map'; tier: Tier }
 	/** The sky refresh page: the frames from a sun move until the sky's light follows it. */
@@ -1431,6 +1436,26 @@ export function grassPlan(): PlanItem<Check>[] {
 			{ switches: [`gpu=${tier}`], timeoutSeconds: EFFECT_TIMEOUT_SECONDS },
 		),
 	);
+}
+
+/** The seconds that the atlas paint page may take: its painters run three rounds of each atlas. */
+const ATLAS_PAINT_TIMEOUT_SECONDS = 120;
+
+/**
+ * How long the bark and the leaf atlas take to paint on each device, separately: the painters that
+ * `bakePlantAtlases` runs, three rounds of each in turn. The paint runs on the sketch thread, so one
+ * page on each device reports both figures, and no GPU path is asked of it. D-241's bake section
+ * records the tablet's and the phone's figures from this plan.
+ */
+export function atlasPaintPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'atlas-paint',
+			'atlas-paint-cost',
+			{ kind: 'atlas-paint' },
+			{ timeoutSeconds: ATLAS_PAINT_TIMEOUT_SECONDS },
+		),
+	];
 }
 
 /** The GPU paths of the alpha-mask plan's pages: the two WebGPU paths draw on WebGPU's tier. */
@@ -2607,6 +2632,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
 	grass: grassPlan,
+	'atlas-paint': atlasPaintPlan,
 	'alpha-mask-cost': alphaMaskPlan,
 	'impostor-bake': impostorBakePlan,
 	'impostor-cost': impostorCostPlan,
@@ -3532,6 +3558,20 @@ export function judge(
 		case 'probe':
 			// The page reports what it found, and the run's result holds it.
 			return [];
+		case 'atlas-paint': {
+			const paint = result as ItemResult & {
+				times?: { bark?: number; leaf?: number }[];
+				barkMs?: number;
+				leafMs?: number;
+				failures?: string[];
+			};
+			return [
+				...(paint.failures ?? []).map((code) => `the engine failed with ${code}`),
+				...((paint.times ?? []).length > 0 ? [] : ['the page painted no round']),
+				...(paint.barkMs && paint.barkMs > 0 ? [] : ['the page measured no bark paint']),
+				...(paint.leafMs && paint.leafMs > 0 ? [] : ['the page measured no leaf paint']),
+			];
+		}
 		case 'effect':
 		case 'environment':
 		case 'grass':
