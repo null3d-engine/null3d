@@ -1,7 +1,9 @@
 # D-281: A ground surface's reflection of the sky costs about a third of a millisecond
 
 Status: decided, for the owner's review. Built: S7, the page switch that drops the reflection and
-the page's memory figures, with the Mac, tablet and phone rows recorded. Open: nothing. Task: M3-R26.
+the page's memory figures, with the Mac, tablet and phone rows recorded. Open: the software references
+are CI's earlier drawing of the same scene, not a fresh run at this commit. Also open: the WebGL2 GPU
+cost has no figure because the timer cannot separate the effect. Task: M3-R26.
 
 Summary: A paved surface that reflects a sky with a layer costs 0.34 ms of GPU time per frame on the
 Mac. It does so at High and at Medium on WebGPU, where a frame with the reflection takes 2.30 ms and
@@ -34,12 +36,15 @@ GPU of its own.
 | GPU buffers | 4.80 MiB | 1.30 MiB | 3.50 MiB | 20261031-032342-bench |
 | Page memory | 166.50 MiB | 155.70 MiB | 10.80 MiB | 20261031-032342-bench |
 
+The archived run `bench/results/20261031-032342-bench.json` keeps the mode's byte figures under each
+page's `memory` field, so each MiB above can be checked against it.
+
 The WebGL2 path gives no GPU figure on any machine of this sitting. The iPad and the phone have no
 timer there, and the Mac's timer's rounds differ by more than the effect. Their CPU times do not
 separate the two runs either.
 
 The two runs draw the same camera, sky and material, and only the ground's environment map changes.
-The iPad's WebGPU on and off live frames show it. Above row 375 of 720 they are pixel-identical, and
+The iPad's WebGPU on and off live frames show it. Above row 374 of 720 they are pixel-identical, and
 every differing pixel lies on the ground below the horizon. The plane draws in the held frame too.
 The held reference's bottom band holds 6.6% sharp edges, the paving's joints, where the sky's top
 band holds none. The ground-level plane fault that M3-R27 records does not appear here.
