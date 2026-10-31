@@ -1134,8 +1134,6 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_BACKGROUND_LAYER, 'background layer', [
 			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
 		]);
-		// The physical sky's group: its values, its three tables, which it reads with a linear
-		// filter, a sampler that clamps and one that repeats across the width.
 		// The volumetric cloud tier's group: the sky's own block or the physical sky's values and
 		// tables, then the noise field and its sampler at the bindings that the shared cloud module
 		// names.
@@ -1159,6 +1157,8 @@ export class Pipelines {
 			{ binding: 6, visibility: fragment, texture: { viewDimension: '3d' } },
 			{ binding: 7, visibility: fragment, sampler: {} },
 		]);
+		// The physical sky's group: its values, its three tables, which it reads with a linear
+		// filter, a sampler that clamps and one that repeats across the width.
 		this.defineLayout(LAYOUT_ATMOSPHERE, 'atmosphere', [
 			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: fragment, texture: {} },

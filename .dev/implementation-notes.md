@@ -1292,6 +1292,12 @@ manifest now makes 62,334 GLSL builds and 24,517 WGSL builds, and `BUILD_BUDGET`
 figures. The vegetation add-on draws its trees in batches, and the row bit is what
 lets such a batch take alpha to coverage.
 
+The sky's volumetric cloud tier adds four shaders in M3-F11, and 6 GLSL builds and 6 WGSL builds
+with them. The analytic and physical skies' cloud draws build both targets with the `TONE_MAP`
+permutation, and the two sky-map steps build both targets once each. All four load on the tier's
+first use, so a page on Low or Medium downloads none of them (D-283). `BUILD_BUDGET` records
+62,347 GLSL builds and 24,531 WGSL builds.
+
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this
 guard refuses.
