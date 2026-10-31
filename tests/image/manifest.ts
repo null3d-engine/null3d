@@ -1396,16 +1396,26 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: 0,
 		}),
 	),
+	// The sky with the flat layer, a picture of its own for the pair below: the tier's march blends
+	// after the 8-bit path tone maps each fragment, so a partly covered sky draws differently on
+	// the two paths, as every surface that blends on that path does.
+	{
+		name: 'background-sky-flat',
+		sketch: 'tests/pages/sketches/backgrounds-sketch.ts?bg=sky',
+		size: [BACKGROUNDS_IMAGE.width, BACKGROUNDS_IMAGE.height],
+		hold: 0,
+		switches: ['cloudSteps=0'],
+	},
 	// The sky on the 8-bit path, where the sky's own shader tone maps its color. It must draw the
-	// HDR path's image.
+	// HDR path's image of the same flat sky.
 	{
 		name: 'background-sky-8-bit',
 		sketch: 'tests/pages/sketches/backgrounds-sketch.ts?bg=sky',
 		size: [BACKGROUNDS_IMAGE.width, BACKGROUNDS_IMAGE.height],
 		hold: 0,
 		tiers: ['webgpu', 'webgl2'],
-		switches: ['hdr=off'],
-		reference: 'background-sky',
+		switches: ['hdr=off', 'cloudSteps=0'],
+		reference: 'background-sky-flat',
 		expect: { hdr: false },
 	},
 	// The sky's volumetric cloud tier: the flat layer that the lighter presets draw, the High
