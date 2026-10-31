@@ -19,12 +19,12 @@ export const CARS: Record<QualityPreset, number> = {
 
 /** The lines that carry lanes, in meters from the field's middle, and the cars' size. */
 const LINES = [-75, -55, -35, 35, 55, 75];
-const SIZE = { halfWidth: 0.7, height: 0.38, halfLength: 1.2 };
+const SIZE = { halfWidth: 0.95, height: 0.51, halfLength: 1.62 };
 
 /** How far a lane sits from its line, so the two directions keep to their own side. */
 const SIDE = 2;
 /** How many levels each line carries. */
-const LEVELS = 4;
+const LEVELS = 5;
 
 /**
  * The lanes of the field's sky, listed one by one: each line carries two directions at each of
@@ -59,7 +59,7 @@ export function createTraffic(ctx: SketchContext): TrafficLanes {
 			tail: '#ff5a3c',
 			nose: '#dfe9ff',
 			skirt: '#3a7fb0',
-			glow: 0.5,
+			glow: 2,
 			size: [SIZE.halfWidth, SIZE.height, SIZE.halfLength],
 		},
 		// The four nearest cars carry a real light, so the traffic washes the field below it.
