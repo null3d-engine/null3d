@@ -511,6 +511,20 @@ export function createHero(
 	const closenessAt = (away: number): number =>
 		math.clamp((away - SIGHT_CLOSE) / Math.max(CHASE_DISTANCE - SIGHT_CLOSE, 1e-3), 0, 1);
 
+	/** Keeps a placed camera at the standoff from the car, where the towers leave room. */
+	const clampStandoff = (eye: Flight): void => {
+		const dx = eye.x - (at[0] as number);
+		const dy = eye.y - (at[1] as number);
+		const dz = eye.z - (at[2] as number);
+		const away = Math.hypot(dx, dy, dz);
+		if (away < SIGHT_MIN && away > 1e-3) {
+			const out = SIGHT_MIN / away;
+			eye.x = (at[0] as number) + dx * out;
+			eye.y = (at[1] as number) + dy * out;
+			eye.z = (at[2] as number) + dz * out;
+		}
+	};
+
 	/**
 	 * Places the camera before the nearest tower that stands between it and the car, no closer to
 	 * the car than the standoff. A tower that leaves no room straight back makes the camera swing to
@@ -571,8 +585,9 @@ export function createHero(
 		}
 		// The tower's shadow spans the angles between the usual place and the clear side, so easing
 		// the angle across it would put the camera close to the car, or behind the tower. The camera
-		// takes the clear side at once and eases its distance from the usual chase to the standoff,
-		// so the pull reads as a pan and never passes inside the car.
+		// takes the clear side at once and eases its distance toward that side's reach, which is the
+		// usual chase distance whenever a tower is in the way; the ten-metre standoff is a floor the
+		// tower's push meets, not an eased target.
 		const low = atY + SIGHT_LOW + (CHASE.above - SIGHT_LOW) * closenessAt(sightSideReach);
 		const target = around + sightSide;
 		sightAngle = target;
@@ -581,23 +596,20 @@ export function createHero(
 		probeEye.y = low;
 		probeEye.z = atZ + Math.cos(sightAngle) * sightRadius;
 		keepOut(probeEye, towers);
-		clearSight(atX, atY, atZ, probeEye, towers, SIGHT_CLEARANCE);
-		// The tower may have pushed the placed point toward the car. The standoff holds after that
-		// push too, so the camera never enters the car's body.
-		const dx = probeEye.x - atX;
-		const dy = probeEye.y - atY;
-		const dz = probeEye.z - atZ;
-		const away = Math.hypot(dx, dy, dz);
-		if (away < SIGHT_MIN && away > 1e-3) {
-			const out = SIGHT_MIN / away;
-			probeEye.x = atX + dx * out;
-			probeEye.y = atY + dy * out;
-			probeEye.z = atZ + dz * out;
+		// A side that the car's turn blocks as well is given up: the camera takes the tower's entry
+		// for this frame and chooses a new side on the next one, rather than holding a hidden car.
+		if (clearSight(atX, atY, atZ, probeEye, towers, SIGHT_CLEARANCE)) {
+			sightSide = 0;
+			sightSideReach = 0;
 		}
+		// The tower may have pushed the placed point toward the car, and the last keep-out can do so
+		// again; the standoff runs after both, so the camera keeps out of the car's body.
+		clampStandoff(probeEye);
 		chase.x = probeEye.x;
 		chase.y = probeEye.y;
 		chase.z = probeEye.z;
 		keepOut(chase, towers);
+		clampStandoff(chase);
 	};
 
 	/**

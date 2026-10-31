@@ -97,19 +97,23 @@ instead of a band of cars over the low streets. The owner judges the final look.
 - **The views.** Behind: the camera eases to 13 m behind the car and 4.4 m above it. It looks 22 m
   ahead while it sits at its usual distance, and two metres past the car once it has pulled in,
   and it keeps out of the towers as the car does. It also pulls in before a tower that would stand
-  between it and the car, and sits lower as it closes. The pull stands no closer than 10 m from
-  the car, so the whole car stays in the frame with a margin: the held frames keep the car's
-  coloured pixels at least 118 pixels inside every edge, 164 at the pull's first frames, and 65 in
-  the control. The tower's shadow covers the angles between the usual place and the clear side, so
-  the camera takes the nearest side that still sees the car at once, and eases its distance from
-  the usual chase to the 10 m standoff: the pull reads as a pan and never passes inside the car.
-  The proof starts on the clear side, so the first angle change is not pictured; the reason it
-  cannot be eased rests on the code, not on a picture. The camera holds that side while the tower
-  stays: a car at rest settles, with the frames at six and eight seconds identical, and the
-  two-second frame differing slightly from the four-second. The chase easing carries the camera
-  back out once the tower clears. The release from the ten-metre pull is not pictured: the corner
-  proof's tower never clears, and the turn run returns from a 17.8 m lag to 13.7 m and never
-  reaches 10.1. Because a turn can bring a tower across the line in a single frame, the camera also
+  between it and the car, and sits lower as it closes. The pull keeps a ten-metre floor from the
+  car where the towers leave room, so the whole car stays in the frame with a margin: the held
+  frames keep the car's coloured pixels at least 118 pixels inside every edge, 164 at the pull's
+  first frames, and 65 in the control. The tower's shadow covers the angles between the usual
+  place and the clear side, so the camera takes the nearest side that still sees the car at once.
+  It eases its distance toward that side's reach, which is the usual chase distance whenever a
+  tower stands in the way; the ten-metre floor is one the tower's push meets in the proof, not an
+  eased target. The floor is not absolute: when every angle is blocked, the camera stays at the
+  tower's entry, where the car can stay hidden. The proof starts on the clear side, so the first
+  angle change is not pictured; the reason it cannot be eased rests on the code, not on a picture.
+  The camera holds that side while it keeps the car in view: a side that the car's turn blocks is
+  given up for the tower's entry on that frame, and a new side is chosen on the next. A car at
+  rest settles, with the frames at six and eight seconds identical, and the two-second frame
+  differing slightly from the four-second. The chase easing carries the camera back out once the
+  tower clears. The release from the ten-metre pull is not pictured: the corner proof's tower
+  never clears, and the turn run returns from a 17.8 m lag to 13.7 m and never reaches 10.1.
+  Because a turn can bring a tower across the line in a single frame, the camera also
   looks a short way along the car's path and starts closing at a limited rate before the tower
   arrives. The car grows on screen as it closes: about a third of the frame's width at the usual
   distance, and a little under half at the closest standoff, with the road ahead still in the
