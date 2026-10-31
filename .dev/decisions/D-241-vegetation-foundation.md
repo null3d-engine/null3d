@@ -228,25 +228,25 @@ the plants' setup, so a page time sets each page's limit. These times were taken
 time on this Mac, and each is the whole test, so it includes opening the page and its hold. The
 limit is the one that the commit carried.
 
-| Demo | Limit (s) | In CI run 41158902325 | Here, one at a time at `83d1d71a9` (s) |
+| Demo | Limit (s) | In CI run 41158902325 | Here, one at a time at `58e8e982f` (s) |
 | --- | --- | --- | --- |
-| demo-atmosphere | 60 | all three tiers timed out | compatibility 60, WebGL2 114, WebGPU 126 |
-| demo-contact-shadows | 60 | none; it drew, and the picture differs by 5.3 per cent | WebGPU 35, compatibility 35, WebGL2 41 |
-| demo-light-shafts | 60 | WebGPU and compatibility timed out; WebGL2 drew, 7.120 per cent different | WebGPU 39, compatibility 36, WebGL2 47 |
-| demo-impostors | 120 | WebGPU timed out | WebGPU 17, compatibility 16, WebGL2 23 |
+| demo-atmosphere | 60 | all three tiers timed out | compatibility 41, WebGL2 132, WebGPU 132 |
+| demo-contact-shadows | 60 | none; it drew, and the picture differs by 5.3 per cent | WebGPU 40, compatibility 37, WebGL2 42 |
+| demo-light-shafts | 300 | WebGPU and compatibility timed out; WebGL2 drew, 7.120 per cent different | WebGPU 38, compatibility 37, WebGL2 48 |
+| demo-impostors | 120 | WebGPU timed out | WebGPU 17, compatibility 16, WebGL2 15 |
 
-All four rows come from a run at `83d1d71a9`, after that commit's own core was built, so each page
-drew the commit's code. The pages' limits were raised locally for the measurement only, so that a
-page could finish; the limit column is the one the commit carries, and the time column is what the
-page needed. An earlier set measured at `fc8775f4c` is replaced by this one, because ten commits
-landed between the two and two of them changed what these pages draw. The branch raises only the
+All four rows come from a run at the branch's rebased tree, head `58e8e982f` on the landing's
+`acf926cdc`, after that tree's own core was built, so each page drew the branch's code. The pages'
+limits were raised locally for the measurement only, so that a page could finish; the limit column
+is the one the head carries, and the time column is what the page needed. An earlier set measured at
+`83d1d71a9` and the first at `fc8775f4c` are replaced by this one. The branch raises only the
 light-shafts limit, to five minutes. The other three keep their limits: each needs a measurement on
 the commit that draws it, and a limit lifted without one would hide how long the page takes.
 
-The pictures behind two of the rows also differ on the landed head, not only in CI:
+The pictures behind two of the rows also differ on this tree, not only in CI:
 demo-contact-shadows differs by 5.286 to 5.384 per cent and demo-light-shafts by 6.892 to 46.826
-per cent, measured at `83d1d71a9`, and the same percentages at `fc8775f4c`. Those are changes to the
-pictures, and they need their own record; a page limit cannot hide them.
+per cent, measured at `58e8e982f`, with the same percentages at `83d1d71a9` and `fc8775f4c`. Those
+are changes to the pictures, and they need their own record; a page limit cannot hide them.
 
 ## Options rejected
 
@@ -771,7 +771,9 @@ one-second line.
 The `atlas-paint` plan measures the same two painters on a device, three rounds each in turn. On the
 M3 Max in Chrome 156, on a free machine, it read 70.6 ms for the bark and 115.2 ms for the leaf
 ([run](../tested-devices/macbook-pro-m3-max-chrome/20261031-104246-atlas-paint.md)). The figures on
-the iPad Pro 13 and an S24-class phone are owed from a run of that plan.
+the iPad Pro 13 and an S24-class phone are owed from a run of that plan. A Mac measures the same page
+without a cloud run with `NULL3D_ATLAS_PAINT_COST=1 bun run test:browser -- atlas-paint-cost.spec.ts`,
+which prints the machine's load beside the figures.
 
 **What the pictures show.** The `vegetation-atlas` picture's leaf card is a twig of lobed leaves that
 fills its square. The `vegetation-versus-creek` picture shows the generated oak beside Creek's

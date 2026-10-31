@@ -389,6 +389,9 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
   one page reports both figures and no GPU path is asked of it.
 - Run it on the cloud iPad and S24-class phone:
   `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys25-chrome --plan atlas-paint`.
+- Run it on this Mac, as the car paint's page runs:
+  `NULL3D_ATLAS_PAINT_COST=1 bun run test:browser -- atlas-paint-cost.spec.ts`. The spec skips
+  without that variable, so no shard and no lane runs it unasked.
 - Run both on the cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet:
   `bun run devices:cloud --only bsiphone17-safari,bsipadpro13-safari,bsgalaxys24-chrome,bsgalaxytaba9plus-chrome --plan vegetation`,
   and the same with `--plan tree-generation` and `--plan vegetation-scatter`.
