@@ -75,7 +75,9 @@ pub fn record_region(
 
 /// The copied rows of a read, and the buffer it reads: a copy of the region follows the pass, and
 /// the read raises the request's slot once its bytes land. `rows_from_bottom` is true on WebGL2,
-/// whose first stored row of a target that a pass drew is the image's bottom row.
+/// whose first stored row of a target that a pass drew is the image's bottom row. This mapping
+/// translates the region's image rows into the target's stored rows; it is not the turn that a
+/// mirrored pass needed, which a read no longer makes.
 pub fn record(
     list: &mut DrawList,
     read: &PassRead,

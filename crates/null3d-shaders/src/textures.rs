@@ -45,9 +45,6 @@ pub(crate) const LOADER: &str = "load_custom_texture_layers";
 /// The name of the function that turns a map's value into the layer to sample.
 const MAP_LAYER: &str = "custom_map_layer";
 
-/// The name of the function that turns a texel read's row on a pass target's image.
-const MAP_ROW: &str = "custom_map_row";
-
 /// The suffix of the name of the sampler that the build declares for each texture.
 const SAMPLER_SUFFIX: &str = "Sampler";
 
@@ -381,18 +378,22 @@ pub(crate) fn read(
             end: tokens[index].start,
             text: "select(vec4f(1.0), ".to_owned(),
         });
+        let last = &tokens[after.end - 1];
+        let after_end = last.start + last.text.len();
         // A texel read of a turned pass target names the image's row of the index, so the row
-        // turns. A sampled read takes the image's own coordinates and needs no turn.
-        let texel = function == "textureLoad";
-        if texel {
+        // turns. A sampled read takes the image's own coordinates and needs no turn. The turn is
+        // written where it is used: a texture may not pass into a function as a parameter.
+        if function == "textureLoad" {
+            let at = &source[tokens[after.start].start..after_end];
             edits.push(Edit {
                 start: tokens[after.start].start,
-                end: tokens[after.start].start,
-                text: format!("{MAP_ROW}({}, {LAYERS}[{slot}], ", tokens[texture].text),
+                end: after_end,
+                text: format!(
+                    "select({at}, vec2i(({at}).x, i32(textureDimensions({}, 0).y) - 1 - ({at}).y), {LAYERS}[{slot}] <= -2)",
+                    tokens[texture].text
+                ),
             });
         }
-        let last = &tokens[after.end - 1];
-        let closing = if texel { ")" } else { "" };
         // A texture array's function already takes the layer that the shader picks.
         let layer = if arrays[slot] {
             String::new()
@@ -400,9 +401,9 @@ pub(crate) fn read(
             format!(", {MAP_LAYER}({LAYERS}[{slot}])")
         };
         edits.push(Edit {
-            start: last.start + last.text.len(),
-            end: last.start + last.text.len(),
-            text: format!("{closing}{layer}"),
+            start: after_end,
+            end: after_end,
+            text: layer,
         });
         edits.push(Edit {
             start: tokens[close].start + 1,
@@ -486,7 +487,7 @@ fn declarations(names: &[&str], owner: TextureOwner) -> String {
         (3, "id: u32", "custom_value(id, {part}u)")
     };
     let mut code = format!(
-        "\n// The textures, as layers of texture arrays in the slots of the maps' group.\n#ifdef WEBGL2\n{}#else\n{}#endif\n\n// The layer of each texture, or -1 while its image is not on the GPU. Below -1 it names a pass target whose image is turned on this path, and holds -(layer + 2).\nvar<private> {LAYERS}: array<i32, {count}>;\n\n// The layer that a map's value names.\nfn {MAP_LAYER}(value: i32) -> i32 {{\n    return select(value, -value - 2, value <= -2);\n}}\n\n// The texel that a read of `at` asks for: a turned pass target counts its rows from the image's bottom.\nfn {MAP_ROW}(tex: texture_2d_array<f32>, value: i32, at: vec2i) -> vec2i {{\n    let size = textureDimensions(tex, 0);\n    return select(at, vec2i(at.x, i32(size.y) - 1 - at.y), value <= -2);\n}}\n\n// The layers of the textures, from the end of the values that the engine writes.\nfn {LOADER}({signature}) {{\n",
+        "\n// The textures, as layers of texture arrays in the slots of the maps' group.\n#ifdef WEBGL2\n{}#else\n{}#endif\n\n// The layer of each texture, or -1 while its image is not on the GPU. Below -1 it names a pass target whose image is turned on this path, and holds -(layer + 2).\nvar<private> {LAYERS}: array<i32, {count}>;\n\n// The layer that a map's value names.\nfn {MAP_LAYER}(value: i32) -> i32 {{\n    return select(value, -value - 2, value <= -2);\n}}\n\n// The layers of the textures, from the end of the values that the engine writes.\nfn {LOADER}({signature}) {{\n",
         bind(webgl2_group),
         bind(1)
     );
@@ -553,7 +554,7 @@ mod tests {
         );
         assert_eq!(
             lines[5].trim(),
-            "let c = select(vec4f(1.0), textureLoad(noise, custom_map_row(noise, custom_texture_layers[1], vec2i(textureDimensions(noise) / 2u)), custom_map_layer(custom_texture_layers[1]), 0), custom_texture_layers[1] != -1);"
+            "let c = select(vec4f(1.0), textureLoad(noise, select(vec2i(textureDimensions(noise) / 2u), vec2i((vec2i(textureDimensions(noise) / 2u)).x, i32(textureDimensions(noise, 0).y) - 1 - (vec2i(textureDimensions(noise) / 2u)).y), custom_texture_layers[1] <= -2), custom_map_layer(custom_texture_layers[1]), 0), custom_texture_layers[1] != -1);"
         );
         assert_eq!(
             lines[6].trim(),
@@ -600,7 +601,7 @@ mod tests {
         );
         assert_eq!(
             lines[4].trim(),
-            "let b = select(vec4f(1.0), textureLoad(facades, custom_map_row(facades, custom_texture_layers[0], vec2i(0)), input.layer, 0), custom_texture_layers[0] != -1);"
+            "let b = select(vec4f(1.0), textureLoad(facades, select(vec2i(0), vec2i((vec2i(0)).x, i32(textureDimensions(facades, 0).y) - 1 - (vec2i(0)).y), custom_texture_layers[0] <= -2), input.layer, 0), custom_texture_layers[0] != -1);"
         );
         assert_eq!(lines[5].trim(), "let n = textureNumLayers(facades);");
         assert_eq!(
