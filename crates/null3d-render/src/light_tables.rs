@@ -126,6 +126,9 @@ struct Image {
     shown: bool,
     /// True while the sketch thread writes a picture's texels, so the light shows none of them.
     writing: bool,
+    /// True once a light record names a copied texture's texels, so a held frame stops drawing
+    /// the frame after the copy.
+    named: bool,
 }
 
 /// The area lights' tables and the lights' images in engine memory, and the layers of the frame
@@ -188,6 +191,7 @@ impl LightTables {
         };
         image.source = ImageSource::Pixels(texels);
         image.writing = true;
+        image.named = false;
         match &mut image.source {
             ImageSource::Pixels(texels) => Some(texels),
             ImageSource::Texture(_) => None,
@@ -207,6 +211,7 @@ impl LightTables {
         image.pending = true;
         image.shown = false;
         image.writing = false;
+        image.named = false;
         true
     }
 
@@ -228,6 +233,7 @@ impl LightTables {
                             pending: false,
                             shown: false,
                             writing: false,
+                            named: false,
                         });
                         self.images.len() - 1
                     }
@@ -251,6 +257,7 @@ impl LightTables {
         image.pending = true;
         image.shown = true;
         image.writing = false;
+        image.named = true;
         image_record(place, image.size, probe_layers)
     }
 
@@ -273,20 +280,36 @@ impl LightTables {
     /// picture. A picture whose texels come from a texture shows none until a frame copies them.
     /// A picture from pixels shows as soon as the sketch finishes it, even after the GPU reset that
     /// a held frame starts with: the frame that names it uploads it before it draws.
-    pub fn image_records(&self, probe_layers: u32) -> impl Iterator<Item = (u32, f32)> + '_ {
+    pub fn image_records(&mut self, probe_layers: u32) -> impl Iterator<Item = (u32, f32)> + '_ {
         self.images
-            .iter()
+            .iter_mut()
             .enumerate()
             .filter(|(_, image)| image.light != 0)
             .map(move |(place, image)| {
-                let texture_waits = matches!(image.source, ImageSource::Texture(_)) && !image.shown;
+                let texture = matches!(image.source, ImageSource::Texture(_));
+                let texture_waits = texture && !image.shown;
                 let record = if image.writing || texture_waits {
                     0.0
                 } else {
+                    // A copied texture is named now, so a held frame stops drawing the frame
+                    // after its copy.
+                    if texture {
+                        image.named = true;
+                    }
                     image_record(place, image.size, probe_layers).unwrap_or(0.0)
                 };
                 (image.light, record)
             })
+    }
+
+    /// True while a light's picture copied from a texture waits for the light record that names
+    /// it, so a held frame draws the frame after the copy and shows the picture. A copy that never
+    /// completes keeps this true, so the frame still draws without a picture and the test fails,
+    /// rather than passing on a frame that the copy never reached.
+    pub fn texture_images_waiting(&self) -> bool {
+        self.images.iter().any(|image| {
+            image.light != 0 && !image.named && matches!(image.source, ImageSource::Texture(_))
+        })
     }
 
     /// True when the images moved to another place in the array since the last frame recorded
@@ -304,6 +327,7 @@ impl LightTables {
             image.pending = false;
             image.shown = false;
             image.writing = false;
+            image.named = false;
         }
     }
 
@@ -348,6 +372,7 @@ impl LightTables {
         for image in &mut self.images {
             image.pending = image.light != 0;
             image.shown = false;
+            image.named = false;
         }
     }
 
@@ -369,6 +394,7 @@ impl LightTables {
             for image in &mut self.images {
                 image.pending = image.light != 0;
                 image.shown = false;
+                image.named = false;
             }
         }
         let changed = moved
@@ -445,6 +471,8 @@ impl LightTables {
                     )?;
                     image.pending = false;
                     image.shown = true;
+                    // The copy is recorded now, so the light names it in the next frame.
+                    image.named = false;
                 }
             }
         }
@@ -611,6 +639,10 @@ mod tests {
         assert!(tables.image_texture_mut(5, 256, Handle::from_raw(0x40)));
         // The light shows no picture until the copy runs, so it keeps its color.
         assert_eq!(tables.image_records(0).collect::<Vec<_>>(), vec![(5, 0.0)]);
+        assert!(
+            tables.texture_images_waiting(),
+            "a texture's picture waits until a light record names it"
+        );
 
         let copies = |list: &DrawList| {
             null3d_gpu::drawlist::decode(list.words())
@@ -625,6 +657,10 @@ mod tests {
         tables.record(&mut list, 7, 0, |_| None).unwrap();
         assert!(copies(&list).is_empty());
         assert_eq!(tables.image_records(0).collect::<Vec<_>>(), vec![(5, 0.0)]);
+        assert!(
+            tables.texture_images_waiting(),
+            "a copy that cannot run keeps the frame after it waiting, so the picture cannot pass unseen"
+        );
 
         // Once the texture's texels are on the GPU, one copy fills the image's layer.
         tables.record(&mut list, 7, 0, |_| Some((9, 3))).unwrap();
@@ -633,11 +669,21 @@ mod tests {
             recorded,
             vec![vec![9, 3, 7, FIRST_IMAGE_LAYER, 256, levels_of(256)]]
         );
+        // The copy is recorded, so a held frame must draw the frame after it, until a light record
+        // names the picture.
+        assert!(
+            tables.texture_images_waiting(),
+            "the frame after the copy shows the picture"
+        );
         let record = tables.image_records(0).next().unwrap().1;
         assert_eq!((record as u32) & 63, FIRST_IMAGE_LAYER + 1);
         assert_eq!(
             (record as u32) >> IMAGE_LAYER_BITS,
             size_index(256).unwrap()
+        );
+        assert!(
+            !tables.texture_images_waiting(),
+            "the record names the picture, so no further frame waits"
         );
 
         // The copy runs once: a later frame records none.
@@ -650,10 +696,12 @@ mod tests {
         let moved = copies(&later);
         assert_eq!(moved.len(), 1);
         assert_eq!(moved[0][3], FIRST_IMAGE_LAYER + 2);
+        assert!(tables.texture_images_waiting());
         assert_eq!(
             tables.image_records(2).next().unwrap().1 as u32 & 63,
             FIRST_IMAGE_LAYER + 2 + 1
         );
+        assert!(!tables.texture_images_waiting());
     }
 
     #[test]

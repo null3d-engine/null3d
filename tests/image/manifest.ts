@@ -2455,6 +2455,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'spot-map-texture',
 		sketch: 'tests/pages/sketches/spot-map-texture-sketch.ts',
+		// A frame copies the texture into the light's image, and the light shows it from the frame
+		// after. Hold mode draws that frame too, as it does for a reflection probe's capture.
 		hold: 0,
 		size: [480, 270],
 		tolerance: { maxDiffRatio: 0.005 },

@@ -1313,9 +1313,14 @@ export class SketchRunner {
 			}
 			// A reflection probe captures in one frame and lights surfaces from then on, and the
 			// capture views take one probe a frame, so a second frame at the same time captures the
-			// next. The thread that draws keeps two frames' lists.
+			// next. A light's picture copied from a texture shows from the frame after the copy, so
+			// that frame draws the picture too. The thread that draws keeps two frames' lists.
 			Atomics.store(slots, Slot.HeldFrom, frame);
-			if (glue.readsLastFrame() !== 0 || glue.probesWaiting() !== 0) {
+			if (
+				glue.readsLastFrame() !== 0 ||
+				glue.probesWaiting() !== 0 ||
+				glue.lightImagesWaiting() !== 0
+			) {
 				this.clock.holdStep(steps, steps, seconds);
 				frame = this.frame();
 			}
@@ -1391,7 +1396,11 @@ export class SketchRunner {
 				if (first === 0 && (before || at === frames - 1)) first = frame;
 			}
 			Atomics.store(slots, Slot.HeldFrom, frame);
-			if (glue.readsLastFrame() !== 0 || glue.probesWaiting() !== 0) {
+			if (
+				glue.readsLastFrame() !== 0 ||
+				glue.probesWaiting() !== 0 ||
+				glue.lightImagesWaiting() !== 0
+			) {
 				this.clock.replayStep(now, 0);
 				frame = this.frame();
 			}

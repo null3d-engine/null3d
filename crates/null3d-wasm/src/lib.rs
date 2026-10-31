@@ -5121,6 +5121,19 @@ pub fn probes_waiting() -> u32 {
     with_engine(|e| u32::from(e.renderer.settings().probes().waiting()))
 }
 
+/// True while a light's picture waits for its texture's texels to be copied.
+#[wasm_bindgen(js_name = lightImagesWaiting)]
+pub fn light_images_waiting() -> u32 {
+    with_engine(|e| {
+        u32::from(
+            e.renderer
+                .settings()
+                .light_tables()
+                .texture_images_waiting(),
+        )
+    })
+}
+
 // Returns the image id under which TypeScript sends the generator that runs each probe's filter,
 // once: the thread that draws keeps the generator for the page's life. Probes capture once it holds
 // it.
