@@ -743,6 +743,10 @@ impl Compiler {
         let mut variants: BTreeMap<String, Variant> = template
             .variants
             .iter()
+            // A variant that needs a bit draws in a pass whose permutation word sets that bit, and
+            // no word of a custom material sets one: those builds are the engine's own. Building
+            // them for a material would compile variants that no draw can use.
+            .filter(|(_, variant)| variant.required.is_empty())
             .map(|(name, variant)| {
                 let mut defs = variant.defs.clone();
                 defs.extend(CUSTOM_DEFS.map(str::to_owned));

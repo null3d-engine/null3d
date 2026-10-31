@@ -35,7 +35,9 @@
 #   custom_materials  True for the one template that custom materials build with: the shader
 #              compiler adds a material's WGSL after the file's last line, and builds every variant
 #              with the shader def of each function that the WGSL declares (CUSTOM_SURFACE for
-#              `fn surface`). The shader compiler holds this manifest and the entry shaders.
+#              `fn surface`). A variant that names `required` bits is the engine's own: the
+#              compiler skips it, because no word of a custom material sets those bits. The shader
+#              compiler holds this manifest and the entry shaders.
 #   custom_effects  True for the one template that custom effects build with. It is a template
 #              only: the build checks that it builds, with an effect that keeps each pixel, and
 #              writes no module of it. The shader compiler adds an effect's WGSL after its last
