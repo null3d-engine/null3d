@@ -1443,7 +1443,7 @@ const ATLAS_PAINT_TIMEOUT_SECONDS = 120;
 
 /**
  * How long the bark and the leaf atlas take to paint on each device, separately: the painters that
- * `bakePlantAtlases` runs, three rounds of each in turn. The paint runs on the page's thread, so one
+ * `bakePlantAtlases` runs, three rounds of each in turn. The paint runs on the sketch thread, so one
  * page on each device reports both figures, and no GPU path is asked of it. D-241's bake section
  * records the tablet's and the phone's figures from this plan.
  */

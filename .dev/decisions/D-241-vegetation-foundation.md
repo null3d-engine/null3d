@@ -621,8 +621,12 @@ one-second line.
 
 The `atlas-paint` plan measures the same two painters on a device, three rounds each in turn. On the
 M3 Max in Chrome 156, on a free machine, it read 70.6 ms for the bark and 115.2 ms for the leaf
-([run](../tested-devices/macbook-pro-m3-max-chrome/20261031-104246-atlas-paint.md)). The figures on
-the iPad Pro 13 and an S24-class phone are owed from a run of that plan.
+([run](../tested-devices/macbook-pro-m3-max-chrome/20261031-104246-atlas-paint.md)). The same plan on
+the iPad Pro 13 in Safari 26.6.1 read 36.7 ms for the bark and 78.3 for the leaf, and on the
+Galaxy S25 in Chrome 152, standing in for the S24 class, 56.0 and 104.1
+([run](../tested-devices/ipad-pro-13-safari/20261031-110416-atlas-paint.md) and
+[run](../tested-devices/galaxy-s25-sm-s931b-chrome/20261031-110416-atlas-paint.md)). Both devices
+paint faster than the Mac does.
 
 **What the pictures show.** The `vegetation-atlas` picture's leaf card is a twig of lobed leaves that
 fills its square. The `vegetation-versus-creek` picture shows the generated oak beside Creek's
