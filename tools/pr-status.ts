@@ -37,7 +37,6 @@ const ON_BRANCH = new Set(['M3-F9']);
 // ticked here until the gap closes, whatever code it already has.
 const INCOMPLETE = new Set([
 	'M3-F5',
-	'M3-B1',
 	'M3-B5',
 	'M3-F2',
 	'M3-K9',
