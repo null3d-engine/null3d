@@ -3087,6 +3087,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// One leaned pine beside its own card, whose crown is not symmetric, seen from 90 degrees around
+	// the pair. The tree and its card are turned by the same angle, so the pair must show the same
+	// lit and dark sides. A card that turned its stored normal with the camera's own frame lights
+	// the opposite side here, where the camera's azimuth and the tree's turn add up.
+	{
+		name: 'impostor-turn-lean-azimuth',
+		sketch: 'tests/pages/sketches/impostor-turn-lean-sketch.ts?azimuth=90',
+		hold: 0,
+		size: [480, 270],
+	},
 	// A grown birch beside the card that `bakeFarTree` makes from it. The mesh draws level 0 with the
 	// bark and leaf materials, and the card draws the same level baked with the same atlases and the
 	// same colours, so the two crowns match in colour at the hand-over.
