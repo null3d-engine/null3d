@@ -235,17 +235,32 @@ function expectUsualSpeed(page: string, name: string, result: BenchReport): void
 /** The whole frames that a short run's second try on SwiftShader measures. */
 const SECOND_TRY_FRAMES = 5;
 
+/** How many first windows the second try spans when the first counted no frame at all. */
+const UNKNOWN_PACE_WINDOWS = 20;
+/** How many times the page's own start time the unknown-pace window spans. */
+const UNKNOWN_PACE_STARTS = 4;
+
 /**
  * The measured seconds of a short run's second try on SwiftShader, after a first try of `seconds`
  * that counted no frame: time for a few whole frames at the pace at which the first try finished
- * its frames, from twice to eight times its window. A first try that finished no frame at all gets
- * the longest.
+ * its frames, from twice to eight times its window.
+ *
+ * A first try that finished no frame gives no pace to size by, and on the software renderer the
+ * two implementations of one scene can differ by many times — three.js's twin of a large mirrored
+ * plane draws several times slower than the engine's — so that case takes a generous ceiling, which
+ * grows with how long the page itself took to start. A page that draws nothing at all still fails
+ * on "no frame was measured" when its window ends, however long the window is.
  */
-function secondTrySeconds(seconds: number, completedFps: number | null | undefined): number {
+function secondTrySeconds(
+	seconds: number,
+	completedFps: number | null | undefined,
+	engineStartMs: number | null | undefined = null,
+): number {
 	const most = seconds * 8;
 	const fps = completedFps ?? 0;
-	if (!(fps > 0)) return most;
-	return Math.min(most, Math.max(seconds * 2, Math.ceil(SECOND_TRY_FRAMES / fps)));
+	if (fps > 0) return Math.min(most, Math.max(seconds * 2, Math.ceil(SECOND_TRY_FRAMES / fps)));
+	const fromStart = Math.ceil(((engineStartMs ?? 0) / 1000) * UNKNOWN_PACE_STARTS);
+	return Math.max(seconds * UNKNOWN_PACE_WINDOWS, fromStart);
 }
 
 /**
@@ -279,7 +294,11 @@ async function runShortBenchmark(
 	console.log(`${name} on SwiftShader: ${runFigures(first)}`);
 	if (first.frames > 0) return first;
 	test.slow();
-	const measure = secondTrySeconds(seconds, first.stats?.completedFps);
+	const measure = secondTrySeconds(
+		seconds,
+		first.stats?.completedFps,
+		first.stats?.load?.engineStartMs,
+	);
 	const second = await run(seconds, measure);
 	const message = `${name} counted no frame on SwiftShader in ${seconds} s, so it measured again for ${measure} s. First try: ${runFigures(first)}. Second try: ${runFigures(second)}.`;
 	console.log(`::warning title=A second try on SwiftShader::${message}`);
