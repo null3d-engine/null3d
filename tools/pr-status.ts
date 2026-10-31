@@ -98,6 +98,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the CPU path draws a hill through the add-on and is measured on this Mac's Chrome, and the task's Done-when is not met. Creek's sketch still imports its own `./grass`, so no hill of Creek draws through the add-on; the cost has a row only for this Mac, and the iPad, an S24-class phone and the Tab A9 Plus are owed; near grass shadows are not built; and the compute-built blade list waits on M3-E8's same-frame output, M3-E9's count in the near shadow views and M3-V3's graph edge, as the evidence entry says",
 	'M3-X1':
 		"held open by its own line: the vegetation add-on in Creek (M3-V11) is open, so Creek's plants are not drawn by a demo yet, and the demo budgets do not hold: the Skyway rates recorded for M3-C1 sit under the 60 fps target on the iPad Pro 13 (50.0 fps at Low on WebGPU, 54.2 on WebGL2) and the cloud S24 (11.7 at Low, 7.8 in the demos plan)",
+	'M3-F12':
+		"held by the Done-when's third clause: it asks that a still camera settles to the same picture as a probe-lit scene within the image tolerance, and the test allows 45 per cent of the frame past the image bar where the repository's bar is 0.1 per cent, with the measured difference at 9.4 per cent. The bleed's signs and strength are sound on both paths, and a screen-space estimate differs from a bake in the soft edges of the light and where the screen cannot see, so a looser reading is defensible. The tick owes the owner's acceptance of that looser reading, and that acceptance waits for the morning",
 };
 
 /** The plan's groups, by the first letter of a task's part, in the plan's order. */
