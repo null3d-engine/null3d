@@ -2,17 +2,22 @@
 //
 // The ground is one plane with one material. Its streets and markings come from the city plan in
 // world units, and the weather add-on's water covers the road, so screen-space reflections smear
-// the lamps and the lit windows down it where it is wet. The lamps are a pool of point lights along
-// the streets, drawn as glowing heads in one batch; the searchlights are spot lights that sweep the
-// haze above the towers; and the signs are canvases drawn in code, refreshed through a scanline and
-// a slow flicker.
-import { math, type QualityPreset, quat, type SketchContext } from '@null3d/engine';
+// the lamps and the lit windows down it where it is wet. The hero car has a reflection of its own,
+// drawn by a camera under the road, which the wet road reads under the car, since screen-space
+// reflections never see its underside. The lamps are a pool of point lights along the streets,
+// drawn as glowing heads in one batch; the searchlights are spot lights that sweep the haze above
+// the towers; and the signs are canvases drawn in code, refreshed through a scanline and a slow
+// flicker.
+import { math, type QualityPreset, quat, type SketchContext, type Texture } from '@null3d/engine';
 import { createWetSurface, type WetSurface } from '../../addons/weather/index';
 import { EFFECT_LAYER } from '../../lib/layers';
 import { HALF, PITCH, STREET, streetLine } from './layout';
 
 /** How much ground the plane covers, in meters: past the outer streets into the haze. */
 const GROUND = 4200;
+/** The share of the hero car's mirror image that the wet road shows, and the least of it that a
+ * steep view keeps. */
+const CAR_REFLECTION = { share: 0.7, steep: 0.35 };
 /** The colours of the street lamps, as linear RGB. */
 const LAMP_COLOURS = [
 	[1.0, 0.5, 0.16],
@@ -23,6 +28,11 @@ const LAMP_COLOURS = [
 /** How many lamps stand along each street of the plan, and how far apart, in meters. */
 const LAMPS_PER_STREET = 9;
 const LAMP_HEIGHT = 9;
+/**
+ * A lamp post: how far from the street's centre line it stands, on the kerb, how far its arm
+ * reaches over the road, and the thickness of its pole and its arm, in meters.
+ */
+const POST = { across: STREET / 2 + 0.8, reach: 3.6, pole: 0.26, arm: 0.16 };
 const LAMP_RANGE = 64;
 /** The strength of one lamp's light, and of a searchlight, when the city's lights burn fully. */
 const LAMP_INTENSITY = 2200;
@@ -35,12 +45,15 @@ const groundWgsl = /* wgsl */ `
 struct Uniforms {
     pitch: f32,
     street: f32,
+    reflect: f32,
+    steep: f32,
     wet0: vec4f,
     wet1: vec4f,
     wet2: vec4f,
 }
 
 var wetMirror: texture_2d<f32>;
+var carMirror: texture_2d<f32>;
 
 // <wet-surface>
 /// The water depth at a place from two octaves of value noise, for a scene with no puddle map. The
@@ -151,6 +164,20 @@ fn surface(input: SurfaceInput) -> Surface {
     s.emissive = kerb * vec3f(0.012, 0.013, 0.016);
     // Water covers the road and leaves the pavement mostly dry.
     let depth = wet_noise_depth(p, 16.0) * (1.0 - pave);
+
+    // The hero car's own reflection, which screen-space reflections cannot show, since its
+    // underside never comes on screen. A camera under the road draws the car alone, mirrored, and
+    // the wet road reads it by the pixel's place. That camera keeps the mirrored view's sides but
+    // turns its up over, so the image stands upside down: the height turns about its middle. A road
+    // shows what stands on it most at the angles a driver looks along it, and dry paving none of it.
+    let wetEdge = 1.0 - material.wet0.x;
+    let water = smoothstep(wetEdge, wetEdge + max(material.wet0.y, 1e-4), depth)
+        * clamp(material.wet2.y, 0.0, 1.0);
+    let carClip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+    let carUv = vec2f(0.5 + 0.5 * (carClip.x / carClip.w), 0.5 - 0.5 * (carClip.y / carClip.w));
+    let car = textureSampleLevel(carMirror, carMirrorSampler, carUv, 0.0).rgb;
+    let grazing = 1.0 - abs(dot(input.normal, input.viewDirection));
+    s.emissive += car * water * material.reflect * mix(material.steep, 1.0, grazing);
     return wet_surface(s, input, depth, material.wet0, material.wet1, material.wet2);
 }
 `;
@@ -227,8 +254,11 @@ function paintSign(
 	return { canvas, context };
 }
 
-/** Builds the ground, the lamps, the searchlights and the signs. */
-export function createCity(ctx: SketchContext): City {
+/**
+ * Builds the ground, the lamps, the searchlights and the signs. `carMirror` is the hero car's
+ * reflection, which the wet road reads under the car.
+ */
+export function createCity(ctx: SketchContext, carMirror: Texture): City {
 	const { scene, geometry, materials, textures } = ctx;
 	math.seed(5);
 
@@ -250,8 +280,14 @@ export function createCity(ctx: SketchContext): City {
 	});
 	const groundMaterial = materials.shader({
 		wgsl: groundWgsl,
-		uniforms: { pitch: PITCH, street: STREET, ...wet.uniforms },
-		textures: { wetMirror: wet.textures.wetMirror },
+		uniforms: {
+			pitch: PITCH,
+			street: STREET,
+			reflect: CAR_REFLECTION.share,
+			steep: CAR_REFLECTION.steep,
+			...wet.uniforms,
+		},
+		textures: { wetMirror: wet.textures.wetMirror, carMirror },
 		color: '#ffffff',
 		roughness: 0.4,
 	});
@@ -262,20 +298,28 @@ export function createCity(ctx: SketchContext): City {
 		receiveShadows: false,
 	});
 
-	// The lamps: a point light at each head, and one batch of glowing heads for them all.
+	// The lamps: posts on the kerbs, on either side of the street in turn, each with an arm that
+	// reaches over the road. A point light sits at each head, and one batch each draws the poles,
+	// the arms and the glowing heads.
 	const heads: { x: number; y: number; z: number; colour: readonly number[] }[] = [];
+	const poles: { x: number; z: number }[] = [];
+	const arms: { x: number; z: number; alongX: boolean }[] = [];
 	for (const axis of ['x', 'z'] as const) {
 		for (let street = 1; street < 10; street++) {
 			for (let lamp = 0; lamp < LAMPS_PER_STREET; lamp++) {
 				const line = streetLine(street);
 				const at = -HALF + ((lamp + 0.5) / LAMPS_PER_STREET) * HALF * 2;
 				const colour = LAMP_COLOURS[(street + lamp) % LAMP_COLOURS.length] as readonly number[];
-				heads.push({
-					x: axis === 'x' ? at : line,
-					y: LAMP_HEIGHT,
-					z: axis === 'x' ? line : at,
-					colour,
-				});
+				const side = lamp % 2 === 0 ? 1 : -1;
+				const post = line + side * POST.across;
+				const head = line + side * (POST.across - POST.reach);
+				const middle = line + side * (POST.across - POST.reach / 2);
+				// A street along x runs its lamps along x, and stands them on its z side.
+				const place = (across: number) =>
+					axis === 'x' ? { x: at, z: across } : { x: across, z: at };
+				heads.push({ ...place(head), y: LAMP_HEIGHT, colour });
+				poles.push(place(post));
+				arms.push({ ...place(middle), alongX: axis !== 'x' });
 			}
 		}
 	}
@@ -313,6 +357,31 @@ fn surface(input: SurfaceInput) -> Surface {
 		glowBatch.scales.set([0.9, 0.22, 0.9], k * 3);
 	}
 	glowBatch.markDirty(0, heads.length);
+	const steel = materials.standard({ color: '#1c2026', roughness: 0.45, metalness: 0.8 });
+	const poleBatch = scene.createInstances(geometry.box(), poles.length, {
+		material: steel,
+		castShadows: false,
+	});
+	for (let k = 0; k < poles.length; k++) {
+		const pole = poles[k] as (typeof poles)[number];
+		poleBatch.positions.set([pole.x, LAMP_HEIGHT / 2, pole.z], k * 3);
+		poleBatch.scales.set([POST.pole, LAMP_HEIGHT + 0.2, POST.pole], k * 3);
+	}
+	poleBatch.markDirty(0, poles.length);
+	const armBatch = scene.createInstances(geometry.box(), arms.length, {
+		material: steel,
+		castShadows: false,
+	});
+	for (let k = 0; k < arms.length; k++) {
+		const arm = arms[k] as (typeof arms)[number];
+		armBatch.positions.set([arm.x, LAMP_HEIGHT + 0.16, arm.z], k * 3);
+		const long = POST.reach + POST.pole;
+		armBatch.scales.set(
+			arm.alongX ? [long, POST.arm, POST.arm] : [POST.arm, POST.arm, long],
+			k * 3,
+		);
+	}
+	armBatch.markDirty(0, arms.length);
 
 	// Three searchlights over the city, sweeping the rain.
 	const beams = [
