@@ -105,10 +105,7 @@ export class PassReads implements ViewHolder {
 	private readonly queue: Job[] = [];
 	private stopped = false;
 
-	constructor(
-		private readonly core: CoreMemory,
-		private readonly webgl2: boolean,
-	) {
+	constructor(private readonly core: CoreMemory) {
 		core.holdViews(this);
 	}
 
@@ -234,9 +231,9 @@ export class PassReads implements ViewHolder {
 		const pitch = alignRow(job.width * texelBytes(job.format));
 		const bytes = this.regionView(job.ring, pitch * job.height);
 		const out = new Float32Array(texels * 4);
-		// The copy already took the region's image rows in the order the GPU stores them, which is
-		// bottom-up on WebGL2, and the core turns that into the image's rows. No second turn here:
-		// that flip served a pass whose fragment form stored its image upside down.
+		// A compute pass's target stores its texels in the order that the compute form numbers
+		// them, on both GPU paths. The copy takes the region's rows in that order, so no turn
+		// here: a second one would return the region bottom first.
 		for (let row = 0; row < job.height; row++)
 			decodeRow(out, row * job.width * 4, bytes, row * pitch, job.width, job.format);
 		return out;

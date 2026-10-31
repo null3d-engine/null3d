@@ -42,9 +42,6 @@ const LAYERS: &str = "custom_texture_layers";
 /// The name of the function that the build writes to load the layers.
 pub(crate) const LOADER: &str = "load_custom_texture_layers";
 
-/// The name of the function that turns a map's value into the layer to sample.
-const MAP_LAYER: &str = "custom_map_layer";
-
 /// The suffix of the name of the sampler that the build declares for each texture.
 const SAMPLER_SUFFIX: &str = "Sampler";
 
@@ -378,37 +375,19 @@ pub(crate) fn read(
             end: tokens[index].start,
             text: "select(vec4f(1.0), ".to_owned(),
         });
-        let last = &tokens[after.end - 1];
-        let after_end = last.start + last.text.len();
-        // A texel read of a turned pass target names the image's row of the index, so the row
-        // turns. A sampled read takes the image's own coordinates and needs no turn. The turn is
-        // written where it is used: a texture may not pass into a function as a parameter.
-        if function == "textureLoad" {
-            let at = &source[tokens[after.start].start..after_end];
+        // A texture array's function already takes the layer that the shader picks.
+        if !arrays[slot] {
+            let last = &tokens[after.end - 1];
             edits.push(Edit {
-                start: tokens[after.start].start,
-                end: after_end,
-                text: format!(
-                    "select({at}, vec2i(({at}).x, i32(textureDimensions({}, 0).y) - 1 - ({at}).y), {LAYERS}[{slot}] <= -2)",
-                    tokens[texture].text
-                ),
+                start: last.start + last.text.len(),
+                end: last.start + last.text.len(),
+                text: format!(", {LAYERS}[{slot}]"),
             });
         }
-        // A texture array's function already takes the layer that the shader picks.
-        let layer = if arrays[slot] {
-            String::new()
-        } else {
-            format!(", {MAP_LAYER}({LAYERS}[{slot}])")
-        };
-        edits.push(Edit {
-            start: after_end,
-            end: after_end,
-            text: layer,
-        });
         edits.push(Edit {
             start: tokens[close].start + 1,
             end: tokens[close].start + 1,
-            text: format!(", {LAYERS}[{slot}] != -1)"),
+            text: format!(", {LAYERS}[{slot}] >= 0)"),
         });
     }
     for index in 0..tokens.len() {
@@ -487,7 +466,7 @@ fn declarations(names: &[&str], owner: TextureOwner) -> String {
         (3, "id: u32", "custom_value(id, {part}u)")
     };
     let mut code = format!(
-        "\n// The textures, as layers of texture arrays in the slots of the maps' group.\n#ifdef WEBGL2\n{}#else\n{}#endif\n\n// The layer of each texture, or -1 while its image is not on the GPU. Below -1 it names a pass target whose image is turned on this path, and holds -(layer + 2).\nvar<private> {LAYERS}: array<i32, {count}>;\n\n// The layer that a map's value names.\nfn {MAP_LAYER}(value: i32) -> i32 {{\n    return select(value, -value - 2, value <= -2);\n}}\n\n// The layers of the textures, from the end of the values that the engine writes.\nfn {LOADER}({signature}) {{\n",
+        "\n// The textures, as layers of texture arrays in the slots of the maps' group.\n#ifdef WEBGL2\n{}#else\n{}#endif\n\n// The layer of each texture, or -1 while its image is not on the GPU.\nvar<private> {LAYERS}: array<i32, {count}>;\n\n// The layers of the textures, from the end of the values that the engine writes.\nfn {LOADER}({signature}) {{\n",
         bind(webgl2_group),
         bind(1)
     );
@@ -546,19 +525,19 @@ mod tests {
         assert!(lines[0].trim().is_empty() && lines[1].trim().is_empty());
         assert_eq!(
             lines[3].trim(),
-            "let a = select(vec4f(1.0), textureSample(base, baseSampler, input.uv * vec2f(2.0, 1.0), custom_map_layer(custom_texture_layers[0])), custom_texture_layers[0] != -1);"
+            "let a = select(vec4f(1.0), textureSample(base, baseSampler, input.uv * vec2f(2.0, 1.0), custom_texture_layers[0]), custom_texture_layers[0] >= 0);"
         );
         assert_eq!(
             lines[4].trim(),
-            "let b = select(vec4f(1.0), textureSampleLevel(noise, baseSampler, f(input.uv), custom_map_layer(custom_texture_layers[1]), 0.0), custom_texture_layers[1] != -1);"
+            "let b = select(vec4f(1.0), textureSampleLevel(noise, baseSampler, f(input.uv), custom_texture_layers[1], 0.0), custom_texture_layers[1] >= 0);"
         );
         assert_eq!(
             lines[5].trim(),
-            "let c = select(vec4f(1.0), textureLoad(noise, select(vec2i(textureDimensions(noise) / 2u), vec2i((vec2i(textureDimensions(noise) / 2u)).x, i32(textureDimensions(noise, 0).y) - 1 - (vec2i(textureDimensions(noise) / 2u)).y), custom_texture_layers[1] <= -2), custom_map_layer(custom_texture_layers[1]), 0), custom_texture_layers[1] != -1);"
+            "let c = select(vec4f(1.0), textureLoad(noise, vec2i(textureDimensions(noise) / 2u), custom_texture_layers[1], 0), custom_texture_layers[1] >= 0);"
         );
         assert_eq!(
             lines[6].trim(),
-            "let d = select(vec4f(1.0), textureGather(1, base, noiseSampler, input.uv, custom_map_layer(custom_texture_layers[0])), custom_texture_layers[0] != -1);"
+            "let d = select(vec4f(1.0), textureGather(1, base, noiseSampler, input.uv, custom_texture_layers[0]), custom_texture_layers[0] >= 0);"
         );
         let tail = &found.declarations;
         assert!(tail.contains("@group(3) @binding(1) var noise: texture_2d_array<f32>;"));
@@ -597,20 +576,20 @@ mod tests {
         // The shader's own layer stays, and the call waits for the texture's image.
         assert_eq!(
             lines[3].trim(),
-            "let a = select(vec4f(1.0), textureSampleLevel(facades, facadesSampler, input.uv, 3, 0.0), custom_texture_layers[0] != -1);"
+            "let a = select(vec4f(1.0), textureSampleLevel(facades, facadesSampler, input.uv, 3, 0.0), custom_texture_layers[0] >= 0);"
         );
         assert_eq!(
             lines[4].trim(),
-            "let b = select(vec4f(1.0), textureLoad(facades, select(vec2i(0), vec2i((vec2i(0)).x, i32(textureDimensions(facades, 0).y) - 1 - (vec2i(0)).y), custom_texture_layers[0] <= -2), input.layer, 0), custom_texture_layers[0] != -1);"
+            "let b = select(vec4f(1.0), textureLoad(facades, vec2i(0), input.layer, 0), custom_texture_layers[0] >= 0);"
         );
         assert_eq!(lines[5].trim(), "let n = textureNumLayers(facades);");
         assert_eq!(
             lines[6].trim(),
-            "let c = select(vec4f(1.0), textureSample(detail, detailSampler, input.uv, custom_map_layer(custom_texture_layers[1])), custom_texture_layers[1] != -1);"
+            "let c = select(vec4f(1.0), textureSample(detail, detailSampler, input.uv, custom_texture_layers[1]), custom_texture_layers[1] >= 0);"
         );
         assert_eq!(
             lines[7].trim(),
-            "let g = select(vec4f(1.0), textureGather(0, facades, facadesSampler, input.uv, input.layer), custom_texture_layers[0] != -1);"
+            "let g = select(vec4f(1.0), textureGather(0, facades, facadesSampler, input.uv, input.layer), custom_texture_layers[0] >= 0);"
         );
         assert!(
             found

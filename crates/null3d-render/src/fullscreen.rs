@@ -196,8 +196,7 @@ impl FullscreenPasses {
     /// when its group is new or the frame made the plan's textures again (`textures_made`).
     /// `drawn` is the pass's target size in texels, `canvas` the canvas's size and `scale` the
     /// render scale, which place the input image, `clock` the sketch time and the seconds since
-    /// the frame before, and `inverse_projection` the inverse of the camera's projection. `turn`
-    /// says the pass is a compute pass's fragment form, which writes the image's rows.
+    /// the frame before, and `inverse_projection` the inverse of the camera's projection.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn prepare(
         &mut self,
@@ -209,7 +208,6 @@ impl FullscreenPasses {
         clock: [f32; 2],
         inverse_projection: Option<Mat4>,
         textures_made: bool,
-        turn: bool,
     ) -> Result<(), RecordError> {
         let ids = self.ids;
         if !self.created {
@@ -225,9 +223,7 @@ impl FullscreenPasses {
                 canvas.0.max(1) as f32,
                 canvas.1.max(1) as f32,
             ],
-            // A fragment form turns its rows, so the shader knows that its row counts from the
-            // bottom of the target.
-            clock: [clock[0], clock[1], 0.0, if turn { 1.0 } else { 0.0 }],
+            clock: [clock[0], clock[1], 0.0, 0.0],
             inverse_projection: inverse_projection.unwrap_or(IDENTITY),
             values: pass.values,
             drawn: [width, height, height, 1.0],
@@ -362,7 +358,6 @@ impl FullscreenPasses {
                 clock,
                 inverse_projection,
                 textures_made,
-                true,
             );
         }
         // A pass of several layers gives each layer a block of its own, which names the layer that
@@ -394,7 +389,7 @@ impl FullscreenPasses {
                     canvas.0.max(1) as f32,
                     canvas.1.max(1) as f32,
                 ],
-                clock: [clock[0], clock[1], 0.0, 1.0],
+                clock: [clock[0], clock[1], 0.0, 0.0],
                 inverse_projection: inverse_projection.unwrap_or(IDENTITY),
                 values: pass.values,
                 // The engine writes the layer plus one, so each layer takes the pass-texture path.

@@ -5073,7 +5073,6 @@ impl FrameGraph {
                 clock,
                 inverse,
                 made,
-                false,
             )?;
         }
         Ok(())
