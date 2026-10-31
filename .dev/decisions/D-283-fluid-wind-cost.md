@@ -3,8 +3,12 @@
 Status: decided by the owner. The owner accepted the rows and budgets that this record proposes:
 0.5, 1.2, 4.9 and 6.25 ms from Low to Ultra, with Medium on the flat 64x64 grid, High on four
 layers of 128x128, Ultra on the volume 64x24x64, and Low on the formula wind on phones until a
-phone measures the small grid. The one open item is the smallest-tier look: a side-by-side that the
-owner judges and has not named. Built: the wind add-on's field and its state-keeping solver
+phone measures the small grid. The ruling closes the rows and the budgets. Three clauses of the
+task's Done-when stay open: the smallest-tier look, a side-by-side that the owner judges and has not
+named; the cost of each tier on the iPad Pro 13, the Galaxy S25, the Galaxy Tab A9 Plus and the
+M5 Max, whose rows are owed; and the proof that the chosen rows keep Creek and the forest within
+D-241's frame ceilings, which waits on M3-V11 and M3-V12. Built: the wind add-on's field and its
+state-keeping solver
 (M3-V13, M3-V15). Built too: the plant material's vertex reader (M3-V7) and the cost pages that
 time them. Not built: the preset rows and budgets (M3-V16), the canopy drag and the falling leaves
 (M3-V17), branch poses (M3-V10, measured on its own branch), and Creek's and the forest's plants on

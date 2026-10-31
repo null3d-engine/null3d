@@ -94,6 +94,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"unticked by the 29 October audit: the owner's 26 October ruling is that cookies take any texture and larger sizes, and the head still resamples to 128 by 128 and takes pixels only",
 	'M3-F14':
 		"unticked by the 29 October audit: the entry gained a rule-42 bullet that the tick never covered. The per-frame terrain work, the quadtree select and the block build, is still in TypeScript and there is no terrain crate; that work is also what M3-R39's new bullet hands here by name, so R39 stands and this carries it",
+	'M3-V14':
+		"the owner ruled the rows and the budgets, and D-283 records them. Three clauses of the Done-when stand open, so the task cannot tick: the smallest-tier look, a side-by-side that the owner judges and has not named, which is also the tier he cannot tell from the next one up; the cost of each tier on the iPad Pro 13, the Galaxy S25, the Galaxy Tab A9 Plus and the M5 Max, whose rows are owed; and the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings, which cannot be shown while their readers wait on M3-V11 and M3-V12",
 	'M3-V8':
 		"the CPU path draws a hill through the add-on and is measured on this Mac's Chrome, and the task's Done-when is not met. Creek's sketch still imports its own `./grass`, so no hill of Creek draws through the add-on; the cost has a row only for this Mac, and the iPad, an S24-class phone and the Tab A9 Plus are owed; near grass shadows are not built; and the compute-built blade list waits on M3-E8's same-frame output, M3-E9's count in the near shadow views and M3-V3's graph edge, as the evidence entry says",
 	'M3-X1':
