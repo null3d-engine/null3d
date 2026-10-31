@@ -69,8 +69,8 @@ export {
 } from './ecology';
 export type { GenerateOptions } from './generate';
 export { generatePlant, generateVariantSet, WIND_STRIDE } from './generate';
-export type { Grass, GrassOptions } from './grass';
-export { createGrass } from './grass';
+export type { Grass, GrassBand, GrassBandOptions, GrassBandPlan, GrassOptions } from './grass';
+export { createGrass, GRASS_ROW_BYTES, grassBands } from './grass';
 export { Grid } from './grid';
 export {
 	type GroundMaps,
