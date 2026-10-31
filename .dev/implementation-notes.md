@@ -541,6 +541,7 @@ A feature that most pages do not use keeps its shader builds out of the start fi
   - The engine test "the first use of X downloads its shader file once" (`tests/image/engine.spec.ts`) runs for every table, from the generated feature list. A feature without a sketch of its own draws in `tests/pages/sketches/first-use-sketch.ts`, whose `?feature=` names it. A new table fails that test until the sketch has a case that uses the feature alone.
   - `shaders` lists templates whose every build needs the feature.
   - `bits` lists permutation bits that a device does not fix. Every build with one of them needs the feature, such as every template's SKIN builds.
+  - `bit_shaders` names, for a bit, the shaders whose builds the bit takes. A value of the permutation word can name a feature in one template and another in a template that shares its value, so a bit also listed by another template takes only the builds of the shaders that it names ([D-261](decisions/D-261-moment-transparency.md)). A CI shard builds a few entries from a manifest narrowed to them, and the narrowing takes from each list the names that the shard does not hold. A list left whole would name a shader that another shard builds, and the shard would refuse it.
   - A build needs its template's feature and the feature of each of its bits that a table names. A build that needs one feature goes into that feature's file. A build that needs several, such as a SKIN build with ALPHA_HASH, goes into a file of its own for that set of features, which a page loads only once it uses each of them. So no feature's file grows by the builds of another feature ([D-56](decisions/D-56-first-use-shader-files.md#builds-that-need-several-features)).
 - A value of the permutation word names one feature in each template, so two features can share a value ([D-156](decisions/D-156-template-scoped-permutation-bits.md)). `AREA_LIGHTS` shares `FXAA`'s value: only the lit templates list it, and only the final pass lists FXAA. The shader build refuses a template that lists two names of one value. A shared value's bit takes only the builds of the templates that list its name, and the generated main module's `FEATURE_MASKS` does the same at run time. An unshared bit counts for every template. Code that makes one template's key from another's keeps only the bits that it names, as `DrawKey::prepass` does.
 - The shader build writes the feature's builds to `generated/shaders-<feature>-<target>-<bits>.js`, and the builds of several features to `generated/shaders-<feature>-and-<feature>-<target>-<bits>.js`, with the names in alphabetical order. There is one file for each value of the device's fixed bits that the builds vary in, and none for a set of features without builds. The size report holds each one to the limits of one start shader file, in a section of its own.
@@ -1287,10 +1288,19 @@ The count rose again with M3-V2: an instance batch whose rows bring values takes
 `ALPHA_COVERAGE` and `ALPHA_HASH` in the draw list. The lit templates then build each mask family
 over the row bit, and `SAMPLE_MASK` adds its WebGPU builds beside them, where a multisampled target
 has no alpha. The count rose by two WGSL builds with M3-R9: the light clusters' depth fit walks the slices by a
-compute pass of its own, `light_depth.wgsl`, which builds once for each of its two targets. The
-manifest now makes 62,334 GLSL builds and 24,517 WGSL builds, and `BUILD_BUDGET` records those
-figures. The vegetation add-on draws its trees in batches, and the row bit is what
+compute pass of its own, `light_depth.wgsl`, which builds once for each of its two targets.
+The vegetation add-on draws its trees in batches, and the row bit is what
 lets such a batch take alpha to coverage.
+
+The moment transparency layer adds its builds in two parts ([D-261](decisions/D-261-moment-transparency.md)).
+Its moment pass is a variant of the six mesh templates that a blended surface draws through, so
+those templates gain the permutations that the layer carries. Its colour pass is six shader entries
+of its own, one for each of those templates, because a first-use file takes the names of a build's
+bits and a shared value would pull another template's builds into the layer's files. The two parts
+add 4,181 GLSL builds and 1,261 WGSL builds, and all of them load on the layer's first use, so no
+page downloads them at its start. The milestone's bitmask ambient occlusion prototype adds seven
+GLSL builds and eight WGSL builds of its own, which the merge brought beside the layer's. The
+manifest makes 66,522 GLSL builds and 25,786 WGSL builds, and `BUILD_BUDGET` records those figures.
 
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this

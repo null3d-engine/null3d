@@ -47,6 +47,17 @@ import {
 	TEMPLATE_INSTANCED_UNLIT_MAP,
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
+	TEMPLATE_MOMENT_COMPOSITE,
+	TEMPLATE_MOMENT_DEPTH,
+	TEMPLATE_MOMENT_LIT,
+	TEMPLATE_MOMENT_SMAA_BLEND,
+	TEMPLATE_MOMENT_SMAA_EDGES,
+	TEMPLATE_MOMENT_SMAA_RESOLVE,
+	TEMPLATE_MOMENT_SPRITE,
+	TEMPLATE_MOMENT_SPRITE_MAP,
+	TEMPLATE_MOMENT_STANDARD_MAPS,
+	TEMPLATE_MOMENT_UNLIT,
+	TEMPLATE_MOMENT_UNLIT_MAP,
 	TEMPLATE_MOTION,
 	TEMPLATE_MOTION_VIEW,
 	TEMPLATE_OUTLINE_MASK,
@@ -374,6 +385,25 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	// The weighted layer's depth copy reads the same one-sample copy of the depth.
 	templates[TEMPLATE_WEIGHTED_COMPOSITE] = { shader: shaders.weighted_composite, pipeline: 'main' };
 	templates[TEMPLATE_WEIGHTED_DEPTH] = { shader: shaders.weighted_depth, pipeline: 'main' };
+	// The moment layer's steps and its colour builds, which draw meshes with their own shader
+	// entries so that their builds load with the layer alone.
+	templates[TEMPLATE_MOMENT_COMPOSITE] = { shader: shaders.moment_composite, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_DEPTH] = { shader: shaders.moment_depth, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SMAA_EDGES] = { shader: shaders.moment_smaa_edges, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SMAA_BLEND] = { shader: shaders.moment_smaa_blend, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SMAA_RESOLVE] = {
+		shader: shaders.moment_smaa_resolve,
+		pipeline: 'main',
+	};
+	templates[TEMPLATE_MOMENT_LIT] = { shader: shaders.moment_lit, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_STANDARD_MAPS] = {
+		shader: shaders.moment_standard_maps,
+		pipeline: 'main',
+	};
+	templates[TEMPLATE_MOMENT_UNLIT] = { shader: shaders.moment_unlit, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_UNLIT_MAP] = { shader: shaders.moment_unlit_map, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SPRITE] = { shader: shaders.moment_sprite, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SPRITE_MAP] = { shader: shaders.moment_sprite_map, pipeline: 'main' };
 	// Decals draw in a pass of their own, never in the depth prepass.
 	templates[TEMPLATE_DECAL] = { shader: shaders.decal, pipeline: 'main' };
 	templates[TEMPLATE_DECAL_MAPS] = { shader: shaders.decal_maps, pipeline: 'main' };
