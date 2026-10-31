@@ -1039,20 +1039,19 @@ describe('the checks plan', () => {
 		expect(job).toContain("matrix.browser == 'Safari' && '--shaders sampled'");
 		expect(job).toMatch(/--prebuilt \$\{\{ env\.PREBUILT \}\}/);
 		expect(job).toMatch(/^\s+PREBUILT: none$/m);
-		// Each browser's own count comes from the expression in the job's name, and the matrix keeps
-		// one shard axis of the larger count. A list in an `include` entry is assigned whole rather
-		// than expanded, which printed the job's name as `Array` and ran no split at all.
-		const counts = /matrix\.browser == 'Safari' && (\d+) \|\| (\d+)/.exec(job);
-		expect(counts).not.toBeNull();
-		const count = Number(counts?.[1]);
-		const firefoxCount = Number(counts?.[2]);
+		// Each browser has a job of its own, because a job's condition cannot read `matrix` and the
+		// two counts differ. Each job's own shard list is its count, from one.
+		const shardCount = (name: string) => {
+			const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(workflowJob(name))?.[1];
+			const shards = listed?.split(',').map(Number) ?? [];
+			expect(shards, name).toEqual(Array.from({ length: shards.length }, (_, i) => i + 1));
+			expect(workflowJob(name), name).toContain('${{ matrix.shards }}');
+			return shards.length;
+		};
+		const count = shardCount('real-browsers');
+		const firefoxCount = shardCount('real-browsers-firefox');
 		expect(count).toBeGreaterThan(firefoxCount);
 		expect(firefoxCount).toBeGreaterThan(0);
-		// The matrix must list every shard of the larger count from 1, or a shard never runs.
-		const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(job)?.[1]?.split(',').map(Number);
-		expect(listed).toEqual(Array.from({ length: count }, (_, i) => i + 1));
-		// Firefox's combinations past its count are skipped by the job's condition.
-		expect(job).toMatch(new RegExp(`matrix\\.shard <= ${firefoxCount}`));
 		const minutes = shardsOf(count, ['--prebuilt', 'none']).map((shard) => secondsOf(shard) / 60);
 		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
 		// Firefox compiles every build of the shaders page, by its own measured times.

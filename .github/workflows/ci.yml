@@ -1704,10 +1704,9 @@ jobs:
     # The few pages that load what the load pages job makes, a production build or S6's city
     # files, run in the real-browsers-prebuilt job below, so these shards wait only for the build
     # job, about 3 minutes sooner.
-    name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.browser == 'Safari' && 49 || 41 }})
+    name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
     needs: build
-    # Firefox keeps 41 shards, so the axis's forty-second to forty-ninth combinations are skipped.
-    if: ${{ (github.event_name != 'push' || github.ref == 'refs/heads/main') && (matrix.browser == 'Safari' || matrix.shard <= 41) }}
+    if: *full-run
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
     # Each shard should take at most about 12 minutes, setup included. In run 39291513923 Safari's
     # runner page went quiet for 90 to 235 s on some shards, and a new runner page then ran the rest,
@@ -1729,17 +1728,18 @@ jobs:
         # 8.5 and 13, and the slowest shard decides when a full run ends. The Enterprise plan runs
         # at most 50 macOS jobs at once and only Safari's shards and the benchmark's 8 take them, so
         # Safari stops at 49: one more would put its own prebuilt shard over the cap and make shards
-        # wait for machines, which costs more than the split saves. The axis carries the larger
-        # count and each browser's own count comes from the expression beside it, because a matrix
-        # list inside an `include` entry is assigned as a list rather than expanded, which printed
-        # `Array` in the job's name and gave every shard the whole list (run 41170255102).
-        browser: [Safari, Firefox]
+        # wait for machines, which costs more than the split saves. The two browsers are separate
+        # jobs rather than one matrix because a job's `if` cannot read `matrix` at all: GitHub
+        # offers it to steps only, and a job condition that names it makes the whole workflow
+        # invalid, which is how run 41173277658 failed without starting a job.
+        browser: [Safari]
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49]
+        shards: [49]
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
       PREBUILT: none
-    steps:
+    steps: &real-browser-steps
       - uses: actions/checkout@v5
         # Real browsers compare with the real GPU's references and their devices' own, never with
         # the software GPU's, which the checkout leaves out.
@@ -1771,8 +1771,8 @@ jobs:
       # healthy runner page went at most 36 s without writing in CI, and a stop otherwise waited out
       # the page's whole time limit, up to 235 s on a shaders page.
       - &real-browser-run
-        name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.browser == 'Safari' && 49 || 41 }}
-        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu ${{ matrix.browser == 'Safari' && '--shaders sampled' || '' }} --prebuilt ${{ env.PREBUILT }} --quiet-cap 90 --shard ${{ matrix.shard }}/${{ matrix.browser == 'Safari' && 49 || 41 }} ${{ matrix.browser }}
+        name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.shards }}
+        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu ${{ matrix.browser == 'Safari' && '--shaders sampled' || '' }} --prebuilt ${{ env.PREBUILT }} --quiet-cap 90 --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
       # Every shard keeps its runs, whose page times set the shards' model of each page's time, and a
       # failed shard's candidates beside them.
       - &real-browser-runs
@@ -1784,6 +1784,27 @@ jobs:
             target/runs/
             test-results/images/
           if-no-files-found: ignore
+
+  real-browsers-firefox:
+    # Firefox's share of the pages that the job above runs, in 41 shards rather than Safari's 49:
+    # it is the faster browser, and a split sized for Safari would leave its shards idle. The steps
+    # are the job above's, anchored and shared, so the two cannot drift.
+    name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
+    needs: build
+    if: *full-run
+    runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [Firefox]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41]
+        shards: [41]
+    env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
+      HUSKY: "0"
+      PREBUILT: none
+    steps: *real-browser-steps
 
   real-browsers-prebuilt:
     # The real-browsers job's pages that load what the load pages jobs make: the startup build of
@@ -1921,6 +1942,7 @@ jobs:
       - bench
       - allocation
       - real-browsers
+      - real-browsers-firefox
       - real-browsers-prebuilt
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -1959,7 +1981,7 @@ jobs:
           jq -e --argjson quick "$QUICK" --argjson passed "$PASSED" '[
               "load-pages", "load-startup-pages", "browser", "browser-alone", "browser-heavy",
               "browser-production", "browser-city", "showcase", "bench", "allocation",
-              "real-browsers", "real-browsers-prebuilt"
+              "real-browsers", "real-browsers-firefox", "real-browsers-prebuilt"
             ] as $full | length > 0 and all(to_entries[]; .value.result == "success"
               or (.value.result == "skipped" and ($quick and (.key | IN($full[])) or (.key | IN($passed[])))))' \
             <<< "$NEEDS" > /dev/null
