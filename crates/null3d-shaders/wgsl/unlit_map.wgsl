@@ -44,7 +44,7 @@ enable draw_index;
 #import null3d::moment::{moment_colour_fragment}
 
 /// The moment store that the colour pass reads at each fragment's own pixel (decision record
-/// D-260), in the frame's group. Binding 19 is free: the composer keeps every module's globals,
+/// D-261), in the frame's group. Binding 19 is free: the composer keeps every module's globals,
 /// and the refraction module's own texture holds binding 15 in every build.
 @group(0) @binding(19) var moment_store: texture_2d<f32>;
 #endif

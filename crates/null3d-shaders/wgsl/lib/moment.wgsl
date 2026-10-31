@@ -1,6 +1,6 @@
 #define_import_path null3d::moment
 
-// Order-independent transparency from a store of four depth moments (decision record D-260).
+// Order-independent transparency from a store of four depth moments (decision record D-261).
 //
 // Each fragment of the moment pass adds four power moments of its own optical depth: the depth's
 // total, then that total times the warped depth, its square and its cube, all relative to the

@@ -96,7 +96,7 @@ pub struct FirstUseFeatures {
     /// The bits of [`Self::bits`] that name their shaders in the manifest's `bit_shaders`: those
     /// count only for the shaders that they name, whether or not another template names the same
     /// value. The moment layer's pass uses the outline mask's value this way, so the outline
-    /// mask's own builds keep their device modules (decision record D-260).
+    /// mask's own builds keep their device modules (decision record D-261).
     pub limited: u32,
 }
 
@@ -259,7 +259,7 @@ mod tests {
     fn a_bit_that_names_its_shaders_takes_only_their_builds() {
         // The moment layer's pass takes the outline mask's value, and the manifest's first-use
         // table names the six mesh templates that the bit serves: the outline mask's own builds
-        // keep their device modules (decision record D-260).
+        // keep their device modules (decision record D-261).
         let mut first_use = FirstUseFeatures::default();
         first_use.bits.insert(OUTLINE_VISIBLE, "moment".to_owned());
         first_use.limited = OUTLINE_VISIBLE;

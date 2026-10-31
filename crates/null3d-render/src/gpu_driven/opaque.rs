@@ -232,7 +232,7 @@ fn push_frame_group(
 }
 
 /// Records the creation of the camera's frame group that carries the moment layer's moment store
-/// where the frame group carries the copy of the opaque color, which no moment build reads.
+/// beside the frame group's own entries, at a binding of its own after them.
 pub(super) fn bind_moment_frame(
     list: &mut DrawList,
     inputs: &FrameInputs,

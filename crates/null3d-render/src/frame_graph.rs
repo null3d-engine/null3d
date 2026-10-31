@@ -6313,6 +6313,12 @@ impl FrameGraph {
             Role::MotionView => (P::MotionView, 0),
             Role::Weighted => (P::Weighted, 0),
             Role::WeightedComposite => (P::WeightedComposite, 0),
+            Role::Moment => (P::Moment, 0),
+            Role::MomentColour => (P::MomentColour, 0),
+            Role::MomentComposite => (P::MomentComposite, 0),
+            Role::MomentSmaaEdges => (P::MomentSmaaEdges, 0),
+            Role::MomentSmaaBlend => (P::MomentSmaaBlend, 0),
+            Role::MomentSmaaResolve => (P::MomentSmaaResolve, 0),
             Role::ParticleDepthCopy => (P::ParticleDepthCopy, 0),
             Role::Accumulate => (P::Accumulate, 0),
             Role::Final => (P::Final, 0),
@@ -6767,6 +6773,12 @@ fn role_scope(role: Role) -> u32 {
         Role::MotionView => scope::MOTION_VIEW,
         Role::Weighted => scope::WEIGHTED,
         Role::WeightedComposite => scope::WEIGHTED_COMPOSITE,
+        Role::Moment => scope::MOMENT,
+        Role::MomentColour => scope::MOMENT_COLOUR,
+        Role::MomentComposite => scope::MOMENT_COMPOSITE,
+        Role::MomentSmaaEdges => scope::MOMENT_SMAA_EDGES,
+        Role::MomentSmaaBlend => scope::MOMENT_SMAA_BLEND,
+        Role::MomentSmaaResolve => scope::MOMENT_SMAA_RESOLVE,
         Role::ParticleDepthCopy => scope::PARTICLE_DEPTH_COPY,
         Role::Accumulate => scope::ACCUMULATE,
         Role::Final => scope::FINAL,
@@ -11041,7 +11053,7 @@ mod tests {
             assert!(at("Transparent1").is_some());
 
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena.reset(frames.upload_bound()).unwrap();
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())

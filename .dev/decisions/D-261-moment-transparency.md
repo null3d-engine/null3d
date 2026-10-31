@@ -1,12 +1,11 @@
 # D-261: Moment transparency, and what it beats
 
 Status: decided, and neither the look nor the accuracy supports it yet. Built on both GPU paths,
-and the layer has drawn on all three GPU paths: WebGL2, WebGPU and its compatibility mode drew the
-four image tests at 480 by 270 on the tree of `e1fbc77f9`. The acceptance spec on the same tree,
-`moment-transparency.spec.ts -g "nearer"`, fails on both paths: the moment image is farther from
-the exact one than the weighted blending's. The picture references are held back and the patches at
-overlapping edges stay under the Look section. The layer drew on a phone and a tablet on 29 October
-2026, and the phone's cost figure is owed. Task: M3-F13.
+and the layer draws on all three GPU paths: WebGL2, WebGPU and its compatibility mode. The
+acceptance spec, `moment-transparency.spec.ts -g "nearer"`, fails on both paths: the moment image is
+farther from the exact one than the weighted blending's. The picture references are held back and
+the patches at overlapping edges stay under the Look section. The layer draws on a phone and a
+tablet, and the phone's cost figure is owed. Task: M3-F13.
 
 Summary: Order-independent transparency from a store of four depth moments. Its accuracy is an
 envelope: where the surfaces spread over a few meters or more, it is about two and a half times
@@ -138,16 +137,11 @@ The first attempt removed binding 15 and gave it to the store. WebGPU refused th
 E1408: a layout may not leave out a binding that its shader declares, read or not. WebGL2 binds by
 name and drew, so only the WebGPU picture tests saw it.
 
-The second attempt moved the copy into a module of its own, which only the transmission builds
-were to import. It did not answer the fault: the copy came in through `ssr` as well, so every lit
-build still declared it. That is the point to read the composed shader rather than the module list:
-the composed text for the color build named binding 15 and no light probe grid.
-
-The fix drops the light probe grid from the moment frame layout and from its bind groups. The color
-builds declare no probe grid, so their fragment stage counts 16 sampled textures with the store:
-nine sampled entries of the frame layout, the six of a material's maps, and the store. The build's
-bind group and both backends' recorders omit the entry, and the pipeline test that sums each
-stage's textures guards it.
+The copy therefore stays, and the moment frame layout drops the light probe grid instead, which no
+moment build declares. The colour build's fragment stage then counts 16 sampled textures: the seven
+of the frame layout, the eight of a material's maps, and the store. The build's bind group and both
+backends' recorders omit the probe grid, and the pipeline test that sums each stage's textures
+guards it.
 
 Four more faults followed, and each was invisible until a picture drew:
 
@@ -262,10 +256,9 @@ Two more tests guard the property that gives the feature its name. The same pane
 opposite order draw the same picture, and both draw nearer the exact image than the weighted
 blending does.
 
-The same property held on real hardware. On 29 October 2026, at `b73dea690`, the four image pages
-ran on a Galaxy S25 (SM-S931B) in Chrome 152 on Android 15 and on an iPad Pro 13 in Safari 26.6.1 on
-iOS 26. Each ran on both tiers, WebGPU and WebGL2, with the panes in the forward order and in the
-reverse order:
+The same property holds on real hardware. The four image pages ran on a Galaxy S25 (SM-S931B) in
+Chrome 152 on Android 15 and on an iPad Pro 13 in Safari 26.6.1 on iOS 26. Each ran on both tiers,
+WebGPU and WebGL2, with the panes in the forward order and in the reverse order:
 
 | Device | Tier | Forward and reverse |
 | --- | --- | --- |

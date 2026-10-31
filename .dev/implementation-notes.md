@@ -1273,18 +1273,18 @@ The count rose again with M3-V2: an instance batch whose rows bring values takes
 `ALPHA_COVERAGE` and `ALPHA_HASH` in the draw list. The lit templates then build each mask family
 over the row bit, and `SAMPLE_MASK` adds its WebGPU builds beside them, where a multisampled target
 has no alpha. The count rose by two WGSL builds with M3-R9: the light clusters' depth fit walks the slices by a
-compute pass of its own, `light_depth.wgsl`, which builds once for each of its two targets. The
-manifest now makes 62,334 GLSL builds and 24,517 WGSL builds, and `BUILD_BUDGET` records those
-figures. The vegetation add-on draws its trees in batches, and the row bit is what
+compute pass of its own, `light_depth.wgsl`, which builds once for each of its two targets.
+The vegetation add-on draws its trees in batches, and the row bit is what
 lets such a batch take alpha to coverage.
 
-On 25 October 2026 the moment transparency layer of M3-F13 joined the manifest: its moment pass is
-a variant of the six mesh templates, and its colour pass is six shader entries of its own, one for
-each of those templates ([D-261](decisions/D-261-moment-transparency.md)). The moment builds carry
-the bits that a blended surface can have, so the six entries add 735 GLSL builds and 123 WGSL
-builds. All of them load on the layer's first use, so no page downloads them at its start. The
-manifest now makes 54,497 GLSL builds and 19,350 WGSL builds, and `BUILD_BUDGET` records those
-figures.
+The moment transparency layer adds its builds in two parts ([D-261](decisions/D-261-moment-transparency.md)).
+Its moment pass is a variant of the six mesh templates that a blended surface draws through, so
+those templates gain the permutations that the layer carries. Its colour pass is six shader entries
+of its own, one for each of those templates, because a first-use file takes the names of a build's
+bits and a shared value would pull another template's builds into the layer's files. The two parts
+add 4,181 GLSL builds and 1,261 WGSL builds, and all of them load on the layer's first use, so no
+page downloads them at its start. The manifest makes 66,515 GLSL builds and 25,778 WGSL builds, and
+`BUILD_BUDGET` records those figures.
 
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this
