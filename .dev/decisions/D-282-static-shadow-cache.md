@@ -122,6 +122,9 @@ The measured whole-layer copy, 0.0108 ms a layer, gives 0.576 ms, or 7.0%. The r
 0.246 ms at this frame. The cache fails it only when the restore costs more than 0.204 ms a layer.
 Afternoon's static share, 0.73 ms, gives the same order.
 
+The far cascade alone gives 0.39 ms, or 4.8%, so the bar clears even if the near cascade is left to
+a rest rule. That form costs 8 MiB at Creek's Medium, against 16 MiB for both cascades.
+
 ### Memory
 
 A cascade layer is 2 bytes a texel. A whole second atlas holds the same layers as the shadow map
