@@ -1,7 +1,7 @@
 // Prototype S3: what ambient occlusion and contact shadows cost on this device, and how the
 // bitmask variant of the horizon search looks beside the current search. The page draws a fixed
 // scene (lib/proto-s3-scene.ts) with GPU calls of its own, in each setup: how AO gets its depth
-// (the engine's copy of the depth prepass, or a separate structure pass into r16float), the AO variant,
+// (the engine's copy of the depth prepass, or a separate 32-bit structure pass), the AO variant,
 // the upsample in the lit pass, and contact shadows. The result also records the device's per-stage
 // storage texture limit, the count that each AO design would need, and the path that the limit
 // allows.
@@ -74,7 +74,9 @@ const measureOn = params.get('measure') !== '0';
 /** The one picture that an image test draws, which it compares with a reference. */
 const pictureName = params.get('picture');
 const copyFormat = params.get('copyformat') === 'r16float' ? 'r16float' : 'r32float';
-const structureFormat = params.get('structureformat') === 'r32float' ? 'r32float' : 'r16float';
+// The structure pass writes the distance as 32-bit floats. A 16-bit distance quantizes the binary
+// mask into a screen-period hatch on flat surfaces.
+const structureFormat = params.get('structureformat') === 'r16float' ? 'r16float' : 'r32float';
 const grid = Number(params.get('grid') ?? 5);
 
 const status = document.querySelector('#status') as HTMLElement;

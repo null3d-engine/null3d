@@ -2,20 +2,20 @@
 
 Status: decided. The bitmask variant passes the prototype's cost rule on the Mac's two GPU paths,
 at half and at quarter size. It removes the dark halos that three.js's two-horizon search draws
-behind thin objects. The engine adopts it in a fragment shader, which needs no storage texture. The
-engine change is not built yet. It keeps three.js's denoise. The iPad's and the phone's figures stay
-with prototype S3. Task: M3-R8.
+behind thin objects, and its contacts stay continuous. The engine adopts it in a fragment shader,
+which needs no storage texture. The engine change is not built yet. It keeps three.js's denoise,
+wider. The iPad's and the phone's figures stay with prototype S3. Task: M3-R8.
 
-Summary: Across four quiet-window runs the bitmask's horizon pass used the same slices and steps
-as three.js's. On WebGPU at half size it was 0.06 to 0.10 ms faster. It was 0.02 to 0.07 ms faster
-at quarter size. On WebGL2 at half size three runs were 0.05 to 0.20 ms faster and one was 0.13 ms
-slower. At quarter size three runs were 0.05 to 0.43 ms faster and one was 0.13 ms slower. The denoise is the same shader in both variants,
-but its time moves by up to 0.47 ms between them because its input differs. The horizon pass is
-therefore the measure of the technique. The fragment path binds no storage texture, so it fits
-WebGPU's default limit of four everywhere. A compute design would need four textures at the reduced
-sizes. At full size it would need five, over the default. On the prototype's scene the bitmask
-removes the gray bands behind the thin poles and the rings around the spheres. It keeps the
-darkening where the spheres meet the floor.
+Summary: The bitmask uses the same 3 slices of 6 steps. It turns its sample pattern by an integer
+hash per texel, and shortens each sample's sector span by the distance falloff. Its denoise is the
+same 16 taps at a wider radius. In four quiet-window runs its AO cost 0.13 to 0.16 ms less than the
+current technique on WebGPU at half size. At quarter size it cost 0.02 to 0.04 ms less. On WebGL2
+the four runs spread from 0.62 ms more to 0.72 ms less at half size. At quarter size they spread
+from 0.18 ms more to 0.23 ms less. The two are equal there within the run's spread. The fragment path binds no storage texture, so it fits WebGPU's default
+limit of four everywhere. A compute design would need four textures at the reduced sizes. At full
+size it would need five, over the default. On the prototype's scene the bitmask removes the gray
+bands behind the thin poles and the rings around the spheres. Its contacts are continuous, and the
+wall-floor seam, the screen-period hatch and the hard marks are gone.
 
 ## Question
 
@@ -41,7 +41,10 @@ five storage textures per stage at full size. WebGPU's default is four.
 The prototype page draws a fixed scene. It has a floor and a wall in a crease, a grid of spheres,
 and a row of thin poles in front of the wall. It also has boxes and a table on four thin legs. Each
 variant reads the same depth copy, which is the prepass's depth. Each uses the same 3 slices of 6
-steps and the same three.js denoise. The two variants differ only in the horizon pass.
+steps. The current technique uses three.js's denoise at a 4-texel radius. The bitmask writes the
+same layout into the denoise and widens its radius to 8 texels. The bitmask also turns its sample
+pattern by an integer hash per texel and shortens each sample's sector span by the distance
+falloff. Both variants therefore do one horizon pass and one 16-tap denoise pass.
 
 The canvas was 3,024 by 1,520 pixels at render scale 1. The AO targets were 1,512 by 760 at half
 size and 756 by 380 at a quarter. The browser was Chrome 156.0.8078.79 on the MacBook Pro's Apple
@@ -52,20 +55,27 @@ The horizon pass, in milliseconds of GPU time, for each of the four runs.
 
 | Path and AO size | Current | Bitmask |
 | --- | --- | --- |
-| WebGPU, 1512 x 760 | 0.690, 0.738, 0.709, 0.692 | 0.619, 0.639, 0.639, 0.636 |
-| WebGPU, 756 x 380 | 0.426, 0.345, 0.352, 0.653 | 0.410, 0.322, 0.329, 0.586 |
-| WebGL2, 1512 x 760 | 2.000, 2.252, 1.947, 1.839 | 1.879, 2.202, 1.746, 1.971 |
-| WebGL2, 756 x 380 | 1.725, 1.597, 1.701, 1.807 | 1.677, 1.723, 1.615, 1.382 |
+| WebGPU, 1512 x 760 | 0.665, 0.658, 0.666, 0.664 | 0.593, 0.600, 0.597, 0.601 |
+| WebGPU, 756 x 380 | 0.307, 0.317, 0.319, 0.317 | 0.292, 0.297, 0.305, 0.308 |
+| WebGL2, 1512 x 760 | 2.017, 1.991, 2.125, 1.817 | 1.976, 2.079, 1.783, 2.078 |
+| WebGL2, 756 x 380 | 1.510, 1.610, 1.603, 1.544 | 1.588, 1.520, 1.605, 1.448 |
 
-Reading. At half size the bitmask's pass is faster in every WebGPU run, by 0.06 to 0.10 ms. On
-WebGL2 three runs are 0.05 to 0.20 ms faster and one is 0.13 ms slower. At quarter size it is 0.02
-to 0.07 ms faster on WebGPU. On WebGL2 at quarter size three runs are 0.05 to 0.43 ms faster and
-one is 0.13 ms slower. The GPU clock moved between
-runs: the same WebGL2 half pass read 1.839 and 2.252 ms in two of them. So each pair is read within
-its own run. The denoise, the other pass of AO, is the same shader in both variants. Its time still
-moves by up to 0.47 ms between them, because its input differs. The horizon pass alone is therefore
-the measure, and the bitmask costs no more than the current technique within 0.14 ms in every run.
-It is faster in most of them.
+AO's two passes, the horizon and the denoise, in milliseconds of GPU time.
+
+| Path and AO size | Current | Bitmask |
+| --- | --- | --- |
+| WebGPU, 1512 x 760 | 1.529, 1.507, 1.507, 1.522 | 1.373, 1.376, 1.363, 1.380 |
+| WebGPU, 756 x 380 | 0.672, 0.699, 0.690, 0.696 | 0.641, 0.656, 0.666, 0.669 |
+| WebGL2, 1512 x 760 | 4.479, 4.385, 4.720, 4.047 | 4.406, 4.599, 4.000, 4.664 |
+| WebGL2, 756 x 380 | 3.182, 3.425, 3.336, 3.209 | 3.365, 3.193, 3.361, 3.073 |
+
+Reading. On WebGPU the bitmask's two passes cost 0.13 to 0.16 ms less at half size in every run.
+At quarter size they cost 0.02 to 0.04 ms less. On WebGL2 the two are equal within the run's spread.
+The half-size difference runs from 0.62 ms more to 0.72 ms less, with a median of 0.07 ms less. The
+quarter-size difference runs from 0.18 ms more to 0.23 ms less. The GPU clock moves between runs and
+between the turns within a run. The same WebGL2 half pass read 1.817 and 2.125 ms in two runs. So
+each pair is read within its own run. The bitmask costs no more than the current technique on
+WebGPU, and the two are equal on WebGL2.
 
 The storage limit. The page reads the device's per-stage storage texture limit. It reports the
 counts that each design needs.
@@ -93,14 +103,23 @@ and `tests/proto-s3-run.ts`.
 The pictures show the difference at the same frame, camera and preset, on both paths at both sizes.
 They show the occlusion view. The current technique draws a broad gray band on the wall behind each
 thin pole. It also draws a dark ring around each sphere's silhouette. The bitmask removes both. It
-keeps the dark line in the floor and wall crease. It keeps the darkening at each sphere's contact
-with the floor, and the shadow under the table top.
+keeps the contact darkening continuous: a stacked pair gives one smooth band, and each sphere rests
+on one smooth patch. Its wall-floor seam is a thin line, like the current one.
 
-The change is a redistribution, not a lighter effect everywhere. Against the current technique at
-half size on WebGPU, 12.7% of the occlusion picture's pixels move by more than 8 steps of 255. Of
-those, 6.8% grow darker and 5.9% grow lighter. At quarter size the shares are 14.0%, 7.3% and 6.7%.
-The shaded scene moves by 0.72% of its pixels at half size and 0.41% at quarter. WebGL2 moves the
-same way, within 0.1 percentage points of those figures.
+The first revision broke the contacts into detached wedges, drew hard rectangles above the rows,
+and put a screen-period hatch on the structure render. Three changes fix them. The sample pattern
+turns with an integer hash per texel. No flat surface then shows a screen-period hatch. Each
+sample's sector span is shortened by the distance falloff. A wall beside a surface then does not
+mark its whole height, and the seam keeps the current width. The denoise takes a wider 8-texel radius,
+which smooths the wedges into continuous bands. The hatch itself came from the structure pass's
+16-bit distance: its quantization flips the binary mask on flat surfaces. The structure pass now
+writes 32-bit distances. The quarter-size star splats and the box's ink outline are gone with the
+wider denoise.
+
+Against the current technique at half size on WebGPU, 11.8% of the occlusion picture's pixels move
+by more than 8 steps of 255. Of those, 5.2% grow darker and 6.6% grow lighter. At quarter size the
+shares are 12.6%, 4.3% and 8.3%. The shaded scene moves by 0.27% of its pixels at half size and
+0.12% at quarter. WebGL2 moves the same way, within 0.1 percentage points of those figures.
 
 Pictures: `tests/image/references/*/webgpu|webgl2/proto-ao-{current,bitmask}-{half,quarter}.png`.
 They were drawn on the Mac's GPU and on SwiftShader. `target/proto-s3/pictures/` holds the larger
@@ -109,11 +128,13 @@ and does not pass its own look.
 
 ## Decision
 
-The engine adopts the bitmask variant, in the fragment-shader form that Filament ships:
+The engine adopts the bitmask variant, in a fragment shader:
 
-- It removes the dark halos behind thin objects, which is the fault the variant exists to fix.
-- At the same slices and steps it costs no more than three.js's horizon search within 0.14 ms. It is
-  faster in most runs, at both sizes.
+- It removes the dark halos behind thin objects, which is the fault the variant exists to fix. Its
+  contacts stay continuous, and its seam keeps the current width.
+- At the same slices, steps and 16-tap denoise, it costs less than the current technique. On
+  WebGPU at half size the gap is 0.13 to 0.16 ms. On WebGL2 the two are equal within the run's
+  spread.
 - The fragment form needs no storage texture. It fits WebGPU's default limit of four on every
   device, so no capability flag or fallback is needed.
 
@@ -122,18 +143,20 @@ four. It would need a capability check and a fallback. At the reduced sizes it n
 It still costs a capability check, a buffer-based interface and a second implementation. It gives
 no measured gain over the fragment form.
 
-Three.js's denoise stays. The bitmask writes the same normal, and the denoise reads it. The variant
-changes one pass. Filament's separable bilateral denoise stays a separate change, as the technique
-review lists it.
+Three.js's denoise stays, at a wider 8-texel radius for the bitmask's mask. The bitmask writes the
+same normal, and the denoise reads it. Filament's separable bilateral denoise stays a separate
+change, as the technique review lists it.
 
 ## Consequences
 
 - The engine change replaces the horizon search in `ao.wgsl` and leaves the two steps around it. It
-  keeps the normal output that the denoise reads.
+  keeps the normal output that the denoise reads, and it widens the denoise's radius for the mask.
+  It turns the sample pattern with an integer hash per texel. It shortens each sample's sector
+  span by the distance falloff.
 - The settings change meaning. `distanceExponent` still spreads the search's steps. `thickness`
-  becomes the slab's thickness. `distanceFalloff` has no effect in a bitmask search. The engine
-  change removes it, and the porting guide says that three.js's `distanceFallOff` no longer applies.
-  The API reference, the three.js mapping and the skills change with that work.
+  becomes the slab's thickness. `distanceFalloff` maps onto the falloff that shortens each sector
+  span. It goes if the mapping cannot hold. The API reference, the three.js mapping and the skills
+  change with that work.
 - The prototype page, its driver and its four image tests retire when the engine's own AO tests draw
   the picture. Until then they keep this record's figures reproducible.
 - The iPad's and the phone's AO cost is still S3's question. This record settles the Mac's two

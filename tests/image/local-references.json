@@ -410,14 +410,14 @@
 	"chromium-swiftshader/webgl2/proto-ao-bitmask-half.png": {
 		"test": "proto-ao-bitmask-half",
 		"tier": "webgl2",
-		"date": "2026-10-30",
-		"reason": "the branch has no CI run; the prototype S3 page is a test page that draws its fixed scene with plain GPU calls, so the software set can be drawn here until a CI run replaces it"
+		"date": "2026-10-31",
+		"reason": "the branch has no CI run; the prototype S3 page draws its fixed scene with plain GPU calls, and its bitmask pictures moved with the look fixes, so the software set is drawn here until a CI run replaces it"
 	},
 	"chromium-swiftshader/webgl2/proto-ao-bitmask-quarter.png": {
 		"test": "proto-ao-bitmask-quarter",
 		"tier": "webgl2",
-		"date": "2026-10-30",
-		"reason": "the branch has no CI run; the prototype S3 page is a test page that draws its fixed scene with plain GPU calls, so the software set can be drawn here until a CI run replaces it"
+		"date": "2026-10-31",
+		"reason": "the branch has no CI run; the prototype S3 page draws its fixed scene with plain GPU calls, and its bitmask pictures moved with the look fixes, so the software set is drawn here until a CI run replaces it"
 	},
 	"chromium-swiftshader/webgl2/proto-ao-current-half.png": {
 		"test": "proto-ao-current-half",
@@ -650,14 +650,14 @@
 	"chromium-swiftshader/webgpu/proto-ao-bitmask-half.png": {
 		"test": "proto-ao-bitmask-half",
 		"tier": "webgpu",
-		"date": "2026-10-30",
-		"reason": "the branch has no CI run; the prototype S3 page is a test page that draws its fixed scene with plain GPU calls, so the software set can be drawn here until a CI run replaces it"
+		"date": "2026-10-31",
+		"reason": "the branch has no CI run; the prototype S3 page draws its fixed scene with plain GPU calls, and its bitmask pictures moved with the look fixes, so the software set is drawn here until a CI run replaces it"
 	},
 	"chromium-swiftshader/webgpu/proto-ao-bitmask-quarter.png": {
 		"test": "proto-ao-bitmask-quarter",
 		"tier": "webgpu",
-		"date": "2026-10-30",
-		"reason": "the branch has no CI run; the prototype S3 page is a test page that draws its fixed scene with plain GPU calls, so the software set can be drawn here until a CI run replaces it"
+		"date": "2026-10-31",
+		"reason": "the branch has no CI run; the prototype S3 page draws its fixed scene with plain GPU calls, and its bitmask pictures moved with the look fixes, so the software set is drawn here until a CI run replaces it"
 	},
 	"chromium-swiftshader/webgpu/proto-ao-current-half.png": {
 		"test": "proto-ao-current-half",
