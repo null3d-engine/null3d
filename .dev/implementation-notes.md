@@ -36,6 +36,33 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - A search with a callback that closes over a value makes one object at every call, and an add-on's frame path can reach such a search inside the engine. In an update of a mesh's vertices, a lookup of the attribute's spec with `ARRAYS.find((array) => array.name === name)` and of its typed array with `INTEGER_ARRAYS.find(([, n, p]) => n === type || p === type)` allocates at every call. The check `bench:allocation --terrain` blames them for 38.1 bytes per frame in `updateProblem scene/mesh-arrays.ts` and 8.5 in `arrayClass`, both against a budget of 4. So both read a map built once at module load. A table that a frame path searches by name needs one.
 - A frame path that parks entries and takes them back several times should keep its list at its longest and hold a count, rather than pushing and popping. The terrain's block pool parks an evicted block's mesh and takes one back in the same selection. With pushes and pops there, `bench:allocation --terrain` blames `push (built-in)` for 6.8 bytes per frame against a budget of 4. With the list kept at its longest and a count, the place stays under its budget. The habit above still holds for a list that only grows and is emptied between frames: shrink it with `pop`, never with a length of 0.
 
+## Level slices and moving cameras
+
+Each frame, the CPU counts the rows that each level of a batch takes. A slice of the compacted instance buffer holds those rows. A view's bundle and its buffer both name the slices, and the frame records them again only when something makes it do so.
+
+A slice that moves while a bundle keeps its old place draws the wrong rows. On the indirect path, that shows as tree crowns over the sea, stretched black trunks and tree shapes on the sand. On the direct path the buffer is too short, the GPU rejects the frame's draw (E1305) and the frame is black. Held frames show neither fault, since a still camera moves no slice.
+
+So a slice keeps its place while its count fits. A first placement is exact, and a slice that must grow takes spare room of an eighth of its count. A count that outgrows its slice moves the slices, and the frame then records the bundles and sizes the buffers again. The culling shader also refuses a row past its slice's end, which leaves one tree out for a frame and never draws another mesh with that row's matrix.
+
+The last word of a view's buffer of culled draws counts the rows that this guard refuses. `packages/engine/src/gpu/webgpu/culled-counts.ts` reads it into `dropped` while the page samples its figures. To read it, open the stats card with `?stats=open` and force the path that culls on the GPU with `?direct=off`. The direct path has no guard. The first refused row prints one console warning. A row refused here means that the CPU's count of a level's copies fell short of the GPU's, which is an engine fault.
+
+## A frame on a full heap
+
+A frame's first step empties its upload arena and reserves the frame's whole upload, which in a large scene's first frame holds every mesh: 206 MiB in the island scene on the direct draw path, and 273 MiB with its terrain one level finer. Near the memory limit the heap can refuse that one request. `UploadArena::begin_frame` asks with `try_reserve_exact`, and the frame then stops with E1109. A plain `reserve_exact` here traps in the allocator with `unreachable` and no message, which the core's allocation hook names (`init_engine` in `crates/null3d-wasm/src/lib.rs`).
+
+The draw path that the start-up probe picks sets how much a first frame asks for, so a page near its limit fits on one path and not on the other, and the probe's pick can change with the machine's load. At the High preset the island scene needs 520 MiB on the indirect path, 720 MiB on the direct path and 510 MiB on WebGL2, whose opening view needs more than a still camera's 490 MiB. Between the first two, the probe decides.
+
+Most of a frame's requests are plain pushes, which cannot report a refusal, so a frame makes sure they fit:
+
+- A request that the scene sizes reports its refusal. The upload arena, the draw list and the culling lists all ask with `try_reserve`.
+- Each of those leaves room behind it when it grows, with `keep_room(FRAME_HEADROOM)` in `null3d_core::alloc`.
+- A frame whose scene changed checks the same room before it culls. A steady frame allocates nothing, as `no_alloc.rs` holds, so it needs no check.
+- A layout's rebuild pushes rows and buckets for each source. It checks room for `REBUILD_BYTES_PER_SOURCE` for each source, when it has more sources than it last checked for.
+
+`keep_room` counts first. When the pages left under the memory's declared maximum hold the room, the heap can grow to give it, so the check asks for nothing, and memory and allocation stay as they were for a scene away from its limit. Only a scene near its limit asks the heap for the bytes and gives them back, once in each frame that changes the scene, where the rebuild allocates anyway. The single-threaded build's memory declares no maximum to count from, so it always asks. A pass by count assumes that the memory can grow to its maximum. A browser can refuse earlier, as phones do, and a small push would then trap.
+
+`FRAME_HEADROOM` is 8 MiB, so a scene stops with E1109 once its peak leaves less than that under the limit. That margin is a fixed line, where a stop without it would depend on how the heap lies. The plain requests of 32 KB or more along the island's route total about 4 MiB on WebGL2 and 12 MiB on the direct path, counting every growth step as if all were held at once, so one frame needs less. It is measured on one scene, and no test forces a small request to fail. `REBUILD_BYTES_PER_SOURCE` is 64: the width of the per-row tables, doubled for a growth's copy. Its buckets are left to the headroom. `tests/image/memory-limit.spec.ts` runs the scene's first frame around its limits on both WebGPU paths, and fails on any stop but E1109.
+
 ## Allocation in Rust
 
 - Rust tests that count allocations use `null3d_core::testing::CountingAllocator`, from the core crate's `testing` feature. It counts only the threads a test marks, so the test runner's own threads cannot reach the count.

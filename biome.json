@@ -58,6 +58,8 @@
 			"!tools/samples/manifest.json",
 			"!skills/null3d-port-threejs/references/threejs-mapping.json",
 			"!packages/engine/src/generated",
+			"!examples/showcase/island/layout.json",
+			"!examples/showcase/island/layout-base.json",
 			"!packages/engine/vendor",
 			"!packages/cli/vendor"
 		]

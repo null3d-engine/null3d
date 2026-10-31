@@ -118,7 +118,10 @@ const SHADOW_LADDER = 1.25;
  * whole step below the held range, so a need that hovers at a step never flickers between two.
  */
 export function shadowStep(raw: number, held: number, base: number): number {
-	const steps = Math.max(0, Math.ceil(Math.log(raw / base) / Math.log(SHADOW_LADDER) - 1e-9));
+	const steps = Math.max(
+		0,
+		Math.ceil(Math.log(Math.max(raw, base) / base) / Math.log(SHADOW_LADDER) - 1e-9),
+	);
 	const up = base * SHADOW_LADDER ** steps;
 	return up > held || raw < held / SHADOW_LADDER ** 2 ? up : held;
 }

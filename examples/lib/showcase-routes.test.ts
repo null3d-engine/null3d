@@ -6,8 +6,8 @@
 import { describe, expect, it } from 'bun:test';
 import * as creekLand from '../showcase/creek/land';
 import * as creek from '../showcase/creek/sketch';
-import * as townLand from '../showcase/night-town/land';
-import * as town from '../showcase/night-town/sketch';
+import * as islandPlan from '../showcase/island/plan';
+import * as island from '../showcase/island/sketch';
 import {
 	BOUNDED_POLAR_ANGLE,
 	type CameraBounds,
@@ -21,17 +21,27 @@ import { shadowStep } from './showcase-effects';
 /** How many points of the loop the checks sample, finely enough for the spline's bends. */
 const SAMPLES = 2000;
 
+/** Each scene's route, its camera's bounds and the ground under them: an island has no mountains. */
+const creekRing = mountainRing(creekLand.mountainSettings(160, 32));
 const SCENES = [
-	{ name: 'night town', land: townLand, sketch: town },
-	{ name: 'creek', land: creekLand, sketch: creek },
+	{
+		name: 'island',
+		sketch: island,
+		ground: (x: number, z: number) => Math.max(islandPlan.groundHeight(x, z), 0),
+	},
+	{
+		name: 'creek',
+		sketch: creek,
+		ground: (x: number, z: number) =>
+			Math.max(creekLand.groundHeight(x, z), creekRing.heightAt(x, z)),
+	},
 ];
 
-for (const { name, land, sketch } of SCENES) {
+for (const { name, ground, sketch } of SCENES) {
 	describe(`the ${name}'s route`, () => {
-		const ring = mountainRing(land.mountainSettings(160, 32));
 		const bounds: CameraBounds = {
 			...sketch.BOUNDS,
-			ground: (x, z) => Math.max(land.groundHeight(x, z), ring.heightAt(x, z)),
+			ground,
 		};
 		const route = routeTimeline(sketch.SHOTS);
 		const pose = new Float32Array(6);

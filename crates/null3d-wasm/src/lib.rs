@@ -11,11 +11,13 @@
 //! Functions that can fail return an error code (0 for success), or 0 in place of a handle or an
 //! address; `lastErrorCode` and `lastErrorDetail` then describe the failure with the codes of the
 //! engine's error table.
+#![feature(alloc_error_hook)]
 
 use std::cell::{Cell, UnsafeCell};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
+use null3d_core::alloc::{FRAME_HEADROOM, keep_room};
 use null3d_core::animation::{
     AnimationError, Animations, Blend, Clip, MATRIX_FLOATS, MAX_BLEND, MAX_JOINTS, Play,
     REST_FLOATS, Skeleton, as_floats, resample, staged_tracks,
@@ -126,6 +128,9 @@ extern "C" {
     /// before any job worker has joined.
     #[wasm_bindgen(js_namespace = globalThis, js_name = __null3dWantJobWorkers)]
     fn want_job_workers();
+    /// The browser's console, for the message of a panic, which a trap would otherwise lose.
+    #[wasm_bindgen(js_namespace = console, js_name = error)]
+    fn console_error(text: &str);
 }
 
 /// Upload ranges one frame can list before it uploads everything instead.
@@ -552,6 +557,13 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// The scene starts with room for `expected_objects` objects, or for `START_OBJECTS` with 0, and
 /// grows when it needs more (`ensure_room`, `grow_ahead`). Every other capacity is fixed from here
 /// on.
+/// Notes the shared memory's declared maximum in MiB, ahead of `initEngine`. A build whose memory
+/// has none is left with 0.
+#[wasm_bindgen(js_name = setMemoryMaximum)]
+pub fn set_memory_maximum(mib: u32) {
+    null3d_core::alloc::set_memory_maximum(mib);
+}
+
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
 pub fn init_engine(
@@ -576,6 +588,24 @@ pub fn init_engine(
     direct_draws: bool,
     shadow_depth_bits: u32,
 ) -> u32 {
+    // A panic stops the core with a bare trap, so its message and place go to the console first.
+    std::panic::set_hook(Box::new(|info| {
+        console_error(&format!("null3D core: {info}"))
+    }));
+    // A failed allocation stops with a trap and no panic, so the hook above never sees it. The heap
+    // has just refused a request here, so the message is written on the stack.
+    std::alloc::set_alloc_error_hook(|layout| {
+        let mut digits = [0u8; 20];
+        let mut at = digits.len();
+        let mut left = layout.size();
+        while left > 0 || at == digits.len() {
+            at -= 1;
+            digits[at] = b'0' + (left % 10) as u8;
+            left /= 10;
+        }
+        console_error("null3D core: the heap refused a request of this many bytes:");
+        console_error(std::str::from_utf8(&digits[at..]).unwrap_or("?"));
+    });
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
     let cell = unsafe { &mut *ENGINE.0.get() };
     if cell.is_some() {
@@ -1158,6 +1188,11 @@ pub fn cull_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32) -
     with_engine(|e| {
         let scale = RenderScale::from_thousandths(scale);
         e.renderer.settings_mut().set_level_scale(scale);
+        if e.structure_changed && keep_room(FRAME_HEADROOM).is_err() {
+            return record_failure(RecordError::OutOfMemory {
+                bytes: FRAME_HEADROOM as u32,
+            });
+        }
         let (renderer, input) = e.frame(frame, (width, height), scale, jobs, built);
         match renderer.cull(&input) {
             Ok(()) => 0,

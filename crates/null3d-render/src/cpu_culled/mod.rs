@@ -2072,7 +2072,7 @@ impl CpuCulledRenderer {
             Opaque::bind_frame(list, ViewId::SUBSURFACE, Some(lit_for(lit, ViewId::CAMERA)))?;
         }
         let rebuilt = self.layout.built_in == input.frame;
-        arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
+        arena.begin_frame(self.upload_bound() + LinesPass::upload_bytes(&input.lines))?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::MATERIALS, MATERIAL_TEXELS)?;
             ao::upload_blank(list, arena, ids::BLANK_AO)?;
@@ -3357,7 +3357,8 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn reads_last_frame(&self) -> bool {
-        self.graph.ssr_draws()
+        // A mirror's picture reaches the materials that read it one frame after the view first draws.
+        self.graph.ssr_draws() || self.settings.has_mirror()
     }
 
     fn graph_message(&self, error: GraphError) -> String {

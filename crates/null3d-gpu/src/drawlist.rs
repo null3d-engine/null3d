@@ -26,6 +26,8 @@
 //! WebGL2 keeps the rows of whatever a render pass draws in GL's order, bottom row first, so a
 //! shader that samples a rendered target by texture coordinates flips them on that path.
 
+use null3d_core::alloc::{FRAME_HEADROOM, keep_room};
+
 /// Command opcodes. The TypeScript replay loop uses the generated constants in
 /// `packages/engine/src/generated/gpu.ts`, which a test keeps equal to these values. Numbers group
 /// by kind: resources from 1, render pass commands from 16, bundles from 32, compute from 40,
@@ -377,6 +379,9 @@ pub mod buffer_usage {
     pub const UNIFORM: u32 = 0x0040;
     pub const STORAGE: u32 = 0x0080;
     pub const INDIRECT: u32 = 0x0100;
+    /// No GPU usage: marks a buffer of culled draws, whose last word counts the copies that the
+    /// culling shader dropped. The backend reads it back while the page samples.
+    pub const DROP_COUNTED: u32 = 0x0001_0000;
 }
 
 /// Texture usage flags, with WebGPU's values.
@@ -1748,7 +1753,7 @@ pub mod sizes {
     /// value, the bucket of the next coarser level plus one, the level's fade bucket plus one, the
     /// threshold bias that picks the levels, 1 for none, the measure that the switch value names,
     /// and the level that the bucket draws, which the levels debug view writes beside each copy.
-    pub const BUCKET_WORDS: u32 = 16;
+    pub const BUCKET_WORDS: u32 = 17;
     /// A bucket record's first joint that sends the culling shader to each source's own: the
     /// buckets that skinned objects share, whose vertex shaders skin, read the first joint of each
     /// object's skin from a data texture of 32-bit indices, at the object's source.
@@ -2537,9 +2542,12 @@ impl DrawList {
             return Err(DrawListError::Full { limit: self.limit });
         }
         let grown = needed.max(self.words.capacity() * 2).min(self.limit);
+        let refused = |_| DrawListError::OutOfMemory { words: needed };
         self.words
             .try_reserve_exact(grown - self.words.len())
-            .map_err(|_| DrawListError::OutOfMemory { words: needed })
+            .map_err(refused)?;
+        // A longer list can take the last of the heap, and the rest of the frame needs some.
+        keep_room(FRAME_HEADROOM).map_err(refused)
     }
 
     /// Appends whole commands that another list recorded.
@@ -2848,6 +2856,7 @@ pub fn typescript_constants() -> String {
                 ("UNIFORM", buffer_usage::UNIFORM),
                 ("STORAGE", buffer_usage::STORAGE),
                 ("INDIRECT", buffer_usage::INDIRECT),
+                ("DROP_COUNTED", buffer_usage::DROP_COUNTED),
             ],
         ),
         (

@@ -193,6 +193,9 @@ struct InstanceBucket {
     /// The level of detail that the bucket draws. The vertex shader reads none of it, but the
     /// record's stride holds it.
     level: u32,
+    /// The copies that the bucket's slice holds. The vertex shader reads none of it, but the
+    /// record's stride holds it.
+    capacity: u32,
 }
 
 // The group after the template's own: the frame's, then the maps' in the builds that sample maps

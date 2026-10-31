@@ -11,7 +11,7 @@
 use std::collections::TryReserveError;
 use std::ops::Range;
 
-use null3d_core::alloc::reserve_keeping;
+use null3d_core::alloc::{FRAME_HEADROOM, keep_room, reserve_keeping};
 use null3d_core::animation::Animations;
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::culling::{CULL_CHUNK, CullRun, Frustum, ROW_CELLS};
@@ -674,6 +674,11 @@ pub(crate) fn clamp_sampler(
     )?)
 }
 
+/// The most bytes that a layout's rebuild asks for with plain pushes, for each source: its rows in
+/// the tables, and the old table that a growth copies from. Its buckets are far fewer than its
+/// sources, and fit in the frame's headroom.
+pub(crate) const REBUILD_BYTES_PER_SOURCE: usize = 64;
+
 /// Copies of data a frame's list uploads. Chunks never move once allocated, so addresses stay
 /// valid until the arena is reset for the next frame of the same parity.
 #[derive(Default)]
@@ -691,18 +696,34 @@ pub(crate) struct UploadArena {
 }
 
 impl UploadArena {
-    /// Empties the arena and makes room for `total` bytes. The list of the frame that last used
-    /// the arena has been replayed, so its copies may move.
-    pub(crate) fn reset(&mut self, total: usize) {
+    /// Empties the arena and makes room for `total` bytes, or reports a heap that cannot give them.
+    /// The list of the frame that last used the arena has been replayed, so its copies may move.
+    pub(crate) fn begin_frame(&mut self, total: usize) -> Result<(), RecordError> {
         self.high_water = self.high_water.max(self.bytes.len());
         self.kept.clear();
         self.bytes.clear();
         self.volatile.clear();
-        self.bytes.reserve_exact(total);
+        let refused = |_| RecordError::OutOfMemory {
+            bytes: u32::try_from(total).unwrap_or(u32::MAX),
+        };
+        let held = self.bytes.capacity();
+        self.bytes.try_reserve_exact(total).map_err(refused)?;
+        // A larger arena can take the last of the heap, and the rest of the frame needs some.
+        if self.bytes.capacity() > held {
+            keep_room(FRAME_HEADROOM).map_err(refused)?;
+        }
         // Each view's uniform carries the frame's volatile ranges, the clock and a still view's
         // jitter, so the list holds at most two for each view id: reserving them here keeps a
         // frame from growing the list while it records.
-        self.volatile.reserve_exact(2 * crate::view::MAX_VIEW_IDS);
+        self.volatile
+            .try_reserve_exact(2 * crate::view::MAX_VIEW_IDS)
+            .map_err(refused)
+    }
+
+    /// [`Self::begin_frame`] for a test, whose request always fits.
+    #[cfg(test)]
+    pub(crate) fn reset(&mut self, total: usize) {
+        self.begin_frame(total).expect("room for a test's uploads");
     }
 
     /// Makes room for `total` bytes ahead of the frame that needs them, or fails when memory
@@ -3120,6 +3141,11 @@ impl SceneSettings {
         }
     }
 
+    /// True when a view draws a mirror of the scene.
+    pub(crate) fn has_mirror(&self) -> bool {
+        self.views.iter().any(|view| view.mirrored().is_some())
+    }
+
     /// True when a view draws the scene's background behind its objects: the camera's view, each
     /// mirror view, whose image shows the sky as a mirror does, and each other view of a scene
     /// that clears to the camera's color, as a three.js render target shows the scene's
@@ -4446,6 +4472,20 @@ pub fn linear_to_srgb(c: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The heap refuses the first frame's whole upload now and then in a scene near its memory
+    /// limit: that frame reports it as an error, and the core does not trap.
+    #[test]
+    fn an_upload_arena_reports_a_frame_that_the_heap_cannot_hold() {
+        let mut arena = UploadArena::default();
+        let refused = arena.begin_frame(usize::MAX / 2);
+        assert!(matches!(
+            refused,
+            Err(RecordError::OutOfMemory { bytes: u32::MAX })
+        ));
+        arena.begin_frame(1024).expect("room after the refusal");
+        arena.push(&[7u8; 300]).expect("the arena still works");
+    }
 
     #[test]
     fn the_upload_arenas_register_their_room_and_the_most_a_frame_filled() {

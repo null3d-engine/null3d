@@ -1,5 +1,5 @@
 // The images of the command-line tool's timed script test: one for each state that a script drives
-// the night town showcase through. The spec (cli-script.spec.ts) runs `bunx @null3d/cli shot
+// the island showcase through. The spec (cli-script.spec.ts) runs `bunx @null3d/cli shot
 // --script` in the repository, and compares each image with its reference here. The runs are not in
 // the manifest, which the image page draws: a script's images come from the command itself.
 import {
@@ -11,7 +11,7 @@ import {
 } from '../lib/images.ts';
 
 /** The test's name, which names each image after the state it shows. */
-export const SCRIPT_TEST = 'script-demo-night-town';
+export const SCRIPT_TEST = 'script-demo-island';
 
 /** The states that the showcase's script draws, in time order. */
 export const SCRIPT_STATES = ['turned', 'walked', 'closer'] as const;
@@ -24,7 +24,7 @@ export const SCRIPT_SIZE = [320, 180] as const;
 
 /** The page that draws the showcase, at the preset that the real GPU's references use. */
 const SHOWCASE_PAGE =
-	'/tests/pages/image.html?sketch=/examples/showcase/night-town/sketch.ts&size=320x180&preset=high';
+	'/tests/pages/image.html?sketch=/examples/showcase/island/sketch.ts&size=320x180&preset=high';
 
 /** The sketch time of each state, in seconds. */
 const SHOWCASE_HOLD: Readonly<Record<(typeof SCRIPT_STATES)[number], number>> = {
@@ -39,7 +39,7 @@ export const SCRIPT_RUNS: ImageRun[] = SCRIPT_STATES.map((state) => ({
 	test: `${SCRIPT_TEST}-${state}`,
 	tier: SCRIPT_TIER,
 	path: SHOWCASE_PAGE,
-	scene: 'examples/showcase/night-town/sketch.ts',
+	scene: 'examples/showcase/island/sketch.ts',
 	hold: SHOWCASE_HOLD[state],
 	timeoutSeconds: 180,
 	size: SCRIPT_SIZE,
