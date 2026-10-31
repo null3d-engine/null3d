@@ -152,59 +152,71 @@ class Runners {
 		// The files are compiled above, so a file that fails to load throws before the count starts.
 		// The count starts here, where the task is about to reach a worker, and `answer` or `end`
 		// clears it: hold mode then knows when every task that the sketch asked for has written
-		// what it draws.
+		// what it draws. A failure before the request leaves clears the count here, as the count
+		// must fall however that call ends.
 		taskStarted();
-		if (this.ended) {
-			taskEnded();
-			throw new TaskFailure('stopped', 'the engine stopped');
-		}
-		const starting = this.starting();
-		if (starting) await starting;
-		if (this.ended) {
-			taskEnded();
-			throw new TaskFailure('stopped', 'the engine stopped');
-		}
-		const runner = this.leastBusy(error);
-		const id = ++this.next;
-		let request = runner.request;
-		if (!request) {
-			request = { id: 0, task: '', input: undefined };
-			runner.request = request;
-		}
-		request.id = id;
-		request.task = task.name;
-		request.input = input;
-		const script = task.script?.href;
-		request.script = script;
-		let newModules: [string, WebAssembly.Module][] | undefined;
-		if (alone !== undefined) {
-			const key = moduleKey(script, alone.name);
-			if (!runner.modules.has(key)) {
-				newModules = [[key, aloneModule as WebAssembly.Module]];
-				runner.modules.add(key);
+		try {
+			if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
+			const starting = this.starting();
+			if (starting) await starting;
+			if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
+			const runner = this.leastBusy(error);
+			const id = ++this.next;
+			let request = runner.request;
+			if (!request) {
+				request = { id: 0, task: '', input: undefined };
+				runner.request = request;
 			}
-		} else if (files && files.length > 0) {
-			const added = files.flatMap((file, k) =>
-				runner.modules.has(moduleKey(script, file.name))
-					? []
-					: [[moduleKey(script, file.name), modules[k]] as [string, WebAssembly.Module]],
-			);
-			if (added.length > 0) {
-				newModules = added;
-				for (const [key] of added) runner.modules.add(key);
+			request.id = id;
+			request.task = task.name;
+			request.input = input;
+			const script = task.script?.href;
+			request.script = script;
+			let newModules: [string, WebAssembly.Module][] | undefined;
+			if (alone !== undefined) {
+				const key = moduleKey(script, alone.name);
+				if (!runner.modules.has(key)) {
+					newModules = [[key, aloneModule as WebAssembly.Module]];
+					runner.modules.add(key);
+				}
+			} else if (files && files.length > 0) {
+				const added = files.flatMap((file, k) =>
+					runner.modules.has(moduleKey(script, file.name))
+						? []
+						: [[moduleKey(script, file.name), modules[k]] as [string, WebAssembly.Module]],
+				);
+				if (added.length > 0) {
+					newModules = added;
+					for (const [key] of added) runner.modules.add(key);
+				}
 			}
+			request.modules = newModules;
+			runner.running++;
+			taskCalls++;
+			const waiting = this.free.pop() ?? { resolve: NO_SETTLE, reject: NO_SETTLE, runner };
+			return new Promise((resolve, reject) => {
+				waiting.resolve = resolve;
+				waiting.reject = reject;
+				waiting.runner = runner;
+				this.waiting.set(id, waiting);
+				try {
+					runner.send(request, transfer);
+				} catch (thrown) {
+					// The request never left, so no answer comes: settle its record and its count here.
+					this.waiting.delete(id);
+					waiting.resolve = NO_SETTLE;
+					waiting.reject = NO_SETTLE;
+					this.free.push(waiting);
+					runner.running--;
+					taskEnded();
+					reject(thrown instanceof Error ? thrown : new Error(String(thrown)));
+				}
+			});
+		} catch (failure) {
+			// Nothing reached a worker, so no answer can clear the count that this call raised.
+			taskEnded();
+			throw failure;
 		}
-		request.modules = newModules;
-		runner.running++;
-		taskCalls++;
-		const waiting = this.free.pop() ?? { resolve: NO_SETTLE, reject: NO_SETTLE, runner };
-		return new Promise((resolve, reject) => {
-			waiting.resolve = resolve;
-			waiting.reject = reject;
-			waiting.runner = runner;
-			this.waiting.set(id, waiting);
-			runner.send(request, transfer);
-		});
 	}
 
 	/**
