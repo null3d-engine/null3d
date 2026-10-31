@@ -609,7 +609,7 @@ laptop under load. A check on an Apple M3 Max reads 244 ms for the leaves and 14
 389 ms together. It ran in Bun, beside the machine's other jobs, and the total
 stays inside the one-second line that keeps an atlas across visits. Each leaf rejects a texel outside
 a box around its outline before it works out the outline. That holds down the cost of a cell of many
-leaves. The figures on the iPad Pro 13 and an S24-class phone are owed.
+leaves.
 
 A cell of twice the leaves would otherwise cost twice the paint. It does not, because the spray
 sorts its leaves into 16 by 16 tiles of the cell and a texel tests the leaves of its own tile alone;
@@ -618,6 +618,11 @@ than the one already found. With 60 to 64 leaves a cluster cell, and 72 needles 
 M3 Max painted the leaves in 160 to 238 ms over three runs, and the bark in 125 to 133 ms, at a load
 of 30: less than the 244 ms that the 20-to-24-leaf cells took before the tiling, and well inside the
 one-second line.
+
+The `atlas-paint` plan measures the same two painters on a device, three rounds each in turn. On the
+M3 Max in Chrome 156, on a free machine, it read 70.6 ms for the bark and 115.2 ms for the leaf
+([run](../tested-devices/macbook-pro-m3-max-chrome/20261031-104246-atlas-paint.md)). The figures on
+the iPad Pro 13 and an S24-class phone are owed from a run of that plan.
 
 **What the pictures show.** The `vegetation-atlas` picture's leaf card is a twig of lobed leaves that
 fills its square. The `vegetation-versus-creek` picture shows the generated oak beside Creek's
