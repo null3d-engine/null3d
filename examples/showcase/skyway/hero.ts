@@ -602,14 +602,14 @@ export function createHero(
 			sightSide = 0;
 			sightSideReach = 0;
 		}
-		// The tower may have pushed the placed point toward the car, and the last keep-out can do so
-		// again; the standoff runs after both, so the camera keeps out of the car's body.
+		// The tower may have pushed the placed point toward the car, so the standoff runs once more.
+		// The keep-out runs last: where a tower and the floor disagree, the tower wins and the
+		// distance gives, so the camera never ends up inside a wall.
 		clampStandoff(probeEye);
 		chase.x = probeEye.x;
 		chase.y = probeEye.y;
 		chase.z = probeEye.z;
 		keepOut(chase, towers);
-		clampStandoff(chase);
 	};
 
 	/**
