@@ -107,6 +107,24 @@ fn rebuilt_normal(texel: vec2i, center: vec3f) -> vec3f {
     return select(normal, -normal, dot(normal, center) > 0.0);
 }
 
+/// A 32-bit hash of a texel, for the bitmask's sample rotation. Two seeds give the slice turn and
+/// the step offset. An integer hash avoids the smooth row pattern that a gradient noise leaves in a
+/// binary mask.
+fn texel_hash(texel: vec2i, seed: u32) -> u32 {
+    var h = u32(texel.x) * 0x9E3779B1u ^ u32(texel.y) * 0x85EBCA77u ^ seed;
+    h ^= h >> 16u;
+    h *= 0x7FEB352Du;
+    h ^= h >> 15u;
+    h *= 0x846CA68Bu;
+    h ^= h >> 16u;
+    return h;
+}
+
+/// A value from 0 to 1 from a texel's hash, for one seed.
+fn texel_random(texel: vec2i, seed: u32) -> f32 {
+    return f32(texel_hash(texel, seed) >> 8u) / 16777216.0;
+}
+
 /// Interleaved gradient noise, fixed per texel.
 fn ign(texel: vec2i) -> f32 {
     return fract(52.9829189 * fract(dot(vec2f(texel), vec2f(0.06711056, 0.00583715))));
@@ -236,7 +254,8 @@ fn horizon_ao(position: vec4f, slices: i32, steps: i32) -> vec4f {
         visibility += frame.projected_length * (arc0 + arc1);
     }
     visibility = max(0.03, visibility / f32(slices));
-    return result(pow(visibility, settings.shape.y), distance);
+    // The same layout as three.js's horizon step, so its denoise reads either variant.
+    return vec4f(pow(visibility, settings.shape.y), normal);
 }
 
 @fragment
@@ -269,7 +288,7 @@ fn sectors(low: f32, high: f32) -> u32 {
 
 /// How close to the surface's own plane a sample must lie, as a share of its distance, before it
 /// occludes nothing. A surface's own depth samples would otherwise hide it from itself.
-const BITMASK_BIAS: f32 = 0.05;
+const BITMASK_BIAS: f32 = 0.01;
 
 /// One sample's occluded sectors: from its front face's angle to its back face's, a thickness
 /// behind it.
@@ -281,11 +300,15 @@ fn sample_sectors(delta: vec3f, view_dir: vec3f, normal: vec3f, side: f32, n: f3
     let front = acos(clamp(dot(normalize(delta), view_dir), -1.0, 1.0));
     let back = acos(clamp(dot(normalize(delta - view_dir * thickness), view_dir), -1.0, 1.0));
     let angles = clamp((side * vec2f(front, back) - n + HALF_PI) / PI, vec2f(0.0), vec2f(1.0));
+    // A farther sample covers fewer sectors, as the horizon search's falloff weights it. Without
+    // this, a wall beside a surface marks its whole height at one weight and the seam is too wide.
     let falloff_weight = falloff(dot(delta, delta));
     if falloff_weight <= 0.0 {
         return 0u;
     }
-    return sectors(min(angles.x, angles.y), max(angles.x, angles.y));
+    let low = min(angles.x, angles.y);
+    let high = max(angles.x, angles.y);
+    return sectors(low, low + (high - low) * falloff_weight);
 }
 
 @fragment
@@ -299,8 +322,9 @@ fn bitmask(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let normal = rebuilt_normal(texel, origin);
     let view_dir = normalize(-origin);
     let radius = settings.rays.z * settings.rays.w / distance;
-    let noise = ign(texel);
-    let offset = spatial_offset(texel);
+    // A white rotation per texel, so no flat surface shows a screen-period hatch.
+    let noise = texel_random(texel, 0x68BC21EBu);
+    let offset = texel_random(texel, 0x02E5BE93u);
     // The same slices and steps as three.js's search, so the two variants do the same work.
     let slices = 3;
     let steps = 6;
@@ -321,10 +345,15 @@ fn bitmask(@builtin(position) position: vec4f) -> @location(0) vec4f {
     return vec4f(pow(visibility, settings.shape.y), normal);
 }
 
-/// Gaussian weights of the blur's taps from the center out, sigma 2.5 texels.
+/// The blur's taps each side of the center, and its standard deviation in texels: Filament's
+/// high-quality separation.
+const BLUR_TAPS: i32 = 10;
+const BLUR_SIGMA: f32 = 6.0;
+
+/// Gaussian weight of the tap `i` texels from the center.
 fn gauss(i: i32) -> f32 {
     let x = f32(i);
-    return exp(-x * x / 12.5);
+    return exp(-x * x / (2.0 * BLUR_SIGMA * BLUR_SIGMA));
 }
 
 fn bilateral(position: vec4f, axis: vec2i) -> vec4f {
@@ -337,7 +366,7 @@ fn bilateral(position: vec4f, axis: vec2i) -> vec4f {
     let tolerance = 0.03 * center.y;
     var sum = center.x;
     var total = 1.0;
-    for (var i = 1; i <= 5; i++) {
+    for (var i = 1; i <= BLUR_TAPS; i++) {
         let a = textureLoad(found, clamp(texel + axis * i, vec2i(0), size), 0).xy;
         let b = textureLoad(found, clamp(texel - axis * i, vec2i(0), size), 0).xy;
         let ga = (a.y - center.y) / tolerance;

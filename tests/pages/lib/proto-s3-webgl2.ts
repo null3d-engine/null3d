@@ -194,6 +194,9 @@ export async function createWebGL2Renderer(
 	const aoUbo = gl.createBuffer();
 	gl.bindBuffer(gl.UNIFORM_BUFFER, aoUbo);
 	gl.bufferData(gl.UNIFORM_BUFFER, AO_BYTES, gl.DYNAMIC_DRAW);
+	const aoWideUbo = gl.createBuffer();
+	gl.bindBuffer(gl.UNIFORM_BUFFER, aoWideUbo);
+	gl.bufferData(gl.UNIFORM_BUFFER, AO_BYTES, gl.DYNAMIC_DRAW);
 
 	const blank = gl.createTexture() as WebGLTexture;
 	gl.bindTexture(gl.TEXTURE_2D, blank);
@@ -210,6 +213,8 @@ export async function createWebGL2Renderer(
 		gl.bufferSubData(gl.UNIFORM_BUFFER, 0, data.scene);
 		gl.bindBuffer(gl.UNIFORM_BUFFER, aoUbo);
 		gl.bufferSubData(gl.UNIFORM_BUFFER, 0, data.ao);
+		gl.bindBuffer(gl.UNIFORM_BUFFER, aoWideUbo);
+		gl.bufferSubData(gl.UNIFORM_BUFFER, 0, data.aoBitmask);
 	};
 
 	const texture = (width: number, height: number, format: number, linear = false) => {
@@ -378,13 +383,14 @@ export async function createWebGL2Renderer(
 		one: WebGLTexture,
 		two: WebGLTexture,
 		three: WebGLTexture,
+		ubo: WebGLBuffer = aoUbo,
 	) => {
 		const t = targets as Targets;
 		gl.bindFramebuffer(gl.FRAMEBUFFER, out.framebuffer);
 		gl.viewport(0, 0, t.sizes.aoWidth, t.sizes.aoHeight);
 		gl.disable(gl.DEPTH_TEST);
 		gl.useProgram(programFor(key));
-		gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, aoUbo);
+		gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, ubo);
 		bindTextures(one, two, three);
 		gl.bindVertexArray(emptyVao);
 		gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -476,11 +482,19 @@ export async function createWebGL2Renderer(
 					blank,
 					distanceOf(t, p.input),
 					blank,
+					p.ao === 'bitmask' ? aoWideUbo : aoUbo,
 				);
 				return;
 			case 'blur':
 				if (keepsThreeDenoise(p.ao))
-					screen('three_denoise', t.final, blank, distanceOf(t, p.input), t.horizons.texture);
+					screen(
+						'three_denoise',
+						t.final,
+						blank,
+						distanceOf(t, p.input),
+						t.horizons.texture,
+						p.ao === 'bitmask' ? aoWideUbo : aoUbo,
+					);
 				else {
 					screen('blur_x', t.across, blank, distanceOf(t, p.input), t.raw.texture);
 					screen('blur_y', t.final, blank, distanceOf(t, p.input), t.across.texture);

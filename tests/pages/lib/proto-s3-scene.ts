@@ -21,8 +21,9 @@ export interface Setup {
 }
 
 /**
- * True for the variants that keep three.js's denoise, so each pair differs only in the horizon
- * search: `three` itself, and `bitmask`, which fills the same output layout.
+ * True for the variants that keep three.js's denoise. The bitmask writes its occlusion with the
+ * distance beside it and takes Filament's separable bilateral blur, whose 23 taps and wide sigma
+ * smooth the binary mask.
  */
 export function keepsThreeDenoise(ao: AoKind): boolean {
 	return ao === 'three' || ao === 'bitmask';
@@ -253,7 +254,8 @@ export const AO_SETTINGS = {
 	bias: 0.0005,
 	thickness: 0.25,
 	three: { radius: 0.25, thickness: 1, exponent: 1, falloff: 1, scale: 1, slices: 3, steps: 6 },
-	denoise: { luma: 10, depth: 2, normal: 3, radius: 4 },
+	// The current technique's denoise radius, in AO texels, then the bitmask's wider radius.
+	denoise: { luma: 10, depth: 2, normal: 3, radius: 4, bitmaskRadius: 8 },
 } as const;
 
 /** Contact shadows: the march's length, the thickness behind a depth, and the bias, in meters. */
@@ -363,7 +365,7 @@ export function uniforms(
 	rowSign: number,
 	showAo: boolean,
 	samples: number,
-): { scene: Float32Array; ao: Float32Array } {
+): { scene: Float32Array; ao: Float32Array; aoBitmask: Float32Array } {
 	const aspect = sizes.width / sizes.height;
 	const fovY = (CAMERA.fovDegrees * Math.PI) / 180;
 	const view = lookAt([...CAMERA.position] as Vec3, [...CAMERA.target] as Vec3);
@@ -391,7 +393,10 @@ export function uniforms(
 	ao.set([s.three.radius, s.three.thickness, s.three.exponent, s.three.falloff], 16);
 	ao.set([s.three.scale, s.three.slices, s.three.steps, 0], 20);
 	ao.set([s.denoise.luma, s.denoise.depth, s.denoise.normal, s.denoise.radius], 24);
-	return { scene, ao };
+	// The same block with the bitmask's wider denoise radius, at the last float.
+	const aoBitmask = ao.slice();
+	aoBitmask[aoBitmask.length - 1] = s.denoise.bitmaskRadius;
+	return { scene, ao, aoBitmask };
 }
 
 /** The middle of some numbers. */

@@ -139,6 +139,10 @@ export async function createWebGPURenderer(
 		size: AO_BYTES,
 		usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 	});
+	const aoWideUniforms = device.createBuffer({
+		size: AO_BYTES,
+		usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+	});
 	const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
 	const blank = device.createTexture({
 		label: 'blank',
@@ -258,6 +262,7 @@ export async function createWebGPURenderer(
 		const data = uniforms(targets.sizes, 1, showAo, samples);
 		device.queue.writeBuffer(sceneUniforms, 0, data.scene);
 		device.queue.writeBuffer(aoUniforms, 0, data.ao);
+		device.queue.writeBuffer(aoWideUniforms, 0, data.aoBitmask);
 	};
 
 	const destroyTargets = (old: Targets) => {
@@ -326,12 +331,12 @@ export async function createWebGPURenderer(
 		}
 		return found;
 	};
-	const aoGroup = (t: Targets, input: AoInput, found: GPUTexture) =>
-		group(t, `ao-${input}-${found.label}`, () =>
+	const aoGroup = (t: Targets, input: AoInput, found: GPUTexture, wide = false) =>
+		group(t, `ao-${input}-${found.label}${wide ? '-wide' : ''}`, () =>
 			device.createBindGroup({
 				layout: aoLayout,
 				entries: [
-					{ binding: 0, resource: { buffer: aoUniforms } },
+					{ binding: 0, resource: { buffer: wide ? aoWideUniforms : aoUniforms } },
 					{ binding: 2, resource: distanceOf(t, input).createView() },
 					{ binding: 3, resource: found.createView() },
 				],
@@ -478,13 +483,19 @@ export async function createWebGPURenderer(
 					encoder,
 					key,
 					keepsThreeDenoise(p.ao) ? t.horizons : t.raw,
-					aoGroup(t, p.input, blank),
+					aoGroup(t, p.input, blank, p.ao === 'bitmask'),
 					timeKey,
 				);
 				return;
 			case 'blur':
 				if (keepsThreeDenoise(p.ao))
-					screen(encoder, key, t.final, aoGroup(t, p.input, t.horizons), timeKey);
+					screen(
+						encoder,
+						key,
+						t.final,
+						aoGroup(t, p.input, t.horizons, p.ao === 'bitmask'),
+						timeKey,
+					);
 				else {
 					screen(encoder, 'blur_x', t.across, aoGroup(t, p.input, t.raw), timeKey);
 					screen(encoder, 'blur_y', t.final, aoGroup(t, p.input, t.across), timeKey);
