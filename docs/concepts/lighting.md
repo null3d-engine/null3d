@@ -325,6 +325,8 @@ An environment map lights every surface the same way. A light probe grid varies 
 
 Each probe holds L1 spherical harmonics of the light that arrives there: four RGB coefficients, 12 numbers. Standard materials read the grid per pixel, with three filtered reads. The grid's light takes the place of the environment's diffuse light, and the environment keeps its reflections. `environmentWeight` sets the share of the diffuse light that the grid takes over.
 
+A scene with a grid draws no [screen-space bounce light](post-processing.md#screen-space-bounce-light). The grid already holds one bounce, with the occlusion the screen cannot supply, and the two would count the same light twice.
+
 `bakeProbes` bakes a grid in the browser. Each probe casts directions with `scene.raycastBatch`. A direction that reaches the sky takes the environment's light. A direction that hits a surface takes that surface's colour once, as a matte bounce. The bake counts no lamps, so the grid holds the sky's light, the scene's occlusion of it, and one coloured bounce. `step` bakes a few probes a frame, so a loading screen can show progress. `finish` bakes the rest at once.
 
 ### What takes the grid's light
