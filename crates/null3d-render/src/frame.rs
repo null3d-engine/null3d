@@ -37,6 +37,7 @@ use crate::ao::{self, Ao, Contact};
 use crate::area_shading::AreaShading;
 use crate::background::{Background, BackgroundSource, SkyLayer};
 use crate::bloom::{Bloom, ChainFrame};
+use crate::bounce::{self, Bounce, BounceFrame};
 use crate::camera::{Lens, Mat4, multiply};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
@@ -1106,6 +1107,9 @@ pub struct SceneSettings {
     ssr_scale: f32,
     /// The most steps of screen-space reflections' march, which the quality settings set.
     ssr_steps: u32,
+    /// The rays that each texel of screen-space bounce light gathers, which the quality settings
+    /// set: 0 draws none.
+    bounce_rays: u32,
     /// The automatic exposure's settings while the sketch turns it on.
     auto_exposure: Option<AutoExposure>,
     /// The meter of automatic exposure, which the quality settings set.
@@ -1307,6 +1311,7 @@ impl SceneSettings {
             ssr: None,
             ssr_scale: ao::MAX_SCALE,
             ssr_steps: ssr::DEFAULT_STEPS,
+            bounce_rays: 0,
             auto_exposure: None,
             exposure_meter: Meter::default(),
             fog_volume: None,
@@ -1771,6 +1776,39 @@ impl SceneSettings {
     /// the next recorded frame on. It changes only the trace's block, so it makes no GPU object.
     pub fn set_ssr_steps(&mut self, steps: u32) {
         self.ssr_steps = steps.clamp(1, ssr::MAX_STEPS);
+    }
+
+    /// Screen-space bounce light's settings while it draws: while the quality settings ask for
+    /// rays, the scene color is HDR, no debug view draws, and the scene sets no light probe grid.
+    /// The copy that its rays read holds the display's color on the 8-bit path, which is no
+    /// radiance to bounce, and the grid is the engine's global illumination, which already holds
+    /// one bounce and replaces the environment's diffuse light.
+    pub fn bounce(&self) -> Option<Bounce> {
+        (self.bounce_rays > 0
+            && self.canvas.scene_color.is_hdr()
+            && !self.debug_view.is_debug()
+            && self.probe_grid.is_none())
+        .then(|| Bounce {
+            rays: self.bounce_rays,
+            ..Bounce::default()
+        })
+    }
+
+    /// Sets the samples that each texel of screen-space bounce light gathers, from 0, which draws
+    /// none, to [`bounce::MAX_RAYS`], from the next recorded frame on.
+    pub fn set_bounce_rays(&mut self, rays: u32) {
+        self.bounce_rays = rays.min(bounce::MAX_RAYS);
+    }
+
+    /// What screen-space bounce light's steps draw with in a frame of a canvas of `canvas` pixels,
+    /// or `None` while it draws nothing or without a camera.
+    pub(crate) fn bounce_frame(&self, canvas: (u32, u32)) -> Option<BounceFrame> {
+        let bounce = self.bounce()?;
+        self.views.first()?.camera()?;
+        Some(BounceFrame {
+            bounce,
+            projection: self.camera_projection(canvas)?,
+        })
     }
 
     /// What screen-space reflections' trace draws with in a frame of a canvas of `canvas` pixels,

@@ -574,7 +574,20 @@ variants.webgl2 = { defs = ["WEBGL2", "REDUCE"], targets = ["glsl"] }
 # and use its depth step. The frames keep the opaque pass without them until the steps' pipelines
 # are built.
 [first_use.ao]
-shaders = ["ao", "ao_ms", "ssr", "ssr_reduce"]
+shaders = ["ao", "ao_ms", "ssr", "ssr_reduce", "bounce"]
+
+# Screen-space bounce light's steps on ambient occlusion's grid (see bounce.wgsl): `trace` casts
+# each texel's rays through the depth copy and writes the light that the frame before showed at
+# their hits, and `denoise` blurs it over a disk of taps that keeps to each texel's surface. Both
+# read ambient occlusion's depth copy and the horizon step's normals, so the feature loads with
+# them. The WebGL2 variants count rows from the bottom.
+[shaders.bounce]
+file = "bounce.wgsl"
+by_device = true
+pipelines.trace = { vertex = "vs", fragment = "trace" }
+pipelines.denoise = { vertex = "vs", fragment = "denoise" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
 
 # Depth of field's steps (see dof.wgsl): `setup` writes half-size color with each texel's signed
 # blur size from the depth, `gather` blurs the near and the far field apart over a disk or polygon of

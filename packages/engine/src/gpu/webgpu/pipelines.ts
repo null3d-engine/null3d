@@ -15,6 +15,7 @@ import {
 	LAYOUT_BACKGROUND,
 	LAYOUT_BACKGROUND_LAYER,
 	LAYOUT_BLOOM,
+	LAYOUT_BOUNCE,
 	LAYOUT_CLUSTER_CULL,
 	LAYOUT_COMPUTE_HISTORY_R32_FLOAT,
 	LAYOUT_COMPUTE_HISTORY_RGBA8_UNORM,
@@ -109,6 +110,8 @@ import {
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
+	TEMPLATE_BOUNCE_DENOISE,
+	TEMPLATE_BOUNCE_TRACE,
 	TEMPLATE_CLUSTER,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
@@ -764,7 +767,11 @@ export class Pipelines {
 				texture: { sampleType: 'depth', viewDimension: '2d-array' },
 			},
 			probeGrid,
-			{ binding: 11, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
+			{
+				binding: 11,
+				visibility: fragment,
+				texture: { sampleType: 'unfilterable-float', viewDimension: '2d-array' },
+			},
 			{ binding: 12, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 13, visibility: fragment, sampler: {} },
 			{ binding: 14, visibility: fragment, sampler: { type: 'non-filtering' } },
@@ -1109,7 +1116,18 @@ export class Pipelines {
 		});
 		this.defineLayout(LAYOUT_AO_DEPTH, 'ao depth', [aoSettings, unfiltered(1)]);
 		this.defineLayout(LAYOUT_AO_DEPTH_MS, 'ao depth ms', [aoSettings, unfiltered(1, true)]);
-		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2), unfiltered(3)]);
+		this.defineLayout(LAYOUT_AO, 'ao', [
+			aoSettings,
+			unfiltered(1),
+			unfiltered(2),
+			// Screen-space reflections' trace, or a blank array while they draw none: an array of
+			// layers either way, so the screen texture reads the same on both paths.
+			{
+				binding: 3,
+				visibility: fragment,
+				texture: { sampleType: 'unfilterable-float', viewDimension: '2d-array' },
+			},
+		]);
 		// Screen-space reflections' steps read every texture with textureLoad too: a level of the
 		// depth pyramid reads the level below it, and the trace ambient occlusion's depth copy and
 		// the pyramid's six levels above it.
@@ -1117,6 +1135,20 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_SSR_TRACE, 'ssr trace', [
 			aoSettings,
 			...[1, 2, 3, 4, 5, 6, 7].map((binding) => unfiltered(binding)),
+		]);
+		// Screen-space bounce light's steps read ambient occlusion's depth copy and horizon step's
+		// target with textureLoad, and the color copy or the traced light as an array of layers:
+		// the copy has one layer per surface that lets light through, and both steps take the
+		// same layout.
+		this.defineLayout(LAYOUT_BOUNCE, 'bounce', [
+			aoSettings,
+			unfiltered(1),
+			unfiltered(2),
+			{
+				binding: 3,
+				visibility: fragment,
+				texture: { sampleType: 'unfilterable-float', viewDimension: '2d-array' },
+			},
 		]);
 		// The background's values, which the sky's vertex stage reads too, a cube map and its
 		// filtering sampler.
@@ -1426,6 +1458,8 @@ export class Pipelines {
 			[TEMPLATE_AO_DENOISE, 'ao denoise', shaders.ao, 'denoise', LAYOUT_AO],
 			[TEMPLATE_SSR_REDUCE, 'ssr reduce', shaders.ssr_reduce, 'reduce', LAYOUT_SSR_REDUCE],
 			[TEMPLATE_SSR_TRACE, 'ssr trace', shaders.ssr, 'trace', LAYOUT_SSR_TRACE],
+			[TEMPLATE_BOUNCE_TRACE, 'bounce trace', shaders.bounce, 'trace', LAYOUT_BOUNCE],
+			[TEMPLATE_BOUNCE_DENOISE, 'bounce denoise', shaders.bounce, 'denoise', LAYOUT_BOUNCE],
 			[
 				TEMPLATE_EXPOSURE_LUMINANCE,
 				'exposure cells',

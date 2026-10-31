@@ -100,6 +100,8 @@ pub const OUTPUT: u32 = 43;
 pub const OUTPUT_BLOOM: u32 = 44;
 /// Reduces the camera view's depth, for the next frame's fitted light clusters.
 pub const LIGHT_DEPTH: u32 = 45;
+/// A step of screen-space bounce light.
+pub const BOUNCE: u32 = 46;
 
 /// A scope of `kind` for a step by its place, such as the fourth step of bloom's chain.
 pub fn of(kind: u32, index: u32) -> u32 {

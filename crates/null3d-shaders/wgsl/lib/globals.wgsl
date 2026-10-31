@@ -104,6 +104,9 @@ struct Frame {
     /// orthographic one. A masked custom material's caster reads it for the direction toward the
     /// camera.
     camera_eye: vec4f,
+    /// Screen-space bounce light's strength, 0 when the view draws none, and spares. The light
+    /// itself reaches the opaque pass in the screen texture's second layer (see null3d::gtao).
+    bounce: vec4f,
 }
 
 /// The clip position of `relative_position` through `view_proj`, with the frame's sub-pixel jitter

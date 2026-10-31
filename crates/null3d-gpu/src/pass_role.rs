@@ -123,6 +123,8 @@ pub enum PassRole {
     /// The camera view's depth reduction, which the next frame's light clustering fits its slices
     /// to.
     LightDepth = 53,
+    /// A step of screen-space bounce light.
+    Bounce = 54,
 }
 
 impl PassRole {
@@ -188,6 +190,7 @@ impl PassRole {
             Self::FeatureRows => "feature rows",
             Self::Sky => "sky",
             Self::LightDepth => "light depth",
+            Self::Bounce => "screen bounce",
         }
     }
 
@@ -215,7 +218,8 @@ impl PassRole {
             | Self::Dof
             | Self::FogLight
             | Self::Taa
-            | Self::Sky => Place::Always,
+            | Self::Sky
+            | Self::Bounce => Place::Always,
             _ => Place::Never,
         }
     }
@@ -276,6 +280,7 @@ impl PassRole {
         Self::FeatureRows,
         Self::Sky,
         Self::LightDepth,
+        Self::Bounce,
     ];
 }
 

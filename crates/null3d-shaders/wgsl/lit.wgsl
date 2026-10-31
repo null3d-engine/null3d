@@ -2186,6 +2186,7 @@ fn light_surface(
     occlusion: f32,
     contact: f32,
     reflection: vec4f,
+    bounce: vec4f,
     lobe_values: vec4f,
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
@@ -2258,10 +2259,14 @@ fn light_surface(
     let clustered = clustered_light(m, relative, normal, vertex_normal, to_view, compensation);
 #endif
     let n_dot_v = saturate(dot(normal, to_view));
+    // Screen-space bounce light adds to the ambient and hemisphere lights. It takes the place of
+    // the environment's diffuse light by its share, as a reflection probe's does, and the
+    // environment keeps the rest where a ray left the screen.
+    let bounce_share = bounce.a;
 #ifdef CUSTOM_DIFFUSE_NORMAL
-    let surrounding_light = ambient_light(diffuse_normal) + extra;
+    let surrounding_light = ambient_light(diffuse_normal) + bounce.rgb * bounce_share + extra;
 #else
-    let surrounding_light = ambient_light(normal) + extra;
+    let surrounding_light = ambient_light(normal) + bounce.rgb * bounce_share + extra;
 #endif
 #ifdef COAT_SHEEN
     let ambient = indirect_diffuse(m, surrounding_light, dfg)
@@ -2285,7 +2290,9 @@ fn light_surface(
 #endif
         let strength = select(0.0, material_row.uv_u.w, has_environment(env));
         let around = probe_surrounding(relative, normal, reflection_normal(m, normal, to_view), to_view, m.roughness);
-        var irradiance = around.irradiance;
+        // The bounce light's share takes the environment's diffuse light with it, so the two do not
+        // count the same light twice.
+        var irradiance = around.irradiance * (1.0 - bounce_share);
         let radiance = mix(around.radiance, reflection.rgb, mirrored);
         // The probe grid takes the environment's diffuse light over where the sketch sets one.
 #ifdef PROBE_GRID
@@ -2533,6 +2540,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         s.occlusion * screen_occlusion(screen.values),
         contact,
         reflection,
+        screen.bounce,
         lobe_values,
     );
 #ifdef TRANSMISSION

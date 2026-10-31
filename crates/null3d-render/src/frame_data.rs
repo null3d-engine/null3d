@@ -105,6 +105,9 @@ pub struct FrameUniform {
     /// The camera's place as a homogeneous point, as `camera_position` holds it in its view, which
     /// a masked custom material's caster reads for the direction toward the camera.
     pub camera_eye: [f32; 4],
+    /// Screen-space bounce light's strength, 0 when the view draws none, and spares, which the
+    /// opaque pass reads beside the light's layer of the screen texture (see [`crate::bounce`]).
+    pub bounce: [f32; 4],
 }
 
 const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES as usize);
