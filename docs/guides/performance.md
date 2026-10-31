@@ -94,6 +94,17 @@ Measure at the presets that your users get. `engine.mode.preset` names the prese
 
 When frames take too long during play, the frame-budget governor lowers a sketch's budgets and the render scale in turn, a budget's step first, and then the live shadow settings, bloom's base and the size of ambient occlusion ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). It hides some of a slow scene's cost. To measure the scene's own cost, turn it off with `quality.set({ governor: false })`, so every run draws the same frames.
 
+## Put performance-sensitive work in Rust
+
+The engine's per-frame loops run in Rust, compiled to WebAssembly. Your TypeScript is an interface to them: it sets values, writes arrays and makes calls. A loop of your own in `onUpdate` runs in JavaScript. Rust has more headroom on work that grows with the scene. The loop runs as compiled code and crosses no JavaScript boundary for each object.
+
+So put per-object work, per-frame math over many objects, and any loop whose cost grows with the scene in Rust:
+
+- Use the engine call that covers the whole batch. Write an instance batch's arrays, and let the engine's transform, animation, culling and sorting steps run.
+- No engine call covers some loops. Build a Rust WebAssembly module for those, and run it on the job workers through `runTask` ([Tasks on the job workers](../api/tasks.md)).
+
+Keep setup, wiring and page logic in TypeScript. They run once or rarely, so they leave the frame budget alone. The engine's calls that rebuild scene tables cost the frame they take effect in, so make them at setup ([Objects during play](#objects-during-play)).
+
 ## Write per-frame code that allocates nothing
 
 Garbage collection pauses the thread that allocated the memory. The render worker runs no sketch code, so your garbage cannot delay drawing. It can still delay your next frame. These habits keep per-frame code free of new objects:
