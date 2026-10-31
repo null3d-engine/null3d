@@ -57,6 +57,31 @@ pub fn narrowed(inputs: &Inputs, names: &[&str]) -> Inputs {
             keep(feature, "bits", |bit| {
                 device_bits.iter().any(|kept| kept == bit)
             });
+            // A bit's own list of shaders names the shaders of the whole manifest, and a shard
+            // holds only some of them. The list keeps the names this shard holds, so a check of
+            // the narrowed manifest reads no shader that another shard builds.
+            let empty = if let Some(Value::Table(by_bit)) = feature.get_mut("bit_shaders") {
+                let mut none_left = Vec::new();
+                for (bit, shaders) in by_bit.iter_mut() {
+                    if let Value::Array(list) = shaders {
+                        list.retain(|name| {
+                            names.contains(&name.as_str().expect("a name in a first-use feature"))
+                        });
+                        if list.is_empty() {
+                            none_left.push(bit.clone());
+                        }
+                    }
+                }
+                for bit in none_left {
+                    by_bit.remove(&bit);
+                }
+                by_bit.is_empty()
+            } else {
+                false
+            };
+            if empty {
+                feature.remove("bit_shaders");
+            }
             feature.contains_key("shaders") || feature.contains_key("bits")
         });
     }
