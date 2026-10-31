@@ -5,11 +5,12 @@
 // and a switch between the two flies the camera over the canopy and down into the seat, or back.
 //
 // Its paint is a clear coat over a deep blue, with amber running lights down its flanks, and the
-// cockpit's floor is dark and matte. A tinted glass canopy closes the cockpit. Three screens from the
-// screens add-on stand on the dashboard: the speed, the altitude and the navigation map. Each
-// refreshes at its own rate, and only the part of its picture that changed uploads, so a number, a
-// bar and a moving dot cost no frame work. Two spot lights at the nose light the rain ahead, and a
-// neon band round the body's lower edge marks the field that holds it up.
+// cockpit's floor is dark and matte. A tinted glass canopy closes the cockpit, and its glass carries
+// the weather add-on's rain drops, which slide and leave trails and that a wiper clears now and
+// then. Three screens from the screens add-on stand on the dashboard: the speed, the altitude and
+// the navigation map. Each refreshes at its own rate, and only the part of its picture that changed
+// uploads, so a number, a bar and a moving dot cost no frame work. Two spot lights at the nose light
+// the rain ahead, and a neon band round the body's lower edge marks the field that holds it up.
 import {
 	type Group,
 	math,
