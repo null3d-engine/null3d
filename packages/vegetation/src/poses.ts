@@ -16,7 +16,6 @@ import {
 	type SketchContext,
 	type Texture,
 } from '@null3d/engine';
-import type { WindField } from '@null3d/wind';
 import type { PlantAsset } from './asset';
 import type { PlantWind } from './plant';
 import posesFallback from './poses.fallback.wgsl';
@@ -200,11 +199,10 @@ export function plantPoses(
 		const wx = qw * qx;
 		const wy = qw * qy;
 		const wz = qw * qz;
-		const sx = 1 / (Math.abs(scales[from] as number) < 1e-6 ? 1e-6 : (scales[from] as number));
-		const sy =
-			1 / (Math.abs(scales[from + 1] as number) < 1e-6 ? 1e-6 : (scales[from + 1] as number));
-		const sz =
-			1 / (Math.abs(scales[from + 2] as number) < 1e-6 ? 1e-6 : (scales[from + 2] as number));
+		const inverse = (value: number) => 1 / (Math.abs(value) < 1e-6 ? 1e-6 : value);
+		const sx = inverse(scales[from] as number);
+		const sy = inverse(scales[from + 1] as number);
+		const sz = inverse(scales[from + 2] as number);
 		data[at] = x;
 		data[at + 1] = y;
 		data[at + 2] = z;
@@ -267,18 +265,7 @@ export function plantPoses(
 					used += 1;
 				}
 			}
-			values[0] = air.base[0] as number;
-			values[1] = air.base[1] as number;
-			values[2] = air.base[2] as number;
-			values[3] = air.base[3] as number;
-			values[4] = air.gust[0] as number;
-			values[5] = air.gust[1] as number;
-			values[6] = air.gust[2] as number;
-			values[7] = air.gust[3] as number;
-			values[8] = air.swirl[0] as number;
-			values[9] = air.swirl[1] as number;
-			values[10] = air.swirl[2] as number;
-			values[11] = 0;
+			values.splice(0, 12, ...air.base, ...air.gust, ...air.swirl);
 			values[12] = field.origin[0];
 			values[13] = field.origin[1];
 			values[14] = field.size;
