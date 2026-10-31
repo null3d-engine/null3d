@@ -15,12 +15,22 @@ const RECORDS = 1024;
 const VALUES = 65536;
 /** Where the fake core keeps the block of births' parameters. */
 const BLOCK = 98304;
+/** Where the fake core keeps the emitter's block, and its sub-emitters' matrices. */
+const EMITTER = 112_640;
+const SUB_MATRICES = 120_000;
 
 /** A particle buffer of `capacity` records over a fake core that logs its marks. */
 function buffer(capacity: number, additive = true) {
 	const marks: number[][] = [];
 	const writes: number[][] = [];
 	const shifts: number[][] = [];
+	const configured: number[] = [];
+	const blocks: number[] = [];
+	const frames: number[] = [];
+	const bursts: number[][] = [];
+	const bounds: number[][] = [];
+	let emitterFloats = 0;
+	let core: CoreMemory;
 	const glue = {
 		particleRecords: () => RECORDS,
 		particleValues: () => VALUES,
@@ -35,16 +45,61 @@ function buffer(capacity: number, additive = true) {
 			shifts.push([id, from, to, seconds]);
 			return 0;
 		},
+		particleEmitterBlock: (_id: number, floats: number) => {
+			emitterFloats = floats;
+			blocks.push(floats);
+			return EMITTER;
+		},
+		configureParticleEmitter: (id: number) => {
+			configured.push(id);
+			return 0;
+		},
+		particleSubMatrices: () => SUB_MATRICES,
+		emitParticleFrame: (id: number) => {
+			frames.push(id);
+			// The core writes the births' box and the count that this frame made.
+			const view = core.f64(EMITTER, emitterFloats);
+			view[80] = -1;
+			view[81] = -2;
+			view[82] = -3;
+			view[83] = 1;
+			view[84] = 2;
+			view[85] = 3;
+			view[86] = 5;
+			return 0;
+		},
+		burstParticles: (id: number, count: number) => {
+			bursts.push([id, count]);
+			return 0;
+		},
 		destroyParticles: () => 0,
 	} as unknown as CoreGlue;
 	const memory = new WebAssembly.Memory({ initial: 2 });
-	const core = new CoreMemory(glue, memory);
-	const object = { scene: { particleBuffers: 1 }, destroy: () => {} } as unknown as Mesh;
+	core = new CoreMemory(glue, memory);
+	const object = {
+		scene: { particleBuffers: 1 },
+		destroy: () => {},
+		setBounds: (center: number[], radius: number) => bounds.push([...center, radius]),
+	} as unknown as Mesh;
 	const linear = (color: Parameters<typeof linearColor>[0]) => linearColor(color, 'test');
 	const particles = new ParticleBuffer(core, 1, capacity, object, additive, linear);
 	particles.reset({});
 	const values = core.f32(VALUES, PARTICLE_PARAM_FLOATS + PARTICLE_FRAME_FLOATS);
-	return { particles, marks, writes, shifts, values, core, memory };
+	return {
+		particles,
+		marks,
+		writes,
+		shifts,
+		configured,
+		blocks,
+		frames,
+		bursts,
+		bounds,
+		values,
+		core,
+		memory,
+		emitterFloats: () => emitterFloats,
+	};
 }
 
 describe('particle buffers', () => {
@@ -162,5 +217,120 @@ describe('particle buffers', () => {
 		expect([values[41], values[43]]).toEqual([0, 1]);
 		// Normal blending: fog tints the particles rather than fading them.
 		expect(values[42]).toBe(0);
+	});
+});
+
+describe('the emitter', () => {
+	const IDENTITY = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+
+	/** A buffer whose emitter has every kind of setting. */
+	function configured(capacity = 8) {
+		const parent = buffer(capacity);
+		const child = buffer(16);
+		parent.particles.configureEmitter({
+			seed: 7,
+			shape: { type: 'sphere', radius: 0.5, surface: true },
+			direction: [0, 1, 0],
+			spread: 0.25,
+			speed: [2, 3],
+			velocity: [0.1, 0.2, 0.3],
+			lifetime: [1, 4],
+			bursts: [
+				{ time: 0.5, count: 3, interval: 1, cycles: 2 },
+				{ time: 0, count: 0 },
+			],
+			duration: 9,
+			loop: false,
+			follow: true,
+			subEmitters: [{ buffer: child.particles, on: 'ground', count: 4, inheritVelocity: 0.5 }],
+		});
+		return { ...parent, child };
+	}
+
+	test('the settings land where the core reads them, with the rows of bursts and sub-emitters', () => {
+		const b = configured();
+		const floats = b.emitterFloats();
+		expect(floats).toBe(88 + (2 + 1) * 4 + 48);
+		expect(b.blocks).toEqual([floats]);
+		expect(b.configured).toEqual([1]);
+		const block = b.core.f64(EMITTER, floats);
+		expect([block[14], block[15]]).toEqual([2, 1]);
+		// The bursts' rows: the first repeats, the second happens once.
+		expect([...block.slice(88, 96)]).toEqual([0.5, 3, 1, 2, 0, 0, Number.NaN, Number.NaN]);
+		// The sub-emitter's row: the child's id, ground, its count and the share it keeps.
+		expect([...block.slice(96, 100)]).toEqual([1, 1, 4, 0.5]);
+		// The fixed settings.
+		const f = 100;
+		expect([block[f], block[f + 1], block[f + 2], block[f + 3]]).toEqual([7, 1, 0.5, 1]);
+		expect([block[f + 8], block[f + 9], block[f + 10], block[f + 11]]).toEqual([2, 3, 1, 4]);
+		expect([block[f + 12], block[f + 13], block[f + 14], block[f + 15]]).toEqual([
+			1, 0.1, 0.2, 0.3,
+		]);
+		// The direction's frame has the direction as its y axis.
+		expect([...block.slice(f + 16, f + 25)]).toEqual([0, 0, 1, 0, 1, 0, 1, 0, 0]);
+		expect([block[f + 25], block[f + 26], block[f + 27], block[f + 28]]).toEqual([0.25, 9, 0, 1]);
+		// The motion's defaults follow the values.
+		expect([block[f + 29], block[f + 32], block[f + 37], block[f + 38]]).toEqual([0, 0, 1, 1]);
+		// The sub-emitters' matrices have a place of their own.
+		expect(b.core.f64(SUB_MATRICES, 16).length).toBe(16);
+	});
+
+	test('a frame writes its span, rate, flags and matrices, and takes the births box from the core', () => {
+		const b = configured();
+		b.particles.setEmitterFollow(IDENTITY, IDENTITY, IDENTITY);
+		b.particles.setEmitterEvents(IDENTITY, [IDENTITY]);
+		b.particles.emitFrame(0.5, 1, 12, true, false);
+		expect(b.frames).toEqual([1]);
+		const block = b.core.f64(EMITTER, b.emitterFloats());
+		expect([...block.slice(0, 6)]).toEqual([12, 1, 0.5, 1, 1, 0]);
+		expect([...block.slice(16, 32)]).toEqual([...IDENTITY]);
+		expect([...block.slice(64, 80)]).toEqual([...IDENTITY]);
+		// The sphere holds the births' box, grown by how far a particle may move.
+		const [x, y, z, radius] = b.bounds.at(-1) as number[];
+		expect([x, y, z]).toEqual([0, 0, 0]);
+		expect(radius).toBeGreaterThan(Math.sqrt(14));
+		// The object keeps the sphere while the births stay inside it.
+		expect(b.bounds.length).toBe(1);
+		expect(b.particles.emitted).toBe(5);
+	});
+
+	test('a burst gives the core its count and the place and velocity in the block', () => {
+		const b = configured();
+		b.particles.emitBurst(5, [1, 2, 3], [0.5, 0, -0.5]);
+		expect(b.bursts).toEqual([[1, 5]]);
+		let block = b.core.f64(EMITTER, b.emitterFloats());
+		expect([...block.slice(6, 14)]).toEqual([1, 1, 2, 3, 1, 0.5, 0, -0.5]);
+		b.particles.emitBurst(2);
+		block = b.core.f64(EMITTER, b.emitterFloats());
+		expect([block[6], block[10]]).toEqual([0, 0]);
+	});
+
+	test('the emitter keeps its block after the memory grows', () => {
+		const b = configured();
+		b.particles.emitFrame(0, 0.5, 12, true, false);
+		b.memory.grow(1);
+		expect(b.core.refresh()).toBe(true);
+		b.particles.emitFrame(0.5, 1, 9, false, true);
+		// The block was asked for once, and the view was made again over the same place.
+		expect(b.blocks.length).toBe(1);
+		const block = b.core.f64(EMITTER, b.emitterFloats());
+		expect([...block.slice(0, 6)]).toEqual([9, 0, 0.5, 1, 1, 1]);
+		expect(b.frames).toEqual([1, 1]);
+	});
+
+	test("the frame's count is the emitted count, at most the capacity", () => {
+		const b = configured(4);
+		b.particles.emitFrame(0, 1, 12, true);
+		// The fake core writes five emitted; the engine leaves the count to the core's frame values.
+		expect(b.particles.emitted).toBe(5);
+	});
+
+	test("a destroyed buffer forgets the emitter's views", () => {
+		const b = configured();
+		b.particles.emitFrame(0, 1, 12, true);
+		b.particles.destroy();
+		const views = b.particles as unknown as Record<'emitterView' | 'subView', ArrayLike<number>>;
+		expect(views.emitterView.length).toBe(0);
+		expect(views.subView.length).toBe(0);
 	});
 });

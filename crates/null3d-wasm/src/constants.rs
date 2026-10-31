@@ -1034,6 +1034,19 @@ pub fn typescript() -> String {
                 ("FRAME_FLOATS", particles::FRAME_FLOATS as u32),
                 ("MAX_SYSTEMS", particles::MAX_SYSTEMS as u32),
                 ("MAX_RECORDS", particles::MAX_RECORDS),
+                (
+                    "EMITTER_HEADER_FLOATS",
+                    particles::EMITTER_HEADER_FLOATS as u32,
+                ),
+                ("EMITTER_ROW_FLOATS", particles::EMITTER_ROW_FLOATS as u32),
+                (
+                    "EMITTER_FIXED_FLOATS",
+                    particles::EMITTER_FIXED_FLOATS as u32,
+                ),
+                (
+                    "EMITTER_SUB_MATRIX_FLOATS",
+                    particles::EMITTER_SUB_MATRIX_FLOATS as u32,
+                ),
             ],
         ),
         // The most that a draw whose instance count the GPU writes holds.
