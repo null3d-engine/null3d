@@ -370,18 +370,6 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
   at another size and the points change. It reports the placement time, which is the figure that the
   vegetation budgets take for a valley of that size. The placement reads no GPU, so both paths must
   give the same number.
-- The `vegetation-poses` plan times the grove's near trees with the per-vertex sway and with branch
-  poses, for M3-V10. Each page fixes its method, preset and GPU path with `?method=`, `?preset=` and
-  `?gpu=`. The page stands the copies close together, as Creek's near trees stand, so each preset's
-  sway distance takes many of them; the image tests' grove keeps its wider rows.
-- Each page measures the frame's GPU time and its parts, the CPU time per frame and the draw calls,
-  as the vegetation pages do. A page with `?scale=0.25` draws at a quarter of the render scale with
-  the sun's shadows off, which leaves a sixteenth of the fragment work and none of the shadow
-  cascades' work, so its figure follows the vertex work that the two methods differ in. Both scales
-  run on core WebGPU and WebGL2 at every preset.
-- Run it on the Mac and the cloud iPad and S24-class phone:
-  `bun tests/real-browsers.ts --plan vegetation-poses "Google Chrome"`, and the same with
-  `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys25-chrome --plan vegetation-poses`.
 - The `atlas-paint` plan times the bark and the leaf atlas paint, separately, for M3-V5's owed
   figures. The page paints each atlas in turn for three rounds, with the order swapped, and reports
   every round with the middle figure of each. The painters are the ones that `bakePlantAtlases`
