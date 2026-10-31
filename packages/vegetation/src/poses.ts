@@ -102,9 +102,9 @@ function holdsPoses(capabilities: Pick<EngineCapabilities, 'tier' | 'features'>)
  * the per-vertex sway.
  *
  * @param ctx The sketch's context, or its `render`, `textures`, `time` and `engine` alone.
- * @param wind The plant's wind data, from {@link plantWind}, which holds the branch records.
+ * @param wind The plant's wind data, from {@link plantWind}, which holds the branch records and the
+ * field that the pass samples.
  * @param asset The grown plant.
- * @param field The scene's one wind field.
  * @param options The variant's copies and the slots that the near ones take.
  * @returns The pose data for the plant's leaf and bark materials, or undefined on a device that
  * keeps no float target.
@@ -114,10 +114,10 @@ export function plantPoses(
 	ctx: Pick<SketchContext, 'render' | 'textures' | 'time' | 'engine'>,
 	wind: PlantWind,
 	asset: PlantAsset,
-	field: WindField,
 	options: PlantPoseOptions,
 ): PlantPoses | undefined {
 	if (!holdsPoses(ctx.engine.capabilities)) return undefined;
+	const field = wind.field;
 	const trees = Math.max(1, Math.floor(options.trees));
 	const slots = Math.max(1, Math.min(Math.floor(options.slots ?? trees), trees));
 	const branches = Math.max(1, asset.wind.branches);

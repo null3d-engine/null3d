@@ -112,7 +112,7 @@ export default defineSketch((ctx) => {
 			swayDistance: SWAY ?? swayDistanceFor(quality.preset),
 		});
 		const poses = POSES
-			? plantPoses(ctx, field, asset, wind.field, { trees: COPIES, name: `grovePoses${variant}` })
+			? plantPoses(ctx, field, asset, { trees: COPIES, name: `grovePoses${variant}` })
 			: undefined;
 		const bark = plantMaterial(ctx, {
 			atlases,

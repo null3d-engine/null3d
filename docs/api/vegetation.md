@@ -168,7 +168,7 @@ A page takes the distance from the quality preset rather than choosing one: `swa
 A page can move the branches by a compute pass instead of by every vertex. The pass turns each branch once in the frame, and keeps each branch's turn and its speed as a spring, so a branch lags a gust and springs back after it. The leaf and bark offsets then read their branch's turn. The trunk's bend and the leaves' flutter stay per vertex in either method.
 
 ```ts
-const poses = plantPoses(ctx, windData, asset, wind.field, { trees: copies });
+const poses = plantPoses(ctx, windData, asset, { trees: copies });
 const bark = plantMaterial(ctx, { atlases, part: 'wood', wind: windData, poses });
 const leaves = plantMaterial(ctx, { atlases, part: 'leaves', wind: windData, poses, cell: leafCellFor(oak) });
 poses?.attach(barkBatch);

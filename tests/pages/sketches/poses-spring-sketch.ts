@@ -47,7 +47,7 @@ export default defineSketch((ctx) => {
 	const atlases = bakePlantAtlases(ctx);
 	const asset = generatePlant(species, { seed: 3, variant: 0, levels: 1 });
 	const field = plantWind(ctx, asset, wind.field, { swayDistance: 0 });
-	const poses = plantPoses(ctx, field, asset, wind.field, {
+	const poses = plantPoses(ctx, field, asset, {
 		trees: 1,
 		slots: 1,
 		name: 'springPoses',
