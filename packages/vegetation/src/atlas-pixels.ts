@@ -818,6 +818,7 @@ function slope(
  * the roughness that lies under it.
  *
  * @returns The colour and the surface map.
+ * @category api/vegetation
  */
 export function paintBark(): PaintedAtlas {
 	const size = BARK_SIZE;
@@ -860,6 +861,7 @@ function leafCellOf(x: number, y: number): [number, number, number] {
  * normal, the leaf's coverage and its thickness.
  *
  * @returns The colour and the surface map.
+ * @category api/vegetation
  */
 export function paintLeaf(): PaintedAtlas {
 	const width = LEAF_WIDTH;

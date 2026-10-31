@@ -370,6 +370,13 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
   at another size and the points change. It reports the placement time, which is the figure that the
   vegetation budgets take for a valley of that size. The placement reads no GPU, so both paths must
   give the same number.
+- The `atlas-paint` plan times the bark and the leaf atlas paint, separately, for M3-V5's owed
+  figures. The page paints each atlas in turn for three rounds, with the order swapped, and reports
+  every round with the middle figure of each. The painters are the ones that `bakePlantAtlases`
+  runs, with no texture upload and no drawing between them. The paint runs on the sketch thread, so
+  one page reports both figures and no GPU path is asked of it.
+- Run it on the cloud iPad and S24-class phone:
+  `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys25-chrome --plan atlas-paint`.
 - Run both on the cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet:
   `bun run devices:cloud --only bsiphone17-safari,bsipadpro13-safari,bsgalaxys24-chrome,bsgalaxytaba9plus-chrome --plan vegetation`,
   and the same with `--plan tree-generation` and `--plan vegetation-scatter`.
