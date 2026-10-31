@@ -1,15 +1,15 @@
 # D-257: The water add-on
 
 Status: decided. Built: the `@null3d/water` add-on, its demo, the reflection's cadence through the
-feature host, one owner for each point where bodies meet, and the Creek's migration to the add-on.
-Owed: the cost per preset. Tasks: M3-F5, M3-E6.
+feature host, one owner for each point where bodies meet, the Creek's migration to the add-on, and
+the ocean. Owed: the cost per preset, for the water and for the ocean. Tasks: M3-F5, M3-E6, M3-F9.
 
-Summary: `@null3d/water` draws a river and a lake from one shape, with waves, ripples, caustics,
-foam, soft shores, a reflection and an underwater view. The surface reads the copy of the scene's
-depth, or the bed that the shape describes, so a shore fades against the bed. The reflection's
-cadence is a feature setting of the preset and the governor. The current carries the whole wave set
-downstream, so every crest moves with the river. The Creek draws its water and its underwater view
-through the add-on, and keeps no water code of its own.
+Summary: `@null3d/water` draws a river and a lake from one shape and an open sea of wave spectra,
+with waves, ripples, caustics, foam, soft shores, a reflection and an underwater view. The surface
+reads the copy of the scene's depth, or the bed that the shape describes, so a shore fades against
+the bed. The reflection's cadence is a feature setting of the preset and the governor. The current
+carries the whole wave set downstream, so every crest moves with the river. The Creek draws its
+water and its underwater view through the add-on, and keeps no water code of its own.
 
 ## Question
 
@@ -180,14 +180,125 @@ shows the mouth only from far away. The other three, the software set, still sho
 a frame of the loop differs from them in most of its pixels, so a software image run of this branch
 is red until a CI run draws them and `images:review` takes them from it.
 
+## The ocean
+
+`createOcean` draws an open sea. Its waves come from two or three bands of wave spectra. Compute
+passes transform each band into the height of the sea every frame. The fragment forms of the same
+passes draw the chain on WebGL2. It is the compute hook's first user (D-173's H1, M3-E8).
+
+### Question
+
+How does an open sea turn a wind's spectrum into waves that one material moves and lights, on both
+GPU paths, without work on the page's thread?
+
+### Rule
+
+- The compute hook fills the heights in the frame that the material reads them, and the same chain
+  has a fragment form for WebGL2. The compute form draws the sea; the fragment form's map binding is
+  an open fault, so its field differs until that is fixed.
+- The add-on owns the ocean as it owns the river (D-173).
+- A pass may not read its own texture. WebGL2 draws a fragment form one texel for each pixel. So a
+  stage that each pixel computes alone is the form that both paths share.
+
+### Data
+
+A band of 128 by 128 texels takes seven radix-2 stages for each axis. A sea of three bands runs 14
+passes on that grid, then one more that puts the heights in meters and adds the slopes. The plan's
+estimate is about 0.5 ms for three bands.
+
+The browser test reads each band's heights back and compares them with the transform on the page's
+thread. On WebGPU the worst texel of the read square differs by 0.004 m, and in compatibility mode
+by 0.004 m, of a field of 0.73 m. On WebGL2 it differs by 0.60 m, and the review holds that open.
+
+The transform's own cost does not separate from a frame of 4 to 5 ms by the effect page's on-and-off
+difference. Over one quiet run of three bands at 128 squared, the difference ranged from -0.62 to
+0.54 ms on WebGPU, and the same work at the four presets spread the same way. So that method does
+not resolve the cost. `ocean-cost.spec.ts` keeps the instrument, gated by `NULL3D_OCEAN_COST`.
+
+The frame rates that each state gives, from `ocean-rate.spec.ts` at 1920 by 1080 on the Low preset,
+put the WebGL2 fallback out of reach. With the ocean on, the page draws 1.21 frames a second; with
+its transform off, 6.32; and with the transform on but the surface hidden, 1.20. The simulation is
+therefore 675 ms of the 833 ms frame, and the surface draw adds nothing measurable.
+
+The options at that size, on the assumption that the cost follows the pixels:
+
+| Option | Transform | Frame | Rate |
+| --- | --- | --- | --- |
+| Three bands at 128 squared, as it stands | 675 ms | 833 ms | 1.2 fps |
+| Two bands | 450 ms | 608 ms | 1.6 fps |
+| One band | 225 ms | 383 ms | 2.6 fps |
+| A 64 squared grid | 169 ms | 327 ms | 3.1 fps |
+| A 32 squared grid | 42 ms | 200 ms | 5.0 fps |
+| A 16 squared grid | 11 ms | 169 ms | 5.9 fps |
+| No simulation, the analytic waves | 0 | 158 ms | 6.3 fps |
+
+The grid rows assume that the cost follows the pixels, which was the first reading. The 64 squared
+run disproved it. Before that run, the two readings predicted this. At 64 squared the chain draws 26
+times rather than 30. A cost that follows the pixels therefore predicts 675 ms times a quarter and
+26/30: 146 ms of transform, a 304 ms frame, 3.3 frames a second. A cost that follows the draws
+predicts the same 675 ms times 26/30: 585 ms of transform, a 743 ms frame, 1.35 frames a second.
+
+The run used the same page and tier at 1920 by 1080 on Low, with a 20 s warm-up and two 4 s windows
+for each state. At 64 squared it gave 1.45 frames a second with the ocean (691.6 ms, windows 700.0
+and 683.3), 7.50 without the transform (133.3 ms, both windows), and 1.46 with the simulation alone
+(683.3 ms, both windows). The transform is 550 ms against 675 ms at 128 squared. A quarter of the
+pixels took away 18 per cent of the cost, not 75, so the run matches the per-draw prediction and not
+the per-pixel one. A draw's fixed cost is about 21 of its 22.5 ms, and its pixels about 2 ms at 128
+squared. The passes and the bands, not the grid, are the lever, and the table's grid rows are the
+reading that this run rules out.
+
+### Decision
+
+**A band.** A band is a square tile of the sea whose waves are a sum of plane waves. The Phillips
+spectrum gives each wave an amplitude from its length and the wind, and a seeded random number in
+the page gives its phase. The page generates about two hundred thousand numbers once, at startup,
+and uploads them as a texture of a layer for each band. The spectrum is normalized so that the raw
+sum of its waves has a spread of one. The transform then adds the spectrum with no scaling of its
+own. Every intermediate value stays inside the range that a 16-bit float keeps.
+
+**The chain.** Each stage is a compute pass on a 128 by 128 grid, with a band to a layer. A pass
+carries its stage and the three tiles in its values, so one compiled shader runs every stage, and it
+reads the pass before it as a texture of the maps' group. The first horizontal stage adds the waves
+at the sketch time, in the bit-reversed order that the butterfly takes. No pass then turns the input
+over. The first vertical stage turns its own axis the same way. A fifteenth pass scales each band to
+its significant height and writes the slopes along x and z from the heights beside it, with the
+tile's other edge standing in for the one past it.
+
+**The surface.** One material reads the three bands of the last pass at each band's own scale. It
+sums their heights for the vertices, sums their slopes for the normal, mirrors the sky with the
+slopes, breaks foam on the crests, and fades where the bed behind it rises to meet the surface. The
+bands' tiles differ, so the material samples each layer at its own share of the world.
+
+**The mesh.** A square grid follows the camera, and its cells grow with distance, so the eye sees
+fine waves without a mesh of millions of vertices. The camera's place is the mesh's origin, and a
+vertex's world place is the origin with its place in the mesh.
+
+### Consequences
+
+- The ocean takes 15 of the 31 passes that a sketch may add, beside its reflection. A sketch that
+  draws a sea leaves room for its own passes.
+- The read buffers of the GPU-driven path took ids that a view of the tenth pass also took, so a
+  frame of many passes mapped a view's frame buffer as a read's buffer. The per-view ids now start
+  after the read buffers, and a unit test in each builder refuses their meeting.
+- The add-on's own page draws the sea on the three GPU paths, and a browser test reads each band's
+  heights back and compares them with the transform on the page's thread.
+- The WebGL2 fallback cannot draw the sea at a usable rate: its simulation is 675 ms of an 833 ms
+  frame. The table in the data gives what fewer bands, a smaller grid or the analytic waves would
+  cost. That choice is the owner's.
+- The WebGL2 fragment form draws a sea that differs from the compute form by 0.60 m of height. Its
+  stage, size, layer, tile and texel all read right, and a chain that copies its map returns a field
+  five times smaller than the map gives, so the map's binding is what differs. The review holds that
+  open. `ocean-waves` marks that path as an expected failure until then, and the demo draws the two
+  paths that draw one sea.
+
 ## Consequences
 
-- The add-on's largest material set is 79.9 KB after Brotli, past D-14's first-use shader budget of
-  56 KB. The landing head without this change measures 79.5 KB, so this change adds at most 0.6 KB.
-  The growth past the 55.9 KB recorded here earlier is the builds that a material naming its surface
-  alpha compiles for alpha to coverage, the alpha hash and a masked shadow and motion, which the
-  water's soft shore names (`681d70cea`). The add-on check warns and does not fail, by the owner's
-  ruling that an add-on's size is a warning ([D-225](D-225-addon-listing-check.md)).
+- The add-on's largest material sets are over D-14's first-use shader budget of 56 KB: the water's
+  79.9 KB after Brotli and the ocean's 74.8 KB. The growth past the 55.9 KB recorded here earlier
+  is the builds that a material naming its surface alpha compiles for alpha to coverage, the alpha
+  hash and a masked shadow and motion, which the water's soft shore names (`681d70cea`). The
+  add-on check warns and does not fail, by the owner's ruling that an add-on's size is a warning
+  ([D-225](D-225-addon-listing-check.md)).
 - A custom effect that draws its own pass keeps no pieces in its module, because they never reach a
   host. The underwater effect's pieces would be 93 KB of the add-on's entry. D-225 gives the rule.
 - The Creek's pictures draw the add-on, as the add-on's demo does. The Creek keeps the columns and

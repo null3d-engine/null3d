@@ -3,12 +3,12 @@ id: api/water
 title: "Water (@null3d/water)"
 status: experimental
 since: "0.3"
-summary: "createWater: a river and a lake from one shape, with waves that the current carries, ripples, caustics, foam, a soft shore that reads the scene's depth or the shape's bed, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface."
+summary: "createWater: a river and a lake from one shape, with waves that the current carries, ripples, caustics, foam, a soft shore that reads the scene's depth or the shape's bed, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface. createOcean: an open sea of spectra transformed on the GPU."
 ---
 
 # Water (@null3d/water)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The ocean's WebGL2 path is not ready. Its heights differ from the other paths, and its transform costs about 675 ms a frame at 1920 by 1080 on the Low preset. Draw the ocean on WebGPU or in compatibility mode.
 
 ```mermaid
 flowchart LR
@@ -18,11 +18,17 @@ flowchart LR
     mirror["A reflection pass"] --> material
     bed["The scene's depth,<br/>or the shape's bed"] --> material
     material --> screen["The water"]
+    spectrum["Wave spectra,<br/>a layer for each band"] --> chain["The transform:<br/>14 butterfly passes,<br/>then the heights in meters"]
+    chain --> sea["The sea's material:<br/>heights, slopes, foam"]
+    mirror --> sea
+    sea --> ocean["The sea"]
     preset["The quality preset"] --> mirror
     camera["A camera under the surface"] --> under["createUnderwater"]
 ```
 
 `@null3d/water` draws the water in a scene. A river follows a line, and a lake fills an outline, and both come from one description. The surface has long waves that the current carries downstream, and finer ripples in its normal. It draws caustics on the bed, foam around what breaks the surface, and a shore that fades where the bed rises to meet it. A reflection pass mirrors the banks and the sky, and redraws as often as the quality preset affords. The same surface draws from below, and `createUnderwater` gives the view from under the water its color, its bend and its caustics.
+
+`createOcean` draws an open sea instead. Its waves come from wave spectra, and the GPU transforms them into heights in every frame. The bands of swell and chop then move on their own, and the surface reads the slopes that the transform writes.
 
 The package is built on the engine's public API. Its surface and underwater shaders ship compiled, so your build does not compile them, and the package needs no extra setup for them.
 
@@ -35,7 +41,7 @@ bun add @null3d/water
 import { defineSketch } from '@null3d/engine';
 import { createUnderwater, createWater } from '@null3d/water';
 
-export default defineSketch((ctx) => {
+export default defineSketch(async (ctx) => {
   const { scene } = ctx;
   const camera = scene.createPerspectiveCamera({ position: [0, 3, 12], target: [0, 0, 0] });
   scene.setActiveCamera(camera);
@@ -129,7 +135,7 @@ the bed at a point, and the current there.
 
 | Member | What it does |
 | --- | --- |
-| `update()` | Draws the reflection in its turn. Call it once in each frame, after the camera moves |
+| `update()` | Keeps the sketch's frame loop. The reflection pass carries its own cadence now, so the call changes nothing |
 | `reflectionEvery` | The frames between two draws of the reflection now |
 | `surfaceHeight(x, z, t)` | The height of the surface at a point and a sketch time, in meters, from its long waves |
 | `currentAt(x, z, out)` | The current at a point, as a velocity in meters a second, written into `out` |
@@ -161,6 +167,73 @@ Call `update(t, air, caustics)` in each frame with the sketch's time, the light 
 horizon, and the light of the caustics. The surface seen from below shows the world above through a
 window overhead, and turns the light back past that window's edge.
 
+## The ocean
+
+`createOcean(ctx, { camera })` makes an open sea. Its waves come from two or three bands of wave
+spectra. A band is a square tile of the sea whose waves are a sum of plane waves. A spectrum gives
+each wave an amplitude from the wind, and a seeded random number gives its phase.
+
+The add-on transforms each band's spectrum into the height of the sea every frame, with compute
+passes that a material reads in the same frame. Each axis takes seven radix-2 butterfly stages, and
+the transform runs on the GPU, not the page's thread. On WebGL2 the same chain draws as fragment
+passes. One material sums the bands at their own scales, so a long swell, a wind sea and chop move
+together.
+
+```ts
+// sketch.ts
+import { defineSketch } from '@null3d/engine';
+import { createOcean } from '@null3d/water';
+
+export default defineSketch(async (ctx) => {
+  const { scene } = ctx;
+  const camera = scene.createPerspectiveCamera({ position: [0, 12, 40], target: [0, 2, 0] });
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 3 });
+  scene.setEnvironment(await ctx.assets.skyEnvironment());
+  const ocean = createOcean(ctx, { camera });
+  return {
+    onUpdate() {
+      ocean.update();
+    },
+  };
+});
+```
+
+### The options
+
+| Option | Takes | Default | What it sets |
+| --- | --- | --- | --- |
+| `camera` | A camera | Required | The camera that the sea's mesh follows |
+| `level` | A number, in meters | 0 | The height of the sea's surface |
+| `bands` | Two or three `OceanBand` values | A swell, a wind sea and chop | Each band's tile in meters, its significant wave height, its wind's speed and heading, and its seed |
+| `reach` | A number above 0, in meters | 3000 | How far past the camera the mesh reaches |
+| `segments` | A whole number above 0 | 256 | The mesh's segments each way. The cells grow with distance, so the camera keeps fine waves |
+| `foam` | A number above 0, in meters | 1.1 | The height at which foam breaks on a crest |
+| `softness` | A number above 0, in meters | 0.12 | The gap to the bed over which the water fades at a shore |
+| `reflectionEvery` | A frame count from 1 to 16 for each preset | 2 on Low and Medium, 1 on High and Ultra | The frames between two draws of the reflection |
+| `layers` | A 32-bit mask | The camera's layers | The layers that the reflection draws |
+| `reflectionScale` | `1`, `0.5` or `0.25` | 1 | The reflection's size as a share of the render size each way |
+| `material` | The standard material values | None | The surface's material, such as the water's tint and its thickness |
+
+`OCEAN_BANDS` holds the default bands. Give a band of your own to change the sea: a wider tile
+holds longer waves, and a taller significant height lifts them further.
+
+### The ocean object
+
+`createOcean` returns an object:
+
+| Member | What it does |
+| --- | --- |
+| `update()` | Moves the mesh about the camera. The reflection pass carries its own cadence. Call it once in each frame, after the camera moves |
+| `reflectionEvery` | The frames between two draws of the reflection now |
+| `heightAt(x, z)` | The height of the sea at a world place, in meters, at the sketch time. It runs the bands' transforms on this thread, so read it now and then |
+| `bands` | The bands, in the order that they sum |
+| `level` | The height of the sea's surface |
+| `destroy()` | Remove the surface, the transform's passes, the reflection and the material |
+
+A boat or a camera floats by reading `heightAt`. A mesh that follows the camera keeps fine waves
+near the eye and spends its vertices far away.
+
 ## Costs and limits
 
 - **The scene's depth.** The surface declares `sceneInputs: ['sceneDepth']` and its textures. The
@@ -181,7 +254,13 @@ window overhead, and turns the light back past that window's edge.
 - **One way to make water.** Use this package rather than a hand-written custom material, so a
   scene's water has one owner.
 - **One water a page.** The add-on registers one water feature, so a page makes its water with one
-  `createWater` call. Give that call every body that shares the surface and the reflection.
+  `createWater` call. Give that call every body that shares the surface and the reflection. An
+  ocean is a feature of its own, so a page may draw a river and a sea.
+- **The ocean's transform.** A sea of three bands adds 14 butterfly passes and one pass that puts
+  the heights in meters. Those 15 passes take 15 of the 31 passes that a sketch may add, so leave
+  room for the sketch's own. Each pass runs on a 128 by 128 grid, with a band to a layer. The stats
+  overlay names the add-on's ocean row and its budget, and the frame's GPU time holds the
+  transform's share.
 
 [The API reference](reference/water.md) lists every export of this page with its type and
 description. The engine's doc comments make it.

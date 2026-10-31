@@ -10,6 +10,8 @@ checkAddonVersion('@null3d/water', VERSION);
 export type { FoamMapOptions, FoamObstacle } from './foam';
 export { foamMap } from './foam';
 export type { MeshDetail } from './mesh';
+export type { Ocean, OceanMaterialOptions, OceanOptions } from './ocean';
+export { createOcean, OCEAN_BANDS } from './ocean';
 export type {
 	BedDepth,
 	FlowAt,
@@ -22,6 +24,7 @@ export type {
 	WaterShape,
 } from './shape';
 export { waterBody } from './shape';
+export type { OceanBand } from './spectrum';
 export type { Underwater, UnderwaterOptions } from './underwater';
 export { createUnderwater } from './underwater';
 export type { FoamMap, Water, WaterMaterialOptions, WaterOptions } from './water';

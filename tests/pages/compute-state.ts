@@ -105,7 +105,7 @@ run('compute-state', async () => {
 			passBytes: 256 * 256 * copies * texel,
 		};
 	}
-	if (CASE === 'kept' || CASE === 'fs-kept') {
+	if (CASE === 'kept' || CASE === 'fs-kept' || CASE === 'cadence-kept') {
 		await waitMessage('running');
 		const before = await engine.captureFrame();
 		engine.postToSketch('stop');

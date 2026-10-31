@@ -145,7 +145,8 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 	scene.setBackground('#000000');
 	const layered = CASE === 'layers';
 	const fullscreenKept = CASE === 'fs-kept';
-	const kept = CASE === 'kept' || fullscreenKept;
+	const cadenceKept = CASE === 'cadence-kept';
+	const kept = CASE === 'kept' || fullscreenKept || cadenceKept;
 	if (kept) {
 		scene.setActiveCamera(
 			scene.createOrthographicCamera({ height: 1, position: [0, 0, 2], target: [0, 0, 0] }),
@@ -177,8 +178,10 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 				size: CASE === 'cost' ? [256, 256] : kept ? [64, 64] : [4, 4],
 				history: !kept && !layered,
 				layers: layered ? 3 : 1,
+				// The cadence case draws in one frame of two from its first frame on.
+				every: cadenceKept ? 2 : undefined,
 				// Every case starts without a run, and the sequence below asks for the runs that it counts.
-				steps: 0,
+				steps: cadenceKept ? 1 : 0,
 			});
 	const shown = textures.fromPass(field);
 	if (kept) {
@@ -230,7 +233,10 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 		// its coverage must stay.
 		page.onMessage((type) => {
 			if (type !== 'stop') return;
-			render.setPassEnabled(field, false);
+			// The cadence case leaves the pass switched on and pushes its turn far away, so the frames
+			// that follow skip it while a material still samples its target.
+			if (cadenceKept) render.setPassEvery(field, 64);
+			else render.setPassEnabled(field, false);
 			page.post('stopped');
 		});
 		void (async () => {
@@ -342,6 +348,19 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 			await wait(10);
 			page.post('measuring', { format: shown.format });
 			return;
+		} else if (CASE === 'cadence') {
+			// The pass draws in one frame of two for eight frames, then in every frame for four,
+			// so the value counts what the cadence drew rather than the frames that went by.
+			render.setPassSteps(field, 1);
+			render.setPassEvery(field, 2);
+			await wait(8);
+			render.setPassSteps(field, 0);
+			values[0] = await read();
+			render.setPassEvery(field, 1);
+			render.setPassSteps(field, 1);
+			await wait(4);
+			render.setPassSteps(field, 0);
+			values[1] = await read();
 		} else if (CASE === 'refuse') {
 			render.setPassSteps(field, 1);
 			await wait(1);

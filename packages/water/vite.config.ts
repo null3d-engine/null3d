@@ -8,5 +8,7 @@ import null3d from '../vite-plugin/src/index.ts';
 export default defineConfig({
 	plugins: [null3d()],
 	resolve: sourceResolve,
-	build: { rollupOptions: { input: { page: 'page/index.html' } } },
+	build: {
+		rollupOptions: { input: { page: 'page/index.html', ocean: 'page/ocean.html' } },
+	},
 });

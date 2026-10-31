@@ -433,7 +433,7 @@ const map = materials.unlit({ map: textures.fromPass(pass) });
 // Show `map` on a screen in the world. The pass leaves the screen out of the map by itself.
 ```
 
-To save GPU time, draw the map every few frames: `render.setPassEnabled(pass, frame % 4 === 0)`. For a view of the scene shown on the canvas itself, use `scene.createView({ camera, rect })` instead. It draws after the camera's view, into a rectangle of the canvas, for a split screen or a picture in picture. Each view culls the scene again and costs one more scene draw at its rectangle's pixels. Docs: `guides/multiple-views`, `guides/custom-passes`, `api/render`.
+To save GPU time, draw the map every few frames: `render.setPassEvery(pass, 4)`. Do not switch the pass off and on for that: `render.setPassEnabled` recompiles the render graph, and a pass that toggles every frame pays for a plan every frame. For a view of the scene shown on the canvas itself, use `scene.createView({ camera, rect })` instead. It draws after the camera's view, into a rectangle of the canvas, for a split screen or a picture in picture. Each view culls the scene again and costs one more scene draw at its rectangle's pixels. Docs: `guides/multiple-views`, `guides/custom-passes`, `api/render`.
 
 ## 13. Screenshots
 
