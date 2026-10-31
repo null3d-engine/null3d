@@ -94,18 +94,19 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 Each rule comes with its reason, because the reason covers cases the rule does not name.
 
-1. Allocate nothing in `onUpdate`, `onFixedUpdate` or `onLateUpdate`: no `new`, no array or object literals, no closures, no `map` or `filter`. Create scratch values at setup, such as `const tmp = vec3.create()`. Garbage collection pauses the sketch worker, and users see the pause as a stutter.
-2. Use an instance batch for many copies of one mesh. A batch is one engine object and one typed array for you, where the same number of `createMesh` calls means as many objects to manage. (`concepts/instances`)
-3. Move many objects by writing arrays, not by calling setters in a loop. Each setter call crosses from JavaScript into WebAssembly; a typed-array write does not cross at all.
-4. Create an object with `dynamic: true` only if it changes most frames. Static objects cost nothing until changed, and dynamic ones are recomputed every frame. Only dynamic objects and batches may be written through arrays, because static objects rely on setters to mark them changed.
-5. Create and destroy in bulk, and pool short-lived objects such as bullets: make a batch with a fixed capacity and use `setActiveCount`. A frame with a structural change (create, destroy, a new mesh or material) rebuilds the draw tables; `setVisible` and `setActiveCount` do not. The engine sizes its memory for the scene it holds, so create meshes, materials and batches during setup. One created during play grows engine memory next frame.
-6. Load and warm up before play: `await assets.preload([...])` and `await scene.warmUp()` behind a loading screen. A shader feature, such as a normal map, is fixed when you create the material and the first frame waits for its pipeline, so create every variant before play; a later stage's objects can start hidden, await `scene.warmUp()`, then show. (`guides/loading-screens`)
+1. Allocate nothing in `onUpdate`, `onFixedUpdate` or `onLateUpdate`: no `new`, no array or object literals, no closures, no `map` or `filter`. Create scratch values at setup, such as `const tmp = vec3.create()`. A garbage collection pause stalls the frame.
+2. Use an instance batch for many copies of one mesh. It is one engine object and one typed array, where `createMesh` calls would mean as many objects to manage. (`concepts/instances`)
+3. Move many objects by writing arrays, not by calling setters in a loop. Each setter crosses into WebAssembly, and a typed-array write does not.
+4. Create an object with `dynamic: true` only if it changes most frames. Static objects rely on setters to mark them changed, so write arrays only for dynamic objects and batches.
+5. Create and destroy in bulk, and pool short-lived objects such as bullets: make a batch with a fixed capacity and use `setActiveCount`. A frame with a structural change (create, destroy, a new mesh or material) rebuilds the draw tables; `setVisible` and `setActiveCount` do not. The engine sizes its memory for the scene it holds, so create meshes, materials and batches during setup.
+6. Load and warm up before play: `await assets.preload([...])` and `await scene.warmUp()` behind a loading screen. A shader feature, such as a normal map, is fixed when you create the material. The first frame waits for its pipeline, so create every variant before play. (`guides/loading-screens`)
 7. Keep the DOM on the page, and keep messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
 8. Use layer masks to limit work. A camera with a mask draws fewer objects, and a raycast (0.2) with a mask tests fewer. (`concepts/render-layers`)
 9. Respect the quality preset. Do not force a heavier preset on phones. When frames run long, the engine's governor lowers a sketch's budgets and the render scale in turn, a budget's step first, then the shadow settings, by itself. Keep your own values per preset, such as particle counts or AI update rates, in one table keyed by `quality.preset`. Listen to `quality.onChange` to apply the values. (`concepts/quality-presets`)
 10. Ship optimized assets: KTX2 textures, which stay compressed on the GPU, and glTF models with integer vertices (0.2). `bunx @null3d/cli assets optimize <in> <out>` makes both, or a `?optimized` import of a `.glb` through the Vite plugin. It compresses models with meshopt, adds blockers for WebGL2's occlusion culling, stores raycast trees for large mesh parts, and bakes normal map detail into the roughness mips so distant bumpy surfaces do not flicker. It records the shader features each model needs, so the engine builds only the pipelines it draws. The KTX2 and meshopt decoders load with the first file that needs them: set no decoder path and copy no worker file. (`api/textures`, `guides/assets-pipeline`, `concepts/assets`)
 11. Keep custom WGSL portable. Use only the three language features every browser shares, and write flat interpolation as `@interpolate(flat, either)`. The build rejects other features, `enable` lines and `f16`, but it cannot check the portable limits or `textureSample` in branches. Test those on each GPU path. (`shaders/wgsl-rules`)
 12. Never branch on GPU names or user agents; read `engine.capabilities` on the page. Several browsers hide GPU names, and a name does not tell you what the engine enabled.
+13. Put performance-sensitive work in Rust. The engine's per-frame loops run there, and your TypeScript is an interface to them. Use the engine's bulk calls over many objects. For a loop that grows with the scene, use a Rust WebAssembly module on the job workers through `runTask`. Keep setup, wiring and page logic in TypeScript. (`guides/performance`, `api/tasks`)
 
 ## 5. When the engine may not have the feature
 
@@ -256,5 +257,4 @@ Read these when the task needs them:
 - `bunx @null3d/cli test` passes, including a new or updated image test for visual changes.
 - For rendering changes, the WebGL2 path renders too.
 - Performance was checked against the preset budget for the target devices.
-- Your summary says what you verified, and what you could not verify.
 - Before a release, also work through "Before you ship" in `references/testing-and-debugging.md`.
