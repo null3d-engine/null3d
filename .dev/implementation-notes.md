@@ -1269,6 +1269,13 @@ Each is a case of the shader library, built for both targets. They add 2 GLSL bu
 builds. The library page compiles them as test cases. No page draws with them unless a material asks
 for them.
 
+The bitmask ambient occlusion prototype adds three shaders to the manifest. `proto_s3_scene` has its
+prepass, structure and lit pipelines. `proto_s3_ao` has nine pipelines. They are copy, sao, gtao,
+gtao_wide, bitmask, blur_x, blur_y, three_horizon and three_denoise. `proto_s3_ao_ms` has its copy
+pipeline. They add 7 GLSL builds and 8 WGSL builds. The main module holds them, which
+`tests/pages/proto-s3.ts` imports. No engine build and no shipped page draws them. The engine's
+start files do not grow. `BUILD_BUDGET` records 62,341 GLSL builds and 24,525 WGSL builds.
+
 The count rose again with M3-V2: an instance batch whose rows bring values takes its mask's own test, as a mesh without rows does, so `ROW_VALUES` left `APART` beside
 `ALPHA_COVERAGE` and `ALPHA_HASH` in the draw list. The lit templates then build each mask family
 over the row bit, and `SAMPLE_MASK` adds its WebGPU builds beside them, where a multisampled target
