@@ -47,7 +47,8 @@ now names the texels that the compute form names, so the case checks the read as
 
 `compute-state`'s `rows-shown` case draws the image on a plane. It samples the plane at the place
 that the docs give for a pass's texture. Its first row fills the frame's top on WebGPU, in
-compatibility mode and on WebGL2.
+compatibility mode and on WebGL2. The case records that sampling convention, which the change leaves
+as it was; `rows` is the case that fails on the old read.
 
 ## Decision
 
@@ -69,8 +70,10 @@ ocean's spectrum, keeps the row index that its texels were given.
 
 - `render.readPass` and `textures.fromPass` keep their docs. A read returns the rows that the pass's
   shader wrote, in that order. A material shows a pass's image at the place that the docs give.
-- `compute-state` gains two cases on all three paths. `rows` guards the read's rows and its region.
-  `rows-shown` guards the image that a material displays. Its `steps` and `rows` fallbacks name
-  their texels as the compute form does.
-- The two `kept` cases' not-ready texture on WebGL2 is a separate fault of the same path. This
-  record does not claim it.
+- `compute-state` gains two cases on all three paths. `rows` fails on the old read, so it guards the
+  change. `rows-shown` records the convention that a material samples a pass's texture by, which the
+  change leaves as it was. Its `steps` and `rows` fallbacks name their texels as the compute form
+  does.
+- `compute-state`'s two kept cases pass on all three paths in both sets. They are `a stopped pass
+  keeps its image and its alpha` and `a stopped full-screen pass keeps its image and its alpha`. An
+  earlier note in the review guide had them failing on WebGL2, and the runs show they do not.

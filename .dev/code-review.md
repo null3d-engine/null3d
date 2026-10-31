@@ -32,9 +32,9 @@ gives the measurements and the rule.
 
 The fragment form was not at fault. Its picture matches the WebGPU compute form's: `compute-pass`,
 which samples a compute pass in a material, draws the same quadrants on both paths. A turn of the
-form's row flipped 77.469% of its WebGL2 pixels. `compute-state`'s `rows` case guards the read's rows
-and its region, and its `rows-shown` case guards the image that a material displays, on all three
-paths.
+form's row flipped 77.469% of its WebGL2 pixels. `compute-state`'s `rows` case fails on the old read
+and so guards the change. Its `rows-shown` case records the convention that a material samples a
+pass's texture by, on all three paths, and the change leaves that convention as it was.
 
 ## A stopped pass keeps its texture on every GPU path (M3-V13)
 
