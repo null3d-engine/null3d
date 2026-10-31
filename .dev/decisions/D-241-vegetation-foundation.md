@@ -1,6 +1,6 @@
 # D-241: A vegetation foundation add-on, with GPU grass, generated plants and wind on custom materials
 
-Status: decided by the owner. Built: the `@null3d/vegetation` package with its generator and built-in species (M3-V4), the bark and leaf atlases (M3-V5), the scatter (M3-V6), and the leaf and bark materials that sway in the wind add-on's field (M3-V7). The engine's vertex offsets read a compute pass in every pass (M3-V3), custom materials have the standard material's cut-out features (M3-V2), and the wind add-on's first stage is built (M3-V15, D-265). Not built yet: GPU grass (M3-V8) and far-tree impostors (M3-V9). Branch poses (M3-V10) and Creek's move to the add-on (M3-V11) are not built yet either. Open: which wind method trees use by default, per vertex or by branch poses, which M3-V10 measures for the owner's ruling. The generated leaves wait for the owner's judgment. Tasks: M3-V1 to M3-V17.
+Status: decided by the owner. Built: the `@null3d/vegetation` package with its generator and built-in species (M3-V4), the bark and leaf atlases (M3-V5), the scatter (M3-V6), the leaf and bark materials that sway in the wind add-on's field (M3-V7), and grass drawn from CPU-built tiles that read the same wind field ([below](#the-grasss-first-slice-and-the-edge-its-compute-half-waits-on)). The engine's vertex offsets read a compute pass in every pass (M3-V3), custom materials have the standard material's cut-out features (M3-V2), and the wind add-on's first stage is built (M3-V15, D-265). Not built yet: the compute-built grass of M3-V8, whose plan line names M3-E8 and M3-E9 and not M3-V3's graph edge ([below](#the-grasss-first-slice-and-the-edge-its-compute-half-waits-on)); and far-tree impostors (M3-V9). Branch poses (M3-V10) and Creek's move to the add-on (M3-V11) are not built yet either. Open: which wind method trees use by default, per vertex or by branch poses, which M3-V10 measures for the owner's ruling. The generated leaves wait for the owner's judgment. Tasks: M3-V1 to M3-V17.
 
 Summary: Vegetation is the eleventh foundation add-on, `@null3d/vegetation`, which grows plants at first use and places them by ecological rules. It draws grass on the GPU, sways plants in the wind add-on's field and hands far trees to impostors. Creek drops its 3.1 MB of Blender plants for it, and custom materials, whose vertex offsets carry the wind, gain the standard material's cut-out features.
 
@@ -728,3 +728,67 @@ that depends on another add-on. [D-173](D-173-addon-hooks.md) gives the rule for
 - The engine changes stay engine hooks that any add-on may use, such as M3-V13's compute passes that
   keep their state between frames.
 - M3-V15 builds the wind add-on, and M3-V16 declares the wind's feature in it.
+
+## The grass's first slice, and the edge its compute half waits on
+
+M3-V8's first slice builds the CPU half of the plan's two paths: `createGrass` places tufts on a
+height function by integer hash and draws the hill in one instance batch for each tuft shape. A
+preset draws its share: 0.35, 0.6, 1 or 1.25. The engine culls each batch's rows in groups. The
+blades read the wind add-on's field at their roots, so one field moves the grass and the leaves
+together. The field's steady-air and sampling blocks are copied verbatim from the leaf material's
+`plant.wgsl`, and a test fails when one copy is edited alone. The material takes the field's newest
+layer each frame through `grass.setWindLayer`, which the page calls in its update.
+
+**The far band's first build thinned, and a look review rejected it.** That build placed a quarter of
+the near band's tufts past the first edge, gave their blades a single segment and widened them by
+two. The review measured the crest's blade-green pixels at 36.2 to 18.3 per cent on WebGPU, 26.1 to
+14.4 in compatibility mode and 20.9 to 11.6 on WebGL2, and saw wide sticks, a dotted lattice and a
+density arc where the bands met. The arithmetic is why. A band's cover is its blades per area times
+its blade width, so a band with a quarter of the tufts needs blades four times as wide, not twice;
+the square root that the plan's line implies holds only when a blade grows in both its width and its
+length, and only the width grew. The widening also lands where the ground hides it: a blade of one
+segment is a triangle that tapers to a point, so its extra width sits at its root. The lattice is
+the same two faults: single-segment blades are sub-pixel at the crest and rasterize as single
+pixels, and every far row began to draw at one distance, so the engine's ordered fade dither fell in
+one ring.
+
+**The second build looked right and saved nothing, so the split left the code.** That build placed
+every band's tufts at the same blade width and took the saving from the segments alone, 39 triangles
+a tuft past the first edge against 65. It drew the hill at 3.54 ms at High on the Mac, a little
+above the 3.47 ms of one band, because the far rows fell only to 60 per cent of the triangles while
+the second batch and its band test cost the frame their own share. The review's rule was that a
+saving which cannot hold the hill's look at its price is not taken, and this one cannot hold its
+price at all. So the distance bands were removed rather than shipped unused: no page asked for them,
+and a picture of the split would have recorded the rejected look as expected output. The record of
+both attempts stays, because the arithmetic is the value that the work produced.
+
+**What it costs.** The default hill holds 20,000 tufts at the High count, and Chrome on the Mac drew
+it at 960 by 540 drawing pixels at each preset and path that its tier offers
+([its run](../tested-devices/macbook-pro-m3-max-chrome/20261030-131312-vegetation-grass.md)).
+WebGPU took 1.38, 2.36, 3.47 and 4.19 ms a frame from Low to Ultra at the median, with the wind
+add-on's compute pass 0.07 to 0.13 ms of that, and the opaque pass at High carried about 1.3 million
+triangles. The split hill's own runs are the two above, 2.59 ms for the rejected thinning and
+3.54 ms for the look-preserving split, with their rows allocated once for Ultra's share: 43,750 rows
+of 64 bytes. The default's High reading sits inside the add-on's 49.0 ms budget on the Apple
+devices. The iPad, the S24 class and the Tab A9 Plus rows are owed. The picture holds the air still,
+so its blades stand straight, and its references hold the three tiers of both sets.
+`createGrass` draws on WebGL2 too, where the field's grid costs extra draws.
+
+**What its compute half waits on.** The plan's V8 line names M3-E8 and M3-E9 with shadow views. It
+does not name M3-V3, and three things stand between this slice and blades that the GPU makes and
+culls:
+
+- **M3-E9's first version stops short of shadows.** Its line draws the main view only, with a CPU
+  count in the shadow views, until the splats are shown to cast no shadow. Near grass casts shadows,
+  so the GPU-written count must reach the near cascades. The RedGPU ruling fixes the form: copy the
+  main view's count word into each near cascade's entry, and widen the main cull toward the light.
+  E9's own bullets carry that requirement, and its finish line does not.
+- **M3-E8's same-frame output.** The pass that makes and culls the blades must be read by the draws
+  of the same frame on WebGPU. WebGL2 keeps the CPU tiles either way.
+- **M3-V3's graph edge.** V3 is what orders a pass before every pass that draws what reads it, the
+  shadow views included, and what tests the order there. Without it a grass pass runs in an order
+  that nothing checks, so a view can draw the last frame's list or an empty one. V8's dependencies
+  should name V3 beside E8 and E9.
+
+None of this changes V8's finish line. It names the order in which the task's remaining pieces can
+land.
