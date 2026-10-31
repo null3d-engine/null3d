@@ -104,6 +104,12 @@ check, and the develop skill and the terrain API page's notes. The engine gains 
 its surface stays as it is at the freeze. The add-on's first use pays one download and one compile
 of the module, and a page that never draws terrain pays nothing.
 
+The module's memory is never given back. A worker forgets a dropped terrain's arrays, but the
+bytes stay used and the allocation cursor keeps rising, so a page that builds and destroys many
+terrains in one worker would grow that worker's module memory without bound. One terrain per page
+is the normal case, which makes the limit acceptable; a page that needs more would need the module
+to free a terrain's arrays.
+
 ## The particle loop, priced both ways
 
 The hard rule 42 audit found the particles add-on writing one birth record for each particle on the
