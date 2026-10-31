@@ -1,8 +1,9 @@
 // GPU grass for null3D: tufts of bent blades over a ground, placed by integer hashes and drawn in
 // instance batches. The CPU path below builds the rows once and both GPU paths draw them; the
-// WebGPU blade list, which culls in a compute pass, comes later. Distance bands thin the far tufts
-// and widen their blades, so cover holds while far ground costs fewer triangles. The colour hands
-// over to the terrain through the blades' own colours, and the per-preset share thins the field.
+// WebGPU blade list, which culls in a compute pass, comes later. Distance bands give the far tufts
+// fewer blade segments at the same density and width, so cover holds while far ground costs fewer
+// triangles. The colour hands over to the terrain through the blades' own colours, and the
+// per-preset share thins the field.
 import {
 	type InstanceBatch,
 	type QualityPreset,
@@ -61,10 +62,12 @@ export interface GrassOptions {
 	/** How far a blade bends at its tip for each meter a second of air. The default is 0.04. */
 	readonly sway?: number;
 	/**
-	 * The distance bands, from the nearest to the farthest. A page that leaves this out gets three:
-	 * far edges at 0.5, 0.9 and 1.6 times the area's side, with 1, a half and a quarter of the
-	 * near band's tufts, blades of one fewer segment each, and blades wider so the cover holds.
-	 * Each band's `far` must lie beyond the band before it.
+	 * The distance bands, from the nearest to the farthest. The default is two: the first ends at
+	 * half the area's side and grows blades of the segments that `segments` gives, and the second
+	 * carries the hill to 1.6 times the side with blades of one segment fewer. Both bands place the
+	 * same tufts at the same width, so the far ground costs fewer triangles without thinning and no
+	 * line of a changed density crosses the hill. Each band's `far` must lie beyond the band before
+	 * it.
 	 */
 	readonly bands?: readonly GrassBandOptions[];
 }
@@ -79,11 +82,15 @@ export interface GrassOptions {
 export interface GrassBandOptions {
 	/** The distance from the camera beyond which this band stops drawing, in meters. */
 	readonly far: number;
-	/** This band's tufts as a share of the near band's. The default keeps the cover as blades widen. */
+	/** This band's tufts as a share of the near band's. The default is 1, which keeps them. */
 	readonly share?: number;
 	/** The segments of each blade in this band. The default is one fewer for each band out. */
 	readonly segments?: number;
-	/** How much wider this band's blades are. The default keeps the cover as the tufts thin. */
+	/**
+	 * How much wider this band's blades are. The default holds the ground's cover, which is the
+	 * inverse of `share`: a band with half the tufts draws blades twice as wide. A wide blade reads
+	 * as a stick past a small widening, so thinning a band is a choice to weigh against its look.
+	 */
 	readonly widen?: number;
 }
 
@@ -268,12 +275,18 @@ function ordered(tufts: readonly GrassTuft[], high: number): GrassTuft[] {
 	return bands;
 }
 
-/** The far edges of the default bands, as fractions of the area's side. */
-const DEFAULT_BAND_EDGES = [0.5, 0.9, 1.6] as const;
-/** The default bands' tufts, as shares of the near band's. */
-const DEFAULT_BAND_SHARES = [1, 0.5, 0.25] as const;
-/** How far past its edge a band's rows carry on, as a share of the band's distance. */
-const BAND_OVERLAP = 0.06;
+/**
+ * The far edges of the default bands, as fractions of the area's side. The first band ends at the
+ * distance where a blade's shape stops showing, and the second carries the hill to its far corner.
+ */
+const DEFAULT_BAND_EDGES = [0.5, 1.6] as const;
+/**
+ * The default bands' tufts, as shares of the near band's. The default keeps every band's tufts and
+ * blade width, so a band changes its blades' geometry alone and no contour of density shows on the
+ * ground. A page that thins a band widens its blades by the same factor, which the review of this
+ * work found turns them into sticks past a small widening, so the default does not thin.
+ */
+const DEFAULT_BAND_SHARES = [1, 1] as const;
 /** The floats of one row: its place, its turn, its size, its values and its two distances. */
 const ROW_FLOATS = 3 + 4 + 3 + 4 + 2;
 /**
@@ -375,7 +388,7 @@ export function grassBands(options: GrassOptions): GrassBandPlan[] {
 			rowBytes: rows * GRASS_ROW_BYTES,
 			share,
 			segments: bandSegments,
-			widen: band?.widen ?? Math.sqrt(nearShare / share),
+			widen: band?.widen ?? nearShare / share,
 		});
 	}
 	return plans;
@@ -452,11 +465,11 @@ export function createGrass(ctx: SketchContext, options: GrassOptions): Grass {
 				scales.set([tuft.size, tuft.size, tuft.size], row * 3);
 				// The shader reads the tint from the row's second value.
 				values[row * 4 + 1] = tuft.tint;
-				// The band hands over to the next one past its edge, and each row's own edge falls a
-				// little past or short of it, so the switch is no single line around the camera.
-				const spread = 1 + BAND_OVERLAP * unitAt(options.seed, salt * 104729 + row, shape, 6, salt);
+				// The row draws between the band's distances. The engine fades each edge over a
+				// share of the range, so the two bands' tufts cross-fade along the boundary instead
+				// of one set of blades stopping where the next starts.
 				ranges[row * 2] = plan.near;
-				ranges[row * 2 + 1] = plan.far * spread;
+				ranges[row * 2 + 1] = plan.far;
 			});
 			batch.markDirty();
 			batches.push(batch);

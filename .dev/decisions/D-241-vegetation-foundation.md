@@ -733,15 +733,31 @@ that depends on another add-on. [D-173](D-173-addon-hooks.md) gives the rule for
 
 M3-V8's first slice builds the CPU half of the plan's two paths, and the second slice gives it
 distance bands. `createGrass` places tufts on a height function by integer hash. The hill draws in
-three bands, each covering the whole square and drawing only between its distances from the camera:
-the near band holds the High count, and each band beyond it places half of the band before it, gives
-its blades one fewer segment and widens them, so the far ground keeps its cover at fewer triangles.
-A preset draws its share of every band: 0.35, 0.6, 1 or 1.25. The engine culls each batch's rows in
-groups and drops the rows outside their band. The blades read the wind add-on's field at their
-roots, so one field moves the grass and the leaves together. The field's steady-air and sampling
-blocks are copied verbatim from the leaf material's `plant.wgsl`, and a test fails when one copy is
-edited alone. The material takes the field's newest layer each frame through `grass.setWindLayer`,
-which the page calls in its update. `grassBands(options)` gives the same plan without building it.
+two bands, each covering the whole square and drawing only between its distances from the camera.
+Both bands place the same tufts at the same blade width, and the band beyond the first gives each
+blade one fewer segment, so the far ground costs fewer triangles and no contour of a changed density
+crosses the hill. A preset draws its share of every band: 0.35, 0.6, 1 or 1.25. The engine culls each
+batch's rows in groups and drops the rows outside their band. The blades read the wind add-on's field
+at their roots, so one field moves the grass and the leaves together. The field's steady-air and
+sampling blocks are copied verbatim from the leaf material's `plant.wgsl`, and a test fails when one
+copy is edited alone. The material takes the field's newest layer each frame through
+`grass.setWindLayer`, which the page calls in its update. `grassBands(options)` gives the same plan
+without building it.
+
+**The far band's first build thinned, and a look review rejected it.** That build placed a quarter of
+the near band's tufts past the first edge, gave their blades a single segment and widened them by
+two. The review measured the crest's blade-green pixels at 36.2 to 18.3 per cent on WebGPU, 26.1 to
+14.4 in compatibility mode and 20.9 to 11.6 on WebGL2, and saw wide sticks, a dotted lattice and a
+density arc where the bands met. The arithmetic is why. A band's cover is its blades per area times
+its blade width, so a band with a quarter of the tufts needs blades four times as wide, not twice;
+the square root that the plan's line implies holds only when a blade grows in both its width and its
+length, and only the width grew. The widening also lands where the ground hides it: a blade of one
+segment is a triangle that tapers to a point, so its extra width sits at its root. The lattice is
+the same two faults: single-segment blades are sub-pixel at the crest and rasterize as single
+pixels, and every far row began to draw at one distance, so the engine's ordered fade dither fell in
+one ring. The fixed bands keep the density and the width and take the saving from the segments alone,
+65 triangles a tuft at three segments against 39 at two, and the engine's own edge fades cross-fade
+the two bands' tufts along the boundary.
 
 **What it costs.** The picture's hill holds 20,000 tufts at the High count in the near band, and
 Chrome on the Mac drew it at 960 by 540 drawing pixels at each preset and path that its tier offers
