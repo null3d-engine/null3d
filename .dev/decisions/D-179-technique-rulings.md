@@ -112,7 +112,9 @@ layers take the size of the largest image in the scene, or the probes' size wher
 **Why 512.** A 1,024 x 1,024 image takes 11 MB with every level, and the room for four pictures
 would take 44 MB for a scene with one cookie. A phone's memory budget does not carry that. 512 keeps
 a projected photograph sharp on a wall at the distances that scenes show it. The cap is the engine's
-choice, not a preset's. The owner did not take the uncapped route for those figures.
+choice, not a preset's. The owner did not take the uncapped route for those figures. A source finer
+than 512 texels a side is reduced to 512, so its finest lines can alias; that is the cap's known
+cost, and the sampling stays as it is.
 
 **The record.** A light's record keeps the image's layer plus one in six low bits of one float. The
 number of the image's size sits above those bits. The shader decodes both, so the record stays 80

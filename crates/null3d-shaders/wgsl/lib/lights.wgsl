@@ -218,7 +218,8 @@ fn cluster_lights(relative: vec3f) -> vec2u {
 /// square, where the light shows one color. `relative` is the surface's position relative to the
 /// camera, `normal` its unit normal, `to_view` the unit direction toward the camera, and
 /// `to_light` the unit direction from the surface toward the light. The light's record holds the
-/// map's layer in the light tables plus one and the up axis that it reads with.
+/// map's layer in the light tables plus one, the number of its size above that, and the up axis
+/// that it reads with (see null3d::tables's image_of).
 fn spot_map(
     light: PointLight,
     relative: vec3f,
