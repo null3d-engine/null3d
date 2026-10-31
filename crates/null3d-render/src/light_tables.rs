@@ -34,6 +34,7 @@ use null3d_core::handle::Handle;
 use null3d_gpu::drawlist::{DrawList, Op};
 
 use crate::frame::{RecordError, address};
+use crate::probes::MAX_PROBES;
 
 /// Texels along each side of each area table.
 pub const TABLE_SIZE: u32 = 64;
@@ -43,7 +44,9 @@ pub const AREA_LAYER: u32 = 1;
 pub const AREA_HALVES: usize = (4 * TABLE_SIZE * TABLE_SIZE * 2) as usize;
 /// The fewest texels along each side of a light's image: a small picture keeps this detail.
 pub const IMAGE_SIZE: u32 = 128;
-/// The most texels along each side of a light's image: a detailed picture keeps this detail.
+/// The most texels along each side of a light's image: a detailed picture keeps this detail. A
+/// larger source is reduced to this size, so its finest lines can alias; the cap is a memory limit,
+/// not a sampling choice.
 pub const MAX_IMAGE_SIZE: u32 = 512;
 /// Mip levels of an image at [`IMAGE_SIZE`], down to one texel.
 pub const IMAGE_LEVELS: u32 = 8;
@@ -88,6 +91,14 @@ pub const fn size_of_index(index: u32) -> u32 {
 /// Bits of a light's record that hold its image's layer, above the bits that hold the size's
 /// number. The record holds the layer plus one, so 0 names an image that the light lacks.
 pub const IMAGE_LAYER_BITS: u32 = 6;
+
+// The layer's field holds the highest image that the probes' and images' caps can place, plus
+// one, so a rise in either cap that outgrows the field stops the build here rather than spilling
+// into the bits that hold the size's number.
+const _: () = assert!(
+    FIRST_IMAGE_LAYER as usize + MAX_PROBES + MAX_IMAGES < (1 << IMAGE_LAYER_BITS),
+    "the image layer and its size number fit a light record's low bits"
+);
 
 /// The size, layers and mip levels that the light tables need of the shared texture, beside the
 /// probes' maps.
