@@ -4,8 +4,8 @@ Status: decided. The moment layer is nearer the exact image than the weighted bl
 scenes and both GPU paths, and it draws the same picture whatever order the surfaces add. A look
 review approved the centered picture against the earlier one: the faint outline that remains at four
 pane edges is 6 to 7 times smaller than the earlier picture's, and invisible at half size. The
-picture references are in for this computer's GPU and owed for CI's software GPU, and the phone's
-cost figure is owed. Task: M3-F13.
+picture references are in for this computer's GPU and for CI's software GPU, which drew them in run
+41169424001, and the phone's cost figure is owed. Task: M3-F13.
 
 Summary: Order-independent transparency from a store of four depth moments. It is nearer an exact
 back-to-front blend than the weighted blending on both test scenes: about two and a half times where
@@ -296,11 +296,10 @@ It also holds that an unused layer declares and records nothing.
 
 ## Remaining work
 
-1. The software set of the seven image tests' references, which comes from a CI run.
-2. The run on an S24-class phone, which gives the cost figure that decides the preset.
-3. The owner's ruling on whether a preset turns the layer on, and which. Every preset leaves it off
+1. The run on an S24-class phone, which gives the cost figure that decides the preset.
+2. The owner's ruling on whether a preset turns the layer on, and which. Every preset leaves it off
    today, and the cost figure above is what a preset would pay.
-4. The steps at the far panes' edges, if the owner wants them gone: a fit of three atoms takes more
+3. The steps at the far panes' edges, if the owner wants them gone: a fit of three atoms takes more
    than half of them away, and it needs a store of 32-bit floats where the surfaces sit close
    together. That store costs twice the moment traffic a frame and needs a device feature that is
    not on every GPU.
