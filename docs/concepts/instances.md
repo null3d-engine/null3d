@@ -138,7 +138,8 @@ engine's memory once, at load. Call `writer.reserve(count)` with the number of c
 change, call `writer.pack(counts)` with one chosen count for each slot. The writer writes the first
 `counts[slot]` rows of each chunk into the batch, in slot order, and sets the batch's active count.
 The pack runs in the engine's core, so the sketch copies no rows and runs no loop over them. The
-writer's code loads on first use. `writer.destroy()` frees its chunks.
+batch must own its rows' transforms: a part of a model, or a sprite or line batch, takes no chunked
+rows. The writer's code loads on first use. `writer.destroy()` frees its chunks.
 
 ## Pools: draw only the rows in use
 
