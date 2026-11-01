@@ -13,6 +13,8 @@ struct Uniforms {
     ripple: f32,
     // The meters of the gap to the bed over which the water fades to nothing at a shore.
     softness: f32,
+    // The share of the water's color that reads the whole way the view runs through it, not its depth.
+    viewPath: f32,
     // The light that the ripples focus on the bed, a linear color whose brightness is its strength.
     caustics: vec3f,
     // The world point and the size in meters that the foam map covers.
@@ -183,7 +185,7 @@ fn surface(input: SurfaceInput) -> Surface {
         max(input.vertexColor.a, 0.0),
         material.bedFromShape,
     );
-    s.thickness = max(depth, 0.02);
+    s.thickness = max(mix(depth, gap, material.viewPath), 0.02);
     // Shallow water at the edges carries a little foam.
     let edgeFoam = (1.0 - smoothstep(0.0, 0.05, depth)) * smoothstep(0.0, 0.03, w.x + 0.012);
     // Foam around the stones: the map holds how near each point lies to a stone, stretched
