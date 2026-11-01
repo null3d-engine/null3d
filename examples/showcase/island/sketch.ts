@@ -92,7 +92,7 @@ export default defineSketch(async (ctx) => {
 		shadow: { distance: SHADOW_REACH.distance, normalBias: 1, bias: 1, contactDistance: 0.25 },
 	});
 	// Warm light thrown back from the dry ground lifts the shadows' undersides, so they do not read sky blue.
-	scene.createHemisphereLight({ skyColor: '#b9a890', groundColor: '#c2965c', intensity: 0.35 });
+	scene.createHemisphereLight({ skyColor: '#b9a890', groundColor: '#c2965c', intensity: 0.8 });
 	// Bloom, auto exposure and the vignette start off; the HUD's Post buttons turn each on. Ambient
 	// occlusion starts on, so the scene's shadows read.
 	post.set({ ao: { radius: 0.7 } });

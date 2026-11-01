@@ -45,6 +45,8 @@ export interface SplatMaterialOptions {
 	 * lights from the mesh's own vertex normals.
 	 */
 	normals?: Texture;
+	/** True when steep faces map the rock layer from the sides. */
+	steepFaces?: boolean;
 	/**
 	 * The selection's scale: the screen's pixels per world meter of a block's cell, at which its
 	 * error fills the threshold. The morph reads it to find each block's split distances. 0 turns
@@ -156,6 +158,7 @@ export function splatMaterial(
 			ground,
 			layerContrast: contrast,
 			layerAlpha: alpha,
+			steepFaces: options.steepFaces ? 1 : 0,
 			selection: [options.scale, options.quads],
 		},
 		roughness: 1,
