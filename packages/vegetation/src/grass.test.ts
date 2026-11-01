@@ -22,6 +22,12 @@ describe('the grass placement', () => {
 		expect(a.length).toBe(100);
 	});
 
+	test('grows no tuft where the option refuses the ground', () => {
+		const tufts = placeTufts({ ...field, where: (x) => x > 0 }, 0, 100);
+		expect(tufts.length).toBeGreaterThan(0);
+		expect(tufts.every((tuft) => tuft.x > 0)).toBe(true);
+	});
+
 	test('a tuft stands on the ground, inside the area, with its traits in range', () => {
 		const tufts = placeTufts(field, 0, 100);
 		for (const tuft of tufts) {
