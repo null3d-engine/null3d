@@ -1,7 +1,18 @@
 // The configurator's model: four pages of choices, a tap that moves one page's choice on, and the
 // option that each page shows. The tablet and the car builder read the same model.
 import { describe, expect, it } from 'bun:test';
-import { choice, cycle, isConfigPage, PAGES, START_CONFIG } from './config';
+import {
+	choice,
+	cycle,
+	isConfigPage,
+	NEXT,
+	PAGES,
+	PREV,
+	START_CONFIG,
+	TABS,
+	tabletAction,
+	VALUE,
+} from './config';
 
 describe('the showroom configurator', () => {
 	it('offers paint, wheels, trim and lights, each with options', () => {
@@ -39,5 +50,21 @@ describe('the showroom configurator', () => {
 		expect(isConfigPage('paint')).toBe(true);
 		expect(isConfigPage('spoiler')).toBe(false);
 		expect(isConfigPage(undefined)).toBe(false);
+	});
+
+	it('reads a tap on each tab as a page, and a tap on the value or an arrow as a step', () => {
+		for (const tab of TABS)
+			expect(tabletAction({ x: tab.x + tab.width / 2, y: tab.y + tab.height / 2 })).toEqual({
+				kind: 'page',
+				page: tab.page,
+			});
+		const middle = (rect: typeof PREV) => ({
+			x: rect.x + rect.width / 2,
+			y: rect.y + rect.height / 2,
+		});
+		expect(tabletAction(middle(PREV))).toEqual({ kind: 'step', step: -1 });
+		expect(tabletAction(middle(NEXT))).toEqual({ kind: 'step', step: 1 });
+		expect(tabletAction(middle(VALUE))).toEqual({ kind: 'step', step: 1 });
+		expect(tabletAction({ x: 5, y: 5 })).toBeNull();
 	});
 });

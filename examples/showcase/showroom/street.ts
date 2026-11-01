@@ -1,8 +1,10 @@
 // The street beyond the studio: a short wet road between dark buildings, lit by hanging lamps and
-// two neon signs. The asphalt is rough where it is dry and smooth in the puddles, so the screen-space
-// reflections streak the lamps and the signs down it. The road runs along z from the studio's
-// opening at 0 to the far end, and its buildings stand back from the pavements.
+// two neon signs. The asphalt is rough where it is dry and smooth in the puddles, and its custom
+// surface carries the scene's planar reflection, so the lamps, the signs and the windows streak down
+// it. The road runs along z from the studio's opening at 0 to the far end, and its buildings stand
+// back from the pavements.
 import { math, type SketchContext, type Texture } from '@null3d/engine';
+import { WET_ROAD } from './floor';
 
 /** The road's width and length, its far end, and the width of each pavement. */
 const ROAD = 13;
@@ -17,12 +19,6 @@ const FLAT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
 /** The normal a plane that faces the street's centre from the left or the right side has. */
 const FACE_PLUS_X = [0, Math.SQRT1_2, 0, Math.SQRT1_2] as const;
 const FACE_MINUS_X = [0, -Math.SQRT1_2, 0, Math.SQRT1_2] as const;
-
-/** Texels along each side of the puddle map. */
-const PUDDLE_SIZE = 128;
-
-/** A wrapping distance on the unit square, so the puddles continue across a tile's edge. */
-const wrap = (d: number) => Math.min(Math.abs(d), 1 - Math.abs(d));
 
 /**
  * A facade of dark brick with a grid of windows, some lit, and a brighter shop front along the
@@ -86,48 +82,21 @@ function facade(textures: SketchContext['textures'], seed: number, lit: string):
 	});
 }
 
-/** Builds the street, its lamp posts and its signs. */
-export function createStreet(ctx: SketchContext): void {
+/** Builds the street, its lamp posts and its signs, over the planar reflection's picture. */
+export function createStreet(ctx: SketchContext, mirror: Texture): void {
 	const { scene, geometry, materials, textures } = ctx;
 
-	// The asphalt: smooth water in the puddles, rough dry stone between them, and a darker damp band
-	// around each puddle. The roughness is green and the metalness blue, as glTF's metal-rough map.
-	math.seed(7);
-	const blobs = Array.from({ length: 42 }, () => [math.randFloat(0, 1), math.randFloat(0, 1)]);
-	const rough = new Uint8Array(PUDDLE_SIZE * PUDDLE_SIZE * 4).fill(255);
-	const shade = new Uint8Array(PUDDLE_SIZE * PUDDLE_SIZE * 4).fill(255);
-	for (let y = 0; y < PUDDLE_SIZE; y++)
-		for (let x = 0; x < PUDDLE_SIZE; x++) {
-			let wet = -1;
-			for (const [bx, by] of blobs)
-				wet = Math.max(
-					wet,
-					1 - Math.hypot(wrap(x / PUDDLE_SIZE - bx) * 1.6, wrap(y / PUDDLE_SIZE - by)) / 0.12,
-				);
-			const damp = math.smoothstep(wet, -0.25, 0.3);
-			const water = math.smoothstep(wet, 0.3, 0.4);
-			const at = (y * PUDDLE_SIZE + x) * 4;
-			rough[at + 1] = math.lerp(math.lerp(0.74, 0.58, damp), 0.04, water) * 255;
-			rough[at + 2] = 0;
-			shade.fill(math.lerp(1, 0.5, Math.max(damp, water)) * 255, at, at + 3);
-		}
-	const map = (data: Uint8Array, colorSpace: 'srgb' | 'linear') =>
-		textures.fromData({
-			width: PUDDLE_SIZE,
-			height: PUDDLE_SIZE,
-			data,
-			colorSpace,
-			wrap: 'repeat',
-			mipmaps: true,
-		});
+	// The asphalt reads the scene's planar reflection pass: rough dry stone between smooth puddles
+	// whose water carries the lamps, the signs and the windows.
+	const road = materials.shader({
+		wgsl: WET_ROAD,
+		textures: { mirror },
+		color: '#1b1d21',
+		roughness: 0.6,
+	});
 	scene.createMesh({
 		mesh: geometry.plane({ width: ROAD, height: LENGTH }),
-		material: materials.standard({
-			color: '#1b1d21',
-			map: map(shade, 'srgb'),
-			metalnessRoughnessMap: map(rough, 'linear'),
-			uvTransform: { repeat: [1, LENGTH / ROAD] },
-		}),
+		material: road,
 		position: [0, 0, FAR / 2],
 		rotation: [...FLAT],
 	});
@@ -219,7 +188,6 @@ export function createStreet(ctx: SketchContext): void {
 				range: 24,
 				color: '#ffd9a8',
 				intensity: 130,
-				castShadows: index < 2,
 			});
 		}
 

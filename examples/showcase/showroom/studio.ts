@@ -2,7 +2,8 @@
 // probe that gives the car's clear coat the room's light. The room opens to the street along one
 // end, so the car can drive out. The softboxes are rectangle lights with a glowing panel in front of
 // each, and the back wall carries a strip of light that the bloom picks up.
-import type { ReflectionProbe, SketchContext } from '@null3d/engine';
+import type { ReflectionProbe, SketchContext, Texture } from '@null3d/engine';
+import { MIRROR_FLOOR } from './floor';
 
 /** The room's half width, its depth from the street end, and its height. */
 const HALF = 11;
@@ -23,17 +24,19 @@ export interface Studio {
 }
 
 /**
- * Builds the studio's room, floor, softboxes and probe. The car is left out of the probe's capture
- * by its layer, so the paint reflects the room and never itself.
+ * Builds the studio's room, floor, softboxes and probe. The floor reads the scene's planar reflection
+ * pass as a mirror. The car is left out of the probe's capture by its layer, so the paint reflects
+ * the room and never itself.
  */
-export function createStudio(ctx: SketchContext): Studio {
+export function createStudio(ctx: SketchContext, mirror: Texture): Studio {
 	const { scene, geometry, materials } = ctx;
 	const wall = materials.standard({ color: '#14161b', roughness: 0.82 });
 	const ceiling = materials.standard({ color: '#0b0c0f', roughness: 0.9 });
-	const floor = materials.standard({
+	const floor = materials.shader({
+		wgsl: MIRROR_FLOOR,
+		textures: { mirror },
 		color: '#07080a',
 		roughness: 0.035,
-		metalness: 0.85,
 	});
 	const block = (
 		size: readonly [number, number, number],

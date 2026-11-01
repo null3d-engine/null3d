@@ -1,17 +1,16 @@
 // Showroom to street: a new car under the softboxes of a dark studio, on a mirror floor, with a
 // configurator tablet beside it, and then the car drives out into a short wet street. The studio's
-// reflection probe gives the paint its softbox highlights, and the street's screen-space reflections
-// carry the lamps and the neon down the wet asphalt. The camera runs a route made for the scene: it
-// looks the car over while the car turns on the spot, follows it out through the opening, watches it
-// turn at the far end, and comes back with it. `c` switches between the route (Auto) and the user's
-// own camera (Manual). A tap on the tablet changes the paint, the wheels, the trim or the lights, and
-// the car takes the change at once. The controls HUD offers the time of day, the effects and the
-// quality preset, as the other showcases do.
+// reflection probe gives the paint its softbox highlights, and one planar reflection across the
+// ground carries the car, the lamps and the neon into both floors. The camera runs a route made for
+// the scene: it looks the car over while the car turns on the spot, follows it out through the
+// opening, watches it turn at the far end, and comes back with it. `c` switches between the route
+// (Auto) and the user's own camera (Manual). A tap on the tablet changes the paint, the wheels, the
+// trim or the lights, and the car takes the change at once. The controls HUD offers the time of day,
+// the effects and the quality preset, as the other showcases do.
 import { defineSketch } from '@null3d/engine';
 import { type CameraBounds, type Cinematic, createCinematic, type Shot } from '../../lib/cinematic';
 import { CAMERA_LAYERS, SUN_LAYERS } from '../../lib/layers';
 import { createShowcaseEffects, type ShadowReach } from '../../lib/showcase-effects';
-import { enableReflections } from '../../lib/ssr';
 import { createMoods, isMood } from '../../lib/stage';
 import { createCar } from './car';
 import { carPose, STUDIO_Z } from './route';
@@ -65,7 +64,7 @@ export const SHOTS: readonly Shot[] = [
 const params = new URL(import.meta.url).searchParams;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, post, page, time } = ctx;
+	const { scene, assets, post, page, render, textures, time } = ctx;
 	page.post('loading', 'Building the studio');
 	const [sky, room] = await Promise.all([
 		assets.skyEnvironment(),
@@ -76,9 +75,18 @@ export default defineSketch(async (ctx) => {
 		layers: SUN_LAYERS,
 		shadow: { distance: SHADOW_REACH.distance, normalBias: 0.04, contactDistance: 0.25 },
 	});
-	post.set({ ao: { radius: 0.7 } });
-	enableReflections(ctx);
-	post.set({ ssr: { maxDistance: 70, thickness: 1, maxRoughness: 0.35 } });
+	post.set({ ao: { radius: 0.7 }, bloom: { intensity: 0.45, threshold: 1 } });
+	// The one reflection that both floors read: the scene mirrored across the ground, the car and the
+	// street's lamps included. It draws at half the size, which a wet surface hides.
+	const reflection = textures.fromPass(
+		render.addPass({
+			kind: 'reflection',
+			writes: 'ground',
+			plane: { point: [0, 0, 0] },
+			scale: 0.5,
+			layers: CAMERA_LAYERS,
+		}),
+	);
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
 		near: 0.08,
@@ -103,8 +111,8 @@ export default defineSketch(async (ctx) => {
 	stage.set(isMood(mood) ? mood : 'Night');
 
 	page.post('loading', 'Building the street');
-	createStreet(ctx);
-	createStudio(ctx);
+	createStreet(ctx, reflection);
+	createStudio(ctx, reflection);
 	const car = createCar(ctx);
 	const tablet = createTablet(ctx, (config) => car.apply(config));
 	car.apply(tablet.config);
