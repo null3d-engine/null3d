@@ -320,6 +320,13 @@ describe('the shadow range', () => {
 		expect(held).toBe(70);
 	});
 
+	it('keeps the base range when the core lies behind the camera', () => {
+		// A camera that looks away from the core needs no reach beyond the base, and never a NaN.
+		expect(shadowStep(-11, 70, 70)).toBe(70);
+		expect(shadowStep(-11, 87.5, 70)).toBe(70);
+		expect(shadowStep(0, 109.375, 70)).toBe(70);
+	});
+
 	it('follows the camera as it draws back from the core and comes in again', () => {
 		const { effects, ranges, place } = stub();
 		expect(ranges).toEqual([70]);

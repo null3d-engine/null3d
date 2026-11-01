@@ -115,10 +115,12 @@ const SHADOW_LADDER = 1.25;
 /**
  * The shadow range for a need of `raw` meters, from a held range of `held`: the shortest step of the
  * ladder up from `base` that reaches the need. It rises at once, and falls only once the need is a
- * whole step below the held range, so a need that hovers at a step never flickers between two.
+ * whole step below the held range, so a need that hovers at a step never flickers between two. A
+ * need of zero or less is the scene's core behind the camera, which asks for the base range alone.
  */
 export function shadowStep(raw: number, held: number, base: number): number {
-	const steps = Math.max(0, Math.ceil(Math.log(raw / base) / Math.log(SHADOW_LADDER) - 1e-9));
+	const steps =
+		raw > 0 ? Math.max(0, Math.ceil(Math.log(raw / base) / Math.log(SHADOW_LADDER) - 1e-9)) : 0;
 	const up = base * SHADOW_LADDER ** steps;
 	return up > held || raw < held / SHADOW_LADDER ** 2 ? up : held;
 }
