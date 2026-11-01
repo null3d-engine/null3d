@@ -162,7 +162,7 @@ function mib(bytes: number | null): string {
 export function count(value: number | null): string {
 	if (value === null) return NONE;
 	if (value < 10_000) return `${Math.round(value)}`;
-	if (value < 10_000_000) return `${(value / 1000).toFixed(1)} k`;
+	if (value < 1_000_000) return `${(value / 1000).toFixed(1)} k`;
 	return `${(value / 1_000_000).toFixed(2)} M`;
 }
 
