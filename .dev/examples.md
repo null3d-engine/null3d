@@ -592,7 +592,8 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 - **The shadow range follows the camera:** a fixed range fails here. With the night town's sun at a fixed 70 m, its shadows fade over the last 7 m. The Manual camera can dolly out with no limit, and past about 70 m every house lies beyond the range. A quick zoom then carries the whole town across the fade in a fifth of a second, so the shadows appear at once. Even the opening view puts the back houses at 75 to 82 m. So each scene passes `shadowReach` to `createShowcaseEffects`: the range it asks for close up, and the sphere of its core. The core is the night town's houses and tower, and Creek's stream and banks. Each frame, the range is the shortest step of a ladder of 1.25 times that reaches the core's far side. It rises at once, and falls only once the need is a whole step lower. Close-up shadows stay as sharp as a fixed range gives, and the core never leaves the range. The engine's automatic distance ([D-168](decisions/D-168-auto-shadow-distance.md)) does not fit here. It follows the farthest visible receiver, which in these scenes is the ground out to the mountains. It would hold the range at 150 m or more and blur the near shadows.
 - **The sky, the sun and the moon:** the outdoor moods drive the physical sky, `scene.setBackground({ atmosphere })`, from `timeOfDay` with the physical model ([D-171](decisions/D-171-showcase-controls-hud.md)). The real sun disc lights the scene by day and the moon disc at night, the main directional light is the sun by day and the moon at night, and the lit fog and the light shafts follow that light, so a scene shows sun rays by day and moon rays at night. `Auto` advances the hour continuously and loops, so the sun rises, arcs and sets and the moon does the same, while the fixed moods hold an hour. A whole day takes 80 seconds in Auto (the owner's ruling). `examples/lib/stage.ts` holds the moods and the Auto driver.
 - **The look follows the light, not the nearest mood:** a scene's own look, such as Creek's fireflies, mist, leaf tint and caustics, blends between the moods on either side of the hour (`moodMix` in `examples/lib/stage.ts`). Through the dark hours, while the sun is more than 18 degrees under the horizon, it holds Night. Only while the sky has light does it move from each mood to the next. The dawn's look comes in through the morning twilight and is whole at Dawn's hour. A look taken from the nearest fixed mood would jump. At 02:36, halfway between Night and Dawn, Creek's warm dawn caustics would come on at once. The stream would change color in the middle of the night. The stage's own haze factor blends the same way. `examples/lib/stage.test.ts` checks that no mood's share steps between hours a minute apart.
-- **The showcase scenes are Creek, Night town and Skyway.** A forest at dawn, a night town under the moon, and a city from the air.
+- **The showcase scenes are Creek, Night town, Skyway and Showroom to street.** A forest at dawn, a
+  night town under the moon, a city from the air, and a car showroom that opens onto a wet street.
 
 ### Night town's windows (M3-B2)
 
@@ -804,6 +805,43 @@ and a hero car with two screens.
   and both windows carry upload spikes of about 1.2 MB, so neither explains the first window. Night
   town's first window had no such stall. A cold phone's first seconds therefore need their own
   measurement before the 60 frames a second target has a device figure.
+
+### Showroom to street (M3-C2)
+
+Showroom to street is the fourth showcase scene. A car stands in a dark studio under softbox area
+lights, on a mirror floor, with a tablet beside it that changes its paint, wheels, trim and lights.
+The car then drives out through the opening into a short wet street. The scene is a template for
+product pages.
+
+- **The studio reflects the softboxes twice.** The floor takes the screen-space reflections, so the
+  car, the softboxes and the tablet mirror in it at grazing angles. A reflection probe fills the
+  room's box, so the paint's clear coat reflects the softboxes and the walls wherever the camera
+  stands. The car draws on a layer of its own, which the probe leaves out, so the paint never
+  reflects itself.
+- **Four rectangle lights carry the studio.** A wide softbox behind the car and a thin box above it
+  draw the highlights along the roof and the flanks, and a strip down each side lights the walls.
+  The Low preset shades four rectangle lights, so the scene adds no more. A warm spot from the front
+  fills the paint, so the body reads deep red under the highlights.
+- **The configurator is a screen in the world.** The tablet is an `OffscreenCanvas` through the
+  screens add-on. Four tabs pick the part, and a tap on a value, a swatch or an arrow moves the
+  choice on. The car takes the change at once: the paint and the rims keep their material and change
+  their color, and the trim swaps between carbon, brushed steel and gloss black. A low glow under
+  the car and the two head lamps take the light's color, so the choice shows on the wet road.
+- **The street is short and lit.** The road runs 56 m from the studio's opening. A row of buildings
+  with lit windows stands on each side, with four lamp posts and two neon signs. One wall closes the
+  far end. The asphalt is a metal-rough map made in code: smooth in the puddles, rough between them,
+  and darker in a damp band around each puddle. The screen-space reflections streak the lamps, the
+  signs and the windows down it. The stage writes the volumetric fog, so each lamp and the head
+  lamps draw their cones through the air. Low turns the fog's slices off, so its fog keeps the sun's
+  glow.
+- **The route and the car run one loop.** The car waits in the studio and turns slowly on the spot.
+  It then drives out, turns at the street's far end and drives back. The camera route takes the same
+  36 s, so the loop meets itself with no jump. `route.test.ts` checks the poses at the points that
+  matter, and that the car moves smoothly at every step. The first shot holds still, so the held
+  frame is the studio view.
+- **The car body is shared with the clear coat demo.** `examples/lib/car-body.ts` builds the hull,
+  the cabin, the lamps and the wheels from the materials that its caller gives. The clear coat demo
+  keeps its candy red paint and carbon trim, and the showroom repaints the same body.
 
 ### Engine features for the showcase
 

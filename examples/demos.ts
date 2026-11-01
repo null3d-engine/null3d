@@ -171,6 +171,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 300,
 	},
 	{
+		name: 'showroom',
+		group: 'Showcase',
+		sketch: new URL('./showcase/showroom/sketch.ts', import.meta.url),
+		code: 'showcase/showroom/',
+		title: 'Showroom to street',
+		scene: 'Car configurator',
+		summary:
+			'A new car under softbox area lights on a mirror floor in a dark studio, with a tablet beside it. A tap on the tablet changes the paint, the wheels, the trim or the lights, and the car takes the change at once. The car turns on the spot, then drives out through the opening into a short wet street, where the lamps and the neon signs streak down the asphalt and the lit fog catches their light.',
+		controls: [...SHOWCASE_CONTROLS, { keys: ['Click'], does: 'change the car on the tablet' }],
+		hold: 1,
+		timeoutSeconds: 300,
+	},
+	{
 		name: 'generators',
 		group: 'Building scenes',
 		sketch: new URL('./generators/sketch.ts', import.meta.url),
