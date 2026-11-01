@@ -2352,13 +2352,13 @@ pub mod groups {
         &[layout::PARTICLE_SCENE_DEPTH, layout::INSTANCES],
         &[layout::TEXTURES],
     ];
-    /// The groups of the background templates: the frame's group, then a texture and the
-    /// background's own group. A cube or sky background binds only the background's own, at the
-    /// group after the frame's, and the WebGL2 path binds each view's instances group last.
+    /// The groups of the background templates: the frame's group, then the background's own, then
+    /// a texture's. A cube or sky background binds only the background's own, at the group after
+    /// the frame's, and the WebGL2 path binds each view's instances group last.
     const BACKGROUND: &[&[u32]] = &[
         &[layout::FRAME],
-        &[layout::TEXTURES, layout::BACKGROUND],
-        &[layout::BACKGROUND, layout::INSTANCES],
+        &[layout::BACKGROUND],
+        &[layout::TEXTURES, layout::INSTANCES],
     ];
     /// The physical sky's tables and its panorama.
     const SKY: &[&[u32]] = &[&[layout::ATMOSPHERE]];

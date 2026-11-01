@@ -1582,7 +1582,7 @@ export class Pipelines {
 			label: 'background',
 			shader: shaders.background,
 			pipeline: 'main',
-			layouts: [LAYOUT_FRAME, LAYOUT_TEXTURES, LAYOUT_BACKGROUND],
+			layouts: [LAYOUT_FRAME, LAYOUT_BACKGROUND, LAYOUT_TEXTURES],
 			vertexBuffers: [],
 		});
 		for (const [id, label, shader] of [
