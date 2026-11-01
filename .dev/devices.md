@@ -324,6 +324,28 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - It fails when the measure drew no frame. The plan times frames, so the runner page measures the display's refresh rate before each page.
 - The `warm-up-time` plan also loads Skyway, for its pipeline wait and its first-frame time with fresh shaders.
 
+## The Skyway plan
+
+- The `skyway` plan times Skyway's frame on each GPU path, for its frame target: the Low and Medium
+  presets, each with the quality governor off and the render scale held at 1, and the preset that
+  the engine chooses with the governor on, which is what a visitor's device draws.
+- Each page starts the demo live, waits for its first frame, and measures 8 seconds from the route's
+  opening shot. The demo's address switches do the pinning: `?governor=off` stops the governor's
+  steps and `?render-scale=1` fixes the scale, so every figure is the same drawing on every run.
+  The scan in the page's overlay names the preset and the scale it drew, such as `webgpu low scale
+  1.00`.
+- The demo's own cost switches name the parts of the scene that a measurement leaves out:
+  `?without=traffic,roamers,rain,ssr,lamps,beams,signs,ground,towers`. The runner's `--switches`
+  gives them to every page of a plan, so `--switches without=traffic` times the city without the
+  lanes. A visitor's address and the picture tests name none, so the demo draws the whole scene.
+- The page reports the frame rate, the display's rate, the frame intervals' percentiles, the CPU
+  time of each thread, the GPU time per frame and per pass, the draw calls, the triangles, the
+  uploads, and the bytes that the page downloaded. On WebGL2 most phones offer no timer queries, so
+  the GPU times are absent there and only the frame rate answers.
+- Run it on the cloud devices with
+  `bun run devices:cloud --plan skyway --only bsipadpro13-safari,bsgalaxys24-chrome`, or on the Mac
+  with `bun tests/real-browsers.ts --plan skyway "Google Chrome"`.
+
 ## The splats plan
 
 - The `splats` plan runs the Gaussian splats add-on's streaming check on each GPU path, for M3-F2. It draws a cloud of 400,000 splats, which the add-on cuts into chunks that the draw takes as they arrive. The preset's budget decides how many of them draw.

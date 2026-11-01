@@ -151,7 +151,19 @@ run('demo-device', async () => {
 	// A demo spells its own cost switches on its sketch's address, as the split page does, so a
 	// page that compares one change at a time passes them here.
 	const sketch = new URL(demo.sketch);
-	for (const id of ['morph', 'still', 'follow'])
+	for (const id of [
+		'morph',
+		'still',
+		'follow',
+		// A showcase scene's own switches: its mood, its storm, the lens marks, the governor, the
+		// render scale and the parts of the scene that a measurement leaves out.
+		'mood',
+		'storm',
+		'lens',
+		'governor',
+		'render-scale',
+		'without',
+	])
 		if (params.has(id)) sketch.searchParams.set(id, params.get(id) ?? '');
 	const runDemo = { ...demo, sketch };
 	const failures: string[] = [];
@@ -210,7 +222,9 @@ run('demo-device', async () => {
 	// after the measure, so its sampling costs none of the frames that the figures above time.
 	let overlayReady = false;
 	if (OVERLAY) {
-		engine.stats(true);
+		// The card opens, so the page reads the figures it holds: the triangles, the draw counts and
+		// the heading with the preset and the render scale. Its sampling happens after the measure.
+		engine.stats({ collapsed: false });
 		overlayReady = await waitForOverlay('triangles');
 		note(`the overlay ${overlayReady ? 'showed' : 'did not show'} its counts`);
 	} else {
