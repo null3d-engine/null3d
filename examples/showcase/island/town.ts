@@ -49,6 +49,7 @@ import {
 	streetLamp,
 } from './kit';
 import {
+	bunkerSpots,
 	CHURCH_AT,
 	circleRadius,
 	groundHeight,
@@ -374,9 +375,9 @@ function patch(
 	color: Color,
 	lift: number,
 	height: (x: number, z: number) => number = groundHeight,
+	sides = 40,
+	rings = 4,
 ): void {
-	const sides = 40;
-	const rings = 4;
 	const first = b.positions.length / 3;
 	for (let ring = 0; ring <= rings; ring++)
 		for (let k = 0; k < sides; k++) {
@@ -799,6 +800,8 @@ const GOLF_SHORE = 36;
 const GREEN_REACH = 17;
 /** The fewest points of a fairway's line in a run of its turf. */
 const SHORTEST_FAIRWAY = 12;
+/** The points of a fairway's line over which its end rounds off. */
+const FAIRWAY_ROUND = 5;
 /** The half width of a stone stair, in meters. */
 const STAIR_HALF = 0.8;
 /** How far a wall keeps from the middle of a house's way, in meters. */
@@ -1588,6 +1591,10 @@ function createGolf(ctx: SketchContext): void {
 		},
 		rough,
 		0.3,
+		groundHeight,
+		// Fine enough to lie over the ground's own rolls, which would show through as dark spots.
+		160,
+		24,
 	);
 	const kidney = (r: number, turn: number) => (a: number) =>
 		r * (1 + 0.32 * Math.cos((a - turn) * 2) + 0.14 * Math.sin((a - turn) * 3));
@@ -1641,7 +1648,18 @@ function createGolf(ctx: SketchContext): void {
 			if (end - k < SHORTEST_FAIRWAY) widths.fill(0, k, end);
 			k = Math.max(end, k + 1);
 		}
-		const onTop = (k: number) => widths[k] as number;
+		// A run's ends round off over some meters, as a fairway's do, in place of a wedge in one step.
+		const rounded = widths.map((width, k) => {
+			let toEnd = 0;
+			while (
+				toEnd < FAIRWAY_ROUND &&
+				(widths[k - toEnd - 1] ?? 0) > 0 &&
+				(widths[k + toEnd + 1] ?? 0) > 0
+			)
+				toEnd++;
+			return width * Math.sqrt(Math.min(1, (toEnd + 0.3) / FAIRWAY_ROUND));
+		});
+		const onTop = (k: number) => rounded[k] as number;
 		ribbon(
 			b,
 			line,
@@ -1658,16 +1676,7 @@ function createGolf(ctx: SketchContext): void {
 		);
 		patch(b, gx, gz, (a) => 15 + 2.4 * Math.sin(a * 3), [0.15, 0.3, 0.08], 0.54);
 		patch(b, gx, gz, (a) => 12 + 2.2 * Math.sin(a * 3), [0.26, 0.45, 0.15], 0.58);
-		const [dx, dz] = [end[0] - first[0], end[1] - first[1]];
-		const length = hypot(dx, dz);
-		const [nx, nz] = [-dz / length, dx / length];
-		const mid = stations[Math.floor(stations.length / 2)] as readonly [number, number, number];
-		const spots: readonly (readonly [number, number, number, number])[] = [
-			[gx + nx * 21, gz + nz * 21, 7.5, 0.4],
-			[gx - nx * 20 - (dx / length) * 6, gz - nz * 20 - (dz / length) * 6, 8.5, 1.1],
-			[GOLF.x + mid[0] + nx * (mid[2] + 6), GOLF.z + mid[1] + nz * (mid[2] + 6), 9, 2],
-			[GOLF.x + mid[0] - nx * (mid[2] + 6) + 16, GOLF.z + mid[1] - nz * (mid[2] + 6), 7.5, 0.7],
-		];
+		const spots = bunkerSpots(stations);
 		for (const [sx, sz, r, turn] of spots) {
 			// No bunker lies on the bank, or runs off the course's top.
 			if ([0, 1.57, 3.14, 4.71].some((a) => offTop(sx + Math.cos(a) * r, sz + Math.sin(a) * r)))
@@ -1914,7 +1923,7 @@ function createKeeps(ctx: SketchContext, surfaces: Surfaces): void {
 
 /** The rocks of the coast: angular boulders in several sizes, tumbled below the cliffs and offshore. */
 function createRocks(ctx: SketchContext): void {
-	const { scene, geometry, materials } = ctx;
+	const { scene, geometry } = ctx;
 	const next = random(1009);
 	const rocks: { x: number; y: number; z: number; scale: number }[] = [];
 	for (let k = 0; k < 260000 && rocks.length < 6000; k++) {
