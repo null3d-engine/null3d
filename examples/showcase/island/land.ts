@@ -130,14 +130,14 @@ export function createLand(ctx: SketchContext): Terrain {
 			// The dark floor under trees.
 			{
 				map: groundMap(ctx, size, [58, 62, 32], [30, 36, 18], 8),
-				tile: 6,
+				tile: 4,
 				heightFrom: 'alpha',
 				contrast: 0.25,
 			},
 			// Dry grass and warm earth in the open.
 			{
 				map: groundMap(ctx, size, [116, 106, 66], [76, 74, 44], 12),
-				tile: 7,
+				tile: 5,
 				heightFrom: 'alpha',
 				contrast: 0.25,
 			},
