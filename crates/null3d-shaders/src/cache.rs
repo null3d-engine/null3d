@@ -3,10 +3,13 @@
 //! The build composes and compiles every entry in the manifest on each run, which takes minutes
 //! when one WGSL file changed. This cache keeps each entry's compiled output, the WGSL and GLSL
 //! records that the build makes before the modules are assembled, in a folder that every checkout
-//! on the machine shares and that is keyed by the compiler's stamp. A run reuses an entry when its
+//! on the machine shares and that holds the entries of one compiler. A run reuses an entry when its
 //! own source, its manifest table and the library modules it imports are unchanged, so a change
 //! to one entry compiles only that entry, and a change to a library module compiles only the
-//! entries that import it.
+//! entries that import it. The key reads the sources without comments and without the white space
+//! between tokens, keeping only the line breaks that start or end a directive line, so an edit that
+//! leaves every token in place reuses the entry: the program that such a source compiles to is the
+//! one the entry holds.
 //!
 //! The cache never decides a build on its own. An entry that is missing, unreadable or written
 //! under another key, or whose dependency contents changed, is a miss, and the entry compiles
@@ -42,7 +45,7 @@ use crate::{Part, VariantOutput};
 
 /// The version of the cache's file format and key. Bump it when either changes, so an entry an
 /// older format wrote is never read with a new meaning.
-const FORMAT: &str = "3";
+const FORMAT: &str = "4";
 
 /// How many bytes one cache folder may hold before its oldest entries go. The build tools bound the
 /// caches under their one root with the same figure (tools/lib/build-cache.ts), so one rule covers
@@ -81,9 +84,8 @@ impl Cache {
         Self::default()
     }
 
-    /// A cache in `folder`, keyed by `stamp`: the fingerprint of the compiler that made the
-    /// entries. A different stamp writes and reads different entries, so a compiler change
-    /// invalidates every one of them.
+    /// A cache in `folder`, keyed by `stamp`: a name for the compiler that made the entries. Two
+    /// compilers never share a folder, so an entry of one is never read as the output of another.
     pub fn at(folder: &Path, stamp: &str) -> Self {
         Self {
             folder: Some(folder.to_owned()),
@@ -99,14 +101,16 @@ impl Cache {
     /// The key of one entry: its name, file and source, its manifest table, the compiler's stamp
     /// and `only`, the listed permutation words that narrow an entry's builds. A change to any of
     /// them gives another key, so the entry compiles again: an entry built for one list of words is
-    /// not the entry a build of another list may reuse.
+    /// not the entry a build of another list may reuse. The source is keyed without comments and
+    /// without the width of the spaces between tokens, which cannot change the program a shader
+    /// compiles to ([`key_text`]).
     pub fn key(&self, name: &str, file: &str, source: &str, table: &str, only: &str) -> String {
         digest(&[
             FORMAT.as_bytes(),
             self.stamp.as_bytes(),
             name.as_bytes(),
             file.as_bytes(),
-            source.as_bytes(),
+            key_text(source).as_bytes(),
             table.as_bytes(),
             only.as_bytes(),
         ])
@@ -177,7 +181,7 @@ impl Cache {
             return None;
         }
         for dep in &entry.deps {
-            if digest(&[files.get(&dep.file)?.as_bytes()]) != dep.hash {
+            if dep_hash(files.get(&dep.file)?) != dep.hash {
                 return None;
             }
         }
@@ -348,7 +352,7 @@ impl Cache {
             .filter_map(|file| {
                 files.get(file).map(|source| Dep {
                     file: file.clone(),
-                    hash: digest(&[source.as_bytes()]),
+                    hash: dep_hash(source),
                 })
             })
             .collect();
@@ -713,6 +717,151 @@ fn digest(parts: &[&[u8]]) -> String {
     format!("{first:016x}{second:016x}")
 }
 
+/// The hash of one library file that an entry read, from the text the cache keys. An edit to its
+/// comments or to the width of its white space leaves the hash, so the entry that read it is
+/// reused; an edit to a token changes the hash, so that entry compiles again.
+#[cfg(not(target_arch = "wasm32"))]
+fn dep_hash(source: &str) -> String {
+    digest(&[key_text(source).as_bytes()])
+}
+
+/// The words that only a line start makes into a directive. A preprocessor directive starts with
+/// `#`, and the WGSL directives are these words.
+const DIRECTIVE_WORDS: [&str; 3] = ["enable", "requires", "diagnostic"];
+
+/// True when the token that starts at `at` is one that only a line start can make a directive.
+fn directive_token(bytes: &[u8], at: usize) -> bool {
+    if bytes[at] == b'#' {
+        return true;
+    }
+    let mut end = at;
+    while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+        end += 1;
+    }
+    DIRECTIVE_WORDS.contains(&std::str::from_utf8(&bytes[at..end]).unwrap_or(""))
+}
+
+/// True when removing the white space between the text written so far and `after` could join the
+/// two into another token. It errs towards keeping the space: a pair it calls joined only costs the
+/// entry a compile, where a pair it wrongly joins would read as another token and could ship a
+/// stale shader.
+fn needs_space(out: &[u8], after: u8) -> bool {
+    let Some(&before) = out.last() else {
+        return false;
+    };
+    let name = |byte: u8| byte == b'_' || byte.is_ascii_alphanumeric() || byte >= 0x80;
+    // Two names or two numbers would read as one, and a suffix would join the number it follows.
+    if name(before) && name(after) {
+        return true;
+    }
+    if (before.is_ascii_digit() && after == b'.') || (before == b'.' && name(after)) {
+        return true;
+    }
+    // An exponent sign joins the number whose exponent it is, and only after a digit, a point or a
+    // separator inside a number.
+    if matches!(before, b'e' | b'E' | b'p' | b'P') && matches!(after, b'+' | b'-') {
+        let before_that = out.len().checked_sub(2).and_then(|at| out.get(at)).copied();
+        if before_that.is_some_and(|byte| byte.is_ascii_digit() || byte == b'.' || byte == b'_') {
+            return true;
+        }
+    }
+    // Two punctuation characters may be one longer punctuator, such as `<<`, `::` or `->`, and a
+    // pair of slashes or a slash and a star would start a comment.
+    const PUNCTUATION: &[u8] = b"+-*/%&|^<>=!:.~@#";
+    PUNCTUATION.contains(&before) && PUNCTUATION.contains(&after)
+}
+
+/// The text of one shader source as the cache keys it: without comments, with one space only where
+/// two tokens would otherwise run together, and with a line break kept only where it can matter.
+/// The composer reads a preprocessor directive, and a WGSL directive, only as the first token on a
+/// line, so the break before such a token and the break that ends its line stay. Every other line
+/// break reads as a space or as nothing.
+///
+/// The composer and the compiler read tokens, not the lines that hold them, so two sources that
+/// differ only in comments or in the white space between tokens give one program. The key names
+/// that program, so such an edit reuses the entry. Any change to a token, its order, or a line that
+/// a directive starts or ends gives other text and another key, so the entry compiles again.
+fn key_text(text: &str) -> String {
+    let bytes = text.as_bytes();
+    // Comments become spaces, so the tokens keep their order; a line break inside a block comment
+    // stays a line break, because it may separate a directive from the line before it.
+    let mut plain = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let byte = bytes[i];
+        if byte == b'/' && bytes.get(i + 1) == Some(&b'/') {
+            i += 2;
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            plain.push(b' ');
+        } else if byte == b'/' && bytes.get(i + 1) == Some(&b'*') {
+            // Block comments nest, as WGSL defines them.
+            let mut depth = 0usize;
+            while i < bytes.len() {
+                if bytes[i] == b'/' && bytes.get(i + 1) == Some(&b'*') {
+                    depth += 1;
+                    i += 2;
+                } else if bytes[i] == b'*' && bytes.get(i + 1) == Some(&b'/') {
+                    depth -= 1;
+                    i += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                } else {
+                    plain.push(if bytes[i] == b'\n' { b'\n' } else { b' ' });
+                    i += 1;
+                }
+            }
+            plain.push(b' ');
+        } else {
+            plain.push(byte);
+            i += 1;
+        }
+    }
+    // One separator between tokens: a line break where a directive starts or ends its line, and a
+    // space where the break cannot matter.
+    let mut out = Vec::with_capacity(plain.len());
+    // The first token starts its line, as every later token does after a line break.
+    let mut line = true;
+    let mut space = false;
+    // True while the token being written is on a line that a directive starts.
+    let mut directive_line = false;
+    for (at, &byte) in plain.iter().enumerate() {
+        if byte == b'\n' {
+            line = true;
+        } else if byte.is_ascii_whitespace() {
+            space = true;
+        } else {
+            let directive = directive_token(&plain, at);
+            if line || space {
+                let separator = if out.is_empty() {
+                    // The first token starts the text, and a directive at the start still starts a
+                    // line, which the flag below records.
+                    None
+                } else if line && (directive_line || directive) {
+                    // A directive line starts or ends here, so the line break stays.
+                    Some(b'\n')
+                } else if needs_space(&out, byte) {
+                    Some(b' ')
+                } else {
+                    None
+                };
+                if let Some(separator) = separator {
+                    out.push(separator);
+                }
+            }
+            if line {
+                directive_line = directive;
+                line = false;
+            }
+            space = false;
+            out.push(byte);
+        }
+    }
+    String::from_utf8(out).expect("comments and white space keep the text's bytes")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -825,6 +974,110 @@ mod tests {
         assert_ne!(one, digest(&[b"a", b"c"]));
         assert_ne!(one, digest(&[b"ab"]));
         assert_ne!(one, digest(&[b"b", b"a"]));
+    }
+
+    /// The key of the entry `source`, under one compiler.
+    fn key_of(source: &str) -> String {
+        Cache::at(Path::new("/nowhere"), "stamp").key("mipmap", "mipmap.wgsl", source, "", "")
+    }
+
+    #[test]
+    fn a_comment_or_a_moved_line_keeps_the_key() {
+        let plain = "@fragment\nfn fs_main() -> @location(0) vec4f {\n    return vec4f(1.0);\n}\n";
+        let edited = "// the pass.\n@fragment\nfn fs_main() -> @location(0) vec4f {\n\n\t/* a note */  return vec4f(1.0);   // done\n}\n";
+        assert_eq!(key_of(plain), key_of(edited));
+        // A comment line above the code, and a block comment that spans two lines, add lines but
+        // leave every token in the same place in the program.
+        let two_lines = "/* a note\n   on two lines */\n@fragment\nfn fs_main() -> @location(0) vec4f { return vec4f(1.0); }\n";
+        let shifted = "@fragment\n\nfn fs_main() -> @location(0) vec4f { return vec4f(1.0); }\n";
+        assert_eq!(key_of(two_lines), key_of(shifted));
+        // A call that a later edit spreads over several lines is the same program.
+        let one_line = "let p = mix(a, b, 0.5);\n";
+        let wrapped = "let p = mix(\n\ta,\n\tb,\n\t0.5\n);\n";
+        assert_eq!(key_of(one_line), key_of(wrapped));
+        // A space may go around an operator, unless the operator would join the number before it.
+        assert_eq!(
+            key_of("let x = value + 1.0;\n"),
+            key_of("let x = value+1.0;\n")
+        );
+        assert_ne!(key_of("let x = 1e+5;\n"), key_of("let x = 1e +5;\n"));
+    }
+
+    #[test]
+    fn a_change_to_a_token_or_to_a_directive_line_changes_the_key() {
+        let base = "@fragment\nfn fs_main() -> @location(0) vec4f { return vec4f(1.0); }\n";
+        // A different token, and a different token boundary.
+        assert_ne!(key_of(base), key_of(&base.replace("1.0", "2.0")));
+        assert_ne!(
+            key_of(base),
+            key_of(&base.replace("vec4f(1.0)", "vec4f(1 .0)"))
+        );
+        // A directive keeps the line it starts on, so a comment that moves it after code gives
+        // another key, even though the tokens are the same.
+        let directive = "a\n#import null3d::math\n";
+        assert_eq!(
+            key_of(directive),
+            key_of("a\n/* a note */ #import null3d::math\n")
+        );
+        assert_ne!(
+            key_of(directive),
+            key_of("a /* a note */ #import null3d::math\n")
+        );
+        // The line break that ends a directive line stays, so the code after a directive is not
+        // read as part of the directive.
+        assert_ne!(
+            key_of("#import null3d::math\nfn f() {}\n"),
+            key_of("#import null3d::math fn f() {}\n")
+        );
+        // A WGSL directive is a line of its own in the same way.
+        assert_ne!(
+            key_of("enable f16;\nfn f() {}\n"),
+            key_of("enable f16; fn f() {}\n")
+        );
+    }
+
+    /// True for each token whose gap from the token before holds a line break.
+    fn line_starts(text: &str) -> Vec<bool> {
+        let tokens = crate::scan::tokenize(text);
+        let mut starts = Vec::with_capacity(tokens.len());
+        let mut end = 0;
+        for token in &tokens {
+            starts.push(text[end..token.start].contains('\n'));
+            end = token.start + token.text.len();
+        }
+        starts
+    }
+
+    #[test]
+    fn the_key_text_keeps_every_token_of_every_source_and_the_lines_a_directive_starts() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let inputs = crate::Inputs::read(&root).expect("the repository's shader sources");
+        for (file, source) in &inputs.files {
+            let keyed = key_text(source);
+            // Keying the key text again gives the same text, so the form is settled.
+            assert_eq!(
+                key_text(&keyed),
+                keyed,
+                "{file}: the key text is not settled"
+            );
+            let before = crate::scan::tokenize(source);
+            let after = crate::scan::tokenize(&keyed);
+            assert_eq!(before.len(), after.len(), "{file}: a token went missing");
+            let starts_before = line_starts(source);
+            let starts_after = line_starts(&keyed);
+            for (index, (one, two)) in before.iter().zip(&after).enumerate() {
+                assert_eq!((one.kind, one.text), (two.kind, two.text), "{file}");
+                // A directive reads only at the start of a line, so that one property stays. The
+                // first token starts the file, which both texts read as a line start.
+                if index > 0 && directive_token(one.text.as_bytes(), 0) {
+                    assert_eq!(
+                        starts_before[index], starts_after[index],
+                        "{file}: `{}` lost the line it starts",
+                        one.text
+                    );
+                }
+            }
+        }
     }
 
     #[test]
