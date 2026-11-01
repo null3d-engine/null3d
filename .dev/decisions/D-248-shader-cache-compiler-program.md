@@ -44,6 +44,17 @@ How the data was produced: SHA-256 of the kept `program/shader-build` of each ca
 
 The entry file named for its key, the shared text table and the folder pruning landed on main at `e27d69055`. That landing took the work of the historical branch `fix/build-cache-hardening` (commit `232f2d25f`). The branch holds nothing beyond main, and it does not decide the compiler's folder or the entry's source text. Its cache format is the base that this change extends.
 
+## Verification
+
+- Two builds of this branch's `shader-build`, one in a worktree and one in a copied tree at another path, have the same bytes: SHA-256 `f27e3e2d…`. The two kept programs of the compiler before this change differed in one string only, the checkout path.
+- The cache and command tests compile the same sources with the old and the new key path. They compare the modules byte for byte: `a_warm_cache_writes_the_same_modules_as_a_cold_build`, `a_warm_cache_gives_the_same_output_as_a_cold_build`, and `a_comment_that_changes_no_token_reuses_every_entry`.
+- The two settings that no key names, `NULL3D_SHADER_THREADS` and `NULL3D_SHADER_COMPOSER_BUILDS`, leave the modules byte-identical. `the_threads_and_the_composer_reset_do_not_change_the_modules` checks this.
+- A change to a token, a manifest table or a library module compiles the entries it reaches. A change to a compiler program reads a folder that program wrote. The tests `a_change_to_a_token_or_to_a_directive_line_changes_the_key`, `a_manifest_change_recompiles_the_entry_it_names`, `changing_a_library_module_compiles_only_its_importers` and the folder tests of `tools/lib/shader-modules.test.ts` check these.
+
+## The GPU line
+
+`tools/hooks/check-gpu-ack.ts` names `crates/null3d-shaders/(src|wgsl)/` as GPU-bearing. A change to this cache therefore asks for a `GPU-Checked:` line, although it cannot change what the GPU draws. It changes which stored entry a build reads and removes a path from the compiler program. The line comes from `bun run bench:gpu-check` at the branch's head in a prepared checkout. It is a timed check, and the comparison of generated modules above is not a substitute for it.
+
 ## CI keys
 
 - **Field names.** `--cache-keys` prints `key`, `branch-keys`, `stamp-keys`, `stamp`, `inputs`, `modules-dir` and `entries-dir`, and also `any-stamp-keys`, a cache prefix of the runner's system alone. `--entry-folder` prints `folder=<path>`, the entry folder that a build read or would write.
