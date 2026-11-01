@@ -27,12 +27,13 @@ import { createCockpit } from './cockpit';
 import { createConsole } from './console';
 import {
 	cityTowers,
-	clearSight,
-	FLIGHT,
+	createSight,
 	type Flight,
 	fly,
 	keepOut,
+	type Sight,
 	type Stick,
+	settleSight,
 	type Towers,
 } from './drive';
 import { HERO_LAYER } from './layout';
@@ -57,38 +58,8 @@ const ARC = 1.2;
 const CHASE = { behind: 13, above: 4.4, ahead: 22, lift: 1.4 };
 /** How quickly the chase camera follows the car's place and its look, per second. */
 const CHASE_FOLLOW = 7;
-/** How far before a tower the chase camera stops, so it does not skim a wall, in meters. */
-const SIGHT_CLEARANCE = 0.6;
-/**
- * How far ahead of the car the camera looks for a tower that a turn will bring between them, in
- * seconds, so the pull starts before the line crosses it.
- */
-const SIGHT_LOOK = 0.3;
-/** How fast the camera may close on the car before a tower, in meters per second, so it eases. */
-const SIGHT_PULL = 60;
-/**
- * How close a pulled camera stands to the car at least, in meters, so the car cannot fill the
- * frame; the car is a little under five meters long, and this keeps it under half the frame's
- * width from the side. The camera swings to a clear side of the car when the tower leaves no room
- * straight back.
- */
-const SIGHT_MIN = 10;
-/** How low above the car the camera sits when it has pulled all the way in, in meters. */
-const SIGHT_LOW = 1.6;
 /** How far past the car the camera looks when it has pulled all the way in, in meters. */
 const SIGHT_LEAD = 2;
-/** The widest swing to either side of the car's tail that tries to find a clear view, in radians. */
-const SIGHT_SWING = Math.PI / 2;
-/** How far apart the swings sit, in radians. */
-const SIGHT_STEP = Math.PI / 18;
-/** How quickly the pull's distance eases from the usual chase to the standoff, per second. */
-const SIGHT_RADIUS_EASE = 4;
-/**
- * The distance at which the low pull gives way to the usual chase look, in meters. It sits just
- * past the standoff, so a camera pulled in looks a little past the car, and one at its usual
- * distance looks down the road as it always did.
- */
-const SIGHT_CLOSE = SIGHT_MIN + 1;
 /** The chase camera's tilt above the car, and its distance from it. */
 const CHASE_TILT = Math.atan2(CHASE.above, CHASE.behind);
 const CHASE_DISTANCE = Math.hypot(CHASE.behind, CHASE.above);
@@ -383,21 +354,14 @@ export function createHero(
 	const trail = vec3.create();
 	let trailYaw = 0;
 	/** The point that the seat looks at, and the camera's place on its way in or out. */
-	const sight = vec3.create();
+	const seatSight = vec3.create();
 	const path = vec3.create();
-	/** How far round the car the camera holds its chosen side while a tower blocks it. */
-	let sightSide = 0;
-	let sightSideReach = 0;
-	/** The world angle of the held side, and how far the pull has eased in toward the standoff. */
-	let sightAngle = 0;
-	let sightRadius = 0;
+	/** How far the chase camera has pulled in toward the car, and the side it swung to see it. */
+	let sight: Sight = createSight(CHASE_DISTANCE);
+	/** The place the chase camera heads for, which the sight settles each frame. */
+	const aim: Flight = { x: 0, y: 0, z: 0, yaw: 0, speed: 0, climb: 0, turning: 0 };
 
 	const flight: Flight = { x: 0, y: 0, z: 0, yaw: 0, speed: 0, climb: 0, turning: 0 };
-	/** The car and camera where a look-ahead puts them, to test the line before a turn reaches it. */
-	const probeCar: Flight = { x: 0, y: 0, z: 0, yaw: 0, speed: 0, climb: 0, turning: 0 };
-	const probeEye: Flight = { x: 0, y: 0, z: 0, yaw: 0, speed: 0, climb: 0, turning: 0 };
-	/** The yaw the last frame showed, so the camera reads how fast the car turns. */
-	let sightYaw = 0;
 	const stick: Stick = { throttle: 0, steer: 0, lift: 0 };
 	/** The on-screen pad's wishes, which a touch screen drives with. */
 	const pad: Stick = { throttle: 0, steer: 0, lift: 0 };
@@ -487,7 +451,7 @@ export function createHero(
 		const sx = Math.sin(yaw);
 		const sz = Math.cos(yaw);
 		vec3.set(
-			sight,
+			seatSight,
 			(seat[0] as number) + sx * CHASE.ahead,
 			seat[1] as number,
 			(seat[2] as number) + sz * CHASE.ahead,
@@ -501,188 +465,43 @@ export function createHero(
 		);
 		camera.setPosition(path[0] as number, path[1] as number, path[2] as number);
 		camera.lookAt(
-			(toward[0] as number) + ((sight[0] as number) - (toward[0] as number)) * e,
-			(toward[1] as number) + ((sight[1] as number) - (toward[1] as number)) * e,
-			(toward[2] as number) + ((sight[2] as number) - (toward[2] as number)) * e,
+			(toward[0] as number) + ((seatSight[0] as number) - (toward[0] as number)) * e,
+			(toward[1] as number) + ((seatSight[1] as number) - (toward[1] as number)) * e,
+			(toward[2] as number) + ((seatSight[2] as number) - (toward[2] as number)) * e,
 		);
-	};
-
-	/** How much of the usual chase look remains at `away` meters from the car. */
-	const closenessAt = (away: number): number =>
-		math.clamp((away - SIGHT_CLOSE) / Math.max(CHASE_DISTANCE - SIGHT_CLOSE, 1e-3), 0, 1);
-
-	/** Keeps a placed camera at the standoff from the car, where the towers leave room. */
-	const clampStandoff = (eye: Flight): void => {
-		const dx = eye.x - (at[0] as number);
-		const dy = eye.y - (at[1] as number);
-		const dz = eye.z - (at[2] as number);
-		const away = Math.hypot(dx, dy, dz);
-		if (away < SIGHT_MIN && away > 1e-3) {
-			const out = SIGHT_MIN / away;
-			eye.x = (at[0] as number) + dx * out;
-			eye.y = (at[1] as number) + dy * out;
-			eye.z = (at[2] as number) + dz * out;
-		}
-	};
-
-	/**
-	 * Places the camera before the nearest tower that stands between it and the car, no closer to
-	 * the car than the standoff. A tower that leaves no room straight back makes the camera swing to
-	 * the nearer side that still sees the car; the swing eases onto that side, and the camera holds
-	 * it while the tower stays, so a still car gets a still shot. The closer it sits, the lower it
-	 * looks from.
-	 */
-	const settleSight = (dt: number): void => {
-		const atX = at[0] as number;
-		const atY = at[1] as number;
-		const atZ = at[2] as number;
-		const tilt = CHASE_TILT + orbit.tilt;
-		const around = yaw + Math.PI + orbit.turn;
-		const level = Math.cos(tilt) * orbit.distance;
-		// The pull releases when the usual chase place behind the car clears. Checking the camera
-		// itself would end the pull as soon as the swing puts it in front of the tower, and the swing
-		// would start over every frame.
-		probeEye.x = atX + Math.sin(around) * level;
-		probeEye.y = atY + Math.sin(tilt) * orbit.distance;
-		probeEye.z = atZ + Math.cos(around) * level;
-		if (!clearSight(atX, atY, atZ, probeEye, towers, SIGHT_CLEARANCE)) {
-			sightSide = 0;
-			sightSideReach = 0;
-			return;
-		}
-		if (sightSide === 0) {
-			const entryX = probeEye.x;
-			const entryY = probeEye.y;
-			const entryZ = probeEye.z;
-			const entry = Math.hypot(entryX - atX, entryY - atY, entryZ - atZ);
-			const reach = Math.max(entry, SIGHT_MIN);
-			const low = atY + SIGHT_LOW + (CHASE.above - SIGHT_LOW) * closenessAt(reach);
-			const back = Math.atan2(chase.x - atX, chase.z - atZ);
-			for (let step = 0; step <= SIGHT_SWING && sightSide === 0; step += SIGHT_STEP) {
-				for (const way of step === 0 ? [1] : [1, -1]) {
-					const swing = back + way * step;
-					probeEye.x = atX + Math.sin(swing) * reach;
-					probeEye.y = low;
-					probeEye.z = atZ + Math.cos(swing) * reach;
-					keepOut(probeEye, towers);
-					if (!clearSight(atX, atY, atZ, probeEye, towers, SIGHT_CLEARANCE)) {
-						sightSide = swing - around;
-						sightSideReach = reach;
-						sightAngle = swing;
-						sightRadius = Math.hypot(chase.x - atX, chase.y - atY, chase.z - atZ);
-						break;
-					}
-				}
-			}
-			// No side sees the car: keep the camera as far from the tower as the line allows.
-			if (sightSide === 0) {
-				chase.x = entryX;
-				chase.y = entryY;
-				chase.z = entryZ;
-				keepOut(chase, towers);
-				return;
-			}
-		}
-		// The tower's shadow spans the angles between the usual place and the clear side, so easing
-		// the angle across it would put the camera close to the car, or behind the tower. The camera
-		// takes the clear side at once and eases its distance toward that side's reach, which is the
-		// usual chase distance whenever a tower is in the way; the ten-metre standoff is a floor the
-		// tower's push meets, not an eased target.
-		const low = atY + SIGHT_LOW + (CHASE.above - SIGHT_LOW) * closenessAt(sightSideReach);
-		const target = around + sightSide;
-		sightAngle = target;
-		sightRadius += (sightSideReach - sightRadius) * (1 - Math.exp(-SIGHT_RADIUS_EASE * dt));
-		probeEye.x = atX + Math.sin(sightAngle) * sightRadius;
-		probeEye.y = low;
-		probeEye.z = atZ + Math.cos(sightAngle) * sightRadius;
-		keepOut(probeEye, towers);
-		// A side that the car's turn blocks as well is given up: the camera takes the tower's entry
-		// for this frame and chooses a new side on the next one, rather than holding a hidden car.
-		if (clearSight(atX, atY, atZ, probeEye, towers, SIGHT_CLEARANCE)) {
-			sightSide = 0;
-			sightSideReach = 0;
-		}
-		// The tower may have pushed the placed point toward the car, so the standoff runs once more.
-		// The keep-out runs last: where a tower and the floor disagree, the tower wins and the
-		// distance gives, so the camera never ends up inside a wall.
-		clampStandoff(probeEye);
-		chase.x = probeEye.x;
-		chase.y = probeEye.y;
-		chase.z = probeEye.z;
-		keepOut(chase, towers);
 	};
 
 	/**
 	 * Puts the camera behind the car, or where a drag turned it round the car, easing after it. It
-	 * looks down the car's way from behind, and at the car itself once a drag turns it away.
+	 * pulls in along the user's view when a tower would hide the car, and swings round to a side
+	 * only when no distance sees it. It looks down the car's way from behind, and at the car itself
+	 * once a drag turns it away.
 	 */
-	const follow = (dt: number, snap: boolean): void => {
+	const follow = (dt: number): void => {
 		const sx = Math.sin(yaw);
 		const sz = Math.cos(yaw);
-		const k = snap ? 1 : 1 - Math.exp(-CHASE_FOLLOW * dt);
-		const turnRate = math.clamp((yaw - sightYaw) / Math.max(dt, 1e-4), -FLIGHT.turn, FLIGHT.turn);
-		sightYaw = yaw;
-		const around = yaw + Math.PI + orbit.turn;
-		const tilt = CHASE_TILT + orbit.tilt;
-		const level = Math.cos(tilt) * orbit.distance;
-		chase.x += ((at[0] as number) + Math.sin(around) * level - chase.x) * k;
-		chase.y += ((at[1] as number) + Math.sin(tilt) * orbit.distance - chase.y) * k;
-		chase.z += ((at[2] as number) + Math.cos(around) * level - chase.z) * k;
+		const k = 1 - Math.exp(-CHASE_FOLLOW * dt);
+		const closeness = settleSight(
+			sight,
+			at[0] as number,
+			at[1] as number,
+			at[2] as number,
+			yaw + Math.PI + orbit.turn,
+			CHASE_TILT + orbit.tilt,
+			orbit.distance,
+			CHASE_DISTANCE,
+			towers,
+			dt,
+			aim,
+		);
+		chase.x += (aim.x - chase.x) * k;
+		chase.y += (aim.y - chase.y) * k;
+		chase.z += (aim.z - chase.z) * k;
 		// The camera never sits inside a tower, though the car may hug one.
 		keepOut(chase, towers);
-		// A tower between the car and the camera would hide the car. The camera moves before the
-		// nearest one, stands no closer than its standoff, and swings to a side when the tower
-		// leaves no room behind the car.
-		settleSight(dt);
-		// A turn can bring a tower across the line in a single frame, so the pull above would snap
-		// the camera in. Look a short way along the car's path and, while the line still clears,
-		// close on the car at a limited rate, so the pull starts before the tower arrives.
-		if (speed > 0.5) {
-			probeCar.x = (at[0] as number) + Math.sin(yaw) * speed * SIGHT_LOOK;
-			probeCar.y = at[1] as number;
-			probeCar.z = (at[2] as number) + Math.cos(yaw) * speed * SIGHT_LOOK;
-			const future = yaw + turnRate * SIGHT_LOOK + Math.PI + orbit.turn;
-			probeEye.x = probeCar.x + Math.sin(future) * level;
-			probeEye.y = probeCar.y + Math.sin(tilt) * orbit.distance;
-			probeEye.z = probeCar.z + Math.cos(future) * level;
-			if (clearSight(probeCar.x, probeCar.y, probeCar.z, probeEye, towers, SIGHT_CLEARANCE)) {
-				const dx = chase.x - (at[0] as number);
-				const dy = chase.y - (at[1] as number);
-				const dz = chase.z - (at[2] as number);
-				const away = Math.hypot(dx, dy, dz);
-				const target = Math.max(
-					SIGHT_MIN,
-					Math.hypot(
-						probeEye.x - (at[0] as number),
-						probeEye.y - (at[1] as number),
-						probeEye.z - (at[2] as number),
-					),
-				);
-				const reached = Math.max(target, away - SIGHT_PULL * dt);
-				if (reached < away) {
-					const share = reached / away;
-					chase.x = (at[0] as number) + dx * share;
-					chase.y = (at[1] as number) + dy * share;
-					chase.z = (at[2] as number) + dz * share;
-					keepOut(chase, towers);
-				}
-			}
-		}
 		// The look lies ahead of the car while the camera sits at its usual distance, and only a
 		// little past the car once the camera has pulled in, so the road ahead stays in the frame
-		// while the car fills no more of it than a chase view allows. The camera sits lower as it
-		// closes, and both the height and the look ease with the distance, so neither jumps.
-		const away = Math.hypot(
-			chase.x - (at[0] as number),
-			chase.y - (at[1] as number),
-			chase.z - (at[2] as number),
-		);
-		// While the pull holds, the look stays just past the car and the camera low, whatever its
-		// easing distance, so the car stays framed as the pull closes. Once the pull releases, the
-		// look and height ease back to the usual chase down the road.
-		const closeness = sightSide !== 0 ? 0 : closenessAt(away);
-		if (closeness < 1)
-			chase.y = (at[1] as number) + SIGHT_LOW + (CHASE.above - SIGHT_LOW) * closeness;
+		// while the car fills no more of it than a chase view allows.
 		const lead =
 			(SIGHT_LEAD + (CHASE.ahead - SIGHT_LEAD) * closeness) *
 			math.clamp(1 - (Math.abs(orbit.turn) + Math.abs(orbit.tilt)) / 0.6, 0, 1);
@@ -768,7 +587,9 @@ export function createHero(
 			flight.yaw = yaw;
 			flight.speed = speed;
 			flight.climb = 0;
-			sightYaw = yaw;
+			// The sight starts at rest, so a tower the first frame crosses asks for a fresh pull
+			// rather than one that the last spell at the wheel left half-eased.
+			sight = createSight(orbit.distance);
 			// The chase camera starts at the Auto camera's place and eases behind the car.
 			camera.getPosition(eye);
 			chase.x = eye[0] as number;
@@ -791,7 +612,7 @@ export function createHero(
 			pose();
 			steerCamera(dt);
 			travel(dt);
-			follow(dt, false);
+			follow(dt);
 			place();
 			focus[0] = at[0] as number;
 			focus[1] = at[1] as number;
