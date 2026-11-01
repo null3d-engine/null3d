@@ -3736,8 +3736,11 @@ export class Materials {
 		// The shaders that let light through, decals' and those of a clear coat and a sheen,
 		// load on first use: the download starts with the material, before any object draws
 		// with it.
-		if (features & MATERIAL_FEATURE_TRANSMISSION) this.shaders.need('transmission');
-		else if (features & MATERIAL_FEATURE_TRANSLUCENCY) this.shaders.need('translucency');
+		if (features & MATERIAL_FEATURE_TRANSMISSION) {
+			this.shaders.need('transmission');
+			// The frame copies the opaque color for the surfaces that let light through to read.
+			this.shaders.need('color_copy');
+		} else if (features & MATERIAL_FEATURE_TRANSLUCENCY) this.shaders.need('translucency');
 		if (features & MATERIAL_FEATURE_COAT_SHEEN) this.shaders.need('coat_sheen');
 		// So do the builds of the weighted layer.
 		if (options.alphaMode === 'blend' && options.blending === 'weighted')
