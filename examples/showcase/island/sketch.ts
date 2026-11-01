@@ -64,17 +64,17 @@ export const BOUNDS: Omit<CameraBounds, 'ground'> = {
 export const SHOTS: readonly Shot[] = [
 	// The opening view holds only briefly, so the camera starts moving soon after the page loads.
 	{ position: [600, 280, 540], target: [40, 80, -40], seconds: 0.8, move: 'hold' },
-	{ position: [600, 280, 540], target: [40, 80, -40], seconds: 4 },
+	{ position: [600, 280, 540], target: [40, 80, -40], seconds: 8 },
 	{ position: [420, 220, 560], target: [150, 40, 150], seconds: 11 },
-	{ position: [150, 55, 520], target: [-60, 30, 230], seconds: 10 },
-	{ position: [-70, 30, 410], target: [-92, 30, 200], seconds: 9 },
+	{ position: [150, 55, 520], target: [-60, 30, 230], seconds: 12 },
+	{ position: [-70, 30, 410], target: [-92, 30, 200], seconds: 11 },
 	{ position: [-130, 70, 330], target: [-92, 36, 190], seconds: 9 },
-	{ position: [-110, 165, 60], target: [-110, 150, -220], seconds: 11 },
+	{ position: [-110, 165, 60], target: [-110, 150, -220], seconds: 12 },
 	{ position: [-30, 270, -190], target: [-118, 195, -375], seconds: 11 },
-	{ position: [90, 250, -250], target: [255, 170, -350], seconds: 8 },
-	{ position: [330, 185, -220], target: [430, 60, -60], seconds: 7 },
-	{ position: [560, 130, -20], target: [430, 45, -70], seconds: 7 },
-	{ position: [680, 240, 300], target: [200, 70, -40], seconds: 8 },
+	{ position: [90, 250, -250], target: [255, 170, -350], seconds: 9 },
+	{ position: [330, 185, -220], target: [430, 60, -60], seconds: 9 },
+	{ position: [560, 130, -20], target: [430, 45, -70], seconds: 9 },
+	{ position: [680, 240, 300], target: [200, 70, -40], seconds: 9 },
 ];
 
 const params = new URL(import.meta.url).searchParams;
