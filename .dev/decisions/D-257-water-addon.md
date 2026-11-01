@@ -229,7 +229,8 @@ every frame: with the pass carrying its cadence, the same page and the same draw
 second in all three states. So the figures below measure the recompile, not the transform, and a
 quarter of the pixels taking away 18 per cent of the cost fits a fixed per-frame cost.
 
-The switched page read these, with the first column as its on-and-off difference:
+The switched page read these, with the first column as its on-and-off difference.
+**Every figure below measures the recompile, not the transform.**
 
 | Option | Difference | Frame | Rate |
 | --- | --- | --- | --- |
