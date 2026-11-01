@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import {
+	bandFields,
 	GRID,
 	heightAt,
 	type OceanBand,
@@ -104,6 +105,23 @@ describe('the spectrum', () => {
 		expect(signedIndex(3, 8)).toBe(3);
 		expect(signedIndex(4, 8)).toBe(-4);
 		expect(signedIndex(7, 8)).toBe(-1);
+	});
+});
+
+describe('the fields kept between reads', () => {
+	test('reads at one time share a transform, and a new time transforms again', () => {
+		const spectra = [spectrum(BAND, 8)];
+		let transforms = 0;
+		const counting: typeof waveField = (data, t, band, n = 8, out = new Float32Array(n * n)) => {
+			transforms++;
+			return waveField(data, t, band, n, out);
+		};
+		const fieldOf = bandFields(spectra, [{ tile: BAND.tile }], 8, counting);
+		const first = fieldOf(0, 3);
+		expect(fieldOf(0, 3)).toBe(first);
+		expect(transforms).toBe(1);
+		fieldOf(0, 4);
+		expect(transforms).toBe(2);
 	});
 });
 
