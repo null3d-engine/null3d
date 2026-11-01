@@ -21,6 +21,13 @@ import { shadowStep } from './showcase-effects';
 /** How many points of the loop the checks sample, finely enough for the spline's bends. */
 const SAMPLES = 2000;
 
+/** The most acceleration of a route, in meters per second squared. A step at a join reads in the hundreds. */
+const MOST_ACCELERATION = 20;
+/** The most that the camera's speed changes between two frames at 60 frames a second, in meters a second. */
+const MOST_SPEED_STEP = MOST_ACCELERATION / 60;
+/** The most that the turning rate changes in a second, in degrees per second. */
+const MOST_TURN_CHANGE = 60;
+
 /** Each scene's route, its camera's bounds and the ground under them: an island has no mountains. */
 const creekRing = mountainRing(creekLand.mountainSettings(160, 32));
 const SCENES = [
@@ -52,6 +59,40 @@ for (const { name, ground, sketch } of SCENES) {
 				target: [pose[3], pose[4], pose[5]] as number[],
 			};
 		};
+
+		it('changes its speed and its turning smoothly, with no step at a join between shots', () => {
+			const dt = 1 / 60;
+			const frames = Math.round(route.total / dt);
+			const speeds: number[] = [];
+			const turns: number[] = [];
+			const aim = (p: Float32Array) => {
+				const d = [p[3]! - p[0]!, p[4]! - p[1]!, p[5]! - p[2]!];
+				const size = Math.hypot(d[0]!, d[1]!, d[2]!);
+				return d.map((v) => v / size);
+			};
+			routePosition(route, 0, pose);
+			let [place, facing] = [[pose[0]!, pose[1]!, pose[2]!], aim(pose)];
+			for (let k = 1; k <= frames; k++) {
+				routePosition(route, k * dt, pose);
+				const here = [pose[0]!, pose[1]!, pose[2]!];
+				const looks = aim(pose);
+				speeds.push(
+					Math.hypot(here[0]! - place[0]!, here[1]! - place[1]!, here[2]! - place[2]!) / dt,
+				);
+				const cosine = looks[0]! * facing[0]! + looks[1]! * facing[1]! + looks[2]! * facing[2]!;
+				turns.push((Math.acos(Math.min(1, cosine)) * (180 / Math.PI)) / dt);
+				[place, facing] = [here, looks];
+			}
+			for (let k = 1; k < speeds.length; k++) {
+				const at = `at ${(k * dt).toFixed(2)} s`;
+				expect(Math.abs(speeds[k]! - speeds[k - 1]!), `the speed steps ${at}`).toBeLessThan(
+					MOST_SPEED_STEP,
+				);
+				expect(Math.abs(turns[k]! - turns[k - 1]!) / dt, `the turning steps ${at}`).toBeLessThan(
+					MOST_TURN_CHANGE,
+				);
+			}
+		});
 
 		it('stays inside the Manual camera’s bounds, so a takeover never moves the camera', () => {
 			for (let step = 0; step <= SAMPLES; step++) {

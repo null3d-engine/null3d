@@ -131,6 +131,13 @@ export interface Route {
 	readonly steps: readonly number[];
 	/** The spline's parameter at each shot, plus the loop's own end. */
 	readonly knots: readonly number[];
+	/**
+	 * For each shot, how far along its stretch of the spline's parameter it has traveled, as an even
+	 * table of its share of the stretch's distance.
+	 */
+	readonly distances: readonly Float32Array[];
+	/** The rate that each shot starts and ends at, as a share of the stretch per its average rate. */
+	readonly ease: readonly (readonly [number, number])[];
 }
 
 /**
@@ -164,7 +171,25 @@ export function routeTimeline(shots: readonly Shot[]): Route {
 	}
 	const knots: number[] = [0];
 	for (let i = 0; i < shots.length; i++) knots.push((knots[i] as number) + (steps[i] as number));
-	return { shots, starts, lengths, total, steps, knots };
+	const timed = { shots, starts, lengths, total, steps, knots };
+	const distances = shots.map((shot, index) => stretchDistances(timed, index, shot));
+	// Each stretch's average rate, and the rate that it shares with the next at their join: their mean,
+	// held near the slower of the two so that the slower stretch keeps its pace. A hold's rate of zero
+	// brings the stretches on either side of it to a stop.
+	const rates = distances.map(
+		(table, index) => (table[DISTANCE_STEPS] as number) / (lengths[index] as number),
+	);
+	const count = shots.length;
+	const joins = rates.map((rate, index) => {
+		const next = rates[(index + 1) % count] as number;
+		return Math.min((rate + next) / 2, JOIN_SHARE * Math.min(rate, next));
+	});
+	const ease = rates.map((rate, index): readonly [number, number] => {
+		if (rate <= 0) return [0, 0];
+		const before = joins[(index + count - 1) % count] as number;
+		return [before / rate, (joins[index] as number) / rate];
+	});
+	return { shots, starts, lengths, total, steps, knots, distances, ease };
 }
 
 /**
@@ -193,7 +218,12 @@ export function routePosition(route: Route, phase: number, out: Float32Array): v
 	const then = (index + 2) % count;
 	const t0 = t1 - (steps[before] as number);
 	const t3 = t2 + (steps[after] as number);
-	const t = shot.move === 'hold' ? t1 : t1 + along * (t2 - t1);
+	const [start, end] = route.ease[index] as readonly [number, number];
+	const t =
+		shot.move === 'hold'
+			? t1
+			: t1 +
+				parameterAt(route.distances[index] as Float32Array, eased(along, start, end)) * (t2 - t1);
 	const first = shots[before] as Shot;
 	const second = shots[after] as Shot;
 	const third = shots[then] as Shot;
@@ -416,6 +446,91 @@ function catmullRom(
 	const b2 = ((t3 - t) * a2 + (t - t1) * a3) / (t3 - t1);
 	return ((t2 - t) * b1 + (t - t1) * b2) / (t2 - t1);
 }
+/** The even steps of a shot's table of distance along its stretch of the spline. */
+const DISTANCE_STEPS = 512;
+/** How many times its own average rate the slower of two stretches may reach at their join. */
+const JOIN_SHARE = 1.5;
+/** How much a meter that the camera's aim travels counts against a meter that the camera travels. */
+const AIM_SHARE = 0.25;
+
+/**
+ * The distance that a shot travels along its stretch of the spline, at even steps of the spline's
+ * parameter, from 0: the camera's own and a share of its aim's, so a shot that only turns still
+ * travels. A shot that holds travels nothing.
+ */
+function stretchDistances(route: Omit<Route, 'distances' | 'ease'>, index: number, shot: Shot) {
+	const table = new Float32Array(DISTANCE_STEPS + 1);
+	if (shot.move === 'hold') return table;
+	const { shots, steps, knots } = route;
+	const count = shots.length;
+	const [t1, t2] = [knots[index] as number, knots[index + 1] as number];
+	const [first, second, third] = [
+		shots[(index + count - 1) % count] as Shot,
+		shots[(index + 1) % count] as Shot,
+		shots[(index + 2) % count] as Shot,
+	];
+	const [t0, t3] = [
+		t1 - (steps[(index + count - 1) % count] as number),
+		t2 + (steps[(index + 1) % count] as number),
+	];
+	const sample = (u: number, c: number, pick: 'position' | 'target') =>
+		catmullRom(
+			first[pick][c] as number,
+			shot[pick][c] as number,
+			second[pick][c] as number,
+			third[pick][c] as number,
+			t0,
+			t1,
+			t2,
+			t3,
+			u,
+		);
+	for (let k = 1; k <= DISTANCE_STEPS; k++) {
+		const [a, b] = [
+			t1 + ((k - 1) / DISTANCE_STEPS) * (t2 - t1),
+			t1 + (k / DISTANCE_STEPS) * (t2 - t1),
+		];
+		let moved = 0;
+		let aimed = 0;
+		for (let c = 0; c < 3; c++) {
+			moved += (sample(b, c, 'position') - sample(a, c, 'position')) ** 2;
+			aimed += (sample(b, c, 'target') - sample(a, c, 'target')) ** 2;
+		}
+		table[k] = (table[k - 1] as number) + Math.sqrt(moved) + AIM_SHARE * Math.sqrt(aimed);
+	}
+	return table;
+}
+
+/**
+ * The share of a shot's distance traveled at the share `x` of its time, when it starts and ends at
+ * `start` and `end` times its average rate: a quintic whose rate takes those values at its ends and
+ * whose rate of change is zero there, so two shots meet with the same speed and no step in their
+ * acceleration. The rate stays above zero for ends of up to twice the average.
+ */
+function eased(x: number, start: number, end: number): number {
+	const [x2, x3, x4] = [x * x, x * x * x, x * x * x * x];
+	// The rate of the ends' blend is `rise`'s, whose own integral is `held`.
+	const rise = x3 * (10 - 15 * x + 6 * x2);
+	const held = x4 * (2.5 - 3 * x + x2);
+	return start * (x - held) + end * held + (1 - (start + end) / 2) * rise;
+}
+
+/** The share of a stretch's parameter at the share `traveled` of its distance. */
+function parameterAt(table: Float32Array, traveled: number): number {
+	const whole = table[DISTANCE_STEPS] as number;
+	if (whole <= 0) return traveled;
+	const wanted = traveled * whole;
+	let low = 0;
+	let high = DISTANCE_STEPS;
+	while (high - low > 1) {
+		const mid = (low + high) >> 1;
+		if ((table[mid] as number) <= wanted) low = mid;
+		else high = mid;
+	}
+	const [a, b] = [table[low] as number, table[high] as number];
+	return (low + (b > a ? (wanted - a) / (b - a) : 0)) / DISTANCE_STEPS;
+}
+
 /** Seconds to glide from the user's camera onto the route, after a switch back to Auto. */
 const GLIDE = 1.5;
 /** How finely the nearest point of the route is searched, in samples around the loop. */
