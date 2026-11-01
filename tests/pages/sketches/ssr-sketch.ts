@@ -32,6 +32,9 @@ fn surface(input: SurfaceInput) -> Surface {
 `;
 
 export default defineSketch(({ scene, materials, geometry, post, quality, render, textures }) => {
+	// The bounce light reads each pixel's color as if a surface sends it every way, and a mirror's color
+	// holds only what it shows this view. These pictures hold the reflection alone.
+	quality.set({ bounceRays: 0 });
 	if (params.has('ssr')) {
 		quality.set({ ssrScale: params.get('ssrscale') === '0.25' ? 0.25 : 0.5, ssrSteps: 64 });
 		post.set({ ssr: { maxDistance: 30, thickness: 0.6 } });

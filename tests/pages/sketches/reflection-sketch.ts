@@ -73,6 +73,9 @@ fn surface(input: SurfaceInput) -> Surface {
 `;
 
 export default defineSketch(({ scene, materials, geometry, textures, render, quality }) => {
+	// The bounce light reads each pixel's color as if a surface sends it every way, and a mirror's color
+	// holds only what it shows this view. These pictures hold the reflection alone.
+	quality.set({ bounceRays: 0 });
 	if (params.has('half'))
 		quality.set({ minRenderScale: 0.5, maxRenderScale: 0.5, governor: false });
 	const lamps = params.has('lamps');

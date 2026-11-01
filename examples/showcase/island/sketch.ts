@@ -108,6 +108,10 @@ export default defineSketch(async (ctx) => {
 	const opening = SHOTS[0]?.target ?? [0, 25, 0];
 	const target: [number, number, number] = [opening[0], opening[1], opening[2]];
 
+	// The analytic sky that Low would draw matches the physical sky only in its mean light over the whole
+	// sphere, so away from the sun it reads far darker and deeper in hue. The island's sky fills half of many
+	// views, so it keeps the physical sky on every preset.
+	ctx.quality.set({ physicalSky: true });
 	const land = createLand(ctx);
 	const sea = createSea(ctx);
 	createTown(ctx);
