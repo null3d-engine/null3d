@@ -342,7 +342,14 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
   time of each thread, the GPU time per frame and per pass, the draw calls, the triangles, the
   uploads, and the bytes that the page downloaded. On WebGL2 most phones offer no timer queries, so
   the GPU times are absent there and only the frame rate answers.
-- Run it on the cloud devices with
+- The `skyway-cost` plan leaves one part of the scene out per page, all on WebGL2 at the Low preset
+  with the same pinning: the base, then the traffic, the rain, the screen reflections, ambient
+  occlusion, the towers and the street lamps in turn. A page repeats the base page there, so the
+  session shows how much of a later page's figure its own warming explains. Its last page draws the
+  whole scene on WebGPU, so a device with both paths says what its default one draws when warm. A
+  device's figures move a lot between sessions, and only a difference from a repeated base page
+  says what a part costs.
+- Run them on the cloud devices with
   `bun run devices:cloud --plan skyway --only bsipadpro13-safari,bsgalaxys24-chrome`, or on the Mac
   with `bun tests/real-browsers.ts --plan skyway "Google Chrome"`.
 
