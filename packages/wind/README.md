@@ -58,8 +58,8 @@ gone.
 
 A reader samples it with one texture read at each vertex. The shader build resolves only the
 engine's library, so a reader's WGSL holds copies of two blocks: the steady field and the sampling
-function. They are in `shaders/field.wgsl` and on the `api/wind` docs page. A test keeps those two
-copies equal to the page's own copy.
+function. They are in `shaders/field.wgsl` and on the `api/wind` docs page. A test keeps every copy
+equal to the one in the package.
 
 `sample(x, y, z, out)` gives the analytic air on the CPU: the field that the solver pulls toward,
 with the pushes and the gust it injects. The solved air is on the GPU.
@@ -73,7 +73,8 @@ with the pushes and the gust it injects. The solved air is on the GPU.
 - A device without float render targets keeps no grid. There `field.size` is zero, so a reader
   works the air out from the steady field and a plant still moves.
 - A place outside the box reads the steady field at its own place, at the height that the texture
-  holds. So the air carries on past the box, instead of holding the box's edge.
+  holds. So the air carries on past the box, instead of holding the box's edge. A page's pushes and
+  a gust that the page sends turn the air inside the box only.
 
 `@null3d/wind` owns the wind. A scene makes its air with it, not with a hand-written field of its
 own, so there is one wind for every reader.
