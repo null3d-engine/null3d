@@ -194,8 +194,12 @@ least repeatable the check has.
 
 **The rule.** The check runs twice on a machine that has drawn nothing for ten minutes, and the two
 runs must agree on the medium rows before any verdict is read from either. A high row may not fail a
-range until the high rows are steadier than they are, whether by more rounds, a pinned clock
-state, or a cheaper scene. Until then a high-preset failure is a note, not a verdict.
+range until the high rows are steadier than they are, whether by a pinned clock state or a
+cheaper and shorter scene. More rounds is not a remedy and was measured against: at six rounds
+the same builds read 27.6 to 28.4 ms on s4 high and 49.8 to 57.3 ms on s6 high, eight times
+the figures an hour earlier, because a longer run spends longer in whatever state the machine
+drifts into. The medium rows stayed steady through that run, which is why the rule leans on
+them. Until then a high-preset failure is a note, not a verdict.
 
 **What to write down beside each run.** The baseline's own four figures before the ratios, the load
 average at the start and the end, whether a browser was drawing, and the phases' spread. A reader who
