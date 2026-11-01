@@ -149,6 +149,10 @@ pub struct ViewTarget {
     pub wait: u32,
     /// True when the view's turn comes in this frame.
     pub due: bool,
+    /// True once the view has drawn.
+    pub drawn: bool,
+    /// True in the frame after its texture was made anew, once the view has drawn.
+    pub emptied: bool,
     /// The size of its texture when it last moved its turns on: a texture of a new size holds no
     /// image, so the view draws into it at once.
     pub made: (u32, u32),
@@ -175,6 +179,8 @@ impl Default for ViewTarget {
             every: 1,
             wait: 0,
             due: true,
+            drawn: false,
+            emptied: false,
             made: (0, 0),
             shown: false,
             reads: 0,
@@ -213,9 +219,10 @@ impl CanvasRect {
 }
 
 impl ViewTarget {
-    /// True when the view draws in this frame: it is switched on, and its turn has come.
+    /// True when the view draws in this frame: it is switched on and its turn has come, or it has
+    /// drawn before and its texture has just been made anew, which holds nothing to show.
     pub fn draws(&self) -> bool {
-        self.enabled && self.due
+        (self.enabled && self.due) || self.emptied
     }
 
     /// Moves the view's turns on to the next frame, in which its texture has the size `made`: a
@@ -224,6 +231,8 @@ impl ViewTarget {
     pub(crate) fn pace(&mut self, made: (u32, u32)) {
         let remade = made != self.made;
         self.made = made;
+        self.drawn |= self.draws();
+        self.emptied = remade && self.drawn;
         self.due = remade || self.wait == 0;
         self.wait = if self.due {
             self.every.max(1) - 1
@@ -706,6 +715,32 @@ impl ViewFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_resting_view_draws_into_a_texture_of_a_new_size_once_it_has_drawn() {
+        let mut target = ViewTarget::default();
+        target.pace((64, 32));
+        assert!(target.draws());
+        target.enabled = false;
+        target.pace((64, 32));
+        assert!(!target.draws(), "it rests while its texture stays");
+        target.pace((32, 16));
+        assert!(
+            target.draws(),
+            "the new texture holds nothing, so it draws once"
+        );
+        target.pace((32, 16));
+        assert!(!target.draws(), "then it rests again");
+
+        // A view that has never drawn stays off, whatever size its texture takes.
+        let mut unused = ViewTarget {
+            enabled: false,
+            ..ViewTarget::default()
+        };
+        unused.pace((64, 32));
+        unused.pace((32, 16));
+        assert!(!unused.draws());
+    }
 
     #[test]
     fn a_view_that_draws_once_in_three_frames_draws_first_then_waits_two_frames() {
