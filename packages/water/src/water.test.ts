@@ -94,3 +94,31 @@ describe('the water’s waves', () => {
 		expect(waveHeight(1, 2, 1, 0, still, 1)).not.toBeCloseTo(waveHeight(1, 2, 0, 0, still, 1), 3);
 	});
 });
+
+describe('the water’s wind', () => {
+	/** The block between the field markers in a shader. */
+	const block = (source: string, name: string) => {
+		const from = `// <${name}>`;
+		const to = `// </${name}>`;
+		return source.slice(source.indexOf(from), source.indexOf(to));
+	};
+
+	it('reads the field with the wind add-on’s own sampling function', () => {
+		// The water takes a plain texture and its box, so it imports no code from the wind add-on.
+		// This test holds its copy of the sampling function equal to the add-on's own.
+		const field = readFileSync(
+			join(import.meta.dirname, '..', '..', 'wind', 'shaders', 'field.wgsl'),
+			'utf8',
+		);
+		for (const name of ['wind-steady', 'wind-sample']) {
+			expect(block(read('water.wgsl'), name).length).toBeGreaterThan(0);
+			expect(block(read('water.wgsl'), name)).toBe(block(field, name));
+		}
+	});
+
+	it('reads the air only for a surface that names a field', () => {
+		const shader = read('water.wgsl');
+		expect(shader).toContain('material.windStrength > 0.0');
+		expect(shader).toContain('wind_sample(');
+	});
+});

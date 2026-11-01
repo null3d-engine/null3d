@@ -247,7 +247,13 @@ describe('the plant shaders', () => {
 		for (const name of ['wind-steady', 'wind-sample']) {
 			const plant = block(read('./plant.wgsl'), name);
 			expect(plant.length).toBeGreaterThan(0);
-			expect(block(read('./grass.wgsl'), name)).toBe(plant);
+			for (const file of [
+				'./grass.wgsl',
+				'./floating-leaves.wgsl',
+				'./floating-leaves-state.wgsl',
+				'./floating-leaves-state.fallback.wgsl',
+			])
+				expect(block(read(file), name)).toBe(plant);
 		}
 	});
 });

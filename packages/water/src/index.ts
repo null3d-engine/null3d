@@ -24,5 +24,5 @@ export type {
 export { waterBody } from './shape';
 export type { Underwater, UnderwaterOptions } from './underwater';
 export { createUnderwater } from './underwater';
-export type { FoamMap, Water, WaterMaterialOptions, WaterOptions } from './water';
+export type { FoamMap, Water, WaterMaterialOptions, WaterOptions, WaterWind } from './water';
 export { createWater, waveHeight } from './water';

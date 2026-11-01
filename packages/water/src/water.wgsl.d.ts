@@ -12,7 +12,10 @@ declare const shader: CompiledMaterial<
 		readonly junctionOrigin: 'vec2f';
 		readonly junctionSize: 'vec2f';
 		readonly bedFromShape: 'f32';
+		readonly windBox: 'f32';
+		readonly windStrength: 'f32';
+		readonly windLayer: 'f32';
 	},
-	'mirror' | 'foamMap' | 'junctionMap'
+	'mirror' | 'foamMap' | 'junctionMap' | 'wind' | 'airSettings'
 >;
 export default shader;
