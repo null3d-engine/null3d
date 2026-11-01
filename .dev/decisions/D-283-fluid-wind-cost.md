@@ -693,3 +693,13 @@ grid's edge and a device without float targets need.
 
 M3-V14 asked for the readers that have a slot free. They are the water surface, the flag, the grass
 and the leaves. The plant material keeps none.
+
+### Creek and the forest at the ceilings
+
+The `vegetation` plan ran on the iPad on the same branch, in
+[its vegetation run](../tested-devices/ipad-pro-13-safari/20261101-080738-vegetation.md). The forest
+holds Low on all three paths. It misses Medium and above by 9 to 19 per cent. Creek misses its
+WebGL2 ceilings by a factor of nine at Low and ten at Medium. The field's own pass is below that
+device's WebGL2 timer floor at these shapes, so the cost is in the readers or the frame's other
+work, not the field's pass. The iPad's rows ask the open ruling's question too: whether a preset's
+ceiling includes the wind's share.
