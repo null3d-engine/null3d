@@ -1423,9 +1423,10 @@ fn narrowed(mut output: Output, again: &Output, names: &[&str]) -> Output {
     output
 }
 
-/// Fails unless the build writes a module of every kind: the main module, the features module, a
-/// device module, a shared-paragraph table, a whole-shader first-use module and a combined loader
-/// table. The check keeps the determinism comparison covering each kind when the manifest changes.
+/// Fails unless the build writes a module of every kind: the main module, the features module, the
+/// permutations module, a device module, a shared-paragraph table, a whole-shader first-use module
+/// and a combined loader table. The check keeps the determinism comparison covering each kind when
+/// the manifest changes.
 fn every_module_kind(modules: &BTreeMap<String, String>) -> Result<(), String> {
     let names: Vec<&str> = modules
         .keys()
