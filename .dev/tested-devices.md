@@ -169,10 +169,12 @@ The run: [20261024-111020-vegetation](tested-devices/galaxy-tab-a9-plus-sm-x216b
 `vkQueueSubmit failed with VK_ERROR_DEVICE_LOST`. The page forced a mode that the device does not
 offer, and no adapter was left to start another.
 
-Three pages passed, three were skipped, and one failed. The device offers no compatibility adapter,
-so the plan skipped its compatibility pages, and it skipped them only after that first one had run.
-It has no High or Ultra row at any path, because those presets draw on core WebGPU only, and the
-tablet offers no WebGPU adapter.
+Three pages passed, three were skipped, and one failed. At that run the device offered no
+compatibility adapter, so the plan skipped its compatibility pages, and it skipped them only after
+that first one had run. It has no High or Ultra row at any path, because those presets draw on core
+WebGPU only, and at that run the tablet offered no WebGPU adapter. A later run reports a WebGPU
+adapter and plays every path, so the fault no longer repeated
+([run](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-030741-wind-field-cost.md)).
 The page then reported 3 frames in 5.5 s, so the runner counted a pass with no triangles and no
 texture bytes. Its figures are in no table here and must not be read. The device's own fault is in
 [Driver bug reports](driver-bugs.md).

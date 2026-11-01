@@ -1,7 +1,9 @@
 // A grove of generated oaks in the scene's one wind field: the leaf and bark materials sway, the
 // leaves flutter, and the sun's shadows follow them. Two held times show the trees move, and
 // ?motion draws the motion view, whose pixels carry the sway's motion. ?still holds the air, for a
-// reference picture. ?sway=<metres> sets how far from the camera the plants move, ?far places every
+// reference picture. ?field=analytic reads the steady field everywhere instead of the grid, as a
+// device without a float target does, so a cost run can set the two readers side by side.
+// ?sway=<metres> sets how far from the camera the plants move, ?far places every
 // row past the near shadow cascades, which the shadow redraw count reads, and ?autumn=<0 to 1>
 // turns their leaves.
 import { defineSketch } from '@null3d/engine';
@@ -30,6 +32,8 @@ const AUTUMN = Math.min(1, Math.max(0, Number(params.get('autumn') ?? 0)));
 const SWAY = params.has('sway') ? Math.max(0, Number(params.get('sway'))) : undefined;
 /** True to place every row past the near shadow cascades, where only the far cascades reach them. */
 const FAR = params.has('far');
+/** True to read the steady field everywhere, as a device without a grid does, instead of the grid. */
+const ANALYTIC = params.get('field') === 'analytic';
 /** The scene's seed, which the plants' shapes and their tints come from. */
 const SEED = 12;
 const VARIANTS = 4;
@@ -78,7 +82,7 @@ export default defineSketch((ctx) => {
 	scene.setActiveCamera(camera);
 	const wind = createWind(ctx, {
 		camera,
-		box: 128,
+		box: ANALYTIC ? 0 : 128,
 		grid: 64,
 		air: STILL ? { speed: 0, gustStrength: 0, swirl: 0 } : {},
 	});
