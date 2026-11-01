@@ -63,7 +63,15 @@ import {
 	TWIN_GAP,
 	tightest,
 } from './routes';
-import { MOORINGS, MOST_RETAINING, parasolSpots, retainingRuns, stoneWalls } from './town';
+import {
+	HULL_WATER,
+	hullDepth,
+	MOORINGS,
+	MOST_RETAINING,
+	parasolSpots,
+	retainingRuns,
+	stoneWalls,
+} from './town';
 
 /** Two turning grades: the road's own, with 3% for the rounding of its height, and on the ground. */
 const GRADE_SLACK = 1.03;
@@ -83,6 +91,8 @@ const FEWEST_CIRCLE_METERS = 40;
 const FEWEST_ON_CIRCLE = 3;
 /** The meters that a road may run beside another close by, counted away from their junction. */
 const MOST_BESIDE = 15;
+/** The meters around a junction that the side-by-side test leaves to the junction tests. */
+const JOINT_SKIP = 15;
 /** The largest share of country houses that may stand on the through roads. */
 const MOST_ON_THROUGH = 0.3;
 /** How far a drive strip may lie under its ground or over it, in meters. */
@@ -149,9 +159,9 @@ const MOST_TIGHT = 300;
 const SHORTEST_WALL_RUN = 18;
 const WALL_REACH = 14;
 /** The least water under a boat, in meters. */
-const BOAT_WATER = 1.5;
+const BOAT_WATER = 5;
 /** The most sand under a house's plot, and how far a stair's first step stands from its road's edge, in meters. */
-const MOST_SAND = 0.3;
+const MOST_SAND = 0.1;
 const STAIR_FROM_ROAD = 0.5;
 /** The most that a wall's top may stand off the ground just behind it, in meters. */
 const WALL_TOP_OFF = 0.8;
@@ -289,7 +299,7 @@ describe('the road network', () => {
 				if (!other || d >= TWIN_GAP) continue;
 				// Close to the junction of two roads that meet there, the meeting is the junction test's.
 				const joined = [...joints(road), ...joints(other)].some(
-					(e) => hypot(e.x - p.x, e.z - p.z) < TWIN_GAP * 1.3,
+					(e) => hypot(e.x - p.x, e.z - p.z) < JOINT_SKIP,
 				);
 				if (joined) continue;
 				const [a, b] = [
@@ -789,6 +799,10 @@ describe('what the search does not lay', () => {
 		);
 		expect(bad.length, failures(bad)).toBe(0);
 		expect(MOORINGS.length).toBeGreaterThan(20);
+		const aground = MOORINGS.flatMap(([x, z, yaw]) =>
+			hullDepth(x, z, yaw) < HULL_WATER ? [`${x | 0},${z | 0}`] : [],
+		);
+		expect(aground.length, failures(aground)).toBe(0);
 	});
 
 	it('ends every road in a junction, a loop or a turning circle', () => {
@@ -1248,7 +1262,7 @@ describe('the plan of land, roads and houses', () => {
 				return r > 11 && r < radius * 0.8;
 			});
 			// At least one tree in each patch of about this many square meters.
-			expect(trees.length).toBeGreaterThan((Math.PI * (radius * 0.8) ** 2) / 90);
+			expect(trees.length).toBeGreaterThan((Math.PI * (radius * 0.8) ** 2) / 50);
 		}
 	});
 
