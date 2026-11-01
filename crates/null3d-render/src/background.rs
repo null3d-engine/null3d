@@ -344,8 +344,9 @@ pub(crate) struct BackgroundIds {
     pub cloud_group: u32,
 }
 
-/// The index at which the texture background binds the texture's group, after the frame's group.
-const TEXTURE_GROUP: u32 = 1;
+/// The index at which the texture background binds the background's own values, after the frame's
+/// group, as every background binds them. The texture's group follows.
+const BACKGROUND_GROUP: u32 = 1;
 
 /// Where the background draws in the camera's opaque pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -808,8 +809,8 @@ impl BackgroundPass {
         bind_frame_group(list, frame_group, offsets)?;
         match draw.shape {
             Shape::Texture { group, layer } => {
-                list.push(Op::SetBindGroup, &[TEXTURE_GROUP, group, 0])?;
-                list.push(Op::SetBindGroup, &[TEXTURE_GROUP + 1, self.ids.group, 0])?;
+                list.push(Op::SetBindGroup, &[BACKGROUND_GROUP, self.ids.group, 0])?;
+                list.push(Op::SetBindGroup, &[BACKGROUND_GROUP + 1, group, 0])?;
                 list.push(Op::Draw, &[3, 1, layer * 3, 0])?;
             }
             Shape::Box => {
