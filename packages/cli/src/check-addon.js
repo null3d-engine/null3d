@@ -1512,9 +1512,6 @@ export async function run(args) {
 				runner = await startRunner({
 					production: true,
 					sourcemap: true,
-					// The engine's shader builds come from the shared shader set as files, so the page's
-					// build passes none of their bytes through the bundler.
-					linkedShaders: true,
 					browserArgs: [WEBGPU_DEVELOPER_FEATURES, `--remote-debugging-port=${port}`],
 				});
 				print(await strictPolicyGate(runner, chosen.page));
