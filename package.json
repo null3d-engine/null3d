@@ -53,6 +53,7 @@
 		"parity": "bun bench/parity.ts",
 		"bench:run": "bun bench/run.ts",
 		"bench:gpu-check": "bun bench/gpu-check.ts",
+		"bench:gpu-passes": "bun bench/gpu-passes.ts",
 		"bench:allocation": "bun bench/allocation.ts",
 		"bench:profile": "bun bench/profile.ts",
 		"bench:startup": "bun bench/startup.ts",
