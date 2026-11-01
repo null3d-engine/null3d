@@ -1832,6 +1832,30 @@ export function vegetationWindPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * The wind field's cost on a device, at the two flat grids that the Low tier would take: the chain
+ * of the same work per step, at the 15 and 30 field steps a second that a preset names, with eight
+ * pressure steps. A phone on WebGL2 has no GPU timer, so the page's frame interval and busiest
+ * thread carry its rows.
+ */
+export function windFieldCostPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const shape of ['flat-32', 'flat-64'])
+		for (const [path, tier] of VEGETATION_WIND_PATHS)
+			items.push(
+				pageItem(
+					`wind-field-${shape}-${path}`,
+					'wind-field-cost',
+					{ kind: 'probe', tier },
+					{
+						switches: [`gpu=${path}`, `shape=${shape}`, 'points=1,8', 'seconds=2', 'rounds=3'],
+						timeoutSeconds: 600,
+					},
+				),
+			);
+	return items;
+}
+
+/**
  * The GPU paths of the terrain plan's pages, and the presets that each one draws. WebGL2 and
  * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
  * under another name.
@@ -2646,6 +2670,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
 	'vegetation-wind': vegetationWindPlan,
+	'wind-field-cost': windFieldCostPlan,
 	'vegetation-grass': vegetationGrassPlan,
 	terrain: terrainPlan,
 	'terrain-shadow': terrainShadowPlan,
