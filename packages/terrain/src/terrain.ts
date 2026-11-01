@@ -62,6 +62,11 @@ export interface TerrainOptions {
 	 */
 	bakedNormals?: boolean;
 	/**
+	 * True maps the third layer, the rock, from the sides on a steep face, where a map laid from above
+	 * stretches into streaks. It costs two more samples of that map. The default is false.
+	 */
+	steepFaces?: boolean;
+	/**
 	 * How far the skirt around each block hangs down, in meters. The default is four of the block's
 	 * cells, which closes the seam against a neighbour up to a level or two coarser.
 	 */
@@ -289,6 +294,7 @@ export class Terrain {
 			size,
 			metalness: options.metalness,
 			normals: this.normalTexture,
+			steepFaces: options.steepFaces,
 			scale: 0,
 			quads: chunkQuads,
 		});

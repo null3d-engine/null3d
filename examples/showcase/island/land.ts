@@ -141,7 +141,7 @@ export function createLand(ctx: SketchContext): Terrain {
 		layers: [
 			// The dark floor under trees.
 			{
-				map: groundMap(ctx, size, [58, 62, 32], [30, 36, 18], 8),
+				map: groundMap(ctx, size, [112, 98, 60], [72, 62, 38], 8),
 				tile: 4,
 				heightFrom: 'alpha',
 				contrast: 0.25,
@@ -176,5 +176,6 @@ export function createLand(ctx: SketchContext): Terrain {
 		error: GROUND_ERROR[ctx.quality.preset],
 		// The blocks' own normals light the ground: a map of them bands on the gentlest slopes.
 		bakedNormals: false,
+		steepFaces: true,
 	});
 }
