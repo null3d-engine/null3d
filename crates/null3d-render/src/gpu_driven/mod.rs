@@ -3520,7 +3520,6 @@ impl GpuDrivenRenderer {
                 &read,
                 texture,
                 ids::PASS_READ_BUFFERS + read.ring,
-                false,
                 size,
             )?;
         }

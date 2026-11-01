@@ -2875,8 +2875,9 @@ impl CpuCulledRenderer {
             )?;
             self.settings.take_pick();
         }
-        // A read of a compute pass's region copies it once the pass's runs have finished. WebGL2's
-        // target stores its first row at the image's bottom edge.
+        // A read of a compute pass's region copies it once the pass's runs have finished. The
+        // target stores its texels in the order that the compute form numbers them, the fragment
+        // form included, so a copy of a region starts at the region's own row.
         if let Some(mut read) = self.settings.take_pass_read()
             && let Some((texture, size)) = self.graph.read_target(read.view as usize)
         {
@@ -2888,7 +2889,6 @@ impl CpuCulledRenderer {
                 &read,
                 texture,
                 ids::PASS_READ_BUFFERS + read.ring,
-                true,
                 size,
             )?;
         }
