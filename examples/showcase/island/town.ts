@@ -961,41 +961,9 @@ function createHouses(ctx: SketchContext, surfaces: Surfaces): void {
 	});
 }
 
-/** The shrubs, one batch with a color for each, and the climbing flowers on some of the plots' walls. */
-function createShrubs(ctx: SketchContext): void {
+/** The climbing flowers on some of the plots' walls. */
+function createClimbers(ctx: SketchContext): void {
 	const { scene, geometry, materials } = ctx;
-	const shrubMesh = geometry.fromArrays(finish(shrub()));
-	shrubMesh.setLevels([
-		{ mesh: geometry.fromArrays(finish(shrub(26))), error: 0.03 },
-		{ mesh: geometry.fromArrays(finish(shrub(8))), error: 0.12 },
-	]);
-	const set = scene.createInstances(shrubMesh, SHRUBS.length, {
-		material: materials.standard({ vertexColors: true, roughness: 0.95, doubleSided: true }),
-		colors: true,
-		castShadows: true,
-		receiveShadows: true,
-	});
-	const next = random(173);
-	const greens = [
-		[0.11, 0.2, 0.06, 1],
-		[0.15, 0.23, 0.08, 1],
-		[0.08, 0.15, 0.06, 1],
-		[0.2, 0.25, 0.12, 1],
-		[0.26, 0.28, 0.17, 1],
-	];
-	SHRUBS.forEach((spot, k) => {
-		row(
-			set,
-			k,
-			spot.x,
-			spot.y,
-			spot.z,
-			next() * 6.3,
-			greens[Math.floor(next() * greens.length)],
-			spot.scale,
-		);
-	});
-	set.markDirty();
 	// Bougainvillea climbs in magenta sheets on the sunny fronts of some of the houses.
 	const climbers = LOTS.filter((_, k) => k % 3 === 0);
 	const mesh = build();
@@ -2027,7 +1995,7 @@ export function createTown(ctx: SketchContext): void {
 		castShadows: true,
 	});
 	createHouses(ctx, surfaces);
-	createShrubs(ctx);
+	createClimbers(ctx);
 	createSquare(ctx, surfaces);
 	createHarbour(ctx, surfaces);
 	createBeach(ctx);

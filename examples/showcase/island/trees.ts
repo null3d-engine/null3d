@@ -36,6 +36,7 @@ import {
 	FILL_SPOTS,
 	OAK,
 	OLIVE,
+	SHRUBS,
 	standing,
 	TREE_SPOTS,
 	type TreeSpot,
@@ -63,6 +64,9 @@ const LEVEL_ERRORS = [0, 0.03, 0.065];
 /** The wind field's box around the camera, in meters, and the cells across it. */
 const WIND_BOX = 160;
 const WIND_GRID = 64;
+
+/** The error that each level of a shrub switches at, from the base level on: past 25 and 70 meters at 1080p. */
+const SHRUB_LEVEL_ERRORS = [0, 0.02, 0.055];
 
 /** How far the far canopy draws, in meters: past the whole island from any view. */
 const FILL_REACH = 6000;
@@ -309,6 +313,66 @@ function stand(
 	return swaying;
 }
 
+/** Stands the plan's shrubs, grown by the add-on, in one batch for each part, moving in the wind. */
+function standShrubs(
+	ctx: SketchContext,
+	atlases: ReturnType<typeof bakePlantAtlases>,
+	wind: Wind,
+): PlantMaterial[] {
+	const { scene, geometry } = ctx;
+	const species = grow('shrub', 'island-shrub', {
+		height: 1.5,
+		trunks: 6,
+		crown: { shape: 'spherical', start: 0.05, spread: 0.75, pull: 0.02 },
+		seedSalt: 859,
+	});
+	const asset = generatePlant(species, { seed: 23, levels: 3 });
+	const field = plantWind(ctx, asset, wind.field, {
+		swayDistance: swayDistanceFor(ctx.quality.preset),
+	});
+	const spots = standing(SHRUBS, TREE_SHARE[ctx.quality.preset]);
+	return (['wood', 'leaves'] as const).flatMap((name) => {
+		const levels = asset.levels.flatMap((level, k) => {
+			const part = level.parts.find((p) => p.name === name);
+			return part
+				? [{ mesh: geometry.fromArrays(part.arrays), error: SHRUB_LEVEL_ERRORS[k] ?? level.error }]
+				: [];
+		});
+		const [base, ...coarser] = levels;
+		if (!base) return [];
+		if (coarser.length > 0) base.mesh.setLevels(coarser);
+		const material = plantMaterial(
+			ctx,
+			name === 'wood'
+				? { atlases, part: 'wood', color: species.color.bark, wind: field }
+				: {
+						atlases,
+						part: 'leaves',
+						cell: leafCellFor(species),
+						color: species.color.leaf,
+						transmission: species.color.transmission,
+						wind: field,
+					},
+		);
+		const batch = scene.createInstances(base.mesh, spots.length, {
+			material,
+			values: true,
+			castShadows: true,
+			receiveShadows: true,
+		});
+		const turn = quat.create();
+		spots.forEach((spot, k) => {
+			batch.positions.set([spot.x, spot.y, spot.z], k * 3);
+			quat.fromEuler(turn, 0, Math.imul(k + 1, 2654435761) / 683565275, 0);
+			batch.rotations.set(turn, k * 4);
+			batch.scales.set([spot.scale, spot.scale, spot.scale], k * 3);
+			batch.values?.set(treeValues(spot.x, spot.z, 23, 0), k * 4);
+		});
+		batch.markDirty();
+		return [material];
+	});
+}
+
 /** Grows the island's trees for the preset, and returns the call that moves them in the wind. */
 export function createTrees(ctx: SketchContext, camera: Camera): { update(): void } {
 	const preset = ctx.quality.preset;
@@ -327,6 +391,7 @@ export function createTrees(ctx: SketchContext, camera: Camera): { update(): voi
 			wind,
 		),
 	);
+	swaying.push(...standShrubs(ctx, atlases, wind));
 	ctx.quality.onChange(() => {
 		const distance = swayDistanceFor(ctx.quality.preset);
 		for (const material of swaying) material.setUniform('swayDistance', distance);
