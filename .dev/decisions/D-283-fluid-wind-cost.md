@@ -535,3 +535,6 @@ record's recommendation holds for the figure and the budget, not for the governo
   `wind-cards-later` and the four vegetation wind tests pass as 21 tests on the Mac's GPU and 21 on
   the software GPU. The change therefore moves no picture past its limit, and no reference is
   redrawn.
+- The GPU check over the branch's own commits reads S4 and S6 at Medium and High as the same, each
+  inside its noise. The scenes do not use the wind add-on, so this is the check that the add-on
+  leaves the engine's drawing alone.
