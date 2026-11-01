@@ -100,6 +100,12 @@ export interface WaterOptions {
 	/** The meters of the gap to the bed over which the water fades at a shore. It is 0.12 by default. */
 	readonly softness?: number;
 	/**
+	 * The share of the water's color, from 0 to 1, that reads the whole way the view runs through the
+	 * water, as a wide sea's does: a low view then shows no sharp outline of the bed in the distance.
+	 * At 0, the default, it reads the water's depth alone, as a clear stream seen from above does.
+	 */
+	readonly colorAlongView?: number;
+	/**
 	 * The frames between two draws of the reflection at each preset, which replaces the add-on's
 	 * own cadence for the presets that it names. The frame-budget governor may still double it while
 	 * frames take too long. It is 2 on Low and Medium and 1 on High and Ultra.
@@ -329,6 +335,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 		uniforms: {
 			ripple: options.ripple ?? RIPPLE,
 			softness: options.softness ?? SOFTNESS,
+			viewPath: options.colorAlongView ?? 0,
 			caustics: [0, 0, 0],
 			foamOrigin: [foamOrigin[0], foamOrigin[1]],
 			foamSize: [foamSize[0], foamSize[1]],
