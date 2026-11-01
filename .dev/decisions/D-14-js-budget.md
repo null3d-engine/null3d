@@ -57,6 +57,15 @@ Shader text compresses far better than code, so the JavaScript files' proportion
 - gzip, 320 KB. Browsers download over HTTPS with Brotli wherever the host offers it, so the Brotli limit binds. Only a host without Brotli sends gzip, and a feature's file loads only on that feature's first use.
 - Uncompressed, 1,792 KB. The coat and sheen family's largest file fills it, since that family's code rides over a hundred builds ([D-215](D-215-iridescence-and-anisotropy.md)). That file, `js/shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-draw-index-tone-map-half.js`, measures 1,788.5 KB at commits `4a3eceaea` and `c7f0868e6`, 99.8% of the figure, and five of its siblings are past 97%. A line in the lit shader repeats once for each build that the file holds. So a few lines that a branch counts at one to three kilobytes cost the file about 13 KB, and take it past its budget.
 
+**The owner raised this figure's ceiling for the leak-free probe volume, in writing.** The tightest first-use file stood at 58,477 of the 59,392 bytes the Brotli figure
+allows, so 915 bytes remained, and the milestone's last lighting feature needs more than that. The
+owner ruled that the ceiling may rise rather than that the feature ships as a set of variants. The
+figure itself is set when the feature's own file exists, against its measured size, so that this
+record carries a number and not a wish. What the raise buys is that the feature reaches every
+device that draws it; what it costs is the same, since a first-use file loads only on the pages
+that use it. The paragraph above, which said a later feature is a decision about which variants
+the family emits rather than another raise, is superseded for this case by the owner's ruling.
+
 The owner raised the uncompressed figure for two files by 16,384 bytes, in writing: `js/shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-draw-index-tone-map-half.js` and its twin with no draw index, `js/shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-tone-map-half.js`. The directional lights' task (M3-K9) lets a surface take up to four directional lights. The loop that fills them repeats in every build that a file holds, so the generated GLSL of these two files passes the standard figure, while their gzip and Brotli figures stay inside theirs. The raise covers these two files alone, and every other first-use shader file keeps 1,792 KB uncompressed. `FIRST_USE_SHADER_RAW_RAISE` in `tools/lib/size-report.ts` holds the two figures.
 
 A texture that a sketch gives a light costs no first-use shader file: the frame copies it into the light's image with the mip shader's scale pipeline, which loads with the device's shaders.
