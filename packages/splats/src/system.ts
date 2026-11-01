@@ -457,7 +457,10 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 		selectorChunks = slots.length;
 		// The core's chunk table grows with the cloud, so a file's later chunks take their places.
 		writer.reserve(selectorChunks);
-		selector = selectorChunks > 0 ? new SplatSelector(slots) : undefined;
+		const previous = selector;
+		// The worker keeps the previous selector's arrays for this one while they hold the chunks.
+		selector = selectorChunks > 0 ? new SplatSelector(slots, previous?.id) : undefined;
+		if (!selector) previous?.drop();
 		// A new selector has counts of its own, and the draw keeps the last set until the worker
 		// answers for this one.
 		lastCounts = new Float32Array(selectorChunks);
@@ -556,6 +559,7 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 		destroy() {
 			stop = true;
 			loader?.abort();
+			selector?.drop();
 			writer.destroy();
 			host.destroy();
 			draw.destroy();
