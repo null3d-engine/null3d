@@ -9,6 +9,7 @@ import {
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	rmSync,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -143,38 +144,32 @@ describe('linkFailure', () => {
 	});
 });
 
-/**
- * A shader set's folder and a build folder on two devices, when this machine has a second one, so
- * that a hard link between them fails with the cross-volume error. `/dev/shm` is a second device on
- * Linux; a machine without one cannot build the case, and the check that uses this skips.
- *
- * @returns {{ source: string, out: string } | undefined}
- */
-function acrossVolumes() {
-	if (!existsSync('/dev/shm')) return undefined;
-	const source = mkdtempSync(join('/dev/shm', 'null3d-shader-files-'));
-	const out = mkdtempSync(join(tmpdir(), 'null3d-shader-files-'));
-	writeFileSync(join(source, 'shaders-wgsl.js'), 'export {};\n');
-	try {
-		linkSync(join(source, 'shaders-wgsl.js'), join(out, 'probe.js'));
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === 'EXDEV') return { source, out };
-	}
-	return undefined;
-}
-
-const crossVolume = acrossVolumes();
-
 describe('a link across two volumes', () => {
-	test.skipIf(crossVolume === undefined)(
+	// `/dev/shm` is a second device on Linux, which is where the check runs. A platform that cannot
+	// build the case skips; Linux must build it, so a runner without a second device fails here
+	// rather than passing without the proof.
+	test.skipIf(process.platform !== 'linux')(
 		'refuses at first, then copies the set when the environment forces it',
 		() => {
-			if (crossVolume === undefined) return;
-			const { source, out } = crossVolume;
-			const stamps = new Map([[source, 'a1b2c3d4']]);
-			const named = new Set([join(source, 'shaders-wgsl.js')]);
+			/** The two folders, so that both are removed even when one of them never appears. */
+			let source = '';
+			let out = '';
 			const before = process.env[FORCE_COPY_ENV];
 			try {
+				source = mkdtempSync(join('/dev/shm', 'null3d-shader-files-'));
+				out = mkdtempSync(join(tmpdir(), 'null3d-shader-files-'));
+				writeFileSync(join(source, 'shaders-wgsl.js'), 'export {};\n');
+				/** The error's code, or undefined when the link crossed no volume. */
+				let code: string | undefined;
+				try {
+					linkSync(join(source, 'shaders-wgsl.js'), join(out, 'probe.js'));
+				} catch (error) {
+					code = (error as NodeJS.ErrnoException).code;
+				}
+				expect(code).toBe('EXDEV');
+
+				const stamps = new Map([[source, 'a1b2c3d4']]);
+				const named = new Set([join(source, 'shaders-wgsl.js')]);
 				delete process.env[FORCE_COPY_ENV];
 				expect(() => linkShaderFiles([source], ['assets'], out, named, stamps)).toThrow(
 					FORCE_COPY_ENV,
@@ -185,6 +180,8 @@ describe('a link across two volumes', () => {
 			} finally {
 				if (before === undefined) delete process.env[FORCE_COPY_ENV];
 				else process.env[FORCE_COPY_ENV] = before;
+				if (source !== '') rmSync(source, { recursive: true, force: true });
+				if (out !== '') rmSync(out, { recursive: true, force: true });
 			}
 		},
 	);
