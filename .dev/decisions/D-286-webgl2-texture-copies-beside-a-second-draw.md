@@ -37,13 +37,23 @@ seconds after a warm-up. Each row is one page.
 | The branch at Medium with the wind grid's pass | 683 ms | 3 | 4.3 MB |
 | The branch at Medium with `grid: 0` | 33.3 ms | 105 | 96 KB |
 
-The render worker's replay phase holds the time: 667 ms of a 667 ms frame at Creek's Low preset, on
-the pass that carries the fragment form. The GPU timer reads 20 to 30 ms through all of it, so the
-time is not the drawing.
+The last column is the engine's `uploadBytes` counter, which adds buffer writes and texture uploads
+together. A temporary instrumentation of the WebGL2 backend split it on the same pages: the buffer
+writes were 87 to 150 KB a frame, and the rest were texture uploads of 2,048 by 2,048 texels, a BC7
+model texture, in canvas-sized regions. The column names textures by inference; the counter alone
+does not say what it moved.
 
-The uploads are compressed model textures: 2,048 by 2,048 texels, BC7, in canvas-sized pieces. The
-scene without the water uploads 87 KB a frame, and with it 2.2 MB. The forest draws no reflection,
-and its Low rows hold on every path.
+The time sits on the render worker: its replay phase holds 667 ms of a 667 ms frame at Creek's Low
+preset, on the pass that carries the fragment form. The sketch thread is idle beside it, and the GPU
+timer reads 20 to 30 ms through the whole frame, so the drawing is not the cost.
+
+The upload figure alone does not name the fault. The Galaxy Tab A9 Plus's head run builds no wind
+field and still uploads 2.19 MB a frame at Creek's Low preset
+([its record](../tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-091901-vegetation.md)),
+and its frame is 1,487 ms, this scene's own miss on that device. What separates the two is the frame
+beside the second draw: 633 ms here, where the same scene without the reflection reads 16.7 ms, and
+the upload falls from 2.2 MB to 87 KB with it. The forest draws no reflection, and its Low rows hold
+on every path.
 
 The branch's own workaround is in `examples/showcase/creek/sketch.ts` and
 `examples/showcase/creek/air.ts`: on the WebGL2 tier the leaves ride the offset form and the field
