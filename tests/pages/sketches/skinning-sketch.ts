@@ -127,6 +127,8 @@ fn surface(input: SurfaceInput) -> Surface {
 `;
 
 export default defineSketch(({ scene, materials, geometry, post, textures, page, quality }) => {
+	// The bounce light's noise differs between the GPU paths, and this picture holds the skin alone on both.
+	quality.set({ bounceRays: 0 });
 	if (STILL) quality.set({ minRenderScale: 1, maxRenderScale: 1, governor: false });
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	if (OUTLINE) post.set({ outline: OUTLINE_SETTINGS.plain });
