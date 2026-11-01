@@ -1625,16 +1625,19 @@ export function coreUrls(build: Build): CoreFiles {
 export type LoadedGlue = Partial<CoreGlue> & { readonly coreSources?: string };
 
 /**
- * E1402 when a generated module does not belong with this code: when `sources`, the stamp of the
- * Rust sources that a dev server gives, differs from the stamp that the build wrote in, or when
- * the module lacks a function that the engine calls.
+ * E1402 when a generated module does not belong with this code: when `sources`, the stamps of the
+ * Rust sources that a dev server gives, holds none of the module's stamp, or when the module lacks
+ * a function that the engine calls.
  */
 export function glueMismatch(
 	build: Build,
 	glue: LoadedGlue,
-	sources: string | undefined,
+	sources: readonly string[] | undefined,
 ): EngineError | undefined {
-	if (sources !== undefined && glue.coreSources !== sources)
+	if (
+		sources !== undefined &&
+		(glue.coreSources === undefined || !sources.includes(glue.coreSources))
+	)
 		return new EngineError(
 			'E1402',
 			`the ${build} engine core was built from other Rust sources than this checkout holds.`,
