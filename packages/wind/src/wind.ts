@@ -58,8 +58,8 @@ export interface WindField {
 	readonly origin: [number, number];
 	/**
 	 * The box's width across the ground, in meters, or zero on a device that keeps no grid. A
-	 * reader that is given zero works out the air from `air` everywhere, which is the same field
-	 * the texture holds where a device can keep one.
+	 * reader that is given zero works out the air from `air` everywhere. That is the steady field
+	 * which the grid's edge and the far field hold where a device keeps one.
 	 */
 	readonly size: number;
 	/**
@@ -120,16 +120,13 @@ const PUSH = 2.5;
 
 /**
  * True when the device draws into a 16-bit float texture, which the grid needs. Every WebGPU path
- * does. A WebGL2 device without either extension keeps no grid, and its readers work the air out
- * from the steady field instead, so a plant still moves there.
+ * does. A WebGL2 device keeps the grid only when the engine's own probe drew into `rgba16f` and read
+ * the pixels back, which `hdr` reports. A device that advertises the extensions but fails that probe
+ * keeps no grid, and its readers work the air out from the steady field instead, so a plant still
+ * moves there.
  */
-export function holdsField(capabilities: Pick<EngineCapabilities, 'tier' | 'features'>): boolean {
-	const { tier, features } = capabilities;
-	return (
-		tier !== 'webgl2' ||
-		features.includes('EXT_color_buffer_float') ||
-		features.includes('EXT_color_buffer_half_float')
-	);
+export function holdsField(capabilities: Pick<EngineCapabilities, 'tier' | 'hdr'>): boolean {
+	return capabilities.tier !== 'webgl2' || capabilities.hdr;
 }
 
 /**

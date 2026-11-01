@@ -32,6 +32,8 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 		'with the first frame that draws a tree of cluster patches (`setMeshPatches`), which builds the pass that picks a tree of patches. A scene without a tree downloads none of it, and WebGL2 never builds that pass',
 	probe_grid: 'when the sketch first sets a light probe grid (`scene.setLightProbeGrid`)',
 	transmission: 'with the first material that lets light through (`transmission`)',
+	color_copy:
+		'with the first step that reads the color that the frame before showed: the first material that lets light through, screen-space reflections, or the bounce light that the preset draws from the start of the page',
 	translucency:
 		'with the first material that lets light through a thin surface (`diffuseTransmission`)',
 	bump: 'with the first material with a bump map',
