@@ -261,52 +261,86 @@ const LOOPING: readonly (readonly [string, (node: ts.Node) => boolean])[] = [
 	['a do', ts.isDoStatement],
 ];
 
+/** A file of the ask path, and the functions in it that a frame runs. */
+interface Scanned {
+	readonly file: string;
+	readonly names: readonly string[];
+}
+
+/** The functions that a frame runs, in each file of the ask path. */
+const FRAME_FILES: readonly Scanned[] = [
+	{ file: 'wind.ts', names: ['write', 'apply', 'turn', 'sample', 'read'] },
+	{ file: 'field.ts', names: ['ask', 'send', 'answered', 'refused', 'reportDrop'] },
+	{ file: 'field-layout.ts', names: ['fillRequest'] },
+];
+
+/** The same, with the buffer's growth, which a call may run when a page first asks for more places. */
+const LOOP_FILES: readonly Scanned[] = [
+	FRAME_FILES[0] as Scanned,
+	{ file: 'field.ts', names: ['ask', 'send', 'answered', 'refused', 'reportDrop', 'reserve'] },
+	FRAME_FILES[2] as Scanned,
+];
+
+/** The name of the function that a declaration or a declaration's arrow makes, if any. */
+function functionName(node: ts.Node): string | undefined {
+	if (
+		(ts.isFunctionDeclaration(node) ||
+			ts.isMethodDeclaration(node) ||
+			ts.isVariableDeclaration(node) ||
+			ts.isPropertyDeclaration(node)) &&
+		node.name !== undefined &&
+		ts.isIdentifier(node.name)
+	)
+		return node.name.text;
+	return undefined;
+}
+
+/** The body of a function that a declaration makes, if any. */
+function functionBody(node: ts.Node): ts.Node | undefined {
+	if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) return node.body;
+	if (ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node)) {
+		const init = node.initializer;
+		return init !== undefined && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))
+			? init.body
+			: undefined;
+	}
+	return undefined;
+}
+
 /**
- * The forms of `patterns`, anywhere in the functions of `wind.ts` that a frame calls. The functions
- * are the constants of `createWind`'s body, so the walk goes anywhere in the file.
+ * The forms of `patterns`, anywhere in the functions that `files` names. A function is a
+ * declaration, a method of a class or an object, or a constant given an arrow. A name that no file
+ * holds fails the test, so a renamed or removed function leaves no rule unchecked.
  */
-function formsIn(patterns: readonly (readonly [string, (node: ts.Node) => boolean])[]): string[] {
-	const source = readFileSync(new URL('./wind.ts', import.meta.url), 'utf8');
-	const file = ts.createSourceFile('wind.ts', source, ts.ScriptTarget.ESNext, true);
-	const wanted = new Set(['write', 'apply', 'turn', 'sample', 'read']);
+function formsIn(
+	files: readonly Scanned[],
+	patterns: readonly (readonly [string, (node: ts.Node) => boolean])[],
+): string[] {
 	const found: string[] = [];
-	const walk = (node: ts.Node, name: string): void => {
-		for (const [what, matches] of patterns)
-			if (matches(node)) found.push(`${name}: ${what} at ${node.getText(file).slice(0, 40)}`);
-		node.forEachChild((child) => walk(child, name));
-	};
-	const visit = (node: ts.Node): void => {
-		if (
-			ts.isVariableDeclaration(node) &&
-			ts.isIdentifier(node.name) &&
-			wanted.has(node.name.text)
-		) {
-			const name = node.name.text;
-			const init = node.initializer;
-			const body =
-				init !== undefined && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))
-					? init.body
-					: undefined;
-			expect(body, `${name} is a function`).toBeDefined();
-			if (body !== undefined) {
-				wanted.delete(name);
-				walk(body, name);
+	for (const { file, names } of files) {
+		const source = readFileSync(new URL(`./${file}`, import.meta.url), 'utf8');
+		const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.ESNext, true);
+		const wanted = new Set(names);
+		const walk = (node: ts.Node, name: string): void => {
+			for (const [what, matches] of patterns)
+				if (matches(node)) found.push(`${name}: ${what} at ${node.getText(parsed).slice(0, 40)}`);
+			node.forEachChild((child) => walk(child, name));
+		};
+		const visit = (node: ts.Node): void => {
+			const name = functionName(node);
+			if (name !== undefined && wanted.has(name)) {
+				const body = functionBody(node);
+				expect(body, `${file}: ${name} is a function`).toBeDefined();
+				if (body !== undefined) {
+					wanted.delete(name);
+					walk(body, `${file}: ${name}`);
+				}
 			}
-		}
-		// A call that the wind makes is a method of the object that `createWind` returns.
-		if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && wanted.has(node.name.text)) {
-			const name = node.name.text;
-			expect(node.body, `${name} is a function`).toBeDefined();
-			if (node.body !== undefined) {
-				wanted.delete(name);
-				walk(node.body, name);
-			}
-		}
-		node.forEachChild(visit);
-	};
-	visit(file);
-	// A renamed or removed function would otherwise leave its rule unchecked.
-	expect([...wanted]).toEqual([]);
+			node.forEachChild(visit);
+		};
+		visit(parsed);
+		expect([...wanted], `${file} holds every function that the rule names`).toEqual([]);
+	}
 	return found;
 }
 
@@ -316,12 +350,13 @@ describe('the functions that a frame calls', () => {
 		// place, a push writes its slot where the page sends it, and the read hands the request
 		// buffer to a job worker. The allocator makes each object these forms make, so the step
 		// keeps its own arrays and its own functions, made once in `createWind`.
-		expect(formsIn(ALLOCATING)).toEqual([]);
+		expect(formsIn(FRAME_FILES, ALLOCATING)).toEqual([]);
 	});
 
 	test('walk no count in TypeScript, which hard rule 42 puts in its WebAssembly', () => {
 		// The pass's values hold the ring where a push writes it, so a frame copies no slot, and the
-		// analytic field's own walk runs in the add-on's Rust, on the job workers.
-		expect(formsIn(LOOPING)).toEqual([]);
+		// analytic field's own walk runs in the add-on's Rust, on the job workers. The ask path has
+		// no loop either: the request is a set of typed-array writes and the task does the walk.
+		expect(formsIn(LOOP_FILES, LOOPING)).toEqual([]);
 	});
 });

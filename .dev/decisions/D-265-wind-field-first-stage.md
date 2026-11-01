@@ -231,7 +231,8 @@ fourth sat in the check that judges the wake.
   `sample` stays synchronous as the TypeScript mirror, which a
   test and a read outside a frame use; it is not on the add-on's frame path. `read` is the frame's
   ask: the walk over the pushes, the gust and the swirl's four noise evaluations for each place
-  runs in the module.
+  runs in the module. A source test walks every function of that path in `wind.ts`, `field.ts` and
+  `field-layout.ts`, and fails on a loop or on a form that makes an object.
   - **The paths.** On WebGPU and on WebGL2 the field's solve is the shader's, and a frame's ask
     runs in the job workers. A page with no job workers, as the single-threaded build has, gets one
     task worker from the engine's loader for its first task, which the engine's own test covers. A
@@ -250,7 +251,11 @@ fourth sat in the check that judges the wake.
     figures come from the WebAssembly path. `WIND_BUDGETS` names the places of that path: the
     request's writes, the task call, and S1's own step. The task's records are judged per call by
     the table that every task uses. The measured figures of the new places are owed to a
-    `bench:allocation --wind` run on each GPU path; CI runs the switch and judges them.
+    `bench:allocation --wind` run on each GPU path; CI runs the switch and judges them. A page
+    holds one ask on its way and one waiting: a third ask that arrives before either answer
+    replaces the waiting one, and the newest wins. The replaced ask's array keeps the numbers it
+    held, which the add-on reports once. A page that asks in every frame therefore never waits on
+    a queue, and a worker slower than a frame drops an ask rather than stall the page.
   - **The parity test.** `field.test.ts` runs the built module over places with pushes and a gust,
     and compares every velocity with the mirror's within a ten-thousandth of a meter a second, and
     the module's own tests hold the noise, the ground's profile, a push's fade and the answer's

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { Task } from '@null3d/engine';
 import {
@@ -267,5 +267,45 @@ describe('the read path through the task', () => {
 		const second = mirrorAt(settings, 2, [-7, 0.5, 9]);
 		for (let i = 0; i < 3; i++)
 			expect(Math.abs((secondAnswer[i] as number) - (second[i] as number))).toBeLessThan(1e-4);
+	});
+});
+
+describe('a third ask that overlaps', () => {
+	test('replaces the queued ask, says so once, and leaves that answer array alone', async () => {
+		const worker = deferringWorker(moduleOf());
+		const probes = new WindProbes(worker.send);
+		const settings = state();
+		const ring = new Float32Array(16);
+		const first = new Float32Array([1, 2, 3]);
+		const second = new Float32Array([-7, 0.5, 9]);
+		const third = new Float32Array([4, 0.25, -2]);
+		const firstAnswer = new Float32Array(3);
+		const secondAnswer = new Float32Array(3);
+		const thirdAnswer = new Float32Array(3);
+		const reported = spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			probes.ask(first, firstAnswer, createReading(settings), settings.pushRadius, 1, ring);
+			probes.ask(second, secondAnswer, createReading(settings), settings.pushRadius, 2, ring);
+			// The third lands while the first answer is on its way and a second ask already waits.
+			probes.ask(third, thirdAnswer, createReading(settings), settings.pushRadius, 3, ring);
+			expect(reported).toHaveBeenCalledTimes(1);
+			expect(String(reported.mock.calls[0]?.[0])).toContain('newest ask replaced it');
+			expect(worker.waiting).toBe(1);
+			worker.flush();
+			await Promise.resolve();
+			// The first answer is the first ask's air, and the queued ask went out with the third.
+			const wantFirst = mirrorAt(settings, 1, [1, 2, 3]);
+			for (let i = 0; i < 3; i++)
+				expect(Math.abs((firstAnswer[i] as number) - (wantFirst[i] as number))).toBeLessThan(1e-4);
+			worker.flush();
+			await Promise.resolve();
+			const wantThird = mirrorAt(settings, 3, [4, 0.25, -2]);
+			for (let i = 0; i < 3; i++)
+				expect(Math.abs((thirdAnswer[i] as number) - (wantThird[i] as number))).toBeLessThan(1e-4);
+			// The ask that the third replaced is dropped, and its array keeps what it held.
+			expect([...secondAnswer]).toEqual([0, 0, 0]);
+		} finally {
+			reported.mockRestore();
+		}
 	});
 });
