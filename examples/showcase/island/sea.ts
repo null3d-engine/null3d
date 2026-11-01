@@ -9,27 +9,29 @@ import { BAY, bayShoal, GROUND, SEA_LEVEL } from './island';
 import { groundHeight } from './plan';
 
 /** How far the sea reaches from the island's middle, in meters: past the horizon's haze. */
-export const SEA_REACH = 16000;
-/** How far the open sea past the water's edge runs, in meters. */
-const OPEN_SEA = 40000;
+export const SEA_REACH = 40000;
 /** The sides of the sea's outline. */
 const SIDES = 96;
 /** The meters between two lines of the sea's grid: the water is flat, and a fine grid has no use. */
-const CELL = 240;
+const CELL = 600;
 /** How far under the sea's level the deep's floor lies, and where the bed starts to fade into it, in meters. */
 const DEEP_FLOOR = 44;
 const DEEP_FROM = 25;
 /** The meters between the lines of the skin over the deep bed, and how far above the bed it lies. */
 const DEEP_CELL = 12;
 const DEEP_LIFT = 0.3;
+/** The meters of depth over which that skin thins in from nothing. */
+const SKIN_FADE = 9;
 /** The bed's colours where the fade starts, and the deep's, as linear values. */
 const BED_COLOR = [0.13, 0.12, 0.1] as const;
 const SAND_COLOR = [0.62, 0.48, 0.28] as const;
 const DEEP_COLOR = [0.03, 0.14, 0.34] as const;
 const DEEP_COLOR_HEX = '#30669f';
 /** How far out over the water the shore's foam reaches at most, and how far back on the sand it starts, in meters. */
-const FOAM_WIDTH = 18;
+const FOAM_WIDTH = 9;
 const FOAM_ON_SAND = 1.5;
+/** The meters of the shore's foam that one copy of its lace covers. */
+const FOAM_TILE = 11;
 
 /** The sea's one body. */
 const SEA: WaterShape = {
@@ -145,6 +147,7 @@ function surf() {
  */
 function deepBed() {
 	const positions: number[] = [];
+	const normals: number[] = [];
 	const colors: number[] = [];
 	const indices: number[] = [];
 	const side = Math.ceil(GROUND / DEEP_CELL);
@@ -157,6 +160,8 @@ function deepBed() {
 			depths[j * (side + 1) + i] = depth;
 			const t = smoothstep01(depth, DEEP_FROM, DEEP_FLOOR);
 			positions.push(x, SEA_LEVEL - Math.min(depth, DEEP_FLOOR) + DEEP_LIFT, z);
+			// It lights as the flat floor past it does, so its slope leaves no line where it meets that floor.
+			normals.push(0, 1, 0);
 			// The bay's shoal is pale sand and the rest is dark rock, so the skin starts in the colour of each.
 			const sandy = smoothstep01(bayShoal(x, z), 0.1, 0.6);
 			for (let c = 0; c < 3; c++) {
@@ -164,6 +169,8 @@ function deepBed() {
 					(BED_COLOR[c] as number) + ((SAND_COLOR[c] as number) - (BED_COLOR[c] as number)) * sandy;
 				colors.push(bed + ((DEEP_COLOR[c] as number) - bed) * t);
 			}
+			// The skin thins away toward its rim, so its square cells leave no edge on the bed.
+			colors.push(smoothstep01(depth, DEEP_FROM, DEEP_FROM + SKIN_FADE));
 		}
 	for (let j = 0; j < side; j++)
 		for (let i = 0; i < side; i++) {
@@ -177,7 +184,7 @@ function deepBed() {
 			);
 			if (deepest > DEEP_FROM) indices.push(a, c, b, b, c, d);
 		}
-	return { positions, colors, indices, computeNormals: true };
+	return { positions, normals, colors, indices };
 }
 
 /**
@@ -201,8 +208,8 @@ function shoreFoam() {
 			const f = w / across;
 			const r = BAY.radius + FOAM_ON_SAND - f * (reach + FOAM_ON_SAND);
 			positions.push(BAY.x + cx * r, SEA_LEVEL + 0.05, BAY.z + cz * r);
-			colors.push(1, 1, 1, ends * (1 - f * f));
-			uvs.push((a * BAY.radius) / 22, r / 22);
+			colors.push(1, 1, 1, ends * (1 - f) ** 1.5);
+			uvs.push((a * BAY.radius) / FOAM_TILE, r / FOAM_TILE);
 		}
 		if (k < steps)
 			for (let w = 0; w < across; w++) {
@@ -225,13 +232,23 @@ export function createSea(ctx: SketchContext): { update(): void } {
 	// clear water shows no rock or empty space in the deep, and no line where the fade ends.
 	ctx.scene.createMesh({
 		mesh: ctx.geometry.fromArrays(deepBed()),
-		material: ctx.materials.standard({ vertexColors: true, roughness: 0.9, metalness: 0 }),
+		material: ctx.materials.standard({
+			vertexColors: true,
+			roughness: 0.9,
+			metalness: 0,
+			alphaMode: 'hash',
+		}),
 		castShadows: false,
 		receiveShadows: false,
 	});
 	ctx.scene.createMesh({
 		mesh: ctx.geometry.fromArrays(openSea(0, SEA_REACH, DEEP_FLOOR + 1.5)),
-		material: ctx.materials.standard({ color: DEEP_COLOR_HEX, roughness: 0.9, metalness: 0 }),
+		material: ctx.materials.standard({
+			color: DEEP_COLOR_HEX,
+			roughness: 0.9,
+			metalness: 0,
+			doubleSided: true,
+		}),
 		castShadows: false,
 		receiveShadows: false,
 	});
@@ -241,28 +258,20 @@ export function createSea(ctx: SketchContext): { update(): void } {
 			map: foamMap(ctx),
 			vertexColors: true,
 			roughness: 0.9,
-			alphaMode: 'mask',
-			alphaCutoff: 0.42,
+			alphaMode: 'hash',
 			doubleSided: true,
 		}),
 		castShadows: false,
 		receiveShadows: true,
 	});
-	ctx.scene.createMesh({
-		mesh: ctx.geometry.fromArrays(openSea(SEA_REACH - 40, OPEN_SEA, 1)),
-		material: ctx.materials.standard({ color: '#3a6c9c', roughness: 0.35, metalness: 0 }),
-		castShadows: false,
-		receiveShadows: false,
-	});
-	// The foam is cut by a mask, so it needs no sorting against the water. Its shape stays here with the sea, so another body that makes its own surf replaces it.
+	// The foam thins by a stochastic mask, so it needs no sorting against the water and its edges stay soft. Its shape stays here with the sea, so another body that makes its own surf replaces it.
 	ctx.scene.createMesh({
 		mesh: ctx.geometry.fromArrays(surf()),
 		material: ctx.materials.standard({
 			map: foamMap(ctx),
 			vertexColors: true,
 			roughness: 0.85,
-			alphaMode: 'mask',
-			alphaCutoff: 0.42,
+			alphaMode: 'hash',
 			doubleSided: true,
 		}),
 		castShadows: false,
@@ -279,7 +288,7 @@ export function createSea(ctx: SketchContext): { update(): void } {
 		reflectionEvery: { high: 2, ultra: 2 },
 		softness: 2.5,
 		material: {
-			attenuationColor: '#1a7fb0',
+			attenuationColor: '#2b86a8',
 			attenuationDistance: 18,
 			thickness: 1,
 		},

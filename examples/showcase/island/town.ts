@@ -860,6 +860,45 @@ function row(
 	if (color) batch.colors?.set(color, k * 4);
 }
 
+/** The meters that one copy of the road's grain and of the turf's grain covers. */
+const ROAD_GRAIN_TILE = 5;
+const TURF_GRAIN_TILE = 9;
+
+/** Gives a mesh texture coordinates from its place on the ground, so a grain map lies level across it. */
+function onGroundUvs(b: Build, tile: number): Build {
+	b.uvs.length = 0;
+	for (let at = 0; at < b.positions.length; at += 3)
+		b.uvs.push((b.positions[at] as number) / tile, (b.positions[at + 2] as number) / tile);
+	return b;
+}
+
+/** A grain of soft mottle over fine speckle, white at its brightest and `darkest` at its darkest. */
+function grainMap({ textures }: SketchContext, seed: number, darkest: number) {
+	const size = 512;
+	const noise = new Noise(seed);
+	const data = new Uint8Array(size * size * 4);
+	for (let j = 0; j < size; j++)
+		for (let i = 0; i < size; i++) {
+			const [u, v] = [i / size, j / size];
+			const mix =
+				0.5 + 0.35 * noise.fbm2(u * 6, v * 6, 3, 6) + 0.4 * noise.fbm2(u * 48, v * 48, 2, 48);
+			const tone = darkest + (255 - darkest) * Math.min(1, Math.max(0, mix));
+			const at = (j * size + i) * 4;
+			data[at] = tone;
+			data[at + 1] = tone;
+			data[at + 2] = tone;
+			data[at + 3] = 255;
+		}
+	return textures.fromData({
+		width: size,
+		height: size,
+		data,
+		colorSpace: 'srgb',
+		wrap: 'repeat',
+		mipmaps: true,
+	});
+}
+
 /** The surfaces that the kit's meshes read: their maps, each as a material. */
 interface Surfaces {
 	plaster: ReturnType<SketchContext['materials']['standard']>;
@@ -1640,7 +1679,15 @@ function createGolf(ctx: SketchContext): void {
 		);
 	}
 	const material = materials.standard({ vertexColors: true, roughness: 0.95 });
-	scene.createMesh({ mesh: geometry.fromArrays(finish(b)), material, receiveShadows: true });
+	scene.createMesh({
+		mesh: geometry.fromArrays(finish(onGroundUvs(b, TURF_GRAIN_TILE))),
+		material: materials.standard({
+			map: grainMap(ctx, 61, 190),
+			vertexColors: true,
+			roughness: 0.95,
+		}),
+		receiveShadows: true,
+	});
 	scene.createMesh({ mesh: geometry.fromArrays(finish(flags)), material, castShadows: true });
 }
 
@@ -1930,8 +1977,13 @@ export function createTown(ctx: SketchContext): void {
 		}),
 	};
 	scene.createMesh({
-		mesh: geometry.fromArrays(finish(roadMesh())),
-		material: materials.standard({ vertexColors: true, roughness: 1, specularIntensity: 0.12 }),
+		mesh: geometry.fromArrays(finish(onGroundUvs(roadMesh(), ROAD_GRAIN_TILE))),
+		material: materials.standard({
+			map: grainMap(ctx, 53, 170),
+			vertexColors: true,
+			roughness: 1,
+			specularIntensity: 0.12,
+		}),
 		receiveShadows: true,
 		castShadows: false,
 	});
