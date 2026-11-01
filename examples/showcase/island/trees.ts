@@ -32,7 +32,15 @@ import {
 /** The share of the plan's trees that each preset stands on the island. */
 const SHARE: Record<QualityPreset, number> = { low: 0.3, medium: 0.55, high: 0.8, ultra: 1 };
 /** The distance from the camera at which a tree hands over from its mesh to its card, in meters. */
-const SWITCH: Record<QualityPreset, number> = { low: 90, medium: 130, high: 170, ultra: 300 };
+const SWITCH: Record<QualityPreset, number> = { low: 90, medium: 130, high: 130, ultra: 300 };
+
+/**
+ * The error that each level of a tree's mesh switches at, from the base level on. The add-on measures
+ * a level's error by the leaves it drops, whose switches lie past the distance where the card takes
+ * over, so these bring the switches well inside it: the second level past about 45 meters on a 1080p
+ * screen, and the third past about 95. Shadow maps pick each at half that distance.
+ */
+const LEVEL_ERRORS = [0, 0.03, 0.065];
 
 /** How far the far canopy draws, in meters: past the whole island from any view. */
 const FILL_REACH = 6000;
@@ -214,9 +222,11 @@ function stand(
 	}
 
 	for (const name of ['wood', 'leaves'] as const) {
-		const levels = asset.levels.flatMap((level) => {
+		const levels = asset.levels.flatMap((level, k) => {
 			const part = level.parts.find((p) => p.name === name);
-			return part ? [{ mesh: geometry.fromArrays(part.arrays), error: level.error }] : [];
+			return part
+				? [{ mesh: geometry.fromArrays(part.arrays), error: LEVEL_ERRORS[k] ?? level.error }]
+				: [];
 		});
 		const [base, ...coarser] = levels;
 		if (!base) continue;
