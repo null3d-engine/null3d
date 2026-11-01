@@ -118,6 +118,18 @@ function groundMap(
 	});
 }
 
+/**
+ * The screen error, in pixels, that a block's cell may show at each preset. A coarse block's grid spans
+ * a road's cut and lifts ground through the road by about a quarter of its cell, so this keeps that
+ * lift to a few pixels wherever such a block draws.
+ */
+export const GROUND_ERROR: Record<QualityPreset, number> = {
+	low: 16,
+	medium: 12,
+	high: 10,
+	ultra: 8,
+};
+
 /** Makes the island's ground for the preset. */
 export function createLand(ctx: SketchContext): Terrain {
 	const detail = DETAIL[ctx.quality.preset];
@@ -161,6 +173,7 @@ export function createLand(ctx: SketchContext): Terrain {
 		splat,
 		splatResolution: detail.splat,
 		maxLevel: 5,
+		error: GROUND_ERROR[ctx.quality.preset],
 		// The blocks' own normals light the ground: a map of them bands on the gentlest slopes.
 		bakedNormals: false,
 	});

@@ -20,6 +20,7 @@ import {
 	VILLAGES,
 } from './island';
 import { HOUSE_KINDS } from './kit';
+import { GROUND_ERROR } from './land';
 import {
 	circleRadius,
 	doorOf,
@@ -90,6 +91,8 @@ const FEWEST_CIRCLE_METERS = 40;
 /** The houses that a road's turning circle serves at least. */
 const FEWEST_ON_CIRCLE = 3;
 /** The meters that a road may run beside another close by, counted away from their junction. */
+/** The pixels that ground a far block lifts through a road may show, at the coarsest preset. */
+const MOST_LIFT_PIXELS = 6;
 const MOST_BESIDE = 15;
 /** The meters around a junction that the side-by-side test leaves to the junction tests. */
 const JOINT_SKIP = 15;
@@ -286,6 +289,38 @@ describe('the road network', () => {
 			}
 		});
 		expect(bad.length, failures(bad)).toBe(0);
+	});
+
+	it('keeps the ground that a far block lifts through a road to a few pixels', () => {
+		// A block of a cell draws past the distance where the cell shows the allowed error, so its lift
+		// shows that error times the lift over the cell, at any distance.
+		for (const cell of [7, 14, 28]) {
+			const mesh = (x: number, z: number) => {
+				const [i, j] = [Math.floor(x / cell), Math.floor(z / cell)];
+				const [s, t] = [x / cell - i, z / cell - j];
+				const at = (a: number, b: number) => groundHeight(a * cell, b * cell);
+				return (
+					(at(i, j) * (1 - s) + at(i + 1, j) * s) * (1 - t) +
+					(at(i, j + 1) * (1 - s) + at(i + 1, j + 1) * s) * t
+				);
+			};
+			let lift = 0;
+			for (const { points, half } of ROADS)
+				for (let k = 1; k + 1 < points.length; k += 2) {
+					const [a, p, b] = [
+						points[k - 1] as RoadPoint,
+						points[k] as RoadPoint,
+						points[k + 1] as RoadPoint,
+					];
+					const length = hypot(b.x - a.x, b.z - a.z) || 1;
+					const [nx, nz] = [-(b.z - a.z) / length, (b.x - a.x) / length];
+					for (const off of [half + 0.45, -half - 0.45, 0])
+						lift = Math.max(lift, mesh(p.x + nx * off, p.z + nz * off) - p.y);
+				}
+			expect((lift * GROUND_ERROR.low) / cell, `the ${cell} m cell's lift`).toBeLessThan(
+				MOST_LIFT_PIXELS,
+			);
+		}
 	});
 
 	it('never runs two roads side by side close together', () => {
