@@ -893,6 +893,11 @@ pub(crate) struct FrameGraph {
     view_passes: Vec<(u16, PassId)>,
     /// True for each view that is switched on, by view.
     view_on: Vec<bool>,
+    /// True for each view that has drawn. Its passes stay in the plan while it rests, so a view that
+    /// draws once in some frames changes no plan, makes no target and binds nothing again.
+    view_drew: Vec<bool>,
+    /// True for each pass whose view rests this frame. The plan holds it, and the frame skips it.
+    resting: Vec<bool>,
     /// The target of each view other than the camera's, by view: `None` for the camera's.
     view_colors: Vec<Option<ResourceId>>,
     /// The image that each view other than the camera's draws, and the pass that copies it into
@@ -1329,6 +1334,8 @@ impl FrameGraph {
             fullscreen_outline: false,
             fullscreen_reads_color: false,
             view_on: Vec::new(),
+            view_drew: Vec::new(),
+            resting: Vec::new(),
             view_colors: Vec::new(),
             view_images: Vec::new(),
             view_copies: ids.view_copy.filter(|_| gpu_culling).map(ViewCopies::new),
@@ -3011,25 +3018,48 @@ impl FrameGraph {
         }
     }
 
-    /// Switches each view's passes on or off with the view, and its transparent pass only while
-    /// some object blends too.
+    /// Keeps each view's passes in the plan once the view has drawn, and marks them resting while it
+    /// does not draw. Its transparent pass stays only while some object blends too.
     fn enable_views(&mut self) {
-        for &(index, pass) in &self.view_passes {
-            let on = self
-                .view_on
-                .get(usize::from(index))
-                .copied()
-                .unwrap_or(true);
-            self.graph.set_enabled(pass, on);
+        self.view_drew.resize(self.view_on.len(), false);
+        for (drew, &on) in self.view_drew.iter_mut().zip(&self.view_on) {
+            *drew |= on;
         }
-        for &(index, pass) in &self.transparent {
-            let on = self
-                .view_on
-                .get(usize::from(index))
-                .copied()
-                .unwrap_or(true);
-            self.graph.set_enabled(pass, on && self.transparent_on);
+        for place in 0..self.view_passes.len() {
+            let (index, pass) = self.view_passes[place];
+            let (planned, on) = self.view_state(index);
+            self.graph.set_enabled(pass, planned);
+            self.set_resting(pass, !on);
         }
+        for place in 0..self.transparent.len() {
+            let (index, pass) = self.transparent[place];
+            let (planned, on) = self.view_state(index);
+            self.graph.set_enabled(pass, planned && self.transparent_on);
+            self.set_resting(pass, !on);
+        }
+    }
+
+    /// Whether a view's passes stay in the plan, and whether they draw this frame.
+    fn view_state(&self, index: u16) -> (bool, bool) {
+        let index = usize::from(index);
+        let on = self.view_on.get(index).copied().unwrap_or(true);
+        (
+            on || self.view_drew.get(index).copied().unwrap_or(false),
+            on,
+        )
+    }
+
+    /// Marks a pass as resting, or as drawing, from this frame on.
+    fn set_resting(&mut self, pass: PassId, resting: bool) {
+        if self.resting.len() <= pass.index() {
+            self.resting.resize(pass.index() + 1, false);
+        }
+        self.resting[pass.index()] = resting;
+    }
+
+    /// True when the frame skips a pass that the plan holds, because its view rests.
+    fn rests(&self, pass: PassId) -> bool {
+        self.resting.get(pass.index()).copied().unwrap_or(false)
     }
 
     /// True when a view culls in two phases against its depth pyramid: with occlusion culling,
@@ -3130,6 +3160,7 @@ impl FrameGraph {
         self.occluder_passes.clear();
         self.pyramid_depths.clear();
         self.view_passes.clear();
+        self.resting.clear();
         self.transparent.clear();
         self.shadow_passes.clear();
         self.bloom_passes.clear();
@@ -5471,6 +5502,7 @@ impl FrameGraph {
             .any(|&(_, pass)| {
                 matches!(self.roles[pass.index()], Role::Fullscreen(_))
                     && plan.step_of(pass).is_some()
+                    && !self.rests(pass)
             })
     }
 
@@ -5525,7 +5557,9 @@ impl FrameGraph {
             .iter()
             .filter(|&&(index, _)| usize::from(index) == place)
             .any(|&(_, pass)| {
-                matches!(self.roles[pass.index()], Role::Compute(_)) && plan.step_of(pass).is_some()
+                matches!(self.roles[pass.index()], Role::Compute(_))
+                    && plan.step_of(pass).is_some()
+                    && !self.rests(pass)
             })
     }
 
@@ -6127,6 +6161,9 @@ impl FrameGraph {
                     // own, not in a compute pass that its path cannot run.
                     if self.is_fallback_step(plan, step) {
                         for &pass in plan.passes(step) {
+                            if self.rests(pass) {
+                                continue;
+                            }
                             let Role::Fullscreen(view) = self.roles[pass.index()] else {
                                 continue;
                             };
@@ -6158,6 +6195,9 @@ impl FrameGraph {
                     let mut began = false;
                     let mut wrote = false;
                     for &pass in plan.passes(step) {
+                        if self.rests(pass) {
+                            continue;
+                        }
                         // A sketch's compute pass is the graph's to record. Every other compute
                         // pass of the step belongs to the builder.
                         match self.roles[pass.index()] {
@@ -6220,7 +6260,7 @@ impl FrameGraph {
                     let passes = plan.passes(step);
                     if passes.iter().all(|&pass| {
                         let role = self.roles[pass.index()];
-                        skips(role) || !self.draws(role)
+                        skips(role) || !self.draws(role) || self.rests(pass)
                     }) {
                         continue;
                     }
@@ -11218,6 +11258,31 @@ mod tests {
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
         assert_eq!(frames.moment_textures_value().scene, source);
+    }
+
+    #[test]
+    fn a_view_that_rests_changes_no_plan_and_makes_no_target() {
+        let canvas = (320, 180);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        let mut views = [View::default(), shown()];
+        frames.sync(&views);
+        let mut list = DrawList::with_capacity(65536);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let compiles = frames.graph().compiles();
+        for enabled in [false, true, false, true, false, true] {
+            views[1].target_mut().enabled = enabled;
+            frames.sync(&views);
+            list.clear();
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert!(!frames.textures_made());
+            assert!(operands(&list, Op::CreateTexture).is_empty());
+            assert!(operands(&list, Op::DestroyTexture).is_empty());
+            assert_eq!(frames.graph().compiles(), compiles);
+        }
     }
 
     #[test]
