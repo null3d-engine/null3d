@@ -256,9 +256,14 @@ function paintSign(
 
 /**
  * Builds the ground, the lamps, the searchlights and the signs. `carMirror` is the hero car's
- * reflection, which the wet road reads under the car.
+ * reflection, which the wet road reads under the car. `without` names the parts that a measurement
+ * leaves out, so it can time one cost of the city on its own; a visitor's address names none.
  */
-export function createCity(ctx: SketchContext, carMirror: Texture): City {
+export function createCity(
+	ctx: SketchContext,
+	carMirror: Texture,
+	without: ReadonlySet<string>,
+): City {
 	const { scene, geometry, materials, textures } = ctx;
 	math.seed(5);
 
@@ -291,12 +296,13 @@ export function createCity(ctx: SketchContext, carMirror: Texture): City {
 		color: '#ffffff',
 		roughness: 0.4,
 	});
-	scene.createMesh({
-		mesh: geometry.plane({ width: GROUND, height: GROUND }),
-		material: groundMaterial,
-		rotation: turnAbout('x', -Math.PI / 2),
-		receiveShadows: false,
-	});
+	if (!without.has('ground'))
+		scene.createMesh({
+			mesh: geometry.plane({ width: GROUND, height: GROUND }),
+			material: groundMaterial,
+			rotation: turnAbout('x', -Math.PI / 2),
+			receiveShadows: false,
+		});
 
 	// The lamps: posts on the kerbs, on either side of the street in turn, each with an arm that
 	// reaches over the road. A point light sits at each head, and one batch each draws the poles,
@@ -324,7 +330,7 @@ export function createCity(ctx: SketchContext, carMirror: Texture): City {
 		}
 	}
 	const streetLights: ReturnType<typeof scene.createPointLight>[] = [];
-	for (const head of heads) {
+	for (const head of without.has('lamps') ? [] : heads) {
 		streetLights.push(
 			scene.createPointLight({
 				position: [head.x, head.y, head.z],
@@ -389,17 +395,19 @@ fn surface(input: SurfaceInput) -> Surface {
 		{ at: [HALF * 0.6, 240, -HALF * 0.35], turn: 2.4, speed: 0.11 },
 		{ at: [HALF * 0.1, 190, HALF * 0.6], turn: 4.2, speed: 0.14 },
 	] as const;
-	const spots = beams.map((beam) =>
-		scene.createSpotLight({
-			position: [beam.at[0], beam.at[1], beam.at[2]],
-			direction: [0, -1, 0],
-			color: '#bcd6ff',
-			intensity: BEAM_INTENSITY,
-			range: 700,
-			angle: 0.085,
-			penumbra: 0.55,
-		}),
-	);
+	const spots = beams
+		.filter(() => !without.has('beams'))
+		.map((beam) =>
+			scene.createSpotLight({
+				position: [beam.at[0], beam.at[1], beam.at[2]],
+				direction: [0, -1, 0],
+				color: '#bcd6ff',
+				intensity: BEAM_INTENSITY,
+				range: 700,
+				angle: 0.085,
+				penumbra: 0.55,
+			}),
+		);
 
 	// The signs, on the faces that look down the route's streets.
 	const signs = [
@@ -413,7 +421,7 @@ fn surface(input: SurfaceInput) -> Surface {
 		{ at: [-75, 38, 225], yaw: -Math.PI / 2 },
 	] as const;
 	const signMaterials: ReturnType<typeof materials.shader>[] = [];
-	for (let k = 0; k < signs.length; k++) {
+	for (let k = 0; k < (without.has('signs') ? 0 : signs.length); k++) {
 		const sign = signs[k] as (typeof signs)[number];
 		const { canvas } = paintSign(k);
 		const map = textures.fromCanvas(canvas);

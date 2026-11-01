@@ -2118,6 +2118,139 @@ export function vegetationScatterPlan(): PlanItem<Check>[] {
 	];
 }
 
+/** The presets that the Skyway plan fixes on each GPU path. */
+const SKYWAY_PRESETS = ['low', 'medium'] as const;
+/** How long each Skyway page measures, in seconds: the route's opening hold and the glide after it. */
+const SKYWAY_SECONDS = 8;
+/**
+ * How long one Skyway page may take: the demo builds its city in code, starts on a slow phone, and
+ * then measures. A cloud phone took half a minute just to reach its first frame.
+ */
+const SKYWAY_TIMEOUT_SECONDS = 300;
+
+/**
+ * Skyway's frame on each GPU path, for M3-C1's frame target: the Low and Medium presets, each with
+ * the governor off and the render scale held at 1, so every figure is the same drawing on every run.
+ * The render scale is what the governor would otherwise lower under load, and a lowered scale would
+ * hide the cost that the task is looking for. A page at each path's chosen preset, with the
+ * governor on, says what a visitor's device draws as the demo runs.
+ *
+ * The page times the demo live, from its opening shot, and reports the frame rate, the frame
+ * intervals, the CPU time, the GPU time per pass, the draw calls and the triangles. Its overlay
+ * comes after the measure, so its sampling costs none of the timed frames. The capabilities page
+ * comes first, so a device without WebGPU skips those pages. `--switches` adds page switches, such
+ * as `without=traffic` to time the lanes without the traffic.
+ */
+export function skywayPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const { path, tier } of [
+		{ path: 'webgpu', tier: 'webgpu' },
+		{ path: 'webgl2', tier: 'webgl2' },
+	] as const) {
+		items.push(
+			pageItem(
+				`skyway-${path}-chosen`,
+				'demo-device',
+				{ kind: 'probe', tier },
+				{
+					switches: [`gpu=${path}`, 'demo=skyway', `seconds=${SKYWAY_SECONDS}`],
+					timeoutSeconds: SKYWAY_TIMEOUT_SECONDS,
+				},
+			),
+		);
+		for (const preset of SKYWAY_PRESETS)
+			items.push(
+				pageItem(
+					`skyway-${path}-${preset}`,
+					'demo-device',
+					{ kind: 'probe', tier },
+					{
+						switches: [
+							`gpu=${path}`,
+							'demo=skyway',
+							`preset=${preset}`,
+							'governor=off',
+							'render-scale=1',
+							`seconds=${SKYWAY_SECONDS}`,
+						],
+						timeoutSeconds: SKYWAY_TIMEOUT_SECONDS,
+					},
+				),
+			);
+	}
+	return items;
+}
+
+/**
+ * The parts of Skyway that a cost sweep leaves out in turn: the page's extra switches, and what the
+ * figure then says. Each page draws the same shot at the same preset with one cost absent, so the
+ * difference from the base page is that cost's share of the frame.
+ */
+const SKYWAY_COSTS = [
+	{ name: 'base', switches: [] as readonly string[] },
+	{ name: 'no-traffic', switches: ['without=traffic'] },
+	{ name: 'no-rain', switches: ['without=rain'] },
+	{ name: 'no-ssr', switches: ['without=ssr'] },
+	{ name: 'no-ao', switches: ['off=ao'] },
+	{ name: 'no-towers', switches: ['without=towers'] },
+	{ name: 'no-lamps', switches: ['without=lamps'] },
+	// The same page as the first one, so a sweep whose device warms up over its pages shows how much
+	// of a difference a later page's figure carries on that account alone.
+	{ name: 'base-again', switches: [] as readonly string[] },
+] as const;
+
+/**
+ * Skyway's frame with one cost left out at a time, on the Low preset with the governor off and the
+ * render scale held at 1, for a cost hunt that must name the part of the frame that holds a device
+ * back. `skyway-cost-base` repeats the measured page, so the sweep compares within one session and
+ * one warm device. The Low preset is the one that every device runs, and the one whose costs matter
+ * on a phone.
+ */
+export function skywayCostPlan(): PlanItem<Check>[] {
+	const items = SKYWAY_COSTS.map(({ name, switches }) =>
+		pageItem(
+			`skyway-cost-${name}`,
+			'demo-device',
+			{ kind: 'probe', tier: 'webgl2' },
+			{
+				switches: [
+					'gpu=webgl2',
+					'demo=skyway',
+					'preset=low',
+					'governor=off',
+					'render-scale=1',
+					`seconds=${SKYWAY_SECONDS}`,
+					...switches,
+				],
+				timeoutSeconds: SKYWAY_TIMEOUT_SECONDS,
+			},
+		),
+	);
+	// The whole scene again on the other GPU path, at the end of the session, so a device with both
+	// paths says what its default one draws when warm. A device without WebGPU skips the page.
+	items.push(
+		pageItem(
+			'skyway-cost-base-webgpu',
+			'demo-device',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: [
+					'gpu=webgpu',
+					'demo=skyway',
+					'preset=low',
+					'governor=off',
+					'render-scale=1',
+					`seconds=${SKYWAY_SECONDS}`,
+				],
+				timeoutSeconds: SKYWAY_TIMEOUT_SECONDS,
+			},
+		),
+	);
+	return items;
+}
+
 /** The showcase demos that the demos plan measures. */
 const MEASURED_DEMOS = ['skyway', 'night-town'] as const;
 
@@ -2750,6 +2883,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'two-step': twoStepPlan,
 	sky: skyPlan,
 	demos: demosPlan,
+	skyway: skywayPlan,
+	'skyway-cost': skywayCostPlan,
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
 	'vegetation-wind': vegetationWindPlan,
