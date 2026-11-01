@@ -781,23 +781,32 @@ so that miss is the scene's on that device. Creek Medium draws no frame on eithe
 
 ### The pictures this branch owes
 
-The task asks that every picture the change moves is redrawn in both reference sets. None is drawn.
-The machine runs a milestone gate that bars browser image runs. A reference needs the Mac's GPU
-drawing and CI's SwiftShader drawing before `bun run images:review` accepts it.
+The task asks that every picture the change moves is redrawn in both reference sets. The manifest
+was then run on the Mac's GPU at the branch's head `582706315`, and it measured which pictures move
+([the run](../tested-devices/macbook-pro-m3-max-chrome/20261101-1803-creek-images.md)). Four Creek
+tests move on every path, against the 0.1 per cent limit:
 
-The manifest's tests that draw the changed demos, and so owe a drawing:
+| Test | WebGPU | Compatibility | WebGL2 |
+| --- | --- | --- | --- |
+| `demo-creek` | 1.321 | 0.873 | 1.681 |
+| `creek-render-scale-opening` | 2.282 | 1.748 | 1.839 |
+| `creek-render-scale-route` | 1.644 | 1.323 | 1.456 |
+| `creek-water-close` | 8.129 | 6.496 | 15.168 |
 
-- `demo-creek`, the Creek demo's held frame: the falling leaves, the water's surface and the grass
-  all move.
-- `creek-render-scale-opening`, `creek-render-scale-route` and `creek-water-close`, the Creek sketch
-  at three views.
-- `demo-forest`, the forest's held frame: its trees now sway.
+The figures are the percentage of each picture's pixels that differ from its reference. The water's
+close view moves most, and three times as far on WebGL2 as on WebGPU, where Creek rides a different
+leaf form.
 
-`creek-band` and `creek-lod` keep no picture. `creek-band` reads the route picture's frame, and
-`creek-lod` draws its own page, so both re-run after the references are drawn.
+The same run measured the forest, and `demo-forest` passes on all three tiers, so its sway does not
+reach its held picture and it is not redrawn. `vegetation-versus-creek` passes too. `creek-band` and
+`creek-lod` keep no picture. `creek-band` reads the route picture's frame, and `creek-lod` draws its
+own page, so both re-run after the references are drawn.
 
-Each test draws on the paths that its entry names, WebGPU, compatibility and WebGL2, with CI's
-SwiftShader set beside the Mac's drawings, and on the devices that draw them.
+Those four are owed a drawing in each set. The machine's milestone gate bars browser image runs, so
+the Mac's drawings wait for it to lift, and `bun run images:review --accept` then makes them
+references. The software set comes only from CI's drawing: a full run on the branch saves the
+images, and `bun run images:review --ci <run> --accept <name>` accepts them, as
+[the image tests guide](../../.dev/image-tests.md#references) says.
 
 ### What the task's clauses stand at
 
