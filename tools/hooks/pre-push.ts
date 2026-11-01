@@ -369,6 +369,12 @@ const STATUS_PLAN = '.internal/plan/m3-breakdown.md';
 export interface StatusReading {
 	lines: string[];
 	ran: boolean;
+	/**
+	 * Why the reading could not be taken, when a call it depends on failed: the git command and its
+	 * error. A caller that compares two readings reads this first, so a failed call never passes for
+	 * a reading that disagreed.
+	 */
+	failed?: string;
 }
 
 /**
@@ -415,8 +421,9 @@ export function statusAt(
 		const plan = resolve(root, '.internal');
 		if (existsSync(plan)) symlinkSync(plan, join(dir, '.internal'));
 		return statusOf(dir, clean);
-	} catch {
-		return { lines: [], ran: false };
+	} catch (error) {
+		const said = error instanceof Error ? error.message : String(error);
+		return { lines: [], ran: false, failed: said.split('\n')[0] ?? said };
 	} finally {
 		spawnSync('git', ['worktree', 'remove', '--force', dir], {
 			cwd: root,

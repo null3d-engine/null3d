@@ -138,7 +138,10 @@ describe('the milestone status', () => {
 		"reads the same lines from a commit's own worktree as from this checkout at that commit",
 		() => {
 			const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-			expect(statusAt(head)).toEqual(statusOf('.'));
+			const atCommit = statusAt(head);
+			// A call that failed leaves no reading, which is not the same as a reading that disagreed.
+			expect(atCommit.failed).toBeUndefined();
+			expect(atCommit).toEqual(statusOf('.'));
 		},
 		scaledBudget(60_000),
 	);
