@@ -63,7 +63,9 @@ equal to the one in the package.
 
 `read(points, out)` gives the air at many places, three numbers a place, worked out by the add-on's
 WebAssembly in a job worker. Use it in a frame, which is what moves a sketch's own objects with the
-air. The answer lands before the next frame's update. `sample(x, y, z, out)` gives the analytic air
+air. The answer lands before the next frame's update. A call that arrives while another waits for
+its answer replaces that ask: the newest ask wins, and the replaced one's array keeps its numbers.
+`sample(x, y, z, out)` gives the analytic air
 on the CPU, which suits a test and a read outside a frame. The solved air is on the GPU.
 
 ## Costs and limits

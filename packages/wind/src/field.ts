@@ -38,6 +38,7 @@ export class WindProbes {
 	private inFlight = false;
 	private queued = false;
 	private reported = false;
+	private dropReported = false;
 	private stopped = false;
 	/** True where the page's memory can be shared with a worker, so the answer needs no copy back. */
 	private readonly shared = typeof SharedArrayBuffer !== 'undefined';
@@ -81,6 +82,11 @@ export class WindProbes {
 		fillRequest(this.requests[this.fill] as Float32Array, points, reading, pushRadius, time, ring);
 		this.nextOut = out;
 		if (this.inFlight) {
+			// One ask can wait for the answer that is on its way. A second one replaces it, because
+			// the free buffer holds the ask that waits, so the newest ask wins and the one it
+			// replaces is dropped: its array keeps the numbers it held. Say so, rather than let a
+			// page read an array that no answer will fill.
+			if (this.queued) this.reportDrop();
 			this.queued = true;
 			return;
 		}
@@ -126,6 +132,15 @@ export class WindProbes {
 			this.send();
 		}
 	};
+
+	/** Reports the first dropped ask, and keeps the frames going. */
+	private reportDrop(): void {
+		if (this.dropReported) return;
+		this.dropReported = true;
+		console.error(
+			"wind: a read arrived while one already waited for its answer, so the newest ask replaced it and the earlier answer's array keeps its numbers. Keep one read in a frame, and read its answer in the next frame's update.",
+		);
+	}
 
 	/** Reports the first failure and keeps the frames going. */
 	private readonly refused = (error: unknown): void => {

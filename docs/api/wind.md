@@ -72,7 +72,7 @@ Call `update` once in each frame. It places the box about the camera and sends t
 
 The ring holds the three newest pushes, and each fades over three seconds. A page that pushes often therefore keeps a wake behind the body it moves. The newest gust has a slot of its own, so a page's pushes never push its gust out. A gust's wave travels for as long as its reach holds it.
 
-`read` asks the air at places the way a page's own motion needs it. The field's walk over the pushes runs in the add-on's WebAssembly, on the engine's job workers. One call takes up to about five thousand places. A call that arrives while an answer is still on its way sends one more ask when that answer comes. A page that asks in every frame therefore queues about one ask a frame. The answer gives the air at the frame's own time, and lands before the next frame's update.
+`read` asks the air at places the way a page's own motion needs it. The field's walk over the pushes runs in the add-on's WebAssembly, on the engine's job workers. One call takes up to about five thousand places. A call that arrives while an answer is still on its way sends one more ask when that answer comes. A third call that arrives before either answer replaces the queued one: the newest ask wins, the one it replaces is dropped, and its array keeps the numbers it held. A page that asks in every frame therefore queues about one ask a frame, and the add-on reports a dropped ask once. The answer gives the air at the frame's own time, and lands before the next frame's update.
 
 ## Reading the field in your own WGSL
 
