@@ -1212,6 +1212,9 @@ pub(crate) struct FrameGraph {
     moment_declared: bool,
     /// True when the declared passes hold the anti-aliasing steps that follow the layer.
     moment_smaa_declared: bool,
+    /// The scene's color as the passes before the moment layer's anti-aliasing leave it, which its
+    /// steps read.
+    moment_smaa_source: &'static str,
     /// The textures that the moment layer's steps read, found once for each compile of the graph.
     moment_textures: CompileCache<MomentTextures>,
     /// The composite and the depth copy of the camera's weighted layer.
@@ -1476,6 +1479,7 @@ impl FrameGraph {
             moment_built: false,
             moment_declared: false,
             moment_smaa_declared: false,
+            moment_smaa_source: SCENE_COLOR,
             moment_textures: CompileCache::default(),
             weighted: WeightedLayer::new(ids.weighted),
             weighted_targets: true,
@@ -2935,7 +2939,7 @@ impl FrameGraph {
                 } else {
                     0
                 },
-                scene: id(SCENE_COLOR),
+                scene: id(self.moment_smaa_source),
                 edges: id(MOMENT_EDGES),
                 weights: id(MOMENT_WEIGHTS),
             }
@@ -3593,6 +3597,7 @@ impl FrameGraph {
         let aliased = self.color_output();
         self.moment_smaa_declared = self.moment_declared;
         if self.moment_smaa_declared {
+            self.moment_smaa_source = aliased;
             self.declare_moment_smaa(views, aliased);
         }
         let resolve = Pass::new("Resolve", PassKind::Resolve)
@@ -11185,6 +11190,30 @@ mod tests {
                 .unwrap();
             assert_eq!(steps(&frames), without);
         }
+    }
+
+    #[test]
+    fn the_moment_layers_anti_aliasing_reads_the_last_pass_before_it() {
+        let canvas = (320, 180);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default(), shown()]);
+        frames.set_transparent(true);
+        frames.set_moment(true);
+        frames.set_dof(Some(dof_frame()));
+        let mut list = DrawList::with_capacity(65536);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 1);
+        pipelines.create_new(&mut list, 2).unwrap();
+        frames.request_pipelines(&mut pipelines, 2);
+        frames.sync(&[View::default(), shown()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert!(frames.moment_draws());
+        assert!(frames.dof_draws());
+        let read = frames.moment_textures_value().scene;
+        let last = frames.sampled_id(DOF_TARGETS[dof::STEPS - 1]).unwrap();
+        assert_eq!(read, last);
     }
 
     #[test]
