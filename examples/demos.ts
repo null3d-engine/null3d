@@ -485,7 +485,9 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			"A day passes over a valley in a minute, under the physical sky. The air turns the sky gold and rose at sunset and hazes each ridge by its distance. At night the moon lights the air and the stars come out. The groves on the valley floor are the vegetation add-on's conifers, grown at three levels and swaying in the wind add-on's field.",
 		hold: 2,
-		timeoutSeconds: 60,
+		// The valley's conifers grow over many frames, and the sky's volumetric tier slows each of
+		// them on a software GPU, so the picture needs longer than a simpler scene's.
+		timeoutSeconds: 180,
 	},
 	{
 		name: 'contact-shadows',
