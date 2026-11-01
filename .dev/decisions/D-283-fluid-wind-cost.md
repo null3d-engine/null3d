@@ -518,7 +518,20 @@ record's recommendation holds for the figure and the budget, not for the governo
 - `windSpringTrees` has no reader yet. Branch poses are M3-V10's work, so the setting waits for
   them. The vegetation add-on reads it when they land.
 - The stress page drives the governor down and back up with a load of cards that read the field. It
-  runs on the cloud iPad Pro 13 and Galaxy S25. Its record gives each run's settings and frame
-  times, and the pixels that moved in the heavy phase.
-- The field's picture tests move with the preset's interval and pressure count, so the branch
-  redraws the references that change (hard rule 34).
+  ran on this Mac at 2,097,152 cards. It ran on the cloud iPad Pro 13 and Galaxy S25 at 500,000.
+  Every preset with a field stepped at least one step on every device, and every one came back.
+  The records sit in the tested-devices folder for this Mac, the iPad and the S25.
+- The load is the figure that makes the page work. At 400,000 cards the Mac stayed at its display's
+  60 Hz. At 250,000 the S25 stayed inside its 33.3 ms frame in one run and stepped in another. A
+  load that leaves the frame inside its budget gives the governor nothing to act on. The page
+  therefore reads the heavy phase's frame and reports whether the load was over the budget before
+  it asks for a step.
+- The S25's Ultra row stepped from 16 to 32 ms in that run. That is 31.25 field steps a second, and
+  it is the step that the record's own 11.08 ms figure needs. The row alone does not make it
+  happen: 11.08 ms is inside the display's 33.3 ms frame, so the governor has no reason to step
+  until other work makes the frame long. The governor's input is the whole frame, as the section
+  above says.
+- The field's picture tests hold their old references. `wind-cards`, `wind-page`,
+  `wind-cards-later` and the four vegetation wind tests pass as 21 tests on the Mac's GPU and 21 on
+  the software GPU. The change therefore moves no picture past its limit, and no reference is
+  redrawn.

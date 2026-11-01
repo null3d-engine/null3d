@@ -76,8 +76,10 @@ export default defineSketch((ctx: SketchContext) => {
 			layer: wind.field.texture.layer,
 		},
 	});
+	// Each card carries enough segments to weigh on the vertex work of both the camera's pass and
+	// the shadow pass, because the instance count alone is capped by the device.
 	const cards = scene.createInstances(
-		geometry.plane({ width: 0.3, height: 1.1, heightSegments: 4 }),
+		geometry.plane({ width: 0.3, height: 1.1, widthSegments: 2, heightSegments: 12 }),
 		CARDS,
 		{ material: cardMaterial, castShadows: true },
 	);
