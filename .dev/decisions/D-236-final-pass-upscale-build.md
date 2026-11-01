@@ -133,12 +133,23 @@ little and a mean a lot. That is why a 33.3 ms median on a 30 Hz display sat bes
 **What to quote.** The window's `frames ÷ seconds`, which every page already records. Until the
 engine changes, a page that quotes `presentedFps` says which statistic it is.
 
-**Tables that need re-deriving from the run files**, because they quote the ring's figure:
+**Which tables move.** Only the Skyway rows do. Every raw page on this machine that holds both
+figures was compared: 80 pages. The 17 that differ by more than 1.5 frames a second are all
+Skyway. The largest difference elsewhere is 0.69 frames, on the vegetation plan's forest page at
+Low.
 
-- this record's second step rows, task M3-R19, from [the iPad's bench run](../tested-devices/ipad-pro-13-safari/20261024-081826-bench.md);
-- the wind field's rows, whose figures D-283 records, task M3-V10;
-- the Skyway rows, task M3-C1, which its own runs re-derive;
-- every other run record whose table has a presented frame rate column, 20 files at this head.
+The others do not move because their rings carry no frame much longer than their windows'. The
+bench page's window is 500 frames over 30 seconds. Its published rate agrees with the window's
+within 0.05 frames across all six rows of this record's second-step table. Warm-up frames of the
+window's own length leave a mean unchanged. The wind field's rows quote intervals and pass times,
+not a rate column, so nothing there needs re-deriving.
+
+The Skyway rows differ because the demo's start sits inside the ring. Its first seconds load the
+city's textures and build its pipelines, and those frames are many times longer than the ones the
+window counts.
+
+**Tables to re-derive from the run files:** the Skyway rows, task M3-C1. Its own run records now
+carry the window's figure.
 
 **The engine change** is the measure page's to place: restrict `intervals`, and the percentiles
 with them, to the window's frames, by frame number. Or publish the window's rate alone and drop
