@@ -40,7 +40,7 @@ export interface WindOptions {
 	box?: number;
 	/**
 	 * The grid's texels across each way. A page that gives it keeps it; otherwise the preset's
-	 * `windGrid` row sets it.
+	 * `windGrid` row sets it, and 0 keeps no grid.
 	 */
 	grid?: number;
 	/** The air's settings: its speed, heading, gust, push and swirl. */
@@ -106,6 +106,18 @@ export interface Wind {
 	 */
 	readonly settings: Readonly<Record<string, FeatureValue>>;
 	/**
+	 * The field's budget, as the preset and the frame-budget governor leave it. The object stays the
+	 * same, so read it in a frame without allocating.
+	 */
+	readonly budget: {
+		/** The time in ms that the field may take in a frame at this preset. */
+		readonly ms: number;
+		/** The share of full quality that the governor gives the field, from its floor to 1. */
+		readonly scale: number;
+		/** The time in ms that the field may take in a frame now. */
+		readonly allowedMs: number;
+	};
+	/**
 	 * Places the box about the camera, runs the steps that the sketch time owes and sends the
 	 * values to the GPU. Call once in each frame.
 	 */
@@ -124,12 +136,22 @@ const STEP_MS_WEBGL2 = [0, 66, 66, 66] as const;
 const PRESSURE_ROW = [0, 16, 24, 40] as const;
 /** The trees that keep branch springs at each preset. The vegetation add-on reads it. */
 const SPRING_ROW = [0, 8, 32, 64] as const;
-/** The grid's texels across each way at each preset; 0 keeps no grid. */
-const GRID_ROW = ['0', '64', '128', '256'] as const;
+/**
+ * The grid's texels across each way at each preset. Low keeps no grid and reads the steady field,
+ * so a phone pays nothing for the field. High and Ultra name the flat sizes that stand in for the
+ * layered and volume grids until the solver builds them.
+ */
+const GRID_ROW = [0, 64, 128, 256] as const;
 /** The field's own budget per frame at each preset, in ms, from M3-V14's figures. */
 const BUDGET_MS = [0.5, 1.2, 4.9, 6.25] as const;
 /** The least share of full quality that the governor gives the field, so it always keeps moving. */
 const BUDGET_MIN = 0.25;
+/**
+ * The divisor that keeps the ground's share below one while the pressure count fills the whole
+ * part of the same value. The grid multiplies the fraction by it to give the ground back, so the
+ * two must agree.
+ */
+export const GROUND_PACK = 100;
 
 /** The Jacobi iterations that one cycle runs by default, before a preset applies. */
 export const PRESSURE_STEPS = 20;
@@ -181,7 +203,7 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	let pressureSteps: number = PRESSURE_ROW[preset] ?? 16;
 	// A page that names a grid keeps it: it is the page's own, not the preset's.
 	const fixedGrid = options.grid !== undefined;
-	let grid = options.grid ?? Number(GRID_ROW[preset] ?? '64');
+	let grid = options.grid ?? GRID_ROW[preset] ?? 64;
 	let gridDirty = false;
 
 	// The solver runs one fixed step per cycle, and the pass takes eight value vectors: the step and
@@ -212,9 +234,10 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		values[0] = stepSeconds;
 		values[1] = air.speed;
 		values[2] = air.heading;
-		// The pressure count rides in the ground setting's whole part, and its fraction carries the
-		// ground itself. The grid reads the ground at a height where its slowdown is nil.
-		values[3] = pressureSteps + air.ground / 100;
+		// A pass takes eight value vectors and every field of them already has a meaning, so the
+		// cycle's pressure count rides in the ground setting's whole part and the ground's share in
+		// its fraction. The grid splits the two before it uses them.
+		values[3] = pressureSteps + air.ground / GROUND_PACK;
 		values[4] = air.gustStrength;
 		values[5] = air.gustRadius;
 		values[6] = air.gustWave;
@@ -226,11 +249,11 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		// The ring is made once, so every slot is there to read.
 		for (let i = 0; i < RING_SLOTS; i++) {
 			const slot = pushes.slots[i] as Push;
-			const at = 12 + i * 4;
-			values[at] = slot.x;
-			values[at + 1] = slot.z;
-			values[at + 2] = slot.strength;
-			values[at + 3] = slot.born;
+			const from = 12 + i * 4;
+			values[from] = slot.x;
+			values[from + 1] = slot.z;
+			values[from + 2] = slot.strength;
+			values[from + 3] = slot.born;
 		}
 		camera.getPosition(place);
 		values[28] = (place[0] as number) - box / 2;
@@ -296,7 +319,7 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	const applySettings = (own: Readonly<Record<string, FeatureValue>>): void => {
 		stepSeconds = (own.windStepMs as number) / 1000;
 		pressureSteps = own.windPressureSteps as number;
-		const next = fixedGrid ? grid : Number(own.windGrid);
+		const next = fixedGrid ? grid : (own.windGrid as number);
 		if (next !== grid) {
 			grid = next;
 			gridDirty = true;
@@ -324,6 +347,7 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 					governor: 'scale',
 				},
 				windGrid: {
+					// A new size needs a new pass, so a preset change alone moves this row.
 					presets: GRID_ROW,
 					values: GRID_ROW,
 					governor: 'none',
@@ -381,11 +405,26 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		pushes.add(at[0], at[1], strength, now(), gust);
 	};
 
+	// The handle keeps its budget current, and its figures carry the full time that the preset
+	// gave, so the page reads both without asking the engine again.
+	const budget = {
+		get ms() {
+			return feature.stats.budgetMs ?? 0;
+		},
+		get scale() {
+			return feature.budgetScale;
+		},
+		get allowedMs() {
+			return feature.stats.allowedMs ?? 0;
+		},
+	};
+
 	return {
 		field,
 		get settings() {
 			return feature.settings;
 		},
+		budget,
 		setBase(speed, heading) {
 			air.speed = speed;
 			air.heading = heading;

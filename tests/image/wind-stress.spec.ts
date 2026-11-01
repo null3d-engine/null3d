@@ -13,8 +13,13 @@ test.use(TIMING_BROWSER);
 
 /** The sketch's reading of the governor and the wind's resolved settings. */
 interface StressState {
+	/** The engine governor's steps past the render scale. */
 	steps: number;
-	scale: number;
+	/** The wind's share of its own budget, from its floor to 1. */
+	budgetScale: number;
+	budgetMs: number;
+	allowedMs: number;
+	renderScale: number;
 	preset: string;
 	layer: number;
 	settings: Readonly<Record<string, number | string>>;
@@ -54,8 +59,9 @@ const setting = (phase: Phase, name: string) => phase.state?.settings[name];
 /** One phase, in one line. */
 function phaseLine(name: string, phase: Phase): string {
 	return [
-		`  ${name}: governor steps ${phase.state?.steps ?? 'none'}, scale ${ms(phase.state?.scale)}`,
+		`  ${name}: governor steps ${phase.state?.steps ?? 'none'}, budget share ${ms(phase.state?.budgetScale)}`,
 		`windStepMs ${String(setting(phase, 'windStepMs') ?? 'none')}`,
+		`budget ${ms(phase.state?.allowedMs)} of ${ms(phase.state?.budgetMs)} ms`,
 		`pressure ${String(setting(phase, 'windPressureSteps') ?? 'none')}`,
 		`springs ${String(setting(phase, 'windSpringTrees') ?? 'none')}`,
 		`grid ${String(setting(phase, 'windGrid') ?? 'none')}`,
@@ -109,10 +115,10 @@ for (const gpu of gpus) {
 			const driven =
 				Number(setting(heavy, 'windStepMs')) > Number(setting(light, 'windStepMs')) ||
 				Number(setting(heavy, 'windPressureSteps')) < Number(setting(light, 'windPressureSteps')) ||
-				(heavy.state?.scale ?? 1) < (light.state?.scale ?? 1);
+				(heavy.state?.budgetScale ?? 1) < (light.state?.budgetScale ?? 1);
 			expect(
 				driven,
-				`${result.preset} on ${result.tier} could not be driven: the light phase was at ${String(setting(light, 'windStepMs'))} ms, ${String(setting(light, 'windPressureSteps'))} pressure steps and scale ${ms(light.state?.scale)}, and the heavy phase reached ${String(setting(heavy, 'windStepMs'))} ms, ${String(setting(heavy, 'windPressureSteps'))} pressure steps and scale ${ms(heavy.state?.scale)}`,
+				`${result.preset} on ${result.tier} could not be driven: the light phase was at ${String(setting(light, 'windStepMs'))} ms, ${String(setting(light, 'windPressureSteps'))} pressure steps and budget share ${ms(light.state?.budgetScale)}, and the heavy phase reached ${String(setting(heavy, 'windStepMs'))} ms, ${String(setting(heavy, 'windPressureSteps'))} pressure steps and budget share ${ms(heavy.state?.budgetScale)}`,
 			).toBe(true);
 			// The governor lightens the field: a longer step, fewer pressure iterations, fewer
 			// spring trees.
@@ -127,18 +133,27 @@ for (const gpu of gpus) {
 			);
 			// The field still moves at the governor's lowest step.
 			expect(result.moved).toBeGreaterThan(0);
-			// The governor comes back up when the load goes: the render scale rises or the field's
-			// settings do, from the deepest state that the heavy phase reached.
+			// The governor comes back up when the load goes: the wind's share of its budget rises or
+			// the field's settings do, from the deepest state that the heavy phase reached.
 			const bottom = result.bottom ?? heavy.state;
 			const cameBack =
-				(settle.state?.scale ?? 0) > (bottom?.scale ?? 1) ||
+				(settle.state?.budgetScale ?? 0) > (bottom?.budgetScale ?? 1) ||
 				Number(setting(settle, 'windPressureSteps')) >
 					Number(bottom?.settings.windPressureSteps ?? 0) ||
 				Number(setting(settle, 'windStepMs')) < Number(bottom?.settings.windStepMs ?? 0);
 			expect(
 				cameBack,
-				`${result.preset} on ${result.tier} did not come back: the bottom was ${String(bottom?.settings.windStepMs)} ms, ${String(bottom?.settings.windPressureSteps)} pressure steps and scale ${ms(bottom?.scale)}, and the settle phase reached ${String(setting(settle, 'windStepMs'))} ms, ${String(setting(settle, 'windPressureSteps'))} pressure steps and scale ${ms(settle.state?.scale)}`,
+				`${result.preset} on ${result.tier} did not come back: the bottom was ${String(bottom?.settings.windStepMs)} ms, ${String(bottom?.settings.windPressureSteps)} pressure steps and budget share ${ms(bottom?.budgetScale)}, and the settle phase reached ${String(setting(settle, 'windStepMs'))} ms, ${String(setting(settle, 'windPressureSteps'))} pressure steps and budget share ${ms(settle.state?.budgetScale)}`,
 			).toBe(true);
+			// The frame comes back inside the budget: with the load gone, the interval returns to the
+			// light phase's, which is the display's own rate. The margin leaves room for the governor's
+			// probation and for a device that runs a frame long now and then.
+			const lightInterval = light.frame.interval;
+			const settleInterval = settle.frame.interval;
+			expect(
+				settleInterval,
+				`${result.preset} on ${result.tier} did not return the frame: the light phase ran at ${ms(lightInterval)} ms and the heavy at ${ms(heavy.frame.interval)} ms, and the settle phase read ${ms(settleInterval)} ms`,
+			).toBeLessThanOrEqual(lightInterval * 1.1 + 2);
 		});
 	}
 }

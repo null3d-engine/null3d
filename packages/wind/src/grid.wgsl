@@ -199,6 +199,9 @@ fn wind_analytic(
 /// How fast the air is pulled toward the analytic field each second. The pull is weak enough that
 /// what the air carried from the frames before stays a while.
 const WIND_PULL: f32 = 0.8;
+/// The divisor that keeps the ground's share below one, beside the cycle's pressure count in the
+/// same value. The add-on packs the two, so the two files must agree.
+const WIND_GROUND_PACK: f32 = 100.0;
 /// How hard the vorticity confinement keeps the eddies that advection would smooth away.
 const WIND_VORTICITY: f32 = 0.35;
 
@@ -322,7 +325,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let packed = block.u0.w;
     let pressure = i32(floor(packed));
     var air = wind_air(block.u0, block.u1, block.u2);
-    air.ground = (packed - f32(pressure)) * 100.0;
+    air.ground = (packed - f32(pressure)) * WIND_GROUND_PACK;
     air.time = block.clock.x;
     // The slots arrive in the fourth to seventh vectors; the first three hold the settings.
     let slots = array<vec4f, 4>(block.u3, block.u4, block.u5, block.u6);

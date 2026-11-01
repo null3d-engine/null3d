@@ -2,7 +2,7 @@
 // cards so frames keep their budget, then draws them all so the frame-budget governor must lighten
 // the wind's settings, then takes them away so the governor raises the settings again. The camera
 // stands still, so the only thing that can move the cards between two frames is the air.
-import { defineSketch, type QualityPreset, type SketchContext } from '@null3d/engine';
+import { defineSketch, type SketchContext } from '@null3d/engine';
 import { createWind } from '@null3d/wind';
 
 const params = new URL(import.meta.url).searchParams;
@@ -34,9 +34,8 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 
 export default defineSketch((ctx: SketchContext) => {
 	const { scene, geometry, materials, page, quality } = ctx;
-	// The page names the preset, and the engine caps it at the path's highest.
-	const wanted = params.get('preset') as QualityPreset | null;
-	if (wanted) quality.setPreset(wanted);
+	// The page starts the engine at its preset, so the field is made at that row's grid and never
+	// remade while the run lasts.
 	scene.setBackground({ sky: { sunPosition: [0.4, 0.5, -0.6], cloudCoverage: 0.2 } });
 	const camera = scene.createPerspectiveCamera({
 		fov: 42,
@@ -105,7 +104,10 @@ export default defineSketch((ctx: SketchContext) => {
 			// how far the governor has gone.
 			page.post('state', {
 				steps: quality.governor.steps,
-				scale: quality.renderScale,
+				budgetScale: wind.budget.scale,
+				budgetMs: wind.budget.ms,
+				allowedMs: wind.budget.allowedMs,
+				renderScale: quality.renderScale,
 				preset: quality.preset,
 				layer: wind.field.texture.layer,
 				cards: CARDS,

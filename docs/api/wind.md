@@ -67,6 +67,7 @@ Call `update` once in each frame. It places the box about the camera and sends t
 | `update()` | Places the box about the camera, runs the steps that the sketch time owes and sends the values. Call it once in each frame. |
 | `destroy()` | Removes the pass and its texture. |
 | `settings` | The feature's settings as the preset and the governor resolve them now: `windStepMs`, `windPressureSteps`, `windSpringTrees` and `windGrid`. The object stays the same, so read it in a frame without allocating. |
+| `budget` | The field's budget as the preset and the governor leave it: `ms` at full quality, the governor's `scale` from its floor to 1, and `allowedMs` now. The object stays the same, so read it in a frame without allocating. |
 | `field` | The texture, its box and the steady settings that a reader works the air out from beyond the box. |
 
 The ring holds the three newest pushes, and each fades over three seconds. A page that pushes often therefore keeps a wake behind the body it moves. The newest gust has a slot of its own, so a page's pushes never push its gust out. A gust's wave travels for as long as its reach holds it.
@@ -288,13 +289,13 @@ The add-on declares its work to the engine as one feature. The preset gives its 
 | `windStepMs`, the time between field steps | 0 | 33 | 33 | 16 | `double`, up to 133 ms |
 | `windPressureSteps`, the pressure iterations of a cycle | 0 | 16 | 24 | 40 | `scale` |
 | `windSpringTrees`, the trees that keep branch springs | 0 | 8 | 32 | 64 | `scale` |
-| `windGrid`, the grid's texels across each way | none | 64 | 128 | 256 | `none` |
+| `windGrid`, the grid's texels across each way | 0, no grid | 64 | 128 | 256 | `none` |
 
 Low keeps no grid: every reader works the air out from the steady field. WebGL2 takes its own step row, 66 ms at Medium and above, because a step costs far more there. A page that gives `grid` keeps it, whatever the preset says.
 
 The grid is one flat slice at the crown's height. The layered and volume grids that the wind cost study measured are not built yet, so High and Ultra use the flat 128 and 256 grids.
 
-The field's own budget is 0.5, 1.2, 4.9 and 6.25 ms a frame from Low to Ultra. The governor lowers its share by a quarter at each of its steps, down to a quarter of the budget. The field still moves at the lowest step: the step interval reaches at most 133 ms, and the pressure count stays above zero. The stats overlay shows the row: `wind gpu 0.62 ms windStepMs 33 windPressureSteps 16 budget 1.0 of 1.5 ms memory 2.1 MiB`.
+The field's own budget is 0.5, 1.2, 4.9 and 6.25 ms a frame from Low to Ultra. That budget is its own, and the plants' own GPU time still fits beside it in the frame ceiling of each preset. The governor lowers the field's share by a quarter at each of its steps, down to a quarter of the budget. The field still moves at the lowest step: the step interval reaches at most 133 ms, and the pressure count stays above zero. The overlay row reads the field's cost in a frame, which grows when a slow display owes the field more than one cycle in that frame. The stats overlay shows the row: `wind gpu 0.62 ms windStepMs 33 windPressureSteps 16 budget 1.0 of 1.5 ms memory 2.1 MiB`.
 
 A preset change that changes the grid makes the grid again at the new size. The air starts empty on the new grid. A reader takes `field.texture` again after that, because the texture is a new one.
 

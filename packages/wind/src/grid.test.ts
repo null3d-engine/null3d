@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { CURL_STEP, GROUND_HEIGHT, GUST_SLOT, PUSH_LIFE, PUSH_SLOTS, RING_SLOTS } from './analytic';
-import { CYCLE_STEPS, PRESSURE_STEPS } from './wind';
+import { CYCLE_STEPS, GROUND_PACK, PRESSURE_STEPS } from './wind';
 
 /** The text between two markers of a file, trimmed. */
 function marked(file: URL, name: string): string {
@@ -56,12 +56,20 @@ describe('the shaders of the grid', () => {
 		expect(constant(steady, 'WIND_CURL_STEP')).toBe(CURL_STEP);
 		expect(constant(marked(gridFile, 'wind-events'), 'WIND_PUSH_LIFE')).toBe(PUSH_LIFE);
 		// The pressure count is the preset's, so it arrives with the frame in the ground setting's
-		// whole part rather than as a constant.
+		// whole part rather than as a constant, and the ground's share rides in its fraction.
 		const solver = marked(gridFile, 'wind-solver');
 		expect(solver).toContain('state: WindState, pressure: i32');
 		expect(solver).toContain('state.stage <= pressure');
-		for (const form of [gridFile, fallbackFile])
-			expect(readFileSync(form, 'utf8')).toContain('let pressure = i32(floor(packed));');
+		expect(constant(solver, 'WIND_GROUND_PACK')).toBe(GROUND_PACK);
+		for (const form of [gridFile, fallbackFile]) {
+			const text = readFileSync(form, 'utf8');
+			expect(text).toContain('let pressure = i32(floor(packed));');
+			expect(text).toContain('air.ground = (packed - f32(pressure)) * WIND_GROUND_PACK;');
+		}
+		// The add-on packs the same two values, so its divisor must match the shaders'.
+		expect(readFileSync(new URL('./wind.ts', import.meta.url), 'utf8')).toContain(
+			'values[3] = pressureSteps + air.ground / GROUND_PACK;',
+		);
 		// The default cycle still adds the advection and the projection to the pressure's iterations.
 		expect(CYCLE_STEPS).toBe(PRESSURE_STEPS + 2);
 	});
