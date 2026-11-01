@@ -1201,6 +1201,27 @@ function quayStreetZ(x: number, road: Road): number {
 	return z;
 }
 
+/** The half beam and half length of the largest yacht's hull, in meters. */
+const HULL_HALF = [2.3, 7] as const;
+/** The water that a hull keeps under it, in meters, and the steps of 2 m that a boat may stand off. */
+export const HULL_WATER = 2;
+const HULL_STEPS = 12;
+
+/** The least water under a yacht's hull at a place and a heading, from its corners and its sides. */
+export function hullDepth(x: number, z: number, yaw: number): number {
+	const [c, s] = [Math.cos(yaw), Math.sin(yaw)];
+	let least = Number.POSITIVE_INFINITY;
+	for (const u of [-1, 0, 1])
+		for (const v of [-1, -0.5, 0, 0.5, 1]) {
+			const [across, along] = [u * HULL_HALF[0], v * HULL_HALF[1]];
+			least = Math.min(
+				least,
+				-groundHeight(x + across * c + along * s, z - across * s + along * c),
+			);
+		}
+	return least;
+}
+
 /** Where the boats lie: stern-to along the quay and both sides of the moles, with a few out at anchor. */
 export const MOORINGS: readonly (readonly [number, number, number])[] = (() => {
 	const next = random(907);
@@ -1231,7 +1252,19 @@ export const MOORINGS: readonly (readonly [number, number, number])[] = (() => {
 		[150, 490],
 	] as const)
 		moorings.push([x, z, next() * 6.3]);
-	return moorings;
+	// A boat with land under its hull stands off toward deeper water.
+	return moorings.map(([x, z, yaw]) => {
+		let [at, depth] = [[x, z] as const, hullDepth(x, z, yaw)];
+		for (let step = 0; depth < HULL_WATER && step < HULL_STEPS; step++) {
+			for (let k = 0; k < 8; k++) {
+				const a = (k * Math.PI) / 4;
+				const moved = [at[0] + Math.cos(a) * 2, at[1] + Math.sin(a) * 2] as const;
+				const deeper = hullDepth(moved[0], moved[1], yaw);
+				if (deeper > depth) [at, depth] = [moved, deeper];
+			}
+		}
+		return [at[0], at[1], yaw] as [number, number, number];
+	});
 })();
 
 function createHarbour(ctx: SketchContext, surfaces: Surfaces): void {
