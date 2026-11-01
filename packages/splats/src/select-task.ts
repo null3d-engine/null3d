@@ -43,6 +43,8 @@ interface SplatWasm {
  * add-on's buffer; without one, the worker answers with a copy.
  */
 export interface SelectInput {
+	/** `select` chooses the counts; `drop` frees the selector's arrays. */
+	readonly op?: 'select';
 	/** The selector's number, which names its table and scratch in this worker. */
 	readonly id: number;
 	/** Changes when the chunk table changes: a new selector, or a new number of chunks. */
@@ -71,6 +73,8 @@ export interface SelectAnswer {
 interface SelectState {
 	version: number;
 	chunks: number;
+	/** The chunk count that the arrays hold room for, which grows by doubling. */
+	capacity: number;
 	params: number;
 	table: number;
 	counts: number;
@@ -78,6 +82,12 @@ interface SelectState {
 	levels: number;
 	order: number;
 	scratch: number;
+}
+
+/** An input that frees the arrays of a selector, which a cloud leaves behind. */
+export interface DropInput {
+	readonly op: 'drop';
+	readonly id: number;
 }
 
 /** The module, which the worker instantiates at its first task and keeps. */
@@ -89,6 +99,8 @@ let wasm: SplatWasm | undefined;
 let next = 0;
 /** The arrays that each selector keeps in this worker, by the input's `id`. */
 const states = new Map<number, SelectState>();
+/** The arrays of selectors that a cloud left, which a later selector takes back. */
+const freed: { at: number; bytes: number }[] = [];
 
 /** The bytes of a 64-bit float, and the alignment of one. */
 const FLOAT_BYTES = 8;
@@ -101,11 +113,36 @@ function align(value: number, unit: number): number {
 /** Makes room for `bytes` in the module's memory and returns where it starts. */
 function alloc(bytes: number): number {
 	const module = wasm as SplatWasm;
+	const needed = align(Math.max(1, bytes), FLOAT_BYTES);
+	// A block that a dropped selector left takes the array, so the memory stops growing after a
+	// cloud that a page creates and destroys again.
+	for (let i = 0; i < freed.length; i++) {
+		const block = freed[i] as { at: number; bytes: number };
+		if (block.bytes < needed) continue;
+		freed.splice(i, 1);
+		return block.at;
+	}
 	const at = align(next, FLOAT_BYTES);
-	next = at + align(bytes, FLOAT_BYTES);
+	next = at + needed;
 	const have = module.memory.buffer.byteLength;
 	if (next > have) module.memory.grow(Math.ceil((next - have) / 65536));
 	return at;
+}
+
+/** Gives a selector's array back, for the next selector to take. */
+function release(at: number, bytes: number): void {
+	freed.push({ at, bytes: align(Math.max(1, bytes), FLOAT_BYTES) });
+}
+
+/** Gives back every array that one selector holds. */
+function drop(state: SelectState): void {
+	release(state.params, PARAMS * FLOAT_BYTES);
+	release(state.table, state.capacity * STRIDE * 4);
+	release(state.counts, state.capacity * 4);
+	release(state.distances, state.capacity * 4);
+	release(state.levels, state.capacity);
+	release(state.order, state.capacity * 4);
+	release(state.scratch, state.capacity * 4);
 }
 
 /** A failure of the module's code or its WebAssembly, which the engine reports at load. */
@@ -151,22 +188,34 @@ function readBytes(at: number, array: ArrayBufferView): void {
 /** The number of 64-bit floats in a call's parameter block. */
 const PARAMS = 12;
 
-/** The state that this worker keeps for a selector, which it makes at the first task that names it. */
+/**
+ * The state that this worker keeps for a selector, which it makes at the first task that names it.
+ * A selector whose chunk count grows keeps its arrays while they hold the new count, and takes
+ * larger ones that double each time they must, so a cloud cut into many chunks does not leave one
+ * state's arrays behind for each chunk.
+ */
 function stateFor(input: SelectInput): SelectState {
 	const kept = states.get(input.id);
-	if (kept && kept.version === input.version && kept.chunks === input.chunks) return kept;
-	// The chunk table starts at the header of the buffer and holds one row for each chunk.
 	const table = input.view.subarray(HEADER, HEADER + input.chunks * STRIDE);
+	if (kept && kept.capacity >= input.chunks) {
+		kept.version = input.version;
+		kept.chunks = input.chunks;
+		writeBytes(kept.table, table);
+		return kept;
+	}
+	const capacity = kept ? Math.max(input.chunks, kept.capacity * 2) : input.chunks;
+	if (kept) drop(kept);
 	const state: SelectState = {
 		version: input.version,
 		chunks: input.chunks,
+		capacity,
 		params: alloc(PARAMS * FLOAT_BYTES),
-		table: alloc(input.chunks * STRIDE * 4),
-		counts: alloc(input.chunks * 4),
-		distances: alloc(input.chunks * 4),
-		levels: alloc(input.chunks),
-		order: alloc(input.chunks * 4),
-		scratch: alloc(input.chunks * 4),
+		table: alloc(capacity * STRIDE * 4),
+		counts: alloc(capacity * 4),
+		distances: alloc(capacity * 4),
+		levels: alloc(capacity),
+		order: alloc(capacity * 4),
+		scratch: alloc(capacity * 4),
 	};
 	writeBytes(state.table, table);
 	states.set(input.id, state);
@@ -209,7 +258,15 @@ export function run(
 	input: unknown,
 	modules: (name: string) => WebAssembly.Module,
 ): { output: SelectAnswer } {
-	const request = input as SelectInput;
+	const request = input as SelectInput | DropInput;
+	if (request.op === 'drop') {
+		const state = states.get(request.id);
+		if (state) {
+			drop(state);
+			states.delete(request.id);
+		}
+		return { output: { total: 0 } };
+	}
 	const module = wasm ?? start(modules('splats'));
 	const state = stateFor(request);
 	return { output: select(module, state, request) };

@@ -79,7 +79,7 @@ const HREFS = new WeakMap<URL, string>();
 const RESOLVED = new WeakMap<URL, WebAssembly.Module>();
 
 /** The href of `url`, made once. */
-function hrefOf(url: URL): string {
+export function hrefOf(url: URL): string {
 	let href = HREFS.get(url);
 	if (href === undefined) {
 		href = url.href;
@@ -117,7 +117,7 @@ export function compiledModule(file: WasmFile): WebAssembly.Module | undefined {
 const MODULE_KEYS = new WeakMap<Task, Map<string, string>>();
 
 /** The worker's key of the WebAssembly file that `task` names, made once. */
-function keyOf(task: Task, script: string | undefined, name: string): string {
+export function keyOf(task: Task, script: string | undefined, name: string): string {
 	let keys = MODULE_KEYS.get(task);
 	if (keys === undefined) {
 		keys = new Map();
