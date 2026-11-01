@@ -42,10 +42,12 @@ export function createCar(ctx: SketchContext, parent?: Object3D): ShowroomCar {
 		color: '#9e0b16',
 		metalness: 0.65,
 		roughness: 0.25,
-		flakes: { cells: [120, 210], tilt: 0.25 },
+		// The flakes catch the studio's softboxes, but a bounded glint keeps them from sparkling
+		// into noise as the car moves: a wider light and a lower ceiling spread each flake's light.
+		flakes: { cells: [120, 210], tilt: 0.25, angle: 0.38, max: 10 },
 		seams: { spacing: [0.34, 0], width: 0.0022, shade: 0.85 },
 		clearcoat: 1,
-		clearcoatRoughness: 0.02,
+		clearcoatRoughness: 0.04,
 	});
 	const trims: Record<string, Material> = {
 		carbon: createCarPaint(ctx, {

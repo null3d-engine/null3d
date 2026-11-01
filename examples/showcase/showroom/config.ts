@@ -124,3 +124,53 @@ export function choice(config: Config, page: ConfigPage): ConfigOption {
 export function isConfigPage(name: unknown): name is ConfigPage {
 	return PAGES.some((page) => page.id === name);
 }
+
+/** The tablet's canvas, in texels. */
+export const TABLET = { width: 512, height: 320 } as const;
+
+/** A rectangle on the tablet's canvas, counted from its top left corner. */
+export interface ScreenRect {
+	readonly x: number;
+	readonly y: number;
+	readonly width: number;
+	readonly height: number;
+}
+
+/** The four page tabs along the bottom of the tablet. */
+export const TABS: readonly (ScreenRect & { readonly page: ConfigPage })[] = PAGES.map(
+	(page, index) => ({
+		page: page.id,
+		x: 10 + index * 125,
+		y: 262,
+		width: 119,
+		height: 46,
+	}),
+);
+/** The two arrows, and the value between them that a tap also cycles. */
+export const PREV: ScreenRect = { x: 16, y: 146, width: 42, height: 50 };
+export const NEXT: ScreenRect = { x: 454, y: 146, width: 42, height: 50 };
+export const VALUE: ScreenRect = { x: 66, y: 146, width: 380, height: 50 };
+
+/** True when a point on the canvas lies inside a rectangle. */
+export function inside(point: { x: number; y: number }, rect: ScreenRect): boolean {
+	return (
+		point.x >= rect.x &&
+		point.x <= rect.x + rect.width &&
+		point.y >= rect.y &&
+		point.y <= rect.y + rect.height
+	);
+}
+
+/** What a tap does: show a page, or move the shown page's choice on by a step. */
+export type TabletAction =
+	| { readonly kind: 'page'; readonly page: ConfigPage }
+	| { readonly kind: 'step'; readonly step: number };
+
+/** What a tap on the tablet's canvas at a point does, or null for a tap that does nothing. */
+export function tabletAction(point: { x: number; y: number }): TabletAction | null {
+	const tab = TABS.find((candidate) => inside(point, candidate));
+	if (tab) return { kind: 'page', page: tab.page };
+	if (inside(point, PREV)) return { kind: 'step', step: -1 };
+	if (inside(point, NEXT) || inside(point, VALUE)) return { kind: 'step', step: 1 };
+	return null;
+}

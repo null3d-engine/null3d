@@ -813,11 +813,11 @@ lights, on a mirror floor, with a tablet beside it that changes its paint, wheel
 The car then drives out through the opening into a short wet street. The scene is a template for
 product pages.
 
-- **The studio reflects the softboxes twice.** The floor takes the screen-space reflections, so the
-  car, the softboxes and the tablet mirror in it at grazing angles. A reflection probe fills the
-  room's box, so the paint's clear coat reflects the softboxes and the walls wherever the camera
-  stands. The car draws on a layer of its own, which the probe leaves out, so the paint never
-  reflects itself.
+- **The studio reflects the softboxes twice.** The floor takes one planar reflection across the
+  ground, so the car, the softboxes and the tablet mirror in it, and the car shows from underneath
+  as a real mirror shows it. A reflection probe fills the room's box, so the paint's clear coat
+  reflects the softboxes and the walls wherever the camera stands. The car draws on a layer of its
+  own, which the probe leaves out, so the paint never reflects itself.
 - **Four rectangle lights carry the studio.** A wide softbox behind the car and a thin box above it
   draw the highlights along the roof and the flanks, and a strip down each side lights the walls.
   The Low preset shades four rectangle lights, so the scene adds no more. A warm spot from the front
@@ -829,11 +829,9 @@ product pages.
   the car and the two head lamps take the light's color, so the choice shows on the wet road.
 - **The street is short and lit.** The road runs 56 m from the studio's opening. A row of buildings
   with lit windows stands on each side, with four lamp posts and two neon signs. One wall closes the
-  far end. The asphalt is a metal-rough map made in code: smooth in the puddles, rough between them,
-  and darker in a damp band around each puddle. The screen-space reflections streak the lamps, the
-  signs and the windows down it. The stage writes the volumetric fog, so each lamp and the head
-  lamps draw their cones through the air. Low turns the fog's slices off, so its fog keeps the sun's
-  glow.
+  far end. The asphalt reads the same planar reflection, with rough dry stone between puddles whose
+  water carries the picture. The stage writes the volumetric fog, so each lamp and the head lamps
+  draw their cones through the air. Low turns the fog's slices off, so its fog keeps the sun's glow.
 - **The route and the car run one loop.** The car waits in the studio and turns slowly on the spot.
   It then drives out, turns at the street's far end and drives back. The camera route takes the same
   36 s, so the loop meets itself with no jump. `route.test.ts` checks the poses at the points that

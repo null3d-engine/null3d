@@ -4,47 +4,29 @@
 // paint, wheels, trim or lights while the picture is still uploading.
 import type { SketchContext } from '@null3d/engine';
 import { createScreen } from '../../addons/screens';
-import { type Config, type ConfigPage, choice, cycle, PAGES, START_CONFIG } from './config';
+import {
+	type Config,
+	type ConfigPage,
+	choice,
+	cycle,
+	NEXT,
+	PAGES,
+	PREV,
+	START_CONFIG,
+	TABLET,
+	TABS,
+	tabletAction,
+	VALUE,
+} from './config';
 
 /** The canvas's size in texels, and the tablet's size in meters. */
-const WIDTH = 512;
-const HEIGHT = 320;
+const WIDTH = TABLET.width;
+const HEIGHT = TABLET.height;
 const SIZE = [1.24, 0.775] as const;
 
 /** Where the tablet stands and which way its face turns, so the studio's camera sees it square on. */
 const AT = [3.6, 1.18, 10.2] as const;
 const FACING = 2.78;
-
-/** A rectangle on the canvas, for the drawing and for the hit test that a tap makes. */
-interface Rect {
-	readonly x: number;
-	readonly y: number;
-	readonly width: number;
-	readonly height: number;
-}
-
-/** The four page tabs along the bottom. */
-const TABS: readonly (Rect & { readonly page: ConfigPage })[] = PAGES.map((page, index) => ({
-	page: page.id,
-	x: 10 + index * 125,
-	y: 262,
-	width: 119,
-	height: 46,
-}));
-/** The two arrows, and the value between them that a tap also cycles. */
-const PREV: Rect = { x: 16, y: 146, width: 42, height: 50 };
-const NEXT: Rect = { x: 454, y: 146, width: 42, height: 50 };
-const VALUE: Rect = { x: 66, y: 146, width: 380, height: 50 };
-
-/** True when a point on the canvas lies inside a rectangle. */
-function inside(point: { x: number; y: number }, rect: Rect): boolean {
-	return (
-		point.x >= rect.x &&
-		point.x <= rect.x + rect.width &&
-		point.y >= rect.y &&
-		point.y <= rect.y + rect.height
-	);
-}
 
 /** Draws the whole panel for a page and a configuration. */
 function paint(context: OffscreenCanvasRenderingContext2D, config: Config, page: ConfigPage): void {
@@ -175,17 +157,14 @@ export function createTablet(
 	});
 
 	screen.onClick((point) => {
-		const tab = TABS.find((candidate) => inside(point, candidate));
-		if (tab) {
-			state.page = tab.page;
+		const action = tabletAction(point);
+		if (!action) return;
+		if (action.kind === 'page') {
+			state.page = action.page;
 			screen.paint((context) => paint(context, state.config, state.page));
 			return;
 		}
-		let step = 0;
-		if (inside(point, PREV)) step = -1;
-		else if (inside(point, NEXT) || inside(point, VALUE)) step = 1;
-		if (step === 0) return;
-		state.config = cycle(state.config, state.page, step);
+		state.config = cycle(state.config, state.page, action.step);
 		screen.paint((context) => paint(context, state.config, state.page));
 		onChange(state.config);
 	});
