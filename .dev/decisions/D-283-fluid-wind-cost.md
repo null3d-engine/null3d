@@ -465,3 +465,60 @@ owner's ruling.
   display carries two cycles in each frame and a 90 Hz display two thirds of one. M3-V16's governor
   must therefore read the field's GPU time a frame, not a cycle, so a slow display's row steps down
   when its frame goes over the budget. The S25's Ultra row is the case that proves it.
+
+## Addendum: the rows the add-on declares, and the governor's floor
+
+M3-V16 declares the rows above in the wind add-on. The add-on names its work to the engine as one
+feature, with the settings, the budget, the memory and the frame scope below. Nothing in this
+addendum changes the owner's ruling; it records how the ruling reaches the engine.
+
+| Setting | Low | Medium | High | Ultra | Governor |
+| --- | --- | --- | --- | --- | --- |
+| `windStepMs` | 0 | 33 | 33 | 16 | `double`, up to 133 ms |
+| `windPressureSteps` | 0 | 16 | 24 | 40 | `scale` |
+| `windSpringTrees` | 0 | 8 | 32 | 64 | `scale` |
+| `windGrid` | 0, no grid | 64 | 128 | 256 | `none` |
+| Budget, ms a frame | 0.5 | 1.2 | 4.9 | 6.25 | floor 0.25 |
+
+- The `webgl2` row gives 66 ms at Medium and above, which is 15 cycles a second. That is the row
+  this record already proposes for WebGL2, where each run costs about 0.16 ms whatever its cells.
+- Low keeps the formula field on every path. Its settings are zero and it makes no pass. The owner
+  has not judged the side-by-side with a small grid. No phone measured the grid's cost either. So
+  the record's Low row stays the analytic field.
+- High and Ultra name the flat 128 and 256 grids. The layered and volume grids are not built. The
+  interface already takes a grid size, so the row moves to them when the solver does.
+- A page that gives `grid` keeps it, on every preset. The record's rows then set only the interval
+  and the pressure count for that page.
+- The governor's floor is a quarter of the budget. At that step the interval is 133 ms at most, and
+  the cycle keeps at least one pressure iteration. So the air still moves and still keeps its
+  volume. A still valley does not meet the bar.
+- Each budget leaves the vegetation add-on its own GPU time inside D-241's frame ceiling. Take the
+  smallest measured ceiling of each preset. The wind's budget plus the vegetation's 5, 12, 49.0 and
+  62.5 ms reads 5.5, 13.2, 53.9 and 68.75 ms. Those sit against 15.5, 43.9, 62.5 and 71.1 ms, so
+  every preset keeps more than the vegetation's time in the frame.
+
+### The cost per frame, not per cycle
+
+This record recommends that the add-on read the field's cost per frame. The add-on does, and the
+engine's shape gives it free. The feature's GPU scope is the field's pass, and the engine times a
+pass over the runs that one frame records. A frame that owes two cycles therefore costs two cycles
+in the figure. The settings take the budget's figures as they stand, in ms a frame. So the S25's
+Ultra row steps down when the frame carries two cycles.
+
+The engine's frame-budget governor still decides its steps from the whole frame's time, as it does
+for every feature. So the wind's budget is a figure that the overlay shows beside the field's
+measured frame time, and the governor lightens the field with the sketch's other budgets. The
+record's recommendation holds for the figure and the budget, not for the governor's input.
+
+### What the branch proves, and what it owes
+
+- Unit tests show that each preset moves each setting. They show that each of the governor's steps
+  moves the interval, the pressure count and the spring trees, and that the budget's floor holds.
+  They show too that a preset change that changes the grid makes a pass of the new size.
+- `windSpringTrees` has no reader yet. Branch poses are M3-V10's work, so the setting waits for
+  them. The vegetation add-on reads it when they land.
+- The stress page drives the governor down and back up with a load of cards that read the field. It
+  runs on the cloud iPad Pro 13 and Galaxy S25. Its record gives each run's settings and frame
+  times, and the pixels that moved in the heavy phase.
+- The field's picture tests move with the preset's interval and pressure count, so the branch
+  redraws the references that change (hard rule 34).

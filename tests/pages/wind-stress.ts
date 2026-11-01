@@ -3,17 +3,24 @@
 // governor steps, and the settle phase takes them away so the governor steps back. The camera
 // stands still, so the pixels that change between two heavy-phase frames are the air moving the
 // cards. Open it with ?gpu= and ?preset=; ?cards= sets the load.
-import { createEngine, type FrameMetrics } from '@null3d/engine';
+import { createEngine, type FrameMetrics, type QualityPreset } from '@null3d/engine';
 import { run } from './lib/result';
 
 const params = new URLSearchParams(location.search);
-const preset = params.get('preset') ?? 'medium';
+const wanted = params.get('preset');
+/** The preset that the page asks for, which the engine caps at the path's highest. */
+const preset = (wanted ?? 'auto') as 'auto' | QualityPreset;
 const cards = Number(params.get('cards') ?? '400000');
 
 /** The sketch's reading of the governor and the wind's resolved settings. */
 interface StressState {
+	/** The engine governor's steps past the render scale. */
 	steps: number;
-	scale: number;
+	/** The wind's share of its own budget, from its floor to 1. */
+	budgetScale: number;
+	budgetMs: number;
+	allowedMs: number;
+	renderScale: number;
 	preset: string;
 	layer: number;
 	/** The load that the device's instance limit allowed. */
@@ -45,8 +52,8 @@ run('wind-stress', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL('./sketches/wind-stress-sketch.ts', import.meta.url);
-	sketch.search = `?cards=${cards}&preset=${preset}`;
-	const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1 });
+	sketch.search = `?cards=${cards}`;
+	const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1, preset });
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.message));
 	await engine.firstFrame;
