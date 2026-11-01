@@ -1474,9 +1474,10 @@ function createHarbour(ctx: SketchContext, surfaces: Surfaces): void {
 	});
 
 	const moorings = MOORINGS;
+	// The boats cast no shadow: through the clear water theirs read as hard dark blobs on the harbour's floor.
 	const yachts = scene.createInstances(geometry.fromArrays(finish(sailboat())), moorings.length, {
 		material: materials.standard({ vertexColors: true, roughness: 0.55, doubleSided: true }),
-		castShadows: true,
+		castShadows: false,
 		receiveShadows: true,
 	});
 	moorings.forEach(([x, z, yaw], k) => {
@@ -1492,7 +1493,7 @@ function createHarbour(ctx: SketchContext, surfaces: Surfaces): void {
 	const small = scene.createInstances(geometry.fromArrays(finish(fishingBoat())), 18, {
 		material: materials.standard({ vertexColors: true, roughness: 0.7 }),
 		colors: true,
-		castShadows: true,
+		castShadows: false,
 		receiveShadows: true,
 	});
 	for (let k = 0; k < 18; k++) {
