@@ -26,8 +26,11 @@ export interface HeavyCheck {
 export const PART_ENV = 'NULL3D_CHECK_PART';
 
 export const HEAVY_CHECKS: readonly HeavyCheck[] = [
-	// The whole generated set beside the text the tests read their counts from.
-	{ file: 'tests/lib/shader-set.test.ts', ceilingMiB: 7168 },
+	// The whole generated set beside the text the tests read their counts from. The set grows with
+	// each feature that adds builds, and shares of it are held while the check runs: CI measured
+	// 7,180 MiB against the older 7,168 figure, so the ceiling leaves room above the growth rather
+	// than sitting twelve mebibytes under it.
+	{ file: 'tests/lib/shader-set.test.ts', ceilingMiB: 8192 },
 	// The engine's programs, read for every build the build wrote. The GLSL sources are most of the
 	// generated set's bytes, and one process that reads every build of it holds 16,839 MiB on the
 	// Mac, past what CI's runner holds beside the rest of the job. So the check runs in three parts,

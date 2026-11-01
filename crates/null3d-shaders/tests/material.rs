@@ -1475,6 +1475,11 @@ fn every_buildable_permutation_of_a_full_custom_material_builds() {
     let mut expected = 0usize;
     let mut not_builds = 0usize;
     for (name, variant) in &template.variants {
+        // The compiler keeps out the variants that a pass's own bit marks as the engine's: no
+        // custom material's word sets that bit.
+        if !variant.required.is_empty() {
+            continue;
+        }
         // The compiler drops the left-out bits from the variant's list before it expands the rest,
         // so the free bits are the list without them.
         let free: Vec<u32> = variant
@@ -1546,4 +1551,60 @@ fn every_buildable_permutation_of_a_full_custom_material_builds() {
             "a custom build carries {name}"
         );
     }
+}
+
+/// The vegetation add-on's plant shaders build into every variant of the standard template: the
+/// leaf and bark material's surface and wind offset, and the leaf card's, which adds the level
+/// morph. The repository's own content depends on them, so a change to the template or the library
+/// that breaks one fails here before a page builds.
+#[test]
+fn the_vegetation_plant_shaders_build() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for name in ["plant.wgsl", "plant-cards.wgsl"] {
+        let source = std::fs::read_to_string(root.join("packages/vegetation/src").join(name))
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let built = compile(&source).unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert!(built.functions.iter().any(|f| f == "surface"), "{name}");
+        assert!(
+            built.functions.iter().any(|f| f == "vertexOffset"),
+            "{name}"
+        );
+        assert!(
+            built
+                .variants
+                .values()
+                .any(|variant| variant.permutation & permutation::TRANSLUCENCY != 0),
+            "{name} names the light through a leaf, so its builds let light through"
+        );
+    }
+}
+
+/// A surface that names its own normal for the diffuse light, as a crown of leaves does.
+const CROWN_LIT: &str = "fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.diffuseNormal = normalize(input.normal + vec3f(0.0, 0.1, 0.0));
+    return s;
+}
+";
+
+#[test]
+fn the_diffuse_normal_reaches_only_the_builds_that_name_it() {
+    // A material that names the field lights its diffuse and ambient by it. The template's split
+    // appears in every one of its builds, and a material that never names the field keeps the
+    // template's single-normal path unchanged.
+    let named = compile(CROWN_LIT).expect("the surface with a normal of its own builds");
+    let mut wgsl = named
+        .variants
+        .values()
+        .filter_map(|variant| variant.wgsl.as_ref());
+    assert!(wgsl.all(|build| build.source.contains("dot(diffuse_normal, to_sun)")));
+    let plain = compile(STRIPES).expect("the plain surface builds");
+    let mut wgsl = plain
+        .variants
+        .values()
+        .filter_map(|variant| variant.wgsl.as_ref());
+    assert!(wgsl.all(
+        |build| !build.source.contains("dot(diffuse_normal, to_sun)")
+            && !build.source.contains("ambient_light(diffuse_normal)")
+    ));
 }

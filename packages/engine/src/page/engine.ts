@@ -226,6 +226,14 @@ export interface EngineOptions {
 	 */
 	depthPrepass?: boolean;
 	/**
+	 * True to blend the camera's blended surfaces in the moment transparency layer. It needs no
+	 * sort and is nearer an exact back-to-front blend than `blending: 'weighted'` is, and it draws
+	 * those surfaces twice. Every preset leaves it off, and the `?moments=on` or `?moments=off`
+	 * switch wins over this option. It stays fixed while the engine runs. Another value fails with
+	 * E1213.
+	 */
+	momentTransparency?: boolean;
+	/**
 	 * True to run GPU occlusion culling on WebGPU: objects that `setOccluder(true)` marks hide the
 	 * objects that lie wholly behind them, so the GPU skips those. Each camera view draws the depth
 	 * of the marked objects that it showed in the last frame and tests every object against it. It
@@ -385,7 +393,9 @@ export interface EngineOptions {
 	 * sky, `'coverage'` with the first masked material that MSAA smooths, `'hash'` with the first
 	 * hashed material, `'cutout'` with the first masked object that casts shadows, which casts none
 	 * until its shaders are built, `'transmission'` with the first material that lets light
-	 * through, `'translucency'` with the first material that lets light through to its other side,
+	 * through, `'color_copy'` with the first step that reads the color of the frame before, which
+	 * the preset's bounce light draws at its start, `'translucency'` with the first material that
+	 * lets light through to its other side,
 	 * `'subsurface'` with the first material with a `subsurfaceRadius` while the subsurface blur has
 	 * taps, `'coat_sheen'` with the first material with a clear coat or a sheen, `'weighted'` with
 	 * the first material of the `weighted` blending, and `'occlusion'` with the first object that
@@ -1688,6 +1698,7 @@ async function startEngine(
 		heroTileSize: options.heroTileSize,
 		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
+		momentTransparency: switches.moments ?? options.momentTransparency,
 		gpuOcclusion: switches.occlusion ?? options.gpuOcclusion,
 		morphTargets: options.morphTargets,
 		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,

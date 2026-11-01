@@ -38,6 +38,9 @@ interface StateResult {
 	callMs?: number;
 	/** The four numbers of each texel of a region read, top row first. */
 	texels?: number[];
+	/** The red channel at the top and the bottom of the frame that shows the pass's image. */
+	top?: number;
+	bottom?: number;
 	error?: string;
 }
 
@@ -71,6 +74,36 @@ for (const { tier, query } of TIERS) {
 		// The field names each texel in green and blue, so a wrong row, column or flip shows.
 		expect(result.texels).toEqual([100, 1, 1, 1, 100, 2, 1, 1, 100, 1, 2, 1, 100, 2, 2, 1]);
 		console.log(`read ${tier}: ${result.frames} frames for the region`);
+	});
+
+	test(`a read gives a region's rows from the image's top on ${tier}`, async ({ page }) => {
+		const result = await stateCase(page, query, 'rows');
+		// The pass names its image row in red and its column in green, from 1, at a quarter of full
+		// scale. The first read takes the image's top two rows and the second its bottom two, so a
+		// copy from the wrong end of the texture or a turn of the rows shows in the other read.
+		const named = (texels: number[]) =>
+			Array.from({ length: 8 }, (_, k) => [
+				Math.round((texels[k * 4] as number) / 0.25),
+				Math.round((texels[k * 4 + 1] as number) / 0.25),
+			]);
+		expect(named(result.texels ?? [])).toEqual([
+			[1, 1],
+			[1, 2],
+			[2, 1],
+			[2, 2],
+			[3, 1],
+			[3, 2],
+			[4, 1],
+			[4, 2],
+		]);
+	});
+
+	test(`a material shows the pass image upright on ${tier}`, async ({ page }) => {
+		const result = await stateCase(page, query, 'rows-shown');
+		// The pass names its row in red, from 1, so its first row is the darkest. A material that
+		// samples a pass's texture the way the docs say shows that row at the frame's top.
+		expect(result.top ?? 255).toBeLessThan(result.bottom ?? 0);
+		expect((result.bottom ?? 0) - (result.top ?? 0)).toBeGreaterThan(20);
 	});
 
 	test(`a history pass of 40 runs reads what 40 frames of one run read on ${tier}`, async ({

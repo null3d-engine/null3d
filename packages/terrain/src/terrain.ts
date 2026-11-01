@@ -5,12 +5,20 @@
 // ground, so a coarse block keeps the hills' relief. The material blends up to four tiled layers
 // over all the blocks, and each layer's own height shows it through its neighbours at a boundary.
 // The terrain has no collision: a game reads `heightAt` and `normalAt` to place what stands on it.
+// The selection that picks the blocks and the build that writes their vertices run in the add-on's
+// WebAssembly module on the engine's job workers, so a frame only asks for the work.
 import type { Mesh, MeshGeometry, SketchContext, Texture, Vec3Like } from '@null3d/engine';
-import { type ChunkShape, chunkShape, writeChunkVertices, writeParentHeights } from './chunk';
+import { Blocks } from './blocks';
+import { type ChunkShape, chunkShape } from './chunk';
 import { createHeightfield, type Heightfield } from './heightfield';
 import { type SplatMaterial, splatMaterial, type TerrainLayer } from './material';
-import { Quadtree } from './quadtree';
 import { defaultSplat, type SplatFunction, splatTexture } from './splat';
+import {
+	type BuildSlot,
+	type TerrainBuilder,
+	type TerrainBuilderOptions,
+	WasmTerrainBuilder,
+} from './terrain-builder';
 
 export type { TerrainLayer } from './material';
 export type { SplatFunction } from './splat';
@@ -85,10 +93,11 @@ export interface TerrainOptions {
 	 */
 	maxBlocks?: number;
 	/**
-	 * The most new blocks that one `update` builds, from 1 up. A camera that crosses into a new
-	 * cell may need tens of blocks, and building them all at once would stall the frame. The
-	 * ground draws its last complete selection until the new one is built. The first update builds
-	 * its whole selection, since there is no ground to draw before it. The default is 16.
+	 * The most new blocks that one task builds, from 1 up. A camera that crosses into a new cell
+	 * may need tens of blocks, and building them all at once would stall the frame. The ground
+	 * draws its last complete selection until the new one is built. The first selection builds
+	 * every block that it needs, over a few tasks, since there is no ground to draw before it. The
+	 * default is 16.
 	 */
 	blocksPerUpdate?: number;
 }
@@ -130,7 +139,7 @@ const DEFAULT_BUILDS = 16;
 export class Terrain {
 	private readonly context: SketchContext;
 	private readonly field: Heightfield;
-	private readonly tree: Quadtree;
+	private readonly tree: Blocks;
 	private readonly material: SplatMaterial['material'];
 	private readonly splatTexture: Texture;
 	private readonly normalTexture: Texture | undefined;
@@ -155,13 +164,30 @@ export class Terrain {
 	 * allocates a word for every block of every frame.
 	 */
 	private spareCount = 0;
-	/** The vertices of the block being written, which every block writes into in turn. */
-	private readonly positions: Float32Array;
-	private readonly normals: Float32Array;
-	/** The parent grid's height at each vertex of the block being written. */
-	private readonly parentHeights: Float32Array;
-	/** The block's four-number record: its parent height, its size, and its low and high heights. */
-	private readonly record: Float32Array;
+	/** The builder that picks the blocks and writes their vertices. */
+	private readonly builder: TerrainBuilder;
+	/** How many leaves the newest selection picked, and the first that waits to be built. */
+	private selectionCount = 0;
+	private cursor = 0;
+	/** True while a task, or the placement after it, runs. */
+	private busy = false;
+	/** The newest view, which waits while an older selection builds. */
+	private hasQueued = false;
+	private queuedX = 0;
+	private queuedY = 0;
+	private queuedZ = 0;
+	private queuedScale = 0;
+	private queuedStamp = 0;
+	/** The view's scale that the newest selection used, which the morph reads. */
+	private lastSelectionScale = 0;
+	/** The stamp of the selection being built, which the blocks that it keeps carry. */
+	private buildingStamp = 0;
+	/** True while the first selection builds, which builds every block that it needs. */
+	private firstSelection = false;
+	/** The promise that settles when no selection or build waits. */
+	private settledResolve: (() => void) | undefined;
+	/** The first failure of the builder, which the ground reports once. */
+	private reportedFailure: Error | undefined;
 	/** True moves each block toward its parent's surface. */
 	private morph: boolean;
 	/** The selection's scale that the material's morph reads, and the one it last got. */
@@ -180,13 +206,15 @@ export class Terrain {
 	/** The block and the key that `scanOldest` found, which `evict` takes. */
 	private oldest: Block | undefined = undefined;
 	private oldestKey = 0;
+	/** The stamp of the selection that the closures below judge a block by. */
+	private currentStamp = 0;
 	/** Draws every block of the newest selection, without making an iterator or a closure. */
 	private readonly showCurrent = (block: Block): void => {
-		if (block.stamp === this.stamp) this.show(block);
+		if (block.stamp === this.currentStamp) this.show(block);
 	};
 	/** Parks a block that the newest selection leaves out, without making an iterator or a closure. */
 	private readonly parkLeftOut = (block: Block): void => {
-		if (block.stamp === this.stamp) return;
+		if (block.stamp === this.currentStamp) return;
 		this.blocks.delete(block.key);
 		this.hide(block);
 		this.park(block);
@@ -197,7 +225,7 @@ export class Terrain {
 	};
 	/** Notes the oldest block that the newest selection leaves out and that no longer draws. */
 	private readonly scanOldest = (block: Block, key: number): void => {
-		if (block.stamp === this.stamp || block.level !== this.scanLevel) return;
+		if (block.stamp === this.currentStamp || block.level !== this.scanLevel) return;
 		// A block that draws holds the last complete selection, which stays whole until the newest
 		// one is built, so its mesh is not free yet.
 		if (block.shown) return;
@@ -225,8 +253,15 @@ export class Terrain {
 	private visible = true;
 	private ended = false;
 
-	/** @internal A terrain is made by `createTerrain`. */
-	constructor(context: SketchContext, options: TerrainOptions) {
+	/**
+	 * @internal A terrain is made by `createTerrain`. The builder is the add-on's own; a test
+	 * passes one that runs the same selection in its own thread.
+	 */
+	constructor(
+		context: SketchContext,
+		options: TerrainOptions,
+		builder?: (options: TerrainBuilderOptions) => TerrainBuilder,
+	) {
 		const {
 			size,
 			chunkQuads = DEFAULT_QUADS,
@@ -264,14 +299,23 @@ export class Terrain {
 			resolution: options.resolution,
 			height: options.height,
 		});
-		this.tree = new Quadtree({ size, maxLevel, quads: chunkQuads, field: this.field });
+		this.tree = new Blocks({ size, maxLevel, quads: chunkQuads, field: this.field });
 		this.cellSize = this.tree.blockSize(maxLevel);
 		this.halfSize = size / 2;
 		this.shape = chunkShape(chunkQuads);
-		this.positions = new Float32Array(this.shape.vertices * 3);
-		this.normals = new Float32Array(this.shape.vertices * 3);
-		this.parentHeights = new Float32Array(this.shape.vertices);
-		this.record = new Float32Array(this.shape.vertices * 4);
+		const builderOptions: TerrainBuilderOptions = {
+			size,
+			field: this.field,
+			blocks: this.tree,
+			ring: this.shape.ring,
+			quads: chunkQuads,
+			maxLevel,
+			vertices: this.shape.vertices,
+			maxBlocks,
+			builds: blocksPerUpdate,
+			skirt: this.fixedSkirt,
+		};
+		this.builder = builder ? builder(builderOptions) : new WasmTerrainBuilder(builderOptions);
 		this.selection.selection[1] = chunkQuads;
 		const splat = options.splat ?? defaultSplat(this.field);
 		this.splatTexture = splatTexture(
@@ -338,7 +382,7 @@ export class Terrain {
 		return this.drawn * (grid + skirt);
 	}
 
-	/** True while the camera's newest selection is still being built, over the next updates. */
+	/** True while the camera's newest selection is still being built, over the next frames. */
 	get building(): boolean {
 		return this.pending;
 	}
@@ -363,11 +407,13 @@ export class Terrain {
 	 * Picks the blocks to draw for a camera whose world position `eye` holds, as x, y and z. The
 	 * ground picks again when the camera crosses a cell of the finest level, rises by one such
 	 * cell, or draws through a different field of view or buffer height, so a still camera costs
-	 * no work. A new selection builds at most `blocksPerUpdate` blocks per call, and the ground
-	 * draws the selection it had until the new one is built. A block that the new selection needs
-	 * takes the mesh of one that it left out. Call it in `onUpdate` with the camera's own position,
-	 * in an array you keep: an array crosses the call as it is, where two fractions make the
-	 * browser box each of them into an object.
+	 * no work. The selection and the block build run in the add-on's WebAssembly module on the
+	 * engine's job workers, so this call only asks for them. A new selection builds at most
+	 * `blocksPerUpdate` blocks in one task, the first selection builds every block it needs, and
+	 * the ground draws the selection it had until the new one is built. A block that the new
+	 * selection needs takes the mesh of one that it left out. Call it in `onUpdate` with the
+	 * camera's own position, in an array you keep: an array crosses the call as it is, where two
+	 * fractions make the browser box each of them into an object.
 	 */
 	update(eye: Vec3Like): void {
 		const x = eye[0] as number;
@@ -396,33 +442,22 @@ export class Terrain {
 			this.lastFov = fov;
 			this.lastScreen = screen;
 			this.lastError = error;
-			this.tree.select(eye, fov, screen, error);
-			this.applyMorphScale(fov, screen, error);
+			// How far one cell of a block reaches before its error fills the buffer: half the buffer
+			// over the tangent of half the field of view, over the error allowed.
+			const half = Math.tan((Math.min(Math.max(fov, 0.01), 179.99) * Math.PI) / 360);
+			const scale = error > 0 ? screen / (2 * half * error) : Number.POSITIVE_INFINITY;
+			this.lastSelectionScale = scale;
+			this.applyMorphScale(scale);
 			this.stamp++;
 			this.pending = true;
-		} else if (!this.pending) return;
-		const { tree, blocks, stamp } = this;
-		// The first selection builds whole: before it, there is no ground to draw.
-		let builds = blocks.size === 0 ? Number.POSITIVE_INFINITY : this.builds;
-		let complete = true;
-		for (let i = 0; i < tree.count; i++) {
-			const level = tree.levels[i] as number;
-			const column = tree.columns[i] as number;
-			const row = tree.rows[i] as number;
-			const key = tree.key(level, column, row);
-			let block = blocks.get(key);
-			if (!block) {
-				if (builds <= 0) {
-					complete = false;
-					continue;
-				}
-				builds--;
-				block = this.placeBlock(level, column, row, key);
-			}
-			block.stamp = stamp;
+			this.queuedX = x;
+			this.queuedY = y;
+			this.queuedZ = z;
+			this.queuedScale = scale;
+			this.queuedStamp = this.stamp;
+			this.hasQueued = true;
+			this.pump();
 		}
-		this.pending = !complete;
-		if (complete) this.retire();
 	}
 
 	/**
@@ -433,21 +468,177 @@ export class Terrain {
 	setMorph(enabled: boolean): void {
 		if (enabled === this.morph) return;
 		this.morph = enabled;
-		if (!Number.isNaN(this.lastFov))
-			this.applyMorphScale(this.lastFov, this.lastScreen, this.lastError);
+		if (!Number.isNaN(this.lastFov)) this.applyMorphScale(this.lastSelectionScale);
 	}
 
 	/**
 	 * Applies the selection's scale to the material's morph, so a block hands over where the
 	 * selection switches it. 0 keeps every block where it is.
 	 */
-	private applyMorphScale(fov: number, screen: number, error: number): void {
-		const half = Math.tan((Math.min(Math.max(fov, 0.01), 179.99) * Math.PI) / 360);
-		const scale = this.morph && error > 0 ? screen / (2 * half * error) : 0;
-		if (scale === this.lastScale) return;
-		this.lastScale = scale;
-		this.selection.selection[0] = scale;
+	private applyMorphScale(scale: number): void {
+		const value = this.morph && Number.isFinite(scale) ? scale : 0;
+		if (value === this.lastScale) return;
+		this.lastScale = value;
+		this.selection.selection[0] = value;
 		this.material.set(this.selection);
+	}
+
+	/**
+	 * Starts the newest view's selection, unless a task or a placement runs. A view that arrives
+	 * meanwhile waits, and replaces the one that has not started.
+	 */
+	private pump(): void {
+		if (this.ended) return;
+		if (this.busy || !this.hasQueued) {
+			if (!this.busy && !this.hasQueued) this.settle();
+			return;
+		}
+		this.hasQueued = false;
+		this.busy = true;
+		this.buildingStamp = this.queuedStamp;
+		this.currentStamp = this.buildingStamp;
+		this.builder.select(this.queuedX, this.queuedY, this.queuedZ, this.queuedScale).then(
+			(count) => this.selected(count),
+			(error: unknown) => this.failed(error),
+		);
+	}
+
+	/** Keeps the leaves that the builder picked, then builds the blocks of the first batch. */
+	private selected(count: number): void {
+		if (this.ended) return;
+		// A newer view waits, so this selection would only be replaced: let it go.
+		if (this.hasQueued) {
+			this.busy = false;
+			this.pump();
+			return;
+		}
+		this.selectionCount = count;
+		this.cursor = 0;
+		this.firstSelection = this.blocks.size === 0;
+		this.buildNext();
+	}
+
+	/**
+	 * Collects the leaves of the newest selection that the ground does not hold yet, up to the
+	 * batch that one call builds, and asks the builder for their vertices. The first selection
+	 * builds every block it needs, since before it there is no ground to draw.
+	 */
+	private buildNext(): void {
+		if (this.ended) return;
+		if (this.hasQueued) {
+			this.busy = false;
+			this.pump();
+			return;
+		}
+		const { tree, blocks, builder } = this;
+		const stamp = this.buildingStamp;
+		const limit = this.firstSelection ? builder.batch : Math.min(this.builds, builder.batch);
+		let count = 0;
+		while (this.cursor < this.selectionCount && count < limit) {
+			const at = this.cursor * 3;
+			const level = builder.leaves[at] as number;
+			const column = builder.leaves[at + 1] as number;
+			const row = builder.leaves[at + 2] as number;
+			this.cursor++;
+			const key = tree.key(level, column, row);
+			const held = blocks.get(key);
+			if (held) {
+				held.stamp = stamp;
+				continue;
+			}
+			builder.buildLeaves[count * 3] = level;
+			builder.buildLeaves[count * 3 + 1] = column;
+			builder.buildLeaves[count * 3 + 2] = row;
+			count++;
+		}
+		if (count > 0) {
+			builder.build(count).then(
+				() => this.built(count),
+				(error: unknown) => this.failed(error),
+			);
+			return;
+		}
+		this.finished();
+	}
+
+	/** Places the blocks that the builder wrote, then builds the next batch of the selection. */
+	private built(count: number): void {
+		if (this.ended) return;
+		if (this.hasQueued) {
+			this.busy = false;
+			this.pump();
+			return;
+		}
+		const { tree, builder } = this;
+		const stamp = this.buildingStamp;
+		for (let i = 0; i < count; i++) {
+			const level = builder.buildLeaves[i * 3] as number;
+			const column = builder.buildLeaves[i * 3 + 1] as number;
+			const row = builder.buildLeaves[i * 3 + 2] as number;
+			this.placeBlock(
+				level,
+				column,
+				row,
+				tree.key(level, column, row),
+				stamp,
+				builder.slots[i] as BuildSlot,
+			);
+		}
+		if (this.cursor < this.selectionCount) this.buildNext();
+		else this.finished();
+	}
+
+	/** Ends a selection: its blocks draw, the rest wait for the next block that needs a mesh. */
+	private finished(): void {
+		if (this.ended) return;
+		this.retire(this.buildingStamp);
+		this.selectionCount = 0;
+		this.cursor = 0;
+		this.busy = false;
+		this.pending = this.hasQueued;
+		if (this.hasQueued) this.pump();
+		else this.settle();
+	}
+
+	/** Reports a failed selection once, and lets the last complete ground stand. */
+	private failed(error: unknown): void {
+		this.busy = false;
+		this.selectionCount = 0;
+		this.cursor = 0;
+		// The engine stopped before the answer came: its workers are gone, so a new view asks for
+		// nothing, and the ground keeps the last selection it built.
+		if ((error as { stage?: string } | null)?.stage === 'stopped') {
+			this.hasQueued = false;
+			this.pending = false;
+			this.settle();
+			return;
+		}
+		this.pending = this.hasQueued;
+		if (!this.reportedFailure) {
+			const failure = error instanceof Error ? error : new Error(String(error));
+			this.reportedFailure = failure;
+			console.error(`terrain: the ground could not build. ${failure.message}`);
+		}
+		if (this.hasQueued) this.pump();
+		else this.settle();
+	}
+
+	/** Resolves the callers that wait for the ground to finish building. */
+	private settle(): void {
+		const resolve = this.settledResolve;
+		this.settledResolve = undefined;
+		if (resolve) resolve();
+	}
+
+	/**
+	 * @internal Resolves once no selection or build waits. The unit tests use it to drive the
+	 * builder without a frame loop.
+	 */
+	settled(): Promise<void> {
+		if (!this.busy && !this.hasQueued) return Promise.resolve();
+		return new Promise((resolve) => {
+			this.settledResolve = resolve;
+		});
 	}
 
 	/** Shows or hides the whole ground, for a camera high above it. */
@@ -467,16 +658,23 @@ export class Terrain {
 		this.splatTexture.destroy();
 		this.normalTexture?.destroy();
 		this.white?.destroy();
+		this.builder.destroy();
 		this.drawnBlocks = 0;
 		this.pending = false;
+		this.busy = false;
+		this.hasQueued = false;
+		this.selectionCount = 0;
+		this.cursor = 0;
 		this.ended = true;
+		this.settle();
 	}
 
 	/**
 	 * Ends a build: the newest selection draws, the blocks it leaves out park for the next block
 	 * that needs a mesh, and the meshes that waited longest past the ground's limit are destroyed.
 	 */
-	private retire(): void {
+	private retire(stamp: number): void {
+		this.currentStamp = stamp;
 		this.blocks.forEach(this.showCurrent);
 		this.blocks.forEach(this.parkLeftOut);
 		this.trimSpares();
@@ -503,62 +701,33 @@ export class Terrain {
 	 * leaf's ground, taken from the blocks that earlier selections left out, and a new mesh only
 	 * when none waits. The block draws once its whole selection is built, so it starts hidden.
 	 */
-	private placeBlock(level: number, column: number, row: number, key: number): Block {
+	private placeBlock(
+		level: number,
+		column: number,
+		row: number,
+		key: number,
+		stamp: number,
+		slot: BuildSlot,
+	): Block {
 		const { tree, shape, blocks } = this;
 		const blockSize = tree.blockSize(level);
 		const originX = tree.blockX(level, column);
 		const originZ = tree.blockZ(level, row);
 		const skirt = this.fixedSkirt ?? (blockSize / shape.quads) * 4;
-		writeChunkVertices(
-			this.field,
-			shape,
-			blockSize,
-			originX,
-			originZ,
-			skirt,
-			this.positions,
-			this.normals,
-		);
-		// The parent is the quadrant of the level above that holds this block, or the block itself
-		// at the coarsest level.
-		const parentLevel = level > 0 ? level - 1 : 0;
-		const parentColumn = level > 0 ? column >> 1 : 0;
-		const parentRow = level > 0 ? row >> 1 : 0;
-		writeParentHeights(
-			this.field,
-			shape,
-			blockSize,
-			originX,
-			originZ,
-			skirt,
-			tree.blockSize(parentLevel),
-			tree.blockX(parentLevel, parentColumn),
-			tree.blockZ(parentLevel, parentRow),
-			this.parentHeights,
-		);
-		const vertices = shape.vertices;
-		const low = tree.lowAt(level, column, row);
-		const high = tree.highAt(level, column, row);
-		for (let v = 0; v < vertices; v++) {
-			this.record[v * 4] = this.parentHeights[v] as number;
-			this.record[v * 4 + 1] = blockSize;
-			this.record[v * 4 + 2] = low;
-			this.record[v * 4 + 3] = high;
-		}
 		let block = this.takeBlock(level);
 		if (block) {
 			// The mesh is the level's own, so it already carries that level's sphere: a crossing
 			// gives the object a new place and leaves the bounds, and the draw table, alone.
-			block.mesh.updateVertices('positions', this.positions);
-			block.mesh.updateVertices('normals', this.normals);
-			block.mesh.updateVertices('targets', this.record);
+			block.mesh.updateVertices('positions', slot.positions);
+			block.mesh.updateVertices('normals', slot.normals);
+			block.mesh.updateVertices('targets', slot.record);
 			block.object.setPosition(originX, 0, originZ);
 		} else {
 			const mesh = this.context.geometry.fromArrays({
-				positions: this.positions,
-				normals: this.normals,
+				positions: slot.positions,
+				normals: slot.normals,
 				uvs: shape.uvs,
-				targets: this.record,
+				targets: slot.record,
 				indices: shape.indices,
 			});
 			const object = this.context.scene.createMesh({
@@ -570,11 +739,11 @@ export class Terrain {
 			});
 			const { center, radius } = this.blockSphere(level, blockSize, skirt);
 			object.setBounds(center, radius);
-			block = { key, object, mesh, level, stamp: this.stamp, shown: false };
+			block = { key, object, mesh, level, stamp, shown: false };
 		}
 		block.key = key;
 		block.level = level;
-		block.stamp = this.stamp;
+		block.stamp = stamp;
 		block.object.setVisible(false);
 		blocks.set(key, block);
 		return block;

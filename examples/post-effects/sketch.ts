@@ -1,34 +1,19 @@
 // Post effects: crates at the dead end of a neon alley at night, on wet asphalt that mirrors the
 // neon, and the camera sways in front of them. Bloom spreads the neon past its edges, ambient
 // occlusion darkens the corner, an outline marks one crate, depth of field focuses on that crate,
-// a vignette darkens the edges, and a light sharpening keeps the crate edges crisp. A lens grade
-// splits red from blue toward the edges and adds film grain, and a second effect reads a level of
-// bloom's chain to bleed the bright neon sideways into an anamorphic streak, rather than gathering
-// its own blur. Every 3 seconds the color grade changes: none, warm, then cool, each set from the
-// grading controls, which a job worker bakes into a table. The pointer moves the pink lamp, and the
-// bloom, the shading and the reflections in the puddles follow.
+// the lens kit darkens the edges, keeps the crate edges crisp, splits red from blue toward the
+// edges, adds film grain and bleeds the bright neon sideways into an anamorphic streak, which it
+// reads from a level of bloom's chain rather than gathering its own blur. Every 3 seconds the color
+// grade changes: none, warm, then cool, each set from the grading controls, which a job worker bakes
+// into a table. The pointer moves the pink lamp, and the bloom, the shading and the reflections in
+// the puddles follow.
 import { defineSketch, type GradingSettings, type Vec3, vec3 } from '@null3d/engine';
+import { createLensKit } from '../addons/lens-kit/index';
 import { interact } from '../lib/interact';
-import { LENS_WGSL } from '../lib/lens';
 import { enableReflections } from '../lib/ssr';
 
 /** Seconds that each color grade shows. */
 const STEP = 3;
-
-/**
- * The anamorphic streak: the glow of bloom's chain's third level, stretched across the bright neon,
- * tinted blue. The effect reads the level instead of gathering taps of its own.
- */
-const STREAK_WGSL = /* wgsl */ `
-struct Uniforms { strength: f32 }
-
-fn effect(input: EffectInput) -> vec4f {
-    let glow = effectBloom(input.uv);
-    // The level's glow is everything bright, blurred wider as the level goes up: added back at a
-    // gain, it reads as the streak and the glare around the neon.
-    return vec4f(input.color.rgb + glow * uniforms.strength * vec3f(0.45, 0.65, 1.0), input.color.a);
-}
-`;
 
 /** Warmer whites, a lifted toe and a cool tint in the shadows. */
 const WARM: GradingSettings = {
@@ -58,14 +43,19 @@ export default defineSketch(async (ctx) => {
 		bloom: { intensity: 0.3, threshold: 1 },
 		ao: { radius: 0.6, intensity: 1 },
 		outline: { color: '#ffd166', width: 2 },
-		vignette: { intensity: 0.9, size: 1.1 },
 		dof: { aperture: 1.4, focusPoint: [-0.3, 0.35, -1.45] },
 		ssr: { maxDistance: 24, thickness: 0.6 },
-		sharpen: 0.5,
 	});
-	// The lens effect keeps the color fringes and the grain. The streak comes from bloom's chain.
-	post.addEffect({ wgsl: LENS_WGSL, uniforms: { shift: 6, streak: 0, grain: 0.05 } });
-	post.addEffect({ wgsl: STREAK_WGSL, uniforms: { strength: 6 }, bloomLevel: 3, order: 1 });
+	// The lens kit gives the picture its vignette, its light sharpening and the camera's marks: the
+	// color fringes, an anamorphic streak read from bloom's own glow, and the grain.
+	const lens = createLensKit(ctx, {
+		sharpen: 0.5,
+		vignette: { intensity: 0.9, size: 1.1 },
+		bloomLevel: 3,
+		aberration: 2,
+		streak: 3.5,
+		grain: 0.05,
+	});
 	scene.setBackground('#05060a');
 	scene.setFog({ color: '#0a0c14', density: 0.03 });
 	const camera = scene.createPerspectiveCamera({ fov: 45 });
@@ -133,7 +123,7 @@ export default defineSketch(async (ctx) => {
 			const next = Math.floor(time.now / STEP) % grades.length;
 			if (next === shown) return;
 			shown = next;
-			post.set({ grading: grades[next] });
+			lens.set({ grading: grades[next] });
 		},
 	};
 });

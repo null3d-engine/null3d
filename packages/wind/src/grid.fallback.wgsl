@@ -181,14 +181,14 @@ fn wind_analytic(
 // </wind-events>
 
 // <wind-solver>
-/// The Jacobi iterations that one cycle runs before it projects the air.
-const WIND_PRESSURE_STEPS: i32 = 20;
-/// The runs that one cycle takes: the forces and the advection, the pressure's iterations, and the
-/// projection.
-const WIND_CYCLE: i32 = WIND_PRESSURE_STEPS + 2;
+/// The pressure iterations of one cycle arrive in the whole part of the ground setting, which the
+/// entry point splits out. The fraction carries the ground itself.
 /// How fast the air is pulled toward the analytic field each second. The pull is weak enough that
 /// what the air carried from the frames before stays a while.
 const WIND_PULL: f32 = 0.8;
+/// The divisor that keeps the ground's share below one, beside the cycle's pressure count in the
+/// same value. The add-on packs the two, so the two files must agree.
+const WIND_GROUND_PACK: f32 = 100.0;
 /// How hard the vorticity confinement keeps the eddies that advection would smooth away.
 const WIND_VORTICITY: f32 = 0.35;
 
@@ -222,10 +222,15 @@ fn wind_advect(
 ) -> WindState {
     let cell = box.z / f32(size.x);
     let world = vec2f(box.x, box.y) + (vec2f(at) + 0.5) * cell;
-    let pullTo = wind_analytic(
-        air, box.w, slots[0], slots[1], slots[2], slots[3],
-        vec3f(world.x, WIND_FULL_HEIGHT, world.y),
-    );
+    let place = vec3f(world.x, WIND_FULL_HEIGHT, world.y);
+    // The box's edge takes the steady field, which a reader past the box works out at the same
+    // height, so the air is continuous across the edge. The pushes and the gust act inside the box:
+    // the cell beside the edge carries advected air, which lags them.
+    if (at.x == 0 || at.y == 0 || at.x == i32(size.x) - 1 || at.y == i32(size.y) - 1) {
+        let steady = wind_steady(air, place);
+        return WindState(steady.xz, 0.0, 1);
+    }
+    let pullTo = wind_analytic(air, box.w, slots[0], slots[1], slots[2], slots[3], place);
     // The advection: the air here comes from where the velocity a step back points.
     let source = (world - state.v * dt - vec2f(box.x, box.y)) / cell - vec2f(0.5);
     let base = vec2i(floor(source));
@@ -249,11 +254,6 @@ fn wind_advect(
     let magnitude = max(length(gradient), 1e-6);
     let n = gradient / magnitude;
     v += vec2f(n.y, -n.x) * WIND_VORTICITY * cell * curl * dt;
-    // The box's edge takes the analytic air exactly, so the far field and the grid meet there. A
-    // cell beside the edge carries advected air, which lags a push, so beside a push the two differ.
-    if (at.x == 0 || at.y == 0 || at.x == i32(size.x) - 1 || at.y == i32(size.y) - 1) {
-        v = pullTo.xz;
-    }
     return WindState(v, 0.0, 1);
 }
 
@@ -274,6 +274,11 @@ fn wind_pressure(
 
 /// The last stage: the air loses the pressure's slope, and the cycle starts again.
 fn wind_project(box: vec4f, dt: f32, at: vec2i, size: vec2u, state: WindState) -> WindState {
+    // The edge keeps the steady field that the advection set, so the slope there would pull it away
+    // from the far field that a reader works out just past the box.
+    if (at.x == 0 || at.y == 0 || at.x == i32(size.x) - 1 || at.y == i32(size.y) - 1) {
+        return WindState(state.v, state.pressure, 0);
+    }
     let cell = box.z / f32(size.x);
     let left = wind_state(at - vec2i(1, 0), size).pressure;
     let right = wind_state(at + vec2i(1, 0), size).pressure;
@@ -286,10 +291,10 @@ fn wind_project(box: vec4f, dt: f32, at: vec2i, size: vec2u, state: WindState) -
 /// One run of the solver at a texel: the stage that the state names, as the next state.
 fn wind_step(
     air: WindAir, box: vec4f, dt: f32, slots: array<vec4f, 4>,
-    at: vec2i, size: vec2u, state: WindState,
+    at: vec2i, size: vec2u, state: WindState, pressure: i32,
 ) -> WindState {
     if (state.stage == 0) { return wind_advect(air, box, dt, slots, at, size, state); }
-    if (state.stage <= WIND_PRESSURE_STEPS) {
+    if (state.stage <= pressure) {
         return wind_pressure(box, dt, at, size, state);
     }
     return wind_project(box, dt, at, size, state);
@@ -303,10 +308,14 @@ fn effect(input: EffectInput) -> vec4f {
     let at = vec2i(i32(input.pixel.x), i32(input.size.y) - 1 - i32(input.pixel.y));
     let before = wind_read(at);
     let state = WindState(vec2f(before.r, before.g), before.b, i32(before.a + 0.5));
+    // The ground setting's whole part is the cycle's pressure count; its fraction is the ground.
+    let packed = uniforms.u0.w;
+    let pressure = i32(floor(packed));
     var air = wind_air(uniforms.u0, uniforms.u1, uniforms.u2);
+    air.ground = (packed - f32(pressure)) * WIND_GROUND_PACK;
     air.time = input.time;
     // The slots arrive in the fourth to seventh vectors; the first three hold the settings.
     let slots = array<vec4f, 4>(uniforms.u3, uniforms.u4, uniforms.u5, uniforms.u6);
-    let next = wind_step(air, uniforms.u7, uniforms.u0.x, slots, at, size, state);
+    let next = wind_step(air, uniforms.u7, uniforms.u0.x, slots, at, size, state, pressure);
     return vec4f(next.v.x, next.v.y, next.pressure, f32(next.stage));
 }

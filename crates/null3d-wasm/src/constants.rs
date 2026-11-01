@@ -163,8 +163,8 @@ pub mod map_slot {
     pub const IRIDESCENCE_ROW: u32 = LayerMap::Iridescence.slot() as u32;
     pub const IRIDESCENCE_THICKNESS_ROW: u32 = LayerMap::IridescenceThickness.slot() as u32;
     pub const ANISOTROPY_ROW: u32 = LayerMap::Anisotropy.slot() as u32;
-    pub const TRANSMISSION_ROW: u32 = LayerMap::Transmission.slot() as u32;
-    pub const THICKNESS_ROW: u32 = LayerMap::Thickness.slot() as u32;
+    pub const TRANSMISSION_ROW: u32 = LayerMap::Transmission.row_slot() as u32;
+    pub const THICKNESS_ROW: u32 = LayerMap::Thickness.row_slot() as u32;
 
     /// The number that `setMaterialMap` takes for a layer map: its place after the map slots.
     const fn layer(map: LayerMap) -> u32 {
@@ -1029,10 +1029,24 @@ pub fn typescript() -> String {
             "PARTICLE",
             &[
                 ("RECORD_BYTES", particles::RECORD_BYTES),
+                ("BIRTH_FLOATS", particles::BIRTH_FLOATS as u32),
                 ("PARAM_FLOATS", particles::PARAM_FLOATS as u32),
                 ("FRAME_FLOATS", particles::FRAME_FLOATS as u32),
                 ("MAX_SYSTEMS", particles::MAX_SYSTEMS as u32),
                 ("MAX_RECORDS", particles::MAX_RECORDS),
+                (
+                    "EMITTER_HEADER_FLOATS",
+                    particles::EMITTER_HEADER_FLOATS as u32,
+                ),
+                ("EMITTER_ROW_FLOATS", particles::EMITTER_ROW_FLOATS as u32),
+                (
+                    "EMITTER_FIXED_FLOATS",
+                    particles::EMITTER_FIXED_FLOATS as u32,
+                ),
+                (
+                    "EMITTER_SUB_MATRIX_FLOATS",
+                    particles::EMITTER_SUB_MATRIX_FLOATS as u32,
+                ),
             ],
         ),
         // The most that a draw whose instance count the GPU writes holds.
@@ -1524,6 +1538,7 @@ pub fn typescript() -> String {
                 ("FINAL_BLOOM", null3d_render::scope::FINAL_BLOOM),
                 ("OUTPUT", null3d_render::scope::OUTPUT),
                 ("OUTPUT_BLOOM", null3d_render::scope::OUTPUT_BLOOM),
+                ("LIGHT_DEPTH", null3d_render::scope::LIGHT_DEPTH),
             ],
         ),
         // The draw list's codes that `createTexture` takes, so the sketch thread needs no import of

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { SketchContext, Texture } from '@null3d/engine';
-import { createTerrain, type TerrainOptions } from './terrain';
+import { ReferenceTerrainBuilder } from './reference-builder';
+import { Terrain, type TerrainOptions } from './terrain';
 
 /** A block's mesh as the fake geometry keeps it: the ground it holds, and its life. */
 interface FakeMesh {
@@ -113,67 +114,65 @@ const layer = { map: {} as Texture };
 
 function terrain(options: Partial<TerrainOptions> = {}) {
 	const fake = fakeContext();
-	const ground = createTerrain(fake.context, {
-		size: SIZE,
-		height: () => 0,
-		resolution: 8,
-		splatResolution: 2,
-		chunkQuads: 16,
-		layers: [layer],
-		maxLevel: 5,
-		...options,
-	});
+	const ground = new Terrain(
+		fake.context,
+		{
+			size: SIZE,
+			height: () => 0,
+			resolution: 8,
+			splatResolution: 2,
+			chunkQuads: 16,
+			layers: [layer],
+			maxLevel: 5,
+			...options,
+		},
+		(builder) => new ReferenceTerrainBuilder(builder),
+	);
 	return { ...fake, ground };
 }
 
-/** Moves the camera to a place and lets every update that the new selection needs run. */
-function settle(t: ReturnType<typeof terrain>, x: number, z: number, y = 0): void {
+/** Moves the camera to a place and lets the selection that it asks for finish. */
+async function settle(t: ReturnType<typeof terrain>, x: number, z: number, y = 0): Promise<void> {
 	t.ground.update([x, y, z]);
-	while (t.ground.building) t.ground.update([x, y, z]);
+	await t.ground.settled();
 }
 
 describe('terrain updates', () => {
-	test('the first update builds its whole selection, which tiles the ground once', () => {
+	test('the first update builds its whole selection, which tiles the ground once', async () => {
 		const t = terrain({ blocksPerUpdate: 1 });
-		t.ground.update([10, 0, 10]);
+		await settle(t, 10, 10);
 		expect(t.ground.building).toBe(false);
 		expect(t.visible().length).toBe(t.ground.drawn);
 		expect(t.area()).toBeCloseTo(SIZE * SIZE, 6);
 	});
 
-	test('a still camera does no work', () => {
+	test('a still camera does no work', async () => {
 		const t = terrain();
-		t.ground.update([10, 0, 10]);
+		await settle(t, 10, 10);
 		const made = t.blocks.length;
-		t.ground.update([11, 0, 12]);
+		await settle(t, 11, 12);
 		expect(t.blocks.length).toBe(made);
 	});
 
-	test('a new cell builds at most blocksPerUpdate blocks per update and keeps the old ground until then', () => {
+	test('a new cell keeps the old ground drawn whole until its selection is built', async () => {
 		const t = terrain({ blocksPerUpdate: 2 });
-		t.ground.update([10, 0, 10]);
+		await settle(t, 10, 10);
 		const before = t.visible();
 		// Far enough that the new cell needs more than two new blocks.
 		t.ground.update([300, 0, -200]);
-		let updates = 1;
-		while (t.ground.building) {
-			expect(t.visible()).toEqual(before);
-			const made = t.blocks.length;
-			t.ground.update([300, 0, -200]);
-			expect(t.blocks.length - made).toBeLessThanOrEqual(2);
-			updates++;
-		}
-		expect(updates).toBeGreaterThan(1);
+		expect(t.ground.building).toBe(true);
+		expect(t.visible()).toEqual(before);
+		await t.ground.settled();
 		expect(t.visible()).not.toEqual(before);
 		expect(t.visible().length).toBe(t.ground.drawn);
 		expect(t.area()).toBeCloseTo(SIZE * SIZE, 6);
 	});
 
-	test('setVisible(true) shows the current selection alone, not every cached block', () => {
+	test('setVisible(true) shows the current selection alone, not every cached block', async () => {
 		const t = terrain();
-		t.ground.update([10, 0, 10]);
-		t.ground.update([400, 0, 400]);
-		t.ground.update([-400, 0, 300]);
+		await settle(t, 10, 10);
+		await settle(t, 400, 400);
+		await settle(t, -400, 300);
 		expect(t.blocks.filter((b) => !b.destroyed).length).toBeGreaterThan(t.ground.drawn);
 		t.ground.setVisible(false);
 		expect(t.visible()).toEqual([]);
@@ -183,19 +182,19 @@ describe('terrain updates', () => {
 		expect(t.area()).toBeCloseTo(SIZE * SIZE, 6);
 	});
 
-	test('a hidden ground stays hidden while the camera moves', () => {
+	test('a hidden ground stays hidden while the camera moves', async () => {
 		const t = terrain();
-		t.ground.update([10, 0, 10]);
+		await settle(t, 10, 10);
 		t.ground.setVisible(false);
-		t.ground.update([400, 0, 400]);
+		await settle(t, 400, 400);
 		expect(t.visible()).toEqual([]);
 		t.ground.setVisible(true);
 		expect(t.area()).toBeCloseTo(SIZE * SIZE, 6);
 	});
 
-	test('past maxBlocks, the ground holds no more meshes than its cap or one selection', () => {
+	test('past maxBlocks, the ground holds no more meshes than its cap or one selection', async () => {
 		const t = terrain({ maxBlocks: 64 });
-		for (let k = 0; k < 20; k++) settle(t, -500 + k * 50, (k % 5) * 100 - 250);
+		for (let k = 0; k < 20; k++) await settle(t, -500 + k * 50, (k % 5) * 100 - 250);
 		const kept = t.blocks.filter((b) => !b.destroyed);
 		// A selection draws more blocks than the cap, so the ground holds one selection of meshes
 		// and gives up the ones that no selection draws.
@@ -211,38 +210,37 @@ describe('terrain updates', () => {
 		expect(t.area()).toBeCloseTo(SIZE * SIZE, 6);
 	});
 
-	test('the ground takes the meshes that no selection draws before it builds new ones', () => {
+	test('the ground takes the meshes that no selection draws before it builds new ones', async () => {
 		const t = terrain();
 		// Two places far apart: each move needs almost its whole selection built again, and the
 		// ground holds the meshes of the selection that it leaves behind.
-		for (let k = 0; k < 10; k++) settle(t, k % 2 === 0 ? -400 : 400, 100);
+		for (let k = 0; k < 10; k++) await settle(t, k % 2 === 0 ? -400 : 400, 100);
 		expect(t.blocks.length).toBeLessThan(t.ground.drawn * 4);
 		expect(t.area()).toBeCloseTo(SIZE * SIZE, 6);
 	});
 
-	test('the last complete ground stays whole while the new one builds at the pool limit', () => {
+	test('the last complete ground stays whole while the new one builds at the pool limit', async () => {
 		// A pool smaller than one selection holds no spare mesh, so a build that cannot take one
 		// must not take the mesh of a block that still draws.
 		const t = terrain({ blocksPerUpdate: 2, maxBlocks: 16 });
-		t.ground.update([10, 0, 10]);
+		await settle(t, 10, 10);
 		const before = t.visible();
 		expect(before.length).toBeGreaterThan(16);
 		t.ground.update([300, 0, -200]);
 		expect(t.ground.building).toBe(true);
-		while (t.ground.building) {
-			expect(t.visible()).toEqual(before);
-			t.ground.update([300, 0, -200]);
-		}
+		expect(t.visible()).toEqual(before);
+		await t.ground.settled();
 		expect(t.area()).toBeCloseTo(SIZE * SIZE, 6);
 	});
 
-	test('destroy ends every block', () => {
+	test('destroy ends every block', async () => {
 		const t = terrain();
-		t.ground.update([10, 0, 10]);
-		t.ground.update([400, 0, 400]);
+		await settle(t, 10, 10);
+		await settle(t, 400, 400);
 		t.ground.destroy();
 		expect(t.blocks.every((b) => b.destroyed)).toBe(true);
 		t.ground.update([0, 0, 0]);
+		await t.ground.settled();
 		expect(t.blocks.every((b) => b.destroyed)).toBe(true);
 	});
 
@@ -252,20 +250,20 @@ describe('terrain updates', () => {
 		expect(() => terrain({ blocksPerUpdate: 0 })).toThrow('blocksPerUpdate');
 	});
 
-	test('a high camera picks coarser blocks under it', () => {
+	test('a high camera picks coarser blocks under it', async () => {
 		const t = terrain();
-		settle(t, 10, 10, 0);
+		await settle(t, 10, 10, 0);
 		const near = t.ground.drawn;
-		settle(t, 10, 10, 500);
+		await settle(t, 10, 10, 500);
 		expect(t.ground.drawn).toBeLessThan(near);
 		expect(t.area()).toBeCloseTo(SIZE * SIZE, 6);
 	});
 
-	test('the ground picks again when the camera rises without moving across', () => {
+	test('the ground picks again when the camera rises without moving across', async () => {
 		const t = terrain();
-		settle(t, 10, 10, 0);
+		await settle(t, 10, 10, 0);
 		const before = t.ground.drawn;
-		settle(t, 10, 10, 400);
+		await settle(t, 10, 10, 400);
 		expect(t.ground.drawn).toBeLessThan(before);
 	});
 });
@@ -274,12 +272,12 @@ describe('terrain block spheres', () => {
 	/** The skirt the test sets, which every block's sphere must cover below the ground. */
 	const SKIRT = 5;
 
-	test("a block's bounds are centred on its middle and hold every vertex of its mesh", () => {
+	test("a block's bounds are centred on its middle and hold every vertex of its mesh", async () => {
 		const t = terrain({
 			skirt: SKIRT,
 			height: (x: number, z: number) => Math.sin(x / 40) * 20 + Math.cos(z / 60) * 12,
 		});
-		settle(t, 10, 10);
+		await settle(t, 10, 10);
 		expect(t.blocks.length).toBeGreaterThan(0);
 		// A level's block size identifies it, so the radii its blocks report are gathered by it.
 		const levelRadii = new Map<number, { radius: number; blocks: number }>();
@@ -327,9 +325,9 @@ describe('terrain block spheres', () => {
 		for (const level of levelRadii.values()) expect(level.blocks).toBeGreaterThan(1);
 	});
 
-	test('writes each block its parent surface and its height box for the morph', () => {
+	test('writes each block its parent surface and its height box for the morph', async () => {
 		const t = terrain();
-		settle(t, 10, 10);
+		await settle(t, 10, 10);
 		const morphed = t.visible();
 		expect(morphed.length).toBeGreaterThan(1);
 		const sizes = new Set<number>();
@@ -355,9 +353,9 @@ describe('terrain block spheres', () => {
 		expect(sizes.size).toBeGreaterThan(1);
 	});
 
-	test('moves the selection scale with setMorph', () => {
+	test('moves the selection scale with setMorph', async () => {
 		const t = terrain();
-		settle(t, 10, 10);
+		await settle(t, 10, 10);
 		const before = (t.selections.at(-1) as { selection: [number, number] }).selection[0];
 		expect(before).toBeGreaterThan(0);
 		t.ground.setMorph(false);
@@ -369,18 +367,18 @@ describe('terrain block spheres', () => {
 		);
 	});
 
-	test('writes the record with the morph off too, which moves nothing', () => {
+	test('writes the record with the morph off too, which moves nothing', async () => {
 		const t = terrain({ morph: false });
-		settle(t, 10, 10);
+		await settle(t, 10, 10);
 		for (const block of t.visible())
 			expect((block.mesh.targets as Float32Array).length).toBe((block.positions.length / 3) * 4);
 	});
 
-	test('a cell crossing gives no block that already draws new bounds', () => {
+	test('a cell crossing gives no block that already draws new bounds', async () => {
 		const t = terrain({ maxBlocks: 64 });
-		settle(t, 10, 10);
+		await settle(t, 10, 10);
 		const existing = t.blocks.slice();
-		settle(t, 200, 10);
+		await settle(t, 200, 10);
 		expect(existing.length).toBeGreaterThan(0);
 		for (const block of existing) expect(block.boundsCalls).toBe(1);
 	});
