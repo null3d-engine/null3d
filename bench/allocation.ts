@@ -616,8 +616,9 @@ const TRANSMISSION_MIPS_BUDGETS: WorkerBudgets = {
 /**
  * What `--splats` adds to the render worker beyond its pass: one texture that the frame refreshes,
  * whose upload makes a route and whose finished upload makes a render pass for each mip level. On
- * the Mac they took 104 bytes a frame for the mip pass and 7 for the route, with the most at 148
- * and 8. The switch names no texture of its own; the cost follows the cloud that it adds.
+ * the Mac they took 104 to 135 bytes a frame for the mip pass and 6 to 8 for the route, with the
+ * most at 153. The switch names no texture of its own; the cost follows the cloud that it adds.
+ * The run at `419024c82` is `.internal/logs/splats-alloc-419024c82-webgpu.log`.
  */
 const SPLATS_BUDGETS: WorkerBudgets = {
 	'render-worker': {
