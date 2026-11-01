@@ -12,8 +12,6 @@
 
 use null3d_gpu::drawlist::{DrawList, Op, address, compare, filter, format, texture_usage, view};
 
-use crate::background::{Background, BackgroundSource};
-
 use crate::frame::{RecordError, UploadArena};
 
 /// The texels across a side of the field.
@@ -26,18 +24,6 @@ pub(crate) const BYTES: usize = (SIZE * SIZE * SIZE * 4) as usize;
 /// GPU, and none after that or while the tier draws the flat layer.
 pub(crate) fn upload_bytes(made: bool, steps: u32) -> usize {
     if made || steps == 0 { 0 } else { BYTES }
-}
-
-/// Whether a frame can draw the tier's clouds: a step count above 0 with one of the skies as the
-/// background. A page that draws another background builds no field, because no draw samples it.
-pub(crate) fn draws(background: Option<&Background>, steps: u32) -> bool {
-    steps > 0
-        && background.is_some_and(|background| {
-            matches!(
-                background.source,
-                BackgroundSource::Sky(_) | BackgroundSource::Atmosphere(_)
-            )
-        })
 }
 
 /// Records the field's texture and its sampler once, and its texels. A page that never draws the
