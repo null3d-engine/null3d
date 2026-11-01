@@ -159,6 +159,8 @@ export interface WindReading {
 	readonly gust: [number, number, number, number];
 	/** The swirl's strength, its size, how fast its pattern drifts, and a number it does not use. */
 	readonly swirl: [number, number, number, number];
+	/** The gust a page sent: its ground place in x and z, its strength, and the time it was sent. */
+	readonly sent: [number, number, number, number];
 }
 
 /** Makes the three vectors of a reading from the field's settings. */
@@ -167,8 +169,15 @@ export function createReading(state: FieldState): WindReading {
 		base: [state.speed, state.heading, state.ground, state.seed],
 		gust: [state.gustStrength, state.gustRadius, state.gustWave, state.gustSpeed],
 		swirl: [state.swirl, state.swirlScale, state.swirlDrift, 0],
+		sent: [0, 0, 0, SENT_NONE],
 	};
 }
+
+/**
+ * The time that a reading holds when no page has sent a gust: a born time that no frame reaches, so
+ * the sent gust's life is over at every frame time.
+ */
+export const SENT_NONE = -1e9;
 
 /** Writes the field's settings into a reading's vectors, in place, so a reader re-reads them. */
 export function writeReading(state: FieldState, reading: WindReading): void {

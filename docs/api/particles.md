@@ -110,7 +110,7 @@ The GPU moves each particle in closed form. Every vector is in the space of the 
 | Option | What it does |
 | --- | --- |
 | `gravity` | An acceleration, in meters per second squared. |
-| `drag`, `wind` | How fast, per second, particles take on the wind's velocity. Smoke and leaves drift with it. |
+| `drag`, `wind` | How fast, per second, particles take on the wind's velocity. Smoke and leaves drift with it. `wind` is one velocity for the whole system; the fluid wind's field is not an input yet. |
 | `turbulence` | How far simplex noise moves each particle from its path, in meters. `turbulenceScale` sets the swirls' size, and `turbulenceSpeed` how fast they change. |
 | `groundHeight`, `groundMode` | A ground plane where particles `bounce` (up to twice, with `restitution` and `friction`), `stick` or `kill`. |
 

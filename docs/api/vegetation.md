@@ -8,7 +8,7 @@ summary: "Trees, conifers, shrubs, ferns, hostas and grass grown from a species 
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass's compute-built blades and its near shadows. This page covers the species generator, the scatter, the bark and leaf atlases that the browser paints at first use, the material that draws a plant from them, the per-vertex wind that moves it, the far tree that a card draws, and the grass's CPU path.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass's compute-built blades and its near shadows. This page covers the species generator, the scatter, and the bark and leaf atlases that the browser paints at first use. It covers the material that draws a plant from them, the per-vertex wind that moves them, the far tree that a card draws, the grass's CPU path, and the floating leaves that ride the wind.
 
 ```mermaid
 flowchart LR
@@ -243,6 +243,37 @@ The blades bend in the wind add-on's field, the same field that the leaf materia
 The CPU tile path draws on WebGPU and WebGL2, with one instance batch for each tuft shape. The rows are built for Ultra's share once, so a preset change only changes how many rows each batch draws, not the memory. The compute path, which builds and culls blades on the GPU for the denser presets, is not built yet.
 
 The blades receive the sun's shadows. The ground's own colour and the blades' root colours should meet at the hill's foot.
+
+## Floating and falling leaves
+
+`createFloatingLeaves(ctx, { wind, camera, count, area, ride })` draws leaves that ride the wind add-on's one field. A leaf falls from the top of `area` to its ground and starts again, and the air moves it across the fall. The box follows the camera, so the leaves fill the part of the scene that the view shows.
+
+```ts
+import { createFloatingLeaves } from '@null3d/vegetation';
+import { createWind } from '@null3d/wind';
+
+const wind = createWind(ctx, { camera, box: 128 });
+const leaves = createFloatingLeaves(ctx, {
+  wind: wind.field,
+  camera,
+  count: 2000,
+  area: { x: 0, z: 0, size: 40, high: 12, low: 0 },
+  ride: 'state',
+});
+
+return {
+  onUpdate(dt) {
+    wind.update();
+    leaves.update(dt);
+  },
+};
+```
+
+Two forms ride the air. `ride: 'offset'` gives each leaf a closed-form fall and pushes it by the air where it passes. It reads the field once for each leaf, and keeps no state between frames. A gust therefore moves a leaf only while the leaf stands in it. `ride: 'state'` keeps a place and a speed for each leaf in a compute pass. The pass steps them through the field, so a gust carries a leaf along its path. The state form is the default. On WebGL2 the pass runs as a fragment form, and the leaf moves the same way.
+
+The state form costs one pass and a texture of four numbers for each leaf. The offset form costs one texture read for each leaf and no pass. `leaves.update(dt)` steps the state and gives the shader the field's newest layer. `leaves.setColor` tints the leaves for a mood. `leaves.destroy()` removes them and their pass.
+
+On WebGL2 the state form's pass costs the frame a large upload for each frame when the scene also draws a reflection, so a scene that reflects its water or its sky rides the offset form on that path. Read the tier with `ctx.engine.capabilities.tier` and pick the form there. D-283 and D-286 hold the figures.
 
 ## Speed and memory
 

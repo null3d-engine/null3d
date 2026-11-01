@@ -431,6 +431,15 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		values[into + 1] = at[1];
 		values[into + 2] = strength;
 		values[into + 3] = born;
+		// The steady field carries the sent gust too, so a reader that works the air out with no grid
+		// sees it travel from where it was sent.
+		if (gust) {
+			const sent = field.air.sent;
+			sent[0] = at[0];
+			sent[1] = at[1];
+			sent[2] = strength;
+			sent[3] = born;
+		}
 	};
 
 	// The handle keeps its budget current, and its figures carry the full time that the preset

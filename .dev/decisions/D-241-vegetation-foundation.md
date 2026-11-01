@@ -306,6 +306,17 @@ every vegetation task must keep the demo within, at the same device, path and pr
 | Forest High, WebGPU | 62.5 | 67.1 | no WebGPU | no WebGPU |
 | Forest Ultra, WebGPU | 99.0 | 71.1 | no WebGPU | no WebGPU |
 
+**Two cells that a later reader must read carefully.** The iPad's Creek Low cell reads 30.8 ms, and
+the milestone head `fcafb9cd7` reads 31.06 ms on it with no wind reader in the scene at all
+([the head's run](../tested-devices/ipad-pro-13-safari/20261101-091901-vegetation.md)). The cell is
+therefore at or just over its own ceiling before any wind work. A later miss of a fraction of a
+millisecond there is the scene's, and it is not the wind's.
+
+These forest cells come from a scene with no wind reader. The vegetation branch's own forest rows
+at Medium and above read 9 to 19 per cent over them. The forest was not measured at `fcafb9cd7` on
+the same rows, so whether the wind's share sits inside those ceilings is open. It needs that head
+run before anyone reads those rows as the wind's cost or as headroom.
+
 **Creek on WebGPU.** The Galaxy S25 draws Creek on core WebGPU, which the Apple devices cannot. The
 owner ruled that this phone stands in for the S24 class, whose own device has no WebGPU adapter and
 no WebGL2 GPU timer. The figures come from one run of the plan.
@@ -316,6 +327,14 @@ no WebGL2 GPU timer. The figures come from one run of the plan.
 | Medium | 166.6 | 149.88 | opaque | 141.16 | 4,387,400 | 174 |
 | High | 208.3 | 213.61 | ambient occlusion 1 | 164.72 | 6,798,700 | 288 |
 | Ultra | 499.8 | 468.19 | ambient occlusion 1 | 279.38 | 11,100,000 | 303 |
+
+**The S25-class Ultra ceiling is 511 ms.** The owner ruled that a class ceiling includes the wind's
+share, because a ceiling is a measured frame and the wind is part of the frame that a page draws.
+This cell is therefore the only ceiling here that is not a measured frame alone: it is the run's
+499.8 ms plus the wind's modelled 11.08 ms, which doubles the measured 5.243 ms of the volume's 40
+steps and adds the advection and projection floor, because the 30 Hz display owes two field cycles
+a frame. The table above keeps the measured 499.8 ms as the run gives it. D-283 records the ruling
+and the two alternatives that the owner declined.
 
 The pages ran from a worktree at `6a0a3215f`, and its engine build was made from that commit's
 sources. The engine's start check accepted the build on the device. Chrome on Android reports no

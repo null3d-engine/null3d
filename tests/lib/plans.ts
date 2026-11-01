@@ -1946,6 +1946,65 @@ export function windFieldCostPlan(): PlanItem<Check>[] {
 	return items;
 }
 
+/** The leaf counts and the two forms that the leaves' cost plan compares. */
+const LEAF_COUNTS = [500, 2000, 10000] as const;
+const LEAF_RIDES = ['offset', 'state'] as const;
+
+/**
+ * What the two ways for leaves to ride the wind cost at 500, 2,000 and 10,000 leaves, on each GPU
+ * path: the offset form reads the field where each leaf passes, and the state form steps a place
+ * and a speed for each leaf through the field.
+ */
+export function leavesWindCostPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const { path, tier } of WIND_READER_PATHS)
+		for (const ride of LEAF_RIDES)
+			for (const count of LEAF_COUNTS)
+				items.push(
+					pageItem(
+						`leaves-wind-${ride}-${count}-${path}`,
+						'leaves-wind-cost',
+						{ kind: 'probe', tier },
+						{
+							switches: [`gpu=${path}`, `ride=${ride}`, `count=${count}`, 'seconds=3'],
+							timeoutSeconds: 600,
+						},
+					),
+				);
+	return items;
+}
+
+/** The GPU paths that a wind reader's cost page draws. */
+const WIND_READER_PATHS = [
+	{ path: 'webgpu', tier: 'webgpu' },
+	{ path: 'compat', tier: 'webgpu' },
+	{ path: 'webgl2', tier: 'webgl2' },
+] as const;
+
+/**
+ * What one more texture read for each vertex costs a flag and a water surface: each reader draws
+ * with the field's read and without it, on every GPU path, so the difference between the two pages
+ * is the read.
+ */
+export function windReaderCostPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const { path, tier } of WIND_READER_PATHS)
+		for (const reader of ['flag', 'water'] as const)
+			for (const read of ['on', 'off'] as const)
+				items.push(
+					pageItem(
+						`wind-reader-${reader}-${read}-${path}`,
+						'wind-reader-cost',
+						{ kind: 'probe', tier },
+						{
+							switches: [`gpu=${path}`, `reader=${reader}`, `read=${read}`, 'seconds=3'],
+							timeoutSeconds: 600,
+						},
+					),
+				);
+	return items;
+}
+
 /**
  * The GPU paths of the terrain plan's pages, and the presets that each one draws. WebGL2 and
  * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
@@ -2898,6 +2957,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	vegetation: vegetationPlan,
 	'vegetation-wind': vegetationWindPlan,
 	'wind-field-cost': windFieldCostPlan,
+	'wind-reader-cost': windReaderCostPlan,
+	'leaves-wind-cost': leavesWindCostPlan,
 	'vegetation-grass': vegetationGrassPlan,
 	terrain: terrainPlan,
 	'terrain-shadow': terrainShadowPlan,
