@@ -750,9 +750,15 @@ now carries a gust that a page sends: `gust()` writes its place, its strength an
 sent into the field's reading, the readers' settings take them as a fourth vector, and the block
 adds the same travelling wave from that place. A push still reaches readers only through the grid.
 
-The sent gust travels across the ground on that path as it does through the grid. A probe measured
-it at Creek's WebGL2 shape: the gust moved 6 m in the 1 s between two reads, and the field's own
-gust speed is 6 m/s ([the run](../tested-devices/macbook-pro-m3-max-chrome/20261101-1915-gust-crossing.md)).
+What this record proves is the air, not a person watching the demo. A probe sampled the block that
+the readers carry, on a line across the ground with no grid, and the gust moved 6 m in the 1 s
+between two reads against the field's own 6 m/s
+([the run](../tested-devices/macbook-pro-m3-max-chrome/20261101-1915-gust-crossing.md)). The
+readers take the fourth vector that carries it, and a test holds their copies of the block equal to
+the one that the probe ran. Owed, and not taken: a held picture of Creek on the WebGL2 path with a
+gust sent, which would show the grass, the water and the leaves moving. The machine barred image
+runs when this landed.
+
 The settings go up when a page sends a gust, so the frame pays one small upload for each press and
 no upload in the frames between. The path that draws a reflection stays off the pass that cost
 [2.2 MB a frame](D-286-webgl2-texture-copies-beside-a-second-draw.md).

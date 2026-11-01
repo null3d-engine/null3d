@@ -41,9 +41,9 @@ const WIND_SENT_LIFE: f32 = 8.0;
 /// two meet at the box's edge.
 const WIND_FULL_HEIGHT: f32 = 100.0;
 
-/// The air's steady settings: its rule of place and time, without the pushes and gusts that a page
-/// sends. The grid takes them from a pass's first three value vectors, and a reader from its own
-/// uniforms.
+/// The air's settings: its rule of place and time, the preset's gust and the swirl, and the gust
+/// that a page sends. The grid's pass takes the first three vectors from its values and solves a
+/// sent gust itself; a reader takes all four from its own settings.
 struct WindAir {
     /// The time in seconds, the wind's speed and its heading in radians, and how much slower the
     /// air is at the ground.
