@@ -472,7 +472,12 @@ export const MOST_TREES = 60000;
 
 /** The trees. A preset draws a share of each. */
 export const TREE_SPOTS: readonly TreeSpot[] = (() => {
-	const next = random(631);
+	// Each group of trees draws from a seed of its own place, so a change to a house moves the trees
+	// beside it and no others.
+	let next = random(631);
+	const seedAt = (a: number, b: number) => {
+		next = random(Math.imul(Math.round(a), 73856093) ^ Math.imul(Math.round(b), 19349663));
+	};
 	const spots: TreeSpot[] = [];
 	const near = new Map<number, TreeSpot[]>();
 	const SIZE = [
@@ -492,13 +497,16 @@ export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 				for (const s of near.get(lookupKey(x + i * LOOKUP, z + j * LOOKUP)) ?? [])
 					if (hypot(x - s.x, z - s.z) < gap) return false;
 		const size = SIZE[kind as 0];
+		const own = random(
+			Math.imul(Math.round(x * 10), 83492791) ^ Math.imul(Math.round(z * 10), 2654435),
+		);
 		const spot = {
 			kind,
 			x,
 			y: y - 0.15,
 			z,
-			turn: next() * Math.PI * 2,
-			scale: size[0] + (size[1] - size[0]) * next(),
+			turn: own() * Math.PI * 2,
+			scale: size[0] + (size[1] - size[0]) * own(),
 		};
 		spots.push(spot);
 		const key = lookupKey(x, z);
@@ -537,6 +545,7 @@ export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 	// The houses have their own trees just outside their walls, the tall ones at the back corners.
 	for (const lot of LOTS) {
 		if (lot.garden < 0) continue;
+		seedAt(lot.x * 100, lot.z * 100);
 		const [w, back] = lot.plot;
 		const pick = next();
 		if (pick < 0.55) {
@@ -550,10 +559,13 @@ export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 			add(next() < 0.5 ? OLIVE : OAK, x, z, 6);
 		}
 	}
-	for (const [x, z] of TERRACE_OLIVES)
+	for (const [x, z] of TERRACE_OLIVES) {
+		seedAt(x * 100, z * 100);
 		add(OLIVE, x + (next() - 0.5) * 1.2, z + (next() - 0.5) * 1.2, TERRACE_OLIVE_GAP);
+	}
 	// Strands of dark cypress stand across the settled slopes.
 	for (let group = 0; group < 90 && spots.length < MOST_TREES; group++) {
+		seedAt(group, 1);
 		const x = (next() * 2 - 1) * 680;
 		const z = -60 - next() * 360;
 		if (inland(x, z) < 30) continue;
@@ -585,6 +597,7 @@ export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 	// Umbrella pines stand along the coast and around the bay, in loose groups, with belts on the golf.
 	for (let i = -130; i <= 130; i++)
 		for (let j = -90; j <= 90; j++) {
+			seedAt(i + 1000, j);
 			const x = i * 8 + (next() - 0.5) * 6;
 			const z = j * 8 + (next() - 0.5) * 6;
 			const d = inland(x, z);
@@ -602,6 +615,7 @@ export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 	// The town's yards hold a tree among the houses.
 	for (let i = -40; i <= 22; i++)
 		for (let j = 6; j <= 34; j++) {
+			seedAt(i + 2000, j);
 			const [x, z] = [i * 10 + (next() - 0.5) * 7, j * 10 + (next() - 0.5) * 7];
 			if (townShare(x, z) > 0.2 && next() < 0.8)
 				add(next() < 0.25 ? CYPRESS : next() < 0.5 ? OLIVE : OAK, x, z, 5);
@@ -611,6 +625,7 @@ export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 	const across = 4.2;
 	for (let i = -190; i <= 190; i++)
 		for (let j = -143; j <= 126; j++) {
+			seedAt(i + 3000, j);
 			const x = i * across + (next() - 0.5) * 3.4;
 			const z = j * across + (next() - 0.5) * 3.4;
 			if (inland(x, z) < 9 || townShare(x, z) > 0.12 || golfShare(x, z) > 0.02) continue;
@@ -835,7 +850,7 @@ export const SHRUBS: readonly ShrubSpot[] = (() => {
 })();
 
 /** The fingerprint of the stored plan, which the plan tests and the browser test both hold it to. */
-export const PLAN_FINGERPRINT = 2812249385;
+export const PLAN_FINGERPRINT = 3094012562;
 
 /**
  * A number that changes with any road, house, tree, wall or sample of the ground, to the millimeter. A
