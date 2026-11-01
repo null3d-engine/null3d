@@ -8,7 +8,7 @@
 //!    copy and horizon step give it, and samples a disk of screen texels around it. A sample whose
 //!    surface lies in the texel's hemisphere, within the reach, takes the color that the frame
 //!    before showed there, from the copy that transmission and reflections read too, weighted by
-//!    the cosine of its direction. The texel writes the mean light times pi, and the share of the
+//!    the cosine of its direction and by how bright it is. The texel writes the mean light times pi, and the share of the
 //!    disk that found a surface. The light is in `crates/null3d-shaders/wgsl/bounce.wgsl`.
 //! 2. The denoise blurs that light over a disk of taps that keeps to each texel's own surface, by
 //!    each tap's distance from its plane and its normal, as ambient occlusion's denoise does.
