@@ -1,0 +1,63 @@
+# D-270: More than one directional light
+
+Status: decided. Built: the core's light gather, the renderer's frame values and the shaders light up to four directional lights. They do so on WebGPU, its compatibility mode and WebGL2, with no new pipeline. The owner raised the uncompressed budget of the two first-use shader files that the fill loop grows most ([D-14](D-14-js-budget.md)). Task: M3-K9.
+
+Summary: A frame lights surfaces with up to four directional lights. The first one created casts the shadows. Up to three more light as fill and rim lights, without shadows, from three slots in the frame's values. A fifth directional light gives no light.
+
+## Question
+
+A `KHR_lights_punctual` file may hold several directional lights, as a key, a fill and a rim. three.js lights every one of them. How does the engine light several directional lights, with no new pipeline, and with a cost that follows only the lights a scene holds?
+
+## Rule
+
+- Intent parity with three.js ([D-52](D-52-intent-parity.md)): every directional light that a view sees lights surfaces. A file that three.js lights must look the same here.
+- One look on WebGPU, WebGPU's compatibility mode and WebGL2 ([AGENTS.md](../../AGENTS.md#hard-rules), rule 9), with image references on the Mac's GPU and on SwiftShader.
+- No new permutation bit, so a light added during play builds no pipeline ([D-156](D-156-template-scoped-permutation-bits.md)).
+- The first directional light created keeps the shadows. A fill light casts none, and has no contact shadows.
+- No allocation in the frame's work ([AGENTS.md](../../AGENTS.md#hard-rules), rule 1).
+
+## Options
+
+| Option | Per pixel | Frame values | Verdict |
+| --- | --- | --- | --- |
+| A: three fill slots in the frame's values, each gated by a count | One direct light term for each fill that the count names | Six vectors and a count | Chosen |
+| B: directional records in the clustered light list, as point and spot lights use | A per-cluster loop that never culls them | The cluster grid | Rejected. A directional light has no position or range, so every cluster lists it, and a surface reads the grid for light it could take from one value |
+| C: a uniform array binding of light records | As A | A binding and a buffer | Rejected. It adds a binding on both paths, and Adreno 830's WebGL2 driver copies no array member of a uniform struct out of its block. The frame's values therefore hold named fields, never arrays |
+| D: a shader define for scenes with fill lights | As A, without the loop's branch | As A | Rejected. A new bit doubles the pipelines that can exist, and a light added during play would build them ([hard rule 27](../../AGENTS.md#hard-rules)) |
+
+## Data
+
+`bun run test:images -g "lights-fills|demo-gizmos|demo-css3d-labels"` draws the three tests on WebGPU, its compatibility mode and WebGL2, and all nine pass on the Mac's GPU at `e72f8b906`. CI run 40491125964 drew the six SwiftShader references.
+
+`bun run parity -- --scene lights-fills` compares the scene with three.js on the Mac's GPU. WebGPU differs over 0.053% of the pixels, compatibility mode 0.082% and WebGL2 0.049%. The scene's limit is 0.15%, and three.js's two renderers differ by 0.025%.
+
+`bun run bench:gpu-check -- --measure --base <control checkout>` compared the branch's own work over the base it merged onto, `300918b96..e72f8b906`. The control checkout held the branch's benchmark pages on the base engine, so both sides drew the same pages. It passed: s4 at Medium 4.08 to 4.10 ms (+0.6%, noise 2.7 per cent), s6 at Medium 4.62 to 4.72 ms (-0.7%, 2.2), s4 at High 4.46 to 4.70 ms (-0.6%, 1.8) and s6 at High 5.71 to 5.56 ms (-2.2%, 0.7).
+
+GPU time per frame for one more directional light. The figures come from `NULL3D_FILL_COST=1 bun run test:browser -- fill-cost.spec.ts` on the MacBook Pro (Apple M5 Max), in Chrome. The window was 1600 x 900, with the render scale at 1. Each run draws one fewer fill and then the next, in turns, and prints the medians of three rounds. The load before each run was 2.7 to 6.8.
+
+| GPU path | 1 light | 2 lights | 3 lights | 4 lights |
+| --- | --- | --- | --- | --- |
+| WebGPU | -0.188 ms | 0.058 ms | -0.289 ms | 0.063 ms |
+| WebGL2 | 0.062 ms | 0.397 ms | 0.241 ms | 0.205 ms |
+
+The WebGPU differences lie within the run's noise. The scene's own GPU time was 0.58 to 0.93 ms a frame, and the medians moved as much between repeats. The WebGL2 differences are 0.06 to 0.40 ms a light, about 0.2 ms in the middle, on a frame of 1.7 to 2.3 ms.
+
+GPU time per frame for one more directional light on the devices. `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys24-chrome --plan fills-cost` and the same plan with `--only bsgalaxys25-chrome` ran the page in turns on the iPad Pro 13 2025 in Safari 26.6.1, the Galaxy S25 in Chrome 152.0.7977.54 and the Galaxy S24 in the same Chrome. The iPad's WebGPU frames, at 1,032 by 1,264 CSS pixels at 2 device pixels each, took 4.602 ms with one light, 4.989 with two, 6.315 with three and 7.403 with four, so one more light cost 0.386, 0.739 and 1.571 ms. Its WebGL2 path gives no GPU timer, and its frame interval held the display's 15.5 ms at every count. The Galaxy S25's WebGPU frames, at 360 by 621 CSS pixels at 3 device pixels each, took 3.211, 3.473, 3.736 and 3.998 ms at one to four lights, so one more light cost 0.262, 0.263 and 0.262 ms; its display ran at 30 Hz and its WebGL2 path gives no GPU timer, so neither shows a cost per light there. The Galaxy S24 has no WebGPU, and its WebGL2 path gives no GPU timer either: its frame interval held the 30 Hz display's 33.33 ms, and its CPU time moved within the run's noise, so it gives no cost per light. The phones' heat and clock are not controlled, so each pair is a guide. The runs are [the iPad's](../tested-devices/ipad-pro-13-safari/20261031-221344-fills-cost.md), [the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261031-223922-fills-cost.md) and [the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261031-221744-fills-cost.md).
+
+## Look
+
+Three colored directional lights show three lit sides on the floor of shapes and on the spheres. That is what three.js draws. Two demos already created a second directional light: the gizmos gallery and the 3D labels hall. They now show the fill light that their code sets. Both look as their authors meant. A third light in the gizmos demo, a warm rim, separates the pieces from the dark hall.
+
+## Decision
+
+Option A. The core gathers the directional lights that the view sees, in creation order, in `LightTable::gather`. The first is the main light, and it keeps the shadows. The next three become `FrameLights::fills`, and a further one is dropped. The renderer writes their directions and exposed colors into six vectors of the frame's uniform block. It writes their count into the fourth float of the sun's color. The block holds those six vectors and the count, and is 1,200 bytes. The lit material's surface function and the lit lines loop over the count and add `direct_surface_light` for each fill, with no shadow lookup. The coat and sheen layer and the translucency's back light treat each fill as the point and spot lights treat theirs.
+
+## Consequences
+
+- `docs/concepts/lighting.md`, `docs/concepts/shadows.md`, `docs/api/lights.md` and the three.js mapping state the limit. The develop skill follows.
+- The image tests add `lights-fills`, a floor under three directional lights. It has a twin in the parity list, which compares it with three.js's three `DirectionalLight`s.
+- The glTF page test loads a file of three directional lights, and checks that every one reaches the scene.
+- The references of `demo-gizmos` and `demo-css3d-labels` are drawn again, in both sets. Their scenes already set a second directional light, which now lights.
+- The frame's values gain the fills' six vectors and their count. The block is 1,200 bytes, and the slot that holds it aligns to 256 bytes, so it is 1,280. A scene with no fill light pays one branch in the lit shaders.
+- The fill code grows every lit variant. The owner raised the uncompressed budget of the two GLSL combination files that the fill loop grows most, by 16,384 bytes each. Their Brotli and gzip figures stay inside theirs ([D-14](D-14-js-budget.md)).
+- `bun run test:browser -- fill-cost.spec.ts` with `NULL3D_FILL_COST` set times one more light on each GPU path. The `fills-cost` device plan does the same on a device, and it ran on the iPad Pro 13, the Galaxy S25 and the Galaxy S24: the iPad and the S25 give the cost on WebGPU, and the S24 gives none because it has no WebGPU and no GPU timer.

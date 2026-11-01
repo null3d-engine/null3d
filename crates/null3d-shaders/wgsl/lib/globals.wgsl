@@ -6,6 +6,11 @@
 // The data every render pipeline shares: per-frame values the core writes once a frame, and the
 // material table that fragment shaders read by material id.
 
+/// The directional lights after the main one that one frame can light a surface with. The frame
+/// keeps their directions and colors in this many slots, and the sun color's w says how many are
+/// set.
+const FILL_LIGHT_SLOTS: u32 = 3u;
+
 /// Per-frame values: the camera, the lights, the output settings and the fog. Colors are linear and
 /// include the intensity. Positions are relative to the camera.
 struct Frame {
@@ -17,7 +22,14 @@ struct Frame {
     camera_position: vec4f,
     /// The direction the sun's light travels, in world space.
     sun_direction: vec4f,
+    /// The sun's color, and in w the number of fill directional lights that light the frame.
     sun_color: vec4f,
+    /// The directions the fill directional lights travel, in world space, one for each slot: the
+    /// lights after the one that casts the shadows.
+    fill_dir: array<vec4f, FILL_LIGHT_SLOTS>,
+    /// The fill directional lights' colors, which include their intensities and the exposure, one
+    /// for each slot.
+    fill_col: array<vec4f, FILL_LIGHT_SLOTS>,
     ambient: vec4f,
     /// The exposure and the tone mapping, which fragment shaders apply themselves on the 8-bit
     /// path.
@@ -30,6 +42,9 @@ struct Frame {
     /// The light grid's tiles across, tiles up, slices, and slices per doubling of the slice
     /// depth. The slices are 0 when no point or spot light reaches the view.
     cluster_grid: vec4f,
+    /// 1 while the view's slices may be fitted to the measured depth, so a fragment finds its
+    /// slice in the grid's header, and 0 while it reads cluster_depth and cluster_grid.
+    cluster_fit: vec4f,
     /// The sketch time in seconds, the seconds since the frame before, the frame's number as the
     /// bits of a `u32`, and a spare.
     clock: vec4f,
@@ -101,6 +116,9 @@ struct Frame {
     /// orthographic one. A masked custom material's caster reads it for the direction toward the
     /// camera.
     camera_eye: vec4f,
+    /// Screen-space bounce light's strength, 0 when the view draws none, and spares. The light
+    /// itself reaches the opaque pass in the screen texture's second layer (see null3d::gtao).
+    bounce: vec4f,
 }
 
 /// The clip position of `relative_position` through `view_proj`, with the frame's sub-pixel jitter
@@ -195,17 +213,21 @@ struct MaterialRow {
     /// The anisotropy's strength, its rotation from the tangent in radians, the family of maps that
     /// each group of shared slots holds (two bits each: 0 for the light map's slot, 2 for the
     /// specular intensity map's and 4 for the specular color map's; 0 is the clear coat's and the
-    /// sheen's, 1 iridescence's and the anisotropy's, and 2 the transmission and thickness maps'),
-    /// and the volume's dispersion.
+    /// sheen's, and 1 iridescence's and the anisotropy's; bits 6 and 7 say that the transmission
+    /// and thickness maps read the second texture coordinates), and the volume's dispersion.
     anisotropy: vec4f,
     /// The scale of a light map's texture coordinates along u and v, then their offset along u
     /// and v. The identity leaves the coordinates as the mesh gives them.
     light_map_uv: vec4f,
-    /// The transforms of the maps of the slots from the second up, two `vec4f`s each: the 2 x 3
+    /// The layers of the transmission and thickness maps in the texture arrays of the specular
+    /// slots, which the shader samples through those slots' bindings: the transmission map's layer,
+    /// then the thickness map's, each a negative value where the map draws nothing.
+    volume: vec4f,
+    /// The transforms of the maps of the row slots from the second up, two `vec4f`s each: the 2 x 3
     /// matrix's row that gives u, then the row that gives v. The base color map's two rows are
     /// `Material::uv_u` and `Material::uv_v`, in the values that every shader reads. A map whose
     /// transform is the identity reads the coordinates as the mesh gives them.
-    map_uv: array<vec4f, 14>,
+    map_uv: array<vec4f, 18>,
 }
 
 /// The values of a material that lets light through: its row's `transmission` and `attenuation`.

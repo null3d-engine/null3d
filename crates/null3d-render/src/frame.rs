@@ -11,7 +11,7 @@
 use std::collections::TryReserveError;
 use std::ops::Range;
 
-use null3d_core::alloc::reserve_keeping;
+use null3d_core::alloc::{reserve_keeping, reserve_len};
 use null3d_core::animation::Animations;
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::culling::{CULL_CHUNK, CullRun, Frustum, ROW_CELLS};
@@ -21,8 +21,8 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::layers::ALL_LAYERS;
 use null3d_core::levels::{FADE_BAND, LevelRule, Switch};
 use null3d_core::lights::{
-    AUTO_FALLBACK, LightShadow, LightTable, LightView, SunShadow, VisibleLight,
-    farthest_receiver_distance, ladder_distance,
+    AUTO_FALLBACK, FillLight, LightShadow, LightTable, LightView, MAX_FILL_DIRECTIONAL_LIGHTS,
+    SunShadow, VisibleLight, farthest_receiver_distance, ladder_distance,
 };
 use null3d_core::memory::{MemoryRegister, MemoryUse, area};
 use null3d_core::morph::MorphWeights;
@@ -37,6 +37,7 @@ use crate::ao::{self, Ao, Contact};
 use crate::area_shading::AreaShading;
 use crate::background::{Background, BackgroundSource, SkyLayer};
 use crate::bloom::{Bloom, ChainFrame};
+use crate::bounce::{self, Bounce, BounceFrame};
 use crate::camera::{Lens, Mat4, multiply};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
@@ -502,7 +503,9 @@ pub trait FrameBuilder {
     fn account(&self, register: &mut MemoryRegister);
     /// Forgets every GPU object the draw lists created and every upload they made, so the next
     /// frame creates them all again and uploads the whole scene. The thread that draws asks for
-    /// this after the browser took the GPU away and it made a new device.
+    /// this after the browser took the GPU away and it made a new device. A builder also does this
+    /// itself to record again after a frame failed, once the scene changed or the frame's bound
+    /// shrank.
     fn reset_gpu(&mut self);
     /// Draws the scene into a target of another format, or with another anti-aliasing mode, from
     /// the next frame on, as an effect that needs HDR color asks on the 8-bit path. The render
@@ -691,18 +694,19 @@ pub(crate) struct UploadArena {
 }
 
 impl UploadArena {
-    /// Empties the arena and makes room for `total` bytes. The list of the frame that last used
-    /// the arena has been replayed, so its copies may move.
-    pub(crate) fn reset(&mut self, total: usize) {
+    /// Empties the arena and makes room for `total` bytes, or fails when memory cannot grow for
+    /// them. The list of the frame that last used the arena has been replayed, so its copies may
+    /// move.
+    pub(crate) fn reset(&mut self, total: usize) -> Result<(), TryReserveError> {
         self.high_water = self.high_water.max(self.bytes.len());
         self.kept.clear();
         self.bytes.clear();
         self.volatile.clear();
-        self.bytes.reserve_exact(total);
+        reserve_len(&mut self.bytes, total)?;
         // Each view's uniform carries the frame's volatile ranges, the clock and a still view's
         // jitter, so the list holds at most two for each view id: reserving them here keeps a
         // frame from growing the list while it records.
-        self.volatile.reserve_exact(2 * crate::view::MAX_VIEW_IDS);
+        reserve_len(&mut self.volatile, 2 * crate::view::MAX_VIEW_IDS)
     }
 
     /// Makes room for `total` bytes ahead of the frame that needs them, or fails when memory
@@ -806,13 +810,24 @@ pub(crate) fn put_u32(bytes: &mut [u8], word: usize, value: u32) {
     bytes[word * 4..word * 4 + 4].copy_from_slice(&value.to_ne_bytes());
 }
 
+/// The figures of a frame that halted the builder, which a later frame compares with its own: the
+/// bound it reached, the forecast of the state it leaves, and the sources that could draw it.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct HaltFigures {
+    pub bound: usize,
+    pub forecast: usize,
+    pub active: u32,
+}
+
 /// The draw list and the upload arena of each frame parity, and the frames' all-or-nothing rule.
 ///
 /// A frame that fails publishes an empty list, so the thread that draws replays nothing and the
 /// canvas keeps the last frame that recorded whole. A failure before the frame recorded any
 /// command changed nothing on the GPU, and the next frame tries again. A failure after it recorded
 /// commands leaves the builder believing that the GPU holds what the dropped commands would have
-/// made, so every later frame fails with the same error until a new GPU device starts afresh.
+/// made. Later frames then fail with the same error until the scene changes or the frame's upload
+/// bound shrinks, when the builder forgets its GPU objects and records from the start, or until a
+/// new GPU device starts afresh.
 pub(crate) struct ParityLists {
     lists: [DrawList; 2],
     arenas: [UploadArena; 2],
@@ -824,6 +839,13 @@ pub(crate) struct ParityLists {
     still: crate::still::Still,
     /// The error of a frame that failed after it recorded commands.
     halted: Option<RecordError>,
+    /// The upload bound of the frame that halted the builder, and the bound that frame forecast
+    /// before it recorded. A later frame retries only when its forecast falls below both.
+    halted_bound: usize,
+    halted_forecast: usize,
+    /// The sources that could draw the frame that halted the builder, which the WebGL2 builder's
+    /// bound does not follow, so a row drop there needs a trigger of its own.
+    halted_sources: u32,
 }
 
 impl ParityLists {
@@ -838,6 +860,9 @@ impl ParityLists {
             snapshots: Default::default(),
             still: crate::still::Still::default(),
             halted: None,
+            halted_bound: 0,
+            halted_forecast: 0,
+            halted_sources: 0,
         }
     }
 
@@ -892,6 +917,8 @@ impl ParityLists {
     /// ago outside its marked parts: the arena's volatile bytes and the list's marked words. The
     /// still count then grows, or falls to zero. A frame that changed while it blended a still view
     /// gets the whole weight, so it shows as it is drawn rather than mixed into the old history.
+    /// `figures` holds the bound the frame reached, the forecast of the state it leaves, and the
+    /// sources that could draw it. A later frame compares its own with them.
     pub(crate) fn restore(
         &mut self,
         frame: u32,
@@ -899,6 +926,7 @@ impl ParityLists {
         mut arena: UploadArena,
         marks: StillMarks<'_>,
         result: Result<bool, RecordError>,
+        figures: HaltFigures,
     ) -> Result<bool, RecordError> {
         let parity = (frame & 1) as usize;
         if result.is_ok() {
@@ -927,6 +955,9 @@ impl ParityLists {
         if let Err(error) = result {
             if !list.is_empty() {
                 self.halted = Some(error);
+                self.halted_bound = figures.bound;
+                self.halted_forecast = figures.forecast;
+                self.halted_sources = figures.active;
             }
             list.clear();
         }
@@ -935,9 +966,23 @@ impl ParityLists {
         result
     }
 
-    /// Lets frames record again on a new GPU device, which the builder fills from the start.
+    /// Lets frames record again, which the builder fills from the start: a new GPU device holds
+    /// none of the objects, and a frame that failed once its scene or bound changed starts again.
     pub(crate) fn reset_gpu(&mut self) {
         self.halted = None;
+    }
+
+    /// True when the builder halted and the next frame can record where the halted one could not.
+    /// That needs one of three: the scene changed, the sources that draw fell, or the frame's
+    /// forecast fell below both the forecast the halted frame made and the bound it reached. The
+    /// last condition is what stops a page from grinding: a forecast that stays level, because a
+    /// table holds its size or because the layout grows past the forecast, never retries. The
+    /// caller then starts the GPU's objects again and records the frame.
+    pub(crate) fn can_retry(&self, forecast: usize, active: u32, changed: bool) -> bool {
+        self.halted.is_some()
+            && (changed
+                || active < self.halted_sources
+                || (forecast < self.halted_forecast && forecast < self.halted_bound))
     }
 }
 
@@ -957,6 +1002,10 @@ pub(crate) enum MaterialStorage {
 struct Lighting {
     sun_direction: [f32; 4],
     sun_color: [f32; 4],
+    /// The directional lights after the main one, which cast no shadows: each one's travel
+    /// direction and its exposed color. Their count is the sun color's fourth float.
+    fill_direction: [[f32; 4]; MAX_FILL_DIRECTIONAL_LIGHTS],
+    fill_color: [[f32; 4]; MAX_FILL_DIRECTIONAL_LIGHTS],
     ambient: [f32; 4],
     /// The light that the hemisphere lights add along each world axis, as the frame's uniform
     /// holds it.
@@ -1062,6 +1111,9 @@ pub struct SceneSettings {
     ssr_scale: f32,
     /// The most steps of screen-space reflections' march, which the quality settings set.
     ssr_steps: u32,
+    /// The rays that each texel of screen-space bounce light gathers, which the quality settings
+    /// set: 0 draws none.
+    bounce_rays: u32,
     /// The automatic exposure's settings while the sketch turns it on.
     auto_exposure: Option<AutoExposure>,
     /// The meter of automatic exposure, which the quality settings set.
@@ -1130,6 +1182,9 @@ pub struct SceneSettings {
     override_material: u32,
     /// True when materials with parallax draw it, as the quality preset says.
     parallax: bool,
+    /// True when the camera draws the blended surfaces in its moment transparency layer, as the
+    /// quality preset says.
+    moment_transparency: bool,
     /// True when a material moved its casters' vertices since the last frame, so every shadow
     /// cascade and tile draws again.
     casters_moved: bool,
@@ -1145,6 +1200,9 @@ pub struct SceneSettings {
     light_tables: LightTables,
     /// The most area lights that one frame shades, which the quality settings set.
     area_light_cap: u32,
+    /// True while the GPU may fit the light clusters' depth slices to the depth it measured, which
+    /// the quality settings set.
+    light_fit: bool,
     /// Whether the lit templates draw with their builds that shade area lights.
     area_shading: AreaShading,
     /// True when the last gather found an area light whose tables have arrived.
@@ -1232,6 +1290,8 @@ impl SceneSettings {
             lighting: Lighting {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
                 sun_color: [0.0; 4],
+                fill_direction: [[0.0, -1.0, 0.0, 0.0]; MAX_FILL_DIRECTIONAL_LIGHTS],
+                fill_color: [[0.0; 4]; MAX_FILL_DIRECTIONAL_LIGHTS],
                 ambient: [0.0; 4],
                 hemisphere: [[0.0; 4]; 3],
                 sun_shadow: None,
@@ -1260,6 +1320,7 @@ impl SceneSettings {
             ssr: None,
             ssr_scale: ao::MAX_SCALE,
             ssr_steps: ssr::DEFAULT_STEPS,
+            bounce_rays: 0,
             auto_exposure: None,
             exposure_meter: Meter::default(),
             fog_volume: None,
@@ -1292,6 +1353,7 @@ impl SceneSettings {
             debug_view: DebugView::Lit,
             override_material: NO_MATERIAL,
             parallax: true,
+            moment_transparency: false,
             casters_moved: false,
             tiles_stale: false,
             shadow_camera: None,
@@ -1299,6 +1361,7 @@ impl SceneSettings {
             mirror_halvings: 1,
             light_tables: LightTables::default(),
             area_light_cap: DEFAULT_AREA_LIGHT_CAP,
+            light_fit: true,
             area_shading: AreaShading::default(),
             area_wanted: false,
             particles: ParticleTable::default(),
@@ -1369,6 +1432,17 @@ impl SceneSettings {
     /// Sets the most area lights that one frame shades, from the next frame on.
     pub fn set_area_light_cap(&mut self, cap: u32) {
         self.area_light_cap = cap;
+    }
+
+    /// True while the GPU may fit the light clusters' depth slices to the depth it measured.
+    pub fn light_fit(&self) -> bool {
+        self.light_fit
+    }
+
+    /// Leaves the light clusters' slices on the CPU's, or lets the GPU fit them to the measured
+    /// depth, from the next frame on.
+    pub fn set_light_fit(&mut self, fit: bool) {
+        self.light_fit = fit;
     }
 
     /// Makes the standard material's maps share the first `units` bindings of their bind group,
@@ -1443,6 +1517,19 @@ impl SceneSettings {
     /// rebuilds the draw tables.
     pub fn set_parallax(&mut self, on: bool) -> bool {
         std::mem::replace(&mut self.parallax, on) != on
+    }
+
+    /// Draws the blended surfaces in the camera's moment transparency layer, or back to front in
+    /// the transparent pass, from the next frame on. Returns true when the choice changed, so the
+    /// caller declares the frame's passes again. The setting is fixed at the start, so a change
+    /// never happens in a frame loop.
+    pub fn set_moment_transparency(&mut self, on: bool) -> bool {
+        std::mem::replace(&mut self.moment_transparency, on) != on
+    }
+
+    /// True when the camera draws the blended surfaces in its moment transparency layer.
+    pub fn moment_transparency(&self) -> bool {
+        self.moment_transparency
     }
 
     /// True when a material, by id, draws parallax where its mesh has texture coordinates: it asks
@@ -1712,6 +1799,39 @@ impl SceneSettings {
     /// the next recorded frame on. It changes only the trace's block, so it makes no GPU object.
     pub fn set_ssr_steps(&mut self, steps: u32) {
         self.ssr_steps = steps.clamp(1, ssr::MAX_STEPS);
+    }
+
+    /// Screen-space bounce light's settings while it draws: while the quality settings ask for
+    /// rays, the scene color is HDR, no debug view draws, and the scene sets no light probe grid.
+    /// The copy that its rays read holds the display's color on the 8-bit path, which is no
+    /// radiance to bounce, and the grid is the engine's global illumination, which already holds
+    /// one bounce and replaces the environment's diffuse light.
+    pub fn bounce(&self) -> Option<Bounce> {
+        (self.bounce_rays > 0
+            && self.canvas.scene_color.is_hdr()
+            && !self.debug_view.is_debug()
+            && self.probe_grid.is_none())
+        .then(|| Bounce {
+            rays: self.bounce_rays,
+            ..Bounce::default()
+        })
+    }
+
+    /// Sets the samples that each texel of screen-space bounce light gathers, from 0, which draws
+    /// none, to [`bounce::MAX_RAYS`], from the next recorded frame on.
+    pub fn set_bounce_rays(&mut self, rays: u32) {
+        self.bounce_rays = rays.min(bounce::MAX_RAYS);
+    }
+
+    /// What screen-space bounce light's steps draw with in a frame of a canvas of `canvas` pixels,
+    /// or `None` while it draws nothing or without a camera.
+    pub(crate) fn bounce_frame(&self, canvas: (u32, u32)) -> Option<BounceFrame> {
+        let bounce = self.bounce()?;
+        self.views.first()?.camera()?;
+        Some(BounceFrame {
+            bounce,
+            projection: self.camera_projection(canvas)?,
+        })
     }
 
     /// What screen-space reflections' trace draws with in a frame of a canvas of `canvas` pixels,
@@ -2740,6 +2860,26 @@ impl SceneSettings {
         }
     }
 
+    /// Records the light tables' images into `array`, which the probes own: the pixels that a
+    /// sketch wrote, and a texture's copy once the frame's texture work has its texels on the GPU.
+    /// `probe_layers` gives the probe layers that the images follow. Returns true when the array's
+    /// texels change.
+    pub(crate) fn record_light_images(
+        &mut self,
+        list: &mut DrawList,
+        array: u32,
+        probe_layers: u32,
+    ) -> Result<bool, RecordError> {
+        let Self {
+            light_tables,
+            textures,
+            ..
+        } = self;
+        light_tables.record(list, array, probe_layers, |handle| {
+            textures.copy_source(handle)
+        })
+    }
+
     /// Records the frame's texture work, writes each map's layer into its material's row when a
     /// map changed, or a texture's layer became ready or stopped drawing, then uploads the rows
     /// that changed into `table`. While the textures near their memory budget, it also reads part
@@ -3310,6 +3450,17 @@ impl SceneSettings {
         self.lighting.sun_color = [color[0], color[1], color[2], 0.0];
     }
 
+    /// The directional lights after the main one, in creation order: `fills`' entries up to
+    /// `count`, whose colors are exposed already. They light surfaces without shadows.
+    pub fn set_fills(&mut self, fills: &[FillLight; MAX_FILL_DIRECTIONAL_LIGHTS], count: u32) {
+        for (k, fill) in fills.iter().enumerate() {
+            self.lighting.fill_direction[k] =
+                [fill.direction[0], fill.direction[1], fill.direction[2], 0.0];
+            self.lighting.fill_color[k] = [fill.color[0], fill.color[1], fill.color[2], 0.0];
+        }
+        self.lighting.sun_color[3] = count.min(MAX_FILL_DIRECTIONAL_LIGHTS as u32) as f32;
+    }
+
     /// The ambient light's exposed color: its linear color times its intensity and the exposure.
     pub fn set_ambient(&mut self, color: [f32; 3]) {
         self.lighting.ambient = [color[0], color[1], color[2], 0.0];
@@ -3355,6 +3506,7 @@ impl SceneSettings {
         lights.set_area_ready(self.light_tables.ready() && shading);
         let lit = lights.gather(scene, parity, view.as_ref(), self.drawn_output().exposure);
         self.set_sun(lit.sun_direction, lit.sun_color);
+        self.set_fills(&lit.fills, lit.fill_count);
         self.set_ambient(lit.ambient);
         self.set_hemisphere(lit.hemisphere);
         self.set_sun_shadow(lit.sun_shadow);
@@ -3369,6 +3521,11 @@ impl SceneSettings {
     /// casts no shadows.
     pub fn sun_shadow_cascades(&self) -> u32 {
         self.lighting.sun_shadow.map_or(0, |shadow| shadow.cascades)
+    }
+
+    /// The main directional light's shadow settings, or None when it casts no shadows.
+    pub fn sun_shadow(&self) -> Option<SunShadow> {
+        self.lighting.sun_shadow
     }
 
     /// How the cascades' shadow map stores depth.
@@ -3527,7 +3684,8 @@ impl SceneSettings {
         let materials = &self.materials;
         self.moving_casters
             .update(scene, input.batches, input.structure_changed, |material| {
-                sways(materials, material) && !casts_still(materials, material)
+                (sways(materials, material) && !casts_still(materials, material))
+                    .then(|| materials.sway(material - 1))
             });
         let moving = &self.moving_casters;
         // A still view has no moving caster for a far cascade to follow, so every cascade draws in
@@ -3545,7 +3703,14 @@ impl SceneSettings {
             interval,
             |bounds| {
                 quality.follow_movers
-                    && moving.touch(scene, input.batches, parity, shadow.layers, bounds)
+                    && moving.touch(
+                        scene,
+                        input.batches,
+                        parity,
+                        shadow.layers,
+                        bounds,
+                        absolute,
+                    )
             },
         );
         Some(ShadowFrame {
@@ -4010,6 +4175,8 @@ impl SceneSettings {
             camera_eye: camera.eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
+            fill_direction: self.lighting.fill_direction,
+            fill_color: self.lighting.fill_color,
             ambient: self.lighting.ambient,
             hemisphere: self.lighting.hemisphere,
             output: output.uniform(),
@@ -4449,6 +4616,24 @@ pub fn grown_size_within(needed: u32, limit: u32) -> Result<u32, RecordError> {
     grown_size(needed, limit).ok_or(RecordError::BufferFull { bytes: limit })
 }
 
+/// The sources that can draw a frame: every scene slot, and the active rows of every batch. A row
+/// the page holds without drawing uploads no copy and takes no upload room.
+pub(crate) fn active_sources(input: &FrameInput<'_>) -> u32 {
+    let parity = input.parity();
+    let rows = input.batches.iter().fold(0u32, |total, (_, batch)| {
+        total.saturating_add(batch.frame_active_count(parity))
+    });
+    (input.scene.capacity() + 1).saturating_add(rows)
+}
+
+/// The error of a frame whose upload arena the engine's memory could not hold, naming the bytes
+/// that the frame needs.
+pub(crate) fn uploads_out_of_memory(bytes: usize) -> RecordError {
+    RecordError::OutOfMemory {
+        bytes: u32::try_from(bytes).unwrap_or(u32::MAX),
+    }
+}
+
 /// Encodes a linear color channel as sRGB.
 pub fn linear_to_srgb(c: f32) -> f32 {
     if c <= 0.003_130_8 {
@@ -4465,17 +4650,53 @@ mod tests {
     #[test]
     fn the_upload_arenas_register_their_room_and_the_most_a_frame_filled() {
         let mut arena = UploadArena::default();
-        arena.reset(1024);
+        arena.reset(1024).expect("room for the test's uploads");
         arena.push(&[7u8; 300]).expect("room for the first frame");
         let first = arena.memory_use();
         assert!(first.reserved >= 1024, "{} bytes reserved", first.reserved);
         assert_eq!(first.used, 300);
         // The next reset records what the frame before it filled.
-        arena.reset(1024);
+        arena.reset(1024).expect("room for the test's uploads");
         arena.push(&[7u8; 100]).expect("room for the second frame");
         let second = arena.memory_use();
         assert_eq!(second.peak, 300);
         assert_eq!(second.used, 100);
+    }
+
+    /// A halted builder retries only on a changed scene, a row drop, or a forecast below both the
+    /// forecast that failed and the bound it reached. A forecast that holds level never retries,
+    /// so a page cannot grind by re-creating its GPU objects every frame.
+    #[test]
+    fn a_halted_builder_retries_only_on_a_change_or_a_further_fall() {
+        let mut lists = ParityLists::new(16, 64);
+        lists.halted = Some(RecordError::OutOfMemory { bytes: 1 });
+        lists.halted_bound = 1_000;
+        lists.halted_forecast = 900;
+        lists.halted_sources = 10;
+        // The same load and forecast: the builder keeps the error.
+        assert!(!lists.can_retry(900, 10, false));
+        // Below the bound the frame reached but not below its forecast: no retry, since the frame
+        // would reach the same bound again.
+        assert!(!lists.can_retry(950, 10, false));
+        // A further fall below both retries.
+        assert!(lists.can_retry(800, 10, false));
+        // A row drop retries even when the forecast holds, which is the WebGL2 builder's case.
+        assert!(lists.can_retry(900, 5, false));
+        // A row rise does not, nor a level row count with a level forecast.
+        assert!(!lists.can_retry(900, 15, false));
+        // A changed scene retries whatever the figures.
+        assert!(lists.can_retry(900, 10, true));
+    }
+
+    /// A frame that asks its arena for more room than the engine's memory holds reports the size
+    /// it needs instead of aborting, so a load the device cannot serve fails with E1109.
+    #[test]
+    fn an_arena_that_cannot_hold_a_frame_reports_the_missing_bytes() {
+        let mut arena = UploadArena::default();
+        assert!(arena.reset(usize::MAX).is_err());
+        // The failure leaves the arena empty, so a later frame of a smaller scene can use it.
+        arena.reset(1024).expect("room for a frame that fits");
+        assert_eq!(arena.push(&[1u8; 16]).expect("room for the bytes").1, 16);
     }
 
     /// A buffer that no bind group reads follows the device's largest buffer: the portable buffer

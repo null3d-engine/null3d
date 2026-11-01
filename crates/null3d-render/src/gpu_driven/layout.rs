@@ -560,6 +560,16 @@ impl Layout {
         (self.copied * stride + self.indexed * sizes::INDEX_STRIDE).max(stride) + stride
     }
 
+    /// The most that one view copies into the upload arena for this layout, when at most `active`
+    /// sources can draw: a copy for each of them, within the layout's compacted size. A source
+    /// that is not active draws nothing and takes no upload room.
+    pub(super) fn copy_upload_bytes(&self, active: u32) -> u32 {
+        let stride = self.copy_stride();
+        (self.copied.min(active) * stride + self.indexed.min(active) * sizes::INDEX_STRIDE)
+            .max(stride)
+            + stride
+    }
+
     /// A layout whose buckets read `copied` slots, for the tests of the buffer that holds them,
     /// which read that count alone.
     #[cfg(test)]
@@ -2055,7 +2065,7 @@ mod tests {
     fn uploaded_ranges(layout: &mut Layout) -> Vec<[f32; 4]> {
         let mut list = DrawList::with_capacity(4096);
         let mut arena = UploadArena::default();
-        arena.reset(1 << 16);
+        arena.reset(1 << 16).expect("room for the test's uploads");
         layout.apply(&mut list, &mut arena, u32::MAX).unwrap();
         let base = arena.bytes().as_ptr() as usize;
         let op = null3d_gpu::drawlist::decode(list.words())
@@ -2301,7 +2311,9 @@ mod tests {
             .unwrap();
         let mut list = DrawList::with_capacity(1 << 16);
         let mut arena = UploadArena::default();
-        arena.reset(layout.upload_bound());
+        arena
+            .reset(layout.upload_bound())
+            .expect("room for the test's uploads");
         layout
             .apply(&mut list, &mut arena, u32::MAX)
             .expect("the frame's tables fit the room the layout asked for");

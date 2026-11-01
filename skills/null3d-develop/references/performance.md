@@ -25,11 +25,13 @@ A frame has three kinds of cost, and each has its own fixes.
 | Engine CPU work | Job workers and the sketch worker | Moving objects, hierarchy depth, animation, culling and light lists on WebGL2 | Static objects, instances, fewer levels, fewer point and spot lights |
 | GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets, hidden objects, vertices of far meshes | Pixel-ratio cap, presets, cheaper materials, levels of detail with `mesh.setLevels` (0.2), fewer shadowed lights, `gpuOcclusion` where walls hide many objects, `depthPrepass` for heavy overdraw on WebGPU (section 7) |
 
-On WebGPU, compute passes on the GPU cull the objects and list the lights of each cluster. Clusters are the cells of the view that clustered lighting uses. On WebGL2, the job workers do both on the CPU. So many objects and many point or spot lights cost CPU time on WebGL2, and GPU time on WebGPU. Both paths list the same lights for each cluster (`concepts/lighting`).
+On WebGPU, compute passes on the GPU cull the objects and list the lights of each cluster. Clusters are the cells of the view that clustered lighting uses. On WebGL2, the job workers do both on the CPU. So many objects and many point or spot lights cost CPU time on WebGL2, and GPU time on WebGPU. On WebGPU at Medium and above, the slices fit the depth that the surfaces in view span, so a cluster lists fewer lights than on WebGL2. A light that a pixel does not reach adds nothing, so both paths light the scene alike (`concepts/lighting`).
 
 In pipelined mode the render worker draws frame N while the sketch worker computes frame N+1. The slower of the two sets the frame rate. The figures of `engine.measure()` show both.
 
 Sketch code is usually the largest CPU cost, so tune it first. In the S1 benchmark (100,000 boxes that `onUpdate` moves every frame, Chrome, MacBook Pro), the sketch's update took 2.18 ms per frame. The engine's own steps took 0.14 ms on the sketch worker, the render worker 0.15 ms, and 16 job workers 0.45 ms together. The engine docs page `guides/performance` has the full split.
+
+Put performance-sensitive work in Rust. The engine's per-frame loops run in Rust, and your TypeScript is an interface to them: it writes arrays and makes calls. For work that grows with the scene, use the engine's bulk calls, which cover every object in one call. For a loop that no engine call covers, build a Rust WebAssembly module and run it on the job workers with `runTask` (`api/tasks`). A task answers between frames, so a loop that must affect the current frame belongs in the engine's own calls. Keep setup, wiring and page logic in TypeScript.
 
 ## 2. Budgets
 

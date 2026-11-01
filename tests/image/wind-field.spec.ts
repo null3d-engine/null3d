@@ -3,6 +3,11 @@
 // out must leave them where they were. The second pair gives the first its teeth. A card material
 // that ignored the field would fail the first pair, and a field frozen by a fault would fail it too.
 // Both pages stop the body at the same second and hold the camera, so only the air moves.
+//
+// A third pair draws the same page with no grid, which is what a device without float targets
+// reads. Its cards work their air out from the steady field at each vertex, so the traveling gust
+// and the swirl must move them between the two times as well. A fallback that gave the reader the
+// grid's stand-in texture, or no air, would leave the cards where they were.
 import { expect, type Page, test } from '@playwright/test';
 import type { ImageRun } from '../lib/images.ts';
 import { pageResult } from '../lib/page-result.ts';
@@ -19,8 +24,8 @@ interface Frame {
 /** The longest that one page may take to draw its image, for the field's first shader builds. */
 const PAGE_MS = 120_000;
 
-/** The pages that the test draws for each run: two times, with the gust and without it. */
-const PAGES_PER_RUN = 4;
+/** The pages that the test draws for each run: two times, with the gust, without it, and with no grid. */
+const PAGES_PER_RUN = 6;
 
 /** Each pixel's red, green and blue, from 0 to 1. */
 async function imageOf(page: Page, path: string): Promise<Float32Array> {
@@ -53,19 +58,21 @@ function pair(name: string, run: ImageRun): ImageRun {
 /**
  * The same page as `run`, held at another time. The body stops a second in and the camera holds, so
  * the air is the only thing that can move the picture between the two times. When asked, the page
- * takes the gust and the swirl out too. The sketch reads its switches from its own address, so the
- * page's sketch switch takes them after a query mark that the switch value encodes. A sketch that
- * already has one takes the mark for a second.
+ * takes the gust and the swirl out too, or keeps no grid. The sketch reads its switches from its own
+ * address, so the page's sketch switch takes them after a query mark that the switch value encodes.
+ * A sketch that already has one takes the mark for a second.
  */
-function variant(run: ImageRun, hold: number, frozen: boolean): string {
-	const timed = run.path.replace(/hold=[0-9.]+/, `hold=${hold}`);
-	const moving = timed.replace(/sketch=([^&]+)/, (_match, sketch: string) =>
-		sketch.includes('%3F') ? `sketch=${sketch}%26still%3D1` : `sketch=${sketch}%3Fstill%3D1`,
-	);
-	if (!frozen) return moving;
-	return moving.replace(/sketch=([^&]+)/, (_match, sketch: string) =>
-		sketch.includes('%3F') ? `sketch=${sketch}%26frozen%3D1` : `sketch=${sketch}%3Ffrozen%3D1`,
-	);
+function variant(run: ImageRun, hold: number, frozen: boolean, grid = true): string {
+	let path = run.path.replace(/hold=[0-9.]+/, `hold=${hold}`);
+	const add = (name: string): void => {
+		path = path.replace(/sketch=([^&]+)/, (_match, sketch: string) =>
+			sketch.includes('%3F') ? `sketch=${sketch}%26${name}` : `sketch=${sketch}%3F${name}`,
+		);
+	};
+	add('still%3D1');
+	if (frozen) add('frozen%3D1');
+	if (!grid) add('box%3D0');
+	return path;
 }
 
 test('wind-field: a gust moves the cards, and a frozen field does not', async ({ page }) => {
@@ -83,7 +90,17 @@ test('wind-field: a gust moves the cards, and a frozen field does not', async ({
 			await imageOf(page, variant(run, 1.6, true)),
 			8 / 255,
 		);
-		console.log(`${run.id}: moved ${moved.toFixed(5)} frozen ${frozen.toFixed(5)}`);
+		// A device without float targets reads the steady field at each vertex, because its field
+		// has no grid. The steady field carries the traveling gust and the swirl, so the same pair
+		// moves the cards there too.
+		const noGrid = changed(
+			await imageOf(page, variant(run, 1, false, false)),
+			await imageOf(page, variant(pair('wind-cards-later', run), 1.6, false, false)),
+			8 / 255,
+		);
+		console.log(
+			`${run.id}: moved ${moved.toFixed(5)} frozen ${frozen.toFixed(5)} no grid ${noGrid.toFixed(5)}`,
+		);
 		// A gust that crosses the field moves a fair share of the cards, while the frozen page holds
 		// every other thing still and cannot move one. Both pages stop the body at the same second
 		// and hold the camera, so the air alone can account for the difference. The moving pair must
@@ -95,6 +112,14 @@ test('wind-field: a gust moves the cards, and a frozen field does not', async ({
 		expect.soft(frozen, `${run.id}: a frozen field leaves the cards`).toBeLessThan(0.005);
 		expect
 			.soft(moved, `${run.id}: the gust moves far more than a frozen field`)
+			.toBeGreaterThan(frozen * 4 + 0.01);
+		// The steady field alone moves about half of the cards by more than half a centimeter between
+		// the two times, so a reader that fell back to the grid's stand-in texture would fail here.
+		expect
+			.soft(noGrid, `${run.id}: the steady field moves the cards with no grid`)
+			.toBeGreaterThan(0.02);
+		expect
+			.soft(noGrid, `${run.id}: the steady field moves far more than a frozen field`)
 			.toBeGreaterThan(frozen * 4 + 0.01);
 	}
 });

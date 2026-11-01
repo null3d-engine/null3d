@@ -15,6 +15,7 @@ import {
 	LAYOUT_BACKGROUND,
 	LAYOUT_BACKGROUND_LAYER,
 	LAYOUT_BLOOM,
+	LAYOUT_BOUNCE,
 	LAYOUT_CLUSTER_CULL,
 	LAYOUT_COMPUTE_HISTORY_R32_FLOAT,
 	LAYOUT_COMPUTE_HISTORY_RGBA8_UNORM,
@@ -46,10 +47,18 @@ import {
 	LAYOUT_INSTANCE_INDEX,
 	LAYOUT_JOINTS,
 	LAYOUT_LIGHT_CLUSTERS,
+	LAYOUT_LIGHT_DEPTH,
+	LAYOUT_LIGHT_DEPTH_MS,
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_MATERIAL_MAPS_PARALLAX,
 	LAYOUT_MATERIAL_MAPS_SCENE,
 	LAYOUT_MATERIAL_SCENE,
+	LAYOUT_MOMENT_COMPOSITE,
+	LAYOUT_MOMENT_DEPTH_MS,
+	LAYOUT_MOMENT_FRAME,
+	LAYOUT_MOMENT_SMAA_BLEND,
+	LAYOUT_MOMENT_SMAA_EDGES,
+	LAYOUT_MOMENT_SMAA_RESOLVE,
 	LAYOUT_MOTION_FRAME,
 	LAYOUT_PARTICLE,
 	LAYOUT_PARTICLE_DEPTH_MS,
@@ -107,6 +116,8 @@ import {
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
+	TEMPLATE_BOUNCE_DENOISE,
+	TEMPLATE_BOUNCE_TRACE,
 	TEMPLATE_CLUSTER,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
@@ -138,10 +149,26 @@ import {
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
 	TEMPLATE_LIGHT_COUNT,
+	TEMPLATE_LIGHT_DEPTH,
+	TEMPLATE_LIGHT_DEPTH_CLEAR,
+	TEMPLATE_LIGHT_DEPTH_CLEAR_MS,
+	TEMPLATE_LIGHT_DEPTH_MS,
+	TEMPLATE_LIGHT_FIT,
 	TEMPLATE_LIGHT_PLACE,
 	TEMPLATE_LIGHT_WRITE,
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
+	TEMPLATE_MOMENT_COMPOSITE,
+	TEMPLATE_MOMENT_DEPTH,
+	TEMPLATE_MOMENT_LIT,
+	TEMPLATE_MOMENT_SMAA_BLEND,
+	TEMPLATE_MOMENT_SMAA_EDGES,
+	TEMPLATE_MOMENT_SMAA_RESOLVE,
+	TEMPLATE_MOMENT_SPRITE,
+	TEMPLATE_MOMENT_SPRITE_MAP,
+	TEMPLATE_MOMENT_STANDARD_MAPS,
+	TEMPLATE_MOMENT_UNLIT,
+	TEMPLATE_MOMENT_UNLIT_MAP,
 	TEMPLATE_MOTION,
 	TEMPLATE_MOTION_VIEW,
 	TEMPLATE_OCCLUSION_EARLY,
@@ -384,6 +411,7 @@ export const SKIN_BUILDS = [
 
 /** The compute templates of light clustering: each one's entry point in the light clustering shader. */
 const LIGHT_ENTRY_POINTS: Readonly<Record<number, string>> = {
+	[TEMPLATE_LIGHT_FIT]: 'fit_lights',
 	[TEMPLATE_LIGHT_COUNT]: 'count_lights',
 	[TEMPLATE_LIGHT_PLACE]: 'place_lights',
 	[TEMPLATE_LIGHT_WRITE]: 'write_lights',
@@ -654,6 +682,10 @@ export class Pipelines {
 	private readonly clusterLayout: GPUPipelineLayout;
 	private readonly lightLayout: GPUPipelineLayout;
 	private readonly lightClusters: WgslShader | undefined;
+	private readonly lightDepth: WgslShader | undefined;
+	private readonly lightDepthMs: WgslShader | undefined;
+	private readonly lightDepthLayout: GPUPipelineLayout;
+	private readonly lightDepthMsLayout: GPUPipelineLayout;
 	private readonly skinLayout: GPUPipelineLayout;
 	/** The skinning pass's builds, which arrive with the skinning feature's shader file. */
 	private readonly skin: ShaderVariants;
@@ -667,6 +699,7 @@ export class Pipelines {
 	private emptyFragment: GPUShaderModule | undefined;
 	/** The pipelines that make mip levels, by the format they draw. */
 	private readonly mipPipelines = new Map<GPUTextureFormat, GPURenderPipeline>();
+	private readonly scalePipelines = new Map<GPUTextureFormat, GPURenderPipeline>();
 
 	/** `shaders` are the WGSL builds that the device loaded, with the bits that it fixes. */
 	constructor(
@@ -752,7 +785,11 @@ export class Pipelines {
 				texture: { sampleType: 'depth', viewDimension: '2d-array' },
 			},
 			probeGrid,
-			{ binding: 11, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
+			{
+				binding: 11,
+				visibility: fragment,
+				texture: { sampleType: 'unfilterable-float', viewDimension: '2d-array' },
+			},
 			{ binding: 12, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 13, visibility: fragment, sampler: {} },
 			{ binding: 14, visibility: fragment, sampler: { type: 'non-filtering' } },
@@ -784,12 +821,14 @@ export class Pipelines {
 		);
 		// The motion pass's frame group: the depth group's entries, then the motion block and the last
 		// frame's joints, which vertex shaders read, and the table of object ranges for custom
-		// materials that read object ids.
+		// materials that read object ids. A custom material's fragment stage reads its row of custom
+		// values, where it tests its own coverage, so that texture reaches both stages as it does in
+		// the depth group.
 		this.defineLayout(LAYOUT_MOTION_FRAME, 'motion frame', [
 			...frameEntries,
 			{
 				binding: 2,
-				visibility: GPUShaderStage.VERTEX,
+				visibility: GPUShaderStage.VERTEX | fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},
 			{ binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
@@ -914,11 +953,33 @@ export class Pipelines {
 			],
 			true,
 		);
-		// Light clustering's parameters, the light list, and the light grid that it fills.
+		// Light clustering's parameters, the light list, the light grid that it fills, and the
+		// depth reduction that its fit reads.
 		this.defineLayout(LAYOUT_LIGHT_CLUSTERS, 'light clusters', [
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+		]);
+		// The light clusters' depth reduction: its blocks, the light grid whose header it writes,
+		// and the view's depth as a float texture. The multisampled layout reads sample 0.
+		this.defineLayout(LAYOUT_LIGHT_DEPTH, 'light depth', [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{
+				binding: 2,
+				visibility: GPUShaderStage.COMPUTE,
+				texture: { sampleType: 'unfilterable-float' },
+			},
+		]);
+		this.defineLayout(LAYOUT_LIGHT_DEPTH_MS, 'light depth ms', [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{
+				binding: 2,
+				visibility: GPUShaderStage.COMPUTE,
+				texture: { sampleType: 'unfilterable-float', multisampled: true },
+			},
 		]);
 		// The joint texture, which the builds that skin in the vertex shader read.
 		this.defineLayout(LAYOUT_JOINTS, 'joints', [
@@ -1071,9 +1132,52 @@ export class Pipelines {
 			visibility: fragment,
 			texture: { sampleType: 'unfilterable-float', multisampled },
 		});
+		// The moment layer's colour builds keep the frame's copy of the opaque color at binding 15,
+		// which every lit build declares through the reflection code, and add the moment store at
+		// the light probe grid's binding, 10. They declare no light probe grid, so that entry
+		// leaves the layout: their maps' group already takes the fragment stage to the count of 16
+		// without it.
+		this.defineLayout(LAYOUT_MOMENT_FRAME, 'moment frame', [
+			...frame.filter((entry) => entry !== probeGrid),
+			{
+				binding: 10,
+				visibility: fragment,
+				texture: { sampleType: 'unfilterable-float' },
+			},
+		]);
+		// The moment layer's steps read their images with textureLoad, and the anti-aliasing reads
+		// its lookup tables and its images with a linear sampler.
+		this.defineLayout(LAYOUT_MOMENT_COMPOSITE, 'moment composite', [unfiltered(0), unfiltered(1)]);
+		this.defineLayout(LAYOUT_MOMENT_DEPTH_MS, 'moment depth ms', [unfiltered(0, true)]);
+		this.defineLayout(LAYOUT_MOMENT_SMAA_EDGES, 'moment smaa edges', [
+			unfiltered(0),
+			unfiltered(1),
+		]);
+		this.defineLayout(LAYOUT_MOMENT_SMAA_BLEND, 'moment smaa blend', [
+			{ binding: 0, visibility: fragment, texture: {} },
+			{ binding: 1, visibility: fragment, texture: {} },
+			{ binding: 2, visibility: fragment, texture: {} },
+			{ binding: 3, visibility: fragment, sampler: { type: 'filtering' } },
+		]);
+		this.defineLayout(LAYOUT_MOMENT_SMAA_RESOLVE, 'moment smaa resolve', [
+			{ binding: 0, visibility: fragment, texture: {} },
+			{ binding: 1, visibility: fragment, texture: {} },
+			{ binding: 2, visibility: fragment, sampler: { type: 'filtering' } },
+		]);
 		this.defineLayout(LAYOUT_AO_DEPTH, 'ao depth', [aoSettings, unfiltered(1)]);
 		this.defineLayout(LAYOUT_AO_DEPTH_MS, 'ao depth ms', [aoSettings, unfiltered(1, true)]);
-		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2), unfiltered(3)]);
+		this.defineLayout(LAYOUT_AO, 'ao', [
+			aoSettings,
+			unfiltered(1),
+			unfiltered(2),
+			// Screen-space reflections' trace, or a blank array while they draw none: an array of
+			// layers either way, so the screen texture reads the same on both paths.
+			{
+				binding: 3,
+				visibility: fragment,
+				texture: { sampleType: 'unfilterable-float', viewDimension: '2d-array' },
+			},
+		]);
 		// Screen-space reflections' steps read every texture with textureLoad too: a level of the
 		// depth pyramid reads the level below it, and the trace ambient occlusion's depth copy and
 		// the pyramid's six levels above it.
@@ -1081,6 +1185,20 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_SSR_TRACE, 'ssr trace', [
 			aoSettings,
 			...[1, 2, 3, 4, 5, 6, 7].map((binding) => unfiltered(binding)),
+		]);
+		// Screen-space bounce light's steps read ambient occlusion's depth copy and horizon step's
+		// target with textureLoad, and the color copy or the traced light as an array of layers:
+		// the copy has one layer per surface that lets light through, and both steps take the
+		// same layout.
+		this.defineLayout(LAYOUT_BOUNCE, 'bounce', [
+			aoSettings,
+			unfiltered(1),
+			unfiltered(2),
+			{
+				binding: 3,
+				visibility: fragment,
+				texture: { sampleType: 'unfilterable-float', viewDimension: '2d-array' },
+			},
 		]);
 		// The background's values, which the sky's vertex stage reads too, a cube map and its
 		// filtering sampler.
@@ -1309,6 +1427,36 @@ export class Pipelines {
 				[LAYOUT_FRAME, LAYOUT_TEXTURES],
 			],
 			[TEMPLATE_SPRITE, 'sprite', shaders.sprite, [0, 2], [LAYOUT_FRAME]],
+			[TEMPLATE_MOMENT_LIT, 'moment lit', shaders.moment_lit, [0, 1], [LAYOUT_MOMENT_FRAME]],
+			[
+				TEMPLATE_MOMENT_STANDARD_MAPS,
+				'moment standard maps',
+				shaders.moment_standard_maps,
+				[0, 1, 2, 3],
+				[LAYOUT_MOMENT_FRAME, LAYOUT_MATERIAL_MAPS],
+			],
+			[TEMPLATE_MOMENT_UNLIT, 'moment unlit', shaders.moment_unlit, [0], [LAYOUT_MOMENT_FRAME]],
+			[
+				TEMPLATE_MOMENT_UNLIT_MAP,
+				'moment unlit map',
+				shaders.moment_unlit_map,
+				[0, 2, 3],
+				[LAYOUT_MOMENT_FRAME, LAYOUT_TEXTURES],
+			],
+			[
+				TEMPLATE_MOMENT_SPRITE,
+				'moment sprite',
+				shaders.moment_sprite,
+				[0, 2],
+				[LAYOUT_MOMENT_FRAME],
+			],
+			[
+				TEMPLATE_MOMENT_SPRITE_MAP,
+				'moment sprite map',
+				shaders.moment_sprite_map,
+				[0, 2],
+				[LAYOUT_MOMENT_FRAME, LAYOUT_TEXTURES],
+			],
 			[TEMPLATE_LINE, 'line', shaders.line, [0], [LAYOUT_FRAME]],
 			[TEMPLATE_LINE_LIT, 'lit line', shaders.line_lit, [0], [LAYOUT_FRAME]],
 			[
@@ -1390,6 +1538,8 @@ export class Pipelines {
 			[TEMPLATE_AO_DENOISE, 'ao denoise', shaders.ao, 'denoise', LAYOUT_AO],
 			[TEMPLATE_SSR_REDUCE, 'ssr reduce', shaders.ssr_reduce, 'reduce', LAYOUT_SSR_REDUCE],
 			[TEMPLATE_SSR_TRACE, 'ssr trace', shaders.ssr, 'trace', LAYOUT_SSR_TRACE],
+			[TEMPLATE_BOUNCE_TRACE, 'bounce trace', shaders.bounce, 'trace', LAYOUT_BOUNCE],
+			[TEMPLATE_BOUNCE_DENOISE, 'bounce denoise', shaders.bounce, 'denoise', LAYOUT_BOUNCE],
 			[
 				TEMPLATE_EXPOSURE_LUMINANCE,
 				'exposure cells',
@@ -1507,6 +1657,42 @@ export class Pipelines {
 			layouts: [LAYOUT_WEIGHTED_COMPOSITE],
 			vertexBuffers: [],
 		});
+		this.defineTemplate(TEMPLATE_MOMENT_COMPOSITE, {
+			label: 'moment composite',
+			shader: shaders.moment_composite,
+			pipeline: 'main',
+			layouts: [LAYOUT_MOMENT_COMPOSITE],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_MOMENT_DEPTH, {
+			label: 'moment depth',
+			shader: shaders.moment_depth,
+			pipeline: 'main',
+			layouts: [LAYOUT_MOMENT_DEPTH_MS],
+			vertexBuffers: [],
+			depthFragment: true,
+		});
+		this.defineTemplate(TEMPLATE_MOMENT_SMAA_EDGES, {
+			label: 'moment smaa edges',
+			shader: shaders.moment_smaa_edges,
+			pipeline: 'main',
+			layouts: [LAYOUT_MOMENT_SMAA_EDGES],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_MOMENT_SMAA_BLEND, {
+			label: 'moment smaa blend',
+			shader: shaders.moment_smaa_blend,
+			pipeline: 'main',
+			layouts: [LAYOUT_MOMENT_SMAA_BLEND],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_MOMENT_SMAA_RESOLVE, {
+			label: 'moment smaa resolve',
+			shader: shaders.moment_smaa_resolve,
+			pipeline: 'main',
+			layouts: [LAYOUT_MOMENT_SMAA_RESOLVE],
+			vertexBuffers: [],
+		});
 		this.defineTemplate(TEMPLATE_WEIGHTED_DEPTH, {
 			label: 'weighted depth',
 			shader: shaders.weighted_depth,
@@ -1603,6 +1789,14 @@ export class Pipelines {
 			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_CLUSTERS)],
 		});
 		this.lightClusters = variantFor(shaders.light_clusters, 0, 'wgsl')?.wgsl ?? undefined;
+		this.lightDepth = variantFor(shaders.light_depth, 0, 'wgsl')?.wgsl ?? undefined;
+		this.lightDepthMs = variantFor(shaders.light_depth_ms, 0, 'wgsl')?.wgsl ?? undefined;
+		this.lightDepthLayout = device.createPipelineLayout({
+			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_DEPTH)],
+		});
+		this.lightDepthMsLayout = device.createPipelineLayout({
+			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_DEPTH_MS)],
+		});
 		this.skinLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_SKIN)] });
 		this.skin = shaders.skin;
 		this.exposureHistogram = shaders.exposure_histogram;
@@ -1948,13 +2142,20 @@ export class Pipelines {
 	 */
 	prebuildMipmaps(): void {
 		if (!this.mipmap) return;
-		for (const format of MIP_FORMATS)
-			this.device.createRenderPipelineAsync(this.mipDescriptor(format)).then(
+		for (const format of MIP_FORMATS) {
+			this.device.createRenderPipelineAsync(this.mipDescriptor(format, 'main')).then(
 				(pipeline) => {
 					if (!this.mipPipelines.has(format)) this.mipPipelines.set(format, pipeline);
 				},
 				() => {},
 			);
+			this.device.createRenderPipelineAsync(this.mipDescriptor(format, 'scale')).then(
+				(pipeline) => {
+					if (!this.scalePipelines.has(format)) this.scalePipelines.set(format, pipeline);
+				},
+				() => {},
+			);
+		}
 	}
 
 	/**
@@ -1962,22 +2163,41 @@ export class Pipelines {
 	 * when it is done, else one made at once.
 	 */
 	mipmaps(format: GPUTextureFormat): GPURenderPipeline {
-		let pipeline = this.mipPipelines.get(format);
+		return this.cachedPipeline(this.mipPipelines, format, 'main');
+	}
+
+	/**
+	 * The pipeline that draws a texture into the corner of a texture of `format`, at a size of its
+	 * own: the one built in the background when it is done, else one made at once.
+	 */
+	mipScale(format: GPUTextureFormat): GPURenderPipeline {
+		return this.cachedPipeline(this.scalePipelines, format, 'scale');
+	}
+
+	private cachedPipeline(
+		pipelines: Map<GPUTextureFormat, GPURenderPipeline>,
+		format: GPUTextureFormat,
+		entry: 'main' | 'scale',
+	): GPURenderPipeline {
+		let pipeline = pipelines.get(format);
 		if (!pipeline) {
-			pipeline = this.device.createRenderPipeline(this.mipDescriptor(format));
-			this.mipPipelines.set(format, pipeline);
+			pipeline = this.device.createRenderPipeline(this.mipDescriptor(format, entry));
+			pipelines.set(format, pipeline);
 		}
 		return pipeline;
 	}
 
-	/** How to build the pipeline that makes mip levels of textures of `format`. */
-	private mipDescriptor(format: GPUTextureFormat): GPURenderPipelineDescriptor {
+	/** How to build the pipeline of `entry` for textures of `format`. */
+	private mipDescriptor(
+		format: GPUTextureFormat,
+		entry: 'main' | 'scale',
+	): GPURenderPipelineDescriptor {
 		const shader = this.mipmap;
 		if (!shader) throw new Error("the device's shader module has no mip level shader");
 		const module = this.module('mipmaps', shader);
-		const entryPoints = shader.pipelines.main;
+		const entryPoints = shader.pipelines[entry];
 		return {
-			label: 'mipmaps',
+			label: entry === 'main' ? 'mipmaps' : 'mip scale',
 			layout: 'auto',
 			vertex: { module, entryPoint: entryPoints?.vertex },
 			fragment: { module, entryPoint: entryPoints?.fragment, targets: [{ format }] },
@@ -2100,6 +2320,27 @@ export class Pipelines {
 				label: `exposure ${exposureEntry}`,
 				layout: this.exposureLayout,
 				compute: { module: this.module('exposure histogram', shader), entryPoint: exposureEntry },
+			};
+		}
+		if (
+			template === TEMPLATE_LIGHT_DEPTH ||
+			template === TEMPLATE_LIGHT_DEPTH_MS ||
+			template === TEMPLATE_LIGHT_DEPTH_CLEAR ||
+			template === TEMPLATE_LIGHT_DEPTH_CLEAR_MS
+		) {
+			const multisampled =
+				template === TEMPLATE_LIGHT_DEPTH_MS || template === TEMPLATE_LIGHT_DEPTH_CLEAR_MS;
+			const clear =
+				template === TEMPLATE_LIGHT_DEPTH_CLEAR || template === TEMPLATE_LIGHT_DEPTH_CLEAR_MS;
+			const shader = multisampled ? this.lightDepthMs : this.lightDepth;
+			if (!shader) throw new Error("the device's shader modules have no light depth shader");
+			return {
+				label: clear ? 'light depth clear' : 'light depth',
+				layout: multisampled ? this.lightDepthMsLayout : this.lightDepthLayout,
+				compute: {
+					module: this.module('light depth', shader),
+					entryPoint: clear ? 'clear_reduction' : 'reduce_depth',
+				},
 			};
 		}
 		const entryPoint = LIGHT_ENTRY_POINTS[template];

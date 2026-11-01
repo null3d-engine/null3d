@@ -32,13 +32,17 @@ use null3d_shaders::{
     BuildError, COMMAND, Cache, CacheStats, Inputs, OUTPUT_DIR, Shard, ShardPlan, Written,
 };
 
-const USAGE: &str = "usage: shader-build [--root <repository root>] [--cache <folder> [--stamp <stamp>]] [--no-cache] [--entries-shard <i>/<n>] [--permutations <file>]";
+const USAGE: &str = "usage: shader-build [--root <repository root>] [--cache <folder> [--stamp <stamp>]] [--no-cache] [--entries-shard <i>/<n>] [--permutations <file>]. --root defaults to the current folder.";
 
 /// The environment variable that turns the cache off, as the Vite plugin's cache names it.
 const NO_CACHE_ENV: &str = "NULL3D_NO_SHADER_CACHE";
 
 fn main() -> ExitCode {
-    let mut root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    // The default root is the current folder, never a path compiled into this program. The tools
+    // identify a compiler by the bytes of this program, so a build path here would give two
+    // checkouts of one compiler different bytes, and each would compile every entry again. Every
+    // tool passes `--root`, and a direct run from the repository root needs no argument.
+    let mut root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let mut cache_folder: Option<PathBuf> = None;
     let mut stamp = String::new();
     let mut no_cache = cache_off();

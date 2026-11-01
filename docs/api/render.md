@@ -408,15 +408,18 @@ state textures, so budget them beside its figures.
 
 ```ts
 const { data, width, height, frames } = await render.readPass(field, {
-  x: 0, y: 0, width: 8, height: 8,  // texels with the top left of the texture at the corner
+  x: 0, y: 0, width: 8, height: 8,  // texels, counted from the pass's first row and column
 });
-// Four numbers for each texel, row by row from the top left.
+// Four numbers for each texel, row by row from the pass's first row.
 const red = data[(3 * width + 2) * 4];
 ```
 
 - A frame copies the region after the pass's runs, and the GPU puts its bytes in engine memory. The
   sketch's frame loop answers the promise, so no thread waits. The answer comes one or more frames
   after the call, and `frames` gives how many.
+- The rows count as the pass's shader numbers them: the row that its compute form writes at index 0
+  is the region's first row, on every path. A material shows a pass's image at the place that the
+  section on a pass's texture gives below.
 - A region is at most 64 texels each way. `data` holds red, green, blue and alpha for each texel:
   8-bit color reads as a share of 255, and a float format gives the values the pass wrote.
 - On WebGL2 the fragment form writes the scene color's format. A read there gives that format's
@@ -434,6 +437,8 @@ const red = data[(3 * width + 2) * 4];
 ### WebGL2
 
 WebGL2 has no compute shaders. A WebGL2 page runs the `fallback` WGSL as a full-screen pass. It gets the same values, textures, size, scale and pace. A pass with `history` runs its fragment form once for each step. The fragment form reads the state of the run before as `input.color`. That holds the state's texels at the pixel.
+
+A fragment form writes the same texels as the compute form, so a read by `render.readPass` and a chain of passes give the same values on every path.
 
 A pass of several layers draws each layer in a pass of its own. `input.layer` gives the layer that the draw writes, from 0. Up to 32 layers work on WebGL2, and a pass of more throws E1220. The WebGPU paths draw up to 128 with history and 256 without. The values keep their positions: the fields of the fragment form's `struct Uniforms` start at the same floats as the compute block's `u0`. Give no fallback when the work needs atomics or shared memory. A fragment shader cannot do those, and neither can it write to a place that the shader chooses. The call then throws E1220 on WebGL2. The engine draws a compute pass on WebGPU only.
 

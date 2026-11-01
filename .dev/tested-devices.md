@@ -169,10 +169,12 @@ The run: [20261024-111020-vegetation](tested-devices/galaxy-tab-a9-plus-sm-x216b
 `vkQueueSubmit failed with VK_ERROR_DEVICE_LOST`. The page forced a mode that the device does not
 offer, and no adapter was left to start another.
 
-Three pages passed, three were skipped, and one failed. The device offers no compatibility adapter,
-so the plan skipped its compatibility pages, and it skipped them only after that first one had run.
-It has no High or Ultra row at any path, because those presets draw on core WebGPU only, and the
-tablet offers no WebGPU adapter.
+Three pages passed, three were skipped, and one failed. At that run the device offered no
+compatibility adapter, so the plan skipped its compatibility pages, and it skipped them only after
+that first one had run. It has no High or Ultra row at any path, because those presets draw on core
+WebGPU only, and at that run the tablet offered no WebGPU adapter. A later run reports a WebGPU
+adapter and plays every path, so the fault no longer repeated
+([run](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-030741-wind-field-cost.md)).
 The page then reported 3 frames in 5.5 s, so the runner counted a pass with no triangles and no
 texture bytes. Its figures are in no table here and must not be read. The device's own fault is in
 [Driver bug reports](driver-bugs.md).
@@ -384,3 +386,26 @@ and Low's 100,000, so the move to Low changed no drawn count, sent no new report
 Medium's figure in place.
 
 The run: [20261024-111706-splats](tested-devices/ipad-pro-13-safari/20261024-111706-splats.md).
+
+### S3's 256 lights with depth-fitted clusters, iPad Pro 13 and Galaxy S25
+
+The fit's before and after ran the device runner's bench plan: S3 on null3D's WebGPU page, three
+runs of 10 s warm-up and 10 s measured each. The iPad chose Medium, where the fit runs, and the S25
+chose Low, where it stays off.
+
+| Device | Preset | Before, GPU ms | After, GPU ms | Light depth pass, ms |
+| --- | --- | --- | --- | --- |
+| iPad Pro 13 | Medium | 8.41 | 6.23 | 0.162 |
+| Galaxy S25 | Low | 19.01 | 19.14 | none: the fit is off |
+
+The iPad saves 2.18 ms, thirteen times the new pass. The phone's frame stays within the 0.1 ms that
+two runs of the before build differ. The S25's display runs at 30 Hz, so the runner marks its
+timing figures unreliable; its GPU times compare between its sessions. The S25 stands in for the
+S24 class by the owner's ruling. [D-264](decisions/D-264-light-cluster-depth-fit.md) gives the
+reason for each preset's choice.
+
+The runs, before and after each device:
+[20261030-150954-bench](tested-devices/ipad-pro-13-safari/20261030-150954-bench.md),
+[20261030-162243-bench](tested-devices/ipad-pro-13-safari/20261030-162243-bench.md),
+[20261030-150954-bench](tested-devices/galaxy-s25-sm-s931b-chrome/20261030-150954-bench.md) and
+[20261030-162243-bench](tested-devices/galaxy-s25-sm-s931b-chrome/20261030-162243-bench.md).

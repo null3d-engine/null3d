@@ -29,8 +29,8 @@ const IMAGE_LAYER = 5;
 
 /** A core that hands out slots and light rows, keeps the command ring, and records light calls. */
 function fakeCore() {
-	// Enough memory for a light's image, which holds every mip level of 128 x 128 texels.
-	const memory = new WebAssembly.Memory({ initial: 4 });
+	// Enough memory for a light's image, which holds every mip level of the largest picture.
+	const memory = new WebAssembly.Memory({ initial: 64 });
 	let slot = 0;
 	let row = 0;
 	/** Each light row's kind, object, colors by code and numbers by code. */
@@ -47,6 +47,8 @@ function fakeCore() {
 	>();
 	/** The light rows whose images the scene asked the core to make room for. */
 	const images: number[] = [];
+	/** The texels across a side that the scene asked for each of those images. */
+	const sizes: number[] = [];
 	const glue = {
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: (field: number) => AT.fields + field * 512,
@@ -74,9 +76,10 @@ function fakeCore() {
 			row.hero = object;
 			return 0;
 		},
-		lightImage: (light: number) => {
+		lightImage: (light: number, size: number) => {
 			if (!rows.has(light)) return 0;
 			images.push(light);
+			sizes.push(size);
 			return AT.images;
 		},
 		finishLightImage: (light: number) => {
@@ -114,7 +117,7 @@ function fakeCore() {
 		const [x, y, z, w] = rotation(light) as [number, number, number, number];
 		return new Vector3(0, 0, -1).applyQuaternion(new Quaternion(x, y, z, w)).toArray();
 	};
-	return { scene, commands, tableRow, rotation, pointing, images };
+	return { scene, commands, tableRow, rotation, pointing, images, sizes };
 }
 
 /** The error that `call` throws. */
@@ -538,10 +541,12 @@ describe('light maps', () => {
 	const picture = () => ({ width: 2, height: 2, data: new Uint8Array(16).fill(255) });
 
 	test('a spot light takes a map, which the core writes into a light tables layer', async () => {
-		const { scene, tableRow, images } = fakeCore();
+		const { scene, tableRow, images, sizes } = fakeCore();
 		const spot = scene.createSpotLight({ range: 6, map: picture() });
 		await scene.imagesSettled();
 		expect(images).toEqual([spot.id]);
+		// A small picture keeps the fewest texels that an image takes.
+		expect(sizes).toEqual([128]);
 		expect(tableRow(spot).values[C.LIGHT_VALUE_IMAGE]).toBe(IMAGE_LAYER);
 		// A new map goes into the light's own place.
 		spot.setMap(picture());
@@ -551,6 +556,16 @@ describe('light maps', () => {
 		// Null goes back to one color and frees the place.
 		spot.setMap(null);
 		expect(tableRow(spot).values[C.LIGHT_VALUE_IMAGE]).toBe(0);
+	});
+
+	test('a detailed map keeps its detail up to the most texels an image takes', async () => {
+		const { scene, sizes } = fakeCore();
+		const width = 300;
+		const detail = () => ({ width, height: width, data: new Uint8Array(width * width * 4) });
+		scene.createSpotLight({ range: 6, map: detail() });
+		await scene.imagesSettled();
+		// 300 pixels a side rounds up to the largest image size.
+		expect(sizes).toEqual([512]);
 	});
 
 	test('a map whose pixels a light cannot take throws E1108', () => {
