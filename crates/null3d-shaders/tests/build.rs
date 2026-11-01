@@ -1243,15 +1243,14 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
 }
 
 /// The entries that the determinism check builds twice, to check that a build is the same every
-/// time. Between them they make one module of every kind that the build writes: the main module,
-/// through `timer_mark`; the features module, through the first-use features that the device
-/// entries keep; a device module and a combined loader table, through the many builds of several
-/// features of `lit`, the standard material without maps; a shared-paragraph table, through the
-/// twenty or more feature sets those builds make; and a whole-shader first-use module, through
-/// `environment`. `lit` has the feature bits of the textured standard material, less its relief
-/// bits, at about a seventh of its builds. The textured material alone is most of the whole
-/// build, and two builds of it made this check the longest part of CI by far.
-const DETERMINISM_ENTRIES: &[&str] = &["lit", "environment", "pick", "timer_mark"];
+/// time. Between them they make one module of every kind that the build writes. The main, features
+/// and permutations modules come with every build. `unlit`, the basic material, writes a device
+/// module and a combined loader table, because its feature sets pair features and fill twenty
+/// device modules of one kind, and it writes a shared-paragraph table from that twenty-module
+/// floor. `environment` writes a whole-shader first-use module. Those two entries make about half
+/// a per cent of the whole build, where `lit` alone made a sixth of it and the textured standard
+/// material makes most of the rest.
+const DETERMINISM_ENTRIES: &[&str] = &["unlit", "environment"];
 
 /// The one test that builds every shader of the repository. A full build takes minutes, and
 /// cargo-nextest runs each test in a process of its own, so a test cannot share another test's
@@ -1424,9 +1423,10 @@ fn narrowed(mut output: Output, again: &Output, names: &[&str]) -> Output {
     output
 }
 
-/// Fails unless the build writes a module of every kind: the main module, the features module, a
-/// device module, a shared-paragraph table, a whole-shader first-use module and a combined loader
-/// table. The check keeps the determinism comparison covering each kind when the manifest changes.
+/// Fails unless the build writes a module of every kind: the main module, the features module, the
+/// permutations module, a device module, a shared-paragraph table, a whole-shader first-use module
+/// and a combined loader table. The check keeps the determinism comparison covering each kind when
+/// the manifest changes.
 fn every_module_kind(modules: &BTreeMap<String, String>) -> Result<(), String> {
     let names: Vec<&str> = modules
         .keys()
