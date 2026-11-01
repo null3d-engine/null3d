@@ -335,7 +335,9 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     // Where the bodies meet, the surface lies flat, so both meshes lie in one plane there. The river's
     // waves give way to still water's only inside that flat band, so the vertices need no mix.
     let flatness = fract(input.uv.y) * 2.0;
-    var lift = waves(input.position.xz, frame.time, current, false).x * (1.0 - flatness);
+    // The vertex stage has no screen-space derivative to fade by, and a displaced vertex is
+    // geometry rather than a pixel, so the fine ripples keep their full detail here.
+    var lift = waves(input.position.xz, frame.time, current, false, 0.0).x * (1.0 - flatness);
     if (material.windStrength > 0.0) {
         // The air over the surface: its speed lifts a short wave, and its direction sets where the
         // crest stands. The field's box follows the camera, as it does for every reader of the field.
