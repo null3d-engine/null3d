@@ -79,7 +79,7 @@ function repository(): string {
 			'[package]\nname = "null3d-gpu"\n\n[dependencies]\ncore = { path = "../null3d-core" }\n',
 		'crates/null3d-gpu/src/lib.rs': '',
 		'crates/null3d-core/Cargo.toml': '[package]\nname = "null3d-core"\n',
-		'crates/unrelated/Cargo.toml': '',
+		'crates/unrelated/Cargo.toml': '[package]\nname = "unrelated"\n',
 		[`${MODULE_DIR}/shaders.ts`]: 'export {};\n',
 		[`${MODULE_DIR}/gpu.ts`]: 'export {};\n',
 	});
