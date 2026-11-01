@@ -11,6 +11,7 @@ Every M2 feature adds templates or permutation bits to the shader files that a p
 ## Rule
 
 - A feature that a page does not use adds nothing to its start ([D-14](D-14-js-budget.md), the chunk rule for M2). That holds for its shader builds as for its code.
+- The copy of the opaque scene color is a feature of its own, `color_copy`, apart from the transparent-material builds that read it. The steps that sample the frame before read it: glass, screen-space reflections, and the bounce light that a preset draws. A page whose preset draws that light downloads the copy during its start, while it draws no glass. A page that draws glass downloads the material builds. Neither pays for the other's file.
 - Each shader file of a feature that loads on first use stays within its limits after Brotli, after gzip and uncompressed. The owner sets them, and D-14 records them.
 - No frame draws a feature half done. A pass whose pipelines wait for their file must not leave the canvas without a frame. And no pass may draw vertices that another pass has not written yet.
 - The image tests draw the same images on all three tiers.
@@ -47,6 +48,7 @@ Each feature has one file for each GPU path and each value of the device's fixed
 | `sprites` | 6 | 3.1 to 4.9 KB | 3.7 to 5.8 KB | 33 to 48 KB | The `sprite` and `sprite_map` templates ([D-37](D-37-sprites.md)) |
 | `bloom` | 4 | 4.7 to 5.1 KB | 5.5 to 6.0 KB | 31 to 35 KB | Bloom's steps, and the final pass's BLOOM builds ([D-21](D-21-effect-chain.md)) |
 | `ao` | 2 | 2.9 to 3.2 KB | 3.4 to 3.6 KB | 17 to 23 KB | Ambient occlusion's depth, horizon and denoise steps |
+| `color_copy` | 4 | 0.7 to 0.8 KB | 0.8 to 0.9 KB | 1.8 to 2.1 KB | The copy of the opaque scene color that glass, screen-space reflections and the preset's bounce light sample |
 | `background` | 4 | 1.0 to 2.2 KB | 1.1 to 2.5 KB | 3 to 7 KB | The texture background |
 | `texcoords` | 6 | 1.5 to 3.9 KB | 1.8 to 4.4 KB | 5 to 21 KB | The engine's own test template, which only test pages use |
 

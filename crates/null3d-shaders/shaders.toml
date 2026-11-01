@@ -820,11 +820,18 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP", "DEPTH_MULTISAMPLED"], targets = ["wgsl"] }
 variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 
-# A page downloads the copy and the builds of the mesh templates that let light through when its
-# first material that lets light through draws. The copy waits for its pipeline, and the frames
-# draw without it until then.
-[first_use.transmission]
+# A page downloads the copy when a step first reads the color that the frame before showed: its
+# first material that lets light through draws, screen-space reflections draw, or the preset's
+# bounce light draws. Those steps read ambient occlusion's grid as well. The copy waits for its
+# pipeline, and the frames draw without it until then. The copy's builds sit in a file of their
+# own, apart from the mesh builds that let light through, because a page that draws the light
+# downloads it while it draws no such material.
+[first_use.color_copy]
 shaders = ["transmission_copy"]
+
+# A page downloads the builds of the mesh templates that let light through when its first material
+# that lets light through draws.
+[first_use.transmission]
 bits = ["TRANSMISSION"]
 
 # A page downloads the builds of layered materials, with a clear coat or a sheen, when it creates
