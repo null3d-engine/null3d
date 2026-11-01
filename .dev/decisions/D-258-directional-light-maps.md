@@ -27,6 +27,12 @@ M3-F4's done criterion: a `NEEDLE_lightmaps` file draws as Needle's viewer shows
 is about 0.1 ms, and the light map takes at most twice the memory of a plain one. A plain light
 map must draw the same picture whether or not the engine reads directions.
 
+## Owner's ruling
+
+Owner, 31 October 2026: a like-for-like comparison with Needle's viewer is owed before this task
+closes. A frame of the viewer's own sample scene does not settle the done clause. Build a
+comparison of the same file on both sides, and let it say what it settles. <!-- outside date -->
+
 ## Data
 
 | Measure | Plain light map | Directional light map | Device |
@@ -36,7 +42,7 @@ map must draw the same picture whether or not the engine reads directions.
 | GPU bytes, 1,024 x 1,024, `rgba16float` radiance | 8,388,608 (8 MiB) | 16,777,216 (16 MiB) | none |
 | Ratio | 1.00 | 2.00 | none |
 | GPU time per frame, 1600 x 900, WebGPU | 0.99 ms | 1.05 ms | Chrome on this Mac, 25 October 2026 |
-| GPU time per frame, 1600 x 900, compatibility mode | 1.11 ms | 1.26 ms | Chrome on this Mac, 25 October 2026; another job ran in its span (below) |
+| GPU time per frame, 1600 x 900, compatibility mode | 0.99 ms | 1.06 ms | Chrome on this Mac, 26 October 2026, High preset, pixel ratio 1, gate 7.8 (below) |
 | GPU time per frame, 1600 x 900, WebGL2 | 1.48 ms | 1.58 ms | Chrome on this Mac, 25 October 2026 |
 
 The GPU figures count the one level that `assets.loadLightMap` makes, which holds no mip chain for
@@ -44,26 +50,31 @@ either encoding, at 4 bytes for each texel of an `rgb8` radiance and 8 for one o
 They are what the texture store holds for a texture of that size and format, not an estimate
 from the file.
 
-The `lightmap-cost` page measured the cost in headless Chrome on the Mac's GPU. The figures were
-taken on `1c76d6cf8`, whose drawing code is the code that this record describes. The page draws 24 lit quads
-that fill a 1600 by 900 view once, so every pixel shades one fragment. The plain and directional
-builds swap in turns for four rounds each, and the order reverses on alternate rounds. Before the
-timing the page draws one frame of each side and compares them. The direction moved 55.71% of the
-pixels on WebGPU, 55.46% in compatibility mode and 55.48% on WebGL2, so it reached the shader on
-every path. The direction costs about a tenth of a millisecond on every path: 0.06 ms on WebGPU,
-0.15 ms in compatibility mode and 0.10 ms on WebGL2.
+The `lightmap-cost` page measured the cost in headless Chrome on the Mac's GPU.
+The figures were taken on `1c76d6cf8`, whose drawing code is the code that this record describes.
+The page draws 24 lit quads that fill a 1600 by 900 view once, so every pixel shades one fragment.
+The plain and directional builds swap in turns for four rounds each, and the order reverses on
+alternate rounds. Before the timing the page draws one frame of each side and compares them. The
+direction moved 55.71% of the pixels on WebGPU, 55.46% in compatibility mode and 55.48% on WebGL2,
+so it reached the shader on every path. The direction costs about a tenth of a millisecond on every
+path: 0.06 ms on WebGPU, 0.07 ms in compatibility mode and 0.10 ms on WebGL2.
 
-The run took its slot at 22:39:45. These facts bound how far the figures can be trusted. The gate
-checks the load only before each path's page. It polls every 15 seconds until the load is below 8,
-and it never checks during the rounds. The three readings were 7.5, 7.9 and 7.5. WebGPU and WebGL2
-then measured while the load drifted upward, to 9.9 and 9.2 by the end of each path. The indexer
-ran between 180% and 280% through the whole run, not only during compatibility. The two clean paths'
-gates still read 7.5. Their medians match their trials to 0.00 ms on WebGPU and 0.03 ms on WebGL2's
-directional side. The compatibility path ran from 22:41 to 22:46. That span contained the push
+The first run took its slot at 22:39:45. These facts bound how far its figures can be trusted. The
+gate checks the load only before each path's page. It polls every 15 seconds until the load is
+below 8, and it never checks during the rounds. The first run's three readings were 7.5, 7.9 and
+7.5. WebGPU and WebGL2 then measured while the load drifted upward, to 9.9 and 9.2 by the end of
+each path. The indexer ran between 180% and 280% through that run. Those two paths' medians match
+their trials to 0.00 ms on WebGPU and 0.03 ms on WebGL2's directional side.
+
+The compatibility path's first attempt ran from 22:41 to 22:46. That span contained the push
 session's commit hook and shader-set copy from 22:43:45 to 22:44:06, about twenty seconds of another
-job's work. Its 1.11 ms plain time is 0.12 ms above the trial's 0.99 ms. Its 0.15 ms difference is
-0.09 ms above the trial's 0.06 ms. Both carry that doubt, and it is the row to take again first in
-a quiet window. [Benchmarks](../benchmarks.md#directional-light-maps) gives the command.
+job's work. It read 1.11 ms plain against 1.26 ms directional, so 0.15 ms, and that doubt stands:
+the record discards it. A later run measured that path alone at the High preset and pixel ratio 1,
+with the indexer quiet and the gate at 7.8 before the page and 6.9 after. It
+read 0.99 ms plain against 1.06 ms directional, so 0.07 ms, and moved 55.46% of the pixels. That
+is the compatibility figure in the table, and
+[20261026-005236-lightmap-cost](../tested-devices/macbook-pro-chrome/20261026-005236-lightmap-cost.md)
+holds the run. [Benchmarks](../benchmarks.md#directional-light-maps) gives the command.
 
 ## Decision
 
