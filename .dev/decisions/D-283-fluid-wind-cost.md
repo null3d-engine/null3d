@@ -582,3 +582,114 @@ the figure and the budget, not for the governor's input.
   landing head, so it is not this branch's. That step would prove the add-on's WGSL compiles for
   both GPU paths, and it is owed to the tool. The pages did compile and run that WGSL in
   Chrome, in the picture tests and the stress runs.
+
+## Addendum: the leaves' two forms, and the flag and water readers
+
+M3-V17 builds the falling and floating leaves in the vegetation add-on. It builds the two forms
+that the leaf section above left unmeasured. It also builds the flag and the water readers that the
+readers section named, and it measures one more texture read for each.
+
+### The leaves' two forms
+
+`createFloatingLeaves(ctx, { wind, camera, count, area, ride })` draws leaves in a box that follows
+the camera. Each leaf falls from the box's top to its ground and starts again. Both forms draw the
+same leaf card and the same fall.
+
+- `ride: 'offset'` pushes a closed-form fall by the air at the leaf's place. It reads the field once
+  for each leaf, and it keeps no state between frames. A gust moves a leaf only while the leaf
+  stands in it.
+- `ride: 'state'` keeps a place and a speed for each leaf in a pass that keeps its state. The pass
+  samples the field, drags each leaf toward the air at its place, and wraps the leaf inside the
+  box. A gust carries a leaf along its path, and the leaf keeps its speed after the gust passes.
+  The state texture holds four numbers for each leaf. On WebGL2 the pass runs as its fragment
+  form, which steps the same state, so a leaf moves the same way on every path.
+
+The state form is the default. It is the form that carries a gust, which is why the leaves moved
+from the CPU.
+
+### The leaves' cost
+
+The `leaves-wind-cost` plan draws one form at one count on one GPU path. Each page holds the camera
+still and measures three seconds after a warm-up. The counts are 500, 2,000 and 10,000. The pages ran on the cloud iPad Pro 13 at Safari 26.6.1, in
+[its leaves run](../tested-devices/ipad-pro-13-safari/20261101-074423-leaves-wind-cost.md).
+
+WebGPU, median GPU milliseconds at High:
+
+| Leaves | Offset, the field's pass | State, the field's and the leaves' passes | The state pass alone |
+| --- | --- | --- | --- |
+| 500 | 0.018 | 0.375 | 0.357 |
+| 2,000 | 0.027 | 0.379 | 0.352 |
+| 10,000 | 0.246 | 0.379 | 0.133 |
+
+Compatibility mode, median GPU milliseconds at High:
+
+| Leaves | Offset, the opaque pass | State, the opaque pass | Offset, the field's pass | State, both passes |
+| --- | --- | --- | --- | --- |
+| 500 | 1.085 | 1.101 | 0.091 | 0.166 |
+| 2,000 | 1.096 | 1.097 | 0.116 | 0.165 |
+| 10,000 | 1.101 | 1.099 | 0.170 | 0.092 |
+
+The compatibility figures at 10,000 are lower than at 2,000 because the field's pass runs fewer
+cycles when a frame is shorter. The opaque pass draws the leaves, and it moves 0.016 ms from 500 to
+10,000 offset leaves, so the per-leaf read is cheap there. The state form's pass adds 0.05 to
+0.08 ms.
+
+On WebGPU the state pass alone is about 0.36 ms at 500 and 2,000 leaves. At 10,000 the offset
+page's field pass is inflated by the extra cycles that its slow frames ran, so the difference there
+is not the state pass's own cost.
+
+Every page updated its sketch about 190 times in its 3 s, so neither form lost the page's update
+rate at 10,000 leaves. The GPU timer's whole-frame median includes idle gaps of 0.7 to 23.6 s
+between passes on several pages, so those medians do not compare the forms. The pass medians are
+the figures above.
+
+WebGL2 reports no GPU timer. Its pages updated their sketch 71, 63 and 63 times a second at 500,
+2,000 and 10,000 offset leaves, with CPU medians of 1.82, 1.82 and 1.88 ms. The state pages updated
+72, 63 and 63 times a second, with CPU medians of 1.88, 1.85 and 1.82 ms. Both forms therefore hold
+the page's update rate at every count on that path.
+
+### The flag and the water
+
+The flag sketch `tests/pages/sketches/wind-reader-cost-sketch.ts` ripples from its pole, and a
+custom vertex offset adds the push of the air at each vertex. The water add-on's surface lifts a
+short wave under the air, read at each vertex. The `wind-reader-cost` plan draws each reader with
+the read and without it, on each path. The run is
+[the iPad's readers run](../tested-devices/ipad-pro-13-safari/20261101-075408-wind-reader-cost.md).
+
+WebGPU and compatibility mode, the opaque pass that draws the reader, median GPU milliseconds:
+
+| Reader | Path | With the field | Without | Difference |
+| --- | --- | --- | --- | --- |
+| Flag | WebGPU | 1.609 | 1.635 | -0.026 |
+| Water | WebGPU | 1.633 | 1.598 | +0.035 |
+| Flag | compatibility | 1.785 | 1.806 | -0.021 |
+| Water | compatibility | 1.791 | 1.794 | -0.003 |
+
+The differences fall inside the runs' noise. The largest is 0.035 ms, so one texture read for each
+vertex costs no measurable time at these readers' vertex counts. The field's own pass runs in both
+sides of each pair, so it is not in the difference.
+
+WebGL2 reports no GPU timer. Both sides of each pair held the update rate, 63 to 76 updates a
+second. The CPU median of each update was 3.38 to 3.50 ms for the flag and 2.54 to 3.40 ms for the
+water.
+
+The WebGL2 row does not isolate either read. The add-on steps the field at a fixed rate, and a
+slower frame runs more cycles, as the readers section above says. The WebGPU rows are the clean
+figures.
+
+### The readers' texture slots
+
+The field costs a reader one texture slot for the field and one for its steady settings, which the
+grid's edge and a device without float targets need.
+
+| Reader | Textures | Free slots of six |
+| --- | --- | --- |
+| Water surface | mirror, foam, junction, field, steady settings | 1 |
+| Flag sketch | field, steady settings | 4 |
+| Leaves, offset form | leaf atlas, field, steady settings | 3 |
+| Leaves, state form's material | state texture, leaf atlas | 4 |
+| Plants (M3-V7) | bark colour, bark surface, leaf colour, leaf surface, branch records, field | 0 |
+| Grass | field, steady settings | 4 |
+
+M3-V14 asked for the readers that have a slot free. They are the water surface, the flag, the grass
+and the leaves. The plant material keeps none.
