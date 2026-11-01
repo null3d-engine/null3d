@@ -448,6 +448,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-sprites.js', module: 'scene/sprites.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-lines.js', module: 'scene/lines.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-particles.js', module: 'scene/particles.ts', loadedBy: 'page-sketch-runner.js' },
+	{ name: 'page-chunk-rows.js', module: 'scene/chunk-rows.ts', loadedBy: 'page-sketch-runner.js' },
 	{
 		name: 'page-feature-draws.js',
 		module: 'scene/feature-draws.ts',
@@ -568,6 +569,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'sketch-worker-particles.js',
 		module: 'scene/particles.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-chunk-rows.js',
+		module: 'scene/chunk-rows.ts',
 		loadedBy: 'sketch-worker.js',
 	},
 	{

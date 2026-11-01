@@ -72,6 +72,22 @@ export interface Task {
 const COMPILED = Symbol.for('null3d.compiledModules');
 const thread = globalThis as { [COMPILED]?: Map<string, Promise<WebAssembly.Module>> };
 
+/** The href of each URL that a task names, so a task in every frame copies no string. */
+const HREFS = new WeakMap<URL, string>();
+
+/** The compiled module of each file that has finished compiling, so a later task reads it at once. */
+const RESOLVED = new WeakMap<URL, WebAssembly.Module>();
+
+/** The href of `url`, made once. */
+function hrefOf(url: URL): string {
+	let href = HREFS.get(url);
+	if (href === undefined) {
+		href = url.href;
+		HREFS.set(url, href);
+	}
+	return href;
+}
+
 /**
  * Downloads and compiles a WebAssembly file once per thread: every later call gets the same
  * module. A failed download or compile lets a later call try again.
@@ -79,13 +95,40 @@ const thread = globalThis as { [COMPILED]?: Map<string, Promise<WebAssembly.Modu
 export function compileOnce(file: WasmFile, error: WasmError): Promise<WebAssembly.Module> {
 	thread[COMPILED] ??= new Map();
 	const compiled = thread[COMPILED];
-	let module = compiled.get(file.url.href);
+	const key = hrefOf(file.url);
+	let module = compiled.get(key);
 	if (!module) {
-		module = compileWasm(file.url, file.what, error).then((result) => result.module);
-		module.catch(() => compiled.delete(file.url.href));
-		compiled.set(file.url.href, module);
+		module = compileWasm(file.url, file.what, error).then((result) => {
+			RESOLVED.set(file.url, result.module);
+			return result.module;
+		});
+		module.catch(() => compiled.delete(key));
+		compiled.set(key, module);
 	}
 	return module;
+}
+
+/** The compiled module of `file`, when its compile has finished, so a task reads it without a promise. */
+export function compiledModule(file: WasmFile): WebAssembly.Module | undefined {
+	return RESOLVED.get(file.url);
+}
+
+/** The key of each of a task's WebAssembly files in a worker, so a task in every frame copies no string. */
+const MODULE_KEYS = new WeakMap<Task, Map<string, string>>();
+
+/** The worker's key of the WebAssembly file that `task` names, made once. */
+function keyOf(task: Task, script: string | undefined, name: string): string {
+	let keys = MODULE_KEYS.get(task);
+	if (keys === undefined) {
+		keys = new Map();
+		MODULE_KEYS.set(task, keys);
+	}
+	let key = keys.get(name);
+	if (key === undefined) {
+		key = moduleKey(script, name);
+		keys.set(name, key);
+	}
+	return key;
 }
 
 /** A worker that runs tasks, as the loader sees it. */
@@ -142,7 +185,10 @@ class Runners {
 		const files = task.wasm;
 		// One WebAssembly file is the usual case, and it needs no array, no map and no Promise.all.
 		const alone = files?.length === 1 ? files[0] : undefined;
-		const aloneModule = alone === undefined ? undefined : await compileOnce(alone, error);
+		const aloneModule =
+			alone === undefined
+				? undefined
+				: (compiledModule(alone) ?? (await compileOnce(alone, error)));
 		const modules =
 			alone !== undefined
 				? NO_MODULES
@@ -170,20 +216,20 @@ class Runners {
 			request.id = id;
 			request.task = task.name;
 			request.input = input;
-			const script = task.script?.href;
+			const script = task.script === undefined ? undefined : hrefOf(task.script);
 			request.script = script;
 			let newModules: [string, WebAssembly.Module][] | undefined;
 			if (alone !== undefined) {
-				const key = moduleKey(script, alone.name);
+				const key = keyOf(task, script, alone.name);
 				if (!runner.modules.has(key)) {
 					newModules = [[key, aloneModule as WebAssembly.Module]];
 					runner.modules.add(key);
 				}
 			} else if (files && files.length > 0) {
 				const added = files.flatMap((file, k) =>
-					runner.modules.has(moduleKey(script, file.name))
+					runner.modules.has(keyOf(task, script, file.name))
 						? []
-						: [[moduleKey(script, file.name), modules[k]] as [string, WebAssembly.Module]],
+						: [[keyOf(task, script, file.name), modules[k]] as [string, WebAssembly.Module]],
 				);
 				if (added.length > 0) {
 					newModules = added;

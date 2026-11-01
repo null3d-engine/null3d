@@ -129,6 +129,17 @@ trees.markDirty(42, 1); // recompute and upload row 42 only
 
 A mark past the batch's capacity throws [E1108](../errors/E1108.md). Development builds check the rule. Before each batch update, they note the marked rows, and compare up to 8,192 drawn rows of each static batch with the values they read before. The next frame takes the next rows, so the check finds a write within a few frames, and costs a bounded time per frame. A row that changed without a mark raises [E1110](../errors/E1110.md), which names the row. Sprite and point batches get the same check. Release builds leave it out. A dynamic batch needs no marks, because it recomputes every row in use in every frame. [Static and dynamic objects](static-dynamic.md) compares what each kind uploads.
 
+## Rows that arrive in chunks
+
+An add-on can hand the engine rows that arrive in pieces. A cloud of Gaussian splats is one such
+add-on. Call `batch.createChunkRows()` to make a writer. The writer stores a chunk's arrays in the
+engine's memory once, at load. Call `writer.reserve(count)` with the number of chunks. Then call
+`writer.write(slot, chunk)` for each chunk as it arrives. In each frame that the chosen rows
+change, call `writer.pack(counts)` with one chosen count for each slot. The writer writes the first
+`counts[slot]` rows of each chunk into the batch, in slot order, and sets the batch's active count.
+The pack runs in the engine's core, so the sketch copies no rows and runs no loop over them. The
+writer's code loads on first use. `writer.destroy()` frees its chunks.
+
 ## Pools: draw only the rows in use
 
 `setActiveCount(n)` draws only the first `n` rows. Size a batch for the most rows it will ever need, and keep the rows in use at the front of its arrays. A new active count is cheap: the engine recomputes the rows that come into use, and keeps its draw tables.
