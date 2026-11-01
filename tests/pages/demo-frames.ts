@@ -62,6 +62,8 @@ run('demo-frames', async () => {
 		firstFrameMs: metrics.load.firstFrameMs,
 		firstFrameDoneMs: metrics.load.firstFrameDoneMs,
 		engineStartMs: metrics.load.engineStartMs,
+		// The engine's own stages of the start, so a slow first frame names its one-time cost.
+		load: metrics.load,
 		wasmBytes: metrics.downloadBytes.wasm,
 		bytesBeforeFirstFrame,
 		bytesTotal,
