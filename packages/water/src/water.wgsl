@@ -94,8 +94,10 @@ fn junction(p: vec2f, body: f32) -> vec2f {
 /// The water's height at a point, and its slopes along x and z: long waves, and with `fine` set,
 /// shorter ripples beside them. A current carries the whole set downstream: each wave's direction
 /// turns into the current's frame, so the crests keep every angle between them and all of them
-/// travel with the water. Still water keeps the authored directions and each wave's own speed.
-fn waves(p: vec2f, t: f32, current: vec3f, fine: bool) -> vec3f {
+/// travel with the water. Still water keeps the authored directions and each wave's own speed. A
+/// wave's slope fades as the wave grows finer than `footprint`, the meters that one pixel covers, so
+/// a slope that a pixel cannot resolve never turns into noise that changes each frame.
+fn waves(p: vec2f, t: f32, current: vec3f, fine: bool, footprint: f32) -> vec3f {
     // Each wave: its direction, its wave number, and the speed it runs at in still water.
     let list = array<vec4f, 6>(
         vec4f(1.0, 0.15, 2.3, 0.9),
@@ -121,19 +123,20 @@ fn waves(p: vec2f, t: f32, current: vec3f, fine: bool) -> vec3f {
         let carried = w.z * (dot(dir, p) - current.z * t * dot(current.xy, dir));
         let phase = select(still, carried, moving);
         h += amplitude * sin(phase);
-        slope += dir * (amplitude * w.z * cos(phase));
+        let resolved = 1.0 - smoothstep(0.75, 2.0, w.z * footprint);
+        slope += dir * (amplitude * w.z * cos(phase) * resolved);
     }
     return vec3f(h, slope);
 }
 
 /// The waves at a point with a share of the river's waves over still water's. Two meshes that meet
 /// carry one current there and read one share, so they give the same surface.
-fn shared_waves(p: vec2f, t: f32, current: vec3f, share: f32, fine: bool) -> vec3f {
-    let moving = waves(p, t, current, fine);
+fn shared_waves(p: vec2f, t: f32, current: vec3f, share: f32, fine: bool, footprint: f32) -> vec3f {
+    let moving = waves(p, t, current, fine, footprint);
     if share >= 1.0 {
         return moving;
     }
-    return mix(waves(p, t, vec3f(0.0), fine), moving, share);
+    return mix(waves(p, t, vec3f(0.0), fine, footprint), moving, share);
 }
 
 fn vertexOffset(input: VertexInput) -> vec3f {
@@ -141,7 +144,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     // Where the bodies meet, the surface lies flat, so both meshes lie in one plane there. The river's
     // waves give way to still water's only inside that flat band, so the vertices need no mix.
     let flatness = fract(input.uv.y) * 2.0;
-    return vec3f(0.0, waves(input.position.xz, frame.time, current, false).x * (1.0 - flatness), 0.0);
+    return vec3f(0.0, waves(input.position.xz, frame.time, current, false, 0.0).x * (1.0 - flatness), 0.0);
 }
 
 /// The distance in front of the camera of a depth value, as sceneDistance converts the copy's.
@@ -157,6 +160,7 @@ fn distance_of(depth: f32) -> f32 {
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let p = input.worldPosition.xz;
+    let footprint = max(length(dpdx(p)), length(dpdy(p)));
     let j = junction(p, body_of(input.uv));
     // Where two meshes overlap, only the body that the junction map names draws the point. The
     // other discards it, since the water writes depth and would hide the drawing body behind it.
@@ -165,10 +169,7 @@ fn surface(input: SurfaceInput) -> Surface {
     }
     let share = j.y;
     let current = current_of(input.uv, input.uv1);
-    var w = shared_waves(p, frame.time, current, share, true);
-    // A far ripple is finer than a pixel, so its slope fades with distance and never shimmers.
-    let far = dot(input.relativePosition, input.relativePosition);
-    w = vec3f(w.x, w.yz / (1.0 + far / 40000.0));
+    let w = shared_waves(p, frame.time, current, share, true, footprint);
     s.normal = normalize(vec3f(-w.y, 1.0, -w.z));
     let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
     let mirrorUv = reflection_uv(clip, w.yz * 0.08);
