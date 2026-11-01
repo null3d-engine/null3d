@@ -244,12 +244,21 @@ pub enum Op {
     /// every pass. The texture takes `RENDER_ATTACHMENT` usage, and each layer is one clear. A
     /// compute pass asks for it when the page starts the pass's state again.
     ClearTexture = 58,
+    /// [source texture id, source layer, destination texture id, destination layer, texels across
+    /// the destination, mip levels]: draws one layer of the source texture into the corner of one
+    /// layer of the destination, at `texels` a side, then makes that layer's mip levels up to
+    /// `levels`. The destination is a 2D array of half floats with render attachment and texture
+    /// binding usage; the source is any live 2D array that a shader samples. A source larger than
+    /// the corner is reduced. The corner is the destination's first rows and columns, which the
+    /// shaders read as the image's place (null3d::tables). The backends draw it with the mipmap
+    /// shader's scale pipeline.
+    CopyIntoImage = 59,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 46] = [
+    pub const ALL: [Op; 47] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -295,6 +304,7 @@ impl Op {
         Op::ProbeFilter,
         Op::CreateBindView,
         Op::ClearTexture,
+        Op::CopyIntoImage,
         Op::Submit,
     ];
 
@@ -349,6 +359,7 @@ impl Op {
             Op::ProbeFilter => "PROBE_FILTER",
             Op::CreateBindView => "CREATE_BIND_VIEW",
             Op::ClearTexture => "CLEAR_TEXTURE",
+            Op::CopyIntoImage => "COPY_INTO_IMAGE",
             Op::Submit => "SUBMIT",
         }
     }
