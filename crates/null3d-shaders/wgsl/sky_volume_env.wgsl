@@ -7,7 +7,7 @@
 // loads with this shader at the tier's first use.
 #import null3d::fullscreen::{triangle}
 #import null3d::cubemap::{face_direction, pack}
-#import null3d::atmosphere::{PI, SkySettings, SkyWhole, sky_light, sky_whole}
+#import null3d::atmosphere::{PI, SkySettings, SkyWhole, second_sun, sky_light, sky_whole}
 #import null3d::cloud_volume::{CloudField, CloudLight, cloud_march}
 
 struct Step {
@@ -52,6 +52,14 @@ fn face_texel(position: vec2f) -> FaceTexel {
 fn fs_sky(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let at = face_texel(position.xy);
     let whole = sky_whole(sky_settings.sun.xyz, sky_settings.scattering);
+    // A second sky, of a second sun, adds its light at its weight, as the environment's own step
+    // adds it: the map has to carry the same sky as the view, or the ambient light and the
+    // reflections lose it while the view keeps it.
+    let second_sky_weight = sky_settings.sun.w;
+    var second = whole;
+    if second_sky_weight > 0.0 {
+        second = sky_whole(second_sun(sky_settings.cloud_place), sky_settings.scattering);
+    }
     // The flat layer gives way to the march, so the sky that the clouds cover carries no clouds.
     let clear =
         SkySettings(
@@ -67,7 +75,12 @@ fn fs_sky(@builtin(position) position: vec4f) -> @location(0) vec4f {
         let tc = (at.texel.y * f32(count) + f32(j) + 0.5) * spacing - 1.0;
         for (var i = 0u; i < count; i++) {
             let sc = (at.texel.x * f32(count) + f32(i) + 0.5) * spacing - 1.0;
-            sum += sky_light(normalize(face_direction(at.face, sc, tc)), whole, clear, 0.0);
+            let d = normalize(face_direction(at.face, sc, tc));
+            var light = sky_light(d, whole, clear, 0.0);
+            if second_sky_weight > 0.0 {
+                light += second_sky_weight * sky_light(d, second, clear, 0.0);
+            }
+            sum += light;
         }
     }
     let base = sum * (1.0 / f32(count * count));

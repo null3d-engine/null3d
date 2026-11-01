@@ -58,6 +58,22 @@ fn background_pipelines(commands: &[(Op, Vec<u32>)], depth: u32) -> Vec<u32> {
         .collect()
 }
 
+/// The ids of the cloud tier's pipelines that a frame's list creates: the sky's depth state, and a
+/// blend over the sky that the march's coverage sets.
+fn cloud_pipelines(commands: &[(Op, Vec<u32>)], depth: u32) -> Vec<u32> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == template::BACKGROUND_CLOUDS)
+        .map(|(_, o)| {
+            assert_eq!(
+                o[6],
+                depth | state_flags::CULL_NONE | state_flags::BLEND_NORMAL
+            );
+            o[0]
+        })
+        .collect()
+}
+
 /// The commands that draw objects.
 const DRAWS: [Op; 5] = [
     Op::Draw,
@@ -348,6 +364,66 @@ fn cube_maps_and_the_sky_draw_a_box<B: FrameBuilder>(mut world: World<B>) {
     let commands = world.step(&mut mock, false);
     assert_eq!(value_writes(&commands, buffer), 1, "the clouds moved");
     assert_eq!(count(&commands, Op::CreateBindGroup), 0);
+}
+
+/// Steps a world whose sky draws the volumetric cloud tier at `steps`, on either frame builder.
+fn the_sky_draws_the_cloud_tier<B: FrameBuilder>(mut world: World<B>) {
+    let mut mock = MockBackend::default();
+    world.add_object(&grid(1, 1), Shading::Lit);
+    world
+        .renderer
+        .settings_mut()
+        .set_background_source(Some(background(BackgroundSource::Sky(Sky::default()))));
+
+    let commands = world.step(&mut mock, true);
+    let sky = box_pipelines(&commands, template::BACKGROUND_SKY, LAST);
+    assert_eq!(sky.len(), 1, "the sky builds");
+    assert!(
+        cloud_pipelines(&commands, LAST).is_empty(),
+        "no step count draws the flat layer alone"
+    );
+    assert!(background_draw(&commands, sky[0], 1).is_some());
+
+    // A step count builds the tier's own box and draws it over the sky in the same pass.
+    world.renderer.settings_mut().set_cloud_steps(32);
+    let commands = world.step(&mut mock, false);
+    let cloud = cloud_pipelines(&commands, LAST);
+    assert_eq!(cloud.len(), 1, "the tier builds its box");
+    let (group, draw) = background_draw(&commands, cloud[0], 1).expect("the march draws");
+    assert!(group != 0, "the box binds the noise field's group");
+    assert_eq!(draw, vec![36, 1, 0, 0], "a box of twelve triangles");
+    let sky_at = commands
+        .iter()
+        .position(|(op, o)| *op == Op::SetPipeline && o[0] == sky[0])
+        .expect("the sky draws");
+    let cloud_at = commands
+        .iter()
+        .position(|(op, o)| *op == Op::SetPipeline && o[0] == cloud[0])
+        .expect("the march draws");
+    assert!(cloud_at > sky_at, "the clouds blend over the sky");
+    let (before, after) = draws_around(&commands, cloud[0]);
+    assert!(before >= 2, "the object and the sky draw first");
+    assert_eq!(after, 0, "the tier's box ends the pass");
+
+    // Zero steps drop the box again, and the sky draws alone.
+    world.renderer.settings_mut().set_cloud_steps(0);
+    let commands = world.step(&mut mock, false);
+    assert!(cloud_pipelines(&commands, LAST).is_empty());
+    assert!(background_draw(&commands, cloud[0], 1).is_none());
+    assert!(background_draw(&commands, sky[0], 1).is_some());
+}
+
+#[test]
+fn the_sky_draws_the_cloud_tier_on_webgpu() {
+    the_sky_draws_the_cloud_tier(World::new());
+}
+
+#[test]
+fn the_sky_draws_the_cloud_tier_on_webgl2() {
+    the_sky_draws_the_cloud_tier(World::build(CpuCulledRenderer::new(CpuCulledConfig {
+        multi_draw: true,
+        ..CpuCulledConfig::default()
+    })));
 }
 
 #[test]
