@@ -110,6 +110,7 @@ export function impostorAtlases(): {
 	color: { width: number; height: number; data: Uint8Array };
 	surface: { width: number; height: number; data: Uint8Array };
 	size: readonly [number, number];
+	room: number;
 	depth: number;
 } {
 	const arrays = pineArrays(0);
@@ -134,6 +135,7 @@ export function impostorAtlases(): {
 		color: bake.color,
 		surface: bake.surface,
 		size: bake.size,
+		room: bake.room,
 		depth: bake.depth,
 	};
 }

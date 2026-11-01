@@ -98,6 +98,8 @@ describe('bakeImpostorAtlas', () => {
 		});
 		expect(bake.size[0]).toBeCloseTo(2 * Math.hypot(2, 1));
 		expect(bake.size[1]).toBe(3);
+		// The picture holds the object from every view, so its height is that of the box's diagonal.
+		expect(bake.room).toBeCloseTo(Math.hypot(2 * Math.hypot(2, 1), 3) / 3);
 	});
 
 	test('refuses a part with no colour and no map, a map without texture coordinates, and none at all', () => {

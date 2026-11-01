@@ -80,8 +80,11 @@ const GRASS_COLOR = '#55752c';
 /** How far a tuft draws, in meters. */
 const GRASS_REACH = 170;
 
-/** How much brighter a mesh's leaf color is than its card's, measured on a forest drawn each way. */
-const NEAR_LEAF_LIGHT = 2.2;
+/**
+ * How much brighter a mesh's leaf color is than its card's, measured on a forest drawn each way. It
+ * matches best at 1.7 from above and 1.4 from a low view, and the route looks mostly from above.
+ */
+const NEAR_LEAF_LIGHT = 1.6;
 
 /** The layer that the sun sees and no camera does, which the trees' casting cards stand on. */
 export const CASTER_LAYER = 1 << 2;
@@ -266,6 +269,7 @@ function stand(
 			color: far.color,
 			surface: far.surface,
 			atlas: far.atlas,
+			room: far.room,
 			positions: spots.flatMap((spot) => [spot.x, spot.y + far.base * spot.scale, spot.z]),
 			turn: spots.map((spot) => spot.turn),
 			depth: far.depth,
@@ -289,6 +293,7 @@ function stand(
 			color: far.color,
 			surface: far.surface,
 			atlas: far.atlas,
+			room: far.room,
 			positions: spots.flatMap((spot) => [spot.x, spot.y + far.base * spot.scale, spot.z]),
 			turn: spots.map((spot) => spot.turn),
 			depth: far.depth,
@@ -311,6 +316,7 @@ function stand(
 				color: far.color,
 				surface: far.surface,
 				atlas: far.atlas,
+				room: far.room,
 				positions: farOnly.flatMap((spot) => [spot.x, spot.y + far.base * spot.scale, spot.z]),
 				turn: farOnly.map((spot) => spot.turn),
 				depth: far.depth,

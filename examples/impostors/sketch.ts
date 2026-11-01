@@ -101,6 +101,7 @@ export default defineSketch(async (ctx) => {
 			color: atlas,
 			surface,
 			atlas: picture.atlas,
+			room: picture.room,
 			positions: far.flatMap((tree) => [tree.x, tree.y, tree.z]),
 			turn: far.map((tree) => tree.turn),
 			depth: picture.depth,

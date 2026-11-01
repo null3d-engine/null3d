@@ -10,9 +10,11 @@
 // object's frame, so no turn of the view enters the stored surface. The card's turn turns that
 // frame toward the camera at draw time.
 //
-// A cell's picture fills a square atlas cell. The card's quad is not square: its width holds the
-// object's widest horizontal reach and its height the object's full height, and `size` gives both.
-// The card stands on the object's lowest point.
+// A cell's picture fills a square atlas cell. Its width holds the object's widest horizontal reach,
+// and its height the diagonal of the object's height and that width, which holds the object from
+// every view. `size` gives the width and the object's height, and `room` how much taller the picture
+// is than that height.
+// The card stands on the object's lowest point and turns about the object's middle.
 
 import { frameDirection, type OctahedralAtlas } from './octahedral';
 import { encodeImpostorSurface } from './surface';
@@ -107,6 +109,11 @@ export interface ImpostorBake {
 	 * horizontal reach, and its height. The card stands on the object's lowest point.
 	 */
 	readonly size: readonly [number, number];
+	/**
+	 * How many times taller a view's picture is than `size`'s height, which holds the object from
+	 * every view: `createImpostors` takes it as `room`.
+	 */
+	readonly room: number;
 	/**
 	 * The object's depth along a view, in world units: the widest of its horizontal extents. The
 	 * surface atlas stores each point's depth over this distance, and a card that receives shadows
@@ -240,7 +247,7 @@ export function bakeImpostorAtlas(options: ImpostorBakeOptions): ImpostorBake {
 			texels,
 			center,
 			reach,
-			objectHeight,
+			pictureHeight: Math.hypot(2 * reach, objectHeight),
 			near,
 			span,
 		};
@@ -252,6 +259,7 @@ export function bakeImpostorAtlas(options: ImpostorBakeOptions): ImpostorBake {
 		color: { width, height, data: color },
 		surface: { width, height, data: surface },
 		size: [2 * reach, objectHeight],
+		room: Math.hypot(2 * reach, objectHeight) / objectHeight,
 		depth: Math.max(max[0] - min[0], max[2] - min[2]),
 	};
 }
@@ -264,7 +272,7 @@ interface Cell {
 	texels: number;
 	center: readonly [number, number, number];
 	reach: number;
-	objectHeight: number;
+	pictureHeight: number;
 	near: number;
 	span: number;
 }
@@ -383,7 +391,7 @@ function draw(
 			const py = (positions[index * 3 + 1] as number) - cell.center[1];
 			const pz = (positions[index * 3 + 2] as number) - cell.center[2];
 			sx[k] = (px * right[0] + py * right[1] + pz * right[2]) / cell.reach;
-			sy[k] = (px * up[0] + py * up[1] + pz * up[2]) / cell.objectHeight + 0.5;
+			sy[k] = (px * up[0] + py * up[1] + pz * up[2]) / cell.pictureHeight + 0.5;
 			sz[k] = px * direction[0] + py * direction[1] + pz * direction[2];
 		}
 		const area =
