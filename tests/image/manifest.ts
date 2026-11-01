@@ -3667,6 +3667,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			// The engine reads the page's switch, but not the demo's option, which a sketch test has no
 			// page to pass. Both take the 8-bit path that the demo's own start takes.
 			...(demo.hdr === false ? ['hdr=off'] : []),
+			...(demo.momentTransparency ? ['moments=on'] : []),
 		];
 		return {
 			name: `demo-${demo.name}`,
