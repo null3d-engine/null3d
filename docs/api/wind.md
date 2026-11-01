@@ -53,7 +53,7 @@ export default defineSketch((ctx) => {
 });
 ```
 
-Call `update` once in each frame. It places the box about the camera and sends the field's values to the GPU. The add-on's calls allocate nothing, so a sketch may make them in every frame. A sketch that pushes in every frame keeps one two-number array for the place, rather than a new one each time.
+Call `update` once in each frame. It places the box about the camera and sends the field's values to the GPU. The add-on's calls make no object of their own, so a sketch may make them in every frame. Until the browser has optimized the add-on's functions, a fraction that crosses one of its calls becomes an object, as in the engine's own steps. A sketch that pushes in every frame keeps one two-number array for the place, rather than a new one each time.
 
 ## The calls
 
@@ -221,7 +221,7 @@ fn wind_sample(world: vec3f, origin: vec2f, size: f32, layer: i32, air: WindAir)
 // </wind-sample>
 ```
 
-Inside the box, the sampling function gives the air with one texture read. Outside it, it works the air out from the steady field, at the height that the grid samples at. So the two meet at the box's edge, and a plant past the box moves with the air at its own place. A device that keeps no grid works the air out everywhere.
+Inside the box, the sampling function gives the air with one texture read. Outside it, it works the air out from the steady field, at the height that the grid samples at. So the two meet at the box's edge, and a plant past the box moves with the air at its own place. A page's pushes and a gust that the page sends turn the air inside the box, so a plant past the box does not see them. A device that keeps no grid works the air out everywhere.
 
 ```ts
 const leaf = ctx.materials.shader({
@@ -274,7 +274,7 @@ A held page steps its sketch's updates up to the held time. The pass runs with e
 
 Beyond its box the field carries on. The box sets the detail, not the field's extent. So a plant past the box reads the air at its own place.
 
-The far field is the analytic field, at the height that the grid samples at. The box's edge takes that air exactly, so a reader just outside and just inside agree there. A cell beside the edge carries advected air, which lags a push. Beside a push, the edge and its neighbour differ by however far the push has travelled. That seam is a limit of this stage.
+The far field is the steady field: the base wind, the swirl and the field's own traveling gust, at the height that the grid samples at. The box's edge takes that field, so the grid and the far field meet there instead of stepping where a push reached the edge. A cell beside the edge carries advected air, which lags a push. A page's pushes and a gust that the page sends turn the air inside the box only, so a place outside the box reads the steady field alone.
 
 The field cannot yet take a preset's settings without a reseed. A frame runs every cycle that the sketch time owes, so the air keeps the sketch's pace however slow the frame is. One frame runs at most ten seconds of air, and a longer stall in a page skips the air that it missed.
 
@@ -283,9 +283,9 @@ The field cannot yet take a preset's settings without a reseed. A frame runs eve
 - The pass fills one `rgba16float` texture of `grid` by `grid` texels, and holds two states of it. A reader spends one texture slot on it.
 - One cycle takes 22 runs of the pass, and the add-on runs one cycle for each sixtieth of a second of sketch time. A page at sixty frames a second therefore runs one cycle a frame.
 - A vertex inside the box costs one texture read. A vertex outside it costs the steady field's arithmetic instead: four reads of the engine's value noise, with a few trigonometric and exponential calls.
-- A device without float render targets cannot hold the grid, so it keeps no pass. There `field.size` is zero and a reader's samples are the steady field worked out, so a plant still moves. The texture it declares holds a single black texel that it never reaches.
+- A WebGL2 device whose float targets fail the engine's probe cannot hold the grid, so it keeps no pass. There `field.size` is zero and a reader's samples are the steady field worked out, so a plant still moves. The texture it declares holds a single black texel that it never reaches.
 - A point far from the camera loses the grid's detail and reads the steady wind alone. That is the base wind, the swirl and the field's own traveling gust. A body's pushes and a sent gust are gone there.
-- The add-on makes no object of its own in a frame, and its texture exists only while something reads it. Until the browser has optimized the add-on's functions, a fraction that crosses one of its calls becomes an object. The engine's own steps carry the same cost, which `bun run bench:allocation --wind` measures.
+- The add-on makes no object of its own in a frame, and its texture exists only while something reads it. Until the browser has optimized the add-on's functions, a fraction that crosses one of its calls becomes an object. The engine's own steps carry the same cost. `bun run bench:allocation --wind` measures it, and CI runs that switch on each GPU path, with a budget for each place.
 
 [The API reference](reference/wind.md) lists every export of this page with its type and
 description. The engine's doc comments make it.

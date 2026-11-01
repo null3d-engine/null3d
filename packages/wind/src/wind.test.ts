@@ -15,11 +15,12 @@ const camera = {
 
 /**
  * A sketch's context around a clock, with the render and texture calls stubbed out. `passes`
- * counts the passes that the add-on adds, so a test can tell a device that keeps no grid.
+ * counts the passes that the add-on adds, so a test can tell a device that keeps no grid. `hdr`
+ * says whether the engine's probe draws into a float target and reads it back.
  */
 function context(
 	tier = 'webgpu',
-	features: string[] = [],
+	hdr = tier !== 'webgl2',
 	passes?: { count: number },
 	steps?: number[],
 	options?: unknown[],
@@ -28,7 +29,7 @@ function context(
 	const pass = { enabled: true, live: true };
 	return {
 		time: { now: 1 },
-		engine: { capabilities: { tier, features } },
+		engine: { capabilities: { tier, hdr } },
 		render: {
 			addPass: (given: unknown) => {
 				if (passes) passes.count++;
@@ -52,17 +53,18 @@ function context(
 }
 
 describe('the device that holds the field', () => {
-	test('every WebGPU path holds it', () => {
-		expect(holdsField({ tier: 'webgpu', features: [] })).toBe(true);
-		expect(holdsField({ tier: 'webgpu-compat', features: ['shader-f16'] })).toBe(true);
+	test('every WebGPU path holds it, in either latency mode', () => {
+		expect(holdsField({ tier: 'webgpu', hdr: true })).toBe(true);
+		// Compatibility mode with MSAA draws into the canvas rather than a float target, yet its
+		// compute pass keeps the grid, so the field does not depend on the engine's color path.
+		expect(holdsField({ tier: 'webgpu-compat', hdr: false })).toBe(true);
 	});
 
-	test('a WebGL2 device needs a float target', () => {
-		expect(holdsField({ tier: 'webgl2', features: ['EXT_color_buffer_float'] })).toBe(true);
-		expect(holdsField({ tier: 'webgl2', features: ['EXT_color_buffer_half_float'] })).toBe(true);
-		// Without either, the pass cannot keep an image, so the add-on costs no pass there.
-		expect(holdsField({ tier: 'webgl2', features: ['OES_texture_float_linear'] })).toBe(false);
-		expect(holdsField({ tier: 'webgl2', features: [] })).toBe(false);
+	test('a WebGL2 device holds it only when the engine reads a float target back', () => {
+		expect(holdsField({ tier: 'webgl2', hdr: true })).toBe(true);
+		// An advertised extension that fails the engine's clear-and-read probe leaves no grid,
+		// because the pass's output would then be undefined.
+		expect(holdsField({ tier: 'webgl2', hdr: false })).toBe(false);
 	});
 });
 
@@ -70,13 +72,10 @@ describe('the field that a reader samples', () => {
 	test('a device without float targets keeps no grid and gives readers the steady field', () => {
 		const passes = { count: 0 };
 		const textures: unknown[] = [];
-		const wind = createWind(
-			context('webgl2', ['OES_texture_float_linear'], passes, [], [], textures),
-			{
-				camera,
-				grid: 8,
-			},
-		);
+		const wind = createWind(context('webgl2', false, passes, [], [], textures), {
+			camera,
+			grid: 8,
+		});
 		// No pass costs the device nothing, and a box of no width sends every sample to the steady
 		// field that the sampling function works out, so a plant there still moves.
 		expect(passes.count).toBe(0);
@@ -91,7 +90,7 @@ describe('the field that a reader samples', () => {
 	test('the pass keeps its state and runs the steps that the sketch time owes', () => {
 		const steps: number[] = [];
 		const options: unknown[] = [];
-		const ctx = context('webgpu', [], undefined, steps, options);
+		const ctx = context('webgpu', true, undefined, steps, options);
 		const wind = createWind(ctx, { camera, grid: 8 });
 		// The field starts when the page makes it, so the first frame owes the cycles since then.
 		expect(options[0]).toMatchObject({
@@ -112,7 +111,7 @@ describe('the field that a reader samples', () => {
 
 	test('a held page solves one cycle in its one drawn frame', () => {
 		const steps: number[] = [];
-		const ctx = context('webgpu', [], undefined, steps);
+		const ctx = context('webgpu', true, undefined, steps);
 		// Hold mode runs the sketch's updates without drawing, from the first step to the hold time,
 		// and draws once at the end. The pass advances only in that drawn frame, so the steps that
 		// the last update sets are the ones that run.
@@ -127,7 +126,7 @@ describe('the field that a reader samples', () => {
 
 	test('a stall skips the air that it missed instead of paying for it later', () => {
 		const steps: number[] = [];
-		const ctx = context('webgpu', [], undefined, steps);
+		const ctx = context('webgpu', true, undefined, steps);
 		(ctx.time as { now: number }).now = 0;
 		const wind = createWind(ctx, { camera, grid: 8 });
 		// A frame that arrives twenty sketch seconds late runs one frame's worth of air: ten
@@ -142,14 +141,14 @@ describe('the field that a reader samples', () => {
 
 	test('a box of no width keeps no grid either, so every sample is the steady field', () => {
 		const passes = { count: 0 };
-		const wind = createWind(context('webgpu', [], passes), { camera, box: 0, grid: 8 });
+		const wind = createWind(context('webgpu', true, passes), { camera, box: 0, grid: 8 });
 		expect(passes.count).toBe(0);
 		expect(wind.field.size).toBe(0);
 	});
 
 	test('a device that holds the field takes its box, and each reader reads the settings', () => {
 		const passes = { count: 0 };
-		const wind = createWind(context('webgpu', [], passes), { camera, box: 96, grid: 8 });
+		const wind = createWind(context('webgpu', true, passes), { camera, box: 96, grid: 8 });
 		expect(passes.count).toBe(1);
 		expect(wind.field.size).toBe(96);
 		// The reading follows the steady wind, so a reader that works out the far field keeps step.

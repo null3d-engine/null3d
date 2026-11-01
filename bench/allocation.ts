@@ -397,15 +397,19 @@ const PROBE_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = 
  * budget runs out before the field's small functions, and each fraction they hand on becomes an
  * object. The places are the functions that receive and hand on the fractions, as the engine's own
  * setters and S1's camera step do, and not the field's arrays or its ring, which are made once.
+ *
+ * Each budget leaves room for the run-to-run noise above the place's steady figure, and less than a
+ * boxed fraction above it, so a new per-frame object fails the run while a sample that varies by a
+ * few bytes still passes. CI runs the switch on each GPU path.
  */
 export const WIND_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
-		'analyticVelocity src/analytic.ts': 224,
-		'value3 src/analytic.ts': 48,
-		'lattice src/analytic.ts': 48,
-		'(anonymous) null3d/addons.ts': 32,
-		'sample src/wind.ts': 12,
-		'owedSteps src/wind.ts': 12,
+		'analyticVelocity src/analytic.ts': 200,
+		'value3 src/analytic.ts': 60,
+		'lattice src/analytic.ts': 24,
+		'(anonymous) null3d/addons.ts': 36,
+		'sample src/wind.ts': 24,
+		'owedSteps src/wind.ts': 18,
 	},
 	'render-worker': {},
 };
