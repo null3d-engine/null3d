@@ -1,8 +1,10 @@
 // The wind feature's preset settings, as the sketch's quality gives them: the preset picks each
 // row, and the frame-budget governor's steps lengthen the step interval while they scale the
 // pressure iterations and the spring trees. The field keeps moving at the lowest step, because the
-// owner ruled that a still valley does not meet the bar, and the wind's own budget leaves the
-// vegetation add-on the time that D-241 gives it inside each preset's frame ceiling.
+// owner ruled that a still valley does not meet the bar. The wind's own budget is smaller than the
+// room that D-241 leaves beside the vegetation add-on's own budget. D-241's ceilings are whole
+// frames that already hold the vegetation and the scene, so the check does not say a frame holds
+// both; the governor is what holds the frame when both are spent.
 import { describe, expect, test } from 'bun:test';
 import type { Camera, FeatureStats, QualityPreset, SketchContext } from '@null3d/engine';
 import { CYCLE_STEPS, createWind, type Wind } from './wind';
@@ -20,7 +22,10 @@ const camera = {
 const BUDGET_MS = [0.5, 1.2, 4.9, 6.25] as const;
 /** The vegetation add-on's own GPU time at each preset, in ms, from D-241. */
 const VEGETATION_MS = [5, 12, 49, 62.5] as const;
-/** Each preset's frame ceiling, in ms, from D-241, at the lowest measured figure. */
+/**
+ * D-241's whole-frame ceiling at each preset, in ms, at its lowest measured figure. The frame it
+ * measures already contains the vegetation's time and the scene.
+ */
 const CEILING_MS = [15.5, 43.9, 62.5, 71.1] as const;
 /** The presets from Low to Ultra. */
 const PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
@@ -294,16 +299,17 @@ describe('the frame-budget governor', () => {
 		}
 	});
 
-	test('leaves the vegetation add-on its time inside each preset’s frame ceiling', () => {
+	test('keeps the wind’s budget inside the room that D-241 leaves beside the vegetation', () => {
 		for (const [index, preset] of PRESETS.entries()) {
 			const context = fakeContext(preset);
 			const wind = windOn(context);
 			const budget = context.stats()?.budgetMs as number;
-			// The wind's budget is its own, and the vegetation's GPU time still fits beside it in
-			// the frame that D-241 gives the preset.
-			expect(budget + (VEGETATION_MS[index] as number)).toBeLessThanOrEqual(
-				CEILING_MS[index] as number,
-			);
+			// D-241's ceiling is a whole frame, and it already holds the vegetation's time and the
+			// scene. The wind's budget must be smaller than the room beside the vegetation's own
+			// budget. A frame that spends both grows by the field's share, and the governor is what
+			// holds such a frame.
+			const room = (CEILING_MS[index] as number) - (VEGETATION_MS[index] as number);
+			expect(budget).toBeLessThan(room);
 			wind.destroy();
 		}
 	});
