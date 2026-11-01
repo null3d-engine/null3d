@@ -20,8 +20,11 @@ export interface Facades {
 	power(share: number): void;
 }
 
-/** Builds the towers from the city plan. */
-export function createFacades(ctx: SketchContext): Facades {
+/**
+ * Builds the towers from the city plan. `without` names the parts that a measurement leaves out, so
+ * it can time one cost of the scene on its own; a visitor's address names none.
+ */
+export function createFacades(ctx: SketchContext, without: ReadonlySet<string>): Facades {
 	const { scene, geometry, materials } = ctx;
 	// The plan is made once, and every building keeps its place in the batch, so a preset only
 	// changes how many rows draw.
@@ -107,7 +110,7 @@ fn surface(input: SurfaceInput) -> Surface {
 			// Every tower draws at every preset. A row here is a box of twelve triangles, and the
 			// cost is in the windows that a pixel shades: a preset that thinned the skyline would
 			// open a hole at the edge of the city that the route flies past.
-			batch.setActiveCount(buildings.length);
+			batch.setActiveCount(without.has('towers') ? 0 : buildings.length);
 			mastBatch.setActiveCount(masts.length);
 			beaconBatch.setActiveCount(masts.length);
 		},
