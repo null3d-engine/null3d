@@ -113,6 +113,12 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
+	"chromium-swiftshader/compat/demo-spot-cookies.png": {
+		"test": "demo-spot-cookies",
+		"tier": "compat",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+	},
 	"chromium-swiftshader/compat/demo-terrain.png": {
 		"test": "demo-terrain",
 		"tier": "compat",
@@ -226,6 +232,12 @@
 		"tier": "compat",
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/spot-map-probe.png": {
+		"test": "spot-map-probe",
+		"tier": "compat",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
 	"chromium-swiftshader/compat/terrain.png": {
 		"test": "terrain",
@@ -383,6 +395,12 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
+	"chromium-swiftshader/webgl2/demo-spot-cookies.png": {
+		"test": "demo-spot-cookies",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+	},
 	"chromium-swiftshader/webgl2/demo-terrain.png": {
 		"test": "demo-terrain",
 		"tier": "webgl2",
@@ -520,6 +538,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/spot-map-probe.png": {
+		"test": "spot-map-probe",
+		"tier": "webgl2",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
 	"chromium-swiftshader/webgl2/terrain.png": {
 		"test": "terrain",
@@ -671,6 +695,12 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
+	"chromium-swiftshader/webgpu/demo-spot-cookies.png": {
+		"test": "demo-spot-cookies",
+		"tier": "webgpu",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+	},
 	"chromium-swiftshader/webgpu/demo-terrain.png": {
 		"test": "demo-terrain",
 		"tier": "webgpu",
@@ -820,6 +850,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/spot-map-probe.png": {
+		"test": "spot-map-probe",
+		"tier": "webgpu",
+		"date": "2026-10-31",
+		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
 	"chromium-swiftshader/webgpu/terrain.png": {
 		"test": "terrain",
