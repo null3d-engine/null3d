@@ -2179,12 +2179,9 @@ impl CpuCulledRenderer {
             .culling
             .frame(ViewId::CAMERA)
             .map_or(0.0, |frame| frame.uniform.camera_world[1]);
-        // The field is made when a frame can draw the tier: a page whose background is no sky
-        // builds none, because no draw samples it.
-        if cloud_noise::draws(
-            self.settings.background().as_ref(),
-            self.settings.cloud_steps(),
-        ) {
+        // The field is made whenever the tier draws: a sky map can refresh from the scene's sky
+        // while another background draws, and its steps bind the field.
+        if self.settings.cloud_steps() > 0 {
             cloud_noise::prepare(
                 list,
                 arena,
