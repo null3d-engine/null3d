@@ -3,6 +3,7 @@
 // worker.
 
 import { EngineError } from '../errors/engine-error';
+import { taskEnded, taskStarted } from './task-pending';
 import type { Task } from './tasks';
 import type { WasmError } from './wasm';
 
@@ -58,10 +59,14 @@ export function runTask<T>(
 	input: unknown,
 	transfer: Transferable[] = NO_TRANSFER,
 ): Promise<T> {
+	// The loader counts a task from the call that sends it. While the loader's own code downloads,
+	// this count stands in for it, so hold mode waits for the first task too.
 	if (loaded) return loaded.runTaskWithError<T>(task, input, transfer, engineError);
+	taskStarted();
 	loader ??= import('./tasks');
-	return loader.then((module) => {
+	const answer = loader.then((module) => {
 		loaded = module;
 		return module.runTaskWithError<T>(task, input, transfer, engineError);
 	});
+	return answer.finally(taskEnded);
 }
