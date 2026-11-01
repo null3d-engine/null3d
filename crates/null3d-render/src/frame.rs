@@ -21,8 +21,8 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::layers::ALL_LAYERS;
 use null3d_core::levels::{FADE_BAND, LevelRule, Switch};
 use null3d_core::lights::{
-    AUTO_FALLBACK, LightShadow, LightTable, LightView, SunShadow, VisibleLight,
-    farthest_receiver_distance, ladder_distance,
+    AUTO_FALLBACK, FillLight, LightShadow, LightTable, LightView, MAX_FILL_DIRECTIONAL_LIGHTS,
+    SunShadow, VisibleLight, farthest_receiver_distance, ladder_distance,
 };
 use null3d_core::memory::{MemoryRegister, MemoryUse, area};
 use null3d_core::morph::MorphWeights;
@@ -1002,6 +1002,10 @@ pub(crate) enum MaterialStorage {
 struct Lighting {
     sun_direction: [f32; 4],
     sun_color: [f32; 4],
+    /// The directional lights after the main one, which cast no shadows: each one's travel
+    /// direction and its exposed color. Their count is the sun color's fourth float.
+    fill_direction: [[f32; 4]; MAX_FILL_DIRECTIONAL_LIGHTS],
+    fill_color: [[f32; 4]; MAX_FILL_DIRECTIONAL_LIGHTS],
     ambient: [f32; 4],
     /// The light that the hemisphere lights add along each world axis, as the frame's uniform
     /// holds it.
@@ -1286,6 +1290,8 @@ impl SceneSettings {
             lighting: Lighting {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
                 sun_color: [0.0; 4],
+                fill_direction: [[0.0, -1.0, 0.0, 0.0]; MAX_FILL_DIRECTIONAL_LIGHTS],
+                fill_color: [[0.0; 4]; MAX_FILL_DIRECTIONAL_LIGHTS],
                 ambient: [0.0; 4],
                 hemisphere: [[0.0; 4]; 3],
                 sun_shadow: None,
@@ -3429,6 +3435,17 @@ impl SceneSettings {
         self.lighting.sun_color = [color[0], color[1], color[2], 0.0];
     }
 
+    /// The directional lights after the main one, in creation order: `fills`' entries up to
+    /// `count`, whose colors are exposed already. They light surfaces without shadows.
+    pub fn set_fills(&mut self, fills: &[FillLight; MAX_FILL_DIRECTIONAL_LIGHTS], count: u32) {
+        for (k, fill) in fills.iter().enumerate() {
+            self.lighting.fill_direction[k] =
+                [fill.direction[0], fill.direction[1], fill.direction[2], 0.0];
+            self.lighting.fill_color[k] = [fill.color[0], fill.color[1], fill.color[2], 0.0];
+        }
+        self.lighting.sun_color[3] = count.min(MAX_FILL_DIRECTIONAL_LIGHTS as u32) as f32;
+    }
+
     /// The ambient light's exposed color: its linear color times its intensity and the exposure.
     pub fn set_ambient(&mut self, color: [f32; 3]) {
         self.lighting.ambient = [color[0], color[1], color[2], 0.0];
@@ -3474,6 +3491,7 @@ impl SceneSettings {
         lights.set_area_ready(self.light_tables.ready() && shading);
         let lit = lights.gather(scene, parity, view.as_ref(), self.drawn_output().exposure);
         self.set_sun(lit.sun_direction, lit.sun_color);
+        self.set_fills(&lit.fills, lit.fill_count);
         self.set_ambient(lit.ambient);
         self.set_hemisphere(lit.hemisphere);
         self.set_sun_shadow(lit.sun_shadow);
@@ -4142,6 +4160,8 @@ impl SceneSettings {
             camera_eye: camera.eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
+            fill_direction: self.lighting.fill_direction,
+            fill_color: self.lighting.fill_color,
             ambient: self.lighting.ambient,
             hemisphere: self.lighting.hemisphere,
             output: output.uniform(),
