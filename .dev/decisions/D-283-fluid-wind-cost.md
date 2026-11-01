@@ -708,3 +708,7 @@ The Galaxy S25's run adds [its record](../tested-devices/galaxy-s25-sm-s931b-chr
 Creek misses the class's 33.3 ms ceiling at Low (312.4 ms) and at Medium (166.6 ms), and its Ultra
 frame reads 516.56 ms against D-241's measured 499.8. The forest holds Low and Medium WebGL2 at the
 display's 33.3 ms floor.
+
+The Galaxy Tab A9 Plus's run adds [its record](../tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-082204-vegetation.md).
+Creek Low on WebGL2 reads 1,600.35 ms against 1,268.5, 26 per cent over. Its forest pages did not
+run, because the session ended after the first page.
