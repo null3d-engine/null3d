@@ -10530,6 +10530,7 @@ mod tests {
         frames.set_bounce(Some(BounceFrame {
             bounce: crate::bounce::Bounce::default(),
             projection: (Mat4::default(), Mat4::default()),
+            mirrors: Default::default(),
         }));
         frames.request_pipelines(&mut PipelineCache::default(), 0);
         frames.sync(&[View::default(), inset]);
@@ -11758,6 +11759,7 @@ mod tests {
         frames.set_bounce(Some(BounceFrame {
             bounce: crate::bounce::Bounce::default(),
             projection: (Mat4::default(), Mat4::default()),
+            mirrors: Default::default(),
         }));
         frames.request_pipelines(&mut pipelines, 1);
         assert!(!frames.bounce_draws(), "the light waits for its pipelines");
