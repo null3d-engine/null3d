@@ -111,6 +111,8 @@ export default defineSketch(async (ctx) => {
 	const opening = carPose(0);
 	car.root.setPosition(0, 0, opening.z);
 	car.root.setRotationEuler(0, opening.heading, 0);
+	/** The z where the car stood a frame ago, which its forward travel and its wheels take from. */
+	let lastZ = opening.z;
 
 	// The scene's controls: the shared sky, fog, environment, shadow and lens switches, and its own
 	// ambient occlusion and bloom.
@@ -175,6 +177,10 @@ export default defineSketch(async (ctx) => {
 			const pose = carPose(t);
 			car.root.setPosition(0, 0, pose.z);
 			car.root.setRotationEuler(0, pose.heading, 0);
+			// The car moves along z only: its forward travel is the part of that move along its nose,
+			// which rolls the wheels by the distance over their radius.
+			car.roll(-(pose.z - lastZ) * Math.sin(pose.heading));
+			lastZ = pose.z;
 			// The lens and the Manual camera's focus stay on the car wherever it drives.
 			target[2] = pose.z;
 			tablet.update();

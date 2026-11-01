@@ -48,3 +48,12 @@ export function carPose(time: number): CarPose {
 		heading: TOWARD_STUDIO + (TOWARD_STREET - 2 * Math.PI - TOWARD_STUDIO) * ease(29, 35, t),
 	};
 }
+
+/**
+ * The turn of one wheel, in radians, for a distance that the car drove forward: the distance over
+ * the wheel's radius, on the axle's side. The right wheel's axle points along +y and the left's along
+ * -y, so the left takes the same distance the other way round.
+ */
+export function wheelTurn(distance: number, radius: number, outward: 1 | -1): number {
+	return (distance / radius) * outward;
+}

@@ -5,8 +5,9 @@
 // glow, and the beams they throw down the street, take the light's color.
 import type { Material, Object3D, SketchContext, SpotLight } from '@null3d/engine';
 import { createCarPaint } from '../../addons/car-paint';
-import { createCarBody } from '../../lib/car-body';
+import { createCarBody, WHEEL_RADIUS } from '../../lib/car-body';
 import { type Config, choice } from './config';
+import { wheelTurn } from './route';
 
 /** The layer that the car draws on, which the studio's reflection probe leaves out. */
 export const CAR_LAYER = 1 << 1;
@@ -17,6 +18,8 @@ export interface ShowroomCar {
 	readonly root: Object3D;
 	/** Puts the chosen paint, wheels, trim and lights on the car. */
 	apply(config: Config): void;
+	/** Rolls the wheels as far as the car has travelled forward, in meters. */
+	roll(distance: number): void;
 }
 
 /** The beam of each head lamp: where it sits on the nose, and how wide and far it throws. */
@@ -115,6 +118,8 @@ export function createCar(ctx: SketchContext, parent?: Object3D): ShowroomCar {
 		}),
 	);
 	let trimValue = 'carbon';
+	/** The distance that the car has driven forward, which sets each wheel's turn. */
+	let travelled = 0;
 
 	const apply = (config: Config): void => {
 		paint.set({ color: choice(config, 'paint').value });
@@ -134,5 +139,11 @@ export function createCar(ctx: SketchContext, parent?: Object3D): ShowroomCar {
 		under.setColor(light);
 	};
 
-	return { root, apply };
+	const roll = (distance: number): void => {
+		travelled += distance;
+		for (const wheel of body.wheels)
+			wheel.spin.setRotationEuler(0, wheelTurn(travelled, WHEEL_RADIUS, wheel.outward), 0);
+	};
+
+	return { root, apply, roll };
 }

@@ -153,6 +153,14 @@ export interface CarLooks {
 	dark: Material;
 }
 
+/** One wheel: the group that spins about the axle, and the side that its axle points to. */
+export interface CarWheel {
+	/** The group to turn about its local y to roll the wheel. */
+	readonly spin: Object3D;
+	/** 1 for the right side of the car and -1 for the left, whose axle points the other way. */
+	readonly outward: 1 | -1;
+}
+
 /** The car's meshes whose material a configurator may change. */
 export interface CarBody {
 	/** The painted body. */
@@ -163,6 +171,8 @@ export interface CarBody {
 	glass: Mesh;
 	/** The cabin's pillars and roof rails in the trim. */
 	pillars: Mesh;
+	/** The four wheels, in the order of the axles and then the right side before the left. */
+	wheels: CarWheel[];
 }
 
 /**
@@ -244,11 +254,14 @@ export function createCarBody(
 			segments: 48,
 		}),
 	);
+	const wheels: CarWheel[] = [];
 	for (const x of AXLES)
-		for (const side of [1, -1])
-			wheel(ctx, parent, [x, WHEEL_RADIUS, side * 0.645], side, tyre, rim, looks, layers);
+		for (const side of [1, -1] as const)
+			wheels.push(
+				wheel(ctx, parent, [x, WHEEL_RADIUS, side * 0.645], side, tyre, rim, looks, layers),
+			);
 
-	return { painted, lower, glass, pillars };
+	return { painted, lower, glass, pillars, wheels };
 }
 
 /** Builds a wheel at `position`, its outer face toward `outward` (1 for +z, -1 for -z). */
@@ -256,12 +269,12 @@ function wheel(
 	ctx: SketchContext,
 	parent: Object3D,
 	position: Vec3,
-	outward: number,
+	outward: 1 | -1,
 	tyre: MeshGeometry,
 	rim: MeshGeometry,
 	looks: CarLooks,
 	layers?: number,
-): void {
+): CarWheel {
 	const { scene, geometry } = ctx;
 	const only = layers === undefined ? {} : { layers };
 	// The wheel's axle is its local y, turned to point across the car.
@@ -270,15 +283,17 @@ function wheel(
 		position,
 		rotation: [outward * Math.SQRT1_2, 0, 0, Math.SQRT1_2],
 	});
+	// A group inside the hub turns about the axle, so the tyre and the rim roll together.
+	const spin = scene.createGroup({ parent: hub });
 	scene.createMesh({
 		mesh: tyre,
 		material: looks.rubber,
-		parent: hub,
+		parent: spin,
 		castShadows: true,
 		receiveShadows: true,
 		...only,
 	});
-	scene.createMesh({ mesh: rim, material: looks.rim, parent: hub, ...only });
+	scene.createMesh({ mesh: rim, material: looks.rim, parent: spin, ...only });
 	scene.createMesh({
 		mesh: geometry.cylinder({
 			radiusTop: 0.17,
@@ -287,7 +302,7 @@ function wheel(
 			radialSegments: 32,
 		}),
 		material: looks.dark,
-		parent: hub,
+		parent: spin,
 		position: [0, -0.02, 0],
 		...only,
 	});
@@ -299,7 +314,7 @@ function wheel(
 			radialSegments: 24,
 		}),
 		material: looks.rim,
-		parent: hub,
+		parent: spin,
 		position: [0, 0.08, 0],
 		...only,
 	});
@@ -309,10 +324,11 @@ function wheel(
 		scene.createMesh({
 			mesh: spoke,
 			material: looks.rim,
-			parent: hub,
+			parent: spin,
 			position: [Math.cos(turn) * 0.115, 0.08, -Math.sin(turn) * 0.115],
 			rotation: [0, Math.sin(turn / 2), 0, Math.cos(turn / 2)],
 			...only,
 		});
 	}
+	return { spin, outward };
 }
