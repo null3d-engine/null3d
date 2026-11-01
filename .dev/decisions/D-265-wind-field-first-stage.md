@@ -238,3 +238,17 @@ fourth sat in the check that judges the wake.
 - **A stall skips the air that it missed.** A frame that owes more cycles than one frame runs sets the
   solved time to now. Crediting only the cycles that ran would leave a debt that every later frame
   pays, which is the fault the fixed step exists to avoid.
+
+## Addendum: the step and the pressure count become settings
+
+M3-V16 moves this record's fixed step and fixed pressure count into the wind add-on's feature. The
+step interval and the pressure iterations now come from the preset, as
+[D-283](D-283-fluid-wind-cost.md#addendum-the-rows-the-add-on-declares-and-the-governors-floor)
+gives them. The cycle still runs the forces, the advection, the pressure's iterations and the
+projection, and the stage still rides in the state's fourth number. What the record's stage two says
+about a fixed sixtieth of a second holds instead for the step that the row gives.
+
+The pass still takes eight value vectors, and each one's fields already had a meaning. So the
+pressure count rides in the whole part of the ground setting, and the ground's share takes its
+fraction. The grid splits the two before it uses them. A unit test keeps the packing and the
+shaders' divisor equal.

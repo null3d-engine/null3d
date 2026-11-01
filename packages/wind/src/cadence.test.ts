@@ -5,7 +5,7 @@
 // vegetation add-on the time that D-241 gives it inside each preset's frame ceiling.
 import { describe, expect, test } from 'bun:test';
 import type { Camera, FeatureStats, QualityPreset, SketchContext } from '@null3d/engine';
-import { createWind, type Wind } from './wind';
+import { CYCLE_STEPS, createWind, type Wind } from './wind';
 
 /** A camera that stands at the world's origin. */
 const camera = {
@@ -45,6 +45,8 @@ function fakeContext(start: QualityPreset = 'medium', tier = 'webgpu') {
 	const posted: { features?: readonly FeatureStats[] }[] = [];
 	const passes: MadePass[] = [];
 	const removed: MadePass[] = [];
+	/** The runs that each frame set for the pass. */
+	const steps: number[] = [];
 	/** The textures that `fromPass` gave, one for each pass. */
 	const textures: { destroy(): void }[] = [];
 	let place = 0;
@@ -94,7 +96,9 @@ function fakeContext(start: QualityPreset = 'medium', tier = 'webgpu') {
 				return pass;
 			},
 			setPassUniforms() {},
-			setPassSteps() {},
+			setPassSteps(_pass: unknown, count: number) {
+				steps.push(count);
+			},
 			removePass(pass: MadePass) {
 				removed.push(pass);
 			},
@@ -112,6 +116,7 @@ function fakeContext(start: QualityPreset = 'medium', tier = 'webgpu') {
 		ctx,
 		passes,
 		removed,
+		steps,
 		textures,
 		/** The features that the page was told of last, which is none after the wind goes. */
 		latest(): readonly FeatureStats[] | undefined {
@@ -331,6 +336,19 @@ describe('a preset change', () => {
 		expect(context.passes.length).toBe(1);
 		expect(wind.field.size).toBe(0);
 		expect(settingsOf(context)).toMatchObject({ windGrid: 0, windStepMs: 0 });
+		wind.destroy();
+	});
+
+	test('gives a page that keeps a grid at a preset with no field the add-on’s own field', () => {
+		const context = fakeContext('low');
+		const wind = windOn(context, { grid: 8 });
+		// Low names no field, but the page asked for a grid, so the add-on's own step and pressure
+		// count run the cycle. Air that never steps would never move.
+		expect(context.passes.map((pass) => pass.options.size)).toEqual([[8, 8]]);
+		expect(context.passes[0]?.options.steps).toBe(CYCLE_STEPS);
+		(context.ctx.time as { now: number }).now = 1 + 1 / 60;
+		wind.update();
+		expect(context.steps.at(-1)).toBe(CYCLE_STEPS);
 		wind.destroy();
 	});
 

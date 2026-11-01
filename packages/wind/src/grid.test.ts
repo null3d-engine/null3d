@@ -68,7 +68,7 @@ describe('the shaders of the grid', () => {
 		}
 		// The add-on packs the same two values, so its divisor must match the shaders'.
 		expect(readFileSync(new URL('./wind.ts', import.meta.url), 'utf8')).toContain(
-			'values[3] = pressureSteps + air.ground / GROUND_PACK;',
+			'values[3] = solverPressureSteps() + air.ground / GROUND_PACK;',
 		);
 		// The default cycle still adds the advection and the projection to the pressure's iterations.
 		expect(CYCLE_STEPS).toBe(PRESSURE_STEPS + 2);

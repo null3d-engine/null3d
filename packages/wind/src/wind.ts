@@ -213,17 +213,22 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	// The air starts when a page makes the wind. A held page steps its updates up to the held time
 	// and the pass runs with each step, so a held picture carries the air that the hold built.
 	let solved = now();
-	const cycleSteps = (): number => pressureSteps + 2;
+	// The preset names no field at Low. A page that keeps its own grid there still gets a field, at
+	// the add-on's own step and pressure count, because air that never steps never moves.
+	const presetField = (): boolean => stepSeconds > 0;
+	const solverSeconds = (): number => (presetField() ? stepSeconds : STEP_SECONDS);
+	const solverPressureSteps = (): number => (presetField() ? pressureSteps : PRESSURE_STEPS);
+	const cycleSteps = (): number => solverPressureSteps() + 2;
 	const owedSteps = (): number => {
-		if (stepSeconds <= 0) return 0;
+		const step = solverSeconds();
 		// The sketch time is a sum of frame times, so a frame that owes exactly one step can read a
 		// hair under it.
-		const owed = Math.floor((now() - solved) / stepSeconds + 1e-6);
+		const owed = Math.floor((now() - solved) / step + 1e-6);
 		if (owed <= 0) return 0;
 		const cycles = Math.min(owed, MAX_CYCLES);
 		// A stall that owes more than one frame runs skips the air that it missed. Crediting only
 		// the cycles that ran would leave a debt, and every later frame would pay it.
-		solved = owed > MAX_CYCLES ? now() : solved + cycles * stepSeconds;
+		solved = owed > MAX_CYCLES ? now() : solved + cycles * step;
 		return cycles * cycleSteps();
 	};
 
@@ -231,13 +236,13 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	const place: number[] = [0, 0, 0];
 	const write = (): void => {
 		// The first vector holds the solver's step, then the air's settings.
-		values[0] = stepSeconds;
+		values[0] = solverSeconds();
 		values[1] = air.speed;
 		values[2] = air.heading;
 		// A pass takes eight value vectors and every field of them already has a meaning, so the
 		// cycle's pressure count rides in the ground setting's whole part and the ground's share in
 		// its fraction. The grid splits the two before it uses them.
-		values[3] = pressureSteps + air.ground / GROUND_PACK;
+		values[3] = solverPressureSteps() + air.ground / GROUND_PACK;
 		values[4] = air.gustStrength;
 		values[5] = air.gustRadius;
 		values[6] = air.gustWave;
