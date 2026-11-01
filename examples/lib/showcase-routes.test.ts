@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'bun:test';
 import * as creekLand from '../showcase/creek/land';
 import * as creek from '../showcase/creek/sketch';
+import * as islandPlace from '../showcase/island/island';
 import * as islandPlan from '../showcase/island/plan';
 import * as island from '../showcase/island/sketch';
 import {
@@ -43,6 +44,57 @@ const SCENES = [
 			Math.max(creekLand.groundHeight(x, z), creekRing.heightAt(x, z)),
 	},
 ];
+
+/** The most that a tree on the island rises above where it stands, per unit of its scale, in meters. */
+const TREE_RISE = 16;
+/** How far the Island's route keeps from the middle of the highest tower, from its trees and from them. */
+const TOWER_CLEARANCE = 40;
+const TREE_CLEARANCE = 2;
+
+describe("the island's close look at its highest tower", () => {
+	const [towerX, towerZ] = islandPlace.SUMMITS[0] as readonly [number, number, number, number];
+	const route = routeTimeline(island.SHOTS);
+	const trees = [...islandPlan.TREE_SPOTS, ...islandPlan.FILL_SPOTS];
+	const close: number[][] = [];
+	const pose = new Float32Array(6);
+	for (let step = 0; step <= SAMPLES; step++) {
+		routePosition(route, (step / SAMPLES) * route.total, pose);
+		const reach = Math.hypot((pose[0] as number) - towerX, (pose[2] as number) - towerZ);
+		if (reach < 150) close.push([pose[0] as number, pose[1] as number, pose[2] as number, reach]);
+	}
+
+	it('comes close, and goes most of the way around the tower', () => {
+		const [x, , z] = close.reduce((a, b) =>
+			(a[3] as number) < (b[3] as number) ? a : b,
+		) as number[];
+		expect(Math.hypot((x as number) - towerX, (z as number) - towerZ)).toBeLessThan(70);
+		const bearings = close
+			.filter((p) => (p[3] as number) < 90)
+			.map((p) =>
+				Math.floor(
+					(Math.atan2((p[0] as number) - towerX, (p[2] as number) - towerZ) + Math.PI) /
+						(Math.PI / 4),
+				),
+			);
+		expect(new Set(bearings).size).toBeGreaterThanOrEqual(6);
+	});
+
+	it('keeps clear of the tower, of the ground and of the tops of the trees it passes', () => {
+		for (const [x, y, z, reach] of close as [number, number, number, number][]) {
+			const where = `${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}`;
+			expect(reach, `the route nears the tower at ${where}`).toBeGreaterThan(TOWER_CLEARANCE);
+			expect(
+				y - islandPlan.groundHeight(x, z),
+				`the route nears the ground at ${where}`,
+			).toBeGreaterThan(5);
+			for (const tree of trees)
+				if (Math.hypot(tree.x - x, tree.z - z) < 8)
+					expect(y, `the route nears a tree at ${where}`).toBeGreaterThan(
+						tree.y + tree.scale * TREE_RISE + TREE_CLEARANCE,
+					);
+		}
+	});
+});
 
 for (const { name, ground, sketch } of SCENES) {
 	describe(`the ${name}'s route`, () => {
