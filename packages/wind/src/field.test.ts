@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import type { Task } from '@null3d/engine';
 import {
 	analyticVelocity,
 	createPushRing,
@@ -7,6 +8,7 @@ import {
 	defaultFieldState,
 	type FieldState,
 } from './analytic';
+import { WindProbes } from './field';
 import { fillRequest, MAX_PLACES, POINTS } from './field-layout';
 import { run } from './field-task';
 
@@ -174,5 +176,96 @@ describe('the field in WebAssembly', () => {
 			for (let i = 0; i < places.length; i++)
 				expect(Math.abs((answer[i] as number) - (mirror[i] as number))).toBeLessThan(1e-4);
 		}
+	});
+});
+
+/** A worker that runs a task later, as the engine's worker does, on the buffer that it was sent. */
+function deferringWorker(module: WebAssembly.Module): {
+	send: (task: Task, input: unknown) => Promise<unknown>;
+	flush(): void;
+	readonly waiting: number;
+} {
+	const queue: (() => void)[] = [];
+	return {
+		send: (_task, input) =>
+			new Promise((resolve) => {
+				// The task reads `input` when the worker runs it, not when the page sends it, which is
+				// what a shared request buffer does.
+				queue.push(() => resolve(run(input, () => module)));
+			}),
+		flush(): void {
+			(queue.shift() as () => void)();
+		},
+		get waiting(): number {
+			return queue.length;
+		},
+	};
+}
+
+/** The air that the mirror gives at one place. */
+function mirrorAt(settings: FieldState, time: number, place: readonly number[]): number[] {
+	const out: [number, number, number] = [0, 0, 0];
+	analyticVelocity(
+		settings,
+		createPushRing().slots,
+		place[0] as number,
+		place[1] as number,
+		place[2] as number,
+		time,
+		out,
+	);
+	return out;
+}
+
+describe('the read path through the task', () => {
+	test('drives the request, the task module and the answer as a worker does', async () => {
+		const worker = deferringWorker(moduleOf());
+		const probes = new WindProbes(worker.send);
+		const settings = state();
+		const points = new Float32Array([2, 3, -4]);
+		const answer = new Float32Array(3);
+		probes.ask(
+			points,
+			answer,
+			createReading(settings),
+			settings.pushRadius,
+			1,
+			new Float32Array(16),
+		);
+		expect(worker.waiting).toBe(1);
+		worker.flush();
+		await Promise.resolve();
+		const want = mirrorAt(settings, 1, [2, 3, -4]);
+		for (let i = 0; i < 3; i++)
+			expect(Math.abs((answer[i] as number) - (want[i] as number))).toBeLessThan(1e-4);
+	});
+
+	test('keeps the places of an ask that is on its way', async () => {
+		// The engine hands a shared request buffer to the worker without copying it, so a second ask
+		// may not write the bytes of the first. Two buffers hold the two asks apart.
+		const worker = deferringWorker(moduleOf());
+		const probes = new WindProbes(worker.send);
+		const settings = state();
+		const ring = new Float32Array(16);
+		const firstPoints = new Float32Array([1, 2, 3]);
+		const secondPoints = new Float32Array([-7, 0.5, 9]);
+		const firstAnswer = new Float32Array(3);
+		const secondAnswer = new Float32Array(3);
+		probes.ask(firstPoints, firstAnswer, createReading(settings), settings.pushRadius, 1, ring);
+		// The second call lands while the first answer is still on its way.
+		probes.ask(secondPoints, secondAnswer, createReading(settings), settings.pushRadius, 2, ring);
+		expect(worker.waiting).toBe(1);
+		worker.flush();
+		await Promise.resolve();
+		const first = mirrorAt(settings, 1, [1, 2, 3]);
+		for (let i = 0; i < 3; i++)
+			expect(Math.abs((firstAnswer[i] as number) - (first[i] as number))).toBeLessThan(1e-4);
+		// The ask that waited goes out with its own places, and its answer follows.
+		expect(worker.waiting).toBe(1);
+		worker.flush();
+		await Promise.resolve();
+		const second = mirrorAt(settings, 2, [-7, 0.5, 9]);
+		for (let i = 0; i < 3; i++)
+			expect(Math.abs((secondAnswer[i] as number) - (second[i] as number))).toBeLessThan(1e-4);
 	});
 });

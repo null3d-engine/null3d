@@ -178,7 +178,6 @@ describe('the calls that a frame makes', () => {
 		// sample allocates nothing. The bytes per frame are the allocation gate's measure, which
 		// D-265 names as owed.
 	});
-
 	test('a frozen field gives the same air at two times, and a live one does not', () => {
 		const frozen = context();
 		const still = createWind(frozen, {
@@ -199,6 +198,48 @@ describe('the calls that a frame makes', () => {
 		(live.time as { now: number }).now = 2;
 		blowing.sample(3, 4, -2, later);
 		expect(later).not.toEqual(first);
+	});
+});
+
+/** The body of the `read` method that `createWind` returns, as the text of the code. */
+function readBody(): string {
+	const source = readFileSync(new URL('./wind.ts', import.meta.url), 'utf8');
+	const file = ts.createSourceFile('wind.ts', source, ts.ScriptTarget.ESNext, true);
+	let body: string | undefined;
+	const visit = (node: ts.Node): void => {
+		if (
+			ts.isMethodDeclaration(node) &&
+			ts.isIdentifier(node.name) &&
+			node.name.text === 'read' &&
+			node.body !== undefined
+		)
+			body = node.body.getText(file);
+		node.forEachChild(visit);
+	};
+	visit(file);
+	expect(body, 'read is a method of the wind').toBeDefined();
+	return body as string;
+}
+
+describe('the air that a frame asks for', () => {
+	test('comes from the job worker, never from the TypeScript field', () => {
+		// A page without job workers gets the engine's task worker, and a task that fails is reported
+		// once. Nothing in the call falls back to the mirror, which would be a frame loop in
+		// TypeScript.
+		const body = readBody();
+		expect(body).toContain('probes.ask');
+		expect(body).not.toMatch(/analyticVelocity/);
+		expect(body).not.toMatch(/\bsample\b/);
+	});
+
+	test('has no TypeScript field in the ask path to answer in its place', () => {
+		const field = readFileSync(new URL('./field.ts', import.meta.url), 'utf8');
+		const task = readFileSync(new URL('./field-task.ts', import.meta.url), 'utf8');
+		expect(field).not.toMatch(/analyticVelocity|value3/);
+		expect(task).not.toMatch(/analyticVelocity|value3|from '\.\/analytic'/);
+		// The one import of the mirror in the ask path gives a type alone, which the build drops.
+		const mirrorImports = field.match(/import[^;]*from '\.\/analytic'/g) ?? [];
+		expect(mirrorImports.every((line) => line.startsWith('import type'))).toBe(true);
 	});
 });
 
