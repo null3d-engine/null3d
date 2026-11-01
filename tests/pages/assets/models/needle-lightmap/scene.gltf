@@ -17,6 +17,18 @@
   }
  ],
  "scene": 0,
+ "cameras": [
+  {
+   "name": "Capture Camera",
+   "type": "perspective",
+   "perspective": {
+    "yfov": 0.9599310885968813,
+    "znear": 0.03,
+    "zfar": 50.0,
+    "aspectRatio": 1.7777777777777777
+   }
+  }
+ ],
  "nodes": [
   {
    "name": "Base",
@@ -26,7 +38,8 @@
     3,
     4,
     5,
-    6
+    6,
+    7
    ],
    "extensions": {
     "NEEDLE_gameobject_data": {
@@ -241,15 +254,6 @@
        "renderOrder": [
         0
        ]
-      },
-      {
-       "name": "MeshCollider",
-       "guid": "286810362170858720",
-       "sharedMesh": "/meshes/13",
-       "convex": false,
-       "attachedRigidbody": null,
-       "isTrigger": false,
-       "sharedMaterial": null
       }
      ]
     },
@@ -383,6 +387,52 @@
    },
    "extras": {
     "guid": "285149360331206952"
+   }
+  },
+  {
+   "name": "Capture Camera",
+   "camera": 0,
+   "translation": [
+    -1.0,
+    9.2,
+    -4.5
+   ],
+   "rotation": [
+    0.037554,
+    0.9450578,
+    0.1171859,
+    -0.302858
+   ],
+   "extensions": {
+    "NEEDLE_components": {
+     "builtin_components": [
+      {
+       "name": "Camera",
+       "guid": "706762905",
+       "nearClipPlane": 0.03,
+       "farClipPlane": 50.0,
+       "fieldOfView": 55.0,
+       "aspect": 1.7777778,
+       "cullingMask": -1,
+       "backgroundColor": {
+        "r": 0.0,
+        "g": 0.0,
+        "b": 0.0,
+        "a": 1.0
+       },
+       "clearFlags": 2,
+       "enabled": true,
+       "gameObject": "/nodes/7"
+      }
+     ]
+    },
+    "NEEDLE_gameobject_data": {
+     "tag": "MainCamera",
+     "guid": "706762906"
+    }
+   },
+   "extras": {
+    "guid": "706762906"
    }
   }
  ],
