@@ -35,7 +35,7 @@ const ON_BRANCH = new Set(['M3-F9']);
 // A task belongs here only when it has no evidence yet. A task whose proof is written but whose
 // gap still stops the tick belongs in AUDIT_GAPS instead: a task in both lists says its work is
 // unfinished and finished at once, and the release hook refuses a range that creates that pair.
-const INCOMPLETE = new Set(['M3-E8', 'M3-R22', 'M3-R19']);
+const INCOMPLETE = new Set(['M3-E8', 'M3-R22']);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
@@ -58,6 +58,8 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
 	'M3-R23':
 		'the depth-only prepass is the default and passes the bar on the iPhone 18 Pro at both scales and on the iPad 10 at half scale; the iPad 10 at full scale reads 0.52 and 0.64 ms against the 0.5 ms bar, and the owner ruled that margin accepted (D-269)',
+	'M3-R19':
+		"the second step costs 2.96 to 2.99 ms of a 6.14 to 6.23 ms frame at half the scale on the cloud iPad, and 3.71 to 4.16 ms on the High preset's canvas; the first addendum's 20.5 to 34.9 ms was the frame's tail, since the engine folds every pass after the seventh into it. The held pair of 34.6 against 29.7 frames a second and 22.56 against 27.56 ms has no run file, and this reading's cells bracket its GPU times. The gate commit's 36.1 frames a second lies inside the 29.6 to 36.2 spread three runs gave at one code state, and the head's 29.0 sits 0.6 below its floor, so the second step is not shown to cause S5's drop (D-236)",
 };
 
 /**
@@ -70,8 +72,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the scene, its lanes, rain and the hero car are in, and so are the moods (`createMoods` in the skyway sketch) and the instances demo, which is registered and built on the traffic-lanes add-on; the owner approved the look. What remains is the chase camera's tower occlusion fix, held on `feat/skyway-camera` until its look review passes, and the frame rates against the target: the iPad Pro 13 drew 50.0 fps at Low on WebGPU and 54.2 on WebGL2, and the cloud S24 drew 11.7 at Low and 7.8 in the demos plan, all under 60",
 	'M3-F4':
 		"unticked by its check at 652fd235b on `feat/m3-f4-lightmap-evidence`: the captured frame is one side of the comparison rather than the comparison itself, D-258 claims more than that frame settles, not every figure has a recorded run. The evidence entry is written now and names what is owed rather than claiming it: the engine-to-viewer comparison does not exist, and the picture's failure without the direction is unrecorded. The same branch's ae46e947d states the viewer-side limit in D-258 lines 78 to 82 instead of closing it, so the owner has not ruled whether an engine-to-viewer comparison is owed",
-	'M3-R19':
-		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
 	'M3-B1':
 		"the whole look is costed at every preset on WebGPU and in compatibility mode, 3.13 to 3.91 and 3.12 to 3.82 ms at the 33-megapixel canvas, and all eight of those cells keep their range above zero. What remains is narrower: each mark is costed at the highest preset its path allows rather than at every preset, WebGL2 keeps no whole-look figure and its sharpening cell does not resolve, and the compatibility fringes' range crosses zero from -0.080 to 0.417, so that cell cannot be told apart from no mark. The earlier run at four times the pixels could not tell a mark from the frame's own variation, and that reason no longer stands",
 	'M3-B5':
