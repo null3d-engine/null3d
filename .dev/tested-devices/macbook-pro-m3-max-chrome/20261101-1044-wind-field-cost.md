@@ -38,10 +38,12 @@ The flat 64x64 grid's 16 by 16 read answered after 62.910 ms, 4 frames late.
 
 ## What the figures say
 
-The figures agree with the field's run of 2026-10-31, which swept every shape at `5e29e392c`, within
-the run-to-run spread. That run's real cycle at flat 64x64 is 0.226 ms against this run's 0.227, and
-WebGL2's eight steps cost 1.327 ms against 1.258. The layered shape's 24 steps read 0.321 ms here
-against 0.327 there.
+The figures are re-measured against the field's run of 2026-10-31, which swept every shape at
+`5e29e392c`. Neither record states a run-to-run spread, so the cells are compared directly. That
+run's real cycle at flat 64x64 is 0.226 ms against this run's 0.227. WebGL2's eight steps cost
+1.327 ms against 1.258, 5.2 per cent lower. Its single step moved from 0.128 to 0.078 ms, 39 per
+cent. The layered shape's 24 steps read 0.321 ms here. This run played the Medium, High and Ultra
+rows' shapes; Low's 32x32 grid and the flat 128x128 and 256x256 stand-ins were not played.
 
 The volume's 40 steps cost 0.648 ms on WebGPU, and the advection and projection that its real cycle
 would add are about 0.09 ms, so one cycle is about 0.74 ms. Its Ultra row steps once a frame at 60

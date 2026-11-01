@@ -7,12 +7,17 @@ phone measures the small grid. The ruling closes the rows and the budgets. Three
 task's Done-when stay open: the smallest-tier look, a side-by-side that the owner judges and has not
 named; the cost of each tier on the M5 Max, because the machine here is an M3 Max and no M5 Max ran
 the plan, while the iPad Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus now carry their rows; and
-the proof that the chosen rows keep Creek and the forest within
-D-241's frame ceilings, which waits on M3-V11 and M3-V12. The three devices confirm the rows, with
-one cell that the governor must step: the Galaxy S25's 30 Hz display owes two field cycles a frame,
-so its Ultra row costs 11.08 ms until Ultra steps at 30 field steps a second there. Built: the wind
-add-on's field and its
-state-keeping solver
+the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings, which waits
+on M3-V11 and M3-V12. The three devices measured their rows. All
+hold except the Galaxy S25's Ultra cell, which stays open: its 30 Hz display owes two field cycles a
+frame, so the modelled frame is 11.08 ms, from the measured 5.243 ms of its 40 volume steps plus the
+advection and projection floor, doubled. That is over the wind's own 6.25 ms figure, and D-241's
+499.8 ms is the measured Creek frame at Ultra on that phone, not a ceiling with room in it: the
+frame with the wind is about 510.9 ms, over by 2.2 per cent, and the governor's 30 field steps a
+second step gives about 505.3 ms, still over. The owner must choose one of three options. The first
+is that the class ceiling includes the wind's share. The second is that Ultra does not run the
+field on a display that owes two cycles. The third is that the preset steps down there, which D-241
+calls a failure. This record picks none. Built: the wind add-on's field and its state-keeping solver
 (M3-V13, M3-V15). Built too: the plant material's vertex reader (M3-V7) and the cost pages that
 time them. Not built: the preset rows and budgets (M3-V16), the canopy drag and the falling leaves
 (M3-V17), branch poses (M3-V10, measured on its own branch), and Creek's and the forest's plants on
@@ -73,9 +78,12 @@ which was taken again at `5e29e392c`. The readers' table comes from [the readers
 at `c4504a038`. The phone tables come from [the iPhone 17's run](../tested-devices/iphone-17-safari/20261031-104558-wind-field-cost.md)
 and [the Galaxy S24's run](../tested-devices/galaxy-s24-sm-s921b-chrome/20261031-104906-wind-field-cost.md),
 both at `c4504a038`. The rows' own shapes were measured again at `06e10a77f`
-([its run](../tested-devices/macbook-pro-m3-max-chrome/20261101-1044-wind-field-cost.md)), and that
-run confirms the earlier figures rather than moving them: every row of the Decision table lands
-within the run-to-run spread of the figure it had. The devices' tables come from the plan's run at the same
+([its run](../tested-devices/macbook-pro-m3-max-chrome/20261101-1044-wind-field-cost.md)). Neither
+Mac record states a run-to-run spread, so a claim that a figure stayed within a spread has no
+denominator. The re-measured cells moved: WebGL2's eight steps at flat 64x64 read 1.258 against
+1.327 ms, 5.2 per cent lower, and its single step 0.078 against 0.128, 39 per cent lower. Four
+figures in the Decision table come from shapes that run never played: Low's two, and the flat
+128x128 and 256x256 stand-ins that High's and Ultra's fallbacks rest on. The devices' tables come from the plan's run at the same
 head, on [the iPad Pro 13](../tested-devices/ipad-pro-13-safari/20261101-025108-wind-field-cost.md),
 [the Galaxy S25](../tested-devices/galaxy-s25-sm-s931b-chrome/20261101-025108-wind-field-cost.md)
 and [the Galaxy Tab A9 Plus](../tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-030741-wind-field-cost.md).
@@ -148,8 +156,8 @@ volume is built costs 0.58 there, its floor of 0.140 ms plus forty steps at 0.01
 Compatibility mode runs the same WebGPU backend under the compatibility limits. Its per-pass figures
 match WebGPU within about 3 per cent. The real cycle costs 0.225, 0.227, 0.243 and 0.362 ms from
 32x32 to 256x256. The least-squares line through the flat shapes is 0.013 ms of fixed cost a step
-and 0.075 nanoseconds a cell. The machine's load rose from 6.9 to between 22 and 43 during that run
-as other sessions worked. The per-pass figures stand on the GPU's own timestamps, and a frame-level
+and 0.075 nanoseconds a cell. The machine's load began at 8.0 and ended between 8.0 and 19.7 during
+that run as other sessions worked. The per-pass figures stand on the GPU's own timestamps, and a frame-level
 figure from that run would not.
 
 ### WebGL2 on the Mac
@@ -165,15 +173,16 @@ no per-pass timer, so the figure carries the field's pass as the frame's command
 | flat 256x256 | 0.177 | 1.376 | 3.103 | 6.272 | 12.123 | 23.620 | 5.050 |
 
 The cost is fixed per run, not per cell. Eight runs cost 1.26 to 1.38 ms at every shape from 1,024
-to 65,536 cells, about 0.16 to 0.17 ms a run. Sixteen runs cost about twice that. From 24 runs a
+to 65,536 cells, about 0.16 to 0.17 ms a run. Sixteen runs cost about twice that. Past 16 runs a
 frame the field's work passes the display's interval, so the GPU queues frames and the per-run
 figure climbs. The 24, 40 and 80 run rows are saturation points, not a clean cost. The add-on's
 shipped cycle, 22 runs at 60 cycles a second, costs 4.4 to 5.1 ms a frame. The single-step rows
 scatter between 0.073 and 0.177 ms, and the least-squares line through them cannot separate a
 step's fixed part from its cells. The eight-run rows are the clean measure.
 
-Drag is one read in six and stays inside the run-to-run spread at every count. The 16 by 16 read
-answered after 65.5 to 67.0 ms, 4 frames late.
+The drag is one more read in a step's six. On WebGL2 it adds 0.118 ms to flat 64x64 at 40 runs,
+0.376 to the layered shape and 0.152 to the volume (the `06e10a77f` run). The 16 by 16 read of flat
+64x64 answered after 62.910 ms, 4 frames late, in that run.
 
 Low's row is a cycle of ten runs at 15 cycles a second. That cycle is eight pressure steps, the
 advection and the projection. The rate is 2.5 runs a frame. At the Mac's 0.17 ms a run that is about
@@ -218,8 +227,9 @@ A quiet-window run at `06e10a77f` measured the three shapes that the rows take, 
 stand-ins that stood in for High and Ultra. It read the field at 1, 8, 24 and 40 chain steps, with
 the drag beside the last, in three rounds of each side. The load sat at 3.4 to 4.2 through it
 ([its run](../tested-devices/macbook-pro-m3-max-chrome/20261101-1044-wind-field-cost.md)). The
-figures agree with the earlier run within its spread. Flat 64x64's real cycle reads 0.227 ms against
-0.226, and WebGL2's eight steps 1.258 against 1.327.
+re-measured cells moved, and no record states a spread to judge them by. Flat 64x64's real cycle
+reads 0.227 ms against 0.226; WebGL2's eight steps 1.258 against 1.327, 5.2 per cent lower; and its
+single step 0.078 against 0.128, 39 per cent lower.
 
 | Shape | WebGPU 1 / 8 / 24 / 40 steps (ms) | WebGL2 1 / 8 / 24 / 40 steps (ms) | Drag adds (ms) |
 | --- | --- | --- | --- |
@@ -273,8 +283,12 @@ The iPad's drag adds about a tenth to a flat step and about half again to the vo
 more read joins six and the cells are many. The tablet's drag adds 1.966 ms to its layered shape and
 1.114 to its volume, and 0.327 to the layered shape in compatibility mode.
 
-**Compatibility mode.** The same backend under the compatibility limits. The devices' figures
-match their WebGPU ones within a few hundredths of a millisecond.
+**Compatibility mode.** The same backend under the compatibility limits. Most cells match their
+WebGPU ones within 0.02 ms. The tablet's layered shape is the widest gap. Its eight steps cost
+1.966 ms against 2.294 on WebGPU, its 24 steps 5.145 against 5.308, and its drag adds 0.327 against
+1.966. The tablet's folder once recorded that compatibility mode lost the GPU there. It also said
+that its figures must not be read. That note is stale: the run reports a WebGPU adapter and plays
+every path, and these figures stand.
 
 | Device | Shape | Shipped cycle | 1 step | 8 steps | 16 steps | 24 steps | Drag adds |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -308,18 +322,22 @@ frame therefore depends on the display: a 60 Hz frame owes one cycle, a 30 Hz fr
 | Galaxy S25, 30 Hz | 5.54 | 2 | 11.08 | over by 77 per cent |
 
 Each cycle is the row's 40 steps plus the advection and projection floor, which the shipped cycle
-fixes on each device. High's row is a cycle of 24 steps at 30 a second, and Medium's 16 at 30, and
-both are inside every budget on every device. High is 0.33 ms a frame on the iPad and 2.1 on the
-tablet, and Medium is 0.09 and 0.36.
+fixes on each device. The S25's cycle is its measured 5.243 ms of 40 volume steps plus a floor of
+about 0.3 ms. That is the about 5.6 ms that the run states. The 5.54 and 11.08 are that
+back-computed cycle and its double. High's row is a cycle of 24 steps at 30 a second, and Medium's
+16 at 30, and both are inside every budget on every device. High is 0.33 ms a frame on the iPad and
+2.1 on the tablet, and Medium is 0.09 and 0.36.
 
-The S25 is the one device whose frame owes two cycles. Its 11.08 ms is 2.2 per cent of the 499.8 ms
-frame ceiling that D-241 gives this class at Ultra, so a Creek or forest page still holds that
-ceiling there. It is over the wind's own 6.25 ms figure, which the Apple devices set. At 30 field
-steps a second the frame owes one cycle and the row is 5.54 ms, inside the figure. The governor's
-`double` step reaches that rate when the field's GPU time passes its budget, and M3-V16 gives it.
-So Ultra on a 30 Hz display runs at 30 cycles a second until that device measures inside. The
-S25's frame interval is its display's cap, not its work, so the field's pass times are the figures
-that count there.
+The S25 is the one device whose frame owes two cycles, and its Ultra row is open. D-241's 499.8 ms
+at Ultra is that phone's measured Creek frame, not a ceiling with headroom: the frame already fills
+it. Adding the wind's 11.08 ms gives about 510.9 ms, over the ceiling by the same 2.2 per cent. The
+governor's 30 field steps a second step gives one cycle, about 5.54 ms, and a frame of about 505.3
+ms, still over. So the row holds neither the wind's own 6.25 ms figure nor D-241's ceiling. The
+owner must choose one of three options. The first is that the class ceiling includes the wind's
+share. The second is that Ultra does not run the field on a display that owes two cycles. The third
+is that the preset steps down there, which D-241 calls a failure. This record picks none. The S25's
+frame interval is its display's cap, not its work, so
+the field's pass times are the figures that count there.
 
 The tablet's Ultra row is at the budget's edge, and the canopy drag takes it over: the drag adds
 1.114 ms a cycle there, so a frame carries about 6.9 ms. The governor's step covers that too.
@@ -408,14 +426,17 @@ accepted ceiling. None of these figures is a phone measurement. Low's 0.5 ms is 
 ceiling for the field. The phone rows in the Data section bound Low's cost with the frame interval,
 and no phone read 0.5 ms there. A reader must not take 0.5 ms for a phone figure.
 
-Three devices have now measured the rows, and the figures hold on all but one cell. The iPad Pro
-13 is inside every budget: Ultra costs 1.42 ms a frame, High 0.33 and Medium 0.09. The Galaxy Tab A9
-Plus holds Ultra at 6.20 ms of 6.25, at the edge, and the canopy drag takes it to about 6.9. The
-Galaxy S25's 30 Hz display owes two cycles a frame, so its Ultra row is 11.08 ms; it holds D-241's
-499.8 ms frame ceiling for the class at 2.2 per cent, but it is over the wind's own figure until the
-governor steps Ultra to 30 field steps a second there, which brings it to 5.54 ms. That step is the
-`double` governor that M3-V16 declares, and it is the one recommendation this record adds to the
-owner's ruling.
+Three devices have now measured the rows. The iPad Pro 13 is inside every budget: Ultra costs 1.42
+ms a frame, High 0.33 and Medium 0.09. The Galaxy Tab A9 Plus holds Ultra at 6.20 ms of 6.25, at the
+edge, and the canopy drag takes it to about 6.9. The Galaxy S25's Ultra row is open. Its 30 Hz
+display owes two cycles a frame, so the modelled frame is 11.08 ms. That is over the wind's own
+6.25 ms figure, and it takes D-241's 499.8 ms Creek frame to about 510.9 ms, over it. The
+governor's step to 30 field steps a second gives about 505.3 ms, still over. The owner must choose
+one of three options. The first is that the class ceiling includes the wind's share. The second is
+that Ultra skips the field on a display that owes two cycles. The third is that the preset steps
+down there, which D-241 calls a failure. This record picks none. The requirement that the governor
+read the field's cost a frame rather than a cycle is recorded in M3-V16's plan block, with this
+case as its test.
 
 - The grid's size is not the cost knob. The pressure count and the field rate set the cost, and both
   halve it when they halve. A row that needs less should take fewer steps a second before it takes a
@@ -449,11 +470,15 @@ owner's ruling.
   the wind that grid, its cost is a read a cell a step. That is what this record measured.
 - The readers are measured on the grove. It is the only dressed plant scene the add-on draws on this
   tree. Creek's and the forest's readers, and the reflections, follow M3-V11 and M3-V12.
-- The two leaf forms wait on M3-V17. A leaf with its own speed needs the step that M3-V13 gives.
+- The two leaf forms are still uncompared, and the comparison has no owner. This record defers it to
+  M3-V17, while M3-V17's line takes "the form that M3-V14's comparison picks". The loop must be
+  broken: either the plan's V17 line names who runs the comparison, or this task does. A leaf with
+  its own speed needs the step that M3-V13 gives.
 - The spring tree sweep is covered by M3-V10's record, which measured branch poses with springs
   beside per-vertex wind. This record does not repeat it.
 - The flag and the water surface read the field through one texture. Their vertex read is not
-  measured. The plant material uses four of its six texture slots, so two are free for the field's
+  measured, and no task owns that measurement, though the plan asks this task to time it. The plant
+  material uses four of its six texture slots, so two are free for the field's
   two states and the branch poses. The water material uses three of six, so three are free for a
   flag or a ripple.
 - The device rows are measured on this Mac's Apple M3 Max, the iPhone 17, the Galaxy S24, the iPad
@@ -462,6 +487,6 @@ owner's ruling.
   steps and 60 cycles a second. The real cycles in the tables are that cycle, and the other pressure
   counts and field rates are the chain's.
 - A row's cost a frame follows the display's rate, because the field steps at a fixed rate: a 30 Hz
-  display carries two cycles in each frame and a 90 Hz display two thirds of one. M3-V16's governor
-  must therefore read the field's GPU time a frame, not a cycle, so a slow display's row steps down
-  when its frame goes over the budget. The S25's Ultra row is the case that proves it.
+  display carries two cycles in each frame and a 90 Hz display two thirds of one. The S25's open
+  Ultra row is the case that shows it. The requirement that the governor read the field's GPU time
+  a frame rather than a cycle is M3-V16's. Its plan block names that case as the test.
