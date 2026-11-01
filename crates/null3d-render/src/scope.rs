@@ -98,6 +98,8 @@ pub const FINAL_BLOOM: u32 = 42;
 pub const OUTPUT: u32 = 43;
 /// Draws the first step of the two-step pass with bloom.
 pub const OUTPUT_BLOOM: u32 = 44;
+/// Reduces the camera view's depth, for the next frame's fitted light clusters.
+pub const LIGHT_DEPTH: u32 = 45;
 
 /// A scope of `kind` for a step by its place, such as the fourth step of bloom's chain.
 pub fn of(kind: u32, index: u32) -> u32 {

@@ -120,6 +120,9 @@ pub enum PassRole {
     FeatureRows = 51,
     /// A step of the physical sky's tables.
     Sky = 52,
+    /// The camera view's depth reduction, which the next frame's light clustering fits its slices
+    /// to.
+    LightDepth = 53,
 }
 
 impl PassRole {
@@ -184,6 +187,7 @@ impl PassRole {
             Self::ExposureAdapt => "exposure adapt",
             Self::FeatureRows => "feature rows",
             Self::Sky => "sky",
+            Self::LightDepth => "light depth",
         }
     }
 
@@ -271,6 +275,7 @@ impl PassRole {
         Self::ExposureAdapt,
         Self::FeatureRows,
         Self::Sky,
+        Self::LightDepth,
     ];
 }
 

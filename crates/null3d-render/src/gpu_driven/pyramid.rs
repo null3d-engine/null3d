@@ -252,6 +252,10 @@ impl Pyramids {
         Ok(())
     }
 
+    /// Bytes that one frame may copy into its arena for a view's batches and its count of
+    /// occluders.
+    pub(super) const UPLOAD_BYTES: usize = MAX_BATCHES * BATCH_BYTES as usize + 4;
+
     /// Forgets every pyramid and the pipelines, so the next frames make them again, after the
     /// thread that draws replaced the GPU.
     pub(super) fn forget_gpu(&mut self) {

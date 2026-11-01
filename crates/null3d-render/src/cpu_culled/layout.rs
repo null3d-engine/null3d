@@ -1140,6 +1140,13 @@ impl Clusters {
             .filter(|(_, set)| set.current && !set.uploaded)
     }
 
+    /// The bytes that the next [`Clusters::upload`] copies into the arena.
+    pub(super) fn pending_bytes(&self, layout: &Layout, casters: &Layout) -> usize {
+        self.uploads(layout, casters)
+            .map(|(_, set)| set.clusters.order().len() * 4)
+            .sum()
+    }
+
     /// Writes the cluster order of each static batch whose clusters are new, or moved in the
     /// cluster texture. Each entry becomes the row's place in the resident texture, and the end
     /// of the last cluster stays [`NO_ROW`].

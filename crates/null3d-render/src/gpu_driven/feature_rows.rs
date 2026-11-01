@@ -51,6 +51,9 @@ pub(super) struct FeatureRows {
 }
 
 impl FeatureRows {
+    /// Bytes a frame may copy into its arena for the conversion: the camera's position.
+    pub(super) const UPLOAD_BYTES: usize = BLOCK_BYTES as usize;
+
     /// Records the conversion's pipeline when the frame first holds a feature-instance draw. It is
     /// one of the frame's first commands, so the thread that draws builds it before it replays the
     /// rest. Returns true when the frame created it.

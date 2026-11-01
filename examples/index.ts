@@ -162,8 +162,26 @@ function welcome(missing?: string): void {
 }
 
 /**
- * Runs the demo on a canvas that fills the panel, with a caption at its top left. The caption shows
- * the demo's title and summary, with a link to its code on the main branch, and starts folded.
+ * The demo's key help: one row for each of its keys or pointer actions, each key as a key cap,
+ * then what it does.
+ */
+function keyHelp(demo: Demo): HTMLElement | undefined {
+	if (!demo.controls?.length) return undefined;
+	const panel = element('dl');
+	panel.className = 'keys';
+	panel.setAttribute('aria-label', 'Keys');
+	for (const control of demo.controls) {
+		const caps = element('dt');
+		for (const key of control.keys) caps.append(element('kbd', key));
+		panel.append(caps, element('dd', control.does));
+	}
+	return panel;
+}
+
+/**
+ * Runs the demo on a canvas that fills the panel, with a caption at its top left and its key help
+ * beside it. The caption shows the demo's title and summary, with a link to its code on the main
+ * branch, and starts folded.
  */
 async function runDemo(demo: Demo): Promise<void> {
 	document.title = `${demo.title} · ${demo.scene}: null3D demos`;
@@ -194,14 +212,7 @@ async function runDemo(demo: Demo): Promise<void> {
 	path.setAttribute('stroke-linejoin', 'round');
 	svg.append(path);
 	chevron.append(svg);
-	title.append(h1);
-	// The demo's keys sit under its title, so a reader finds them without pressing at random.
-	if (demo.controls) {
-		const keys = element('span', demo.controls);
-		keys.className = 'controls';
-		title.append(keys);
-	}
-	title.append(chevron);
+	title.append(h1, chevron);
 	caption.append(title, element('p', demo.summary));
 	const code = element('a', 'View code', sourceUrl(demo));
 	code.target = '_blank';
@@ -210,7 +221,13 @@ async function runDemo(demo: Demo): Promise<void> {
 	links.className = 'quiet';
 	links.append(code);
 	caption.append(links);
-	stage.append(canvas, labels, caption);
+	// The demo's keys sit beside the caption, so a reader finds them without pressing at random.
+	const corner = element('div');
+	corner.className = 'corner';
+	corner.append(caption);
+	const keys = keyHelp(demo);
+	if (keys) corner.append(keys);
+	stage.append(canvas, labels, corner);
 	// A showcase scene's choices, such as its time of day, sit in a bar at the bottom of the panel.
 	const choices = demo.choices && !params.has('hold') ? element('div') : undefined;
 	if (choices) {
@@ -224,8 +241,12 @@ async function runDemo(demo: Demo): Promise<void> {
 		hud.hidden = true;
 		stage.append(hud);
 	}
+	// A sketch reads its switches from its own address, such as Skyway's `mood` and `storm`, so the
+	// page's switches go on to it.
+	const sketch = new URL(demo.sketch);
+	for (const [key, value] of params) if (key !== 'demo') sketch.searchParams.set(key, value);
 	try {
-		await startDemo({ canvas, demo, labels, choices, hud, preset });
+		await startDemo({ canvas, demo: { ...demo, sketch }, labels, choices, hud, preset });
 	} catch (error) {
 		const message = element('p', error instanceof Error ? error.message : String(error));
 		message.className = 'error';

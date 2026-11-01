@@ -331,6 +331,9 @@ impl FogVolumePass {
         }
     }
 
+    /// Bytes a frame may copy into its arena: the block.
+    pub(crate) const UPLOAD_BYTES: usize = std::mem::size_of::<Block>();
+
     /// Asks `pipelines` for the steps' pipelines, once.
     pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
         for (step, slot) in self.pipelines.iter_mut().enumerate() {

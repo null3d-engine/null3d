@@ -124,8 +124,8 @@ use crate::exposure::ExposureIds;
 use crate::final_pass::FinalIds;
 use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
-    CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
-    RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows,
+    CanvasOutput, FrameBuilder, FrameInput, HaltFigures, KeyCounts, MaterialStorage, MeshBuffers,
+    ParityLists, RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows,
     indices_as_bytes, joined_rows, settled, unbound_buffer_bytes,
 };
 use crate::frame_graph::{
@@ -134,7 +134,7 @@ use crate::frame_graph::{
 use crate::fullscreen::FullscreenIds;
 use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{LightGrid, LightGrids, LightLimits};
-use crate::materials::MATERIAL_TEXELS;
+use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshMoves, MeshStorage, Packing};
 use crate::motion::MotionIds;
 use crate::occlusion::Occluders;
@@ -144,8 +144,8 @@ use crate::physical_sky::{self, PhysicalSkyIds, PhysicalSkyPass};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::probe_grid;
 use crate::probes::{self, ProbeTextures};
-use crate::shadow_tiles::{self, ShadowTiles};
-use crate::shadows::{self, CascadeDepth, CasterPasses, ShadowFrame, ShadowUniform};
+use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
+use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
 use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
 use crate::ssr::SsrIds;
 use crate::subsurface::SubsurfaceIds;
@@ -158,7 +158,7 @@ use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices, write_row_values};
 use layout::{BatchSlot, Clusters, Drawn, Layout, RESIDENT, STREAMED};
 use lights::LightTextures;
-use opaque::{LitTextures, Opaque, PatchView, Shading, ViewUpload};
+use opaque::{LitTextures, OFFSETS_BYTES, Opaque, PatchView, Shading, ViewUpload};
 use skin::Skins;
 use transparent::Transparent;
 
@@ -582,6 +582,8 @@ pub struct CpuCulledRenderer {
     config: CpuCulledConfig,
     settings: SceneSettings,
     lists: ParityLists,
+    /// The upload bound that the frame just recorded used, for a later frame's retry.
+    frame_bound: usize,
     graph: FrameGraph,
     /// The scene's layout, which the camera views draw.
     layout: Layout,
@@ -732,6 +734,7 @@ impl CpuCulledRenderer {
             config,
             settings,
             lists: ParityLists::new(config.draw_list_words, config.draw_list_limit),
+            frame_bound: 0,
             // WebGL2 has no transient attachments: the backend discards what a pass does not store
             // with `invalidateFramebuffer` instead.
             graph: {
@@ -1468,6 +1471,70 @@ impl CpuCulledRenderer {
         Ok(())
     }
 
+    /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
+    /// uploaded yet, the material table, three.js's table of specular terms, the light grid, each
+    /// view's, each shadow cascade's and each shadow tile's frame uniform, draw records and
+    /// multi-draw arrays, the shadow settings block's parts, the final pass's settings,
+    /// the skinned objects' first joints after a change, and the cluster orders not uploaded yet.
+    fn upload_bound(&self) -> usize {
+        self.upload_bound_without_clusters()
+            + self.clusters.pending_bytes(&self.layout, &self.casters)
+    }
+
+    /// [`Self::upload_bound`] without the cluster orders.
+    fn upload_bound_without_clusters(&self) -> usize {
+        let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
+        // A rebuilt scene uploads each mesh's tree of cluster patches again, when the device
+        // draws many ranges in one call.
+        let patches = if self.config.multi_draw {
+            self.settings
+                .patches()
+                .iter()
+                .map(|(_, tree)| tree.indices().len() * 2 + 256)
+                .sum()
+        } else {
+            0
+        };
+        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2
+            + dfg::BYTES
+            + ao::BLANK_BYTES;
+        let per_view = |layout: &Layout| {
+            (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize
+                + layout.draws_slot_bytes as usize
+                + layout.draws.len() * 12
+        };
+        let views = self.settings.views().len();
+        let tiles = (self.settings.tile_settings().tiles as usize).min(MAX_TILES);
+        let cascades = (MAX_CASCADES + tiles) * per_view(&self.casters);
+        let outline = per_view(&self.outlined) + per_view(&self.scattering) + per_view(&self.tone);
+        let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
+        meshes
+            + patches
+            + materials
+            + self.lights.upload_room()
+            + views * per_view(&self.layout)
+            + Transparent::upload_bound(&self.sorted, views, self.config.multi_draw)
+            + Transparent::upload_bound(&self.decal_layout, 1, self.config.multi_draw)
+            + Transparent::upload_bound(&self.redraw_layout, 1, self.config.multi_draw)
+            + cascades
+            + outline
+            + shadows
+            + self.skins.upload_bound(self.settings.meshes())
+            + self.graph.upload_bound()
+            + BackgroundPass::UPLOAD_BYTES
+            + self
+                .particles
+                .upload_bound(self.settings.particles(), views)
+            + PhysicalSkyPass::UPLOAD_BYTES
+            + sizes::OBJECT_RANGE_BYTES as usize
+            + if self.layouts_moving {
+                crate::motion::BLOCK_BYTES as usize
+            } else {
+                0
+            }
+            + views * probes::LIST_BYTES as usize
+    }
+
     /// Records the creation of the material table, a data texture with one row of texels for each
     /// material it holds and one for each material's custom values, and three.js's table of
     /// specular terms in the columns after them, and of the shadows' settings block and comparison
@@ -1753,6 +1820,9 @@ impl CpuCulledRenderer {
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
+        // A failure before the bound is known leaves no bound to compare, so a later frame retries
+        // only on a changed scene.
+        self.frame_bound = 0;
         // A pick that waits declares the pick's passes for this frame. The request stays until a
         // frame records its read, and the passes stay declared for a few frames after it, while
         // its copy may still wait.
@@ -2003,6 +2073,8 @@ impl CpuCulledRenderer {
         }
         let rebuilt = self.layout.built_in == input.frame;
         arena.begin_frame()?;
+        let bound = self.upload_bound() + LinesPass::upload_bytes(&input.lines);
+        self.frame_bound = bound;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::MATERIALS, MATERIAL_TEXELS)?;
             ao::upload_blank(list, arena, ids::BLANK_AO)?;
@@ -3128,10 +3200,39 @@ impl FrameBuilder for CpuCulledRenderer {
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
         self.settings.set_still(self.lists.still());
-        let (mut list, mut arena) = self.lists.take(input.frame)?;
+        let forecast = self.upload_bound() + LinesPass::upload_bytes(&input.lines);
+        let active = crate::frame::active_sources(input);
+        let mut took = self.lists.take(input.frame);
+        if took.is_err()
+            && self
+                .lists
+                .can_retry(forecast, active, input.structure_changed)
+        {
+            self.reset_gpu();
+            took = self.lists.take(input.frame);
+        }
+        let (mut list, mut arena) = took?;
         let result = self.record_into(input, &mut list, &mut arena);
+        // A failed frame stores the forecast of the state it leaves, which is the state the next
+        // frame forecasts from.
+        let halted_forecast = if result.is_err() {
+            self.upload_bound() + LinesPass::upload_bytes(&input.lines)
+        } else {
+            forecast
+        };
         let marks = StillMarks::of(input, &self.settings, &self.graph, &self.pipelines);
-        self.lists.restore(input.frame, list, arena, marks, result)
+        self.lists.restore(
+            input.frame,
+            list,
+            arena,
+            marks,
+            result,
+            HaltFigures {
+                bound: self.frame_bound,
+                forecast: halted_forecast,
+                active,
+            },
+        )
     }
 
     fn still(&self) -> crate::still::Still {

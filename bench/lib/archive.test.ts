@@ -60,6 +60,15 @@ function null3dResult(busy: number, update: number) {
 				'render-worker': { busyMs: figures(0.2), phases: { replay: figures(0.2) } },
 			},
 		},
+		memory: {
+			ready: true,
+			wasmBytes: 8323072,
+			engineBytes: 8283750,
+			gpuTextureBytes: 157705830,
+			gpuBufferBytes: 5033165,
+			jsHeapBytes: 3565158,
+			totalBytes: 174587904,
+		},
 	};
 }
 
@@ -265,7 +274,13 @@ describe('archiveFolder', () => {
 		});
 		expect(runner?.counts).toEqual({ pass: 8, skip: 0, fail: 0 });
 		const page = runner?.pages?.find((p) => p.page === 'null3d-webgpu');
-		expect(page).toMatchObject({ n: 300000, presets: ['low'], runs: 2, ownWorkMs: 2 });
+		expect(page).toMatchObject({
+			n: 300000,
+			presets: ['low'],
+			runs: 2,
+			ownWorkMs: 2,
+			memory: { gpuTextureBytes: 157705830, totalBytes: 174587904 },
+		});
 		expect(page?.againstThree).toEqual({
 			wholeFrame: { page: 'threejs-webgpu', threeMs: 31, share: 0.5161 },
 			ownWork: { page: 'threejs-webgpu', threeMs: 17, share: 0.1176 },
@@ -281,6 +296,7 @@ describe('archiveFolder', () => {
 				{ name: 'compute 1', ms: 0.25 },
 				{ name: 'render 1', ms: 1.75 },
 			],
+			memory: { gpuBufferBytes: 5033165, jsHeapBytes: 3565158 },
 		});
 		expect(JSON.stringify(record)).not.toContain('captured frame');
 	});
