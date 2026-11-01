@@ -180,14 +180,18 @@ const WIND_GUST_SECONDS = 2;
 
 /**
  * Adds the wind add-on's field about the swarm, and returns the step that sets its base wind, sends
- * a gust, pushes the air where a body passes, samples it and places its box. The places and the
- * result are made once, here, so the step allocates nothing, as a page's own frame does not.
+ * a gust, pushes the air where a body passes, asks a job worker for the air there and places its
+ * box. The places and the result are made once, here, so the step allocates nothing beyond the
+ * task's own records, as a page's own frame does not.
  */
 export function createWindAir(context: SketchContext, camera: Camera): (t: number) => void {
 	const wind = createWind(context, { camera, box: WIND_BOX, grid: 64 });
 	const gustAt: [number, number] = [-S1_EXTENT, 0];
 	const pushAt: [number, number] = [0, 0];
-	const air: [number, number, number] = [0, 0, 0];
+	// One place, asked of the field's job worker in each frame: the same work that a page does when
+	// it moves its own objects with the air.
+	const place = new Float32Array(3);
+	const air = new Float32Array(3);
 	let nextGust = 0;
 	return (t) => {
 		if (t >= nextGust) {
@@ -197,7 +201,10 @@ export function createWindAir(context: SketchContext, camera: Camera): (t: numbe
 		pushAt[0] = Math.cos(t) * S1_EXTENT;
 		pushAt[1] = Math.sin(t) * S1_EXTENT;
 		wind.push(pushAt);
-		wind.sample(pushAt[0], 1, pushAt[1], air);
+		place[0] = pushAt[0];
+		place[1] = 1;
+		place[2] = pushAt[1];
+		wind.read(place, air);
 		wind.setBase(4, Math.sin(t * 0.1));
 		wind.update();
 	};

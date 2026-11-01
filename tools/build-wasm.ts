@@ -1,5 +1,5 @@
-// Builds the engine's two WebAssembly files and the build tools' modules (the shader compiler and
-// the asset tool's formats), then reports their sizes and
+// Builds the engine's two WebAssembly files and the modules of the tools and the add-ons (the
+// shader compiler, the asset tool's formats and the terrain builder), then reports their sizes and
 // the sizes of the engine's JavaScript in a production build of the engine test page. Run from
 // the repository root:
 //   bun tools/build-wasm.ts                 build everything, then print the size report
@@ -7,8 +7,8 @@
 //     [--base <ref>]                        commit, and fail on growth that no trailer explains
 //   bun tools/build-wasm.ts --sizes-only    build only what the size report measures, and write the
 //                                           sizes for a size check that builds this commit as its base
-//   bun tools/build-wasm.ts --prebuilt      measure the WebAssembly files and the build tools' modules
-//                                           that an earlier build made, such as CI's build job, instead
+//   bun tools/build-wasm.ts --prebuilt      measure the WebAssembly files and the modules that an
+//                                           earlier build made, such as CI's build job, instead
 //                                           of building them again; combines with --check-size
 //   bun tools/build-wasm.ts --check-size --prebuilt --part <i>/<n>
 //                                           build the engine test page, measure only part i of n of its
@@ -35,9 +35,10 @@
 // The threaded build uses atomics and shared memory, so it rebuilds the standard library with
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
 // wasm-bindgen command-line tool must match the crate version exactly, so the script downloads
-// that release into the build folder and verifies its checksum. The build tools' modules run in
-// Node and Bun, never in a page, so they have no size budget. Every mode that builds also builds the
-// shader modules when they are missing or out of date, because git does not keep them.
+// that release into the build folder and verifies its checksum. The tools' modules run in Node and
+// Bun, never in a page, and the terrain add-on's loads only when a page draws terrain, so none has
+// a size budget. Every mode that builds also builds the shader modules when they are missing or out
+// of date, because git does not keep them.
 //
 // The two WebAssembly files, the build tools' modules and the shader modules build at the same
 // time, so that the steps of one build that use a single core (the link, wasm-bindgen and
@@ -197,9 +198,10 @@ const WASM_BUDGET_BYTES = 600 * 1024;
 /** Where the size report builds the engine test page, apart from the build the browser tests serve. */
 const JS_BUILD_DIR = 'target/js-size';
 /**
- * The modules that build tools load, each from a crate of its own: the shader compiler, which the
- * Vite plugin runs, and the asset tool's formats, which the command-line tool runs. Each goes
- * where its tool loads it from.
+ * The modules that the build tools and the foundation add-ons load, each from a crate of its own:
+ * the shader compiler, which the Vite plugin runs; the asset tool's formats, which the
+ * command-line tool runs; and the terrain builder, which the terrain add-on runs on the engine's
+ * job workers. Each goes where its caller loads it from.
  */
 const TOOL_MODULES = [
 	{
@@ -212,6 +214,11 @@ const TOOL_MODULES = [
 		crate: 'null3d-assets-wasm',
 		folder: 'crates/null3d-assets-wasm',
 		path: fileURLToPath(ASSET_FORMATS_URL),
+	},
+	{
+		crate: 'null3d-terrain',
+		folder: 'crates/null3d-terrain',
+		path: join(root, 'packages/terrain/dist/terrain.wasm'),
 	},
 ] as const;
 
@@ -824,15 +831,14 @@ export function variantKey(
 	);
 }
 
-/** The key of the build tools' modules, from their crates' inputs and the same code, flags and versions. */
-export function toolsKey(shaders: string, assets: string, tools: ToolVersions): string {
+/** The key of the modules, from their crates' inputs and the same code, flags and versions. */
+export function toolsKey(inputs: readonly string[], tools: ToolVersions): string {
 	return digest(
 		[
 			`format=${ARTIFACT_FORMAT}`,
 			'kind=tools',
 			`code=${buildCodeHash(root)}`,
-			`shaders=${shaders}`,
-			`assets=${assets}`,
+			...inputs.map((input, index) => `input${index}=${input}`),
 			'rustflags=-Cstrip=symbols',
 			'target=wasm32-unknown-unknown',
 			'profile=release',
@@ -845,10 +851,9 @@ export function toolsKey(shaders: string, assets: string, tools: ToolVersions): 
 export function currentArtifactKeys(): string[] {
 	const tools = toolVersions(readFileSync(join(root, 'Cargo.lock'), 'utf8'));
 	const stamp = coreSourcesStamp(root);
-	const [shaders, assets] = toolInputs(root);
 	return [
 		...VARIANTS.map((variant) => variantKey(variant, stamp, false, tools)),
-		toolsKey(shaders, assets, tools),
+		toolsKey(toolInputs(root), tools),
 	];
 }
 
@@ -885,12 +890,12 @@ export function keepOnlyArtifacts(base: string, keep: ReadonlySet<string>): stri
 }
 
 /**
- * The input hashes of the two crates that the build tools' modules come from, in `TOOL_MODULES`
- * order. A crate is named by its folder, which `inputHash` reads, so a name without its `crates/`
- * step would throw here and fail every build before it could cache anything.
+ * The input hashes of the crates that the modules come from, in `TOOL_MODULES` order. A crate is
+ * named by its folder, which `inputHash` reads, so a name without its `crates/` step would throw
+ * here and fail every build before it could cache anything.
  */
-export function toolInputs(root: string): [string, string] {
-	return [inputHash(root, TOOL_MODULES[0].folder), inputHash(root, TOOL_MODULES[1].folder)];
+export function toolInputs(root: string): string[] {
+	return TOOL_MODULES.map(({ folder }) => inputHash(root, folder));
 }
 
 /**
@@ -1059,8 +1064,8 @@ async function buildVariant(
 }
 
 /**
- * Builds the build tools' modules. Each takes and gives its data through its memory, so it needs
- * no JavaScript glue. The build drops the function names and skips wasm-opt, which on the shader
+ * Builds the modules of the tools and the add-ons. Each takes and gives its data through its
+ * memory, so it needs no JavaScript glue. The build drops the function names and skips wasm-opt, which on the shader
  * compiler takes longer than the whole build, saves almost nothing after Brotli and makes compiles
  * no faster. It copies the modules of an earlier build of the same inputs from the cache, when
  * there is one. Its lines go to `log`, as buildVariant's do.
@@ -1071,12 +1076,12 @@ async function buildToolModules(
 	noCache: boolean,
 ): Promise<void> {
 	const names = TOOL_MODULES.map(({ crate }) => `${crate}.wasm`);
-	const [shaders, assets] = toolInputs(root);
-	const key = toolsKey(shaders, assets, tools);
+	const inputs = toolInputs(root);
+	const key = toolsKey(inputs, tools);
 	const cached = noCache ? null : readArtifacts(ARTIFACT_CACHE_BASE, key, names);
 	if (cached) {
 		log.say(
-			"the shader compiler and the asset tool's formats are unchanged, copying them from the cache",
+			"the shader compiler, the asset tool's formats and the terrain builder are unchanged, copying them from the cache",
 		);
 		// The entry is in use now, so pruning keeps it while this build copies from it.
 		touchCacheEntry(cached);
@@ -1086,10 +1091,11 @@ async function buildToolModules(
 		return;
 	}
 	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
-	log.say("building the shader compiler and the asset tool's formats");
-	// Each module builds in a cargo call of its own. One call over both merges the features of the
-	// dependencies they share, so each module's bytes would follow what else the call builds: with
-	// the shader compiler beside it, the asset module's `half` and `libm` gained features.
+	log.say("building the shader compiler, the asset tool's formats and the terrain builder");
+	// Each module builds in a cargo call of its own. One call over every module merges the features
+	// of the dependencies they share, so each module's bytes would follow what else the call
+	// builds: with the shader compiler beside it, the asset module's `half` and `libm` gained
+	// features.
 	for (const { crate } of TOOL_MODULES)
 		await log.cargo(
 			['build', '-p', crate, '--release', '--target', 'wasm32-unknown-unknown'],
@@ -1106,8 +1112,8 @@ async function buildToolModules(
 	// The tools' crates are hashed before cargo builds them, so an edit during the build means these
 	// modules are not what the key names (see buildVariant, which takes the same care).
 	if (!noCache) {
-		const [nowShaders, nowAssets] = toolInputs(root);
-		if (nowShaders === shaders && nowAssets === assets)
+		const now = toolInputs(root);
+		if (now.length === inputs.length && now.every((input, index) => input === inputs[index]))
 			storeArtifacts(
 				log,
 				key,
@@ -1534,6 +1540,14 @@ async function main(): Promise<void> {
 		}));
 		if (!options.sizesOnly)
 			builds.push({ name: 'tools', work: (log) => buildToolModules(log, tools, noCache) });
+		// The wind add-on's own WebAssembly, which its task runs in the job workers, goes into the
+		// add-on's package beside the code that loads it. A size check reads files that exist, so it
+		// does not build this one.
+		if (!options.sizesOnly)
+			builds.push({
+				name: 'wind',
+				work: (log) => log.run(process.execPath, [join(root, 'tools/build-wind-wasm.ts')]),
+			});
 		// No Rust build reads a shader module, so the modules build beside them, in a process of their
 		// own, whose memory and cores the builds share.
 		if (modules)
@@ -1618,7 +1632,7 @@ async function main(): Promise<void> {
 		console.log(`\nwrote ${SIZE_RECORD}`);
 	}
 	if (options.sizesOnly) return;
-	console.log('\nthe modules that only build tools load (no budget)');
+	console.log('\nthe modules that the tools and the add-ons load (no budget)');
 	for (const { path } of TOOL_MODULES) printSize(basename(path), measure(readFileSync(path)));
 
 	const problems = Object.entries(sizes)

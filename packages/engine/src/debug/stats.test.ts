@@ -486,7 +486,7 @@ describe('statsText', () => {
 			'main  4.00 ms',
 			'gpu 3.25 ms per frame',
 			'draw calls 120',
-			'triangles 2345.7 k  objects 15.00 M',
+			'triangles 2.35 M  objects 15.00 M',
 			'memory  wasm n/a  js heap n/a',
 			'gpu memory  textures n/a  buffers n/a',
 			'page memory measuring',

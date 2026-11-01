@@ -61,6 +61,13 @@ TEXTURE_FORMATS[G.FORMAT_R16_FLOAT] = 'r16float';
 /** The bytes that each row of texels in a buffer copy must be a multiple of. */
 const ROW_ALIGNMENT = 256;
 
+/**
+ * Bits of the scale draw's instance that hold the texels across the destination: a light's image
+ * takes at most 512, so they fit in ten. The source's layer sits above them. The mipmap shader's
+ * scale pipeline reads both.
+ */
+const SCALE_SIZE_BITS = 10;
+
 const VIEW_DIMENSIONS: (GPUTextureViewDimension | undefined)[] = [];
 VIEW_DIMENSIONS[G.VIEW_2D] = '2d';
 VIEW_DIMENSIONS[G.VIEW_2D_ARRAY] = '2d-array';
@@ -545,22 +552,74 @@ export class WebGPUBackend {
 	 * draws into its level of the layer, and reads the level before it through a view of every
 	 * layer, as compatibility mode binds whole arrays only. The views, bind groups and pass
 	 * descriptors stay with the texture, so a render target whose levels a frame makes in every
-	 * frame makes none of them again.
+	 * frame makes none of them again. `levels` holds how many levels the image needs, or 0 for the
+	 * texture's own count.
 	 */
-	private generateMipmaps(id: number, layer: number): void {
+	private generateMipmaps(id: number, layer: number, levels = 0): void {
 		const texture = this.need(this.textures, id, 'texture');
 		const pipeline = this.pipelines.mipmaps(texture.format);
 		let chain = this.mipChains[id];
 		if (!chain || chain.layer !== layer || chain.pipeline !== pipeline)
 			chain = this.mipChains[id] = this.mipChain(texture, pipeline, layer);
 		const encoder = this.commandEncoder();
-		for (let level = 1; level < texture.mipLevelCount; level++) {
+		const count = levels === 0 ? texture.mipLevelCount : Math.min(levels, texture.mipLevelCount);
+		for (let level = 1; level < count; level++) {
 			const pass = encoder.beginRenderPass(chain.passes[level - 1] as GPURenderPassDescriptor);
 			pass.setPipeline(pipeline);
 			pass.setBindGroup(0, chain.groups[level - 1] as GPUBindGroup);
 			pass.draw(3, 1, 0, layer);
 			pass.end();
 		}
+	}
+
+	/**
+	 * Draws one layer of a source texture into the first texels of one layer of a light's image,
+	 * at a size of its own, then makes that layer's mip levels: a spot light's picture that a
+	 * sketch set as a texture. The image's corner is the smallest `size` by `size` texels of the
+	 * layer, which the light tables' shaders read, so a source larger than the corner is reduced.
+	 * The scale pipeline takes the image's size and the source's layer in its first instance.
+	 */
+	private copyIntoImage(words: Uint32Array, a: number): void {
+		const sourceId = words[a] as number;
+		const sourceLayer = words[a + 1] as number;
+		const destId = words[a + 2] as number;
+		const destLayer = words[a + 3] as number;
+		const size = words[a + 4] as number;
+		const levels = words[a + 5] as number;
+		const source = this.need(this.textures, sourceId, 'texture');
+		const dest = this.need(this.textures, destId, 'texture');
+		const pipeline = this.pipelines.mipScale(dest.format);
+		this.mipSampler ??= this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+		const sourceView = source.createView({
+			dimension: '2d-array',
+			baseMipLevel: 0,
+			mipLevelCount: 1,
+			usage: G.TEXTURE_USAGE_TEXTURE_BINDING,
+		});
+		const group = this.device.createBindGroup({
+			layout: pipeline.getBindGroupLayout(0),
+			entries: [
+				{ binding: 0, resource: sourceView },
+				{ binding: 1, resource: this.mipSampler },
+			],
+		});
+		const target = dest.createView({
+			dimension: '2d',
+			baseMipLevel: 0,
+			mipLevelCount: 1,
+			baseArrayLayer: destLayer,
+			arrayLayerCount: 1,
+			usage: G.TEXTURE_USAGE_RENDER_ATTACHMENT,
+		});
+		const pass = this.commandEncoder().beginRenderPass({
+			colorAttachments: [{ view: target, loadOp: 'clear', storeOp: 'store' }],
+		});
+		pass.setPipeline(pipeline);
+		pass.setBindGroup(0, group);
+		pass.setScissorRect(0, 0, size, size);
+		pass.draw(3, 1, 0, size | (sourceLayer << SCALE_SIZE_BITS));
+		pass.end();
+		this.generateMipmaps(destId, destLayer, levels);
 	}
 
 	/** What making the levels of one layer of a texture with `pipeline` draws with, level by level. */
@@ -1163,6 +1222,9 @@ export class WebGPUBackend {
 					break;
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);
+					break;
+				case G.OP_COPY_INTO_IMAGE:
+					this.copyIntoImage(words, a);
 					break;
 				case G.OP_COPY_TEXTURE_TO_TEXTURE:
 					this.copyTexture(words, a);

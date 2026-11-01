@@ -23,6 +23,7 @@ describe('readRunOptions', () => {
 			antialias: null,
 			maxPixelRatio: null,
 			governor: true,
+			renderScale: null,
 		});
 		expect(read('?hold&n=1000&seconds=2.5&shadows=3&far=1')).toEqual({
 			hold: HOLD_TIME,
@@ -41,6 +42,7 @@ describe('readRunOptions', () => {
 			antialias: null,
 			maxPixelRatio: null,
 			governor: true,
+			renderScale: null,
 		});
 		expect(read('?keep&n=500')).toMatchObject({ demo: false, keep: true, count: 500 });
 		expect(read('?shadowCascades=2&shadowMapSize=1024&shadowFilter=5')).toMatchObject({
@@ -63,6 +65,7 @@ describe('readRunOptions', () => {
 		expect(read('?hold=0').hold).toBe(0);
 		expect(read('?demo').demo).toBe(true);
 		expect(read('?governor=off').governor).toBe(false);
+		expect(read('?renderScale=0.5').renderScale).toBe(0.5);
 	});
 
 	test('takes only off for the governor', () => {
@@ -98,6 +101,9 @@ describe('readRunOptions', () => {
 			'shadowCascades=0',
 			'maxPixelRatio=0.25',
 			'maxPixelRatio=x',
+			'renderScale=0.2',
+			'renderScale=1.5',
+			'renderScale=x',
 		]) {
 			expect(() => read(query)).toThrow(/is not valid: use/);
 		}

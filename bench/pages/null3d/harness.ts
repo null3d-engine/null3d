@@ -200,6 +200,8 @@ export function runNull3dPage(
 		if (options.shadowCascadeBlend !== null)
 			sketchUrl.searchParams.set('shadowCascadeBlend', String(options.shadowCascadeBlend));
 		if (!options.governor) sketchUrl.searchParams.set('governor', 'off');
+		if (options.renderScale !== null)
+			sketchUrl.searchParams.set('renderScale', String(options.renderScale));
 		// A scene with a playable demo, such as S5, reads `demo` to take the user's input.
 		if (options.demo) sketchUrl.searchParams.set('demo', '');
 		// A scene that loads in stages, such as S6, loads everything before its held frame.

@@ -127,10 +127,15 @@ describe('the pushes ring', () => {
 		expect(ring.slots[GUST_SLOT]?.strength).toBe(7);
 	});
 
-	test('an empty ring turns nothing', () => {
-		const ring = createPushRing();
+	test('an empty ring turns nothing, and a filled one turns the air', () => {
 		const state = still();
-		expect(at(state, 3, 4, 0, 0, ring.slots)).toEqual(at(state, 3, 4, 0, 0, []));
+		const ring = createPushRing();
+		const quiet = at(state, 3, 4, 0, 0, ring.slots);
+		expect(quiet).toEqual(at(state, 3, 4, 0, 0, []));
+		// The ring is what a field reads: a push at the place turns the air there, so a field that
+		// ignored its slots could not give this answer.
+		ring.add(0, 0, 5, 0, false);
+		expect(at(state, 3, 4, 0, 0, ring.slots)).not.toEqual(quiet);
 	});
 });
 

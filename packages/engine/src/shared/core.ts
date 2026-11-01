@@ -606,6 +606,8 @@ export interface CoreGlue extends CoreErrors {
 	setProbeSize(size: number): number;
 	/** 1 while a reflection probe waits for its first capture, and 0 otherwise. */
 	probesWaiting(): number;
+	/** 1 while a light's picture waits for its texture's texels to be copied, and 0 otherwise. */
+	lightImagesWaiting(): number;
 	/**
 	 * Returns the image id under which TypeScript sends the generator that runs reflection probes'
 	 * filters, once.
@@ -795,10 +797,17 @@ export interface CoreGlue extends CoreErrors {
 	areaLightTables(): number;
 	/** Marks the area lights' tables as written, so frames light with area lights. */
 	finishAreaLightTables(): number;
-	/** Makes room for a light's image; the address of its half floats, or 0. */
-	lightImage(light: number): number;
+	/**
+	 * Makes room for a light's image of `size` texels a side; the address of its half floats, or 0.
+	 */
+	lightImage(light: number, size: number): number;
 	/** Marks a light's image as written, so frames show it. */
 	finishLightImage(light: number): number;
+	/**
+	 * Gives a light an image of `size` texels a side whose texels come from a texture, which a
+	 * frame copies into the image once the texture's texels are on the GPU.
+	 */
+	setLightMapTexture(light: number, texture: number, size: number): number;
 	/** Takes a light's image away. */
 	removeLightImage(light: number): number;
 	/** Draws the physical sky from its tables while `on`, else the analytic sky in its place. */
@@ -892,6 +901,11 @@ export interface CoreGlue extends CoreErrors {
 	 * steps of their march, from the next frame on: a size of 0 draws none.
 	 */
 	setSsrQuality(thousandths: number, steps: number): number;
+	/**
+	 * The rays that each texel of screen-space bounce light casts, from the next frame on: 0 draws
+	 * none.
+	 */
+	setBounceRays(rays: number): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
 	/**
@@ -948,6 +962,19 @@ export interface CoreGlue extends CoreErrors {
 	 * that they count from, and marks them.
 	 */
 	shiftParticleRecords(id: number, from: number, to: number, seconds: number): number;
+	/**
+	 * Makes room for a particle system's emitter block of `floats` numbers and returns its
+	 * address, or 0 for no such system or when the memory cannot grow.
+	 */
+	particleEmitterBlock(id: number, floats: number): number;
+	/** Reads an emitter's settings from its block and starts its births and its time base again. */
+	configureParticleEmitter(id: number): number;
+	/** The address of a system's sub-emitter inverse world matrices, 16 numbers each, or 0. */
+	particleSubMatrices(id: number): number;
+	/** Emits a particle system's frame, fires its due sub-emitters, and moves its time base. */
+	emitParticleFrame(id: number): number;
+	/** Emits `count` particles of a system at once, at the place and velocity in its block. */
+	burstParticles(id: number, count: number): number;
 	/** Lets soft particles fade near the surfaces behind them, or draws them with hard edges. */
 	setSoftParticles(on: boolean): number;
 	/**
@@ -991,6 +1018,11 @@ export interface CoreGlue extends CoreErrors {
 	setSoftwareOcclusion(on: boolean): number;
 	/** Lets materials with parallax draw it, or draws them with their displacement alone. */
 	setParallax(on: boolean): number;
+	/**
+	 * Draws the blended surfaces in the camera's moment transparency layer from the next frame on,
+	 * as the quality preset's `momentTransparency` says.
+	 */
+	setMomentTransparency(on: boolean): number;
 	/**
 	 * Sets the pixels that software occlusion culling's buffer holds about from the next frame
 	 * on, or 0 for the core's default, where the path culls on the CPU.
@@ -1392,6 +1424,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'captureReflectionProbe',
 	'setProbeSize',
 	'probesWaiting',
+	'lightImagesWaiting',
 	'probeGenerator',
 	'setTextureData',
 	'setTextureRegion',
@@ -1424,6 +1457,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'finishAreaLightTables',
 	'lightImage',
 	'finishLightImage',
+	'setLightMapTexture',
 	'removeLightImage',
 	'setPhysicalSky',
 	'removeScenePass',
@@ -1458,6 +1492,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setSsr',
 	'readsLastFrame',
 	'setSsrQuality',
+	'setBounceRays',
 	'setAutoExposure',
 	'setExposureMeter',
 	'createParticles',
@@ -1469,6 +1504,11 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'particleRecordBlock',
 	'writeParticleRecords',
 	'shiftParticleRecords',
+	'particleEmitterBlock',
+	'configureParticleEmitter',
+	'particleSubMatrices',
+	'emitParticleFrame',
+	'burstParticles',
 	'setSoftParticles',
 	'createVertexDraw',
 	'destroyVertexDraw',
@@ -1482,6 +1522,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setFeatureInstanceReady',
 	'setSoftwareOcclusion',
 	'setParallax',
+	'setMomentTransparency',
 	'setOcclusionBuffer',
 	'setLut',
 	'setGrade',

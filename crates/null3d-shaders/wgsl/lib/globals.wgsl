@@ -6,6 +6,11 @@
 // The data every render pipeline shares: per-frame values the core writes once a frame, and the
 // material table that fragment shaders read by material id.
 
+/// The directional lights after the main one that one frame can light a surface with. The frame
+/// keeps their directions and colors in this many slots, and the sun color's w says how many are
+/// set.
+const FILL_LIGHT_SLOTS: u32 = 3u;
+
 /// Per-frame values: the camera, the lights, the output settings and the fog. Colors are linear and
 /// include the intensity. Positions are relative to the camera.
 struct Frame {
@@ -17,7 +22,14 @@ struct Frame {
     camera_position: vec4f,
     /// The direction the sun's light travels, in world space.
     sun_direction: vec4f,
+    /// The sun's color, and in w the number of fill directional lights that light the frame.
     sun_color: vec4f,
+    /// The directions the fill directional lights travel, in world space, one for each slot: the
+    /// lights after the one that casts the shadows.
+    fill_dir: array<vec4f, FILL_LIGHT_SLOTS>,
+    /// The fill directional lights' colors, which include their intensities and the exposure, one
+    /// for each slot.
+    fill_col: array<vec4f, FILL_LIGHT_SLOTS>,
     ambient: vec4f,
     /// The exposure and the tone mapping, which fragment shaders apply themselves on the 8-bit
     /// path.
@@ -104,6 +116,9 @@ struct Frame {
     /// orthographic one. A masked custom material's caster reads it for the direction toward the
     /// camera.
     camera_eye: vec4f,
+    /// Screen-space bounce light's strength, 0 when the view draws none, and spares. The light
+    /// itself reaches the opaque pass in the screen texture's second layer (see null3d::gtao).
+    bounce: vec4f,
 }
 
 /// The clip position of `relative_position` through `view_proj`, with the frame's sub-pixel jitter

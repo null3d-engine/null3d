@@ -64,6 +64,11 @@ export interface PackageBuild {
 	 */
 	readonly required: readonly string[];
 	/**
+	 * The WebAssembly files that the package's build writes, as paths within the package folder. An
+	 * add-on's task loads them from its own folder, and the pack and the CDN build carry them.
+	 */
+	readonly wasm?: readonly string[];
+	/**
 	 * Entry points in `src/` that only the repository imports, through the source condition, such
 	 * as the test pages' internal API. The build leaves their built files out of `lib/`, and the
 	 * tarball check fails if it holds one.
@@ -123,12 +128,14 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		docs: false,
 		required: ['THIRD-PARTY-NOTICES.txt'],
 	},
-	// The surface function lives in a .wgsl file, which the pack compiles into a module of its own.
+	// The surface function lives in a .wgsl file, which the pack compiles into a module of its own,
+	// and the selection and block build in a WebAssembly module that the pack ships beside `lib`.
 	terrain: {
 		compile: true,
 		shaders: false,
 		docs: false,
-		required: [],
+		required: ['dist/terrain.wasm'],
+		repositoryOnly: ['reference-builder.ts', 'quadtree.ts', 'chunk-vertices.ts'],
 	},
 	vegetation: {
 		compile: true,
@@ -158,13 +165,14 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		docs: false,
 		required: [],
 	},
-	// Its analytic field and grid WGSL compile into modules of their own, and the sampling file
-	// ships as text, which a reader copies.
+	// Its analytic field and grid WGSL compile into modules of their own, the sampling file ships
+	// as text, and its field's WebAssembly goes into the package's `dist` for its task to run.
 	wind: {
 		compile: true,
 		shaders: false,
 		docs: false,
 		required: ['shaders/field.wgsl'],
+		wasm: ['dist/wind.wasm'],
 	},
 	cli: {
 		compile: false,
