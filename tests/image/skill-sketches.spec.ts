@@ -18,10 +18,9 @@ test.describe.configure({ mode: 'parallel' });
 const HOLD_SECONDS = 1;
 /**
  * How long a page may take to publish its frame. A scene of thousands of objects takes several
- * times longer on CI's software GPU while other tests share its cores, and the sky's volumetric
- * tier draws on every page that shows a sky.
+ * times longer on CI's software GPU while other tests share its cores.
  */
-const TIMEOUT_MS = 120_000;
+const TIMEOUT_MS = 60_000;
 /** Time to open each page, besides the time its frame may take. */
 const LOAD_MS = 10_000;
 
