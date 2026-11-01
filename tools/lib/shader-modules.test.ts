@@ -69,11 +69,13 @@ function repository(): string {
 		'Cargo.toml': '[workspace]\n',
 		'Cargo.lock': '',
 		'rust-toolchain.toml': '',
-		'crates/null3d-shaders/Cargo.toml': '[package]\nname = "null3d-shaders"\n\n[dependencies]\ngpu = { path = "../null3d-gpu" }\n',
+		'crates/null3d-shaders/Cargo.toml':
+			'[package]\nname = "null3d-shaders"\n\n[dependencies]\ngpu = { path = "../null3d-gpu" }\n',
 		'crates/null3d-shaders/src/lib.rs': '',
 		'crates/null3d-shaders/wgsl/lit.wgsl': 'fn main() {}\n',
 		'crates/null3d-shaders/tests/cli.rs': '',
-		'crates/null3d-gpu/Cargo.toml': '[package]\nname = "null3d-gpu"\n\n[dependencies]\ncore = { path = "../null3d-core" }\n',
+		'crates/null3d-gpu/Cargo.toml':
+			'[package]\nname = "null3d-gpu"\n\n[dependencies]\ncore = { path = "../null3d-core" }\n',
 		'crates/null3d-gpu/src/lib.rs': '',
 		'crates/null3d-core/Cargo.toml': '[package]\nname = "null3d-core"\n',
 		'crates/unrelated/Cargo.toml': '[package]\nname = "unrelated"\n',

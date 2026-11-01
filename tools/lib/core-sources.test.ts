@@ -18,7 +18,8 @@ function repository(): string {
 		'Cargo.toml': '[workspace]\n',
 		'Cargo.lock': '',
 		'rust-toolchain.toml': '',
-		'crates/null3d-wasm/Cargo.toml': '[package]\nname = "null3d-wasm"\n\n[dependencies]\ncore = { path = "../null3d-core" }\n',
+		'crates/null3d-wasm/Cargo.toml':
+			'[package]\nname = "null3d-wasm"\n\n[dependencies]\ncore = { path = "../null3d-core" }\n',
 		'crates/null3d-wasm/src/lib.rs': '',
 		'crates/null3d-core/Cargo.toml': '[package]\nname = "null3d-core"\n',
 		'crates/null3d-core/src/lib.rs': '',
