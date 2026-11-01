@@ -3396,6 +3396,12 @@ impl FrameGraph {
                         }
                     };
                 }
+                // A view that shares the canvas draws after the screen's steps, which split its prepass
+                // from its opaque pass too. WebGPU's prepass pipelines name a color, so it takes a
+                // stand-in color of its own.
+                if !camera && canvas && self.gpu_culling && self.screen_target().is_some() {
+                    prepass = prepass.creates(format!("{}Color", names.prepass), color);
+                }
                 prepass = reads_targets(prepass, views, &named, index);
                 let prepass = if canvas {
                     prepass
@@ -10502,6 +10508,42 @@ mod tests {
             assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
             assert!(frames.graph().find_pass("AoDepth").is_none());
             assert_eq!(frames.ao_texture(), None);
+        }
+    }
+
+    #[test]
+    fn a_view_on_the_canvas_gives_its_split_prepass_a_stand_in_color_where_the_gpu_culls() {
+        let lens = ([1.0; 16], [1.0; 16]);
+        let inset = View::canvas(CanvasRect {
+            x: 0.5,
+            y: 0.0,
+            width: 0.5,
+            height: 1.0,
+        });
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, true);
+        frames.sync(&[View::default(), inset]);
+        let mut list = DrawList::with_capacity(65536);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        frames.set_ao(Some(Ao::default()), None, Some(lens), 0.5);
+        frames.set_bounce(Some(BounceFrame {
+            bounce: crate::bounce::Bounce::default(),
+            projection: (Mat4::default(), Mat4::default()),
+        }));
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
+        frames.sync(&[View::default(), inset]);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        let plan = frames.graph().plan().unwrap();
+        for &(index, pass) in &frames.prepasses {
+            let step = plan.step_of(pass).unwrap();
+            let attachments = plan.attachments(&plan.steps()[step]);
+            assert!(
+                attachments.iter().any(|a| !a.depth),
+                "the prepass of view {index} draws with a color attached"
+            );
         }
     }
 
