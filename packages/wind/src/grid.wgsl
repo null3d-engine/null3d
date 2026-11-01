@@ -235,10 +235,15 @@ fn wind_advect(
 ) -> WindState {
     let cell = box.z / f32(size.x);
     let world = vec2f(box.x, box.y) + (vec2f(at) + 0.5) * cell;
-    let pullTo = wind_analytic(
-        air, box.w, slots[0], slots[1], slots[2], slots[3],
-        vec3f(world.x, WIND_FULL_HEIGHT, world.y),
-    );
+    let place = vec3f(world.x, WIND_FULL_HEIGHT, world.y);
+    // The box's edge takes the steady field, which a reader past the box works out at the same
+    // height, so the air is continuous across the edge. The pushes and the gust act inside the box:
+    // the cell beside the edge carries advected air, which lags them.
+    if (at.x == 0 || at.y == 0 || at.x == i32(size.x) - 1 || at.y == i32(size.y) - 1) {
+        let steady = wind_steady(air, place);
+        return WindState(steady.xz, 0.0, 1);
+    }
+    let pullTo = wind_analytic(air, box.w, slots[0], slots[1], slots[2], slots[3], place);
     // The advection: the air here comes from where the velocity a step back points.
     let source = (world - state.v * dt - vec2f(box.x, box.y)) / cell - vec2f(0.5);
     let base = vec2i(floor(source));
@@ -262,11 +267,6 @@ fn wind_advect(
     let magnitude = max(length(gradient), 1e-6);
     let n = gradient / magnitude;
     v += vec2f(n.y, -n.x) * WIND_VORTICITY * cell * curl * dt;
-    // The box's edge takes the analytic air exactly, so the far field and the grid meet there. A
-    // cell beside the edge carries advected air, which lags a push, so beside a push the two differ.
-    if (at.x == 0 || at.y == 0 || at.x == i32(size.x) - 1 || at.y == i32(size.y) - 1) {
-        v = pullTo.xz;
-    }
     return WindState(v, 0.0, 1);
 }
 
@@ -287,6 +287,11 @@ fn wind_pressure(
 
 /// The last stage: the air loses the pressure's slope, and the cycle starts again.
 fn wind_project(box: vec4f, dt: f32, at: vec2i, size: vec2u, state: WindState) -> WindState {
+    // The edge keeps the steady field that the advection set, so the slope there would pull it away
+    // from the far field that a reader works out just past the box.
+    if (at.x == 0 || at.y == 0 || at.x == i32(size.x) - 1 || at.y == i32(size.y) - 1) {
+        return WindState(state.v, state.pressure, 0);
+    }
     let cell = box.z / f32(size.x);
     let left = wind_state(at - vec2i(1, 0), size).pressure;
     let right = wind_state(at + vec2i(1, 0), size).pressure;

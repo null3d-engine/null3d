@@ -83,16 +83,15 @@ export function value3(px: number, py: number, pz: number): number {
 /**
  * One slot of the ring: a push or a gust, each of which turns the air about a center. A push turns
  * about the place it names and fades over its life. A gust turns as a wave about a center that
- * travels along the heading from that place, for as long as the wave's reach holds it. A gust's
- * birth time is stored negative and a second late, so the sign of `born` tells the two apart and a
- * gust sent at time zero cannot read as a push.
+ * travels along the heading from that place, for as long as the wave's reach holds it. The slot's
+ * place in the ring tells the two apart: the gust keeps the last slot, after the pushes.
  */
 export interface Push {
 	readonly x: number;
 	readonly z: number;
 	/** How hard the body shoved the air: a positive number turns it one way, a negative the other. */
 	readonly strength: number;
-	/** A push's sketch time in seconds, or a gust's as `-(time + 1)`. */
+	/** The sketch time in seconds when the page sent the push or the gust. */
 	readonly born: number;
 }
 
