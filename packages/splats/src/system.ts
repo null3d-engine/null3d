@@ -4,9 +4,9 @@
 //
 // The cloud is cut into chunks. Each chunk keeps its splats in importance order, so a prefix of the
 // list is a coarser level of it. A job worker chooses a prefix for each chunk by its distance and by
-// the preset's budget, and the sketch packs the chosen splats into the batch. The engine then culls
-// and sorts the rows back to front in the transparent pass, which is what lets the splats mix with
-// each other and with the scene's opaque meshes.
+// the preset's budget, in the add-on's Rust module, and the core packs the chosen splats into the
+// batch in its own memory. The engine then culls and sorts the rows back to front in the transparent
+// pass, which is what lets the splats mix with each other and with the scene's opaque meshes.
 //
 // A file that a page downloads whole is cut as the bytes arrive. A splat stream names its chunks in
 // a small index, so the cloud starts at once and the loader fetches only the chunks that the
@@ -21,13 +21,13 @@ import {
 	type SketchContext,
 	type Vec3Like,
 } from '@null3d/engine';
-import { chunkSplats, type SplatChunk } from './chunks';
+import { chunkSplats } from './chunks';
 import { splatsFeature } from './feature';
 import { checkSplats, type SplatData, splatsError } from './format';
 // The module registers the glTF extension as the add-on loads.
 import './gltf';
-import { type PrefixView, packRows, type SplatRows } from './pack';
 import { SplatSelector } from './select';
+import type { SelectAnswer } from './select-task';
 import splatShader from './splats.wgsl';
 import {
 	firstViewCount,
@@ -153,12 +153,15 @@ export interface Splats {
 	destroy(): void;
 }
 
-/** One slot of the selection: a chunk's bounds, its count, and the data that has arrived. */
+/**
+ * One slot of the selection: a chunk's bounds, its count, and whether its rows have arrived. The
+ * rows live in the core once they arrive, so the slot keeps no reference to them.
+ */
 interface ChunkSlot {
 	readonly center: readonly [number, number, number];
 	readonly radius: number;
 	readonly count: number;
-	data: SplatChunk | undefined;
+	arrived: boolean;
 }
 
 /** What a page downloads: a cloud's whole file, or a stream's index. */
@@ -204,7 +207,7 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 				center: chunk.center,
 				radius: chunk.radius,
 				count: chunk.count,
-				data: undefined,
+				arrived: false,
 			});
 	// The size of each chunk's file, which decides the chunks that the first view waits for.
 	const chunkBytes = stream
@@ -250,6 +253,11 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 	});
 	// A splat's card reaches past its center, so its rows need a sphere that holds it.
 	draw.batch.setBoundingRadius(4);
+	if (!draw.batch.colors)
+		throw splatsError(2111, 'the splats batch has no row colors, which its draw needs.');
+	// The writer stores each chunk in the core's memory and packs the chosen prefixes into the
+	// batch's rows there, so a frame copies no rows through the sketch's heap.
+	const writer = await draw.batch.createChunkRows();
 	// A new batch draws every row, whose colors and places are still zero: draw none until the
 	// first selection fills them.
 	draw.setCount(0);
@@ -275,27 +283,9 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 	let loadedChunks = 0;
 	let reported: Error | undefined;
 
-	/** The prefix views of each slot, which change only when its chosen count does. */
-	const prefixes: (PrefixView | undefined)[] = [];
-	/** The batch rows of a pack, which point at the batch's own views of the current memory. */
-	const rows: SplatRows = {
-		positions: new Float32Array(0),
-		rotations: new Float32Array(0),
-		scales: new Float32Array(0),
-		colors: new Float32Array(0),
-		markDirty: (start, count) => draw.batch.markDirty(start, count),
-		setActiveCount: (count) => draw.batch.setActiveCount(count),
-	};
-
+	/** Packs the chosen prefixes into the batch's rows, in the core's memory. */
 	const pack = (counts: Float32Array): void => {
-		const views = draw.batch;
-		if (!views.colors)
-			throw splatsError(2111, 'the splats batch has no row colors, which its draw needs.');
-		rows.positions = views.positions;
-		rows.rotations = views.rotations;
-		rows.scales = views.scales;
-		rows.colors = views.colors;
-		drawn = packRows(rows, slots, counts, prefixes);
+		drawn = writer.pack(counts);
 		packedVersion = version;
 	};
 
@@ -323,7 +313,7 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 		const eyeZ = eye[2] as number;
 		for (let i = 0; i < slots.length; i++) {
 			const slot = slots[i] as ChunkSlot;
-			if (slot.data || !(i < counts.length && (counts[i] as number) > 0)) continue;
+			if (slot.arrived || !(i < counts.length && (counts[i] as number) > 0)) continue;
 			const dx = (slot.center[0] as number) - eyeX;
 			const dy = (slot.center[1] as number) - eyeY;
 			const dz = (slot.center[2] as number) - eyeZ;
@@ -404,12 +394,14 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 		Math.min(capacity, Math.floor(override ?? (feature.settings.drawn as number)));
 
 	/** Takes the answer: fills the draw again when the counts or the total changed. */
-	const selected = (_output: boolean): void => {
+	const selected = (answer: SelectAnswer): void => {
 		inFlight = false;
 		const asked = asking;
 		asking = undefined;
 		if (stop || !asked) return;
-		const total = asked.total;
+		// Without shared memory, the worker answered with a copy, which the sketch writes in.
+		if (answer.counts) asked.counts.set(answer.counts);
+		const total = answer.total;
 		const changed =
 			total !== lastTotal || version !== packedVersion || differs(asked.counts, lastCounts);
 		if (changed) {
@@ -463,7 +455,12 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 	const syncSelector = (): void => {
 		if (slots.length === selectorChunks) return;
 		selectorChunks = slots.length;
-		selector = selectorChunks > 0 ? new SplatSelector(slots) : undefined;
+		// The core's chunk table grows with the cloud, so a file's later chunks take their places.
+		writer.reserve(selectorChunks);
+		const previous = selector;
+		// The worker keeps the previous selector's arrays for this one while they hold the chunks.
+		selector = selectorChunks > 0 ? new SplatSelector(slots, previous?.id) : undefined;
+		if (!selector) previous?.drop();
 		// A new selector has counts of its own, and the draw keeps the last set until the worker
 		// answers for this one.
 		lastCounts = new Float32Array(selectorChunks);
@@ -477,7 +474,9 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 			decode: decodeChunk,
 			onChunk: (index, chunk) => {
 				const slot = slots[index] as ChunkSlot;
-				slot.data = chunk;
+				// The rows move into the core, so the slot keeps only the answer that they arrived.
+				slot.arrived = true;
+				writer.write(index, chunk);
 				loadedChunks++;
 				version++;
 				packArrived();
@@ -503,11 +502,12 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 		const cut = chunkSplats(data as SplatData, {
 			yieldTo: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
 			onChunk: (chunk) => {
+				writer.write(slots.length, chunk);
 				slots.push({
 					center: chunk.center,
 					radius: chunk.radius,
 					count: chunk.count,
-					data: chunk,
+					arrived: true,
 				});
 				loadedChunks++;
 				version++;
@@ -559,6 +559,8 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 		destroy() {
 			stop = true;
 			loader?.abort();
+			selector?.drop();
+			writer.destroy();
 			host.destroy();
 			draw.destroy();
 		},

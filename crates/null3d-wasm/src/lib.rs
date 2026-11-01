@@ -25,6 +25,7 @@ use null3d_core::bvh::query::{NO_TRIANGLE, QueryHit, QueryScene, SceneQueries};
 use null3d_core::bvh::rows::{QueryCamera, RowQuery};
 use null3d_core::bvh::scene::Source;
 use null3d_core::bvh::top::WorldRay;
+use null3d_core::chunk_rows::ChunkRowTable;
 use null3d_core::error::CoreError;
 use null3d_core::frames::{frame_after, next_frame};
 use null3d_core::handle::{Handle, MAX_SLOTS};
@@ -211,6 +212,13 @@ struct Engine {
     scene: SceneStorage,
     ring: CommandRing,
     batches: BatchTable,
+    /// The chunks that the splats add-on packs into a batch's rows.
+    chunk_rows: ChunkRowTable,
+    /// The chosen count of each chunk that the next pack reads, which TypeScript writes.
+    splat_counts: Vec<f32>,
+    /// The count that the last pack left in the batch, which TypeScript reads: the rows it wrote,
+    /// or the count that the batch kept when it owns no transform rows.
+    splat_packed: u32,
     lights: LightTable,
     snapshot: FrameSnapshot,
     renderer: Box<dyn FrameBuilder>,
@@ -631,6 +639,9 @@ pub fn init_engine(
         },
         ring: CommandRing::with_capacity(commands),
         batches: BatchTable::with_capacity(max_batches),
+        chunk_rows: ChunkRowTable::default(),
+        splat_counts: Vec::new(),
+        splat_packed: 0,
         lights: LightTable::new(),
         snapshot: FrameSnapshot::with_capacity(UPLOAD_RANGES),
         memory: MemoryRegister::new(),
@@ -1333,6 +1344,7 @@ pub fn update_memory_register() -> u32 {
         e.memory.begin();
         e.scene.account(&mut e.memory);
         e.batches.account(&mut e.memory);
+        e.chunk_rows.account(&mut e.memory);
         e.renderer.account(&mut e.memory);
         if let Some(animations) = &e.animations {
             animations.account(&mut e.memory);
@@ -1791,6 +1803,100 @@ pub fn mark_batch_dirty(batch: u32, start: u32, count: u32) -> u32 {
             Err(error) => core_failure(error),
         }
     })
+}
+
+/// Makes room for `slots` chunk places in `cloud`'s run of the splats add-on's table. A pack
+/// never grows the table between frames.
+#[wasm_bindgen(js_name = splatChunksReserve)]
+pub fn splat_chunks_reserve(cloud: u32, slots: u32) -> u32 {
+    with_engine(|e| match e.chunk_rows.reserve(cloud, slots) {
+        Ok(()) => 0,
+        Err(error) => core_failure(error),
+    })
+}
+
+/// Stores `count` rows at `slot` of `cloud`, replacing what the slot held. The add-on then writes
+/// the arrays at the addresses that `splatChunkField` gives.
+#[wasm_bindgen(js_name = splatChunkPrepare)]
+pub fn splat_chunk_prepare(cloud: u32, slot: u32, count: u32) -> u32 {
+    with_engine(|e| match e.chunk_rows.prepare(cloud, slot, count) {
+        Ok(()) => 0,
+        Err(error) => core_failure(error),
+    })
+}
+
+/// The address of one of a chunk's arrays: positions (0), rotations (1), scales (2) or colors (3).
+/// 0 for a cloud, slot or field that holds none.
+#[wasm_bindgen(js_name = splatChunkField)]
+pub fn splat_chunk_field(cloud: u32, slot: u32, field: u32) -> u32 {
+    value_with_engine(|e| Ok(e.chunk_rows.field(cloud, slot, field) as u32))
+}
+
+/// Forgets a chunk, so its slot draws nothing.
+#[wasm_bindgen(js_name = splatChunkDestroy)]
+pub fn splat_chunk_destroy(cloud: u32, slot: u32) -> u32 {
+    with_engine(|e| {
+        e.chunk_rows.destroy(cloud, slot);
+        0
+    })
+}
+
+/// Forgets every chunk of a cloud, which a page frees with the cloud.
+#[wasm_bindgen(js_name = splatChunksDrop)]
+pub fn splat_chunks_drop(cloud: u32) -> u32 {
+    with_engine(|e| {
+        e.chunk_rows.drop_cloud(cloud);
+        0
+    })
+}
+
+/// Makes room for `slots` chosen counts in the pack's plan, which TypeScript then writes, and
+/// returns their address. The plan only grows, so a writer with fewer slots keeps a view of its
+/// own prefix; a writer that outgrows it moves the plan, and every writer reads the address again.
+#[wasm_bindgen(js_name = splatPackPlan)]
+pub fn splat_pack_plan(slots: u32) -> u32 {
+    value_with_engine(|e| {
+        let slots = slots as usize;
+        if e.splat_counts.len() < slots {
+            e.splat_counts
+                .try_reserve(slots - e.splat_counts.len())
+                .map_err(|_| {
+                    core_failure(CoreError::OutOfMemory {
+                        bytes: u32::try_from(slots.saturating_mul(4)).unwrap_or(u32::MAX),
+                    })
+                })?;
+            e.splat_counts.resize(slots, 0.0);
+        }
+        Ok(address(e.splat_counts.as_slice()))
+    })
+}
+
+/// Packs the chosen prefix of every chunk of `cloud` into the batch's rows, in slot order, and
+/// sets the batch's active count. Returns 0, or the core's error; `splatPackedCount` gives the
+/// batch's active count after the pack, which on a refused pack is the count that it kept.
+#[wasm_bindgen(js_name = splatPack)]
+pub fn splat_pack(batch: u32, cloud: u32, slots: u32) -> u32 {
+    with_engine(|e| {
+        let slots = (slots as usize).min(e.splat_counts.len());
+        let packed = match e.batches.get_mut(Handle::from_raw(batch)) {
+            Ok(batch) => e.chunk_rows.pack(cloud, batch, &e.splat_counts[..slots]),
+            Err(error) => return core_failure(error),
+        };
+        match packed {
+            Ok(count) => {
+                e.splat_packed = count;
+                0
+            }
+            Err(error) => core_failure(error),
+        }
+    })
+}
+
+/// The batch's active count after the last pack: the rows that it wrote, or the count that the
+/// batch kept when it owns no transform rows.
+#[wasm_bindgen(js_name = splatPackedCount)]
+pub fn splat_packed_count() -> u32 {
+    value_with_engine(|e| Ok(e.splat_packed))
 }
 
 /// The address of the memory epoch, which grows by one each time WebAssembly memory grows, so

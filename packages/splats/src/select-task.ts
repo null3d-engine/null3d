@@ -1,10 +1,11 @@
-// The task that chooses which splats draw, which the engine runs in a job worker beside the frames.
-// The sketch writes each chunk's centre, radius and four level counts into a shared buffer with the
-// camera and the budget, and the task writes the count that each chunk draws: a coarsest prefix for
-// every chunk the budget reaches, then a finer prefix for the nearest chunks, up to the level that
-// their distance asks for. Sorting the chunks by distance takes the work off the sketch's thread.
+// The add-on's selection task, which the engine imports in each job worker. It holds the
+// WebAssembly module for the worker, copies the chunk table into the module's memory once, calls
+// the module with the camera and the budget, and writes the counts back into the buffer that the
+// sketch reads. The selection and its distance sort run in Rust under hard rule 42, so no loop
+// over chunks runs in TypeScript in a frame.
 //
-// The module runs on its own in the worker, so it imports nothing.
+// The worker keeps the chunk table and the scratch between calls, so a call copies only the few
+// numbers that changed and the counts. The module imports nothing, so a worker loads it alone.
 //
 // The buffer holds a header of `HEADER` floats, then `STRIDE` floats for each chunk, then one float
 // for each chunk's chosen count.
@@ -29,99 +30,244 @@ export const TOTAL = 6;
 /** The number of detail levels of a chunk: every splat, then half, a quarter and an eighth. */
 export const LEVELS = 4;
 
-/**
- * The level that a chunk draws at, from the distance to its nearest point and the cloud's size. The
- * distance is measured in the cloud's own radius, not the chunk's: a finer cut makes smaller chunks,
- * and measuring against them would let a smaller chunk pass for a farther one, so the same view
- * would draw fewer splats.
- */
-function levelOf(distance: number, radius: number, cloudRadius: number): number {
-	const near = Math.max(distance - radius, 0);
-	const size = Math.max(cloudRadius, 1e-3);
-	if (near <= size * 2) return 0;
-	if (near <= size * 4) return 1;
-	if (near <= size * 8) return 2;
-	return LEVELS - 1;
+/** The module's exports, as the build writes them. */
+interface SplatWasm {
+	readonly memory: WebAssembly.Memory;
+	/** Chooses each chunk's count; returns the total that draws. */
+	readonly splat_select: (params: number) => number;
 }
 
 /**
- * The scratch of the last call's chunk count. A worker keeps the module between tasks, so the
- * arrays are made once and reused: a call that runs in every frame allocates nothing.
+ * One call's input, which the add-on reuses and refills so a call makes no object. `view` is
+ * shared with the worker where the page allows a `SharedArrayBuffer`, so its counts land in the
+ * add-on's buffer; without one, the worker answers with a copy.
  */
-let scratch = {
-	chunks: -1,
-	distances: new Float32Array(0),
-	levels: new Uint8Array(0),
-	order: [] as number[],
-};
+export interface SelectInput {
+	/** `select` chooses the counts; `drop` frees the selector's arrays. */
+	readonly op?: 'select';
+	/** The selector's number, which names its table and scratch in this worker. */
+	readonly id: number;
+	/** Changes when the chunk table changes: a new selector, or a new number of chunks. */
+	readonly version: number;
+	/** The number of chunks. */
+	readonly chunks: number;
+	/** The most splats that draw. */
+	budget: number;
+	/** The camera's world position. */
+	eyeX: number;
+	eyeY: number;
+	eyeZ: number;
+	/** The whole buffer: the header, the chunk table and the counts. */
+	readonly view: Float32Array;
+}
 
-/** Orders two chunk indices by their distance from the camera, nearest first. */
-function byDistance(a: number, b: number): number {
-	return (scratch.distances[a] as number) - (scratch.distances[b] as number);
+/** A call's answer: the total that draws, and the counts when the page shares no memory. */
+export interface SelectAnswer {
+	/** The number of splats that draw. */
+	readonly total: number;
+	/** The chosen count of each chunk, when the worker could not write into `view` itself. */
+	readonly counts?: Float32Array;
+}
+
+/** The module's memory and the arrays that one selector keeps in it. */
+interface SelectState {
+	version: number;
+	chunks: number;
+	/** The chunk count that the arrays hold room for, which grows by doubling. */
+	capacity: number;
+	params: number;
+	table: number;
+	counts: number;
+	distances: number;
+	levels: number;
+	order: number;
+	scratch: number;
+}
+
+/** An input that frees the arrays of a selector, which a cloud leaves behind. */
+export interface DropInput {
+	readonly op: 'drop';
+	readonly id: number;
+}
+
+/** The module, which the worker instantiates at its first task and keeps. */
+let wasm: SplatWasm | undefined;
+/**
+ * The next free byte of the module's memory. The module's first pages hold its shadow stack, which
+ * grows down from the top of them, so the add-on's arrays start above them.
+ */
+let next = 0;
+/** The arrays that each selector keeps in this worker, by the input's `id`. */
+const states = new Map<number, SelectState>();
+/** The arrays of selectors that a cloud left, which a later selector takes back. */
+const freed: { at: number; bytes: number }[] = [];
+
+/** The bytes of a 64-bit float, and the alignment of one. */
+const FLOAT_BYTES = 8;
+
+/** Rounds `value` up to the next multiple of `unit`. */
+function align(value: number, unit: number): number {
+	return Math.ceil(value / unit) * unit;
+}
+
+/** Makes room for `bytes` in the module's memory and returns where it starts. */
+function alloc(bytes: number): number {
+	const module = wasm as SplatWasm;
+	const needed = align(Math.max(1, bytes), FLOAT_BYTES);
+	// A block that a dropped selector left takes the array, so the memory stops growing after a
+	// cloud that a page creates and destroys again.
+	for (let i = 0; i < freed.length; i++) {
+		const block = freed[i] as { at: number; bytes: number };
+		if (block.bytes < needed) continue;
+		freed.splice(i, 1);
+		return block.at;
+	}
+	const at = align(next, FLOAT_BYTES);
+	next = at + needed;
+	const have = module.memory.buffer.byteLength;
+	if (next > have) module.memory.grow(Math.ceil((next - have) / 65536));
+	return at;
+}
+
+/** Gives a selector's array back, for the next selector to take. */
+function release(at: number, bytes: number): void {
+	freed.push({ at, bytes: align(Math.max(1, bytes), FLOAT_BYTES) });
+}
+
+/** Gives back every array that one selector holds. */
+function drop(state: SelectState): void {
+	release(state.params, PARAMS * FLOAT_BYTES);
+	release(state.table, state.capacity * STRIDE * 4);
+	release(state.counts, state.capacity * 4);
+	release(state.distances, state.capacity * 4);
+	release(state.levels, state.capacity);
+	release(state.order, state.capacity * 4);
+	release(state.scratch, state.capacity * 4);
+}
+
+/** A failure of the module's code or its WebAssembly, which the engine reports at load. */
+function loadError(message: string): Error {
+	const error = new Error(message);
+	error.name = 'TaskLoadError';
+	return error;
+}
+
+/** Starts the module on its first task in this worker, or fails the task at the load stage. */
+function start(module: WebAssembly.Module): SplatWasm {
+	try {
+		wasm = new WebAssembly.Instance(module).exports as unknown as SplatWasm;
+	} catch (e) {
+		throw loadError(`the splat selector could not start: ${(e as Error).message}`);
+	}
+	if (typeof wasm.splat_select !== 'function')
+		throw loadError('the splat selector holds no selection call');
+	// The module's memory starts with its shadow stack, so the first array goes above all of it.
+	next = wasm.memory.buffer.byteLength;
+	return wasm;
+}
+
+/** True when the typed array's bytes are shared with the thread that sent it. */
+function shared(array: ArrayBufferView): boolean {
+	return typeof SharedArrayBuffer !== 'undefined' && array.buffer instanceof SharedArrayBuffer;
+}
+
+/** Writes a typed array's bytes into the module's memory at `at`. */
+function writeBytes(at: number, array: ArrayBufferView): void {
+	const module = wasm as SplatWasm;
+	const source = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+	new Uint8Array(module.memory.buffer, at, array.byteLength).set(source);
+}
+
+/** Reads bytes from the module's memory at `at` into a typed array. */
+function readBytes(at: number, array: ArrayBufferView): void {
+	const module = wasm as SplatWasm;
+	const target = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+	target.set(new Uint8Array(module.memory.buffer, at, array.byteLength));
+}
+
+/** The number of 64-bit floats in a call's parameter block. */
+const PARAMS = 12;
+
+/**
+ * The state that this worker keeps for a selector, which it makes at the first task that names it.
+ * A selector whose chunk count grows keeps its arrays while they hold the new count, and takes
+ * larger ones that double each time they must, so a cloud cut into many chunks does not leave one
+ * state's arrays behind for each chunk.
+ */
+function stateFor(input: SelectInput): SelectState {
+	const kept = states.get(input.id);
+	const table = input.view.subarray(HEADER, HEADER + input.chunks * STRIDE);
+	if (kept && kept.capacity >= input.chunks) {
+		kept.version = input.version;
+		kept.chunks = input.chunks;
+		writeBytes(kept.table, table);
+		return kept;
+	}
+	const capacity = kept ? Math.max(input.chunks, kept.capacity * 2) : input.chunks;
+	if (kept) drop(kept);
+	const state: SelectState = {
+		version: input.version,
+		chunks: input.chunks,
+		capacity,
+		params: alloc(PARAMS * FLOAT_BYTES),
+		table: alloc(capacity * STRIDE * 4),
+		counts: alloc(capacity * 4),
+		distances: alloc(capacity * 4),
+		levels: alloc(capacity),
+		order: alloc(capacity * 4),
+		scratch: alloc(capacity * 4),
+	};
+	writeBytes(state.table, table);
+	states.set(input.id, state);
+	return state;
+}
+
+/** Chooses each chunk's count, writes it into the caller's buffer, and answers the total. */
+function select(module: SplatWasm, state: SelectState, input: SelectInput): SelectAnswer {
+	// The parameter block, written in place so a call makes no array.
+	const params = new Float64Array(module.memory.buffer, state.params, PARAMS);
+	params[0] = input.chunks;
+	params[1] = input.budget;
+	params[2] = input.eyeX;
+	params[3] = input.eyeY;
+	params[4] = input.eyeZ;
+	params[5] = input.view[CLOUD_RADIUS] as number;
+	params[6] = state.table;
+	params[7] = state.counts;
+	params[8] = state.distances;
+	params[9] = state.levels;
+	params[10] = state.order;
+	params[11] = state.scratch;
+	const total = module.splat_select(state.params);
+	// The counts follow the chunk table in the buffer that the sketch reads.
+	if (shared(input.view)) {
+		const offset = (HEADER + input.chunks * STRIDE) * 4;
+		readBytes(state.counts, new Float32Array(input.view.buffer, offset, input.chunks));
+		return { total };
+	}
+	const copy = new Float32Array(input.chunks);
+	readBytes(state.counts, copy);
+	return { total, counts: copy };
 }
 
 /**
- * Chooses each chunk's count, writes them after the chunks, and answers that it filled the buffer.
- * The sketch's thread reads the counts from the same buffer, so no count crosses a message.
+ * Runs one call. The engine calls this once for each task, with the compiled WebAssembly module
+ * that the task names.
  */
-export function run(input: unknown): { output: boolean } {
-	const { view } = input as { view: Float32Array };
-	const chunks = view[CHUNK_COUNT] as number;
-	if (chunks !== scratch.chunks) {
-		scratch = {
-			chunks,
-			distances: new Float32Array(chunks),
-			levels: new Uint8Array(chunks),
-			order: new Array<number>(chunks),
-		};
+export function run(
+	input: unknown,
+	modules: (name: string) => WebAssembly.Module,
+): { output: SelectAnswer } {
+	const request = input as SelectInput | DropInput;
+	if (request.op === 'drop') {
+		const state = states.get(request.id);
+		if (state) {
+			drop(state);
+			states.delete(request.id);
+		}
+		return { output: { total: 0 } };
 	}
-	const { distances, levels, order } = scratch;
-	const budget = view[BUDGET] as number;
-	const eyeX = view[EYE] as number;
-	const eyeY = view[EYE + 1] as number;
-	const eyeZ = view[EYE + 2] as number;
-	const cloudRadius = view[CLOUD_RADIUS] as number;
-	for (let i = 0; i < chunks; i++) {
-		const at = HEADER + i * STRIDE;
-		const dx = (view[at] as number) - eyeX;
-		const dy = (view[at + 1] as number) - eyeY;
-		const dz = (view[at + 2] as number) - eyeZ;
-		const radius = view[at + 3] as number;
-		const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-		distances[i] = distance > radius ? distance - radius : 0;
-		levels[i] = levelOf(distance, radius, cloudRadius);
-		order[i] = i;
-	}
-	order.sort(byDistance);
-	const countsAt = HEADER + chunks * STRIDE;
-	for (let i = 0; i < chunks; i++) view[countsAt + i] = 0;
-	let left = budget;
-	let total = 0;
-	// The base level: each chunk, nearest first, keeps its coarsest prefix while the budget lasts.
-	// A budget too small for every level then thins the whole cloud rather than dropping its far
-	// parts, and a stream still fetches only the chunks that the budget reaches.
-	for (const i of order) {
-		if (left <= 0) break;
-		const base = view[HEADER + i * STRIDE + 4 + (LEVELS - 1)] as number;
-		const chosen = base < left ? base : left;
-		view[countsAt + i] = chosen;
-		left -= chosen;
-		total += chosen;
-	}
-	// The rest of the budget refines the nearest chunks first, up to the level that each one's
-	// distance asks for, so a near chunk is denser than a far one of the same size.
-	for (const i of order) {
-		if (left <= 0) break;
-		const at = HEADER + i * STRIDE;
-		const target = view[at + 4 + (levels[i] as number)] as number;
-		const chosen = view[countsAt + i] as number;
-		if (chosen >= target) continue;
-		const rest = target - chosen;
-		const more = rest < left ? rest : left;
-		view[countsAt + i] = chosen + more;
-		left -= more;
-		total += more;
-	}
-	view[TOTAL] = total;
-	return { output: true };
+	const module = wasm ?? start(modules('splats'));
+	const state = stateFor(request);
+	return { output: select(module, state, request) };
 }

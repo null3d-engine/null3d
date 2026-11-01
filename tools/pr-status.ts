@@ -77,7 +77,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-B5':
 		'the glints draw and are tested in both sets; its cost per preset is owed (D-255), which needs a quiet GPU',
 	'M3-F2':
-		"the cloud that arrives as 100,000 splats used to become one chunk and could not stream; `chunks.ts` now cuts it into up to eight, which landed in `dcbacc193`, and the streaming test passes locally on the software renderer CI uses, in 48 seconds; CI's own run on this head is next. What keeps the task open is its rule-42 debt: the chunk selection and its sort, and the row packing, are still TypeScript",
+		"the rule-42 move is on `feat/m3-f2-splats-scope`: the selection and its distance sort run in `crates/null3d-splats` on the job workers, and the pack runs in `crates/null3d-core` through the public `createChunkRows()` writer, with the parity test and the seven-plus-eight Rust tests beside them. The device runs at that branch's head held the settled budget on the iPad Pro 13 and the Galaxy S24 and failed no chunk. What keeps the task open is the picture run at the head, which the reviewer holds, and the record corrections beside it",
 	'M3-V6':
 		'the same placement is shown on two Android phones in Chrome and on an iPad in Safari 26.6.1, so a second JavaScript engine has placed the same points (`.dev/tested-devices/ipad-pro-13-safari/20261027-000756-vegetation-scatter.md`, two passed, both paths); the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
 	'M3-F5':
