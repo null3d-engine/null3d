@@ -4,6 +4,7 @@
 // another kind can take its place by changing this file alone.
 import type { SketchContext } from '@null3d/engine';
 import { createWater, type WaterShape } from '@null3d/water';
+import { INTERIOR_LAYER } from '../../lib/layers';
 import { Noise, random } from '../../lib/procedural';
 import { BAY, bayShoal, GROUND, SEA_LEVEL } from './island';
 import { groundHeight } from './plan';
@@ -17,11 +18,12 @@ const CELL = 600;
 /** How far under the sea's level the deep's floor lies, and where the bed starts to fade into it, in meters. */
 const DEEP_FLOOR = 44;
 const DEEP_FROM = 25;
-/** The meters between the lines of the skin over the deep bed, and how far above the bed it lies. */
-const DEEP_CELL = 12;
-const DEEP_LIFT = 0.3;
-/** The meters of depth over which that skin thins in from nothing. */
-const SKIN_FADE = 9;
+/** The meters between the lines of the skin over the deep bed, and how far above and below the bed it lies. */
+const DEEP_CELL = 6;
+const DEEP_LIFT = 5;
+const DEEP_UNDER = -1;
+/** The meters of depth over which that skin rises from under the bed to over it. */
+const SKIN_FADE = 16;
 /** The bed's colours where the fade starts, and the deep's, as linear values. */
 const BED_COLOR = [0.13, 0.12, 0.1] as const;
 const SAND_COLOR = [0.62, 0.48, 0.28] as const;
@@ -70,13 +72,16 @@ function foamMap({ textures }: SketchContext) {
 	for (let j = 0; j < size; j++)
 		for (let i = 0; i < size; i++) {
 			const [u, v] = [i / size, j / size];
-			const lace = noise.fbm2(u * 8, v * 8, 4, 8) + 0.55 * noise.fbm2(u * 24, v * 24, 3, 24);
+			// Thin threads along the zero lines of the noise, which join up as a web of lace.
+			const coarse = 1 - Math.abs(noise.fbm2(u * 9, v * 9, 3, 9)) * 5;
+			const fine = 1 - Math.abs(noise.fbm2(u * 27, v * 27, 2, 27)) * 5;
+			const lace = Math.max(coarse, fine * 0.85) * 0.5 + 0.05 * noise.fbm2(u * 60, v * 60, 2, 60);
 			const at = (j * size + i) * 4;
 			const tone = 235 + Math.min(20, Math.max(0, lace * 30));
 			data[at] = tone;
 			data[at + 1] = tone;
 			data[at + 2] = tone;
-			data[at + 3] = Math.max(0, Math.min(255, 150 + lace * 300));
+			data[at + 3] = Math.max(0, Math.min(255, 50 + lace * 370));
 		}
 	return textures.fromData({
 		width: size,
@@ -158,8 +163,13 @@ function deepBed() {
 			const [x, z] = [place(i), place(j)];
 			const depth = SEA_LEVEL - groundHeight(x, z);
 			depths[j * (side + 1) + i] = depth;
-			const t = smoothstep01(depth, DEEP_FROM, DEEP_FLOOR);
-			positions.push(x, SEA_LEVEL - Math.min(depth, DEEP_FLOOR) + DEEP_LIFT, z);
+			const t = smoothstep01(depth, DEEP_FROM - 8, DEEP_FLOOR);
+			// The skin starts under the bed, so the bed cuts its rim and no square cell shows, and it rises
+			// over the bed, far enough that the bed's coarse far blocks stay under it.
+			const lift =
+				DEEP_UNDER +
+				(DEEP_LIFT - DEEP_UNDER) * smoothstep01(depth, DEEP_FROM, DEEP_FROM + SKIN_FADE);
+			positions.push(x, SEA_LEVEL - Math.min(depth, DEEP_FLOOR) + lift, z);
 			// It lights as the flat floor past it does, so its slope leaves no line where it meets that floor.
 			normals.push(0, 1, 0);
 			// The bay's shoal is pale sand and the rest is dark rock, so the skin starts in the colour of each.
@@ -169,8 +179,6 @@ function deepBed() {
 					(BED_COLOR[c] as number) + ((SAND_COLOR[c] as number) - (BED_COLOR[c] as number)) * sandy;
 				colors.push(bed + ((DEEP_COLOR[c] as number) - bed) * t);
 			}
-			// The skin thins away toward its rim, so its square cells leave no edge on the bed.
-			colors.push(smoothstep01(depth, DEEP_FROM, DEEP_FROM + SKIN_FADE));
 		}
 	for (let j = 0; j < side; j++)
 		for (let i = 0; i < side; i++) {
@@ -236,7 +244,6 @@ export function createSea(ctx: SketchContext): { update(): void } {
 			vertexColors: true,
 			roughness: 0.9,
 			metalness: 0,
-			alphaMode: 'hash',
 		}),
 		castShadows: false,
 		receiveShadows: false,
@@ -258,11 +265,15 @@ export function createSea(ctx: SketchContext): { update(): void } {
 			map: foamMap(ctx),
 			vertexColors: true,
 			roughness: 0.9,
-			alphaMode: 'hash',
+			alphaMode: 'mask',
+			alphaCutoff: 0.42,
+			alphaToCoverage: true,
 			doubleSided: true,
 		}),
 		castShadows: false,
 		receiveShadows: true,
+		// The mirror holds no foam: it lies on the water and shows only its dark underside there.
+		layers: INTERIOR_LAYER,
 	});
 	// The foam thins by a stochastic mask, so it needs no sorting against the water and its edges stay soft. Its shape stays here with the sea, so another body that makes its own surf replaces it.
 	ctx.scene.createMesh({
@@ -271,11 +282,15 @@ export function createSea(ctx: SketchContext): { update(): void } {
 			map: foamMap(ctx),
 			vertexColors: true,
 			roughness: 0.85,
-			alphaMode: 'hash',
+			alphaMode: 'mask',
+			alphaCutoff: 0.42,
+			alphaToCoverage: true,
 			doubleSided: true,
 		}),
 		castShadows: false,
 		receiveShadows: true,
+		// The mirror holds no foam: it lies on the water and shows only its dark underside there.
+		layers: INTERIOR_LAYER,
 	});
 	return createWater(ctx, {
 		shapes: SEA,
@@ -285,9 +300,13 @@ export function createSea(ctx: SketchContext): { update(): void } {
 		ripple: 0.45,
 		// The reflection is soft on rippled water, so a coarser one every other frame shows no less.
 		reflectionScale: 0.5,
+		layers: 1,
 		reflectionEvery: { high: 2, ultra: 2 },
 		softness: 2.5,
 		material: {
+			// A weak bend: screen-space refraction takes its light from the picture above the water, so a
+			// strong one draws a band of the rocks' lit faces around their feet.
+			ior: 1.1,
 			attenuationColor: '#2b86a8',
 			attenuationDistance: 18,
 			thickness: 1,
