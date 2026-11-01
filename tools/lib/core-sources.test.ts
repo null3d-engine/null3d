@@ -157,6 +157,38 @@ describe('the core that a page build ships', () => {
 		expect(coreFromOtherSources(root)).toBeNull();
 	});
 
+	it('refuses an earlier stamp after a lock edit inside the core closure', () => {
+		const root = checkout();
+		const earlier = inputHash(root, CORE_CRATE).slice(0, 16);
+		buildCore(root, earlier);
+		writeFileSync(
+			join(root, 'Cargo.lock'),
+			LOCK.replace(
+				'name = "null3d-core"\nversion = "0.1.0"',
+				'name = "null3d-core"\nversion = "0.2.0"',
+			),
+		);
+		expect(inputHash(root, CORE_CRATE).slice(0, 16)).not.toBe(earlier);
+		expect(coreFromOtherSources(root)).toContain('the single engine core');
+	});
+
+	it('accepts an earlier stamp after a lock edit outside the core closure', () => {
+		const root = checkout();
+		const earlier = inputHash(root, CORE_CRATE).slice(0, 16);
+		const whole = coreSourcesStamp(root);
+		buildCore(root, earlier);
+		writeFileSync(
+			join(root, 'Cargo.lock'),
+			LOCK.replace(
+				'name = "null3d-shaders"\nversion = "0.1.0"',
+				'name = "null3d-shaders"\nversion = "0.2.0"',
+			),
+		);
+		expect(coreSourcesStamp(root)).not.toBe(whole);
+		expect(inputHash(root, CORE_CRATE).slice(0, 16)).toBe(earlier);
+		expect(coreFromOtherSources(root)).toBeNull();
+	});
+
 	it('refuses a core whose stamp belongs to other sources', () => {
 		const root = checkout();
 		const earlier = inputHash(root, CORE_CRATE).slice(0, 16);
@@ -178,6 +210,17 @@ describe('the core that a page build ships', () => {
 		buildCore(root, coreSourcesStamp(root));
 		writeFileSync(join(root, 'packages/engine/dist/wasm/threaded/null3d.js'), 'export {};\n');
 		expect(coreFromOtherSources(root)).toContain('the threaded engine core');
+	});
+});
+
+describe('the accepted stamps', () => {
+	it('holds one stamp when the lock cannot resolve the core closure', () => {
+		// Both stamps read the whole file then, so the set collapses. It holds two only when the
+		// lock resolves the closure and an entry outside it could differ.
+		const root = checkout();
+		writeFileSync(join(root, 'Cargo.lock'), 'version = 4\n');
+		expect(inputHash(root, CORE_CRATE).slice(0, 16)).toBe(coreSourcesStamp(root));
+		expect(acceptedSourcesStamps(root)).toEqual([coreSourcesStamp(root)]);
 	});
 });
 

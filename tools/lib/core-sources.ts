@@ -40,9 +40,15 @@ export function coreSourcesStamp(root: string): string {
 }
 
 /**
- * The stamp of these sources that the shared input hash gives. Cores built while that hash
- * produced the stamp are cores of the same sources, so the guard accepts it during the transition.
- * Remove this, and its entry in `acceptedSourcesStamps`, once no such core remains.
+ * The stamp of these sources that the shared input hash gives, with the lock narrowed to the
+ * core's dependency closure. Cores built while that hash produced the stamp are cores of the
+ * same sources, so the guard accepts it during the transition.
+ *
+ * Remove this function, and its entry in `acceptedSourcesStamps`, once this change has landed and
+ * every machine that built an earlier core has run `bun run build` once, or at the release after.
+ * The end state makes the current stamp hash the core's own lock closure and deletes this
+ * function. The whole-file digest stays while the transition lasts, because it is what matches
+ * cores built before the lock narrowing.
  */
 function earlierSourcesStamp(root: string): string {
 	return inputHash(root, CORE_CRATE).slice(0, STAMP_DIGITS);
@@ -50,8 +56,8 @@ function earlierSourcesStamp(root: string): string {
 
 /**
  * The stamps that a core of the sources at `root` may carry: the current stamp, and while the
- * transition lasts the stamp of the earlier build key. Remove the earlier stamp, and
- * `earlierSourcesStamp`, once no core built with the earlier key remains.
+ * transition lasts the stamp of the earlier build key. The set holds one stamp when the two agree,
+ * as they do when the lock cannot resolve the core's closure and both read the whole file.
  */
 export function acceptedSourcesStamps(root: string): string[] {
 	const current = coreSourcesStamp(root);
