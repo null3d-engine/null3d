@@ -754,8 +754,9 @@ What this record proves is the air, not a person watching the demo. A probe samp
 the readers carry, on a line across the ground with no grid, and the gust moved 6 m in the 1 s
 between two reads against the field's own 6 m/s
 ([the run](../tested-devices/macbook-pro-m3-max-chrome/20261101-1915-gust-crossing.md)). The
-readers take the fourth vector that carries it, and a test holds their copies of the block equal to
-the one that the probe ran. Owed, and not taken: a held picture of Creek on the WebGL2 path with a
+readers take the fourth vector that carries it, and the vegetation add-on's copy test holds their
+blocks, the cost page's and the probe's steady block equal to the canonical text; the probe keeps
+only the reading function of the other block, since it samples no grid. Owed, and not taken: a held picture of Creek on the WebGL2 path with a
 gust sent, which would show the grass, the water and the leaves moving. The machine barred image
 runs when this landed.
 

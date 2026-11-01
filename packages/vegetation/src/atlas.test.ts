@@ -237,13 +237,18 @@ describe('the plant shaders', () => {
 	});
 	it('read the wind field with one copy in the plant and grass shaders', () => {
 		// The grass copies the field's steady settings and its sampling function from the plant
-		// shader, so a change to the air rules in one file must reach the other.
+		// shader, so a change to the air rules in one file must reach the other. Two test pages draw
+		// readers too: the cost page carries both blocks, and the gust page carries the steady block
+		// twice and keeps only the reading function of the other, so it is held to the steady block
+		// alone.
 		const read = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8');
 		const block = (source: string, name: string) => {
 			const from = `// <${name}>`;
 			const to = `// </${name}>`;
 			return source.slice(source.indexOf(from), source.indexOf(to));
 		};
+		const COST_PAGE = '../../../tests/pages/sketches/wind-reader-cost-sketch.ts';
+		const GUST_PAGE = '../../../tests/pages/sketches/gust-crossing-sketch.ts';
 		for (const name of ['wind-steady', 'wind-sample']) {
 			const plant = block(read('./plant.wgsl'), name);
 			expect(plant.length).toBeGreaterThan(0);
@@ -252,8 +257,19 @@ describe('the plant shaders', () => {
 				'./floating-leaves.wgsl',
 				'./floating-leaves-state.wgsl',
 				'./floating-leaves-state.fallback.wgsl',
+				COST_PAGE,
+				...(name === 'wind-steady' ? [GUST_PAGE] : []),
 			])
 				expect(block(read(file), name)).toBe(plant);
 		}
+		// The gust page draws the steady block twice, once for each path's form.
+		const gust = read(GUST_PAGE);
+		const steady = block(read('./plant.wgsl'), 'wind-steady');
+		const copies = gust.split('// <wind-steady>').length - 1;
+		expect(copies).toBe(2);
+		for (const piece of gust.split('// <wind-steady>').slice(1))
+			expect(`// <wind-steady>${piece.slice(0, steady.length - '// <wind-steady>'.length)}`).toBe(
+				steady,
+			);
 	});
 });
