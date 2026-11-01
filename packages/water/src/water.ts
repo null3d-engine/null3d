@@ -13,6 +13,7 @@ import {
 	type ShaderOptions,
 	type SketchContext,
 	type Texture,
+	type Textures,
 } from '@null3d/engine';
 import { type Junctions, junctions } from './junction';
 import { bodyMesh, type MeshDetail } from './mesh';
@@ -49,6 +50,25 @@ export const LONG_WAVES = [
 	[0.8, -0.6, 3.7, 0.7],
 	[0.6, 0.8, 5.9, 0.5],
 ] as const;
+
+/**
+ * The wind that a water surface reads: a plain field texture and its box, so that a page connects
+ * the wind add-on to the water without either add-on importing the other.
+ *
+ * @category api/water
+ */
+export interface WaterWind {
+	/** The field's texture, whose newest state its layer names. */
+	readonly texture: Texture;
+	/** The field's box across the ground, in meters, or 0 for the steady field everywhere. */
+	readonly size: number;
+	/** The air's steady settings, as the sampling function reads them: base, gust and swirl. */
+	readonly air: {
+		readonly base: readonly number[];
+		readonly gust: readonly number[];
+		readonly swirl: readonly number[];
+	};
+}
 
 /**
  * A map of the foam around things that break the water's surface, such as stones.
@@ -127,6 +147,11 @@ export interface WaterOptions {
 	readonly bed?: 'scene' | 'shape';
 	/** The standard material values, such as the volume's tint and its thickness. */
 	readonly material?: WaterMaterialOptions;
+	/**
+	 * The wind field that lifts the surface's short waves and carries their crests. A page gives the
+	 * wind add-on's field here, and the surface reads it once for each vertex.
+	 */
+	readonly wind?: WaterWind;
 }
 
 /**
@@ -268,6 +293,40 @@ function junctionTexture({ textures }: SketchContext, map: Junctions | undefined
 	});
 }
 
+/** The texture that holds the field's steady settings, three texels of four numbers each. */
+function readingTexture(textures: Textures, air: WaterWind['air']): Texture {
+	const data = new Float32Array(12);
+	data.set(air.base.slice(0, 4), 0);
+	data.set(air.gust.slice(0, 4), 4);
+	data.set(air.swirl.slice(0, 4), 8);
+	return textures.fromData({ width: 3, height: 1, format: 'rgba16float', data });
+}
+
+/** A still field's textures, for water that names no wind field. */
+const STILL = new WeakMap<Textures, { wind: Texture; airSettings: Texture }>();
+
+function stillWind(textures: Textures): { wind: Texture; airSettings: Texture } {
+	const held = STILL.get(textures);
+	if (held) return held;
+	const made = {
+		wind: textures.fromData({
+			width: 1,
+			height: 1,
+			depth: 1,
+			format: 'rgba16float',
+			data: new Float32Array(4),
+		}),
+		airSettings: textures.fromData({
+			width: 3,
+			height: 1,
+			format: 'rgba16float',
+			data: new Float32Array(12),
+		}),
+	};
+	STILL.set(textures, made);
+	return made;
+}
+
 /**
  * Makes the water that a scene draws, and the reflection pass that mirrors the scene in it. The
  * bodies come from one description: a river that follows a line, or a lake that fills an outline.
@@ -307,6 +366,12 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	// The junction map also gives the vertices near a meeting the river's current there.
 	const junction = junctions(bodies, arrays);
 	const junctionMap = junctionTexture(ctx, junction);
+	// The wind is a plain texture and its box. Without one the surface still declares the field's
+	// textures, which a page that names no field never reads.
+	const wind = options.wind;
+	const calm = stillWind(ctx.textures);
+	const windTexture = wind?.texture ?? calm.wind;
+	const airSettings = wind ? readingTexture(ctx.textures, wind.air) : calm.airSettings;
 	const material = materials.shader({
 		color: '#ffffff',
 		roughness: 0.03,
@@ -325,7 +390,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 		wgsl: waterShader,
 		// The water's depth comes from the scene's own bed behind each pixel, or from the shapes.
 		sceneInputs: ['sceneDepth'],
-		textures: { mirror, foamMap, junctionMap },
+		textures: { mirror, foamMap, junctionMap, wind: windTexture, airSettings },
 		uniforms: {
 			ripple: options.ripple ?? RIPPLE,
 			softness: options.softness ?? SOFTNESS,
@@ -335,6 +400,9 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			junctionOrigin: junction ? [junction.origin[0], junction.origin[1]] : [0, 0],
 			junctionSize: junction ? [junction.size[0], junction.size[1]] : [0, 0],
 			bedFromShape: bedFromShape ? 1 : 0,
+			windBox: wind?.size ?? 0,
+			windStrength: wind ? 1 : 0,
+			windLayer: 0,
 		},
 	});
 	let meshBytes = 0;
@@ -413,6 +481,8 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			return every;
 		},
 		update() {
+			// The field keeps two states, so the surface reads the one that this frame's run wrote.
+			if (wind) material.setUniform('windLayer', wind.texture.layer);
 			// The add-on draws its own debug view: each body's bounds at the water's surface.
 			if (debugBounds) {
 				for (const body of bodies)
