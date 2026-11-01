@@ -15,7 +15,8 @@
 // merge past the allowance is refused unless its message has a `Merge-Edit:` trailer that says why
 // the edit belongs in the merge.
 //   bun tools/hooks/check-merges.ts <base>..<head>
-// It skips merges committed before the rule; --all checks them too.
+// It skips merges committed before the rule; --all checks them too. It always skips the merges that
+// KNOWN_MERGES names, by the owner's ruling.
 import { spawnSync } from 'node:child_process';
 import { effectiveMessage, findAckValue, isBareAck } from './commit-ack';
 
@@ -24,6 +25,23 @@ export const MERGE_EDIT_TRAILER = 'Merge-Edit';
 
 /** Merges committed before this moment were made before the rule, and are not checked. */
 export const MERGE_RULE_SINCE = '2026-10-15T14:28:48+0800';
+
+/**
+ * Merges on the milestone branch that hold new work beyond their resolutions, from before landings
+ * ran this check. By the owner's ruling they stay, named here, and the rule holds for every other
+ * merge: their content is on the branch, and rewriting them would risk more than it fixes (D-259).
+ */
+export const KNOWN_MERGES: ReadonlySet<string> = new Set([
+	'f593dbb4e8cee3db614f7ca327e6e67e90cc6ff7', // Merge commit '148fd2660' into m3-start
+	'd4e2230daf5ffe7f617073bf6c1029083805eed4', // Merge remote-tracking branch 'origin/m3-start' into fix/skyway-phone-weight
+	'860e3cc0a4caa1bed3b5560f36c6a1752782c8fd', // Merge branch 'fix/skyway-phone-weight' into m3-start
+	'ffa03c91020e220b12f7f24e2d8fdedc0656c09b', // Merge branch 'feat/m3-a11-taa-measure' into m3-start
+	'2cf17e8781eaaaf40489b54cad0fa9ed92f07ba5', // refactor(engine): name the compute instance draw apart from the batch draw
+	'503bb3051b9e8d6f3eb93db5299e129e77cda136', // Merge branch 'feat/m3-levels-red' into m3-start
+	'864f29fcaaf5c90261fe49e6a9d3a3f4939739af', // Merge the milestone branch into the cluster levels branch
+	'21b18bd578fd72a74c72ef4224d687c4655ff9ab', // Merge the milestone branch into the cluster levels branch
+	'7c9deadc991784a7ad76986e2939036918929b80', // Merge origin/m3-start into feat/m3-l1-rest
+]);
 
 /** Words of new work a merge may hold before the check refuses it: a line or two of glue. */
 export const NEW_WORD_ALLOWANCE = 30;
@@ -314,15 +332,18 @@ export function mergeProblem(finding: MergeFinding): string | null {
 	return `${finding.sha.slice(0, 9)} ${finding.subject}\n  holds ${what} outside its conflict resolutions:\n${list}`;
 }
 
+/** The merges of a range that the check reads: every one but those that KNOWN_MERGES names. */
+export function mergesToCheck(shas: readonly string[]): string[] {
+	return shas.filter((sha) => sha !== '' && !KNOWN_MERGES.has(sha));
+}
+
 function main(): void {
 	const range = process.argv[2];
 	if (!range) {
 		console.error('usage: bun tools/hooks/check-merges.ts <base>..<head> [--all]');
 		process.exit(2);
 	}
-	const problems = git(['rev-list', '--merges', range])
-		.split('\n')
-		.filter(Boolean)
+	const problems = mergesToCheck(git(['rev-list', '--merges', range]).split('\n'))
 		.map((sha) => analyseMerge(sha, undefined, process.argv.includes('--all') ? '' : undefined))
 		.flatMap((finding) => (finding ? [mergeProblem(finding)] : []))
 		.filter((problem) => problem !== null);

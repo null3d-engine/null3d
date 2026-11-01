@@ -29,12 +29,14 @@ import {
 	LIGHT_VALUE_INTENSITY,
 	LIGHT_VALUE_PENUMBRA,
 	LIGHT_VALUE_RANGE,
+	MAP_SLOT_BASE_COLOR,
+	MAP_SLOT_EMISSIVE,
 } from '../generated/core';
 import { DEV } from '../shared/dev';
 import { onEngineStop } from '../shared/helper-workers';
 import { compileOnce, type WasmFile } from '../shared/tasks';
 import type { WasmError } from '../shared/wasm';
-import { bootstrapFailure, spawnWorker } from '../shared/worker-start';
+import { bootstrapFailure, spawnWorker, watchWorkerError } from '../shared/worker-start';
 import type { GltfAnswer, GltfDecoder, GltfRequest } from '../workers/gltf-worker';
 import { type AnimationRig, destroyRig, loadAnimationRig } from './animation';
 import type {
@@ -185,10 +187,7 @@ class Parser {
 			if (!('needs' in event.data)) this.waiting.delete(event.data.id);
 			waiting.resolve(event.data);
 		};
-		this.worker.onerror = (event) => {
-			event.preventDefault();
-			this.stop(event.message || 'its script did not load');
-		};
+		watchWorkerError(this.worker, (message) => this.stop(message || 'its script did not load'));
 	}
 
 	/** Stops the worker, and fails every waiting request with `reason`. */
@@ -487,11 +486,12 @@ export function sharesVertices(
 /**
  * Gives each primitive's mesh of a node the levels of detail that `MSFT_lod` names: the same
  * primitive of each level node's mesh. Each level's error comes from the asset tool's
- * `NULL3D_lod_error`, which measured the level's own error, or its share of the screen's height
- * from `MSFT_screencoverage`. A measured error changes the picture by under a pixel at its switch,
- * so the level switches at once; a coverage given by hand keeps a fading band. A level that names
- * another material than the node's primitive draws with it. Levels whose meshes have other
- * primitives, or no errors, are left out, and so are levels that a mesh cannot take, with a note.
+ * `NULL3D_lod_error`, or its share of the screen's height from `MSFT_screencoverage`. A measured
+ * error changes the picture by under a pixel at its switch, so the level switches at once; a
+ * hand-set error or a coverage keeps a fading band. A level that names another material than the
+ * node's primitive draws with it. Levels whose meshes have other primitives are left out, and so
+ * are levels that a mesh cannot take, with a note. A node that gives neither an error nor a coverage
+ * gives the mesh no levels.
  */
 function setFileLevels(
 	base: readonly MeshGeometry[],
@@ -505,10 +505,9 @@ function setFileLevels(
 	if (levels.meshes.some((k) => (data.meshes[k] as MeshData).primitives.length !== count)) return;
 	const lower = levels.meshes.map(levelOf);
 	for (const [p, mesh] of base.entries()) {
-		const measured = levels.errors !== undefined;
 		const errors = levels.errors;
 		const coverage = levels.coverage;
-		if (!measured && !coverage) return;
+		if (!errors && !coverage) return;
 		const own = primitives[p] as PrimitiveData | undefined;
 		try {
 			mesh.setLevels(
@@ -519,9 +518,7 @@ function setFileLevels(
 					const material = own && level.material !== own.material ? materials.of(level) : undefined;
 					return {
 						mesh: meshes[p] as MeshGeometry,
-						...(measured
-							? { error: (errors as number[])[j] as number, fade: false }
-							: { coverage: (coverage as number[])[j] as number }),
+						...fileLevelMeasure(errors, coverage, j),
 						...(material && { material }),
 					};
 				}),
@@ -533,7 +530,28 @@ function setFileLevels(
 	}
 }
 
-/** A node's staged levels, and the meshes that draw them, one for each primitive of its mesh. */
+/**
+ * The measure that a file gives a level: its error, or its coverage where the file gives no errors,
+ * and whether the level switches at once. The asset tool writes the screen coverage that its
+ * measured error implies beside the error, so an error that comes alone is one its author set as a
+ * switch distance, and that switch shows.
+ */
+export function fileLevelMeasure(
+	errors: readonly number[] | undefined,
+	coverage: readonly number[] | undefined,
+	j: number,
+): { error?: number; coverage?: number; fade?: boolean } {
+	if (errors) {
+		const measured = coverage !== undefined;
+		return {
+			error: errors[j] as number,
+			...(measured ? { fade: false } : {}),
+		};
+	}
+	return { coverage: (coverage as readonly number[])[j] as number };
+}
+
+/** A node's staged levels and cluster bands, and the meshes that draw them. */
 interface StagedNode {
 	/** The node's meshes, in the order of its mesh's primitives. */
 	meshes: MeshGeometry[];
@@ -543,6 +561,8 @@ interface StagedNode {
 	error: number;
 	/** The stages, from the level after the file's own down to the finest. */
 	stages: { url: string; bytes: number; error: number }[];
+	/** The bands of each cluster tree, in the order they extend the tree that the file holds. */
+	bands: { primitive: number; url: string; bytes: number }[];
 }
 
 /** The magic number that a stage file starts with, as the word `N3DS` counted little-endian. */
@@ -551,8 +571,20 @@ const STAGE_MAGIC = 0x5344334e;
 const STAGE_VERSION = 1;
 /** The kind of a stage that holds a level's triangles, one list for each of a mesh's primitives. */
 const STAGE_LEVELS = 0;
-/** The words of a stage file's header: its magic number, its version, its kind and its list count. */
+/** The kind of a stage that holds one band of a tree of cluster patches. */
+const STAGE_BAND = 1;
+/** The words of a stage file's header: its magic number, its version, its kind and a count. */
 const STAGE_HEADER = 4;
+
+/** One band of a tree of cluster patches, as a stage file holds it. */
+export interface StageBand {
+	/** Each patch's bounding sphere: its centre, then its radius. */
+	bounds: Float32Array;
+	/** Each patch's first index, count, parent's place plus one, and error's bits. */
+	records: Uint32Array;
+	/** The band's indices, which each run counts from the band's own first one. */
+	indices: Uint32Array;
+}
 
 /**
  * The triangle lists that a stage file holds: one for each of the node's primitives, in the order
@@ -591,6 +623,51 @@ export function readStage(bytes: ArrayBuffer, count: number): Uint32Array[] | un
 }
 
 /**
+ * The band of a tree of cluster patches that a kind 1 stage file holds. The file gives its header,
+ * then the patch count, then each patch's sphere and record, then the band's indices as kind 0
+ * frames a list: its count, the number of bytes of each index, and the indices padded to a whole
+ * word. A run's first index counts from the band's own first one, and a record's parent names a
+ * patch of the tree that the model file holds or of an earlier band. Undefined for a file that
+ * this engine does not read, which leaves the tree as it is.
+ */
+export function readStageBand(bytes: ArrayBuffer): StageBand | undefined {
+	const size = bytes.byteLength;
+	if (size < (STAGE_HEADER + 1) * 4) return undefined;
+	const view = new DataView(bytes);
+	if (
+		view.getUint32(0, true) !== STAGE_MAGIC ||
+		view.getUint32(4, true) !== STAGE_VERSION ||
+		view.getUint32(8, true) !== STAGE_BAND ||
+		view.getUint32(12, true) !== 1
+	)
+		return undefined;
+	const patches = view.getUint32(16, true);
+	if (patches === 0) return undefined;
+	let at = (STAGE_HEADER + 1) * 4;
+	const words = patches * 8;
+	if (at + words * 4 + 8 > size) return undefined;
+	const bounds = new Float32Array(patches * 4);
+	const records = new Uint32Array(patches * 4);
+	for (let k = 0; k < patches; k++)
+		for (let c = 0; c < 8; c++) {
+			const word = at + (k * 8 + c) * 4;
+			if (c < 4) bounds[k * 4 + c] = view.getFloat32(word, true);
+			else records[k * 4 + c - 4] = view.getUint32(word, true);
+		}
+	at += words * 4;
+	const length = view.getUint32(at, true);
+	const width = view.getUint32(at + 4, true);
+	at += 8;
+	if (width !== 2 && width !== 4) return undefined;
+	const bytesOf = Math.ceil((length * width) / 4) * 4;
+	if (at + bytesOf !== size) return undefined;
+	const indices = new Uint32Array(length);
+	if (width === 2) indices.set(new Uint16Array(bytes, at, length));
+	else indices.set(new Uint32Array(bytes, at, length));
+	return { bounds, records, indices };
+}
+
+/**
  * Starts the downloads of a file's staged levels, each node's from the coarsest down, without
  * waiting for them: the sketch draws the level that the file holds while they arrive. `maxLevels`
  * stops each node's downloads after that many levels, the file's own counted first, so a page that
@@ -607,20 +684,122 @@ function startStages(
 ): void {
 	const given = options.maxLevels ?? Number.POSITIVE_INFINITY;
 	const maxLevels = given >= 1 ? Math.floor(given) : 1;
-	for (const node of staged)
-		void loadStages(context, prefab, node, made, maxLevels, address, call).catch((error) => {
-			if (DEV)
-				console.warn(
-					`${call}() could not finish the levels of ${address}: ${error instanceof Error ? error.message : String(error)}`,
-				);
-		});
+	const failed = (error: unknown) => {
+		if (DEV)
+			console.warn(
+				`${call}() could not finish the levels of ${address}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+	};
+	for (const node of staged) {
+		if (node.stages.length > 0)
+			void loadStages(context, prefab, node, made, maxLevels, address, call).catch(failed);
+		/** The bands of one tree, in the order they extend it. */
+		const trees = new Map<number, { primitive: number; url: string; bytes: number }[]>();
+		for (const band of node.bands) {
+			const list = trees.get(band.primitive);
+			if (list) list.push(band);
+			else trees.set(band.primitive, [band]);
+		}
+		for (const [primitive, bands] of trees)
+			void loadBands(context, prefab, node, primitive, bands, maxLevels, address, call).catch(
+				failed,
+			);
+	}
+}
+
+/**
+ * The frames that the engine draws before a level that it never picked gives up its stage for now.
+ * A camera that starts far away has time to show the level that the file draws: about two seconds
+ * at 60 frames a second. A page that comes close waits at most that long for its finest stage.
+ */
+const STAGE_WARMUP_FRAMES = 120;
+
+/**
+ * The frames that the loader watches a stage it gave up for the camera coming close. A view that
+ * picks the level the mesh draws shows that pick within the window, and the stage comes back.
+ */
+const STAGE_RETRY_FRAMES = 20;
+
+/**
+ * How long the loader waits between checks of the levels that the engine picked, and how long it
+ * waits, with no watch running, before it looks again at a stage that it gave up. While it waits it
+ * holds no watch, so a frame pays one check and nothing else.
+ */
+const STAGE_POLL_MS = 100;
+const STAGE_RETRY_PAUSE_MS = 1500;
+
+/**
+ * True once a view has picked the level, or the band, that the node's meshes draw now, or false
+ * when `frames` pass with no pick: a level that never draws cannot hand over to a finer one, so the
+ * stage would buy nothing yet. `band` names the band of a tree of cluster patches that the stage
+ * extends, or null for a level, which is bit 0 of the mesh's level picks. A frame that draws no
+ * source of a mesh restarts that mesh's warm-up, so a page that loads a model before it
+ * instantiates it keeps its stages. The watch that the check makes is released before either
+ * answer, so the frames after it pay nothing.
+ */
+async function stagePicked(
+	context: GltfContext,
+	prefab: Prefab,
+	meshes: readonly MeshGeometry[],
+	frames: number,
+	band: number | null,
+): Promise<boolean> {
+	const { glue } = context.core;
+	const ids = meshes.filter((mesh) => mesh.live).map((mesh) => mesh.id);
+	if (ids.length === 0) return false;
+	const picks =
+		band === null
+			? (id: number) => glue.stageLevelPicks(id)
+			: (id: number) => glue.stageBandPicks(id);
+	// Bit 0 is the level that the mesh draws now, which the pending stage would replace, or the
+	// band that the tree holds now, which the pending band would refine.
+	const wanted = band === null ? 1 : 1 << band;
+	for (const id of ids) glue.watchStageLevels(id);
+	try {
+		for (;;) {
+			if (!prefab.live) return false;
+			let drawn = 0;
+			for (const id of ids) {
+				if ((picks(id) & wanted) !== 0) return true;
+				drawn = Math.max(drawn, glue.stageFrames(id));
+			}
+			if (drawn >= frames) return false;
+			await new Promise((resolve) => setTimeout(resolve, STAGE_POLL_MS));
+		}
+	} finally {
+		for (const id of ids) glue.unwatchStageLevels(id);
+	}
+}
+
+/**
+ * True once a view picks the level, or the band, that the node's meshes draw now, so the stage on
+ * hold would replace a level or refine a tree on screen: false only when the model or its meshes
+ * have gone. A stage that the warm-up passes without a pick is not gone for good: the loader stops
+ * watching it and looks again after a pause, so a camera that starts far away and comes close later
+ * still gets what it then needs.
+ */
+async function stageWanted(
+	context: GltfContext,
+	prefab: Prefab,
+	meshes: readonly MeshGeometry[],
+	band: number | null,
+): Promise<boolean> {
+	if (await stagePicked(context, prefab, meshes, STAGE_WARMUP_FRAMES, band)) return true;
+	for (;;) {
+		if (!prefab.live || !meshes.some((mesh) => mesh.live)) return false;
+		await new Promise((resolve) => setTimeout(resolve, STAGE_RETRY_PAUSE_MS));
+		if (!prefab.live || !meshes.some((mesh) => mesh.live)) return false;
+		if (await stagePicked(context, prefab, meshes, STAGE_RETRY_FRAMES, band)) return true;
+	}
 }
 
 /**
  * Downloads one node's staged levels, coarsest first, and gives the node's meshes each level as it
  * arrives: the level that the mesh drew becomes a level of the mesh, and the arriving one takes its
- * place, so the objects that already draw the mesh refine without a new object. A mesh that cannot
- * take another triangle list keeps the level it has, and its stages stop.
+ * place, so the objects that already draw the mesh refine without a new object. The first stage
+ * always arrives, and each later one waits until the level loaded now has drawn. A level that never
+ * draws holds its stage back while it can, and a camera that later asks for it brings it back. A
+ * mesh that cannot take another triangle list keeps the level it has, and its stages stop.
  */
 async function loadStages(
 	context: GltfContext,
@@ -637,8 +816,12 @@ async function loadStages(
 	// is the one that the file or the stage before it gave.
 	let drawn = node.error;
 	let loaded = 1;
-	for (const stage of node.stages) {
+	for (const [index, stage] of node.stages.entries()) {
 		if (loaded >= maxLevels) return;
+		// The stage after the file's own level always arrives: it is what the file draws until it
+		// does. Each finer stage waits for the level loaded now to be picked, and a stage that the
+		// camera ignores waits again rather than dropping out of the chain.
+		if (index > 0 && !(await stageWanted(context, prefab, node.meshes, null))) return;
 		const blob = await context.download(new URL(stage.url, address), call);
 		const bytes = await blob.arrayBuffer();
 		if (!prefab.live) return;
@@ -651,6 +834,7 @@ async function loadStages(
 			return;
 		}
 		loaded += 1;
+		let taken = false;
 		for (const [k, mesh] of node.meshes.entries()) {
 			const current = indices[k];
 			const list = lists[k] as Uint32Array;
@@ -672,9 +856,82 @@ async function loadStages(
 				return;
 			}
 			indices[k] = list;
+			taken = true;
 		}
+		// No mesh of the node took the list, so no finer stage would either.
+		if (!taken) return;
 		drawn = stage.error;
 	}
+}
+
+/**
+ * Downloads one tree's bands, coarsest first, and appends each to the tree that its mesh drew:
+ * the patches that arrived draw below the ones before them, so the surface refines in place. The
+ * first band always arrives, and each later one waits until a view draws a patch of the band that
+ * the tree holds now. A band that never draws holds its stage back while it can, and a camera that
+ * later asks for it brings it back. A mesh that cannot take a band keeps the tree it has, and its
+ * bands stop.
+ */
+async function loadBands(
+	context: GltfContext,
+	prefab: Prefab,
+	node: StagedNode,
+	primitive: number,
+	bands: readonly { url: string; bytes: number }[],
+	maxLevels: number,
+	address: URL,
+	call: string,
+): Promise<void> {
+	const mesh = node.meshes[primitive];
+	if (!mesh?.live) {
+		if (DEV)
+			console.warn(
+				`${call}() left out a tree of ${address}: primitive ${primitive} of its mesh draws no triangles.`,
+			);
+		return;
+	}
+	// The file holds the tree's root band, which counts as the first level.
+	let loaded = 1;
+	for (const [index, band] of bands.entries()) {
+		if (loaded >= maxLevels) return;
+		// Each finer band waits for a view to draw the band that the tree holds now. A band that
+		// the camera ignores waits again rather than dropping out of the chain.
+		if (index > 0 && !(await stageWanted(context, prefab, [mesh], index))) return;
+		const blob = await context.download(new URL(band.url, address), call);
+		const bytes = await blob.arrayBuffer();
+		if (!prefab.live || !mesh.live) return;
+		const parsed = readStageBand(bytes);
+		if (!parsed) {
+			if (DEV)
+				console.warn(
+					`${call}() left out a band of ${address}: the file at ${band.url} does not hold a band of cluster patches.`,
+				);
+			return;
+		}
+		if (!appendBandPatches(context.core, mesh.id, parsed, call)) {
+			if (DEV)
+				console.warn(
+					`${call}() left out a band of ${address}: primitive ${primitive} of its mesh cannot take the patches of ${band.url}.`,
+				);
+			return;
+		}
+		loaded += 1;
+	}
+}
+
+/**
+ * Warns, in a development build alone, about each extension that a file uses and that neither the
+ * loader nor a registered add-on reads: its data does not draw. A package that reads one is named,
+ * so a page that imports it draws the file's data.
+ */
+export function warnUnreadExtensions(data: GltfData, address: URL, call: string): void {
+	if (!DEV) return;
+	for (const { name, addon } of data.unread ?? [])
+		console.warn(
+			addon
+				? `${call}() loaded ${address}, which uses ${name}, an extension that the engine does not read. Import ${addon}, which reads it.`
+				: `${call}() loaded ${address}, which uses ${name}, an extension that the engine does not read, so its data does not draw.`,
+		);
 }
 
 /** The prefab of a parsed file, once its textures and materials exist. */
@@ -714,6 +971,8 @@ async function buildPrefab(
 		return lower;
 	};
 	const lights = data.lights.map(lightTemplate);
+	/** Each light map that the file's `NEEDLE_lightmaps` registers, or undefined where it failed. */
+	const lightMaps = data.lightMaps.map((use) => (use < 0 ? undefined : textures[use]));
 	const rig = await makeRig(context, data, address, call);
 	if (rig) made.rig = rig;
 	const template: TemplateNode[] = [
@@ -781,13 +1040,15 @@ async function buildPrefab(
 			staged.set(n.mesh, {
 				meshes: made,
 				indices: made.map((_, k) => data.meshes[n.mesh]?.primitives[k]?.indices),
-				error: n.stages.error,
+				error: n.stages.error ?? 0,
 				stages: n.stages.levels,
+				bands: n.stages.bands ?? [],
 			});
+		const lightMap = nodeLightMap(n.lightMap, lightMaps);
 		const parts = [
 			...(mesh?.primitives ?? []).map((p, k) => ({
 				mesh: made[k] as MeshGeometry,
-				material: materials.of(p),
+				material: materials.of(p, lightMap),
 				...morphOf(mesh as MeshData, p, n),
 				// The asset tool marks the primitives that block the view, as `setOccluder` does.
 				...(p.occluder && { flags: FLAG_VISIBLE | FLAG_OCCLUDER }),
@@ -858,6 +1119,7 @@ async function buildPrefab(
 	const { parts, bounds } = partsOf(template, data, meshes, instancing);
 	if (DEV && data.notes.length > 0)
 		console.warn(`${call}() left out parts of ${address}: ${data.notes.join('; ')}.`);
+	warnUnreadExtensions(data, address, call);
 	if (DEV && data.draco)
 		console.warn(
 			`${call}() loaded ${address}, whose meshes use Draco compression. Draco's decoder adds about 60 KB to the page's download, and decodes slower than meshopt. Convert the file to meshopt with \`bunx @null3d/cli assets optimize\`.`,
@@ -1140,6 +1402,69 @@ function storePatches(core: CoreMemory, mesh: number, patches: PatchesData, call
 }
 
 /**
+ * Appends one band to the tree of cluster patches of a mesh: its patches' spheres and records, then
+ * their indices, at the address that the staging words give. Returns true when the mesh took the
+ * band, and false when it has no tree or the band does not fit it, which leaves the tree as it is.
+ */
+function appendBandPatches(core: CoreMemory, mesh: number, band: StageBand, call: string): boolean {
+	const { bounds, records, indices } = band;
+	const patches = records.length / 4;
+	const at = core.checkGrowth(core.glue.meshArrays(patches * 8 + indices.length), call);
+	// Eight words a patch: its sphere's four floats, then its record's four integers.
+	const staging = core.u32(at, patches * 8);
+	const floats = new Float32Array(staging.buffer, staging.byteOffset, patches * 8);
+	for (let k = 0; k < patches; k++) {
+		floats.set(bounds.subarray(k * 4, k * 4 + 4), k * 8);
+		staging.set(records.subarray(k * 4, k * 4 + 4), k * 8 + 4);
+	}
+	core.u32(at + patches * 32, indices.length).set(indices);
+	return core.glue.appendMeshPatches(mesh, patches, indices.length) === 1;
+}
+
+/**
+ * The light map that a node's Needle `MeshRenderer` names, with the texture that the file's
+ * `NEEDLE_lightmaps` registers at its index and the scale and offset of its coordinates. `key`
+ * names the assignment, so that nodes which place the same map alike share a material.
+ */
+interface NodeLightMap {
+	texture: Texture;
+	scale: readonly [number, number];
+	offset: readonly [number, number];
+	key: string;
+}
+
+/**
+ * The material options of a node's light map: its texture, the scale and offset that place the
+ * bake on the mesh, and Needle's RGBM decode. Needle's offset counts rows from the top, so the
+ * vertical one flips here.
+ */
+function lightMapOptions(lightMap: NodeLightMap | undefined): StandardOptions {
+	if (!lightMap) return {};
+	return {
+		lightMap: lightMap.texture,
+		lightMapRepeat: lightMap.scale,
+		lightMapOffset: [lightMap.offset[0], 1 - lightMap.scale[1] - lightMap.offset[1]],
+		lightMapDecode: 'rgbm',
+	};
+}
+
+/** The light map of a node, or undefined when the node has none or its texture did not load. */
+function nodeLightMap(
+	held: NodeData['lightMap'],
+	maps: readonly (Texture | undefined)[],
+): NodeLightMap | undefined {
+	if (!held) return undefined;
+	const texture = maps[held.index];
+	if (!texture) return undefined;
+	return {
+		texture,
+		scale: held.scale,
+		offset: held.offset,
+		key: `${held.index} ${held.scale.join(',')} ${held.offset.join(',')}`,
+	};
+}
+
+/**
  * The engine's materials of a file: one for each of its materials, and one for each other way a
  * primitive draws it, as three.js's GLTFLoader makes them. A primitive with vertex colors turns
  * them on, one without normals shades flat, and one without tangents turns its normal map's
@@ -1197,9 +1522,15 @@ class FileMaterials {
 		this.extra.length = 0;
 	}
 
-	/** The material that draws a primitive. */
-	of(p: PrimitiveData): Material {
-		return this.variant(p.material, p.colors !== undefined, !p.normals, p.tangents !== undefined);
+	/** The material that draws a primitive, with the light map that the primitive's node names. */
+	of(p: PrimitiveData, lightMap?: NodeLightMap): Material {
+		return this.variant(
+			p.material,
+			p.colors !== undefined,
+			!p.normals,
+			p.tangents !== undefined,
+			lightMap,
+		);
 	}
 
 	/**
@@ -1210,11 +1541,17 @@ class FileMaterials {
 		return material < 0 ? undefined : this.variant(material, false, false, true);
 	}
 
-	private variant(k: number, vertexColors: boolean, flat: boolean, tangents: boolean): Material {
-		const key = `${k} ${vertexColors} ${flat} ${tangents}`;
+	private variant(
+		k: number,
+		vertexColors: boolean,
+		flat: boolean,
+		tangents: boolean,
+		lightMap?: NodeLightMap,
+	): Material {
+		const key = `${k} ${vertexColors} ${flat} ${tangents}${lightMap ? ` ${lightMap.key}` : ''}`;
 		let material = this.made.get(key);
 		if (!material) {
-			material = this.create(this.data.materials[k], vertexColors, flat, tangents);
+			material = this.create(this.data.materials[k], vertexColors, flat, tangents, lightMap);
 			this.made.set(key, material);
 		}
 		return material;
@@ -1225,9 +1562,18 @@ class FileMaterials {
 		vertexColors: boolean,
 		flatShading: boolean,
 		tangents: boolean,
+		lightMap?: NodeLightMap,
 	): Material {
 		const { materials } = this.context;
-		if (!m) return materials.standard({ metalness: 1, roughness: 1, vertexColors, flatShading });
+		const baked = lightMapOptions(lightMap);
+		if (!m)
+			return materials.standard({
+				metalness: 1,
+				roughness: 1,
+				vertexColors,
+				flatShading,
+				...baked,
+			});
 		const map = (k: number | undefined) => (k === undefined ? undefined : this.textures[k]);
 		const common: UnlitOptions = {
 			color: m.color,
@@ -1236,7 +1582,7 @@ class FileMaterials {
 			alphaCutoff: Math.min(m.alphaCutoff, 1),
 			doubleSided: m.doubleSided,
 			vertexColors,
-			uvTransform: m.uvTransform,
+			mapUvTransforms: m.uvTransforms,
 			// three.js's GLTFLoader writes no depth for blended materials.
 			depthWrite: m.alphaMode !== 'blend',
 			map: map(m.maps.map),
@@ -1272,6 +1618,7 @@ class FileMaterials {
 			options.attenuationDistance = volume.attenuationDistance;
 		}
 		if (m.transmission) options.transmission = m.transmission.factor;
+		if (m.dispersion > 0) options.dispersion = m.dispersion;
 		if (m.diffuseTransmission) {
 			options.diffuseTransmission = m.diffuseTransmission.factor;
 			options.diffuseTransmissionColor = m.diffuseTransmission.color;
@@ -1281,6 +1628,7 @@ class FileMaterials {
 			options.subsurfaceColor = m.scatter.color;
 		}
 		const layers = m.layers;
+		Object.assign(options, baked);
 		if (layers) {
 			const scale = layers.clearcoatNormalScale;
 			options.clearcoat = layers.clearcoat;
@@ -1318,12 +1666,24 @@ const LIGHT_PROPERTIES: ReadonlyMap<string, number> = new Map([
 ]);
 
 /**
+ * The slot of each map whose transform a `KHR_animation_pointer` moves, by the map's key. These are
+ * the maps that three.js's animation-pointer plugin moves: a base color map and an emissive map.
+ */
+const POINTER_MAP_SLOTS: ReadonlyMap<string, number> = new Map<string, number>([
+	['map', MAP_SLOT_BASE_COLOR],
+	['emissiveMap', MAP_SLOT_EMISSIVE],
+]);
+
+/**
  * The properties that a model's clips move, as the prefab's copies play them: one binding for each
  * property, with the value that the file gave it, and the tracks of each clip by its id in the
  * core. Returns undefined when no clip moves a property, and notes the tracks that name a target
- * the copy does not have.
+ * the copy does not have. Each map keeps a transform of its own, so a clip that moves two maps of
+ * one material plays both.
+ *
+ * @internal
  */
-function propertyAnimation(
+export function propertyAnimation(
 	data: GltfData,
 	materials: FileMaterials,
 	placed: readonly number[],
@@ -1342,9 +1702,13 @@ function propertyAnimation(
 		const id = rig.clips.get(clip.name);
 		if (id === undefined) continue;
 		const tracks: PropertyTrack[] = [];
+		// A clip that moves one property twice plays the first track and notes the other, rather
+		// than mixing the two into one value.
+		const played = new Set<number>();
 		for (const track of clip.properties ?? []) {
 			const { target, components } = track;
-			const key = `${target.kind} ${target.index} ${target.value}`;
+			const moved = target.kind === 'material' ? target.map : undefined;
+			const key = `${target.kind} ${target.index} ${target.value} ${moved ?? ''}`;
 			let binding = known.get(key);
 			if (binding === undefined) {
 				const base = propertyBase(target, data);
@@ -1367,12 +1731,21 @@ function propertyAnimation(
 					name: target.kind === 'material' ? target.value : '',
 					components,
 					base,
+					slot: moved === undefined ? undefined : POINTER_MAP_SLOTS.get(moved),
 				});
 				targets.push(where);
 				// The key names the property as a file's pointer does, such as "materials/0/color".
-				keys.push(`${target.kind}s/${target.index}/${target.value}`);
+				const name = target.kind === 'material' ? (target.key ?? target.value) : target.value;
+				keys.push(`${target.kind}s/${target.index}/${name}`);
 				known.set(key, binding);
 			}
+			if (played.has(binding)) {
+				notes.push(
+					`the clip "${clip.name}" moves ${target.kind} ${target.index}'s ${target.value} twice, so it plays the first track`,
+				);
+				continue;
+			}
+			played.add(binding);
 			tracks.push({
 				binding,
 				interpolation: track.interpolation ?? 'linear',
@@ -1436,6 +1809,8 @@ function propertyBase(target: RigPropertyTarget, data: GltfData): Float32Array |
 				return Float32Array.from(m.specularColor);
 			case 'transmission':
 				return one(m.transmission?.factor);
+			case 'dispersion':
+				return one(m.dispersion);
 			case 'thickness':
 				return one(m.transmission?.thickness ?? m.diffuseTransmission?.thickness);
 			case 'clearcoat':
@@ -1454,6 +1829,10 @@ function propertyBase(target: RigPropertyTarget, data: GltfData): Float32Array |
 				return one(layers?.anisotropy);
 			case 'anisotropyRotation':
 				return one(layers?.anisotropyRotation);
+			case 'uvOffset':
+				return Float32Array.from(m.uvTransforms?.[target.map ?? 'map']?.offset ?? [0, 0]);
+			case 'uvScale':
+				return Float32Array.from(m.uvTransforms?.[target.map ?? 'map']?.repeat ?? [1, 1]);
 		}
 		return undefined;
 	}

@@ -14,8 +14,8 @@ use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
 use null3d_gpu::drawlist::sizes;
 use null3d_render::camera::{Affine, Lens, Orthographic, Perspective};
 use null3d_render::light_grid::{
-    ClusterParams, DEFAULT_GRID, FADE_FRAMES, GridShape, GridView, LightGrid, LightLimits,
-    START_BITS, area_light_at_camera,
+    ClusterParams, DEFAULT_GRID, FADE_FRAMES, GridShape, GridView, HEADER_FITTED, HEADER_WORDS,
+    LightGrid, LightLimits, START_BITS, area_light_at_camera,
 };
 
 /// Runs `f` with a job system whose workers are native threads.
@@ -220,7 +220,7 @@ fn the_clusters_list_what_a_search_of_every_cluster_and_light_finds() {
     }
     assert_eq!(
         grid.words().len(),
-        DEFAULT_GRID.clusters() as usize + listed
+        HEADER_WORDS as usize + DEFAULT_GRID.clusters() as usize + listed
     );
     // Most lights miss most clusters, and every light reaches some.
     assert!(listed < lights.len() * DEFAULT_GRID.clusters() as usize / 20);
@@ -288,7 +288,10 @@ fn caps_keep_the_first_lights_of_a_cluster_and_the_nearest_lights_of_the_frame()
     };
     let mut grid = LightGrid::new(shape, limits);
     grid.assign(&jobs, &view, &lights);
-    assert_eq!(grid.words().len(), shape.clusters() as usize + 20);
+    assert_eq!(
+        grid.words().len(),
+        HEADER_WORDS as usize + shape.clusters() as usize + 20
+    );
     assert!(grid.cluster_lights(far).is_empty());
 
     // Past the frame's cap, the nearest lights stay, in the order of the list.
@@ -313,7 +316,10 @@ fn a_grid_without_lights_in_its_depth_lists_none() {
     assert_eq!(grid.uniform().grid[2], DEFAULT_GRID.slices as f32);
     grid.assign(&jobs, &view, &[]);
     assert_eq!(grid.uniform().grid[2], 0.0);
-    assert_eq!(grid.words().len(), DEFAULT_GRID.clusters() as usize);
+    assert_eq!(
+        grid.words().len(),
+        HEADER_WORDS as usize + DEFAULT_GRID.clusters() as usize
+    );
     assert_eq!(grid.cluster_at([0.0, 0.0, -5.0]), None);
     // A light wholly behind the near plane reaches no slice.
     grid.assign(&jobs, &view, &[light([0.0, 0.0, 1.0], 0.5, false, 1)]);
@@ -335,7 +341,7 @@ fn slices_end_where_the_farthest_light_ends() {
     assert_eq!(cluster / DEFAULT_GRID.tiles(), last);
     assert_eq!(grid.cluster_at([0.0, 0.0, -24.1]), None);
     // The word of that cluster names the light.
-    let word = grid.words()[cluster as usize];
+    let word = grid.words()[(HEADER_WORDS + cluster) as usize];
     assert_eq!(word >> START_BITS, 1);
 }
 
@@ -615,6 +621,80 @@ fn the_gpu_reads_the_slicing_that_the_job_workers_assign_with() {
         assert_eq!(a.bounds[12], [0.0; 4]);
         assert_eq!(prepared.gpu_workgroups(), [2, 24, 1]);
     }
+}
+
+/// The fitted slicing lists every light whose sphere reaches a sampled point. This is the
+/// reference that the GPU's fit follows, so the fit never loses a light that a fragment needs.
+#[test]
+fn a_fitted_slicing_lists_every_light_that_reaches_a_fragment() {
+    let world = AHEAD;
+    let view = view(PERSPECTIVE, &world);
+    let lights = lights_in(&mut Rng(7), &view, &world, 256, 120.0, 12.0);
+    let jobs = JobSystem::new(0);
+    let measured = [40.0, 220.0];
+    // Room for every light in every cluster, so the test judges the slicing and no cap.
+    let limits = LightLimits {
+        per_cluster: lights.len() as u32,
+        ..Default::default()
+    };
+    let mut fitted = LightGrid::new(DEFAULT_GRID, limits);
+    fitted.assign_fitted(&jobs, &view, &lights, measured);
+    let mut plain = LightGrid::new(DEFAULT_GRID, limits);
+    plain.assign(&jobs, &view, &lights);
+    assert_eq!(fitted.words()[HEADER_FITTED as usize], 1.0f32.to_bits());
+    assert_eq!(plain.words()[HEADER_FITTED as usize], 0);
+    // Every light whose sphere reaches a sampled point is in that point's cluster.
+    let mut rng = Rng(11);
+    let kept = fitted.lights();
+    let mut checked = 0;
+    for _ in 0..2000 {
+        // A point inside the view, so a cluster covers it as the shader would find it.
+        let d = rng.between(1.0, 240.0);
+        let p = [rng.between(-0.4, 0.4) * d, rng.between(-0.2, 0.2) * d, -d];
+        let Some(cluster) = fitted.cluster_at(p) else {
+            continue;
+        };
+        let indices = fitted.cluster_lights(cluster);
+        for (i, light) in kept.iter().enumerate() {
+            let at = light.position;
+            let gap =
+                ((p[0] - at[0]).powi(2) + (p[1] - at[1]).powi(2) + (p[2] - at[2]).powi(2)).sqrt();
+            assert!(
+                gap >= light.range || indices.contains(&(i as u32)),
+                "light {i} reaches {p:?} but cluster {cluster} does not list it"
+            );
+        }
+        checked += 1;
+    }
+    assert!(checked > 1000, "only {checked} points found a cluster");
+    // A point past the last slice keeps the last cluster, which stays open to the lights' end.
+    assert!(fitted.cluster_at([0.0, 0.0, -380.0]).is_some());
+    assert_eq!(plain.cluster_at([0.0, 0.0, -380.0]), None);
+}
+
+/// A measured range shorter than a twentieth of its near end fits nothing, and neither does an
+/// orthographic lens or a nearest depth behind the near plane: each keeps the CPU's slicing.
+#[test]
+fn a_short_range_or_an_orthographic_lens_keeps_the_cpu_slicing() {
+    let jobs = JobSystem::new(0);
+    let fitted = |lens: Lens, measured: [f32; 2]| {
+        let view = view(lens, &AHEAD);
+        let lights = lights_in(&mut Rng(5), &view, &AHEAD, 64, 100.0, 10.0);
+        let mut grid = LightGrid::new(DEFAULT_GRID, LightLimits::default());
+        grid.assign_fitted(&jobs, &view, &lights, measured);
+        grid.words()[HEADER_FITTED as usize]
+    };
+    assert_eq!(fitted(PERSPECTIVE, [40.0, 41.0]), 0, "a 2.5% range");
+    assert_eq!(
+        fitted(PERSPECTIVE, [0.1, 80.0]),
+        0,
+        "a range behind the near plane"
+    );
+    assert_eq!(
+        fitted(ORTHOGRAPHIC, [40.0, 200.0]),
+        0,
+        "an orthographic lens"
+    );
 }
 
 /// A plane of the parameters, which the grid set: a normalized plane.

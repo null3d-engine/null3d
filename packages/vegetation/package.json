@@ -1,0 +1,59 @@
+{
+	"name": "@null3d/vegetation",
+	"version": "0.0.0",
+	"description": "Vegetation for null3D sketches: parametric trees, conifers, shrubs, ferns and grass grown from a short record of numbers and a seed, placed by ecological rules, with detail levels and wind data, built on the engine's public API.",
+	"license": "MIT OR Apache-2.0",
+	"author": "Ramesh Nair (https://hiddentao.com)",
+	"homepage": "https://github.com/null3d-engine/null3d#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/null3d-engine/null3d.git",
+		"directory": "packages/vegetation"
+	},
+	"bugs": {
+		"url": "https://github.com/null3d-engine/null3d/issues"
+	},
+	"keywords": [
+		"null3d",
+		"3d",
+		"vegetation",
+		"trees",
+		"grass",
+		"procedural",
+		"webgpu",
+		"webgl2"
+	],
+	"type": "module",
+	"exports": {
+		".": {
+			"null3d-source": "./src/index.ts",
+			"types": "./lib/index.d.ts",
+			"default": "./lib/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"lib",
+		"LICENSE-MIT",
+		"LICENSE-APACHE"
+	],
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"scripts": {
+		"prepack": "bun ../../tools/build-package.ts vegetation"
+	},
+	"peerDependencies": {
+		"@null3d/engine": "workspace:*",
+		"@null3d/wind": "workspace:*",
+		"@null3d/impostors": "workspace:*"
+	},
+	"devDependencies": {
+		"@null3d/engine": "workspace:*",
+		"@null3d/vite-plugin": "workspace:*",
+		"@null3d/wind": "workspace:*",
+		"@webgpu/types": "0.1.74",
+		"@null3d/impostors": "workspace:*"
+	}
+}

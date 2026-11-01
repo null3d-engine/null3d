@@ -27,6 +27,8 @@ import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import {
 	ANTIALIAS_MSAA,
+	CORE_NOT_COUNTED,
+	LIGHT_VALUE_HERO_SIZE,
 	LIGHT_VALUE_SHADOW_CASCADES,
 	LIGHT_VALUE_SHADOW_MAP_SIZE,
 	TEXTURE_OPTION_KEEP_COPIES,
@@ -36,8 +38,16 @@ import {
 } from '../generated/core';
 import { FORMAT_CANVAS, PERMUTATION_DRAW_INDEX, PERMUTATION_TONE_MAP } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
+import type {
+	HoldDump,
+	HoldScript,
+	HoldScriptProblem,
+	HoldScriptResult,
+	HoldScriptStep,
+} from '../page/hold';
 import { type CoreDevice, cellTableWarning } from '../page/limits';
-import { FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
+import { FULL_SCALE, thousandths } from '../quality/budget';
+import { Governor, GovernorLoop } from '../quality/governor';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import type { Assets, GltfExtensionHandler, ProgressHandler } from '../scene/assets';
 import { FrameCameras } from '../scene/frame-cameras';
@@ -47,7 +57,7 @@ import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
 import { Render } from '../scene/render';
 import { Geometry, Materials } from '../scene/resources';
-import { Scene } from '../scene/scene';
+import { Camera, Light, type Object3D, Scene } from '../scene/scene';
 import { ShaderPreloads } from '../scene/shader-preloads';
 import { ShaderTemplates } from '../scene/shader-templates';
 import { Textures } from '../scene/textures';
@@ -56,10 +66,19 @@ import {
 	type ControlViews,
 	controlLabels,
 	controlViews,
+	EVENT_KEY_DOWN,
+	EVENT_KEY_UP,
+	EVENT_POINTER_DOWN,
+	EVENT_POINTER_MOVE,
+	EVENT_POINTER_UP,
+	EVENT_WHEEL,
+	FLAG_PRIMARY,
 	frameAfter,
 	frameReached,
+	type InputEventType,
 	nextFrame,
 	Slot,
+	writeInputEvent,
 } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { stopHelperWorkers } from '../shared/helper-workers';
@@ -73,21 +92,34 @@ import {
 } from '../shared/images';
 import { MEMORY_AREA_COUNT } from '../shared/memory-area';
 import { MemoryViews } from '../shared/memory-views';
-import { Counter, FrameRecorder, MemoryFigure, Phase, Role } from '../shared/metrics';
+import { Counter, FrameRecorder, MemoryFigure, PHASE_NAMES, Phase, Role } from '../shared/metrics';
+import type { Recorder, ReplayProgram, ReplayResult } from '../shared/recording';
+import { tasksPending } from '../shared/task-pending';
+import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { FixedClock, FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
 import { InputReader } from './input';
 import { type QualityStart, type QualityUpdate, RESTART_CHANGE, SketchQuality } from './quality';
-import { HOLD_SEED, seedMathRandom } from './random';
+import { HOLD_SEED, RECORDING_SEED, seedMathRandom } from './random';
 import { type LabelSlotSender, Ui } from './ui';
 
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
 
 /** Fixed sizes of the engine core. */
 const MAX_BATCHES = 256;
+/**
+ * How long a held frame waits for the tasks that the sketch queued before it. A task answers
+ * between frames, and a hold runs its frames with no frame loop, so the held frame waits here or
+ * it draws what the tasks had not yet written. The limit keeps a task that never answers from
+ * stopping the hold.
+ */
+const TASK_SETTLE_LIMIT_MS = 10_000;
 const COMMAND_CAPACITY = 1 << 16;
+/** The id of the pointer that a timed script drives, and the bit of its main button. */
+const MAIN_POINTER = 1;
+const MAIN_BUTTON = 1;
 
 export interface SketchCore {
 	glue: CoreGlue;
@@ -122,6 +154,8 @@ export interface SketchCore {
 	twoStepProbe: boolean;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
 	pageUrl: string;
+	/** The sketch module's address, which a recording keeps and a replay compares. */
+	sketchUrl: string;
 	/**
 	 * The highest frame rate that the preset check and the governor aim for: the page's `targetFps`
 	 * setting under the ?fps= cap, and infinity for the display's full rate.
@@ -250,6 +284,7 @@ export async function runPipelined(
 ): Promise<void> {
 	const { slots } = controlViews(control);
 	sketch.context.scene.attachPickControl(slots);
+	sketch.context.render.attachReadControl(slots);
 	try {
 		while (Atomics.load(slots, Slot.Running) !== 0) {
 			const paused = Atomics.load(slots, Slot.Paused);
@@ -286,6 +321,9 @@ export class SketchRunner {
 	private readonly clock = new FrameClock();
 	/** The fixed steps' clock, which the sketch's options set up. */
 	private fixed = new FixedClock();
+	/** The page's count of resumes as the last frame read it, and whether the page showed since. */
+	private resumes = -1;
+	private resumed = false;
 	/** The sketch's `time`, which each frame updates in place. Its frames are those that run the sketch. */
 	private readonly time = { now: 0, dt: 0, frame: 0 };
 	/**
@@ -331,6 +369,8 @@ export class SketchRunner {
 	private frameOpen = false;
 	/** When the current phase of the frame started. */
 	private phaseStart = 0;
+	/** The last phase that the frame in progress ended, which names where a hold stopped. */
+	private lastPhase: string | undefined;
 	/** True while hold mode steps the sketch: the first failure then stops it. */
 	private holding = false;
 	/** Gives the thread its own Math.random back, after hold mode seeded it. */
@@ -398,19 +438,44 @@ export class SketchRunner {
 	private readonly ui: Ui;
 	/** True once the sketch thread has warned that the grid cells ran out. */
 	private cellsWarned = false;
+	/** What a timed script's steps gave, once hold mode has performed them. */
+	private scriptResult: HoldScriptResult | undefined;
+	/** The recording of this session, while the page records one. */
+	private recorder: Recorder | undefined;
+	/** The frames that this session replays, when the page gave a recording instead of a page to play. */
+	private readonly replayProgram: ReplayProgram | undefined;
+	/** What a replay gave, once its frames ran. */
+	private replayResult: ReplayResult | undefined;
+	/** True while a replay's frames run, so each frame reads the input that the replay wrote. */
+	private replaying = false;
+	/** True when the page records this session's frames and input. */
+	private readonly records: boolean;
+	/**
+	 * True when the session runs fixed frames rather than the page's: hold mode, which steps to a
+	 * time, or a replay, which steps through a recording.
+	 */
+	private readonly holdsFrames: boolean;
 	readonly context: SketchContext;
 
 	/**
 	 * Starts the engine on the core's thread. `holdSeconds` starts hold mode at that sketch time: it
 	 * seeds this thread's math.random, and routes Math.random to it, at once. So the runner must
 	 * exist before the sketch module loads, and `setup` then steps the sketch to that time.
+	 * `holdScript` gives hold mode the input steps, property writes and dumps to perform as it steps.
 	 */
 	constructor(
 		post: PagePoster,
 		private readonly metrics: ArrayBufferLike,
 		private readonly sketch: SketchCore,
 		private readonly holdSeconds?: number,
+		private readonly holdScript?: HoldScript,
+		replay?: ReplayProgram,
+		record = false,
+		debugView?: string,
 	) {
+		this.replayProgram = replay;
+		this.records = record;
+		this.holdsFrames = holdSeconds !== undefined || replay !== undefined;
 		this.record = new FrameRecorder(metrics, Role.Sketch);
 		this.jobRecords = Array.from(
 			{ length: sketch.jobWorkers },
@@ -432,6 +497,7 @@ export class SketchRunner {
 			device.transparent,
 			device.cellCulling,
 			device.depthPrepass,
+			device.prepassColor,
 			device.skinning,
 			device.indexInstances,
 			device.largeWorld,
@@ -448,17 +514,20 @@ export class SketchRunner {
 			pointLightShadows,
 			shadowCascades,
 			shadowMapSize,
+			heroTileSize,
 			morphTargets,
 		} = sketch.quality.settings;
 		glue.setShadowTiles(shadowTiles, shadowTileSize, pointLightShadows);
 		glue.setMorphTargets(morphTargets);
 		if (device.occlusionBuffer > 0) glue.setOcclusionBuffer(device.occlusionBuffer);
-		// Directional lights that name no cascades or map size take the preset's.
+		// Directional lights that name no cascades, map size or hero tile size take the preset's.
 		const values = this.core.callValues();
 		values[0] = shadowCascades;
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES);
 		values[0] = shadowMapSize;
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE);
+		values[0] = heroTileSize;
+		glue.setLightDefault(LIGHT_VALUE_HERO_SIZE);
 		if (sketch.jobWorkers > 0) {
 			// The page ends the job workers' loops through these words when the engine stops, and
 			// lets them run the browser's measurement of its memory through the yield word.
@@ -480,6 +549,7 @@ export class SketchRunner {
 			device.webgl2,
 			device.textureCache,
 			() => this.quality.own('textureMemoryMiB'),
+			post,
 		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
@@ -487,6 +557,9 @@ export class SketchRunner {
 		// The page's own setting, which is not one of the preset's: it keeps the copies that bring
 		// each texture's map back after the GPU is lost.
 		glue.setTextureOption(TEXTURE_OPTION_KEEP_COPIES, sketch.quality.keepCopies === true ? 1 : 0);
+		// A device that draws on the CPU keeps the whole render scale once a step below it failed:
+		// its two-step upscale costs about what the smaller scene saves (D-237).
+		this.governor.setSoftware(device.softwareRenderer);
 		this.governorLoop =
 			holdSeconds === undefined
 				? new GovernorLoop(
@@ -588,6 +661,7 @@ export class SketchRunner {
 			templates,
 			device.joinEffects,
 			new GradeTable(textures),
+			this.quality,
 		);
 		this.render = new Render(
 			this.core,
@@ -607,7 +681,12 @@ export class SketchRunner {
 			sketch.sendLabelSlot,
 		);
 		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
+		// The page's ?view switch applies before the sketch's setup, so a sketch that never calls
+		// debug.view still draws the view. A feature that registers an add-on view during the setup
+		// starts it when it registers.
+		if (debugView !== undefined) this.debugDraw?.requestView(debugView);
 		const debug = this.debugDraw ?? new SketchDebug(host);
+		const holdsFrames = this.holdsFrames;
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
@@ -623,7 +702,7 @@ export class SketchRunner {
 			quality: this.quality,
 			preferences: {
 				get reducedMotion() {
-					return holdSeconds === undefined && Atomics.load(slots, Slot.ReducedMotion) !== 0;
+					return !holdsFrames && Atomics.load(slots, Slot.ReducedMotion) !== 0;
 				},
 				onChange: (handler) => {
 					this.preferenceHandlers.add(handler);
@@ -640,7 +719,11 @@ export class SketchRunner {
 			debug,
 		};
 		// Last, so a constructor that fails leaves the thread's own Math.random in place.
-		if (holdSeconds !== undefined) this.restoreRandom = seedMathRandom(HOLD_SEED);
+		const seed =
+			holdSeconds !== undefined
+				? HOLD_SEED
+				: (replay?.seed ?? (record ? RECORDING_SEED : undefined));
+		if (seed !== undefined) this.restoreRandom = seedMathRandom(seed);
 	}
 
 	/**
@@ -650,14 +733,26 @@ export class SketchRunner {
 	 */
 	async setup(sketch: SketchDefinition): Promise<void> {
 		this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
+		// The setup grows the scene, and a page that stalls here reports the time it spent doing it.
+		this.record.markSetupStart();
+		const growing = performance.now();
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
+		this.record.markSetupDone(performance.now() - growing);
 		const { check } = this.sketch.quality;
-		if (check && this.holdSeconds === undefined) await this.checkPreset();
+		if (check && !this.holdsFrames) await this.checkPreset();
 		// Warm-ups that the setup started without waiting for them publish their frames first, so
 		// the frame loop never records while a setup frame does.
 		await this.setupFrames;
+		if (this.records) {
+			// The format's code loads only for a session that records one, so a page that records
+			// nothing downloads none of it.
+			const { Recorder: Recording } = await import('../shared/recording');
+			this.recorder = new Recording(RECORDING_SEED, this.sketch.keyCodes);
+			this.input.recorder = this.recorder;
+		}
 		this.setUp = true;
 		if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
+		else if (this.replayProgram !== undefined) await this.replay(this.replayProgram);
 	}
 
 	/**
@@ -720,7 +815,7 @@ export class SketchRunner {
 	 * once the thread that draws has taken that frame too, so the targets it makes exist.
 	 */
 	private async settle(drawn: boolean): Promise<void> {
-		if (this.holdSeconds !== undefined) return;
+		if (this.holdsFrames) return;
 		const { slots } = this.sketch.control;
 		const target = this.setUp ? nextFrame(this.recorded.frame) : await this.queueSetupFrame();
 		await reached(slots, Slot.PipelinesBuilt, target);
@@ -776,14 +871,22 @@ export class SketchRunner {
 			console.error(error);
 		}
 		this.context.scene.stopPicks();
+		this.render.stopReads();
 		this.core.stop();
 		stopHelperWorkers();
 		this.restoreRandom?.();
 		this.restoreRandom = undefined;
 	}
 
-	/** Delivers a message the page sent with engine.postToSketch. It arrives between frames. */
+	/**
+	 * Delivers a message the page sent with engine.postToSketch. It arrives between frames. A
+	 * video's frame goes to the texture that follows the video, and never to the sketch's handlers.
+	 */
 	receive(type: string, data: unknown): void {
+		if (type === VIDEO_FRAME) {
+			this.context.textures.receiveVideoFrame(data as VideoFrameMessage);
+			return;
+		}
 		for (const handler of this.messageHandlers) handler(type, data);
 	}
 
@@ -817,6 +920,7 @@ export class SketchRunner {
 		const at = this.record.phaseIndex(phase);
 		floats[at] = (floats[at] as number) + (now - this.phaseStart);
 		this.phaseStart = now;
+		this.lastPhase = PHASE_NAMES[phase];
 	}
 
 	/**
@@ -960,6 +1064,7 @@ export class SketchRunner {
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setSsrQuality(governor.ssrScale, this.ssrStepSetting) !== 0 ||
+			glue.setBounceRays(settings.bounceRays) !== 0 ||
 			glue.setContactSteps(governor.contactSteps) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
 			glue.setSubsurfaceTaps(settings.subsurfaceSamples) !== 0 ||
@@ -969,10 +1074,12 @@ export class SketchRunner {
 			this.setReflectionScale(settings.reflectionScale) !== 0 ||
 			glue.setProbeSize(settings.probeSize) !== 0 ||
 			glue.setAreaLightCap(settings.areaLights) !== 0 ||
+			glue.setLightFit(settings.lightFit ? 1 : 0) !== 0 ||
 			this.setLevelQuality() !== 0 ||
 			glue.setPhysicalSky(settings.physicalSky) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0 ||
 			glue.setParallax(settings.parallax) !== 0 ||
+			glue.setMomentTransparency(settings.momentTransparency) !== 0 ||
 			glue.setSoftParticles(settings.softParticles) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
@@ -1147,7 +1254,10 @@ export class SketchRunner {
 	 * `timestamp` is the frame's time in milliseconds.
 	 */
 	step(timestamp: number): number {
-		this.clock.advance(timestamp, Atomics.load(this.sketch.control.slots, Slot.Resumes));
+		const resumes = Atomics.load(this.sketch.control.slots, Slot.Resumes);
+		this.resumed = this.resumes >= 0 && resumes !== this.resumes;
+		this.resumes = resumes;
+		this.clock.advance(timestamp, resumes);
 		return this.frame();
 	}
 
@@ -1161,17 +1271,36 @@ export class SketchRunner {
 	 * capture, it steps the sketch once more at the
 	 * same time, and that thread draws both frames in turn. The first failure in the sketch or the
 	 * core stops the hold with E1408.
+	 *
+	 * A timed script that the page gave is performed alongside the steps: its input events reach the
+	 * frame that falls at their time, its property writes land before that frame, and its dumps read
+	 * the state after it. A step that fails is recorded and the hold goes on.
 	 */
 	private async hold(seconds: number): Promise<void> {
 		const steps = holdSteps(seconds);
 		const { slots } = this.sketch.control;
 		const { glue } = this.sketch;
+		const script = this.holdScript;
+		const scriptSteps = script?.steps ?? [];
+		const keys = new Map(this.sketch.keyCodes.map((code, key) => [code, key]));
+		const dumps: HoldDump[] = [];
+		const problems: HoldScriptProblem[] = [];
+		let cursor = 0;
 		let frame = 0;
 		let first = 0;
 		this.holding = true;
 		try {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
+				const now = this.clock.now;
+				// Input and property writes land before the frame at their time, so the frame reads
+				// them. Dumps wait for it, so they read the state that it gave.
+				this.scriptDumps.length = 0;
+				while (cursor < scriptSteps.length && (scriptSteps[cursor] as HoldScriptStep).at <= now) {
+					const one = scriptSteps[cursor++] as HoldScriptStep;
+					if (one.verb === 'dump') this.scriptDumps.push(one);
+					else this.performScriptStep(one, keys, problems);
+				}
 				// A held frame whose passes read the motion since the frame before it, as the motion
 				// debug view does, has the thread that draws draw the frame before it first.
 				const before = step === steps - 1 && glue.holdsFrameBefore() !== 0;
@@ -1190,26 +1319,288 @@ export class SketchRunner {
 				}
 				frame = this.frame();
 				if (first === 0 && (before || step === steps)) first = frame;
+				for (const one of this.scriptDumps) this.dumpScriptStep(one, dumps, problems);
 			}
 			// A reflection probe captures in one frame and lights surfaces from then on, and the
 			// capture views take one probe a frame, so a second frame at the same time captures the
-			// next. The thread that draws keeps two frames' lists.
+			// next. A light's picture copied from a texture shows from the frame after the copy, so
+			// that frame draws the picture too. The thread that draws keeps two frames' lists.
 			Atomics.store(slots, Slot.HeldFrom, frame);
-			if (glue.readsLastFrame() !== 0 || glue.probesWaiting() !== 0) {
+			// A task that the sketch queued in a frame answers between frames, so the last frame that
+			// the loop ran may have drawn what the task had not yet written. Once the tasks settle, one
+			// more frame at the same time draws what they wrote.
+			if (
+				glue.readsLastFrame() !== 0 ||
+				glue.probesWaiting() !== 0 ||
+				glue.lightImagesWaiting() !== 0 ||
+				tasksPending() > 0
+			) {
+				if (tasksPending() > 0) await this.settleTasks();
 				this.clock.holdStep(steps, steps, seconds);
 				frame = this.frame();
 			}
 		} catch (error) {
+			// The message alone rarely says where the frame stopped, so name the phase that finished
+			// last: a failure during the phase after it belongs to that part of the frame.
+			const phase =
+				this.frameOpen && this.lastPhase !== undefined ? ` (past its ${this.lastPhase} phase)` : '';
 			throw new EngineError(
 				'E1408',
-				`hold mode stopped at ${Number(this.clock.now.toFixed(3))} seconds, in frame ${this.context.time.frame}: ${messageOf(error)}`,
+				`hold mode stopped at ${Number(this.clock.now.toFixed(3))} seconds, in frame ${this.context.time.frame}: ${messageOf(error)}${phase}`,
 			);
 		} finally {
 			this.holding = false;
 		}
+		if (script !== undefined) this.scriptResult = { dumps, problems };
 		Atomics.store(slots, Slot.HeldFrom, first);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
+	}
+
+	/**
+	 * Waits for the tasks that the sketch queued, which write their answers between frames, so the
+	 * held frame draws what they wrote. A chain of tasks has each one queued before the promise that
+	 * answered before it runs its next code, so the count reaches zero only when the chain is done.
+	 */
+	private async settleTasks(): Promise<void> {
+		const deadline = performance.now() + TASK_SETTLE_LIMIT_MS;
+		while (tasksPending() > 0) {
+			if (performance.now() >= deadline) {
+				console.warn(`hold mode stopped waiting for ${tasksPending()} task(s) that did not answer`);
+				return;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+	}
+
+	/**
+	 * Steps the sketch through a recording: each frame gets the step and the sketch time that it had
+	 * when the session was recorded, and the input that the sketch read in it. The frames run from
+	 * the recording's first one on a fresh setup, so the session's states come out the same on
+	 * another machine, whatever its frame rate. The last frame is the one that the thread that draws
+	 * draws, as in hold mode.
+	 */
+	private async replay(program: ReplayProgram): Promise<void> {
+		const { slots } = this.sketch.control;
+		const { glue } = this.sketch;
+		const rate = Math.round(1 / this.fixed.step);
+		if (program.fixedRate !== rate)
+			throw new EngineError(
+				'E1435',
+				`the recording runs ${program.fixedRate} fixed steps a second, and this sketch runs ${rate}.`,
+			);
+		/** The engine's key index of each name in the recording's dictionary. */
+		const keyIndex = program.keyNames.map((name) => {
+			const index = this.sketch.keyCodes.indexOf(name);
+			if (index >= 0) return index;
+			throw new EngineError(
+				'E1435',
+				`the recording used the key "${name}", which this engine's key codes do not hold. Play the recording with the engine that recorded it.`,
+			);
+		});
+		const frames = program.steps.length;
+		this.replaying = true;
+		let first = 0;
+		let frame = 0;
+		let now = 0;
+		try {
+			for (let at = 0; at < frames; at++) {
+				const step = program.steps[at] as number;
+				now += step;
+				this.clock.replayStep(now, step);
+				const start = program.starts[at] as number;
+				const count = program.counts[at] as number;
+				for (let k = start; k < start + count; k++) this.writeRecordedEvent(program, k, keyIndex);
+				// The last frame is the only one that the thread that draws draws, so it is the first
+				// to wait for the scene's images, as a held frame does. A pass that reads the frame
+				// before it, as screen-space reflections do, draws the frame before the last too.
+				const before = at === frames - 2 && glue.holdsFrameBefore() !== 0;
+				if (first === 0 && (before || at === frames - 1)) {
+					await this.context.scene.imagesSettled();
+					await this.context.scene.areaTablesSettled();
+					await this.post.gradingSettled();
+					await imagesArrived(slots, glue.textureStat(TEXTURE_STAT_IMAGES_SENT, 0));
+					glue.setTextureOption(TEXTURE_OPTION_UPLOAD_ALL, 1);
+					this.gpuEpoch = -1;
+				}
+				frame = this.frame();
+				if (first === 0 && (before || at === frames - 1)) first = frame;
+			}
+			Atomics.store(slots, Slot.HeldFrom, frame);
+			if (
+				glue.readsLastFrame() !== 0 ||
+				glue.probesWaiting() !== 0 ||
+				glue.lightImagesWaiting() !== 0 ||
+				tasksPending() > 0
+			) {
+				if (tasksPending() > 0) await this.settleTasks();
+				this.clock.replayStep(now, 0);
+				frame = this.frame();
+			}
+		} catch (error) {
+			if (error instanceof EngineError && error.code === 'E1435') throw error;
+			throw new EngineError(
+				'E1408',
+				`the replay stopped at ${Number(now.toFixed(3))} seconds, in frame ${this.context.time.frame}: ${messageOf(error)}`,
+			);
+		} finally {
+			this.replaying = false;
+		}
+		this.replayResult = {
+			frames,
+			seconds: now,
+			sketch: program.sketch,
+			stopped: program.stopped,
+		};
+		Atomics.store(slots, Slot.HeldFrom, first);
+		Atomics.store(slots, Slot.FramesPublished, frame);
+		Atomics.notify(slots, Slot.FramesPublished);
+	}
+
+	/** Writes one recorded input record into the ring for the frame that reads it. */
+	private writeRecordedEvent(
+		program: ReplayProgram,
+		event: number,
+		keyIndex: readonly number[],
+	): void {
+		const at = event * program.stride;
+		const type = program.events[at] as number;
+		const code = program.events[at + 1] as number;
+		writeInputEvent(
+			this.sketch.control,
+			type as InputEventType,
+			program.events[at + 5] as number,
+			program.events[at + 6] as number,
+			type === EVENT_KEY_DOWN || type === EVENT_KEY_UP ? (keyIndex[code] as number) : code,
+			program.events[at + 3] as number,
+			program.events[at + 4] as number,
+			program.events[at + 2] as number,
+			nextFrame(this.recorded.frame),
+		);
+	}
+
+	/** What a replay gave, once its frames ran. */
+	get replayOutcome(): ReplayResult | undefined {
+		return this.replayResult;
+	}
+
+	/** The recording of this session so far, or undefined when the page records nothing. */
+	async saveRecording(): Promise<Uint8Array | undefined> {
+		if (this.recorder === undefined) return undefined;
+		return this.recorder.encode({
+			fixedRate: Math.round(1 / this.fixed.step),
+			sketch: this.sketch.sketchUrl,
+		});
+	}
+
+	/** The dump steps that fall at the frame that is about to run, which read it after it ran. */
+	private readonly scriptDumps: Extract<HoldScriptStep, { verb: 'dump' }>[] = [];
+
+	/** What a timed script's steps gave, once hold mode has performed them. */
+	get holdScriptResult(): HoldScriptResult | undefined {
+		return this.scriptResult;
+	}
+
+	/**
+	 * Performs one step of a timed script that lands before a frame: writes the input event that the
+	 * next frame reads, or writes a property at once. A step that fails leaves a problem and the rest
+	 * of the script goes on.
+	 */
+	private performScriptStep(
+		step: HoldScriptStep,
+		keys: ReadonlyMap<string, number>,
+		problems: HoldScriptProblem[],
+	): void {
+		const text = scriptStepText(step);
+		try {
+			if (step.verb === 'key') {
+				const key = keys.get(step.code);
+				if (key === undefined)
+					problems.push({
+						at: step.at,
+						step: text,
+						error: `the engine reads no key named "${step.code}". Name a key by its code on a standard keyboard, such as KeyA, Space or ArrowLeft.`,
+					});
+				else writeKeyEvent(this.sketch.control, step.down, key, this.nextInputFrame());
+				return;
+			}
+			if (step.verb === 'pointer') {
+				writePointerEvent(this.sketch.control, step, this.input.pointer, this.nextInputFrame());
+				return;
+			}
+			if (step.verb === 'set') {
+				const target = this.scriptTarget(step, problems);
+				if (target !== undefined) this.context.scene.setScriptPath(target, step.path, step.value);
+			}
+		} catch (error) {
+			problems.push({ at: step.at, step: text, error: messageOf(error) });
+		}
+	}
+
+	/** Records what a dump step reads, or the problem that stopped it. */
+	private dumpScriptStep(
+		step: Extract<HoldScriptStep, { verb: 'dump' }>,
+		dumps: HoldDump[],
+		problems: HoldScriptProblem[],
+	): void {
+		const target = this.scriptTarget(step, problems);
+		if (target === undefined) return;
+		const { scene } = this.context;
+		try {
+			if (step.path !== undefined) {
+				dumps.push({
+					at: step.at,
+					target: step.target,
+					path: step.path,
+					value: scene.readScriptPath(target, step.path),
+				});
+				return;
+			}
+			const visible = scene.readScriptPath(target, 'visible');
+			dumps.push({
+				at: step.at,
+				target: step.target,
+				value: {
+					name: target.name,
+					kind: target instanceof Camera ? 'camera' : target instanceof Light ? 'light' : 'object',
+					position: scene.readScriptPath(target, 'position'),
+					rotation: scene.readScriptPath(target, 'rotation'),
+					scale: scene.readScriptPath(target, 'scale'),
+					visible: visible[0] === 1,
+				},
+			});
+		} catch (error) {
+			problems.push({ at: step.at, step: scriptStepText(step), error: messageOf(error) });
+		}
+	}
+
+	/**
+	 * The object that a script step names: an object by name, or the scene's active camera. A name
+	 * that finds nothing leaves a problem that says so, with the names that are close.
+	 */
+	private scriptTarget(
+		step: Extract<HoldScriptStep, { verb: 'set' | 'dump' }>,
+		problems: HoldScriptProblem[],
+	): Object3D | undefined {
+		const { scene } = this.context;
+		const found = step.target === '#camera' ? scene.shownCamera : scene.find(step.target);
+		if (found !== undefined) return found;
+		const near = scene.nearNames(step.target.replace(/^#/, ''));
+		const where =
+			step.target === '#camera'
+				? 'the scene has no active camera'
+				: `the scene has no object named "${step.target}"`;
+		const hint =
+			near.length > 0
+				? ` Names that are close: ${near.map((name) => `"${name}"`).join(', ')}.`
+				: ' The scene has no named objects.';
+		problems.push({ at: step.at, step: scriptStepText(step), error: `${where}.${hint}` });
+		return undefined;
+	}
+
+	/** The number of the frame that the next input event reaches. */
+	private nextInputFrame(): number {
+		return nextFrame(this.recorded.frame);
 	}
 
 	/**
@@ -1278,12 +1669,14 @@ export class SketchRunner {
 		this.updateFailed = false;
 		this.frameOpen = true;
 		this.phaseStart = start;
+		this.lastPhase = undefined;
 		this.readViewport();
 		// The governor judges the frames so far before the sketch's update, which then sees the
 		// render scale of this frame, and whose change handlers hear of a shadow step.
 		if (play && this.governorLoop) {
 			this.governorLoop.now[0] = start;
-			this.governorLoop.frame();
+			this.governorLoop.frame(this.resumed);
+			this.resumed = false;
 			if (this.governor.stepChanges !== this.stepChanges) this.applyGovernedSteps();
 		}
 		// Handlers that hear of a restart may create objects with new pipelines, so their frame
@@ -1293,7 +1686,8 @@ export class SketchRunner {
 		// objects, preference changes, the fixed steps and the update. It stays in this function: a
 		// call that passed the step on would allocate a number for it in every frame.
 		if (play) {
-			if (this.holdSeconds === undefined) {
+			this.recorder?.beginFrame(dt);
+			if (!this.holdsFrames) {
 				this.input.beginFrame(frame, (frame - time.frame) | 0);
 				this.context.scene.dispatchPointerEvents(this.reportError);
 				const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
@@ -1301,6 +1695,11 @@ export class SketchRunner {
 					this.reducedMotion = reducedMotion;
 					this.notify(this.preferenceHandlers, undefined);
 				}
+			} else if (this.replaying || (this.holding && this.holdScript !== undefined)) {
+				// A hold that performs a timed script, or a replay, reads the events that were written
+				// for the frame, so a frame driven by input stays the same on every run.
+				this.input.beginFrame(frame, 0);
+				this.context.scene.dispatchPointerEvents(this.reportError);
 			}
 			const change = this.quality.takeChange();
 			if (change !== 0) {
@@ -1335,6 +1734,8 @@ export class SketchRunner {
 		// Job workers woken now start while the engine applies the frame's commands; woken before
 		// the sketch's update, they would spin through it and sleep again.
 		glue.prepareJobs();
+		// Each feature draw answers whether its feature is ready before the frame takes its room.
+		this.context.scene.pollReadiness();
 		// Whole milliseconds and microseconds cross into the core without a number object each.
 		const timeMs = Math.round(time.now * 1000);
 		const stepUs = Math.round(dt * 1_000_000);
@@ -1420,6 +1821,11 @@ export class SketchRunner {
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		this.record.count(Counter.OccludedEntries, glue.occludedEntries(frame));
+		// The path that the frame's cluster trees took, for a page that reports which one a held
+		// frame drew: the ranges the walk chose, or none where the device draws whole levels.
+		const ranges = glue.patchRanges(frame);
+		Atomics.store(slots, Slot.ClusterPatches, ranges === CORE_NOT_COUNTED ? -1 : ranges);
+		Atomics.store(slots, Slot.ClusterPatchFrame, frame);
 		// A frame whose update threw still presents, so its record marks it: the figure that counts
 		// completed updates leaves it out.
 		this.record.count(Counter.UpdateErrors, this.updateFailed ? 1 : 0);
@@ -1461,8 +1867,88 @@ export class SketchRunner {
 			jobRecord.commitMicros(glue.takeJobBusyUs(k));
 		}
 		this.growJobs(glue, asked);
-		// A pick whose read landed answers now, before the next frame's update.
+		// A pick whose read landed answers now, before the next frame's update, and so does a read
+		// of a compute pass's region.
 		this.context.scene.pollPicks(this.sketch.control.slots);
+		this.render.pollReads(this.sketch.control.slots);
 		return frame;
+	}
+}
+
+/** A step of a timed script as a person writes it, for a message about the step. */
+function scriptStepText(step: HoldScriptStep): string {
+	switch (step.verb) {
+		case 'key':
+			return `key ${step.code} ${step.down ? 'down' : 'up'}`;
+		case 'pointer':
+			return `pointer ${step.action}`;
+		case 'set':
+			return `set "${step.target}".${step.path}`;
+		case 'dump':
+			return step.path === undefined
+				? `dump "${step.target}"`
+				: `dump "${step.target}".${step.path}`;
+	}
+}
+
+/** Writes a key's press or release for the frame that reads it. */
+function writeKeyEvent(control: ControlViews, down: boolean, key: number, frame: number): void {
+	writeInputEvent(control, down ? EVENT_KEY_DOWN : EVENT_KEY_UP, 0, 0, key, 0, 0, 0, frame);
+}
+
+/** Writes a pointer's step for the frame that reads it. The script's pointer is the main pointer. */
+function writePointerEvent(
+	control: ControlViews,
+	step: Extract<HoldScriptStep, { verb: 'pointer' }>,
+	pointer: { x: number; y: number; buttons: number },
+	frame: number,
+): void {
+	// A press or a release without a place keeps the pointer where it is. A move or a wheel
+	// scroll carries its own numbers.
+	const x = step.x ?? pointer.x;
+	const y = step.y ?? pointer.y;
+	switch (step.action) {
+		case 'move':
+			writeInputEvent(
+				control,
+				EVENT_POINTER_MOVE,
+				x,
+				y,
+				0,
+				MAIN_POINTER,
+				pointer.buttons,
+				FLAG_PRIMARY,
+				frame,
+			);
+			return;
+		case 'down':
+			writeInputEvent(
+				control,
+				EVENT_POINTER_DOWN,
+				x,
+				y,
+				0,
+				MAIN_POINTER,
+				pointer.buttons | MAIN_BUTTON,
+				FLAG_PRIMARY,
+				frame,
+			);
+			return;
+		case 'up':
+			writeInputEvent(
+				control,
+				EVENT_POINTER_UP,
+				x,
+				y,
+				0,
+				MAIN_POINTER,
+				pointer.buttons & ~MAIN_BUTTON,
+				FLAG_PRIMARY,
+				frame,
+			);
+			return;
+		case 'wheel':
+			writeInputEvent(control, EVENT_WHEEL, x, y, 0, 0, 0, 0, frame);
+			return;
 	}
 }

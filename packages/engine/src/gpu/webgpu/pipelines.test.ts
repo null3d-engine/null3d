@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { scaledBudget } from '../../../../../tests/lib/run-budget.ts';
+import { everyWgslShader } from '../../../../../tests/lib/shader-builds.ts';
 import * as G from '../../generated/gpu';
-import { type DeviceShaders, everyShader, type ShaderVariants } from '../../generated/shaders';
+import type { DeviceShaders, ShaderVariants } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
 import { engineTemplates } from '../webgl2/programs';
 import { COMPUTE_MAPS_BIT, Pipelines } from './pipelines';
@@ -12,8 +14,12 @@ afterAll(() => {
 	for (const name of Object.keys(GLOBALS)) delete scope[name];
 });
 
-/** Every shader build the shader compiler wrote, as this device's pipeline builders see them. */
-const SHADERS = await everyShader();
+/**
+ * Every WGSL build the shader compiler wrote, as this device's pipeline builders see them. The
+ * pipeline layouts come from the WGSL side of a build alone, and the WebGL2 modules hold most of
+ * the set's bytes, so the check reads the WGSL modules and holds a fraction of the whole set.
+ */
+const SHADERS = await everyWgslShader();
 
 /** WebGPU's default limits, which every device offers and the engine stays within. */
 const LIMITS = {
@@ -29,13 +35,6 @@ const LIMITS = {
 };
 
 const STAGES = { vertex: 1, fragment: 2, compute: 4 };
-
-/** The permutation bits of a custom shader that change its pipeline layout. */
-const CUSTOM_BITS = {
-	SKIN: G.PERMUTATION_SKIN,
-	INSTANCE_INDEX: G.PERMUTATION_INSTANCE_INDEX,
-	DEPTH_MULTISAMPLED: G.PERMUTATION_DEPTH_MULTISAMPLED,
-};
 
 /** Every combination of the bits of `bits`. */
 function combinations(bits: number): number[] {
@@ -174,12 +173,16 @@ function custom(kind: CustomShader['kind'], textures: number, bits: number): Cus
 
 describe('the WebGPU pipeline layouts', () => {
 	// Every template's every build, which is a few thousand pipelines, so this takes seconds.
-	it('keep every build of every template within the default limits per shader stage', () => {
-		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
-		const templates = renderTemplates(pipelines);
-		expect(templates).toContain(G.TEMPLATE_DECAL_MAPS);
-		expect(templates.flatMap((id) => templateFaults(pipelines, id))).toEqual([]);
-	}, 120_000);
+	it(
+		'keep every build of every template within the default limits per shader stage',
+		() => {
+			const pipelines = new Pipelines(fakeDevice(), deviceShaders());
+			const templates = renderTemplates(pipelines);
+			expect(templates).toContain(G.TEMPLATE_DECAL_MAPS);
+			expect(templates.flatMap((id) => templateFaults(pipelines, id))).toEqual([]);
+		},
+		scaledBudget(120_000),
+	);
 
 	it('never reuse one template’s pipeline layout for another template’s build', () => {
 		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
@@ -198,16 +201,43 @@ describe('the WebGPU pipeline layouts', () => {
 		expect(stageCounts(entries, STAGES.fragment).sampledTextures).toBe(16);
 	});
 
+	it('give a depth-reading material with maps a maps group with one slot fewer', () => {
+		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
+		const id = G.TEMPLATE_CUSTOM_FIRST + 7;
+		pipelines.defineCustom(id, {
+			...custom(undefined, G.SIZE_MAP_SLOTS - 1, 0),
+			sceneDepth: true,
+		});
+		const layout = layoutOf(renderDescriptor(pipelines, id, 0));
+		const groups = [...layout.bindGroupLayouts] as unknown as GPUBindGroupLayoutDescriptor[];
+		expect(groups.map((group) => group.label)).toEqual([
+			'frame',
+			'material maps with scene depth',
+			'material scene depth',
+		]);
+		const maps = groups[1];
+		const bindings = [...(maps?.entries ?? [])].map((entry) => entry.binding);
+		// The shader numbers its own textures from the first binding and their samplers from the
+		// slot count, so the group keeps those numbers and leaves the last slot's pair out.
+		expect(bindings).toEqual([0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14]);
+		const entries = groups.flatMap((group) => [...group.entries]);
+		expect(stageCounts(entries, STAGES.fragment).sampledTextures).toBe(16);
+	});
+
 	it('keep custom materials and effects with textures within the default limits', () => {
 		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
-		const meshBits = G.PERMUTATION_SKIN | G.PERMUTATION_INSTANCE_INDEX | G.PERMUTATION_CASTER;
+		// A custom material's builds never read their instances by index: the material compiler
+		// leaves that permutation out, and the renderer pairs it only with the engine's own mesh
+		// templates. Skinning and the caster builds are the combinations that add a group here.
+		const meshBits = G.PERMUTATION_SKIN | G.PERMUTATION_CASTER;
 		const shaders = [
 			custom(undefined, 0, meshBits),
 			custom(undefined, G.SIZE_MAP_SLOTS, meshBits),
-			// A material that reads the scene's depth takes the group after the frame's, and
-			// `materials.shader` refuses one that also declares textures, so its fragment stage
-			// stays within the default limit.
+			// A material that reads the scene's depth takes the group after the frame's and a maps'
+			// group with one slot fewer, which `materials.shader` matches by refusing an eighth
+			// texture, so its fragment stage stays within the default limit.
 			{ ...custom(undefined, 0, meshBits), sceneDepth: true },
+			{ ...custom(undefined, G.SIZE_MAP_SLOTS - 1, meshBits), sceneDepth: true },
 			custom('effect', G.SIZE_MAP_SLOTS, G.PERMUTATION_DEPTH_MULTISAMPLED),
 			custom('effectGroup', 0, G.PERMUTATION_DEPTH_MULTISAMPLED),
 			custom('effectFold', 0, G.PERMUTATION_DEPTH_MULTISAMPLED),
@@ -237,6 +267,7 @@ describe('the WebGPU pipeline layouts', () => {
 			G.TEMPLATE_LIGHT_COUNT,
 			G.TEMPLATE_LIGHT_PLACE,
 			G.TEMPLATE_LIGHT_WRITE,
+			G.TEMPLATE_FEATURE_ROWS,
 		]) {
 			const descriptor = pipelines.compute(id, 0);
 			for (const fault of faults(layoutOf(descriptor), 0))
@@ -266,6 +297,10 @@ describe('the WebGPU pipeline layouts', () => {
 		// binds fails its dispatch.
 		expect(groups.map((group) => group.label)).toEqual(['compute rgba16float']);
 		expect(faults(layoutOf(descriptor), 0)).toEqual([]);
+		// A pass that fills an instance draw's count word and rows takes the buffers' layout: the
+		// format code 0 names it, and the pass's two storage buffers stay within the limits.
+		const buffers = pipelines.compute(id, 0);
+		expect(faults(layoutOf(buffers), 0)).toEqual([]);
 	});
 
 	it('give an add-on compute pass with maps the maps layout at group 1', () => {

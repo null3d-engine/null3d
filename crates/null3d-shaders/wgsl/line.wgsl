@@ -26,7 +26,7 @@ enable draw_index;
 #import null3d::mesh::{ambient_light, frame as engine_frame, material_of}
 #import null3d::vertex::{OUTSIDE_CLIP, mesh_position, to_clip}
 #ifdef LIT
-#import null3d::globals::{Material}
+#import null3d::globals::{FILL_LIGHT_SLOTS, Material}
 #import null3d::lighting::{direct_light, dfg_lut, indirect_diffuse, multiscatter_compensation}
 #import null3d::lighting::{pbr_material, with_specular}
 #import null3d::lights::{clustered_light}
@@ -175,8 +175,8 @@ fn closest_line_to_line(p1: vec3f, p2: vec3f, p3: vec3f, p4: vec3f) -> vec2f {
 
 #ifdef LIT
 /// The light that a line reflects toward the camera, as a standard material with the line's color
-/// reflects it from a surface that faces the camera: the sun, the point and spot lights of its
-/// cluster and the ambient and hemisphere lights, plus the light it gives off. `relative` is the point on the line
+/// reflects it from a surface that faces the camera: the directional lights, the point and spot
+/// lights of its cluster and the ambient and hemisphere lights, plus the light it gives off. `relative` is the point on the line
 /// relative to the camera. The frame's lights are exposed, and the light it gives off takes the
 /// exposure here.
 fn lit_color(m: Material, base: vec3f, relative: vec3f) -> vec3f {
@@ -187,8 +187,18 @@ fn lit_color(m: Material, base: vec3f, relative: vec3f) -> vec3f {
     let dfg = dfg_lut(1.0, pbr.roughness);
     let compensation = multiscatter_compensation(pbr.specular_blended, dfg);
     let to_light = -engine_frame.sun_direction.xyz;
-    let sun = direct_light(pbr, normal, normal, to_light, engine_frame.sun_color.rgb, compensation);
-    let clustered = clustered_light(pbr, relative, normal, normal, compensation);
+
+    var sun = direct_light(pbr, normal, normal, to_light, engine_frame.sun_color.rgb, compensation);
+    let fills = min(u32(engine_frame.sun_color.w), FILL_LIGHT_SLOTS);
+    for (var k = 0u; k < fills; k++) {
+        let direction = engine_frame.fill_dir[k];
+        let color = engine_frame.fill_col[k];
+        let fill = direct_light(pbr, normal, normal, -direction.xyz, color.rgb, compensation);
+        sun.diffuse += fill.diffuse;
+        sun.specular += fill.specular;
+    }
+    let clustered = clustered_light(pbr, relative, normal, normal, normal, compensation);
+
     let ambient = indirect_diffuse(pbr, ambient_light(normal), dfg);
     let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
     return direct + ambient + exposed(m.emissive.rgb * m.strengths.w);

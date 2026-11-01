@@ -1,8 +1,8 @@
 # D-23: Index-only instance data on core WebGPU
 
-Status: decided for now: the index path stays a test switch, off by default. The owner's iPad ran it on 2026-10-11 and gained 2.1% in S1-static, under the rule's 5%, so the switch stays off. Date: 2026-10-05. Task: M2-K1 (T-23).
+Status: decided: the index path stays a test switch, off by default. No device saves the rule's 5% in S1-static; the owner's iPad gains the most, 2.1%. Built: the switch and its first-use builds. Not run yet: S6 with the index path. Task: M2-K1 (T-23).
 
-Summary: Behind `?instances=index` on core WebGPU only, the culling pass writes a 16-byte entry with the source's index in place of a 64-byte copy. The vertex shaders then read the matrix, material and cell offset from storage buffers. Twelve scenes draw the same images both ways, to the pixel, on the Mac's GPU and SwiftShader. The builds load on first use, 15.1 to 16.7 KB after Brotli each. On the device cloud, S1 is 13% faster on a Galaxy S25 and 1.4% slower on an iPad. S1-static changes by less than 2% on both, and the Mac shows no change. On the owner's iPad the indices are 0.2% to 2.1% faster, within the runs' spread. No device saves the 5% of GPU time in S1-static that a capability flag needs, so it stays off by default.
+Summary: Behind `?instances=index` on core WebGPU only, the culling pass writes a 16-byte entry with the source's index in place of a 64-byte copy. Twelve scenes draw the same images both ways, to the pixel, and the builds load on first use. No device saves the 5% of GPU time in S1-static that a capability flag needs, so the path stays off by default.
 
 ## Question
 
@@ -10,7 +10,7 @@ On WebGPU, each view's culling pass copies every visible instance into a compact
 
 ## Rule
 
-Adopt the index path behind a capability flag if it saves at least 5% of the GPU time in S1-static or S6. The Mac or the iPad must show the saving. Its images must be identical, and it must cost time in no scene on either device. The owner allowed the measurement as an exception to hard rule 7 (question 2 of the milestone's plan, 3 October 2026). The owner also allowed a capability flag if the path wins.
+Adopt the index path behind a capability flag if it saves at least 5% of the GPU time in S1-static or S6. The Mac or the iPad must show the saving. Its images must be identical, and it must cost time in no scene on either device. The owner allowed the measurement as an exception to hard rule 7 (question 2 of the milestone's plan). The owner also allowed a capability flag if the path wins.
 
 ## The two ways
 
@@ -29,11 +29,11 @@ How the engine builds the index path:
 - Meshes that the vertex skinning switch skins in the vertex shader keep the copies, and no build has both the `SKIN` and the `INSTANCE_INDEX` bits. A build with both would load with the skinning feature, since a build goes with its lowest bit. So every WebGPU page with a skinned mesh would download them. They more than doubled the WebGPU skinning files: 2.2 to 2.5 MB uncompressed and 434 to 559 KB after gzip. The limits are 1,536 KB and 320 KB. The permutation module's `APART` list holds the pair, and the shader build makes no build with both bits of a pair in it.
 - A bucket reads indices when the switch is on and its template has the builds, unless the vertex shader skins it. Custom materials, sprites, lines, the debug views and the texture coordinates template keep the copies. So do the transparent pass's instances, which the CPU writes after it sorts them. Custom materials have no `INSTANCE_INDEX` builds, which would double what a project's bundle holds for each material.
 - Each bucket record has a word more, which tells the culling shader the bucket's form. A bucket that reads indices has its slice in the view's compacted instance buffer, after every copy. So the culling group binds no buffer more. Culling may bind at most 8 storage buffers, the default limit. Occlusion culling takes the last of them for its depth pyramid. A unit test keeps every pipeline within that limit.
-- Each index fills a whole 16-byte entry, which the shader writes as one vector. Its base counts entries from the buffer's start. A first build wrote each index as one 32-bit word of a vector, four indices to an entry. That is a data race. WGSL may write one part of a vector in storage as a read and a write of the whole vector. So two threads that write neighbouring parts of one entry can lose a write on any GPU. SwiftShader drew every index image right, and Apple's GPUs showed the race. One index per entry ends it, as atomic writes would. The timings below come from an earlier build, with 4-byte indices in a buffer of their own. Occlusion culling has since taken that buffer's place in the culling group.
+- Each index fills a whole 16-byte entry, which the shader writes as one vector. Its base counts entries from the buffer's start. Four indices to an entry, one 32-bit word each, would be a data race. WGSL may write one part of a vector in storage as a read and a write of the whole vector. So two threads that write neighboring parts of one entry can lose a write on any GPU. SwiftShader draws every index image right, and Apple's GPUs show the race. One index per entry avoids it, as atomic writes would. The timings below come from a build with 4-byte indices in a buffer of their own. Occlusion culling takes that buffer's place in the culling group.
 - Each view has an index group of bind group layout `INSTANCE_INDEX`. It binds the view's culling parameters as a uniform block, for the view's row of the cell offsets texture. Then it binds the matrices, the bucket table and records of the layout that the view draws, and the cell offsets texture ([D-95](D-95-culling-cell-offsets.md)). The group is made again whenever the view's culling group is, since both bind the same resources. It sits after the template's own groups: the frame's, the maps' and the joint texture's, where the template has them.
 - The vertex shader adds the cell's offset to each matrix row with the same 32-bit addition that the culling shader makes for a copy. So both ways give each vertex shader the same matrix, bit for bit.
 
-The default path changes too. Each bucket record has a word more, and the culling shader writes each copy as unsigned integers, which keeps every bit of the floats. The shader build makes 118 more WGSL builds.
+The index path costs the default path a little too. Each bucket record has a word more, and the culling shader writes each copy as unsigned integers, which keeps every bit of the floats. The shader build makes 118 more WGSL builds.
 
 ## Data
 
@@ -49,7 +49,7 @@ The fault check shows that the copies of the image tests draw through the index 
 
 ### Download size
 
-These figures compare with main on 2026-10-05, after Brotli. The WebGPU start shader files grew by 0.0% to 0.5%, and the core WebAssembly files by 0.1% to 0.2%. The renderer's JavaScript grew by up to 0.8%. At full precision the four new shader files take 15,957 and 15,949 bytes, without and with tone mapping in the shader. At half precision they take 15,418 and 17,098 bytes. Uncompressed they are 1,043 to 1,183 KB, and after gzip 213 to 272 KB.
+These figures compare the engine with and without the index path, after Brotli. The WebGPU start shader files are 0.0% to 0.5% larger with it, and the core WebAssembly files 0.1% to 0.2%. The renderer's JavaScript is up to 0.8% larger. At full precision the four new shader files take 15,957 and 15,949 bytes, without and with tone mapping in the shader. At half precision they take 15,418 and 17,098 bytes. Uncompressed they are 1,043 to 1,183 KB, and after gzip 213 to 272 KB.
 
 ### Timing
 
@@ -64,13 +64,13 @@ The benchmark page kind `null3d-webgpu-index` starts null3D with `?instances=ind
 | | S1-static | 7.21 | 7.31 | 1.4% slower | 6.71 to 7.57 / 6.74 to 7.69 |
 | | S4 | 16.84 | 16.86 | 0.1% slower | 13.74 to 17.54 / 13.75 to 17.17 |
 
-These runs drew the build before the index builds moved to first-use files and before meshes skinned in the vertex shader kept the copies. Neither change alters what S1, S1-static or S4 draw on the GPU. The S25's display ran at 30 Hz, which the runner marks as unreliable for frame timing. The GPU times come from timestamp queries, so the refresh rate does not set them.
+These runs drew a build whose index builds sat in the start files, and whose meshes skinned in the vertex shader read indices too. Neither difference alters what S1, S1-static or S4 draw on the GPU. The S25's display ran at 30 Hz, which the runner marks as unreliable for frame timing. The GPU times come from timestamp queries, so the refresh rate does not set them.
 
-On the S25, S1 gains 13%, but S1-static, where the rule looks, gains only 1.3%. On the iPad every scene is 0.1% to 1.4% slower, and the five runs of each page overlap by more than the change. No device yet meets the rule's 5% in S1-static.
+On the S25, S1 gains 13%, but S1-static, where the rule looks, gains only 1.3%. On the iPad every scene is 0.1% to 1.4% slower, and the five runs of each page overlap by more than the change. No device meets the rule's 5% in S1-static.
 
 The Mac ran Chrome on WebGPU, five runs of each page, with its load about 3.9 (run `20261005-162153-bench`). Its GPU times are equal: S1 takes 2.11 ms with the copies and 2.13 ms with the indices, and S1-static changes by 0%. On the main thread, S1 takes 2.05 ms with the copies and 2.33 ms with the indices, 0.28 ms more. S1-static takes 0.07 ms both ways, and S4 0.12 ms with the copies and 0.10 ms with the indices.
 
-The owner's iPad Pro 11 (2018, A12X, Safari 26.6.2) ran the same plan over the local network on 11 October 2026. It ran main at f854dd72d (run `20261011-092631-bench`). It ran `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`. Every page passed: 33 of 33. The iPad was on its charger, with Limit Frame Rate on, and the screen ran at 60 Hz.
+The owner's iPad Pro 11 (2018, A12X, Safari 26.6.2) ran the same plan over the local network, on main at f854dd72d (run `20261011-092631-bench`). It ran `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`. Every page passed: 33 of 33. The iPad was on its charger, with Limit Frame Rate on, and the screen ran at 60 Hz.
 
 | Device, 2026-10-11 | Scene | Copies (ms) | Indices (ms) | Change | Range of the five runs, copies / indices (ms) |
 | --- | --- | --- | --- | --- | --- |
@@ -80,19 +80,17 @@ The owner's iPad Pro 11 (2018, A12X, Safari 26.6.2) ran the same plan over the l
 
 On the owner's iPad the indices are slightly faster in every scene, but by less than the spread of the five runs. S1-static gains 2.1%, under the rule's 5%. The main thread's time hardly changed: 4.50 against 4.44 ms in S1, and 0.24 ms both ways in S1-static. In S4 the governor held 60 fps for 99% of the time both ways.
 
-Still to run:
-
-- S6, when it exists: the same commands with `--scenes s6`.
+Not run yet: S6, with the same commands and `--scenes s6`.
 
 The device cloud runs above came from `bun tests/real-browsers.ts --plan bench --cloud bsgalaxys25-chrome,bsipad10-safari --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`, run `20261005-100625-bench`. Its files are in the [S25's folder](../tested-devices/galaxy-s25-sm-s931b-chrome/20261005-100625-bench.md) and the [iPad's folder](../tested-devices/ipad-10th-generation-safari/20261005-100625-bench.md).
 
-S1 and S1-static are each one instance batch, whose rows cast no shadows (batches cast only with `castShadows`, since M2-R6). So their runs time the culling and the camera's pass. S4's sun casts shadows in the preset's cascades, so S4 times the shadow passes too.
+S1 and S1-static are each one instance batch, whose rows cast no shadows (batches cast only with `castShadows`, by M2-R6). So their runs time the culling and the camera's pass. S4's sun casts shadows in the preset's cascades, so S4 times the shadow passes too.
 
 What to expect: per visible instance and pass, the index path writes 60 bytes less. It reads about as many bytes, but through storage buffers instead of the vertex fetch. S1-static uploads no matrices, so the copies are a larger share of its frame's work than in S1.
 
 ## Decision
 
-No device meets the rule's 5% in S1-static. The Galaxy S25 gains 1.3% and the owner's iPad 2.1%. The cloud iPad loses 1.4%, and the Mac shows no change. So the copies stay the only default, and `?instances=index` stays a test switch, off by default. S6, when it exists, can still reopen this. If a device then meets the rule, the index path ships behind a capability flag for core WebGPU, and the transparent pass's instances follow it.
+No device meets the rule's 5% in S1-static. The Galaxy S25 gains 1.3% and the owner's iPad 2.1%. The cloud iPad loses 1.4%, and the Mac shows no change. So the copies stay the only default, and `?instances=index` stays a test switch, off by default. A run of S6 can still reopen this. If a device then meets the rule, the index path ships behind a capability flag for core WebGPU, and the transparent pass's instances follow it.
 
 ## Consequences
 

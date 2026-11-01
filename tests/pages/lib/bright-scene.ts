@@ -8,6 +8,16 @@ export const TONE_MAPPINGS = ['aces', 'agx', 'neutral', 'none'] as const;
 export type BrightToneMapping = (typeof TONE_MAPPINGS)[number];
 
 /**
+ * The tone curves that `@null3d/three-compat` gives the engine, by their three.js names. The
+ * three.js page and the null3D page both know them, and each maps the name onto its own curve.
+ */
+export const ADDON_TONE_MAPPINGS = ['reinhard', 'cineon'] as const;
+export type AddonToneMapping = (typeof ADDON_TONE_MAPPINGS)[number];
+
+/** Every tone mapping that the comparison draws. */
+export type AnyToneMapping = BrightToneMapping | AddonToneMapping;
+
+/**
  * The two exposures the tests draw at, in stops: the exposure is 2 to the power of the stops. The
  * pages take stops because a module address whose query holds a dot, such as exposure=0.5, reaches
  * Vite's transform with the value's end as the file's extension.

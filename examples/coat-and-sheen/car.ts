@@ -4,14 +4,9 @@
 // and a cabin of gloss-black glass framed by thin dark pillars and roof rails. A dark band runs
 // round the bottom.
 // The lamps glow, and each wheel has a tyre with a rubber sheen and a five-spoke metal rim.
-import {
-	type Material,
-	type MeshGeometry,
-	math,
-	type Object3D,
-	type SketchContext,
-} from '@null3d/engine';
+import type { Material, MeshGeometry, Object3D, SketchContext } from '@null3d/engine';
 import { lathe } from '@null3d/geometry';
+import { createCarPaint } from '../addons/car-paint';
 
 type Vec3 = [number, number, number];
 
@@ -20,8 +15,6 @@ const [TAIL, NOSE] = [-1.65, 1.72];
 const AXLES = [-1.02, 1.08];
 const WHEEL = 0.3;
 const ARCH = 0.37;
-/** Texels on each side of the paint's flake map. */
-const FLAKES = 64;
 /** The cabin's ends, the share of its length where the roof peaks, and the roof's height. */
 const [REAR, FRONT, PEAK, ROOF] = [-1.1, 0.8, 0.38, 1.16];
 
@@ -201,46 +194,41 @@ function wheel(
 }
 
 /**
- * Candy red metallic paint. A normal map of small random tilts gives it metal flakes, which the
- * smooth coat covers.
+ * Candy red metallic paint with glinting flakes and door seams under the smooth coat, and a carbon
+ * weave on the trim.
  */
-function flakePaint({ materials, textures }: SketchContext): Material {
-	math.seed(7);
-	const data = new Uint8Array(FLAKES * FLAKES * 4);
-	for (let k = 0; k < FLAKES * FLAKES; k++) {
-		const [x, y] = [math.randFloat(-0.35, 0.35), math.randFloat(-0.35, 0.35)];
-		data.set([(x * 0.5 + 0.5) * 255, (y * 0.5 + 0.5) * 255, 255, 255], k * 4);
-	}
-	const flakes = textures.fromData({
-		width: FLAKES,
-		height: FLAKES,
-		data,
-		colorSpace: 'linear',
-		wrap: 'repeat',
-		mipmaps: true,
-	});
-	return materials.standard({
+function paint(ctx: SketchContext): Material {
+	return createCarPaint(ctx, {
 		color: '#9e0b16',
-		metalness: 0.7,
-		roughness: 0.38,
-		normalMap: flakes,
-		normalScale: [0.6, 0.6],
-		uvTransform: { repeat: [24, 12] },
+		metalness: 0.72,
+		roughness: 0.34,
+		flakes: { cells: [120, 210], tilt: 0.25 },
+		// Door gaps at intervals along the body, and no seam around it.
+		seams: { spacing: [0.34, 0], width: 0.0022, shade: 0.85 },
 		clearcoat: 1,
 		clearcoatRoughness: 0.02,
+	});
+}
+
+/** Glossy carbon fibre: a dark twill whose tows stretch their highlight along their length. */
+function carbon(ctx: SketchContext): Material {
+	return createCarPaint(ctx, {
+		color: '#141619',
+		metalness: 0.25,
+		roughness: 0.42,
+		flakes: false,
+		seams: false,
+		weave: { cells: [70, 120], shine: 0.9 },
+		clearcoat: 0.85,
+		clearcoatRoughness: 0.08,
 	});
 }
 
 /** Builds the car under `parent`, its body and roof in candy red paint. */
 export function createCar(ctx: SketchContext, parent: Object3D): void {
 	const { scene, materials, geometry } = ctx;
-	const paint = flakePaint(ctx);
-	const trim = materials.standard({
-		color: '#0b0c0e',
-		roughness: 0.45,
-		clearcoat: 0.6,
-		clearcoatRoughness: 0.2,
-	});
+	const paintMaterial = paint(ctx);
+	const trim = carbon(ctx);
 	const glass = materials.standard({
 		color: '#020304',
 		roughness: 0.05,
@@ -258,7 +246,7 @@ export function createCar(ctx: SketchContext, parent: Object3D): void {
 		(_, a) => ((section(a)[1] ?? 0) < -0.55 ? 1 : 0),
 	);
 	for (const [mesh, material] of [
-		[painted, paint],
+		[painted, paintMaterial],
 		[lower, trim],
 	] as const)
 		if (mesh) scene.createMesh({ mesh, material, ...shadows });

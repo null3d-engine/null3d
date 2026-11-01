@@ -10,7 +10,7 @@ import {
 	effectiveMessage,
 	isExemptCommit,
 } from './check-docs-ack';
-import { audienceOf, isStyleChecked, subjectOf } from './check-docs-style';
+import { audienceOf, isStyleChecked, keepsDates, subjectOf } from './check-docs-style';
 import { gpuBearingFiles, gpuCheckProblem } from './check-gpu-ack';
 import { macReferencesProblem, unmatchedSwiftShaderReferences } from './check-mac-references';
 import { touchesRust } from './check-rust';
@@ -165,17 +165,20 @@ describe('the Size-Growth trailer', () => {
 		expect(sizeGrowthProblems(lines, files)).toEqual([]);
 		const start = 'feat: x\n\nSize-Growth: js/shaders-made-up.js +3%, nothing';
 		expect(sizeGrowthProblems(start, files)).toEqual([
-			'Size-Growth value "js/shaders-made-up.js +3%, nothing" names no file that the size report measures.',
+			'Size-Growth value "js/shaders-made-up.js +3%, nothing" names no file that the size report measures. If the commit grows no measured file, leave the trailer out. If it grows one, name that file as the size report prints it.',
 		]);
 	});
 
 	it('rejects a trailer that names no reported file, or gives no reason', () => {
 		expect(sizeGrowthProblems('feat: x\n\nSize-Growth: the core grew for meshes', files)).toEqual([
-			'Size-Growth value "the core grew for meshes" names no file that the size report measures.',
+			'Size-Growth value "the core grew for meshes" names no file that the size report measures. If the commit grows no measured file, leave the trailer out. If it grows one, name that file as the size report prints it.',
+		]);
+		expect(sizeGrowthProblems('feat: x\n\nSize-Growth: none', files)).toEqual([
+			'Size-Growth value "none" names no file that the size report measures. If the commit grows no measured file, leave the trailer out. If it grows one, name that file as the size report prints it.',
 		]);
 		expect(
 			sizeGrowthProblems('feat: x\n\nSize-Growth: page.js grew for the ring', files)[0],
-		).toContain('names no file');
+		).toContain('name that file as the size report prints it');
 		expect(
 			sizeGrowthProblems('feat: x\n\nSize-Growth: js/page.js +3.6% (13,709 bytes)', files),
 		).toEqual([
@@ -272,6 +275,19 @@ describe('the docs style hook', () => {
 		expect(audienceOf('.dev/benchmarks.md')).toBe('contributors');
 		expect(audienceOf('.dev/decisions/D-01-gpu-layer.md')).toBe('contributors');
 		expect(audienceOf('README.md')).toBe('users');
+	});
+
+	it('lets only the release notes and the device run files keep dates', () => {
+		expect(keepsDates('CHANGELOG.md')).toBe(true);
+		expect(keepsDates('.dev/tested-devices/pixel-9-chrome/20261006-jitter.md')).toBe(true);
+		for (const path of [
+			'.dev/tested-devices/pixel-9-chrome/README.md',
+			'.dev/tested-devices.md',
+			'.dev/decisions/D-01-gpu-layer.md',
+			'AGENTS.md',
+			'docs/concepts/backends.md',
+		])
+			expect(keepsDates(path)).toBe(false);
 	});
 
 	it('reads the subject line, which becomes a changelog entry', () => {

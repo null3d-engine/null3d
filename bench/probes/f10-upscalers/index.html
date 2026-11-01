@@ -34,7 +34,7 @@
 			// FXAA at that size into an 8-bit display-color target. Each candidate draws that target
 			// at the canvas size: bilinear (today's second step), nearest (the scale-0.5 baseline),
 			// GSR 1, and FSR 1's EASU followed by RCAS. Today's one-pass output draws the 16-bit
-			// float color at the canvas size with the old four-tap loop, which runs the output
+			// float color at the canvas size with its four-tap loop, which runs the output
 			// transform on every tap.
 			//
 			// For each candidate the page reports the cost of its whole output sequence and how close

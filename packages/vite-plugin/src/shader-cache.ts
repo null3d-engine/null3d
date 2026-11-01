@@ -29,6 +29,7 @@ import {
 	SHADER_COMPILER_URL,
 	type ShaderCompiler,
 	type ShaderSource,
+	type SkyLayerResult,
 } from './shader-compiler.ts';
 
 /** The cache's folder in a project, beside the asset tool's cache. */
@@ -152,20 +153,27 @@ export interface ShaderCacheOptions {
 /**
  * Compiles through another compiler, and keeps each result in a project's cache. A request whose
  * key the cache holds gives the stored result and never touches the inner compiler, so no compiler
- * worker starts. Two requests with one key compile once, however they arrive.
+ * worker starts. Two requests with one key compile once, however they arrive. Its fields are
+ * declared here rather than in the constructor's parameters: the command-line tool imports this
+ * package's source while Node runs it, and Node strips types from that source without transforming
+ * a parameter property.
  */
 export class ShaderCache implements ShaderCompiler {
 	/** Requests that are compiling now, by key, so a second one waits for the first. */
 	private readonly running = new Map<string, Promise<unknown>>();
+	/** The project's folder, as a getter, so a build that moves it reads the new one. */
+	private readonly root: () => string;
+	private readonly inner: ShaderCompiler;
+	private readonly options: ShaderCacheOptions;
 	private stamp: string | undefined;
 	/** True once this build has said that it compiles shaders, so it says it once. */
 	private announced = false;
 
-	constructor(
-		private readonly root: () => string,
-		private readonly inner: ShaderCompiler,
-		private readonly options: ShaderCacheOptions = {},
-	) {}
+	constructor(root: () => string, inner: ShaderCompiler, options: ShaderCacheOptions = {}) {
+		this.root = root;
+		this.inner = inner;
+		this.options = options;
+	}
 
 	shader(shader: ShaderSource): Promise<CompileResult> {
 		return this.run('shader', shader, () => this.inner.shader(shader));
@@ -177,6 +185,10 @@ export class ShaderCache implements ShaderCompiler {
 
 	effect(effect: MaterialSource): Promise<EffectResult> {
 		return this.run('effect', effect, () => this.inner.effect(effect));
+	}
+
+	skyLayer(layer: MaterialSource): Promise<SkyLayerResult> {
+		return this.run('skyLayer', layer, () => this.inner.skyLayer(layer));
 	}
 
 	/**

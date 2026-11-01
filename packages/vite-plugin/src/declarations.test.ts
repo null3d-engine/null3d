@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { fixture } from '../../../tools/lib/fixture';
 import { declarationPath, wgslDeclaration, writeWgslDeclaration } from './declarations';
 import type {
@@ -36,6 +37,7 @@ function material(
 		baseColor: true,
 		objectIds: false,
 		sceneDepth: false,
+		alpha: false,
 	};
 }
 
@@ -166,17 +168,21 @@ describe('writeWgslDeclaration', () => {
 });
 
 describe.skipIf(!ENABLED)('the declarations in the repository', () => {
-	it('match what the plugin writes for their WGSL files', async () => {
-		for (const path of [
-			'tests/fixtures/typed-uniforms/waves.wgsl',
-			'tests/pages/sketches/shaders/tint.wgsl',
-		]) {
-			const file = join(ROOT, path);
-			const compiled = await compileWgslFile(path, file, readFileSync(file, 'utf8'));
-			if ('error' in compiled) throw new Error(compiled.error.message);
-			expect(readFileSync(declarationPath(file), 'utf8')).toBe(
-				wgslDeclaration(file, compiled.shader),
-			);
-		}
-	}, 60_000);
+	it(
+		'match what the plugin writes for their WGSL files',
+		async () => {
+			for (const path of [
+				'tests/fixtures/typed-uniforms/waves.wgsl',
+				'tests/pages/sketches/shaders/tint.wgsl',
+			]) {
+				const file = join(ROOT, path);
+				const compiled = await compileWgslFile(path, file, readFileSync(file, 'utf8'));
+				if ('error' in compiled) throw new Error(compiled.error.message);
+				expect(readFileSync(declarationPath(file), 'utf8')).toBe(
+					wgslDeclaration(file, compiled.shader),
+				);
+			}
+		},
+		scaledBudget(60_000),
+	);
 });

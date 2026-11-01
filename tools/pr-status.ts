@@ -9,6 +9,7 @@
 // From the repository root:
 //   bun run pr-status            print the description
 //   bun run pr-status --apply    write it to the milestone pull request
+//   bun run pr-status --ready    print the open tasks, the ones nothing blocks first
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -22,66 +23,73 @@ const PLAN = '.internal/plan/m3-breakdown.md';
 const BASE = 'origin/main';
 
 /** Tasks whose work is partly on the branch: the part that landed, and the part that remains. */
-const PARTIAL: Readonly<Record<string, string>> = {
-	'M3-C1':
-		'the scene, its lanes, rain and the hero car are in; the moods, the instances demo and the device figures remain',
-	'M3-T1': 'the measured fence is in; the trim is on its branch',
-};
+const PARTIAL: Readonly<Record<string, string>> = {};
 
-/** Tasks built on a helper branch, with nothing of them on this branch yet. */
-const ON_BRANCH = new Set(['M3-A3', 'M3-B4', 'M3-E9', 'M3-R14']);
+/** Tasks whose work is on a helper branch, whether or not part of it has reached this branch. */
+const ON_BRANCH = new Set(['M3-F9']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
-const INCOMPLETE = new Set([
-	'M3-B1',
-	'M3-D9',
-	'M3-E2',
-	'M3-E4',
-	'M3-E6',
-	'M3-E8',
-	'M3-E10',
-	'M3-F2',
-	'M3-L1',
-	'M3-L3',
-	'M3-L4',
-	'M3-R12',
-	'M3-R13',
-	'M3-R17',
-]);
+// The branch's audits read every ticked task against its own "Done when" and its section's rule.
+// A tick states that the task is done, so a task those audits found short of its own line is not
+// ticked here until the gap closes, whatever code it already has.
+// A task belongs here only when it has no evidence yet. A task whose proof is written but whose
+// gap still stops the tick belongs in AUDIT_GAPS instead: a task in both lists says its work is
+// unfinished and finished at once, and the release hook refuses a range that creates that pair.
+const INCOMPLETE = new Set(['M3-E8', 'M3-R22']);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
-	'M3-A9':
-		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
-	'M3-E2':
-		"the task hook and the splats add-on's distance selection run on the job workers on both paths; the allocation check the task asks for is missing",
-	'M3-E4':
-		"the depth input is built and splats mix with meshes by depth; water's soft shores, the task's first user, are not on the branch",
+	'M3-A8':
+		"the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, over the prototype's one-step tolerance. The owner accepted that cost and ruled that the display table stays and the light table comes out",
 	'M3-E6':
-		"splats' budget follows the preset and reaches the overlay; water's reflection cadence, the other first user, is not on the branch",
+		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame. The overlay now lists the GPU time of each step of the frame and fills an add-on's row from the render passes that its description names, which the water add-on uses for its reflection pass; a feature whose work records inside the engine's own pass reads gpu not measured, as splats does on every path (D-267)",
 	'M3-E8':
-		"the compute pass and its WebGL2 fragment form are built and tested; the first-user outcome waits on M3-F9's ocean, because the splats add-on cannot take the hook",
-	'M3-E10':
-		"the sky layer's template, ids and sizes are in place but unregistered; the example add-on that draws a sky layer, the task's first user, does not exist",
-	'M3-F2':
-		'the add-on, both file kinds, depth mixing and the pictures on both paths are in; its streaming within budget on the iPad and an S24-class phone is not recorded',
-	'M3-B1': 'the lens kit has no picture test and no cost per preset',
-	'M3-D9':
-		'the command and its refusal of an add-on that imports the engine internal entry are tested; no recorded run holds it over every foundation add-on',
-	'M3-L1':
-		'every item is built with its pictures, but D-211 records Mac figures alone: the phone GPU time the fade item asks for, and the iPad and phone figures the section asks for, are missing',
-	'M3-L3':
-		'the WebGPU path draws the patches, but D-213 records the WebGL2 multi-draw path, the whole-level fallback and the GPU time as not built',
-	'M3-L4': 'the impostor cards are done; staged loading, coarse first, is not',
+		"the compute pass and its WebGL2 fragment form are built and tested, and the wind add-on fills its field through the hook with a compute pass. The owner's 25 October ruling adds M3-V13's history to the hook, and the first-user outcome the plan names still waits on M3-F9's ocean",
+	'M3-R22':
+		"the shader cache on the branch is D-248's change, not this task's: it reuses every entry when a compiler change leaves the compiled program identical, 0 compiled and 79 reused in 19 s, where the same change cost an hour. The task's own change, three entries instead of four for every module kind, is on `feat/m3-r22-entry-set` and not on this branch, and the determinism list here still holds `lit`; the two checks' CI times remain unmeasured",
 	'M3-F3':
-		'dropped with the temporal resolve it waited on (D-206); the owner may change the ruling',
-	'M3-F10': 'dropped with the temporal resolve it needs (D-206); the owner may change the ruling',
-	'M3-R12': 'the build compiles only the listed permutations; the time and size are not recorded',
-	'M3-R13': 'the fallbacks exist; no test names the three checks the task asks for',
-	'M3-R17': 'the develop skill has neither section the task asks for',
+		"dropped with the temporal resolve it waited on (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
+	'M3-F10':
+		"dropped with the temporal resolve it needs (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
+	'M3-F9':
+		"the simulation, the material and the older path's fragment form are on the local branch `feat/m3-f9-fft-ocean`, thirteen commits ahead of the milestone and pushed, so a reader can find them; the engine buffer-id fault it found has landed separately. The older path's cost is found and fixed on that branch: its 833 ms frame against 158 without was not the ocean's draws but the add-on switching the pass off and on every other frame, which made the engine compile its plan every frame; a pass that carries its cadence without being switched holds 60 frames a second. What remains is the quiet-window figure and the merge. The demo entry is held because its picture on that path would record a flat sea. No cost per preset is stated: two runs of identical work differed by more than the effect, so the frame-difference method cannot resolve a sub-millisecond chain",
 	'M3-A11':
-		'measured on both paths at every preset; the resolve does not beat the presets, so TAA does not ship (D-206)',
+		'measured on both paths at every preset; it does not beat the presets, so it stays behind the internal setting and does not ship (D-206). Its black-capture and bind-group faults are fixed, its shader file still loads on first use, and that first-use case is now tested on both paths',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
+	'M3-R23':
+		'the depth-only prepass is the default and passes the bar on the iPhone 18 Pro at both scales and on the iPad 10 at half scale; the iPad 10 at full scale reads 0.52 and 0.64 ms against the 0.5 ms bar, and the owner ruled that margin accepted (D-269)',
+	'M3-R19':
+		"the second step costs 2.96 to 2.99 ms of a 6.14 to 6.23 ms frame at half the scale on the cloud iPad, and 3.71 to 4.16 ms on the High preset's canvas; the first addendum's 20.5 to 34.9 ms was the frame's tail, since the engine folds every pass after the seventh into it. The held pair of 34.6 against 29.7 frames a second and 22.56 against 27.56 ms has no run file, and this reading's cells bracket its GPU times. The gate commit's 36.1 frames a second lies inside the 29.6 to 36.2 spread three runs gave at one code state, and the head's 29.0 sits 0.6 below its floor, so the second step is not shown to cause S5's drop (D-236)",
+};
+
+/**
+ * Why a task whose work is on the branch is still unticked: the gap that the branch's audits found
+ * between the task's own "Done when" and what the branch holds. These win over the note above,
+ * because both describe the same task and only one of them can be true.
+ */
+const AUDIT_GAPS: Readonly<Record<string, string>> = {
+	'M3-C1':
+		"the scene, its lanes, rain and the hero car are in, and so are the moods (`createMoods` in the skyway sketch) and the instances demo, which is registered and built on the traffic-lanes add-on; the owner approved the look. What remains is the chase camera's tower occlusion fix, held on `feat/skyway-camera` until its look review passes, and the frame rates against the target: the iPad Pro 13 drew 50.0 fps at Low on WebGPU and 54.2 on WebGL2, and the cloud S24 drew 11.7 at Low and 7.8 in the demos plan, all under 60",
+	'M3-B1':
+		"the whole look is costed at every preset on WebGPU and in compatibility mode, 3.13 to 3.91 and 3.12 to 3.82 ms at the 33-megapixel canvas, and all eight of those cells keep their range above zero. What remains is narrower: each mark is costed at the highest preset its path allows rather than at every preset, WebGL2 keeps no whole-look figure and its sharpening cell does not resolve, and the compatibility fringes' range crosses zero from -0.080 to 0.417, so that cell cannot be told apart from no mark. The earlier run at four times the pixels could not tell a mark from the frame's own variation, and that reason no longer stands",
+	'M3-B5':
+		'the glints draw and are tested in both sets; its cost per preset is owed (D-255), which needs a quiet GPU',
+	'M3-F2':
+		"the cloud that arrives as 100,000 splats used to become one chunk and could not stream; `chunks.ts` now cuts it into up to eight, which landed in `dcbacc193`, and the streaming test passes locally on the software renderer CI uses, in 48 seconds; CI's own run on this head is next. What keeps the task open is its rule-42 debt: the chunk selection and its sort, and the row packing, are still TypeScript",
+	'M3-V6':
+		'the same placement is shown on two Android phones in Chrome and on an iPad in Safari 26.6.1, so a second JavaScript engine has placed the same points (`.dev/tested-devices/ipad-pro-13-safari/20261027-000756-vegetation-scatter.md`, two passed, both paths); the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
+	'M3-F5':
+		"the owner rejected the look and withdrew the earlier approval, because the water showed sideways lines amid the flow, and the Creek now draws its own water again, flowing with the river: each wave direction turns by the stream's local angle, the crests are kept, and the phase is carried in the moving frame. The close 640 by 360 picture is what guards that look, since the 320-wide bank views draw the stream as a ribbon a few dozen pixels across. The migration waits until the add-on follows the current the same way. The add-on moved the phase, the foam drift and the caustics onto a current vector read from the river mesh's texture coordinates instead of the old fixed flow, took the thickness from the screen-space depth copy instead of the analytic bed, and made the shore a soft alpha ramp",
+	'M3-F13':
+		"the layer, its seven pictures and its speed line are in and its look is approved; two clauses stay open. The S24-class phone's cost figure decides the preset and is a run to schedule. The steps at the far panes' edges are a look choice that the owner has not ruled: a fit of three atoms removes more than half of them and needs a 32-bit store, which is twice the moment traffic a frame",
+	'M3-F14':
+		"the 1 November audit found the code passing and the record holding three faults, and the record is corrected now: the cost rows say that they predate the port, a parity test drives the built module against the TypeScript reference, and the loader's task count no longer stays up when a task throws before it reaches its worker. What remains is narrower: the shading pictures compare each scene with the same scene without the feature, which is the clause's own test rather than a reference picture, so a baked normal that moves but is wrong would still pass",
+	'M3-V14':
+		"the owner ruled the rows and the budgets, and D-283 records them. Three clauses of the Done-when stand open, so the task cannot tick: the smallest-tier look, a side-by-side that the owner judges and has not named, which is also the tier he cannot tell from the next one up; the cost of each tier on the M5 Max, whose row is owed, while the iPad Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus measured theirs at this head; and the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings, which cannot be shown while their readers wait on M3-V11 and M3-V12",
+	'M3-V8':
+		"the CPU path draws a hill through the add-on and is measured on this Mac's Chrome, and the task's Done-when is not met. Creek's sketch still imports its own `./grass`, so no hill of Creek draws through the add-on; the cost has a row only for this Mac, and the iPad, an S24-class phone and the Tab A9 Plus are owed; near grass shadows are not built; and the compute-built blade list waits on M3-E8's same-frame output, M3-E9's count in the near shadow views and M3-V3's graph edge, as the evidence entry says",
+	'M3-X1':
+		"held open by its own line: the vegetation add-on in Creek (M3-V11) is open, so Creek's plants are not drawn by a demo yet, and the demo budgets do not hold: the Skyway rates recorded for M3-C1 sit under the 60 fps target on the iPad Pro 13 (50.0 fps at Low on WebGPU, 54.2 on WebGL2) and the cloud S24 (11.7 at Low, 7.8 in the demos plan)",
 };
 
 /** The plan's groups, by the first letter of a task's part, in the plan's order. */
@@ -92,6 +100,7 @@ const GROUPS: readonly (readonly [string, string])[] = [
 	['Effects and techniques', 'F'],
 	['glTF and API', 'GK'],
 	['Shipping', 'OT'],
+	['Queue lanes', 'S'],
 	["The study's tasks", 'R'],
 	['Vegetation', 'V'],
 	['Demos', 'X'],
@@ -100,37 +109,63 @@ const GROUPS: readonly (readonly [string, string])[] = [
 const git = (...args: string[]) =>
 	execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
-/** Every task ID that a kept commit's `Task:` trailer names. A split task keeps a lower-case tail. */
+/** The roots that hold a build of the engine, its tests, its demos and its published pages. */
+const CODE_ROOTS = ['crates/', 'packages/', 'tests/', 'examples/', 'bench/', 'docs/'];
+
+/** Every task ID that a kept commit's `Task:` trailer names, once that commit built something. */
 function landedTasks(): Set<string> {
-	const out = git('log', '--format=%b', `${BASE}..HEAD`);
-	// Only a trailer claims a task. A commit body that mentions an ID in prose, such as a
-	// `Docs-Checked:` line, must not tick it: the audit of 23 October found one task ticked that
-	// no commit had ever named in a trailer.
-	const claimed = out
-		.split('\n')
-		.filter((line) => /^Task:\s/.test(line))
-		.join('\n');
+	// A record-only commit claims a task without building any of it, so it must not read as work
+	// that landed with its evidence still owed: that reads to a maintainer as a finished feature
+	// whose proof is missing. Only a commit that touches a file outside the records counts.
+	const out = git('log', '--format=%x1e%H%x1f%b', `${BASE}..HEAD`, '--name-only');
+	const out2 = out.split('\x1e').map((chunk) => {
+		const [header = '', body = ''] = chunk.split('\x1f');
+		const lines = body.split('\n');
+		// A trailer claims a task. A body that mentions an ID in prose, such as a
+		// `Docs-Checked:` line, must not tick it, or a task that no commit names in a trailer reads
+		// as ticked.
+		const claimed = lines.filter((line) => /^Task:\s/.test(line)).join('\n');
+		const files = lines.filter((line) => /^\S+\/\S*$/.test(line) && !/^Task:/.test(line));
+		// A test file is code wherever it lives: the guard test for a tool sits beside the tool, and
+		// without this a task whose whole work is a test in `tools/` could never land.
+		const built = files.some(
+			(file) =>
+				CODE_ROOTS.some((root) => file.startsWith(root)) || /\.(test|spec)\.[jt]s$/.test(file),
+		);
+		return built || header === '' ? claimed : '';
+	});
+	const claimed = out2.join('\n');
 	return new Set(claimed.match(/M3-[A-Z0-9]+[a-z]?/g) ?? []);
 }
 
 /** Each task of the plan, in its order, with the name it was given. */
 function planTasks(): { id: string; name: string }[] {
 	const text = readFileSync(PLAN, 'utf8');
-	return [...text.matchAll(/^(M3-[A-Z0-9]+[a-z]?) (.+?)(?: \(P.*)?$/gm)].map((match) => ({
-		id: match[1] as string,
-		name: (match[2] as string).trim(),
-	}));
+	// A plan entry that names a closed investigation rather than work is not a task, and counting
+	// it among the open ones says the milestone has work it does not have.
+	const NOT_TASKS = new Set(['M3-R37']);
+	const marks = [...text.matchAll(/^(M3-[A-Z0-9]+[a-z]?) (.+?)(?: \(P.*)?$/gm)];
+	// An entry the owner dropped is not work either: its own line says so, and no ready start makes
+	// it happen.
+	const dropped = new Set<string>();
+	for (let i = 0; i < marks.length; i++) {
+		const start = marks[i]?.index ?? 0;
+		const end = marks[i + 1]?.index ?? text.length;
+		if (/^Dropped by the owner's ruling/m.test(text.slice(start, end)))
+			dropped.add(marks[i]?.[1] as string);
+	}
+	return marks
+		.filter((match) => !NOT_TASKS.has(match[1] as string) && !dropped.has(match[1] as string))
+		.map((match) => ({
+			id: match[1] as string,
+			name: (match[2] as string).trim(),
+		}));
 }
 
 function description(): string {
 	const tasks = planTasks();
 	const landed = landedTasks();
-	const done = ({ id }: { id: string }) =>
-		landed.has(id) &&
-		!PARTIAL[id] &&
-		!ON_BRANCH.has(id) &&
-		!INCOMPLETE.has(id) &&
-		id in TASK_EVIDENCE;
+	const done = ({ id }: { id: string }) => isDone(id, landed);
 	const open = tasks.filter(({ id }) => !landed.has(id) && !PARTIAL[id] && !ON_BRANCH.has(id));
 	const lines = [
 		'One pull request for the whole of the milestone that ships 0.2.0. It is not merged until every task below is done, so the list moves as the work lands.',
@@ -148,20 +183,17 @@ function description(): string {
 			// branch keeps the empty box and says its state in the note; anything else reads as text.
 			// A task whose code sits only on a helper branch is not done: the pull request merges the
 			// branch, so an unmerged task would claim work that a reader cannot find here.
-			const done =
-				landed.has(id) &&
-				!PARTIAL[id] &&
-				!ON_BRANCH.has(id) &&
-				!INCOMPLETE.has(id) &&
-				id in TASK_EVIDENCE;
+			const done = isDone(id, landed);
 			const mark = done ? 'x' : ' ';
 			const note = PARTIAL[id]
 				? ` — part landed: ${PARTIAL[id]}`
 				: ON_BRANCH.has(id)
-					? ' — on a helper branch'
-					: INCOMPLETE.has(id) || NOTES[id]
-						? NOTES[id]
-							? ` — ${NOTES[id]}`
+					? NOTES[id]
+						? ` — on a helper branch: ${NOTES[id]}`
+						: ' — on a helper branch'
+					: INCOMPLETE.has(id) || NOTES[id] || AUDIT_GAPS[id]
+						? (AUDIT_GAPS[id] ?? NOTES[id])
+							? ` — ${AUDIT_GAPS[id] ?? NOTES[id]}`
 							: ' — the branch check is owed'
 						: landed.has(id) && !(id in TASK_EVIDENCE)
 							? ' — the branch check is owed'
@@ -175,6 +207,7 @@ function description(): string {
 		'',
 		"- CI on this pull request is the branch's backstop, never the first reader of a change.",
 		'- Each helper commits on its own worktree branch, runs the tests its change touches, and reports before the coordinator merges it.',
+		"- A task reported done is read by a fresh checker, never by its author: the checker reads the task's own Done-when line, runs the tests it names and opens the pictures it cites, and only a cleared verdict lets a tick or a landing through.",
 		'- `bun run limits` reports each fixed limit before a push, and `bun run pr-status` rebuilds this list from the branch itself.',
 		'- A commit that can move a limit carries a `Limits-Checked:` line, and one that changes what the GPU draws carries a `GPU-Checked:` line.',
 		'- The pictures, timings and device rows live in `.dev/examples.md`, `.dev/benchmarks.md` and `.dev/tested-devices.md` beside the features they measure.',
@@ -182,13 +215,90 @@ function description(): string {
 	return `${lines.join('\n')}\n`;
 }
 
+/**
+ * True for a task that counts as done: landed, with an evidence entry, and nothing that holds it.
+ * The description's marks and the ready list both read this one rule, so a change to it reaches
+ * every place that says whether a task is finished.
+ */
+function isDone(id: string, landed: ReadonlySet<string>): boolean {
+	return (
+		landed.has(id) &&
+		!PARTIAL[id] &&
+		!ON_BRANCH.has(id) &&
+		!INCOMPLETE.has(id) &&
+		!(id in AUDIT_GAPS) &&
+		id in TASK_EVIDENCE
+	);
+}
+
+/** The tasks that count as done, for the ready list. */
+function doneTasks(): Set<string> {
+	const landed = landedTasks();
+	return new Set(
+		planTasks()
+			.filter(({ id }) => isDone(id, landed))
+			.map(({ id }) => id),
+	);
+}
+
+/**
+ * Each task's dependencies, as the plan's own lines name them. A task is blocked only by a task it
+ * names and that is not done, so the list never grows by an assumption about what a feature needs.
+ */
+function planDependencies(): Map<string, string[]> {
+	const text = readFileSync(PLAN, 'utf8');
+	const marks = [...text.matchAll(/^(M3-[A-Z0-9]+[a-z]?) /gm)];
+	const out = new Map<string, string[]>();
+	for (let i = 0; i < marks.length; i++) {
+		const mark = marks[i];
+		if (!mark) continue;
+		const id = mark[1] as string;
+		const start = mark.index ?? 0;
+		const next = marks[i + 1];
+		const end = next?.index ?? text.length;
+		const deps = new Set<string>();
+		for (const line of text.slice(start, end).split('\n'))
+			if (/depends on/i.test(line))
+				for (const match of line.matchAll(/M3-[A-Z0-9]+[a-z]?/g)) deps.add(match[0]);
+		deps.delete(id);
+		out.set(id, [...deps]);
+	}
+	return out;
+}
+
+/** The open tasks, the ones nothing blocks first, so a coordinator starts what can start. */
+function readyLines(): string[] {
+	const done = doneTasks();
+	const deps = planDependencies();
+	const open = planTasks().filter(({ id }) => !done.has(id));
+	const lines: string[] = [];
+	const ready = open.filter(({ id }) => (deps.get(id) ?? []).every((dep) => done.has(dep)));
+	const waiting = open.filter(({ id }) => !ready.includes(open.find((t) => t.id === id)!));
+	lines.push(`${ready.length} tasks nothing blocks, and ${waiting.length} that wait on another:`);
+	for (const { id, name } of ready) lines.push(`ready    ${id} — ${name}`);
+	for (const { id, name } of waiting) {
+		const blocked = (deps.get(id) ?? []).filter((dep) => !done.has(dep));
+		lines.push(
+			`waiting  ${id} — waits on ${blocked.join(', ')}${blocked.length === 0 ? name : ''}`,
+		);
+	}
+	return lines;
+}
+
 function main(): void {
 	if (!existsSync(PLAN)) {
 		console.error(`pr-status reads the plan at ${PLAN}, which this clone does not keep.`);
 		process.exit(1);
 	}
+	if (process.argv.includes('--ready')) {
+		process.stdout.write(`${readyLines().join('\n')}\n`);
+		return;
+	}
 	const body = description();
-	const owed = landedTasks();
+	// A task the plan no longer holds can still be named by an old commit's trailer, and it owes
+	// nothing: the owed set is what the plan lists, not every id a trailer ever carried.
+	const planIds = new Set(planTasks().map((task) => task.id));
+	const owed = [...landedTasks()].filter((id) => planIds.has(id));
 	for (const id of owed) {
 		if (!(id in TASK_EVIDENCE) && !INCOMPLETE.has(id) && !ON_BRANCH.has(id) && !PARTIAL[id])
 			console.error(
@@ -209,7 +319,8 @@ function main(): void {
 				!INCOMPLETE.has(id) &&
 				!ON_BRANCH.has(id) &&
 				!PARTIAL[id] &&
-				!NOTES[id],
+				!NOTES[id] &&
+				!AUDIT_GAPS[id],
 		);
 		if (missing.length > 0) process.exit(1);
 	}

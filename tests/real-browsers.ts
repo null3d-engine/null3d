@@ -76,7 +76,26 @@
 //                       move to the new light on each GPU path, or reflection, which times S1 with
 //                       a reflection pass at a quarter and at half the render size against none,
 //                       or alpha-mask-cost, which times masked lit quads against opaque ones with
-//                       MSAA and without on each GPU path
+//                       MSAA and without on each GPU path, or canvas-cost, which times the frames
+//                       that refresh a canvas texture's rectangle against the same frames without
+//                       the refresh, or demos, which plays the Skyway and
+//                       Night town showcases at the chosen preset and at High on each GPU path,
+//                       and reports their frame rate, display rate and first-frame time, or
+//                       splats, which draws a large splat
+//                       cloud on each GPU path and reports how much of it draws against the
+//                       preset's budget, with the frame rate, the first-frame time and the bytes
+//                       the page downloaded, or vegetation, which times Creek and the forest demo
+//                       at every preset on each GPU path with the triangles and the memory, or
+//                       terrain, which times the terrain demo at each preset that a GPU path draws,
+//                       the same way, and beside each page a held-camera pair with the morph on and
+//                       off for the offset's own cost, or terrain-shadow, which draws the demo from
+//                       a still camera with the morph on, with it off and with the far cascades kept
+//                       to their turns, for the shadow redraw that a morphing caster causes, or
+//                       tree-generation, which times procedural tree generation in a worker, or
+//                       vegetation-scatter, which places Creek's valley by the vegetation add-on's
+//                       ecological rules and checks the placement against the reference, or
+//                       history-cost, which times a compute pass that keeps its state between frames,
+//                       with the pass off and on
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
@@ -118,7 +137,11 @@
 //                       that comes only now and then
 //   --shields on|off    the state of Brave's Shields for the dev server's site, which the runner
 //                       cannot read: it goes into each Brave result and the run's summary. No
-//                       plan tests Brave any more; it runs only where a run names it
+//                       plan tests Brave; it runs only where a run names it
+//   --quiet-cap <s>     a runner page that sends nothing for this many seconds on a page counts as
+//                       stopped, however long the page may take, so a new runner page takes over
+//                       sooner. For a browser in front, as on CI's machines, whose runner page
+//                       writes its heartbeat on time; a page with a quiet time of its own keeps it
 //   --switches <q>      page switches that every page of the plan gets, such as half=on or
 //                       half=on&preset=ultra: the checks plan's image tests then compare the
 //                       scene shaders at half precision with the usual references
@@ -240,6 +263,7 @@ import {
 import { endTurnClaim, RUNS_DIR } from './lib/report-collector.ts';
 import {
 	addToResult,
+	cappedQuietLimitMs,
 	type ItemResult,
 	inLanes,
 	keepsRefusingMemory,
@@ -329,6 +353,8 @@ export interface Options {
 	rounds?: number;
 	/** Page switches that every page of the plan gets, joined by `&`, when given. */
 	switches?: string;
+	/** The most seconds that a runner page may send nothing on a page, when given. */
+	quietCap?: number;
 	/** Someone is at the network devices, to reopen a runner page that a crash closed. */
 	attended?: boolean;
 	/** At most this many runners at once, when given. */
@@ -348,7 +374,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shaders all|sampled] [--shard <i>/<n>] [--only <ids>] [--prebuilt only|none] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shaders all|sampled] [--shard <i>/<n>] [--only <ids>] [--prebuilt only|none] [--rounds <n>] [--shields on|off] [--quiet-cap <s>] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -405,6 +431,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--rounds') options.rounds = wholeNumber(arg, args[++i]);
 		else if (arg === '--shields') options.shields = oneOf(arg, args[++i], SHIELDS_STATES);
 		else if (arg === '--switches') options.switches = readSwitches(args[++i], arg);
+		else if (arg === '--quiet-cap') options.quietCap = wholeNumber(arg, args[++i]);
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
 		else if (arg === '--lan') options.lan = list(args[++i]);
@@ -1100,7 +1127,20 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'texture-cache',
 	'reflection',
 	'alpha-mask-cost',
+	'impostor-cost',
+	'impostor-frame',
+	'canvas-cost',
 	'cluster-cost',
+	'lod-cost',
+	'splats',
+	'demos',
+	'vegetation',
+	'vegetation-wind',
+	'terrain',
+	'terrain-shadow',
+	'tree-generation',
+	'vegetation-scatter',
+	'webgpu-stall',
 ]);
 
 /**
@@ -1449,6 +1489,7 @@ async function runPlan(
 					return recovery.onQuiet(runner, seconds, at);
 				},
 				onHandover: recovery.onHandover,
+				...(options.quietCap !== undefined && { quietMs: cappedQuietLimitMs(options.quietCap) }),
 				onSilence: (runner, ms, item) =>
 					console.log(
 						`${runner}: its runner page's longest silence was ${(ms / 1000).toFixed(1)} s${item ? `, on ${item}` : ''}`,

@@ -16,7 +16,7 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 	morph:
 		"with the first morphed mesh, or as soon as the sketch reads a glTF file with morph targets. WebGPU morphs in the skinning pass, so there `'morph'` downloads the skinning shaders",
 	bloom: 'when `post.set` turns bloom on',
-	ao: 'when `post.set` turns ambient occlusion on',
+	ao: 'when `post.set` turns ambient occlusion on, or when the preset draws the screen-space bounce light that reads its steps',
 	dof: 'when `post.set` turns depth of field on',
 	exposure:
 		'when `post.set` turns automatic exposure on. The camera keeps its own exposure until the meter is built',
@@ -32,6 +32,8 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 		'with the first frame that draws a tree of cluster patches (`setMeshPatches`), which builds the pass that picks a tree of patches. A scene without a tree downloads none of it, and WebGL2 never builds that pass',
 	probe_grid: 'when the sketch first sets a light probe grid (`scene.setLightProbeGrid`)',
 	transmission: 'with the first material that lets light through (`transmission`)',
+	color_copy:
+		'with the first step that reads the color that the frame before showed: the first material that lets light through, screen-space reflections, or the bounce light that the preset draws from the start of the page',
 	translucency:
 		'with the first material that lets light through a thin surface (`diffuseTransmission`)',
 	bump: 'with the first material with a bump map',
@@ -43,6 +45,8 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 		'when a pass first reads the motion. The motion debug view is such a pass, and it exists in development builds only',
 	coat_sheen: 'with the first material with a clear coat, a sheen, iridescence or anisotropy',
 	weighted: "with the first material of the `'weighted'` blending",
+	moment:
+		'when the quality setting `momentTransparency` is on and the first blended surface draws. The surfaces draw sorted until the layer and its anti-aliasing are built',
 	area_lights: 'with the first rectangle or tube light',
 	background: 'with the first texture, environment or cube map background',
 	sky: 'with the first sky background',

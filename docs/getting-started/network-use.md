@@ -14,7 +14,7 @@ null3D sends nothing to any server of its own. The engine and its add-ons have n
 
 ## What the engine downloads
 
-The engine downloads its own files from the address where the page serves them. That address is the page's own origin, or a CDN that the page names. [Hosting](hosting.md#the-engines-files-on-a-cdn) covers the CDN case.
+The engine downloads its own files from the address where the page serves them. That address is the page's own origin, or a CDN that the page names. [Hosting](hosting.md#the-engines-files-on-a-cdn) covers the CDN case. A replay page names a recording, and the engine downloads that file from the address the page gives it; no other address is used for it.
 
 | File | When it loads |
 | --- | --- |
@@ -23,8 +23,13 @@ The engine downloads its own files from the address where the page serves them. 
 | A feature's shader module | On the first use of that feature |
 | The KTX2, meshopt and Draco decoders | On the first file that needs one |
 | The area light tables | On the first rectangle or tube light |
+| A feature's first-use code module, such as a decoder's wrapper or a pass's setup | On the first use of that feature |
+
+The table names what the engine ships. A feature may have both a shader module and a code module, and each loads at its own first use; a page that never uses the feature downloads neither.
 
 The engine builds each address with `new URL(..., import.meta.url)`. The bundler then ships that file beside the engine's code.
+
+The vendored decoders hold a download path of their own, and the engine never uses it. The engine hands each decoder its compiled WebAssembly, so a page can block every other origin.
 
 ## What your own code downloads
 
@@ -33,7 +38,9 @@ The engine downloads only the addresses that you give it:
 - `assets.loadTexture`, `assets.loadGltf`, `assets.loadBinary`, `assets.loadJson` and `assets.loadImageBitmap` download the address that you pass.
 - A glTF file names more addresses inside it, for its buffers, images and extensions. The engine downloads those too. They may be on another origin, which must allow the page to read them.
 - `preload` downloads the features that you list, when you call it.
-- `@null3d/splats` downloads the SPZ file that you pass, and no other address.
+- `@null3d/splats` downloads the SPZ file that you pass. A streamed cloud is fetched as its index and then only the chunk files that the view asks for, so a large cloud appears without the whole file. No other address is contacted.
+
+A demo that loads a model makes these same calls. The file's address is the demo's choice.
 
 A service worker can keep these files for a later visit. [Hosting](hosting.md#offline-play) shows how.
 
@@ -55,7 +62,14 @@ Set `NULL3D_ENGINE_SHADERS` to a folder that holds the engine's generated shader
 
 ## The command-line tool
 
-`bunx @null3d/cli` contacts no server. It serves the page from a server on the same machine, and it drives a browser on that machine. When Playwright's browser is missing, the tool prints the command that installs it. You run that command yourself.
+`bunx @null3d/cli` contacts no server of its own. It serves the page from a server on the same machine, and it drives a browser on that machine. When Playwright's browser is missing, the tool prints the command that installs it. You run that command yourself.
+
+`check-addon` reads the allocations of an add-on's own code by asking the browser it started for a
+heap profile. That browser listens on a loopback address on this machine, and the tool talks to it
+over that address and its debugging socket. Nothing leaves the machine, and no address is a server
+the tool chooses.
+
+A command that builds the page also runs the build's one download, the engine's generated shader modules, as the section above says. Set `NULL3D_ENGINE_SHADERS` on that command to keep the tool's whole run off every network.
 
 ## Check the claim
 

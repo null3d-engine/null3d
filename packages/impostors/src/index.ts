@@ -9,6 +9,13 @@ import { VERSION } from './version';
 
 checkAddonVersion('@null3d/impostors', VERSION);
 
+export type {
+	ImpostorBake,
+	ImpostorBakeMap,
+	ImpostorBakeOptions,
+	ImpostorBakePart,
+} from './bake';
+export { bakeImpostorAtlas } from './bake';
 export type { ImpostorContext, ImpostorOptions } from './batch';
 export { createImpostors, ImpostorBatch } from './batch';
 export type { FarPart } from './merge';

@@ -531,6 +531,8 @@ export default defineSketch(({ scene, geometry, materials, textures, time }) => 
 
 The `refreshHz` option caps the refreshes, so a frame rate above the cap costs no canvas read. A refresh costs one `ImageData` of the rectangle and its upload, which stays within the frame's upload budget. [Textures](../api/textures.md#canvases) covers the rectangle's coordinates and what `texture.refresh` does to the rest of the texture.
 
+The screens example add-on in `examples/addons/screens` builds this pattern into one call. It adds a refresh rate for each screen, an LCD look that changes with distance, a boot glitch, and clicks mapped back to the canvas's coordinates. [In-world screens](../guides/screens.md) covers it.
+
 ## A trail behind a moving object
 
 A dynamic line batch updates every point in every frame. Each frame, the sketch moves the trail's points one place back and puts the object's place at the front.

@@ -9,6 +9,10 @@ description: >-
   each content once, as the load builds need. "download" takes the file and unpacks it into root.
   With pattern set, "download" takes every archive whose artifact name matches, and unpacks each
   into root, so several jobs' shares of one folder join there.
+  Each step that uses this action sets a limit of a few minutes, as a composite action's own steps
+  cannot: a transfer takes at most about 30 s, and one that stalls would otherwise hold its job,
+  and every run queued behind it, until the job's own limit. On 24 October 2026 the build job's
+  upload stalled for 19 minutes in run 40114017712 until a cancel by hand.
 
 inputs:
   mode:

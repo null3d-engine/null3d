@@ -17,6 +17,9 @@ import {
 	waitForQuiet,
 } from '../lib/effect-cost.ts';
 import { pageResult } from '../lib/page-result.ts';
+import { TIMING_BROWSER } from '../lib/timing-browser.ts';
+
+test.use(TIMING_BROWSER);
 
 /** Each case: the GPU path, the preset, the steps per march and whether the prepass stays on. */
 const CASES = [

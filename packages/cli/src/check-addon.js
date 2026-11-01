@@ -3,7 +3,7 @@
 // the entry points that its shipped code imports, the plugin interface that it declares, a build
 // that compiles its shaders for WebGPU and WebGL2, and the sizes of the files it loads after the
 // start. With a page in the project's config, a browser opens that page for the remaining gates.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
@@ -12,16 +12,30 @@ import { brotliCompressSync, gzipSync } from 'node:zlib';
 import { readArguments, UsageError } from './args.js';
 import { measurePage } from './bench.js';
 import { WEBGPU_DEVELOPER_FEATURES } from './browser.js';
-import { holdPath, holdResult, switchedPath } from './page.js';
+import {
+	attachWorkers,
+	DevTools,
+	freePort,
+	HeapSampler,
+	pagesAt,
+	sampledFrames,
+	sleep,
+} from './devtools.js';
+import { placeName, profilePlaces, steadyPlaces, totalSize } from './heap-profile.js';
+import { ENGINE_GLOBAL, holdPath, holdResult, switchedPath } from './page.js';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from './protocol.js';
-import { startRunner, visitPage } from './runner.js';
+import { failure, pollPage, startRunner, visitPage } from './runner.js';
+import { BuildNames } from './source-names.js';
 import { outcomeText, summaryLine } from './test.js';
 import { readTestConfig } from './test-config.js';
 import { counted } from './text.js';
 
 /** @import { Outcome } from './project-checks.js' */
+/** @import { CallFrame, ProfileNode, Sample } from './heap-profile.js' */
 /** @import { HoldFailure } from './page.js' */
+/** @import { Page } from 'playwright-core' */
 /** @import { Runner } from './runner.js' */
+/** @import { TargetInfo } from './devtools.js' */
 
 /** The file that names an add-on's package, in its folder. */
 const MANIFEST = 'package.json';
@@ -31,6 +45,13 @@ const PUBLIC_ENTRIES = new Set(['@null3d/engine', '@null3d/engine/stats']);
 
 /** The engine's entry-point prefix. */
 const ENGINE_ENTRY = '@null3d/engine';
+
+/**
+ * The packages that stay out of an add-on's build: every null3D package. A foundation add-on may
+ * build on another foundation, and a page loads that package as a dependency of its own. So the
+ * build measures the add-on's own files alone, as it measures them for the engine.
+ */
+export const ADDON_EXTERNALS = [/^@null3d\//];
 
 /** The package scope of the engine's own add-ons, which pin the engine version. */
 const ENGINE_SCOPE = '@null3d/';
@@ -56,8 +77,29 @@ const INTERFACE_CALL =
 /** The call that an engine add-on makes to pin the engine version. */
 const VERSION_CALL = /checkAddonVersion\(\s*['"]([^'"]+)['"]\s*,\s*VERSION\s*\)/;
 
-/** The budget of each column for a file that an add-on loads after the start (D-14). */
-export const ADDON_FILE_BUDGET = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 17 * 1024 };
+/**
+ * The budget of each column for a file that an add-on loads after the start (D-14). It follows the
+ * engine's own figure for the same kind of file, which has room for the glTF worker's
+ * texture-transform pointers; an add-on may not take more room than the engine allows it.
+ */
+export const ADDON_FILE_BUDGET = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 18 * 1024 };
+
+/**
+ * The budget of each column for a built file that holds compiled shader builds (D-14, D-215). The
+ * plugin puts custom materials' builds in files of their own, which a page loads on the material's
+ * first use. They are shader data, so they take the first-use shader budget rather than the code
+ * budget above. The engine's size report keeps the same figures for its own first-use shader files,
+ * and a test keeps these equal to that report's.
+ */
+export const ADDON_SHADER_BUDGET = { raw: 1792 * 1024, gzip: 320 * 1024, brotli: 58 * 1024 };
+
+/**
+ * A built file that holds compiled shader builds: the plugin names each set after its kind, its
+ * GPU path and permutation bits, and the build adds a hash to the name. A material's set names the
+ * bits that pick it; an effect's and a tone curve's take one set for each GPU path alone.
+ */
+const SHADER_BUILDS_FILE =
+	/^(?:material|effect|curve)-(?:wgsl|glsl)-\d+-[0-9a-f]+(?:-[A-Za-z0-9_-]+)?\.js$/;
 
 /** The columns that a size report shows. */
 const COLUMNS = /** @type {const} */ (['raw', 'gzip', 'brotli']);
@@ -68,19 +110,24 @@ const SHOWN_LINES = 12;
 const OPTIONS = /** @type {const} */ ({
 	page: { type: 'string' },
 	'skip-browser': { type: 'boolean', default: false },
+	'skip-cost': { type: 'boolean', default: false },
 	help: { type: 'boolean', short: 'h', default: false },
 });
 
 export const HELP = `Usage: bunx @null3d/cli check-addon [folder] [options]
 
 Runs the engine's gates on one add-on package, in \`folder\` (the current folder without one):
-  public API   the shipped code imports only @null3d/engine and @null3d/engine/stats
+  public API   the shipped code reaches the engine only through @null3d/engine and
+               @null3d/engine/stats; another package that it names loads on its own
   interface    the entry declares the plugin interface that it works with, or, for a null3D
                package, pins the engine version
   shaders      a build compiles the add-on's WGSL for WebGPU and WebGL2
-  sizes        each file that the add-on loads after the start holds to its budget
-  page         with a page, it starts from another origin under the strict policy, allocates
-               nothing in a frame, and its cost is measured on each quality preset
+  sizes        each file that the add-on loads after the start is checked against its
+               budget; a file over budget warns, and does not fail the check
+  page         with a page, it starts from another origin under the strict policy
+  cost         with a page, its cost per frame is measured on each quality preset
+  allocation   with a page, the bytes that the add-on's own code allocates per frame are
+               measured on each quality preset
 
 The page comes from \`page\` in the first test of null3d.json, or from --page. Without one, the
 page gates are skipped.
@@ -89,6 +136,8 @@ Options:
   --page <path>       The page to open, from the project's root, such as /demo.html, instead of
                       the config's
   --skip-browser      Run no gate that opens a browser
+  --skip-cost         Leave out the cost gate alone, for a machine whose load would show in its
+                      figures; the page and allocation gates still run
   --help              Print this help`;
 
 /**
@@ -108,6 +157,7 @@ export function parseCheckAddonArgs(args) {
 		folder: positionals[0] ?? process.cwd(),
 		page: values.page,
 		skipBrowser: values['skip-browser'],
+		skipCost: values['skip-cost'],
 		help: values.help,
 	};
 }
@@ -428,86 +478,282 @@ function buildTools(folder) {
 }
 
 /**
- * One file that a build wrote, with its size in each column.
+ * One buffer's size in each column.
  *
- * @typedef {object} BuiltFileSize
- * @property {string} name
+ * @typedef {object} ByteSize
  * @property {number} raw
  * @property {number} gzip
  * @property {number} brotli
  */
 
 /**
- * Builds the add-on's entry with the null3D plugin, which compiles its WGSL for WebGPU and WebGL2,
- * and gives the size of each file that the build wrote. The engine stays external: the sizes are
- * the add-on's own.
+ * One file that a build wrote. The three columns are what a page downloads. `code` and `shader`
+ * split that file by what it holds: the add-on's own code, and the compiled WGSL that the plugin
+ * inlines in it. The two parts add up to the whole in every column. A file of a build that holds
+ * no compiled WGSL has no split, and its whole size answers the code budget.
+ *
+ * @typedef {object} BuiltFileSize
+ * @property {string} name
+ * @property {number} raw
+ * @property {number} gzip
+ * @property {number} brotli
+ * @property {ByteSize} [code]
+ * @property {ByteSize} [shader]
+ */
+
+/** A file that a module imports as WGSL, which the plugin compiles for both GPU paths. */
+const WGSL_IMPORT = /\.wgsl$/;
+
+/**
+ * A Vite plugin that answers each WGSL import with an empty module. A build with it writes the
+ * add-on's code alone: no shader compiles, and nothing of one reaches a file. The difference from
+ * a build with the null3D plugin is the shader data that the plugin inlined.
+ */
+export function emptyShaders() {
+	return {
+		name: 'null3d-addon-sizes',
+		enforce: 'pre',
+		load(/** @type {string} */ id) {
+			return WGSL_IMPORT.test(id) ? 'export default {};' : undefined;
+		},
+	};
+}
+
+/**
+ * Builds the add-on's entry twice with the null3D plugin, which compiles its WGSL for WebGPU and
+ * WebGL2, and gives the files that each build wrote. The engine and every other null3D package stay
+ * external, since a page loads them as dependencies of their own. The first build is the one that
+ * the sizes come from. The second answers each WGSL import with an empty module, so a test can tell
+ * the add-on's code from the compiled WGSL that the plugin inlines beside it.
  *
  * @param {string} folder
  * @param {string} entry
- * @returns {Promise<{ files?: BuiltFileSize[], missing?: string, error?: string }>}
+ * @returns {Promise<{ full?: BuiltOutput[], codeOnly?: BuiltOutput[], missing?: string, error?: string }>}
  */
-export async function buildAddon(folder, entry) {
+export async function buildAddonOutputs(folder, entry) {
 	const tools = buildTools(folder);
 	if (tools === undefined)
 		return { missing: 'vite or @null3d/vite-plugin is not installed beside the add-on' };
 	try {
 		const { build } = await import(pathToFileURL(tools.vite).href);
 		const plugin = await import(pathToFileURL(tools.plugin).href);
-		const result = await build({
-			configFile: false,
-			root: folder,
-			logLevel: 'silent',
-			plugins: [plugin.default()],
-			build: {
-				write: false,
-				minify: true,
-				lib: { entry, formats: ['es'], fileName: 'addon' },
-				rollupOptions: { external: [/^@null3d\/engine(?:\/stats)?$/] },
-			},
-		});
-		const outputs = /** @type {unknown[]} */ (Array.isArray(result) ? result : [result]);
-		/** @type {BuiltFileSize[]} */
-		const files = [];
-		for (const output of outputs) {
-			const parts = /** @type {{ output?: unknown[] }} */ (output).output ?? [];
-			for (const part of parts) {
-				const file =
-					/** @type {{ type?: string, fileName?: string, code?: string, source?: unknown }} */ (
-						part
-					);
-				if (file.type !== 'chunk' && file.type !== 'asset') continue;
-				const bytes = Buffer.from(String(file.type === 'chunk' ? file.code : file.source));
-				files.push({
-					name: file.fileName ?? 'addon.js',
-					raw: bytes.length,
-					gzip: gzipSync(bytes, { level: 9 }).length,
-					brotli: brotliCompressSync(bytes).length,
-				});
+		const outputsOf = async (/** @type {unknown[]} */ plugins) => {
+			const result = await build({
+				configFile: false,
+				root: folder,
+				logLevel: 'silent',
+				plugins: /** @type {never[]} */ (plugins),
+				build: {
+					write: false,
+					minify: true,
+					lib: { entry, formats: ['es'], fileName: 'addon' },
+					rollupOptions: { external: ADDON_EXTERNALS },
+				},
+			});
+			return /** @type {unknown[]} */ (Array.isArray(result) ? result : [result]);
+		};
+		const written = (/** @type {unknown[]} */ outputs) => {
+			/** @type {BuiltOutput[]} */
+			const files = [];
+			for (const output of outputs) {
+				const parts = /** @type {{ output?: unknown[] }} */ (output).output ?? [];
+				for (const part of parts) {
+					const file =
+						/** @type {{ type?: string, fileName?: string, code?: string, source?: unknown }} */ (
+							part
+						);
+					if (file.type !== 'chunk' && file.type !== 'asset') continue;
+					files.push({
+						name: file.fileName ?? 'addon.js',
+						bytes: Buffer.from(String(file.type === 'chunk' ? file.code : file.source)),
+					});
+				}
 			}
-		}
-		return { files };
+			return files;
+		};
+		const full = written(await outputsOf([plugin.default()]));
+		const codeOnly = written(await outputsOf([emptyShaders(), plugin.default()]));
+		return { full, codeOnly };
 	} catch (error) {
 		return { error: error instanceof Error ? error.message : String(error) };
 	}
+}
+
+/**
+ * The size of each file that the build with the plugin wrote.
+ *
+ * @param {string} folder
+ * @param {string} entry
+ * @returns {Promise<{ files?: BuiltFileSize[], missing?: string, error?: string }>}
+ */
+export async function buildAddon(folder, entry) {
+	const built = await buildAddonOutputs(folder, entry);
+	if (built.full === undefined || built.codeOnly === undefined) return built;
+	return { files: splitShaderData(built.full, built.codeOnly) };
+}
+
+/**
+ * The size of each file that the build with the plugin wrote, split by what it holds: its own code
+ * and the shader data that the plugin inlined in it. `codeOnly` is what the build with the empty
+ * WGSL imports wrote. A file that build did not write has no code of its own here, such as a set of
+ * builds that the plugin writes apart, so only its whole size is known.
+ *
+ * @param {readonly BuiltOutput[]} full
+ * @param {readonly BuiltOutput[]} codeOnly
+ * @returns {BuiltFileSize[]}
+ */
+export function splitShaderData(full, codeOnly) {
+	const code = new Map(codeOnly.map((file) => [file.name, file.bytes]));
+	return full.map(({ name, bytes }) => {
+		const file = { name, ...sizesOf(bytes) };
+		const alone = code.get(name);
+		if (alone === undefined) return file;
+		const size = sizesOf(alone);
+		return { ...file, code: size, shader: difference(file, size) };
+	});
+}
+
+/**
+ * One file that a build wrote, before its sizes are measured.
+ *
+ * @typedef {object} BuiltOutput
+ * @property {string} name
+ * @property {Buffer} bytes
+ */
+
+/** The size of `bytes` in each column. */
+function sizesOf(/** @type {Buffer} */ bytes) {
+	return {
+		raw: bytes.length,
+		gzip: gzipSync(bytes, { level: 9 }).length,
+		brotli: brotliCompressSync(bytes).length,
+	};
+}
+
+/**
+ * The bytes that the shader data adds to a file in each column: the whole file less the same file
+ * built without it. A column never reads below zero, so such a column charges those bytes to code.
+ */
+function difference(/** @type {ByteSize} */ whole, /** @type {ByteSize} */ code) {
+	/** @type {ByteSize} */
+	const shader = { raw: 0, gzip: 0, brotli: 0 };
+	for (const column of COLUMNS) shader[column] = Math.max(0, whole[column] - code[column]);
+	return shader;
 }
 
 /** A size in KB, to one decimal place. */
 const kb = (/** @type {number} */ bytes) => `${(bytes / 1024).toFixed(1)} KB`;
 
 /**
+ * The budget that a built file answers: the first-use shader budget for a file of compiled shader
+ * builds, and the later-file budget for code.
+ *
+ * @param {string} name
+ * @returns {{ raw: number, gzip: number, brotli: number }}
+ */
+export function budgetOf(name) {
+	return SHADER_BUILDS_FILE.test(name) ? ADDON_SHADER_BUDGET : ADDON_FILE_BUDGET;
+}
+
+/**
  * The budget problems of the files that a build wrote: one for each column of a file over its
- * budget, and none when every file holds to it.
+ * budget, and none when every file holds to it. A file of code that holds compiled WGSL answers
+ * both budgets. Its own code takes the later-file budget, and the shader data takes the shader one.
  *
  * @param {readonly BuiltFileSize[]} files
  * @returns {string[]}
  */
 export function sizeProblems(files) {
-	return files.flatMap((file) =>
-		COLUMNS.filter((column) => file[column] > ADDON_FILE_BUDGET[column]).map(
-			(column) =>
-				`${file.name} is ${kb(file[column])} ${column}, over its ${kb(ADDON_FILE_BUDGET[column])} budget`,
-		),
+	const zero = { raw: 0, gzip: 0, brotli: 0 };
+	return files.flatMap((file) => {
+		if (budgetOf(file.name) === ADDON_SHADER_BUDGET)
+			return overBudget(file.name, '', file, ADDON_SHADER_BUDGET);
+		// A file that the build wrote the same without its shader data answers one budget as before.
+		if (file.code === undefined || COLUMNS.every((column) => (file.shader?.[column] ?? 0) === 0))
+			return overBudget(file.name, '', file, ADDON_FILE_BUDGET);
+		return [
+			...overBudget(file.name, ' of code', file.code, ADDON_FILE_BUDGET),
+			...overBudget(file.name, ' of shader data', file.shader ?? zero, ADDON_SHADER_BUDGET),
+		];
+	});
+}
+
+/**
+ * A problem for each column of `size` over `budget`, and none when it holds to it. `part` names
+ * what of the file the size is, such as ` of code`, or is empty for the whole file.
+ *
+ * @param {string} name
+ * @param {string} part
+ * @param {ByteSize} size
+ * @param {ByteSize} budget
+ * @returns {string[]}
+ */
+function overBudget(name, part, size, budget) {
+	return COLUMNS.filter((column) => size[column] > budget[column]).map(
+		(column) =>
+			`${name} is ${kb(size[column])} ${column}${part}, over its ${kb(budget[column])} budget`,
 	);
+}
+
+/**
+ * The size of a group of built files, as its largest in each column. `part` picks what of a file
+ * the size is: the whole file, or its own code without the shader data inlined beside it.
+ *
+ * @param {readonly BuiltFileSize[]} files
+ * @param {'all' | 'code'} [part]
+ * @returns {string}
+ */
+function largestSizes(files, part = 'all') {
+	const sizeOf = (/** @type {BuiltFileSize} */ file) =>
+		part === 'code' ? (file.code ?? file) : file;
+	const largest = (/** @type {'raw' | 'gzip' | 'brotli'} */ column) =>
+		Math.max(0, ...files.map((file) => sizeOf(file)[column]));
+	return `${kb(largest('raw'))} raw, ${kb(largest('gzip'))} gzip, ${kb(largest('brotli'))} brotli`;
+}
+
+/**
+ * The sizes gate's result: PASS when every file that the build wrote holds to its budget, and WARN
+ * when one goes over. The three size budgets are the code budget, the later-file budget and the
+ * shader-data budget. An add-on is a choice, so a file over one of them warns rather than fails the
+ * check (owner's ruling). The page, cost and allocation gates still fail.
+ *
+ * @param {readonly BuiltFileSize[]} files
+ * @returns {Outcome}
+ */
+export function sizeOutcome(files) {
+	const over = sizeProblems(files);
+	const shaderBuilds = files.filter((file) => budgetOf(file.name) === ADDON_SHADER_BUDGET);
+	const code = files.filter((file) => budgetOf(file.name) === ADDON_FILE_BUDGET);
+	const split = code.filter((file) => (file.shader?.raw ?? 0) > 0);
+	const inlined = split.reduce((sum, file) => sum + (file.shader?.raw ?? 0), 0);
+	/** What the gate adds to the plain line about a file that holds shader data. */
+	const notes = [];
+	if (inlined > 0 || shaderBuilds.length > 0) {
+		if (code.length > 0) notes.push(`the largest code file at ${largestSizes(code, 'code')}`);
+		if (shaderBuilds.length > 0)
+			notes.push(`the largest shader build at ${largestSizes(shaderBuilds)}`);
+		if (inlined > 0)
+			notes.push(
+				`${kb(inlined)} of shader data inlined in ${counted(split.length, 'code file')}, within the shader budget`,
+			);
+	}
+	if (over.length > 0)
+		return {
+			status: 'WARN',
+			text: `sizes: ${counted(over.length, 'file')} load more than the budget for a file after the start`,
+			details: over,
+		};
+	return {
+		status: 'PASS',
+		text:
+			notes.length === 0
+				? `sizes: the largest file is ${largestSizes(files)}, within budget`
+				: `sizes: ${counted(files.length, 'file')} within budget, ${notes.join(', ')}`,
+		details: split.map(
+			(file) =>
+				`${file.name}: ${kb(file.raw)} in all, ${kb(file.code?.raw ?? 0)} of code and ${kb(file.shader?.raw ?? 0)} of shader data, which adds ${kb(file.shader?.gzip ?? 0)} gzip and ${kb(file.shader?.brotli ?? 0)} brotli`,
+		),
+	};
 }
 
 /** How many more lines than `SHOWN_LINES` a message printed, as a note, or nothing. */
@@ -519,6 +765,9 @@ function moreLines(/** @type {string[]} */ lines) {
 
 /** The quality presets that the cost gate measures, lowest first. */
 const PRESETS = /** @type {const} */ (['low', 'medium', 'high', 'ultra']);
+
+/** The gates that open a browser, which the page's config or an option can leave out. */
+const BROWSER_GATES = ['page', 'cost', 'allocation'];
 
 /** The headers that make a page cross-origin isolated, which its worker threads need. */
 const ISOLATION = {
@@ -735,6 +984,435 @@ async function costGate(runner, page) {
 }
 
 /**
+ * The workers that the allocation gate samples, by a part of their script's address. The engine
+ * runs the page's frame code in the sketch worker, and draws in the render worker.
+ */
+const SAMPLED_WORKERS = ['sketch-worker', 'render-worker'];
+
+/** Bytes between the heap profiler's samples, small so that a few bytes per frame still show. */
+const SAMPLING_INTERVAL = 128;
+
+/**
+ * The most objects that one worker's profile may hold in one sample. The profiler records one
+ * sample for each stretch of bytes that a page allocates, so a page that allocates fast would
+ * otherwise grow a profile until the memory runs out. The gate learns the page's rate first, then
+ * widens the interval to hold this count, which keeps one sample at about 20 MB.
+ */
+export const MAX_ALLOCATION_SAMPLES = 250_000;
+
+/**
+ * The coarsest interval that the gate sets. At this interval and the count above, a sample holds
+ * any page's allocations up to a few terabytes in its window, so the count holds for every page.
+ */
+const COARSEST_SAMPLING_INTERVAL = 16 * 1024 * 1024;
+
+/**
+ * Milliseconds of the page's frames that the gate samples to learn its allocation rate, and the
+ * bytes between those samples, coarse so that the rate's own profile stays small.
+ */
+const RATE_SAMPLE_MS = 250;
+const RATE_SAMPLING_INTERVAL = 8192;
+
+/** Seconds that a page warms up before a sample, so the browser optimizes its frame code. */
+const ALLOCATION_WARMUP_SECONDS = 20;
+
+/**
+ * Frames that a page draws before a sample too. The browser optimizes code that runs once a frame
+ * only after many frames, and until then the numbers that such code computes are allocated.
+ */
+const ALLOCATION_WARMUP_FRAMES = 1200;
+
+/** Samples that the gate takes one after another, and the seconds that each runs. */
+const ALLOCATION_SAMPLES = 2;
+const ALLOCATION_SAMPLE_SECONDS = 4;
+
+/** Seconds without a new frame after which the gate gives up on a page that stopped drawing. */
+const STALL_SECONDS = 60;
+
+/** How many places of the add-on's own code a result names. */
+const SHOWN_PLACES = 8;
+
+/**
+ * Milliseconds that a CPU profile of the workers runs. The heap profile lists only the places that
+ * allocated; this profile lists the functions that ran, so the gate can tell whether it saw the
+ * add-on's own code at all.
+ */
+const CPU_PROFILE_MS = 1000;
+
+/** The global where the gate counts a page's animation frames. */
+const FRAME_COUNTER = '__null3dAddonFrames';
+
+/** How long a page may take to start the engine. */
+const ENGINE_TIMEOUT_MS = 60_000;
+
+/**
+ * The figures of one page on one quality preset.
+ *
+ * @typedef {object} AllocationFigures
+ * @property {number} pageBytes Bytes per frame in the page's threads.
+ * @property {number} addonBytes Bytes per frame in the add-on's own code.
+ * @property {boolean} addonRan Whether the workers ran any of the add-on's own code.
+ * @property {{ worker: string, place: string, perFrame: number }[]} places The places of the
+ *   add-on's own code that allocated, largest first.
+ */
+
+/**
+ * Runs in the page: counts the browser's animation frames under `name`, from now on.
+ *
+ * @param {string} name
+ */
+function startCountingFrames(name) {
+	const scope =
+		/** @type {{ requestAnimationFrame: (callback: () => void) => number } & Record<string, unknown>} */ (
+			/** @type {unknown} */ (globalThis)
+		);
+	if (scope[name]) return;
+	const counter = { frames: 0 };
+	const tick = () => {
+		counter.frames++;
+		scope.requestAnimationFrame(tick);
+	};
+	scope.requestAnimationFrame(tick);
+	scope[name] = counter;
+}
+
+/**
+ * Runs in the page: the animation frames counted since the counter started.
+ *
+ * @param {string} name
+ * @returns {number}
+ */
+function countedFrames(name) {
+	const counter = /** @type {{ frames: number } | undefined} */ (
+		/** @type {Record<string, unknown>} */ (globalThis)[name]
+	);
+	return counter?.frames ?? 0;
+}
+
+/**
+ * The file of a named frame, as a path, or nothing for a frame of the browser or of a script with no
+ * address of its own.
+ *
+ * @param {CallFrame} frame
+ * @returns {string | undefined}
+ */
+function sourcePathOf({ url }) {
+	if (!/^https?:/.test(url)) return undefined;
+	try {
+		return decodeURIComponent(new URL(url).pathname);
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Something that names a frame through a build's source maps, such as a `BuildNames`.
+ *
+ * @typedef {{ name: (frame: CallFrame) => CallFrame }} Namer
+ */
+
+/**
+ * An add-on's package name and its folder, with symbolic links resolved.
+ *
+ * @typedef {{ folder: string, name: string }} Addon
+ */
+
+/**
+ * Whether a source file is the add-on's own: in its folder, as a page that imports its source uses
+ * it, or in its copy under `node_modules`, as a page that imports the published package uses it.
+ *
+ * @param {string} path
+ * @param {Addon} addon
+ * @returns {boolean}
+ */
+function belongsToAddon(path, { folder, name }) {
+	return `${path}${sep}`.startsWith(`${folder}${sep}`) || path.includes(`/node_modules/${name}/`);
+}
+
+/**
+ * Names each function of a profile through the build's source maps, and notes each place that the
+ * add-on's own code allocated in. A place belongs to the add-on when its source file is the
+ * add-on's, so the gate names the page's and the add-on's code, not the engine's.
+ *
+ * @param {ProfileNode} node
+ * @param {Namer} names
+ * @param {Addon} addon
+ * @param {Set<string>} into
+ */
+export function nameProfile(node, names, addon, into) {
+	node.callFrame = names.name(node.callFrame);
+	const path = sourcePathOf(node.callFrame);
+	if (path !== undefined && belongsToAddon(path, addon)) into.add(placeName(node.callFrame));
+	for (const child of node.children) nameProfile(child, names, addon, into);
+}
+
+/**
+ * Whether any of the frames that the workers ran comes from the add-on's own code. A page that runs
+ * none of it is the wrong page to measure, whatever its profile holds.
+ *
+ * @param {readonly CallFrame[]} frames
+ * @param {Namer} names
+ * @param {Addon} addon
+ * @returns {boolean}
+ */
+export function ranAddonCode(frames, names, addon) {
+	for (const frame of frames) {
+		const path = sourcePathOf(names.name(frame));
+		if (path !== undefined && belongsToAddon(path, addon)) return true;
+	}
+	return false;
+}
+
+/**
+ * The bytes between samples that keep one worker's profile under `MAX_ALLOCATION_SAMPLES`, for a
+ * page that allocates `bytesPerSecond`. A page that allocates slowly takes the finest interval, so
+ * a few bytes per frame still show; a faster page is sampled less finely, and its places are
+ * coarser.
+ *
+ * @param {number} bytesPerSecond
+ * @returns {number}
+ */
+export function samplingIntervalFor(bytesPerSecond) {
+	const wanted = Math.ceil((bytesPerSecond * ALLOCATION_SAMPLE_SECONDS) / MAX_ALLOCATION_SAMPLES);
+	return Math.min(COARSEST_SAMPLING_INTERVAL, Math.max(SAMPLING_INTERVAL, wanted));
+}
+
+/**
+ * The bytes that the page's workers allocate each second, from a short sample at a coarse interval.
+ *
+ * @param {HeapSampler} sampler
+ * @param {() => Promise<number>} frames
+ * @returns {Promise<number>}
+ */
+async function allocationRate(sampler, frames) {
+	await sampler.start(RATE_SAMPLING_INTERVAL);
+	const start = await frames();
+	await sleep(RATE_SAMPLE_MS);
+	const profiles = await sampler.stop();
+	if ((await frames()) - start <= 0) return 0;
+	let bytes = 0;
+	for (const profile of profiles.values()) bytes += totalSize(profile.head);
+	return bytes / (RATE_SAMPLE_MS / 1000);
+}
+
+/**
+ * Waits until a page's frame counter reaches `target`, and throws when it stands still for a while,
+ * as on a page whose engine failed.
+ *
+ * @param {() => Promise<number>} frames
+ * @param {number} target
+ */
+async function reachFrames(frames, target) {
+	let last = -1;
+	let still = 0;
+	for (;;) {
+		const now = await frames();
+		if (now >= target) return;
+		still = now === last ? still + 1 : 0;
+		if (still >= STALL_SECONDS)
+			throw new Error(`the page drew no frame for ${STALL_SECONDS} s, at ${now} of ${target}`);
+		last = now;
+		await sleep(1000);
+	}
+}
+
+/**
+ * The browser's page target at the address that the gate opened, or the newest page at its path for
+ * a page that rewrote its address. The address names the preset, so a page that an earlier gate left
+ * open does not match it.
+ *
+ * @param {DevTools} devtools
+ * @param {string} url
+ * @returns {Promise<TargetInfo | undefined>}
+ */
+async function pageTargetAt(devtools, url) {
+	const { targetInfos } = /** @type {{ targetInfos: TargetInfo[] }} */ (
+		await devtools.send('Target.getTargets')
+	);
+	const exact = targetInfos.filter(
+		(target) => target.type === 'page' && target.url.startsWith(url),
+	);
+	return exact.at(-1) ?? (await pagesAt(devtools, url)).at(-1);
+}
+
+/**
+ * Opens the page on one quality preset and samples what its workers allocate per frame, then gives
+ * the bytes per frame of the add-on's own code and of the page.
+ *
+ * @param {{ devtools: DevTools, browserPage: Page, url: string, names: Namer, addon: Addon }} options
+ * @returns {Promise<AllocationFigures | { error: string }>}
+ */
+async function sampleAllocation({ devtools, browserPage, url, names, addon }) {
+	const started = await pollPage(browserPage, url, ENGINE_TIMEOUT_MS, async (overdue) => {
+		const found = await browserPage
+			.evaluate((name) => name in globalThis, ENGINE_GLOBAL)
+			.catch(() => false);
+		if (found) return true;
+		if (overdue)
+			return failure(
+				'the page did not start the engine in time. The allocation gate needs a page that starts the engine as it loads, with no click',
+			);
+		return undefined;
+	});
+	if (started !== true) return { error: started.error };
+	await browserPage.evaluate(startCountingFrames, FRAME_COUNTER);
+	const framesSoFar = () => browserPage.evaluate(countedFrames, FRAME_COUNTER);
+	const target = await pageTargetAt(devtools, url);
+	if (target === undefined) return { error: 'the browser reported no page for this address' };
+	const { workers } = await attachWorkers(devtools, target.targetId, SAMPLED_WORKERS);
+	await sleep(ALLOCATION_WARMUP_SECONDS * 1000);
+	await reachFrames(framesSoFar, ALLOCATION_WARMUP_FRAMES);
+	const ran = await sampledFrames(devtools, workers, CPU_PROFILE_MS);
+	const addonRan = [...ran.values()].some((frames) => ranAddonCode(frames, names, addon));
+	const sampler = new HeapSampler(devtools, workers);
+	await sampler.enable();
+	const interval = samplingIntervalFor(await allocationRate(sampler, framesSoFar));
+	/** @type {Map<string, Sample[]>} */
+	const samples = new Map();
+	/** @type {Map<string, number>} */
+	const bytes = new Map();
+	/** @type {Set<string>} */
+	const addonPlaces = new Set();
+	let frames = 0;
+	for (let sample = 0; sample < ALLOCATION_SAMPLES; sample++) {
+		await sampler.start(interval);
+		const startFrames = await framesSoFar();
+		await sleep(ALLOCATION_SAMPLE_SECONDS * 1000);
+		const profiles = await sampler.stop();
+		const drawn = (await framesSoFar()) - startFrames;
+		if (drawn <= 0) return { error: 'the page drew no frame while it was sampled' };
+		frames += drawn;
+		for (const [worker, profile] of profiles) {
+			nameProfile(profile.head, names, addon, addonPlaces);
+			samples.set(worker, [
+				...(samples.get(worker) ?? []),
+				{ places: profilePlaces(profile), frames: drawn },
+			]);
+			bytes.set(worker, (bytes.get(worker) ?? 0) + totalSize(profile.head));
+		}
+	}
+	const unsampled = [...samples.keys()].filter((worker) => !bytes.get(worker));
+	if (unsampled.length > 0)
+		return {
+			error: `the heap profiler sampled nothing in the ${unsampled.join(' and the ')}. Its page must run the engine's sketch and render workers`,
+		};
+	/** @type {{ worker: string, place: string, perFrame: number }[]} */
+	const places = [];
+	for (const [worker, workerSamples] of samples)
+		for (const [place, { perFrame }] of steadyPlaces(workerSamples))
+			if (addonPlaces.has(place)) places.push({ worker, place, perFrame });
+	places.sort((a, b) => b.perFrame - a.perFrame);
+	return {
+		addonBytes: places.reduce((sum, place) => sum + place.perFrame, 0),
+		pageBytes: [...bytes.values()].reduce((sum, size) => sum + size, 0) / frames,
+		addonRan,
+		places,
+	};
+}
+
+/** The size of a figure per frame: whole bytes below one kilobyte, and kilobytes above it. */
+const perFrameSize = (/** @type {number} */ bytes) =>
+	bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${Math.round(bytes)} bytes`;
+
+/**
+ * What the allocation gate prints: the bytes per frame in the add-on's own code on each preset,
+ * then the page's own figure and the places that allocated on each.
+ *
+ * @param {readonly ({ preset: string } & AllocationFigures)[]} runs
+ * @param {string} browserName
+ * @returns {Outcome}
+ */
+export function allocationOutcome(runs, browserName) {
+	const shown = runs.map((run) => `${run.preset} ${perFrameSize(run.addonBytes)}`);
+	/** @type {string[]} */
+	const details = runs.map(
+		(run) =>
+			`${run.preset}: ${perFrameSize(run.pageBytes)} per frame in the page's threads, ${perFrameSize(run.addonBytes)} of it in the add-on's own code`,
+	);
+	for (const run of runs)
+		for (const { worker, place, perFrame } of run.places.slice(0, SHOWN_PLACES))
+			details.push(`${run.preset}: ${perFrameSize(perFrame)} per frame in ${place} (${worker})`);
+	return {
+		status: 'PASS',
+		text: `allocation per preset: ${shown.join(', ')} per frame in the add-on's own code, on ${browserName}`,
+		details,
+	};
+}
+
+/**
+ * Measures what the add-on's own code allocates per frame on the page, on each quality preset. The
+ * page runs its production build, as the cost gate measures it, and the gate samples the sketch and
+ * render workers' heaps. A page that the gate cannot measure fails; a figure that a seller publishes
+ * for its add-on never does.
+ *
+ * @param {Runner} runner
+ * @param {{ page: string, folder: string, name: string }} options The page, from the project's
+ *   root, and the add-on that it belongs to.
+ * @param {number} port The port of the browser's debugging socket.
+ * @param {number} [timeoutMs] How long the browser may take to answer on that port.
+ * @returns {Promise<Outcome>}
+ */
+export async function allocationGate(runner, { page, folder, name }, port, timeoutMs = 20_000) {
+	const buildDir = runner.server.buildDir;
+	if (buildDir === undefined)
+		return { status: 'FAIL', text: 'allocation: the project has no production build' };
+	/** @type {DevTools} */
+	let devtools;
+	try {
+		devtools = await DevTools.connect(port, timeoutMs);
+	} catch (error) {
+		return {
+			status: 'FAIL',
+			text: `allocation: the gate could not reach the browser's debugging socket: ${error instanceof Error ? error.message : error}`,
+		};
+	}
+	const names = new BuildNames(buildDir);
+	// A build names the sources by the path that Vite resolved, and a symbolic link in the folder's
+	// own path would hide the add-on's code from the gate.
+	/** @type {Addon} */
+	const addon = { name, folder };
+	try {
+		addon.folder = realpathSync(folder);
+	} catch {
+		addon.folder = folder;
+	}
+	try {
+		/** @type {({ preset: string } & AllocationFigures)[]} */
+		const runs = [];
+		for (const preset of PRESETS) {
+			const context = await runner.browser.newContext({
+				viewport: { width: 1280, height: 720 },
+				deviceScaleFactor: 1,
+				ignoreHTTPSErrors: true,
+			});
+			try {
+				const browserPage = await context.newPage();
+				const url = new URL(switchedPath(page, { bench: '', preset }), runner.server.url).href;
+				const run = await sampleAllocation({ devtools, browserPage, url, names, addon });
+				if ('error' in run)
+					return { status: 'FAIL', text: `allocation: on ${preset}, ${run.error}` };
+				runs.push({ preset, ...run });
+			} finally {
+				await context.close();
+			}
+		}
+		if (!runs.some((run) => run.addonRan))
+			return {
+				status: 'FAIL',
+				text: `allocation: the page ran none of the add-on's own code on any preset, so the gate measured other code. Make the page use the add-on, and check that its files come from the add-on's folder or its installed package`,
+			};
+		return allocationOutcome(runs, runner.browserName);
+	} catch (error) {
+		return {
+			status: 'FAIL',
+			text: `allocation: the gate stopped: ${error instanceof Error ? error.message : error}`,
+		};
+	} finally {
+		devtools.close();
+	}
+}
+
+/**
  * Runs the command with its arguments, prints each gate as it comes and a count at the end, and
  * returns the exit code: 0 when no gate failed, 1 when one did.
  *
@@ -810,29 +1488,18 @@ export async function run(args) {
 			status: 'PASS',
 			text: `shaders: ${counted(files.length, 'file')} built with WGSL for WebGPU and WebGL2`,
 		});
-		const over = sizeProblems(files);
-		const largest = (/** @type {'raw' | 'gzip' | 'brotli'} */ column) =>
-			Math.max(0, ...files.map((file) => file[column]));
-		print(
-			over.length === 0
-				? {
-						status: 'PASS',
-						text: `sizes: the largest file is ${kb(largest('raw'))} raw, ${kb(largest('gzip'))} gzip, ${kb(largest('brotli'))} brotli, within budget`,
-					}
-				: {
-						status: 'FAIL',
-						text: `sizes: ${counted(over.length, 'file')} load more than the budget for a file after the start`,
-						details: over,
-					},
-		);
+		print(sizeOutcome(files));
 	}
 
 	if (options.skipBrowser) {
-		print({ status: 'SKIP', text: 'page: --skip-browser runs no gate that opens a browser' });
+		for (const gate of BROWSER_GATES)
+			print({ status: 'SKIP', text: `${gate}: --skip-browser runs no gate that opens a browser` });
 	} else {
 		const chosen = pageOf(folder, options.page);
 		if (chosen.page === undefined) {
 			print({ status: 'SKIP', text: `page: ${chosen.reason ?? ''}` });
+			print({ status: 'SKIP', text: 'cost: there is no page to measure' });
+			print({ status: 'SKIP', text: 'allocation: there is no page to sample' });
 		} else {
 			/** @type {Runner | undefined} */
 			let runner;
@@ -840,12 +1507,24 @@ export async function run(args) {
 			const cwd = process.cwd();
 			try {
 				process.chdir(folder);
+				// The allocation gate reads the workers' heaps through the browser's debugging socket.
+				const port = await freePort();
 				runner = await startRunner({
 					production: true,
-					browserArgs: [WEBGPU_DEVELOPER_FEATURES],
+					sourcemap: true,
+					// The engine's shader builds come from the shared shader set as files, so the page's
+					// build passes none of their bytes through the bundler.
+					linkedShaders: true,
+					browserArgs: [WEBGPU_DEVELOPER_FEATURES, `--remote-debugging-port=${port}`],
 				});
 				print(await strictPolicyGate(runner, chosen.page));
-				print(await costGate(runner, chosen.page));
+				if (options.skipCost)
+					print({
+						status: 'SKIP',
+						text: 'cost: --skip-cost runs no cost measurement, because a loaded machine reports its load',
+					});
+				else print(await costGate(runner, chosen.page));
+				print(await allocationGate(runner, { page: chosen.page, folder, name: addon.name }, port));
 			} catch (error) {
 				print({
 					status: 'FAIL',

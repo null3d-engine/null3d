@@ -473,6 +473,9 @@ struct TextureArray {
     /// For the target of a view: the view's place, and the target's GPU id once the render graph
     /// made it.
     pass: Option<(u32, Option<u32>)>,
+    /// The first layer of the state that a view's pass wrote last, which a map of the pass's
+    /// target samples: 0 for a pass that keeps one state.
+    pass_layer: u32,
     /// Layers still marked used whose textures move to a smaller array in the next recorded frame,
     /// which copies them out and frees them.
     leaving: u32,
@@ -498,6 +501,7 @@ impl TextureArray {
             grown_in: 0,
             left_in: 0,
             pass: None,
+            pass_layer: 0,
         }
     }
 
@@ -662,12 +666,22 @@ struct MapSetKey {
     /// True when the fragment stage reads the displacement map too, for parallax: the group then
     /// has a layout of its own.
     parallax: bool,
+    /// True for a material that reads the scene's depth. Its group leaves out the last slot and
+    /// the displacement map, which no custom material reads, so the copy of the depth fits the
+    /// fragment stage beside the maps.
+    scene: bool,
 }
 
 impl MapSetKey {
-    /// Every array and sampler that the group binds.
+    /// Every slot's array and sampler that the group binds, and the displacement map's after them.
     fn pairs(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
-        self.slots.iter().copied().chain([self.height])
+        let slots = if self.scene {
+            &self.slots[..MAP_SET_SLOTS - 1]
+        } else {
+            &self.slots[..]
+        };
+        let height = if self.scene { None } else { Some(self.height) };
+        slots.iter().copied().chain(height)
     }
 }
 
@@ -1091,12 +1105,14 @@ impl TextureStore {
     /// The GPU id of the bind group that samples a material's maps, one per map slot: each live
     /// texture's array with its sampler, and a white texel where a slot has none. Materials whose
     /// maps share arrays and samplers share the group. A texture that moves to another array needs
-    /// its material's group again.
+    /// its material's group again. A material that reads the scene's depth takes a group with the
+    /// last slot and the displacement map left out, under a layout of its own.
     pub fn map_set_group(
         &mut self,
         maps: &[Handle; MAP_SET_SLOTS],
         height: Handle,
         parallax: bool,
+        scene: bool,
     ) -> Result<u32, TextureError> {
         let empty = self.placeholder()?;
         let mut slots = [empty; MAP_SET_SLOTS];
@@ -1110,6 +1126,7 @@ impl TextureStore {
             slots,
             height,
             parallax,
+            scene,
         };
         Ok(self.ids.first_group + self.group_of_key(GroupKey::Maps(key)))
     }
@@ -1157,6 +1174,7 @@ impl TextureStore {
             slots,
             height: self.map_pair(height).unwrap_or(empty),
             parallax: false,
+            scene: false,
         };
         let group = self.ids.first_group + self.group_of_key(GroupKey::Maps(key));
         Ok((group, slot_units))
@@ -1511,7 +1529,17 @@ impl TextureStore {
         self.handles.is_live(texture)
     }
 
-    /// The layer that a material samples a texture from, once its texels are on the GPU.
+    /// True when two textures share a texture array, so a shader that binds the array of one
+    /// reads the other at its own layer.
+    pub fn same_array(&self, first: Handle, second: Handle) -> bool {
+        match (self.slot(first), self.slot(second)) {
+            (Ok(a), Ok(b)) => a.array == b.array,
+            _ => false,
+        }
+    }
+
+    /// The layer that a material samples a texture from, once its texels are on the GPU. A map of
+    /// a pass's target takes the first layer of the state that the pass wrote last.
     pub fn ready_layer(&self, texture: Handle) -> Option<u32> {
         let slot = self.slot(texture).ok()?;
         let array = &self.arrays[slot.array as usize];
@@ -1519,7 +1547,31 @@ impl TextureStore {
             Some((_, target)) => target.is_some(),
             None => matches!(slot.state, State::Uploaded { .. }),
         };
-        ready.then_some(slot.layer)
+        ready.then_some(slot.layer + array.pass_layer)
+    }
+
+    /// Gives the maps of view `view`'s target the first layer of the state that its pass wrote
+    /// last, from this frame on.
+    pub fn set_pass_layer(&mut self, view: u32, layer: u32) {
+        for array in &mut self.arrays {
+            if array.live == 0 || array.pass.is_none_or(|(of, _)| of != view) {
+                continue;
+            }
+            if array.pass_layer != layer {
+                array.pass_layer = layer;
+                self.layers_changed = true;
+            }
+        }
+    }
+
+    /// The GPU array and layer that a shader copies a texture from, once its texels are on the
+    /// GPU: a 2D texture's, whose layers a shader samples. A 3D or cube texture has no such array,
+    /// and a texture that still uploads has none either.
+    pub fn copy_source(&self, texture: Handle) -> Option<(u32, u32)> {
+        let slot = self.slot(texture).ok()?;
+        let array = &self.arrays[slot.array as usize];
+        (array.key.kind == Kind::Layers && matches!(slot.state, State::Uploaded { .. }))
+            .then(|| (self.array_id(slot.array), slot.layer))
     }
 
     /// Whether a texture's texels on the GPU come from an image that holds colors multiplied by
@@ -2287,29 +2339,41 @@ impl TextureStore {
                         continue;
                     }
                     // Each slot's array at the binding of its slot, then each slot's sampler
-                    // after every array, then the displacement map's array and sampler.
+                    // after every array, then the displacement map's array and sampler. A
+                    // material that reads the scene's depth leaves out the last slot and the
+                    // displacement map, under a layout of its own.
                     let mut words = [0; 3 + (2 * MAP_SET_SLOTS + 2) * 5];
-                    let layout = if key.parallax {
+                    let slots = if key.scene {
+                        MAP_SET_SLOTS - 1
+                    } else {
+                        MAP_SET_SLOTS
+                    };
+                    let layout = if key.scene {
+                        layout::MATERIAL_MAPS_SCENE
+                    } else if key.parallax {
                         layout::MATERIAL_MAPS_PARALLAX
                     } else {
                         layout::MATERIAL_MAPS
                     };
-                    words[..3].copy_from_slice(&[id, layout, 2 * MAP_SET_SLOTS as u32 + 2]);
-                    let (array, sampler) = key.height;
-                    let height = 3 + 5 * 2 * MAP_SET_SLOTS;
-                    words[height..height + 10].copy_from_slice(&[
-                        HEIGHT_BINDING,
-                        resource_kind::TEXTURE,
-                        self.array_id(array),
-                        0,
-                        0,
-                        HEIGHT_BINDING + 1,
-                        resource_kind::SAMPLER,
-                        self.ids.first_sampler + sampler,
-                        0,
-                        0,
-                    ]);
-                    for (k, &(array, sampler)) in key.slots.iter().enumerate() {
+                    let count = if key.scene { 2 * slots } else { 2 * slots + 2 };
+                    words[..3].copy_from_slice(&[id, layout, count as u32]);
+                    if !key.scene {
+                        let (array, sampler) = key.height;
+                        let height = 3 + 5 * 2 * slots;
+                        words[height..height + 10].copy_from_slice(&[
+                            HEIGHT_BINDING,
+                            resource_kind::TEXTURE,
+                            self.array_id(array),
+                            0,
+                            0,
+                            HEIGHT_BINDING + 1,
+                            resource_kind::SAMPLER,
+                            self.ids.first_sampler + sampler,
+                            0,
+                            0,
+                        ]);
+                    }
+                    for (k, &(array, sampler)) in key.slots[..slots].iter().enumerate() {
                         let texture = 3 + 5 * k;
                         words[texture..texture + 5].copy_from_slice(&[
                             k as u32,
@@ -2318,7 +2382,7 @@ impl TextureStore {
                             0,
                             0,
                         ]);
-                        let at = 3 + 5 * (MAP_SET_SLOTS + k);
+                        let at = 3 + 5 * (slots + k);
                         words[at..at + 5].copy_from_slice(&[
                             (MAP_SET_SLOTS + k) as u32,
                             resource_kind::SAMPLER,
@@ -2327,7 +2391,7 @@ impl TextureStore {
                             0,
                         ]);
                     }
-                    list.push(Op::CreateBindGroup, &words)?;
+                    list.push(Op::CreateBindGroup, &words[..3 + 5 * count])?;
                 }
             }
             self.groups[index].created = true;

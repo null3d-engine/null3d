@@ -17,17 +17,19 @@ import * as C from '../generated/core';
 import { linearToSrgb } from '../math/color';
 import { hexValue, invalidColor } from '../math/hex';
 import type { Vec3Like } from '../math/types';
+import { activateAddonDebugView, hasAddonDebugView } from '../scene/addon-debug-views';
 import { type ColorInput, isComponent } from '../scene/color';
 import type { CoreMemory, ViewHolder } from '../scene/memory';
 import {
 	type Camera,
 	type DirectionalLight,
+	type Mesh,
 	Object3D,
 	type OrthographicCamera,
 	type PerspectiveCamera,
 	type Scene,
 } from '../scene/scene';
-import type { DebugGridOptions, DebugLightOptions, DebugView } from './debug';
+import type { DebugGridOptions, DebugLightOptions, DebugViewName } from './debug';
 import { type DebugHost, SketchDebug } from './sketch-debug';
 
 /** The points that the arrays first make room for: 2,048 lines. */
@@ -57,6 +59,11 @@ const LIGHT = 2;
 const LIGHT_AT = 3;
 /** The skeleton of an animated object, in the colors of three.js's `SkeletonHelper`. */
 const SKELETON = 4;
+/** The most culling spheres that one frame draws, so a forest of copies does not fill the frame. */
+const MAX_CULL_SPHERES = 128;
+/** The color of a culling sphere. */
+const CULL_SPHERE_COLOR = 0xffffff;
+
 /** The color of a skeleton line's joint end and parent end: blue and green, as three.js's. */
 const JOINT_BLUE = 0xffff0000;
 const PARENT_GREEN = 0xff00ff00;
@@ -101,8 +108,8 @@ export function packedColor(color: ColorInput, call: string): number {
 	throw invalidColor(color, call);
 }
 
-/** The core's code of a debug view, or E1213 for a name that is not one. */
-function viewCode(view: DebugView): number {
+/** The core's code of one of the engine's own debug views, or undefined for another name. */
+function viewCode(view: string): number | undefined {
 	switch (view) {
 		case 'lit':
 			return C.DEBUG_VIEW_LIT;
@@ -118,11 +125,10 @@ function viewCode(view: DebugView): number {
 			return C.DEBUG_VIEW_SHADOWS;
 		case 'motion':
 			return C.DEBUG_VIEW_MOTION;
+		case 'levels':
+			return C.DEBUG_VIEW_LEVELS;
 		default:
-			throw new EngineError(
-				'E1213',
-				`debug.view() got ${JSON.stringify(view)}, which is not 'lit', 'normals', 'depth', 'wireframe', 'overdraw', 'shadows' or 'motion'.`,
-			);
+			return undefined;
 	}
 }
 
@@ -146,6 +152,12 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 	private readonly followedLights: number[] = [];
 	/** An object's world matrix: rows of a 3 x 4 matrix, with the translation in 64 bits. */
 	private readonly matrix = new Float64Array(C.CORE_MATRIX_FLOATS);
+	/** The center of a culling sphere, which the levels view draws. */
+	private readonly sphereCenter = new Float64Array(3);
+	/** The culling spheres drawn in this frame. */
+	private spheresDrawn = 0;
+	/** Visits each level mesh for the culling spheres, made once so a frame allocates nothing. */
+	private readonly visitCullingSphere = (object: Mesh): boolean => this.drawCullingSphere(object);
 	/**
 	 * Corners in world space: a frustum's near plane's four, then its far plane's, or a light's
 	 * square's four.
@@ -153,6 +165,8 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 	private readonly corners = new Float64Array(24);
 	/** Two unit vectors at right angles to a direction and to each other, from `across`. */
 	private readonly sides = new Float64Array(6);
+	/** True while the culling spheres of the meshes with levels draw. */
+	private cullingSpheresWanted = false;
 	/** The direction a drawn light's light travels. */
 	private readonly direction = new Float64Array(3);
 
@@ -172,12 +186,54 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 		this.colors = new Uint32Array(0);
 	}
 
-	view(view: DebugView): void {
-		this.core.glue.setDebugView(viewCode(view));
+	view(view: DebugViewName): void {
+		if (this.applyView(view)) return;
+		throw new EngineError(
+			'E1213',
+			`debug.view() got ${JSON.stringify(view)}, which is not 'lit', 'normals', 'depth', 'wireframe', 'overdraw', 'shadows', 'motion' or 'levels', and no add-on feature registers a view with that name.`,
+		);
+	}
+
+	/**
+	 * Sets the view that the page's `?view` switch asks for, without throwing for a name that no
+	 * feature has registered yet: an add-on that registers it later starts it.
+	 */
+	requestView(view: string): void {
+		if (this.applyView(view)) return;
+		// Store the name, so a feature that registers it during the sketch's setup starts it. The
+		// engine's own view must not stay set under an add-on's view, as when one is registered now.
+		this.core.glue.setDebugView(C.DEBUG_VIEW_LIT);
+		activateAddonDebugView(view);
+	}
+
+	/** True when `view` is one that the sketch may set, and it is now the active view. */
+	private applyView(view: string): boolean {
+		const code = viewCode(view);
+		if (code !== undefined) {
+			this.core.glue.setDebugView(code);
+			activateAddonDebugView(undefined);
+			return true;
+		}
+		if (!hasAddonDebugView(view)) return false;
+		// An add-on draws its own view, so the engine's view must not stay set under it.
+		this.core.glue.setDebugView(C.DEBUG_VIEW_LIT);
+		activateAddonDebugView(view);
+		return true;
 	}
 
 	shadowCamera(camera?: Camera): void {
 		this.scene.setShadowCamera(camera);
+	}
+
+	cullingSpheres(show = true): void {
+		this.cullingSpheresWanted = show;
+		// With the switch off, no later frame visits a sphere, so the last frame's count would
+		// outlive the switch.
+		if (!show) this.spheresDrawn = 0;
+	}
+
+	cullingSpheresDrawn(): number {
+		return this.spheresDrawn;
 	}
 
 	line(from: Vec3Like, to: Vec3Like, color?: ColorInput): void {
@@ -321,6 +377,7 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 			else this.drawLight(k, kind === LIGHT_AT, value);
 		}
 		this.followedCount = 0;
+		if (this.cullingSpheresWanted) this.drawCullingSpheres();
 		if (this.points === 0) return;
 		const points = this.points;
 		this.points = 0;
@@ -330,6 +387,40 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 	skeleton(object: Object3D, color?: ColorInput): void {
 		const c = color === undefined ? TWO_COLORS : packedColor(color, 'debug.skeleton');
 		this.follow(SKELETON, object, c);
+	}
+
+	/**
+	 * Draws the bounding sphere that culling tests for each of the first objects whose mesh has
+	 * levels of detail, from the object's world matrix and the mesh's own sphere.
+	 */
+	private drawCullingSpheres(): void {
+		this.spheresDrawn = 0;
+		this.scene.forEachLevelMesh(this.visitCullingSphere);
+	}
+
+	/** Draws the culling sphere of one object whose mesh has levels, or passes the limit. */
+	private drawCullingSphere(object: Mesh): boolean {
+		if (this.spheresDrawn >= MAX_CULL_SPHERES) return false;
+		const mesh = object.mesh;
+		if (mesh === undefined || this.core.readWorldMatrix(object.handle, this.matrix) !== 0)
+			return true;
+		const m = this.matrix;
+		// The largest axis scale of the world matrix, as the culling shader reads it.
+		const scale = Math.max(
+			Math.hypot(m[0] as number, m[4] as number, m[8] as number),
+			Math.hypot(m[1] as number, m[5] as number, m[9] as number),
+			Math.hypot(m[2] as number, m[6] as number, m[10] as number),
+		);
+		const center = this.sphereCenter;
+		center[0] = m[3] as number;
+		center[1] = m[7] as number;
+		center[2] = m[11] as number;
+		// Only a sphere whose lines reached the buffer counts, so a full buffer reports none drawn
+		// rather than a count that the frame never wrote.
+		const before = this.points;
+		this.sphere(center, mesh.radius * scale, CULL_SPHERE_COLOR);
+		if (this.points > before) this.spheresDrawn += 1;
+		return true;
 	}
 
 	/**

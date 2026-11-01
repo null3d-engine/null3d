@@ -235,6 +235,56 @@ The first background of each kind downloads its shaders, `'background'`, `'sky'`
 
 Development builds throw E1203 for a number that is not finite, and E1108 for a number out of its range. They throw E1213 for `blur` on a background that is not an environment, and for `rotation` on a texture or the sky. Every build throws E1101 for a background that was destroyed. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) says how each background draws, and what it costs.
 
+### Sky layers
+
+`scene.setSkyLayer(description, { wgsl })` draws an add-on's own layer over the sky: the top of the sky, a second layer of clouds, an aurora or a space backdrop. The description is a [feature description](features.md): it names the feature and records at the `'background'` point, as a `'draw'`, provides `'sky'`, and draws in the `'main'`, `'scenePass'` and `'reflection'` views. The layer's WGSL declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer` and the null3D Vite plugin builds it into the engine's sky-layer template, which owns the box around the camera, the bindings, the depth state and the blend. The layer draws right after the background, in the pixels that no object covers, on WebGPU, WebGL2 and in compatibility mode.
+
+```ts
+import { defineFeature, defineSketch } from '@null3d/engine';
+import curtain from './curtain.wgsl';
+
+export default defineSketch(({ scene }) => {
+  scene.setBackground({ sky: { cloudCoverage: 0.1 } });
+  const description = defineFeature({
+    name: 'curtain',
+    frame: 'background',
+    kind: 'draw',
+    provides: ['sky'],
+    views: ['main', 'scenePass', 'reflection'],
+  });
+  const layer = scene.setSkyLayer(description, { wgsl: curtain, sun: 0.2 });
+  return {
+    onUpdate(time) {
+      layer.set({ opacity: 0.8 + 0.2 * Math.sin(time.now) });
+    },
+  };
+});
+```
+
+| Option | Takes | Default | What it sets |
+| --- | --- | --- | --- |
+| `wgsl` | Compiled WGSL that declares `fn skyLayer` | | The layer's function, from a `.wgsl` file or a tagged template literal |
+| `opacity` | 0 to 1 | 1 | How much of the layer's color draws, which multiplies its coverage |
+| `sun` | 0 to 1 | 0 | The share of the sun that the layer hides. The core sky dims its disc and glow by the rest |
+| `refresh` | seconds | 1 | How often the sky's environment map captures a layer that its clock moves. Give 0 for a layer that stands still |
+
+The layer's function reads one input and returns one value:
+
+| Field | What it holds |
+| --- | --- |
+| `SkyLayerInput.direction` | The fragment's view ray in the world, from the camera |
+| `SkyLayerInput.clouds` | The core sky's cloud coverage, density, elevation and scale, as the four numbers |
+| `SkyLayerInput.time` | The sketch time in seconds |
+| `SkyLayerInput.sun` | The share of the sun that the layer hides, from 0 to 1 |
+| `SkyLayer.color` | The layer's linear color, which the pass tone maps with the scene's exposure |
+| `SkyLayer.coverage` | How much of the pixel the layer covers, from 0 to 1. 0 draws nothing there |
+
+A layer declares no uniforms, textures or bindings of its own: the engine binds the frame and the layer's values, and the add-on's numbers are constants in its WGSL. It draws in the camera's view, in scene passes and in reflections, and it draws nothing where the background draws nothing, as in a debug view. A second call replaces the layer, `set` changes its values, and `scene.clearSkyLayer()` removes it and gives the core sky its full sun back.
+
+The layer reaches the sky's environment map as well as the background, so every place that a sky is seen shows it: a lake or a window reflects the layer, and the diffuse light that the sky gives the scene carries its color, so it lights the ground under it. The engine builds the layer's WGSL a second time into the shader that fills the map's cube faces, and finds the map's light in the map itself: a small pass sums a level of the map onto the nine coefficients of its diffuse light, and the engine reads them back once for each fill, never in a frame and with nothing waiting: the read is asynchronous, and a fill that cannot start while another runs starts on a later frame. None of this is the add-on's work, and the light matches the reflections because it comes from them.
+
+A fill spreads over some twenty frames, one stage a frame, so a layer that its clock moves tells the map how often to capture it with `refresh`, in seconds. A shorter time follows a faster layer, at a rate of one fill each `refresh` seconds: at the default of a second that is 15 stage draws a second, and a page that asks for less waits for none of it. A layer of 0 stands still and costs one fill per change. Until the first capture of a new layer lands, the scene keeps the core sky's own light, and a frame or two passes before the map's light follows its texels. The aurora example add-on in `examples/addons/aurora/` draws one, over a frozen lake that reflects it.
+
 ## Multiple views
 
 `scene.createView({ camera, rect })` draws the scene again from another camera, into a rectangle of the canvas, after the camera's view and in the same frame. Use it for a split screen or a picture in picture. `rect` is `[x, y, width, height]` as fractions of the canvas's width and height from its top-left corner, so `[0.5, 0, 0.5, 1]` is the right half.
@@ -282,7 +332,7 @@ Each call sets both options, and an option left out takes its default. The call 
 
 `setLightProbeGrid` lights the scene with a grid of irradiance probes, so light that changes with a surface's place, bounced from colored walls or sky, reaches it. Each probe holds L1 spherical harmonics of the light that arrives at its point. Standard materials read the grid per pixel, with three filtered reads each. Its light takes the place of the environment's diffuse light, and the environment keeps its reflections.
 
-A grid baked elsewhere passes in through `LightProbeGridData`, which packs its coefficients into the texture. Each probe holds four RGB coefficients, 12 numbers: L0, then L1 along y, z and x.
+A grid baked elsewhere passes in through `LightProbeGridData`, which packs its coefficients into the texture. Each probe holds four RGB coefficients, 12 numbers: L0, then L1 along y, z and x. A grid that a tool outside the engine baked can also come from a file: [`assets.loadLightProbeGrid`](assets.md#baked-light) reads the [baked light file](../guides/baked-light-data.md) format and gives the options below, with the texture already made. `assets.lightProbeGridFile` writes that format from a grid that `bakeProbes` made.
 
 ```ts
 const grid = new LightProbeGridData(
@@ -345,7 +395,7 @@ export default defineSketch(async ({ scene, assets, textures }) => {
 });
 ```
 
-Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed, and E1222 for a texture that is not a 3D texture: make the grid's texture with `LightProbeGridData.toTexture()`. The grid takes 24 bytes of GPU memory per probe, and each lit pixel reads it three times. [Lighting and environment](../concepts/lighting.md#light-probe-grid) gives the grid's limits, what takes its light, and how its shaders load.
+Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed, and E1222 for a texture that is not a 3D texture: make the grid's texture with `LightProbeGridData.toTexture()`. The grid takes 24 bytes of GPU memory per probe, plus a padding slice at either end of each sub-volume, and each lit pixel reads it three times. [Lighting and environment](../concepts/lighting.md#light-probe-grid) gives the grid's limits, what takes its light, and how its shaders load.
 
 ## Reflection probes
 

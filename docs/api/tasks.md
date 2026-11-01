@@ -10,7 +10,7 @@ summary: "runTask: an add-on's code and WebAssembly on the job workers; shared m
 
 > Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
-An add-on can move heavy work off the thread that runs the sketch, and onto the engine's job workers. `runTask` runs a task there while the frames continue. An add-on that sorts many instances in each frame uses this hook, and so does one for Gaussian splats.
+An add-on can move heavy work off the thread that runs the sketch, and onto the engine's job workers. `runTask` runs a task there while the frames continue. An add-on that chooses what to draw, or in what order, from many objects uses this hook: the Gaussian splats add-on chooses each chunk's prefix there, nearest first. The engine's transparent pass then sorts the chosen rows on the job workers, as it does for every blended draw, so an add-on does not sort its drawn rows through a task.
 
 A task is an object with three parts: a name, the address of the module that runs, and the WebAssembly files that the module uses. The module exports `run`, and the worker calls it for each task. The answer travels back to the thread that called `runTask`.
 
@@ -19,7 +19,7 @@ import { runTask, type Task } from '@null3d/engine';
 
 export const SORT_TASK: Task = {
   name: 'splat-sort',
-  script: new URL('./sort-task.js', import.meta.url),
+  script: new URL('./sort-task.ts', import.meta.url),
   wasm: [
     { name: 'splat', url: new URL('./splat.wasm', import.meta.url), what: 'the splat sorter' },
   ],
@@ -45,13 +45,15 @@ export function run(input, wasm) {
 
 The engine imports the module once in each worker that runs the task, so the module keeps its state between tasks. Each WebAssembly file compiles once per page, and the engine sends the compiled module to the workers.
 
+The build bundles the module that the task names, so it may be TypeScript with its imports. A worker imports it as it does any module, and raw TypeScript would not parse there. The engine's Vite plugin emits the module as its own chunk for that reason.
+
 Throw a `TaskLoadError` when the module's code or WebAssembly cannot start. The engine then reports the failure at the load stage, whatever the task's input was.
 
 ## What the engine guarantees
 
 - **Off the sketch thread.** The task runs in a job worker, not in the thread that runs the sketch.
 - **Frames first.** The engine never waits for a task in a frame. A job worker leaves the job system only between the chunks of a frame. With two or more job workers, one stays for the frames.
-- **Ordering.** The engine hands an answer to the thread that called `runTask` between two frames. Code in the promise's `then` runs before the next frame's `onUpdate`, and that frame draws what the task wrote.
+- **Ordering.** The engine hands an answer to the thread that called `runTask` between two frames. Code in the promise's `then` runs before the next frame's `onUpdate`, and that frame draws what the task wrote. Hold mode runs its frames with no frame loop. Its held frame first waits for the tasks that the sketch queued. It then draws one more frame at the held time.
 - **No fixed order between tasks.** Tasks run at the same time in different job workers. Their answers come back in no fixed order, so await one task's answer before you queue the next when the order matters.
 - **Shared memory.** A `SharedArrayBuffer` in the task's input reaches the worker shared rather than copied. The worker writes into the same memory that the sketch reads.
 - **A task always runs.** Where no job worker takes the task, the engine starts a task worker for it, as on a page without worker threads.

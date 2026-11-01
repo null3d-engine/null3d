@@ -278,22 +278,30 @@ const NO_FADE: u32 = permutation::SKIN
     | permutation::INSTANCE_INDEX
     | permutation::TRANSMISSION
     | permutation::ALPHA_HASH
-    | permutation::DISPLACEMENT;
+    | permutation::DISPLACEMENT
+    // A caster, a motion build and a pick build draw no fading level of their own: the level's
+    // fade belongs to the camera's view, and a custom material has no build with these bits and
+    // LOD_FADE together.
+    | permutation::CASTER
+    | permutation::MOTION
+    | permutation::PICK;
 
 /// True when a pipeline has builds of a fading level: the engine's standard and unlit templates,
-/// opaque or with a mask tested by its cutoff or by coverage. Custom materials, masks tested by the
-/// hash and the debug views switch levels at once.
+/// opaque or with a mask tested by its cutoff or by coverage, and a custom material's. Masks tested
+/// by the hash and the debug views switch levels at once.
 pub(crate) fn fades_its_way(key: DrawKey) -> bool {
-    matches!(
+    (matches!(
         key.template,
         template::INSTANCED_LIT
             | template::INSTANCED_STANDARD_MAPS
             | template::INSTANCED_UNLIT
             | template::INSTANCED_UNLIT_MAP
-    ) && key.permutation & NO_FADE == 0
+    ) || key.template >= template::CUSTOM_FIRST)
+        && key.permutation & NO_FADE == 0
 }
 
-/// True when a bucket key draws a fading level.
+/// True when a bucket key draws with the fading build, which lists the fade value or, in a levels
+/// debug view, the level code beside each entry.
 pub(crate) fn is_fade_key(key: &BucketKey) -> bool {
     key.0.permutation & permutation::LOD_FADE != 0
 }
@@ -314,7 +322,9 @@ pub(crate) type LevelBucket<'a> = &'a dyn Fn(&BucketKey, usize) -> Option<Bucket
 /// Adds the keys of the level buckets of every key in `keys` whose mesh has levels and that
 /// `eligible` lets pick them: one key for each lower level, and one fade bucket for each level
 /// alike, where the level or the one after it fades, or where `ranged` says its sources draw in a
-/// distance band and `distance_fades` turns those bands on. A key without levels gets a fade bucket
+/// distance band and `distance_fades` turns those bands on. With `codes`, a levels debug view
+/// draws every level through its own bucket and adds no fade bucket, since each of its entries
+/// carries the level's code. A key without levels gets a fade bucket
 /// when its sources draw in a distance band. Each takes the count of the key it comes from, since
 /// any of its sources may draw any level. `level_bucket` gives the bucket of a level, whose
 /// material may differ from the base key's, so the level's pipeline and map group come from the
@@ -324,6 +334,7 @@ pub(crate) fn expand_level_keys(
     keys: &mut Vec<(BucketKey, u32)>,
     levels: &Levels,
     distance_fades: bool,
+    codes: bool,
     ranged: impl Fn(&BucketKey) -> bool,
     eligible: impl Fn(&BucketKey) -> bool,
     level_bucket: LevelBucket<'_>,
@@ -333,6 +344,22 @@ pub(crate) fn expand_level_keys(
         let (key, count) = keys[k];
         let fades = fades_its_way(key.0);
         let range = distance_fades && ranged(&key);
+        // A levels debug view draws every level through its own bucket, whose entries carry the
+        // level's code, so it adds no fade bucket: a band lists both levels' buckets instead.
+        if codes {
+            let Some(set) = levels.of(key.3).filter(|_| eligible(&key)) else {
+                continue;
+            };
+            let mut carried = key;
+            for level in 1..set.len() {
+                let Some(level_key) = level_bucket(&carried, level) else {
+                    continue;
+                };
+                keys.push((level_key, count));
+                carried.4 = level_key.4;
+            }
+            continue;
+        }
         let Some(set) = levels.of(key.3).filter(|_| eligible(&key)) else {
             if fades && range {
                 keys.push((fade_key(key), count));
@@ -376,7 +403,9 @@ pub(crate) fn expand_level_keys(
 }
 
 /// What a bucket key says of its level of detail: the level's switch value and measure, and the
-/// places in the sorted keys of the next coarser level's key and of the level's fade key.
+/// places in the sorted keys of the next coarser level's key and of the level's fade key. A levels
+/// debug view adds no fade bucket, so its fade place names the level's own key, and only a band
+/// that the engine draws gives it one.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct KeyLinks {
     pub value: f32,
@@ -393,19 +422,34 @@ pub(crate) fn links_of(
     key: BucketKey,
     keys: &[(BucketKey, u32)],
     levels: &Levels,
+    codes: bool,
+    bands: impl Fn(&BucketKey) -> bool,
     eligible: impl Fn(&BucketKey) -> bool,
     level_bucket: LevelBucket<'_>,
 ) -> KeyLinks {
     let (base, level) = key_level(key.3);
-    if is_fade_key(&key) {
+    // A levels debug view's buckets all carry the fading bit, since each lists its level's code
+    // beside its entry, so only the bits of another view mark a fade bucket here.
+    if !codes && is_fade_key(&key) {
         return KeyLinks::default();
     }
     let find = |key: Option<BucketKey>| {
         key.and_then(|key| keys.binary_search_by_key(&key, |&(k, _)| k).ok())
             .map(|place| place as u32)
     };
-    let fade = find(Some(fade_key(key)));
     let set = levels.of(base).filter(|_| level > 0 || eligible(&key));
+    // A levels debug view appends a band's entries to the level buckets themselves, so a bucket's
+    // fade link names the bucket. Only a band that the engine draws gives it one: its sources'
+    // distance band, the level's own fade, or the fade of the level after it, as a fade bucket
+    // takes the band of the level that hands over to it.
+    let fades = bands(&key)
+        || set
+            .is_some_and(|set| set.fades(level) || (level + 1 < set.len() && set.fades(level + 1)));
+    let fade = if codes {
+        find(Some(key)).filter(|_| fades)
+    } else {
+        find(Some(fade_key(key)))
+    };
     let Some(set) = set else {
         return KeyLinks {
             fade,
@@ -453,6 +497,59 @@ mod tests {
                 "{word:#x}"
             );
         }
+    }
+
+    #[test]
+    fn a_custom_material_fades_its_own_levels_and_a_handed_over_card_dithers() {
+        // A custom material's levels fade, and so do its distance bands' edges. The two batches of
+        // a hand-over, a plant's mesh and its card, are different sources, so their dither phases
+        // differ; both fade at their own edge rather than one switching at full coverage.
+        let key = |template: u32| -> BucketKey {
+            (
+                DrawKey {
+                    template,
+                    permutation: 0,
+                    vertex_format: 0,
+                    state: 0,
+                    bias: DepthBias::NONE,
+                },
+                0,
+                0,
+                1,
+                5,
+                0,
+            )
+        };
+        assert!(fades_its_way(key(template::CUSTOM_FIRST).0));
+        assert!(fades_its_way(key(template::INSTANCED_LIT).0));
+        // A caster, a motion build and a pick build never fade.
+        for bit in [permutation::CASTER, permutation::MOTION, permutation::PICK] {
+            let mut key = key(template::CUSTOM_FIRST);
+            key.0.permutation = bit;
+            assert!(!fades_its_way(key.0), "{bit}");
+        }
+        let mut keys = vec![
+            (key(template::INSTANCED_LIT), 3),
+            (key(template::CUSTOM_FIRST), 2),
+        ];
+        // Every source draws in a distance range, and the distance bands fade.
+        let no_level = |_: &BucketKey, _: usize| -> Option<BucketKey> { None };
+        let levels = Levels::default();
+        expand_level_keys(
+            &mut keys,
+            &levels,
+            true,
+            false,
+            |_| true,
+            |_| true,
+            &no_level,
+        );
+        let faded = |template: u32| {
+            keys.iter()
+                .any(|(key, _)| key.0.template == template && is_fade_key(key))
+        };
+        assert!(faded(template::INSTANCED_LIT));
+        assert!(faded(template::CUSTOM_FIRST));
     }
 
     #[test]
@@ -554,6 +651,7 @@ mod tests {
             &mut keys,
             &levels,
             false,
+            false,
             |_| false,
             eligible,
             &level_bucket,
@@ -568,7 +666,18 @@ mod tests {
         // Level 1 names a material, and level 2, which names none, draws with level 1's.
         assert_eq!((own(1), own(2)), (7, 7));
         // The links walk from the base level to level 1 and from level 1 to level 2.
-        let links = |key: BucketKey| links_of(key, &keys, &levels, eligible, &level_bucket).next;
+        let links = |key: BucketKey| {
+            links_of(
+                key,
+                &keys,
+                &levels,
+                false,
+                |_| false,
+                eligible,
+                &level_bucket,
+            )
+            .next
+        };
         let first = keys
             .iter()
             .find(|(key, _)| key_level(key.3) == (1, 0))
@@ -630,5 +739,267 @@ mod tests {
         assert!(levels.of(1).is_none() && levels.of(4).is_some());
         levels.set(4, &[], &[], &[], &[], 0, false).unwrap();
         assert!(!levels.any());
+    }
+}
+
+/// The meshes whose finer levels are still to download, and the levels that a view has picked since
+/// each watch began: how the loader decides whether a stage would ever draw.
+///
+/// A level whose neighbour above was never picked cannot be picked either, because switch distances
+/// grow from level to level. So a loader holds a stage until the level above it has been picked after
+/// a warm-up of frames, and gives the stage up, and every finer one, when the warm-up passes with no
+/// pick. The device's name never enters the decision: only the frames that the renderer drew and the
+/// levels it picked.
+///
+/// Giving a stage up is not final: a loader releases a watch that it has no more use for, so the
+/// frames that follow pay nothing, and watches the mesh again when it looks for the pick that would
+/// bring the stage back. A camera that starts far away and comes close later still gets the level it
+/// then needs, and a level that never draws is never downloaded.
+#[derive(Debug, Default)]
+pub struct StageWatches {
+    /// One watch per mesh, in the order that the watches began.
+    watches: Vec<StageWatch>,
+}
+
+/// One mesh's watch.
+#[derive(Clone, Copy, Debug)]
+struct StageWatch {
+    /// The base mesh's engine id.
+    mesh: u32,
+    /// One bit for each level picked since the watch began: bit 0 is the mesh itself.
+    picked: u32,
+    /// One bit for each band of a patch tree that a view drew since the watch began: bit 0 is the
+    /// band that the file holds.
+    bands: u32,
+    /// The frame that the watch began, in the frame input's own count.
+    since: u64,
+}
+
+impl StageWatches {
+    /// Watches `mesh` from `frame` on, in place of a watch that the mesh had.
+    pub fn watch(&mut self, mesh: u32, frame: u64) {
+        if let Some(watch) = self.watches.iter_mut().find(|watch| watch.mesh == mesh) {
+            watch.picked = 0;
+            watch.bands = 0;
+            watch.since = frame;
+        } else {
+            self.watches.push(StageWatch {
+                mesh,
+                picked: 0,
+                bands: 0,
+                since: frame,
+            });
+        }
+    }
+
+    /// The levels picked since the mesh's watch began, one bit each, bit 0 for the mesh itself. 0
+    /// for a mesh that nothing watches.
+    pub fn picks(&self, mesh: u32) -> u32 {
+        self.watches
+            .iter()
+            .find(|watch| watch.mesh == mesh)
+            .map_or(0, |watch| watch.picked)
+    }
+
+    /// The frames drawn since the mesh's watch began, 0 for a mesh that nothing watches.
+    pub fn frames(&self, mesh: u32, frame: u64) -> u32 {
+        self.watches
+            .iter()
+            .find(|watch| watch.mesh == mesh)
+            .map_or(0, |watch| {
+                frame.saturating_sub(watch.since).min(u32::MAX as u64) as u32
+            })
+    }
+
+    /// Stops watching the meshes that `live` refuses: a removed mesh's watch would count nothing.
+    pub fn forget(&mut self, live: impl Fn(u32) -> bool) {
+        self.watches.retain(|watch| live(watch.mesh));
+    }
+
+    /// Stops watching `mesh`. A loader that has taken what it can from a stage releases its watch,
+    /// so the frames that follow pay nothing; a later watch starts the count again.
+    pub fn release(&mut self, mesh: u32) {
+        self.watches.retain(|watch| watch.mesh != mesh);
+    }
+
+    /// True while no mesh waits for a stage, so a frame with no loader pays nothing.
+    pub fn is_empty(&self) -> bool {
+        self.watches.is_empty()
+    }
+
+    /// Notes that a view placed at least one source in the bucket of `level` of `mesh`.
+    pub fn picked(&mut self, mesh: u32, level: usize) {
+        if let Some(watch) = self.watches.iter_mut().find(|watch| watch.mesh == mesh) {
+            watch.picked |= 1 << level;
+        }
+    }
+
+    /// The bands of the tree of `mesh` that a view drew since the watch began, one bit each, bit 0
+    /// for the band that the file holds. 0 for a mesh that nothing watches.
+    pub fn bands(&self, mesh: u32) -> u32 {
+        self.watches
+            .iter()
+            .find(|watch| watch.mesh == mesh)
+            .map_or(0, |watch| watch.bands)
+    }
+
+    /// The number of watches, which the pick count reads one at a time.
+    pub fn len(&self) -> usize {
+        self.watches.len()
+    }
+
+    /// The mesh of the watch at `index`.
+    pub fn mesh_at(&self, index: usize) -> u32 {
+        self.watches[index].mesh
+    }
+
+    /// Adds the bands of the watch at `index` that a view drew this frame to the bands that a view
+    /// drew since the watch began. A pick between two polls stays, as a level's pick does.
+    pub fn note_bands(&mut self, index: usize, bands: u32) {
+        if let Some(watch) = self.watches.get_mut(index) {
+            watch.bands |= bands;
+        }
+    }
+
+    /// Restarts the warm-up of each watch whose mesh `present` refuses. A page may load a model
+    /// before its scene draws it, so the frames that count toward a warm-up are the frames that
+    /// drew the mesh, and a page that never draws it never drops its stages.
+    pub fn hold(&mut self, frame: u64, present: impl Fn(u32) -> bool) {
+        for watch in &mut self.watches {
+            if !present(watch.mesh) {
+                watch.since = frame;
+            }
+        }
+    }
+
+    /// Notes the levels that a view placed at least one source in, from the number of entries in
+    /// each bucket of that view: `counted` gives a bucket key's entries. It reads one count for each
+    /// level of each watched mesh, so a frame with no watch pays nothing.
+    pub fn note(&mut self, levels: &Levels, counted: impl Fn(u32) -> u32) {
+        for watch in &mut self.watches {
+            let Some(set) = levels.of(watch.mesh) else {
+                continue;
+            };
+            for level in 0..set.len() {
+                if counted(level_key(watch.mesh, level)) > 0 {
+                    watch.picked |= 1 << level;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod stage_watch_tests {
+    use super::*;
+
+    /// A set of three levels on the mesh with id 1.
+    fn levels() -> Levels {
+        let mut levels = Levels::default();
+        levels
+            .set(
+                1,
+                &[11, 12],
+                &[0.2, 0.5],
+                &[Switch::Error; 2],
+                &[0; 2],
+                0,
+                true,
+            )
+            .expect("three levels fit");
+        levels
+    }
+
+    #[test]
+    fn a_watch_counts_the_levels_a_view_put_a_source_in() {
+        let levels = levels();
+        let mut watches = StageWatches::default();
+        watches.watch(1, 100);
+        // The view's counts: the mesh itself and its coarsest level, nothing between.
+        let counted = |key: u32| match key_level(key) {
+            (1, 0) => 3,
+            (1, 2) => 7,
+            _ => 0,
+        };
+        watches.note(&levels, counted);
+        assert_eq!(watches.picks(1), 0b101);
+        assert_eq!(watches.picks(2), 0);
+        // The frames count from the watch's start.
+        assert_eq!(watches.frames(1, 340), 240);
+        assert_eq!(watches.frames(1, 50), 0);
+        assert_eq!(watches.frames(2, 340), 0);
+    }
+
+    #[test]
+    fn a_second_watch_clears_what_the_first_counted() {
+        let levels = levels();
+        let mut watches = StageWatches::default();
+        watches.watch(1, 0);
+        watches.note(&levels, |key| u32::from(key_level(key).1 == 1));
+        assert_eq!(watches.picks(1), 0b010);
+        watches.watch(1, 90);
+        assert_eq!(watches.picks(1), 0);
+        assert_eq!(watches.frames(1, 95), 5);
+        // A removed mesh's watch goes.
+        watches.forget(|mesh| mesh != 1);
+        assert_eq!(watches.frames(1, 95), 0);
+    }
+
+    #[test]
+    fn a_released_watch_stops_counting_and_a_new_one_counts_again() {
+        let levels = levels();
+        let mut watches = StageWatches::default();
+        watches.watch(1, 10);
+        watches.note(&levels, |key| u32::from(key_level(key).1 == 1));
+        assert_eq!(watches.picks(1), 0b010);
+        // Released, the mesh costs a frame nothing, and its counts read as a mesh with no watch.
+        watches.release(1);
+        assert!(watches.is_empty());
+        assert_eq!(watches.picks(1), 0);
+        assert_eq!(watches.frames(1, 300), 0);
+        watches.note(&levels, |key| u32::from(key_level(key).1 == 1));
+        assert_eq!(watches.picks(1), 0);
+        // A later watch starts its own count, which a pick the views make now fills.
+        watches.watch(1, 200);
+        assert_eq!(watches.frames(1, 260), 60);
+        watches.picked(1, 0);
+        assert_eq!(watches.picks(1), 1);
+    }
+
+    #[test]
+    fn a_watch_counts_bands_and_a_new_watch_clears_them() {
+        let mut watches = StageWatches::default();
+        watches.watch(7, 20);
+        assert_eq!(watches.bands(7), 0);
+        // A pick stays after a frame that drew none of its band, as a level's pick does.
+        watches.note_bands(0, 0b101);
+        watches.note_bands(0, 0b010);
+        assert_eq!(watches.bands(7), 0b111);
+        assert_eq!(watches.bands(8), 0);
+        assert_eq!((watches.len(), watches.mesh_at(0)), (1, 7));
+        // A second watch starts the count again.
+        watches.watch(7, 40);
+        assert_eq!(watches.bands(7), 0);
+        assert_eq!(watches.frames(7, 60), 20);
+    }
+
+    #[test]
+    fn a_frame_that_draws_no_source_of_a_mesh_restarts_its_warm_up() {
+        let mut watches = StageWatches::default();
+        assert!(watches.is_empty());
+        watches.watch(1, 10);
+        watches.watch(2, 10);
+        // The mesh's bucket holds a source, which picked its base level.
+        watches.picked(1, 0);
+        assert_eq!(watches.picks(1), 1);
+        assert_eq!(watches.picks(3), 0);
+        // Mesh 2's source drew nothing this frame, so its warm-up starts again; mesh 1's goes on.
+        watches.hold(50, |mesh| {
+            assert!(mesh == 1 || mesh == 2, "only watched meshes are asked");
+            mesh == 1
+        });
+        assert_eq!(watches.frames(1, 60), 50);
+        assert_eq!(watches.frames(2, 60), 10);
+        assert_eq!(watches.picks(1), 1);
     }
 }

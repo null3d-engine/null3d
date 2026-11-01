@@ -2,9 +2,70 @@
 
 Faults of GPU drivers and browsers that the engine works around, written up to report upstream. Each report names the device, the driver and the browser, and gives the smallest known case. It also says where the engine's workaround and evidence are. [Browser faults](implementation-notes.md#browser-faults) holds the full story of each.
 
+## WebKit on iOS and iPadOS: Creek at Low and Medium wedges WebGPU after its first frame
+
+Status: not reported yet. The fault is in WebKit's WebGPU path on iOS and iPadOS. A capture of the frame on the device is still owed before a report goes upstream, and no engine change is made first.
+
+- Devices: iPhone 17 in Safari 26.1 on iOS 26, and iPad Pro 13 2025 in Safari 26.6.1 on iPadOS 26, both in BrowserStack's device cloud.
+- Seen in: Creek, `examples/showcase/creek/sketch.ts`, at the Low and Medium presets, at commit `5aea95fd1`. The task branch `feat/m3-v1-creek-webgpu-bisect` holds the diagnostic switches that the bisect used.
+- What happens: the first frame draws. The page's thread then stops. Its own 12 second timer never fires, and WebDriver's script calls time out. Safari reloads the tab 15 to 26 seconds after the first frame.
+- What runs: the same page and scene at Low in Safari 26 on macOS. Its WebKit draws the scene and posts 719 page frames in 12 seconds. Chrome 155 on macOS draws it too, with the engine's measurement on. The forest demo draws at every preset on the iPad's WebGPU. Creek at Low on WebGL2 draws 30 frames a second on the iPad. Creek at **High** on the iPad's WebGPU runs, with 720 page frames in 12 seconds.
+
+The bisect ran eleven sessions on the iPad Pro 13, one per pass. Each page fixed the preset and the GPU path, turned the measurement and the overlay off, and counted its own frame callbacks for 12 seconds. A pass whose page posted that count kept its thread free. A pass whose page posted no count, and whose tab reloaded, wedged it.
+
+| Pass | Page | Result |
+| --- | --- | --- |
+| 1 | Low, no measure, no overlay | Wedged |
+| 2 | High, the same | Ran |
+| 3 | Medium, the same | Wedged |
+| 4 | Low, the reflection drawn in every frame | Wedged |
+| 5 | Low, the reflection every frame at the whole render size | Wedged |
+| 6 | Low, without the water | Wedged |
+| 7 | Low, without the grass | Wedged |
+| 8 | Low, with the sky, the environment light, the shadows and the bloom off | Wedged |
+| 9 | Low, in compatibility mode | Wedged |
+| 10 | Low, without the engine's mobile texture copies | Wedged |
+| 11 | Low, in Safari on the Mac | Ran |
+
+What the bisect shows:
+
+- The measurement, the stats overlay, the GPU timings and the page's heap walk are not the cause. Pass 1 ran with none of them.
+- The water's reflection is not the cause: not its cadence (pass 4), not its target's size (pass 5), and not the water itself (pass 6).
+- The grass is not the cause (pass 7). Neither are the sky, the environment light, the shadows or the bloom (pass 8).
+- The mobile path that keeps CPU copies of textures is not the cause (pass 10).
+- The fault follows the preset. Low and Medium wedge. High runs the same scene with more content and the reflection in every frame.
+- Compatibility mode wedges too (pass 9). So the fault is not a feature of core WebGPU alone.
+- The same page and engine run in WebKit on macOS (pass 11) and in Chromium. So the fault is WebKit on iOS and iPadOS, not WebKit in general and not the scene's data as another engine sees it.
+
+Where it blocks: the page's own main thread. Its timer never fires, and the engine's JavaScript there is idle while the render worker keeps drawing. So the block is a wait in WebKit's presentation path for the GPU, not a wait in the engine's code. Whether the engine's GPU work is malformed in a way that only Apple's iOS driver mishandles is not known.
+
+Still owed: a capture of the frame on the device. BrowserStack does not offer one, because WebKit's WebGPU inspector needs a Mac with Safari's Develop menu over a cable.
+
+Workaround: none. The [vegetation measurements](tested-devices.md#vegetation-on-the-five-cloud-devices) report Creek on WebGL2 on Apple devices, and they name the WebGPU rows that this fault keeps from running.
+
+The texture budget is not the mechanism. Creek at Low holds 120.6 MiB of GPU textures on the iPad, against Low's 256 MiB. So Low never fills its budget and never drops a mip level. The budget setting follows the preset only because every quality setting does. The 1024 and 2048 texel shadow map is the one such setting with a plausible mechanism, and pass 8 already excludes it. What remains in the engine is a short list of settings that change with the preset and have no named mechanism.
+
+Compatibility mode wedges too, so the fault is not in a core WebGPU feature, such as a texture format, a higher limit or a query. It lies in what both modes share: WebKit's WebGPU on iOS and iPadOS, and the path that presents a canvas a worker draws.
+
+The preset cut could point to pace rather than content. Low and Medium present fast frames, and High presents slow ones. Every piece that the bisect removed made the frames faster without lifting the wedge. But the forest demo at Low presents 60 frames a second on the same iPad and runs. Creek at High runs with the same passes too. A capped frame rate rules pace out. The Low page with `?fps=15` caps the rate that the drawing thread holds, and it still wedges on the iPad's WebGPU. It drew its first frame, never fired its own 12 second timer, and reloaded 29 seconds later. A second attempt did the same at 19 seconds. Neither attempt reached the page's own step that reports a drawn frame. So the fault does not follow how fast the drawing thread presents.
+
+The next step is therefore a capture of the frame on a device, not another bisect in the cloud.
+
+## Adreno 619: compatibility mode loses the Vulkan device on its first frame
+
+Status: not reported yet.
+
+- Device: Samsung Galaxy Tab A9+ (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
+- Browser: Chrome 152.0.7977.54, WebGPU through Dawn's Vulkan backend.
+- Seen in: Creek at Low, in compatibility mode, in the vegetation run on four cloud devices ([tested devices](tested-devices.md#vegetation-on-the-five-cloud-devices), run 20261024-111020).
+- What happens: the engine's capabilities page reports no compatibility adapter on this device. A page that asked for the mode anyway started, drew no scene, and its render worker lost the device. It reported E1302, `vkQueueSubmit failed with VK_ERROR_DEVICE_LOST` from Dawn. No adapter was left to start another. The engine's frame counter still advanced. So the page reported 3 frames in 5.5 s, and the runner counted a pass.
+- What runs: Creek at Low on WebGL2 draws 0.8 frames a second on the same device.
+- Not tried: whether the loss follows the first draw, a pipeline, or an allocation, and whether any shader triggers it. The engine's own choice never takes the mode there, so the loss comes only from a page that forces it.
+- Workaround: none needed for users, because the engine picks the path from the capabilities report. A page that forces the mode can still hit it. The device page fails on any engine failure, so such a run cannot pass.
+
 ## Safari 27.0: `atomicCompareExchangeWeak` does not compile
 
-Status: fixed in WebKit on 13 September 2026 (commit 4f56cc248e8a, 321006@main, inside bug 323873), not yet in a Safari release. No bug names the fault. Not reported by null3D: a draft waits for the owner. Found 8 October 2026.
+Status: fixed in WebKit (commit 4f56cc248e8a, 321006@main, inside bug 323873), not yet in a Safari release. No bug names the fault. Not reported by null3D: a draft waits for the owner.
 
 - Device: iPad in BrowserStack's device cloud, Safari 27.0, WebGPU. Any Apple device whose Metal compiler comes from the 27 releases should fail the same way.
 - Seen in: null3D's culling compute shader, `crates/null3d-shaders/wgsl/cull.wgsl` at commit 2ed8971bc, which called `atomicCompareExchangeWeak` on an `array<atomic<u32>, 128>` in workgroup memory.
@@ -17,7 +78,7 @@ Workaround in the engine: no engine shader calls it, and the engine's shader bui
 
 ## Adreno 619: a program whose vertex shader reads a uniform array at the draw index fails to link
 
-Status: not reported yet. Found 12 October 2026.
+Status: not reported yet.
 
 - Device: Samsung Galaxy Tab A9+ (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
 - Browser: Chrome 152.0.7977.54, WebGL2 on ANGLE over OpenGL ES 3.2. `WEBGL_multi_draw` is offered, `KHR_parallel_shader_compile` is not.
@@ -43,7 +104,7 @@ To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>A
 
 ## Adreno 619: the floats of a struct keep only half precision on WebGL2
 
-Status: not reported yet. Found 13 October 2026.
+Status: not reported yet.
 
 - Device: Samsung Galaxy Tab A9+ (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
 - Browser: Chrome 152.0.7977.54, WebGL2. WebGPU and compatibility mode on the same tablet are right.
@@ -58,7 +119,7 @@ What happens: a fragment shader that keeps a float in a struct reads it back at 
 
 Whole numbers in a struct keep only their low 16 bits, also as `highp uvec4` members. The shader library page's write probe passes its whole numbers through a struct, so it read 0x0000cdef for 0x89abcdef. The struct probe, which multiplies its whole numbers by a uniform 1, read 0xffffcdef: the high half took the sign of the low half. A clear of the same target kept every bit.
 
-Plain locals, plain arrays, function results that are not structs, and values passed between the stages keep all 32 bits. So does a uniform block's struct read in place. In the vertex stage, a struct in `main` kept all 32 bits, but a struct that a function returned did not. The sky's scattering coefficients per metre, about 1e-5, read as zero, except blue's Rayleigh coefficient. Red and green light then divided zero by zero, and the sky drew yellow-white.
+Plain locals, plain arrays, function results that are not structs, and values passed between the stages keep all 32 bits. So does a uniform block's struct read in place. In the vertex stage, a struct in `main` kept all 32 bits, but a struct that a function returned did not. The sky's scattering coefficients per meter, about 1e-5, read as zero, except blue's Rayleigh coefficient. Red and green light then divided zero by zero, and the sky drew yellow-white.
 
 Smallest known case, a fragment shader over an `RGBA32UI` target:
 
@@ -76,13 +137,13 @@ void main() { color = floatBitsToUint(hold(probe).value); }
 
 With `probe` (1234.567, 0.123456, 1e-5, 70000) and `one` 1, the bits read back as (1234, 0.1234131, 0, 65504).
 
-Workaround in the engine: the sky keeps its scattering coefficients per million metres, within half precision's range (`null3d::atmosphere`). The shader library check page runs the case above and reports the fault as `structFault` ([Browser faults](implementation-notes.md#browser-faults)). The GLSL build still keeps each fragment shader's inputs and most of its values in structs, so on this driver they hold only half precision.
+Workaround in the engine: the sky keeps its scattering coefficients per million meters, within half precision's range (`null3d::atmosphere`). The shader library check page runs the case above and reports the fault as `structFault` ([Browser faults](implementation-notes.md#browser-faults)). The shader build also splits each structure into plain values, as [a value held in a GLSL structure](#adreno-619-a-value-held-in-a-glsl-structure-keeps-only-16-bits) describes.
 
 To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>ANGLE), with the shader above.
 
 ## Adreno 830: a uniform array read at a per-thread index returns one thread's entry
 
-Status: not reported yet. Found 7 October 2026.
+Status: not reported yet.
 
 - Device: Samsung Galaxy S25 (SM-S931B), Qualcomm Adreno 830, Android 15, in BrowserStack's device cloud.
 - Browser: Chrome 149.0.7827.160, WebGPU and WebGPU compatibility mode. Both run on Vulkan: the compatibility adapter has `core-features-and-limits`. WebGL2 on the same phone is right.
@@ -92,18 +153,18 @@ What happens: the shader reads `params.cell_offsets[entry >> 23u]`. `params` is 
 
 Smallest known case: the culling shader alone, with plain WebGPU, on 512 synthetic sources in 4 cells. Each source's cell differs from its neighbour's. 384 of 512 output rows held another cell's offset. The case differs from main's shader only in its inputs. A smaller uniform struct was right in the compute, vertex and fragment stages. It held an array of 512 `vec4f` after one `vec4f`, read at a per-thread index. So the fault needs more of the culling shader's shape. These changes did not help: a clamped index, the offset read before the first early return, and a plane loop with no early return. These did: the parameters in a storage buffer, and a copy of the whole array into a local variable before the read.
 
-Workaround in the engine: the offsets moved into a float texture read with `textureLoad` ([D-95](decisions/D-95-culling-cell-offsets.md)). The vertex shaders that read their instances by index read that texture too. They would otherwise index a table in the same uniform parameters per vertex, which is the shape of this fault.
+Workaround in the engine: the offsets live in a float texture read with `textureLoad` ([D-95](decisions/D-95-culling-cell-offsets.md)). The vertex shaders that read their instances by index read that texture too. They would otherwise index a table in the same uniform parameters per vertex, which is the shape of this fault.
 
 To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>Dawn), with the culling shader and the probe page's inputs.
 
 ## Adreno 830: a multisampled texture first resolved into the canvas resolves nothing into other textures
 
-Status: not reported yet. Found 7 October 2026.
+Status: not reported yet.
 
 - Device, driver and browser: as above, WebGPU and compatibility mode alike.
 - Seen in: null3D's 8-bit path with MSAA, when the scene's render pass resolves its multisampled color straight into the canvas from the first frame.
 
-What happens: take a multisampled color texture whose first render pass resolved into the canvas's current texture. A later render pass that resolves it into any other texture leaves that texture as it was. A texture cleared to green before the pass stayed green, and a new one stayed zero. The same pass with a new multisampled texture of the same descriptor resolves right. A new depth texture alone did not help. The canvas itself keeps showing the right frame. Then the engine moved the scene to its final pass, which resolves into a texture of its own and copies that into the canvas. The canvas read black. A texture whose first resolve went into another texture resolves into the canvas and into others alike. No GPU error or device loss was reported.
+What happens: take a multisampled color texture whose first render pass resolved into the canvas's current texture. A later render pass that resolves it into any other texture leaves that texture as it was. A texture cleared to green before the pass stayed green, and a new one stayed zero. The same pass with a new multisampled texture of the same descriptor resolves right. A new depth texture alone did not help. The canvas itself keeps showing the right frame. With the scene in its final pass, which resolves into a texture of its own and copies that into the canvas, the canvas reads black. A texture whose first resolve went into another texture resolves into the canvas and into others alike. No GPU error or device loss was reported.
 
 Smallest known case, not yet written as a page of its own:
 
@@ -119,7 +180,7 @@ To report: as above, after a standalone page confirms the three steps.
 
 ## Adreno 619: the first pass on a device that draws gets nothing from indirect draws
 
-Status: not reported yet. Found 13 October 2026.
+Status: not reported yet.
 
 - Device: Samsung Galaxy Tab A9 Plus (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
 - Browser: Chrome 152.0.7977.54, WebGPU and WebGPU compatibility mode. Both fail the same way, so the fault is not in one of Chrome's two GPU backends alone.
@@ -144,7 +205,7 @@ Smallest known case: a new device, an index buffer and a vertex buffer, five `dr
 
 Workaround in the engine: before a device's first frame, the WebGPU scene renderer draws one point into a 1x1 target (`gpu/webgpu/first-pass.ts`). Its pipeline builds in the background with the frame's own pipelines, and the first frame waits for it. The engine writes the arguments of its indirect draws from the CPU each frame, and culling then adds the counts on the GPU. So without the pass, the first frame after each device start could lose its indirect draws on such a device. An image test cannot see this, because a capture draws the frame a second time ([Image tests](image-tests.md#other-browsers-and-devices)).
 
-The pass makes the first frame no later. On 13 October 2026, `bun run bench:startup` loaded the engine test page 8 times per case on the Mac (Apple M5 Max, Chrome 155), with and without the pass, in turns. Each figure is the median time from navigation until the GPU finished the first frame. Single loads spread by up to 400 ms.
+The pass makes the first frame no later. The startup bench, `bun run bench:startup`, loaded the engine test page 8 times per case on the Mac (Apple M5 Max, Chrome 155). It took turns with and without the pass. Each figure is the median time from navigation until the GPU finished the first frame. Single loads spread by up to 400 ms.
 
 | GPU path | Load | With the pass, ms | Without it, ms |
 | --- | --- | --- | --- |
@@ -159,7 +220,7 @@ To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>D
 
 ## Firefox: freeing a moved MessagePort's old object drops the unread messages that its new owner sent
 
-Status: not reported yet. Found 7 October 2026.
+Status: not reported yet.
 
 - Browser: Firefox 156.0 on Linux (GitHub's Ubuntu 24.04 runner, x86-64, and an ARM container on a Mac), with a software renderer. The code below is the same on every platform, so Firefox on macOS and Windows should fail the same way.
 - Seen in: null3D's image channel from the sketch worker to the render worker, and the merge queue run 37599350642 of pull request #346 (E1404).
@@ -174,7 +235,7 @@ To report: Mozilla's Bugzilla (Core, DOM: postMessage), with the test page.
 
 ## Adreno 619: a value held in a GLSL structure keeps only 16 bits
 
-Status: not reported yet. Found 13 October 2026.
+Status: not reported yet.
 
 - Device: Samsung Galaxy Tab A9 Plus (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
 - Browser: Chrome 152 on WebGL2, which hands the GLSL to Qualcomm's driver directly, without ANGLE's own precision pass.
@@ -188,15 +249,15 @@ Workaround in the engine: the shader build replaces each structure local, parame
 
 Limitation: an array of structures keeps its shape. The build splits a structure's members, but not each element of an array. A WGSL `var values: array<Values, 2>` therefore builds as one GLSL array of structures. A device with this fault still stores its members at 16 bits. The engine's own shaders hold no such array. A custom material that holds one meets the fault on WebGL2 only.
 
-Cost in text: a flattened shader names each member in place of the structure, so it is longer. The WebGL2 start's shader file grew from 22.8 KB to 40.0 KB after Brotli. The owner raised the start budget to 165 KB and each first-use shader file to 49 KB for the flattened text ([D-14](decisions/D-14-js-budget.md)).
+Cost in text: a flattened shader names each member in place of the structure, so it is longer. The WebGL2 start's shader file is 40.0 KB after Brotli flattened, against 22.8 KB with structures. The start's budget and each first-use shader file's budget allow for the flattened text, and only the owner raises them ([D-14](decisions/D-14-js-budget.md)).
 
-Consequence for the text the engine adds at run time: a shader the engine builds by joining text into a WebGL2 host holds the flattened form, so text written for that host must carry the members and not the structure. The joined custom effects' chain did not, so every group's shader failed to compile on WebGL2 and the engine drew those effects in a pass each instead. The chain now carries the members, and the shader crate's `check_glsl` refuses a call that does not fit the function it calls ([D-167](decisions/D-167-two-step-output.md)).
+Consequence for the text the engine adds at run time: a shader the engine builds by joining text into a WebGL2 host holds the flattened form, so text written for that host must carry the members and not the structure. The joined custom effects' chain carries the members. A chain that carries the structure fails to compile on WebGL2, and the engine then draws those effects in a pass each. The shader crate's `check_glsl` refuses a call that does not fit the function it calls ([D-167](decisions/D-167-two-step-output.md)).
 
 To report: Qualcomm, through Chromium's issue tracker, with the probe page.
 
 ## Safari 26.6: a fragment shader that returns only its depth is read as a color output
 
-Status: not reported yet. Found 19 October 2026.
+Status: not reported yet.
 
 - Device: Mac, Safari 26.6.2, WebGPU in core mode and in compatibility mode.
 - Seen in: null3D's weighted layer, the depth copy that the weighted pass tests against (`crates/null3d-shaders/wgsl/weighted_layer.wgsl`), at commit 33c0bbe0e. The image tests `weighted`, `weighted-compat`, `weighted-reverse`, `weighted-reverse-compat` and `demo-weighted-transparency` failed to build their pipelines, so the held frame could not be read back (E1408).

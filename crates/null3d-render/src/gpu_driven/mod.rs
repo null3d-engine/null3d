@@ -136,7 +136,9 @@
 mod clusters;
 mod copies;
 mod cull;
+mod depth_fit;
 mod direct;
+mod feature_rows;
 mod layout;
 mod lights;
 mod motion;
@@ -158,6 +160,7 @@ use crate::accumulate::AccumulateIds;
 use crate::ao::{self, AoIds};
 use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
+use crate::bounce::BounceIds;
 use crate::cells::CellCulling;
 use crate::compute::ComputePassIds;
 use crate::data_texture::DataTexture;
@@ -170,15 +173,17 @@ use crate::exposure::{ComputeIds, ExposureIds};
 use crate::final_pass::FinalIds;
 use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
-    CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
-    RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, floats_as_bytes,
+    CanvasOutput, FrameBuilder, FrameInput, HaltFigures, KeyCounts, MaterialStorage, MeshBuffers,
+    ParityLists, RecordError, SceneSettings, StillMarks, UploadArena, active_sources,
+    bind_frame_group, floats_as_bytes, unbound_buffer_bytes, uploads_out_of_memory,
 };
-use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
+use crate::frame_graph::{DrawnViews, FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
 use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{LightGrid, LightGrids, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Packing};
+use crate::moment::MomentIds;
 use crate::motion::MotionIds;
 use crate::output::{Antialias, SceneColor};
 use crate::particles::{ParticleIds, ParticlePass};
@@ -199,7 +204,9 @@ use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
 use crate::view_copy::ViewCopyIds;
 use crate::weighted::WeightedIds;
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES, Phase};
+use depth_fit::LightDepths;
 use direct::Direct;
+use feature_rows::FeatureRows;
 use layout::{Drawn, Layout};
 use lights::LightClusters;
 use opaque::{Bundle, FrameInputs};
@@ -267,6 +274,7 @@ mod ids {
     use crate::bloom::STEPS;
     use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
+    use crate::moment::MomentIds;
     use crate::particles::ParticleIds;
     use crate::subsurface::STEPS as SUBSURFACE_STEPS;
     use crate::taa::STEPS as TAA_STEPS;
@@ -281,8 +289,10 @@ mod ids {
     /// Every drawn source's place, in cell order.
     pub const ORDER: u32 = 6;
     /// Each view's buffers: its frame uniform, culling parameters, compacted instances and
-    /// indirect draws, four ids from `VIEW_BUFFERS + 4 * view`.
-    const VIEW_BUFFERS: u32 = 7;
+    /// indirect draws, four ids from `VIEW_BUFFERS + 4 * view`. They start at the graph's first
+    /// texture id, which no buffer takes, so a frame of many passes cannot give a view's buffers
+    /// the ids that reads land in: a read would then map a view's shorter buffer in place of its.
+    const VIEW_BUFFERS: u32 = TARGETS;
 
     pub const fn frame(view: ViewId) -> u32 {
         VIEW_BUFFERS + 4 * view.index() as u32
@@ -380,9 +390,11 @@ mod ids {
     pub const MOTION_RECORDS: u32 = MOTION_BUCKETS + 1;
     /// The uniform buffer of the background's values.
     pub const BACKGROUND: u32 = MOTION_RECORDS + 1;
+    /// The uniform buffer of a sky layer's values.
+    pub const BACKGROUND_LAYER: u32 = BACKGROUND + 1;
     /// Each camera view's buffers of occlusion culling: its depth pyramid and the pyramid's level
     /// parameters, two ids from `OCCLUSION + 2 * view`.
-    const OCCLUSION: u32 = BACKGROUND + 1;
+    const OCCLUSION: u32 = BACKGROUND_LAYER + 1;
 
     pub const fn pyramid(view: ViewId) -> u32 {
         OCCLUSION + 2 * view.index() as u32
@@ -436,16 +448,21 @@ mod ids {
     /// culling reads.
     pub const SUBSURFACE_BUCKETS: u32 = PROBE_LISTS + 1;
     pub const SUBSURFACE_RECORDS: u32 = SUBSURFACE_BUCKETS + 1;
+    /// The tone view's bucket table and bucket records, which its culling reads.
+    pub const TONE_BUCKETS: u32 = SUBSURFACE_RECORDS + 1;
+    pub const TONE_RECORDS: u32 = TONE_BUCKETS + 1;
     /// The uniform buffer of the subsurface blur's steps.
-    pub const SUBSURFACE: u32 = SUBSURFACE_RECORDS + 1;
+    pub const SUBSURFACE: u32 = TONE_RECORDS + 1;
     /// The uniform buffer of the physical sky's values.
     pub const PHYSICAL_SKY: u32 = SUBSURFACE + 1;
     /// The uniform buffer of the full-screen passes' blocks.
     pub const FULLSCREEN: u32 = PHYSICAL_SKY + 1;
     /// The uniform buffer of screen-space reflections' steps.
     pub const SSR: u32 = FULLSCREEN + 1;
+    /// The uniform buffer of screen-space bounce light's steps.
+    pub const BOUNCE: u32 = SSR + 1;
     /// The uniform buffer of the volumetric fog's steps (see [`crate::fog_volume`]).
-    pub const FOG_VOLUME: u32 = SSR + 1;
+    pub const FOG_VOLUME: u32 = BOUNCE + 1;
     /// The automatic exposure's meter: its uniform buffer, its histogram and its stored exposure.
     pub const EXPOSURE: u32 = FOG_VOLUME + 1;
     pub const EXPOSURE_HISTOGRAM: u32 = EXPOSURE + 1;
@@ -456,19 +473,26 @@ mod ids {
     pub const STILL_SETTINGS: u32 = ACCUMULATE + 1;
     /// The uniform buffer of temporal anti-aliasing's resolve.
     pub const TAA: u32 = STILL_SETTINGS + 1;
-    /// Each feature-instance draw's per-instance buffer, then its count word, from
-    /// `FEATURE_INSTANCES + 2 * (id - 1)`.
+    /// Each feature-instance draw's per-instance world rows, the camera-relative rows that the
+    /// draw reads and its count word, three ids from `FEATURE_INSTANCES + 3 * (id - 1)`.
     pub const FEATURE_INSTANCES: u32 = TAA + 1;
 
     pub const fn feature_instances(id: u32) -> u32 {
-        FEATURE_INSTANCES + 2 * (id - 1)
+        FEATURE_INSTANCES + 3 * (id - 1)
     }
-    pub const fn feature_count(id: u32) -> u32 {
+    pub const fn feature_relative(id: u32) -> u32 {
         feature_instances(id) + 1
     }
+    pub const fn feature_count(id: u32) -> u32 {
+        feature_instances(id) + 2
+    }
+
+    /// The uniform buffer of the conversion's block: the camera's absolute world position.
+    pub const FEATURE_ROWS_BLOCK: u32 =
+        FEATURE_INSTANCES + 3 * crate::feature_instances::MAX_FEATURE_INSTANCES;
 
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = FEATURE_INSTANCES + 2 * crate::feature_instances::MAX_FEATURE_INSTANCES;
+    pub const PAGES: u32 = FEATURE_ROWS_BLOCK + 1;
 
     /// The blank texture array that frame groups bind while the scene has no probe and no area
     /// light. The probes own the frame group's shared array, which holds the light tables' layers
@@ -516,9 +540,12 @@ mod ids {
     pub const BLANK_SCENE_DEPTH: u32 = BLANK_PARTICLE_DEPTH + 1;
     /// The physical sky's tables and panorama.
     pub const SKY_TABLES: u32 = BLANK_SCENE_DEPTH + 1;
+    /// The moment layer's two lookup tables, which it makes at its first use.
+    pub const MOMENT_AREA: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
+    pub const MOMENT_SEARCH: u32 = MOMENT_AREA + 1;
     /// The texel that a full-screen pass without an input image reads, and the one that it binds
     /// in place of the scene's depth when it reads none.
-    pub const BLANK_PASS_COLOR: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
+    pub const BLANK_PASS_COLOR: u32 = MOMENT_SEARCH + 1;
     pub const BLANK_PASS_DEPTH: u32 = BLANK_PASS_COLOR + 1;
     /// The first joint of the skin of each scene slot that the vertex shaders skin, which the
     /// culling pass copies into the instances of buckets that such objects share.
@@ -556,14 +583,33 @@ mod ids {
     pub const PICK_BUFFERS: u32 = PROBE_TEXTURES + 4;
     /// The bind group of GPU picking's resolve pass.
     pub const PICK_GROUP: u32 = PICK_BUFFERS + crate::pick::RING as u32;
+    /// The buffers of compute pass reads, one for each read that may wait for the GPU.
+    pub const PASS_READ_BUFFERS: u32 = PICK_GROUP + 1;
+    /// The buffers of the sky maps' light captures, one for each read that may wait for the GPU.
+    pub const SKY_LIGHT_BUFFERS: u32 = PASS_READ_BUFFERS + crate::readback::RING as u32;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = PICK_GROUP + 1;
+    pub const TARGETS: u32 = SKY_LIGHT_BUFFERS + crate::sky_maps::LIGHT_RING as u32;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
+    /// The scratch textures and state views of the fragment forms of compute passes, above every
+    /// other id so that their ids collide with none and cost the backends no room.
+    pub const FALLBACK_IDS: u32 = 1 << 20;
     /// The uniform buffer of the compute passes' blocks, in the gap after the cluster levels'
     /// per-view buffers, which leaves the page buffers and the texture store's groups above them
     /// their own numbers.
     pub const COMPUTE: u32 = CLUSTER_BUFFERS + 5 * MAX_VIEW_IDS as u32;
+    /// The light depth reduction's buffers, after every mesh page, so that their ids collide with
+    /// no buffer the frame's passes take.
+    const LIGHT_DEPTH_BUFFERS: u32 = PAGES + 2 * super::skin::MAX_PAGES;
+    /// Each camera view's uniform block of its light depth reduction.
+    const LIGHT_DEPTH_PARAMS: u32 = LIGHT_DEPTH_BUFFERS;
+
+    pub const fn light_depth_params(view: ViewId) -> u32 {
+        LIGHT_DEPTH_PARAMS + view.index() as u32
+    }
+    /// The depth reduction that the light clusters' fit reads: the nearest and farthest reversed
+    /// depth of the last frame.
+    pub const LIGHT_REDUCTION: u32 = LIGHT_DEPTH_PARAMS + MAX_VIEW_IDS as u32;
     /// The compute pipeline of each compute pass, from this id on, by its view's place. The
     /// engine's own compute pipelines take the low numbers.
     pub const COMPUTE_PIPELINES: u32 = 100;
@@ -598,8 +644,10 @@ mod ids {
     pub const STILL_LUT_SAMPLER: u32 = OUTPUT_LUT_SAMPLER + 1;
     /// The linear sampler of temporal anti-aliasing's history.
     pub const TAA_SAMPLER: u32 = STILL_LUT_SAMPLER + 1;
+    /// The linear sampler of the moment layer's lookup tables and of its anti-aliasing steps.
+    pub const MOMENT_SAMPLER: u32 = TAA_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = TAA_SAMPLER + 1;
+    pub const SAMPLERS: u32 = MOMENT_SAMPLER + 1;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -621,6 +669,15 @@ mod ids {
     pub const EXPOSURE_ADAPT: u32 = 13;
     /// The motion view's culling pipeline.
     pub const CULL_MOTION: u32 = 14;
+    /// The conversion of feature-instance rows to camera-relative rows.
+    pub const FEATURE_ROWS: u32 = 15;
+    /// The light clusters' depth reduction, and the same from a multisampled depth target.
+    pub const LIGHT_DEPTH: u32 = 16;
+    pub const LIGHT_DEPTH_MS: u32 = 17;
+    pub const LIGHT_DEPTH_CLEAR: u32 = 18;
+    pub const LIGHT_DEPTH_CLEAR_MS: u32 = 19;
+    /// The fit that light clustering runs first, which writes the grid's header.
+    pub const LIGHT_FIT: u32 = 20;
 
     /// Each view's bind groups: the frame group of its render pipelines, its culling group, and
     /// the group of the pipelines that read their instances by index.
@@ -657,13 +714,15 @@ mod ids {
     pub const AO_GROUPS: u32 = JOINTS_GROUP + 1;
     /// The background's bind group, after ambient occlusion's.
     pub const BACKGROUND_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
-    /// Each camera view's group of its depth pyramid, after the background's.
+    /// The bind group of a sky layer's values, after the background's.
+    pub const BACKGROUND_LAYER_GROUP: u32 = BACKGROUND_GROUP + 1;
+    /// Each camera view's group of its depth pyramid, after the layer's.
     pub const fn pyramid_group(view: ViewId) -> u32 {
-        BACKGROUND_GROUP + 1 + view.index() as u32
+        BACKGROUND_LAYER_GROUP + 1 + view.index() as u32
     }
     /// The bind group of each custom effect, and of each group of joined effects, after the depth
     /// pyramids'.
-    pub const EFFECT_GROUPS: u32 = BACKGROUND_GROUP + 1 + MAX_VIEWS as u32;
+    pub const EFFECT_GROUPS: u32 = BACKGROUND_LAYER_GROUP + 1 + MAX_VIEWS as u32;
     /// The bind group of the copy of each view's image into its target, after the effects'.
     pub const VIEW_COPY_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of each step of depth of field, after the copies'.
@@ -686,9 +745,11 @@ mod ids {
     pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
     /// The bind group of each step of screen-space reflections, after the full-screen passes'.
     pub const SSR_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The bind group of each step of screen-space bounce light, after screen-space reflections'.
+    pub const BOUNCE_GROUPS: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
     /// The bind group of the motion debug view's step, and of the blank map of the motion view,
-    /// after screen-space reflections'.
-    pub const MOTION_VIEW_GROUP: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
+    /// after screen-space bounce light's.
+    pub const MOTION_VIEW_GROUP: u32 = BOUNCE_GROUPS + crate::bounce::STEPS as u32;
     pub const BLANK_MAP_GROUP: u32 = MOTION_VIEW_GROUP + 1;
     /// The bind group of the still-camera accumulation's blend, after the motion view's.
     pub const ACCUMULATE_GROUP: u32 = BLANK_MAP_GROUP + 1;
@@ -729,11 +790,42 @@ mod ids {
     /// Group 0 of each compute pass, from this id on, by its view's place, after the parallax
     /// frame groups.
     pub const COMPUTE_GROUPS: u32 = PARALLAX_FRAME_GROUPS + MAX_VIEW_IDS as u32;
-    /// The bind groups of temporal anti-aliasing's resolve and copy, after the compute passes'
-    /// groups.
-    pub const TAA_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
-    /// The bind groups of materials' maps, after temporal anti-aliasing's.
-    pub const TEXTURE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
+    /// Group 0 of each compute pass's second state, after the first states' groups.
+    pub const COMPUTE_HISTORY_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
+    /// One state view for each compute pass's two states, after the groups.
+    pub const COMPUTE_VIEWS: u32 = COMPUTE_HISTORY_GROUPS + MAX_VIEWS as u32;
+    /// The two state textures of each compute pass, after the state views.
+    pub const COMPUTE_STATES: u32 = COMPUTE_VIEWS + 2 * MAX_VIEWS as u32;
+    /// The conversion's group for each feature-instance draw, from this id on by the draw's id
+    /// less one, after the compute passes' groups.
+    pub const FEATURE_ROWS_GROUPS: u32 = COMPUTE_STATES + 2 * MAX_VIEWS as u32;
+
+    pub const fn feature_rows_group(id: u32) -> u32 {
+        FEATURE_ROWS_GROUPS + id - 1
+    }
+
+    /// The bind groups of temporal anti-aliasing's resolve and copy, after the conversions'.
+    pub const TAA_GROUPS: u32 =
+        FEATURE_ROWS_GROUPS + crate::feature_instances::MAX_FEATURE_INSTANCES;
+    /// The bind groups of the moment layer's steps, after temporal anti-aliasing's.
+    pub const MOMENT_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
+    /// Each camera view's frame group that carries the moment store, after the layer's steps'.
+    pub const MOMENT_FRAME_GROUPS: u32 = MOMENT_GROUPS + MomentIds::GROUPS;
+
+    pub const fn moment_frame_group(view: ViewId) -> u32 {
+        MOMENT_FRAME_GROUPS + view.index() as u32
+    }
+
+    /// Each camera view's group of its light depth reduction, after the moment layer's frame
+    /// groups and before the texture store's groups, whose ids run on from here.
+    pub const LIGHT_DEPTH_GROUPS: u32 = MOMENT_FRAME_GROUPS + MAX_VIEWS as u32;
+
+    pub const fn light_depth_group(view: ViewId) -> u32 {
+        LIGHT_DEPTH_GROUPS + view.index() as u32
+    }
+
+    /// The bind groups of materials' maps, after the light depth reductions'.
+    pub const TEXTURE_GROUPS: u32 = LIGHT_DEPTH_GROUPS + MAX_VIEW_IDS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -754,16 +846,31 @@ mod ids {
     }
 }
 
-/// The ids of a feature-instance draw's per-instance buffer and its count word, which the frame
-/// makes and the draw binds and copies from.
+/// The id of a view's frame uniform. A test that reads the buffer the builder writes for a view
+/// asks for it here, so the numbering can move without the test pinning an old value.
+pub use ids::frame as view_frame;
+
+/// The ids of a feature-instance draw's world-rows buffer and its count word, which the frame
+/// makes and the page or the add-on's compute fills.
 pub fn feature_buffer_ids(id: u32) -> (u32, u32) {
     (ids::feature_instances(id), ids::feature_count(id))
+}
+
+/// The id of the buffer that a feature-instance draw reads: the camera-relative rows that the
+/// frame's conversion writes from the world rows, which the page and the add-on's compute fill.
+pub fn feature_relative_buffer(id: u32) -> u32 {
+    ids::feature_relative(id)
 }
 
 /// The id of a view's buffer of indirect draws, whose instance counts the frame copies a
 /// feature-instance draw's count into.
 pub fn view_indirect_buffer(view: ViewId) -> u32 {
     ids::indirect(view)
+}
+
+/// The ids of the scene's cluster patch table and its indices, which the cluster pass reads.
+pub fn cluster_table_buffers() -> (u32, u32) {
+    (ids::CLUSTER_PATCHES, ids::CLUSTER_INDICES)
 }
 
 /// Sizes the builder allocates once, what the device offers, and how its frames reach the canvas.
@@ -838,6 +945,8 @@ pub struct GpuDrivenRenderer {
     meshes: MeshBuffers,
     pipelines: PipelineCache,
     lists: ParityLists,
+    /// The upload bound that the frame just recorded used, for a later frame's retry.
+    frame_bound: usize,
     graph: FrameGraph,
     /// The scene's layout, which the camera views draw.
     layout: Layout,
@@ -871,6 +980,13 @@ pub struct GpuDrivenRenderer {
     layouts_scattered: bool,
     /// True once the subsurface view's GPU objects exist.
     subsurface_made: bool,
+    /// The layout of the objects whose material keeps its display color, which the tone view
+    /// draws.
+    tone: Layout,
+    /// True when the layouts were built while some material keeps its display color.
+    layouts_toned: bool,
+    /// True once the tone view's GPU objects exist.
+    tone_made: bool,
     /// True when the scene's layout was built with the depth prepass's pipelines.
     layout_prepass: bool,
     /// The views whose depth prepass has its bind group.
@@ -916,6 +1032,8 @@ pub struct GpuDrivenRenderer {
     lights_made: u32,
     /// The pass that lists the lights of each cluster of each camera view's light grid.
     light_clusters: LightClusters,
+    /// The depth reduction that fits each camera view's light slices to the depth.
+    depths: LightDepths,
     /// The pass that skins the skinned meshes that some view draws.
     skinning: Skinning,
     /// Each camera view's values in the frame being recorded, or `None` for a view with no camera.
@@ -939,6 +1057,9 @@ pub struct GpuDrivenRenderer {
     dfg_pending: bool,
     /// The cube texture that the camera views' frame groups bind: the environment's, or the
     /// blank one.
+    /// The moment store that the camera's moment frame group was made for, or 0 before it was
+    /// made.
+    moment_frame: u32,
     bound_environment: u32,
     /// The 3D texture that the frame groups bind: the grid's, or the blank one.
     bound_probe_grid: u32,
@@ -959,6 +1080,11 @@ pub struct GpuDrivenRenderer {
     /// The capacity that each feature-instance draw's buffers were made for, by id from 1, or 0
     /// before they exist.
     feature_capacity: Vec<u32>,
+    /// The count of readiness changes that the layouts were built at, so a change builds them
+    /// again: a draw whose feature stops being ready leaves every view's buckets.
+    feature_readiness: u64,
+    /// The conversion of feature-instance rows to the camera-relative rows that the draws read.
+    feature_rows: FeatureRows,
 }
 
 /// The builder's scene settings from `config`: meshes in shared buffers, each page within one
@@ -974,7 +1100,7 @@ fn scene_settings(config: &RendererConfig) -> SceneSettings {
         },
         BUDGET[Limit::TextureDimension2D as usize],
     );
-    SceneSettings::new(
+    let mut settings = SceneSettings::new(
         MeshStorage::with_page_limit(
             Packing::SharedBuffers,
             MAX_BUFFER_BYTES.min(u64::from(config.storage_binding_bytes)),
@@ -983,7 +1109,9 @@ fn scene_settings(config: &RendererConfig) -> SceneSettings {
         textures,
         config.canvas,
         config.cascade_depth,
-    )
+    );
+    settings.place_sky_light_buffers(ids::SKY_LIGHT_BUFFERS);
+    settings
 }
 
 impl GpuDrivenRenderer {
@@ -1001,6 +1129,7 @@ impl GpuDrivenRenderer {
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
             lists: ParityLists::new(config.draw_list_words, config.draw_list_limit),
+            frame_bound: 0,
             graph: {
                 let mut graph = FrameGraph::new(
                     true,
@@ -1042,6 +1171,11 @@ impl GpuDrivenRenderer {
                         ao: AoIds {
                             buffer: ids::AO,
                             first_group: ids::AO_GROUPS,
+                            blank: ids::BLANK_AO,
+                        },
+                        bounce: BounceIds {
+                            buffer: ids::BOUNCE,
+                            first_group: ids::BOUNCE_GROUPS,
                         },
                         effects: EffectIds {
                             buffer: ids::EFFECTS,
@@ -1056,11 +1190,23 @@ impl GpuDrivenRenderer {
                             first_group: ids::FULLSCREEN_GROUPS,
                             blank_color: ids::BLANK_PASS_COLOR,
                             blank_depth: ids::BLANK_PASS_DEPTH,
+                            first_view: ids::FALLBACK_IDS + MAX_VIEWS as u32,
+                            first_scratch: ids::FALLBACK_IDS,
+                            first_layer_group: ids::FALLBACK_IDS
+                                + MAX_VIEWS as u32
+                                + MAX_VIEWS as u32 * 2 * crate::fullscreen::MAX_FALLBACK_LAYERS,
+                            layer_buffer: ids::FALLBACK_IDS
+                                + MAX_VIEWS as u32
+                                + MAX_VIEWS as u32 * 2 * crate::fullscreen::MAX_FALLBACK_LAYERS
+                                + MAX_VIEWS as u32 * crate::fullscreen::MAX_FALLBACK_LAYERS,
                         },
                         compute: ComputePassIds {
                             buffer: ids::COMPUTE,
                             first_group: ids::COMPUTE_GROUPS,
+                            first_history_group: ids::COMPUTE_HISTORY_GROUPS,
                             first_pipeline: ids::COMPUTE_PIPELINES,
+                            first_view: ids::COMPUTE_VIEWS,
+                            first_state: ids::COMPUTE_STATES,
                         },
                         dof: DofIds {
                             buffer: ids::DOF,
@@ -1101,6 +1247,12 @@ impl GpuDrivenRenderer {
                         weighted: WeightedIds {
                             first_group: ids::WEIGHTED_GROUPS,
                         },
+                        moment: MomentIds {
+                            first_group: ids::MOMENT_GROUPS,
+                            sampler: ids::MOMENT_SAMPLER,
+                            area: ids::MOMENT_AREA,
+                            search: ids::MOMENT_SEARCH,
+                        },
                         particle_depth: ids::PARTICLE_DEPTH_COPY_GROUP,
                         material_scene: ids::MATERIAL_SCENE_GROUPS,
                         blank_scene_depth: ids::BLANK_SCENE_DEPTH,
@@ -1139,6 +1291,9 @@ impl GpuDrivenRenderer {
             scattering: Layout::new(Drawn::Subsurface, config.index_instances),
             layouts_scattered: false,
             subsurface_made: false,
+            tone: Layout::new(Drawn::Tone, config.index_instances),
+            layouts_toned: false,
+            tone_made: false,
             layout_prepass: false,
             prepass_views: 0,
             cells: CellCulling::new(config.cell_culling, config.direct_draws),
@@ -1160,6 +1315,8 @@ impl GpuDrivenRenderer {
             background: BackgroundPass::new(BackgroundIds {
                 buffer: ids::BACKGROUND,
                 group: ids::BACKGROUND_GROUP,
+                layer_buffer: ids::BACKGROUND_LAYER,
+                layer_group: ids::BACKGROUND_LAYER_GROUP,
                 blank_cube: ids::BLANK_ENVIRONMENT,
                 sampler: ids::ENVIRONMENT_SAMPLER,
             }),
@@ -1178,6 +1335,7 @@ impl GpuDrivenRenderer {
             lights: LightGrids::new(config.light_limits, true),
             lights_made: 0,
             light_clusters: LightClusters::default(),
+            depths: LightDepths::default(),
             skinning: Skinning::new(config.skinning),
             frames: Vec::new(),
             cascade_frames: [None; MAX_CASCADES],
@@ -1192,7 +1350,10 @@ impl GpuDrivenRenderer {
             copy_views: Vec::new(),
             copy_offsets: crate::frame::CellOffsets::default(),
             feature_capacity: vec![0; crate::feature_instances::MAX_FEATURE_INSTANCES as usize],
+            feature_readiness: 0,
+            feature_rows: FeatureRows::default(),
             dfg_pending: false,
+            moment_frame: 0,
             bound_environment: ids::BLANK_ENVIRONMENT,
             bound_probe_grid: ids::BLANK_PROBE_GRID,
             bound_probes: None,
@@ -1317,22 +1478,65 @@ impl GpuDrivenRenderer {
             outlined,
             scattering,
             moving,
+            tone,
             copy_offsets,
+            settings,
             ..
         } = self;
         let scene = input.scene;
         let batches = input.batches;
-        for (layout, drawn_by) in [
-            (layout, &views[..]),
+        for (drawn, drawn_by) in [
+            (&mut *layout, &views[..]),
             (casters, std::slice::from_ref(&shadow)),
             (outlined, std::slice::from_ref(&plain)),
             (scattering, std::slice::from_ref(&plain)),
             (moving, std::slice::from_ref(&plain)),
+            (tone, std::slice::from_ref(&plain)),
         ] {
-            layout.fit_copies(scene, batches, drawn_by, parity, copy_offsets)?;
+            drawn.fit_copies(scene, batches, drawn_by, parity, copy_offsets)?;
+        }
+        // The staged levels' watches read the levels that the camera's layout put copies in.
+        if settings.watches_stages() {
+            layout.note_stage_picks(
+                settings.stage_watches_mut(),
+                u64::from(input.frame),
+                !views.is_empty(),
+            );
         }
         self.copy_views = views;
         Ok(())
+    }
+
+    /// Notes the bands of each watched mesh's tree of cluster patches that the camera's view drew
+    /// this frame, so a loader holds a band until the band above it drew. A frame with no loader
+    /// waiting pays nothing.
+    fn note_stage_band_picks(&mut self, input: &FrameInput<'_>, parity: usize) {
+        if !self.settings.watches_stages() {
+            return;
+        }
+        let Some(frame) = self
+            .frames
+            .first()
+            .and_then(|frame| frame.as_ref())
+            .copied()
+        else {
+            return;
+        };
+        let rule = self.settings.level_view(ViewId::CAMERA, input.canvas);
+        self.copy_offsets.update(input.scene, &frame.camera);
+        let layout = &self.layout;
+        let drawn = |mesh: u32| layout.clusters.iter().any(|cluster| cluster.mesh == mesh);
+        self.settings.note_stage_bands(
+            input.scene,
+            parity,
+            &crate::patches::BandView {
+                view: &frame,
+                rule,
+                offsets: self.copy_offsets.as_slice(),
+                frame: u64::from(input.frame),
+            },
+            drawn,
+        );
     }
 
     /// True when a layout that a culling role draws holds a tree of cluster patches, so the frame
@@ -1344,6 +1548,7 @@ impl GpuDrivenRenderer {
             &self.outlined,
             &self.scattering,
             &self.moving,
+            &self.tone,
         ]
         .iter()
         .any(|layout| !layout.cluster_patches.is_empty())
@@ -1358,6 +1563,21 @@ impl GpuDrivenRenderer {
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
+        // A failure before the bound is known leaves no bound to compare, so a later frame retries
+        // only on a changed scene.
+        self.frame_bound = 0;
+        // A draw whose count the GPU writes needs the indirect path: the direct path reads every
+        // count on the CPU and creates no indirect buffer for the frame's count copy. The first
+        // frame picks the builder's path, so a scene that holds such a draw takes the indirect one.
+        // A draw that arrives after that frame has no indirect draw to reach, so the frame refuses
+        // it rather than draw nothing.
+        if !self.settings.feature_instances().is_empty() {
+            if !self.created {
+                self.config.direct_draws = false;
+            } else if self.config.direct_draws {
+                return Err(RecordError::FeatureDrawAfterFirstFrame);
+            }
+        }
         let parity = input.parity();
         let shadow = self.settings.shadow_frame(input);
         let camera = self.settings.view_frame(
@@ -1373,7 +1593,7 @@ impl GpuDrivenRenderer {
             self.tiles.forget_drawn();
         }
         let settings = &self.settings;
-        let sways = |material| settings.sways(material);
+        let sways = |material| settings.sways(material) && !settings.casts_still(material);
         self.tiles.plan(
             input,
             tile_settings,
@@ -1382,7 +1602,7 @@ impl GpuDrivenRenderer {
             settings.meshes(),
             &sways,
             shadow.and_then(|shadow| shadow.hero),
-        );
+        )?;
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
         // casters draw into the passes of each.
         let passes = CasterPasses {
@@ -1398,6 +1618,8 @@ impl GpuDrivenRenderer {
         let shadows = passes.any();
         let outlines = self.settings.outline().is_some();
         let scatters = self.settings.holds_scattering();
+        // The tone mask only matters on the path whose final pass applies the tone curve.
+        let tones = self.settings.any_keeps_display_color() && self.graph.hdr_color();
         let motion = self.settings.motion_wanted();
 
         // Ambient occlusion and the sun's contact shadows read the depth prepass's depth, so
@@ -1417,6 +1639,7 @@ impl GpuDrivenRenderer {
         );
         self.graph
             .set_ssr(settings.ssr_frame(input.canvas), settings.ssr_scale());
+        self.graph.set_bounce(settings.bounce_frame(input.canvas));
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
             .chain(self.sorted.waiting())
@@ -1443,12 +1666,15 @@ impl GpuDrivenRenderer {
             || passes != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || scatters != self.layouts_scattered
+            || tones != self.layouts_toned
             || motion != self.layouts_moving
             || self.graph.depth_prepass() != self.layout_prepass
             || self.redraws_wanted() != self.redraws_built
             || picking != self.layouts_picked
-            || skinned_appear;
+            || skinned_appear
+            || self.settings.feature_instances().readiness() != self.feature_readiness;
         if upload_everything {
+            self.feature_readiness = self.settings.feature_instances().readiness();
             let limit = max_sources(self.config.storage_binding_bytes);
             self.settings
                 .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
@@ -1475,9 +1701,22 @@ impl GpuDrivenRenderer {
                 &mut self.key_counts,
                 self.graph.pick_targets(),
                 picking,
+                !self.config.direct_draws,
             )?;
             self.layout_prepass = self.graph.depth_prepass();
             let (skinning, layout) = (&self.skinning, &self.layout);
+            // The moment layer draws every blended surface that it has a build for, so while the
+            // quality setting turns it on the weighted layer draws nothing.
+            let moment = if self.settings.moment_transparency() {
+                self.graph.moment_targets(targets)
+            } else {
+                None
+            };
+            let weighted = if moment.is_some() {
+                None
+            } else {
+                self.graph.weighted_targets(targets)
+            };
             self.sorted
                 .rebuild(
                     &self.settings,
@@ -1489,7 +1728,8 @@ impl GpuDrivenRenderer {
                     0,
                     shadows,
                     |slot, key| skinning.sorted_pipeline(slot as u32, key),
-                    self.graph.weighted_targets(targets),
+                    weighted,
+                    moment,
                     &mut self.key_counts,
                 )
                 .map_err(out_of_memory)?;
@@ -1504,6 +1744,7 @@ impl GpuDrivenRenderer {
                     0,
                     shadows,
                     |_, _| SkinnedPipeline::NotSkinned,
+                    None,
                     None,
                     &mut self.key_counts,
                 )
@@ -1523,6 +1764,7 @@ impl GpuDrivenRenderer {
                         0,
                         shadows,
                         |slot, key| skinning.sorted_pipeline(slot as u32, key),
+                        None,
                         None,
                         &mut self.key_counts,
                     )
@@ -1546,6 +1788,7 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                     self.graph.pick_targets(),
                     false,
+                    !self.config.direct_draws,
                 )?;
             } else {
                 self.casters.clear();
@@ -1568,6 +1811,7 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                     self.graph.pick_targets(),
                     false,
+                    !self.config.direct_draws,
                 )?;
             } else {
                 self.outlined.clear();
@@ -1590,11 +1834,34 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                     self.graph.pick_targets(),
                     false,
+                    !self.config.direct_draws,
                 )?;
             } else {
                 self.scattering.clear();
             }
             self.layouts_scattered = scatters;
+            // The tone layout holds buckets only while some material keeps its display color.
+            if tones {
+                self.tone.rebuild(
+                    &self.settings,
+                    &mut self.pipelines,
+                    self.graph.outline_targets(),
+                    input.scene,
+                    input.batches,
+                    parity,
+                    limit,
+                    passes,
+                    Prepass::Off,
+                    &self.skinning,
+                    &mut self.key_counts,
+                    self.graph.pick_targets(),
+                    false,
+                    !self.config.direct_draws,
+                )?;
+            } else {
+                self.tone.clear();
+            }
+            self.layouts_toned = tones;
             // The motion layout holds buckets only while a pass reads the motion.
             if motion {
                 self.moving.rebuild(
@@ -1611,6 +1878,7 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                     self.graph.pick_targets(),
                     false,
+                    !self.config.direct_draws,
                 )?;
             } else {
                 self.moving.clear();
@@ -1622,12 +1890,14 @@ impl GpuDrivenRenderer {
             // all the same. Blended objects can be outlined too.
             let (layout, casters, outlined) = (&self.layout, &self.casters, &self.outlined);
             let scattering = &self.scattering;
+            let tone = &self.tone;
             self.cells
                 .classify(input.scene, &|slot| {
                     layout.draws(slot)
                         || (shadows && casters.draws(slot))
                         || (outlines && outlined.draws(slot))
                         || (scatters && scattering.draws(slot))
+                        || (tones && tone.draws(slot))
                 })
                 .map_err(|_| RecordError::OutOfMemory {
                     bytes: (input.scene.capacity() + 1).saturating_mul(16),
@@ -1646,12 +1916,16 @@ impl GpuDrivenRenderer {
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
         let mut created_pipelines = !self.created;
+        created_pipelines |= self
+            .feature_rows
+            .request_pipeline(list, self.settings.feature_instances())?;
         let occlusion = self.graph.occlusion();
         if !self.created {
             if !self.config.direct_draws {
                 cull::create_pipeline(list)?;
             }
             lights::create_pipelines(list)?;
+            self.depths.create_pipelines(list)?;
         }
         // The cluster pass's shader loads on first use, so its pipeline is made with the first
         // frame that draws a tree of cluster patches. A page whose scene holds no tree never
@@ -1698,6 +1972,10 @@ impl GpuDrivenRenderer {
         self.graph.set_sharpen(self.settings.sharpen());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
+        self.graph
+            .set_tone_mask(!self.tone.buckets.is_empty() && self.graph.hdr_color());
+        self.graph
+            .set_light_depth(self.settings.light_fit() && !input.lights.is_empty());
         self.graph.set_still_enabled(self.settings.still_enabled());
         self.graph.set_still(self.settings.still());
         self.graph.set_subsurface(
@@ -1716,6 +1994,7 @@ impl GpuDrivenRenderer {
         };
         self.graph.set_motion(motion, motion_frame);
         self.graph.set_weighted(self.sorted.weighs());
+        self.graph.set_moment(self.sorted.moments());
         let skipped = self.settings.decal_skipped_layers();
         let shown = self.settings.views()[ViewId::CAMERA.index()].layers();
         self.redraw_layout.set_layer_filter(skipped, shown);
@@ -1731,8 +2010,11 @@ impl GpuDrivenRenderer {
         self.graph.set_scaling(self.settings.render_scaling());
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
-        self.graph
-            .request_fullscreen_pipelines(&mut self.pipelines, self.settings.views());
+        self.graph.request_fullscreen_pipelines(
+            &mut self.pipelines,
+            input.pipelines_built,
+            self.settings.views(),
+        );
         self.background.request_pipeline(
             &self.settings,
             &mut self.pipelines,
@@ -1765,11 +2047,15 @@ impl GpuDrivenRenderer {
         self.graph.set_tiles(self.tiles.shape().map(|s| TilePasses {
             tiles: s.layers,
             size: s.size,
+            hero: self.tiles.hero_tile(),
         }));
         self.graph.set_skinning(self.skinning.dispatches());
         self.settings.prepare_probe_capture(input.frame);
         self.settings.pace_views(input.canvas, input.render_scale);
         self.settings.mark_shown_views();
+        // The shadow, motion and pick passes draw their layouts' materials, so each reads the pass
+        // targets those materials sample: a compute pass finds its place before them.
+        self.sync_drawn_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.set_debug_lines(!input.lines.is_empty());
@@ -1784,6 +2070,8 @@ impl GpuDrivenRenderer {
         // them. Their contents wait for the frame's uploads below.
         self.create_feature_buffers(list)?;
         self.graph.prepare(list, input.canvas, input.render_scale)?;
+        self.graph
+            .apply_compute_layers(self.settings.textures_mut());
         let pick_frame = self.begin_pick(list, input, pick_drawing)?;
         self.pick.keep = if pick_frame.is_some() {
             crate::pick::KEEP_FRAMES
@@ -1814,7 +2102,13 @@ impl GpuDrivenRenderer {
             self.settings.probes().size(),
             self.settings.probes().probe_layers(),
         );
-        self.settings.probes_mut().record(list, shape)?;
+        self.settings.probes_mut().record(
+            list,
+            shape,
+            input.frame,
+            created_pipelines,
+            input.pipelines_built,
+        )?;
         // The next frame destroys the old array, so no frame group may still bind it.
         let probes_now = self.settings.probes().array();
         let probes_remade = probes_now != self.bound_probes;
@@ -1856,6 +2150,13 @@ impl GpuDrivenRenderer {
                     probe_array(probes_now),
                 );
                 self.bind_frame(list, view, inputs)?;
+                if view == ViewId::CAMERA
+                    && let Some(store) = self.graph.moment_store()
+                    && (self.moment_frame != store || self.graph.textures_made())
+                {
+                    opaque::bind_moment_frame(list, &inputs, store)?;
+                    self.moment_frame = store;
+                }
             }
         }
         self.views_made = self.views_made.max(views);
@@ -1884,7 +2185,8 @@ impl GpuDrivenRenderer {
             let made = (0..self.cascades_made).map(ViewId::cascade);
             let tiles = (0..self.tiles_made).map(ViewId::tile);
             let outline = self.outline_made.then_some(ViewId::OUTLINE);
-            for view in made.chain(tiles).chain(outline) {
+            let tone = self.tone_made.then_some(ViewId::TONE);
+            for view in made.chain(tiles).chain(outline).chain(tone) {
                 shadow::bind_depth(list, ids::frame_group(view), view)?;
             }
         }
@@ -1911,6 +2213,15 @@ impl GpuDrivenRenderer {
             self.culling.add_view(list, ViewId::OUTLINE)?;
             self.outline_made = true;
         }
+        // The tone mask shares the outline mask's pass and target, so its view needs only its
+        // culling buffers and the depth that the mask tests.
+        let tone_drawn = self.graph.tone_mask_draws();
+        let new_tone = tone_drawn && !self.tone_made;
+        if new_tone {
+            shadow::create_view(list, ViewId::TONE)?;
+            self.culling.add_view(list, ViewId::TONE)?;
+            self.tone_made = true;
+        }
         // The skin pass draws through the camera view's frame group, so its view needs only its
         // culling buffers.
         let skin_drawn = self.graph.subsurface_draws();
@@ -1926,6 +2237,7 @@ impl GpuDrivenRenderer {
         let exposure = self.settings.drawn_output().exposure;
         self.lights
             .set_area_light_cap(self.settings.area_light_cap());
+        self.lights.set_fit(self.settings.light_fit());
         for index in 0..views {
             let view = ViewId::from_index(index);
             // A view that the graph culls needs no values.
@@ -1955,27 +2267,51 @@ impl GpuDrivenRenderer {
         for index in 0..views {
             let view = ViewId::from_index(index);
             let bit = 1 << index;
-            if self.lights_made & bit != 0 {
-                continue;
+            if self.lights_made & bit == 0 {
+                let Some(lights) = self.lights.get(view) else {
+                    continue;
+                };
+                lights::create(list, view, lights)?;
+                self.lights_made |= bit;
+                self.bind_frame(
+                    list,
+                    view,
+                    frame_inputs(view, view, probe_array(probes_now)),
+                )?;
             }
-            let Some(lights) = self.lights.get(view) else {
-                continue;
-            };
-            lights::create(list, view, lights)?;
-            self.lights_made |= bit;
-            self.bind_frame(
-                list,
-                view,
-                frame_inputs(view, view, probe_array(probes_now)),
-            )?;
         }
 
-        arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
+        // The shadow views that draw this frame, each of which uploads the copies of the casters
+        // it sees. A frame sizes the arena for those alone, never for every cascade and tile that
+        // a setting allows.
+        let shadow_views = shadow
+            .as_ref()
+            .map_or(0, |shadow| shadow.drawn.count_ones()) as usize
+            + self.tiles.shape().map_or(0, |shape| shape.layers as usize);
+        let bound = self.upload_bound(shadow_views, active_sources(input))
+            + LinesPass::upload_bytes(&input.lines);
+        self.frame_bound = bound;
+        arena
+            .reset(bound)
+            .map_err(|_| uploads_out_of_memory(bound))?;
+        // The camera view's depth reduction names its light grid, so it waits for the grid, and
+        // its block counts wait for the arena that this frame's uploads take.
+        if let Some(depth) = self.graph.scene_depth() {
+            let multisampled = self.graph.scene_depth_multisampled();
+            self.depths.prepare(
+                list,
+                ViewId::CAMERA,
+                depth,
+                multisampled,
+                self.graph.textures_made(),
+            )?;
+            self.depths
+                .upload(list, arena, ViewId::CAMERA, self.graph.render_size())?;
+        }
         let array = self.settings.probes().array().map_or(0, |(id, _)| id);
         let probe_layers = self.settings.probes().probe_layers();
         self.settings
-            .light_tables_mut()
-            .record(list, array, probe_layers)?;
+            .record_light_images(list, array, probe_layers)?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::CUSTOM_VALUES, MATERIAL_TEXELS)?;
             ao::upload_blank(list, arena, ids::BLANK_AO)?;
@@ -2011,6 +2347,12 @@ impl GpuDrivenRenderer {
         let groups_remade =
             self.settings
                 .record_materials(input, list, arena, table, &self.physical_sky)?;
+        // The frame's texture work recorded the uploads, so a texture that a light's image copies
+        // from is on the GPU by the time the frame's passes run.
+        let array = self.settings.probes().array().map_or(0, |(id, _)| id);
+        let probe_layers = self.settings.probes().probe_layers();
+        self.settings
+            .record_light_images(list, array, probe_layers)?;
         self.graph.set_probe_filter(self.settings.probes().filter());
         // The frame's texture work made the passes' targets and uploads ready, so the textures
         // of the effects and the full-screen passes sample from this frame on.
@@ -2078,6 +2420,7 @@ impl GpuDrivenRenderer {
         // for every source. It comes before the layouts are applied and the views' bundles are
         // recorded: both name the slices' bases in commands that the frame keeps.
         self.fit_level_copies(input, parity)?;
+        self.note_stage_band_picks(input, parity);
         let (shared_recreated, casters_recreated) = if upload_everything {
             let shared = self.layout.apply(list, arena, binding_bytes)?;
             let casters = shadows && self.casters.apply(list, arena, binding_bytes)?;
@@ -2086,6 +2429,9 @@ impl GpuDrivenRenderer {
             }
             if scatters {
                 self.scattering.apply(list, arena, binding_bytes)?;
+            }
+            if tones {
+                self.tone.apply(list, arena, binding_bytes)?;
             }
             (shared, casters)
         } else {
@@ -2104,16 +2450,27 @@ impl GpuDrivenRenderer {
                 self.scattering
                     .update_membership(list, arena, input, features, parity)?;
             }
+            if tones {
+                self.tone
+                    .update_membership(list, arena, input, features, parity)?;
+            }
             (false, false)
         };
-        // The scene's cluster tables follow its layout: they upload again when it changes.
-        let clusters_recreated = self.clusters.apply_tables(
-            list,
-            arena,
-            &self.layout,
-            upload_everything,
-            binding_bytes,
-        )?;
+        // The scene's cluster tables follow its layout: they upload again when it changes. Only
+        // the path that runs the cluster pass builds them, whose group binds each table whole and
+        // whose dispatch reads it. The direct path binds neither and reads neither, so it builds
+        // neither.
+        let clusters_recreated = if self.config.direct_draws {
+            false
+        } else {
+            self.clusters.apply_tables(
+                list,
+                arena,
+                &self.layout,
+                upload_everything,
+                binding_bytes,
+            )?
+        };
         // Build the motion tables when their layout changes, even while its pipelines load.
         // Once the view can draw, the scene may no longer need a layout upload.
         if motion && upload_everything {
@@ -2132,9 +2489,20 @@ impl GpuDrivenRenderer {
         if scatters {
             self.scattering.upload_records(list, arena)?;
         }
+        if tones {
+            self.tone.upload_records(list, arena)?;
+        }
         // A feature-instance draw's buffers exist before any bundle names them, and their contents
         // reach them here, after the frame's arena is set aside.
         self.feature_buffers(list, arena)?;
+        // The conversion of the world rows to the camera-relative rows that the draws read, whose
+        // dispatches the graph records once all compute steps have ended.
+        let camera_world = camera.as_ref().map_or([0.0; 4], |camera| {
+            let [x, y, z] = camera.camera.absolute().map(|v| v as f32);
+            [x, y, z, 0.0]
+        });
+        self.feature_rows
+            .prepare(list, arena, self.settings.feature_instances(), camera_world)?;
         // The motion view draws while a pass reads the motion and the device draws its target. Its
         // bundles and culling groups name the copies of the last frame's data, which can grow.
         let motion_on = motion && self.graph.motion_draws();
@@ -2268,6 +2636,24 @@ impl GpuDrivenRenderer {
                 opaque::record_bundle(list, view, outlined, meshes, targets, kind, 0, &|_| false)?;
             }
         }
+        if tone_drawn && (upload_everything || buffers_remade || new_tone) {
+            let view = ViewId::TONE;
+            // The tone layout's tables are new whenever the layouts are.
+            let recreated = shared_recreated || upload_everything;
+            if self.config.direct_draws {
+                self.culling
+                    .apply_direct(list, view, &self.tone, binding_bytes)?;
+            } else {
+                self.culling
+                    .apply(list, view, &self.tone, recreated, binding_bytes, false)?;
+            }
+            if !self.config.direct_draws {
+                let targets = self.graph.outline_targets();
+                let (tone, meshes) = (&self.tone, &self.meshes);
+                let kind = Bundle::Tone;
+                opaque::record_bundle(list, view, tone, meshes, targets, kind, 0, &|_| false)?;
+            }
+        }
         if skin_drawn && (upload_everything || buffers_remade || groups_remade || new_skin) {
             let view = ViewId::SUBSURFACE;
             if self.config.direct_draws {
@@ -2352,12 +2738,12 @@ impl GpuDrivenRenderer {
             .filter(|(_, frame)| frame.is_some())
             .fold(0u32, |mask, (index, _)| mask | 1 << index);
         // The reset that each view's culling uploads zeroes the indirect counts, so the page's
-        // counts go into the templates first: a shadow view draws them, because the add-on's
-        // compute writes the main view's count alone.
+        // counts go into the templates of the views that the frame's count copy does not reach:
+        // the camera's mirrors and probes, and the outline, skin and motion views. The camera's own
+        // view and every shadow view take the add-on's count word instead.
         let features = self.settings.feature_instances();
         let radii = input.scene.world(parity).radii();
         self.layout.set_feature_counts(features, radii);
-        self.casters.set_feature_counts(features, radii);
         self.outlined.set_feature_counts(features, radii);
         self.scattering.set_feature_counts(features, radii);
         self.moving.set_feature_counts(features, radii);
@@ -2367,9 +2753,12 @@ impl GpuDrivenRenderer {
             &mut self.lights,
             self.lights_made & drawn_views,
         )?;
-        self.transparent.size(list, &self.sorted, views)?;
-        self.decals.size(list, &self.decal_layout, 1)?;
-        self.redraws.size(list, &self.redraw_layout, 1)?;
+        self.transparent
+            .size(list, &self.sorted, views, binding_bytes)?;
+        self.decals
+            .size(list, &self.decal_layout, 1, binding_bytes)?;
+        self.redraws
+            .size(list, &self.redraw_layout, 1, binding_bytes)?;
 
         let render_size = self.graph.render_size();
         let any_probes = self.settings.probes().any();
@@ -2506,6 +2895,43 @@ impl GpuDrivenRenderer {
                     &frame,
                     layout,
                     scattering,
+                    input.scene,
+                    cells,
+                    None,
+                    &detail,
+                )?;
+            }
+        }
+        if let (true, Some(frame)) = (tone_drawn, self.frames[ViewId::CAMERA.index()]) {
+            let view = ViewId::TONE;
+            // The mask places each vertex as the scene passes do, so its view reads the camera's
+            // frame in a uniform buffer of its own.
+            opaque::upload(list, arena, view, &frame)?;
+            let (layout, tone, cells) = (&self.layout, &self.tone, &self.cells);
+            let detail = self.settings.level_view(view, input.canvas);
+            if self.config.direct_draws {
+                self.direct.record(
+                    list,
+                    arena,
+                    input.jobs,
+                    view,
+                    &frame,
+                    input.scene,
+                    input.batches,
+                    cells,
+                    layout,
+                    tone,
+                    detail,
+                    parity,
+                )?;
+            } else {
+                self.culling.upload(
+                    list,
+                    arena,
+                    view,
+                    &frame,
+                    layout,
+                    tone,
                     input.scene,
                     cells,
                     None,
@@ -2725,11 +3151,20 @@ impl GpuDrivenRenderer {
         )?;
         self.settings.particles_mut().clear_marks();
         let camera = self.frames[ViewId::CAMERA.index()].as_ref();
-        self.lines
-            .upload(list, arena, &input.lines, camera.map(|frame| &frame.camera))?;
-        // The culling reset zeroed the indirect draws, so the page's counts reach them from here,
-        // and every compute step copies the add-on's own counts over them before the pass.
-        self.copy_feature_counts(list, input.scene.world(parity).radii())?;
+        // A line buffer binds at a vertex slot and no group reads it, so the device's largest
+        // buffer bounds it.
+        let lines_bytes = unbound_buffer_bytes(Some(self.config.storage_binding_bytes));
+        self.lines.upload(
+            list,
+            arena,
+            &input.lines,
+            camera.map(|frame| &frame.camera),
+            lines_bytes,
+        )?;
+        // The culling reset zeroed the indirect draws, so the page's count reaches the camera's
+        // view from here, and the frame copies the add-on's own count over it once every compute
+        // step ended.
+        self.copy_feature_counts(list, input.scene.world(parity).radii(), camera_view_mask())?;
 
         let (layout, casters, culling, lines) =
             (&self.layout, &self.casters, &self.culling, &self.lines);
@@ -2741,23 +3176,36 @@ impl GpuDrivenRenderer {
         let occluding =
             occlusion && self.layout.occluders() > 0 && self.pyramids.built(input.pipelines_built);
         let (outlined, scattering) = (&self.outlined, &self.scattering);
+        let tone = &self.tone;
         let moving = &self.moving;
         let motion_draws = motion_on && self.motion.draws();
         let (frames, cascade_frames, tiles) = (&self.frames, &self.cascade_frames, &self.tiles);
         let (background, light_clusters) = (&self.background, &self.light_clusters);
+        let (depths, depth_multisampled) = (&self.depths, self.graph.scene_depth_multisampled());
+        // A frame without lights pays nothing for the depth reduction.
+        let light_depth_on = self.lights.camera().grid().uniform().grid[2] != 0.0;
         let skinning = &self.skinning;
         let drawn = |view: ViewId| match (view.cascade_index(), view.tile_index()) {
             (Some(cascade), _) => cascade_frames[cascade].is_some(),
             (_, Some(tile)) => tiles.frame(tile).is_some(),
             _ if view == ViewId::OUTLINE => outline_drawn && frames[0].is_some(),
             _ if view == ViewId::SUBSURFACE => skin_drawn && frames[0].is_some(),
+            _ if view == ViewId::TONE => tone_drawn && frames[0].is_some(),
             _ if view == ViewId::MOTION => motion_draws && frames[0].is_some(),
 
             _ => frames[view.index()].is_some(),
         };
+        // The shadow views draw the add-on's count word too, because a near instance of the draw
+        // casts a shadow: the frame copies the word into each drawn shadow view's indirect draws.
+        let shadow_count_views = (0..MAX_CASCADES)
+            .map(ViewId::cascade)
+            .chain((0..MAX_TILES).map(ViewId::tile))
+            .filter(|&view| drawn(view))
+            .fold(0u64, |mask, view| mask | 1 << view.index());
         let layout_of = |view: ViewId| match view {
             ViewId::OUTLINE => outlined,
             ViewId::SUBSURFACE => scattering,
+            ViewId::TONE => tone,
             ViewId::MOTION => moving,
 
             view if view.is_camera() => layout,
@@ -2777,6 +3225,7 @@ impl GpuDrivenRenderer {
         let (settings, meshes) = (&self.settings, &self.meshes);
         let motion_state = &mut self.motion;
         let weighted = self.graph.weighted_declared();
+        let moment_layer = self.graph.moment_declared();
         let direct_draws = self.config.direct_draws;
         let direct = &self.direct;
         // A direct draw's instance count changes every frame, so the direct path records the
@@ -2809,12 +3258,25 @@ impl GpuDrivenRenderer {
         let feature_layout = &self.layout;
         let feature_table = self.settings.feature_instances();
         let feature_radii = input.scene.world(parity).radii();
+        let feature_rows = &self.feature_rows;
+        // The scene group that each view's blended draws bind for a custom material that reads the
+        // scene's depth: the copy of the camera's opaque depth in the camera's view, and the blank
+        // texel in another view. The graph chooses it, as the CPU-culled builder asks it to, so the
+        // two builders share one rule.
+        let mut scene_groups = [0u32; MAX_VIEWS];
+        for (index, group) in scene_groups.iter_mut().enumerate() {
+            *group = self.graph.material_scene_group(ViewId::from_index(index));
+        }
         self.graph.record(
             list,
             |view| settings.clear_color_of(view),
             skips,
             |list, role| match role {
                 Role::LightClusters => light_clusters.record(list),
+                Role::LightDepth if light_depth_on => {
+                    depths.record(list, ViewId::CAMERA, depth_multisampled)
+                }
+                Role::LightDepth => Ok(()),
                 Role::Skin => skinning.record(list),
                 Role::Cull(ViewId::MOTION) if drawn(ViewId::MOTION) => {
                     culling.record(list, ViewId::MOTION, moving, Phase::Motion(parity))
@@ -2868,12 +3330,22 @@ impl GpuDrivenRenderer {
                     culling.record(list, view, layout, Phase::Late)?;
                     clusters.record(list, view, layout)
                 }
-                Role::OutlineMask if drawn(ViewId::OUTLINE) => {
-                    if direct_draws {
-                        record_direct_view(list, ViewId::OUTLINE, Bundle::Outline)
-                    } else {
-                        opaque::record(list, ViewId::OUTLINE, Bundle::Outline)
+                Role::OutlineMask if drawn(ViewId::OUTLINE) || drawn(ViewId::TONE) => {
+                    if drawn(ViewId::OUTLINE) {
+                        if direct_draws {
+                            record_direct_view(list, ViewId::OUTLINE, Bundle::Outline)?;
+                        } else {
+                            opaque::record(list, ViewId::OUTLINE, Bundle::Outline)?;
+                        }
                     }
+                    if drawn(ViewId::TONE) {
+                        if direct_draws {
+                            record_direct_view(list, ViewId::TONE, Bundle::Tone)?;
+                        } else {
+                            opaque::record(list, ViewId::TONE, Bundle::Tone)?;
+                        }
+                    }
+                    Ok(())
                 }
                 Role::SkinLight if drawn(ViewId::SUBSURFACE) => {
                     if direct_draws {
@@ -2885,15 +3357,15 @@ impl GpuDrivenRenderer {
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::FogLight(_) => bind_frame_group(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::Transparent(view) => {
-                    let rows = if weighted && view == ViewId::CAMERA {
+                    let rows = if (weighted || moment_layer) && view == ViewId::CAMERA {
                         SortedRows::Sorted
                     } else {
                         SortedRows::All
                     };
                     let frame = ids::frame_group(view);
                     // The camera's transparent pass draws after the copy of its opaque depth; a
-                    // scene pass's view has no copy and binds the blank texel.
-                    let scene = ids::MATERIAL_SCENE_GROUPS + u32::from(view == ViewId::CAMERA);
+                    // scene pass's view has no copy, so the graph gives it the blank texel.
+                    let scene = scene_groups.get(view.index()).copied().unwrap_or(0);
                     transparent.record(
                         list, view, rows, sorted, skinning, settings, meshes, frame, 0, scene,
                         particles,
@@ -2963,11 +3435,57 @@ impl GpuDrivenRenderer {
                     ids::MATERIAL_SCENE_GROUPS,
                     particles,
                 ),
+                Role::Moment => transparent.record(
+                    list,
+                    ViewId::CAMERA,
+                    SortedRows::Moment,
+                    sorted,
+                    skinning,
+                    settings,
+                    meshes,
+                    ids::frame_group(ViewId::CAMERA),
+                    0,
+                    ids::MATERIAL_SCENE_GROUPS,
+                    particles,
+                ),
+                Role::MomentColour => transparent.record(
+                    list,
+                    ViewId::CAMERA,
+                    SortedRows::MomentColour,
+                    sorted,
+                    skinning,
+                    settings,
+                    meshes,
+                    ids::moment_frame_group(ViewId::CAMERA),
+                    0,
+                    0,
+                    particles,
+                ),
                 _ => Ok(()),
             },
-            // A feature's compute pass writes its count word before the pass that draws it, so
-            // the word reaches the indirect draws once the compute step ends.
-            |list| copy_feature_counts(list, feature_layout, feature_table, feature_radii),
+            // The feature draws' reads wait for the frame's one conversion point below, which is
+            // the only place a compute write is certainly final for the pass that reads it.
+            |_| Ok(()),
+            // Every compute write is final before the first render pass: the frame converts the
+            // feature-instance rows, then copies each count word into the indirect draws of the
+            // camera's view and of every shadow view.
+            |list| {
+                feature_rows.record(list, feature_table)?;
+                copy_feature_counts(
+                    list,
+                    feature_layout,
+                    feature_table,
+                    feature_radii,
+                    camera_view_mask(),
+                )?;
+                copy_feature_counts(
+                    list,
+                    casters,
+                    feature_table,
+                    feature_radii,
+                    shadow_count_views,
+                )
+            },
             |list| {
                 if motion_on {
                     motion_state.finish(list, parity, layout, skinning)?;
@@ -2989,6 +3507,21 @@ impl GpuDrivenRenderer {
                 false,
             )?;
             self.settings.take_pick();
+        }
+        // A read of a compute pass's region copies it once the pass's runs have finished.
+        if let Some(mut read) = self.settings.take_pass_read()
+            && let Some((texture, size)) = self.graph.read_target(read.view as usize)
+        {
+            read.layer = self.graph.read_layer(read.view as usize, read.layer);
+            // A canvas that shrank since the call leaves the region past the edge, and a copy
+            // there would reject the frame's commands, so it is skipped for the read's timeout.
+            crate::readback::record_region(
+                list,
+                &read,
+                texture,
+                ids::PASS_READ_BUFFERS + read.ring,
+                size,
+            )?;
         }
         self.tiles
             .finish(input.frame, created_pipelines, input.pipelines_built);
@@ -3057,7 +3590,17 @@ impl GpuDrivenRenderer {
                 &[
                     ids::feature_instances(id),
                     capacity * crate::feature_instances::INSTANCE_BYTES,
-                    usage::VERTEX | usage::STORAGE | usage::COPY_DST,
+                    usage::STORAGE | usage::COPY_DST,
+                ],
+            )?;
+            // The rows that the draw reads: the conversion writes them from the world rows each
+            // frame, so the camera can move without an upload of the page's rows.
+            list.push(
+                Op::CreateBuffer,
+                &[
+                    ids::feature_relative(id),
+                    capacity * crate::feature_instances::INSTANCE_BYTES,
+                    usage::VERTEX | usage::STORAGE,
                 ],
             )?;
             list.push(
@@ -3079,18 +3622,20 @@ impl GpuDrivenRenderer {
     }
 
     /// Copies each feature-instance draw's count word into the instance count of its bucket's
-    /// indirect draws. The main view takes the add-on's word, which its compute pass writes each
-    /// frame; a view of a light's shadows takes the page's count, because the add-on's compute
-    /// writes the main view's count alone.
-    /// The count that a view of a light's shadows draws for feature-instance draw `id`, or `None`
-    /// when no shadow view draws it. A shadow view takes the page's count, because the add-on's
-    /// compute writes the main view's count alone.
-    pub fn feature_shadow_count(&self, id: u32) -> Option<u32> {
-        self.casters.feature_template_count(id)
-    }
-
-    fn copy_feature_counts(&self, list: &mut DrawList, radii: &[f32]) -> Result<(), RecordError> {
-        copy_feature_counts(list, &self.layout, self.settings.feature_instances(), radii)
+    /// indirect draws in `views`, as a mask of the views' places in the view list.
+    fn copy_feature_counts(
+        &self,
+        list: &mut DrawList,
+        radii: &[f32],
+        views: u64,
+    ) -> Result<(), RecordError> {
+        copy_feature_counts(
+            list,
+            &self.layout,
+            self.settings.feature_instances(),
+            radii,
+            views,
+        )
     }
 
     /// True when this frame draws the pick that waits: the resolve pipeline and the pick pipeline
@@ -3180,6 +3725,18 @@ impl GpuDrivenRenderer {
             Some(ids::SHADOW_TEXEL_SAMPLER),
         )?;
         probe_grid::create_objects(list, ids::BLANK_PROBE_GRID)?;
+        // The buffers that a read of a compute pass's region lands in, one for each read that may
+        // wait for the GPU.
+        for ring in 0..crate::readback::RING as u32 {
+            list.push(
+                Op::CreateBuffer,
+                &[
+                    ids::PASS_READ_BUFFERS + ring,
+                    crate::readback::MAX_BYTES,
+                    usage::MAP_READ | usage::COPY_DST,
+                ],
+            )?;
+        }
         let materials = self.config.max_materials.max(1);
         list.push(
             Op::CreateBuffer,
@@ -3227,6 +3784,8 @@ impl GpuDrivenRenderer {
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
         transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
+        // The light cluster groups bind the depth reduction, so it comes before their groups.
+        self.depths.create_buffer(list)?;
         lights::create(list, ViewId::CAMERA, self.lights.camera())?;
         self.lights_made = 1 << ViewId::CAMERA.index();
         self.dfg_pending = true;
@@ -3288,13 +3847,20 @@ impl GpuDrivenRenderer {
     /// uploaded yet, the whole material table, three.js's table of specular terms, both layouts'
     /// tables, the light grid, each view's, each cascade's and each tile's frame uniform, culling
     /// parameters and indirect draws, the cascades' and the tiles' uniforms, and the final pass's
-    /// settings.
-    fn upload_bound(&self) -> usize {
+    /// settings. `shadow_views` counts the cascades and tiles that draw this frame, each of which
+    /// uploads the casters it sees. `active_sources` bounds the sources that can draw this frame,
+    /// which is all that the views copy.
+    fn upload_bound(&self, shadow_views: usize, active_sources: u32) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         // The cluster tables upload again whenever the layout changes, and every view uploads its
-        // three blocks of dispatch parameters.
-        let clusters = clusters::Clusters::upload_bytes(&self.layout)
-            + clusters::Clusters::upload_bytes(&self.casters);
+        // three blocks of dispatch parameters. Both belong to the cluster pass, which the direct
+        // path does not record.
+        let clusters = if self.config.direct_draws {
+            0
+        } else {
+            clusters::Clusters::upload_bytes(&self.layout)
+                + clusters::Clusters::upload_bytes(&self.casters)
+        };
         let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2
             + dfg::BYTES
             + ao::BLANK_BYTES;
@@ -3302,7 +3868,7 @@ impl GpuDrivenRenderer {
             (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
                 + layout.draws.len() * INDIRECT_BYTES as usize
                 + if self.config.direct_draws {
-                    layout.compacted_bytes() as usize
+                    layout.copy_upload_bytes(active_sources) as usize
                 } else {
                     0
                 }
@@ -3323,15 +3889,14 @@ impl GpuDrivenRenderer {
             + per_view(&self.outlined)
             + per_view(&self.scattering)
             + motion;
-        let tiles = self.settings.tile_settings().tiles as usize;
-        let cascades = (MAX_CASCADES + tiles.min(MAX_TILES)) * per_view(&self.casters);
+        let shadow_copies = shadow_views * per_view(&self.casters);
         let tables = self.layout.upload_bound()
             + self.casters.upload_bound()
             + self.outlined.upload_bound()
             + self.scattering.upload_bound()
             + self.moving.upload_bound();
 
-        let lights = self.lights.upload_room();
+        let lights = self.lights.upload_room() + LightDepths::UPLOAD_BYTES;
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         let sorted = Transparent::upload_bound(&self.sorted, camera_views)
             + Transparent::upload_bound(&self.decal_layout, 1)
@@ -3347,13 +3912,65 @@ impl GpuDrivenRenderer {
             + tables
             + lights
             + views
-            + cascades
+            + shadow_copies
             + shadows
             + sorted
             + particles
+            // The page's rows that this frame uploads, then the camera that the conversion reads.
+            + self.settings.feature_instances().pending_bytes()
+            + FeatureRows::UPLOAD_BYTES
             + self.graph.upload_bound()
             + BackgroundPass::UPLOAD_BYTES
             + PhysicalSkyPass::UPLOAD_BYTES
+    }
+}
+
+impl GpuDrivenRenderer {
+    /// Tells the graph which pass targets the shadow, motion and pick passes' materials sample,
+    /// so each of those passes reads them and runs after the pass that writes them.
+    fn sync_drawn_views(&mut self) {
+        self.graph.set_drawn_views(DrawnViews {
+            casters: self.casters.material_views,
+            motion: self.moving.material_views,
+            pick: self.layout.pick_views,
+        });
+    }
+
+    /// The upload bound that the next frame can need with the current settings and inputs, or an
+    /// upper bound of it: the shadow views that the settings and lights allow, the sources that
+    /// draw, the tables, and the frame's own uploads. A page that turns off a shadow or steps its
+    /// preset down lowers it, and a frame the memory refused can then record again.
+    fn forecast_bound(&self, input: &FrameInput<'_>) -> usize {
+        self.upload_bound(self.most_shadow_views(input), active_sources(input))
+            + LinesPass::upload_bytes(&input.lines)
+    }
+
+    /// The most shadow views that the current settings and lights can draw: the sun's cascades,
+    /// the sun's hero tile, and the tiles that the spot and point lights fill. A frame can draw
+    /// fewer of the sun's cascades, so this bounds its shadow views from above.
+    fn most_shadow_views(&self, input: &FrameInput<'_>) -> usize {
+        let sun = self.settings.sun_shadow();
+        let cascades = sun
+            .map_or(0, |shadow| shadow.cascades as usize)
+            .min(MAX_CASCADES);
+        let hero = usize::from(sun.is_some_and(|shadow| shadow.hero.is_some()));
+        let settings = self.settings.tile_settings();
+        let faces = if settings.point_shadows {
+            shadow_tiles::POINT_FACES
+        } else {
+            0
+        };
+        let tiles: usize = input
+            .shadow_lights
+            .iter()
+            .map(|light| match light.kind {
+                null3d_core::lights::kind::SPOT => 1,
+                null3d_core::lights::kind::POINT => faces,
+                _ => 0,
+            })
+            .sum();
+        let room = MAX_TILES.saturating_sub(hero);
+        cascades + hero + tiles.min(settings.tiles as usize).min(room)
     }
 }
 
@@ -3399,7 +4016,11 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.moving.reserve(sources)?;
 
         let added = sources.saturating_sub(self.layout.sources);
-        let bound = self.upload_bound() + (added * TABLE_BYTES_PER_SOURCE) as usize;
+        // Book room for every shadow view that the settings allow, since the scene may grow
+        // before the next frame names the views that draw.
+        let tiles = (self.settings.tile_settings().tiles as usize).min(MAX_TILES);
+        let bound = self.upload_bound(MAX_CASCADES + tiles, sources)
+            + (added * TABLE_BYTES_PER_SOURCE) as usize;
         for arena in self.lists.arenas_mut() {
             arena.try_reserve(bound)?;
         }
@@ -3408,10 +4029,39 @@ impl FrameBuilder for GpuDrivenRenderer {
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
         self.settings.set_still(self.lists.still());
-        let (mut list, mut arena) = self.lists.take(input.frame)?;
+        let forecast = self.forecast_bound(input);
+        let active = active_sources(input);
+        let mut took = self.lists.take(input.frame);
+        if took.is_err()
+            && self
+                .lists
+                .can_retry(forecast, active, input.structure_changed)
+        {
+            self.reset_gpu();
+            took = self.lists.take(input.frame);
+        }
+        let (mut list, mut arena) = took?;
         let result = self.record_into(input, &mut list, &mut arena);
+        // A failed frame stores the forecast of the state it leaves, which is the state the next
+        // frame forecasts from: the layout it built, and the settings it used.
+        let halted_forecast = if result.is_err() {
+            self.forecast_bound(input)
+        } else {
+            forecast
+        };
         let marks = StillMarks::of(input, &self.settings, &self.graph, &self.pipelines);
-        self.lists.restore(input.frame, list, arena, marks, result)
+        self.lists.restore(
+            input.frame,
+            list,
+            arena,
+            marks,
+            result,
+            HaltFigures {
+                bound: self.frame_bound,
+                forecast: halted_forecast,
+                active,
+            },
+        )
     }
 
     fn still(&self) -> crate::still::Still {
@@ -3477,6 +4127,8 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.outline_made = false;
         self.scattering.forget_gpu();
         self.subsurface_made = false;
+        self.tone.forget_gpu();
+        self.tone_made = false;
         self.moving.forget_gpu();
         self.motion_made = false;
         self.motion.forget_gpu();
@@ -3492,6 +4144,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.tiles.forget_gpu();
         self.lines.forget_gpu();
         self.lights.forget_gpu();
+        self.depths.forget_gpu();
         self.lights_made = 0;
         self.skinning.forget_gpu();
         self.transparent.forget_gpu();
@@ -3504,6 +4157,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.pipelines.forget();
         // The add-on's buffers went with the old device, so the next frame makes them again.
         self.feature_capacity.fill(0);
+        self.feature_rows.reset_gpu();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
         self.settings.light_tables_mut().reset_gpu();
@@ -3529,6 +4183,7 @@ impl FrameBuilder for GpuDrivenRenderer {
     fn graph_dot(&mut self) -> String {
         self.settings.prepare_effect_maps();
         self.settings.mark_shown_views();
+        self.sync_drawn_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.dot()
@@ -3539,7 +4194,7 @@ impl FrameBuilder for GpuDrivenRenderer {
     }
 
     fn reads_last_frame(&self) -> bool {
-        self.graph.ssr_draws()
+        self.graph.ssr_draws() || self.graph.bounce_draws()
     }
 
     fn graph_message(&self, error: GraphError) -> String {
@@ -3556,35 +4211,83 @@ impl FrameBuilder for GpuDrivenRenderer {
     }
 }
 
-/// The add-on's count words of the feature-instance draws, copied into the main view's indirect
-/// draws. A feature's compute pass writes each word before the pass that draws it, so the frame
-/// copies the word again after every compute step.
+/// The mask of the camera's own view: the one place in the view list that the camera's layout
+/// draws for a page's camera.
+const fn camera_view_mask() -> u64 {
+    1 << ViewId::CAMERA.index()
+}
+
+/// The add-on's count words of the feature-instance draws, copied into the indirect draws of
+/// `views`, as a mask of their places in the view list. A feature's compute pass writes each word
+/// before the pass that draws it, so the frame copies the word again once every compute step has
+/// ended and before the first render step. The camera's own view and every shadow view take it, so
+/// an instance that the GPU counts draws and casts its shadow by that same count.
 fn copy_feature_counts(
     list: &mut DrawList,
     layout: &Layout,
     features: &crate::feature_instances::FeatureInstanceTable,
     radii: &[f32],
+    views: u64,
 ) -> Result<(), RecordError> {
-    if features.is_empty() {
+    if features.is_empty() || views == 0 {
         return Ok(());
     }
     for bucket in layout.buckets.iter().filter(|bucket| bucket.feature != 0) {
-        // A hidden object's entry keeps the reset's 0, so its draw draws nothing.
-        if layout::feature_hidden(radii, bucket) {
+        // A hidden object's entry keeps the reset's 0, so its draw draws nothing, and a draw whose
+        // feature is not ready copies nothing either.
+        if layout::feature_hidden(radii, bucket) || !features.is_ready(bucket.feature) {
             continue;
         }
-        for index in bucket.first_draw..bucket.first_draw + bucket.draws {
-            list.push(
-                Op::CopyBufferToBuffer,
-                &[
-                    ids::feature_count(bucket.feature),
-                    0,
-                    ids::indirect(ViewId::CAMERA),
-                    index * INDIRECT_BYTES + 4,
-                    4,
-                ],
-            )?;
+        let count = ids::feature_count(bucket.feature);
+        let mut places = views;
+        while places != 0 {
+            let place = places.trailing_zeros() as usize;
+            places &= places - 1;
+            let indirect = ids::indirect(ViewId::from_index(place));
+            for index in bucket.first_draw..bucket.first_draw + bucket.draws {
+                list.push(
+                    Op::CopyBufferToBuffer,
+                    &[count, 0, indirect, index * INDIRECT_BYTES + 4, 4],
+                )?;
+            }
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ids;
+    use crate::readback::RING as READ_RING;
+    use crate::sky_maps::LIGHT_RING;
+    use crate::view::{MAX_VIEW_IDS, ViewId};
+
+    #[test]
+    fn the_buffers_that_reads_land_in_keep_ids_of_their_own() {
+        // A read maps the buffer at its id with the region's bytes, so a view's shorter buffer at
+        // that id refuses the map. A frame with many passes makes many views, so the two ranges
+        // must not meet at any view.
+        let mut reads = Vec::new();
+        for ring in 0..READ_RING as u32 {
+            reads.push(ids::PASS_READ_BUFFERS + ring);
+            reads.push(ids::PICK_BUFFERS + ring);
+        }
+        for ring in 0..LIGHT_RING as u32 {
+            reads.push(ids::SKY_LIGHT_BUFFERS + ring);
+        }
+        for index in 0..MAX_VIEW_IDS {
+            let view = ViewId::from_index(index);
+            for id in [
+                ids::frame(view),
+                ids::cull_params(view),
+                ids::visible(view),
+                ids::indirect(view),
+            ] {
+                assert!(
+                    !reads.contains(&id),
+                    "view {index} takes the buffer id {id}, which a read maps"
+                );
+            }
+        }
+    }
 }

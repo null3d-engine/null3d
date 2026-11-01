@@ -243,11 +243,13 @@ describe('SketchQuality.lower', () => {
 			subsurfaceSamples: low.subsurfaceSamples,
 			ssrScale: low.ssrScale,
 			ssrSteps: low.ssrSteps,
+			bounceRays: low.bounceRays,
 			exposureMeter: low.exposureMeter,
 			fogSlices: low.fogSlices,
 			reflectionScale: low.reflectionScale,
 			probeSize: low.probeSize,
 			areaLights: low.areaLights,
+			lightFit: low.lightFit,
 			softParticles: low.softParticles,
 			lodThreshold: low.lodThreshold,
 			lodShadowFactor: low.lodShadowFactor,
@@ -260,10 +262,12 @@ describe('SketchQuality.lower', () => {
 			textureMemoryMiB: low.textureMemoryMiB,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
 			antialias: MEDIUM.antialias,
+			momentTransparency: MEDIUM.momentTransparency,
 			shadowCascades: MEDIUM.shadowCascades,
 			shadowMapSize: MEDIUM.shadowMapSize,
 			shadowTiles: MEDIUM.shadowTiles,
 			shadowTileSize: MEDIUM.shadowTileSize,
+			heroTileSize: MEDIUM.heroTileSize,
 			pointLightShadows: MEDIUM.pointLightShadows,
 			depthPrepass: MEDIUM.depthPrepass,
 			gpuOcclusion: MEDIUM.gpuOcclusion,
@@ -272,7 +276,7 @@ describe('SketchQuality.lower', () => {
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
 		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps,
 		// the reflections' size, the probes' size, the cap of area lights, soft particles, the levels
-		// of detail and parallax did.
+		// of detail, parallax and the fitted light clusters did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'textureMemoryMiB',
@@ -293,6 +297,7 @@ describe('SketchQuality.lower', () => {
 			'lodFade',
 			'physicalSky',
 			'parallax',
+			'lightFit',
 		]);
 	});
 });
@@ -324,7 +329,8 @@ describe('SketchQuality.setPreset', () => {
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
 		// Low and Medium share the highest render scale, following of moving casters, the far
 		// characters' update interval, cascade blend, software occlusion culling and governor, and on
-		// WebGPU the ambient occlusion scale, contact shadow steps and subsurface blur too.
+		// WebGPU the ambient occlusion scale, contact shadow steps and subsurface blur too. Both draw
+		// no bounce light.
 		const same = [
 			'maxRenderScale',
 			'followMovingCasters',
@@ -333,6 +339,7 @@ describe('SketchQuality.setPreset', () => {
 			'aoScale',
 			'contactShadowSteps',
 			'subsurfaceSamples',
+			'bounceRays',
 			'softwareOcclusion',
 			'governor',
 		];

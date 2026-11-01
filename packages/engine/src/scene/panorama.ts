@@ -13,7 +13,7 @@
 
 import type { EngineError } from '../errors/engine-error';
 import { onEngineStop } from '../shared/helper-workers';
-import { spawnWorker } from '../shared/worker-start';
+import { spawnWorker, watchWorkerError } from '../shared/worker-start';
 import type { PanoramaAnswer, PanoramaRequest } from '../workers/panorama-worker';
 import type { PanoramaFile } from './panorama-files';
 
@@ -67,10 +67,7 @@ class Reader {
 			error,
 		);
 		this.worker.onmessage = (event: MessageEvent<PanoramaAnswer>) => this.answer(event.data);
-		this.worker.onerror = (event) => {
-			event.preventDefault();
-			this.fail(event.message || 'its script did not load');
-		};
+		watchWorkerError(this.worker, (message) => this.fail(message || 'its script did not load'));
 	}
 
 	/** Reads a file, which moves to the worker, into a panorama at most `maxSide` on each side. */

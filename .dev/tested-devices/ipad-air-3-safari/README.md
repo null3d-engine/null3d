@@ -10,15 +10,14 @@
 
 ## Known issues
 
-The iPad's automation agent refused to start for a day: it reinstalled cleanly but timed out
-waiting for WebDriverAgent, through every replug and a reinstall with the Apple profile. It started
-on 23 October after the owner deployed an unrelated app from Xcode to the device. The cloud iPad
-Pro 13 stood in meanwhile.
+The iPad's automation agent can time out waiting for WebDriverAgent after a clean reinstall, through every replug and a reinstall with the Apple profile.
+Deploying an app from Xcode to the device lets it start again.
+The cloud iPad Pro 13 can stand in while the agent does not start.
 
-The iPad's Safari reports the page hidden when another app takes the screen, and a page that loses
-it stops its run with "the browser reports the page hidden". Nothing may touch the device while a
-timed row runs, and no other browser may raise a dialog: a Brave crash prompt once took the screen
-and failed a row.
+The iPad's Safari reports the page hidden when another app takes the screen.
+A page that loses the screen stops its run with "the browser reports the page hidden".
+Nothing may touch the device while a timed row runs, and no other browser may raise a dialog.
+A Brave crash prompt can take the screen and fail a row.
 
-This device is an Air-class machine with an A12 chip, so its figures sit well below the iPad Pro
-13's on the heavy scenes. Compare it with itself, not with the Pro.
+This device is an Air-class machine with an A12 chip, so its figures sit well below the iPad Pro 13's on the heavy scenes.
+Compare it with itself, not with the Pro.

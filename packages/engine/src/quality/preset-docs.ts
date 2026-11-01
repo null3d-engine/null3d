@@ -62,6 +62,7 @@ export const SETTING_DOCS: {
 		label: 'Anti-aliasing',
 		print: (value) => ({ none: 'none', fxaa: 'FXAA', msaa: 'MSAA 4x' })[value],
 	},
+	momentTransparency: { label: 'Moment transparency', print: yesNo },
 	shadowCascades: { label: 'Shadow cascades' },
 	shadowMapSize: { label: 'Shadow map size in texels' },
 	shadowFilter: { label: 'Shadow filter', print: (value) => `${value} x ${value} texels` },
@@ -74,6 +75,7 @@ export const SETTING_DOCS: {
 	},
 	shadowTiles: { label: 'Spot and point light shadow tiles' },
 	shadowTileSize: { label: 'Shadow tile size in texels' },
+	heroTileSize: { label: 'Hero shadow tile size in texels' },
 	pointLightShadows: { label: 'Point light shadows', print: yesNo },
 	bloomSize: { label: "Bloom's largest level in texels on the short side" },
 	aoScale: {
@@ -99,6 +101,10 @@ export const SETTING_DOCS: {
 			({ 0: 'off', 0.25: 'quarter resolution', 0.5: 'half resolution' })[Number(value)] ?? '',
 	},
 	ssrSteps: { label: 'Screen-space reflection steps per ray' },
+	bounceRays: {
+		label: 'Screen-space bounce light',
+		print: (value) => (Number(value) > 0 ? `${value} rays each way` : 'off'),
+	},
 	exposureMeter: {
 		label: "Automatic exposure's meter",
 		print: (value) =>
@@ -120,6 +126,7 @@ export const SETTING_DOCS: {
 		print: (value) => `${value} x ${value}`,
 	},
 	areaLights: { label: 'Area lights per frame' },
+	lightFit: { label: 'Depth-fitted light clusters (WebGPU)', print: yesNo },
 	lodThreshold: {
 		label: 'Level of detail threshold',
 		print: (value) => (Number(value) > 0 ? `${value} px` : 'base levels only'),

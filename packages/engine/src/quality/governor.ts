@@ -1,9 +1,11 @@
 // The frame-budget governor. When frames take too long, it lowers the live settings one step at a
-// time, in a fixed order: the render scale first, then the threshold of the levels of detail, then
-// how often far shadow cascades draw, then the shadow filter, then bloom's base, then ambient
-// occlusion's scale, then the steps of the sun's contact shadows, then the update interval of far
-// characters' poses, then the volumetric fog's slices. When the frames have time to spare again, it
-// raises them in the reverse order. It never changes a setting that is fixed while a preset runs.
+// time, in a fixed order: a step of a sketch's budgets and a step of the render scale in turn, a
+// budget's step first, then the threshold of the levels of detail, then how often far shadow
+// cascades draw, then the shadow filter, then bloom's base, then ambient occlusion's scale, then the
+// steps of the sun's contact shadows, then the update interval of far characters' poses, then the
+// volumetric fog's slices. Once the render scale is at its floor, the budgets' remaining steps come
+// before the threshold's. When the frames have time to spare again, it raises them in the reverse
+// order. It never changes a setting that is fixed while a preset runs.
 //
 // A detail step happens only while the scene draws a mesh with levels of detail: each doubles the
 // threshold in pixels under which a coarser level draws, up to four times the setting's. A level's
@@ -33,8 +35,13 @@
 // quick. A step down is on trial too: when the first second judged after it came clearly slower
 // than the second that caused it, or no second could be judged in the time a trial lasts, the
 // governor takes the step back and keeps that setting closed for a wait that doubles with each
-// failure. A step that changes nothing stays. A shadow step happens only where the scene has a
-// light that casts shadows, and only where the step changes what the frame draws: the far cascades
+// failure. A step that changes nothing stays. A gap between frames is a pause, and starts the
+// windows again, unless a frame was drawing through it: a frame that the GPU or the thread that
+// draws held for `GAP_MS` or more counts as a frame of its length and fills the windows it spans,
+// so a page that draws a few frames a second is judged like any other. A device that draws on the
+// CPU keeps the whole render scale once a step below it failed: its two-step upscale costs about
+// what the smaller scene saves (D-237). A shadow step happens only where the scene has a light
+// that casts shadows, and only where the step changes what the frame draws: the far cascades
 // need a directional light with two cascades or more, and the filter any light that casts shadows.
 // The far cascades' step also needs far cascades that draw in every frame while moving casters
 // touch them: where they keep their turns instead, a longer interval would leave moving shadows
@@ -58,37 +65,14 @@ import {
 	RingSums,
 	SUM_BUSY_MS,
 	SUM_INTERVAL_MS,
+	SUM_LONGEST_BUSY_MS,
 	SUM_RECORDS,
 } from '../shared/metrics';
 import * as Role from '../shared/role';
 import { HELD_PERCENT } from '../shared/stats';
+import { BUDGET_STEPS, FULL_SCALE, SCALE_STEP, thousandths } from './budget';
 import { CHECK_MAX_FPS, checkTargetFps } from './check';
 import { QUALITY_SETTINGS } from './presets';
-
-/** The render scale of the whole canvas, in thousandths. */
-export const FULL_SCALE = 1000;
-/** How far one step moves the render scale, in thousandths. */
-export const SCALE_STEP = 50;
-
-/** The render scale in thousandths of a scale from 0 to 1, rounded, from 1 to the whole canvas. */
-export function thousandths(scale: number): number {
-	return Math.min(FULL_SCALE, Math.max(1, Math.round(scale * FULL_SCALE)));
-}
-
-/** How far one step moves the budgets' scale, in thousandths. */
-export const BUDGET_STEP = 250;
-/** The budgets' steps from the full scale down to none. */
-export const BUDGET_STEPS = FULL_SCALE / BUDGET_STEP;
-
-/** The budgets' steps from the full scale down to `min`, a scale from 0 to 1. */
-export function budgetSteps(min: number): number {
-	return Math.ceil((FULL_SCALE - Math.round(min * FULL_SCALE)) / BUDGET_STEP);
-}
-
-/** A budget's scale from 0 to 1 after `level` steps of the budgets, and at least `min`. */
-export function budgetScale(level: number, min: number): number {
-	return Math.max(min, (FULL_SCALE - level * BUDGET_STEP) / FULL_SCALE);
-}
 
 /** The longest interval between two draws of a far shadow cascade, in frames. */
 export const LONGEST_FAR_INTERVAL = QUALITY_SETTINGS.farCascadeInterval.values.max;
@@ -160,8 +144,8 @@ export const LONGEST_RAISE_AFTER_MS = 80_000;
 export const SETTLE_MS = 1000;
 /**
  * How long a step up is on trial, in ms: a step down from its setting within this time counts as
- * its failure. On the iPad, heat made a step up that held the target at first fail 9 to 15 seconds
- * later.
+ * its failure. On the iPad, heat makes a step up that holds the target at first fail 9 to 15
+ * seconds later.
  */
 export const FAILED_RAISE_MS = 30_000;
 /**
@@ -169,7 +153,7 @@ export const FAILED_RAISE_MS = 30_000;
  * frame time of the second that caused it or more, the step made the frames slower, and the
  * governor takes it back. A step that changes nothing stays: a step that saves little shows no gain
  * within one second's noise, and the walk down passes through such steps. On CI's software GPU the
- * step below the whole render scale turned on the two-step upscale, and the frames came about seven
+ * step below the whole render scale turns on the two-step upscale, and the frames come about seven
  * times slower (D-237).
  */
 export const LOWER_LOSS_PERCENT = 110;
@@ -183,8 +167,15 @@ export const LOWER_TRIAL_MS = SETTLE_MS + 3 * DROP_AFTER_MS;
 export const FLOOR_AFTER_MS = 10_000;
 /** How long after the first frame the governor takes no step, in ms. */
 export const GRACE_MS = 2000;
-/** A gap between frames this long, as after a pause, starts the windows again, in ms. */
+/**
+ * A gap between frames this long, as after a pause, starts the windows again, in ms. A gap that a
+ * frame filled was no pause: a frame that the GPU or the thread that draws held for this long or
+ * more counts as a frame of its length, and fills the windows it spans (D-237). Its busy time is
+ * this share of the gap or more.
+ */
 export const GAP_MS = 500;
+/** The share of a gap, in percent, that the busiest frame of it must fill to count as a held frame. */
+export const HELD_FRAME_PERCENT = 50;
 /** A GPU delay of this percentage of the budget or more means that frames queue on the GPU. */
 export const QUEUED_PERCENT = 200;
 /**
@@ -241,7 +232,9 @@ const LOWERED_AT = 6;
 const LOWERED_FRAME_US = 7;
 /** The mean frame time of the second that the last window completed, in µs, or -1 before one. */
 const SECOND_US = 8;
-const STATE_SIZE = 9;
+/** 1 when the step down on trial lowered the render scale, 0 otherwise. */
+const LOWERED_SCALE_STEP = 9;
+const STATE_SIZE = 10;
 
 /**
  * The governor's levels: 0 at the highest scale with the settings as set, and one more for each
@@ -314,6 +307,14 @@ export class Governor {
 	stepChanges = 0;
 	/** False while the governor is off: the scale stays at the highest and the settings as set. */
 	on = true;
+	/**
+	 * True when the device draws on the CPU. Such a device gains little from drawing below the whole
+	 * canvas: its upscale costs about as much as the pixels that the scale saves. So a step below the
+	 * whole scale that does not pay closes the render scale for the session (D-237).
+	 */
+	private software = false;
+	/** True once a failed step below the whole scale closed the render scale, on a software device. */
+	private scaleClosed = false;
 	/** The figures of the window to judge, by the `WINDOW_END` to `BUDGET_US` indices. */
 	readonly window = new Int32Array(BUDGET_US + 1);
 	private readonly state = new Int32Array(STATE_SIZE);
@@ -496,6 +497,18 @@ export class Governor {
 	}
 
 	/**
+	 * Says whether the device draws on the CPU, which its reported name tells (D-174, D-237). A
+	 * software device whose first step below the whole render scale did not pay keeps the whole
+	 * scale: its two-step upscale costs about what the smaller scene saves, so every step down into
+	 * it would lose the frames that the trial then has to watch.
+	 */
+	setSoftware(software: boolean): void {
+		if (software === this.software) return;
+		this.software = software;
+		this.scaleClosed = false;
+	}
+
+	/**
 	 * The steps past the render scale that the scene's levels of detail, shadows, bloom, ambient
 	 * occlusion, screen-space reflections, contact shadows, the far characters' update interval,
 	 * the volumetric fog's slices and the settings allow.
@@ -529,15 +542,51 @@ export class Governor {
 	}
 
 	/**
-	 * A gap of `GAP_MS` or more between frames at `now`, a time in whole ms: the windows start
-	 * again. A step down still on trial that has had no judged second for `LOWER_TRIAL_MS` fails
-	 * here, since its frames came too slowly to fill a window. A pause in play during the trial
-	 * fails it too; the floor's first wait is short, so the governor tries the step again soon.
+	 * A gap of `GAP_MS` or more between frames at `now`, a time in whole ms. `heldUs` is the length
+	 * of the frame behind the gap, in µs, when a frame was drawing through it, or 0 for a pause.
+	 * `budgetUs` is the frame budget, which a held frame's windows are judged by.
+	 *
+	 * A pause starts the windows again. A step down still on trial that has had no judged second for
+	 * `LOWER_TRIAL_MS` fails here, since its frames came too slowly to fill a window. A pause in play
+	 * during the trial fails it too; the floor's first wait is short, so the governor tries the step
+	 * again soon.
+	 *
+	 * A held frame counts as a frame of its length. It fills the windows it spans, so one 3 s frame
+	 * makes a whole second of windows that missed, and a page that draws a few frames a second is
+	 * judged like any other (D-237).
 	 */
-	gap(now: number): void {
-		const lowered = this.state[LOWERED_AT] as number;
-		if (this.on && lowered >= 0 && now - lowered > LOWER_TRIAL_MS) this.undoLower(now);
-		this.restart(now);
+	gap(now: number, heldUs = 0, budgetUs = 0): void {
+		const { state } = this;
+		const lowered = state[LOWERED_AT] as number;
+		if (this.on && lowered >= 0) {
+			// A step down is on trial. A held frame that came clearly slower than the second before
+			// the step fails the trial at once, and no further step follows from it.
+			if (heldUs > 0) {
+				if (heldUs * 100 >= (state[LOWERED_FRAME_US] as number) * LOWER_LOSS_PERCENT) {
+					this.undoLower(now);
+					return;
+				}
+			} else if (now - lowered > LOWER_TRIAL_MS) {
+				this.undoLower(now);
+				return;
+			}
+		}
+		if (heldUs > 0 && budgetUs > 0) this.fillWindows(now, heldUs, budgetUs);
+		else this.restart(now);
+	}
+
+	/**
+	 * Judges a held frame of `heldUs` µs as the windows it spans, up to the second that a step
+	 * judges. A step restarts the windows, so the rest of a long frame is left to the new setting.
+	 */
+	private fillWindows(now: number, heldUs: number, budgetUs: number): void {
+		const { window } = this;
+		const spans = Math.min(DROP_WINDOWS, Math.max(1, Math.ceil(heldUs / (WINDOW_MS * 1000))));
+		window[WINDOW_END] = now;
+		window[FRAME_US] = heldUs;
+		window[GPU_DELAY_US] = heldUs;
+		window[BUDGET_US] = budgetUs;
+		for (let k = 0; k < spans && this.on; k++) this.judge();
 	}
 
 	/**
@@ -564,6 +613,8 @@ export class Governor {
 		const budget = window[BUDGET_US] as number;
 		const frame = window[FRAME_US] as number;
 		const delay = window[GPU_DELAY_US] as number;
+		// The window joins the last second before the trial reads that second: a held frame fills
+		// the windows it spans, and the last of them completes the second that judges a trial.
 		const missed = this.missed(frame, delay, budget);
 		if (this.lowerFailed(now)) {
 			this.undoLower(now);
@@ -649,14 +700,16 @@ export class Governor {
 	private lower(now: number): void {
 		const left = this.level();
 		const { budgetLevel, state } = this;
+		const scale = this.scale;
 		let moved = true;
 		if ((this.floorUntil[Math.min(LEVELS - 1, left + 1)] as number) > now) moved = false;
 		else if (
 			budgetLevel < this.budgetSteps &&
-			(budgetLevel <= this.scaleSteps() || this.scale <= this.low)
+			(budgetLevel <= this.scaleSteps() || this.scale <= this.low || this.scaleClosed)
 		)
 			this.budgetLevel = budgetLevel + 1;
-		else if (this.scale > this.low) this.scale = Math.max(this.low, this.scale - SCALE_STEP);
+		else if (this.scale > this.low && !this.scaleClosed)
+			this.scale = Math.max(this.low, this.scale - SCALE_STEP);
 		else if (this.steps < this.maxSteps) this.moveSteps(1);
 		else moved = false;
 		if (moved) {
@@ -669,6 +722,7 @@ export class Governor {
 			raisedAt[left] = -1;
 			state[LOWERED_AT] = now;
 			state[LOWERED_FRAME_US] = state[SECOND_US] as number;
+			state[LOWERED_SCALE_STEP] = this.scale < scale ? 1 : 0;
 		}
 		this.settle(moved, now);
 	}
@@ -696,15 +750,17 @@ export class Governor {
 	/**
 	 * Takes back the step down on trial, and keeps the governor from stepping into its level again
 	 * until a wait has passed. The wait doubles with each failed step into that level, up to the
-	 * longest wait of a step up.
+	 * longest wait of a step up. On a software device, a failed step below the whole render scale
+	 * closes the render scale for the session (D-237).
 	 */
 	private undoLower(now: number): void {
 		const level = this.level();
-		const { floorUntil, floorAfter } = this;
+		const { floorUntil, floorAfter, state } = this;
+		if (this.software && (state[LOWERED_SCALE_STEP] as number) !== 0) this.scaleClosed = true;
 		const wait = floorAfter[level] as number;
 		floorUntil[level] = now + wait;
 		floorAfter[level] = Math.min(LONGEST_RAISE_AFTER_MS, wait * 2);
-		this.state[LOWERED_AT] = -1;
+		state[LOWERED_AT] = -1;
 		this.stepUp();
 		this.settle(true, now);
 	}
@@ -748,6 +804,7 @@ export class Governor {
 		this.floorUntil.fill(-1);
 		this.floorAfter.fill(FLOOR_AFTER_MS);
 		this.state[LOWERED_AT] = -1;
+		this.state[LOWERED_SCALE_STEP] = 0;
 	}
 
 	/**
@@ -910,6 +967,8 @@ export class GovernorLoop {
 	private readonly refresh: RefreshRate;
 	/** The highest frame rate the governor aims for, in hertz, as the preset check's target allows. */
 	private readonly maxTargetHz: number;
+	/** True once a completion record has come: the engine's first frames leave none. */
+	private completionsSeen = false;
 	/**
 	 * The window's start and the last frame's time, in ms, or -1 before the first frame, then the
 	 * origin of the governor's clock on the frame loop's clock.
@@ -935,9 +994,10 @@ export class GovernorLoop {
 	/**
 	 * Takes in the frames since the last call, and judges them at the end of each window. The
 	 * frame loop writes the frame's clock reading into `now` first. While the governor is off, it
-	 * does nothing.
+	 * does nothing. `resumed` says that the page showed again since the last call, which explains
+	 * a long gap and is no frame of the page's.
 	 */
-	frame(): void {
+	frame(resumed = false): void {
 		const { times, presented, completed, governor } = this;
 		// Off, the governor judges nothing. Turned on again, it starts as at the first frame.
 		if (!governor.on) {
@@ -947,13 +1007,18 @@ export class GovernorLoop {
 		const now = this.now[0] as number;
 		presented.add();
 		completed.add();
+		if (!this.completionsSeen && (completed.sums[SUM_RECORDS] as number) > 0)
+			this.completionsSeen = true;
 		const last = times[1] as number;
 		times[1] = now;
 		if (last < 0) governor.restart(this.clock(now) + GRACE_MS);
 		else if (now - last >= GAP_MS) {
-			// The first frame after a pause, or after a frame that took as long: the windows start
-			// again from here.
-			governor.gap(this.clock(now));
+			// The first frame after a pause, or after a frame that took as long. A pause starts the
+			// windows again; a frame that was drawing through the gap counts as a frame of its
+			// length, which the governor judges (D-237).
+			const gap = now - last;
+			const held = this.heldFrame(gap, resumed);
+			governor.gap(this.clock(now), held ? Math.round(gap * 1000) : 0, this.budgetUs());
 		} else {
 			if (now - (times[0] as number) < WINDOW_MS) return;
 			const casters = this.scene.shadowCasters();
@@ -977,9 +1042,7 @@ export class GovernorLoop {
 				window[WINDOW_END] = this.clock(now);
 				window[FRAME_US] = Math.round(Math.max(shownMs, doneMs) * 1000);
 				window[GPU_DELAY_US] = Math.round(delayMs * 1000);
-				window[BUDGET_US] = Math.round(
-					1_000_000 / checkTargetFps(this.refresh.hz, this.maxTargetHz),
-				);
+				window[BUDGET_US] = this.budgetUs();
 				governor.judge();
 			}
 		}
@@ -987,6 +1050,38 @@ export class GovernorLoop {
 		times[0] = now;
 		presented.clear();
 		completed.clear();
+	}
+
+	/**
+	 * True when a frame was drawing through a gap of `gapMs` between two frames, rather than the
+	 * page pausing. The longest busy time of the frames that finished since the last call is a
+	 * frame's own length when the GPU or the thread that draws held it, and a frame's usual time
+	 * after a pause. A frame that a sketch on a thread of its own held is a pause here: the scale
+	 * would not lighten the sketch's own work.
+	 */
+	private heldFrame(gapMs: number, resumed: boolean): boolean {
+		// A resume of the page explains the gap, and is no frame of the page's.
+		if (resumed) return false;
+		const longest = Math.max(
+			this.presented.sums[SUM_LONGEST_BUSY_MS] as number,
+			this.completed.sums[SUM_LONGEST_BUSY_MS] as number,
+		);
+		if (longest * 100 >= gapMs * HELD_FRAME_PERCENT) return true;
+		// A frame that the GPU still holds has no busy time yet: a completion is recorded only when
+		// the GPU finishes the frame, and a frame held far longer than the recent ones is given up
+		// without one. So a frame that the thread that draws presented since the last call, and
+		// that no completion has followed, was drawing through the whole gap.
+		// The engine's first frames leave no completion record, so the absence says nothing until
+		// one has come.
+		return (
+			this.completionsSeen &&
+			(this.presented.sums[SUM_RECORDS] as number) > (this.completed.sums[SUM_RECORDS] as number)
+		);
+	}
+
+	/** The frame budget, in µs, from the refresh rate that the thread that draws measured. */
+	private budgetUs(): number {
+		return Math.round(1_000_000 / checkTargetFps(this.refresh.hz, this.maxTargetHz));
 	}
 
 	/**

@@ -18,8 +18,9 @@ import { onEngineStop } from './helper-workers';
 import { TaskFailure } from './task-failure';
 import { type JobTaskHost, jobTasks, taskTakers } from './task-host';
 import { moduleKey } from './task-modules';
+import { taskEnded, taskStarted } from './task-pending';
 import { compileWasm, type WasmError } from './wasm';
-import { bootstrapFailure, spawnWorker } from './worker-start';
+import { bootstrapFailure, spawnWorker, watchWorkerError } from './worker-start';
 
 /**
  * How long the first task waits for the page's word on which job workers run, in ms. The word comes
@@ -94,6 +95,8 @@ interface Runner {
 	readonly modules: Set<string>;
 	/** Its tasks that have not answered. */
 	running: number;
+	/** The request that the runner sends, which each call refills rather than making another. */
+	request?: TaskRequest;
 }
 
 /** A task that waits for its answer. */
@@ -103,9 +106,20 @@ interface Waiting {
 	runner: Runner;
 }
 
+/** The task's compiled modules, which a task without WebAssembly matches. */
+const NO_MODULES: readonly WebAssembly.Module[] = [];
+/** A waiting record's settle function before a task fills it. */
+const NO_SETTLE = (): void => {};
+
+/** The tasks that this thread has run, which the allocation check reads to judge one call. */
+let taskCalls = 0;
+(globalThis as { __null3dTaskCalls?: () => number }).__null3dTaskCalls = () => taskCalls;
+
 /** The workers that run this thread's tasks, and the tasks that wait for them. */
 class Runners {
 	private readonly waiting = new Map<number, Waiting>();
+	/** The records of answered tasks, which a later task fills again instead of making one. */
+	private readonly free: Waiting[] = [];
 	private next = 0;
 	/** The job workers that take tasks, or the task worker once it has started. */
 	private runners: Runner[] | undefined;
@@ -125,45 +139,108 @@ class Runners {
 		transfer: Transferable[],
 		error: WasmError,
 	): Promise<unknown> {
-		const modules = await Promise.all((task.wasm ?? []).map((file) => compileOnce(file, error)));
-		if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
-		await this.starting();
-		if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
-		const runner = this.leastBusy(error);
-		const id = ++this.next;
-		const request: TaskRequest = { id, task: task.name, input };
-		const script = task.script?.href;
-		if (script) request.script = script;
-		const newModules = (task.wasm ?? []).flatMap((file, k) =>
-			runner.modules.has(moduleKey(script, file.name))
-				? []
-				: [[moduleKey(script, file.name), modules[k]] as [string, WebAssembly.Module]],
-		);
-		if (newModules.length > 0) request.modules = newModules;
-		for (const [key] of newModules) runner.modules.add(key);
-		runner.running++;
-		return new Promise((resolve, reject) => {
-			this.waiting.set(id, { resolve, reject, runner });
-			runner.send(request, transfer);
-		});
+		const files = task.wasm;
+		// One WebAssembly file is the usual case, and it needs no array, no map and no Promise.all.
+		const alone = files?.length === 1 ? files[0] : undefined;
+		const aloneModule = alone === undefined ? undefined : await compileOnce(alone, error);
+		const modules =
+			alone !== undefined
+				? NO_MODULES
+				: files && files.length > 0
+					? await Promise.all(files.map((file) => compileOnce(file, error)))
+					: NO_MODULES;
+		// The files are compiled above, so a file that fails to load throws before the count starts.
+		// The count starts here, where the task is about to reach a worker, and `answer` or `end`
+		// clears it: hold mode then knows when every task that the sketch asked for has written
+		// what it draws. A failure before the request leaves clears the count here, as the count
+		// must fall however that call ends.
+		taskStarted();
+		try {
+			if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
+			const starting = this.starting();
+			if (starting) await starting;
+			if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
+			const runner = this.leastBusy(error);
+			const id = ++this.next;
+			let request = runner.request;
+			if (!request) {
+				request = { id: 0, task: '', input: undefined };
+				runner.request = request;
+			}
+			request.id = id;
+			request.task = task.name;
+			request.input = input;
+			const script = task.script?.href;
+			request.script = script;
+			let newModules: [string, WebAssembly.Module][] | undefined;
+			if (alone !== undefined) {
+				const key = moduleKey(script, alone.name);
+				if (!runner.modules.has(key)) {
+					newModules = [[key, aloneModule as WebAssembly.Module]];
+					runner.modules.add(key);
+				}
+			} else if (files && files.length > 0) {
+				const added = files.flatMap((file, k) =>
+					runner.modules.has(moduleKey(script, file.name))
+						? []
+						: [[moduleKey(script, file.name), modules[k]] as [string, WebAssembly.Module]],
+				);
+				if (added.length > 0) {
+					newModules = added;
+					for (const [key] of added) runner.modules.add(key);
+				}
+			}
+			request.modules = newModules;
+			runner.running++;
+			taskCalls++;
+			const waiting = this.free.pop() ?? { resolve: NO_SETTLE, reject: NO_SETTLE, runner };
+			return new Promise((resolve, reject) => {
+				waiting.resolve = resolve;
+				waiting.reject = reject;
+				waiting.runner = runner;
+				this.waiting.set(id, waiting);
+				try {
+					runner.send(request, transfer);
+				} catch (thrown) {
+					// The request never left, so no answer comes: settle its record and its count here.
+					this.waiting.delete(id);
+					waiting.resolve = NO_SETTLE;
+					waiting.reject = NO_SETTLE;
+					this.free.push(waiting);
+					runner.running--;
+					taskEnded();
+					reject(thrown instanceof Error ? thrown : new Error(String(thrown)));
+				}
+			});
+		} catch (failure) {
+			// Nothing reached a worker, so no answer can clear the count that this call raised.
+			taskEnded();
+			throw failure;
+		}
 	}
 
 	/**
 	 * Settles which job workers this thread's tasks go to, before the first task picks one: it asks
 	 * the page for the first job workers, which start as the thread asks for them, and waits for the
 	 * page's word on which of them run. Waiting keeps a task from going to a job worker that did not
-	 * start, which would never answer. Nothing waits once the thread's runners are settled.
+	 * start, which would never answer. Nothing waits once the thread's runners are settled, and then
+	 * this answers nothing, so a call in every frame allocates no promise for it.
 	 */
-	private async starting(): Promise<void> {
+	private starting(): Promise<void> | undefined {
 		// A later engine on this thread brings job workers of its own.
 		const host = jobTasks();
 		if (host !== this.host) {
 			this.host = host;
 			this.runners = undefined;
 		}
-		if (this.runners || !host) return;
+		if (this.runners || !host) return undefined;
 		host.want(2);
-		if (host.running) return;
+		if (host.running) return undefined;
+		return this.announce(host);
+	}
+
+	/** Waits for the page's word on which job workers run. */
+	private async announce(host: JobTaskHost): Promise<void> {
 		const deadline = performance.now() + ANNOUNCE_WAIT_MS;
 		while (host.running === undefined && !this.ended && performance.now() < deadline)
 			await new Promise((resolve) => setTimeout(resolve, ANNOUNCE_POLL_MS));
@@ -171,8 +248,13 @@ class Runners {
 
 	private leastBusy(error: WasmError): Runner {
 		this.runners ??= this.start(error);
-		let best = this.runners[0] as Runner;
-		for (const runner of this.runners) if (runner.running < best.running) best = runner;
+		const runners = this.runners;
+		let best = runners[0] as Runner;
+		// An index walk, because a `for...of` makes an iterator result for each of these runners.
+		for (let i = 1; i < runners.length; i++) {
+			const runner = runners[i] as Runner;
+			if (runner.running < best.running) best = runner;
+		}
 		// While every job worker has a task, the tasks ask for twice the job workers.
 		if (best.running > 0 && this.host) best = this.addJobRunners(this.host) ?? best;
 		return best;
@@ -230,11 +312,10 @@ class Runners {
 		);
 		this.worker = worker;
 		worker.onmessage = (event: MessageEvent<TaskAnswer>) => this.answer(event.data);
-		worker.onerror = (event) => {
-			event.preventDefault();
+		watchWorkerError(worker, (message) => {
 			worker.terminate();
-			this.fail(event.message || 'its script did not load', error);
-		};
+			this.fail(message || 'its script did not load', error);
+		});
 		return [
 			{
 				modules: new Set(),
@@ -248,10 +329,15 @@ class Runners {
 		const waiting = this.waiting.get(answer.id);
 		if (!waiting) return;
 		this.waiting.delete(answer.id);
+		taskEnded();
 		waiting.runner.running--;
 		if ('failed' in answer)
 			waiting.reject(new TaskFailure(answer.failed.stage, answer.failed.message));
 		else waiting.resolve(answer.output);
+		// The record goes back for a later task, so a call makes no record of its own.
+		waiting.resolve = NO_SETTLE;
+		waiting.reject = NO_SETTLE;
+		this.free.push(waiting);
 	}
 
 	/**
@@ -286,7 +372,10 @@ class Runners {
 	/** Forgets these runners, so a later task starts afresh, and fails every waiting task. */
 	private end(reason: Error): void {
 		this.stopped();
-		for (const { reject } of this.waiting.values()) reject(reason);
+		for (const { reject } of this.waiting.values()) {
+			taskEnded();
+			reject(reason);
+		}
 		this.waiting.clear();
 	}
 }

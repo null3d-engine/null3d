@@ -3,23 +3,27 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Glob } from 'bun';
 import {
-	BUDGETS,
-	PAGE_SWITCHES,
-	placeBudget,
-	SKY_ENVIRONMENT_BUDGETS,
-	STATS_BUDGETS,
-	SWIFTSHADER_BUDGETS,
-} from '../allocation.ts';
-import {
 	burstBytes,
 	byPlace,
+	countIn,
 	type ProfileNode,
 	type ProfileSample,
 	profilePlaces,
 	type Sample,
 	steadyPlaces,
 	totalSize,
-} from './allocation';
+} from '../../packages/cli/src/heap-profile.js';
+import {
+	BUDGETS,
+	CANVAS_BUDGETS,
+	COUNTED_IN_CALLER,
+	DAY_BUDGETS,
+	PAGE_SWITCHES,
+	placeBudget,
+	SKY_ENVIRONMENT_BUDGETS,
+	STATS_BUDGETS,
+	SWIFTSHADER_BUDGETS,
+} from '../allocation.ts';
 
 let nextId = 1;
 function node(functionName: string, url: string, selfSize: number, children: ProfileNode[] = []) {
@@ -72,6 +76,30 @@ describe('allocation places', () => {
 			['draw render/loop.ts', { perFrame: 36, most: 40, callers: '' }],
 			['frame render/loop.ts', { perFrame: 0, most: 120, callers: '' }],
 		]);
+	});
+
+	test("count a callee in its caller, so the inlining's split between them cannot move bytes", () => {
+		const sample = (entries: [string, number][]): Sample => ({
+			frames: 100,
+			places: new Map(
+				entries.map(([name, bytes]) => [name, { bytes, burst: 0, callers: '', largest: bytes }]),
+			),
+		});
+		const into = new Map([['view backend.ts', 'replay backend.ts']]);
+		// The same 120 bytes per frame, split two ways by the browser's inlining.
+		const steady = steadyPlaces(
+			countIn(
+				[
+					sample([
+						['replay backend.ts', 7_000],
+						['view backend.ts', 5_000],
+					]),
+					sample([['replay backend.ts', 12_000]]),
+				],
+				into,
+			),
+		);
+		expect(steady).toEqual([['replay backend.ts', { perFrame: 120, most: 120, callers: '' }]]);
 	});
 });
 
@@ -154,11 +182,12 @@ describe('budgets', () => {
 		const real = placeBudget('render-worker', frame, { swiftShader: false });
 		expect(real).toBe(192);
 		expect(444.4 > real).toBe(true);
-		// The replay keeps its budget, and each pass adds the browser's encoder to it.
+		// The replay keeps its budget, with the canvas texture and its view, and each pass adds the
+		// browser's encoder to it.
 		const replay = 'replay webgpu/backend.ts';
-		expect(placeBudget('render-worker', replay, { swiftShader: true })).toBe(320);
-		expect(placeBudget('render-worker', replay, { swiftShader: true, extra: 32 })).toBe(352);
-		expect(380 > placeBudget('render-worker', replay, { swiftShader: true })).toBe(true);
+		expect(placeBudget('render-worker', replay, { swiftShader: true })).toBe(368);
+		expect(placeBudget('render-worker', replay, { swiftShader: true, extra: 32 })).toBe(400);
+		expect(428 > placeBudget('render-worker', replay, { swiftShader: true })).toBe(true);
 	});
 
 	test('name a function that its file still defines, so a moved function keeps its budget', () => {
@@ -170,21 +199,33 @@ describe('budgets', () => {
 			SWIFTSHADER_BUDGETS,
 			...PAGE_SWITCHES.flatMap(({ budgets }) => (budgets ? [budgets] : [])),
 		];
-		for (const table of tables) {
-			for (const places of Object.values(table)) {
-				for (const place of Object.keys(places ?? {})) {
-					const [name, file] = place.split(' ');
-					if (!name || !file || file === '(built-in)') continue;
-					const found = sources
-						.filter((path) => path.endsWith(`/${file}`))
-						.some(
-							(path) =>
-								name === '(anonymous)' || defines(readFileSync(join(root, path), 'utf8'), name),
-						);
-					if (!found) stale.push(place);
-				}
-			}
+		const places = [
+			...tables.flatMap((table) =>
+				Object.values(table).flatMap((byWorker) => Object.keys(byWorker ?? {})),
+			),
+			...COUNTED_IN_CALLER.keys(),
+		];
+		for (const place of places) {
+			const [name, file] = place.split(' ');
+			if (!name || !file || file === '(built-in)') continue;
+			const found = sources
+				.filter((path) => path.endsWith(`/${file}`))
+				.some(
+					(path) => name === '(anonymous)' || defines(readFileSync(join(root, path), 'utf8'), name),
+				);
+			if (!found) stale.push(place);
 		}
 		expect(stale).toEqual([]);
+	});
+
+	test('count a place in a caller whose budget holds it', () => {
+		const tables = [BUDGETS, CANVAS_BUDGETS, DAY_BUDGETS];
+		const budgeted = new Set(
+			tables.flatMap((table) =>
+				Object.values(table).flatMap((byWorker) => Object.keys(byWorker ?? {})),
+			),
+		);
+		const unbudgeted = [...COUNTED_IN_CALLER.values()].filter((place) => !budgeted.has(place));
+		expect(unbudgeted).toEqual([]);
 	});
 });

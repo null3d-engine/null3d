@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { encode } from 'fast-png';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { main } from '../cli.js';
 import { decodePng, writePng } from '../png.js';
 import { decodeTga, imageType, readHeights } from './image-files.js';
@@ -11,7 +12,7 @@ import { parseBumpArgs } from './normal-from-bump.js';
 import { parsePackArgs } from './pack-orm.js';
 
 // UASTC encodes take a second or more on a busy machine.
-setDefaultTimeout(60_000);
+setDefaultTimeout(scaledBudget(60_000));
 
 const scratch = mkdtempSync(join(tmpdir(), 'null3d-maps-'));
 const log = spyOn(console, 'log').mockImplementation(() => {});

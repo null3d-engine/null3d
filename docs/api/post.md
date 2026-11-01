@@ -33,7 +33,7 @@ export default defineSketch(({ post }) => {
 - `'aces'` serves ports of three.js scenes that set `ACESFilmicToneMapping`. It shifts the hues of bright colors, so new scenes use AgX.
 - `'none'` scales the color by the exposure and clips it at white, as three.js's `LinearToneMapping` does.
 - three.js uses no tone mapping by default. A port of a three.js scene without tone mapping sets `toneMapping: 'none'`.
-- A custom tone curve is WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, compiled by the null3D Vite plugin. [Custom effects](#custom-effects) shows one.
+- A custom tone curve is WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, compiled by the null3D Vite plugin. [Custom effects](#custom-effects) shows one. `@null3d/three-compat` gives `ReinhardToneMapping` and `CineonToneMapping` as the `reinhard` and `cineon` curves ([three.js compatibility](three-compat.md)).
 - The settings apply to the whole scene, the background included, from the next frame on. A setting that a call leaves out keeps its value.
 
 ## Lights in real units
@@ -299,6 +299,7 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 - A setting that a call leaves out keeps its value, also while outlines are off. `post.set` allocates nothing. So a sketch can change the outline's color or width every frame.
 - Turning outlines on or off, and `setOutlined`, rebuild the engine's draw tables, as a new material does. Do it in response to a click, not in every frame.
 - A full-screen pass reads the outline's mask with `input: 'outlineMask'`, for a soft glow such as `OutlinePass` draws ([Custom passes](../guides/custom-passes.md#a-soft-outline-glow)). `width: 0` draws the mask without the line.
+- `@null3d/three-compat`'s `createOutlinePass` draws `OutlinePass`'s soft edge, glow and pulse from this mask, through five full-screen passes and an effect ([three.js compatibility](three-compat.md)).
 
 [The post-processing chain](../concepts/post-processing.md#outlines) explains how outlines draw and what they cost.
 
@@ -329,9 +330,10 @@ export default defineSketch(async ({ assets, post }) => {
 ### Grading controls
 
 The grading controls set a look from a few numbers, without a table file. A job worker bakes them
-into a table of its own, and the final pass applies it after the tone mapping, before a `lut`.
-Changing a value costs the frames nothing: the picture shows the new grade once the worker's bake
-reaches the GPU, usually within a few frames.
+into a table of its own. The final pass applies that table to the display color that the tone curve
+leaves, before a `lut`. A change stalls no frame. The picture shows the new grade once the
+worker's bake reaches the GPU, usually within a few frames. The frame that lands a bake uploads the
+table, 256 KB.
 
 ```ts
 post.set({
@@ -351,8 +353,8 @@ post.set({
 | `grading` | Its settings to turn it on, or `false` to turn it off. A setting that a call leaves out keeps its value. | Off |
 | `grading.whiteBalance.temperature` | The color temperature of the light that whites are corrected for, from 1667 to 25000 kelvin. A low value, such as 3200 for a tungsten lamp, makes the picture cooler. | 6500 |
 | `grading.whiteBalance.tint` | The green to magenta shift, from -1 to 1. Each step of 1 halves or doubles the green channel. | 0 |
-| `grading.lift` | Three values, one per channel, from -1 to 1, added before the curve: positive values lift the blacks. | `[0, 0, 0]` |
-| `grading.gamma` | Three powers, one per channel, above 0. Values below 1 brighten the shadows. | `[1, 1, 1]` |
+| `grading.lift` | Three values, one per channel, from -1 to 1, added to the color: positive values lift the blacks. | `[0, 0, 0]` |
+| `grading.gamma` | The gamma of each channel, above 0. A channel is raised to the power of one over its gamma, so values above 1 brighten the shadows. | `[1, 1, 1]` |
 | `grading.gain` | Three factors, one per channel, from 0 up: higher values brighten the highlights. | `[1, 1, 1]` |
 | `grading.saturation` | How much color the picture keeps: 0 is gray, 1 leaves it as it is, and higher values add color. | 1 |
 | `grading.splitToning.shadows` | The hue that tints the dark parts, as a color. Its brightness does not matter. | Gray, so no tint |
@@ -360,11 +362,13 @@ post.set({
 | `grading.splitToning.balance` | Where the split falls, from -1 to 1: higher values tint more of the picture with the shadows' hue. | 0 |
 | `grading.splitToning.strength` | How much of the tints reaches the picture, from 0 to 1. | 0 |
 
-- The controls apply in this order: white balance, then saturation around the luma, then lift and gamma and gain on each channel, then split toning.
+- The controls apply in this order: white balance, then saturation around the luma, then lift and gamma and gain on each channel, then split toning. They act on the display color, after the tone curve.
 - White balance corrects the light of the given temperature to the neutral white of daylight at 6500 kelvin. It keeps the picture's brightness.
-- The table holds 32 texels along each side. The final pass takes the square root of the color before it reads the table. Its texels therefore lie closer together toward black. A grade's curve is steepest there.
-- The final pass applies the built-in table first and a `lut` after it, so a look from a file can sit over a grade from the controls.
-- The bake runs in a job worker, so a value that changes in a frame loop does not stall the frames. Where no worker can run tasks, the picture keeps its colors and development builds warn once.
+- The table holds 32 texels along each side. The final pass takes the square root of the color before it reads the table. Its texels therefore lie closer together toward black, where a grade's curve is steepest.
+- The table holds the grade alone, and the tone curve stays a calculation in the pass. A custom tone curve therefore still works with the controls.
+- The final pass applies the built-in grade first and a `lut` after it, so a look from a file can sit over a grade from the controls.
+- The final pass draws on every GPU path, with HDR color or without it, so both paths grade alike.
+- The bake runs in a job worker, so a value that changes in a frame loop does not stall the frames. The frame that lands a bake uploads the table, 256 KB. Where no worker can run tasks, the picture keeps its colors and development builds warn once.
 - The values are designed for the null3D grading controls. To match a grade that a colorist made in another tool, load its `.cube` file instead.
 
 ## Vignette
@@ -436,7 +440,7 @@ post.removeEffect(effect);
 | `uniforms` | The first value of each field of the WGSL's `struct Uniforms`, by name | 0 for each field |
 | `textures` | The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name, or a texture of several layers for a `var name: texture_2d_array<f32>;` declaration: a texture from a file or data, or a render pass's texture from `textures.fromPass` | None: white |
 | `order` | A number. Effects run from the lowest order to the highest. | 0 |
-| `bloomLevel` | The level of bloom's chain that the WGSL reads with `effectBloom`, a whole number from 0 for the narrowest glow to 9 for the widest | None: the WGSL reads no bloom |
+| `bloomLevel` | The level of bloom's chain that the WGSL reads with `effectBloom`, a whole number from 0 for the narrowest glow to 9 for the widest | Required when the WGSL calls `effectBloom`, and E1213 without it. The compiler reads the shader text rather than the uniform values, so a call inside a branch that never runs still needs a level. Otherwise it reads no bloom |
 
 A custom tone curve takes the place of the built-in curves:
 
@@ -456,6 +460,7 @@ post.set({ toneMapping: reinhard });
 - An effect samples a texture as `textureSampleLevel(name, nameSampler, uv, 0.0)`. A render pass's texture holds its bottom row first: sample it at `effectPassUv(input.uv)`. The textures are fixed when the effect is added, and an effect with textures draws in a pass of its own.
 - Effects and custom curves need HDR color. On a device without it they stay off, and development builds warn once.
 - [Custom passes](../guides/custom-passes.md) lists what an effect reads, and what effects cost.
+- An add-on's effect takes a [feature description](features.md) instead, through [`post.addFeatureEffect`](feature-effects.md). The description places the pass at the resolve point and says whether it draws.
 
 ## Still views
 

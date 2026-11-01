@@ -3,7 +3,19 @@
 // worker.
 
 import { EngineError } from '../errors/engine-error';
+import { taskEnded, taskStarted } from './task-pending';
 import type { Task } from './tasks';
+import type { WasmError } from './wasm';
+
+/** The engine's error for a task's WebAssembly, which is the same in every call. */
+const engineError: WasmError = (code, message) => new EngineError(code, message);
+
+/** The loader, which loads on the first task and answers every later one. */
+let loader: Promise<typeof import('./tasks')> | undefined;
+/** The loader's functions, once it has loaded, so a later task makes no promise for it. */
+let loaded: typeof import('./tasks') | undefined;
+/** No objects that move with a task, for the usual call that names none. */
+const NO_TRANSFER: Transferable[] = [];
 
 /**
  * Runs a task in a job worker, beside the frames, and resolves with its output.
@@ -42,8 +54,19 @@ import type { Task } from './tasks';
  *
  * @category api/tasks
  */
-export function runTask<T>(task: Task, input: unknown, transfer: Transferable[] = []): Promise<T> {
-	return import('./tasks').then(({ runTaskWithError }) =>
-		runTaskWithError<T>(task, input, transfer, (code, message) => new EngineError(code, message)),
-	);
+export function runTask<T>(
+	task: Task,
+	input: unknown,
+	transfer: Transferable[] = NO_TRANSFER,
+): Promise<T> {
+	// The loader counts a task from the call that sends it. While the loader's own code downloads,
+	// this count stands in for it, so hold mode waits for the first task too.
+	if (loaded) return loaded.runTaskWithError<T>(task, input, transfer, engineError);
+	taskStarted();
+	loader ??= import('./tasks');
+	const answer = loader.then((module) => {
+		loaded = module;
+		return module.runTaskWithError<T>(task, input, transfer, engineError);
+	});
+	return answer.finally(taskEnded);
 }

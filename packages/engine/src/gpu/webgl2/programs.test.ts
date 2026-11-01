@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { PART_ENV } from '../../../../../tests/lib/heavy-checks.ts';
+import { scaledBudget } from '../../../../../tests/lib/run-budget.ts';
 import {
 	everyShader,
 	type GlslProgram,
@@ -10,6 +12,7 @@ import { DEPTH_SETUPS } from './depth';
 import {
 	checkStageUnits,
 	createProgram,
+	declaredUniforms,
 	declaresUniform,
 	type GlslTemplate,
 	linkLogs,
@@ -26,7 +29,17 @@ import {
 	UPLOAD_UNIT,
 } from './programs';
 
-const SHADERS = await everyShader();
+/**
+ * The part of the generated set that this process reads, as `part/parts`, or the whole set. The
+ * check reads every GLSL build, whose sources make the set large, so it runs in parts: each part
+ * holds its own share in a process of its own ([Test memory](../../../../../.dev/tests.md)).
+ */
+const PART = process.env[PART_ENV] ?? '1/1';
+const [part = 1, parts = 1] = PART.split('/').map(Number);
+if (!Number.isInteger(part) || !Number.isInteger(parts) || part < 1 || part > parts)
+	throw new Error(`${PART_ENV} names no part of the set: ${PART}`);
+
+const SHADERS = await everyShader(part, parts);
 
 /**
  * Every GLSL program that the shader build writes, those of every device module too, by a name
@@ -162,13 +175,13 @@ describe('WebGL2 texture-unit allocator', () => {
 		expect(stageUnitCount(stage([texture(0), texture(0), texture(1)]))).toBe(2);
 	});
 
-	it("gives an add-on's material the error when it asks for too many units", () => {
+	it('refuses a stage that reads one unit past the limit it is given', () => {
 		const many = stage(
 			Array.from({ length: MIN_STAGE_TEXTURE_UNITS + 1 }, (_, binding) => texture(binding)),
 		);
 		const thrown = (() => {
 			try {
-				checkStageUnits(many, 'fragment');
+				checkStageUnits(many, 'fragment', MIN_STAGE_TEXTURE_UNITS);
 				return null;
 			} catch (error) {
 				return error as { code?: string; message: string };
@@ -176,7 +189,7 @@ describe('WebGL2 texture-unit allocator', () => {
 		})();
 		expect(thrown?.code).toBe('E1209');
 		expect(thrown?.message).toContain(
-			`reads ${MIN_STAGE_TEXTURE_UNITS + 1} textures in its fragment stage`,
+			`reads ${MIN_STAGE_TEXTURE_UNITS + 1} textures in its fragment stage, and a stage has ${MIN_STAGE_TEXTURE_UNITS} units`,
 		);
 	});
 
@@ -184,7 +197,74 @@ describe('WebGL2 texture-unit allocator', () => {
 		const full = stage(
 			Array.from({ length: MIN_STAGE_TEXTURE_UNITS }, (_, binding) => texture(binding)),
 		);
-		expect(() => checkStageUnits(full, 'fragment')).not.toThrow();
+		expect(() => checkStageUnits(full, 'fragment', MIN_STAGE_TEXTURE_UNITS)).not.toThrow();
+	});
+
+	it('holds a stage to the units that the device reports, not to the fewest of any device', () => {
+		const many = stage(
+			Array.from({ length: MIN_STAGE_TEXTURE_UNITS + 1 }, (_, binding) => texture(binding)),
+		);
+		expect(() => checkStageUnits(many, 'fragment', MIN_STAGE_TEXTURE_UNITS)).toThrow(/E1209/);
+		expect(() => checkStageUnits(many, 'fragment', MIN_STAGE_TEXTURE_UNITS + 1)).not.toThrow();
+		expect(() => checkStageUnits(many, 'fragment', 64)).not.toThrow();
+	});
+
+	/**
+	 * A context that reports `fragmentUnits` for its fragment stage and links every program. It
+	 * counts the link results that the engine asks for, which a refusal must come before.
+	 */
+	function deviceContext(fragmentUnits: number) {
+		let linkChecks = 0;
+		const gl = {
+			LINK_STATUS: 0x8b82,
+			INVALID_INDEX: 0xffffffff,
+			MAX_VERTEX_TEXTURE_IMAGE_UNITS: 0x8b45,
+			MAX_TEXTURE_IMAGE_UNITS: 0x8b46,
+			getParameter: (parameter: number) =>
+				parameter === 0x8b45 ? MIN_STAGE_TEXTURE_UNITS : fragmentUnits,
+			getProgramParameter: () => {
+				linkChecks++;
+				return true;
+			},
+			detachShader: () => {},
+			deleteShader: () => {},
+			useProgram: () => {},
+			getUniformBlockIndex: () => 0xffffffff,
+			uniformBlockBinding: () => {},
+			getUniformLocation: () => null,
+			uniform1i: () => {},
+			uniform2f: () => {},
+		} as unknown as WebGL2RenderingContext;
+		return { gl, linkChecks: () => linkChecks };
+	}
+
+	it('refuses a stage past the units that the device reports, before reading its link result', () => {
+		const context = deviceContext(10);
+		const fragment = stage(Array.from({ length: 12 }, (_, binding) => texture(binding)));
+		const program: Program = {
+			program: {} as WebGLProgram,
+			source: { vertex: stage([]), fragment },
+			shaders: [],
+			firstInstance: null,
+			firstInstanceValue: 0,
+			textureUnits: [],
+			ready: false,
+			background: false,
+		};
+		const thrown = (() => {
+			try {
+				prepareProgram(context.gl, program, DEPTH_SETUPS.reversed);
+				return null;
+			} catch (error) {
+				return error as { code?: string; message: string };
+			}
+		})();
+		expect(thrown?.code).toBe('E1209');
+		expect(thrown?.message).toContain(
+			'reads 12 textures in its fragment stage, and a stage has 10 units',
+		);
+		// The device linked the program, so a refusal that read the link result would not have come.
+		expect(context.linkChecks()).toBe(0);
 	});
 });
 
@@ -204,19 +284,33 @@ describe('WebGL2 multi-draw vertex shaders', () => {
 });
 
 describe('WebGL2 programs that a driver optimized', () => {
-	it('declares every uniform block and texture that a reflection names in its stage', () => {
-		for (const [name, stage] of glslStages()) {
-			const names = [...stage.uniformBlocks, ...stage.textures].map((b) => b.name);
-			for (const uniform of names)
-				expect([name, uniform, declaresUniform(stage.source, uniform)]).toEqual([
-					name,
-					uniform,
-					true,
-				]);
-		}
-		expect(declaresUniform('uniform highp sampler2D other;', 'missing')).toBe(false);
-		expect(declaresUniform('vec4 a = texture(missing, uv);', 'missing')).toBe(false);
-	});
+	// The check walks every distinct shader source, of which there are thousands, so its cost follows
+	// the shader set rather than this file. A quiet machine reads a few seconds and a busy one reads
+	// several times that; the budget below is a guard against a hang, not a target.
+	it(
+		'declares every uniform block and texture that a reflection names in its stage',
+		() => {
+			const missing: string[] = [];
+			const declaring = new Map<string, Set<string>>();
+			for (const [name, stage] of glslStages()) {
+				// A stage that reflects no block and no texture asks nothing of its source, and most
+				// stages are that: walking each one would scan the whole shader set for no question.
+				if (stage.uniformBlocks.length === 0 && stage.textures.length === 0) continue;
+				// Many stages share one source, so the walk is done once for each distinct source.
+				let declared = declaring.get(stage.source);
+				if (declared === undefined) {
+					declared = declaredUniforms(stage.source);
+					declaring.set(stage.source, declared);
+				}
+				for (const binding of [...stage.uniformBlocks, ...stage.textures])
+					if (!declared.has(binding.name)) missing.push(`${name}: ${binding.name}`);
+			}
+			expect(missing).toEqual([]);
+			expect(declaresUniform('uniform highp sampler2D other;', 'missing')).toBe(false);
+			expect(declaresUniform('vec4 a = texture(missing, uv);', 'missing')).toBe(false);
+		},
+		scaledBudget(60_000),
+	);
 
 	it('binds the textures and blocks that the driver kept, and skips the ones it removed', () => {
 		const kept = { name: 'kept_fs', group: 0, binding: 4, sampler: { group: 0, binding: 5 } };
@@ -233,6 +327,9 @@ describe('WebGL2 programs that a driver optimized', () => {
 		const gl = {
 			LINK_STATUS: 0x8b82,
 			INVALID_INDEX: 0xffffffff,
+			MAX_VERTEX_TEXTURE_IMAGE_UNITS: 0x8b45,
+			MAX_TEXTURE_IMAGE_UNITS: 0x8b46,
+			getParameter: () => 16,
 			getProgramParameter: () => true,
 			detachShader: () => {},
 			deleteShader: () => {},
@@ -293,6 +390,10 @@ describe("WebGL2 links that Safari's Metal translator broke", () => {
 			LINK_STATUS: 0x8b82,
 			VERTEX_SHADER: 0x8b31,
 			FRAGMENT_SHADER: 0x8b30,
+			// The units that a device reports, which every WebGL2 device gives a stage at least 16 of.
+			MAX_VERTEX_TEXTURE_IMAGE_UNITS: 0x8b45,
+			MAX_TEXTURE_IMAGE_UNITS: 0x8b46,
+			getParameter: (parameter: number) => (parameter === 0x8b45 ? 32 : 16),
 			createProgram: () => ({}),
 			createShader: () => ({ log: shaderLogs[shaders++] ?? '' }),
 			shaderSource: (_: unknown, source: string) => sources.push(source),

@@ -9,6 +9,6 @@
 
 ## Known issues
 
-The 85 failures are the pages that force the full WebGPU path.
-The adapter offers compatibility mode only, so the engine refuses that path with E1301.
-The runner does not yet skip those pages on such a device
+The adapter offers compatibility mode only, so the engine refuses the full WebGPU path with E1301.
+The 85 failures of its checks run are the pages that force that path ([run](20261003-earlier-runs.md)).
+The runner does not skip those pages on such a device.
