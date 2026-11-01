@@ -867,6 +867,12 @@ interface Surfaces {
 	tile: ReturnType<SketchContext['materials']['standard']>;
 }
 
+/**
+ * The error at which a house switches to its plain far mesh, which has no shutters or trim: past about
+ * 460 meters on a 1080p screen, and half that in the shadow maps. Closer, the plain walls show.
+ */
+const FAR_HOUSE_ERROR = 0.35;
+
 /** Stands the houses and their gardens: one batch of walls and one of roofs for each kind. */
 function createHouses(ctx: SketchContext, surfaces: Surfaces): void {
 	const { scene, geometry } = ctx;
@@ -874,7 +880,7 @@ function createHouses(ctx: SketchContext, surfaces: Surfaces): void {
 		const lots = LOTS.filter((lot) => lot.kind === k);
 		if (lots.length === 0) return;
 		const mesh = geometry.fromArrays(finish(kind.walls));
-		mesh.setLevels([{ mesh: geometry.fromArrays(finish(kind.farWalls)), error: 0.04 }]);
+		mesh.setLevels([{ mesh: geometry.fromArrays(finish(kind.farWalls)), error: FAR_HOUSE_ERROR }]);
 		const w = scene.createInstances(mesh, lots.length, {
 			material: kind.stone ? surfaces.rubble : surfaces.plaster,
 			colors: true,
@@ -882,7 +888,9 @@ function createHouses(ctx: SketchContext, surfaces: Surfaces): void {
 			receiveShadows: true,
 		});
 		const roofMesh = geometry.fromArrays(finish(kind.roof));
-		roofMesh.setLevels([{ mesh: geometry.fromArrays(finish(kind.farRoof)), error: 0.04 }]);
+		roofMesh.setLevels([
+			{ mesh: geometry.fromArrays(finish(kind.farRoof)), error: FAR_HOUSE_ERROR },
+		]);
 		const r = scene.createInstances(roofMesh, lots.length, {
 			material: surfaces.tile,
 			colors: true,

@@ -57,9 +57,13 @@ Most of a frame's other requests are plain pushes, which cannot report a refusal
 
 A request of 4 MiB or less that the heap cannot otherwise give takes the reserve, and the next frame stops with E1109, naming 8 MB. A layout's rebuild can push more than that for a large scene, so it checks room for `REBUILD_BYTES_PER_SOURCE` for each source first, with `keep_room`, which counts the pages left under the maximum before it asks the heap.
 
-The island scene's peak at High, with its opening camera moving, is 205 MiB on the indirect path, 267 MiB on the direct path and 235 MiB on WebGL2. The indirect path and WebGL2 draw it clean at 256 MiB, the lowest maximum a page can ask for, and the direct path from 272 MiB. At 1,024 MiB, the default, the start-up probe's pick does not decide whether this scene fits.
+The island scene's peak at High through its whole route is 140 MiB on the indirect path, 204 MiB on the direct path and 161 MiB on WebGL2. Held frames peak at 166, 296 and 177 MiB, as a held frame copies the whole scene at once. All three draw it clean at 256 MiB, the lowest maximum a page can ask for. So the start-up probe's pick does not decide whether this scene fits.
 
 `tests/image/memory-limit.spec.ts` fills the heap with `fillHeapForTest` and makes plain requests, with the maximum known and with it hidden (`?memory-maximum=hidden`). It also raises a scene's mesh data step by step past what the lowest maximum holds, on both draw paths. With the reserve taken out, the same runs trap, and the core prints the refused size through its allocation hook, without allocating.
+
+## Levels of detail in the WebGL2 frame order
+
+The WebGL2 path builds its layout in its cull step, before the frame graph gives a reflection pass its target. A material that reads the pass keeps its old texture group for that frame, so the reflection reaches it one frame after the view first draws. `reads_last_frame` makes a held frame draw that frame too. WebGPU builds its layout after the graph, so it does not need this.
 
 ## Allocation in Rust
 

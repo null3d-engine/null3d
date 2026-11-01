@@ -136,6 +136,7 @@ export default defineSketch(async (ctx) => {
 		shadowReach: SHADOW_REACH,
 		stage,
 		start: {
+			lod: true,
 			sky: true,
 			fog: true,
 			shadows: true,

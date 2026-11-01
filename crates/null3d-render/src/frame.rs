@@ -3903,7 +3903,12 @@ impl SceneSettings {
     }
 
     /// As [`Self::pipeline_of`], with the builds that read row values when `row_values` is set.
-    fn rows_pipeline_of(&self, mesh: u32, material: u32, row_values: bool) -> Option<DrawKey> {
+    pub(crate) fn rows_pipeline_of(
+        &self,
+        mesh: u32,
+        material: u32,
+        row_values: bool,
+    ) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
         }
