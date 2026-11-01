@@ -124,6 +124,7 @@ the bed at a point, and the current there.
 | `softness` | A number above 0, in meters | 0.12 | The gap to the bed over which the water fades at a shore |
 | `colorAlongView` | A number from 0 to 1 | 0 | The share of the water's color at a low view that reads the whole way the view runs through the water, not its depth. A view from above keeps the depth. A wide sea takes a little, so a low view shows no sharp outline of the bed in the distance |
 | `reflectionEvery` | A frame count from 1 to 16 for each preset | 2 on Low and Medium, 1 on High and Ultra | The frames between two draws of the reflection. The frame-budget governor doubles it while frames take too long |
+| `reflectionFollowsBudget` | `true` or `false` | `true` | Whether the frame-budget governor may raise `reflectionEvery`. Between draws the water shows the reflection of an older camera, so on a moving camera a raised count reads as a lag. `false` keeps the count |
 | `layers` | A 32-bit mask | The camera's layers | The layers that the reflection draws. Leave out what lies on or under the water |
 | `reflectionScale` | `1`, `0.5` or `0.25` | 1 | The reflection's size as a share of the render size each way |
 | `mesh` | `{ step, across, cell, reach }` | 2, 16, 2 and 1.36 | The meters between two cross sections along a river, the sections across it, a lake's grid cell, and how far past a river's half width its mesh reaches as a factor |
