@@ -712,3 +712,30 @@ display's 33.3 ms floor.
 The Galaxy Tab A9 Plus's run adds [its record](../tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-082204-vegetation.md).
 Creek Low on WebGL2 reads 1,600.35 ms against 1,268.5, 26 per cent over. Its forest pages did not
 run, because the session ended after the first page.
+
+### The WebGL2 cost that the Creek rows carried
+
+The Creek rows above miss their WebGL2 ceilings by nine to ten times, far beyond what the field's
+own pass explains. A bisect found the cause on the development machine, between the milestone head
+that the branch was cut from and the branch, at Creek's Low preset and the WebGL2 path, three
+seconds after a warm-up:
+
+| Scene | Frame interval | Frames in 3 s | Uploaded per frame |
+| --- | --- | --- | --- |
+| The milestone head, no wind | 16.7 ms | 176 | 128 KB |
+| The branch, as built | 633 ms | 3 | 2.2 MB |
+| The branch without the water | 16.7 ms | 178 | 87 KB |
+| The branch with the leaves riding the offset form | 16.7 ms | 175 | 113 KB |
+
+The water draws the valley a second time for its reflection. Beside that second draw, a pass whose
+WebGL2 form is a fragment pass re-uploads the valley's compressed textures for every frame: 2.1 MB
+at Low and 4.3 MB at Medium. Both passes that the branch adds hit it, the leaves' state pass and the
+wind grid's. The same scene without the reflection, and the same passes in a scene that draws once,
+as the forest does, pay nothing: the forest's Low rows hold on every path.
+
+The wind grid's own pass lifts Medium and above into the same cost: at Medium the branch reads
+683 ms with the grid and 33.3 ms without it, the leaves riding the offset form in both.
+
+So Creek rides the offset form and keeps no grid on the WebGL2 path. Its readers work the air out of
+the steady field there, which carries the gust and the swirl, so a gust still crosses the banks. The
+cost itself is the WebGL2 backend's, not the add-ons', and belongs to the engine's own record.
