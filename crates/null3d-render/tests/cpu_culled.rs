@@ -1403,6 +1403,26 @@ fn a_tree_draws_no_whole_level_where_the_device_draws_many_ranges() {
     assert_eq!(with_levels - with_tree, 2, "the mesh's two lower levels");
 }
 
+#[test]
+fn a_frame_reports_the_tree_ranges_it_walked_and_none_where_it_draws_levels() {
+    let mut ranges = Vec::new();
+    for multi_draw in [true, false] {
+        let mut world = world(multi_draw);
+        let mesh = world.add_object(&grid(1, 1), Shading::Lit);
+        world
+            .renderer
+            .set_mesh_patches(mesh, Some(separate_patches(3)))
+            .unwrap();
+        world.record(true);
+        ranges.push(world.renderer.patch_ranges(world.frame).unwrap());
+    }
+    let [with_tree, with_levels] = ranges[..] else {
+        unreachable!()
+    };
+    assert!(with_tree > 0, "the walk chose ranges: {ranges:?}");
+    assert_eq!(with_levels, 0, "the whole levels draw no range: {ranges:?}");
+}
+
 /// Adds a mesh of `geometry`, a material, `copies` objects of it, and two lower levels. Returns
 /// the engine mesh id and the material's.
 fn copies_with_levels(

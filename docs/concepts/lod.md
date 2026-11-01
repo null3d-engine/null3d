@@ -148,6 +148,8 @@ mesh.setLevels([{ mesh: low, distance: 80, fade: false }]);
 
 The fragments that the dither drops cost a tile GPU, such as a phone's or an Apple GPU's, its hidden-surface removal. So only the objects inside a band draw with the dither. The shader builds of the bands download with the first mesh whose levels fade. These builds follow the level, whatever the `lodFade` quality setting, because a hand-set level pops without them.
 
+[Custom materials](../shaders/surface-functions.md) fade too, through their own builds, which download with the material's first use. Three kinds switch at once: a material that tests its mask by the [alpha hash](../api/materials.md#alpha-modes), a skinned material, and one that lets light through.
+
 Two add-ons morph a level instead of fading it. The terrain add-on moves each block's vertices toward its parent block's surface over the last part of the approach, so the block matches its parent when the selection hands over. The vegetation add-on moves a tree's leaf cards toward the next level before the switch: the cards that the level drops shrink and the kept ones grow. Both write the target in the mesh's four-number vertex record, which their own custom material's `vertexOffset` reads. Neither adds a draw, and neither writes a vertex in a frame. File meshes keep the dither: the asset tool's simplifier records no mapping between one level's vertices and the next.
 
 ## Small objects
@@ -195,7 +197,7 @@ A level of detail keeps one draw and one mesh per object. Far past the last leve
 
 A bake stores the object from many directions, folded onto an octahedral grid, in a color atlas and a surface atlas of normals and depths. Each card blends the three stored views nearest the direction from the card toward the eye, so the picture changes smoothly as the camera moves rather than jumping between views. The card's light comes from the scene, through the stored normal, so a sun that moves relights the cards exactly as it relights the meshes. A copy's turn about the world's up turns its views and its light too, so a turned tree hands over to a card whose crown matches it. A camera that moves around the tree does not turn its light: the card turns to the eye, and the stored normal turns only with the tree. A card casts the crown's shape, and takes the shadows that fall on the surface it shows, when the sketch asks for it.
 
-`setDrawRange` fades a band's edges with the dither, so the hand-over from a mesh to its cards need not pop. The vegetation add-on's `handOverToCards` sets the two bands for a row of plants. [Impostors](../api/impostors.md) gives the calls, and the demo `examples/impostors` draws a forest three ways by distance.
+`setDrawRange` fades a band's edges with the dither, so the hand-over from a mesh to its cards need not pop. The vegetation add-on's `handOverToCards` sets the two bands for a row of plants. It starts the cards early enough that their own dithered edge finishes first. The mesh and the card are different sources, so their dither phases differ. The card must already cover every pixel that the mesh will drop. [Impostors](../api/impostors.md) gives the calls, and the demo `examples/impostors` draws a forest three ways by distance.
 
 ## From three.js
 

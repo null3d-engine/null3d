@@ -299,8 +299,8 @@ export interface EnginePart {
  * The parts of a thread's drawing code that it loads on demand, named after `prefix`, where
  * `drawing` names the part that holds the thread's frame loops. Each GPU path's renderers load once
  * the thread knows its path, with the code that both paths share beside them. The thread loads the
- * WebGL call timing, the texture generators' steps, the reader of the GPU-culled draws' counts and
- * the joiner of custom effects on first use.
+ * WebGL call timing, the texture generators of both paths, the reader of the GPU-culled draws'
+ * counts and the joiner of custom effects on first use.
  */
 function drawingParts(prefix: string, drawing: string): EnginePart[] {
 	const webgpu = `${prefix}-webgpu.js`;
@@ -311,6 +311,11 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 		{ name: shared, module: 'render/scene-renderer.ts', loadedBy: webgpu },
 		{ name: `${prefix}-call-timing.js`, module: 'gpu/webgl2/call-timing.ts', loadedBy: drawing },
 		{ name: `${prefix}-culled-counts.js`, module: 'gpu/webgpu/culled-counts.ts', loadedBy: webgpu },
+		{
+			name: `${prefix}-environment-maps.js`,
+			module: 'gpu/webgpu/environment.ts',
+			loadedBy: drawing,
+		},
 		{
 			name: `${prefix}-environment-generator.js`,
 			module: 'gpu/environment-steps.ts',
@@ -1102,11 +1107,20 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  *
  * The grading controls' code over light rides every WebGL2 tone-map build. Its largest file, the
  * half-precision draw-index tone-map set, measures 53,325 bytes after Brotli, inside this figure.
+ *
+ * The Brotli figure rose from 56 KB to 58 KB by the owner's ruling. The bounce
+ * light's shader additions carried the two largest area-lights paragraph files 202 bytes past the
+ * old figure, at 100.4 per cent. Three measurements say nothing smaller can be recovered: the shader
+ * build strips comments, so the branch's prose is not in the measured file at all; the family's two
+ * largest files share 7.1 per cent of their text, because each variant is a separate compilation and
+ * there is no base to extract; and the moment layer and the particle work fit under the old figure
+ * on their own. The cost is the number of variants the family emits, not waste inside one. The next
+ * feature that needs room here is a decision about which variants to emit, and not a further raise.
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 1_792 * 1024,
 	gzip: 320 * 1024,
-	brotli: 56 * 1024,
+	brotli: 58 * 1024,
 };
 
 /**

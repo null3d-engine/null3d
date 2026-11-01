@@ -491,7 +491,9 @@ mod tests {
         };
         let mut run = |pass: &mut SubsurfacePass, list: &mut DrawList, frame: SubsurfaceFrame| {
             list.clear();
-            arena.reset(SubsurfacePass::UPLOAD_BYTES);
+            arena
+                .reset(SubsurfacePass::UPLOAD_BYTES)
+                .expect("room for the test's uploads");
             let size = ((1920, 1080), RenderScale::FULL);
             pass.prepare(list, &mut arena, size, frame, sources, false)
                 .unwrap();

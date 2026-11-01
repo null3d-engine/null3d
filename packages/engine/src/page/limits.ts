@@ -108,6 +108,11 @@ export interface CoreDevice {
 	 * thread that draws copies the data out first.
 	 */
 	sharedUploads: boolean;
+	/**
+	 * WebGL2: true when the context draws many ranges in one call, so a cluster mesh draws its
+	 * chosen patches; false draws the whole levels that its tree was cut into.
+	 */
+	multiDraw: boolean;
 	/** How the GPU path stores depth: always `reversed` on WebGPU. */
 	depth: DepthMode;
 	/**
@@ -485,6 +490,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 				C.CAPABILITY_FLOAT16_TARGETS,
 			maxTextureSize: 0,
 			sharedUploads: true,
+			multiDraw: false,
 			depth: 'reversed',
 			shaderBits: toneMap | half,
 			indexInstances: tier === 'webgpu' && options.indexInstances,
@@ -504,6 +510,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
 		sharedUploads:
 			!options.copyUploads && uploads !== null && uploads.bufferSubData && uploads.texSubImage2D,
+		multiDraw,
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, options.depth),
 		shaderBits: (multiDraw ? PERMUTATION_DRAW_INDEX : 0) | toneMap | half,
 		indexInstances: false,

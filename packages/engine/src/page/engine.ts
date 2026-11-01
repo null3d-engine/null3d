@@ -226,6 +226,14 @@ export interface EngineOptions {
 	 */
 	depthPrepass?: boolean;
 	/**
+	 * True to blend the camera's blended surfaces in the moment transparency layer. It needs no
+	 * sort and is nearer an exact back-to-front blend than `blending: 'weighted'` is, and it draws
+	 * those surfaces twice. Every preset leaves it off, and the `?moments=on` or `?moments=off`
+	 * switch wins over this option. It stays fixed while the engine runs. Another value fails with
+	 * E1213.
+	 */
+	momentTransparency?: boolean;
+	/**
 	 * True to run GPU occlusion culling on WebGPU: objects that `setOccluder(true)` marks hide the
 	 * objects that lie wholly behind them, so the GPU skips those. Each camera view draws the depth
 	 * of the marked objects that it showed in the last frame and tests every object against it. It
@@ -1688,6 +1696,7 @@ async function startEngine(
 		heroTileSize: options.heroTileSize,
 		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
+		momentTransparency: switches.moments ?? options.momentTransparency,
 		gpuOcclusion: switches.occlusion ?? options.gpuOcclusion,
 		morphTargets: options.morphTargets,
 		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,
@@ -1863,6 +1872,10 @@ async function startEngine(
 	);
 	const expectedObjects = expectedObjectCount(options.expectedObjects);
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
+	// The frame figures go on the page as the start makes them, so a test tool can time a start
+	// that stalls before it publishes anything, and read the sketch's growth, the first draw's
+	// pipelines and the first frame beside the steps it has noted.
+	(globalThis as { __null3dMetrics?: ArrayBufferLike }).__null3dMetrics = metrics;
 	const views = controlViews(control);
 	const { slots } = views;
 	if (switches.replayDelay !== undefined)
@@ -2162,7 +2175,10 @@ async function startEngine(
 		parkWorker(options.canvas, canvasHold, canvasWorker.handle, canvasHold.movedTo);
 	};
 	try {
-		const report = await abortable(probeCapabilities(powerPreference, presetRequest.hints), signal);
+		const report = await abortable(
+			probeCapabilities(powerPreference, presetRequest.hints, switches.multiDraw),
+			signal,
+		);
 		const probeMs = performance.now() - startedAt;
 		const requested = switches.gpu !== 'auto' ? switches.gpu : (options.gpu ?? 'auto');
 		// After starts that crashed on WebGPU, WebGL2 comes first, unless the page names a GPU path.
@@ -2842,13 +2858,20 @@ async function startEngine(
 		}
 		if (DEV && switches.twoStep) logTwoStep(slots, true);
 		const { summarizeFrames } = await loadFrameStats();
+		const frame = Atomics.load(slots, Slot.FramesTaken);
+		const patchFrame = Atomics.load(slots, Slot.ClusterPatchFrame);
+		const patchRanges = Atomics.load(slots, Slot.ClusterPatches);
 		publishHold({
 			ok: true,
 			time: hold ?? replayResult?.seconds ?? 0,
 			...held,
-			frame: Atomics.load(slots, Slot.FramesTaken),
+			frame,
 			tier,
 			directDraws: device.directDraws,
+			// What the frame builder recorded: the patch ranges that its tree walk chose, or none
+			// where it drew the trees' whole levels. A negative count is a path that picks the
+			// patches on the GPU, and a count from another frame tells nothing about this one.
+			clusterPatches: patchFrame === frame && patchRanges >= 0 ? patchRanges > 0 : null,
 			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
 			...(scriptResult !== undefined && { script: scriptResult }),
 			...(replayResult !== undefined && { replay: replayResult }),

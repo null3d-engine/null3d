@@ -52,7 +52,11 @@ const image = (red: number) => ({
 let dirs: HarnessDirs;
 beforeEach(() => {
 	const root = mkdtempSync(join(tmpdir(), 'null3d-review-'));
-	dirs = { references: join(root, 'references'), candidates: join(root, 'candidates') };
+	dirs = {
+		references: join(root, 'references'),
+		candidates: join(root, 'candidates'),
+		drawn: join(root, 'drawn'),
+	};
 	// grid is new; boxes changed on the real GPU; the copied uploads and Safari compare with boxes.
 	compareWithReference(GRID, REAL, image(10), dirs);
 	writePng(join(dirs.references, 'chrome-real-gpu/webgl2/boxes.png'), image(10));
@@ -201,6 +205,28 @@ describe('a SwiftShader reference', () => {
 		});
 		expect(accepted.refused).toEqual([]);
 		expect(existsSync(target())).toBe(true);
+	});
+
+	it('reads a picture that a run kept for its drawings, without a diff, and accepts it', () => {
+		const kept = process.env.NULL3D_TAKE_IMAGES;
+		process.env.NULL3D_TAKE_IMAGES = '1';
+		try {
+			drawn({ GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '42' });
+		} finally {
+			if (kept === undefined) delete process.env.NULL3D_TAKE_IMAGES;
+			else process.env.NULL3D_TAKE_IMAGES = kept;
+		}
+		const folder = join(dirs.drawn as string, 'chromium-swiftshader');
+		const [drawing] = readCandidates(folder);
+		expect(drawing).toMatchObject({ test: 'grid', status: 'drawn', ciRun: '42' });
+		expect(reviewLines(readCandidates(folder), 'review.html')[0]).toBe(
+			'grid on webgpu, drawn in chromium-swiftshader',
+		);
+		const accepted = acceptCandidates(readCandidates(folder), dirs.references, undefined, {
+			record: record(),
+		});
+		expect(accepted.refused).toEqual([]);
+		expect(readPng(target())).toEqual(image(10));
 	});
 
 	it('is taken from this machine only with a reason, which the record keeps until CI draws it', () => {

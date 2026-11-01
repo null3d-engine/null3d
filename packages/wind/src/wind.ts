@@ -11,10 +11,13 @@ import {
 import {
 	analyticVelocity,
 	createPushRing,
+	createReading,
 	defaultFieldState,
 	type FieldState,
-	PUSH_LIFE,
-	PUSH_SLOTS,
+	type Push,
+	RING_SLOTS,
+	type WindReading,
+	writeReading,
 } from './analytic';
 import fallbackShader from './grid.fallback.wgsl';
 import gridShader from './grid.wgsl';
@@ -27,7 +30,10 @@ import gridShader from './grid.wgsl';
 export interface WindOptions {
 	/** The camera whose ground place the box follows. The field is centered on it in every frame. */
 	camera: Camera;
-	/** The box's width across the ground, in meters. */
+	/**
+	 * The box's width across the ground, in meters. Zero keeps no grid, so every reader works the
+	 * air out from the steady field.
+	 */
 	box?: number;
 	/** The grid's texels across each way. */
 	grid?: number;
@@ -42,15 +48,25 @@ export interface WindOptions {
  */
 export interface WindField {
 	/**
-	 * The texture. A reader declares it as `var wind: texture_2d_array<f32>;` and samples layer 0.
-	 * Its red and blue channels hold the wind across the ground, and its green channel holds the
-	 * wind's rise, which is zero while the field is flat. Its alpha holds how fast the air moves.
+	 * The texture. A reader declares it as `var wind: texture_2d<f32>;` and samples it through the
+	 * sampling function, which gives the air back: the wind across the ground, the wind's rise,
+	 * which is zero while the field is flat, and how fast the air moves. The grid keeps its state
+	 * in the texture's own numbers, so a reader does not decode them itself.
 	 */
 	readonly texture: Texture;
 	/** The box's near corner across the ground, in meters: x and z. */
 	readonly origin: [number, number];
-	/** The box's width across the ground, in meters. */
+	/**
+	 * The box's width across the ground, in meters, or zero on a device that keeps no grid. A
+	 * reader that is given zero works out the air from `air` everywhere, which is the same field
+	 * the texture holds where a device can keep one.
+	 */
 	readonly size: number;
+	/**
+	 * The steady settings that a reader works out beyond the box. Give them to a material with the
+	 * sampling function's three vectors, and give them again when `setBase` or the air changes.
+	 */
+	readonly air: WindReading;
 }
 
 /**
@@ -63,20 +79,39 @@ export interface Wind {
 	readonly field: WindField;
 	/** Sets the steady wind: its speed in meters a second and its heading in radians. */
 	setBase(speed: number, heading: number): void;
-	/** Sends a gust of `strength` at a ground place, which turns the air about it as it fades. */
+	/**
+	 * Sends a gust of `strength` from a ground place, whose wave then travels along the heading, so
+	 * the air turns as it passes over the scene.
+	 */
 	gust(at: readonly [number, number], strength?: number): void;
 	/** Pushes the air about a ground place, as a body moving through it does. */
 	push(at: readonly [number, number], strength?: number): void;
 	/**
-	 * The air at a world place, in meters a second, written into `out`. The CPU form of the same
-	 * field that the GPU fills, for a page's own motion and for a test.
+	 * The air at a world place, in meters a second, written into `out`, from the analytic field that
+	 * the solver pulls the air toward and the pushes and the gust it injects. The solved air itself
+	 * is on the GPU, so a page's own motion follows the forces rather than the wakes.
 	 */
 	sample(x: number, y: number, z: number, out: [number, number, number]): [number, number, number];
-	/** Places the box about the camera and sends the values to the GPU. Call once in each frame. */
+	/**
+	 * Places the box about the camera, runs the steps that the sketch time owes and sends the
+	 * values to the GPU. Call once in each frame.
+	 */
 	update(): void;
 	/** Removes the pass and its texture. */
 	destroy(): void;
 }
+
+/** The Jacobi iterations that one cycle of the solver runs, as its shaders hold them. */
+export const PRESSURE_STEPS = 20;
+/** The runs that one cycle takes: the forces and the advection, the pressure, the projection. */
+export const CYCLE_STEPS = PRESSURE_STEPS + 2;
+/** The fixed time that one cycle steps the air by, in seconds. */
+export const STEP_SECONDS = 1 / 60;
+/**
+ * The most cycles that one frame runs, which is ten seconds of air. A longer stall in a page skips
+ * the air that it missed rather than spends one frame solving it.
+ */
+const MAX_CYCLES = 600;
 
 /** How strong a gust is when the page names no strength. */
 const GUST = 7;
@@ -84,9 +119,9 @@ const GUST = 7;
 const PUSH = 2.5;
 
 /**
- * True when the device draws into a 16-bit float texture, which the field needs. Every WebGPU path
- * does. A WebGL2 device without either extension cannot hold the field, and its readers read the
- * texture's neutral black instead.
+ * True when the device draws into a 16-bit float texture, which the grid needs. Every WebGPU path
+ * does. A WebGL2 device without either extension keeps no grid, and its readers work the air out
+ * from the steady field instead, so a plant still moves there.
  */
 export function holdsField(capabilities: Pick<EngineCapabilities, 'tier' | 'features'>): boolean {
 	const { tier, features } = capabilities;
@@ -111,11 +146,30 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	const pushes = createPushRing();
 	const now = (): number => ctx.time.now;
 
-	// The pass takes eight value vectors: the settings, the pushes' ring and the box.
+	// The solver runs one fixed step per cycle, and the pass takes eight value vectors: the step and
+	// the settings, the ring of pushes and gusts, and the box. A frame sets the runs that the sketch
+	// time owes, so the air keeps the same pace whatever the frame rate.
+	//
+	// The air starts when a page makes the wind. A held page steps its updates up to the held time
+	// and the pass runs with each step, so a held picture carries the air that the hold built.
+	let solved = now();
+	const owedSteps = (): number => {
+		// The sketch time is a sum of frame times, so a frame that owes exactly one step can read a
+		// hair under it.
+		const owed = Math.floor((now() - solved) / STEP_SECONDS + 1e-6);
+		if (owed <= 0) return 0;
+		const cycles = Math.min(owed, MAX_CYCLES);
+		// A stall that owes more than one frame runs skips the air that it missed. Crediting only
+		// the cycles that ran would leave a debt, and every later frame would pay it.
+		solved = owed > MAX_CYCLES ? now() : solved + cycles * STEP_SECONDS;
+		return cycles * CYCLE_STEPS;
+	};
+
 	const values = new Array<number>(32).fill(0);
 	const place: number[] = [0, 0, 0];
 	const write = (): void => {
-		values[0] = now();
+		// The first vector holds the solver's step, then the air's settings.
+		values[0] = STEP_SECONDS;
 		values[1] = air.speed;
 		values[2] = air.heading;
 		values[3] = air.ground;
@@ -127,13 +181,14 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		values[9] = air.swirlScale;
 		values[10] = air.swirlDrift;
 		values[11] = air.seed;
-		for (let i = 0; i < PUSH_SLOTS; i++) {
-			const push = pushes.slots[i];
+		// The ring is made once, so every slot is there to read.
+		for (let i = 0; i < RING_SLOTS; i++) {
+			const slot = pushes.slots[i] as Push;
 			const at = 12 + i * 4;
-			values[at] = push?.x ?? 0;
-			values[at + 1] = push?.z ?? 0;
-			values[at + 2] = push?.strength ?? 0;
-			values[at + 3] = push?.born ?? -PUSH_LIFE;
+			values[at] = slot.x;
+			values[at + 1] = slot.z;
+			values[at + 2] = slot.strength;
+			values[at + 3] = slot.born;
 		}
 		camera.getPosition(place);
 		values[28] = (place[0] as number) - box / 2;
@@ -143,8 +198,10 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	};
 
 	// A device without float targets keeps no grid, so it costs no pass. A reader still samples a
-	// texture, which holds the field's neutral black, and `sample` still gives it the air.
-	const pass = holdsField(ctx.engine.capabilities)
+	// texture, which holds the field's neutral black, but its box has no width, so every sample is
+	// the steady field that `shaders/field.wgsl` works out. A box of no width asks for the same.
+	const holds = box > 0 && holdsField(ctx.engine.capabilities);
+	const pass = holds
 		? ctx.render.addPass({
 				kind: 'compute',
 				description: defineFeature({
@@ -157,6 +214,8 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 				fallback: { wgsl: fallbackShader },
 				format: 'rgba16float',
 				size: [grid, grid],
+				history: true,
+				steps: CYCLE_STEPS,
 				values,
 				name: 'wind-field',
 			})
@@ -168,15 +227,19 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 					width: 1,
 					height: 1,
 					depth: 1,
-					data: new Float32Array(4),
+					data: new Uint8Array(4),
 				}),
 		origin: [0, 0],
-		size: box,
+		size: holds ? box : 0,
+		air: createReading(air),
 	};
 	// The box follows the camera and the pushes fade, so the values go up in every frame.
 	const apply = (): void => {
 		write();
-		if (pass) ctx.render.setPassUniforms(pass, values);
+		if (pass) {
+			ctx.render.setPassSteps(pass, owedSteps());
+			ctx.render.setPassUniforms(pass, values);
+		}
 		field.origin[0] = values[28] as number;
 		field.origin[1] = values[29] as number;
 	};
@@ -189,10 +252,11 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		out: [number, number, number],
 	): [number, number, number] => analyticVelocity(air, pushes.slots, x, y, z, now(), out);
 
-	// A gust and a push are one turn of the air, and the newest replaces the oldest. The ring
-	// writes its own slots, so neither call allocates anything.
-	const turn = (at: readonly [number, number], strength: number): void => {
-		pushes.add(at[0], at[1], strength, now());
+	// A push takes the next of the three push slots, and a gust takes the slot after them, so a
+	// page's pushes never push its gust out. A gust travels from where it was sent, and a push
+	// stays there. The ring writes its own slots, so neither call allocates anything.
+	const turn = (at: readonly [number, number], strength: number, gust: boolean): void => {
+		pushes.add(at[0], at[1], strength, now(), gust);
 	};
 
 	return {
@@ -200,12 +264,13 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		setBase(speed, heading) {
 			air.speed = speed;
 			air.heading = heading;
+			writeReading(air, field.air);
 		},
 		gust(at, strength = GUST) {
-			turn(at, strength);
+			turn(at, strength, true);
 		},
 		push(at, strength = PUSH) {
-			turn(at, strength);
+			turn(at, strength, false);
 		},
 		sample,
 		update: apply,

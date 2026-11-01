@@ -709,7 +709,9 @@ mod tests {
         };
         let mut run = |pass: &mut FogVolumePass, frame: &FogVolumeFrame| -> Vec<Op> {
             list.clear();
-            arena.reset(FogVolumePass::UPLOAD_BYTES);
+            arena
+                .reset(FogVolumePass::UPLOAD_BYTES)
+                .expect("room for the test's uploads");
             pass.prepare(
                 &mut list,
                 &mut arena,

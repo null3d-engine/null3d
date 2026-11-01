@@ -278,19 +278,26 @@ const NO_FADE: u32 = permutation::SKIN
     | permutation::INSTANCE_INDEX
     | permutation::TRANSMISSION
     | permutation::ALPHA_HASH
-    | permutation::DISPLACEMENT;
+    | permutation::DISPLACEMENT
+    // A caster, a motion build and a pick build draw no fading level of their own: the level's
+    // fade belongs to the camera's view, and a custom material has no build with these bits and
+    // LOD_FADE together.
+    | permutation::CASTER
+    | permutation::MOTION
+    | permutation::PICK;
 
 /// True when a pipeline has builds of a fading level: the engine's standard and unlit templates,
-/// opaque or with a mask tested by its cutoff or by coverage. Custom materials, masks tested by the
-/// hash and the debug views switch levels at once.
+/// opaque or with a mask tested by its cutoff or by coverage, and a custom material's. Masks tested
+/// by the hash and the debug views switch levels at once.
 pub(crate) fn fades_its_way(key: DrawKey) -> bool {
-    matches!(
+    (matches!(
         key.template,
         template::INSTANCED_LIT
             | template::INSTANCED_STANDARD_MAPS
             | template::INSTANCED_UNLIT
             | template::INSTANCED_UNLIT_MAP
-    ) && key.permutation & NO_FADE == 0
+    ) || key.template >= template::CUSTOM_FIRST)
+        && key.permutation & NO_FADE == 0
 }
 
 /// True when a bucket key draws with the fading build, which lists the fade value or, in a levels
@@ -493,11 +500,10 @@ mod tests {
     }
 
     #[test]
-    fn a_custom_material_never_fades_so_a_handed_over_card_does_not_dither() {
-        // The two batches of a hand-over, a plant's mesh and its card, are different sources, so
-        // their dither phases differ. The card's custom material takes no fading build: its
-        // distance range switches at full coverage, behind the mesh whose pixels dither out over
-        // it, and no pixel is dropped by both.
+    fn a_custom_material_fades_its_own_levels_and_a_handed_over_card_dithers() {
+        // A custom material's levels fade, and so do its distance bands' edges. The two batches of
+        // a hand-over, a plant's mesh and its card, are different sources, so their dither phases
+        // differ; both fade at their own edge rather than one switching at full coverage.
         let key = |template: u32| -> BucketKey {
             (
                 DrawKey {
@@ -514,8 +520,14 @@ mod tests {
                 0,
             )
         };
-        assert!(!fades_its_way(key(template::CUSTOM_FIRST).0));
+        assert!(fades_its_way(key(template::CUSTOM_FIRST).0));
         assert!(fades_its_way(key(template::INSTANCED_LIT).0));
+        // A caster, a motion build and a pick build never fade.
+        for bit in [permutation::CASTER, permutation::MOTION, permutation::PICK] {
+            let mut key = key(template::CUSTOM_FIRST);
+            key.0.permutation = bit;
+            assert!(!fades_its_way(key.0), "{bit}");
+        }
         let mut keys = vec![
             (key(template::INSTANCED_LIT), 3),
             (key(template::CUSTOM_FIRST), 2),
@@ -537,7 +549,7 @@ mod tests {
                 .any(|(key, _)| key.0.template == template && is_fade_key(key))
         };
         assert!(faded(template::INSTANCED_LIT));
-        assert!(!faded(template::CUSTOM_FIRST));
+        assert!(faded(template::CUSTOM_FIRST));
     }
 
     #[test]

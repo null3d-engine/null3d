@@ -28,7 +28,7 @@ function factsOf(text: string): CandidateFacts | undefined {
 	try {
 		const facts = JSON.parse(text) as Partial<CandidateFacts>;
 		const named = [facts.test, facts.drawnIn, facts.reference].every((v) => typeof v === 'string');
-		const known = facts.status === 'new' || facts.status === 'changed';
+		const known = facts.status === 'new' || facts.status === 'changed' || facts.status === 'drawn';
 		return named && known && isTier(facts.tier) && facts.tolerance
 			? (facts as CandidateFacts)
 			: undefined;
@@ -58,6 +58,10 @@ const titleOf = ({ test, tier, drawnIn, mode }: Candidate) =>
 /** What a candidate is, in one sentence. */
 function statusText({ status, share, tolerance, reference }: Candidate): string {
 	if (status === 'new') return `New: there is no reference ${reference} yet.`;
+	if (status === 'drawn')
+		return share === undefined
+			? `Drawn: the renderer drew this image, and there is no reference ${reference} yet.`
+			: `Drawn: ${percent(share)} of pixels differ from ${reference}, and at most ${percent(tolerance.maxDiffRatio)} may.`;
 	return `Changed: ${percent(share ?? 1)} of pixels differ from ${reference}, and at most ${percent(tolerance.maxDiffRatio)} may.`;
 }
 

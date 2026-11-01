@@ -273,6 +273,16 @@ them in. `sky-layer-light` checks the order within that bound on the same tiers:
 crossing is no later than the mirror's plus one frame, and the mirror's no later than the light's
 plus three.
 
+`sky-layer-scene-pass` holds the layer in three views at once. A green layer covers the sky over a
+lake, and the main camera sees it in the sky and in the water. A reflection pass mirrors the layer
+into the water. A screen on the right shows a second camera's view across the same water, which a
+scene pass draws. The screen's sky is the layer's green because the scene pass draws the scene's
+background. A scene pass that left the layer out would show the core sky there, and the picture
+would move past its limit. The screen covers 3.8 to 4.0 per cent of the frame. `?layer=off` draws
+the control, where the core sky and its own reflection stand in the layer's place, and the picture
+then differs in 79 to 87 per cent of its pixels. The picture is drawn on WebGPU, in compatibility
+mode and on WebGL2.
+
 The demo's cloud coverage does not suppress the layer. The aurora's brightness scales by the clear
 fraction, about 0.96 at the demo's settings (`examples/addons/aurora/aurora.wgsl`), not by the
 coverage.

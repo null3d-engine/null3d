@@ -25,6 +25,7 @@ import {
 	SCOPE_FULLSCREEN,
 	SCOPE_LATE_CULL,
 	SCOPE_LIGHT_CLUSTERS,
+	SCOPE_LIGHT_DEPTH,
 	SCOPE_MOTION,
 	SCOPE_MOTION_VIEW,
 	SCOPE_NONE,
@@ -55,6 +56,7 @@ import {
 /** The name of each kind of step, in the overlay's words. */
 const NAMES: ReadonlyMap<number, string> = new Map([
 	[SCOPE_LIGHT_CLUSTERS, 'light clusters'],
+	[SCOPE_LIGHT_DEPTH, 'light depth'],
 	[SCOPE_SKIN, 'skinning'],
 	[SCOPE_CULL, 'culling'],
 	[SCOPE_PREPASS, 'depth prepass'],

@@ -171,6 +171,7 @@ use null3d_gpu::pass_role::{self, PassRole};
 use crate::accumulate::{self, AccumulateIds, AccumulatePass};
 use crate::ao::{self, Ao, AoIds, AoPass, Contact, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
+use crate::bounce::{self, BounceFrame, BounceIds, BouncePass};
 use crate::camera::Mat4;
 use crate::compute::{ComputePassIds, ComputePasses};
 use crate::dof::{self, DofFrame, DofIds, DofPass, DofSources};
@@ -188,6 +189,7 @@ use crate::graph::{
     CANVAS, GraphError, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph,
     RenderScale, ResourceId, Size, Step, StepKind, StoreOp, Surface, Target,
 };
+use crate::moment::{self, MomentIds, MomentLayer};
 use crate::motion::{self, MotionFrame, MotionIds, MotionView};
 use crate::outline::{self, Outline};
 use crate::output::{Antialias, Output, SceneColor};
@@ -252,8 +254,12 @@ pub(crate) struct GraphIds {
     /// The motion debug view's step.
     pub(crate) motion: MotionIds,
     pub(crate) ssr: SsrIds,
+    /// The uniform buffer and bind groups of screen-space bounce light's steps.
+    pub(crate) bounce: BounceIds,
     /// The composite and the depth copy of the camera's weighted layer.
     pub(crate) weighted: WeightedIds,
+    /// The steps, the sampler and the lookup tables of the camera's moment layer.
+    pub(crate) moment: MomentIds,
     /// The bind group of the copy of the camera's opaque depth that soft particles read.
     pub(crate) particle_depth: u32,
     /// The first of two bind groups for custom materials that read the scene's depth: the blank
@@ -271,6 +277,8 @@ const OBJECTS: &str = "objects";
 const LIGHTS: &str = "lights";
 /// The camera's light grid, which the light clustering pass fills on WebGPU.
 const LIGHT_GRID: &str = "lightGrid";
+/// The depth reduction that the next frame's light clustering fits its slices to.
+const LIGHT_REDUCTION: &str = "lightReduction";
 /// The camera's color target, which reaches the canvas.
 const SCENE_COLOR: &str = "sceneColor";
 /// The first step of the two-step pass's target: the scene's display color at the render size,
@@ -450,6 +458,10 @@ const PICK_RESOLVED: &str = "pickResolved";
 /// the denoise, whose target the camera's opaque pass reads.
 const AO_PASSES: [&str; ao::STEPS] = ["AoDepth", "AoHorizon", "AoDenoise"];
 const AO_TARGETS: [&str; ao::STEPS] = ["aoDepth", "aoHorizon", "aoResult"];
+/// Screen-space bounce light's steps: the trace and the denoise.
+const BOUNCE_PASSES: [&str; bounce::STEPS] = ["BounceTrace", "BounceDenoise"];
+/// Screen-space bounce light's traced target, which only its denoise reads.
+const BOUNCE_RAW: &str = "bounceRaw";
 /// The motion view's culling pass on WebGPU, and the buffer of its compacted instances and
 /// indirect draws.
 const MOTION_CULLING: &str = "MotionCulling";
@@ -492,6 +504,26 @@ const WEIGHTED_PASS: &str = "Weighted";
 const WEIGHTED_SUM: &str = "weightedSum";
 const WEIGHTED_COVER: &str = "weightedCover";
 const WEIGHTED_COMPOSITE_PASS: &str = "WeightedComposite";
+/// The camera's moment transparency layer (see [`crate::moment`]): the pass that writes the moment
+/// store, the pass that writes the colour sum, the composite over the scene color, and the three
+/// steps of SMAA that smooth its edges under the share that its moments cover.
+const MOMENT_STORE: &str = "momentStore";
+const MOMENT_COLOUR: &str = "momentColour";
+const MOMENT_DEPTH: &str = "momentDepth";
+const MOMENT_EDGES: &str = "momentEdges";
+const MOMENT_WEIGHTS: &str = "momentWeights";
+const MOMENT_RESOLVED: &str = "momentResolved";
+const MOMENT_PASS: &str = "Moment";
+const MOMENT_COLOUR_PASS: &str = "MomentColour";
+const MOMENT_COMPOSITE_PASS: &str = "MomentComposite";
+const MOMENT_SMAA_EDGES_PASS: &str = "MomentEdges";
+const MOMENT_SMAA_BLEND_PASS: &str = "MomentBlend";
+const MOMENT_SMAA_RESOLVE_PASS: &str = "MomentResolve";
+/// The bytes that the moment layer copies into the upload arena at its first use: its area and
+/// search lookup tables, four bytes a texel.
+const MOMENT_TABLES_BYTES: usize =
+    (moment::tables::AREA_WIDTH * moment::tables::AREA_HEIGHT) as usize * 4
+        + (moment::tables::SEARCH_WIDTH * moment::tables::SEARCH_HEIGHT) as usize * 4;
 /// The pass that draws decals over the camera's opaque objects, from the scene's depth so far.
 const DECALS_PASS: &str = "Decals";
 /// The pass that draws the objects that decals skip again, after the decal pass.
@@ -592,6 +624,8 @@ pub(crate) struct DrawnViews {
 pub(crate) enum Role {
     /// Lists the lights of each cluster of the camera's light grid on the GPU.
     LightClusters,
+    /// Reduces the camera view's depth for the light clusters' fitted slices.
+    LightDepth,
     /// Skins the skinned meshes that some view draws, on the GPU, into the skinned vertex buffer
     /// that the shadow and scene passes draw.
     Skin,
@@ -641,6 +675,9 @@ pub(crate) enum Role {
     /// A step of screen-space reflections, by its place: a level of the depth pyramid, then the
     /// trace. The graph records it itself.
     Ssr(u8),
+    /// A step of screen-space bounce light, by its place: the trace, then the denoise. The graph
+    /// records it itself.
+    Bounce(u8),
     /// A pass of the custom effects, a lone effect or a group, by its place among the effects'
     /// passes. The graph records it itself.
     Effect(u8),
@@ -680,6 +717,19 @@ pub(crate) enum Role {
     Weighted,
     /// Blends the camera's weighted layer over its scene color. The graph records it itself.
     WeightedComposite,
+    /// Writes the camera's blended surfaces into the moment layer's moment store. The builder
+    /// records it, after the graph's copy of a multisampled scene depth.
+    Moment,
+    /// Draws the same surfaces again into the moment layer's colour sum. The builder records it.
+    MomentColour,
+    /// Blends the camera's moment layer over its scene color. The graph records it itself.
+    MomentComposite,
+    /// Marks the moment layer's edges for SMAA. The graph records it itself.
+    MomentSmaaEdges,
+    /// Finds the ends of those edges and their areas. The graph records it itself.
+    MomentSmaaBlend,
+    /// Mixes each pixel with the neighbour that its weights name. The graph records it itself.
+    MomentSmaaResolve,
     /// Copies the camera's opaque depth into the target that soft particles read. The graph
     /// records it itself.
     ParticleDepthCopy,
@@ -784,6 +834,19 @@ impl<T: Copy> CompileCache<T> {
     }
 }
 
+/// The textures that the moment layer's steps read, found for each compile of the graph: the
+/// moment store and the colour sum, the scene depth that the depth copy reads or 0, the scene color
+/// that the anti-aliasing reads, and the edge marks and the blending weights it writes.
+#[derive(Clone, Copy, Debug, Default)]
+struct MomentTextures {
+    store: u32,
+    colour: u32,
+    depth: u32,
+    scene: u32,
+    edges: u32,
+    weights: u32,
+}
+
 /// A group of passes that draws once its pipelines are built. The passes that a group allows
 /// differ between a frame that has them built and one that has not, so a change in that state
 /// declares the frame's passes again.
@@ -796,6 +859,7 @@ enum BuiltGroup {
     Subsurface,
     Transmission,
     Weighted,
+    Moment,
     ParticleDepth,
     Taa,
 }
@@ -847,6 +911,8 @@ pub(crate) struct FrameGraph {
     samples: u32,
     /// True when the GPU culls each view in a culling pass.
     gpu_culling: bool,
+    /// True when the camera's grid lists a light, so the frame reduces its depth for the slices.
+    light_depth: bool,
     /// The format of the scene's color targets.
     scene_color: SceneColor,
     /// True when the scene's render pass can resolve its color into the canvas: on the 8-bit path
@@ -1084,6 +1150,15 @@ pub(crate) struct FrameGraph {
     /// True once screen-space reflections' pipelines, ambient occlusion's depth step's and the
     /// color copy's are built.
     ssr_built: bool,
+    /// Screen-space bounce light's steps and their GPU objects, once they first draw.
+    bounce_pass: Option<BouncePass>,
+    /// The GPU objects that screen-space bounce light's steps take.
+    bounce_ids: BounceIds,
+    /// What screen-space bounce light's steps draw with, while it draws.
+    bounce: Option<BounceFrame>,
+    /// True once screen-space bounce light's pipelines, ambient occlusion's steps' and the color
+    /// copy's are built.
+    bounce_built: bool,
     /// The camera's view in the frame whose color copy the next frame's reflections read, with the
     /// copy's texture as that frame made it, or `None` before a frame copied for them.
     last_view: Option<(LastView, MadeTexture)>,
@@ -1125,6 +1200,20 @@ pub(crate) struct FrameGraph {
     motion_view_built: bool,
     /// True when the declared passes hold the motion debug view's step.
     motion_declared: bool,
+    /// The steps of the camera's moment transparency layer.
+    moment: MomentLayer,
+    /// True when the device draws into the moment layer's targets of 16-bit floats.
+    moment_targets: bool,
+    /// True while some sorted bucket has a pipeline of the moment layer.
+    moment_wanted: bool,
+    /// True once the layer's own pipelines are built.
+    moment_built: bool,
+    /// True when the declared passes hold the moment layer.
+    moment_declared: bool,
+    /// True when the declared passes hold the anti-aliasing steps that follow the layer.
+    moment_smaa_declared: bool,
+    /// The textures that the moment layer's steps read, found once for each compile of the graph.
+    moment_textures: CompileCache<MomentTextures>,
     /// The composite and the depth copy of the camera's weighted layer.
     weighted: WeightedLayer,
     /// True when the device draws into the weighted layer's targets of 16-bit floats.
@@ -1246,6 +1335,7 @@ impl FrameGraph {
             declared_names: Vec::new(),
             samples: antialias.samples(),
             gpu_culling,
+            light_depth: false,
             scene_color,
             resolves: !scene_color.is_hdr() && antialias == Antialias::Msaa,
             scales: false,
@@ -1360,6 +1450,10 @@ impl FrameGraph {
             ssr: None,
             ssr_scale: ao::MAX_SCALE,
             ssr_built: false,
+            bounce_pass: None,
+            bounce_ids: ids.bounce,
+            bounce: None,
+            bounce_built: false,
             last_view: None,
             views: 0,
             debug_lines: None,
@@ -1376,6 +1470,13 @@ impl FrameGraph {
             motion_step: MotionView::new(ids.motion),
             motion_view_built: false,
             motion_declared: false,
+            moment: MomentLayer::new(ids.moment),
+            moment_targets: true,
+            moment_wanted: false,
+            moment_built: false,
+            moment_declared: false,
+            moment_smaa_declared: false,
+            moment_textures: CompileCache::default(),
             weighted: WeightedLayer::new(ids.weighted),
             weighted_targets: true,
             weighted_wanted: false,
@@ -1537,9 +1638,11 @@ impl FrameGraph {
         self.prepass || self.screen_steps() || self.ssr.is_some()
     }
 
-    /// True while ambient occlusion's steps run: while ambient occlusion or contact shadows draw.
+    /// True while ambient occlusion's steps run: while ambient occlusion, contact shadows or
+    /// screen-space bounce light draw, as the bounce light reads the depth copy and the normals
+    /// that the steps leave.
     fn screen_steps(&self) -> bool {
-        self.ao.is_some() || self.contact.is_some()
+        self.ao.is_some() || self.contact.is_some() || self.bounce.is_some()
     }
 
     /// Sets ambient occlusion's settings and the main directional light's contact shadows for the
@@ -1627,10 +1730,34 @@ impl FrameGraph {
         self.ssr.is_some() && self.ssr_built
     }
 
+    /// Turns screen-space bounce light on with what its steps draw with, or off with `None`, for
+    /// the next frames. The passes are declared again only when it turns on or off. The light
+    /// draws on the screen texture's grid, which ambient occlusion's steps leave, so it keeps
+    /// those steps running too.
+    pub(crate) fn set_bounce(&mut self, frame: Option<BounceFrame>) {
+        if frame.is_some() != self.bounce.is_some() {
+            self.declared = false;
+        }
+        self.bounce = frame;
+    }
+
+    /// True while screen-space bounce light draws: the quality settings asked for it, and its
+    /// pipelines, ambient occlusion's steps' and the color copy's are built. Until then the
+    /// prepass runs, so its pipelines build too.
+    pub(crate) fn bounce_draws(&self) -> bool {
+        self.bounce.is_some() && self.bounce_built
+    }
+
+    /// Screen-space bounce light's steps, made when first asked for.
+    fn bounce_steps(&mut self) -> &mut BouncePass {
+        self.bounce_pass
+            .get_or_insert_with(|| BouncePass::new(self.bounce_ids))
+    }
+
     /// True while the frame copies the camera's opaque color: for surfaces that let light through,
-    /// or for screen-space reflections, which read it in the next frame.
+    /// or for screen-space reflections and bounce light, which read it in the next frame.
     fn copy_wanted(&self) -> bool {
-        self.transmission_wanted || self.ssr.is_some()
+        self.transmission_wanted || self.ssr.is_some() || self.bounce.is_some()
     }
 
     /// Writes the screen texture's grid and screen-space reflections' values into the camera's
@@ -1638,7 +1765,7 @@ impl FrameGraph {
     /// `eye` is this frame's camera position in the world. It then keeps this frame's view, whose
     /// copy the next frame reads. Call it once a frame, after [`FrameGraph::prepare`].
     pub(crate) fn write_screen_values(&mut self, uniform: &mut FrameUniform, eye: [f64; 3]) {
-        if self.screen_draws() || self.ssr_draws() {
+        if self.screen_draws() || self.ssr_draws() || self.bounce_draws() {
             let strength = if self.screen_draws() {
                 uniform.occlusion[0]
             } else {
@@ -1654,6 +1781,13 @@ impl FrameGraph {
             _ => None,
         };
         ssr::write_frame_values(uniform, self.ssr.map(|frame| frame.ssr), last, eye);
+        // The light's layer exists only while its steps draw, so its strength is 0 until then.
+        bounce::write_frame_values(
+            uniform,
+            self.bounce
+                .filter(|_| self.bounce_draws())
+                .map(|frame| frame.bounce),
+        );
         self.last_view = copy.map(|made| {
             let view = LastView {
                 view_proj: uniform.view_proj,
@@ -1804,12 +1938,37 @@ impl FrameGraph {
         }
     }
 
+    /// Turns the light depth reduction on while the camera's grid lists a light, for the next
+    /// frames. Its read keeps the scene depth out of transient memory, so a frame without local
+    /// lights declares it not at all.
+    pub(crate) fn set_light_depth(&mut self, on: bool) {
+        if on != self.light_depth {
+            self.light_depth = on;
+            self.declared = false;
+        }
+    }
+
     /// The draw list's id of the scene depth that the decal pass reads, or `None` while it does
     /// not run. Valid once the frame's [`FrameGraph::prepare`] made the plan's textures.
     pub(crate) fn decal_depth(&self) -> Option<u32> {
         self.decals_declared
             .then(|| self.sampled_id(SCENE_DEPTH))
             .flatten()
+    }
+
+    /// The draw list's id of the scene depth that the light clusters' depth reduction reads, or
+    /// `None` while the graph declares no reduction. A frame without it never binds the depth, so
+    /// the depth keeps the usage that the graph planned.
+    pub(crate) fn scene_depth(&self) -> Option<u32> {
+        self.light_depth
+            .then(|| self.sampled_id(SCENE_DEPTH))
+            .flatten()
+    }
+
+    /// True when the scene depth target is multisampled, so the depth reduction reads its first
+    /// sample.
+    pub(crate) fn scene_depth_multisampled(&self) -> bool {
+        self.gpu_culling && self.samples > 1
     }
 
     /// Bytes that one frame may copy into its arena for the graph's own passes. The final pass can
@@ -1827,6 +1986,11 @@ impl FrameGraph {
         };
         let ssr = if self.ssr_draws() {
             SsrPass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        let bounce = if self.bounce_draws() {
+            BouncePass::UPLOAD_BYTES
         } else {
             0
         };
@@ -1880,6 +2044,12 @@ impl FrameGraph {
         } else {
             0
         };
+        // The moment layer copies its two lookup tables into the arena at its first frame.
+        let moment = if self.moment_declared {
+            MOMENT_TABLES_BYTES
+        } else {
+            0
+        };
         FinalPass::UPLOAD_BYTES
             + still
             + if self.two_step_declared {
@@ -1890,6 +2060,7 @@ impl FrameGraph {
             + bloom
             + ao
             + ssr
+            + bounce
             + effects
             + dof
             + subsurface
@@ -1899,6 +2070,7 @@ impl FrameGraph {
             + compute
             + exposure
             + taa
+            + moment
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -1913,6 +2085,7 @@ impl FrameGraph {
             || self.fullscreen_reads_color
             || self.mask_draws()
             || self.transmission_declared
+            || self.moment_smaa_declared
             || self.particle_depth_declared
     }
 
@@ -2257,7 +2430,9 @@ impl FrameGraph {
     /// target while its steps are declared, or else the custom effects' output. Bloom and the final
     /// pass read it, and the effects that fold into the final pass.
     fn color_output(&self) -> &'static str {
-        if self.dof_declared {
+        if self.moment_smaa_declared {
+            MOMENT_RESOLVED
+        } else if self.dof_declared {
             DOF_TARGETS[dof::STEPS - 1]
         } else {
             self.effects_output()
@@ -2608,7 +2783,35 @@ impl FrameGraph {
         self.weighted_targets = supported;
     }
 
-    /// The targets of the camera's weighted layer, for the pipelines of a pass whose targets are
+    /// Says whether the device draws into one-sample targets of 16-bit floats, which the camera's
+    /// moment layer needs.
+    pub(crate) fn set_moment_targets(&mut self, supported: bool) {
+        self.moment_targets = supported;
+    }
+
+    /// The targets of the camera's moment layer, for the pipelines of a pass whose targets are
+    /// `scene`, or `None` where the device cannot draw the layer.
+    pub(crate) fn moment_targets(&self, scene: PassTargets) -> Option<PassTargets> {
+        self.moment_targets.then_some(PassTargets {
+            color_format: moment::STORE_FORMAT,
+            depth_format: DEPTH_FORMAT,
+            samples: 1,
+            ..scene
+        })
+    }
+
+    /// Turns the camera's moment layer on while some sorted bucket has its pipelines, and off
+    /// otherwise, for the next frames. The passes are declared again only when the layer starts or
+    /// stops drawing. Call it before [`FrameGraph::request_pipelines`].
+    pub(crate) fn set_moment(&mut self, on: bool) {
+        let was = self.moment_draws();
+        self.moment_wanted = on && self.moment_targets;
+        if self.moment_draws() != was {
+            self.declared = false;
+        }
+    }
+
+    /// The textures of the camera's weighted layer, for the pipelines of a pass whose targets are
     /// `scene`, or `None` where the device cannot draw the layer.
     pub(crate) fn weighted_targets(&self, scene: PassTargets) -> Option<PassTargets> {
         self.weighted_targets.then_some(PassTargets {
@@ -2685,6 +2888,60 @@ impl FrameGraph {
             samples: self.samples,
             permutation: 0,
         }
+    }
+
+    /// True while the camera's moment layer draws: some sorted bucket has its pipelines, and the
+    /// layer's own pipelines are built. Until then blended surfaces draw back to front in the
+    /// transparent pass.
+    pub(crate) fn moment_draws(&self) -> bool {
+        self.moment_wanted && self.moment_built
+    }
+
+    /// True when the declared passes hold the camera's moment layer, so the camera's transparent
+    /// pass leaves its buckets to it.
+    pub(crate) fn moment_declared(&self) -> bool {
+        self.moment_declared
+    }
+
+    /// True when the camera's moment layer copies one sample of a multisampled scene depth, which
+    /// both of its passes then test against.
+    fn moment_copies_depth(&self) -> bool {
+        self.samples > 1
+    }
+
+    /// The moment store's texture while the layer is declared, which the colour pass's frame
+    /// groups bind.
+    pub(crate) fn moment_store(&mut self) -> Option<u32> {
+        if !self.moment_declared {
+            return None;
+        }
+        let textures = self.moment_textures_value();
+        Some(textures.store)
+    }
+
+    /// The moment layer's textures, found once for each compile of the graph.
+    fn moment_textures_value(&mut self) -> MomentTextures {
+        let mut found = self.moment_textures;
+        let value = found.get_or(self.graph.compiles(), || {
+            let id = |name: &str| {
+                self.sampled_id(name)
+                    .expect("the moment layer reads planned textures")
+            };
+            MomentTextures {
+                store: id(MOMENT_STORE),
+                colour: id(MOMENT_COLOUR),
+                depth: if self.moment_copies_depth() {
+                    id(SCENE_DEPTH)
+                } else {
+                    0
+                },
+                scene: id(SCENE_COLOR),
+                edges: id(MOMENT_EDGES),
+                weights: id(MOMENT_WEIGHTS),
+            }
+        });
+        self.moment_textures = found;
+        value
     }
 
     /// True while the camera's weighted layer draws: some sorted bucket has its pipeline, and the
@@ -2894,8 +3151,9 @@ impl FrameGraph {
             };
             self.graph.keep(SHADOW_ATLAS, atlas, size);
         }
-        if self.ssr_draws() && !views.is_empty() {
-            // Screen-space reflections read the color copy that the frame before made.
+        if (self.ssr_draws() || self.bounce_draws()) && !views.is_empty() {
+            // Screen-space reflections and bounce light read the color copy that the frame before
+            // made.
             let target = Target::color(self.copy_format()).mipmapped();
             let size = view_size(&views[ViewId::CAMERA.index()]);
             self.graph.keep(TRANSMISSION_COLOR, target, size);
@@ -3001,10 +3259,21 @@ impl FrameGraph {
         });
         if self.gpu_culling {
             self.graph.import_buffer(LIGHTS);
-            let clusters = Pass::new("LightClusters", PassKind::Compute)
-                .reads(LIGHTS)
-                .creates_buffer(LIGHT_GRID);
+            let mut clusters = Pass::new("LightClusters", PassKind::Compute).reads(LIGHTS);
+            if self.light_depth {
+                self.graph.import_buffer(LIGHT_REDUCTION);
+                clusters = clusters.reads_so_far(LIGHT_REDUCTION);
+            }
+            let clusters = clusters.creates_buffer(LIGHT_GRID);
             self.add(clusters, Role::LightClusters);
+            // The depth reduction reads the depth that the camera view's opaque pass leaves, and
+            // fills what the next frame's clustering fits its slices to.
+            if self.light_depth {
+                let light_depth = Pass::new("LightDepth", PassKind::Compute)
+                    .reads(SCENE_DEPTH)
+                    .writes(LIGHT_REDUCTION);
+                self.add(light_depth, Role::LightDepth);
+            }
             self.graph.import_buffer(OBJECTS);
             for (index, names) in named.iter().enumerate() {
                 if (self.fullscreen_views | self.compute_views) & (1 << index) != 0 {
@@ -3180,7 +3449,8 @@ impl FrameGraph {
             self.add(copy, Role::Taa(taa::OPAQUE_STEP as u8));
         }
         self.transmission_declared =
-            (self.transmission_draws() || self.ssr_draws()) && !views.is_empty();
+            (self.transmission_draws() || self.ssr_draws() || self.bounce_draws())
+                && !views.is_empty();
         if self.transmission_declared {
             // The copy reads the scene color and depth as the opaque pass and the debug lines
             // leave them, before the transparent pass draws into them. For screen-space
@@ -3192,7 +3462,7 @@ impl FrameGraph {
                 .size(size)
                 .reads_so_far(SCENE_COLOR)
                 .reads_so_far(SCENE_DEPTH);
-            let copy = if self.ssr_draws() {
+            let copy = if self.ssr_draws() || self.bounce_draws() {
                 copy.writes(TRANSMISSION_COLOR)
             } else {
                 copy.optional().creates(TRANSMISSION_COLOR, target)
@@ -3239,6 +3509,10 @@ impl FrameGraph {
         self.weighted_declared = self.weighted_draws() && !views.is_empty();
         if self.weighted_declared {
             self.declare_weighted(views, &named);
+        }
+        self.moment_declared = self.moment_draws() && !views.is_empty();
+        if self.moment_declared {
+            self.declare_moment(views, &named);
         }
         if copies {
             for (index, view) in views.iter().enumerate().skip(1) {
@@ -3314,6 +3588,13 @@ impl FrameGraph {
             self.declare_dof();
         }
         self.declare_accumulate();
+        // The anti-aliasing steps read the scene's color as the passes before them leave it, so
+        // they take the name of that output before the later passes read their own.
+        let aliased = self.color_output();
+        self.moment_smaa_declared = self.moment_declared;
+        if self.moment_smaa_declared {
+            self.declare_moment_smaa(views, aliased);
+        }
         let resolve = Pass::new("Resolve", PassKind::Resolve)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
@@ -3879,20 +4160,34 @@ impl FrameGraph {
             for level in &SSR_TARGETS[..ssr::LEVELS] {
                 trace = trace.reads(*level);
             }
-            let trace = trace.creates(SSR_TARGETS[ssr::LEVELS], Target::color(ssr::TRACE_FORMAT));
+            let trace = trace.creates(
+                SSR_TARGETS[ssr::LEVELS],
+                Target::color(ssr::TRACE_FORMAT).array(),
+            );
             self.add(trace, Role::Ssr(ssr::LEVELS as u8));
         }
         if !self.screen_draws() {
             return;
         }
         for step in 1..ao::STEPS {
-            let target = Target::color(ao::FORMATS[step]);
+            let last = step == ao::STEPS - 1;
+            // The last target holds the bounce light's layer while the bounce light draws. The
+            // target is an array either way, so the opaque pass binds one shape of texture.
+            let two_layers = last && self.bounce_draws();
+            let mut target = Target::color(ao::FORMATS[step]);
+            if last {
+                target = target.layers(if two_layers { 2 } else { 1 }).array();
+            }
             let pass = Pass::new(AO_PASSES[step], PassKind::Fullscreen).size(ao::SIZE);
             let mut pass = if no_clear {
                 pass.creates_overwriting(AO_TARGETS[step], target)
             } else {
                 pass.creates(AO_TARGETS[step], target)
             };
+            if two_layers {
+                // The bounce light's denoise draws into the target's second layer.
+                pass = pass.writes_layer(AO_TARGETS[step], 0);
+            }
             pass = pass.reads(AO_TARGETS[0]);
             if step == 2 {
                 pass = pass.reads(AO_TARGETS[1]);
@@ -3901,6 +4196,24 @@ impl FrameGraph {
                 }
             }
             self.add(pass, Role::Ao(step as u8));
+        }
+        if self.bounce_draws() {
+            // The trace reads the color copy as the frame before left it, and the denoise writes
+            // the light into the screen texture's second layer.
+            let trace = Pass::new(BOUNCE_PASSES[0], PassKind::Fullscreen)
+                .size(ao::SIZE)
+                .reads(AO_TARGETS[0])
+                .reads(AO_TARGETS[1])
+                .reads_so_far(TRANSMISSION_COLOR)
+                .creates(BOUNCE_RAW, Target::color(bounce::FORMAT).array());
+            self.add(trace, Role::Bounce(0));
+            let denoise = Pass::new(BOUNCE_PASSES[1], PassKind::Fullscreen)
+                .size(ao::SIZE)
+                .reads(BOUNCE_RAW)
+                .reads(AO_TARGETS[0])
+                .reads(AO_TARGETS[1])
+                .writes_layer(AO_TARGETS[ao::STEPS - 1], 1);
+            self.add(denoise, Role::Bounce(1));
         }
     }
 
@@ -3935,6 +4248,77 @@ impl FrameGraph {
             .reads(WEIGHTED_COVER)
             .writes(SCENE_COLOR);
         self.add(composite, Role::WeightedComposite);
+    }
+
+    /// Declares the camera's moment transparency layer after its transparent pass (see
+    /// [`crate::moment`]). The moment pass writes the moment store with the scene's depth as its
+    /// depth target, and the colour pass writes the colour sum from it. A scene of one sample
+    /// lends its own depth. A multisampled scene's first pass creates a depth target of one
+    /// sample, and its first draw copies the scene depth into it, as the transparent pass leaves
+    /// it. The composite then blends the colour over the scene color.
+    fn declare_moment(&mut self, views: &[View], named: &[ViewPassNames]) {
+        let camera = &views[ViewId::CAMERA.index()];
+        let size = view_size(camera);
+        let mut layer = Pass::new(MOMENT_PASS, PassKind::Scene)
+            .size(size)
+            .layers(camera.layers())
+            .creates(MOMENT_STORE, Target::color(moment::STORE_FORMAT));
+        layer = if self.moment_copies_depth() {
+            layer
+                .reads_so_far(SCENE_DEPTH)
+                .creates(MOMENT_DEPTH, Target::depth(DEPTH_FORMAT))
+        } else {
+            layer.writes(SCENE_DEPTH)
+        };
+        if self.skins() {
+            layer = layer.reads(SKINNED);
+        }
+        let layer = reads_targets(layer, views, named, ViewId::CAMERA.index());
+        self.add(layer, Role::Moment);
+        let mut colour = Pass::new(MOMENT_COLOUR_PASS, PassKind::Scene)
+            .size(size)
+            .layers(camera.layers())
+            .reads(MOMENT_STORE)
+            .creates(MOMENT_COLOUR, Target::color(moment::COLOUR_FORMAT));
+        colour = if self.moment_copies_depth() {
+            colour.writes(MOMENT_DEPTH)
+        } else {
+            colour.writes(SCENE_DEPTH)
+        };
+        if self.skins() {
+            colour = colour.reads(SKINNED);
+        }
+        let colour = reads_targets(colour, views, named, ViewId::CAMERA.index());
+        self.add(colour, Role::MomentColour);
+        let composite = Pass::new(MOMENT_COMPOSITE_PASS, PassKind::Scene)
+            .size(size)
+            .reads(MOMENT_STORE)
+            .reads(MOMENT_COLOUR)
+            .writes(SCENE_COLOR);
+        self.add(composite, Role::MomentComposite);
+    }
+
+    /// Declares the three steps of SMAA that smooth the moment layer's edges under the share that
+    /// its moments cover, reading `source`, the scene's color as the passes before them leave it.
+    fn declare_moment_smaa(&mut self, views: &[View], source: &'static str) {
+        let size = view_size(&views[ViewId::CAMERA.index()]);
+        let edges = Pass::new(MOMENT_SMAA_EDGES_PASS, PassKind::Fullscreen)
+            .size(size)
+            .reads(source)
+            .reads(MOMENT_STORE)
+            .creates(MOMENT_EDGES, Target::color(moment::EDGES_FORMAT));
+        self.add(edges, Role::MomentSmaaEdges);
+        let blend = Pass::new(MOMENT_SMAA_BLEND_PASS, PassKind::Fullscreen)
+            .size(size)
+            .reads(MOMENT_EDGES)
+            .creates(MOMENT_WEIGHTS, Target::color(moment::WEIGHTS_FORMAT));
+        self.add(blend, Role::MomentSmaaBlend);
+        let resolve = Pass::new(MOMENT_SMAA_RESOLVE_PASS, PassKind::Fullscreen)
+            .size(size)
+            .reads(source)
+            .reads(MOMENT_WEIGHTS)
+            .creates(MOMENT_RESOLVED, Target::color(self.scene_color.format()));
+        self.add(resolve, Role::MomentSmaaResolve);
     }
 
     /// Screen-space reflections' steps, made when first asked for.
@@ -4297,6 +4681,7 @@ impl FrameGraph {
             BuiltGroup::Subsurface => self.subsurface_built,
             BuiltGroup::Transmission => self.transmission_built,
             BuiltGroup::Weighted => self.weighted_built,
+            BuiltGroup::Moment => self.moment_built,
             BuiltGroup::ParticleDepth => self.particle_depth_built,
             BuiltGroup::Taa => self.taa_built,
         }
@@ -4312,6 +4697,7 @@ impl FrameGraph {
             BuiltGroup::Subsurface => self.subsurface_draws(),
             BuiltGroup::Transmission => self.transmission_draws(),
             BuiltGroup::Weighted => self.weighted_draws(),
+            BuiltGroup::Moment => self.moment_draws(),
             BuiltGroup::ParticleDepth => self.particle_depth_draws(),
             BuiltGroup::Taa => self.taa_draws(),
         }
@@ -4338,6 +4724,7 @@ impl FrameGraph {
             BuiltGroup::Subsurface => self.subsurface_built = built,
             BuiltGroup::Transmission => self.transmission_built = built,
             BuiltGroup::Weighted => self.weighted_built = built,
+            BuiltGroup::Moment => self.moment_built = built,
             BuiltGroup::ParticleDepth => self.particle_depth_built = built,
             BuiltGroup::Taa => self.taa_built = built,
         }
@@ -4493,6 +4880,21 @@ impl FrameGraph {
                 self.declared = false;
             }
         }
+        let bounce_built = self.bounce.is_some()
+            && {
+                let steps = self.bounce_steps();
+                steps.request_pipelines(pipelines);
+                pipelines.all_built(steps.pipeline_ids(), pipelines_built)
+            }
+            && steps_built
+            && transmission_built;
+        if bounce_built != self.bounce_built {
+            let was = self.bounce_draws();
+            self.bounce_built = bounce_built;
+            if self.bounce_draws() != was {
+                self.declared = false;
+            }
+        }
         let weighted_built = self.weighted_wanted && {
             let composite =
                 self.weighted
@@ -4508,6 +4910,21 @@ impl FrameGraph {
             weighted_built,
             FrameGraph::declare_again,
         );
+        let moment_built = self.moment_wanted && {
+            let format = self.scene_color.format();
+            let composite = self
+                .moment
+                .request_composite(pipelines, format, self.samples);
+            let (edges, blend, resolve) = self.moment.request_aliasing(pipelines, format);
+            let depth = self
+                .moment_copies_depth()
+                .then(|| self.moment.request_depth(pipelines, DEPTH_FORMAT));
+            [composite, edges, blend, resolve]
+                .into_iter()
+                .all(|id| pipelines.built(id, pipelines_built))
+                && depth.is_none_or(|id| pipelines.built(id, pipelines_built))
+        };
+        self.note_built(BuiltGroup::Moment, moment_built, FrameGraph::declare_again);
         // WebGL2 has no multisampled textures: its backend gives the copy a copy of one sample.
         let samples = if self.gpu_culling { self.samples } else { 1 };
         let particle_depth_built = self.particle_depth_wanted && {
@@ -4608,6 +5025,7 @@ impl FrameGraph {
     ) -> Result<(), RecordError> {
         self.upload_ao(list, arena)?;
         self.upload_ssr(list, arena)?;
+        self.upload_bounce(list, arena)?;
         self.upload_subsurface(list, arena)?;
         self.upload_effects(list, arena)?;
         self.upload_fullscreen(list, arena)?;
@@ -4621,6 +5039,7 @@ impl FrameGraph {
         self.bind_transmission(list)?;
         self.prepare_motion_view(list, arena)?;
         self.bind_weighted(list)?;
+        self.bind_moment(list, arena)?;
         self.bind_particle_depth(list)?;
         self.bind_material_scene(list)?;
         if !self.final_runs() {
@@ -5276,6 +5695,36 @@ impl FrameGraph {
             .prepare(list, color, depth, self.textures_made)
     }
 
+    /// Binds the moment layer's steps to their textures while the layer is declared: the composite
+    /// to the moment store and the colour sum, the depth copy to the scene depth, and the
+    /// anti-aliasing's three steps to their images. It makes the two lookup tables at the layer's
+    /// first use.
+    fn bind_moment(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        if !self.moment_declared {
+            return Ok(());
+        }
+        let textures = self.moment_textures_value();
+        let made = self.textures_made;
+        // The anti-aliasing's groups name the two lookup tables, so the first frame makes the
+        // tables before it makes the groups that bind them.
+        self.moment.prepare_tables(list, arena)?;
+        self.moment
+            .prepare_composite(list, textures.store, textures.colour, made)?;
+        if textures.depth != 0 {
+            self.moment
+                .prepare_depth(list, textures.depth, self.gpu_culling, made)?;
+        }
+        self.moment
+            .prepare_edges(list, textures.scene, textures.store, made)?;
+        self.moment.prepare_blend(list, textures.edges, made)?;
+        self.moment
+            .prepare_resolve(list, textures.scene, textures.weights, made)
+    }
+
     /// Binds the composite of the camera's weighted layer to its two sums, and the depth copy to
     /// the scene depth, while the layer is declared. It finds their textures once for each compile
     /// of the graph.
@@ -5386,7 +5835,7 @@ impl FrameGraph {
     /// Records the objects and settings of ambient occlusion's steps while the screen texture's
     /// steps draw, and binds each step to the textures it reads. While only screen-space
     /// reflections draw, the depth step alone runs, and the other steps' groups bind the depth
-    /// copy.
+    /// copy where the steps read it, and the blank array where a step reads the reflections.
     fn upload_ao(
         &mut self,
         list: &mut DrawList,
@@ -5409,16 +5858,27 @@ impl FrameGraph {
         };
         let depth = id(AO_TARGETS[0]);
         let reflects = self.ssr_draws();
+        // The reflections' binding is an array of layers, so the blank array stands in while the
+        // reflections draw none.
+        let blank = self.ao_ids.blank;
         let sources: StepSources = if screen {
             let horizon = id(AO_TARGETS[1]);
             let trace = if reflects {
                 id(SSR_TARGETS[ssr::LEVELS])
             } else {
-                depth
+                blank
             };
-            [[id(SCENE_DEPTH); 3], [depth; 3], [depth, horizon, trace]]
+            [
+                [id(SCENE_DEPTH); 3],
+                [depth, depth, blank],
+                [depth, horizon, trace],
+            ]
         } else {
-            [[id(SCENE_DEPTH); 3], [depth; 3], [depth; 3]]
+            [
+                [id(SCENE_DEPTH); 3],
+                [depth, depth, blank],
+                [depth, depth, blank],
+            ]
         };
         let (canvas, scale, grid, made) = (
             self.canvas,
@@ -5458,6 +5918,31 @@ impl FrameGraph {
         let (canvas, scale, made) = (self.canvas, self.scale, self.textures_made);
         self.ssr_steps()
             .prepare(list, arena, &frame, canvas, scale, grid, &sources, made)
+    }
+
+    /// Records screen-space bounce light's objects and settings while it draws, and binds its steps
+    /// to the depth copy, the horizon step's target and the color copy or the traced light.
+    fn upload_bounce(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        let Some(frame) = self.bounce.filter(|_| self.bounce_draws()) else {
+            return Ok(());
+        };
+        let id = |name: &str| {
+            self.sampled_id(name)
+                .expect("each step of screen-space bounce light reads a planned texture")
+        };
+        let depth = id(AO_TARGETS[0]);
+        let normals = id(AO_TARGETS[1]);
+        let copy = id(TRANSMISSION_COLOR);
+        let raw = id(BOUNCE_RAW);
+        let sources = [[depth, normals, copy], [depth, normals, raw]];
+        let corner = ao::corner(self.canvas, self.scale, self.screen_scale());
+        let (canvas, scale, made) = (self.canvas, self.scale, self.textures_made);
+        self.bounce_steps()
+            .prepare(list, arena, &frame, canvas, scale, corner, &sources, made)
     }
 
     /// Makes each texture of the plan whose shape or size differs from what the draw lists made,
@@ -5770,6 +6255,8 @@ impl FrameGraph {
                                 | Role::SkinLight
                                 | Role::Motion
                                 | Role::Weighted
+                                | Role::Moment
+                                | Role::MomentColour
                                 | Role::Pick
                         )
                     });
@@ -5826,6 +6313,15 @@ impl FrameGraph {
                                     .expect("screen-space reflections' passes run once declared")
                                     .record(list, step, corner)?
                             }
+                            Role::Bounce(step) => self
+                                .bounce_pass
+                                .as_ref()
+                                .expect("screen-space bounce light's passes run once declared")
+                                .record(
+                                    list,
+                                    usize::from(step),
+                                    ao::corner(self.canvas, self.scale, self.screen_scale()),
+                                )?,
                             Role::Effect(index) => {
                                 let unit = self.effect_units[usize::from(index)];
                                 self.effect_pass
@@ -5881,6 +6377,17 @@ impl FrameGraph {
                                 record(list, Role::Weighted)?;
                             }
                             Role::WeightedComposite => self.weighted.record_composite(list)?,
+                            Role::Moment => {
+                                if self.moment_copies_depth() {
+                                    self.moment.record_depth(list)?;
+                                }
+                                record(list, Role::Moment)?;
+                            }
+                            Role::MomentColour => record(list, Role::MomentColour)?,
+                            Role::MomentComposite => self.moment.record_composite(list)?,
+                            Role::MomentSmaaEdges => self.moment.record_edges(list)?,
+                            Role::MomentSmaaBlend => self.moment.record_blend(list)?,
+                            Role::MomentSmaaResolve => self.moment.record_resolve(list)?,
                             Role::ParticleDepthCopy => self.particle_depth.record(list)?,
                             role => record(list, role)?,
                         }
@@ -5930,6 +6437,7 @@ impl FrameGraph {
         let view = |view: ViewId| view.index() as u32;
         let (code, place) = match role {
             Role::LightClusters => (P::LightClusters, 0),
+            Role::LightDepth => (P::LightDepth, 0),
             Role::Skin => (P::Skin, 0),
             Role::Cull(view_id) => (P::Cull, view(view_id)),
             Role::Prepass(view_id) => (P::Prepass, view(view_id)),
@@ -5962,6 +6470,7 @@ impl FrameGraph {
             Role::Subsurface(step) => (P::Subsurface, u32::from(step)),
             Role::Ao(step) => (P::Ao, u32::from(step)),
             Role::Ssr(step) => (P::Ssr, u32::from(step)),
+            Role::Bounce(step) => (P::Bounce, u32::from(step)),
             Role::Effect(step) => (P::Effect, u32::from(step)),
             Role::Dof(step) => (P::Dof, u32::from(step)),
             Role::FogLight(parity) => (P::FogLight, u32::from(parity)),
@@ -5977,6 +6486,12 @@ impl FrameGraph {
             Role::MotionView => (P::MotionView, 0),
             Role::Weighted => (P::Weighted, 0),
             Role::WeightedComposite => (P::WeightedComposite, 0),
+            Role::Moment => (P::Moment, 0),
+            Role::MomentColour => (P::MomentColour, 0),
+            Role::MomentComposite => (P::MomentComposite, 0),
+            Role::MomentSmaaEdges => (P::MomentSmaaEdges, 0),
+            Role::MomentSmaaBlend => (P::MomentSmaaBlend, 0),
+            Role::MomentSmaaResolve => (P::MomentSmaaResolve, 0),
             Role::ParticleDepthCopy => (P::ParticleDepthCopy, 0),
             Role::Accumulate => (P::Accumulate, 0),
             Role::Final => (P::Final, 0),
@@ -6230,6 +6745,9 @@ impl FrameGraph {
         if let Some(ssr) = self.ssr_pass.as_mut() {
             ssr.reset_gpu();
         }
+        if let Some(bounce) = self.bounce_pass.as_mut() {
+            bounce.reset_gpu();
+        }
         self.last_view = None;
         self.fullscreen.reset_gpu();
         self.compute.reset_gpu();
@@ -6260,6 +6778,7 @@ impl FrameGraph {
         self.transmission.reset_gpu();
         self.motion_step.reset_gpu();
         self.weighted.reset_gpu();
+        self.moment.reset_gpu();
         self.particle_depth.reset_gpu();
         // The blank texel and the two groups belong to the device that was lost.
         self.material_scene_has_blank = false;
@@ -6393,6 +6912,7 @@ fn role_view(role: Role) -> Option<ViewId> {
 fn role_scope(role: Role) -> u32 {
     match role {
         Role::LightClusters => scope::LIGHT_CLUSTERS,
+        Role::LightDepth => scope::LIGHT_DEPTH,
         Role::Skin => scope::SKIN,
         Role::Cull(view) => scope::of(scope::CULL, view.index() as u32),
         Role::Prepass(view) => scope::of(scope::PREPASS, view.index() as u32),
@@ -6414,6 +6934,7 @@ fn role_scope(role: Role) -> u32 {
         Role::Subsurface(step) => scope::of(scope::SUBSURFACE, u32::from(step)),
         Role::Ao(step) => scope::of(scope::AO, u32::from(step)),
         Role::Ssr(step) => scope::of(scope::SSR, u32::from(step)),
+        Role::Bounce(step) => scope::of(scope::BOUNCE, u32::from(step)),
         Role::Effect(step) => scope::of(scope::EFFECT, u32::from(step)),
         Role::Dof(step) => scope::of(scope::DOF, u32::from(step)),
         Role::FogLight(step) => scope::of(scope::FOG_LIGHT, u32::from(step)),
@@ -6429,6 +6950,12 @@ fn role_scope(role: Role) -> u32 {
         Role::MotionView => scope::MOTION_VIEW,
         Role::Weighted => scope::WEIGHTED,
         Role::WeightedComposite => scope::WEIGHTED_COMPOSITE,
+        Role::Moment => scope::MOMENT,
+        Role::MomentColour => scope::MOMENT_COLOUR,
+        Role::MomentComposite => scope::MOMENT_COMPOSITE,
+        Role::MomentSmaaEdges => scope::MOMENT_SMAA_EDGES,
+        Role::MomentSmaaBlend => scope::MOMENT_SMAA_BLEND,
+        Role::MomentSmaaResolve => scope::MOMENT_SMAA_RESOLVE,
         Role::ParticleDepthCopy => scope::PARTICLE_DEPTH_COPY,
         Role::Accumulate => scope::ACCUMULATE,
         Role::Final => scope::FINAL,
@@ -6686,7 +7213,9 @@ mod tests {
             .prepare(&mut list, (64, 48), RenderScale::FULL)
             .unwrap();
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -6728,7 +7257,9 @@ mod tests {
             .prepare(&mut list, (64, 48), RenderScale::FULL)
             .unwrap();
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -6809,7 +7340,9 @@ mod tests {
         assert_eq!(created[4], format::RGBA16_FLOAT);
         // The frame creates the pass's pipeline and its group, and dispatches it over the target.
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -6909,7 +7442,9 @@ mod tests {
         // Its own scratch texture reads the state that a run does not write, and the two views
         // draw into one state each.
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -7009,7 +7544,9 @@ mod tests {
         // The pass takes the layout that binds the state of the run before. Two state textures hold
         // the states, and each state's group writes one and reads the other.
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -7149,20 +7686,53 @@ mod tests {
         assert!(step_of(&frames, "ShadowCascade0").is_some());
         assert!(step_of(&frames, "Motion").is_some());
         assert!(step_of(&frames, "Pick").is_some());
-        // Each pass's layout draws a material that samples the pass's target.
-        frames.set_drawn_views(DrawnViews {
-            casters: 1 << 1,
-            motion: 1 << 1,
-            pick: 1 << 1,
-        });
-        frames.sync(&[View::default(), compute(true)]);
-        frames
-            .prepare(&mut list, (320, 180), RenderScale::FULL)
-            .unwrap();
-        let pass = step_of(&frames, "Opaque1").expect("the pass runs");
-        assert!(pass < step_of(&frames, "ShadowCascade0").unwrap());
-        assert!(pass < step_of(&frames, "Motion").unwrap());
-        assert!(pass < step_of(&frames, "Pick").unwrap());
+
+        // A material that the camera does not draw: only a shadow caster, the motion pass or the
+        // pick draws it, so no texture shows the pass to the camera. The pass reads a full-screen
+        // view that the graph declares after the camera, which the graph runs first, so the pass
+        // itself cannot run early: only the reading pass's edge puts it first. Without that edge
+        // the reader runs before the pass, and the pass is culled because nothing else reads it.
+        let mut field = compute(false);
+        field.compute_pass_mut().unwrap().maps.views = 1 << 2;
+        let views = [View::default(), field, fullscreen(PassSource::None, false)];
+        let readers = [
+            (
+                "ShadowCascade0",
+                DrawnViews {
+                    casters: 1 << 1,
+                    ..DrawnViews::default()
+                },
+            ),
+            (
+                "Motion",
+                DrawnViews {
+                    motion: 1 << 1,
+                    ..DrawnViews::default()
+                },
+            ),
+            (
+                "Pick",
+                DrawnViews {
+                    pick: 1 << 1,
+                    ..DrawnViews::default()
+                },
+            ),
+        ];
+        for (reader, drawn) in readers {
+            frames.set_drawn_views(drawn);
+            frames.sync(&views);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            let pass = step_of(&frames, "Opaque1")
+                .unwrap_or_else(|| panic!("{reader}: the pass runs because the reader reads it"));
+            let reading =
+                step_of(&frames, reader).unwrap_or_else(|| panic!("{reader}: the reader runs"));
+            assert!(
+                pass < reading,
+                "{reader}: the pass runs at step {pass}, before its reader at {reading}"
+            );
+        }
     }
 
     /// The step of each named pass in the plan, or `None` for a pass that does not run.
@@ -7290,7 +7860,7 @@ mod tests {
         );
         // The pass's shader fills the texture that the frame made, not a share of the canvas.
         let mut arena = UploadArena::default();
-        arena.reset(4096);
+        arena.reset(4096).expect("room for the test's uploads");
         frames.upload_fullscreen(&mut list, &mut arena).unwrap();
         assert_eq!(frames.fullscreen.drawn(1), Some([16.0, 12.0, 12.0, 1.0]));
         assert!(
@@ -7381,7 +7951,9 @@ mod tests {
         assert!(frames.particle_depth_declared);
 
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -7452,6 +8024,8 @@ mod tests {
         ao: AoIds {
             buffer: 11,
             first_group: 30,
+            // The moment layer's area and search tables take 913 and 914.
+            blank: 915,
         },
         effects: EffectIds {
             buffer: 12,
@@ -7528,7 +8102,17 @@ mod tests {
             buffer: 21,
             first_group: 220,
         },
+        bounce: BounceIds {
+            buffer: 25,
+            first_group: 230,
+        },
         weighted: WeightedIds { first_group: 140 },
+        moment: MomentIds {
+            first_group: 260,
+            sampler: 152,
+            area: 913,
+            search: 914,
+        },
         particle_depth: 121,
         material_scene: 122,
         blank_scene_depth: 912,
@@ -7694,7 +8278,18 @@ mod tests {
             IDS.ssr.first_group,
             ssr::STEPS as u32,
         ));
+        buffers.push(("the bounce light's block".to_string(), IDS.bounce.buffer, 1));
+        groups.push((
+            "the bounce light's groups".to_string(),
+            IDS.bounce.first_group,
+            bounce::STEPS as u32,
+        ));
         groups.push(("the particle depth copy".to_string(), IDS.particle_depth, 1));
+        textures.push((
+            "the ambient occlusion blank array".to_string(),
+            IDS.ao.blank,
+            1,
+        ));
         groups.push((
             "the materials' scene groups".to_string(),
             IDS.material_scene,
@@ -7717,6 +8312,18 @@ mod tests {
             1,
         ));
         groups.push(("the motion view's step".to_string(), IDS.motion.group, 1));
+        samplers.push((
+            "the moment layer's sampler".to_string(),
+            IDS.moment.sampler,
+            1,
+        ));
+        textures.push(("the moment area table".to_string(), IDS.moment.area, 1));
+        textures.push(("the moment search table".to_string(), IDS.moment.search, 1));
+        groups.push((
+            "the moment layer's groups".to_string(),
+            IDS.moment.first_group,
+            MomentIds::GROUPS,
+        ));
         // The graph takes its own textures from `first_texture` on: one for each texture of its
         // plan and one view for each of their layers, each run at most [`LAYER_VIEWS`] long.
         textures.push((
@@ -8153,6 +8760,43 @@ mod tests {
     }
 
     #[test]
+    fn a_frame_with_lights_reduces_the_camera_depth_after_its_opaque_pass() {
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
+        frames.set_light_depth(true);
+        frames.sync(&[View::default()]);
+        let mut list = DrawList::with_capacity(256);
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        let built = steps(&frames);
+        let flat: Vec<&str> = built.iter().flatten().map(String::as_str).collect();
+        let opaque = flat
+            .iter()
+            .position(|name| *name == "Opaque")
+            .expect("an opaque pass");
+        let depth = flat
+            .iter()
+            .position(|name| *name == "LightDepth")
+            .expect("a depth reduction");
+        assert!(
+            depth > opaque,
+            "the reduction reads the depth that the opaque pass leaves: {flat:?}"
+        );
+        // A frame without a local light declares no reduction, so its depth stays transient.
+        let mut plain = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
+        plain.sync(&[View::default()]);
+        plain
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        assert!(
+            !steps(&plain)
+                .iter()
+                .flatten()
+                .any(|name| name == "LightDepth")
+        );
+    }
+
+    #[test]
     fn each_view_depth_prepass_draws_first_in_its_render_pass_and_creates_its_depth() {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
         frames.set_depth_prepass(true);
@@ -8461,7 +9105,9 @@ mod tests {
         // new settings.
         let mut arena = UploadArena::default();
         let output = Output::default();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         frames
             .upload(&mut list, &mut arena, output, Grading::default())
             .unwrap();
@@ -8473,7 +9119,9 @@ mod tests {
                 frames
                     .prepare(list, canvas, RenderScale::from_thousandths(500))
                     .unwrap();
-                arena.reset(frames.upload_bound());
+                arena
+                    .reset(frames.upload_bound())
+                    .expect("room for the test's uploads");
                 frames
                     .upload(list, arena, output, Grading::default())
                     .unwrap();
@@ -8487,7 +9135,9 @@ mod tests {
         frames
             .prepare(&mut list, canvas, RenderScale::from_thousandths(700))
             .unwrap();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         frames
             .upload(&mut list, &mut arena, output, Grading::default())
             .unwrap();
@@ -8628,7 +9278,9 @@ mod tests {
         let (sources, _) = frames.bloom_textures();
         assert_eq!(sources[0], left, "the chain reads the effects' output");
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -8741,7 +9393,9 @@ mod tests {
         assert!(with <= with_bloom + 3, "{with} textures");
         // The setup and the composite read the multisampled depth through their layouts.
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -8831,7 +9485,9 @@ mod tests {
             "{names:?}"
         );
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -8909,7 +9565,9 @@ mod tests {
             );
             assert_eq!(frames.scene_output(), TAA_COLOR);
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena
+                .reset(frames.upload_bound())
+                .expect("room for the test's uploads");
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -8973,7 +9631,9 @@ mod tests {
         let bound = frames.upload_bound();
         let record = |frames: &mut FrameGraph, list: &mut DrawList| {
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena
+                .reset(frames.upload_bound())
+                .expect("room for the test's uploads");
             list.clear();
             frames
                 .upload(list, &mut arena, Output::default(), Grading::default())
@@ -9281,7 +9941,9 @@ mod tests {
             .expect("the group asked for its pipeline");
         assert_eq!(group.permutation, permutation::DEPTH_MULTISAMPLED);
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -9307,7 +9969,9 @@ mod tests {
             .expect("the final pass asked for its fold build") as u32
             + 1;
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -9545,7 +10209,9 @@ mod tests {
             );
 
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena
+                .reset(frames.upload_bound())
+                .expect("room for the test's uploads");
             list.clear();
             let output = Output::default();
             frames
@@ -9733,7 +10399,14 @@ mod tests {
                 };
                 let made = plan.textures()[usize::from(index)];
                 assert_eq!(made.size, ao::SIZE);
-                assert_eq!(made.target, Target::color(ao::FORMATS[step]));
+                // The last target is an array, whose second layer carries screen-space bounce
+                // light while it draws, so the opaque pass binds one shape of texture.
+                let expected = if step == AO_TARGETS.len() - 1 {
+                    Target::color(ao::FORMATS[step]).array()
+                } else {
+                    Target::color(ao::FORMATS[step])
+                };
+                assert_eq!(made.target, expected);
             }
             // On WebGL2, every read clamps inside the corner that the step draws, so a step's
             // target starts from what the texture holds rather than a clear, which Safari can make
@@ -9754,7 +10427,9 @@ mod tests {
 
             // A lower scale draws a smaller corner of the same targets.
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena
+                .reset(frames.upload_bound())
+                .expect("room for the test's uploads");
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
                 .unwrap();
@@ -9844,7 +10519,9 @@ mod tests {
                 .prepare(&mut list, (320, 180), RenderScale::FULL)
                 .unwrap();
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena
+                .reset(frames.upload_bound())
+                .expect("room for the test's uploads");
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
                 .unwrap();
@@ -10012,7 +10689,9 @@ mod tests {
 
             // The steps record into the corners of their targets.
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena
+                .reset(frames.upload_bound())
+                .expect("room for the test's uploads");
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10073,7 +10752,9 @@ mod tests {
                     frames.ao_texture(),
                     frames.sampled_id(AO_TARGETS[ao::STEPS - 1])
                 );
-                arena.reset(frames.upload_bound());
+                arena
+                    .reset(frames.upload_bound())
+                    .expect("room for the test's uploads");
                 list.clear();
                 frames
                     .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10238,7 +10919,9 @@ mod tests {
 
             // A new reach or a new direction only uploads the steps' settings.
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena
+                .reset(frames.upload_bound())
+                .expect("room for the test's uploads");
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
                 .unwrap();
@@ -10343,7 +11026,9 @@ mod tests {
         assert_eq!(frames.effects_output(), EFFECT_TARGETS[0]);
         // The skin pass draws in a render pass of its own, which clears its light to zero.
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10478,7 +11163,9 @@ mod tests {
             assert!(at("Transparent1").is_some());
 
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena
+                .reset(frames.upload_bound())
+                .expect("room for the test's uploads");
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10540,6 +11227,123 @@ mod tests {
 
             // Unused again, the layer and its targets are gone.
             frames.set_weighted(false);
+            frames.sync(&[View::default(), shown()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert_eq!(steps(&frames), without);
+        }
+    }
+
+    #[test]
+    fn the_moment_layer_draws_its_two_passes_then_the_composite_and_the_anti_aliasing() {
+        let canvas = (320, 180);
+        for (format, antialias) in [
+            (format::RGBA16_FLOAT, Antialias::Msaa),
+            (format::CANVAS, Antialias::Msaa),
+            (format::RGBA16_FLOAT, Antialias::Fxaa),
+        ] {
+            let multisampled = antialias == Antialias::Msaa;
+            let mut frames = frame_graph(format, antialias, true, false);
+            frames.sync(&[View::default(), shown()]);
+            frames.set_transparent(true);
+            let mut list = DrawList::with_capacity(65536);
+            let mut pipelines = PipelineCache::default();
+            frames.request_pipelines(&mut pipelines, 1);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let without = steps(&frames);
+            let keys = pipelines.keys().len();
+
+            // A device without targets of 16-bit floats never draws the layer, and asks for none
+            // of its pipelines.
+            frames.set_moment_targets(false);
+            assert!(frames.moment_targets(frames.scene_targets()).is_none());
+            frames.set_moment(true);
+            frames.request_pipelines(&mut pipelines, 1);
+            assert!(!frames.moment_draws());
+            assert_eq!(pipelines.keys().len(), keys);
+
+            // The layer waits for its pipelines: the composite, the anti-aliasing's three steps,
+            // and the depth copy of a multisampled scene.
+            frames.set_moment_targets(true);
+            frames.set_moment(true);
+            frames.request_pipelines(&mut pipelines, 1);
+            assert!(!frames.moment_draws(), "the layer waits for its pipelines");
+            assert_eq!(
+                pipelines.keys().len(),
+                keys + 4 + usize::from(multisampled),
+                "the layer asks for the depth copy only for a multisampled scene"
+            );
+            pipelines.create_new(&mut list, 2).unwrap();
+            frames.request_pipelines(&mut pipelines, 2);
+            assert!(frames.moment_draws());
+            frames.sync(&[View::default(), shown()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert!(frames.moment_declared());
+            let with: Vec<String> = steps(&frames).into_iter().flatten().collect();
+            let at = |name: &str| with.iter().position(|n| n == name);
+            let transparent = at("Transparent").unwrap();
+            let moment = at(MOMENT_PASS).unwrap();
+            let colour = at(MOMENT_COLOUR_PASS).unwrap();
+            let composite = at(MOMENT_COMPOSITE_PASS).unwrap();
+            let edges = at(MOMENT_SMAA_EDGES_PASS).unwrap();
+            let blend = at(MOMENT_SMAA_BLEND_PASS).unwrap();
+            let resolve = at(MOMENT_SMAA_RESOLVE_PASS).unwrap();
+            assert!(
+                transparent < moment
+                    && moment < colour
+                    && colour < composite
+                    && composite < edges
+                    && edges < blend
+                    && blend < resolve,
+                "the layer's steps run in order: {with:?}"
+            );
+            // The final pass reads the anti-aliased image, and another view keeps its passes.
+            assert!(resolve < at("Final").unwrap());
+            assert!(at("Transparent1").is_some());
+
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound()).unwrap();
+            list.clear();
+            frames
+                .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            let groups: Vec<(u32, u32)> = operands(&list, Op::CreateBindGroup)
+                .iter()
+                .map(|group| (group[0], group[1]))
+                .filter(|&(id, _)| {
+                    (IDS.moment.first_group..IDS.moment.first_group + MomentIds::GROUPS)
+                        .contains(&id)
+                })
+                .collect();
+            let mut expected = vec![(IDS.moment.first_group, bind_layout::MOMENT_COMPOSITE)];
+            if multisampled {
+                expected.push((IDS.moment.first_group + 1, bind_layout::MOMENT_DEPTH_MS));
+            }
+            expected.push((IDS.moment.first_group + 2, bind_layout::MOMENT_SMAA_EDGES));
+            expected.push((IDS.moment.first_group + 3, bind_layout::MOMENT_SMAA_BLEND));
+            expected.push((IDS.moment.first_group + 4, bind_layout::MOMENT_SMAA_RESOLVE));
+            assert_eq!(groups, expected);
+            // The layer made its two lookup tables and their sampler at its first frame.
+            assert!(
+                operands(&list, Op::CreateTexture)
+                    .iter()
+                    .any(|op| op[0] == IDS.moment.area),
+                "the area table is made"
+            );
+            assert!(
+                operands(&list, Op::CreateTexture)
+                    .iter()
+                    .any(|op| op[0] == IDS.moment.search),
+                "the search table is made"
+            );
+
+            // Unused again, the layer and its targets are gone.
+            frames.set_moment(false);
             frames.sync(&[View::default(), shown()]);
             frames
                 .prepare(&mut list, canvas, RenderScale::FULL)
@@ -10624,7 +11428,9 @@ mod tests {
             let copy = frames.transmission_texture();
             assert_ne!(copy, IDS.transmission.blank);
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena
+                .reset(frames.upload_bound())
+                .expect("room for the test's uploads");
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10746,7 +11552,9 @@ mod tests {
             );
 
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound());
+            arena
+                .reset(frames.upload_bound())
+                .expect("room for the test's uploads");
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10816,6 +11624,60 @@ mod tests {
         assert_eq!(copy_format(&frames), format::RGBA16_FLOAT);
     }
 
+    /// The bounce light reads the frame before's opaque color, so it declares the copy and keeps
+    /// it even when nothing else wants it: no surface lets light through, and the reflections are
+    /// off.
+    #[test]
+    fn the_bounce_light_keeps_the_copy_for_itself_with_reflections_off() {
+        let canvas = (320, 180);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        frames.set_ssr(None, 0.0);
+        let mut list = DrawList::with_capacity(8192);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 1);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        // Unasked, the frame declares and keeps nothing of the copy.
+        assert!(!frames.transmission_copied());
+        assert_eq!(frames.transmission_texture(), IDS.transmission.blank);
+
+        frames.set_bounce(Some(BounceFrame {
+            bounce: crate::bounce::Bounce::default(),
+            projection: (Mat4::default(), Mat4::default()),
+        }));
+        frames.request_pipelines(&mut pipelines, 1);
+        assert!(!frames.bounce_draws(), "the light waits for its pipelines");
+        pipelines.create_new(&mut list, 2).unwrap();
+        frames.request_pipelines(&mut pipelines, 2);
+        assert!(frames.bounce_draws());
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+
+        // The light declares the copy for itself, keeps it, and binds it to its trace. The trace
+        // reads the copy as the frame before left it, so it runs before this frame's copy pass,
+        // which refreshes the kept target for the next frame.
+        assert!(frames.transmission_copied());
+        assert_ne!(frames.transmission_texture(), IDS.transmission.blank);
+        assert!(frames.graph().find_resource(TRANSMISSION_COLOR).is_some());
+        let with = steps(&frames);
+        let copy_at = with
+            .iter()
+            .position(|step| step == &[TRANSMISSION_PASS])
+            .expect("the copy draws in a render pass of its own");
+        let trace_at = with
+            .iter()
+            .position(|step| step.iter().any(|name| name == BOUNCE_PASSES[0]))
+            .expect("the bounce light's trace is declared");
+        assert!(
+            trace_at < copy_at,
+            "the trace reads the copy that the frame before kept"
+        );
+    }
+
     #[test]
     fn the_8_bit_path_draws_no_bloom() {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
@@ -10837,7 +11699,9 @@ mod tests {
             .prepare(&mut prepared, canvas, RenderScale::FULL)
             .unwrap();
         let mut arena = UploadArena::default();
-        arena.reset(frames.upload_bound());
+        arena
+            .reset(frames.upload_bound())
+            .expect("room for the test's uploads");
         let mut uploaded = DrawList::with_capacity(65536);
         frames
             .upload(

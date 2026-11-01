@@ -95,11 +95,12 @@
 // `--stats` samples. `--time-of-day` moves a day cycle's hour in every frame, through the object
 // that the first `timeOfDay` call made, for the allocation sample of the helper's per-frame form.
 // `--prepass` turns the depth prepass on, in any scene.
-// `--terrain` and `--impostors` fail the check while their add-ons stand as they are: measured on
-// the Mac, the terrain's update allocates 1908 bytes per frame in the heightfield sampling, 1871 in
-// the chunks it evicts and 1163 more in the same sampling, about 5 KB in all, and the impostors'
-// batch update allocates 187 KB per frame with 23 KB in the sampling beside it. Both add-ons must
-// stop allocating in their per-frame update, which their owners owe.
+// `--terrain` and `--impostors` judge their add-ons' own places. The terrain's frame step allocates
+// nothing: its selection and block build run in its WebAssembly module on the job workers, and a
+// task call's places are judged per call (`TASK_CALL_BUDGETS`). Its task is the only engine task
+// that carries WebAssembly, so its calls take the loader's compile path, which makes no array and no
+// iterator object per call for a lone file. The impostors add-on's batch update still allocates
+// 187 KB per frame with 23 KB in the sampling beside it, which its owner owes.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -390,6 +391,26 @@ const PROBE_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = 
 };
 
 /**
+ * Places that allocate with `--wind`, on top of `BUDGETS`: the browser's boxing of a fraction that
+ * one of the wind's functions works out and passes to another that it does not inline. S1's frame
+ * both runs the field's sample and inlines the large `pose` of the page, so the browser's inlining
+ * budget runs out before the field's small functions, and each fraction they hand on becomes an
+ * object. The places are the functions that receive and hand on the fractions, as the engine's own
+ * setters and S1's camera step do, and not the field's arrays or its ring, which are made once.
+ */
+export const WIND_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+	'sketch-worker': {
+		'analyticVelocity src/analytic.ts': 224,
+		'value3 src/analytic.ts': 48,
+		'lattice src/analytic.ts': 48,
+		'(anonymous) null3d/addons.ts': 32,
+		'sample src/wind.ts': 12,
+		'owedSteps src/wind.ts': 12,
+	},
+	'render-worker': {},
+};
+
+/**
  * Places that allocate with `--calls`, on top of `BUDGETS`: the sketch's own step, which makes the
  * calls that the engine's docs promise allocate nothing, and the figure places that its read of
  * `debug.frameStats` turns on, which are `STATS_BUDGETS`'.
@@ -484,6 +505,11 @@ const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 2
  * loader's places. So `pose` is judged per call here too. The figures come from the Mac's WebGL2 run
  * and SwiftShader runs with `--splats` and the task asked about once a frame, with room above them.
  * The add-on's frame step makes no array and no number object.
+ *
+ * A task that carries WebAssembly compiles its file in the loader once per page, and a lone file
+ * needs no array, no map and no `Promise.all`; the terrain add-on's task is the first that takes
+ * that path. The loader walks its runners by index too, so a call makes no iterator result for
+ * each of them.
  */
 const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
 	'pose null3d/s1-sketch.ts': 128,
@@ -643,6 +669,7 @@ interface PageSwitch {
  * - `--transmission`: the pass that copies the opaque color, with the passes of its mip levels;
  * - `--ssr`: the depth prepass, the depth copy, the six levels of the depth pyramid, the trace and
  *   the copy of the opaque colors, with the passes of the copy's mip levels;
+ * - `--wind`: the wind add-on's field, one compute pass that fills its grid;
  * - `--particles`: the pass that copies the opaque depth for the soft particles;
  * - `--decals`: the decal pass;
  * - `--splats`: the pass that copies the opaque depth, which the splats' soft mix with meshes reads.
@@ -711,6 +738,8 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--terrain', query: '&terrain' },
 	{ flag: '--impostors', query: '&impostors' },
 	{ flag: '--splats', query: '&splats', swiftShaderQuery: '&splats=12000', passes: 1 },
+	// The wind's field: one compute pass that fills its grid.
+	{ flag: '--wind', query: '&wind', passes: 1, budgets: WIND_BUDGETS },
 	{ flag: '--inertial', query: '&inertial' },
 	{ flag: '--calls', query: '&calls', budgets: CALLS_BUDGETS },
 	{ flag: '--time-of-day', query: '&timeOfDay', budgets: DAY_BUDGETS },

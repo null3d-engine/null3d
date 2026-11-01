@@ -42,28 +42,33 @@ add-on own them? What do the three-view blend and the relight still need?
 | The test atlas | 4 by 4 cells of 32 texels, 128 by 128 texels each, two textures | `impostors-sketch.ts` |
 | The demo atlas | 4 by 4 cells of 64 texels, 256 by 256 texels each | `forest.ts` |
 | The demo atlas's bytes | 262,144 bytes a texture in RGBA8, 524,288 for the two | the size above, four bytes a texel |
-| The preset atlases | 5 by 5 at 800 KiB, up to 12 by 12 at 4,608 KiB, both atlases in RGBA8 | the bake page at every grid, runs `20261029-143509-impostor-bake` and `20261029-143643-impostor-bake`. This measurement replaces the far-tree task's estimate of about 1.6 MB and 9 MB, which counted eight bytes a texel (RGBA16F) for each atlas; the bake packs four, an sRGB color and three surface codes |
+| The preset atlases | 5 by 5 at 800 KiB, 7 by 7 at 1,568 KiB, 9 by 9 at 2,592 KiB, and 12 by 12 at 4,608 KiB, both atlases in RGBA8, the same on every device | the bake page at every grid, runs `20261030-071918-impostor-bake`, `20261030-071952-impostor-bake` and `20261030-072140-impostor-bake`. The bake packs four bytes a texel, an sRGB color and three surface codes, so the far-tree task's estimate of about 1.6 MB and 9 MB counted eight bytes a texel (RGBA16F) and is twice the atlas that a preset builds |
 | The card against the mesh at the switch | not measured | the image test `impostor-turn` |
-| The hand-over's dithers | one: the mesh's range edge. A custom material takes no fading build, so the card switches at full coverage behind it | `fades_its_way` in `levels.rs`, and `handOverToCards` |
-| The bake's time at 25 views and 64 texels | 28 to 90 ms a plant on the Mac, the first time | `bakeFarTree` of three species, 3,667 to 5,968 triangles |
-| The bake's memory at 25 views and 64 texels | 0.73 to 0.78 MiB, both atlases | the same run, the atlases' bytes |
-| The bake at each preset on the Galaxy S25 | conifer, birch and oak: Low 159, 38 and 48 ms; Medium 252, 68 and 96; High 420, 113 and 162; Ultra 757, 205 and 292. 800 KiB to 4,608 KiB | `impostor-bake` plan, run `20261029-143509-impostor-bake`, Chrome 152 on WebGPU |
-| The bake at each preset on the iPad Pro 13 | Low 110, 39 and 40 ms; Medium 223, 55 and 76; High 303, 87 and 123; Ultra 532, 153 and 216. 800 KiB to 4,608 KiB | the same run, Safari 26.6.1 on WebGPU |
-| The bake at each preset on the Galaxy S24 | Low 454, 84 and 113 ms; Medium 602, 155 and 220; High 1,002, 253 and 362; Ultra 1,771, 449 and 642. 800 KiB to 4,608 KiB | `impostor-bake` plan, run `20261029-143643-impostor-bake`, Chrome 152 on WebGL2 |
-| The first use of a three-species scene at Ultra | 900 ms on the iPad Pro 13, 1,254 ms on the Galaxy S25 and 2,862 ms on the Galaxy S24, in one blocked main thread: one synchronous block a species, and nothing hides it | the three rows above, summed. The bake runs on the CPU, so the display rate and any GPU timer do not touch these figures |
+| The hand-over's dithers | one visible: the mesh's range edge. A custom material fades at its band edges too, so the cards start a fifth of the switch early and finish their own fade-in before the mesh's fade-out begins | `fades_its_way` in `levels.rs`, `FADE_BAND` in `null3d-core`, and `handOverToCards` |
+| The bake at each preset on the MacBook Pro M3 Max | conifer, birch and oak: Low 177, 44 and 60 ms; Medium 313, 84 and 118; High 518, 138 and 195; Ultra 924, 241 and 342. The page took 3.16 s for all twelve bakes | `impostor-bake` plan, run `20261030-071918-impostor-bake`, Chrome 156 on WebGPU |
+| The bake at each preset on the iPad Pro 13 | Low 112, 39 and 41 ms; Medium 221, 54 and 77; High 303, 87 and 124; Ultra 535, 155 and 217. The page took 1.96 s | `impostor-bake` plan, run `20261030-071952-impostor-bake`, Safari 26.6.1 on WebGPU |
+| The bake at each preset on the Galaxy S25 | Low 150, 36 and 50 ms; Medium 245, 66 and 94; High 411, 111 and 157; Ultra 740, 200 and 283. The page took 2.54 s | the same run, Chrome 152 on WebGPU |
+| The bake at each preset on the Galaxy S24 | Low 293, 54 and 72 ms; Medium 384, 99 and 141; High 643, 164 and 234; Ultra 1,158, 297 and 426. The page took 3.97 s | `impostor-bake` plan, run `20261030-072140-impostor-bake`, Chrome 152 on WebGL2 |
+| The first use of a three-species scene at Ultra | 1.51 s on the Mac, 0.91 s on the iPad Pro 13, 1.22 s on the Galaxy S25 and 1.88 s on the Galaxy S24, in one blocked main thread: one synchronous block a species, and nothing hides it | the four rows above, summed. The bake runs on the CPU, so the display rate and any GPU timer do not touch these figures |
 | A turned copy's light | matches its mesh within the atlas's resolution | `impostor-turn`, `impostor-turn-sun-back` |
-| The card field's GPU cost, 152 cards at 1600 x 900 on the Mac | WebGPU 0.77 ms, compatibility mode 0.96 ms, WebGL2 0.55 ms a frame | `NULL3D_IMPOSTOR_COST=1 bun run test:browser -- impostor-cost.spec.ts` through the heavy queue |
-| The whole frame with the cards, the same run | 1.11 to 1.92 ms of GPU time against 0.15 to 1.37 ms with them hidden; 16.67 ms interval, 0.1 ms CPU | the same |
-| The cards on a phone and a tablet | the five tests passed on the iPad Pro 13 on WebGPU, compatibility mode and WebGL2, and on the Galaxy S24 on WebGL2; the phone has no WebGPU or compatibility mode | the checks plan, 2026-10-29, runs `20261029-073419-checks` and `20261029-073908-checks` |
-| The card field on the iPad Pro 13, 152 cards | WebGPU 7.0 ms, compatibility mode 5.9 ms a frame at a 1032 by 1264 window with 2x pixels, nearly half of a 60 Hz frame's 16.67 ms; WebGL2 gives no GPU timer | `impostor-cost` plan, run `20261029-091142-impostor-cost` |
-| The card field on the Galaxy S24 | this device gave no usable figure: its WebGL2 path has no GPU timer, and its display ran at 30 Hz, so the 33.3 ms interval is the display's cap and says nothing about the cards | `impostor-cost` plan, run `20261029-091347-impostor-cost` |
-| The blend's cost against one view | not measured | the switch that draws one cell is built (`ImpostorBatch.setViews`); the run is queued |
+| The card field's GPU cost, 152 cards at 1600 x 900 on the Mac, preset High | WebGPU 1.02 ms, compatibility mode 1.02 ms, WebGL2 1.34 ms a frame | `NULL3D_IMPOSTOR_COST=1 bun run test:browser -- impostor-cost.spec.ts` through the heavy queue, from the driver's own timestamps |
+| The whole frame with the cards, the same run | 1.22 to 2.51 ms of GPU time with the cards against 0.20 to 1.17 ms with them hidden; 16.67 ms interval, 0.12 to 0.16 ms CPU. The interval is the headless display's cap, so it is not a figure | the same |
+| The card field on the iPad Pro 13 at Medium, 152 cards, 1032 x 1264 at 2x | WebGPU 7.38 ms, compatibility mode 9.43 ms a frame. A second run measured 6.96 and 9.24 ms. That is close to half of a 60 Hz frame's 16.67 ms. WebGL2 gives no GPU timer, and its 15.5 ms interval is the display's cap | `impostor-cost` plan, run `20261030-065625-impostor-cost` |
+| The card field on the Galaxy S25 at Low, 152 cards, 360 x 621 at 3x | WebGPU 4.39 ms, compatibility mode 4.26 ms a frame. A second run measured 4.33 and 4.33 ms. The GPU timer gives the figures. The display ran at 30 Hz, so the 33.3 ms interval is its cap. WebGL2 gives no GPU timer | the same run |
+| The cards on a phone and a tablet | the five tests passed on the iPad Pro 13 on WebGPU, compatibility mode and WebGL2, and on the Galaxy S24 on WebGL2; the S24 has no WebGPU or compatibility mode | the checks plan, 2026-10-29, runs `20261029-073419-checks` and `20261029-073908-checks` |
+| The card field on the Galaxy S24 | this device gives no usable figure: its WebGL2 path has no GPU timer, and its display runs at 30 Hz, so the 33.3 ms interval is the display's cap and says nothing about the cards | `impostor-cost` plan, run `20261029-091347-impostor-cost` |
+| The blend's cost against one view | Mac: 0.15 ms on WebGPU, 0.16 ms in compatibility mode and 0.20 ms on WebGL2. iPad at Medium: 0.00 ms on WebGPU, inside the round-to-round spread, and 0.47 ms in compatibility mode. Galaxy S25 at Low: 0.53 ms on both WebGPU paths | the same runs |
+| The impostors demo's frame time, MacBook Pro M3 Max at 120 Hz | the display's rate held at every preset. GPU time per frame on WebGPU is 4.19, 5.24, 5.96 and 6.62 ms from Low to Ultra, in compatibility mode 4.39 and 4.19 ms, and on WebGL2 4.59 and 10.15 ms. D-241 has no Mac row | `impostor-frame` plan, run `20261030-063236-impostor-frame` |
+| The impostors demo against D-241's forest ceilings, iPad Pro 13 at 60 Hz | holds every forest row the tablet has: Low WebGPU 15.62 against 15.6, Low compatibility 15.68 against 15.6, Low WebGL2 15.52 against 15.5, Medium WebGPU 40.43 against 54.8, Medium WebGL2 15.56 against 46.6, High WebGPU 48.67 against 67.1, and Ultra WebGPU 50.19 against 71.1. The three Low readings sit at the display's cap, at 60.0 frames a second | `impostor-frame` plan, run `20261030-070320-impostor-frame` |
+| The impostors demo on the Galaxy S25 at 30 Hz | holds the display at every preset, with a frame interval of 33.32 or 33.33 ms. D-241 has an S24-class forest row only on WebGL2, where Low and Medium hold its 33.3 ms. The WebGPU GPU time is 19.73, 22.58, 24.58 and 28.05 ms from Low to Ultra, and compatibility mode 19.66 and 21.30 ms | the same run |
 
 How the data was produced: the shader's texture reads and normal decodes are read from its code, and
-the atlas sizes from the code that makes them. The bake's times and memory were measured on the Mac
-with a script over three species, and on the Galaxy S25, the Galaxy S24 and the iPad Pro 13 with the
-bake page. The card field's cost was measured on the Mac's GPU in a quiet window, in the heavy queue,
-and on the iPad, with the cost page. The pictures are the image tests that this record names.
+the atlas sizes from the code that makes them. The bake's times and memory were measured with the
+bake page on the Mac, the iPad Pro 13, the Galaxy S25 and the Galaxy S24. The card field's cost was
+measured on the Mac's GPU in a quiet window, in the heavy queue,
+and on the iPad and the Galaxy S25 with the cost page. The demo's frame time was measured with the
+demo page at each preset that a GPU path draws, on the Mac, the iPad and the Galaxy S25. The pictures
+are the image tests that this record names.
 
 ## Look
 
@@ -77,32 +82,19 @@ The demo reference `demo-impostors` shows a pine forest at sunset, with the far 
 The far trees read as trees, and no seam between the middle band and the cards shows at 320 by 180
 pixels. The picture is a still, so it cannot show a hop, a shimmer or a change of light.
 
-No picture puts a card beside the mesh it replaces at the demo's switch distance. `impostor-turn`
-puts the two side by side at one camera, and `impostor-turn-azimuth` does at a camera 65 degrees
-around the row. Every card there sees the eye far from the world's forward, so a card that turned
-its stored normal by the card's own frame lights a different side of its crown than its mesh does,
-and the pair no longer matches.
-
-The references that this change redraws moved for one reason, and the earlier commit's message
-described it wrongly; this paragraph corrects that description. A card's stored normal used to turn
-with the camera's bearing as well as the tree's, so a card whose eye lay off the world's forward,
-or whose tree was turned, lit a different side than its mesh did. The pictures that moved are those
-whose cards are large on screen and see the eye off that forward: the card grid, which sets no turn
-at all, moved by 1.002 to 1.012 per cent of its pixels, and the single plant by 0.207 to 0.269. The
-two turned rows moved less, from 0.146 to 0.356 per cent, and the demo, which turns every tree and
-draws its cards far and small, stayed under the 0.100 per cent line. The earlier message said that
-the turned scenes moved and that the demo's cards were why one did not; the runs show the reverse
-of its first half, and the grid it did not name is the picture that moved most.
-
-Drawing both faces was reasoned rather than measured: a camera-facing card shows its front face,
-whose shading path the change does not touch, so the picture that a camera draws cannot change. The
-earlier message called that a measured comparison, and no run in the tree holds one, so this line
-withdraws the claim.
+`impostor-handover` puts each card beside the mesh it replaces, inside the hand-over band, so the
+pair can be compared at the switch. `impostor-turn` puts the two side by side at one camera, and
+`impostor-turn-azimuth` does at a camera 65 degrees around the row. Every card there sees the eye
+far from the world's forward, so a card that turned its stored normal by the card's own frame would
+light a different side of its crown than its mesh does. The stored normal turns with the tree's turn
+alone, so the pair matches at every camera.
 
 The image reference `impostor-handover` shows a row of pines at the hand-over distance: each draws
 as its mesh and as its card at one place, the mesh's pixels dither out over the card's full crown,
-and no background shows through a crown. A card that faded as well would drop the pixels that its
-mesh's dither drops too, and the picture would hold dots of the background.
+and no background shows through a crown. A card that faded at the same time as its mesh would drop
+the pixels that its mesh's dither drops too, and the picture would hold dots of the background. The
+cards start early enough that their own fade finishes behind the full mesh, so the reference holds
+only the mesh's dither.
 
 The demo's cards stand past its sun's 120 m reach, which is decision 7's rule and the reason its
 picture has no card shadow: the cards begin at 420 m. The picture test below shows the method at a
@@ -164,10 +156,10 @@ that darkens itself.
    the bake needs no scene light at all. The work runs once at first use, which hard rule 42 leaves
    in TypeScript because it is not a frame loop. That first use is a stall a visitor meets: the bake
    is one synchronous block a species on the main thread, and nothing in the add-on hides it, with
-   no progress line and no placeholder. At the Ultra grid the three species take 0.9 s on the iPad
-   Pro 13, 1.3 s on the Galaxy S25 and 2.9 s on the Galaxy S24. A scene that cannot afford the
-   S24's stall bakes one species a frame, or holds its far band as meshes until the bake ends; the
-   add-on offers no help for either.
+   no progress line and no placeholder. At the Ultra grid the three species take 1.5 s on the Mac,
+   0.9 s on the iPad Pro 13, 1.2 s on the Galaxy S25 and 1.9 s on the Galaxy S24. A scene that cannot
+   afford the S24's stall bakes one species a frame, or holds its far band as meshes until the bake
+   ends; the add-on offers no help for either.
 9. The card's shadow method is built, as decisions 6 and 7 leave it to the far-tree task. A card
    that casts draws as a cast-only caster, inside the reach, and faces the light. The engine
    capability that the caster needed is built: a custom material may declare
@@ -206,16 +198,21 @@ that darkens itself.
    takes its flat quad for a solid wall. The vertex offset reads the frame's camera the way the lit
    template does, so an orthographic cascade turns the card toward the light and a perspective
    camera turns it toward the eye.
-10. The hand-over moves a tree with one dither, not two. `handOverToCards` ends the mesh batch's
-    range at the switch distance and starts the card batch a fade band before it. The engine gives
-    the mesh's last eighth of its range the `LOD_FADE` builds, whose 4 x 4 dither thins the mesh
-    out, and it gives no such build to a custom material: the card material takes none, so the
-    cards stand at full coverage behind the meshes while the mesh's pixels dither away. Each pixel
-    that the mesh drops shows its card, and the background never shows through. The engine's dither
-    phase is a hash of each copy's source, and the mesh and the card are different sources, so
-    their phases differ. Were both to fade, each would drop part of the pixels that the other
-    drops too, and about a quarter of the band would show the background. The helper therefore
-    takes a card batch whose material does not fade, and its documentation says so.
+10. The hand-over moves a tree with one visible dither. `handOverToCards` ends the mesh batch's
+    range at the switch distance and starts the card batch a fifth of the switch before it. The
+    engine gives a draw range's edges a dithered fade over the last 8 per cent of each edge's distance.
+    A custom material takes that fade as the engine's own templates do, because a custom material's
+    levels fade too. The mesh and the card are different sources, and the dither's phase is a hash of
+    each copy's source, so their phases differ. Were the two bands to overlap, each would drop part
+    of the pixels that the other drops too, and about a third of the crown would show the background.
+    The card's lead therefore ends the card's own fade-in at 0.864 of the switch, before the mesh's
+    fade-out begins at 0.926. From there the card stands at full coverage behind the mesh. The
+    mesh's dither alone thins the tree out, and each pixel that the mesh drops shows its card. The
+    lead also covers the difference between the two batches' bounding spheres, since a card's corner
+    lies farther from its origin than the plant's own vertices do. The demo that draws the cards
+    keeps its held picture within its reference's 0.1 per cent line, so the added far shell changes
+    fewer than one pixel in a thousand of it, and the frame figures that this record lists keep
+    their headroom.
 
 ## Ruled out
 
@@ -243,29 +240,43 @@ that darkens itself.
   moves the sun behind the row, and both sources turn dark. The pieces match within the atlas's
   resolution, which the cells' texels set. `impostor-turn-azimuth` draws the same pairs with the
   camera 65 degrees around the row, where the card's light must stay on its mesh's side.
-- The image test `impostor-handover` draws a row of pines inside the hand-over band, where the
-  mesh's dither and its card share the crown. The crown holds no pixel of the background, which
-  settles that one dither moves the tree. The Rust test
-  `a_custom_material_never_fades_so_a_handed_over_card_does_not_dither` holds the fact that makes
-  it so.
+- The image test `impostor-handover` draws a row of turned pines inside the hand-over band, where
+  the mesh's dither and its card share the crown. The crown holds no pixel of the background, which
+  settles that one dither moves the tree, and each card shows the turn that its tree has.
+  `impostor-handover-strip.spec.ts` walks the camera through the band and compares each card with
+  the crown of its mesh: the card that shows the tree's own turn sits closer to the mesh than a card
+  turned 60 degrees further, and the two card pictures differ. The unit test
+  `draws the cards from far enough before the switch that their fade ends first` in
+  `packages/vegetation/src/impostor.test.ts` holds the arithmetic of the lead against the engine's
+  fade band. The Rust test `a_custom_material_fades_its_own_levels_and_a_handed_over_card_dithers`
+  holds the fact that makes the lead necessary: a custom material's distance-band edge fades, so
+  the card would dither at the same time as the mesh.
+- The Rust tests `a_still_card_in_a_far_cascade_leaves_its_layer_cached` count the far cascade's
+  draws over eight frames, on the WebGPU builder and on the WebGL2 one. A card that claims to be
+  still draws it exactly as often as a caster that never moves, and a card that does not claim it
+  draws it in every frame. The material test `passes a card's still-caster claim to the core, and
+  its withdrawal` holds that the public `castsStill` option sets the core's still-caster flag.
 - The image test `impostor-plant` draws a grown birch as its level-0 mesh beside the card that
   `bakeFarTree` makes from it. The two crowns match in colour, which settles the bake, the leaf
   coverage and the per-part tints.
 - The `impostor-cost` page draws a full view of 152 cards with the whole batch hidden and shown in
-  turns, so the difference is the card batch's frame cost. On the Mac's GPU the field costs 0.55 to
-  0.96 ms a frame, and the whole frame runs 1.11 to 1.92 ms of GPU time with the cards against 0.15
-  to 1.37 ms without. The iPad Pro 13 measures 7.0 ms on WebGPU and 5.9 ms in compatibility mode.
-  That is nearly half of the 16.67 ms of a 60 Hz frame, so a scene that draws a field of cards at
-  this size spends almost half its budget on them on that tablet. The Galaxy S24 gave no usable
-  figure: its WebGL2 path has no GPU timer, and its display ran at 30 Hz, so its 33.3 ms interval
-  is the display's cap and not the cards' cost. The Galaxy S25's own cost is still owed: its WebGPU
-  path has a GPU timer, and its display ran at 30 Hz in its timed runs, so a run there decides
-  whether a phone gives a usable figure at all. The blend's own cost against one view is still
-  owed: the switch that draws one cell is built, and the run is queued. The Mac's and the iPad's
-  card-field figures predate the card material's coverage function, its shadow offset and its drawn
-  back face, so the same run re-measures them.
-- A filmstrip of a moving camera through the hand-over, and of the sun's sweep. A still cannot show a
-  hop, a shimmer or the light changing. The demo runs it, and no picture holds it yet.
+  turns, so the difference is the card batch's frame cost, and then draws the three-view blend
+  against one view. On the Mac's GPU at High the field costs 1.02 ms on WebGPU, 1.02 ms in
+  compatibility mode and 1.34 ms on WebGL2 at 1600 x 900. On the iPad Pro 13 at Medium it costs
+  7.38 ms on WebGPU and 9.43 ms in compatibility mode at 1032 x 1264 with 2x pixels. That is close
+  to half of a 60 Hz frame's 16.67 ms, so a scene that draws a field of cards at this size spends
+  almost half its budget on them on that tablet. On the Galaxy S25 at Low it costs 4.39 ms on WebGPU
+  and 4.26 ms in compatibility mode at 360 x 621 with 3x pixels. WebGL2 gives no GPU timer on any of
+  the three devices, so its interval is the display's cap and not the cards' cost. The three-view
+  blend costs 0.15 to 0.20 ms on the Mac and up to 0.53 ms on the phone; on the iPad's WebGPU path
+  its cost is inside the round-to-round spread. The `impostor-frame` plan then times the demo that
+  draws the cards at each preset a path draws. The iPad Pro 13 holds every forest ceiling that D-241
+  gives it. The Galaxy S25 holds the display at every preset, and D-241 has an S24-class forest row
+  only on WebGL2, where Low and Medium hold its 33.3 ms. D-241 has no Mac row. The figures are in the
+  table above.
+- The filmstrip `impostor-handover-strip.spec.ts` walks the camera through the hand-over and moves
+  the sun around a row of turned pairs, which a still cannot show, and compares the band's turned
+  cards with their meshes. Its frames go to `target/filmstrip/` for the owner.
 
 ## Consequences
 
@@ -294,8 +305,12 @@ that darkens itself.
   `impostor-plant` draws a grown plant beside its card, and `impostor-shadow` draws a row of cards
   beside their cut-out shadows. A Rust test holds a coverage material's caster to its own builds and
   a still caster out of the moving list, and the material build's test holds the coverage function's
-  caster builds. The impostor, plant and turn pictures are redrawn for the upright frame, the bake
-  and the shadow offset.
+  caster builds. The impostor, plant, turn and hand-over pictures are redrawn for the upright frame,
+  the bake, the shadow offset and the hand-over's turned trees. The `impostor-frame` plan times the
+  demo that draws the cards at each preset a GPU path draws, so the frame check repeats on each
+  device. The Rust test `a_still_card_in_a_far_cascade_leaves_its_layer_cached` counts the far
+  cascade's draws on both builders, the material test holds the still-caster option's core flag, and
+  the strip's turned-band test runs on a computer with a GPU of its own.
 - The far-tree task builds the per-variant bake, the hand-over band and the shadow method. This
   record builds the card, the blend, the normal's frame, the turn and the bake helper, and the two
   tasks do not split the same work twice. The shadow method is M3-V9's, and this record's decision 9

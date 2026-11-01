@@ -76,7 +76,8 @@ export interface Null3dPageOptions {
  *   the decoders' work in the engine's workers.
  * - `sky` draws a background behind S1, and `backgroundFirst` makes it draw before S1's objects.
  * - `extraBox` adds a small box to S1.
- * - `reflection` puts water under S1's swarm that a reflection pass mirrors S1 into.
+ * - `reflection` puts water under S1's swarm that a reflection pass mirrors S1 into, and
+ *   `reflection=off` leaves S7's surface without the sky's environment map, so it reflects nothing.
  * - `transmission` puts clear water under S1's swarm that lets light through.
  * - `translucency` makes S1's boxes let light through to their other side.
  * - `subsurface` adds spheres whose light spreads under their surface and gives the blur its taps.
@@ -102,6 +103,7 @@ export interface Null3dPageOptions {
  *   the camera every frame.
  * - `splats` puts a cloud of the splats add-on's Gaussians above S1, whose chunks a job worker
  *   selects for the camera every frame.
+ * - `wind` gives S1 the wind add-on's field, with a gust, a push and a sample in every frame.
  * - `reflectionProbes` places two reflection probes over S1, and `reflectionProbes=always`
  *   captures them again every frame.
  * - `setters` calls each per-frame setter in S1, colors included.
@@ -147,6 +149,7 @@ const SKETCH_SWITCHES = [
 	'terrain',
 	'impostors',
 	'splats',
+	'wind',
 	'batchShadows',
 	'rowValues',
 	'levels',

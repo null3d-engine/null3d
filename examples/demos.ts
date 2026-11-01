@@ -438,7 +438,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Atmosphere',
 		scene: 'Valley of ridges',
 		summary:
-			'A day passes over a valley in a minute, under the physical sky. The air turns the sky gold and rose at sunset and hazes each ridge by its distance. At night the moon lights the air and the stars come out.',
+			"A day passes over a valley in a minute, under the physical sky. The air turns the sky gold and rose at sunset and hazes each ridge by its distance. At night the moon lights the air and the stars come out. The groves on the valley floor are the vegetation add-on's conifers, grown at three levels and swaying in the wind add-on's field.",
 		hold: 2,
 		timeoutSeconds: 60,
 	},
@@ -450,7 +450,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Contact shadows',
 		scene: 'Stone garden',
 		summary:
-			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of grass, a stone lantern, and a plaster wall with bamboo and pines beyond it. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
+			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of meadow grass and pines from the vegetation add-on, a stone lantern, and a plaster wall with bamboo beyond it. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
 		controls: [{ keys: ['Move', 'Tap'], does: 'Swing the sun around the garden' }],
 		hold: 1,
 		timeoutSeconds: 60,
@@ -488,6 +488,18 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'A street after the rain, whose puddles mirror the lit windows, the neon shop signs, the street lamps and a passing taxi, while the dry asphalt between them stays matte. Dark window panes, wet curbs and chrome bollards shine too.',
 		hold: 3,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'bounce-light',
+		group: 'Light, materials and effects',
+		sketch: new URL('./bounce-light/sketch.ts', import.meta.url),
+		code: 'bounce-light/',
+		title: 'Screen-space bounce light',
+		scene: 'Red and green room',
+		summary:
+			"One bounce of indirect light in a room with a red wall at the left and a green one at the right. Each wall's light lands on the white floor and on the white back wall, which the environment's uniform light cannot show. Every few seconds the bounce turns off and on again.",
+		hold: 1,
 		timeoutSeconds: 60,
 	},
 	{
@@ -534,9 +546,11 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Light shafts and lit fog',
 		scene: 'Pine wood at sunset',
 		summary:
-			"A path through a pine wood in haze. The volumetric fog takes the light of the low sun between the trunks, so rays fall through the gaps and the trunks' shadows cut dark lanes. At dusk the lanterns light up, and each casts a glowing cone into the fog.",
+			"A path through a pine wood in haze, its conifers grown by the vegetation add-on and swaying in the wind add-on's field. The volumetric fog takes the light of the low sun between the trunks, so rays fall through the gaps and the trunks' shadows cut dark lanes. At dusk the lanterns light up, and each casts a glowing cone into the fog.",
 		hold: 2,
-		timeoutSeconds: 60,
+		// The wood and its cards come from the vegetation add-on, and the software GPU compiles their
+		// builds and draws the fog slowly.
+		timeoutSeconds: 300,
 	},
 	{
 		name: 'gltf-model',
@@ -619,6 +633,18 @@ export const DEMOS: readonly Demo[] = [
 			"Shop windows are rectangle lights and a neon sign is made of tube lights. The wet street shows each light's whole shape, stretched toward the camera, where a point light would leave a dot, and mirrors the glowing sign and windows through screen-space reflections.",
 		hold: 2,
 		timeoutSeconds: 60,
+	},
+	{
+		name: 'spot-cookies',
+		group: 'Light, materials and effects',
+		sketch: new URL('./spot-cookies/sketch.ts', import.meta.url),
+		code: 'spot-cookies/',
+		title: 'Spot-light cookies',
+		scene: 'Stained glass in a dark hall',
+		summary:
+			'Two spot lights throw pictures over their cones: a rose window of stained glass whose lead lines stay fine at 512 texels a side, and a lit window frame across the floor. Each picture wraps over the plinths and spheres in its beam, and the haze catches the light in the air.',
+		hold: 1,
+		timeoutSeconds: 90,
 	},
 	{
 		name: 'character',

@@ -290,7 +290,9 @@ index. A caster, motion or pick build shades no surface, so its layout leaves th
   `crates/null3d-render/src/frame_graph.rs`; the draw bindings in both frame builders.
 - **Tests:** a Rust shader compiler test checks the depth binding in the shading builds alone. The
   declaration has unit tests. The page test `scene-depth` draws the same water sheet on both GPU
-  paths and in every thread mode.
+  paths and in every thread mode. The `water-shores` picture fails on every tier and thread mode
+  when the blank texel stands in for the copy. That failure is what proves the picture binds the
+  input.
 - **Docs:** `docs/api/materials.md`, `docs/shaders/surface-functions.md`,
   `docs/concepts/render-graph.md`, `docs/api/features.md`, `docs/guides/custom-passes.md`,
   `docs/guides/custom-shaders.md` and the mapping's entry for scene depth.
@@ -313,7 +315,7 @@ picture test holds the frame on every GPU tier and in every thread mode.
 | What sets the water's depth? | The gap between the sheet and the surface behind it along the view ray | The distance from the camera to the surface behind a pixel also grows with the camera's own distance. A shore that fades over that distance would fade with the viewpoint, not with the water |
 | How is the gap found? | Convert the pixel's own depth, `input.fragCoord.z`, to a distance with `engine_frame.camera_range`, and subtract it from `sceneDistance(uv)` | `sceneDistance` already converts the copy's stored depth the same way, on a perspective and on an orthographic camera |
 | How does the shore fade? | The alpha falls to zero over a band at the end of the gap, and foam fills half of that band | A fade in alpha ends the surface before its polygon's edge, so the bed shows through it. Foam marks the water that is too thin to show |
-| What when the copy is absent? | The gap reads as the far plane, so the whole sheet draws its deep color, opaque, with no foam | The same absent case as in the scene inputs above. The picture test therefore catches a copy that is not bound |
+| What when the copy is absent? | The gap reads as the far plane, so the whole sheet draws its deep color, opaque, with no foam | The same absent case as in the scene inputs above. The picture test catches a copy that is not bound: with the blank texel bound in its place in both frame builders, every thread mode differs from its reference at 5.163% of the pixels on compatibility mode, 5.286% on WebGPU and 5.552% on WebGL2, against the 0.100% limit |
 
 ### The test
 

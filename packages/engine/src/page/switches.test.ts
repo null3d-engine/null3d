@@ -10,6 +10,7 @@ describe('parseSwitches', () => {
 			sketchThread: undefined,
 			latency: undefined,
 			copyUploads: false,
+			multiDraw: true,
 			depth: undefined,
 			compression: undefined,
 			parallelCompile: true,
@@ -23,6 +24,7 @@ describe('parseSwitches', () => {
 			half: undefined,
 			cells: true,
 			prepass: undefined,
+			moments: undefined,
 			prepassColor: undefined,
 			occlusion: undefined,
 			occlusionBuffer: undefined,
@@ -56,6 +58,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?occlusion-buffer=256x144').occlusionBuffer).toBe(256 * 144);
 		for (const bad of ['384', '384x', 'x216', '384x216x2', '0x216', '2048x1024', 'big'])
 			expect(parseSwitches(`?occlusion-buffer=${bad}`).occlusionBuffer).toBeUndefined();
+	});
+
+	it('withholds WEBGL_multi_draw with ?multidraw=off, and offers it otherwise', () => {
+		expect(parseSwitches('?multidraw=off').multiDraw).toBe(false);
+		expect(parseSwitches('?multidraw=on').multiDraw).toBe(true);
+		expect(parseSwitches('').multiDraw).toBe(true);
 	});
 
 	it('picks how WebGPU skins with ?skinning=, and the vertex shaders otherwise', () => {
@@ -95,6 +103,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?prepass=on').prepass).toBe(true);
 		expect(parseSwitches('?prepass=off').prepass).toBe(false);
 		expect(parseSwitches('?prepass=yes').prepass).toBeUndefined();
+	});
+
+	it('turns moment transparency on or off with ?moments=, and leaves it to the page otherwise', () => {
+		expect(parseSwitches('?moments=on').moments).toBe(true);
+		expect(parseSwitches('?moments=off').moments).toBe(false);
+		expect(parseSwitches('?moments=yes').moments).toBeUndefined();
 	});
 
 	it('picks how the prepass starts its stand-in color with ?prepass-color=', () => {

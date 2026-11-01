@@ -14,6 +14,7 @@
 // The stats overlay starts collapsed to its frame rate, as every demo's does.
 import { defineSketch, type GradingSettings, vec3 } from '@null3d/engine';
 import { createLensKit } from '../../addons/lens-kit/index';
+import { createSplashes, createSteam } from '../../addons/weather/index';
 import { type CameraBounds, type Cinematic, createCinematic, type Shot } from '../../lib/cinematic';
 import { type HudGroup, radioGroup } from '../../lib/controls';
 import { EFFECT_LAYER } from '../../lib/layers';
@@ -218,6 +219,21 @@ export default defineSketch(async (ctx) => {
 		{ position: (SHOTS[0] as Shot).position, target: TARGET },
 		TARGET,
 	);
+	// The rain's splashes on the car's roof and body, and the vapour from its engine nozzles, both
+	// through the particles add-on. The hero group is not scaled, so these sizes are meters.
+	const spray = await createSplashes(ctx, {
+		parent: hero.group,
+		position: [0, 2.45, 0],
+		size: [2.4, 0.08, 6.2],
+		rate: 70,
+	});
+	const vapour = await createSteam(ctx, {
+		parent: hero.group,
+		position: [0, 1.2, -4.4],
+		size: [1.2, 0.12, 0.25],
+		rate: 14,
+		wind: [0, 0.5, -1.2],
+	});
 
 	const fit = (): void => {
 		facades.fit(quality.preset);
@@ -277,10 +293,14 @@ export default defineSketch(async (ctx) => {
 			switch (id) {
 				case 'rain':
 					rain.setVisible(on);
+					spray.setVisible(on);
+					vapour.setVisible(on);
+					hero.setRain(on ? 1 : 0);
 					break;
 				case 'storm':
 					stage.setWeather(on ? STORM_WEATHER : CLEAR_WEATHER);
 					rain.setStrength(on ? STORM_RAIN : 1);
+					city.setRain(on ? 1 : 0.85);
 					break;
 				case 'ao':
 					post.set({ ao: on ? { radius: 1.4 } : false });
@@ -393,6 +413,11 @@ export default defineSketch(async (ctx) => {
 			roamers.update(dt);
 			if (controls.on.dof) post.set(lensSettings);
 			controls.update(t);
+		},
+		onLateUpdate() {
+			// The particles move in the late update, where every object's world place is this frame's.
+			spray.update();
+			vapour.update();
 		},
 	};
 });

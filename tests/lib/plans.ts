@@ -270,6 +270,11 @@ export type Check =
 	 * holds the figures, and nothing judges them.
 	 */
 	| { kind: 'probe'; tier: Tier }
+	/**
+	 * The atlas paint page: how long the bark and the leaf atlas take to paint, in turns. The paint
+	 * runs on the page's own thread, so the figures do not depend on a GPU path.
+	 */
+	| { kind: 'atlas-paint' }
 	/** The sky map cost page: each stage of a sky map's refresh, timed on one GPU path. */
 	| { kind: 'sky-map'; tier: Tier }
 	/** The sky refresh page: the frames from a sun move until the sky's light follows it. */
@@ -1180,7 +1185,8 @@ export type CostedEffect =
 	| 'effects'
 	| 'sky'
 	| 'sharpen'
-	| 'compute';
+	| 'compute'
+	| 'fills';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1282,6 +1288,8 @@ export function effectPlan(
 		sharpen: [['', []]],
 		// A compute pass whose output a vertex offset reads, for the vegetation wind path's budgets.
 		compute: [['', []]],
+		// The fills plan times its own pages, at one render scale each.
+		fills: [['', []]],
 	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
@@ -1341,6 +1349,27 @@ export function effectPlan(
 				})
 			: [];
 	return [...pages, ...twin, ...repro];
+}
+
+/**
+ * What one more directional light costs on each GPU path: the effect cost page's floor of shapes,
+ * timed with one fewer fill light and with the next one, in turns, at counts of 2 to 4. The
+ * difference between the two sides is one fill light's cost. D-270 records the figures.
+ */
+export function fillsCostPlan(): PlanItem<Check>[] {
+	return TIERS.flatMap((tier) =>
+		[2, 3, 4].map((count) =>
+			pageItem(
+				`fills-${tier}-${count}`,
+				'effect-cost',
+				{ kind: 'effect', effect: 'fills', tier, scale: 1 },
+				{
+					switches: [`gpu=${tier}`, 'scale=1', 'effect=fills', `count=${count}`],
+					timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	);
 }
 
 /**
@@ -1433,6 +1462,26 @@ export function grassPlan(): PlanItem<Check>[] {
 	);
 }
 
+/** The seconds that the atlas paint page may take: its painters run three rounds of each atlas. */
+const ATLAS_PAINT_TIMEOUT_SECONDS = 120;
+
+/**
+ * How long the bark and the leaf atlas take to paint on each device, separately: the painters that
+ * `bakePlantAtlases` runs, three rounds of each in turn. The paint runs on the sketch thread, so one
+ * page on each device reports both figures, and no GPU path is asked of it. D-241's bake section
+ * records the tablet's and the phone's figures from this plan.
+ */
+export function atlasPaintPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'atlas-paint',
+			'atlas-paint-cost',
+			{ kind: 'atlas-paint' },
+			{ timeoutSeconds: ATLAS_PAINT_TIMEOUT_SECONDS },
+		),
+	];
+}
+
 /** The GPU paths of the alpha-mask plan's pages: the two WebGPU paths draw on WebGPU's tier. */
 const ALPHA_MASK_PATHS = [
 	['webgpu', 'webgpu'],
@@ -1496,6 +1545,56 @@ export function impostorCostPlan(): PlanItem<Check>[] {
 				{ switches: [`gpu=${path}`], timeoutSeconds: EFFECT_TIMEOUT_SECONDS },
 			),
 		);
+	return items;
+}
+
+/**
+ * The GPU paths of the impostor frame plan's pages, and the presets that each one draws. WebGL2 and
+ * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
+ * under another name.
+ */
+const IMPOSTOR_FRAME_PATHS = [
+	{ path: 'webgpu', tier: 'webgpu', presets: ['low', 'medium', 'high', 'ultra'] },
+	{ path: 'compat', tier: 'webgpu', presets: ['low', 'medium'] },
+	{ path: 'webgl2', tier: 'webgl2', presets: ['low', 'medium'] },
+] as const;
+
+/**
+ * How long one page of the impostor frame plan may take: the demo builds its forest in code, draws
+ * its first frame, measures five seconds and reads the overlay.
+ */
+const IMPOSTOR_FRAME_TIMEOUT_SECONDS = 600;
+
+/**
+ * The impostors demo at each preset that a GPU path draws, for the far-tree task's frame check: the
+ * demo that shows the far cards holds the frame ceiling of D-241 at its preset. Each page fixes its
+ * path and its preset, and holds the render scale at 1 with the governor's target at a rate that no
+ * frame misses, so each preset's own cost shows. The capabilities page comes first, so a device
+ * without WebGPU skips those pages.
+ */
+export function impostorFramePlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const { path, tier, presets } of IMPOSTOR_FRAME_PATHS)
+		for (const preset of presets)
+			items.push(
+				pageItem(
+					`impostor-frame-${preset}-${path}`,
+					'demo-device',
+					{ kind: 'probe', tier },
+					{
+						switches: [
+							`gpu=${path}`,
+							'demo=impostors',
+							`preset=${preset}`,
+							'target-fps=1',
+							'seconds=5',
+						],
+						timeoutSeconds: IMPOSTOR_FRAME_TIMEOUT_SECONDS,
+					},
+				),
+			);
 	return items;
 }
 
@@ -1689,6 +1788,74 @@ export function vegetationPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * What a grove of grown oaks costs at each preset, for M3-V7: the leaf and bark materials sway in
+ * the scene's one wind field, the leaves flutter and the sun's shadows follow them. The page times
+ * the frames at a fixed preset and GPU path, and reports the GPU time per frame and per pass, the
+ * CPU time and the draw calls.
+ */
+const VEGETATION_WIND_PATHS = [
+	['webgpu', 'webgpu'],
+	['compat', 'webgpu'],
+	['webgl2', 'webgl2'],
+] as const;
+/**
+ * The GPU paths of the grass plan's pages, with the presets that each one draws. WebGL2 and
+ * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
+ * under another name.
+ */
+const VEGETATION_GRASS_PATHS = [
+	{ path: 'webgpu', tier: 'webgpu', presets: ['low', 'medium', 'high', 'ultra'] },
+	{ path: 'compat', tier: 'webgpu', presets: ['low', 'medium'] },
+	{ path: 'webgl2', tier: 'webgl2', presets: ['low', 'medium'] },
+] as const;
+
+/**
+ * What the grass on one hill costs at each preset that a GPU path draws, for M3-V8: the frame's
+ * GPU time, its per-pass breakdown where the device times passes, the CPU time and the draw calls.
+ * The page places 20,000 tufts at High, draws a preset's share of them, and measures five seconds.
+ * Each of the hill's three distance bands also runs alone at High on WebGPU, so the far bands'
+ * cheaper draws read as figures of their own rather than as one hill's average.
+ */
+export function vegetationGrassPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const { path, tier, presets } of VEGETATION_GRASS_PATHS)
+		for (const preset of presets)
+			items.push(
+				pageItem(
+					`vegetation-grass-${preset}-${path}`,
+					'vegetation-grass',
+					{ kind: 'probe', tier },
+					{
+						switches: [`gpu=${path}`, `preset=${preset}`, 'seconds=5'],
+						timeoutSeconds: 600,
+					},
+				),
+			);
+	return items;
+}
+
+/** The presets that the vegetation wind plan runs on each path. */
+const VEGETATION_WIND_PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
+
+export function vegetationWindPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const preset of VEGETATION_WIND_PRESETS)
+		for (const [path, tier] of VEGETATION_WIND_PATHS)
+			items.push(
+				pageItem(
+					`vegetation-wind-${preset}-${path}`,
+					'vegetation-cost',
+					{ kind: 'probe', tier },
+					{
+						switches: [`gpu=${path}`, `preset=${preset}`, 'seconds=5'],
+						timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
+					},
+				),
+			);
+	return items;
+}
+
+/**
  * The GPU paths of the terrain plan's pages, and the presets that each one draws. WebGL2 and
  * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
  * under another name.
@@ -1717,7 +1884,7 @@ export function terrainPlan(): PlanItem<Check>[] {
 		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
 	];
 	for (const { path, tier, presets } of TERRAIN_PATHS)
-		for (const preset of presets)
+		for (const preset of presets) {
 			items.push(
 				pageItem(
 					`terrain-${preset}-${path}`,
@@ -1735,7 +1902,69 @@ export function terrainPlan(): PlanItem<Check>[] {
 					},
 				),
 			);
+			// The morph's own cost: one pair a preset and path, the same held view with the morph
+			// on and off. The demo's own camera orbits, so a moving pair draws a different
+			// selection on each side: the first S25 pair drew 22% more triangles off only because
+			// its measure began at another point. Both items therefore ask for the held view.
+			for (const side of ['on', 'off'] as const)
+				items.push(
+					pageItem(
+						`terrain-${preset}-${path}-morph-${side}`,
+						'demo-device',
+						{ kind: 'probe', tier },
+						{
+							switches: [
+								`gpu=${path}`,
+								'demo=terrain',
+								`preset=${preset}`,
+								'target-fps=1',
+								'seconds=5',
+								'still',
+								...(side === 'off' ? ['morph=off'] : []),
+							],
+							timeoutSeconds: TERRAIN_TIMEOUT_SECONDS,
+						},
+					),
+				);
+		}
 	return items;
+}
+
+/**
+ * The terrain demo with a still camera, for the shadow redraw that a morphing caster causes: the
+ * pages draw the same ground from the same eye, one with the morph on and one with it off, and a
+ * third that keeps the far cascades to their turns, which is the same casters over a cascade that
+ * stays cached.
+ */
+const TERRAIN_SHADOW_VARIANTS = [
+	{ id: 'morph-on', switches: ['morph=on'] },
+	{ id: 'morph-off', switches: ['morph=off'] },
+	{ id: 'follow-off', switches: ['morph=on', 'follow=off'] },
+] as const;
+
+export function terrainShadowPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...TERRAIN_SHADOW_VARIANTS.map(({ id, switches }) =>
+			pageItem(
+				`terrain-shadow-${id}`,
+				'demo-device',
+				{ kind: 'probe', tier: 'webgpu' },
+				{
+					switches: [
+						'gpu=webgpu',
+						'demo=terrain',
+						'preset=high',
+						'target-fps=1',
+						'seconds=5',
+						'still',
+						...switches,
+					],
+					timeoutSeconds: TERRAIN_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	];
 }
 
 /**
@@ -2230,7 +2459,7 @@ const WARM_UP_TIMEOUT_SECONDS = 90;
 
 /** Each benchmark scene's count on its own page. */
 /** The sketches whose warm-up the plan times: each benchmark scene at its own count, then each demo. */
-function warmUpSketches(): { scene: string; sketch: string }[] {
+export function warmUpSketches(): { scene: string; sketch: string }[] {
 	return [
 		...(Object.keys(SCENE_COUNTS) as BenchScene[]).map((scene) => ({
 			scene,
@@ -2423,13 +2652,16 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	sharpen: () => effectPlan('sharpen'),
 	compute: () => effectPlan('compute'),
 	'physical-sky': () => effectPlan('sky'),
+	'fills-cost': fillsCostPlan,
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
 	grass: grassPlan,
+	'atlas-paint': atlasPaintPlan,
 	'alpha-mask-cost': alphaMaskPlan,
 	'impostor-bake': impostorBakePlan,
 	'impostor-cost': impostorCostPlan,
+	'impostor-frame': impostorFramePlan,
 	'cluster-cost': clusterCostPlan,
 	'history-cost': historyCostPlan,
 	'lod-cost': lodCostPlan,
@@ -2438,7 +2670,10 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	demos: demosPlan,
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
+	'vegetation-wind': vegetationWindPlan,
+	'vegetation-grass': vegetationGrassPlan,
 	terrain: terrainPlan,
+	'terrain-shadow': terrainShadowPlan,
 	'tree-generation': treeGenerationPlan,
 	'vegetation-scatter': vegetationScatterPlan,
 	'canvas-cost': canvasCostPlan,
@@ -3348,6 +3583,20 @@ export function judge(
 		case 'probe':
 			// The page reports what it found, and the run's result holds it.
 			return [];
+		case 'atlas-paint': {
+			const paint = result as ItemResult & {
+				times?: { bark?: number; leaf?: number }[];
+				barkMs?: number;
+				leafMs?: number;
+				failures?: string[];
+			};
+			return [
+				...(paint.failures ?? []).map((code) => `the engine failed with ${code}`),
+				...((paint.times ?? []).length > 0 ? [] : ['the page painted no round']),
+				...(paint.barkMs && paint.barkMs > 0 ? [] : ['the page measured no bark paint']),
+				...(paint.leafMs && paint.leafMs > 0 ? [] : ['the page measured no leaf paint']),
+			];
+		}
 		case 'effect':
 		case 'environment':
 		case 'grass':

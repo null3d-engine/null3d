@@ -5,11 +5,13 @@ import {
 	CEILING,
 	CLEARANCE,
 	cityTowers,
+	clearSight,
 	EDGE,
 	FLIGHT,
 	FLOOR,
 	type Flight,
 	fly,
+	keepOut,
 	type Stick,
 } from './drive';
 
@@ -104,4 +106,102 @@ test('the city plan gives every tower as a box', () => {
 		expect(towers[k + 2]).toBeGreaterThan(0);
 		expect(towers[k + 4]).toBeGreaterThan(0);
 	}
+});
+
+/** The distance between two places. */
+const apart = (a: { x: number; y: number; z: number }, b: readonly number[]): number =>
+	Math.hypot(a.x - (b[0] as number), a.y - (b[1] as number), a.z - (b[2] as number));
+
+/** True when the segment from a place to another crosses any tower's box, grown by `clearance`. */
+function sightBlocked(
+	from: readonly number[],
+	to: { x: number; y: number; z: number },
+	towers: Float32Array,
+	clearance: number,
+): boolean {
+	const [dx, dy, dz] = [
+		to.x - (from[0] as number),
+		to.y - (from[1] as number),
+		to.z - (from[2] as number),
+	];
+	for (let k = 0; k < towers.length; k += 5) {
+		const [cx, cz, hx, hz, top] = [
+			towers[k] as number,
+			towers[k + 1] as number,
+			towers[k + 2] as number,
+			towers[k + 3] as number,
+			towers[k + 4] as number,
+		];
+		const slabs: readonly [number, number, number, number][] = [
+			[from[0] as number, dx, cx - hx - clearance, cx + hx + clearance],
+			[from[1] as number, dy, -clearance, top + clearance],
+			[from[2] as number, dz, cz - hz - clearance, cz + hz + clearance],
+		];
+		let near = 0;
+		let far = 1;
+		let hits = true;
+		for (const [origin, step, low, high] of slabs) {
+			if (Math.abs(step) < 1e-9) {
+				if (origin < low || origin > high) {
+					hits = false;
+					break;
+				}
+				continue;
+			}
+			let t1 = (low - origin) / step;
+			let t2 = (high - origin) / step;
+			if (t1 > t2) [t1, t2] = [t2, t1];
+			near = Math.max(near, t1);
+			far = Math.min(far, t2);
+			if (near > far) {
+				hits = false;
+				break;
+			}
+		}
+		if (hits && near > 0 && near < 1) return true;
+	}
+	return false;
+}
+
+test('a tower in the line of sight pulls the chase camera before it', () => {
+	// A small tower at the origin, with the car just past it and the camera behind, so the tower
+	// stands between them while the camera itself is outside the tower.
+	const towers = new Float32Array([0, 0, 2, 2, 100]);
+	const car = [0, 50, 10];
+	const camera: Flight = { x: 0, y: 54, z: -6, yaw: 0, speed: 0, climb: 0, turning: 0 };
+	// The old camera keeps itself out of the tower: it is outside it. The tower still hides the car.
+	expect(keepOut(camera, towers)).toBe(false);
+	expect(sightBlocked(car, camera, towers, 0.6)).toBe(true);
+	// The pull-in places the camera at the near side of the tower's grown box, before it.
+	expect(
+		clearSight(car[0] as number, car[1] as number, car[2] as number, camera, towers, 0.6),
+	).toBe(true);
+	expect(camera.z).toBeCloseTo(2.6, 5);
+	expect(camera.x).toBeCloseTo(0, 5);
+	expect(apart(camera, car)).toBeGreaterThan(2);
+	expect(sightBlocked(car, camera, towers, 0.6)).toBe(false);
+	// With the line of sight clear, a second call leaves the camera where it is.
+	const place = { ...camera };
+	expect(
+		clearSight(car[0] as number, car[1] as number, car[2] as number, camera, towers, 0.6),
+	).toBe(false);
+	expect(camera).toEqual(place);
+});
+
+test('a clear line of sight leaves the camera alone', () => {
+	const towers = new Float32Array([0, 0, 2, 2, 100]);
+	const camera: Flight = { x: 0, y: 54, z: 17, yaw: 0, speed: 0, climb: 0, turning: 0 };
+	// The car ahead of the tower, the camera behind it, so the tower is not between them.
+	const place = { ...camera };
+	expect(clearSight(0, 50, 30, camera, towers, 0.6)).toBe(false);
+	expect(camera).toEqual(place);
+});
+
+test('the pull keeps two meters from the point it looks at', () => {
+	// A tower whose grown box starts less than two meters from the point: the camera stops at the
+	// near limit rather than closer, so the near plane never clips the body.
+	const towers = new Float32Array([0, 0, 2, 2, 100]);
+	const camera: Flight = { x: 0, y: 50, z: 0.5, yaw: 0, speed: 0, climb: 0, turning: 0 };
+	expect(clearSight(0, 50, 3, camera, towers, 0.6)).toBe(true);
+	expect(apart(camera, [0, 50, 3])).toBeCloseTo(2, 5);
 });

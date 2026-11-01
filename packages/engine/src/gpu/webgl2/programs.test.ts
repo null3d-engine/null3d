@@ -11,6 +11,7 @@ import { DEPTH_SETUPS } from './depth';
 import {
 	checkStageUnits,
 	createProgram,
+	declaredUniforms,
 	declaresUniform,
 	type GlslTemplate,
 	linkLogs,
@@ -282,19 +283,29 @@ describe('WebGL2 multi-draw vertex shaders', () => {
 });
 
 describe('WebGL2 programs that a driver optimized', () => {
+	// The check walks every distinct shader source, of which there are thousands, so its cost follows
+	// the shader set rather than this file. A quiet machine reads a few seconds and a busy one reads
+	// several times that; the budget below is a guard against a hang, not a target.
 	it('declares every uniform block and texture that a reflection names in its stage', () => {
+		const missing: string[] = [];
+		const declaring = new Map<string, Set<string>>();
 		for (const [name, stage] of glslStages()) {
-			const names = [...stage.uniformBlocks, ...stage.textures].map((b) => b.name);
-			for (const uniform of names)
-				expect([name, uniform, declaresUniform(stage.source, uniform)]).toEqual([
-					name,
-					uniform,
-					true,
-				]);
+			// A stage that reflects no block and no texture asks nothing of its source, and most
+			// stages are that: walking each one would scan the whole shader set for no question.
+			if (stage.uniformBlocks.length === 0 && stage.textures.length === 0) continue;
+			// Many stages share one source, so the walk is done once for each distinct source.
+			let declared = declaring.get(stage.source);
+			if (declared === undefined) {
+				declared = declaredUniforms(stage.source);
+				declaring.set(stage.source, declared);
+			}
+			for (const binding of [...stage.uniformBlocks, ...stage.textures])
+				if (!declared.has(binding.name)) missing.push(`${name}: ${binding.name}`);
 		}
+		expect(missing).toEqual([]);
 		expect(declaresUniform('uniform highp sampler2D other;', 'missing')).toBe(false);
 		expect(declaresUniform('vec4 a = texture(missing, uv);', 'missing')).toBe(false);
-	});
+	}, 60_000);
 
 	it('binds the textures and blocks that the driver kept, and skips the ones it removed', () => {
 		const kept = { name: 'kept_fs', group: 0, binding: 4, sampler: { group: 0, binding: 5 } };

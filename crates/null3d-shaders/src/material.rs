@@ -100,6 +100,9 @@ const HOOKS: [Hook; 4] = [
 const VERTEX_OFFSET_DEF: &str = "CUSTOM_VERTEX_OFFSET";
 /// The shader def that makes a custom material's shadow caster test the material's coverage.
 const COVERAGE_DEF: &str = "CUSTOM_COVERAGE";
+/// The shader def that makes the template light a custom surface's diffuse and ambient light by a
+/// normal that the material names, which only WGSL that reads the field gets.
+const DIFFUSE_NORMAL_DEF: &str = "CUSTOM_DIFFUSE_NORMAL";
 
 /// `defs` without the def that binds the scene's depth, which only the shading builds read: a
 /// caster, a motion or a pick build draws no surface function, so it takes no depth group.
@@ -134,20 +137,35 @@ fn without_scene_depth(defs: &[String]) -> Vec<String> {
 }
 
 /// The bits of a custom material's shading builds that its shadow caster builds keep: the draw
-/// index, skins on WebGL2, row values, which a vertex offset may read, and the mask whose cutoff the
-/// caster tests where the WGSL declares a coverage function.
-const CASTER_KEEPS: [&str; 3] = ["DRAW_INDEX", "SKIN", "ROW_VALUES"];
+/// index and skins on WebGL2.
+const CASTER_KEEPS: [&str; 2] = ["DRAW_INDEX", "SKIN"];
+
+/// The bits of a custom material's shading builds that its shadow caster builds keep beside the
+/// ones every caster keeps: row values, which a vertex offset may read, and the mask that the
+/// caster's fragment stage tests, with the vertex color its surface input reads.
+const CASTER_MASK_KEEPS: [&str; 3] = ["ROW_VALUES", "ALPHA_MASK", "VERTEX_COLOR"];
+
+/// The same bits for a material whose WGSL sets the surface's alpha, which also keeps the alpha
+/// hash where the material tests its mask that way.
+const CASTER_ALPHA_KEEPS: [&str; 4] = ["ROW_VALUES", "ALPHA_MASK", "ALPHA_HASH", "VERTEX_COLOR"];
 
 /// The variant of a custom material's shadow caster builds beside one of its shading variants:
 /// the same defs and targets, every build with the CASTER bit, and with or without CASTER_OFFSET
 /// for casters that draw their back faces. The material's vertex offset then moves its shadow as it
-/// moves its surface. A material with a coverage function also keeps the mask bit, whose cutoff its
-/// caster's fragment stage tests.
-fn caster_variant(shading: &Variant, coverage: bool) -> Variant {
+/// moves its surface. A material that names the coverage of its shadow, or sets the surface's
+/// alpha, casts a masked shadow whose fragment stage tests that opacity.
+fn caster_variant(shading: &Variant, alpha: bool, coverage: bool) -> Variant {
+    let keeps: &[&str] = if alpha {
+        &CASTER_ALPHA_KEEPS
+    } else if coverage {
+        &CASTER_MASK_KEEPS
+    } else {
+        &["ROW_VALUES"]
+    };
     let mut permutations: Vec<String> = shading
         .permutations
         .iter()
-        .filter(|bit| CASTER_KEEPS.contains(&bit.as_str()) || (coverage && *bit == "ALPHA_MASK"))
+        .filter(|bit| CASTER_KEEPS.contains(&bit.as_str()) || keeps.contains(&bit.as_str()))
         .cloned()
         .collect();
     permutations.extend(["CASTER_OFFSET", "CASTER"].map(str::to_owned));
@@ -159,18 +177,34 @@ fn caster_variant(shading: &Variant, coverage: bool) -> Variant {
     }
 }
 
-/// The bits of a custom material's shading builds that its motion builds keep: the draw index,
-/// and row values, which a vertex offset may read.
-const MOTION_KEEPS: [&str; 2] = ["DRAW_INDEX", "ROW_VALUES"];
+/// The bits of a custom material's shading builds that its motion builds keep: the draw index.
+const MOTION_KEEPS: [&str; 1] = ["DRAW_INDEX"];
+
+/// The bits of a custom material's shading builds that its motion builds keep beside the draw
+/// index: row values, and the mask that the motion's fragment stage tests, with the vertex color
+/// its surface input reads.
+const MOTION_MASK_KEEPS: [&str; 3] = ["ROW_VALUES", "ALPHA_MASK", "VERTEX_COLOR"];
+
+/// The same bits for a material whose WGSL sets the surface's alpha, which also keeps the alpha
+/// hash where the material tests its mask that way.
+const MOTION_ALPHA_KEEPS: [&str; 4] = ["ROW_VALUES", "ALPHA_MASK", "ALPHA_HASH", "VERTEX_COLOR"];
 
 /// The variant of a custom material's motion builds beside one of its shading variants: the same
 /// defs and targets, every build with the MOTION bit. The motion pass then draws the motion of the
-/// material's vertex offset, as the material's sway moves its surface (decision record D-140).
-fn motion_variant(shading: &Variant) -> Variant {
+/// material's vertex offset, as the material's sway moves its surface, and a material that names
+/// the opacity of its motion cuts its holes (decision record D-140).
+fn motion_variant(shading: &Variant, alpha: bool, coverage: bool) -> Variant {
+    let keeps: &[&str] = if alpha {
+        &MOTION_ALPHA_KEEPS
+    } else if coverage {
+        &MOTION_MASK_KEEPS
+    } else {
+        &["ROW_VALUES"]
+    };
     let mut permutations: Vec<String> = shading
         .permutations
         .iter()
-        .filter(|bit| MOTION_KEEPS.contains(&bit.as_str()))
+        .filter(|bit| MOTION_KEEPS.contains(&bit.as_str()) || keeps.contains(&bit.as_str()))
         .cloned()
         .collect();
     permutations.push("MOTION".to_owned());
@@ -226,14 +260,19 @@ struct Input {
 /// The shader def of the inputs that find an instance's index in its batch and its object's id.
 const OBJECT_IDS_DEF: &str = "OBJECT_IDS";
 
-/// The inputs that cost something: the second texture coordinates, a vertex attribute; the
-/// instance's index and the object's id, which the vertex shader finds in the table of object
-/// ranges; the object's matrices, which pass to the fragment shader as three more values; and the
-/// four-number vertex record, a vertex attribute that a generated shape's vertex offset reads.
-const INPUTS: [Input; 4] = [
+/// The inputs that cost something: the second texture coordinates, a vertex attribute; the mesh's
+/// vertex color, another vertex attribute, which a vertex offset reads as data; the instance's
+/// index and the object's id, which the vertex shader finds in the table of object ranges; the
+/// object's matrices, which pass to the fragment shader as three more values; and the four-number
+/// vertex record, a vertex attribute that a generated shape's vertex offset reads.
+const INPUTS: [Input; 5] = [
     Input {
         def: "CUSTOM_UV1",
         fields: &[(None, "uv1")],
+    },
+    Input {
+        def: "CUSTOM_VERTEX_COLOR",
+        fields: &[(None, "colors")],
     },
     Input {
         def: OBJECT_IDS_DEF,
@@ -291,6 +330,11 @@ fn read_inputs(tokens: &[Token]) -> Vec<&'static str> {
         })
         .map(|input| input.def)
         .collect()
+}
+
+/// True when the WGSL names a normal of its own for the surface's diffuse and ambient light.
+fn reads_diffuse_normal(tokens: &[Token]) -> bool {
+    reads_field(tokens, None, "diffuseNormal")
 }
 
 /// What a problem in the template's own lines says after its message.
@@ -500,6 +544,9 @@ pub struct MaterialOutput {
     /// True when the WGSL reads the copy of the scene's depth through `sceneDepth` or
     /// `sceneDistance`, so its shading builds bind the copy.
     pub scene_depth: bool,
+    /// True when the WGSL sets or reads the surface's alpha, so the material has the builds of
+    /// alpha to coverage, the alpha hash, a masked shadow caster and a masked motion.
+    pub alpha: bool,
 }
 
 /// The entry points of a full shader: its `@vertex` function's name and the `@fragment` ones'.
@@ -586,6 +633,14 @@ fn names_diffuse_transmission(tokens: &[Token]) -> bool {
                 "diffuseTransmission" | "diffuseTransmissionColor"
             )
     })
+}
+
+/// True when a custom material's WGSL sets or reads the surface's `alpha`, so the material can cut
+/// its shape by it: by alpha to coverage, by the alpha hash, or in a masked shadow or motion.
+fn names_alpha(tokens: &[Token]) -> bool {
+    tokens
+        .windows(2)
+        .any(|pair| pair[0].text == "." && pair[1].text == "alpha")
 }
 
 /// The fields of the surface record that a layered material's builds light: the clear coat's, the
@@ -679,18 +734,27 @@ impl Compiler {
         let transmits = sets_transmission(&tokens);
         let translucent = names_diffuse_transmission(&tokens);
         let layered = names_coat_sheen(&tokens);
+        let alpha = names_alpha(&tokens);
         let offsets = declared.iter().any(|hook| hook.def == VERTEX_OFFSET_DEF);
         let coverage = declared.iter().any(|hook| hook.def == COVERAGE_DEF);
         let inputs = read_inputs(&tokens);
+        let diffuse_normal = reads_diffuse_normal(&tokens);
         let scene_depth = calls_scene_depth(&tokens);
         let mut variants: BTreeMap<String, Variant> = template
             .variants
             .iter()
+            // A variant that needs a bit draws in a pass whose permutation word sets that bit, and
+            // no word of a custom material sets one: those builds are the engine's own. Building
+            // them for a material would compile variants that no draw can use.
+            .filter(|(_, variant)| variant.required.is_empty())
             .map(|(name, variant)| {
                 let mut defs = variant.defs.clone();
                 defs.extend(CUSTOM_DEFS.map(str::to_owned));
                 defs.extend(declared.iter().map(|hook| hook.def.to_owned()));
                 defs.extend(inputs.iter().map(|&def| def.to_owned()));
+                if diffuse_normal {
+                    defs.push(DIFFUSE_NORMAL_DEF.to_owned());
+                }
                 defs.extend(uniforms.as_ref().map(|_| UNIFORMS_DEF.to_owned()));
                 if !texture_fields.is_empty() {
                     defs.push(TEXTURES_DEF.to_owned());
@@ -722,34 +786,27 @@ impl Compiler {
                 // record D-20). They have no MORPH builds, which would double their WebGL2 builds
                 // again: on WebGL2 they draw morphed meshes at rest (decision record D-51). They
                 // read their instances from the culling shader's copies on every path, so they
-                // have no INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
-                // coverage or the alpha hash either: they test their alpha against the cutoff.
+                // have no INSTANCE_INDEX builds (decision record D-23). Only WGSL that sets or
+                // reads the surface's alpha has the builds of alpha to coverage, the alpha hash and
+                // their sample mask, which cut the material's own shape. Every material has the
+                // builds of a fading level of detail, which load on first use with the feature.
                 // Only WGSL that sets the surface's transmission has the builds that let light
                 // through, only WGSL that names its diffuse transmission has the builds that let
                 // light through a thin surface, and only WGSL that names a layer's value has the
                 // builds of the clear coat and the sheen, so other materials keep their builds as
                 // few as before. Every material
                 // has the builds of rows with row values, since a batch's rows may bring colors
-                // that the default surface multiplies. They have no builds of a fading level of
-                // detail, so their levels switch at once. They have no builds of the weighted
+                // that the default surface multiplies. They have no builds of the weighted
                 // layer: the engine's API refuses the weighted blending for them (decision record
                 // D-150). They always have the area lights' code, so they have no builds without
                 // it.
-                let left_out = [
-                    "HALF",
-                    "MORPH",
-                    "INSTANCE_INDEX",
-                    "SAMPLE_MASK",
-                    "ALPHA_COVERAGE",
-                    "ALPHA_HASH",
-                    "LOD_FADE",
-                    "WEIGHTED",
-                    AREA_LIGHTS,
-                ];
+                let left_out = ["HALF", "MORPH", "INSTANCE_INDEX", "WEIGHTED", AREA_LIGHTS];
+                let needs_alpha = ["SAMPLE_MASK", "ALPHA_COVERAGE", "ALPHA_HASH"];
                 let permutations = variant
                     .permutations
                     .iter()
                     .filter(|bit| !left_out.contains(&bit.as_str()))
+                    .filter(|bit| alpha || !needs_alpha.contains(&bit.as_str()))
                     .filter(|bit| transmits || *bit != "TRANSMISSION")
                     .filter(|bit| translucent || *bit != "TRANSLUCENCY")
                     .filter(|bit| layered || *bit != "COAT_SHEEN")
@@ -764,16 +821,21 @@ impl Compiler {
                 (name.clone(), variant)
             })
             .collect();
-        if offsets || coverage {
+        if offsets || alpha || coverage {
             let more: Vec<(String, Variant)> = variants
                 .iter()
                 .flat_map(|(name, variant)| {
-                    let mut made =
-                        vec![(format!("{name}_shadow"), caster_variant(variant, coverage))];
+                    let mut made = vec![(
+                        format!("{name}_shadow"),
+                        caster_variant(variant, alpha, coverage),
+                    )];
                     // Only a vertex offset moves a surface in the motion and pick passes, so only
                     // its material has their builds.
                     if offsets {
-                        made.push((format!("{name}_motion"), motion_variant(variant)));
+                        made.push((
+                            format!("{name}_motion"),
+                            motion_variant(variant, alpha, coverage),
+                        ));
                         made.push((format!("{name}_pick"), pick_variant(variant)));
                     }
                     made
@@ -809,6 +871,7 @@ impl Compiler {
             base_color: true,
             object_ids: inputs.contains(&OBJECT_IDS_DEF),
             scene_depth,
+            alpha,
         })
     }
 
@@ -898,6 +961,7 @@ impl Compiler {
             base_color: false,
             object_ids: false,
             scene_depth: false,
+            alpha: false,
         })
     }
 }

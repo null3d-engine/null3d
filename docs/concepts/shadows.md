@@ -404,13 +404,13 @@ The box holds the object, a radius of space above it and sixteen radii below, wh
 
 ## Which objects cast and receive
 
-- The first directional light created casts the shadows, if it has `castShadows`. The core keeps only that one directional light, so a further one lights nothing and casts none.
+- The first directional light created casts the shadows, if it has `castShadows`. Up to three more directional lights light surfaces as fill and rim lights, and cast none. A fifth directional light lights nothing.
 - Each spot light with `castShadows` casts shadows while it holds a tile of the atlas. Each point light with `castShadows` casts them while it holds six, where the preset's `pointLightShadows` is on.
 - A caster draws into every cascade whose box it reaches, however far toward the light it stands.
 - The light's layers choose the casters: an object casts only when its layer mask shares a bit with the light's. The light still lights every object in a view that it shares a layer with. So an object with `castShadows` on a layer that the light lacks casts nothing, with no warning, and the light shines through it. Give the light that layer too ([Layers and shadows](render-layers.md#layers-and-shadows)). three.js tests casters against the camera's layers instead.
 - The standard material and [custom materials](../shaders/surface-functions.md) show shadows. The unlit material shows none, but unlit objects still cast them.
 - A masked surface cuts the holes of its mask into its shadow, so leaves and fences cast leaf and fence shapes. The shadow tests the surface's opacity, vertex alpha and base color map's alpha against its `alphaCutoff`. A hashed surface casts a hashed shadow, which the filter turns into a partial shadow as dense as its alpha. A blended surface casts its whole shape, as in three.js.
-- A custom material casts its mesh's whole shape: its alpha comes from its own WGSL, which the shadow pass does not run.
+- A custom material whose WGSL sets or reads the surface's alpha casts that shape: its shadow caster runs the surface function, with the scene camera's values and the face that the caster draws, and tests its alpha at the cutoff. A material that declares `fn coverage` casts that function's shape instead, in the light's view. WGSL that never names the alpha or the coverage casts the mesh's whole shape.
 - `setCastShadows` and `setReceiveShadows` rebuild the engine's tables of what it draws, as `setMaterial` does. Set them at setup rather than in every frame.
 
 ## What shadows cost

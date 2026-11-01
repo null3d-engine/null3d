@@ -1,11 +1,11 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
+// ?sketch-thread=main, ?latency=, ?uploads=copy, ?multidraw=off, ?depth=, ?compile=wait, ?shaders=fresh,
 // ?check=fresh, ?wake=message, ?hdr=off, ?scene-format=, ?half= and ?compression=. Twelve more
 // set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count,
 // ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on the GPU,
 // ?cells=off for culling without grid cells, ?prepass=on or off for the depth prepass,
-// ?prepass-color= for how a prepass that a screen step splits from the opaque pass starts the
-// stand-in color that it never draws,
+// ?moments=on or off for moment transparency, ?prepass-color= for how a prepass that a screen
+// step splits from the opaque pass starts the stand-in color that it never draws,
 // ?occlusion=on or off for occlusion culling, ?occlusion-buffer= for the size of software occlusion
 // culling's buffer, such as 384x216, ?skinning= for how WebGPU skins (compute for the skinning
 // pass, or full, skip or narrow for the pass with fewer of its savings), ?instances=index for
@@ -111,6 +111,12 @@ export interface Switches {
 	/** True when ?uploads=copy makes the WebGL2 path copy uploads out of shared memory first. */
 	copyUploads: boolean;
 	/**
+	 * False when ?multidraw=off hides `WEBGL_multi_draw` from the WebGL2 path, as a device without
+	 * the extension is, so the path draws the whole levels of a cluster tree instead of its patches.
+	 * The engine probes and draws as if the browser never offered it.
+	 */
+	multiDraw: boolean;
+	/**
 	 * The depth mode that ?depth= asks the WebGL2 path to draw with, or undefined for the device's
 	 * own. A device without `EXT_clip_control` cannot draw `reversed`, and draws its own instead.
 	 */
@@ -188,6 +194,11 @@ export interface Switches {
 	 * undefined to leave it to the page's option and the quality preset.
 	 */
 	prepass: boolean | undefined;
+	/**
+	 * True when ?moments=on turns moment transparency on, false when ?moments=off turns it off, and
+	 * undefined to leave it to the page's option and the quality preset.
+	 */
+	moments: boolean | undefined;
 	/**
 	 * How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
 	 * that it never draws, which ?prepass-color= picks: `load` starts it from what the texture
@@ -391,6 +402,7 @@ export function parseSwitches(search: string): Switches {
 		sketchThread: oneOf(params.get('sketch-thread'), ['worker', 'main'] as const),
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
 		copyUploads: params.get('uploads') === 'copy',
+		multiDraw: params.get('multidraw') !== 'off',
 		depth: oneOf(params.get('depth'), ['reversed', 'reversed-gl', 'standard'] as const),
 		compression: params
 			.get('compression')
@@ -408,6 +420,7 @@ export function parseSwitches(search: string): Switches {
 		cells: params.get('cells') !== 'off',
 		join: params.get('join') !== 'off',
 		prepass: onOff(params.get('prepass')),
+		moments: onOff(params.get('moments')),
 		prepassColor: oneOf(params.get('prepass-color'), ['load', 'clear', 'none'] as const),
 		occlusion: onOff(params.get('occlusion')),
 		occlusionBuffer: pixelsOf(params.get('occlusion-buffer')),

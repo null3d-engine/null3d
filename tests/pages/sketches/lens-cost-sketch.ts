@@ -5,14 +5,29 @@
 // 'lens-off' message drops the look again, which removes the add-on's effect as well.
 // ?scale= draws at that render scale, and ?fixed holds that scale alone with the governor off.
 //
+// The look's own work is a fraction of a millisecond, and the scene's frame-to-frame variation is
+// larger than that, so the page takes two options that lift it above the variation. ?repeat= draws
+// the marks' effect that many times in each frame, in place of the kit's own, and the page divides
+// what it measures by the count. ?clear draws only the background and the bars that feed bloom, so
+// the work around the look does not hide it. Bloom stays on for every case: the kit's shader names
+// a level of bloom's chain, and the frame fails when no pass writes that level.
+//
 // The module uses no type annotations: an address whose last value holds a dot, such as scale=0.5,
 // makes the dev server read the module as JavaScript.
-import { defineSketch } from '@null3d/engine';
+import { defineSketch, type Effect } from '@null3d/engine';
 import { createLensKit, type LensLook } from '../../../examples/addons/lens-kit/index';
+import lensEffect from '../../../examples/addons/lens-kit/lens.wgsl';
+import { EFFECT_MAX } from '../../../packages/engine/src/generated/core';
 
 const params = new URL(import.meta.url).searchParams;
 const SCALE = params.get('scale');
 const FIXED = params.has('fixed');
+/** How many times the marks' effect draws in each frame, up to the effects that the engine runs at once. */
+const REPEAT = Number(params.get('repeat') ?? '1');
+if (!(Number.isSafeInteger(REPEAT) && REPEAT >= 1 && REPEAT <= EFFECT_MAX))
+	throw new Error(`the page repeats the look between 1 and ${EFFECT_MAX} times, not ${REPEAT}`);
+/** True leaves the wall of boxes out, so only the look's own work and bloom's chain remain. */
+const CLEAR = params.has('clear');
 /** Boxes along each side of the wall that covers the view. */
 const WALL = 32;
 
@@ -79,7 +94,8 @@ export default defineSketch((ctx) => {
 			governor: !FIXED,
 		});
 	}
-	// Bloom lights the streak, and it stays on for both sides, so only the lens's own cost is timed.
+	// Bloom lights the streak, and it stays the same on both sides, so only the lens's own cost is
+	// timed. It stays on for every case, because the kit's shader names a level of its chain.
 	post.set({ bloom: { intensity: 0.5, threshold: 1 } });
 	scene.setBackground('#0e1420');
 	scene.setActiveCamera(
@@ -99,14 +115,15 @@ export default defineSketch((ctx) => {
 	const red = materials.standard({ color: '#c83422', roughness: 0.6, metalness: 0 });
 	// The view is about 9.3 units high at the wall's distance, and wider: the wall reaches past it.
 	const step = 16 / WALL;
-	for (let i = 0; i < WALL; i++)
-		for (let j = 0; j < WALL; j++)
-			scene.createMesh({
-				mesh: box,
-				material: j % 9 === 4 ? red : (i + j) % 2 === 0 ? light : dark,
-				position: [(i - (WALL - 1) / 2) * step, (j - (WALL - 1) / 2) * step, 0],
-				scale: [step, step, step],
-			});
+	if (!CLEAR)
+		for (let i = 0; i < WALL; i++)
+			for (let j = 0; j < WALL; j++)
+				scene.createMesh({
+					mesh: box,
+					material: j % 9 === 4 ? red : (i + j) % 2 === 0 ? light : dark,
+					position: [(i - (WALL - 1) / 2) * step, (j - (WALL - 1) / 2) * step, 0],
+					scale: [step, step, step],
+				});
 	// Bars brighter than white, for bloom and for the streak that spreads bloom's own glow.
 	const glow = materials.standard({
 		color: '#000000',
@@ -119,13 +136,48 @@ export default defineSketch((ctx) => {
 	for (const x of [-1.6, 0, 1.6])
 		scene.createMesh({ mesh: bar, material: glow, position: [x, 3, 0.6] });
 	const lens = createLensKit(ctx, OFF);
+	/** The mark values that each repeated effect draws with. */
+	const marks = {
+		aberration: CHOSEN.aberration ?? 0,
+		streak: CHOSEN.streak ?? 0,
+		grain: CHOSEN.grain ?? 0,
+		speed: CHOSEN.speedBlur ?? 0,
+	};
+	/** True while the look draws the add-on's effect, which is the part that the page repeats. */
+	const marksDrawn = marks.aberration > 0 || marks.streak > 0 || marks.grain > 0 || marks.speed > 0;
+	/** The repeated effects, so that the page can take them away again. */
+	const repeats: Effect[] = [];
+	const dropRepeats = () => {
+		for (const effect of repeats) post.removeEffect(effect);
+		repeats.length = 0;
+	};
+	/**
+	 * A repeated run draws the marks that many times and leaves the core's parts to the kit, so a
+	 * cell is the marks' work divided by the count. A run of one leaves the kit the whole look.
+	 */
+	const addRepeats = () => {
+		if (REPEAT === 1 || !marksDrawn) return;
+		for (let draw = 0; draw < REPEAT; draw++)
+			repeats.push(
+				post.addEffect({
+					wgsl: lensEffect,
+					uniforms: marks,
+					bloomLevel: CHOSEN.bloomLevel ?? 3,
+				}),
+			);
+	};
 	page.onMessage((message) => {
 		if (message === 'lens-off') {
 			lens.set(OFF);
+			dropRepeats();
 			return;
 		}
 		if (message !== 'lens') return;
-		lens.set(CHOSEN);
+		dropRepeats();
+		const repeated = REPEAT > 1 && marksDrawn;
+		// The kit draws no marks where the repeats do, or the effect would draw one time too many.
+		lens.set(repeated ? { ...CHOSEN, aberration: 0, streak: 0, grain: 0, speedBlur: 0 } : CHOSEN);
+		addRepeats();
 		void scene.warmUp().then(() => page.post('settled', {}));
 	});
 	return {};

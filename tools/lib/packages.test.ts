@@ -38,8 +38,13 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 /** True when the shader compiler's build is present, which the pack tests need. */
 const COMPILES = existsSync(fileURLToPath(SHADER_COMPILER_URL));
 
-/** A custom material compiles every build of the standard material, which takes seconds. */
-const COMPILE_MS = scaledBudget(60_000);
+/**
+ * A custom material compiles the whole engine set, which takes seconds: 62,334 GLSL and 24,515 WGSL
+ * builds at the time of writing, just under a fifth more than before the masked custom-material
+ * builds were added. The check took 15.6 s on a warm Mac and 64.05 s on CI's runner, which is why
+ * the budget is a minute and a half rather than a minute.
+ */
+const COMPILE_MS = scaledBudget(90_000);
 
 /** The built files of a small package, by path in `lib/`. */
 const BUILT = new Set([

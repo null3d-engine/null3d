@@ -1,13 +1,13 @@
 # D-277: Skyway's driven hover car, its traffic and the demos' key help
 
 Status: decided by the owner. Built: the driven hover car with its two views, the stacked
-right-hand traffic and the key help panel. Pending: the owner's look review, and the software-GPU
-references of `demo-skyway`, which come from a CI run. Task: M3-C1.
+right-hand traffic and the key help panel. Pending: the owner's look review of `demo-skyway` and
+`demo-instances`, and their software-GPU references, which come from a CI run. Task: M3-C1.
 
 Summary: In Skyway's Manual mode the user drives the hero car with W, A, S, D, R and F. V switches
 the view from behind the car to its seat. The sky lanes keep to the right on 12 heights, with one
 speed to a lane. They draw 6,000 to 16,000 cars, so a lane at High carries a car about every 96 m
-instead of every 20 m. Every demo's keys show as key caps in a panel beside its caption.
+instead of every 20 m. Every demo's keys show as key caps in a panel under its caption.
 
 ## Question
 
@@ -95,7 +95,34 @@ instead of a band of cars over the low streets. The owner judges the final look.
   vertex's place in its own space, so the paint, the running lights and the cockpit's trim turn
   with the car.
 - **The views.** Behind: the camera eases to 13 m behind the car and 4.4 m above it. It looks 22 m
-  ahead, and keeps out of the towers as the car does. Inside: the camera sits in the driver's seat
+  ahead while it sits at its usual distance, and two metres past the car once it has pulled in,
+  and it keeps out of the towers as the car does. It also pulls in before a tower that would stand
+  between it and the car, and sits lower as it closes. The pull keeps a ten-metre floor from the
+  car where the towers leave room, so the whole car stays in the frame with a margin: the held
+  frames keep the car's coloured pixels at least 118 pixels inside every edge, 164 at the pull's
+  first frames, and 65 in the control. The tower's shadow covers the angles between the usual
+  place and the clear side, so the camera takes the nearest side that still sees the car at once.
+  It eases its distance toward that side's reach, which is the usual chase distance whenever a
+  tower stands in the way; the ten-metre floor is one the tower's push meets in the proof, not an
+  eased target. Where a tower and the floor disagree, the tower wins and the distance gives, so
+  the floor holds only where the towers leave room. When every angle is blocked, the camera stays
+  at the tower's entry, where the car can stay hidden; that path takes no clamp, but its usual
+  distance is about 13.7 m, so the floor holds there too unless the page has zoomed inside ten
+  metres. The proof starts on the clear side, so the first angle change is not pictured; the
+  reason it cannot be eased rests on the code, not on a picture. The camera holds that side while
+  it keeps the car in view: a side that the car's turn blocks is given up for the tower's entry on
+  that frame, and a new side is chosen on the next. A car at rest settles, with the frames at six
+  and eight seconds identical, and the two-second frame differing slightly from the four-second.
+  The chase easing carries the camera back out once the tower clears. The release from the
+  ten-metre pull is not pictured: the corner proof's tower never clears, and the turn run returns
+  from a 17.8 m lag to 13.7 m and never reaches 10.1.
+  Because a turn can bring a tower across the line in a single frame, the camera also
+  looks a short way along the car's path and starts closing at a limited rate before the tower
+  arrives. The car grows on screen as it closes: about a third of the frame's width at the usual
+  distance, and a little under half at the closest standoff, with the road ahead still in the
+  frame. The proof's control leaves the tower out of the camera's tower list, so it shows the
+  camera at rest rather than a second blocked view. Inside:
+  the camera sits in the driver's seat
   and turns with the car, and the speed blur keeps a quarter of its strength, so the dashboard
   stays readable. V and the View buttons switch the two, in Auto too: there the car carries the
   camera along the route. A switch flies the camera over 0.9 s along a path that rises 1.2 m over
@@ -121,6 +148,12 @@ instead of a band of cars over the low streets. The owner judges the final look.
   the cockpit, and the rain streams past just outside the glass. A press posts
   `hud-press` to the page, which sends it on to the sketch as its own panel's button would. Both
   panels then show the change.
+- **The weather add-on.** The ground's water is the weather add-on's wet surface
+  (`createWetSurface`), which the city's surface function copies and calls. The scene reflects from
+  the screen, so the add-on binds no planar pass. The car's own mirror is added over that surface's
+  shading, where the water is, because the screen-space reflections never see the car's underside.
+  The hero car's bubble carries the add-on's windshield drops and wiper, and the splashes on its
+  roof and the vapour from its nozzles are the add-on's particle systems.
 - **The cars' bodies.** The traffic and the hero car are flying cars (`createFlyingCarHull` and
   `loftHull` in the traffic-lanes add-on): a smooth body lofted through eight rounded sections,
   with a cut-off tail where the tail lights sit and a nose that tapers to a point, a bubble

@@ -123,6 +123,12 @@ export interface Debug {
 	 */
 	cullingSpheres(show?: boolean): void;
 	/**
+	 * The culling spheres that the last frame drew, of the first 128 objects whose mesh has levels.
+	 * Zero while `cullingSpheres(false)` holds the switch off, and in a release build, which draws
+	 * none. A page reads it to tell that the switch drew the spheres rather than nothing.
+	 */
+	cullingSpheresDrawn(): number;
+	/**
 	 * Places the main directional light's shadow cascades from `camera` instead of from the active
 	 * camera, from the next frame on, until the next call. The active camera still draws the frame,
 	 * so it can watch from a fixed place how the cascades move as `camera` moves and turns: shadow

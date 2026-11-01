@@ -21,8 +21,9 @@ import {
 } from './wgsl';
 
 // A custom surface function builds into every variant of the standard material, which takes seconds
-// on a CI runner of four cores.
-setDefaultTimeout(scaledBudget(30_000));
+// on a CI runner of four cores. The mask's builds in an instance batch grew the manifest by five
+// thousand builds, and a compile on a loaded runner now passes thirty seconds.
+setDefaultTimeout(scaledBudget(60_000));
 
 /** The hint that the tests' compiles end their message about a missing entry point with. */
 const HINT = 'HINT';
@@ -346,8 +347,10 @@ fn effect(input: EffectInput) -> vec4f {
 		const built = material(await compileWgsl('src/stripes.wgsl', SURFACE, HINT));
 		expect(built.functions).toEqual(['surface']);
 		// Each build has a twin that skins, for skinned meshes, and each build has a twin that reads
-		// the row values of instance batches. No build does its math at half precision, so the
-		// material's sets of builds (material-builds.ts) are not split by the half bit.
+		// the row values of instance batches. Each also has a twin that fades between levels and at
+		// a distance band's edge, which a custom material's levels take (D-241), so no build does its
+		// math at half precision: the material's sets of builds (material-builds.ts) are not split by
+		// the half bit.
 		const plain = [
 			'webgl2',
 			'webgl2_alpha_mask',
@@ -400,7 +403,11 @@ fn effect(input: EffectInput) -> vec4f {
 		];
 		const skinned = plain.map((name) => `${name}_skin`);
 		const rowValued = plain.map((name) => `${name}_row_values`);
-		expect(Object.keys(built.variants).sort()).toEqual([...plain, ...skinned, ...rowValued].sort());
+		const faded = plain.map((name) => `${name}_lod_fade`);
+		const fadedRowValued = plain.map((name) => `${name}_lod_fade_row_values`);
+		expect(Object.keys(built.variants).sort()).toEqual(
+			[...plain, ...skinned, ...rowValued, ...faded, ...fadedRowValued].sort(),
+		);
 		const webgpu = built.variants.webgpu;
 		expect(webgpu?.wgsl?.source).toMatch(/fn surface\(\w+: SurfaceInput\) -> Surface/);
 		expect(webgpu?.wgsl?.pipelines).toEqual({ main: { vertex: 'vs', fragment: 'fs' } });

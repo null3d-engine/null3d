@@ -567,6 +567,42 @@ function aoTests(): ImageTest[] {
 	];
 }
 
+/** The prototype AO comparison page (tests/pages/proto-s3.ts), not an engine page. */
+const PROTO_AO_PAGE = 'tests/pages/proto-s3.html';
+
+/**
+ * The bitmask ambient occlusion prototype's own pictures, which keep the figures in its decision
+ * record reproducible. Each draws the prototype page's fixed scene on both GPU paths and publishes
+ * one picture of the occlusion alone: the current technique and the bitmask variant, each at half
+ * and at a quarter size. These entries and the page serve the prototype alone. The engine's own AO
+ * tests do not draw them.
+ */
+function protoAoTests(): ImageTest[] {
+	const test = (name: string, ao: string, aoscale: string): ImageTest => ({
+		name,
+		page: PROTO_AO_PAGE,
+		size: [960, 540],
+		tiers: ['webgpu', 'webgl2'],
+		switches: [
+			`aos=${ao}`,
+			`aoscale=${aoscale}`,
+			`picture=copy-${ao}-bilinear-ao`,
+			'imagesize=960x540',
+			'measure=0',
+		],
+		// The software set is this machine's SwiftShader drawing, and CI's Linux SwiftShader is the
+		// judge. A wider tolerance covers the two renderers' rounding until a CI run draws the set.
+		swiftShaderTolerance: { maxDiffRatio: 0.01 },
+		timeoutSeconds: 180,
+	});
+	return [
+		test('proto-ao-current-half', 'three', '0.5'),
+		test('proto-ao-current-quarter', 'three', '0.25'),
+		test('proto-ao-bitmask-half', 'bitmask', '0.5'),
+		test('proto-ao-bitmask-quarter', 'bitmask', '0.25'),
+	];
+}
+
 /** The sketch of the occlusion tests: a city whose buildings block the view from its streets. */
 const OCCLUSION_SKETCH = 'tests/pages/sketches/occlusion-sketch.ts';
 
@@ -794,6 +830,32 @@ function reflectionTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the sky layer scene pass test: a green layer over a lake, drawn in two views. */
+export const SKY_LAYER_SCENE_PASS_SKETCH = 'tests/pages/sketches/sky-layer-scene-pass-sketch.ts';
+
+/**
+ * A sky layer in the main view, in a scene pass and in a reflection, on every tier. A green layer
+ * covers the sky over a lake. The main camera shows the layer in the sky and in the water, which a
+ * reflection pass mirrors it into. A second camera looks across the same water from the left, and
+ * a scene pass draws its view into a texture that a screen on the right of the main view shows. So
+ * one frame holds the layer three times, and the screen's sky is the layer only because the scene
+ * pass draws the scene's background. ?layer=off is the control, where the core sky and its own
+ * reflection stand in the layer's place, so the screen's sky falls away with the layer.
+ */
+function skyLayerScenePassTests(): ImageTest[] {
+	return [
+		{
+			name: 'sky-layer-scene-pass',
+			sketch: SKY_LAYER_SCENE_PASS_SKETCH,
+			size: [640, 360],
+			hold: 0,
+			// A reflection pass and a scene pass, each drawing the scene again, take longer on a
+			// software GPU than one view does.
+			timeoutSeconds: 120,
+		},
+	];
+}
+
 /** The sketch of the screen-space reflection tests: boxes, a ball and a lamp on a shiny floor. */
 export const SSR_SKETCH = 'tests/pages/sketches/ssr-sketch.ts';
 
@@ -831,6 +893,8 @@ function ssrTests(): ImageTest[] {
 
 /** The sketch of weighted blending's crossing panes and overlapping puffs. */
 const WEIGHTED_SKETCH = 'tests/pages/sketches/weighted-sketch.ts';
+/** The sketch of moment transparency's five panes at different depths (the test `moment-*`). */
+export const MOMENT_SKETCH = 'tests/pages/sketches/moment-sketch.ts';
 /** The sketch of the reflection probe tests: a room of glowing walls over a mirror floor. */
 export const PROBE_SKETCH = 'tests/pages/sketches/probe-sketch.ts';
 
@@ -1439,6 +1503,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// a field of foam flecks. A material that reads the copy of the opaque scene's depth takes a maps'
 	// group with one slot fewer, so both the copy and the textures fit the fragment stage. Every GPU
 	// tier must bind all three groups, so a tier that drops one shows a different shore.
+	// The same shore, with the water add-on's bounds view on: the view draws each body's outline and
+	// its shore width over the water it describes. The view is a debug view that the add-on adds, and
+	// nothing but a unit test has ever turned it on, so this picture is the only thing that draws it.
+	// The boxes are the picture: the test keeps references of its own, because its image is the
+	// shore's with the bodies' bounds drawn over it.
+	{
+		name: 'water-bounds',
+		sketch: 'tests/pages/sketches/water-stats-sketch.ts',
+		hold: 0,
+		switches: ['view=water-bounds'],
+		modes: ALL_MODES,
+	},
 	{
 		name: 'depth-textures',
 		sketch: 'tests/pages/sketches/depth-textures-sketch.ts',
@@ -1578,9 +1654,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...hdrLimitTests(),
 	...realUnitsTests(),
 	...aoTests(),
+	...protoAoTests(),
 	...outlineTests(),
 	...minimapTests(),
 	...reflectionTests(),
+	...skyLayerScenePassTests(),
 	...ssrTests(),
 	...probeTests(),
 	...fullscreenTests(),
@@ -2235,6 +2313,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			timeoutSeconds: 60,
 		}),
 	),
+	// Screen-space bounce light in the room that the light probe grid's tests use (D-284): the
+	// neutral floor takes red light at the red wall and green at the green one, which the
+	// environment's uniform light cannot show. ?bounce draws the bounce light from the camera's view,
+	// ?grid bakes a light probe grid instead, and neither draws the room's environment alone. The
+	// bounce reads the frame before's color, so the held frame draws twice, and the room's
+	// environment makes its map in it, so the runs take the room's longer limit.
+	...(['off', 'bounce', 'grid'] as const).map(
+		(variant): ImageTest => ({
+			name: `bounce-${variant}`,
+			sketch: `tests/pages/sketches/bounce-sketch.ts${variant === 'off' ? '' : `?${variant}`}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+			// Compatibility mode draws the 8-bit path, where the light draws nothing, so there the
+			// bounce test draws the plain room's picture. The other tiers show the light.
+			...(variant === 'bounce' && { samePicture: 'bounce-off' }),
+		}),
+	),
 	// The room's light with a hemisphere light added, which the parity test compares with three.js:
 	// the hemisphere light adds to the environment's light, and the environment's intensity does
 	// not scale it.
@@ -2320,14 +2416,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
-	// lights through an orthographic camera. Then the same floor under a hemisphere light, under
-	// three rectangle lights, under the same lights showing an image, and under three tube lights. The parity test compares the grid of 16,
-	// the spot lights, the hemisphere light and the rectangle lights with three.js.
+	// lights through an orthographic camera. Then the same floor under three directional lights,
+	// under a hemisphere light, under three rectangle lights, under the same lights showing an
+	// image, and under three tube lights. The parity test compares the grid of 16, the three
+	// directional lights, the spot lights, the hemisphere light and the rectangle lights with
+	// three.js.
 	...(
 		[
 			['lights-1', 'lights=1'],
 			['lights-16', 'lights=16'],
 			['lights-256', 'lights=256'],
+			['lights-fills', 'scene=fills'],
 			['lights-spot', 'scene=spot'],
 			['lights-ortho', 'lights=16&camera=ortho'],
 			['lights-hemisphere', 'scene=hemisphere'],
@@ -2360,6 +2459,31 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The same light with a larger picture, and a reflection probe made after the picture is in the
+	// light tables. The probe's layers come before the pictures', so the picture moves along the
+	// array: a picture or a light record that stays behind reads a probe's map instead, and the
+	// grid below breaks into a reflection.
+	{
+		name: 'spot-map-probe',
+		sketch: 'tests/pages/sketches/spot-map-probe-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The same light and picture as `spot-map-probe`, given as an engine texture instead of pixels.
+	// The frame copies the texture into the light's image, so a wrong corner, a turned row order,
+	// or a copy that stays in a moved layer draws another picture. It borrows that test's
+	// references, because the two forms of the same picture must draw the same image.
+	{
+		name: 'spot-map-texture',
+		sketch: 'tests/pages/sketches/spot-map-texture-sketch.ts',
+		// A frame copies the texture into the light's image, and the light shows it from the frame
+		// after. Hold mode draws that frame too, as it does for a reflection probe's capture.
+		hold: 0,
+		size: [480, 270],
+		tolerance: { maxDiffRatio: 0.005 },
+		reference: 'spot-map-probe',
 	},
 	// The hemisphere light as two halves, one turned upside down with its colors swapped, which take
 	// their intensities and colors in every frame. The frame sums them to the single light, so the
@@ -2395,6 +2519,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		name: 'custom-vertex-offset',
 		sketch: 'tests/pages/sketches/custom-vertex-offset-sketch.ts',
 		hold: 0,
+		size: [480, 270],
+	},
+	// Custom materials with cut-out features: a batch of masked leaf cards whose own WGSL cuts each
+	// leaf, sways it from the mesh's vertex colors and its rows' values, casts leaf-shaped shadows
+	// that sway with it, and fades between levels and at the far edge of a distance band. High, the
+	// references' preset, draws them with MSAA, so alpha to coverage smooths the cut edges.
+	{
+		name: 'custom-cutout',
+		sketch: 'tests/pages/sketches/custom-cutout-sketch.ts',
+		hold: 0.4,
+		size: [480, 270],
+	},
+	// The same cards drawn by the motion debug view: each leaf shows its own motion, and the holes
+	// that its alpha cuts show the still scene behind, so the motion build tests the same alpha.
+	{
+		name: 'custom-cutout-motion',
+		sketch: 'tests/pages/sketches/custom-cutout-sketch.ts?motion',
+		hold: 0.4,
 		size: [480, 270],
 	},
 	// Instance batches whose rows bring colors: lit, unlit, mapped, masked and blended rows, from
@@ -2449,6 +2591,23 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [480, 270] as const,
 		switches: ['direct=off'],
 	},
+	{
+		// The whole-level fallback: the switch hides `WEBGL_multi_draw`, so WebGL2 draws the levels
+		// that the asset tool cut from the tree, as a browser without the extension does. The cut
+		// holds the patches that the walk picks at the same threshold, so the picture stays within
+		// the test's tolerance of the patched path's. The probe's answer alone cannot tell the two
+		// pictures apart, so the page also reports the ranges that the frame builder's walk chose:
+		// the fallback draws none, and a renderer that took the patch path reports a count even
+		// where the probe withheld the extension.
+		name: 'cluster-no-multi-draw',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts',
+		hold: 0,
+		size: [480, 270] as const,
+		switches: ['direct=off', 'multidraw=off'],
+		tiers: ['webgl2'],
+		reference: 'cluster',
+		expect: { multiDraw: false, clusterPatches: false },
+	},
 	// Levels of detail: copies of a sphere whose levels each take a color, just before and just past
 	// each of three switch distances. Every GPU path must draw the first path's image, so each
 	// switches at the same distances. The copies draw as objects and as the rows of a batch, with
@@ -2465,6 +2624,26 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The same copies and the same levels, with each level picked by its distance on this canvas
+	// rather than by its measured error, and then by the share of the screen its bounds cover. All
+	// three measures work out to the same switch distances here, so all three pictures must match
+	// the base one, and each entry points at it rather than holding a reference of its own.
+	{
+		name: 'lod-switch-distance',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&switch=distance',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod',
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
+		name: 'lod-switch-coverage',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&switch=coverage',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod',
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	{
@@ -2531,6 +2710,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'lod-range-batch',
 		sketch: 'tests/pages/sketches/lod-sketch.ts?range&batch',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod-range',
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// Each row's band goes into the batch's own range array, with no batch-wide call, so the image
+	// holds only when the engine reads every row's two floats.
+	{
+		name: 'lod-range-rows',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?range&rows',
 		hold: 0,
 		size: [480, 270],
 		reference: 'lod-range',
@@ -2790,7 +2979,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Each built-in vegetation species: three of its variants, grown from the species record and a
 	// fixed seed, in a row on flat ground, drawn with the bark and leaf atlases that the GPU paints
-	// at first use.
+	// at first use. The shrub's page takes longer than the default limit on CI's software GPU, where
+	// it ran out the 60 seconds on compatibility and on WebGL2, so it asks for three times that.
 	...[
 		'broadleaf',
 		'conifer',
@@ -2809,6 +2999,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		name: `vegetation-${species}`,
 		sketch: `tests/pages/sketches/vegetation-sketch.ts?species=${species}`,
 		hold: 1,
+		...(species === 'shrub' && { timeoutSeconds: 180 }),
 	})),
 	// The four maps that the GPU paints for the two atlases, each with its mip levels beside it,
 	// and below them a trunk and a leaf card drawn through the materials that sample them.
@@ -2843,10 +3034,56 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1,
 		size: [640, 360],
 	},
+	// The first grass picture: a hill of tufts grown by the add-on, placed and tinted by integer
+	// hash, drawn as one band. The blades read the wind add-on's field, which this picture holds
+	// still; the camera and the light are fixed, so two runs draw the same frame.
+	{
+		name: 'vegetation-grass',
+		sketch: 'tests/pages/sketches/vegetation-grass-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+	},
+	// A grove of grown oaks in the scene's one wind field: the leaf and bark materials sway, the
+	// leaves flutter and the sun's shadows follow. The two holds catch the trees at different points
+	// of their sway, the motion picture draws the sway's motion, and the still picture holds the air
+	// for the pair that the sway moves. The page that first compiles the instanced plant materials
+	// and their shadow casters pays minutes for it on CI's software GPU, which took 2.0 to 4.6
+	// minutes a page, so these four run in the heavy job, where each has a runner of its own, and
+	// hold 600 seconds. A later test that compiles these builds first meets the same wall.
+	{
+		name: 'vegetation-wind',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+	},
+	{
+		name: 'vegetation-wind-later',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts',
+		hold: 1.6,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+	},
+	{
+		name: 'vegetation-wind-motion',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?motion',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+	},
+	{
+		name: 'vegetation-wind-still',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?still',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+	},
 	// The wind add-on's own page: a field of cards that reads the air at each vertex. A gust
 	// crosses the field between the first hold and the second, so the pairs change where the gust
-	// has reached. The wake test holds one body still, so its trail stays put. The part test draws
-	// the same page with the gust and the swirl taken out, from the drawings it makes itself.
+	// has reached. The part test draws the same page with the gust and the swirl taken out, from the
+	// drawings it makes itself. The wake has no reference picture here: its trail is only meaningful
+	// against a control, so `tests/image/wind-wake.spec.ts` holds two pages at the same time and
+	// compares the one that pushes the air with the one that turns `?push=0`.
 	{
 		name: 'wind-cards',
 		sketch: 'packages/wind/page/sketch.ts?camera=still',
@@ -2855,17 +3092,20 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		// The cards cast shadows that sway with them, and the software GPU takes its time with them.
 		timeoutSeconds: 180,
 	},
+	// The page's look witness: the same cards held at 1.2 s with the body stopped, so they stand
+	// turned along the solved field. It replaces the wake's six pictures, which said nothing without
+	// a control; the wake is measured against its own control instead.
 	{
-		name: 'wind-cards-later',
-		sketch: 'packages/wind/page/sketch.ts?camera=still',
-		hold: 1.6,
+		name: 'wind-page',
+		sketch: 'packages/wind/page/sketch.ts?camera=still&still=1',
+		hold: 1.2,
 		size: [480, 270],
 		timeoutSeconds: 180,
 	},
 	{
-		name: 'wind-wake',
-		sketch: 'packages/wind/page/sketch.ts?still=1',
-		hold: 1.2,
+		name: 'wind-cards-later',
+		sketch: 'packages/wind/page/sketch.ts?camera=still',
+		hold: 1.6,
 		size: [480, 270],
 		timeoutSeconds: 180,
 	},
@@ -2904,6 +3144,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// One leaned pine beside its own card, whose crown is not symmetric, seen from 90 degrees around
+	// the pair. The tree and its card are turned by the same angle, so the pair must show the same
+	// lit and dark sides. A card that turned its stored normal with the camera's own frame lights
+	// the opposite side here, where the camera's azimuth and the tree's turn add up.
+	{
+		name: 'impostor-turn-lean-azimuth',
+		sketch: 'tests/pages/sketches/impostor-turn-lean-sketch.ts?azimuth=90',
+		hold: 0,
+		size: [480, 270],
+	},
 	// A grown birch beside the card that `bakeFarTree` makes from it. The mesh draws level 0 with the
 	// bark and leaf materials, and the card draws the same level baked with the same atlases and the
 	// same colours, so the two crowns match in colour at the hand-over.
@@ -2913,9 +3163,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
-	// A row of pines inside the hand-over band: each draws as its mesh and as its card at the same
-	// place, the mesh's pixels dither out over the card's full crown, and the background must not
-	// show through the crown where both could drop a pixel.
+	// A row of turned pines inside the hand-over band: each draws as its mesh and as its card at the
+	// same place, the card shows the turn that its tree has, the mesh's pixels dither out over the
+	// card's full crown, and the background must not show through the crown where both could drop a
+	// pixel.
 	{
 		name: 'impostor-handover',
 		sketch: 'tests/pages/sketches/impostor-handover-sketch.ts',
@@ -3121,12 +3372,22 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
 	},
-	// The balls' transmission and thickness vary across them, from the two maps that take the
-	// specular maps' slots: bands of the transmission map's red and bands of the thickness map's
-	// green. A software GPU builds these shaders slowly.
+	// The balls' transmission and thickness vary across them, from the two maps that keep row slots
+	// beside the specular maps: bands of the transmission map's red and bands of the thickness
+	// map's green. A software GPU builds these shaders slowly.
 	{
 		name: 'transmission-maps',
 		sketch: `${TRANSMISSION_SKETCH}?maps`,
+		hold: 0,
+		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
+		timeoutSeconds: 60,
+	},
+	// The same balls with a specular intensity map in the same texture array, lit by the built-in
+	// room whose reflection its bands vary: each map keeps its own row slot, so a build that drops
+	// either one draws a different picture. A software GPU builds these shaders slowly.
+	{
+		name: 'transmission-specular',
+		sketch: `${TRANSMISSION_SKETCH}?maps&specular&env`,
 		hold: 0,
 		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
 		timeoutSeconds: 60,
@@ -3261,6 +3522,27 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		timeoutSeconds: 120,
 	},
+	// The paint lit by a spot where its point light stood. The spot's lobe must light the body and
+	// its flakes as the point light's does, so the image is the first test's within a step.
+	{
+		name: 'car-paint-spot',
+		sketch: `${CAR_PAINT_SKETCH}?spot=on`,
+		hold: 0,
+		timeoutSeconds: 120,
+		reference: 'car-paint',
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The weather add-on: the wet ground with its puddles, ripple rings and planar mirror, the
+	// windshield drops on a canopy in front, and the splashes and steam from the particles add-on.
+	// The scene is small and fixed, so the software GPU draws it quickly.
+	{
+		name: 'weather',
+		sketch: 'tests/pages/sketches/weather-cost-sketch.ts?mirror=1&show=1',
+		hold: 1,
+		size: [640, 360],
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 120,
+	},
 	// Weighted blending: crossing panes of glass and overlapping puffs blend in any order in the
 	// camera's weighted layer, over a pane of normal blending.
 	{ name: 'weighted', sketch: WEIGHTED_SKETCH, hold: 0, size: [480, 270] },
@@ -3272,6 +3554,65 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 		reference: 'weighted',
+	},
+	// Moment transparency: the same five panes at different depths, blended back to front by the
+	// sorted pass, by the weighted blending, and by the moment layer. The spec compares both
+	// approximations with the sorted image.
+	{
+		name: 'moment-sorted',
+		sketch: `${MOMENT_SKETCH}?mode=sorted`,
+		switches: ['antialias=none'],
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'moment-weighted',
+		sketch: `${MOMENT_SKETCH}?mode=weighted`,
+		switches: ['antialias=none'],
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'moment-layer',
+		sketch: `${MOMENT_SKETCH}?mode=moment`,
+		switches: ['antialias=none', 'moments=on'],
+		hold: 0,
+		size: [480, 270],
+	},
+	// The model's range: the same five panes spread from one to thirty metres from the camera, each
+	// sized to keep its place on screen.
+	{
+		name: 'moment-spread-sorted',
+		sketch: `${MOMENT_SKETCH}?mode=sorted&spread=1`,
+		switches: ['antialias=none'],
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'moment-spread-weighted',
+		sketch: `${MOMENT_SKETCH}?mode=weighted&spread=1`,
+		switches: ['antialias=none'],
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'moment-spread-layer',
+		sketch: `${MOMENT_SKETCH}?mode=moment&spread=1`,
+		switches: ['antialias=none', 'moments=on'],
+		hold: 0,
+		size: [480, 270],
+	},
+	// The same layer with the panes added in the opposite order: the moment layer's draws depend on
+	// no order, so the two images agree.
+	{
+		name: 'moment-layer-reverse',
+		sketch: `${MOMENT_SKETCH}?mode=moment&order=reverse`,
+		switches: ['antialias=none', 'moments=on'],
+		hold: 0,
+		size: [480, 270],
+		// The panes added in the opposite order draw the layer's own picture: the store sums
+		// without regard to the order, which is the property that the test proves.
+		samePicture: 'moment-layer',
 	},
 	// Decals on a stone yard: a scorch mark, road paint through a ball's shadow, a puddle under a
 	// point light, cracks on a wall, moss that fades up the ball's side, and a batch of mud
@@ -3360,6 +3701,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			// The hero shadow is fine detail on one object, so its demo draws larger than the
 			// other demos, where the tile size's difference shows.
 			...(demo.name === 'hero-shadow' && { size: HERO_SIZE }),
+			// A projected picture's detail is fine, so its demo draws larger too, where the fine
+			// lines of the stained glass and the window's bars show at their own size.
+			...(demo.name === 'spot-cookies' && { size: [640, 360] as const }),
 		};
 	}),
 	// Creek on a near-square canvas at a render scale below the whole canvas, from the opening view

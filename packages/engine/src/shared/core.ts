@@ -161,6 +161,12 @@ export interface CoreGlue extends CoreErrors {
 	 * frame, where the path culls on the CPU, or `CORE_NOT_COUNTED` where the GPU culls.
 	 */
 	occludedEntries(frame: number): number;
+	/**
+	 * The ranges of cluster-tree patches that a recorded frame's camera view draws, where the path
+	 * walks the trees, or `CORE_NOT_COUNTED` where the GPU picks the patches itself. Zero where
+	 * the view draws the trees' whole levels.
+	 */
+	patchRanges(frame: number): number;
 	/** True when the last recorded frame rebuilt its draw tables after a structure change. */
 	drawTablesRebuilt(): boolean;
 	/** True when the last recorded frame's still view has accumulated enough frames to rest. */
@@ -478,7 +484,8 @@ export interface CoreGlue extends CoreErrors {
 	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
 	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on, as is the depth bias: three.js's
-	 * polygon offset units and factor.
+	 * polygon offset units and factor. `swayDistance` is the distance from the camera out to which a
+	 * custom material's vertex offset moves, in meters, or 0 for every distance.
 	 */
 	createMaterial(
 		shading: number,
@@ -489,6 +496,7 @@ export interface CoreGlue extends CoreErrors {
 		a: number,
 		biasConstant: number,
 		biasSlope: number,
+		swayDistance: number,
 	): number;
 	/**
 	 * Changes one value of a material, `param` (a `MATERIAL_PARAM_*` code), and keeps the others.
@@ -598,6 +606,8 @@ export interface CoreGlue extends CoreErrors {
 	setProbeSize(size: number): number;
 	/** 1 while a reflection probe waits for its first capture, and 0 otherwise. */
 	probesWaiting(): number;
+	/** 1 while a light's picture waits for its texture's texels to be copied, and 0 otherwise. */
+	lightImagesWaiting(): number;
 	/**
 	 * Returns the image id under which TypeScript sends the generator that runs reflection probes'
 	 * filters, once.
@@ -781,14 +791,23 @@ export interface CoreGlue extends CoreErrors {
 	setReflectionScale(): number;
 	/** Sets the most area lights that one frame shades. */
 	setAreaLightCap(cap: number): number;
+	/** Fits the light clusters' depth slices to the depth that the frame before measured, or not. */
+	setLightFit(enabled: number): number;
 	/** Makes room for the area lights' tables; the address of their half floats, or 0. */
 	areaLightTables(): number;
 	/** Marks the area lights' tables as written, so frames light with area lights. */
 	finishAreaLightTables(): number;
-	/** Makes room for a light's image; the address of its half floats, or 0. */
-	lightImage(light: number): number;
+	/**
+	 * Makes room for a light's image of `size` texels a side; the address of its half floats, or 0.
+	 */
+	lightImage(light: number, size: number): number;
 	/** Marks a light's image as written, so frames show it. */
 	finishLightImage(light: number): number;
+	/**
+	 * Gives a light an image of `size` texels a side whose texels come from a texture, which a
+	 * frame copies into the image once the texture's texels are on the GPU.
+	 */
+	setLightMapTexture(light: number, texture: number, size: number): number;
 	/** Takes a light's image away. */
 	removeLightImage(light: number): number;
 	/** Draws the physical sky from its tables while `on`, else the analytic sky in its place. */
@@ -882,6 +901,11 @@ export interface CoreGlue extends CoreErrors {
 	 * steps of their march, from the next frame on: a size of 0 draws none.
 	 */
 	setSsrQuality(thousandths: number, steps: number): number;
+	/**
+	 * The rays that each texel of screen-space bounce light casts, from the next frame on: 0 draws
+	 * none.
+	 */
+	setBounceRays(rays: number): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
 	/**
@@ -923,6 +947,34 @@ export interface CoreGlue extends CoreErrors {
 	markParticleRecords(id: number, start: number, count: number): number;
 	/** Marks a particle system's values for the next frame's upload. */
 	markParticleValues(id: number): number;
+	/**
+	 * Makes room for `count` births' parameters in the core's block, nine numbers per birth, and
+	 * returns the address of its first number, or 0 when the memory cannot grow.
+	 */
+	particleRecordBlock(count: number): number;
+	/**
+	 * Writes the records of `count` births from the core's block, from record `first` on, and
+	 * marks them for the next frame's upload.
+	 */
+	writeParticleRecords(id: number, count: number, first: number): number;
+	/**
+	 * Takes whole `seconds` off the birth times of records `from` to `to`, which moves the time
+	 * that they count from, and marks them.
+	 */
+	shiftParticleRecords(id: number, from: number, to: number, seconds: number): number;
+	/**
+	 * Makes room for a particle system's emitter block of `floats` numbers and returns its
+	 * address, or 0 for no such system or when the memory cannot grow.
+	 */
+	particleEmitterBlock(id: number, floats: number): number;
+	/** Reads an emitter's settings from its block and starts its births and its time base again. */
+	configureParticleEmitter(id: number): number;
+	/** The address of a system's sub-emitter inverse world matrices, 16 numbers each, or 0. */
+	particleSubMatrices(id: number): number;
+	/** Emits a particle system's frame, fires its due sub-emitters, and moves its time base. */
+	emitParticleFrame(id: number): number;
+	/** Emits `count` particles of a system at once, at the place and velocity in its block. */
+	burstParticles(id: number, count: number): number;
 	/** Lets soft particles fade near the surfaces behind them, or draws them with hard edges. */
 	setSoftParticles(on: boolean): number;
 	/**
@@ -966,6 +1018,11 @@ export interface CoreGlue extends CoreErrors {
 	setSoftwareOcclusion(on: boolean): number;
 	/** Lets materials with parallax draw it, or draws them with their displacement alone. */
 	setParallax(on: boolean): number;
+	/**
+	 * Draws the blended surfaces in the camera's moment transparency layer from the next frame on,
+	 * as the quality preset's `momentTransparency` says.
+	 */
+	setMomentTransparency(on: boolean): number;
 	/**
 	 * Sets the pixels that software occlusion culling's buffer holds about from the next frame
 	 * on, or 0 for the core's default, where the path culls on the CPU.
@@ -1287,6 +1344,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'recordFrame',
 	'visibleEntries',
 	'occludedEntries',
+	'patchRanges',
 	'drawTablesRebuilt',
 	'resetGpu',
 	'drawListAddress',
@@ -1366,6 +1424,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'captureReflectionProbe',
 	'setProbeSize',
 	'probesWaiting',
+	'lightImagesWaiting',
 	'probeGenerator',
 	'setTextureData',
 	'setTextureRegion',
@@ -1393,10 +1452,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setPassValues',
 	'setReflectionScale',
 	'setAreaLightCap',
+	'setLightFit',
 	'areaLightTables',
 	'finishAreaLightTables',
 	'lightImage',
 	'finishLightImage',
+	'setLightMapTexture',
 	'removeLightImage',
 	'setPhysicalSky',
 	'removeScenePass',
@@ -1431,6 +1492,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setSsr',
 	'readsLastFrame',
 	'setSsrQuality',
+	'setBounceRays',
 	'setAutoExposure',
 	'setExposureMeter',
 	'createParticles',
@@ -1439,6 +1501,14 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'particleValues',
 	'markParticleRecords',
 	'markParticleValues',
+	'particleRecordBlock',
+	'writeParticleRecords',
+	'shiftParticleRecords',
+	'particleEmitterBlock',
+	'configureParticleEmitter',
+	'particleSubMatrices',
+	'emitParticleFrame',
+	'burstParticles',
 	'setSoftParticles',
 	'createVertexDraw',
 	'destroyVertexDraw',
@@ -1452,6 +1522,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setFeatureInstanceReady',
 	'setSoftwareOcclusion',
 	'setParallax',
+	'setMomentTransparency',
 	'setOcclusionBuffer',
 	'setLut',
 	'setGrade',

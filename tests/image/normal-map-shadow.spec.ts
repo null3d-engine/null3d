@@ -1,9 +1,10 @@
 // The shadow of a plate on normal-mapped ground, on every GPU tier. The ground's normal map tilts
 // its normals hard, while the plate floats just above it, so the shadow filter's comparison lies
-// within reach of the plate's near face. The filter compares each stored depth with the receiver's
-// plane, which must follow the flat triangles that the shadow map holds: a plane built from the
-// normal map's bent normal lifts the comparison over the plate and lights ground inside the
-// shadow. The page draws the shadow factor alone through the debug view, which reads the vertex
+// within reach of the plate's near face. The filter compares each stored depth with the surface
+// plane at the receiver, which must follow the flat triangles that the shadow map holds: a plane
+// built from the normal map's bent normal lifts the comparison over the plate and lights ground
+// inside the shadow. The sun's cascades keep one plane for a whole map, while a point or spot
+// light keeps one for each face of its cube or cone; both take the receiver's here. The page draws the shadow factor alone through the debug view, which reads the vertex
 // normal and so shows the shadow of the ground's own plane, and the lit frame with the sun, and
 // with the sun off for the floor that a fully shadowed texel keeps. No texel of the true shadow may
 // leave that floor.
@@ -106,3 +107,66 @@ for (const tier of ['webgpu', 'compat', 'webgl2'])
 			`texels of the ground that the shadow's own plane shadows and the frame lights instead, the largest change ${worst} of 255`,
 		).toBeLessThanOrEqual(LEAK_LIMIT);
 	});
+
+/**
+ * A point or spot light above the box casts the same kind of comparison through the receiver's
+ * plane, and its receiver takes the map's normal where the sun's does. The true shadow here is the
+ * box's own footprint, which a run with the normal map left out draws from the ground's flat
+ * plane; the run with the map may not light any texel inside it.
+ */
+for (const tier of ['webgpu', 'compat', 'webgl2'] as const)
+	for (const light of ['point', 'spot'] as const)
+		test(`a ${light} light's shadow follows the ground's own plane under a normal map on ${tier}`, async ({
+			page,
+		}) => {
+			test.setTimeout(240_000);
+			const tilted = await frameOf(page, pathOf(`?light=${light}&sun=off`, tier));
+			const floor = await frameOf(page, pathOf(`?light=${light}&sun=off&power=off`, tier));
+			const plane = await frameOf(page, pathOf(`?light=${light}&sun=off&bump=off`, tier));
+			const planeFloor = await frameOf(
+				page,
+				pathOf(`?light=${light}&sun=off&bump=off&power=off`, tier),
+			);
+			const { width } = tilted;
+			const height = tilted.pixels.length / 4 / width;
+			/** The largest channel change, out of 255, between two frames at one texel. */
+			const changeAt = (a: Uint8Array, b: Uint8Array, x: number, y: number) => {
+				const i = 4 * (y * width + x);
+				return Math.max(
+					Math.abs((a[i] ?? 0) - (b[i] ?? 0)),
+					Math.abs((a[i + 1] ?? 0) - (b[i + 1] ?? 0)),
+					Math.abs((a[i + 2] ?? 0) - (b[i + 2] ?? 0)),
+				);
+			};
+			// The flat ground's own shadow: texels that the light does not reach there at all.
+			const shadowed = (x: number, y: number) =>
+				changeAt(plane.pixels, planeFloor.pixels, x, y) < STEP;
+			let pixels = 0;
+			let leaked = 0;
+			let worst = 0;
+			for (let y = MARGIN; y < height - MARGIN; y++)
+				for (let x = MARGIN; x < width - MARGIN; x++) {
+					let inside = true;
+					for (let dy = -MARGIN; dy <= MARGIN && inside; dy++)
+						for (let dx = -MARGIN; dx <= MARGIN && inside; dx++) inside = shadowed(x + dx, y + dy);
+					if (!inside) continue;
+					pixels++;
+					const change = changeAt(tilted.pixels, floor.pixels, x, y);
+					if (change > STEP) leaked++;
+					worst = Math.max(worst, change);
+				}
+			const mean = (pixels: Uint8Array) => {
+				let sum = 0;
+				for (let i = 0; i < pixels.length; i += 4)
+					sum += ((pixels[i] ?? 0) + (pixels[i + 1] ?? 0) + (pixels[i + 2] ?? 0)) / 3;
+				return sum / (pixels.length / 4);
+			};
+			expect(pixels, `pixels of the ${light} light's shadow`).toBeGreaterThan(SHADOW_PIXELS);
+			expect(mean(tilted.pixels), 'the lit frame against the frame with no light').toBeGreaterThan(
+				mean(floor.pixels) + 20,
+			);
+			expect(
+				leaked,
+				`texels that the ${light} light's shadow covers and the frame lights instead, the largest change ${worst} of 255`,
+			).toBeLessThanOrEqual(LEAK_LIMIT);
+		});

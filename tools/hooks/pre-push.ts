@@ -110,12 +110,14 @@ export function pushToMilestone(refs: readonly PushedRef[]): PushedRef | undefin
 /**
  * The message that refuses a push to the milestone branch from a session that does not check the
  * landings, or undefined when the push may go ahead. A helper saves its work on its own branch, the
- * coordinator merges it, and the CI session checks the range and pushes it, so a helper's push here
- * would put unchecked work on the branch that every other helper and CI read.
+ * coordinator merges it into the landing's branch, and the CI session alone gates that range and
+ * pushes it, so a push from any other session would put unchecked work on the branch that every
+ * other helper and CI read. The landing session is not that session: it hands the CI session the
+ * branch and the head.
  */
 export function milestoneRefusal(refs: readonly PushedRef[], landing: boolean): string | undefined {
 	if (landing || !pushToMilestone(refs)) return undefined;
-	return `pre-push: this push writes ${MILESTONE_REF}, and only the session that checks the landings pushes the milestone branch. Push your own branch and let the coordinator land it. If you are that session, set ${LANDING_VARIABLE}=1 for the push.`;
+	return `pre-push: this push writes ${MILESTONE_REF}, and only the CI session that gates each landing pushes the milestone branch (D-259). A landing session pushes its own range branch and tells the CI session the ref and the head; a helper pushes its own branch and lets the coordinator land it. Set ${LANDING_VARIABLE}=1 in the CI session alone.`;
 }
 
 /** The reason that a `Push-Check-Skipped:` trailer gives on any of the messages, if one does. */

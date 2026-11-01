@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
+import { failureText, type ItemResult } from '../lib/runs.ts';
 
 /** What the water-stats page publishes: the overlay's water row on Medium and on High. */
 interface WaterStatsResult {
@@ -23,8 +24,10 @@ for (const gpu of ['webgpu', 'webgl2'])
 		page,
 	}) => {
 		await page.goto(`water-stats.html?gpu=${gpu}&preset=medium`);
-		const result = await pageResult<WaterStatsResult>(page, 45_000);
-		expect(result.error).toBeUndefined();
+		// A page that failed gives its message and the steps it got through, which say where it
+		// spent the time.
+		const result = await pageResult<WaterStatsResult & ItemResult>(page, 45_000);
+		expect(result.error, failureText(result)).toBeUndefined();
 		// The add-on's own row, on the preset's cadence and budget, with its GPU time where the
 		// device times passes and its memory.
 		expect(result.row).toContain('water');

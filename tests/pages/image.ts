@@ -6,7 +6,7 @@
 // ?pointLightShadows with point light shadows on. The engine reads its own switches: ?hold= the
 // sketch time, ?gpu= the tier, ?depth= the WebGL2 depth mode, ?hdr=off, ?half=, and the thread
 // mode's switches.
-import { createEngine, type EngineOptions } from '@null3d/engine';
+import { createEngine, type EngineOptions, type HoldResult } from '@null3d/engine';
 import { depthFacts } from './lib/depth';
 import { run, toBase64 } from './lib/result';
 
@@ -55,11 +55,18 @@ run('image', async () => {
 		largeWorld: params.has('largeWorld'),
 	});
 	const frame = await engine.captureFrame();
+	const hold = (globalThis as { __null3dHold?: HoldResult }).__null3dHold;
 	await engine.destroy();
 	return {
 		tier: engine.capabilities.tier,
 		hdr: engine.capabilities.hdr,
 		halfPrecision: engine.capabilities.halfPrecision,
+		// Whether the engine probed the extension that draws many ranges in one call, which a
+		// picture of the whole-level fallback expects it to lack.
+		multiDraw: engine.capabilities.features.includes('WEBGL_multi_draw'),
+		// Whether the held frame drew a cluster tree's patches as ranges, which a picture of the
+		// whole-level fallback expects false.
+		clusterPatches: hold?.ok ? hold.clusterPatches : null,
 		mode: engine.mode,
 		...depthFacts(engine),
 		width: frame.width,

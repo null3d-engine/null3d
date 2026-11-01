@@ -53,7 +53,7 @@ Throw a `TaskLoadError` when the module's code or WebAssembly cannot start. The 
 
 - **Off the sketch thread.** The task runs in a job worker, not in the thread that runs the sketch.
 - **Frames first.** The engine never waits for a task in a frame. A job worker leaves the job system only between the chunks of a frame. With two or more job workers, one stays for the frames.
-- **Ordering.** The engine hands an answer to the thread that called `runTask` between two frames. Code in the promise's `then` runs before the next frame's `onUpdate`, and that frame draws what the task wrote.
+- **Ordering.** The engine hands an answer to the thread that called `runTask` between two frames. Code in the promise's `then` runs before the next frame's `onUpdate`, and that frame draws what the task wrote. Hold mode runs its frames with no frame loop. Its held frame first waits for the tasks that the sketch queued. It then draws one more frame at the held time.
 - **No fixed order between tasks.** Tasks run at the same time in different job workers. Their answers come back in no fixed order, so await one task's answer before you queue the next when the order matters.
 - **Shared memory.** A `SharedArrayBuffer` in the task's input reaches the worker shared rather than copied. The worker writes into the same memory that the sketch reads.
 - **A task always runs.** Where no job worker takes the task, the engine starts a task worker for it, as on a page without worker threads.

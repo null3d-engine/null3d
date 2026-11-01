@@ -18,7 +18,7 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/lib/interact.ts` | `interact`, which gives a demo's camera orbit controls and lets the pointer steer the demo ([Always-on interaction](#always-on-interaction)) |
 | `examples/lib/pines.ts` | Pines made in code at four levels of detail, and the hills they stand on, which the page that measures the levels' saving uses |
 | `examples/forest/woods.ts` | The forest demo's scenery: three firs and a broadleaf tree made in code at four levels of detail, the bushes of its understory, the land and its ridges, the bark, needle and leaf textures, and the cut-out cards that draw the far trees on phones |
-| `examples/impostors/forest.ts` | The impostors demo's scenery: the shared pines split into three bands by distance, the octahedral atlas drawn in code from the pine's own tiers, and the transform that places each copy in a merged far mesh |
+| `examples/impostors/forest.ts` | The impostors demo's scenery: the shared pines split into three bands by distance, the octahedral atlas drawn in code from the pine's own tiers, and the transform that places each copy in a merged far mesh. The two nearer bands overlap, and each fades through the other's edge, so the rings never meet on a line |
 | `examples/lib/` | Code that several demos share, such as `sampleUrl` |
 | `examples/vite.build.config.ts` | The production build of the page against this checkout's packages |
 | `examples/compare/comparisons.ts` | The list of comparisons with three.js ([below](#comparisons-with-threejs)) |
@@ -486,6 +486,44 @@ the plane maps back to the canvas's own coordinates. The design and its measured
   comes from a render pass rather than a canvas. Its look could move onto the add-on's material if
   the add-on took any texture, and that is a later change.
 
+## The weather add-on (M3-B4)
+
+`examples/addons/weather/` puts rain where it lands: water on the ground, drops on a car's glass,
+and the link to the particles add-on for the splashes and steam that rain makes. Each scene keeps
+its own material, its maps and its paint, and the add-on adds the water to the surface that the
+scene hands it.
+
+- **One block, copied by its readers.** A scene's material owns its surface function, and the
+  shader build resolves only the engine's library, so a shader cannot import another shader. The
+  add-on's water is one WGSL block in `wet.wgsl` between the markers `// <wet-surface>` and
+  `// </wet-surface>`. A reader copies it into its own WGSL and ends its surface function with
+  `return wet_surface(s, input, depth, material.wet0, material.wet1, material.wet2);`. The wind
+  add-on shares its field block the same way. `examples/addons/weather/wet.test.ts` compares every
+  copy with the canonical block and fails when one is edited alone; a one-word edit to a copy fails
+  it.
+- **The block's work.** It darkens and smooths the surface where the water is deep, bends the
+  normal with ripple rings hashed from world-space cells, and puts a planar mirror's light into the
+  surface's reflection. The water depth comes from the scene: a puddle map where it has one, else
+  `wet_noise_depth`. Three `vec4f`s carry the look, which `createWetSurface` gives and writes each
+  frame. The rain streaks are not the add-on's: they come from the core's draw from a vertex count
+  (M3-A5). The splashes and steam come from `@null3d/particles` (F11).
+- **The mirror.** With a planar pass, the add-on adds it at a share of the render size and a cadence
+  per preset: every other frame on Low and Medium, every frame above. Without one, the block leaves
+  the mirror to the engine's screen-space reflections and the add-on binds a black stand-in.
+- **Skyway.** The city ground in `examples/showcase/skyway/city.ts` keeps its plan, pavements, kerbs
+  and lane paint, and the block covers its road. The scene reflects from the screen, so the ground
+  takes no planar pass. The hero car's canopy carries the add-on's windshield drops, and the rain's
+  splashes on its roof and the vapour from its nozzles are particle systems from the add-on.
+- **Night town.** The comparison's street in `examples/compare/night-town/shaders.ts` keeps its
+  maps, its paint, its crossings and its own water depth, and the block covers it. The add-on owns
+  the planar pass that the puddles mirror, at the same share and in every frame, as three.js's
+  reflector draws; the three.js half keeps its own mirror. The particles link stays out of the
+  comparison, so both halves draw the same scene.
+- **The cost.** The add-on's README holds the wet surface's cost per GPU path and preset, measured
+  by `tests/image/weather-cost.spec.ts` with `NULL3D_WEATHER_COST=1`. The page times a plain ground
+  against the wet ground, and the wet ground against the same ground with the planar mirror, in
+  turns, at 1920 by 1080 with a render scale of 1.
+
 ## The automatic exposure demo (M2-EX31)
 
 `auto-exposure: Courtyard and hall` shows automatic exposure ([D-148](decisions/D-148-automatic-exposure.md)). The camera walks from a sunny courtyard into a dark stone hall, turns round, and walks out again, in a loop of 20 seconds. The eye opens in the hall, and closes again when the camera faces the bright door. E turns automatic exposure off and on, so a visitor can see the fixed exposure that the camera would have.
@@ -520,7 +558,7 @@ The scenery of the contact shadows demo (`contact-shadows`, Stone garden) lives 
 - Sand raked in rings around each rock, and in straight furrows between them. A normal map from the same rake gives the low sun a light relief. A stronger relief draws dark stripes that hide the cast shadows.
 - Granite rocks: polyhedra from `@null3d/geometry` with bumps, flat underneath, each with its own shape and warmth. One granite texture made from value noise covers the rocks, the stepping stones, the curb and the lantern. Moss covers the rocks' tops through their vertex colors.
 - Pebbles and moss clumps in one batch, tufts of grass, a stone lantern with a warm point light, and a plaster wall with a tiled cap.
-- Beyond the wall, a bamboo grove and pines of seven ragged tiers that droop at their tips. Their greens hold little red. A green with more red turns khaki in the orange light of the low sun.
+- Beyond the wall, a bamboo grove and pines grown by the vegetation add-on from the garden's own record. The boughs leave the trunk at a fifth of its height, in whorls whose boughs lengthen toward the foot. The crown tapers to a point. The wall hides the lower trunk, so the part that shows is a layered spruce skirt. The built-in conifer's crown starts halfway up, where it would show only a rounded cap. Their greens hold little red. A green with more red turns khaki in the orange light of the low sun.
 - The sun keeps the hour's own height as it turns, and the sky's sun turns with it. When the sky's sun stands higher than the hour's, the sky is too bright for the low sun's light, and the long shadows hardly show. The sky's environment lights the scene, so the demo has no ambient light.
 - The wall stands high behind the garden, away from the sun's side. On the left, the sun's side, it stands only 0.5 m high. A wall 1.2 m high there shades half the bed under a sun this low. The bamboo behind it fills the skyline there, and casts no shadows.
 - The camera stands low and close, over a rock, its drift of pebbles and a stepping stone, and the sun stands about 10 degrees high. There, the cascades miss the pebbles' long shadows, and contact shadows draw them. On a tall screen the camera stands farther back with a wider view, and looks above the stones, so they sit low in the frame.
@@ -625,6 +663,14 @@ and a hero car with two screens.
   (`examples/addons/facades/`), and Skyway uses it ([D-254](decisions/D-254-interior-mapped-facades.md)).
   The wall pages and the window codes are made in code when the scene starts, so the add-on ships
   no image. Street level is a band of lit shop fronts, also from the add-on.
+- **The wet road, the glass and the rain's particles.** The city ground keeps its plan, pavements,
+  kerbs and lane paint, and the weather add-on's block adds the water to its surface
+  (`examples/addons/weather/`). The scene reflects from the screen, so the ground takes no planar
+  pass. The hero car's canopy carries the add-on's windshield drops, and the splashes on its roof
+  and the vapour from its nozzles are particle systems from the add-on, which wraps
+  `@null3d/particles`. The falling streaks stay the core's draw from a vertex count. The Rain
+  button hides the streaks, the splashes and the vapour and dries the glass; Storm raises the
+  ground's water and the streaks together.
 - **The power-on wave** lights the city from the middle out over the first second, from the frame
   clock. Each window waits for the wave to reach it and then rises on a damped spring, which
   overshoots slightly and settles. A held frame therefore always shows the same city.
@@ -648,8 +694,9 @@ and a hero car with two screens.
   interpolation. It fails on a sample inside a building. In Auto the hero car flies ahead of the
   camera, in the middle of the frame.
 - **The user drives the car in Manual.** W and S speed it up and slow it down, A and D turn it, and
-  R and F climb and sink. The towers are boxes that the car slides along or lands on.
-  `drive.test.ts` flies it frame by frame. A drag swings the camera round the car, and a touch
+  R and F climb and sink. The towers are boxes that the car slides along or lands on. The chase
+  camera pulls in before a tower that would hide the car, so the car stays in view, and eases back
+  out when the tower clears. `drive.test.ts` flies it frame by frame. A drag swings the camera round the car, and a touch
   screen drives with an on-screen pad. V and the View buttons put the camera behind the car or
   in its seat. The camera flies over the canopy into the seat and back out. The hero car has a
   cockpit under a tinted glass canopy, with its screens on the dashboard and a touchscreen console
@@ -728,22 +775,24 @@ and a hero car with two screens.
   then. One that lowers every mark to 0 drops it again. So a kit made with every mark at 0 still
   draws a mark that a later call sets.
 - **The lens's cost.** The add-on's README holds the look's cost per preset and each mark's. The
-  cost test times the whole look against the same scene without it. It draws at a canvas of
-  3840 x 2160 CSS pixels with the pixel ratio held at 2, a 7680 x 4320 buffer, with a render scale
-  of 1, and runs as `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. Each side takes
-  five rounds, in the opposite order on alternate rounds. The quiet run on the Mac's M3 Max in
-  Chrome 156 gives the look 2.00 ms at Low and 1.27 at Ultra on WebGPU, 5.42 and 2.00 in
-  compatibility mode, and 1.41 and 1.46 on WebGL2. Ten of the twelve cells keep their whole range
-  above zero; compatibility High's and WebGL2 Medium's cross it. The four cells that the earlier,
-  smaller run put at or below zero now read 3.41 at WebGPU Medium, 2.02 at WebGPU High, 1.64 at
-  WebGL2 Medium and 0.71 at WebGL2 High; three of the four keep their range above zero, and WebGL2
-  Medium's does not, its range running from -7.02 to 1.64. Seven of the twenty-one marks resolve
-  their own cost at the highest preset their path allows, between 0.38 and 1.58 ms. The add-on's
-  README holds every cell with its range
-  ([run](tested-devices/macbook-pro-m3-max-chrome/20261027-103454-lens-cost.md)). The core's
-  vignette and grade add nothing to a frame, since they run in the final pass; the sharpening value
-  adds the first step's pass at the whole render scale. A look that leaves all four of the effect's
-  values at 0 adds no effect at all.
+  look's work is a fraction of a millisecond, and a lit scene's own frame time moves by more than
+  that between rounds, so the cost test measures it above that movement: the page clears the scene
+  to its background and the bars that feed bloom, draws the marks' effect eight times in every
+  frame, and divides by eight. It draws at a canvas of 3840 x 2160 CSS pixels with the pixel ratio
+  held at 2, a 7680 x 4320 buffer, with a render scale of 1, and runs as
+  `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. Each side takes eight rounds of a
+  second, in the opposite order on alternate rounds, and the test reads the effect's own passes from
+  the GPU's per-pass timer where the device times them. The core's vignette and grade add nothing to
+  a frame, since they run in the final pass; the sharpening value adds the first step's pass at the
+  whole render scale. A look that leaves all four of the effect's values at 0 adds no effect at
+  all. The quiet run on the Mac's M3 Max in Chrome 156 reads the whole look at 3.1 to 3.9 ms at
+  every preset on WebGPU and in compatibility mode, and about a tenth of a millisecond for each
+  megapixel of the canvas. WebGL2 keeps no whole-look figure, because its own frame moves by about
+  a millisecond between rounds. Each of the effect's four marks resolves on every path, between 0.19
+  and 0.70 ms at the highest preset its path allows. The grade and the vignette stay inside the
+  final pass and read under what the method resolves, and the sharpening's first step reads 1.32 ms
+  on WebGPU and 1.09 in compatibility mode. The add-on's README holds every cell with its range
+  ([run](tested-devices/macbook-pro-m3-max-chrome/20261031-0700-lens-cost.md)).
 - **On a phone**, WebGL2 runs Medium at most. That preset draws 30,000 cars, about 900 towers, 180
   lights, the rain and reflections at a quarter of the render size. Medium doubles the cars and
   raises the reflection scale. A cloud Galaxy S24 measured two windows in a row at Low. The first 5
@@ -796,8 +845,9 @@ The particles demo uses the particles add-on. The showcase and comparison scenes
 A demo takes each engine feature as it lands, not all at once. A scene is ready for its look pass when every feature it needs is on main.
 
 - **Creek** takes lit fog, the physical sky, foliage translucency and impostors.
-- **Night town** takes screen-space reflections, area lights, reflection probes, decals and automatic exposure.
+- **Night town** takes screen-space reflections, area lights, reflection probes, decals, automatic exposure and the weather add-on's wet street.
 - **Battle** takes the particles add-on, joint overrides, weighted blended transparency, decals, terrain and the physical sky.
+- **Skyway** takes the weather add-on's wet road, windshield drops and particles link, beside its facades, screens, traffic lanes and lens kit.
 - **Factory**, **forest**, the **campfire glade** and the feature demos take the sky, the exposure and contact shadows where they fit. A surface that suits clearcoat takes it.
 
 The owner reviews each scene's look before its references are remade. Every scene holds the display rate at its preset, as the other demos do.
@@ -809,17 +859,17 @@ Creek is a small stream in a grassy valley (M2-EX8). Code makes all of it but th
 | Part | How it is made |
 | --- | --- |
 | Land (`land.ts`) | A grid of 160 m whose quads pack toward the middle, where the camera looks. A height function cuts the stream's bed, the low banks and the valley's sides. Each vertex takes a color from its height and slope: wet bed, mud, soil, dry patches, meadow and bare rock. A tiled texture set from `textures.fromData` adds clods and grit |
-| Water (`@null3d/water`) | A grid at the water's height. Its vertex offset moves it with long waves that the current carries downstream. Its surface function adds finer ripples, which catch the sun as glints. A reflection pass mirrors the banks and the sky, and transmission shows the bed through the water. Caustics play over the bed. The water is clear where it is shallow, and foams at the banks and around the stones, with a trail downstream of each stone |
+| Water (`@null3d/water`) | Three sheets at the water's height, along the stream and on down each gorge. Each sheet's vertex offset moves it with long waves, and the current carries the whole set downstream. Its surface function adds finer ripples, which catch the sun as glints. A reflection pass mirrors the banks and the sky, and transmission shows the bed through the water. Caustics play over the bed. The water is clear where it is shallow, and foams at the banks and around the stones, with a trail downstream of each stone. The sheets give the add-on the stream's own bed and current as functions of each point |
 | Grass (`grass.ts`) | Tufts of 13 curved blades, in three shapes, as instance batches. A vertex offset bends each blade in gusts that roll across the banks. Each row's values give its tuft a phase in the wind, a tint and a turn. The tufts near the water cast shadows and show in the reflection; the others only receive shadows |
 | Stones (`stones.ts`) | Rocks of noise-shaped spheres with moss where they face up, and pebbles on the bed, as instance batches with shadows. Rocks in and at the edge of the stream are wet: darker and glossy. The cave mouth is a model |
 | Trees, plants and leaves (`flora.ts`) | Seventeen trees of three kinds and sizes, hostas at the water's edge, ferns over the banks and among the cave's boulders, wildflowers in patches, and shrubs at the trees' feet. Each plant kind is one instance batch. Fallen leaves float down the current, and fireflies glow at blue hour and at night |
 | Models (`models.ts`) | Loads the three model files of the trees, the plants and the cave mouth, and places their parts. [Sample content](sample-content.md#models-built-in-blender) says how a script builds them |
 | Air (`air.ts`) | Leaves that fall from the crowns and spin on the breeze, motes of dust that glow in the low sun, and mist over the water. Each is a sprite batch that the sketch moves from the time alone |
 | Shafts (`shafts.ts`) | Rays of light through the trees at golden hour: a custom effect that marches from each pixel toward the sun on the screen |
-| Under the water (`@null3d/water`) | While the camera is under the surface, a custom effect makes the view read as seen through flowing water. The current's wobble runs downstream across the picture, caustics play over the bed, and the water swallows the light with distance into its own green. The water's surface draws both faces: from below, the world above shows through a window overhead, and past the window's edge the surface turns some light back down as a faint mirror. Each pixel decides for itself, from where its line of sight leaves the near plane, so a camera half under the water splits the picture at the waterline. The effect is added while the camera is within 0.6 m above the water, since a new effect takes a few frames to start drawing. The Auto route dips under the water for about six seconds as it glides down the stream, through shots that pass the surface on purpose (`through`). `route.test.ts` keeps the dip clear of the bed and the stones (the owner's ruling). |
+| Under the water (`@null3d/water`) | While the camera is under the surface, the add-on's effect makes the view read as seen through flowing water. The current's wobble runs downstream across the picture, caustics play over the bed, and the water swallows the light with distance into its own green. The water's surface draws both faces: from below, the world above shows through a window overhead, and past the window's edge the surface turns some light back down as a faint mirror. Each pixel decides for itself, from where its line of sight leaves the near plane, so a camera half under the water splits the picture at the waterline. The effect is added while the camera is within 0.6 m above the water, since a new effect takes a few frames to start drawing. The Auto route dips under the water for about six seconds as it glides down the stream, through shots that pass the surface on purpose (`through`). `route.test.ts` keeps the dip clear of the bed and the stones (the owner's ruling). |
 | Moods (`examples/lib/stage.ts`) | Afternoon, golden hour, blue hour and night from `timeOfDay`, lit by the sky's environment, and a studio lit by the built-in room. A mood can thicken the fog into a haze: golden hour and blue hour do |
 
-**The water is the Creek's own.** Creek draws its river, and the view from under the water, in `water.ts` and `underwater.ts`. The owner rules that the water add-on `@null3d/water` does not reproduce that look in the Creek. Its current follows the river mesh's texture coordinates, its thickness comes from the copy of the scene's depth, and its shore fades. The Creek keeps its own water until the add-on reproduces that look ([D-257](decisions/D-257-water-addon.md)). The add-on and its own demo stay as they are.
+**The water is the add-on's.** Creek draws its river, and the view from under the water, through `@null3d/water` ([D-257](decisions/D-257-water-addon.md)). The scene keeps no water code of its own: the three sheets give the add-on the stream's bed and current as functions of each point, so the water carries the stream's own flow. The add-on turns each wave's direction into the current's frame, so every crest drifts downstream and the cross-hatch stays. The Creek's sheets keep the columns and rows that the scene drew before.
 
 **The plant code and models are temporary.** The vegetation add-on of M3-V4 to M3-V9 grows Creek's trees, ferns, hostas, shrubs, flowers and grass at first use. It places them over the whole valley by ecological rules and moves them all in one wind field, which the wind add-on provides. Once it exists, Creek draws its plants through it (M3-V11). Its Blender plant models, their script and their files of about 3.1 MB are deleted. So is the scene's own plant code: `grass.ts`, `models.ts` and the plant parts of `flora.ts`. The floating leaves and the fireflies stay (the owner's ruling, [D-241](decisions/D-241-vegetation-foundation.md)).
 
@@ -963,7 +1013,8 @@ The rules that these demos follow, and why:
 - Picking turns its plinth and its pieces from `time.now`. Adding `dt` each frame would make the held frame depend on the frame rate.
 - Depth of field draws nothing on the Low preset, which phones start on, as [Post-processing](../docs/api/post.md#depth-of-field) says. The two demos look right without it.
 - Some demos make the room or the sky environment, or load large files. Their image tests may take 60 s, as the math, instances and generators demos do.
-- The post effects demo has screen-space reflections and the lens grade (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). Its puddles are almost mirror smooth, so the neon and the crates streak down into the asphalt while the dry ground stays matte. The lens grade adds color fringes, an anamorphic streak on light brighter than white, and grain that changes 24 times a second. The switch that turns the reflections on for a device that leaves them off lives in `examples/lib/ssr.ts`, which every demo with them shares.
+- The post effects demo has screen-space reflections and the lens kit (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). Its puddles are almost mirror smooth, so the neon and the crates streak down into the asphalt while the dry ground stays matte. The kit adds color fringes, an anamorphic streak read from bloom's chain, and grain that changes 24 times a second, and it owns the demo's grade, sharpening and vignette, so the demo writes no effect of its own. The switch that turns the reflections on for a device that leaves them off lives in `examples/lib/ssr.ts`, which every demo with them shares.
+- The comparison scenes keep a lens grade of their own, in `examples/lib/lens.ts`, with a three.js twin that draws the same effect in that engine's half. A comparison draws one description in both engines, so the effect they carry stays the same in the two, and neither takes the lens kit. A scene that is not a comparison takes the kit.
 - The security camera demo's monitor has the LCD look (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). Its shader lives in `monitor.ts` beside the sketch. It draws the panel's red, green and blue stripes when the screen is near enough to show them, and a few dead cells.
 - The area lights demo has screen-space reflections (M2-EX43). Its road is smooth where the puddles lie, so the glowing shop windows, the neon sign and the street around them mirror in it, beside each light's own shaped highlight. The reflections stop at a roughness of 0.35, so the dry asphalt stays matte.
 - The picking demo has a clickable plan on its wall (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). The module `screen.ts` beside the sketch draws it from code, with a grid and a square for each click. A click's event carries `uv` and `hasUv` (M3-A1), so the plan marks the square from the hit itself, where the pointer points. The texture changes only when a click adds a mark, so a held frame is the same on every run.
