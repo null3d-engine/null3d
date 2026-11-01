@@ -110,6 +110,9 @@ simpler light of the panorama costs nothing that a viewer can see.
   layer's draw is that branch's; the background pass's cloud draw comes before it.
 - The image tests `clouds-volume` and `clouds-flat` compare the High tier with the flat layer of the
   same scene, on all three GPU paths and on both reference sets.
+- A comparison with three.js pins `cloudSteps` to 0, because three.js draws the flat layer and the
+  tier has no twin there. The scene, the light and every other effect stay as the comparison draws
+  them, so the two pictures still judge the engine against three.js.
 - The demo showcase's sky shows the tier (M3-J3).
 
 ## Alternatives rejected

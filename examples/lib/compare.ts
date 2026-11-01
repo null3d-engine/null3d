@@ -285,6 +285,9 @@ async function startNull3d(
 		},
 		// A fixed preset: High, which WebGL2 caps at Medium. The sketch turns the governor off.
 		preset: 'high',
+		// three.js draws the flat cloud layer, so a comparison pins the engine to it: the
+		// volumetric tier has no twin, and the two pictures would otherwise differ by the sky.
+		cloudSteps: 0,
 		maxPixelRatio: pixelRatio,
 		antialias: 'msaa',
 		shadowTiles: comparison.shadowTiles,

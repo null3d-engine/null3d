@@ -599,12 +599,6 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
-	"chromium-swiftshader/webgpu/demo-terrain.png": {
-		"test": "demo-terrain",
-		"tier": "webgpu",
-		"date": "2026-10-27",
-		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
-	},
 	"chromium-swiftshader/webgpu/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
 		"tier": "webgpu",
