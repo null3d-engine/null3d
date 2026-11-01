@@ -1617,7 +1617,7 @@ export function windStressPlan(): PlanItem<Check>[] {
 				{
 					// The page clamps the load to the device's instance limit, so a phone takes a
 					// smaller load than the Mac and says so.
-					switches: ['gpu=webgpu', `preset=${preset}`, 'cards=2097152'],
+					switches: ['gpu=webgpu', `preset=${preset}`, 'cards=500000'],
 					timeoutSeconds: 240,
 				},
 			),

@@ -11,6 +11,8 @@ const wanted = params.get('preset');
 /** The preset that the page asks for, which the engine caps at the path's highest. */
 const preset = (wanted ?? 'auto') as 'auto' | QualityPreset;
 const cards = Number(params.get('cards') ?? '400000');
+/** The cards that stand during the motion reading, which the capture can read on every device. */
+const MOTION_CARDS = 10000;
 
 /** The sketch's reading of the governor and the wind's resolved settings. */
 interface StressState {
@@ -88,6 +90,22 @@ run('wind-stress', async () => {
 		return { state: reading, frame };
 	};
 
+	// The card material's pipelines build on its first drawn frame, and a capture waits for the
+	// frame's pipelines. A tablet cannot build them under the full load within that wait, so a few
+	// cards draw first and a capture builds them.
+	const warmUp = async (): Promise<string> => {
+		setLoad(256);
+		await wait(1.5);
+		const outcome = await engine.captureFrame().then(
+			() => 'ok',
+			(error: unknown) => (error instanceof Error ? error.message : String(error)),
+		);
+		setLoad(0);
+		await wait(0.5);
+		return outcome;
+	};
+	const warmUpCapture = await warmUp();
+
 	// The light phase keeps the budget, the heavy one overloads it until the governor steps, and
 	// the settle phase asks whether it comes back.
 	const light = await phase(0, 1.5, 2);
@@ -95,25 +113,42 @@ run('wind-stress', async () => {
 	// The governor may step further down while the heavy frames queue, so the deepest state is the
 	// one to beat on the way back up.
 	const bottom = await read();
-	// Two frames 300 ms apart: only the air can move a still camera's cards.
-	const first = await engine.captureFrame();
-	await wait(0.3);
-	const second = await engine.captureFrame();
-	const moved = changed(first.pixels, second.pixels, 8);
+	// The full load's first frames build the card material's pipelines for every cascade, and a
+	// tablet does not finish them within the capture's wait. The motion reading therefore runs at a
+	// light load, with the governor still at its deepest step: two frames a second apart, so only
+	// the air can move a still camera's cards. A device that cannot capture says why.
+	setLoad(MOTION_CARDS);
+	await wait(1.5);
+	let moved = 0;
+	let captureError: string | undefined;
+	try {
+		const first = await engine.captureFrame();
+		await wait(1);
+		const second = await engine.captureFrame();
+		moved = changed(first.pixels, second.pixels, 8);
+	} catch (error) {
+		captureError = error instanceof Error ? error.message : String(error);
+	}
+	// The settings read beside the captures show the governor stayed stepped for them.
+	const stepping = await read();
 	const settle = await phase(0, 20, 2);
 
+	const { tier, maxInstances } = engine.capabilities;
 	await engine.destroy();
 	return {
-		tier: engine.capabilities.tier,
+		tier,
 		requested: preset,
 		preset: light.state?.preset ?? preset,
 		cards: light.state?.cards ?? cards,
-		maxInstances: light.state?.maxInstances ?? engine.capabilities.maxInstances,
+		maxInstances: light.state?.maxInstances ?? maxInstances,
 		light,
 		heavy,
 		bottom,
+		stepping,
 		settle,
 		moved,
+		warmUpCapture,
+		...(captureError === undefined ? {} : { captureError }),
 		window: [innerWidth, innerHeight],
 		devicePixelRatio,
 		failures,

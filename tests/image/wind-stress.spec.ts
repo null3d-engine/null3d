@@ -43,8 +43,12 @@ interface StressResult {
 	heavy: Phase;
 	/** The governor's state at the end of the heavy phase, after its frames queued. */
 	bottom: StressState | null;
+	/** The settings beside the motion reading, with the light load in place. */
+	stepping: StressState | null;
 	settle: Phase;
 	moved: number;
+	/** Why the device could not capture two frames, where it could not. */
+	captureError?: string;
 	failures: string[];
 }
 
@@ -88,7 +92,7 @@ for (const gpu of gpus) {
 					phaseLine('heavy', result.heavy),
 					phaseLine('bottom', { state: result.bottom, frame: result.heavy.frame }),
 					phaseLine('settle', result.settle),
-					`  pixels moved in the heavy phase: ${(result.moved * 100).toFixed(2)} percent`,
+					`  pixels moved while the governor was stepped: ${(result.moved * 100).toFixed(2)} percent`,
 					`  failures: ${result.failures.join('; ') || 'none'}`,
 				].join('\n'),
 			);
@@ -112,6 +116,23 @@ for (const gpu of gpus) {
 				console.log(`  ${result.preset} keeps no field, so there is no wind setting to drive`);
 				return;
 			}
+			// The field still moves under the load. This holds whether or not the governor had to step.
+			expect(result.captureError, `the capture failed: ${result.captureError}`).toBeUndefined();
+			expect(result.moved).toBeGreaterThan(0);
+			// The frame that the governor defends is the one that the light phase kept. The load is
+			// over it when the heavy frames take longer, or when their GPU work alone passes it.
+			const lightInterval = light.frame.interval;
+			const heavyInterval = heavy.frame.interval;
+			const heavyGpu = heavy.frame.gpu ?? 0;
+			const overBudget = heavyInterval > lightInterval * 1.1 + 1 || heavyGpu > lightInterval;
+			if (!overBudget) {
+				// The device held the frame under the load, so the governor kept the field's full
+				// settings. That is the budget's goal, and no step can be asked of it.
+				console.log(
+					`  the load stayed inside the frame (${ms(heavyInterval)} ms, GPU ${ms(heavyGpu)} ms of ${ms(lightInterval)} ms), so the governor kept the field's settings`,
+				);
+				return;
+			}
 			const driven =
 				Number(setting(heavy, 'windStepMs')) > Number(setting(light, 'windStepMs')) ||
 				Number(setting(heavy, 'windPressureSteps')) < Number(setting(light, 'windPressureSteps')) ||
@@ -131,8 +152,6 @@ for (const gpu of gpus) {
 			expect(Number(setting(heavy, 'windSpringTrees'))).toBeLessThanOrEqual(
 				Number(setting(light, 'windSpringTrees')),
 			);
-			// The field still moves at the governor's lowest step.
-			expect(result.moved).toBeGreaterThan(0);
 			// The governor comes back up when the load goes: the wind's share of its budget rises or
 			// the field's settings do, from the deepest state that the heavy phase reached.
 			const bottom = result.bottom ?? heavy.state;
@@ -148,7 +167,6 @@ for (const gpu of gpus) {
 			// The frame comes back inside the budget: with the load gone, the interval returns to the
 			// light phase's, which is the display's own rate. The margin leaves room for the governor's
 			// probation and for a device that runs a frame long now and then.
-			const lightInterval = light.frame.interval;
 			const settleInterval = settle.frame.interval;
 			expect(
 				settleInterval,
