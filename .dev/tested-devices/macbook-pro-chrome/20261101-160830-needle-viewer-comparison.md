@@ -8,10 +8,11 @@ attribute, at `http://127.0.0.1:56084/index.html`. The engine draws the same fil
 `tests/pages/sketches/needle-viewer-sketch.ts` at the same size, on WebGPU, compatibility mode and
 WebGL2, at the High preset and held at 0.2 s, at
 `http://127.0.0.1:5199/tests/pages/image.html?gpu=webgpu&preset=high&hold=0.2&size=1280x720&sketch=%2Ftests%2Fpages%2Fsketches%2Fneedle-viewer-sketch.ts`,
-and at that address with `gpu=compat` and `gpu=webgl2`. Both sides take the file's `Capture Camera`
-node: position [-1, 9.2, -4.5], target [2, 7.9, -0.3], a 55-degree field of view, near 0.03 and far
-50. Neither side adds a light, an ambient light, an environment or a tone curve, and both scale the
-exposure by one. Run at `579b6c932` with
+and at that address with `gpu=compat` and `gpu=webgl2`. The viewer reads the file's `Capture
+Camera` node for its camera: position [-1, 9.2, -4.5], target [2, 7.9, -0.3], a 55-degree field of
+view, near 0.03 and far 50. The sketch carries the same pose as constants, so the two agree today,
+but a change to the node alone would desync them. Neither side adds a light, an ambient light, an
+environment or a tone curve, and both scale the exposure by one. Run at `579b6c932` with
 `bun tools/needle-viewer-compare.ts --viewer <clone> --out <folder>`. The tool serves the pinned
 viewer, starts the dev server, opens headless Chrome, waits for the scene's `loading-finished` class,
 and reads the viewer's canvas until two reads in a row match. No gate build was running when the run
@@ -30,4 +31,6 @@ and the wall's edges, where the two renderers smooth an edge with their own samp
 the reduced `NEEDLE_lightmaps` file draws as Needle's viewer draws it. A wrong RGBM decode would
 change the brightness, and a wrong coordinate set, scale or offset would smear the bake. The
 pictures show neither, so the light map's decode and placement agree with the viewer's. The residue
-is the two renderers' edges and their rounding, not the light map.
+is the two renderers' edges and their rounding, not the light map. The comparison covers the plain
+light map only: the reduced sample carries no direction texture, so the direction is not compared
+with the viewer.
