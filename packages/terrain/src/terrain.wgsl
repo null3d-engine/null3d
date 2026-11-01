@@ -76,9 +76,13 @@ fn surface(input: SurfaceInput) -> Surface {
     // A steep face would stretch a map laid from above, so the third layer, the rock, also reads two
     // maps laid from the sides, blended by which way the ground faces.
     var c2 = textureSample(layerTwo, layerTwoSampler, at / material.tiles.z);
+    // A material's value is not uniform to the shader's analysis, so the branch takes its derivatives
+    // from outside it.
+    let sideGrads = array(dpdx(input.worldPosition), dpdy(input.worldPosition));
     if material.steepFaces > 0.5 {
-        let sideX = textureSample(layerTwo, layerTwoSampler, input.worldPosition.zy / material.tiles.z);
-        let sideZ = textureSample(layerTwo, layerTwoSampler, input.worldPosition.xy / material.tiles.z);
+        let t = material.tiles.z;
+        let sideX = textureSampleGrad(layerTwo, layerTwoSampler, input.worldPosition.zy / t, sideGrads[0].zy / t, sideGrads[1].zy / t);
+        let sideZ = textureSampleGrad(layerTwo, layerTwoSampler, input.worldPosition.xy / t, sideGrads[0].xy / t, sideGrads[1].xy / t);
         let facing = abs(input.normal);
         let steep = smoothstep(0.75, 0.45, facing.y);
         let sideways = mix(sideX, sideZ, smoothstep(0.35, 0.65, facing.z / max(facing.x + facing.z, 0.0001)));
