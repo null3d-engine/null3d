@@ -778,11 +778,10 @@ and a hero car with two screens.
   The WebGL2 pages cannot rank the parts, because they all reach the ceiling.
 
   The WebGPU page's one measured difference is its upload: 432 KiB a frame against the WebGL2
-  pages' 78 to 147 KiB. Without the traffic the WebGPU path uploads about 24 KiB. So the figure is
-  the lanes' instance rows, sent again in every frame. The GPU-driven path uploads every static
-  batch's rows when the frame's structure reads as changed. What sets that flag in this scene is
-  not yet found, and clearing it is the cheapest change that would bring the WebGPU path to the
-  WebGL2 one.
+  pages' 78 to 147 KiB. The Mac's WebGPU page draws the same scene and uploads 27 KiB, so the
+  figure is not the scene's data. Both mobile devices keep CPU copies of their textures, where the
+  Mac does not, and the cause is not measured. The WebGPU page also draws 155 draws against 80. It
+  misses about one frame in five where WebGL2 misses none.
 
   The phone's pages fall into two rates whatever they leave out. One session drew 29.5 frames a
   second on its whole-scene page, and the same 29.5 without ambient occlusion. Its pages without
