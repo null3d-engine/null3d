@@ -57,7 +57,7 @@ export const BOUNDS: Omit<CameraBounds, 'ground'> = {
 /**
  * The cinematic route. It opens high off the south-east, showing the whole island. Then it drops to
  * the bay and flies in low toward the beach, turns along the town's waterfront to the harbour and the
- * square, climbs over the south face to the highest hill's tower, crosses to the eastern hill, sweeps
+ * square, climbs over the south face to the highest hill's tower and circles it, crosses to the eastern hill, sweeps
  * over the golf course, and rises back to the opening view.
  * The first shot holds still, so a held frame lands on the opening view.
  */
@@ -70,7 +70,13 @@ export const SHOTS: readonly Shot[] = [
 	{ position: [-70, 30, 410], target: [-92, 30, 200], seconds: 11 },
 	{ position: [-130, 70, 330], target: [-92, 36, 190], seconds: 9 },
 	{ position: [-110, 165, 60], target: [-110, 150, -220], seconds: 12 },
-	{ position: [-30, 270, -190], target: [-118, 195, -375], seconds: 11 },
+	{ position: [-30, 270, -190], target: [-118, 200, -375], seconds: 10 },
+	// Close in on the highest hill's tower, low over its trees, and go most of the way around it.
+	{ position: [-92, 196, -319], target: [-118, 200, -375], seconds: 7 },
+	{ position: [-174, 194, -349], target: [-118, 200, -375], seconds: 7 },
+	{ position: [-144, 196, -431], target: [-118, 200, -375], seconds: 7 },
+	{ position: [-62, 198, -401], target: [-118, 200, -375], seconds: 7 },
+	{ position: [-62, 200, -349], target: [-118, 200, -375], seconds: 6 },
 	{ position: [90, 250, -250], target: [255, 170, -350], seconds: 9 },
 	{ position: [330, 185, -220], target: [430, 60, -60], seconds: 9 },
 	{ position: [560, 130, -20], target: [430, 45, -70], seconds: 9 },
