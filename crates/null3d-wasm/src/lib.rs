@@ -2613,7 +2613,10 @@ pub fn mesh_format(mesh: u32) -> u32 {
 /// `shading::CUSTOM_TRANSMISSION` when its WGSL has the builds that let light through. Its features
 /// (`constants::material_feature`) and its depth bias are fixed from now on. The bias takes
 /// three.js's `polygonOffsetUnits` as `bias_constant` and its `polygonOffsetFactor` as
-/// `bias_slope`, whose positive values push the surface away.
+/// `bias_slope`, whose positive values push the surface away. A custom material whose vertex offset
+/// sways gives the distance from the camera out to which it moves, in meters, as `sway_distance`:
+/// past it the material's casters stand still, so far shadow cascades keep their layers. Zero sways
+/// at every distance.
 #[wasm_bindgen(js_name = createMaterial)]
 #[allow(clippy::too_many_arguments)]
 pub fn create_material(
@@ -2625,6 +2628,7 @@ pub fn create_material(
     a: f32,
     bias_constant: f32,
     bias_slope: f32,
+    sway_distance: f32,
 ) -> u32 {
     let shading = match shading {
         shading::UNLIT => Shading::Unlit,
@@ -2654,6 +2658,9 @@ pub fn create_material(
             .create(shading, features, [r, g, b, a])
             .map_err(material_failure)?;
         table.set_depth_bias(id, bias).map_err(material_failure)?;
+        table
+            .set_sway(id, sway_distance)
+            .map_err(material_failure)?;
         // A wireframe draws each part's edge list, which the meshes keep from the first one on.
         if features & materials::feature::WIREFRAME != 0 {
             settings.meshes_mut().keep_edges();
@@ -3610,6 +3617,17 @@ pub fn set_area_light_cap(cap: u32) -> u32 {
     })
 }
 
+/// Fits the light clusters' depth slices to the depth that the frame before measured, from the next
+/// frame on, or leaves them on the CPU's slicing: the quality preset's `lightFit`. It runs only on
+/// WebGPU, where the light clustering passes do this work.
+#[wasm_bindgen(js_name = setLightFit)]
+pub fn set_light_fit(enabled: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_light_fit(enabled != 0);
+        0
+    })
+}
+
 /// The halvings of the render size each way that make a share `scale` of it: 0 for the whole
 /// size, 1 for half and 2 for a quarter.
 fn halvings_of(scale: f32) -> u8 {
@@ -4264,6 +4282,52 @@ pub fn mark_particle_records(id: u32, start: u32, count: u32) -> u32 {
 pub fn mark_particle_values(id: u32) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().particles_mut().mark_values(id);
+        0
+    })
+}
+
+/// Makes room for `count` births' parameters and returns the address of the block's first
+/// number, which the sketch fills before it asks for their records. Each birth takes nine
+/// numbers: the birth place, the birth time, the velocity, the lifetime and the seed. 0 means the
+/// memory cannot grow.
+#[wasm_bindgen(js_name = particleRecordBlock)]
+pub fn particle_record_block(count: u32) -> u32 {
+    value_with_engine(|e| {
+        let address = e
+            .renderer
+            .settings_mut()
+            .particles_mut()
+            .births_address(count as usize);
+        if address == 0 {
+            Err(out_of_memory(u64::from(count) * 9 * 4))
+        } else {
+            Ok(address)
+        }
+    })
+}
+
+/// Writes the records of `count` births from the block that `particleRecordBlock` gave, from
+/// record `first` on, and marks them for the next frame's upload.
+#[wasm_bindgen(js_name = writeParticleRecords)]
+pub fn write_particle_records(id: u32, count: u32, first: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .particles_mut()
+            .write_records(id, count, first);
+        0
+    })
+}
+
+/// Takes whole `seconds` off the birth times of records `from..to`, which moves the time that
+/// they count from, and marks them for the next frame's upload.
+#[wasm_bindgen(js_name = shiftParticleRecords)]
+pub fn shift_particle_records(id: u32, from: u32, to: u32, seconds: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .particles_mut()
+            .shift_records(id, from, to, seconds);
         0
     })
 }

@@ -523,6 +523,8 @@ describe('the pages', () => {
 			'null3d-webgpu-skin-narrow',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
+			'null3d-webgpu-reflection-off',
+			'null3d-webgl2-reflection-off',
 		]);
 		expect(TIERS.map(gpuApiOf)).toEqual(['webgpu', 'webgpu', 'webgl2']);
 	});
@@ -650,6 +652,8 @@ describe('the pages', () => {
 			'null3d-webgpu-skin-narrow',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
+			'null3d-webgpu-reflection-off',
+			'null3d-webgl2-reflection-off',
 		]);
 		expect(isNull3dPage('scene-code')).toBe(false);
 		expect(PAGE_KINDS.map(gpuApiOfPage)).toEqual([
@@ -691,6 +695,8 @@ describe('the pages', () => {
 			'webgpu',
 			'webgpu',
 			'webgl2',
+			'webgl2',
+			'webgpu',
 			'webgl2',
 		]);
 		expect(gpuApiOfPage('scene-code')).toBe('webgl2');
@@ -824,7 +830,7 @@ describe('parseParityArgs', () => {
 
 	test('refuses unknown names, a pair that is not two pages, and --tier with --pair', () => {
 		expect(() => parseParityArgs(['--scene', 's9'])).toThrow(
-			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4, s5, s6, standard-grid,',
+			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4, s5, s6, s7, standard-grid,',
 		);
 		expect(() => parseParityArgs(['--tier', 'webgl1'])).toThrow('"webgl1" is not a tier.');
 		expect(() => parseParityArgs(['--pair', 'threejs-webgl'])).toThrow(

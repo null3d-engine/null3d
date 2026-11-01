@@ -204,6 +204,9 @@ impl SsrPass {
         }
     }
 
+    /// Bytes a frame may copy into its arena: the whole uniform buffer.
+    pub(crate) const UPLOAD_BYTES: usize = BUFFER_BYTES as usize;
+
     /// The ids of the steps' pipelines that the pass asked for.
     pub(crate) fn pipeline_ids(&self) -> impl Iterator<Item = u32> + '_ {
         self.pipelines.iter().flatten().copied()

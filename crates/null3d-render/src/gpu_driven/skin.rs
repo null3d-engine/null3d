@@ -838,6 +838,12 @@ impl Skinning {
         }
     }
 
+    /// The most that one frame copies into its arena: the whole table, and the morph texture's
+    /// deltas and weights.
+    pub(super) fn upload_bound(&self, storage: &MeshStorage) -> usize {
+        (self.table_entries * ENTRY_WORDS * 4) as usize + self.morph.upload_bound(storage)
+    }
+
     /// Uploads the frame's joint matrices, its morph weights, and the parts to skin and morph of
     /// each segment: those of the objects that some view draws, with their workgroups, apart from
     /// objects whose regions hold their pose already (see the module documentation).

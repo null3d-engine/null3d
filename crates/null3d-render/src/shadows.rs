@@ -797,37 +797,53 @@ impl CascadeSchedule {
 /// caster whose material moves its vertices by a vertex offset of its own counts too, as its
 /// shadow may sway in every frame, unless the material holds its casters still: its offset then
 /// follows the view that draws it, so a caster that only shadow passes draw keeps the layer's
-/// shadow. The list follows the scene's structure, so it changes only in frames where the structure
-/// changed.
+/// shadow. A material whose offset fades out at a distance from the camera carries that distance
+/// here, and a caster of it that stands farther away than that stands still, so a far cascade that
+/// only its sway reaches keeps the layer it holds. The list follows the scene's structure, so it
+/// changes only in frames where the structure changed.
 #[derive(Debug, Default)]
 pub struct MovingCasters {
     slots: Vec<u32>,
+    /// The distance from the camera out to which each slot's caster sways: 0 for a caster that
+    /// moves at every distance, such as a dynamic object's.
+    slot_sway: Vec<f32>,
     batches: Vec<Handle>,
+    /// The distance from the camera out to which each batch sways, as [`Self::slot_sway`] gives it.
+    batch_sway: Vec<f32>,
     /// True once the list matches the scene's structure.
     built: bool,
 }
 
 impl MovingCasters {
     /// Lists the scene's moving casters again when its structure changed, or when the list was
-    /// never built. `sways` says whether a material, by engine id, moves its vertices by a vertex
-    /// offset. Allocates only when the list grows past its largest size so far.
+    /// never built. `moving` gives a material's sway distance by engine id, or `None` for a
+    /// material that does not move its vertices by a vertex offset: 0 sways at every distance.
+    /// Allocates only when the list grows past its largest size so far.
     pub fn update(
         &mut self,
         scene: &SceneStorage,
         batches: &BatchTable,
         structure_changed: bool,
-        sways: impl Fn(u32) -> bool,
+        moving: impl Fn(u32) -> Option<f32>,
     ) {
         if self.built && !structure_changed {
             return;
         }
         self.built = true;
         self.slots.clear();
+        self.slot_sway.clear();
         self.batches.clear();
+        self.batch_sway.clear();
         for (id, batch) in batches.iter() {
-            let moving = batch.is_dynamic() || sways(batch.material());
-            if moving && batch.shadows() & flags::CAST_SHADOWS != 0 {
+            let sway = batch
+                .is_dynamic()
+                .then_some(0.0)
+                .or_else(|| moving(batch.material()));
+            if let Some(sway) = sway
+                && batch.shadows() & flags::CAST_SHADOWS != 0
+            {
                 self.batches.push(id);
+                self.batch_sway.push(sway);
             }
         }
         let (parents, slot_flags, meshes) = (scene.parents(), scene.flags(), scene.meshes());
@@ -847,8 +863,15 @@ impl MovingCasters {
         let high = scene.slots().high_water() as usize;
         for slot in 0..high {
             let casts = meshes[slot] != 0 && slot_flags[slot] & flags::CAST_SHADOWS != 0;
-            if casts && (moves(slot) || sways(materials[slot])) {
+            if !casts {
+                continue;
+            }
+            let sway = moves(slot)
+                .then_some(0.0)
+                .or_else(|| moving(materials[slot]));
+            if let Some(sway) = sway {
                 self.slots.push(slot as u32);
+                self.slot_sway.push(sway);
             }
         }
     }
@@ -860,7 +883,9 @@ impl MovingCasters {
 
     /// True when a visible moving caster on the layers `layers` touches `bounds`, in the world
     /// output of frame parity `parity`: a scene object, or an active row of a batch. Casters beyond
-    /// the box's face toward the light count, as they draw into it flattened onto that face.
+    /// the box's face toward the light count, as they draw into it flattened onto that face. A
+    /// caster whose sway fades out at a distance stands still when it is farther from `camera` than
+    /// that, so it does not count.
     pub fn touch(
         &self,
         scene: &SceneStorage,
@@ -868,40 +893,60 @@ impl MovingCasters {
         parity: usize,
         layers: u32,
         bounds: &CascadeBox,
+        camera: [f64; 3],
     ) -> bool {
         let spheres = scene.world(parity).spheres();
         let (slot_flags, slot_layers, cells) = (scene.flags(), scene.layers(), scene.cells());
         let table = scene.cell_table();
         let size = f64::from(CELL_SIZE);
-        let touches = |cell: u32, center: [f32; 3], radius: f32| {
+        let centre = |cell: u32, center: [f32; 3]| {
             let cell = table.coords(cell);
-            let center = std::array::from_fn(|k| f64::from(cell[k]) * size + f64::from(center[k]));
-            bounds.touches(center, radius)
+            std::array::from_fn(|k| f64::from(cell[k]) * size + f64::from(center[k]))
         };
-        let objects = self.slots.iter().any(|&slot| {
+        // A caster whose offset has faded out by its distance stands still, so only the box can
+        // bring a far cascade to draw for it.
+        let objects = self.slots.iter().enumerate().any(|(k, &slot)| {
             let s = slot as usize;
             if slot_flags[s] & flags::VISIBLE == 0 || slot_layers[s] & layers == 0 {
                 return false;
             }
             let center = [spheres.xs[s], spheres.ys[s], spheres.zs[s]];
-            touches(cells[s], center, spheres.radii[s])
+            let at = centre(cells[s], center);
+            !beyond_sway(at, spheres.radii[s], self.slot_sway[k], camera)
+                && bounds.touches(at, spheres.radii[s])
         });
         objects
-            || self.batches.iter().any(|&id| {
+            || self.batches.iter().enumerate().any(|(k, &id)| {
                 let Ok(batch) = batches.get(id) else {
                     return false;
                 };
                 if batch.layers() & layers == 0 {
                     return false;
                 }
+                let sway = self.batch_sway[k];
                 let spheres = batch.world(parity).spheres();
                 let rows = batch.frame_active_count(parity) as usize;
                 (0..rows).any(|r| {
                     let center = [spheres.xs[r], spheres.ys[r], spheres.zs[r]];
-                    touches(batch.cells()[r], center, spheres.radii[r])
+                    let at = centre(batch.cells()[r], center);
+                    !beyond_sway(at, spheres.radii[r], sway, camera)
+                        && bounds.touches(at, spheres.radii[r])
                 })
             })
     }
+}
+
+/// True when a caster whose bounding sphere is at `at` from the world's origin, of `radius`, stands
+/// still in a frame whose camera is at `camera`: the material's vertex offset fades out at `sway`
+/// meters from the camera, and 0 sways at every distance. The nearest point of the sphere counts, so
+/// a caster whose middle is past the distance but whose edge reaches within it still moves.
+fn beyond_sway(at: [f64; 3], radius: f32, sway: f32, camera: [f64; 3]) -> bool {
+    if sway <= 0.0 {
+        return false;
+    }
+    let away = f64::from(sway) + f64::from(radius);
+    (at[0] - camera[0]).powi(2) + (at[1] - camera[1]).powi(2) + (at[2] - camera[2]).powi(2)
+        > away * away
 }
 
 /// The main directional light's shadows in one frame: its cascades, fitted to the camera's view,
@@ -2332,5 +2377,19 @@ mod tests {
                 assert_eq!(share, 0.0, "{preset} at {rate}");
             }
         }
+    }
+
+    #[test]
+    fn a_sway_that_fades_out_leaves_far_casters_still() {
+        let camera = [10.0, 2.0, -4.0];
+        // A caster whose offset moves at every distance always counts.
+        assert!(!beyond_sway([1000.0, 0.0, 0.0], 1.0, 0.0, camera));
+        // Within the material's sway distance the caster counts, and past it it stands still.
+        assert!(!beyond_sway([10.0, 2.0, 35.0], 1.0, 40.0, camera));
+        assert!(beyond_sway([10.0, 2.0, 38.0], 1.0, 40.0, camera));
+        // The distance runs in every direction, so height counts as well.
+        assert!(beyond_sway([10.0, 45.0, -4.0], 1.0, 40.0, camera));
+        // A caster whose middle is past the distance but whose edge reaches within it still moves.
+        assert!(!beyond_sway([10.0, 45.0, -4.0], 4.0, 40.0, camera));
     }
 }

@@ -583,6 +583,9 @@ impl BloomPass {
         }
     }
 
+    /// Bytes a frame may copy into its arena: the whole uniform buffer.
+    pub(crate) const UPLOAD_BYTES: usize = BUFFER_BYTES;
+
     /// True on WebGL2, which counts a texture's rows from the bottom.
     pub(crate) fn rows_from_bottom(&self) -> bool {
         self.rows_from_bottom

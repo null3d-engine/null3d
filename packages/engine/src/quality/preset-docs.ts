@@ -121,6 +121,7 @@ export const SETTING_DOCS: {
 		print: (value) => `${value} x ${value}`,
 	},
 	areaLights: { label: 'Area lights per frame' },
+	lightFit: { label: 'Depth-fitted light clusters (WebGPU)', print: yesNo },
 	lodThreshold: {
 		label: 'Level of detail threshold',
 		print: (value) => (Number(value) > 0 ? `${value} px` : 'base levels only'),

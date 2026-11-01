@@ -271,6 +271,8 @@ const OBJECTS: &str = "objects";
 const LIGHTS: &str = "lights";
 /// The camera's light grid, which the light clustering pass fills on WebGPU.
 const LIGHT_GRID: &str = "lightGrid";
+/// The depth reduction that the next frame's light clustering fits its slices to.
+const LIGHT_REDUCTION: &str = "lightReduction";
 /// The camera's color target, which reaches the canvas.
 const SCENE_COLOR: &str = "sceneColor";
 /// The first step of the two-step pass's target: the scene's display color at the render size,
@@ -592,6 +594,8 @@ pub(crate) struct DrawnViews {
 pub(crate) enum Role {
     /// Lists the lights of each cluster of the camera's light grid on the GPU.
     LightClusters,
+    /// Reduces the camera view's depth for the light clusters' fitted slices.
+    LightDepth,
     /// Skins the skinned meshes that some view draws, on the GPU, into the skinned vertex buffer
     /// that the shadow and scene passes draw.
     Skin,
@@ -847,6 +851,8 @@ pub(crate) struct FrameGraph {
     samples: u32,
     /// True when the GPU culls each view in a culling pass.
     gpu_culling: bool,
+    /// True when the camera's grid lists a light, so the frame reduces its depth for the slices.
+    light_depth: bool,
     /// The format of the scene's color targets.
     scene_color: SceneColor,
     /// True when the scene's render pass can resolve its color into the canvas: on the 8-bit path
@@ -1246,6 +1252,7 @@ impl FrameGraph {
             declared_names: Vec::new(),
             samples: antialias.samples(),
             gpu_culling,
+            light_depth: false,
             scene_color,
             resolves: !scene_color.is_hdr() && antialias == Antialias::Msaa,
             scales: false,
@@ -1804,12 +1811,126 @@ impl FrameGraph {
         }
     }
 
+    /// Turns the light depth reduction on while the camera's grid lists a light, for the next
+    /// frames. Its read keeps the scene depth out of transient memory, so a frame without local
+    /// lights declares it not at all.
+    pub(crate) fn set_light_depth(&mut self, on: bool) {
+        if on != self.light_depth {
+            self.light_depth = on;
+            self.declared = false;
+        }
+    }
+
     /// The draw list's id of the scene depth that the decal pass reads, or `None` while it does
     /// not run. Valid once the frame's [`FrameGraph::prepare`] made the plan's textures.
     pub(crate) fn decal_depth(&self) -> Option<u32> {
         self.decals_declared
             .then(|| self.sampled_id(SCENE_DEPTH))
             .flatten()
+    }
+
+    /// The draw list's id of the scene depth that the light clusters' depth reduction reads, or
+    /// `None` while the graph declares no reduction. A frame without it never binds the depth, so
+    /// the depth keeps the usage that the graph planned.
+    pub(crate) fn scene_depth(&self) -> Option<u32> {
+        self.light_depth
+            .then(|| self.sampled_id(SCENE_DEPTH))
+            .flatten()
+    }
+
+    /// True when the scene depth target is multisampled, so the depth reduction reads its first
+    /// sample.
+    pub(crate) fn scene_depth_multisampled(&self) -> bool {
+        self.gpu_culling && self.samples > 1
+    }
+
+    /// Bytes that one frame may copy into its arena for the graph's own passes. The final pass can
+    /// start to run in any frame, once the render scale can drop.
+    pub(crate) fn upload_bound(&self) -> usize {
+        let bloom = if self.bloom_pass.is_some() {
+            BloomPass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        let ao = if self.screen_draws() || self.ssr_draws() {
+            AoPass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        let ssr = if self.ssr_draws() {
+            SsrPass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        let effects = if self.effect_count > 0 {
+            EffectPass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        let dof = if self.dof.is_some() {
+            DofPass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        let subsurface = if self.subsurface.is_some() {
+            SubsurfacePass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        let motion = if self.motion_view {
+            motion::VIEW_UPLOAD_BYTES
+        } else {
+            0
+        };
+        let fog = if self.fog.is_some() {
+            FogVolumePass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        let fullscreen = if self.fullscreen_views != 0 {
+            FullscreenPasses::UPLOAD_BYTES + self.fullscreen.upload_bound(&self.declared_views)
+        } else {
+            0
+        };
+        let compute = if self.compute_views != 0 {
+            ComputePasses::UPLOAD_BYTES
+        } else {
+            0
+        };
+        let exposure = if self.exposure.is_some() {
+            ExposurePass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        let still = if self.still_declared {
+            accumulate::UPLOAD_BYTES + FinalPass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        let taa = if self.taa.is_some() {
+            TaaPass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        FinalPass::UPLOAD_BYTES
+            + still
+            + if self.two_step_declared {
+                FinalPass::UPLOAD_BYTES
+            } else {
+                0
+            }
+            + bloom
+            + ao
+            + ssr
+            + effects
+            + dof
+            + subsurface
+            + motion
+            + fog
+            + fullscreen
+            + compute
+            + exposure
+            + taa
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -2011,7 +2132,17 @@ impl FrameGraph {
         let was = self.bloom_draws();
         self.bloom = bloom;
         if self.bloom_draws() != was {
-            self.enable_outputs();
+            self.bloom_switched();
+        }
+    }
+
+    /// Switches the passes for bloom starting or stopping to draw. An effect that reads a level of
+    /// bloom's chain declares that read only while the chain draws, so its passes are declared
+    /// again.
+    fn bloom_switched(&mut self) {
+        self.enable_outputs();
+        if self.effect_blooms.iter().any(|&level| level != 0) {
+            self.declared = false;
         }
     }
 
@@ -2902,10 +3033,21 @@ impl FrameGraph {
         });
         if self.gpu_culling {
             self.graph.import_buffer(LIGHTS);
-            let clusters = Pass::new("LightClusters", PassKind::Compute)
-                .reads(LIGHTS)
-                .creates_buffer(LIGHT_GRID);
+            let mut clusters = Pass::new("LightClusters", PassKind::Compute).reads(LIGHTS);
+            if self.light_depth {
+                self.graph.import_buffer(LIGHT_REDUCTION);
+                clusters = clusters.reads_so_far(LIGHT_REDUCTION);
+            }
+            let clusters = clusters.creates_buffer(LIGHT_GRID);
             self.add(clusters, Role::LightClusters);
+            // The depth reduction reads the depth that the camera view's opaque pass leaves, and
+            // fills what the next frame's clustering fits its slices to.
+            if self.light_depth {
+                let light_depth = Pass::new("LightDepth", PassKind::Compute)
+                    .reads(SCENE_DEPTH)
+                    .writes(LIGHT_REDUCTION);
+                self.add(light_depth, Role::LightDepth);
+            }
             self.graph.import_buffer(OBJECTS);
             for (index, names) in named.iter().enumerate() {
                 if (self.fullscreen_views | self.compute_views) & (1 << index) != 0 {
@@ -3594,8 +3736,13 @@ impl FrameGraph {
                 pass = pass.reads(SCENE_DEPTH);
             }
             // An effect that reads a level of bloom's chain runs after the step that fills it.
+            // While the frame draws no bloom, or no step fills that level, nothing writes it: the
+            // effect then reads the blank texture that its sources bind, and declares no read.
+            let declared = self.bloom_pass.as_ref().map_or(0, BloomPass::levels);
+            let fills = |level: usize| self.bloom_draws() && level < declared;
             for place in unit.places() {
                 if let Some(level) = self.effects.get(place).and_then(|effect| effect.bloom)
+                    && fills(level as usize)
                     && let Some(name) = BLOOM_LEVELS.get(level as usize)
                 {
                     pass = pass.reads(*name);
@@ -4345,7 +4492,7 @@ impl FrameGraph {
             && steps_built;
         let ao_built = steps_built && self.screen_steps();
         self.note_built(BuiltGroup::Screen, ao_built, FrameGraph::declare_again);
-        self.note_built(BuiltGroup::Bloom, built, FrameGraph::enable_outputs);
+        self.note_built(BuiltGroup::Bloom, built, FrameGraph::bloom_switched);
         let permutation = self.scene_color.permutation();
         let transmission_built = self.copy_wanted() && {
             // WebGL2 has no multisampled textures: its backend gives the copy a copy of one sample.
@@ -5826,6 +5973,7 @@ impl FrameGraph {
         let view = |view: ViewId| view.index() as u32;
         let (code, place) = match role {
             Role::LightClusters => (P::LightClusters, 0),
+            Role::LightDepth => (P::LightDepth, 0),
             Role::Skin => (P::Skin, 0),
             Role::Cull(view_id) => (P::Cull, view(view_id)),
             Role::Prepass(view_id) => (P::Prepass, view(view_id)),
@@ -6289,6 +6437,7 @@ fn role_view(role: Role) -> Option<ViewId> {
 fn role_scope(role: Role) -> u32 {
     match role {
         Role::LightClusters => scope::LIGHT_CLUSTERS,
+        Role::LightDepth => scope::LIGHT_DEPTH,
         Role::Skin => scope::SKIN,
         Role::Cull(view) => scope::of(scope::CULL, view.index() as u32),
         Role::Prepass(view) => scope::of(scope::PREPASS, view.index() as u32),
@@ -7045,20 +7194,53 @@ mod tests {
         assert!(step_of(&frames, "ShadowCascade0").is_some());
         assert!(step_of(&frames, "Motion").is_some());
         assert!(step_of(&frames, "Pick").is_some());
-        // Each pass's layout draws a material that samples the pass's target.
-        frames.set_drawn_views(DrawnViews {
-            casters: 1 << 1,
-            motion: 1 << 1,
-            pick: 1 << 1,
-        });
-        frames.sync(&[View::default(), compute(true)]);
-        frames
-            .prepare(&mut list, (320, 180), RenderScale::FULL)
-            .unwrap();
-        let pass = step_of(&frames, "Opaque1").expect("the pass runs");
-        assert!(pass < step_of(&frames, "ShadowCascade0").unwrap());
-        assert!(pass < step_of(&frames, "Motion").unwrap());
-        assert!(pass < step_of(&frames, "Pick").unwrap());
+
+        // A material that the camera does not draw: only a shadow caster, the motion pass or the
+        // pick draws it, so no texture shows the pass to the camera. The pass reads a full-screen
+        // view that the graph declares after the camera, which the graph runs first, so the pass
+        // itself cannot run early: only the reading pass's edge puts it first. Without that edge
+        // the reader runs before the pass, and the pass is culled because nothing else reads it.
+        let mut field = compute(false);
+        field.compute_pass_mut().unwrap().maps.views = 1 << 2;
+        let views = [View::default(), field, fullscreen(PassSource::None, false)];
+        let readers = [
+            (
+                "ShadowCascade0",
+                DrawnViews {
+                    casters: 1 << 1,
+                    ..DrawnViews::default()
+                },
+            ),
+            (
+                "Motion",
+                DrawnViews {
+                    motion: 1 << 1,
+                    ..DrawnViews::default()
+                },
+            ),
+            (
+                "Pick",
+                DrawnViews {
+                    pick: 1 << 1,
+                    ..DrawnViews::default()
+                },
+            ),
+        ];
+        for (reader, drawn) in readers {
+            frames.set_drawn_views(drawn);
+            frames.sync(&views);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            let pass = step_of(&frames, "Opaque1")
+                .unwrap_or_else(|| panic!("{reader}: the pass runs because the reader reads it"));
+            let reading =
+                step_of(&frames, reader).unwrap_or_else(|| panic!("{reader}: the reader runs"));
+            assert!(
+                pass < reading,
+                "{reader}: the pass runs at step {pass}, before its reader at {reading}"
+            );
+        }
     }
 
     /// The step of each named pass in the plan, or `None` for a pass that does not run.
@@ -7748,6 +7930,14 @@ mod tests {
                 assert_eq!(graph.find_pass(name).is_some(), declared, "{name}");
             }
             assert_eq!(frames.still_declared, declared);
+            // The blend's weight and the still build's settings each take a block of the frame's
+            // upload arena, so the bound grows by both where the graph declares them.
+            let moving = frame_graph(format, Antialias::Msaa, true, false).upload_bound();
+            let blocks = accumulate::UPLOAD_BYTES + FinalPass::UPLOAD_BYTES;
+            assert_eq!(
+                frames.upload_bound(),
+                moving + if declared { blocks } else { 0 }
+            );
             // Without a built pipeline no frame may blend yet.
             assert!(!frames.still_eligible());
             frames.set_still_enabled(false);
@@ -7869,6 +8059,12 @@ mod tests {
                 Some(Surface::Texture(_))
             ));
             assert_eq!(plan.steps().len(), 2);
+            // This graph draws as a moving view's does, so the accumulation's blocks are not in
+            // the bound.
+            assert_eq!(
+                frames.upload_bound(),
+                FinalPass::UPLOAD_BYTES + BloomPass::UPLOAD_BYTES
+            );
         }
     }
 
@@ -7934,6 +8130,16 @@ mod tests {
                 for step in plan.steps() {
                     assert!(plan.attachments(step).iter().all(|a| a.resolve.is_none()));
                 }
+                let bloom = if scene_color == format::CANVAS {
+                    0
+                } else {
+                    BloomPass::UPLOAD_BYTES
+                };
+                assert_eq!(
+                    frames.upload_bound(),
+                    FinalPass::UPLOAD_BYTES + bloom,
+                    "a moving view's frames"
+                );
             }
         }
     }
@@ -8022,6 +8228,43 @@ mod tests {
             .unwrap();
         assert_eq!(steps(&frames), without);
         assert!(list.is_empty(), "switching the lines makes no texture");
+    }
+
+    #[test]
+    fn a_frame_with_lights_reduces_the_camera_depth_after_its_opaque_pass() {
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
+        frames.set_light_depth(true);
+        frames.sync(&[View::default()]);
+        let mut list = DrawList::with_capacity(256);
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        let built = steps(&frames);
+        let flat: Vec<&str> = built.iter().flatten().map(String::as_str).collect();
+        let opaque = flat
+            .iter()
+            .position(|name| *name == "Opaque")
+            .expect("an opaque pass");
+        let depth = flat
+            .iter()
+            .position(|name| *name == "LightDepth")
+            .expect("a depth reduction");
+        assert!(
+            depth > opaque,
+            "the reduction reads the depth that the opaque pass leaves: {flat:?}"
+        );
+        // A frame without a local light declares no reduction, so its depth stays transient.
+        let mut plain = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
+        plain.sync(&[View::default()]);
+        plain
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        assert!(
+            !steps(&plain)
+                .iter()
+                .flatten()
+                .any(|name| name == "LightDepth")
+        );
     }
 
     #[test]
@@ -8561,6 +8804,7 @@ mod tests {
         let without = steps(&frames);
         let textures = frames.graph().plan().unwrap().textures().len();
         let keys = pipelines.keys().len();
+        let bound = frames.upload_bound();
 
         // Off, the frame declares, asks for and uploads nothing of depth of field.
         frames.set_dof(None);
@@ -8570,6 +8814,7 @@ mod tests {
             .unwrap();
         assert_eq!(steps(&frames), without);
         assert_eq!(pipelines.keys().len(), keys);
+        assert_eq!(frames.upload_bound(), bound);
 
         let effect = Effect {
             template: CUSTOM,
@@ -8840,6 +9085,7 @@ mod tests {
             .unwrap();
         let without = steps(&frames);
         let keys = pipelines.keys().len();
+        let bound = frames.upload_bound();
         let record = |frames: &mut FrameGraph, list: &mut DrawList| {
             let mut arena = UploadArena::default();
             arena.begin_frame().unwrap();
@@ -8869,6 +9115,7 @@ mod tests {
         frames.set_exposure(None);
         frames.request_pipelines(&mut pipelines, 1);
         assert_eq!(pipelines.keys().len(), keys);
+        assert_eq!(frames.upload_bound(), bound);
         let commands = record(&mut frames, &mut list);
         assert!(
             !commands
@@ -8970,6 +9217,9 @@ mod tests {
         frames.request_pipelines(&mut pipelines, 0);
         pipelines.create_new(&mut list, 1).unwrap();
         frames.request_pipelines(&mut pipelines, 1);
+        // As a frame does, the passes are declared after the pipelines are asked for, so the
+        // effect declares its read of the chain once bloom's pipelines are built.
+        frames.sync(&[View::default()]);
         frames
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
@@ -9008,6 +9258,7 @@ mod tests {
         frames.request_pipelines(&mut pipelines, 0);
         pipelines.create_new(&mut list, 1).unwrap();
         frames.request_pipelines(&mut pipelines, 1);
+        frames.sync(&[View::default()]);
         frames
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
@@ -9030,6 +9281,55 @@ mod tests {
             sources[0], scene,
             "the chain reads the scene, not the effect"
         );
+    }
+
+    #[test]
+    fn an_effect_that_reads_bloom_draws_while_bloom_is_off_and_reads_the_chain_once_it_is_on() {
+        let canvas = (1280, 720);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        let mut list = DrawList::with_capacity(8192);
+        let effect = Effect {
+            template: CUSTOM,
+            depth: false,
+            bloom: Some(2),
+            values: [0.0; effects::EFFECT_FLOATS],
+            maps: EffectMaps::NONE,
+        };
+        frames.set_effects(&[effect], &EffectJoins::default(), [0.0; 2], None);
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        frames.sync(&[View::default()]);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 0);
+        pipelines.create_new(&mut list, 1).unwrap();
+        frames.request_pipelines(&mut pipelines, 1);
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert!(frames.bloom_draws());
+        // Bloom turns off under the effect: the frame still draws, and the effect reads blank.
+        frames.set_bloom(None, ChainFrame::default());
+        frames.request_pipelines(&mut pipelines, 1);
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
+        assert!(names.iter().any(|name| name == "Effect0"), "{names:?}");
+        assert!(!names.iter().any(|name| name == BLOOM_DOWN[0]), "{names:?}");
+        assert_eq!(frames.effect_blooms()[0].texture, 0);
+        // Bloom turns on again: the effect waits for the chain and reads its level.
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        frames.request_pipelines(&mut pipelines, 1);
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
+        let place = |name: &str| names.iter().position(|n| n == name).unwrap();
+        assert!(place(BLOOM_UP[2]) < place("Effect0"));
+        assert_ne!(frames.effect_blooms()[0].texture, 0);
     }
 
     #[test]

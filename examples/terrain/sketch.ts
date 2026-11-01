@@ -12,6 +12,12 @@ import { defineSketch, math, timeOfDay, vec3 } from '@null3d/engine';
 import { createTerrain, terrainTextures } from '@null3d/terrain';
 import { interact } from '../lib/interact';
 
+// A cost page spells one change at a time on the sketch's address, as the split page does:
+// ?morph=off leaves every block at its own surface, ?still holds the camera at one point of its
+// orbit, and ?follow=off keeps the far shadow cascades to their turns.
+const params = new URL(import.meta.url).searchParams;
+const STILL = params.has('still');
+
 /** The ground's width and depth, in meters, and how many boulders stand on it. */
 const SIZE = 1200;
 const BOULDERS = 900;
@@ -65,7 +71,8 @@ function ground(x: number, z: number): number {
 }
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, post, time } = ctx;
+	const { scene, assets, geometry, materials, post, quality, time } = ctx;
+	if (params.get('follow') === 'off') void quality.set({ followMovingCasters: false });
 	const day = timeOfDay('goldenHour', { heading: -2.3 });
 	scene.setBackground(
 		{ sky: { ...day.sky, cloudCoverage: 0.25 } },
@@ -99,6 +106,7 @@ export default defineSketch(async (ctx) => {
 		maxLevel: 6,
 		camera,
 	});
+	if (params.get('morph') === 'off') terrain.setMorph(false);
 
 	// Boulders seated on the ground, each where the height field says the ground is.
 	const rock = geometry.sphere({ radius: 1, widthSegments: 8, heightSegments: 5 });
@@ -124,9 +132,9 @@ export default defineSketch(async (ctx) => {
 	const eye = vec3.create();
 	return {
 		onUpdate(dt) {
-			// A slow circle over the valley, looking down its length toward the low sun.
+			// A slow circle over the valley, or the view that a cost page holds in one place.
 			if (!view.userCamera) {
-				const t = time.now * 0.05;
+				const t = STILL ? 1.57 : time.now * 0.05;
 				const [x, z] = [Math.sin(t) * 230, Math.cos(t) * 230];
 				const [ax, az] = [Math.sin(t + 0.55) * 330, Math.cos(t + 0.55) * 330];
 				camera.setPosition(x, ground(x, z) + 32, z);

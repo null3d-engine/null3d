@@ -344,6 +344,9 @@ impl FinalPass {
         }
     }
 
+    /// Bytes the pass may copy into a frame's arena: its settings.
+    pub(crate) const UPLOAD_BYTES: usize = SETTINGS_BYTES as usize;
+
     /// Asks `pipelines` for the pass's pipeline, once, and for its bloom build's once a frame has
     /// `bloom`. A builder asks before it records the pipelines that its frame creates, so the list
     /// creates them with the others, at its start.

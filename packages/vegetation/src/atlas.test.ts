@@ -223,4 +223,31 @@ describe('the plant shaders', () => {
 		expect(surface(read('./plant-cards.wgsl'))).toContain(from);
 		expect(surface(read('./plant-cards.wgsl'))).toBe(surface(read('./plant.wgsl')));
 	});
+
+	it('read the wind with one offset in both files', () => {
+		// The card material adds only the level morph to the plant shader, so the branch records, the
+		// turns and the wind offset are copies, and this test holds them equal.
+		const read = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8');
+		const from = '/// One turn,';
+		const to = '/// Moves each vertex by the wind';
+		const shared = (source: string) => source.slice(source.indexOf(from), source.indexOf(to));
+		const plain = shared(read('./plant.wgsl'));
+		expect(plain).toContain('fn wind_offset');
+		expect(shared(read('./plant-cards.wgsl'))).toBe(plain);
+	});
+	it('read the wind field with one copy in the plant and grass shaders', () => {
+		// The grass copies the field's steady settings and its sampling function from the plant
+		// shader, so a change to the air rules in one file must reach the other.
+		const read = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8');
+		const block = (source: string, name: string) => {
+			const from = `// <${name}>`;
+			const to = `// </${name}>`;
+			return source.slice(source.indexOf(from), source.indexOf(to));
+		};
+		for (const name of ['wind-steady', 'wind-sample']) {
+			const plant = block(read('./plant.wgsl'), name);
+			expect(plant.length).toBeGreaterThan(0);
+			expect(block(read('./grass.wgsl'), name)).toBe(plant);
+		}
+	});
 });

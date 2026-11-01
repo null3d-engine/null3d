@@ -400,6 +400,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'start',
 		values: 'flag',
 	},
+	// The light clustering's slices follow the depth that the frame before measured. On WebGPU a
+	// fitted slice lists about half the lights per shaded fragment, but every fragment reads the
+	// grid's header to find its slice. That read costs more on a weak phone than the shorter light
+	// loop saves, so Low keeps the CPU's slicing there. Medium and above fit it (D-264).
+	lightFit: {
+		presets: [false, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// The most morph weights of each object that WebGL2 draws. Its vertex shaders morph in every
 	// pass that draws a mesh, shadow passes too, and skip a target whose weight is 0, so the cap
 	// bounds the reads of each pass. WebGPU morphs once per frame in its skinning pass and draws
@@ -596,6 +605,13 @@ export interface QualitySettings {
 	 * play.
 	 */
 	areaLights: number;
+	/**
+	 * Whether the light clustering fits its depth slices to the depth that the frame before
+	 * measured, on WebGPU. A fitted slice lists fewer lights per shaded fragment, and every
+	 * fragment reads the grid's header to find its slice. False keeps the CPU's slicing and its
+	 * lookup in the frame uniform. It changes during play.
+	 */
+	lightFit: boolean;
 	/**
 	 * The error in pixels under which a mesh's coarser level of detail draws (see
 	 * `mesh.setLevels`). Each object and instance row draws the coarsest level whose error covers

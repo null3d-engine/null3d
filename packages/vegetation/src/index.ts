@@ -36,6 +36,7 @@ export type {
 	LeafCell,
 	PlantAtlas,
 	PlantAtlases,
+	PlantMaterial,
 	PlantMaterialOptions,
 	PlantMaterialPart,
 	PlantMorph,
@@ -47,6 +48,7 @@ export {
 	plantMaterial,
 } from './atlas';
 export type { AtlasPixels, PaintedAtlas } from './atlas-pixels';
+export { paintBark, paintLeaf } from './atlas-pixels';
 export type { PartArrays } from './builder';
 export {
 	ALL_SPECIES,
@@ -68,6 +70,8 @@ export {
 } from './ecology';
 export type { GenerateOptions } from './generate';
 export { generatePlant, generateVariantSet, WIND_STRIDE } from './generate';
+export type { Grass, GrassOptions } from './grass';
+export { createGrass } from './grass';
 export { Grid } from './grid';
 export {
 	type GroundMaps,
@@ -81,6 +85,8 @@ export {
 } from './ground';
 export type { FarTree, FarTreeOptions } from './impostor';
 export { bakeFarTree, handOverToCards } from './impostor';
+export type { PlantWind, PlantWindOptions } from './plant';
+export { plantWind, setWindLayer, treeValues } from './plant';
 export {
 	builtinRules,
 	type SpeciesRuleFields,
@@ -117,6 +123,7 @@ export {
 	speciesProblems,
 } from './species';
 export { type VarianceMaps, type VarianceOptions, varianceMaps } from './variance';
+export { PLANT_SWAY_DISTANCE, swayDistanceFor } from './wind-presets';
 
 /**
  * Grows one plant in a job worker, beside the frames, and resolves with its asset. The work is the

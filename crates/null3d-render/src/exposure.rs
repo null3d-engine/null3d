@@ -269,6 +269,9 @@ impl ExposurePass {
         }
     }
 
+    /// Bytes a frame may copy into its arena: the block.
+    pub(crate) const UPLOAD_BYTES: usize = BLOCK_BYTES as usize;
+
     /// The meter that `meter` asks for runs as: the histogram only where the builder has compute.
     pub(crate) fn path(&self, meter: Meter) -> Meter {
         match (meter, self.ids.compute) {
