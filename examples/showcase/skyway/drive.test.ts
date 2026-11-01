@@ -242,7 +242,7 @@ test('a blocked view eases the camera in over several frames', () => {
 	settle(sight, aim, IN_THE_WAY, 10);
 	expect(sight.radius).toBeGreaterThan(CLEAR_AT + 0.5);
 	expect(sight.radius).toBeLessThan(DISTANCE - 0.5);
-	settle(sight, aim, IN_THE_WAY, 110);
+	settle(sight, aim, IN_THE_WAY, 150);
 	expect(sight.radius).toBeCloseTo(CLEAR_AT, 3);
 	// The camera stands at the standoff or beyond, and looks past the tower.
 	expect(apart(aim, [0, 50, 0])).toBeGreaterThanOrEqual(SIGHT_MIN);
@@ -252,7 +252,7 @@ test('a blocked view eases the camera in over several frames', () => {
 test('the camera returns to the user’s exact chase distance once clear', () => {
 	const sight = createSight(DISTANCE);
 	const aim: Flight = { ...flight() };
-	settle(sight, aim, IN_THE_WAY, 120);
+	settle(sight, aim, IN_THE_WAY, 180);
 	expect(sight.radius).toBeCloseTo(CLEAR_AT, 3);
 	settle(sight, aim, NONE, 180);
 	expect(sight.radius).toBe(DISTANCE);
@@ -265,7 +265,7 @@ test('the camera returns to the user’s exact chase distance once clear', () =>
 test('a tower edge that crosses back and forth does not pump the distance', () => {
 	const sight = createSight(DISTANCE);
 	const aim: Flight = { ...flight() };
-	settle(sight, aim, IN_THE_WAY, 120);
+	settle(sight, aim, IN_THE_WAY, 180);
 	let last = sight.radius;
 	let most = 0;
 	// The tower appears and disappears on alternate frames, as a tower's edge does when the car
@@ -277,6 +277,52 @@ test('a tower edge that crosses back and forth does not pump the distance', () =
 	}
 	expect(most).toBeLessThan(0.01);
 	expect(sight.pull).toBe(1);
+});
+
+/** The speed of the car in the tower swap, and the user's zoom there. */
+const SPEED = 10;
+const ZOOM = 50;
+/**
+ * Two towers that stand in the same line behind the car, at very different distances. They are
+ * wide, so the car's sideways travel keeps its view across both while the blocker changes.
+ */
+const NEAR_TOWER = new Float32Array([0, -20, 80, 1.4, 100]);
+const FAR_TOWER = new Float32Array([0, -40, 80, 1.4, 100]);
+
+test('a changed tower moves the distance no faster than the pull', () => {
+	// The car flies across its view, so the camera keeps moving while the blocker changes: the
+	// owner's steady turn, where one tower's face gives way to another's.
+	const car = flight();
+	const sight = createSight(ZOOM);
+	const aim: Flight = { ...flight() };
+	const step = (towers: Float32Array, frames: number): void => {
+		for (let k = 0; k < frames; k++) {
+			car.x += SPEED * FRAME;
+			settleSight(sight, car.x, car.y, car.z, BEHIND, TILT, ZOOM, DISTANCE, towers, FRAME, aim);
+		}
+	};
+	// The pull reaches the end of its travel behind the near tower.
+	step(NEAR_TOWER, 240);
+	expect(sight.pull).toBe(1);
+	const before = sight.radius;
+	let was = { x: aim.x, y: aim.y, z: aim.z };
+	let last = sight.radius;
+	let mostPlace = 0;
+	let mostDistance = 0;
+	for (let k = 0; k < 120; k++) {
+		step(FAR_TOWER, 1);
+		mostPlace = Math.max(mostPlace, apart(aim, [was.x, was.y, was.z]));
+		mostDistance = Math.max(mostDistance, Math.abs(sight.radius - last));
+		was = { x: aim.x, y: aim.y, z: aim.z };
+		last = sight.radius;
+	}
+	// The blocker changed for one about 21 m farther off, and the camera did reach it.
+	expect(sight.radius).toBeGreaterThan(before + 15);
+	// Both the pull and the distance it heads for ease at the same rate, so one frame covers at
+	// most about a fifteenth of that gap: the distance steps under 1.45 m, and the car's own
+	// travel puts the camera's place under 1.6 m away from where it was.
+	expect(mostDistance).toBeLessThan(1.45);
+	expect(mostPlace).toBeLessThan(1.6);
 });
 
 test('a tower dead behind the car finds a side that sees it', () => {
