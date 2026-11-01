@@ -216,7 +216,8 @@ struct Engine {
     chunk_rows: ChunkRowTable,
     /// The chosen count of each chunk that the next pack reads, which TypeScript writes.
     splat_counts: Vec<f32>,
-    /// The rows that the last pack wrote, which TypeScript reads.
+    /// The count that the last pack left in the batch, which TypeScript reads: the rows it wrote,
+    /// or the count that the batch kept when it owns no transform rows.
     splat_packed: u32,
     lights: LightTable,
     snapshot: FrameSnapshot,
@@ -1872,7 +1873,7 @@ pub fn splat_pack_plan(slots: u32) -> u32 {
 
 /// Packs the chosen prefix of every chunk of `cloud` into the batch's rows, in slot order, and
 /// sets the batch's active count. Returns 0, or the core's error; `splatPackedCount` gives the
-/// rows that it wrote.
+/// batch's active count after the pack, which on a refused pack is the count that it kept.
 #[wasm_bindgen(js_name = splatPack)]
 pub fn splat_pack(batch: u32, cloud: u32, slots: u32) -> u32 {
     with_engine(|e| {
@@ -1891,7 +1892,8 @@ pub fn splat_pack(batch: u32, cloud: u32, slots: u32) -> u32 {
     })
 }
 
-/// The number of rows that the last pack wrote.
+/// The batch's active count after the last pack: the rows that it wrote, or the count that the
+/// batch kept when it owns no transform rows.
 #[wasm_bindgen(js_name = splatPackedCount)]
 pub fn splat_packed_count() -> u32 {
     value_with_engine(|e| Ok(e.splat_packed))
