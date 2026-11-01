@@ -214,7 +214,11 @@ by 0.004 m, of a field of 0.73 m. On WebGL2 it differed by 0.60 m when this bran
 reading went through `render.readPass`, which on WebGL2 returned rows from the other end of the
 target; [D-271](D-271-a-fallback-pass-writes-the-image.md) found that fault, and its record names
 this ocean's read. The comparison against the merged engine is owed, and `ocean-waves` keeps WebGL2
-marked as an expected failure until it runs.
+marked as an expected failure until it runs. A run in which the path agrees reports an unexpected
+pass, which fails the suite, so that first red means the gap closed and the marker's line must then
+be removed. The comparison is owed at the first CI run of `tests/image/ocean-waves.spec.ts` on a
+built core, or on a quiet machine after `bun run build` with
+`bun run test:browser -- ocean-waves.spec.ts`.
 
 The transform's own cost is unmeasured. The effect page's on-and-off difference cannot resolve it:
 over one quiet run of three bands at 128 squared, the difference ranged from -0.62 to 0.54 ms on
