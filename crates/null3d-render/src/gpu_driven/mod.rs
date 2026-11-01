@@ -160,6 +160,7 @@ use crate::accumulate::AccumulateIds;
 use crate::ao::{self, AoIds};
 use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
+use crate::bounce::BounceIds;
 use crate::cells::CellCulling;
 use crate::cloud_noise;
 use crate::compute::ComputePassIds;
@@ -183,6 +184,7 @@ use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{LightGrid, LightGrids, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Packing};
+use crate::moment::MomentIds;
 use crate::motion::MotionIds;
 use crate::output::{Antialias, SceneColor};
 use crate::particles::{ParticleIds, ParticlePass};
@@ -273,6 +275,7 @@ mod ids {
     use crate::bloom::STEPS;
     use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
+    use crate::moment::MomentIds;
     use crate::particles::ParticleIds;
     use crate::subsurface::STEPS as SUBSURFACE_STEPS;
     use crate::taa::STEPS as TAA_STEPS;
@@ -457,8 +460,10 @@ mod ids {
     pub const FULLSCREEN: u32 = PHYSICAL_SKY + 1;
     /// The uniform buffer of screen-space reflections' steps.
     pub const SSR: u32 = FULLSCREEN + 1;
+    /// The uniform buffer of screen-space bounce light's steps.
+    pub const BOUNCE: u32 = SSR + 1;
     /// The uniform buffer of the volumetric fog's steps (see [`crate::fog_volume`]).
-    pub const FOG_VOLUME: u32 = SSR + 1;
+    pub const FOG_VOLUME: u32 = BOUNCE + 1;
     /// The automatic exposure's meter: its uniform buffer, its histogram and its stored exposure.
     pub const EXPOSURE: u32 = FOG_VOLUME + 1;
     pub const EXPOSURE_HISTOGRAM: u32 = EXPOSURE + 1;
@@ -536,8 +541,11 @@ mod ids {
     pub const BLANK_SCENE_DEPTH: u32 = BLANK_PARTICLE_DEPTH + 1;
     /// The physical sky's tables and panorama.
     pub const SKY_TABLES: u32 = BLANK_SCENE_DEPTH + 1;
+    /// The moment layer's two lookup tables, which it makes at its first use.
+    pub const MOMENT_AREA: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
+    pub const MOMENT_SEARCH: u32 = MOMENT_AREA + 1;
     /// The noise field of the volumetric cloud tier, which the renderer makes at its first use.
-    pub const CLOUD_NOISE: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
+    pub const CLOUD_NOISE: u32 = MOMENT_SEARCH + 1;
     /// The texel that a full-screen pass without an input image reads, and the one that it binds
     /// in place of the scene's depth when it reads none.
     pub const BLANK_PASS_COLOR: u32 = CLOUD_NOISE + 1;
@@ -639,8 +647,10 @@ mod ids {
     pub const STILL_LUT_SAMPLER: u32 = OUTPUT_LUT_SAMPLER + 1;
     /// The linear sampler of temporal anti-aliasing's history.
     pub const TAA_SAMPLER: u32 = STILL_LUT_SAMPLER + 1;
+    /// The linear sampler of the moment layer's lookup tables and of its anti-aliasing steps.
+    pub const MOMENT_SAMPLER: u32 = TAA_SAMPLER + 1;
     /// The repeating linear sampler of the volumetric cloud tier's noise field.
-    pub const CLOUD_SAMPLER: u32 = TAA_SAMPLER + 1;
+    pub const CLOUD_SAMPLER: u32 = MOMENT_SAMPLER + 1;
     /// The samplers of materials' maps.
     pub const SAMPLERS: u32 = CLOUD_SAMPLER + 1;
 
@@ -742,9 +752,11 @@ mod ids {
     pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
     /// The bind group of each step of screen-space reflections, after the full-screen passes'.
     pub const SSR_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The bind group of each step of screen-space bounce light, after screen-space reflections'.
+    pub const BOUNCE_GROUPS: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
     /// The bind group of the motion debug view's step, and of the blank map of the motion view,
-    /// after screen-space reflections'.
-    pub const MOTION_VIEW_GROUP: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
+    /// after screen-space bounce light's.
+    pub const MOTION_VIEW_GROUP: u32 = BOUNCE_GROUPS + crate::bounce::STEPS as u32;
     pub const BLANK_MAP_GROUP: u32 = MOTION_VIEW_GROUP + 1;
     /// The bind group of the still-camera accumulation's blend, after the motion view's.
     pub const ACCUMULATE_GROUP: u32 = BLANK_MAP_GROUP + 1;
@@ -802,9 +814,18 @@ mod ids {
     /// The bind groups of temporal anti-aliasing's resolve and copy, after the conversions'.
     pub const TAA_GROUPS: u32 =
         FEATURE_ROWS_GROUPS + crate::feature_instances::MAX_FEATURE_INSTANCES;
-    /// Each camera view's group of its light depth reduction, after temporal anti-aliasing's and
-    /// before the texture store's groups, whose ids run on from here.
-    pub const LIGHT_DEPTH_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
+    /// The bind groups of the moment layer's steps, after temporal anti-aliasing's.
+    pub const MOMENT_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
+    /// Each camera view's frame group that carries the moment store, after the layer's steps'.
+    pub const MOMENT_FRAME_GROUPS: u32 = MOMENT_GROUPS + MomentIds::GROUPS;
+
+    pub const fn moment_frame_group(view: ViewId) -> u32 {
+        MOMENT_FRAME_GROUPS + view.index() as u32
+    }
+
+    /// Each camera view's group of its light depth reduction, after the moment layer's frame
+    /// groups and before the texture store's groups, whose ids run on from here.
+    pub const LIGHT_DEPTH_GROUPS: u32 = MOMENT_FRAME_GROUPS + MAX_VIEWS as u32;
 
     pub const fn light_depth_group(view: ViewId) -> u32 {
         LIGHT_DEPTH_GROUPS + view.index() as u32
@@ -1045,6 +1066,9 @@ pub struct GpuDrivenRenderer {
     dfg_pending: bool,
     /// The cube texture that the camera views' frame groups bind: the environment's, or the
     /// blank one.
+    /// The moment store that the camera's moment frame group was made for, or 0 before it was
+    /// made.
+    moment_frame: u32,
     bound_environment: u32,
     /// The 3D texture that the frame groups bind: the grid's, or the blank one.
     bound_probe_grid: u32,
@@ -1156,6 +1180,11 @@ impl GpuDrivenRenderer {
                         ao: AoIds {
                             buffer: ids::AO,
                             first_group: ids::AO_GROUPS,
+                            blank: ids::BLANK_AO,
+                        },
+                        bounce: BounceIds {
+                            buffer: ids::BOUNCE,
+                            first_group: ids::BOUNCE_GROUPS,
                         },
                         effects: EffectIds {
                             buffer: ids::EFFECTS,
@@ -1226,6 +1255,12 @@ impl GpuDrivenRenderer {
                         },
                         weighted: WeightedIds {
                             first_group: ids::WEIGHTED_GROUPS,
+                        },
+                        moment: MomentIds {
+                            first_group: ids::MOMENT_GROUPS,
+                            sampler: ids::MOMENT_SAMPLER,
+                            area: ids::MOMENT_AREA,
+                            search: ids::MOMENT_SEARCH,
                         },
                         particle_depth: ids::PARTICLE_DEPTH_COPY_GROUP,
                         material_scene: ids::MATERIAL_SCENE_GROUPS,
@@ -1333,6 +1368,7 @@ impl GpuDrivenRenderer {
             feature_readiness: 0,
             feature_rows: FeatureRows::default(),
             dfg_pending: false,
+            moment_frame: 0,
             bound_environment: ids::BLANK_ENVIRONMENT,
             bound_probe_grid: ids::BLANK_PROBE_GRID,
             bound_probes: None,
@@ -1618,6 +1654,7 @@ impl GpuDrivenRenderer {
         );
         self.graph
             .set_ssr(settings.ssr_frame(input.canvas), settings.ssr_scale());
+        self.graph.set_bounce(settings.bounce_frame(input.canvas));
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
             .chain(self.sorted.waiting())
@@ -1683,6 +1720,18 @@ impl GpuDrivenRenderer {
             )?;
             self.layout_prepass = self.graph.depth_prepass();
             let (skinning, layout) = (&self.skinning, &self.layout);
+            // The moment layer draws every blended surface that it has a build for, so while the
+            // quality setting turns it on the weighted layer draws nothing.
+            let moment = if self.settings.moment_transparency() {
+                self.graph.moment_targets(targets)
+            } else {
+                None
+            };
+            let weighted = if moment.is_some() {
+                None
+            } else {
+                self.graph.weighted_targets(targets)
+            };
             self.sorted
                 .rebuild(
                     &self.settings,
@@ -1694,7 +1743,8 @@ impl GpuDrivenRenderer {
                     0,
                     shadows,
                     |slot, key| skinning.sorted_pipeline(slot as u32, key),
-                    self.graph.weighted_targets(targets),
+                    weighted,
+                    moment,
                     &mut self.key_counts,
                 )
                 .map_err(out_of_memory)?;
@@ -1709,6 +1759,7 @@ impl GpuDrivenRenderer {
                     0,
                     shadows,
                     |_, _| SkinnedPipeline::NotSkinned,
+                    None,
                     None,
                     &mut self.key_counts,
                 )
@@ -1728,6 +1779,7 @@ impl GpuDrivenRenderer {
                         0,
                         shadows,
                         |slot, key| skinning.sorted_pipeline(slot as u32, key),
+                        None,
                         None,
                         &mut self.key_counts,
                     )
@@ -1957,6 +2009,7 @@ impl GpuDrivenRenderer {
         };
         self.graph.set_motion(motion, motion_frame);
         self.graph.set_weighted(self.sorted.weighs());
+        self.graph.set_moment(self.sorted.moments());
         let skipped = self.settings.decal_skipped_layers();
         let shown = self.settings.views()[ViewId::CAMERA.index()].layers();
         self.redraw_layout.set_layer_filter(skipped, shown);
@@ -2112,6 +2165,13 @@ impl GpuDrivenRenderer {
                     probe_array(probes_now),
                 );
                 self.bind_frame(list, view, inputs)?;
+                if view == ViewId::CAMERA
+                    && let Some(store) = self.graph.moment_store()
+                    && (self.moment_frame != store || self.graph.textures_made())
+                {
+                    opaque::bind_moment_frame(list, &inputs, store)?;
+                    self.moment_frame = store;
+                }
             }
         }
         self.views_made = self.views_made.max(views);
@@ -2266,8 +2326,7 @@ impl GpuDrivenRenderer {
         let array = self.settings.probes().array().map_or(0, |(id, _)| id);
         let probe_layers = self.settings.probes().probe_layers();
         self.settings
-            .light_tables_mut()
-            .record(list, array, probe_layers)?;
+            .record_light_images(list, array, probe_layers)?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::CUSTOM_VALUES, MATERIAL_TEXELS)?;
             ao::upload_blank(list, arena, ids::BLANK_AO)?;
@@ -2320,6 +2379,12 @@ impl GpuDrivenRenderer {
             &self.physical_sky,
             ids::CLOUD_NOISE,
         )?;
+        // The frame's texture work recorded the uploads, so a texture that a light's image copies
+        // from is on the GPU by the time the frame's passes run.
+        let array = self.settings.probes().array().map_or(0, |(id, _)| id);
+        let probe_layers = self.settings.probes().probe_layers();
+        self.settings
+            .record_light_images(list, array, probe_layers)?;
         self.graph.set_probe_filter(self.settings.probes().filter());
         // The frame's texture work made the passes' targets and uploads ready, so the textures
         // of the effects and the full-screen passes sample from this frame on.
@@ -3198,6 +3263,7 @@ impl GpuDrivenRenderer {
         let (settings, meshes) = (&self.settings, &self.meshes);
         let motion_state = &mut self.motion;
         let weighted = self.graph.weighted_declared();
+        let moment_layer = self.graph.moment_declared();
         let direct_draws = self.config.direct_draws;
         let direct = &self.direct;
         // A direct draw's instance count changes every frame, so the direct path records the
@@ -3329,7 +3395,7 @@ impl GpuDrivenRenderer {
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::FogLight(_) => bind_frame_group(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::Transparent(view) => {
-                    let rows = if weighted && view == ViewId::CAMERA {
+                    let rows = if (weighted || moment_layer) && view == ViewId::CAMERA {
                         SortedRows::Sorted
                     } else {
                         SortedRows::All
@@ -3407,6 +3473,32 @@ impl GpuDrivenRenderer {
                     ids::MATERIAL_SCENE_GROUPS,
                     particles,
                 ),
+                Role::Moment => transparent.record(
+                    list,
+                    ViewId::CAMERA,
+                    SortedRows::Moment,
+                    sorted,
+                    skinning,
+                    settings,
+                    meshes,
+                    ids::frame_group(ViewId::CAMERA),
+                    0,
+                    ids::MATERIAL_SCENE_GROUPS,
+                    particles,
+                ),
+                Role::MomentColour => transparent.record(
+                    list,
+                    ViewId::CAMERA,
+                    SortedRows::MomentColour,
+                    sorted,
+                    skinning,
+                    settings,
+                    meshes,
+                    ids::moment_frame_group(ViewId::CAMERA),
+                    0,
+                    0,
+                    particles,
+                ),
                 _ => Ok(()),
             },
             // The feature draws' reads wait for the frame's one conversion point below, which is
@@ -3466,7 +3558,6 @@ impl GpuDrivenRenderer {
                 &read,
                 texture,
                 ids::PASS_READ_BUFFERS + read.ring,
-                false,
                 size,
             )?;
         }
@@ -4143,7 +4234,7 @@ impl FrameBuilder for GpuDrivenRenderer {
     }
 
     fn reads_last_frame(&self) -> bool {
-        self.graph.ssr_draws()
+        self.graph.ssr_draws() || self.graph.bounce_draws()
     }
 
     fn graph_message(&self, error: GraphError) -> String {

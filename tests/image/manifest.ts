@@ -893,6 +893,8 @@ function ssrTests(): ImageTest[] {
 
 /** The sketch of weighted blending's crossing panes and overlapping puffs. */
 const WEIGHTED_SKETCH = 'tests/pages/sketches/weighted-sketch.ts';
+/** The sketch of moment transparency's five panes at different depths (the test `moment-*`). */
+export const MOMENT_SKETCH = 'tests/pages/sketches/moment-sketch.ts';
 /** The sketch of the reflection probe tests: a room of glowing walls over a mirror floor. */
 export const PROBE_SKETCH = 'tests/pages/sketches/probe-sketch.ts';
 
@@ -2367,6 +2369,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			timeoutSeconds: 60,
 		}),
 	),
+	// Screen-space bounce light in the room that the light probe grid's tests use (D-284): the
+	// neutral floor takes red light at the red wall and green at the green one, which the
+	// environment's uniform light cannot show. ?bounce draws the bounce light from the camera's view,
+	// ?grid bakes a light probe grid instead, and neither draws the room's environment alone. The
+	// bounce reads the frame before's color, so the held frame draws twice, and the room's
+	// environment makes its map in it, so the runs take the room's longer limit.
+	...(['off', 'bounce', 'grid'] as const).map(
+		(variant): ImageTest => ({
+			name: `bounce-${variant}`,
+			sketch: `tests/pages/sketches/bounce-sketch.ts${variant === 'off' ? '' : `?${variant}`}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+			// Compatibility mode draws the 8-bit path, where the light draws nothing, so there the
+			// bounce test draws the plain room's picture. The other tiers show the light.
+			...(variant === 'bounce' && { samePicture: 'bounce-off' }),
+		}),
+	),
 	// The room's light with a hemisphere light added, which the parity test compares with three.js:
 	// the hemisphere light adds to the environment's light, and the environment's intensity does
 	// not scale it.
@@ -2452,14 +2472,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
-	// lights through an orthographic camera. Then the same floor under a hemisphere light, under
-	// three rectangle lights, under the same lights showing an image, and under three tube lights. The parity test compares the grid of 16,
-	// the spot lights, the hemisphere light and the rectangle lights with three.js.
+	// lights through an orthographic camera. Then the same floor under three directional lights,
+	// under a hemisphere light, under three rectangle lights, under the same lights showing an
+	// image, and under three tube lights. The parity test compares the grid of 16, the three
+	// directional lights, the spot lights, the hemisphere light and the rectangle lights with
+	// three.js.
 	...(
 		[
 			['lights-1', 'lights=1'],
 			['lights-16', 'lights=16'],
 			['lights-256', 'lights=256'],
+			['lights-fills', 'scene=fills'],
 			['lights-spot', 'scene=spot'],
 			['lights-ortho', 'lights=16&camera=ortho'],
 			['lights-hemisphere', 'scene=hemisphere'],
@@ -2492,6 +2515,31 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The same light with a larger picture, and a reflection probe made after the picture is in the
+	// light tables. The probe's layers come before the pictures', so the picture moves along the
+	// array: a picture or a light record that stays behind reads a probe's map instead, and the
+	// grid below breaks into a reflection.
+	{
+		name: 'spot-map-probe',
+		sketch: 'tests/pages/sketches/spot-map-probe-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The same light and picture as `spot-map-probe`, given as an engine texture instead of pixels.
+	// The frame copies the texture into the light's image, so a wrong corner, a turned row order,
+	// or a copy that stays in a moved layer draws another picture. It borrows that test's
+	// references, because the two forms of the same picture must draw the same image.
+	{
+		name: 'spot-map-texture',
+		sketch: 'tests/pages/sketches/spot-map-texture-sketch.ts',
+		// A frame copies the texture into the light's image, and the light shows it from the frame
+		// after. Hold mode draws that frame too, as it does for a reflection probe's capture.
+		hold: 0,
+		size: [480, 270],
+		tolerance: { maxDiffRatio: 0.005 },
+		reference: 'spot-map-probe',
 	},
 	// The hemisphere light as two halves, one turned upside down with its colors swapped, which take
 	// their intensities and colors in every frame. The frame sums them to the single light, so the
@@ -3563,6 +3611,65 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		reference: 'weighted',
 	},
+	// Moment transparency: the same five panes at different depths, blended back to front by the
+	// sorted pass, by the weighted blending, and by the moment layer. The spec compares both
+	// approximations with the sorted image.
+	{
+		name: 'moment-sorted',
+		sketch: `${MOMENT_SKETCH}?mode=sorted`,
+		switches: ['antialias=none'],
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'moment-weighted',
+		sketch: `${MOMENT_SKETCH}?mode=weighted`,
+		switches: ['antialias=none'],
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'moment-layer',
+		sketch: `${MOMENT_SKETCH}?mode=moment`,
+		switches: ['antialias=none', 'moments=on'],
+		hold: 0,
+		size: [480, 270],
+	},
+	// The model's range: the same five panes spread from one to thirty metres from the camera, each
+	// sized to keep its place on screen.
+	{
+		name: 'moment-spread-sorted',
+		sketch: `${MOMENT_SKETCH}?mode=sorted&spread=1`,
+		switches: ['antialias=none'],
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'moment-spread-weighted',
+		sketch: `${MOMENT_SKETCH}?mode=weighted&spread=1`,
+		switches: ['antialias=none'],
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'moment-spread-layer',
+		sketch: `${MOMENT_SKETCH}?mode=moment&spread=1`,
+		switches: ['antialias=none', 'moments=on'],
+		hold: 0,
+		size: [480, 270],
+	},
+	// The same layer with the panes added in the opposite order: the moment layer's draws depend on
+	// no order, so the two images agree.
+	{
+		name: 'moment-layer-reverse',
+		sketch: `${MOMENT_SKETCH}?mode=moment&order=reverse`,
+		switches: ['antialias=none', 'moments=on'],
+		hold: 0,
+		size: [480, 270],
+		// The panes added in the opposite order draw the layer's own picture: the store sums
+		// without regard to the order, which is the property that the test proves.
+		samePicture: 'moment-layer',
+	},
 	// Decals on a stone yard: a scorch mark, road paint through a ball's shadow, a puddle under a
 	// point light, cracks on a wall, moss that fades up the ball's side, and a batch of mud
 	// splashes that row colors tint and fade. The decals spec compares places with the bare yard.
@@ -3650,6 +3757,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			// The hero shadow is fine detail on one object, so its demo draws larger than the
 			// other demos, where the tile size's difference shows.
 			...(demo.name === 'hero-shadow' && { size: HERO_SIZE }),
+			// A projected picture's detail is fine, so its demo draws larger too, where the fine
+			// lines of the stained glass and the window's bars show at their own size.
+			...(demo.name === 'spot-cookies' && { size: [640, 360] as const }),
 		};
 	}),
 	// Creek on a near-square canvas at a render scale below the whole canvas, from the opening view

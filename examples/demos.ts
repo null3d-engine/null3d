@@ -491,6 +491,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'bounce-light',
+		group: 'Light, materials and effects',
+		sketch: new URL('./bounce-light/sketch.ts', import.meta.url),
+		code: 'bounce-light/',
+		title: 'Screen-space bounce light',
+		scene: 'Red and green room',
+		summary:
+			"One bounce of indirect light in a room with a red wall at the left and a green one at the right. Each wall's light lands on the white floor and on the white back wall, which the environment's uniform light cannot show. Every few seconds the bounce turns off and on again.",
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'auto-exposure',
 		group: 'Light, materials and effects',
 		sketch: new URL('./auto-exposure/sketch.ts', import.meta.url),
@@ -621,6 +633,18 @@ export const DEMOS: readonly Demo[] = [
 			"Shop windows are rectangle lights and a neon sign is made of tube lights. The wet street shows each light's whole shape, stretched toward the camera, where a point light would leave a dot, and mirrors the glowing sign and windows through screen-space reflections.",
 		hold: 2,
 		timeoutSeconds: 60,
+	},
+	{
+		name: 'spot-cookies',
+		group: 'Light, materials and effects',
+		sketch: new URL('./spot-cookies/sketch.ts', import.meta.url),
+		code: 'spot-cookies/',
+		title: 'Spot-light cookies',
+		scene: 'Stained glass in a dark hall',
+		summary:
+			'Two spot lights throw pictures over their cones: a rose window of stained glass whose lead lines stay fine at 512 texels a side, and a lit window frame across the floor. Each picture wraps over the plinths and spheres in its beam, and the haze catches the light in the air.',
+		hold: 1,
+		timeoutSeconds: 90,
 	},
 	{
 		name: 'character',

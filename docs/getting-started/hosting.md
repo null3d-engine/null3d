@@ -234,7 +234,9 @@ async function update() {
   const cache = await caches.open(name);
   if (await cache.match('./')) return;
   const features = FEATURES.flatMap((feature) => list.features[feature]);
-  await cache.addAll(['./', ...list.start, ...features]);
+  // Two features can name one file, such as a shared table of shader paragraphs, and a cache
+  // refuses a list that names a file twice.
+  await cache.addAll([...new Set(['./', ...list.start, ...features])]);
   for (const old of await caches.keys())
     if (old.startsWith(PREFIX) && old !== name) await caches.delete(old);
 }
@@ -255,6 +257,8 @@ The cache keeps each response with its headers, so the cached page keeps the two
 ### The preload list and the cache
 
 The cache decides where the files come from, and `preload` decides when they load. Cache each feature that the game lists in `preload`, or an offline start fails while it waits for that feature's shaders. A feature that the game caches but does not preload loads from the cache on its first use, with no network. A feature that the game neither caches nor preloads needs the network on its first use.
+
+The preset can also draw a feature that the sketch never asks for. High and Ultra, and WebGL2's Medium, draw [screen-space bounce light](../concepts/post-processing.md#screen-space-bounce-light), whose steps read `'ao'`'s depth and normals and the `'color_copy'` of the scene color from the first frame. A game that plays offline on those presets caches both features as well as the ones that it preloads.
 
 ### Keep the engine's caches
 

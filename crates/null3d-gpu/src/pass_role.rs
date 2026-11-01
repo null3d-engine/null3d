@@ -123,6 +123,20 @@ pub enum PassRole {
     /// The camera view's depth reduction, which the next frame's light clustering fits its slices
     /// to.
     LightDepth = 53,
+    /// The camera's blended surfaces into the moment layer's moment store.
+    Moment = 54,
+    /// The same surfaces again into the moment layer's color sum.
+    MomentColour = 55,
+    /// The blend of the moment layer over the scene color.
+    MomentComposite = 56,
+    /// The marks of the moment layer's edges, for SMAA.
+    MomentSmaaEdges = 57,
+    /// The ends and areas of those edges.
+    MomentSmaaBlend = 58,
+    /// The mix of each pixel with the neighbour that its weights name.
+    MomentSmaaResolve = 59,
+    /// A step of screen-space bounce light.
+    Bounce = 60,
 }
 
 impl PassRole {
@@ -188,6 +202,13 @@ impl PassRole {
             Self::FeatureRows => "feature rows",
             Self::Sky => "sky",
             Self::LightDepth => "light depth",
+            Self::Moment => "moment layer",
+            Self::MomentColour => "moment colour",
+            Self::MomentComposite => "moment composite",
+            Self::MomentSmaaEdges => "moment edges",
+            Self::MomentSmaaBlend => "moment weights",
+            Self::MomentSmaaResolve => "moment resolve",
+            Self::Bounce => "screen bounce",
         }
     }
 
@@ -215,7 +236,8 @@ impl PassRole {
             | Self::Dof
             | Self::FogLight
             | Self::Taa
-            | Self::Sky => Place::Always,
+            | Self::Sky
+            | Self::Bounce => Place::Always,
             _ => Place::Never,
         }
     }
@@ -276,6 +298,13 @@ impl PassRole {
         Self::FeatureRows,
         Self::Sky,
         Self::LightDepth,
+        Self::Moment,
+        Self::MomentColour,
+        Self::MomentComposite,
+        Self::MomentSmaaEdges,
+        Self::MomentSmaaBlend,
+        Self::MomentSmaaResolve,
+        Self::Bounce,
     ];
 }
 

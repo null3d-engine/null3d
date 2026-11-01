@@ -21,8 +21,8 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::layers::ALL_LAYERS;
 use null3d_core::levels::{FADE_BAND, LevelRule, Switch};
 use null3d_core::lights::{
-    AUTO_FALLBACK, LightShadow, LightTable, LightView, SunShadow, VisibleLight,
-    farthest_receiver_distance, ladder_distance,
+    AUTO_FALLBACK, FillLight, LightShadow, LightTable, LightView, MAX_FILL_DIRECTIONAL_LIGHTS,
+    SunShadow, VisibleLight, farthest_receiver_distance, ladder_distance,
 };
 use null3d_core::memory::{MemoryRegister, MemoryUse, area};
 use null3d_core::morph::MorphWeights;
@@ -37,6 +37,7 @@ use crate::ao::{self, Ao, Contact};
 use crate::area_shading::AreaShading;
 use crate::background::{Background, BackgroundSource, SkyLayer};
 use crate::bloom::{Bloom, ChainFrame};
+use crate::bounce::{self, Bounce, BounceFrame};
 use crate::camera::{Lens, Mat4, multiply};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
@@ -1001,6 +1002,10 @@ pub(crate) enum MaterialStorage {
 struct Lighting {
     sun_direction: [f32; 4],
     sun_color: [f32; 4],
+    /// The directional lights after the main one, which cast no shadows: each one's travel
+    /// direction and its exposed color. Their count is the sun color's fourth float.
+    fill_direction: [[f32; 4]; MAX_FILL_DIRECTIONAL_LIGHTS],
+    fill_color: [[f32; 4]; MAX_FILL_DIRECTIONAL_LIGHTS],
     ambient: [f32; 4],
     /// The light that the hemisphere lights add along each world axis, as the frame's uniform
     /// holds it.
@@ -1109,6 +1114,9 @@ pub struct SceneSettings {
     ssr_scale: f32,
     /// The most steps of screen-space reflections' march, which the quality settings set.
     ssr_steps: u32,
+    /// The rays that each texel of screen-space bounce light gathers, which the quality settings
+    /// set: 0 draws none.
+    bounce_rays: u32,
     /// The automatic exposure's settings while the sketch turns it on.
     auto_exposure: Option<AutoExposure>,
     /// The meter of automatic exposure, which the quality settings set.
@@ -1177,6 +1185,9 @@ pub struct SceneSettings {
     override_material: u32,
     /// True when materials with parallax draw it, as the quality preset says.
     parallax: bool,
+    /// True when the camera draws the blended surfaces in its moment transparency layer, as the
+    /// quality preset says.
+    moment_transparency: bool,
     /// True when a material moved its casters' vertices since the last frame, so every shadow
     /// cascade and tile draws again.
     casters_moved: bool,
@@ -1283,6 +1294,8 @@ impl SceneSettings {
             lighting: Lighting {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
                 sun_color: [0.0; 4],
+                fill_direction: [[0.0, -1.0, 0.0, 0.0]; MAX_FILL_DIRECTIONAL_LIGHTS],
+                fill_color: [[0.0; 4]; MAX_FILL_DIRECTIONAL_LIGHTS],
                 ambient: [0.0; 4],
                 hemisphere: [[0.0; 4]; 3],
                 sun_shadow: None,
@@ -1311,6 +1324,7 @@ impl SceneSettings {
             ssr: None,
             ssr_scale: ao::MAX_SCALE,
             ssr_steps: ssr::DEFAULT_STEPS,
+            bounce_rays: 0,
             auto_exposure: None,
             exposure_meter: Meter::default(),
             fog_volume: None,
@@ -1343,6 +1357,7 @@ impl SceneSettings {
             debug_view: DebugView::Lit,
             override_material: NO_MATERIAL,
             parallax: true,
+            moment_transparency: false,
             casters_moved: false,
             tiles_stale: false,
             shadow_camera: None,
@@ -1506,6 +1521,19 @@ impl SceneSettings {
     /// rebuilds the draw tables.
     pub fn set_parallax(&mut self, on: bool) -> bool {
         std::mem::replace(&mut self.parallax, on) != on
+    }
+
+    /// Draws the blended surfaces in the camera's moment transparency layer, or back to front in
+    /// the transparent pass, from the next frame on. Returns true when the choice changed, so the
+    /// caller declares the frame's passes again. The setting is fixed at the start, so a change
+    /// never happens in a frame loop.
+    pub fn set_moment_transparency(&mut self, on: bool) -> bool {
+        std::mem::replace(&mut self.moment_transparency, on) != on
+    }
+
+    /// True when the camera draws the blended surfaces in its moment transparency layer.
+    pub fn moment_transparency(&self) -> bool {
+        self.moment_transparency
     }
 
     /// True when a material, by id, draws parallax where its mesh has texture coordinates: it asks
@@ -1775,6 +1803,39 @@ impl SceneSettings {
     /// the next recorded frame on. It changes only the trace's block, so it makes no GPU object.
     pub fn set_ssr_steps(&mut self, steps: u32) {
         self.ssr_steps = steps.clamp(1, ssr::MAX_STEPS);
+    }
+
+    /// Screen-space bounce light's settings while it draws: while the quality settings ask for
+    /// rays, the scene color is HDR, no debug view draws, and the scene sets no light probe grid.
+    /// The copy that its rays read holds the display's color on the 8-bit path, which is no
+    /// radiance to bounce, and the grid is the engine's global illumination, which already holds
+    /// one bounce and replaces the environment's diffuse light.
+    pub fn bounce(&self) -> Option<Bounce> {
+        (self.bounce_rays > 0
+            && self.canvas.scene_color.is_hdr()
+            && !self.debug_view.is_debug()
+            && self.probe_grid.is_none())
+        .then(|| Bounce {
+            rays: self.bounce_rays,
+            ..Bounce::default()
+        })
+    }
+
+    /// Sets the samples that each texel of screen-space bounce light gathers, from 0, which draws
+    /// none, to [`bounce::MAX_RAYS`], from the next recorded frame on.
+    pub fn set_bounce_rays(&mut self, rays: u32) {
+        self.bounce_rays = rays.min(bounce::MAX_RAYS);
+    }
+
+    /// What screen-space bounce light's steps draw with in a frame of a canvas of `canvas` pixels,
+    /// or `None` while it draws nothing or without a camera.
+    pub(crate) fn bounce_frame(&self, canvas: (u32, u32)) -> Option<BounceFrame> {
+        let bounce = self.bounce()?;
+        self.views.first()?.camera()?;
+        Some(BounceFrame {
+            bounce,
+            projection: self.camera_projection(canvas)?,
+        })
     }
 
     /// What screen-space reflections' trace draws with in a frame of a canvas of `canvas` pixels,
@@ -2814,6 +2875,26 @@ impl SceneSettings {
         }
     }
 
+    /// Records the light tables' images into `array`, which the probes own: the pixels that a
+    /// sketch wrote, and a texture's copy once the frame's texture work has its texels on the GPU.
+    /// `probe_layers` gives the probe layers that the images follow. Returns true when the array's
+    /// texels change.
+    pub(crate) fn record_light_images(
+        &mut self,
+        list: &mut DrawList,
+        array: u32,
+        probe_layers: u32,
+    ) -> Result<bool, RecordError> {
+        let Self {
+            light_tables,
+            textures,
+            ..
+        } = self;
+        light_tables.record(list, array, probe_layers, |handle| {
+            textures.copy_source(handle)
+        })
+    }
+
     /// Records the frame's texture work, writes each map's layer into its material's row when a
     /// map changed, or a texture's layer became ready or stopped drawing, then uploads the rows
     /// that changed into `table`. While the textures near their memory budget, it also reads part
@@ -3373,6 +3454,17 @@ impl SceneSettings {
         self.lighting.sun_color = [color[0], color[1], color[2], 0.0];
     }
 
+    /// The directional lights after the main one, in creation order: `fills`' entries up to
+    /// `count`, whose colors are exposed already. They light surfaces without shadows.
+    pub fn set_fills(&mut self, fills: &[FillLight; MAX_FILL_DIRECTIONAL_LIGHTS], count: u32) {
+        for (k, fill) in fills.iter().enumerate() {
+            self.lighting.fill_direction[k] =
+                [fill.direction[0], fill.direction[1], fill.direction[2], 0.0];
+            self.lighting.fill_color[k] = [fill.color[0], fill.color[1], fill.color[2], 0.0];
+        }
+        self.lighting.sun_color[3] = count.min(MAX_FILL_DIRECTIONAL_LIGHTS as u32) as f32;
+    }
+
     /// The ambient light's exposed color: its linear color times its intensity and the exposure.
     pub fn set_ambient(&mut self, color: [f32; 3]) {
         self.lighting.ambient = [color[0], color[1], color[2], 0.0];
@@ -3418,6 +3510,7 @@ impl SceneSettings {
         lights.set_area_ready(self.light_tables.ready() && shading);
         let lit = lights.gather(scene, parity, view.as_ref(), self.drawn_output().exposure);
         self.set_sun(lit.sun_direction, lit.sun_color);
+        self.set_fills(&lit.fills, lit.fill_count);
         self.set_ambient(lit.ambient);
         self.set_hemisphere(lit.hemisphere);
         self.set_sun_shadow(lit.sun_shadow);
@@ -4086,6 +4179,8 @@ impl SceneSettings {
             camera_eye: camera.eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
+            fill_direction: self.lighting.fill_direction,
+            fill_color: self.lighting.fill_color,
             ambient: self.lighting.ambient,
             hemisphere: self.lighting.hemisphere,
             output: output.uniform(),

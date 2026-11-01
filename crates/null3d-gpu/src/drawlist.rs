@@ -244,12 +244,21 @@ pub enum Op {
     /// every pass. The texture takes `RENDER_ATTACHMENT` usage, and each layer is one clear. A
     /// compute pass asks for it when the page starts the pass's state again.
     ClearTexture = 58,
+    /// [source texture id, source layer, destination texture id, destination layer, texels across
+    /// the destination, mip levels]: draws one layer of the source texture into the corner of one
+    /// layer of the destination, at `texels` a side, then makes that layer's mip levels up to
+    /// `levels`. The destination is a 2D array of half floats with render attachment and texture
+    /// binding usage; the source is any live 2D array that a shader samples. A source larger than
+    /// the corner is reduced. The corner is the destination's first rows and columns, which the
+    /// shaders read as the image's place (null3d::tables). The backends draw it with the mipmap
+    /// shader's scale pipeline.
+    CopyIntoImage = 59,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 46] = [
+    pub const ALL: [Op; 47] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -295,6 +304,7 @@ impl Op {
         Op::ProbeFilter,
         Op::CreateBindView,
         Op::ClearTexture,
+        Op::CopyIntoImage,
         Op::Submit,
     ];
 
@@ -349,6 +359,7 @@ impl Op {
             Op::ProbeFilter => "PROBE_FILTER",
             Op::CreateBindView => "CREATE_BIND_VIEW",
             Op::ClearTexture => "CLEAR_TEXTURE",
+            Op::CopyIntoImage => "COPY_INTO_IMAGE",
             Op::Submit => "SUBMIT",
         }
     }
@@ -811,6 +822,26 @@ pub mod layout {
     /// [`permutation::TRANSMISSION`], so those builds read no copy. Only WebGPU has this layout:
     /// the parallax passes bind it in place of [`FRAME`].
     pub const FRAME_PARALLAX: u32 = 48;
+    /// Group 0 of the moment transparency layer's composite: the moment store and the colour sum,
+    /// both read with `textureLoad` as unfilterable floats.
+    pub const MOMENT_COMPOSITE: u32 = 65;
+    /// The copy of a multisampled scene depth for the moment layer's two passes: the depth, read
+    /// with `textureLoad` as multisampled unfilterable floats. Only WebGPU has it.
+    pub const MOMENT_DEPTH_MS: u32 = 66;
+    /// Group 0 of the moment layer's colour builds: [`FRAME`]'s bindings without the copy of the
+    /// opaque color, which no moment build reads, and the moment store at that binding. A moment
+    /// build with the standard material's maps then reads within WebGPU's default count of
+    /// sampled textures in its fragment stage.
+    pub const MOMENT_FRAME: u32 = 67;
+    /// Group 0 of the moment layer's anti-aliasing first step: the scene color and the moment
+    /// store, both read with `textureLoad` as unfilterable floats.
+    pub const MOMENT_SMAA_EDGES: u32 = 68;
+    /// Group 0 of the anti-aliasing second step: the edges it found, the two lookup tables, and a
+    /// linear sampler that reads them all.
+    pub const MOMENT_SMAA_BLEND: u32 = 69;
+    /// Group 0 of the anti-aliasing last step: the scene color and the blending weights, and a
+    /// linear sampler that reads them.
+    pub const MOMENT_SMAA_RESOLVE: u32 = 70;
     /// Group 0 of depth-only pipelines, such as shadow casters': per-frame constants and the
     /// material table. It has no shadow map, so a pass that draws into the shadow map never binds
     /// it.
@@ -890,10 +921,10 @@ pub mod layout {
     /// Group 1 of the analytic sky's volumetric cloud draw: the background's own uniform block,
     /// then the cloud noise atlas and its sampler at bindings 6 and 7. The numbers leave room for
     /// [`CLOUDS_ATMOSPHERE`]'s tables, so the shared cloud module names one set of bindings.
-    pub const CLOUDS: u32 = 65;
+    pub const CLOUDS: u32 = 72;
     /// Group 1 of the physical sky's volumetric cloud draw: its values block and tables exactly as
     /// [`ATMOSPHERE`] binds them, then the cloud noise atlas and its sampler at bindings 6 and 7.
-    pub const CLOUDS_ATMOSPHERE: u32 = 66;
+    pub const CLOUDS_ATMOSPHERE: u32 = 73;
     /// The final pass with custom effects folded into it: [`FINAL`]'s bindings, then the effects'
     /// uniform buffer at binding 4 and the scene's depth, or a blank texture, at binding 5, as
     /// plain floats.
@@ -990,6 +1021,9 @@ pub mod layout {
     /// [`LIGHT_DEPTH`] for a multisampled depth target, whose sample 0 it reads. Only WebGPU has
     /// it.
     pub const LIGHT_DEPTH_MS: u32 = 64;
+    /// Group 0 of screen-space bounce light's steps: the steps' uniform block, the depth copy, the
+    /// horizon step's target, which holds the normal, and the color copy or the traced light.
+    pub const BOUNCE: u32 = 71;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1737,17 +1771,17 @@ pub mod sizes {
     /// Bytes per compacted instance that a vertex shader reads by index: the source's index in a
     /// whole 16-byte entry, which the culling shader writes as one vector.
     pub const INDEX_STRIDE: u32 = 16;
-    /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
-    /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
-    /// materials read, the camera's near and far distances, ambient occlusion's values, the
-    /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
-    /// shadow lookups, the camera's view and projection matrices, which custom materials read,
-    /// screen-space reflections' matrix into the frame before's view and their two vectors, a
-    /// still view's jitter, which the scene's vertex shaders add, the physical sky's aerial
-    /// perspective's six vectors, the vignette that the 8-bit path's fragment shaders apply, and
-    /// the camera's view-projection, target size and eye, which a masked custom material's caster
-    /// reads in a light's view.
-    pub const FRAME_UNIFORM_BYTES: u32 = 1104;
+    /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the fill
+    /// directional lights' six vectors, the output settings, the fog's 48 bytes, the light grid's
+    /// two vectors, three vectors that custom materials read, the camera's near and far distances,
+    /// ambient occlusion's values, the environment's 208 bytes, the hemisphere lights' three
+    /// vectors, the view's offset for shadow lookups, the camera's view and projection matrices,
+    /// which custom materials read, screen-space reflections' matrix into the frame before's view
+    /// and their two vectors, a still view's jitter, which the scene's vertex shaders add, the
+    /// physical sky's aerial perspective's six vectors, the vignette that the 8-bit path's fragment
+    /// shaders apply, the camera's view-projection, target size and eye, which a masked custom
+    /// material's caster reads in a light's view, and screen-space bounce light's strength.
+    pub const FRAME_UNIFORM_BYTES: u32 = 1216;
     /// Bytes of the output settings: the exposure, the tone mapping, the flags and the render
     /// size.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
@@ -2173,14 +2207,81 @@ pub mod template {
     /// Light clustering's fit: one thread that fits the slices to the measured depth and writes
     /// the grid's header, before the counting dispatch. WebGPU only.
     pub const LIGHT_FIT: u32 = 88;
+    /// The moment transparency layer's composite: one triangle that reads the moment store and the
+    /// colour sum, one texel per pixel, works out from the moments the share that shows through,
+    /// and blends the summed colour over the scene color. It binds as
+    /// [`layout::MOMENT_COMPOSITE`](super::layout::MOMENT_COMPOSITE) does.
+    pub const MOMENT_COMPOSITE: u32 = 89;
+    /// The copy of the first sample of a multisampled scene depth into a depth target of one
+    /// sample, which the moment layer's two passes test against: one triangle that writes each
+    /// pixel's depth, first in the moment pass. Its pipeline names that pass's moment target, which
+    /// it does not write. On WebGPU it reads the multisampled depth with the layout
+    /// [`MOMENT_DEPTH_MS`](super::layout::MOMENT_DEPTH_MS); on WebGL2 it reads the copy of one
+    /// sample that the backend keeps.
+    pub const MOMENT_DEPTH: u32 = 90;
+    /// The first step of the moment layer's anti-aliasing: one triangle over the scene color that
+    /// marks the layer's edges with SMAA 1x, under the share that the moments cover, and leaves
+    /// every other pixel unmarked. It binds as
+    /// [`layout::MOMENT_SMAA_EDGES`](super::layout::MOMENT_SMAA_EDGES) does.
+    pub const MOMENT_SMAA_EDGES: u32 = 91;
+    /// The moment layer's colour pass for the standard material, from the lit template's file: it
+    /// writes each fragment's colour and its share, weighted by the transmittance that the moment
+    /// store gives at the fragment's own depth. It binds as [`INSTANCED_LIT`] does, with the moment
+    /// store in its frame group.
+    pub const MOMENT_LIT: u32 = 92;
+    /// [`MOMENT_LIT`] with the standard material's maps.
+    pub const MOMENT_STANDARD_MAPS: u32 = 93;
+    /// The moment layer's colour pass for the basic material, from the unlit template's file.
+    pub const MOMENT_UNLIT: u32 = 94;
+    /// [`MOMENT_UNLIT`] with the material's base color map.
+    pub const MOMENT_UNLIT_MAP: u32 = 95;
+    /// The moment layer's colour pass for sprites, from the sprite template's file.
+    pub const MOMENT_SPRITE: u32 = 96;
+    /// [`MOMENT_SPRITE`] with the material's map.
+    pub const MOMENT_SPRITE_MAP: u32 = 97;
+    /// The second step of the moment layer's anti-aliasing: one triangle that finds the ends of
+    /// each marked edge and the areas at each side, from the two lookup tables, and writes the
+    /// blending weights. It binds as
+    /// [`layout::MOMENT_SMAA_BLEND`](super::layout::MOMENT_SMAA_BLEND) does.
+    pub const MOMENT_SMAA_BLEND: u32 = 98;
+    /// The last step of the moment layer's anti-aliasing: one triangle that mixes each pixel with
+    /// the neighbour that its weights name, over the scene color. It binds as
+    /// [`layout::MOMENT_SMAA_RESOLVE`](super::layout::MOMENT_SMAA_RESOLVE) does.
+    pub const MOMENT_SMAA_RESOLVE: u32 = 99;
+
+    /// The moment layer's colour template for a mesh template, or 0 for one that has no moment
+    /// build. Six mesh templates draw in the layer: the standard material with and without maps,
+    /// both basic materials, and sprites with and without a map. Their colour builds are entries of
+    /// their own, because the shader build names a first-use file by the names of a build's bits,
+    /// and a shared value would pull another template's builds into the moment files (decision
+    /// record D-261).
+    pub const fn moment_colour(template: u32) -> u32 {
+        match template {
+            INSTANCED_LIT => MOMENT_LIT,
+            INSTANCED_STANDARD_MAPS => MOMENT_STANDARD_MAPS,
+            INSTANCED_UNLIT => MOMENT_UNLIT,
+            INSTANCED_UNLIT_MAP => MOMENT_UNLIT_MAP,
+            SPRITE => MOMENT_SPRITE,
+            SPRITE_MAP => MOMENT_SPRITE_MAP,
+            _ => 0,
+        }
+    }
+
+    /// Screen-space bounce light's trace: one triangle over the screen texture's grid, which casts
+    /// each texel's rays through the depth copy and writes the light that the frame before showed
+    /// at their hits, with the share that hit.
+    pub const BOUNCE_TRACE: u32 = 100;
+    /// Screen-space bounce light's denoise: one triangle over the grid, which blurs the traced
+    /// light over a disk of taps that keeps to each texel's own surface.
+    pub const BOUNCE_DENOISE: u32 = 101;
     /// The analytic sky's volumetric clouds, drawn as [`BACKGROUND_CUBE`]'s box right after the
     /// sky and blended over it. It binds the frame's group and the background's own group, of
     /// layout [`CLOUDS`](super::layout::CLOUDS).
-    pub const BACKGROUND_CLOUDS: u32 = 89;
+    pub const BACKGROUND_CLOUDS: u32 = 102;
     /// The physical sky's volumetric clouds, drawn as [`BACKGROUND_CLOUDS`] is, from the physical
     /// sky's values and tables, of layout
     /// [`CLOUDS_ATMOSPHERE`](super::layout::CLOUDS_ATMOSPHERE).
-    pub const BACKGROUND_CLOUDS_ATMOSPHERE: u32 = 90;
+    pub const BACKGROUND_CLOUDS_ATMOSPHERE: u32 = 103;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2188,7 +2289,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 90] = [
+    pub const NAMES: [(&str, u32); 103] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2276,6 +2377,19 @@ pub mod template {
         ("LIGHT_DEPTH_CLEAR", LIGHT_DEPTH_CLEAR),
         ("LIGHT_DEPTH_CLEAR_MS", LIGHT_DEPTH_CLEAR_MS),
         ("LIGHT_FIT", LIGHT_FIT),
+        ("MOMENT_COMPOSITE", MOMENT_COMPOSITE),
+        ("MOMENT_DEPTH", MOMENT_DEPTH),
+        ("MOMENT_SMAA_EDGES", MOMENT_SMAA_EDGES),
+        ("MOMENT_LIT", MOMENT_LIT),
+        ("MOMENT_STANDARD_MAPS", MOMENT_STANDARD_MAPS),
+        ("MOMENT_UNLIT", MOMENT_UNLIT),
+        ("MOMENT_UNLIT_MAP", MOMENT_UNLIT_MAP),
+        ("MOMENT_SPRITE", MOMENT_SPRITE),
+        ("MOMENT_SPRITE_MAP", MOMENT_SPRITE_MAP),
+        ("MOMENT_SMAA_BLEND", MOMENT_SMAA_BLEND),
+        ("MOMENT_SMAA_RESOLVE", MOMENT_SMAA_RESOLVE),
+        ("BOUNCE_TRACE", BOUNCE_TRACE),
+        ("BOUNCE_DENOISE", BOUNCE_DENOISE),
         ("BACKGROUND_CLOUDS", BACKGROUND_CLOUDS),
         ("BACKGROUND_CLOUDS_ATMOSPHERE", BACKGROUND_CLOUDS_ATMOSPHERE),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
@@ -2352,6 +2466,9 @@ pub mod groups {
         &[layout::PARTICLE_SCENE_DEPTH, layout::INSTANCES],
         &[layout::TEXTURES],
     ];
+    /// [`MESH`] for the moment layer's colour builds, whose frame group carries the moment store in
+    /// place of the copy of the opaque color.
+    const MOMENT_MESH: &[&[u32]] = &[&[layout::MOMENT_FRAME], MESH[1], MESH[2], MESH[3], MESH[4]];
     /// The groups of the background templates: the frame's group, then the background's own, then
     /// a texture's. A cube or sky background binds only the background's own, at the group after
     /// the frame's, and the WebGL2 path binds each view's instances group last.
@@ -2416,6 +2533,8 @@ pub mod groups {
         (template::AO_DEPTH_MS, own!(layout::AO_DEPTH_MS)),
         (template::AO, own!(layout::AO)),
         (template::AO_DENOISE, own!(layout::AO)),
+        (template::BOUNCE_TRACE, own!(layout::BOUNCE)),
+        (template::BOUNCE_DENOISE, own!(layout::BOUNCE)),
         (template::BACKGROUND_CUBE, BACKGROUND),
         (template::BACKGROUND_SKY, BACKGROUND),
         (
@@ -2466,6 +2585,20 @@ pub mod groups {
             own!(layout::WEIGHTED_COMPOSITE),
         ),
         (template::WEIGHTED_DEPTH, own!(layout::WEIGHTED_DEPTH_MS)),
+        (template::MOMENT_COMPOSITE, own!(layout::MOMENT_COMPOSITE)),
+        (template::MOMENT_DEPTH, own!(layout::MOMENT_DEPTH_MS)),
+        (template::MOMENT_SMAA_EDGES, own!(layout::MOMENT_SMAA_EDGES)),
+        (template::MOMENT_SMAA_BLEND, own!(layout::MOMENT_SMAA_BLEND)),
+        (
+            template::MOMENT_SMAA_RESOLVE,
+            own!(layout::MOMENT_SMAA_RESOLVE),
+        ),
+        (template::MOMENT_LIT, MOMENT_MESH),
+        (template::MOMENT_STANDARD_MAPS, MOMENT_MESH),
+        (template::MOMENT_UNLIT, MOMENT_MESH),
+        (template::MOMENT_UNLIT_MAP, MOMENT_MESH),
+        (template::MOMENT_SPRITE, MOMENT_MESH),
+        (template::MOMENT_SPRITE_MAP, MOMENT_MESH),
         (template::SUBSURFACE, MESH),
         (template::SUBSURFACE_MAPS, MESH),
         (template::SUBSURFACE_BLUR, own!(layout::SUBSURFACE_BLUR)),
@@ -2732,6 +2865,7 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("MOTION_FRAME", layout::MOTION_FRAME),
     ("SSR_REDUCE", layout::SSR_REDUCE),
     ("SSR_TRACE", layout::SSR_TRACE),
+    ("BOUNCE", layout::BOUNCE),
     ("WEIGHTED_COMPOSITE", layout::WEIGHTED_COMPOSITE),
     ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
     ("TRANSMISSION_COPY_MS", layout::TRANSMISSION_COPY_MS),
@@ -2750,6 +2884,12 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
     ("ATMOSPHERE", layout::ATMOSPHERE),
     ("EXPOSURE", layout::EXPOSURE),
+    ("MOMENT_COMPOSITE", layout::MOMENT_COMPOSITE),
+    ("MOMENT_DEPTH_MS", layout::MOMENT_DEPTH_MS),
+    ("MOMENT_FRAME", layout::MOMENT_FRAME),
+    ("MOMENT_SMAA_EDGES", layout::MOMENT_SMAA_EDGES),
+    ("MOMENT_SMAA_BLEND", layout::MOMENT_SMAA_BLEND),
+    ("MOMENT_SMAA_RESOLVE", layout::MOMENT_SMAA_RESOLVE),
 ];
 
 /// The TypeScript constants for the replay loop, generated from the definitions above.

@@ -215,6 +215,18 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [16, 24, 32, 48, 64],
 	},
+	// The rays that each texel of screen-space bounce light casts over its hemisphere, which draws
+	// one bounce of the indirect light that the camera's view showed. 0 draws none: Low and Medium
+	// keep the environment's light alone, and High and Ultra draw 4 and 8 rays. The light draws on
+	// ambient occlusion's grid at half the render size, so its cost follows the render scale. At
+	// 1920 x 1080 on the Mac's M5 Max it added 2.5 ms at High and 1.3 ms at Ultra on WebGPU, and
+	// 0.8 ms at WebGL2's Medium. D-284 gives the figures.
+	bounceRays: {
+		presets: [0, 0, 4, 8],
+		webgl2: [0, 4, 4, 8],
+		changes: 'live',
+		values: [0, 4, 8, 16],
+	},
 	// How automatic exposure meters the scene while a sketch turns it on: `histogram` bins a grid of
 	// 128 samples on the short side in compute shaders, on WebGPU; `downsample` draws 16 x 16 cells
 	// and meters them in one texel, on every GPU path. WebGL2 has no compute shaders, so it always
@@ -387,6 +399,16 @@ export const QUALITY_SETTINGS = {
 	// Point lights cast shadows into six tiles each, so only the heavier presets turn them on.
 	pointLightShadows: {
 		presets: [false, false, true, true],
+		changes: 'start',
+		values: 'flag',
+	},
+	// Moment transparency: the blended surfaces draw into a store of four depth moments and a
+	// colour sum, in any order, and a composite blends them over the scene. It is nearer an exact
+	// back-to-front blend than the weighted blending is, and it draws those surfaces twice. Off on
+	// every preset: it costs twice the weighted layer's bytes a frame and three full-screen steps
+	// of anti-aliasing, so a scene that wants it turns it on and pays for it (D-261).
+	momentTransparency: {
+		presets: [false, false, false, false],
 		changes: 'start',
 		values: 'flag',
 	},
@@ -580,6 +602,13 @@ export interface QualitySettings {
 	 */
 	ssrSteps: 16 | 24 | 32 | 48 | 64;
 	/**
+	 * The rays that each texel of screen-space bounce light casts: 0, 4, 8 or 16. 0 draws no bounce
+	 * light, which leaves the environment's indirect light alone. Each ray marches through the
+	 * depth that the frame saw and takes the light that the frame before showed where it lands, so
+	 * more rays make the light smoother and cost more. It changes during play.
+	 */
+	bounceRays: 0 | 4 | 8 | 16;
+	/**
 	 * How automatic exposure meters the scene's brightness while `post.set` turns it on:
 	 * `histogram` bins a grid of samples in compute shaders, on WebGPU, and `downsample` averages
 	 * 16 x 16 cells of the image, on every GPU path. WebGL2 always takes the downsample. The
@@ -678,6 +707,13 @@ export interface QualitySettings {
 	 * take it.
 	 */
 	antialias: 'none' | 'fxaa' | 'msaa';
+	/**
+	 * True to blend the camera's blended surfaces in the moment transparency layer, which needs no
+	 * sort and is nearer an exact back-to-front blend than `blending: 'weighted'` is, and which
+	 * draws those surfaces twice. The mode is fixed when the engine starts: the page's
+	 * `momentTransparency` option of `createEngine` sets it, and `set` does not take it.
+	 */
+	momentTransparency: boolean;
 	/**
 	 * The cascades of a directional light's shadows, a whole number from 1 to 4, for each light whose
 	 * `shadow` options name none. More cascades keep shadows sharp further from the camera, and each

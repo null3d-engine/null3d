@@ -243,6 +243,7 @@ describe('SketchQuality.lower', () => {
 			subsurfaceSamples: low.subsurfaceSamples,
 			ssrScale: low.ssrScale,
 			ssrSteps: low.ssrSteps,
+			bounceRays: low.bounceRays,
 			exposureMeter: low.exposureMeter,
 			fogSlices: low.fogSlices,
 			reflectionScale: low.reflectionScale,
@@ -262,6 +263,7 @@ describe('SketchQuality.lower', () => {
 			textureMemoryMiB: low.textureMemoryMiB,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
 			antialias: MEDIUM.antialias,
+			momentTransparency: MEDIUM.momentTransparency,
 			shadowCascades: MEDIUM.shadowCascades,
 			shadowMapSize: MEDIUM.shadowMapSize,
 			shadowTiles: MEDIUM.shadowTiles,
@@ -328,7 +330,8 @@ describe('SketchQuality.setPreset', () => {
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
 		// Low and Medium share the highest render scale, following of moving casters, the far
 		// characters' update interval, cascade blend, software occlusion culling and governor, and on
-		// WebGPU the ambient occlusion scale, contact shadow steps and subsurface blur too.
+		// WebGPU the ambient occlusion scale, contact shadow steps and subsurface blur too. Both draw
+		// no bounce light.
 		const same = [
 			'maxRenderScale',
 			'followMovingCasters',
@@ -337,6 +340,7 @@ describe('SketchQuality.setPreset', () => {
 			'aoScale',
 			'contactShadowSteps',
 			'subsurfaceSamples',
+			'bounceRays',
 			'cloudSteps',
 			'softwareOcclusion',
 			'governor',

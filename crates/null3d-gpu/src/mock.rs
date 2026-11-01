@@ -893,6 +893,53 @@ impl MockBackend {
         Ok(())
     }
 
+    fn copy_into_image(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
+        self.outside_passes(op)?;
+        check(o.len() == 6, op, "a copy into an image takes 6 words")?;
+        let source = self.texture(op, o[0])?;
+        let destination = self.texture(op, o[2])?;
+        check(
+            source.binding_view == view::D2_ARRAY,
+            op,
+            "a copy into an image reads a 2d-array texture",
+        )?;
+        check(
+            source.usage & texture_usage::TEXTURE_BINDING != 0,
+            op,
+            "a copy into an image reads a texture with TEXTURE_BINDING usage",
+        )?;
+        let usage = texture_usage::TEXTURE_BINDING | texture_usage::RENDER_ATTACHMENT;
+        check(
+            destination.usage & usage == usage,
+            op,
+            "a copy into an image writes a texture with TEXTURE_BINDING and RENDER_ATTACHMENT usage",
+        )?;
+        check(
+            destination.binding_view == view::D2_ARRAY && destination.samples == 1,
+            op,
+            "a copy into an image writes a 2d-array texture of one sample",
+        )?;
+        check(
+            format::draws_mipmaps(destination.format),
+            op,
+            "a copy into an image writes a texture whose format draws mip levels",
+        )?;
+        let (source_layer, destination_layer) = (o[1], o[3]);
+        let (size, levels) = (o[4], o[5]);
+        if source_layer >= source.layers
+            || destination_layer >= destination.layers
+            || size > destination.width
+            || size > destination.height
+            || levels == 0
+            || levels > destination.mips
+        {
+            return Err(MockError::OutOfRange { op, id: o[2] });
+        }
+        self.use_resource(Resource::Texture(o[0]));
+        self.use_resource(Resource::Texture(o[2]));
+        Ok(())
+    }
+
     fn generate_texture(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
         self.outside_passes(op)?;
         let texture = self.texture(op, o[0])?;
@@ -1212,6 +1259,7 @@ impl MockBackend {
             }
             Op::UploadImage => self.upload_image(op, o)?,
             Op::GenerateMipmaps => self.generate_mipmaps(op, o)?,
+            Op::CopyIntoImage => self.copy_into_image(op, o)?,
             Op::ReleaseImage => {
                 self.images.remove(&o[0]);
                 self.generators.remove(&o[0]);

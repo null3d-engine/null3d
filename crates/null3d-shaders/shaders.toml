@@ -35,7 +35,9 @@
 #   custom_materials  True for the one template that custom materials build with: the shader
 #              compiler adds a material's WGSL after the file's last line, and builds every variant
 #              with the shader def of each function that the WGSL declares (CUSTOM_SURFACE for
-#              `fn surface`). The shader compiler holds this manifest and the entry shaders.
+#              `fn surface`). A variant that names `required` bits is the engine's own: the
+#              compiler skips it, because no word of a custom material sets those bits. The shader
+#              compiler holds this manifest and the entry shaders.
 #   custom_effects  True for the one template that custom effects build with. It is a template
 #              only: the build checks that it builds, with an effect that keeps each pixel, and
 #              writes no module of it. The shader compiler adds an effect's WGSL after its last
@@ -174,6 +176,18 @@ custom_materials = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "TRANSLUCENCY", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "TRANSLUCENCY", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["glsl"] }
+variants.moment_wgpu = { defs = ["MOMENT"], required = ["OUTLINE_VISIBLE"], permutations = ["TONE_MAP", "VERTEX_COLOR", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "HALF", "OUTLINE_VISIBLE", "ROW_VALUES", "TRANSLUCENCY"], targets = ["wgsl"] }
+variants.moment_webgl2 = { defs = ["MOMENT", "WEBGL2"], required = ["OUTLINE_VISIBLE"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "RECEIVE_SHADOWS", "AREA_LIGHTS", "HALF", "SKIN", "MORPH", "OUTLINE_VISIBLE", "ROW_VALUES", "TRANSLUCENCY"], targets = ["glsl"] }
+# The moment layer's colour pass for the standard material: the same shading as the builds above,
+# with each fragment's colour weighted by the transmittance that the moment store gives at its own
+# depth. It carries the bits that the moment store's own builds carry, so the layer draws the same
+# surfaces in both passes; a material with another bit keeps the transparent pass's sort.
+[shaders.moment_lit]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MOMENT_COLOUR"], permutations = ["TONE_MAP", "VERTEX_COLOR", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "HALF", "ROW_VALUES", "TRANSLUCENCY"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["MOMENT_COLOUR", "WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "RECEIVE_SHADOWS", "AREA_LIGHTS", "HALF", "SKIN", "MORPH", "ROW_VALUES", "TRANSLUCENCY"], targets = ["glsl"] }
 
 # The standard material with its texture maps, from the same file: base color, metal-rough, normal,
 # occlusion, emissive, light and specular maps, which share six texture units on WebGL2. In the
@@ -197,6 +211,16 @@ variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_
 variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "TRANSLUCENCY", "LOD_FADE", "WEIGHTED", "COAT_SHEEN", "DISPLACEMENT", "PARALLAX", "BUMP"], targets = ["glsl"] }
 variants.webgpu_caster = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["SKIN", "CASTER_OFFSET", "CASTER", "DISPLACEMENT", "PARALLAX"], required = ["CASTER", "DISPLACEMENT"], targets = ["wgsl"] }
 variants.webgl2_caster = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "SKIN", "MORPH", "CASTER_OFFSET", "CASTER", "DISPLACEMENT", "PARALLAX"], required = ["CASTER", "DISPLACEMENT"], targets = ["glsl"] }
+variants.moment_wgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS", "MOMENT"], required = ["OUTLINE_VISIBLE"], permutations = ["TONE_MAP", "VERTEX_COLOR", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "HALF", "OUTLINE_VISIBLE", "ROW_VALUES", "TRANSLUCENCY", "DISPLACEMENT"], targets = ["wgsl"] }
+variants.moment_webgl2 = { defs = ["WEBGL2", "MAPS", "MOMENT"], required = ["OUTLINE_VISIBLE"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "RECEIVE_SHADOWS", "AREA_LIGHTS", "HALF", "SKIN", "MORPH", "OUTLINE_VISIBLE", "ROW_VALUES", "TRANSLUCENCY", "DISPLACEMENT"], targets = ["glsl"] }
+# The moment layer's colour pass for the standard material with maps. The moment store's builds and
+# this one carry the same bits, and a material with a bit that neither carries keeps the sort.
+[shaders.moment_standard_maps]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS", "MOMENT_COLOUR"], permutations = ["TONE_MAP", "VERTEX_COLOR", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "HALF", "ROW_VALUES", "TRANSLUCENCY", "DISPLACEMENT"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAPS", "MOMENT_COLOUR"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "RECEIVE_SHADOWS", "AREA_LIGHTS", "HALF", "SKIN", "MORPH", "ROW_VALUES", "TRANSLUCENCY", "DISPLACEMENT"], targets = ["glsl"] }
 
 # The skin pass's builds of the standard material, with and without maps, from the same file: the
 # SUBSURFACE def writes the diffuse light that scatters, with the material's scatter distances and
@@ -278,6 +302,15 @@ by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", "LOD_FADE", "WEIGHTED"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", "LOD_FADE", "WEIGHTED"], targets = ["glsl"] }
+variants.moment_wgpu = { defs = ["MOMENT"], required = ["OUTLINE_VISIBLE"], permutations = ["TONE_MAP", "VERTEX_COLOR", "SKIN", "HALF", "OUTLINE_VISIBLE", "ROW_VALUES"], targets = ["wgsl"] }
+variants.moment_webgl2 = { defs = ["MOMENT", "WEBGL2"], required = ["OUTLINE_VISIBLE"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "HALF", "SKIN", "MORPH", "OUTLINE_VISIBLE", "ROW_VALUES"], targets = ["glsl"] }
+# The moment layer's colour pass for the basic material.
+[shaders.moment_unlit]
+file = "unlit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MOMENT_COLOUR"], permutations = ["TONE_MAP", "VERTEX_COLOR", "SKIN", "HALF", "ROW_VALUES"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["MOMENT_COLOUR", "WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "HALF", "SKIN", "MORPH", "ROW_VALUES"], targets = ["glsl"] }
 
 # The material's color times its map, like three.js's MeshBasicMaterial with a map, times the
 # mesh's vertex colors with VERTEX_COLOR. ALPHA_MASK as for the standard material.
@@ -287,6 +320,15 @@ by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", "LOD_FADE", "WEIGHTED"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", "LOD_FADE", "WEIGHTED"], targets = ["glsl"] }
+variants.moment_wgpu = { defs = ["JOINTS_AFTER_MAPS", "MOMENT"], required = ["OUTLINE_VISIBLE"], permutations = ["TONE_MAP", "VERTEX_COLOR", "SKIN", "HALF", "OUTLINE_VISIBLE", "ROW_VALUES"], targets = ["wgsl"] }
+variants.moment_webgl2 = { defs = ["WEBGL2", "MOMENT"], required = ["OUTLINE_VISIBLE"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "HALF", "SKIN", "MORPH", "OUTLINE_VISIBLE", "ROW_VALUES"], targets = ["glsl"] }
+# The moment layer's colour pass for the basic material with a map.
+[shaders.moment_unlit_map]
+file = "unlit_map.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["JOINTS_AFTER_MAPS", "MOMENT_COLOUR"], permutations = ["TONE_MAP", "VERTEX_COLOR", "SKIN", "HALF", "ROW_VALUES"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["MOMENT_COLOUR", "WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "HALF", "SKIN", "MORPH", "ROW_VALUES"], targets = ["glsl"] }
 
 # Sprites, like three.js's Sprite with a SpriteMaterial: quads of a sprite batch's rows that face
 # the camera, in the material's color times each sprite's color. ALPHA_MASK as for the standard
@@ -297,6 +339,15 @@ by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "WEIGHTED"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "ALPHA_HASH", "WEIGHTED"], targets = ["glsl"] }
+variants.moment_wgpu = { defs = ["MOMENT"], required = ["OUTLINE_VISIBLE"], permutations = ["TONE_MAP", "OUTLINE_VISIBLE"], targets = ["wgsl"] }
+variants.moment_webgl2 = { defs = ["MOMENT", "WEBGL2"], required = ["OUTLINE_VISIBLE"], permutations = ["DRAW_INDEX", "TONE_MAP", "OUTLINE_VISIBLE"], targets = ["glsl"] }
+# The moment layer's colour pass for sprites.
+[shaders.moment_sprite]
+file = "sprite.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MOMENT_COLOUR"], permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["MOMENT_COLOUR", "WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
 
 # Sprites times the material's map at each sprite's frame of the atlas, from the same file.
 [shaders.sprite_map]
@@ -305,6 +356,15 @@ by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["MAP"], permutations = ["TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "WEIGHTED"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2", "MAP"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "ALPHA_HASH", "WEIGHTED"], targets = ["glsl"] }
+variants.moment_wgpu = { defs = ["MAP", "MOMENT"], required = ["OUTLINE_VISIBLE"], permutations = ["TONE_MAP", "OUTLINE_VISIBLE"], targets = ["wgsl"] }
+variants.moment_webgl2 = { defs = ["WEBGL2", "MAP", "MOMENT"], required = ["OUTLINE_VISIBLE"], permutations = ["DRAW_INDEX", "TONE_MAP", "OUTLINE_VISIBLE"], targets = ["glsl"] }
+# The moment layer's colour pass for sprites with a map.
+[shaders.moment_sprite_map]
+file = "sprite.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MAP", "MOMENT_COLOUR"], permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["MOMENT_COLOUR", "WEBGL2", "MAP"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
 
 # A page downloads the sprite templates with its first sprite batch.
 [first_use.sprites]
@@ -574,7 +634,20 @@ variants.webgl2 = { defs = ["WEBGL2", "REDUCE"], targets = ["glsl"] }
 # and use its depth step. The frames keep the opaque pass without them until the steps' pipelines
 # are built.
 [first_use.ao]
-shaders = ["ao", "ao_ms", "ssr", "ssr_reduce"]
+shaders = ["ao", "ao_ms", "ssr", "ssr_reduce", "bounce"]
+
+# Screen-space bounce light's steps on ambient occlusion's grid (see bounce.wgsl): `trace` casts
+# each texel's rays through the depth copy and writes the light that the frame before showed at
+# their hits, and `denoise` blurs it over a disk of taps that keeps to each texel's surface. Both
+# read ambient occlusion's depth copy and the horizon step's normals, so the feature loads with
+# them. The WebGL2 variants count rows from the bottom.
+[shaders.bounce]
+file = "bounce.wgsl"
+by_device = true
+pipelines.trace = { vertex = "vs", fragment = "trace" }
+pipelines.denoise = { vertex = "vs", fragment = "denoise" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
 
 # Depth of field's steps (see dof.wgsl): `setup` writes half-size color with each texel's signed
 # blur size from the depth, `gather` blurs the near and the far field apart over a disk or polygon of
@@ -747,11 +820,18 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP", "DEPTH_MULTISAMPLED"], targets = ["wgsl"] }
 variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 
-# A page downloads the copy and the builds of the mesh templates that let light through when its
-# first material that lets light through draws. The copy waits for its pipeline, and the frames
-# draw without it until then.
-[first_use.transmission]
+# A page downloads the copy when a step first reads the color that the frame before showed: its
+# first material that lets light through draws, screen-space reflections draw, or the preset's
+# bounce light draws. Those steps read ambient occlusion's grid as well. The copy waits for its
+# pipeline, and the frames draw without it until then. The copy's builds sit in a file of their
+# own, apart from the mesh builds that let light through, because a page that draws the light
+# downloads it while it draws no such material.
+[first_use.color_copy]
 shaders = ["transmission_copy"]
+
+# A page downloads the builds of the mesh templates that let light through when its first material
+# that lets light through draws.
+[first_use.transmission]
 bits = ["TRANSMISSION"]
 
 # A page downloads the builds of layered materials, with a clear coat or a sheen, when it creates
@@ -785,6 +865,73 @@ variants.webgl2 = { defs = ["WEBGL2", "DEPTH"], targets = ["glsl"] }
 [first_use.weighted]
 shaders = ["weighted_composite", "weighted_depth"]
 bits = ["WEIGHTED"]
+
+# The steps of the camera's moment transparency layer (moment_layer.wgsl and moment_smaa.wgsl):
+# the composite, which blends the layer over the scene color, the copy of one sample of a
+# multisampled scene depth, which the layer's two passes test against, and the three steps of SMAA
+# 1x, which smooths the layer's edges under the share that the moments cover. Only WebGPU reads a
+# multisampled depth; WebGL2 reads the copy of one sample that its backend keeps.
+[shaders.moment_composite]
+file = "moment_layer.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "composite" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+[shaders.moment_depth]
+file = "moment_layer.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "depth" }
+variants.webgpu = { defs = ["DEPTH", "MULTISAMPLED"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "DEPTH"], targets = ["glsl"] }
+[shaders.moment_smaa_edges]
+file = "moment_smaa.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "edges" }
+variants.webgpu = { defs = ["EDGES"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["EDGES", "WEBGL2"], targets = ["glsl"] }
+[shaders.moment_smaa_blend]
+file = "moment_smaa.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "blend" }
+variants.webgpu = { defs = ["BLEND"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["BLEND", "WEBGL2"], targets = ["glsl"] }
+[shaders.moment_smaa_resolve]
+file = "moment_smaa.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "resolve" }
+variants.webgpu = { defs = ["RESOLVE"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["RESOLVE", "WEBGL2"], targets = ["glsl"] }
+
+# A page downloads the moment layer's steps, its SMAA steps and the MOMENT builds of the mesh
+# templates when the quality setting turns the layer on and its first blended surface draws. The
+# MOMENT builds write the moment store; their colour builds are the six moment colour entries above
+# the mesh templates, one for each template that has them, because a build's first-use file takes
+# the names of its bits and a second shared value would pull another template's builds into these
+# files (decision record D-261). The OUTLINE_VISIBLE bit takes only the six mesh templates' builds:
+# the outline mask lists that value for its own visible parts and keeps them in the device modules.
+[first_use.moment]
+shaders = [
+    "moment_composite",
+    "moment_depth",
+    "moment_smaa_edges",
+    "moment_smaa_blend",
+    "moment_smaa_resolve",
+    "moment_lit",
+    "moment_standard_maps",
+    "moment_unlit",
+    "moment_unlit_map",
+    "moment_sprite",
+    "moment_sprite_map",
+]
+bits = ["OUTLINE_VISIBLE"]
+bit_shaders = { OUTLINE_VISIBLE = [
+    "lit",
+    "standard_maps",
+    "unlit",
+    "unlit_map",
+    "sprite",
+    "sprite_map",
+] }
 
 # A page downloads the builds of the lit templates that shade rectangle and tube lights when its
 # first area light's tables have arrived. The frames draw with the builds without them until every
@@ -919,12 +1066,14 @@ shaders = ["motion", "cull_motion"]
 
 # The mip levels of a layer of a texture array, one render pass per level. It loads by device, as
 # the backends make the mip levels of textures that the scene uploads. The copy pipeline copies a
-# layer texel by texel, for the WebGL2 backend.
+# layer texel by texel, for the WebGL2 backend. The scale pipeline draws one texture into the
+# corner of another at a size of its own, which fills a light's image with a sketch's texture.
 [shaders.mipmap]
 file = "mipmap.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs_main", fragment = "fs_main" }
 pipelines.copy = { vertex = "vs_main", fragment = "fs_copy" }
+pipelines.scale = { vertex = "vs_scale", fragment = "fs_scale" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 

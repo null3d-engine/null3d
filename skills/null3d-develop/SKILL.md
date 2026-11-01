@@ -140,7 +140,7 @@ Check this table before you write a generator, control, effect or loader. Each f
 | Text in the scene, sharp at any distance | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
 | A river or a lake, with waves, foam, soft shores and a surface seen from below | `@null3d/water` | `api/water` | built |
 | Trees, shrubs, ferns, hostas and grass, with detail levels, wind data and ecological placement | `@null3d/vegetation` | `api/vegetation` | built (generator, scatter and atlases; grass and materials not built yet) |
-| Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | `api/wind` | built (the field carries no state between frames yet) |
+| Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | `api/wind` | built (the preset sets the step interval, pressure count and grid) |
 | three.js look modes for a port: Reinhard and Cineon tone curves, and a soft outline with a glow and a pulse | `@null3d/three-compat` | `api/three-compat` | built |
 
 Drawing:
@@ -169,7 +169,7 @@ Materials:
 | A custom look that still gets lights, shadows and fog | `materials.shader({ wgsl })` with `fn surface` in the WGSL | `shaders/surface-functions` |
 | A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one | `guides/custom-shaders` |
 
-Lighting and shadows: surfaces take one directional light, the ambient and hemisphere lights (0.2), and clustered point and spot lights. One shadowed directional light covers most outdoor scenes, and its layers choose the casters. Hemisphere light is the cheap fill. Point and spot lights cost little without shadows. Rectangle and tube lights (0.2) show their true shape in highlights, at several times a point light's cost. Contact shadows ground small objects on High and Ultra (0.2). An environment gives standard materials reflections and soft diffuse light (0.2). Set it up before play, because the GPU filters the whole map in one frame. The sky lights outdoor scenes. The physical atmosphere hazes distant land blue (0.2). Indoors, give each room its own reflection probe (0.2). (`api/lights`, `concepts/lighting`, `concepts/shadows`; every option and default is in `references/api-quickref.md` section 7.)
+Lighting and shadows: surfaces take up to four directional lights (the first casts the shadows), the ambient and hemisphere lights (0.2), and clustered point and spot lights. A shadowed directional light covers most outdoor scenes, and its layers choose the casters. Hemisphere light is cheap fill. Point and spot lights cost little unshadowed. Rectangle and tube lights (0.2) show their shape in highlights, at several times a point light's cost. Contact shadows ground small objects on High and Ultra (0.2). An environment gives standard materials reflections and soft diffuse light (0.2). Set it up before play: the GPU filters the whole map in one frame. The sky lights outdoor scenes. The physical atmosphere hazes distant land blue (0.2). Indoors, give each room its own reflection probe (0.2). (`api/lights`, `concepts/lighting`, `concepts/shadows`; every option and default is in `references/api-quickref.md` section 7.)
 
 Interaction:
 

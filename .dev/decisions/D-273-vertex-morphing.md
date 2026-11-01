@@ -1,6 +1,6 @@
 # D-273: Vertex morphing for generated shapes
 
-Status: decided by the helper of M3-L4, for the owner's review. Built: the terrain morphs each
+Status: decided by the owner, on the rule below. Built: the terrain morphs each
 block toward its parent's surface, and a tree's leaf cards morph toward the next level. Task:
 M3-L4.
 

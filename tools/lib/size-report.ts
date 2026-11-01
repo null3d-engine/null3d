@@ -1114,11 +1114,20 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  *
  * The grading controls' code over light rides every WebGL2 tone-map build. Its largest file, the
  * half-precision draw-index tone-map set, measures 53,325 bytes after Brotli, inside this figure.
+ *
+ * The Brotli figure rose from 56 KB to 58 KB by the owner's ruling. The bounce
+ * light's shader additions carried the two largest area-lights paragraph files 202 bytes past the
+ * old figure, at 100.4 per cent. Three measurements say nothing smaller can be recovered: the shader
+ * build strips comments, so the branch's prose is not in the measured file at all; the family's two
+ * largest files share 7.1 per cent of their text, because each variant is a separate compilation and
+ * there is no base to extract; and the moment layer and the particle work fit under the old figure
+ * on their own. The cost is the number of variants the family emits, not waste inside one. The next
+ * feature that needs room here is a decision about which variants to emit, and not a further raise.
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 1_792 * 1024,
 	gzip: 320 * 1024,
-	brotli: 56 * 1024,
+	brotli: 58 * 1024,
 };
 
 /**

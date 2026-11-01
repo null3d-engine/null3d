@@ -79,7 +79,15 @@ That is 16 of WebGPU's 16 sampled textures in the lit fragment stage. The decal 
 
 A rectangle light can take an image, such as a shop window, a sign or a screen. Its light then varies across its area. The shader follows Heitz's demo code. In the frame that each lobe's LTC matrix makes, it reads the image where the surface point's foot meets the light's plane. The mip level grows with the plane's distance over the light's size. So rough lobes and far surfaces see the image blurred, and mirror-like ones see it sharp. Heitz blurs each level of a prefiltered pyramid with a Gaussian, and pads the image with a border. The engine uses plain mip levels and clamps at the edges, which costs no pass and looks the same on soft images.
 
-The sketch thread resamples each image to 128 x 128 texels in linear light and makes its mip levels. In Bun on the Mac, at a load of 12, that took 0.5 to 1.4 ms for images up to 512 x 512 pixels, and 4.5 ms at 1,024 x 1,024. Each image takes a layer of the light tables' array, so it needs no binding either. The texture then grows to 128 x 128 texels with every level, with the tables in a corner of their layers. It makes room for 4 images, then 8, 16 and 32, and the frame groups bind it again. Up to 32 lights show images at once: 5.5 MiB of GPU memory with every level.
+The sketch thread resamples each image to its own size, a power of two from 128 to 512 texels a
+side, in linear light, and makes its mip levels. In Bun on the Mac, at a load of 12, that took 0.5
+to 1.4 ms for images up to 512 x 512 pixels, and 4.5 ms at 1,024 x 1,024. Each image takes a layer
+of the light tables' array, so it needs no binding either. The texture grows to the largest image's
+size with every level, with the tables in a corner of their layers. It makes room for 4 images,
+then 8, 16 and 32, and the frame groups bind it again. Up to 32 lights show images at once. A
+rectangle light's picture takes the same resampler and layers as a spot light's map, which
+[D-179](D-179-technique-rulings.md) gives, and a tube light shows no picture, so it pays
+nothing.
 
 ### Records and culling
 

@@ -37,6 +37,17 @@ enable draw_index;
 #ifdef WEIGHTED
 #import null3d::weighted::{WeightedFragment, weighted_fragment}
 #endif
+#ifdef MOMENT
+#import null3d::moment::{moment_fragment}
+#endif
+#ifdef MOMENT_COLOUR
+#import null3d::moment::{moment_colour_fragment}
+
+/// The moment store that the colour pass reads at each fragment's own pixel (decision record
+/// D-261), in the frame's group. It takes the light probe grid's binding, which the layer's own
+/// frame layout leaves out because no moment build reads the grid.
+@group(0) @binding(10) var moment_store: texture_2d<f32>;
+#endif
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
 #endif
@@ -152,6 +163,8 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 fn fs(in: VertexOut) -> MaskedFragment {
 #else ifdef WEIGHTED
 fn fs(in: VertexOut) -> WeightedFragment {
+#else ifdef MOMENT_COLOUR
+fn fs(in: VertexOut) -> @location(0) vec4f {
 #else
 fn fs(in: VertexOut) -> @location(0) vec4f {
 #endif
@@ -197,6 +210,14 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     return vec4f(finished.rgb, alpha);
 #else ifdef WEIGHTED
     return weighted_fragment(fragment_color(m, finished.rgb, alpha), in.relative);
+#else ifdef MOMENT
+    return moment_fragment(alpha, in.relative);
+#else ifdef MOMENT_COLOUR
+    return moment_colour_fragment(
+        fragment_color(m, finished.rgb, alpha),
+        in.relative,
+        textureLoad(moment_store, vec2u(in.clip.xy), 0),
+    );
 #else
     return fragment_color(m, finished.rgb, alpha);
 #endif

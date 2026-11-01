@@ -1,0 +1,14 @@
+[package]
+name = "null3d-wind-wasm"
+description = "The wind add-on's analytic field as a WebAssembly module for the job workers, with a byte layout interface."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[lints]
+workspace = true

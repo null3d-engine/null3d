@@ -100,7 +100,10 @@ simpler light of the panorama costs nothing that a viewer can see.
 ## Consequences
 
 - The noise field is made on the first frame that the tier draws, before the sky maps record,
-  because a sky map can refresh from the scene's sky while an environment background draws.
+  because a page that had a sky background keeps a live map whose stages can still choose the cloud
+  step while the background is a texture, and those stages bind the field. Gating the field on a
+  sky background broke exactly that case: the map fell back to the flat layer where it had drawn
+  its clouds, and the draw list named a texture that did not exist, so the gate was reverted.
 - A page on Low or Medium downloads no cloud shader and makes no noise field. The engine test that
   a page which uses no feature that loads on first use downloads none of their files covers the
   family.
@@ -111,7 +114,14 @@ simpler light of the panorama costs nothing that a viewer can see.
   fails loudly instead of drawing a cloudless sky.
 - The tier's environment step draws the same sky as the view: a second sky adds its light at its
   weight in the map's step as it does in the view's, the clouds take the combined overhead light,
-  and a zero step count keeps the flat layer in the map. Without the first term the map lost the
+  and a zero step count keeps the flat layer in the map.
+
+- The view's clouds still take their sun and their overhead light from the first sky alone, in
+  `sky_volume.wgsl` and `sky_volume_physical.wgsl`, while the environment map's clouds now take
+  both skies. At night the view's clouds therefore miss the moon's light that the reflections
+  carry. That asymmetry is not intended: both shaders should read the second sky's weight as the
+  map's step does, and it waits as its own change because it moves the night pictures and needs its
+  own measurement. Without the first term the map lost the
   moon's sky at night while the view kept it; without the second it lost the flat layer at every
   step count where the march drew nothing.
 - A sky layer (D-242) draws after the cloud tier's draw, so an aurora stands over the clouds. The

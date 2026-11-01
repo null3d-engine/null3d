@@ -26,6 +26,8 @@ import {
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
+	TEMPLATE_BOUNCE_DENOISE,
+	TEMPLATE_BOUNCE_TRACE,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
 	TEMPLATE_DECAL,
@@ -49,6 +51,17 @@ import {
 	TEMPLATE_INSTANCED_UNLIT_MAP,
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
+	TEMPLATE_MOMENT_COMPOSITE,
+	TEMPLATE_MOMENT_DEPTH,
+	TEMPLATE_MOMENT_LIT,
+	TEMPLATE_MOMENT_SMAA_BLEND,
+	TEMPLATE_MOMENT_SMAA_EDGES,
+	TEMPLATE_MOMENT_SMAA_RESOLVE,
+	TEMPLATE_MOMENT_SPRITE,
+	TEMPLATE_MOMENT_SPRITE_MAP,
+	TEMPLATE_MOMENT_STANDARD_MAPS,
+	TEMPLATE_MOMENT_UNLIT,
+	TEMPLATE_MOMENT_UNLIT_MAP,
 	TEMPLATE_MOTION,
 	TEMPLATE_MOTION_VIEW,
 	TEMPLATE_OUTLINE_MASK,
@@ -378,9 +391,30 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_SUBSURFACE_COMPOSITE] = { shader: shaders.subsurface_blur, pipeline: 'down' };
 	templates[TEMPLATE_SSR_REDUCE] = { shader: shaders.ssr_reduce, pipeline: 'reduce' };
 	templates[TEMPLATE_SSR_TRACE] = { shader: shaders.ssr, pipeline: 'trace' };
+	templates[TEMPLATE_BOUNCE_TRACE] = { shader: shaders.bounce, pipeline: 'trace' };
+	templates[TEMPLATE_BOUNCE_DENOISE] = { shader: shaders.bounce, pipeline: 'denoise' };
 	// The weighted layer's depth copy reads the same one-sample copy of the depth.
 	templates[TEMPLATE_WEIGHTED_COMPOSITE] = { shader: shaders.weighted_composite, pipeline: 'main' };
 	templates[TEMPLATE_WEIGHTED_DEPTH] = { shader: shaders.weighted_depth, pipeline: 'main' };
+	// The moment layer's steps and its colour builds, which draw meshes with their own shader
+	// entries so that their builds load with the layer alone.
+	templates[TEMPLATE_MOMENT_COMPOSITE] = { shader: shaders.moment_composite, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_DEPTH] = { shader: shaders.moment_depth, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SMAA_EDGES] = { shader: shaders.moment_smaa_edges, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SMAA_BLEND] = { shader: shaders.moment_smaa_blend, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SMAA_RESOLVE] = {
+		shader: shaders.moment_smaa_resolve,
+		pipeline: 'main',
+	};
+	templates[TEMPLATE_MOMENT_LIT] = { shader: shaders.moment_lit, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_STANDARD_MAPS] = {
+		shader: shaders.moment_standard_maps,
+		pipeline: 'main',
+	};
+	templates[TEMPLATE_MOMENT_UNLIT] = { shader: shaders.moment_unlit, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_UNLIT_MAP] = { shader: shaders.moment_unlit_map, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SPRITE] = { shader: shaders.moment_sprite, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SPRITE_MAP] = { shader: shaders.moment_sprite_map, pipeline: 'main' };
 	// Decals draw in a pass of their own, never in the depth prepass.
 	templates[TEMPLATE_DECAL] = { shader: shaders.decal, pipeline: 'main' };
 	templates[TEMPLATE_DECAL_MAPS] = { shader: shaders.decal_maps, pipeline: 'main' };
@@ -402,9 +436,13 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 
 /**
  * A program of the mip shader, from the shaders the device loaded: `main` draws a mip level of a
- * texture array's layer from the level before it, and `copy` copies a level of a layer.
+ * texture array's layer from the level before it, `copy` copies a level of a layer, and `scale`
+ * draws a texture into a corner of another at a size of its own.
  */
-export function mipmapTemplate(shaders: DeviceShaders, pipeline: 'main' | 'copy'): GlslTemplate {
+export function mipmapTemplate(
+	shaders: DeviceShaders,
+	pipeline: 'main' | 'copy' | 'scale',
+): GlslTemplate {
 	return { shader: shaders.mipmap, pipeline };
 }
 
@@ -464,15 +502,32 @@ export function createProgram(
 	};
 }
 
+/** The head of a uniform declaration, with the text between it and the declaration's end. */
+const DECLARATION = /^\s*(?:layout\([^)]*\)\s*)?uniform\b([^;{]*)/gm;
+
+/** A word of a declaration, which is a name that the source declares. */
+const WORD = /[A-Za-z_][A-Za-z0-9_]*/g;
+
+/**
+ * The names that a GLSL source declares as uniforms or uniform blocks. One walk of the source
+ * answers every name, so a check over a program's whole reflection costs a scan beside a scan
+ * rather than a scan for each name it asks about.
+ */
+export function declaredUniforms(source: string): Set<string> {
+	const names = new Set<string>();
+	DECLARATION.lastIndex = 0;
+	for (let match = DECLARATION.exec(source); match !== null; match = DECLARATION.exec(source))
+		for (const word of (match[1] ?? '').match(WORD) ?? []) names.add(word);
+	return names;
+}
+
 /**
  * Whether a GLSL stage declares a uniform or a uniform block of this name. A driver may remove a
  * declared uniform that the program never reads, as GLSL allows, so a linked program can lack a
- * name that its source declares.
+ * name that its source declares. A check over many names reads [`declaredUniforms`] once instead.
  */
 export function declaresUniform(source: string, name: string): boolean {
-	return new RegExp(`^\\s*(?:layout\\([^)]*\\)\\s*)?uniform\\b[^;{]*\\b${name}\\b`, 'm').test(
-		source,
-	);
+	return declaredUniforms(source).has(name);
 }
 
 /**

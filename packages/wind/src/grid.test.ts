@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { CURL_STEP, GROUND_HEIGHT, PUSH_LIFE } from './analytic';
-import { CYCLE_STEPS, PRESSURE_STEPS } from './wind';
+import { CURL_STEP, GROUND_HEIGHT, GUST_SLOT, PUSH_LIFE, PUSH_SLOTS, RING_SLOTS } from './analytic';
+import { CYCLE_STEPS, GROUND_PACK, PRESSURE_STEPS } from './wind';
 
 /** The text between two markers of a file, trimmed. */
 function marked(file: URL, name: string): string {
@@ -55,11 +55,22 @@ describe('the shaders of the grid', () => {
 		expect(constant(steady, 'WIND_GROUND_HEIGHT')).toBe(GROUND_HEIGHT);
 		expect(constant(steady, 'WIND_CURL_STEP')).toBe(CURL_STEP);
 		expect(constant(marked(gridFile, 'wind-events'), 'WIND_PUSH_LIFE')).toBe(PUSH_LIFE);
-		// The step count of a cycle is the same in the shader and in the add-on that asks for it.
+		// The pressure count is the preset's, so it arrives with the frame in the ground setting's
+		// whole part rather than as a constant, and the ground's share rides in its fraction.
 		const solver = marked(gridFile, 'wind-solver');
-		expect(constant(solver, 'WIND_PRESSURE_STEPS')).toBe(PRESSURE_STEPS);
-		// The cycle adds the advection and the projection to the pressure's iterations.
-		expect(solver).toContain('const WIND_CYCLE: i32 = WIND_PRESSURE_STEPS + 2;');
+		expect(solver).toContain('state: WindState, pressure: i32');
+		expect(solver).toContain('state.stage <= pressure');
+		expect(constant(solver, 'WIND_GROUND_PACK')).toBe(GROUND_PACK);
+		for (const form of [gridFile, fallbackFile]) {
+			const text = readFileSync(form, 'utf8');
+			expect(text).toContain('let pressure = i32(floor(packed));');
+			expect(text).toContain('air.ground = (packed - f32(pressure)) * WIND_GROUND_PACK;');
+		}
+		// The add-on packs the same two values, so its divisor must match the shaders'.
+		expect(readFileSync(new URL('./wind.ts', import.meta.url), 'utf8')).toContain(
+			'values[3] = solverPressureSteps() + air.ground / GROUND_PACK;',
+		);
+		// The default cycle still adds the advection and the projection to the pressure's iterations.
 		expect(CYCLE_STEPS).toBe(PRESSURE_STEPS + 2);
 	});
 
@@ -74,6 +85,54 @@ describe('the shaders of the grid', () => {
 		// The box arrives in the eighth value vector, and the settings in the three before the slots.
 		expect(compute).toContain('block.u7');
 		expect(fallback).toContain('uniforms.u7');
+	});
+
+	test('the ring’s four slots are the three pushes and the gust, and no more', () => {
+		// The add-on packs one slot into four value numbers, from 12, and the box starts where the
+		// last slot ends. A push slot added without the shaders would run into the box's numbers,
+		// and a gust moved to another index would read as a push there.
+		expect(PUSH_SLOTS).toBe(3);
+		expect(GUST_SLOT).toBe(PUSH_SLOTS);
+		expect(RING_SLOTS).toBe(PUSH_SLOTS + 1);
+		expect(12 + RING_SLOTS * 4).toBe(28);
+		const events = marked(gridFile, 'wind-events');
+		// The analytic field takes one argument for each push, then the gust.
+		expect([...events.matchAll(/slot(\d+): vec4f/g)].map((match) => Number(match[1]))).toEqual([
+			0, 1, 2,
+		]);
+		expect(events).toContain(`array<vec4f, ${PUSH_SLOTS}>(slot0, slot1, slot2)`);
+		expect(events).toContain(`i < ${PUSH_SLOTS}u`);
+		expect(events).toContain('wind_gust(air, gust, p)');
+		// Each form reads the slots as one value vector for each, then the box from the next.
+		for (const [name, file, source] of [
+			['compute', gridFile, 'block'],
+			['WebGL2', fallbackFile, 'uniforms'],
+		] as const) {
+			const text = readFileSync(file, 'utf8');
+			const slots = new RegExp(`array<vec4f, (\\d+)>\\(${source}\\.[^)]*\\)`).exec(text);
+			expect(slots?.[1], name).toBe(String(RING_SLOTS));
+			expect(text, name).toContain(`${source}.u${3 + RING_SLOTS}`);
+		}
+	});
+
+	test('the box’s edge takes the steady field that a reader works out past it', () => {
+		// A reader past the box works out the steady field, which has no pushes and no sent gust.
+		// The edge takes the same field, so the air is continuous across the edge rather than
+		// stepping where a push reached it, and the projection leaves the edge where it is.
+		for (const file of [gridFile, fallbackFile]) {
+			const solver = marked(file, 'wind-solver');
+			const advect = solver.slice(
+				solver.indexOf('fn wind_advect'),
+				solver.indexOf('fn wind_pressure'),
+			);
+			expect(advect).toContain('wind_steady(air, place)');
+			expect(advect).not.toContain('v = pullTo.xz');
+			const project = solver.slice(
+				solver.indexOf('fn wind_project'),
+				solver.indexOf('fn wind_step'),
+			);
+			expect(project).toContain('return WindState(state.v, state.pressure, 0);');
+		}
 	});
 });
 

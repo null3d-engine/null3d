@@ -1032,9 +1032,9 @@ export class Post implements ViewHolder {
 		const on = this.ssr && this.occlusionTargets;
 		if (on) {
 			// The reflections draw on ambient occlusion's grid, and read the copy of the opaque color
-			// that transmission makes.
+			// that the frame keeps for the steps that sample it.
 			this.shaders.need('ao');
-			this.shaders.need('transmission');
+			this.shaders.need('color_copy');
 		}
 		if (DEV && this.ssr && !this.occlusionTargets && !this.warnedNoSsr) {
 			this.warnedNoSsr = true;

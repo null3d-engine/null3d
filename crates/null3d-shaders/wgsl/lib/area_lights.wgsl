@@ -1,7 +1,7 @@
 #define_import_path null3d::area_lights
 #import null3d::lighting::{PbrMaterial, Reflected}
 #import null3d::math::{square}
-#import null3d::tables::{AreaTerms, light_image}
+#import null3d::tables::{AreaTerms, image_of, light_image}
 
 // Rectangle and tube lights, shaded with linearly transformed cosines (LTC), after Heitz, Dupuy,
 // Hill and Neubelt, "Real-Time Polygonal-Light Shading with Linearly Transformed Cosines" (ACM
@@ -60,10 +60,11 @@ fn any_perpendicular(v: vec3f) -> vec3f {
     return normalize(cross(v, other));
 }
 
-/// The image of a rectangle light in layer `layer`, as seen from the origin of `corners`' frame:
-/// the corners of the light, counterclockwise from its +X, -Y corner. The image's texture
-/// coordinates run from its +X, -Y corner, so it reads the right way round from the lit side.
-fn image_seen(corners: array<vec3f, 4>, layer: i32) -> vec3f {
+/// The image of a rectangle light that `record` names, as seen from the origin of `corners`'
+/// frame: the corners of the light, counterclockwise from its +X, -Y corner. The image's texture
+/// coordinates run from its +X, -Y corner, so it reads the right way round from the lit side. The
+/// image's size picks the level that a blurred image reads at.
+fn image_seen(corners: array<vec3f, 4>, record: f32) -> vec3f {
     let across = corners[1] - corners[0];
     let up = corners[3] - corners[0];
     let normal = cross(across, up);
@@ -78,11 +79,8 @@ fn image_seen(corners: array<vec3f, 4>, layer: i32) -> vec3f {
     let u = dot(across, foot) * inverse_across2 - across_up * inverse_across2 * v;
     // The plane's distance over the light's size picks how blurred the image looks.
     let ratio = abs(distance_area) / pow(area2, 0.75);
-    return light_image(layer, vec2f(u, v), log2(ratio * f32(IMAGE_SIZE)));
+    return light_image(record, vec2f(u, v), log2(ratio * image_of(record).y));
 }
-
-/// Texels along each side of a rectangle light's image.
-const IMAGE_SIZE: u32 = 128u;
 
 /// How an area light fades to nothing at its range, measured from its middle at `gap`, with the
 /// window of three.js's `getDistanceAttenuation`. The light inside the range keeps its physical
@@ -95,8 +93,8 @@ fn range_window(gap: f32, range: f32) -> f32 {
 /// The light that a PBR surface reflects from a rectangle of uniform radiance `color`, which the
 /// light gives out on the side that its corners wind counterclockwise toward. `toward` is the
 /// rectangle's middle relative to the surface, and `half_width` and `half_height` its half sides.
-/// `terms` come from `area_terms` for the surface's view and roughness. `image` is the layer of
-/// the light's image, or a negative number for a light of one color.
+/// `terms` come from `area_terms` for the surface's view and roughness. `record` names the light's
+/// image, or 0 for a light of one color.
 fn rectangle_light(
     m: PbrMaterial,
     terms: AreaTerms,
@@ -106,8 +104,9 @@ fn rectangle_light(
     half_width: vec3f,
     half_height: vec3f,
     color: vec3f,
-    image: i32,
+    record: f32,
 ) -> Reflected {
+    let has_image = image_of(record).x > 0.5;
     var corners = array<vec3f, 4>(
         toward + half_width - half_height,
         toward - half_width - half_height,
@@ -130,8 +129,8 @@ fn rectangle_light(
     }
     let diffuse = quad_form_factor(corners);
     var diffuse_color = color;
-    if image >= 0 {
-        diffuse_color *= image_seen(corners, image);
+    if has_image {
+        diffuse_color *= image_seen(corners, record);
     }
     let inverse = mat3x3f(
         vec3f(terms.inverse.x, 0.0, terms.inverse.y),
@@ -143,8 +142,8 @@ fn rectangle_light(
     }
     let specular = quad_form_factor(corners);
     var specular_color = color;
-    if image >= 0 {
-        specular_color *= image_seen(corners, image);
+    if has_image {
+        specular_color *= image_seen(corners, record);
     }
     // Stephen Hill's Fresnel term for LTC, as three.js gives it.
     let fresnel = m.specular_blended * terms.fresnel.x
@@ -170,5 +169,5 @@ fn tube_light(
     let across = cross(toward, half_axis);
     let length2 = dot(across, across);
     let side = select(any_perpendicular(normalize(half_axis)), across * inverseSqrt(length2), length2 > 1e-12);
-    return rectangle_light(m, terms, normal, to_view, toward, half_axis, side * radius, color, -1);
+    return rectangle_light(m, terms, normal, to_view, toward, half_axis, side * radius, color, 0.0);
 }

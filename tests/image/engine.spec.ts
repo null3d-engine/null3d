@@ -402,6 +402,9 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 	particles: 'tests/pages/sketches/particles-sketch.ts',
 	background: 'tests/pages/sketches/texture-background-sketch.ts',
 	transmission: 'tests/pages/sketches/transmission-sketch.ts',
+	// A surface that lets light through makes the frame copy the opaque color to sample it, so the
+	// same sketch draws the copy's builds as its own.
+	color_copy: 'tests/pages/sketches/transmission-sketch.ts',
 	// Both suns cast shadows for their feature's picture, and their scenes let the sun draw contact
 	// shadows, which load ambient occlusion's shader file on first use. The switch turns those off,
 	// so the page downloads its own feature's file alone.
@@ -461,6 +464,15 @@ const FEATURE_FILE_OWNERS: Partial<
 };
 
 /**
+ * The feature whose file a feature's first use downloads as well as its own: a surface that lets
+ * light through makes the frame copy the opaque color, so the two files load together.
+ */
+const FIRST_USE_ALSO: Partial<Record<ShaderFeature, ShaderFeature>> = {
+	transmission: 'color_copy',
+	color_copy: 'transmission',
+};
+
+/**
  * How long a first-use page may take to answer. The page itself waits for the frame's pipelines to
  * build for up to 30 s (`BUILD_WAIT_LIMIT_MS`), and answers with its error when that runs out. So
  * the test must wait longer than the page's own limit, or it races the page and reports a bare
@@ -507,17 +519,19 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				return;
 			}
 			// The shader files spell a feature's name with hyphens. A feature that draws another's
-			// file as well, such as the cloud tier over the sky, downloads both.
-			const files = [owner ?? feature, ...(FEATURE_EXTRAS[feature] ?? [])].map((name) =>
-				name.replaceAll('_', '-'),
-			);
+			// file as well, such as the cloud tier over the sky, downloads both, and so does one
+			// whose page makes the frame copy the opaque color.
+			const also = FIRST_USE_ALSO[feature];
+			const files = [
+				owner ?? feature,
+				...(also ? [also] : []),
+				...(FEATURE_EXTRAS[feature] ?? []),
+			].map((name) => name.replaceAll('_', '-'));
 			expect(shaderFiles).toHaveLength(files.length);
 			for (const file of files)
 				expect(
-					shaderFiles.some((requested) =>
-						new RegExp(`/shaders-${file}-(wgsl|glsl)[^/]*$`).test(requested),
-					),
-				).toBe(true);
+					shaderFiles.filter((path) => new RegExp(`/shaders-${file}-(wgsl|glsl)[^/]*$`).test(path)),
+				).toHaveLength(1);
 		});
 
 // GPU occlusion culling runs only on WebGPU, where the first-use test turns it on. A scene whose
