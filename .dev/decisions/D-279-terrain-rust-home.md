@@ -1,6 +1,6 @@
 # D-279: Where the terrain's per-frame work runs in Rust
 
-Status: decided by the owner: the terrain's Rust home is the add-on compiled to wasm, not a public core call. Not built yet. Task: M3-F14.
+Status: decided by the owner, and built: the terrain's Rust home is the add-on compiled to wasm, not a public core call. Task: M3-F14, M3-R39.
 
 Summary: The terrain's quadtree selection and block build run in TypeScript on the sketch thread.
 Hard rule 42 asks for a Rust home. A public core hook is the smaller build, but it adds a
@@ -69,14 +69,32 @@ freeze in the engine's API at 1.0, and its code would join every page's start, f
   finished arrays through the mesh path that it uses today.
 - **The engine's surface does not change.** No new public call and no new start code.
 
-### The first slice
+### What shipped
 
-The crate skeleton and its loader path, with the block build in them, proven by a page whose cells
-still come from the TypeScript quadtree: one block of a height field draws from the module's arrays,
-vertex for vertex as today, on both GPU paths. That slice puts the new machinery in place, the pack
-step, the loader entry, the cache key and the worker call, and it has an exact comparison, because
-the block build's output is today's arrays. The quadtree selection follows once the loader path is
-proven, then the allocation check and the docs.
+- **The crate.** `crates/null3d-terrain` holds `terrain_select` and `terrain_build`. It imports
+  nothing, allocates nothing, and reads every array through a parameter block of 64-bit floats, so
+  a call gives the bytes that the add-on's TypeScript reference gives.
+- **The pack step.** `bun run build` builds the crate with the other tool modules and copies it to
+  `packages/terrain/dist/terrain.wasm`. The tarball requires that file, and the CDN build carries
+  it beside `lib`.
+- **The loader entry.** `packages/terrain/src/terrain-builder.ts` names the task and its module, and
+  runs it with `runTask`. The engine compiles the module once per page and each job worker
+  instantiates it at its first terrain task.
+- **The arrays.** The add-on makes one buffer for the terrain and shares it with the worker where
+  the page allows a `SharedArrayBuffer`: the height samples, the height boxes, the skirt's ring, the
+  leaves and one block's place for each slot of a batch. A selection that outgrows the leaves makes
+  the buffer again, once, and asks again.
+- **The reference.** `packages/terrain/src/reference-builder.ts` runs the same selection and build
+  in the thread that runs the sketch, so the package's unit tests drive them with no worker. The
+  package build leaves that file out of the tarball, with the tree walk and the vertex writers that
+  it reads. `packages/terrain/src/wasm-parity.test.ts` drives the built module through the shipped
+  task module on a view that mixes levels, and compares the leaves and every vertex with that
+  reference, so an edit to either side that moves a number fails. CI's build job hands the module to
+  the unit tests with the page's other WebAssembly.
+- **Hold mode.** A hold runs its frames with no frame loop, so a task that the sketch queued never
+  answers while it steps. The held frame now waits for those tasks, then draws one more frame at
+  the held time, as it already waits for textures and a grading table. Without that wait a held
+  picture would show the ground that the tasks had not yet written.
 
 ## Consequences
 
@@ -85,6 +103,12 @@ It also adds tests that compare the selection and the vertex arrays with today's
 check, and the develop skill and the terrain API page's notes. The engine gains no public call, so
 its surface stays as it is at the freeze. The add-on's first use pays one download and one compile
 of the module, and a page that never draws terrain pays nothing.
+
+The module's memory is never given back. A worker forgets a dropped terrain's arrays, but the
+bytes stay used and the allocation cursor keeps rising, so a page that builds and destroys many
+terrains in one worker would grow that worker's module memory without bound. One terrain per page
+is the normal case, which makes the limit acceptable; a page that needs more would need the module
+to free a terrain's arrays.
 
 ## The particle loop, priced both ways
 

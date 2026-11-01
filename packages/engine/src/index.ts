@@ -198,6 +198,10 @@ export {
 export type {
 	ParticleBuffer,
 	ParticleBufferOptions,
+	ParticleEmitterBurst,
+	ParticleEmitterOptions,
+	ParticleEmitterShape,
+	ParticleEmitterSub,
 	ParticleFacing,
 	ParticleFlipbook,
 	ParticleGroundMode,

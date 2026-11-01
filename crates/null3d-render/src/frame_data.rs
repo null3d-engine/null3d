@@ -24,7 +24,15 @@ pub struct FrameUniform {
     pub camera_position: [f32; 4],
     /// The direction the sun's light travels, normalized.
     pub sun_direction: [f32; 4],
+    /// The sun's exposed color, and in w the number of fill directional lights that light the
+    /// frame, from 0 to [`null3d_core::lights::MAX_FILL_DIRECTIONAL_LIGHTS`].
     pub sun_color: [f32; 4],
+    /// The directions the fill directional lights travel, in world space, and their exposed
+    /// colors after them: one entry of each per fill light, up to
+    /// [`null3d_core::lights::MAX_FILL_DIRECTIONAL_LIGHTS`]. The main directional light, which
+    /// casts the shadows, is not among them.
+    pub fill_direction: [[f32; 4]; null3d_core::lights::MAX_FILL_DIRECTIONAL_LIGHTS],
+    pub fill_color: [[f32; 4]; null3d_core::lights::MAX_FILL_DIRECTIONAL_LIGHTS],
     pub ambient: [f32; 4],
     /// The exposure and the tone mapping, which the 8-bit path's fragment shaders apply.
     pub output: OutputUniform,
@@ -105,6 +113,9 @@ pub struct FrameUniform {
     /// The camera's place as a homogeneous point, as `camera_position` holds it in its view, which
     /// a masked custom material's caster reads for the direction toward the camera.
     pub camera_eye: [f32; 4],
+    /// Screen-space bounce light's strength, 0 when the view draws none, and spares, which the
+    /// opaque pass reads beside the light's layer of the screen texture (see [`crate::bounce`]).
+    pub bounce: [f32; 4],
 }
 
 const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES as usize);

@@ -138,7 +138,7 @@ enable draw_index;
 #endif
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::color::srgb_to_linear
-#import null3d::globals::{Material}
+#import null3d::globals::{FILL_LIGHT_SLOTS, Material}
 #ifdef SCENE_DEPTH
 #import null3d::depth::{linear_depth, orthographic_depth_to_view_z}
 #endif
@@ -182,14 +182,15 @@ fn pick_key(found: Instance) -> u32 {
 #endif
 }
 
-/// The color that GPU picking's id target holds for a source key: its four bytes, each as the
-/// fraction an 8-bit target stores.
+/// The color that GPU picking's id target holds for a source key: its four bytes, the lowest in
+/// red, each as the fraction an 8-bit target stores. A little-endian read of the copy's first four
+/// bytes then gives the key itself, as the pick template's copy does.
 fn pick_color(key: u32) -> vec4f {
     let bytes = vec4u(
-        (key >> 24u) & 0xffu,
-        (key >> 16u) & 0xffu,
-        (key >> 8u) & 0xffu,
         key & 0xffu,
+        (key >> 8u) & 0xffu,
+        (key >> 16u) & 0xffu,
+        (key >> 24u) & 0xffu,
     );
     return vec4f(bytes) / 255.0;
 }
@@ -284,6 +285,18 @@ fn pick_color(key: u32) -> vec4f {
 #endif
 #ifdef WEIGHTED
 #import null3d::weighted::{WeightedFragment, weighted_fragment}
+#endif
+#ifdef MOMENT
+#import null3d::moment::{moment_fragment}
+#endif
+#ifdef MOMENT_COLOUR
+#import null3d::moment::{moment_colour_fragment}
+
+/// The moment store that the colour pass reads at each fragment's own pixel (decision record
+/// D-261): the four moments that the moment pass summed there, read with `textureLoad` as plain
+/// floats. It takes the light probe grid's binding, which the layer's own frame layout leaves out
+/// because no moment build reads the grid.
+@group(0) @binding(10) var moment_store: texture_2d<f32>;
 #endif
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
@@ -2149,7 +2162,8 @@ fn clustered_lobed_light(
 #endif
 
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
-/// where its shadows fall, the point and spot lights of the surface's cluster, the ambient and
+/// where its shadows fall, the fill directional lights, the point and spot lights of the
+/// surface's cluster, the ambient and
 /// hemisphere lights, `extra` irradiance such as a light map's, and the light around it, from the
 /// reflection probes and the environment, times the material's factor of it. That light adds to
 /// the ambient and hemisphere lights, as three.js adds the environment's, and neither its
@@ -2186,6 +2200,7 @@ fn light_surface(
     occlusion: f32,
     contact: f32,
     reflection: vec4f,
+    bounce: vec4f,
     lobe_values: vec4f,
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
@@ -2231,6 +2246,7 @@ fn light_surface(
     sun.diffuse = saturate(dot(diffuse_normal, to_sun)) * sun_color
         * brdf_lambert(m.diffuse) * (1.0 - fresnel);
 #endif
+
 #ifdef CUSTOM_LOBE
     // The material's own lobe adds its specular beside the base lobe's for the sun. It knows the
     // light, the view and the half vector, which a surface function cannot see.
@@ -2246,6 +2262,25 @@ fn light_surface(
         lobe_values,
     ));
 #endif
+
+    // The fill directional lights add their light beside the main light's, without its shadows.
+    let fills = min(u32(engine_frame.sun_color.w), FILL_LIGHT_SLOTS);
+    for (var k = 0u; k < fills; k++) {
+        let direction = engine_frame.fill_dir[k];
+        let color = engine_frame.fill_col[k];
+        // The light enters the clear coat and sheen first, and the translucency builds add the
+        // share that reaches the surface's back, as the sun's light does above.
+        var incoming = color.rgb;
+#ifdef COAT_SHEEN
+        incoming *= layered_light(normal, to_view, -direction.xyz, incoming);
+#endif
+#ifdef TRANSLUCENCY
+        gather_back_light(normal, -direction.xyz, incoming);
+#endif
+        let fill = direct_light(m, normal, to_view, -direction.xyz, incoming, compensation);
+        sun.diffuse += fill.diffuse;
+        sun.specular += fill.specular;
+    }
 #ifdef TRANSLUCENCY
     gather_back_light(normal, to_sun, sun_color);
     back_indirect = ambient_light(-normal) * occlusion;
@@ -2258,10 +2293,14 @@ fn light_surface(
     let clustered = clustered_light(m, relative, normal, vertex_normal, to_view, compensation);
 #endif
     let n_dot_v = saturate(dot(normal, to_view));
+    // Screen-space bounce light adds to the ambient and hemisphere lights. It takes the place of
+    // the environment's diffuse light by its share, as a reflection probe's does, and the
+    // environment keeps the rest where a ray left the screen.
+    let bounce_share = bounce.a;
 #ifdef CUSTOM_DIFFUSE_NORMAL
-    let surrounding_light = ambient_light(diffuse_normal) + extra;
+    let surrounding_light = ambient_light(diffuse_normal) + bounce.rgb * bounce_share + extra;
 #else
-    let surrounding_light = ambient_light(normal) + extra;
+    let surrounding_light = ambient_light(normal) + bounce.rgb * bounce_share + extra;
 #endif
 #ifdef COAT_SHEEN
     let ambient = indirect_diffuse(m, surrounding_light, dfg)
@@ -2285,7 +2324,9 @@ fn light_surface(
 #endif
         let strength = select(0.0, material_row.uv_u.w, has_environment(env));
         let around = probe_surrounding(relative, normal, reflection_normal(m, normal, to_view), to_view, m.roughness);
-        var irradiance = around.irradiance;
+        // The bounce light's share takes the environment's diffuse light with it, so the two do not
+        // count the same light twice.
+        var irradiance = around.irradiance * (1.0 - bounce_share);
         let radiance = mix(around.radiance, reflection.rgb, mirrored);
         // The probe grid takes the environment's diffuse light over where the sketch sets one.
 #ifdef PROBE_GRID
@@ -2533,6 +2574,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         s.occlusion * screen_occlusion(screen.values),
         contact,
         reflection,
+        screen.bounce,
         lobe_values,
     );
 #ifdef TRANSMISSION
@@ -2835,6 +2877,8 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) {
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
 #else ifdef WEIGHTED
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> WeightedFragment {
+#else ifdef MOMENT_COLOUR
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else ifdef PICK
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else
@@ -2918,6 +2962,14 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     return masked_fragment(shade(s, input, in.clip));
 #else ifdef WEIGHTED
     return weighted_fragment(shade(s, input, in.clip), in.relative);
+#else ifdef MOMENT
+    return moment_fragment(s.alpha, in.relative);
+#else ifdef MOMENT_COLOUR
+    return moment_colour_fragment(
+        shade(s, input, in.clip),
+        in.relative,
+        textureLoad(moment_store, vec2u(in.clip.xy), 0),
+    );
 #else
     return shade(s, input, in.clip);
 #endif

@@ -206,6 +206,8 @@ mod render_detail {
     pub const SHADOW_ATLAS_TOO_LARGE: u32 = 18;
     /// The second detail is the most bytes that one buffer may take.
     pub const BUFFER_FULL: u32 = 19;
+    /// The second detail is the size that a light's image was given, which no image takes.
+    pub const BAD_IMAGE_SIZE: u32 = 20;
 }
 
 struct Engine {
@@ -341,6 +343,17 @@ impl Engine {
 }
 
 impl Engine {
+    /// Writes each light's image record, which the frame's lights read: its layer and size, or 0
+    /// while its texture still waits for its copy. A probe's layers come before the images', so a
+    /// probe that a scene adds or removes moves every image, and the records follow.
+    fn fix_image_layers(&mut self) {
+        let probe_layers = self.renderer.settings().probes().probe_layers();
+        let tables = self.renderer.settings_mut().light_tables_mut();
+        for (light, value) in tables.image_records(probe_layers) {
+            let _ = self.lights.set_value(light, light_value::IMAGE, value);
+        }
+    }
+
     /// The frame builder, and the frame's input for it. The frame's upload list and its lights are
     /// recorded once, by the frame's first step. `pipelines_built` is the newest frame that the
     /// thread that draws drew with every pipeline built.
@@ -356,6 +369,7 @@ impl Engine {
             .settings_mut()
             .set_last_frame_size(canvas, render_scale);
         if self.snapshot.frame() != frame {
+            self.fix_image_layers();
             self.snapshot.record(frame, &self.scene, &self.batches);
             self.renderer.settings_mut().gather_lights(
                 &mut self.lights,
@@ -3933,14 +3947,19 @@ pub fn finish_area_light_tables() -> u32 {
     })
 }
 
-/// Makes room for light `light`'s image, and returns the address of its half floats. Fails with
-/// E1501 when every place for an image is taken.
+/// Makes room for light `light`'s image of `size` texels a side, and returns the address of its
+/// half floats. The size is a power of two from `IMAGE_SIZE` to `MAX_IMAGE_SIZE` texels; a
+/// detailed picture keeps more of its detail. Fails with E1501 when every place for an image is
+/// taken, or when the size is one that no image takes.
 #[wasm_bindgen(js_name = lightImage)]
-pub fn light_image(light: u32) -> u32 {
+pub fn light_image(light: u32, size: u32) -> u32 {
     value_with_engine(|e| {
         e.lights.object(light).map_err(core_failure)?;
+        if light_tables::size_index(size).is_none() {
+            return Err(render_failure(render_detail::BAD_IMAGE_SIZE, size));
+        }
         let tables = e.renderer.settings_mut().light_tables_mut();
-        match tables.image_texels_mut(light) {
+        match tables.image_texels_mut(light, size) {
             Some(texels) => Ok(address(texels)),
             None => Err(render_failure(
                 render_detail::LIGHT_IMAGES_FULL,
@@ -3950,17 +3969,40 @@ pub fn light_image(light: u32) -> u32 {
     })
 }
 
+/// Gives light `light` an image of `size` texels a side whose texels come from texture `texture`.
+/// A frame copies the texture into the image once its texels are on the GPU, and the light shows
+/// the picture from the frame after. The copy is a snapshot: later changes to the texture do not
+/// reach the light. Fails with E1501 when every place for an image is taken, or when the size is
+/// one that no image takes.
+#[wasm_bindgen(js_name = setLightMapTexture)]
+pub fn set_light_map_texture(light: u32, texture: u32, size: u32) -> u32 {
+    value_with_engine(|e| {
+        e.lights.object(light).map_err(core_failure)?;
+        if light_tables::size_index(size).is_none() {
+            return Err(render_failure(render_detail::BAD_IMAGE_SIZE, size));
+        }
+        let tables = e.renderer.settings_mut().light_tables_mut();
+        if !tables.image_texture_mut(light, size, Handle::from_raw(texture)) {
+            return Err(render_failure(
+                render_detail::LIGHT_IMAGES_FULL,
+                light_tables::MAX_IMAGES as u32,
+            ));
+        }
+        Ok(0)
+    })
+}
+
 /// Marks light `light`'s image as written, so the next frame uploads it and the light shows it.
 #[wasm_bindgen(js_name = finishLightImage)]
 pub fn finish_light_image(light: u32) -> u32 {
     with_engine(|e| {
         let probe_layers = e.renderer.settings().probes().probe_layers();
-        let layer = e
+        let image = e
             .renderer
             .settings_mut()
             .light_tables_mut()
-            .finish_image(light, probe_layers);
-        let image = layer.map_or(0.0, |layer| (layer + 1) as f32);
+            .finish_image(light, probe_layers)
+            .unwrap_or(0.0);
         e.lights
             .set_value(light, light_value::IMAGE, image)
             .map_or_else(core_failure, |()| 0)
@@ -4332,6 +4374,67 @@ pub fn shift_particle_records(id: u32, from: u32, to: u32, seconds: u32) -> u32 
     })
 }
 
+/// Makes room for a particle system's emitter block of `floats` numbers and returns its address,
+/// or 0 for no such system or when the memory cannot grow. The sketch writes the emitter's
+/// settings into the block and calls `configureParticleEmitter` once, then writes the frame's
+/// numbers and calls `emitParticleFrame` in every frame.
+#[wasm_bindgen(js_name = particleEmitterBlock)]
+pub fn particle_emitter_block(id: u32, floats: u32) -> u32 {
+    value_with_engine(|e| {
+        let address = e
+            .renderer
+            .settings_mut()
+            .particles_mut()
+            .emitter_block(id, floats as usize);
+        if address == 0 {
+            Err(out_of_memory(u64::from(floats) * 8))
+        } else {
+            Ok(address)
+        }
+    })
+}
+
+/// Reads a particle system's emitter settings from its block, which the sketch wrote, and starts
+/// its births and its time base again.
+#[wasm_bindgen(js_name = configureParticleEmitter)]
+pub fn configure_particle_emitter(id: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .particles_mut()
+            .configure_emitter(id);
+        0
+    })
+}
+
+/// The address of a particle system's sub-emitter inverse world matrices, 16 numbers each, or 0
+/// for none. The sketch writes them for the frame's events.
+#[wasm_bindgen(js_name = particleSubMatrices)]
+pub fn particle_sub_matrices(id: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.settings().particles().emitter_sub_matrices(id)))
+}
+
+/// Emits the births of a particle system's frame, fires the sub-emitters that fall due by its
+/// end, and moves its time base when the time calls for it. The sketch writes the frame's numbers
+/// into the emitter block first.
+#[wasm_bindgen(js_name = emitParticleFrame)]
+pub fn emit_particle_frame(id: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().particles_mut().emit_frame(id);
+        0
+    })
+}
+
+/// Emits `count` particles of a system at once, at the place and velocity in its emitter block,
+/// and plans their sub-emitter events.
+#[wasm_bindgen(js_name = burstParticles)]
+pub fn burst_particles(id: u32, count: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().particles_mut().burst(id, count);
+        0
+    })
+}
+
 /// Makes a draw of `vertices` vertices for each of `instances` copies for the object in scene slot
 /// `slot`, whose material is a full shader of the sketch's that makes its vertices from the vertex
 /// and instance indices, and returns its id: 0 when the scene holds the most draws already. No mesh
@@ -4658,6 +4761,18 @@ pub fn set_ssr_quality(thousandths: u32, steps: u32) -> u32 {
     })
 }
 
+/// Sets the rays that each texel of screen-space bounce light casts, from the quality settings,
+/// from the next frame on: 0 draws none. The light draws on ambient occlusion's grid, and the
+/// steps of each ray's march are the engine's default.
+#[wasm_bindgen(js_name = setBounceRays)]
+pub fn set_bounce_rays(rays: u32) -> u32 {
+    with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        settings.set_bounce_rays(rays);
+        0
+    })
+}
+
 /// Sets the steps of each march of the main directional light's contact shadows, from the next
 /// frame on: 0 draws none.
 #[wasm_bindgen(js_name = setContactSteps)]
@@ -4868,6 +4983,18 @@ pub fn set_bloom_chain(size: u32, halvings: u32) -> u32 {
 pub fn set_parallax(on: bool) -> u32 {
     with_engine(|e| {
         if e.renderer.settings_mut().set_parallax(on) {
+            e.structure_changed = true;
+        }
+        0
+    })
+}
+
+/// Draws the blended surfaces in the camera's moment transparency layer, or back to front in the
+/// transparent pass, from the next frame on, as the quality preset's `momentTransparency` says.
+#[wasm_bindgen(js_name = setMomentTransparency)]
+pub fn set_moment_transparency(on: bool) -> u32 {
+    with_engine(|e| {
+        if e.renderer.settings_mut().set_moment_transparency(on) {
             e.structure_changed = true;
         }
         0
@@ -5144,6 +5271,19 @@ pub fn set_probe_size(size: u32) -> u32 {
 #[wasm_bindgen(js_name = probesWaiting)]
 pub fn probes_waiting() -> u32 {
     with_engine(|e| u32::from(e.renderer.settings().probes().waiting()))
+}
+
+/// True while a light's picture waits for its texture's texels to be copied.
+#[wasm_bindgen(js_name = lightImagesWaiting)]
+pub fn light_images_waiting() -> u32 {
+    with_engine(|e| {
+        u32::from(
+            e.renderer
+                .settings()
+                .light_tables()
+                .texture_images_waiting(),
+        )
+    })
 }
 
 // Returns the image id under which TypeScript sends the generator that runs each probe's filter,
