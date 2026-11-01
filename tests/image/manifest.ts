@@ -3698,6 +3698,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.017 },
 			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
+			// The ocean's WebGL2 heights differed from the other paths' when the demo was added, and
+			// the read that measured them was itself wrong on that path. Until the comparison runs
+			// against the fixed read (D-271), the demo draws the two paths that agree, and a WebGL2
+			// reference could record a sea the other paths do not draw.
+			...(demo.name === 'ocean' && { tiers: ['webgpu', 'compat'] as const }),
 			// The hero shadow is fine detail on one object, so its demo draws larger than the
 			// other demos, where the tile size's difference shows.
 			...(demo.name === 'hero-shadow' && { size: HERO_SIZE }),

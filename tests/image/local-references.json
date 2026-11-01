@@ -125,6 +125,12 @@
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
+	"chromium-swiftshader/compat/demo-ocean.png": {
+		"test": "demo-ocean",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
+	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
 		"tier": "compat",
@@ -706,6 +712,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+	},
+	"chromium-swiftshader/webgpu/demo-ocean.png": {
+		"test": "demo-ocean",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
 	},
 	"chromium-swiftshader/webgpu/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",

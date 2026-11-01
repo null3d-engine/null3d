@@ -140,6 +140,13 @@ for (const { tier, query } of TIERS) {
 		expect(result.frames).toBeGreaterThanOrEqual(1);
 	});
 
+	test(`a cadence skips its frames and changes on the next frame on ${tier}`, async ({ page }) => {
+		const result = await stateCase(page, query, 'cadence');
+		// Four runs in eight frames at a cadence of two, then four more in four frames at one.
+		expect(result.values[0]).toBe(4);
+		expect(result.values[1]).toBe(8);
+	});
+
 	test(`an out-of-range read is refused on ${tier}`, async ({ page }) => {
 		const result = await stateCase(page, query, 'refuse');
 		expect(result.values[0]).toBe(1);
@@ -177,6 +184,17 @@ for (const { tier, query } of TIERS) {
 		const result = await stateCase(page, query, 'kept');
 		// The left half shows the pass's white image, and the right half its zero coverage as light:
 		// a pass texture that lost its alpha would show white there.
+		expect(result.left?.[0] ?? 0).toBeGreaterThan(120);
+		expect(result.right?.[0] ?? 255).toBeLessThan(40);
+		expect(result.same).toBe(true);
+	});
+
+	test(`a cadence's skipped frame keeps the image a material samples on ${tier}`, async ({
+		page,
+	}) => {
+		// The pass draws in one frame of two; the picture is taken while it drew, then after its turn
+		// is pushed far away. The material must keep sampling the pass's texture, and its last image.
+		const result = await stateCase(page, query, 'cadence-kept');
 		expect(result.left?.[0] ?? 0).toBeGreaterThan(120);
 		expect(result.right?.[0] ?? 255).toBeLessThan(40);
 		expect(result.same).toBe(true);
