@@ -56,7 +56,6 @@ import {
 	LOTS,
 	ROADS,
 	roadEdge,
-	SHRUBS,
 	SQUARE,
 	STAIRS,
 	slopeAt,
@@ -1692,7 +1691,66 @@ function createGolf(ctx: SketchContext): void {
 	scene.createMesh({ mesh: geometry.fromArrays(finish(flags)), material, castShadows: true });
 }
 
+/** The outline of a park's lawn, as its radius at each bearing. */
+function parkShape(x: number, z: number, r: number) {
+	return (a: number) => r * (1 + 0.14 * Math.sin(a * 2 + x) + 0.09 * Math.sin(a * 5 + z));
+}
+
+/** A park's gravel walk, which winds around its lawn. */
+function parkWalk(x: number, y: number, z: number, shape: (a: number) => number) {
+	const walk: { x: number; y: number; z: number }[] = [];
+	for (let t = 0; t <= 1.001; t += 0.018) {
+		const a = t * Math.PI * 2 * 0.86 + 2.2;
+		const rr = shape(a) * (0.72 + 0.1 * Math.sin(t * 19));
+		walk.push({ x: x + Math.cos(a) * rr, y: y + 0.02, z: z + Math.sin(a) * rr });
+	}
+	return walk;
+}
+
+/** The branch of a park's walk that leads to its gazebo. */
+function parkBranch(x: number, y: number, z: number, walk: readonly { x: number; z: number }[]) {
+	const [gx, gz] = [x + 3, z + 2];
+	const branch: { x: number; y: number; z: number }[] = [];
+	const from = walk[Math.floor(walk.length * 0.72)] as { x: number; z: number };
+	for (let t = 0; t <= 1.001; t += 0.1)
+		branch.push({
+			x: from.x + (gx - from.x) * t + Math.sin(t * 3.14) * 2,
+			y: y + 0.02,
+			z: from.z + (gz - from.z) * t,
+		});
+	return branch;
+}
+
+/** The lawns of the parks, for grass: each one's square, the lawn's height, and where its lawn lies. */
+export function parkLawns() {
+	return PARKS.map(([x, z, radius]) => {
+		const y = groundHeight(x, z);
+		const r = radius * 0.72;
+		const shape = parkShape(x, z, r);
+		const walk = parkWalk(x, y, z, shape);
+		const paths = [...walk, ...parkBranch(x, y, z, walk)];
+		return {
+			x,
+			z,
+			size: r * 2.6,
+			height: y + LAWN_LIFT,
+			where: (px: number, pz: number) => {
+				const [dx, dz] = [px - x, pz - z];
+				if (hypot(dx, dz) >= shape(Math.atan2(dz, dx)) - 0.3) return false;
+				if (hypot(px - (x + 3), pz - (z + 2)) < GAZEBO_CLEAR) return false;
+				// The points along a walk stand about 2 m apart, so this also covers the walk between them.
+				return !paths.some((p) => hypot(px - p.x, pz - p.z) < WALK_CLEAR);
+			},
+		};
+	});
+}
+
 /** The parks: mottled lawns with a winding gravel walk, a gazebo, benches, hedges, lamps and a low wall. */
+/** How high a lawn lies over the park's level, and how far grass keeps from a walk and a gazebo, in meters. */
+const LAWN_LIFT = 0.1;
+const WALK_CLEAR = 2;
+const GAZEBO_CLEAR = 7;
+
 function createParks(ctx: SketchContext, surfaces: Surfaces): void {
 	const { scene, geometry, materials } = ctx;
 	const b = build();
@@ -1707,25 +1765,13 @@ function createParks(ctx: SketchContext, surfaces: Surfaces): void {
 		const flat = () => y + 0.02;
 		const r = radius * 0.72;
 		// An uneven lawn, and a gravel walk that winds around it with a branch to the gazebo.
-		const shape = (a: number) => r * (1 + 0.14 * Math.sin(a * 2 + x) + 0.09 * Math.sin(a * 5 + z));
+		const shape = parkShape(x, z, r);
 		patch(b, x, z, (a) => shape(a) + 3, [0.1, 0.18, 0.05], 0.07, flat);
-		patch(b, x, z, shape, lawn, 0.1, flat);
-		const walk: { x: number; y: number; z: number }[] = [];
-		for (let t = 0; t <= 1.001; t += 0.018) {
-			const a = t * Math.PI * 2 * 0.86 + 2.2;
-			const rr = shape(a) * (0.72 + 0.1 * Math.sin(t * 19));
-			walk.push({ x: x + Math.cos(a) * rr, y: y + 0.02, z: z + Math.sin(a) * rr });
-		}
+		patch(b, x, z, shape, lawn, LAWN_LIFT, flat);
+		const walk = parkWalk(x, y, z, shape);
 		strip(b, walk, 1.5, gravel, 0.13);
 		const [gx, gz] = [x + 3, z + 2];
-		const branch: { x: number; y: number; z: number }[] = [];
-		const from = walk[Math.floor(walk.length * 0.72)] as { x: number; z: number };
-		for (let t = 0; t <= 1.001; t += 0.1)
-			branch.push({
-				x: from.x + (gx - from.x) * t + Math.sin(t * 3.14) * 2,
-				y: y + 0.02,
-				z: from.z + (gz - from.z) * t,
-			});
+		const branch = parkBranch(x, y, z, walk);
 		strip(b, branch, 1.2, gravel, 0.14);
 		const hall = pavilion();
 		const place = [gx, y + 0.12, gz] as [number, number, number];

@@ -236,7 +236,7 @@ A large scene need not place every plant at once. `EcoScatter` takes tiles with 
 
 ## Grass on the ground
 
-`createGrass(ctx, { height, area, count, seed, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)` and skip ground steeper than `maxSlope`. Their turn, size and tint come from integer hashes, so one seed places the same grass on every device. Each tuft's row values carry its tint, which its shader reads. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
+`createGrass(ctx, { height, area, count, seed, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)` and skip ground steeper than `maxSlope`, and any point where `where(x, z)` returns false. `color` sets the blades' color, so they can meet the ground's own. Their turn, size and tint come from integer hashes, so one seed places the same grass on every device. Each tuft's row values carry its tint, which its shader reads. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
 
 The blades bend in the wind add-on's field, the same field that the leaf material reads. Give `createGrass` its `wind` field, and call `grass.setWindLayer(field)` in each frame with the field's newest state, as the leaf material takes it. A page that gives no field grows grass that stands still.
 

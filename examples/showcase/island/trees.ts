@@ -16,6 +16,7 @@ import {
 	bakeFarTree,
 	bakePlantAtlases,
 	builtInSpecies,
+	createGrass,
 	generatePlant,
 	handOverToCards,
 	leafCellFor,
@@ -42,6 +43,7 @@ import {
 	type TreeSpot,
 	UMBRELLA,
 } from './plan';
+import { parkLawns } from './town';
 
 /** The share of the plan's trees that each preset stands on the island. */
 export const TREE_SHARE: Record<QualityPreset, number> = {
@@ -67,6 +69,16 @@ const WIND_GRID = 64;
 
 /** The error that each level of a shrub switches at, from the base level on: past 25 and 70 meters at 1080p. */
 const SHRUB_LEVEL_ERRORS = [0, 0.02, 0.055];
+
+/** How far a shrub draws, in meters: past it, a bush is a few pixels among the trees. */
+const SHRUB_REACH = 320;
+
+/** The tufts of grass on each park's lawn at High. */
+const GRASS_TUFTS = 9000;
+/** The blades' color: a summer lawn, drier than the turf of the golf course. */
+const GRASS_COLOR = '#55752c';
+/** How far a tuft draws, in meters. */
+const GRASS_REACH = 170;
 
 /** How far the far canopy draws, in meters: past the whole island from any view. */
 const FILL_REACH = 6000;
@@ -369,6 +381,7 @@ function standShrubs(
 			batch.values?.set(treeValues(spot.x, spot.z, 23, 0), k * 4);
 		});
 		batch.markDirty();
+		batch.setDrawRange(0, SHRUB_REACH);
 		return [material];
 	});
 }
@@ -392,9 +405,25 @@ export function createTrees(ctx: SketchContext, camera: Camera): { update(): voi
 		),
 	);
 	swaying.push(...standShrubs(ctx, atlases, wind));
+	const lawns = parkLawns().map((lawn, k) =>
+		createGrass(ctx, {
+			height: () => lawn.height,
+			area: { x: lawn.x, z: lawn.z, size: lawn.size },
+			count: GRASS_TUFTS,
+			seed: 41 + k,
+			blades: 9,
+			segments: 2,
+			shapes: 2,
+			where: lawn.where,
+			color: GRASS_COLOR,
+			wind: wind.field,
+		}),
+	);
+	for (const lawn of lawns) for (const batch of lawn.batches) batch.setDrawRange(0, GRASS_REACH);
 	ctx.quality.onChange(() => {
 		const distance = swayDistanceFor(ctx.quality.preset);
 		for (const material of swaying) material.setUniform('swayDistance', distance);
+		for (const lawn of lawns) lawn.fit(ctx.quality.preset);
 	});
 	// The cypresses are solid spires, which look the same from every distance.
 	const spires = kept.filter((spot) => spot.kind === CYPRESS);
@@ -427,6 +456,7 @@ export function createTrees(ctx: SketchContext, camera: Camera): { update(): voi
 			// The field's box follows the camera, and a gust fades, so it steps every frame.
 			wind.update();
 			setWindLayer(swaying, wind.field);
+			for (const lawn of lawns) lawn.setWindLayer(wind.field);
 		},
 	};
 }
