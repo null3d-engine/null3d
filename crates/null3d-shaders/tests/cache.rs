@@ -188,6 +188,44 @@ fn changing_one_entry_recompiles_only_that_entry() {
 }
 
 #[test]
+fn a_comment_or_a_moved_line_reuses_the_entry() {
+    let scratch = Scratch::new();
+    let first = build(&scratch, &project(A, B));
+    // The same tokens as `A`, with a comment line, a wrapped call and other white space.
+    let reflowed = "// the pass.\n#import null3d::math\n\n@fragment\nfn fs_main() -> @location(0) vec4f\n{\n\treturn vec4f(\n\t\tnull3d::math::square(0.5)\n\t); /* the end. */\n}\n";
+    let (output, stats) =
+        null3d_shaders::build_with_cache(&project(reflowed, B), &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 0,
+            reused: 2
+        }
+    );
+    assert_eq!(output, first);
+}
+
+#[test]
+fn a_comment_in_a_library_module_reuses_the_entries_that_import_it() {
+    let scratch = Scratch::new();
+    let first = build(&scratch, &project(A, B));
+    let mut inputs = project(A, B);
+    inputs.files.insert(
+        "lib/math.wgsl".to_owned(),
+        format!("// a note that changes nothing.\n{}", math()),
+    );
+    let (output, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 0,
+            reused: 2
+        }
+    );
+    assert_eq!(output, first);
+}
+
+#[test]
 fn changing_a_library_module_recompiles_only_the_entries_that_import_it() {
     let scratch = Scratch::new();
     let first = build(&scratch, &project(A, B));
