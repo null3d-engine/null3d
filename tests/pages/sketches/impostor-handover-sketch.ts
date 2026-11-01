@@ -117,6 +117,7 @@ export default defineSketch((ctx) => {
 			color,
 			surface,
 			atlas: bake.atlas,
+			room: bake.room,
 			positions,
 			turn: TURNS.map((turn) => turn + cardTurn),
 			depth: bake.depth,

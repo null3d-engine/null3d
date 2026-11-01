@@ -1,12 +1,14 @@
-// The impostor cards' surface: a quad that stands upright and turns about the world's up toward
-// the eye, drawn from the three atlas views nearest the direction from the card toward the eye,
-// and lit by the scene's lights from the normal that the bake stored. The bake holds two atlases
+// The impostor cards' surface: a quad that faces the eye about the object's middle, with the
+// world's up kept upright in its plane, drawn from the three atlas views nearest the direction from
+// the card toward the eye, and lit by the scene's lights from the normal that the bake stored. The
+// bake holds two atlases
 // of the same octahedral grid: the colour, in sRGB, and a surface atlas whose red and green hold
 // the octahedral code of the view's normal, its blue the depth from the view's front to its back,
 // and its alpha the coverage.
 //
-// The vertex offset turns each quad toward the eye and keeps its up along the world's up, so a
-// tree's card stands as its mesh does. The instance's world matrix takes the mesh to the world,
+// The vertex offset lays each quad across the view, as the bake drew its pictures, so a card seen
+// from above holds its mesh's size and does not lean away. A bake's picture leaves room for the
+// object from every view, which the quad's height takes too. The instance's world matrix takes the mesh to the world,
 // so the offset that lands the quad on the plane across the eye is that matrix's inverse applied
 // to the wanted offset in the world, less the vertex's own offset. A shadow pass fills the matrix
 // with the light's view, so the card turns toward the light there.
@@ -31,6 +33,9 @@ struct Uniforms {
     // the three nearest. w: the world distance that the surface atlas's stored depth spans, or 0
     // to read the card's own plane for the shadow lookup.
     cells: vec4f,
+    // x: how many times taller a view's picture is than the card's height. A bake leaves room for
+    // the object from every view, and a painted picture fills the card.
+    picture: vec4f,
 }
 
 /// The sign of a number, with 0 counted as positive, so the fold sends each back direction home.
@@ -87,24 +92,21 @@ fn octahedralDirection(code: vec2f) -> vec3f {
     return normalize(n);
 }
 
-/// The card's frame in the world: the horizontal direction toward the eye, and the right and up
-/// axes about it. The up stays the world's up, so the card stands as the tree does.
+/// The card's frame in the world: its right and up across the view. The right stays level and the
+/// up holds the world's up in the card's plane, as the bake's views do.
 struct CardFrame {
     right: vec3f,
     up: vec3f,
-    forward: vec3f,
 }
 
-/// The card's frame from the direction toward the eye, `eye`. A direction straight up or down has
-/// no horizontal part, and faces the world's forward.
+/// The card's frame from the unit direction toward the eye, `eye`. A direction straight up or down
+/// has no horizontal part, and turns to the world's forward.
 fn cardFrame(eye: vec3f) -> CardFrame {
     let flat = vec3f(eye.x, 0.0, eye.z);
     let forward = select(vec3f(0.0, 0.0, 1.0), normalize(flat), length(flat) > 1e-4);
-    let up = vec3f(0.0, 1.0, 0.0);
     var frame: CardFrame;
-    frame.right = normalize(cross(up, forward));
-    frame.up = up;
-    frame.forward = forward;
+    frame.right = normalize(cross(vec3f(0.0, 1.0, 0.0), forward));
+    frame.up = cross(eye, frame.right);
     return frame;
 }
 
@@ -126,7 +128,11 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     // The corner's place across the card and up it, in the world. The instance's transform turns
     // it into the local move that lands the corner there, which is its inverse applied to the
     // wanted offset.
-    let wanted = frame.right * (input.position.x * scaleX) + frame.up * (input.position.y * scaleY);
+    // The object's middle stays half its height above the object's lowest point, where the instance
+    // stands.
+    let wanted = frame.right * (input.position.x * scaleX)
+        + frame.up * ((input.position.y - 0.5) * scaleY * material.picture.x)
+        + vec3f(0.0, 0.5 * scaleY, 0.0);
     let columnZ = m[2].xyz;
     // The local point that lands there, less the vertex's own local point: the offset.
     return vec3f(
