@@ -11,6 +11,7 @@ import { runTask } from './run-task';
 import { TaskFailure } from './task-failure';
 import { clearJobTasks, jobAsker, setJobTasks } from './task-host';
 import { moduleKey } from './task-modules';
+import { tasksPending } from './task-pending';
 import { runTaskWithError } from './tasks';
 import type { WasmError } from './wasm';
 
@@ -95,6 +96,23 @@ describe('runTask', () => {
 		runTaskWithError({ name: 'ktx2' }, 1, [], error).catch(() => {});
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		expect(calls).toEqual([1, 3]);
+	});
+
+	test('lowers the count when a task never reaches its worker', async () => {
+		setJobTasks({
+			ports: [jobPort()],
+			running: [0],
+			call: () => {
+				throw new Error('the job worker is gone');
+			},
+			want: jobAsker(1, () => {}),
+		});
+		const failure = await runTaskWithError({ name: 'ktx2' }, 0, [], error).catch(
+			(thrown: unknown) => thrown,
+		);
+		expect((failure as Error).message).toBe('the job worker is gone');
+		// Hold mode waits for this count to reach zero, so a task that never left cannot leave it up.
+		expect(tasksPending()).toBe(0);
 	});
 
 	test('waits for the page to say which job workers run before it sends a task', async () => {

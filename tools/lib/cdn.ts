@@ -111,6 +111,9 @@ export function cdnSourcesHash(root: string): string {
 	addFile(`${ENGINE}/THIRD-PARTY-NOTICES.txt`);
 	for (const name of CDN_ADDONS) {
 		addFolder(`packages/${name}/src`);
+		// The files that an add-on loads by address, such as the terrain builder's WebAssembly.
+		const dist = `packages/${name}/dist`;
+		if (existsSync(join(root, dist))) addFolder(dist);
 		addFile(`packages/${name}/package.json`);
 		const notices = `packages/${name}/THIRD-PARTY-NOTICES.txt`;
 		if (existsSync(join(root, notices))) addFile(notices);
@@ -168,6 +171,8 @@ function copyAddon(root: string, out: string, name: string): void {
 	const from = join(root, 'packages', name);
 	const to = join(out, 'addons', name);
 	cpSync(join(from, 'lib'), join(to, 'lib'), { recursive: true });
+	const dist = join(from, 'dist');
+	if (existsSync(dist)) cpSync(dist, join(to, 'dist'), { recursive: true });
 	for (const path of walkFiles(to, ''))
 		if (path.endsWith('.js')) {
 			const file = join(to, path);

@@ -7,6 +7,10 @@
 // - forty-passes: one run a frame for 40 frames, then a read. The same value as forty-row.
 // - layers: a pass of three layers writes its layer's number into each, and a read of each layer
 //   gives what it wrote.
+// - rows: a 4 by 4 pass writes its row and column into each texel, counted from 1, and a read of
+//   the image's top half gives those rows from the top. The reads skip the image's bottom two
+//   rows, so a region copied from the wrong end of the texture shows. The values sit at a quarter
+//   of full scale, so an 8-bit path keeps them apart.
 // - stopped: five runs, then the pass switches off, and a read keeps the last state.
 // - reset: the state starts again from zero, and a run then reads one.
 // - loss: two runs read two, the page loses the GPU, and one run then reads one.
@@ -50,8 +54,9 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 const FALLBACK = /* wgsl */ `
 fn effect(input: EffectInput) -> vec4f {
     // The state of the run before arrives as the input image. The green and blue channels name the
-    // texel, as the compute shader's do.
-    let cell = floor(input.uv * input.size);
+    // texel, as the compute shader's do. A pass's texture holds its image's bottom row first and
+    // input.uv counts from the image's top, so the row turns to name the same texel.
+    let cell = floor(vec2f(input.uv.x, 1.0 - input.uv.y) * input.size);
     return vec4f(input.color.r + 1.0, cell.x, cell.y, 1.0);
 }
 `;
@@ -106,6 +111,61 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 `;
 
+/** A pass whose red channel names its image row and whose green names its column, from 1. */
+const ROWS = /* wgsl */ `
+struct ComputeBlock {
+    size: vec4f,
+    clock: vec4f,
+    inverseProjection: mat4x4f,
+    u0: vec4f,
+    u1: vec4f,
+    u2: vec4f,
+    u3: vec4f,
+    u4: vec4f,
+    u5: vec4f,
+    u6: vec4f,
+    u7: vec4f,
+    drawn: vec4f,
+    bloom: vec4f,
+}
+
+@group(0) @binding(0) var<uniform> block: ComputeBlock;
+@group(0) @binding(1) var output: texture_storage_2d_array<rgba16float, write>;
+
+@compute @workgroup_size(4, 4)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+    if (id.x >= 4u || id.y >= 4u) { return; }
+    textureStore(output, vec2i(id.xy), 0, vec4f(f32(id.y + 1u), f32(id.x + 1u), 0.0, 4.0) * 0.25);
+}
+`;
+
+/** The fragment form of the row pass: the image's own row and column, from 1. */
+const ROWS_FRAGMENTS = /* wgsl */ `
+fn effect(input: EffectInput) -> vec4f {
+    // The pass's texture holds its image's bottom row first and input.uv counts from the image's
+    // top row, so the texel's row turns to name the same row that the compute form names.
+    let cell = floor(vec2f(input.uv.x, 1.0 - input.uv.y) * input.size);
+    return vec4f(cell.y + 1.0, cell.x + 1.0, 0.0, 4.0) * 0.25;
+}
+`;
+
+/** The pass image on a plane, sampled at the place that the docs give for a pass's texture. */
+const ROWS_SURFACE = /* wgsl */ `
+var field: texture_2d<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    // A pass's texture holds its image's bottom row first, so a material reads its top row at the
+    // top of the plane by sampling the row turned.
+    let image = textureSampleLevel(field, fieldSampler, vec2f(input.uv.x, 1.0 - input.uv.y), 0.0);
+    s.baseColor = vec3f(0.0);
+    s.emissive = image.rgb;
+    s.roughness = 1.0;
+    s.metalness = 0.0;
+    return s;
+}
+`;
+
 /** The fragment form of the layered pass: its layer's number, which the engine gives it. */
 const LAYERS_FRAGMENTS = /* wgsl */ `
 fn effect(input: EffectInput) -> vec4f {
@@ -144,9 +204,11 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 export default defineSketch(({ scene, geometry, materials, textures, render, page }) => {
 	scene.setBackground('#000000');
 	const layered = CASE === 'layers';
+	const shownRows = CASE === 'rows-shown';
+	const rows = CASE === 'rows' || shownRows;
 	const fullscreenKept = CASE === 'fs-kept';
 	const kept = CASE === 'kept' || fullscreenKept;
-	if (kept) {
+	if (kept || shownRows) {
 		scene.setActiveCamera(
 			scene.createOrthographicCamera({ height: 1, position: [0, 0, 2], target: [0, 0, 0] }),
 		);
@@ -171,11 +233,19 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 					kind: 'compute',
 					outputs: { counter: { default: 'black' } },
 				}),
-				wgsl: kept ? CONSTANT : layered ? LAYERS : COMPUTE,
-				fallback: { wgsl: layered ? LAYERS_FRAGMENTS : kept ? CONSTANT_FRAGMENTS : FALLBACK },
+				wgsl: kept ? CONSTANT : rows ? ROWS : layered ? LAYERS : COMPUTE,
+				fallback: {
+					wgsl: kept
+						? CONSTANT_FRAGMENTS
+						: rows
+							? ROWS_FRAGMENTS
+							: layered
+								? LAYERS_FRAGMENTS
+								: FALLBACK,
+				},
 				format: 'rgba16float',
 				size: CASE === 'cost' ? [256, 256] : kept ? [64, 64] : [4, 4],
-				history: !kept && !layered,
+				history: !kept && !layered && !rows,
 				layers: layered ? 3 : 1,
 				// Every case starts without a run, and the sequence below asks for the runs that it counts.
 				steps: 0,
@@ -200,6 +270,18 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 			});
 		}
 		scene.createDirectionalLight({ direction: [0, 0, -1], intensity: 1 });
+	} else if (shownRows) {
+		// The pass image fills the view, sampled the way the docs say a pass's texture is read:
+		// a material shows the image upright, so the top of the screen holds its first row.
+		const material = materials.shader({
+			wgsl: ROWS_SURFACE,
+			textures: { field: shown },
+		});
+		scene.createMesh({
+			mesh: geometry.plane({ width: 1, height: 1 }),
+			material,
+			position: [0, 0, 0],
+		});
 	} else {
 		const material = materials.unlit({ map: shown });
 		scene.createMesh({
@@ -225,14 +307,18 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 		waiters.length = 0;
 	};
 
-	if (kept) {
-		// The page captures the frame while the pass runs, stops it, and captures again: the image and
-		// its coverage must stay.
-		page.onMessage((type) => {
-			if (type !== 'stop') return;
-			render.setPassEnabled(field, false);
-			page.post('stopped');
-		});
+	if (kept || shownRows) {
+		if (kept) {
+			// The page captures the frame while the pass runs, stops it, and captures again: the image
+			// and its coverage must stay.
+			page.onMessage((type) => {
+				if (type !== 'stop') return;
+				render.setPassEnabled(field, false);
+				page.post('stopped');
+			});
+		}
+		// The page reads the drawn frame once the pass has run, so it waits for the sketch to say
+		// that a few frames have drawn it.
 		void (async () => {
 			await wait(3);
 			page.post('running');
@@ -297,6 +383,15 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 			await wait(40);
 			render.setPassSteps(field, 0);
 			values[0] = await read();
+		} else if (CASE === 'rows') {
+			await wait(1);
+			// The image's top two rows, then its bottom two: a copy from the wrong end of the
+			// texture fetches other rows, and a turned region puts them in the other read.
+			const top = await render.readPass(field, { x: 0, y: 0, width: 2, height: 2 });
+			const bottom = await render.readPass(field, { x: 0, y: 2, width: 2, height: 2 });
+			values[0] = top.data[0] as number;
+			texels = [...top.data, ...bottom.data];
+			readFrames = top.frames;
 		} else if (CASE === 'layers') {
 			await wait(1);
 			for (let layer = 0; layer < 3; layer++) values[layer] = await read(layer);
