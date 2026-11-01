@@ -54,6 +54,8 @@ struct Uniforms {
 const WIND_GROUND_HEIGHT: f32 = 2.0;
 /// The distance over which the noise's curl is measured, in noise cells.
 const WIND_CURL_STEP: f32 = 0.02;
+/// How long a gust that a page sends keeps its strength, in seconds, before the air is steady again.
+const WIND_SENT_LIFE: f32 = 8.0;
 /// The height that the grid samples at, where the air moves at its full speed. The grid stores the
 /// air at this height, and a reader outside the grid's box works it out at the same height, so the
 /// two meet at the box's edge.
@@ -79,6 +81,12 @@ struct WindAir {
     swirlScale: f32,
     swirlDrift: f32,
     seed: f32,
+    /// The gust a page sent: its ground place in x and z, its strength in meters a second, and the
+    /// time it was sent. Its strength is zero until a page sends one, and after it fades.
+    sentX: f32,
+    sentZ: f32,
+    sentStrength: f32,
+    sentBorn: f32,
 }
 
 /// The field's settings read from three value vectors: the air, the gust and the swirl.
@@ -96,6 +104,12 @@ fn wind_air(v0: vec4f, v1: vec4f, v2: vec4f) -> WindAir {
     air.swirlScale = v2.y;
     air.swirlDrift = v2.z;
     air.seed = v2.w;
+    // The grid solves a gust that a page sends itself, from the ring of pushes and gusts, so its
+    // readers hold no sent gust here.
+    air.sentX = 0.0;
+    air.sentZ = 0.0;
+    air.sentStrength = 0.0;
+    air.sentBorn = 0.0;
     return air;
 }
 
@@ -115,24 +129,47 @@ fn wind_stream(air: WindAir, p: vec3f) -> f32 {
     return value3(q);
 }
 
+/// The turn that one gust gives the air at a place, in meters a second: a wave of turns that travels
+/// along the heading. The turns are rings about the gust's center and depend only on the distance to
+/// it, so a ring of air turns without piling up.
+fn wind_gust_wave(air: WindAir, center: vec2f, strength: f32, p: vec3f, height: f32) -> vec3f {
+    let g = vec2f(p.x - center.x, p.z - center.y);
+    let distance = length(g) / air.gustRadius;
+    let reach = distance * distance;
+    if (reach >= 9.0) {
+        return vec3f(0.0);
+    }
+    let envelope = exp(-reach) * cos(distance * air.gustWave) * strength * height;
+    return vec3f((g.y / air.gustRadius) * envelope, 0.0, -(g.x / air.gustRadius) * envelope);
+}
+
 /// The wind's steady velocity at a world place, in meters a second: the base wind, the gust that
-/// travels through it and the swirl, without the pushes and gusts that a page sends.
+/// travels through it, the swirl, and the gust that a page sent, which travels from its own place.
+/// A page's pushes reach readers only through the grid.
 fn wind_steady(air: WindAir, p: vec3f) -> vec3f {
     let height = wind_profile(air, p.y);
     let cosHeading = cos(air.heading);
     let sinHeading = sin(air.heading);
     var v = vec3f(cosHeading * air.speed * height, 0.0, sinHeading * air.speed * height);
 
-    // The gust: a wave of turns that travels along the heading. The turns are rings about the
-    // gust's center and depend only on the distance to it, so a ring of air turns without piling up.
     let travel = air.gustSpeed * air.time;
-    let g = vec2f(p.x - cosHeading * travel, p.z - sinHeading * travel);
-    let distance = length(g) / air.gustRadius;
-    let reach = distance * distance;
-    if (reach < 9.0) {
-        let envelope = exp(-reach) * cos(distance * air.gustWave) * air.gustStrength * height;
-        v.x += (g.y / air.gustRadius) * envelope;
-        v.z -= (g.x / air.gustRadius) * envelope;
+    v += wind_gust_wave(air, vec2f(cosHeading * travel, sinHeading * travel), air.gustStrength, p, height);
+
+    // The gust that a page sent: the same wave, from the place it was sent, carried along the
+    // heading and fading over its life so the air comes back to its steady state.
+    if (air.sentStrength != 0.0) {
+        let age = air.time - air.sentBorn;
+        if (age >= 0.0 && age < WIND_SENT_LIFE) {
+            let sentTravel = air.gustSpeed * age;
+            let wane = 1.0 - age / WIND_SENT_LIFE;
+            v += wind_gust_wave(
+                air,
+                vec2f(air.sentX + cosHeading * sentTravel, air.sentZ + sinHeading * sentTravel),
+                air.sentStrength * wane,
+                p,
+                height,
+            );
+        }
     }
 
     // The swirl: the curl of one stream function in the ground plane. The function varies slowly,
@@ -151,8 +188,9 @@ fn wind_steady(air: WindAir, p: vec3f) -> vec3f {
 
 // <wind-sample>
 /// The air's steady settings as a reader holds them: the base wind in the first vector, the gust in
-/// the second and the swirl in the third, with the time that the reader's own frame gives.
-fn wind_reading(base: vec4f, gust: vec4f, swirl: vec4f, time: f32) -> WindAir {
+/// the second, the swirl in the third and the gust that a page sent in the fourth, with the time
+/// that the reader's own frame gives.
+fn wind_reading(base: vec4f, gust: vec4f, swirl: vec4f, sent: vec4f, time: f32) -> WindAir {
     var air: WindAir;
     air.time = time;
     air.speed = base.x;
@@ -166,6 +204,10 @@ fn wind_reading(base: vec4f, gust: vec4f, swirl: vec4f, time: f32) -> WindAir {
     air.swirl = swirl.x;
     air.swirlScale = swirl.y;
     air.swirlDrift = swirl.z;
+    air.sentX = sent.x;
+    air.sentZ = sent.y;
+    air.sentStrength = sent.z;
+    air.sentBorn = sent.w;
     return air;
 }
 
@@ -203,6 +245,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
         textureLoad(airSettings, vec2i(0, 0), 0),
         textureLoad(airSettings, vec2i(1, 0), 0),
         textureLoad(airSettings, vec2i(2, 0), 0),
+        textureLoad(airSettings, vec2i(3, 0), 0),
         frame.time,
     );
     let air = wind_sample(
@@ -343,6 +386,9 @@ export function createGrass(
 	clear: (x: number, z: number) => boolean,
 	wind: WindField,
 ): Grass {
+	const airSettings = readingTexture(textures, wind.air);
+	/** The sent gust's born time that the settings texture holds, so one gust costs one upload. */
+	let sentBorn = Number.NaN;
 	const material = materials.shader({
 		wgsl,
 		color: '#5f9a2a',
@@ -351,7 +397,7 @@ export function createGrass(
 		specularIntensity: 0.4,
 		doubleSided: true,
 		contactShadows: false,
-		textures: { wind: wind.texture, airSettings: readingTexture(textures, wind.air) },
+		textures: { wind: wind.texture, airSettings },
 		uniforms: {
 			sway: 0.12,
 			windBox: wind.size,
@@ -416,15 +462,27 @@ export function createGrass(
 		},
 		setWindLayer(field) {
 			material.setUniform('windLayer', field.texture.layer);
+			// A gust that a page sends travels through the steady field, which the settings carry. The
+			// texels go up when a gust is sent, not once a frame.
+			if (field.air.sent[3] !== sentBorn) {
+				sentBorn = field.air.sent[3];
+				airSettings.update(readingData(field.air));
+			}
 		},
 	};
 }
 
-/** The texture that holds the field's steady settings, three texels of four numbers each. */
-function readingTexture(textures: Textures, air: WindField['air']): Texture {
-	const data = new Float32Array(12);
+/** The field's settings as the texture holds them: the air, the gust, the swirl and the sent gust. */
+function readingData(air: WindField['air']): Float32Array {
+	const data = new Float32Array(16);
 	data.set(air.base.slice(0, 4), 0);
 	data.set(air.gust.slice(0, 4), 4);
 	data.set(air.swirl.slice(0, 4), 8);
-	return textures.fromData({ width: 3, height: 1, format: 'rgba16float', data });
+	data.set(air.sent.slice(0, 4), 12);
+	return data;
+}
+
+/** The texture that holds the field's settings: four texels of four numbers each. */
+function readingTexture(textures: Textures, air: WindField['air']): Texture {
+	return textures.fromData({ width: 4, height: 1, format: 'rgba16float', data: readingData(air) });
 }
