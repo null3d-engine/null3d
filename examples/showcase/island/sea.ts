@@ -297,7 +297,7 @@ export function createSea(ctx: SketchContext): { update(): void } {
 		ripple: 0.45,
 		// The reflection is soft on rippled water, so a coarser one shows no less. It draws every frame on
 		// every preset: a crisp mast steps visibly at a slower cadence, and a pass that switches on and off
-		// makes the render graph's targets again each time, which costs more than the draw it saves.
+		// makes the render graph's targets again each time.
 		reflectionScale: 0.5,
 		layers: 1,
 		reflectionEvery: { low: 1, medium: 1, high: 1, ultra: 1 },
