@@ -300,6 +300,8 @@ export function createSea(ctx: SketchContext): { update(): void } {
 		reflectionScale: 0.5,
 		layers: 1,
 		reflectionEvery: { high: 1, ultra: 1 },
+		// The route's camera always moves, and an old reflection lags behind the boats that it mirrors.
+		reflectionFollowsBudget: false,
 		softness: 2.5,
 		colorAlongView: 1,
 		material: {
