@@ -1204,11 +1204,15 @@ fn surface(input: SurfaceInput) -> Surface {
     // The sea's level is 0, in the island's plan.
     let wet = 1.0 - smoothstep(-0.6, 0.25, input.worldPosition.y);
     s.baseColor *= mix(1.0, 0.16, wet);
+    // No stone stands under the surface, where its underside would show through thin water as a bright ring.
+    s.alpha = step(-0.3, input.worldPosition.y);
     return s;
 }
 `,
 		vertexColors: true,
 		roughness: 1,
+		alphaMode: 'mask',
+		alphaCutoff: 0.5,
 	});
 }
 
