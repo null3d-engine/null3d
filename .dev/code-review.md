@@ -45,10 +45,14 @@ array of two layers, one for each band, at the layer that it draws, and writes o
 engine's layered fallback test (`compute-state`, the `layers` case) draws a pass without textures,
 so nothing else in the suite covers that shape.
 
-The fix needs a test that binds a known two-layer texture as a fallback pass's map and reads each
-layer back against its source, through a second pass. That names whether the map's binding, its
-layer, or the texture view differs on that path.
-`tests/image/ocean-waves.spec.ts` marks the WebGL2 case as an expected failure until then.
+The readings above went through `render.readPass`. [D-271](decisions/D-271-a-fallback-pass-writes-the-image.md)
+then found that a read on WebGL2 fetched rows from the other end of the target, and its record names
+this ocean's read at row 6 against row 118. So the difference and the copy-chain probe may both be
+that read, and neither says the map's binding is at fault. The case must be re-run against the
+merged engine. If WebGL2 then agrees, the expected-failure line comes off and this finding closes;
+if it does not, the test that binds a known two-layer texture as a fallback pass's map and reads
+each layer back, through a second pass, names whether the binding, the layer or the view differs.
+`tests/image/ocean-waves.spec.ts` marks the WebGL2 case as an expected failure until that run.
 
 ## A read of a compute pass fetched the mirror on WebGL2 (M3-V13)
 

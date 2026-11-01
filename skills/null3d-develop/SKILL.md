@@ -40,7 +40,7 @@ creates the engine           shared typed arrays                 never runs your
 - Scene objects are small wrappers around 30-bit integer handles. Change them with setters such as `setPosition`; never assign properties like `mesh.position.x = 1`. (`concepts/handles`, `api/objects`)
 - For many objects, write typed arrays directly: instance batches and dynamic objects. This is where null3D gets its speed. (`concepts/instances`)
 - Objects are static by default: they cost nothing per frame until a setter changes them. Objects created with `dynamic: true` are recomputed every frame and may be written through arrays. (`concepts/static-dynamic`)
-- The engine renders every frame by itself. Sketch code has no render call and no `requestAnimationFrame`; per-frame logic goes in `onUpdate(dt)`.
+- The engine renders every frame. Sketch code has no render call and no `requestAnimationFrame`; per-frame logic goes in `onUpdate(dt)`.
 - The same code runs on WebGPU and WebGL2. The page's `engine.capabilities` reports optional features to the sketch; never check browser or GPU names. (`concepts/backends`)
 
 A complete minimal project:

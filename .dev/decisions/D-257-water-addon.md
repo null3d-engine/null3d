@@ -169,8 +169,8 @@ meshes. Its texels are 0.25 m, and it covers each overlap with a margin of about
   back over 2 m. The two meshes then lie in one plane, so they agree on the texel of each pixel.
 - The vertices take the flatness in their first texture coordinate, beside the body's number, so
   the vertex stage reads no texture. With the map read in the vertex stage too, the largest WebGL2
-  shader build was 56.1 KB after Brotli, past the 56 KB budget. Without it, the build is 55.9 KB,
-  against 54.9 KB before the junction.
+  shader build was 56.1 KB after Brotli, past the figure that the budget then held. Without it, the
+  build is 55.9 KB, against 54.9 KB before the junction.
 - `surfaceHeight` and `currentAt` follow the same owner, the same mix and the same flat band.
 
 `packages/water/src/junction.test.ts` lays out the demo's river and lake. It proves that each point
@@ -194,8 +194,10 @@ GPU paths, without work on the page's thread?
 ### Rule
 
 - The compute hook fills the heights in the frame that the material reads them, and the same chain
-  has a fragment form for WebGL2. The compute form draws the sea; the fragment form's map binding is
-  an open fault, so its field differs until that is fixed.
+  has a fragment form for WebGL2. The compute form draws the sea. The fragment form's field differed
+  from the compute form's when this branch measured it, through a read that WebGL2 later fixed
+  ([D-271](D-271-a-fallback-pass-writes-the-image.md)), so the comparison is owed against the
+  merged engine.
 - The add-on owns the ocean as it owns the river (D-173).
 - A pass may not read its own texture. WebGL2 draws a fragment form one texel for each pixel. So a
   stage that each pixel computes alone is the form that both paths share.
@@ -208,21 +210,28 @@ estimate is about 0.5 ms for three bands.
 
 The browser test reads each band's heights back and compares them with the transform on the page's
 thread. On WebGPU the worst texel of the read square differs by 0.004 m, and in compatibility mode
-by 0.004 m, of a field of 0.73 m. On WebGL2 it differs by 0.60 m, and the review holds that open.
+by 0.004 m, of a field of 0.73 m. On WebGL2 it differed by 0.60 m when this branch measured it. That
+reading went through `render.readPass`, which on WebGL2 returned rows from the other end of the
+target; [D-271](D-271-a-fallback-pass-writes-the-image.md) found that fault, and its record names
+this ocean's read. The comparison against the merged engine is owed, and `ocean-waves` keeps WebGL2
+marked as an expected failure until it runs.
 
-The transform's own cost does not separate from a frame of 4 to 5 ms by the effect page's on-and-off
-difference. Over one quiet run of three bands at 128 squared, the difference ranged from -0.62 to
-0.54 ms on WebGPU, and the same work at the four presets spread the same way. So that method does
-not resolve the cost. `ocean-cost.spec.ts` keeps the instrument, gated by `NULL3D_OCEAN_COST`.
+The transform's own cost is unmeasured. The effect page's on-and-off difference cannot resolve it:
+over one quiet run of three bands at 128 squared, the difference ranged from -0.62 to 0.54 ms on
+WebGPU, and the same work at the four presets spread the same way. `ocean-cost.spec.ts` keeps the
+instrument, gated by `NULL3D_OCEAN_COST`, and the pass timer reports each of the chain's fifteen
+passes apart.
 
-The frame rates that each state gives, from `ocean-rate.spec.ts` at 1920 by 1080 on the Low preset,
-put the WebGL2 fallback out of reach. With the ocean on, the page draws 1.21 frames a second; with
-its transform off, 6.32; and with the transform on but the surface hidden, 1.20. The simulation is
-therefore 675 ms of the 833 ms frame, and the surface draw adds nothing measurable.
+The first rate runs measured the page while the reflection switched itself off every other frame.
+At 1920 by 1080 on Low the ocean drew 1.21 frames a second, and a 64 squared grid gave 1.45.
+[D-285](D-285-a-pass-carries-its-cadence.md) then showed that the switch recompiled the render graph
+every frame: with the pass carrying its cadence, the same page and the same draws held 60 frames a
+second in all three states. So the figures below measure the recompile, not the transform, and a
+quarter of the pixels taking away 18 per cent of the cost fits a fixed per-frame cost.
 
-The options at that size, on the assumption that the cost follows the pixels:
+The switched page read these, with the first column as its on-and-off difference:
 
-| Option | Transform | Frame | Rate |
+| Option | Difference | Frame | Rate |
 | --- | --- | --- | --- |
 | Three bands at 128 squared, as it stands | 675 ms | 833 ms | 1.2 fps |
 | Two bands | 450 ms | 608 ms | 1.6 fps |
@@ -232,20 +241,9 @@ The options at that size, on the assumption that the cost follows the pixels:
 | A 16 squared grid | 11 ms | 169 ms | 5.9 fps |
 | No simulation, the analytic waves | 0 | 158 ms | 6.3 fps |
 
-The grid rows assume that the cost follows the pixels, which was the first reading. The 64 squared
-run disproved it. Before that run, the two readings predicted this. At 64 squared the chain draws 26
-times rather than 30. A cost that follows the pixels therefore predicts 675 ms times a quarter and
-26/30: 146 ms of transform, a 304 ms frame, 3.3 frames a second. A cost that follows the draws
-predicts the same 675 ms times 26/30: 585 ms of transform, a 743 ms frame, 1.35 frames a second.
-
-The run used the same page and tier at 1920 by 1080 on Low, with a 20 s warm-up and two 4 s windows
-for each state. At 64 squared it gave 1.45 frames a second with the ocean (691.6 ms, windows 700.0
-and 683.3), 7.50 without the transform (133.3 ms, both windows), and 1.46 with the simulation alone
-(683.3 ms, both windows). The transform is 550 ms against 675 ms at 128 squared. A quarter of the
-pixels took away 18 per cent of the cost, not 75, so the run matches the per-draw prediction and not
-the per-pixel one. A draw's fixed cost is about 21 of its 22.5 ms, and its pixels about 2 ms at 128
-squared. The passes and the bands, not the grid, are the lever, and the table's grid rows are the
-reading that this run rules out.
+The rows assume that the difference follows the pixels, which the 64 squared run already
+contradicted. Neither that run nor these figures measures the transform, so the bands and the grid
+are unmeasured as levers. The cost per preset is owed before either is chosen.
 
 ### Decision
 
@@ -282,23 +280,28 @@ vertex's world place is the origin with its place in the mesh.
   after the read buffers, and a unit test in each builder refuses their meeting.
 - The add-on's own page draws the sea on the three GPU paths, and a browser test reads each band's
   heights back and compares them with the transform on the page's thread.
-- The WebGL2 fallback cannot draw the sea at a usable rate: its simulation is 675 ms of an 833 ms
-  frame. The table in the data gives what fewer bands, a smaller grid or the analytic waves would
-  cost. That choice is the owner's.
-- The WebGL2 fragment form draws a sea that differs from the compute form by 0.60 m of height. Its
-  stage, size, layer, tile and texel all read right, and a chain that copies its map returns a field
-  five times smaller than the map gives, so the map's binding is what differs. The review holds that
-  open. `ocean-waves` marks that path as an expected failure until then, and the demo draws the two
-  paths that draw one sea.
+- The WebGL2 page's first rates measured the frame's recompile, not the transform
+  ([D-285](D-285-a-pass-carries-its-cadence.md)). With the pass carrying its cadence, the same page
+  holds 60 frames a second, so the transform's cost per path and preset is owed rather than known.
+  The data's table keeps the switched page's figures as the reading that the cadence replaces.
+- The WebGL2 heights differed from the compute form by 0.60 m when this branch measured them, and
+  the demo draws only the two paths that drew one sea. The readings went through `render.readPass`,
+  which on WebGL2 returned rows from the other end of the target
+  ([D-271](D-271-a-fallback-pass-writes-the-image.md)); that record names this ocean's read. The
+  comparison is owed against the merged engine, and `ocean-waves` marks that path as an expected
+  failure until it runs.
 
 ## Consequences
 
-- The add-on's largest material sets are over D-14's first-use shader budget of 56 KB: the water's
-  79.9 KB after Brotli and the ocean's 74.8 KB. The growth past the 55.9 KB recorded here earlier
-  is the builds that a material naming its surface alpha compiles for alpha to coverage, the alpha
-  hash and a masked shadow and motion, which the water's soft shore names (`681d70cea`). The
-  add-on check warns and does not fail, by the owner's ruling that an add-on's size is a warning
-  ([D-225](D-225-addon-listing-check.md)).
+- The add-on's largest material sets are over D-14's first-use shader figure of 58 KB. The water's
+  is 79.9 KB after Brotli; the landing head without this branch measures 79.5 KB, so the branch
+  adds at most 0.6 KB. The ocean's was 74.8 KB as this branch measured it, before the landing's
+  shader keying changed the build. The growth past the 55.9 KB recorded here earlier is the builds
+  that a material naming its surface alpha compiles for alpha to coverage, the alpha hash and a
+  masked shadow and motion, which the water's soft shore names (`681d70cea`). The add-on check
+  warns and does not fail, by the owner's ruling that an add-on's size is a warning
+  ([D-225](D-225-addon-listing-check.md)). The ocean's figure after the keying change is owed, and
+  the check measures it with `--skip-browser` once the WebAssembly core is built.
 - A custom effect that draws its own pass keeps no pieces in its module, because they never reach a
   host. The underwater effect's pieces would be 93 KB of the add-on's entry. D-225 gives the rule.
 - The Creek's pictures draw the add-on, as the add-on's demo does. The Creek keeps the columns and
