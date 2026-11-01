@@ -2170,6 +2170,9 @@ const SKYWAY_COSTS = [
 	{ name: 'no-ao', switches: ['off=ao'] },
 	{ name: 'no-towers', switches: ['without=towers'] },
 	{ name: 'no-lamps', switches: ['without=lamps'] },
+	// The same page as the first one, so a sweep whose device warms up over its pages shows how much
+	// of a difference a later page's figure carries on that account alone.
+	{ name: 'base-again', switches: [] as readonly string[] },
 ] as const;
 
 /**
@@ -2180,7 +2183,7 @@ const SKYWAY_COSTS = [
  * on a phone.
  */
 export function skywayCostPlan(): PlanItem<Check>[] {
-	return SKYWAY_COSTS.map(({ name, switches }) =>
+	const items = SKYWAY_COSTS.map(({ name, switches }) =>
 		pageItem(
 			`skyway-cost-${name}`,
 			'demo-device',
@@ -2199,6 +2202,27 @@ export function skywayCostPlan(): PlanItem<Check>[] {
 			},
 		),
 	);
+	// The whole scene again on the other GPU path, at the end of the session, so a device with both
+	// paths says what its default one draws when warm. A device without WebGPU skips the page.
+	items.push(
+		pageItem(
+			'skyway-cost-base-webgpu',
+			'demo-device',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: [
+					'gpu=webgpu',
+					'demo=skyway',
+					'preset=low',
+					'governor=off',
+					'render-scale=1',
+					`seconds=${SKYWAY_SECONDS}`,
+				],
+				timeoutSeconds: SKYWAY_TIMEOUT_SECONDS,
+			},
+		),
+	);
+	return items;
 }
 
 /** The showcase demos that the demos plan measures. */
