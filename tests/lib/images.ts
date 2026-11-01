@@ -106,9 +106,11 @@ export const SKETCH_SIZE = [320, 180] as const;
 /**
  * How long a page may take to publish its image, unless its entry gives another time. CI's software
  * GPU compiles a custom shader's pipelines for WebGPU on its CPU: a page that takes 18.5 seconds on
- * a passing run can give no result within 30 on a slower runner.
+ * a passing run can give no result within 30 on a slower runner. The sky's volumetric tier draws at
+ * High, where these pages draw, and a software GPU pays for every frame of it, so a heavy page
+ * needs about twice the time that it took before the tier.
  */
-const TIMEOUT_SECONDS = 60;
+const TIMEOUT_SECONDS = 120;
 
 /** The page that draws each sketch test. */
 export const IMAGE_PAGE = '/tests/pages/image.html';
