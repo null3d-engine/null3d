@@ -19,7 +19,16 @@ import {
 	sandAt,
 	VILLAGES,
 } from './island';
-import { HOUSE_KINDS } from './kit';
+import {
+	type Build,
+	box,
+	church,
+	GARDEN_KINDS,
+	HOUSE_KINDS,
+	keep,
+	lighthouse,
+	pavilion,
+} from './kit';
 import { GROUND_ERROR } from './land';
 import {
 	circleRadius,
@@ -215,6 +224,106 @@ describe('the stored plan', () => {
 
 	it('is the plan that the fingerprint names', () => {
 		expect(planFingerprint()).toBe(PLAN_FINGERPRINT);
+	});
+});
+
+/** The area two convex polygons share, each listed counterclockwise. */
+function sharedArea(a: readonly number[][], b: readonly number[][]): number {
+	let kept = a as number[][];
+	b.forEach((from, i) => {
+		const to = b[(i + 1) % b.length] as number[];
+		const side = (p: number[]) =>
+			(to[0]! - from[0]!) * (p[1]! - from[1]!) - (to[1]! - from[1]!) * (p[0]! - from[0]!);
+		const next: number[][] = [];
+		kept.forEach((p, k) => {
+			const q = kept[(k + 1) % kept.length] as number[];
+			const [sp, sq] = [side(p), side(q)];
+			if (sp >= 0) next.push(p);
+			if (sp * sq < 0) {
+				const t = sp / (sp - sq);
+				next.push([p[0]! + (q[0]! - p[0]!) * t, p[1]! + (q[1]! - p[1]!) * t]);
+			}
+		});
+		kept = next;
+	});
+	return Math.abs(
+		kept.reduce((sum, p, k) => {
+			const q = kept[(k + 1) % kept.length] as number[];
+			return sum + p[0]! * q[1]! - q[0]! * p[1]!;
+		}, 0) / 2,
+	);
+}
+
+/** The most area, in square meters, over which two faces of different colors lie at one depth. */
+function largestFight({ positions, colors, uvs, indices }: Build): number {
+	const planes = new Map<string, { color: string; corners: number[][] }[]>();
+	for (let t = 0; t < indices.length; t += 3) {
+		const [a, b, c] = [0, 1, 2].map((k) => {
+			const v = indices[t + k] as number;
+			return [positions[v * 3]!, positions[v * 3 + 1]!, positions[v * 3 + 2]!];
+		}) as [number[], number[], number[]];
+		const [u, v] = [a.map((n, k) => b[k]! - n), a.map((n, k) => c[k]! - n)];
+		const cross = [
+			u[1]! * v[2]! - u[2]! * v[1]!,
+			u[2]! * v[0]! - u[0]! * v[2]!,
+			u[0]! * v[1]! - u[1]! * v[0]!,
+		];
+		const size = Math.hypot(...cross);
+		if (size < 1e-6) continue;
+		const normal = cross.map((n) => n / size);
+		const reach = normal[0]! * a[0]! + normal[1]! * a[1]! + normal[2]! * a[2]!;
+		const key = `${normal.map((n) => Math.round(n * 100))}|${Math.round(reach * 200)}`;
+		// The face lies flat on the two axes that its normal leans on least.
+		const flat = Math.abs(normal[0]!) > 0.9 ? [1, 2] : Math.abs(normal[2]!) > 0.9 ? [0, 1] : [0, 2];
+		const corners = [a, b, c].map((p) => [p[flat[0]!]!, p[flat[1]!]!]);
+		const [p, q, r] = corners as [number[], number[], number[]];
+		if ((q[0]! - p[0]!) * (r[1]! - p[1]!) < (q[1]! - p[1]!) * (r[0]! - p[0]!)) corners.reverse();
+		const at = indices[t] as number;
+		const color = [
+			colors[at * 3],
+			colors[at * 3 + 1],
+			colors[at * 3 + 2],
+			uvs[at * 2] || uvs[at * 2 + 1] ? 'mapped' : '',
+		].join();
+		const plane = planes.get(key) ?? [];
+		plane.push({ color, corners });
+		planes.set(key, plane);
+	}
+	let largest = 0;
+	for (const faces of planes.values())
+		faces.forEach((face, i) => {
+			for (const other of faces.slice(i + 1))
+				if (other.color !== face.color)
+					largest = Math.max(largest, sharedArea(face.corners, other.corners));
+		});
+	return largest;
+}
+
+describe('the models', () => {
+	it('keep faces of different colors apart in depth, which would flicker as the camera moves', () => {
+		const { stone } = church();
+		const builds: Record<string, Build> = {
+			keep: keep(),
+			lighthouse: lighthouse(),
+			church: stone,
+			pavilion: pavilion().stone,
+		};
+		HOUSE_KINDS.forEach((kind, k) => {
+			builds[`house ${k}`] = kind.walls;
+			builds[`far house ${k}`] = kind.farWalls;
+		});
+		GARDEN_KINDS.forEach((kind, k) => {
+			builds[`garden ${k}`] = kind.mesh;
+		});
+		for (const [name, mesh] of Object.entries(builds))
+			expect(largestFight(mesh), name).toBeLessThan(0.25);
+	});
+
+	it('measures a fight: two boxes that share a top', () => {
+		const mesh = { positions: [], colors: [], uvs: [], indices: [], mapped: false } as Build;
+		box(mesh, 0, 0, 0, 2, 1, 2, [1, 1, 1]);
+		box(mesh, 0, 0, 0, 2, 1, 2, [0, 0, 0]);
+		expect(largestFight(mesh)).toBeGreaterThan(0.25);
 	});
 });
 
