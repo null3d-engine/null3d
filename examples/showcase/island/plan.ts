@@ -469,6 +469,36 @@ const inView = (x: number, z: number) =>
 
 /** The most trees that the plan places, for the highest preset. */
 export const MOST_TREES = 60000;
+/** The slope past which the golf course's ground grows scrub, as rise over run. */
+const BANK_SCRUB = 0.26;
+/** How far a tree's trunk stands from a bunker's edge, in meters. */
+const BUNKER_CLEAR = 4;
+
+/** The places that a hole may hold a bunker: x, z, radius and turn. */
+export function bunkerSpots(
+	stations: readonly (readonly [number, number, number])[],
+): readonly (readonly [number, number, number, number])[] {
+	const end = stations[stations.length - 1] as readonly [number, number, number];
+	const first = stations[0] as readonly [number, number, number];
+	const mid = stations[Math.floor(stations.length / 2)] as readonly [number, number, number];
+	const [gx, gz] = [GOLF.x + end[0], GOLF.z + end[1]];
+	const [dx, dz] = [end[0] - first[0], end[1] - first[1]];
+	const length = hypot(dx, dz);
+	const [nx, nz] = [-dz / length, dx / length];
+	return [
+		[gx + nx * 21, gz + nz * 21, 7.5, 0.4],
+		[gx - nx * 20 - (dx / length) * 6, gz - nz * 20 - (dz / length) * 6, 8.5, 1.1],
+		[GOLF.x + mid[0] + nx * (mid[2] + 6), GOLF.z + mid[1] + nz * (mid[2] + 6), 9, 2],
+		[GOLF.x + mid[0] - nx * (mid[2] + 6) + 16, GOLF.z + mid[1] - nz * (mid[2] + 6), 7.5, 0.7],
+	];
+}
+
+/** Whether a place lies in or beside a bunker, where no tree stands. */
+function inBunker(x: number, z: number): boolean {
+	return HOLES.some((stations) =>
+		bunkerSpots(stations).some(([bx, bz, r]) => hypot(x - bx, z - bz) < r * 1.4 + BUNKER_CLEAR),
+	);
+}
 
 /** The trees. A preset draws a share of each. */
 export const TREE_SPOTS: readonly TreeSpot[] = (() => {
@@ -489,7 +519,7 @@ export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 	const add = (kind: number, x: number, z: number, gap: number): boolean => {
 		if (spots.length >= MOST_TREES || open(x, z)) return false;
 		if (kind !== OLIVE && inView(x, z)) return false;
-		if (read(edgeGrid, x, z) < 1.1 || inPlot(x, z)) return false;
+		if (read(edgeGrid, x, z) < 1.1 || inPlot(x, z) || inBunker(x, z)) return false;
 		const y = groundHeight(x, z);
 		if (y < 2 || slopeAt(x, z) > 5) return false;
 		for (let i = -1; i <= 1; i++)
@@ -807,6 +837,16 @@ export const SHRUBS: readonly ShrubSpot[] = (() => {
 			add(x, z, 0.6 + next() * 0.9, false);
 		}
 	}
+	// Scrub holds the golf course's bank, where no turf lies.
+	for (let i = 0; i <= 80; i++)
+		for (let j = 0; j <= 80; j++) {
+			const [x, z] = [
+				GOLF.x - 200 + i * 5 + (next() - 0.5) * 4,
+				GOLF.z - 200 + j * 5 + (next() - 0.5) * 4,
+			];
+			const scale = 0.9 + next() * 1.1;
+			if (golfShare(x, z) > 0.02 && slopeAt(x, z) > BANK_SCRUB) add(x, z, scale, false);
+		}
 	// The town's yards fill with shrubs between the houses.
 	for (let i = -70; i <= 40; i++)
 		for (let j = 12; j <= 56; j++) {
@@ -850,7 +890,7 @@ export const SHRUBS: readonly ShrubSpot[] = (() => {
 })();
 
 /** The fingerprint of the stored plan, which the plan tests and the browser test both hold it to. */
-export const PLAN_FINGERPRINT = 3094012562;
+export const PLAN_FINGERPRINT = 403048988;
 
 /**
  * A number that changes with any road, house, tree, wall or sample of the ground, to the millimeter. A
