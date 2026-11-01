@@ -92,20 +92,32 @@ export function lineMap(id, code) {
 }
 
 /**
+ * The variable that copies the shader files into the build's folders when the operating system
+ * refuses a hard link across two volumes. A container whose temporary folder sits on `tmpfs` cannot
+ * move that folder to the shader cache's volume, so linking is impossible there and the copy is the
+ * only way to build. Setting the variable to `1` takes that way, which writes the whole set into
+ * each folder and costs its space and time; a machine that can set `TMPDIR` should do that instead.
+ */
+export const FORCE_COPY_ENV = 'NULL3D_SHADER_COPY';
+
+/**
  * What to do when a hard link from `source` to `target` fails: leave the target as it is, copy the
  * file, or refuse. A link across two volumes copies the file instead, and the set is gigabytes in
- * each folder, so that case refuses and names the setting that puts the build beside the set.
+ * each folder, so that case refuses unless the environment asks for the copy, which is the only way
+ * to build where the temporary folder cannot move. The message names both ways out.
  *
  * @param {string | undefined} code The error's code, such as `EXDEV`.
  * @param {string} source
  * @param {string} target
+ * @param {boolean} [forceCopy] Whether the environment asks for a copy rather than a refusal.
  * @returns {{ skip: true } | { copy: true } | { problem: string }}
  */
-export function linkFailure(code, source, target) {
+export function linkFailure(code, source, target, forceCopy = false) {
 	if (code === 'EEXIST') return { skip: true };
+	if (forceCopy) return { copy: true };
 	if (code === 'EXDEV')
 		return {
-			problem: `the shader files in ${dirname(source)} and the page build in ${dirname(target)} are on different volumes, so linking them would copy the whole set. Set TMPDIR to a folder on the same volume as the shader cache, and run again`,
+			problem: `the shader files in ${dirname(source)} and the page build in ${dirname(target)} are on different volumes, so linking them would copy the whole set. Set TMPDIR to a folder on the same volume as the shader cache, or set ${FORCE_COPY_ENV}=1 to copy the set instead, which writes it into each folder, and run again`,
 		};
 	return { copy: true };
 }
@@ -116,13 +128,14 @@ export function linkFailure(code, source, target) {
  *
  * @param {string} source
  * @param {string} target
+ * @param {boolean} forceCopy Whether the environment asks for a copy when a link fails.
  */
-function linkOrCopy(source, target) {
+function linkOrCopy(source, target, forceCopy) {
 	try {
 		linkSync(source, target);
 	} catch (error) {
 		const code = /** @type {NodeJS.ErrnoException} */ (error).code;
-		const action = linkFailure(code, source, target);
+		const action = linkFailure(code, source, target, forceCopy);
 		if ('problem' in action) throw new Error(action.problem);
 		if ('skip' in action) return;
 		copyFileSync(source, target);
@@ -143,6 +156,7 @@ function linkOrCopy(source, target) {
  * @param {ReadonlyMap<string, string>} stamps The set's stamp, by folder.
  */
 export function linkShaderFiles(folders, places, out, named, stamps) {
+	const forceCopy = process.env[FORCE_COPY_ENV] === '1';
 	for (const folder of folders) {
 		const stamp = stamps.get(folder) ?? '';
 		for (const name of readdirSync(folder)) {
@@ -153,7 +167,7 @@ export function linkShaderFiles(folders, places, out, named, stamps) {
 				const file = join(out, place, target);
 				if (existsSync(file)) continue;
 				mkdirSync(dirname(file), { recursive: true });
-				linkOrCopy(path, file);
+				linkOrCopy(path, file, forceCopy);
 			}
 		}
 	}

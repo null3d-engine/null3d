@@ -3,11 +3,19 @@
 // scripts that name them. Each name carries the set's stamp, so a cached name never answers for
 // another set. These checks hold both halves to that.
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	linkSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'vite';
 import {
+	FORCE_COPY_ENV,
 	lineMap,
 	linkFailure,
 	linkShaderFiles,
@@ -114,17 +122,72 @@ describe('lineMap', () => {
 });
 
 describe('linkFailure', () => {
-	test('refuses a link across two volumes, which would copy the whole set', () => {
+	test('refuses a link across two volumes, which would copy the whole set, and names both ways out', () => {
 		const action = linkFailure('EXDEV', '/cache/shaders-wgsl.js', '/build/assets/shaders-a1b2.js');
-		expect('problem' in action ? action.problem : '').toContain('/cache');
-		expect('problem' in action ? action.problem : '').toContain('/build/assets');
-		expect('problem' in action ? action.problem : '').toContain('TMPDIR');
+		const problem = 'problem' in action ? action.problem : '';
+		expect(problem).toContain('/cache');
+		expect(problem).toContain('/build/assets');
+		expect(problem).toContain('TMPDIR');
+		expect(problem).toContain(`${FORCE_COPY_ENV}=1`);
 	});
 
 	test('leaves a file in place, and copies one whose link failed for another reason', () => {
 		expect(linkFailure('EEXIST', 'a', 'b')).toEqual({ skip: true });
 		expect(linkFailure('EPERM', 'a', 'b')).toEqual({ copy: true });
 	});
+
+	test('copies a cross-volume link when the environment forces it', () => {
+		expect(linkFailure('EXDEV', 'a', 'b', true)).toEqual({ copy: true });
+		// A file already in place is not copied again, whatever the environment asks.
+		expect(linkFailure('EEXIST', 'a', 'b', true)).toEqual({ skip: true });
+	});
+});
+
+/**
+ * A shader set's folder and a build folder on two devices, when this machine has a second one, so
+ * that a hard link between them fails with the cross-volume error. `/dev/shm` is a second device on
+ * Linux; a machine without one cannot build the case, and the check that uses this skips.
+ *
+ * @returns {{ source: string, out: string } | undefined}
+ */
+function acrossVolumes() {
+	if (!existsSync('/dev/shm')) return undefined;
+	const source = mkdtempSync(join('/dev/shm', 'null3d-shader-files-'));
+	const out = mkdtempSync(join(tmpdir(), 'null3d-shader-files-'));
+	writeFileSync(join(source, 'shaders-wgsl.js'), 'export {};\n');
+	try {
+		linkSync(join(source, 'shaders-wgsl.js'), join(out, 'probe.js'));
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === 'EXDEV') return { source, out };
+	}
+	return undefined;
+}
+
+const crossVolume = acrossVolumes();
+
+describe('a link across two volumes', () => {
+	test.skipIf(crossVolume === undefined)(
+		'refuses at first, then copies the set when the environment forces it',
+		() => {
+			if (crossVolume === undefined) return;
+			const { source, out } = crossVolume;
+			const stamps = new Map([[source, 'a1b2c3d4']]);
+			const named = new Set([join(source, 'shaders-wgsl.js')]);
+			const before = process.env[FORCE_COPY_ENV];
+			try {
+				delete process.env[FORCE_COPY_ENV];
+				expect(() => linkShaderFiles([source], ['assets'], out, named, stamps)).toThrow(
+					FORCE_COPY_ENV,
+				);
+				process.env[FORCE_COPY_ENV] = '1';
+				linkShaderFiles([source], ['assets'], out, named, stamps);
+				expect(existsSync(join(out, 'assets', 'shaders-wgsl-a1b2c3d4.js'))).toBe(true);
+			} finally {
+				if (before === undefined) delete process.env[FORCE_COPY_ENV];
+				else process.env[FORCE_COPY_ENV] = before;
+			}
+		},
+	);
 });
 
 describe('linkShaderFiles', () => {
