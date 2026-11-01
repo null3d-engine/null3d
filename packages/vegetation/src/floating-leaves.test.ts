@@ -30,6 +30,7 @@ const field = {
 		base: [4, 0.6, 0.35, 7],
 		gust: [7, 24, 0.2, 3],
 		swirl: [1.4, 0.03, 0.05, 11],
+		sent: [0, 0, 0, -1e9],
 	},
 } as unknown as WindField;
 
@@ -68,7 +69,11 @@ function context() {
 			},
 		},
 		textures: {
-			fromData: (options: Record<string, unknown>) => ({ kind: 'data', ...options }),
+			fromData: (options: Record<string, unknown>) => ({
+				kind: 'data',
+				...options,
+				update: () => undefined,
+			}),
 			fromPass: () => ({ kind: 'pass', layer: 0 }),
 		},
 		render: {

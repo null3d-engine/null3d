@@ -14,10 +14,11 @@ modelled frame is 11.08 ms, from the measured 5.243 ms of its 40 volume steps pl
 advection and projection floor, doubled. That is over the wind's own 6.25 ms figure, and D-241's
 499.8 ms is the measured Creek frame at Ultra on that phone, not a ceiling with room in it: the
 frame with the wind is about 510.9 ms, over by 2.2 per cent, and the governor's 30 field steps a
-second step gives about 505.3 ms, still over. The owner must choose one of three options. The first
-is that the class ceiling includes the wind's share. The second is that Ultra does not run the
-field on a display that owes two cycles. The third is that the preset steps down there, which D-241
-calls a failure. This record picks none. The tablet's field row holds at the budget's edge, and its
+second step gives about 505.3 ms, still over. The owner ruled that the class ceiling includes the
+wind's share. The S25-class Ultra ceiling is therefore 511 ms: the measured 499.8 ms plus the
+modelled 11.08 ms, which D-241 now states beside its measured rows. The owner declined the two
+other options that this record set out. Ultra does not skip the field, and the preset does not step
+down there, which D-241 calls a failure. The tablet's field row holds at the budget's edge, and its
 canopy drag takes it over, so the governor must step that row too. Built: the wind add-on's field
 and its state-keeping solver
 (M3-V13, M3-V15). Built too: the plant material's vertex reader (M3-V7) and the cost pages that
@@ -744,13 +745,20 @@ The wind grid's own pass lifts Medium and above into the same cost: at Medium th
 683 ms with the grid and 33.3 ms without it, the leaves riding the offset form in both.
 
 So Creek rides the offset form and keeps no grid on the WebGL2 path. Its readers work the air out of
-the steady field there. That field carries the base wind, the swirl and the preset's own traveling
-gust. It does not carry a gust or a push that a page sends: `gust()` writes the push ring and the
-grid's values, and readers meet those only through the grid. The G key therefore moves nothing on
-Creek's grass, water or leaves on that path.
+the steady field there. The owner ruled that the gust must work on that path, so the steady field
+now carries a gust that a page sends: `gust()` writes its place, its strength and the time it was
+sent into the field's reading, the readers' settings take them as a fourth vector, and the block
+adds the same travelling wave from that place. A push still reaches readers only through the grid.
 
-An earlier version of this record, and of the commit that made the change, said the sent gust still
-crossed the banks. That was wrong. The clause is open, below.
+The sent gust travels across the ground on that path as it does through the grid. A probe measured
+it at Creek's WebGL2 shape: the gust moved 6 m in the 1 s between two reads, and the field's own
+gust speed is 6 m/s ([the run](../tested-devices/macbook-pro-m3-max-chrome/20261101-1915-gust-crossing.md)).
+The settings go up when a page sends a gust, so the frame pays one small upload for each press and
+no upload in the frames between. The path that draws a reflection stays off the pass that cost
+[2.2 MB a frame](D-286-webgl2-texture-copies-beside-a-second-draw.md).
+
+An earlier version of this record said the sent gust crossed the banks when it did not. That was
+wrong, and the code now makes it true.
 
 The cost itself is the WebGL2 backend's, not the add-ons'.
 [D-286](D-286-webgl2-texture-copies-beside-a-second-draw.md) holds it, with the figures and what a
@@ -811,16 +819,14 @@ images, and `bun run images:review --ci <run> --accept <name>` accepts them, as
 ### What the task's clauses stand at
 
 M3-V17 delivers the readers, the two leaf forms and their comparison, the flag's and the water's
-extra read, and the Creek and forest rows that match the head on the iPad, the S25 and the tablet.
-It is a partial delivery. These clauses stay open:
+extra read, the gust on every path, and the Creek and forest rows that match the head on the iPad,
+the S25 and the tablet. It is a partial delivery. These clauses stay open:
 
-- **The gust on WebGL2.** G moves nothing on Creek's grass, water or leaves on that path, as the
-  section above says. The clause needs a way to carry a page's gust without the grid, or the owner's
-  ruling that the gust is WebGPU-only there.
 - **The particles add-on's wind input.** The task's bullet asks for a field texture and its box, so
   dust, motes, smoke and rain take an offset from the field. The add-on takes a constant vector
   still, so the bullet is unbuilt.
-- **The pictures.** Five drawings are owed; the section above names the tests and why they wait.
+- **The pictures.** Four Creek drawings are owed; the section above names the tests and the run
+  that measured them, and why they wait.
 - **The iPhone 17's row.** The Done-when names four cloud devices. The branch has rows for the iPad,
   the S25 and the Tab A9 Plus, and none for the iPhone.
 - **The forest at the head.** Its Medium and above rows were never measured at `fcafb9cd7`, so

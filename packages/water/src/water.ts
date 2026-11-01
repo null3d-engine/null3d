@@ -62,11 +62,15 @@ export interface WaterWind {
 	readonly texture: Texture;
 	/** The field's box across the ground, in meters, or 0 for the steady field everywhere. */
 	readonly size: number;
-	/** The air's steady settings, as the sampling function reads them: base, gust and swirl. */
+	/**
+	 * The air's steady settings, as the sampling function reads them: base, gust, swirl and the gust
+	 * that a page sent, whose born time changes when a page sends another.
+	 */
 	readonly air: {
 		readonly base: readonly number[];
 		readonly gust: readonly number[];
 		readonly swirl: readonly number[];
+		readonly sent: readonly number[];
 	};
 }
 
@@ -293,13 +297,27 @@ function junctionTexture({ textures }: SketchContext, map: Junctions | undefined
 	});
 }
 
-/** The texture that holds the field's steady settings, three texels of four numbers each. */
-function readingTexture(textures: Textures, air: WaterWind['air']): Texture {
-	const data = new Float32Array(12);
+/** The texture's texels that hold the field's steady settings and its sent gust. */
+const READING_TEXELS = 4;
+
+/** The field's settings as the texture holds them: the air, the gust, the swirl and the sent gust. */
+function readingData(air: WaterWind['air']): Float32Array {
+	const data = new Float32Array(READING_TEXELS * 4);
 	data.set(air.base.slice(0, 4), 0);
 	data.set(air.gust.slice(0, 4), 4);
 	data.set(air.swirl.slice(0, 4), 8);
-	return textures.fromData({ width: 3, height: 1, format: 'rgba16float', data });
+	data.set(air.sent.slice(0, 4), 12);
+	return data;
+}
+
+/** The texture that holds the field's settings: four texels of four numbers each. */
+function readingTexture(textures: Textures, air: WaterWind['air']): Texture {
+	return textures.fromData({
+		width: READING_TEXELS,
+		height: 1,
+		format: 'rgba16float',
+		data: readingData(air),
+	});
 }
 
 /** A still field's textures, for water that names no wind field. */
@@ -317,10 +335,10 @@ function stillWind(textures: Textures): { wind: Texture; airSettings: Texture } 
 			data: new Float32Array(4),
 		}),
 		airSettings: textures.fromData({
-			width: 3,
+			width: 4,
 			height: 1,
 			format: 'rgba16float',
-			data: new Float32Array(12),
+			data: new Float32Array(16),
 		}),
 	};
 	STILL.set(textures, made);
@@ -419,6 +437,8 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	// the frame-budget governor doubles it while frames take too long. The stats overlay reads the
 	// cadence and the pass's share of a frame from the host's figures.
 	let every = 1;
+	/** The sent gust's born time that the settings texture holds, so one gust costs one upload. */
+	let sentBorn = Number.NaN;
 	/** True while the `water-bounds` debug view draws. */
 	let debugBounds = false;
 	const host = new FeatureHost({
@@ -482,7 +502,16 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 		},
 		update() {
 			// The field keeps two states, so the surface reads the one that this frame's run wrote.
-			if (wind) material.setUniform('windLayer', wind.texture.layer);
+			if (wind) {
+				material.setUniform('windLayer', wind.texture.layer);
+				// A gust that a page sends travels through the steady field, which the settings carry.
+				// The texels go up when a gust is sent, not once a frame.
+				const sent = wind.air.sent;
+				if ((sent[3] as number) !== sentBorn) {
+					sentBorn = sent[3] as number;
+					airSettings.update(readingData(wind.air));
+				}
+			}
 			// The add-on draws its own debug view: each body's bounds at the water's surface.
 			if (debugBounds) {
 				for (const body of bodies)
