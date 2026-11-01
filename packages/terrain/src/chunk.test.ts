@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { chunkShape, writeChunkVertices, writeParentHeights } from './chunk';
+import { chunkShape } from './chunk';
+import { writeChunkVertices, writeParentHeights } from './chunk-vertices';
 import { createHeightfield } from './heightfield';
 
 describe('chunk shape', () => {

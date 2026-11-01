@@ -485,7 +485,7 @@ export class Render {
 		/** True when the page draws on WebGL2, which has no compute shaders. */
 		private readonly webgl2 = false,
 	) {
-		this.reads = new PassReads(core, webgl2);
+		this.reads = new PassReads(core);
 	}
 
 	/**

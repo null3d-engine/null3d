@@ -311,6 +311,31 @@ The engine's benchmark scene of 100,000 boxes over a polished floor ran on a Mac
 - When frames take too long, the frame-budget governor lowers `ssrScale` to a quarter, in the step after ambient occlusion's.
 
 
+## Screen-space bounce light
+
+Screen-space bounce light adds one bounce of the indirect light that the camera's view shows. A red wall throws red light onto the floor beside it. A green wall throws green light onto the other side. The environment's light is one color for every direction, so it cannot show that.
+
+The light draws on ambient occlusion's grid, at half the render size, and it reuses that feature's depth copy and normals:
+
+1. The trace samples a disk of screen texels around each surface, almost half the grid wide. A wall beside a floor then shows its upper part. A sample whose surface lies above or beside it takes the color that the frame before showed there. The light is weighted by the cosine of the sample's direction, and the surface must lie in the hemisphere and within reach. The trace reads that color from the copy that screen-space reflections read too.
+2. A denoise blurs the traced light over a small disk that stays on each texel's own surface. It compares depth and normal, as ambient occlusion's denoise does, so light does not bend around a corner.
+3. The opaque pass adds the light to the ambient light. The light takes the place of the environment's diffuse light by its share. Where the rays left the screen or hit nothing, the environment keeps that share.
+
+```ts
+quality.set({ bounceRays: 8 });
+```
+
+- The quality setting `bounceRays` is the number of rays each texel casts: 0 draws none. High sets 4 and Ultra 8. Low and Medium set 0, and WebGL2, which ends at Medium, sets 4 there. A change takes effect during play and makes no GPU object.
+- The light is one frame behind the scene, as screen-space reflections are. The first frame after it turns on shows none.
+- The light draws nothing on the 8-bit path, whose copy holds display color. Compatibility mode draws that path, so it draws no bounce light.
+- A scene with a [light probe grid](lighting.md#light-probe-grid) draws no bounce light. The grid already holds one bounce, with the validity and sky-occlusion terms that the screen cannot supply.
+- The cost follows the render scale, because the grid does. The light is part of the preset table, so a page pays only where the preset asks for it.
+
+### Cost
+
+The light costs two passes at half the render size and a few texture reads in the opaque pass. At 1920 x 1080 on the Mac it added 2.5 ms at High and 1.3 ms at Ultra on WebGPU. It added 0.8 ms at WebGL2's Medium. At half the render scale it adds about a millisecond.
+
+
 ## Outlines
 
 Outlines draw a crisp line around the meshes that `setOutlined(true)` marks:

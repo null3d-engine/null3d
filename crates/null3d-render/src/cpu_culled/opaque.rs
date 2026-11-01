@@ -425,6 +425,50 @@ impl Opaque {
         view: ViewId,
         lit: Option<LitTextures>,
     ) -> Result<(), RecordError> {
+        Self::bind_frame_with(
+            list,
+            view,
+            lit,
+            ids::frame_group(view),
+            bind_layout::FRAME,
+            None,
+            true,
+        )
+    }
+
+    /// Records the creation of a camera view's frame group that carries the moment layer's moment
+    /// store beside the frame group's own entries. The colour builds bind it as their group 0, and
+    /// they declare no light probe grid, which leaves that entry out.
+    pub(super) fn bind_moment_frame(
+        list: &mut DrawList,
+        view: ViewId,
+        lit: LitTextures,
+        store: u32,
+    ) -> Result<(), RecordError> {
+        Self::bind_frame_with(
+            list,
+            view,
+            Some(lit),
+            ids::moment_frame_group(view),
+            bind_layout::MOMENT_FRAME,
+            Some(store),
+            false,
+        )
+    }
+
+    /// Records the creation of the frame groups of `view` with `group` as the first, and with
+    /// `layout`: binding 15 holds the copy of the opaque color, `store` adds the moment store, and
+    /// `probe_grid` says whether the group binds the light probe grid.
+    #[allow(clippy::too_many_arguments)]
+    fn bind_frame_with(
+        list: &mut DrawList,
+        view: ViewId,
+        lit: Option<LitTextures>,
+        group: u32,
+        layout: u32,
+        store: Option<u32>,
+        probe_grid_entry: bool,
+    ) -> Result<(), RecordError> {
         // The frame's slot offset moves the uniform block and the cell offsets together, and
         // the backend gives dynamic offsets to a group's buffers in their order here.
         let frame = ids::frame(view);
@@ -450,7 +494,6 @@ impl Opaque {
             0,
             sizes::OBJECT_RANGE_BYTES,
         ];
-        let group = ids::frame_group(view);
         // The lists hold a slot for each camera view. The skin pass has none of its own: it reads
         // the camera's list, as it reads the camera's light textures.
         let listed = if view.is_camera() {
@@ -469,13 +512,15 @@ impl Opaque {
             probes,
         }) = lit
         else {
+            // A cascade's, a tile's or another depth-only view's group binds the frame's common
+            // entries alone, in the depth-only layout that its pipeline declares.
             let mut words = [0; 23];
             words[..3].copy_from_slice(&[group, bind_layout::DEPTH, 4]);
             words[3..].copy_from_slice(&common);
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 73 + environment::ENTRY_WORDS];
+        let mut words = [0; 78 + environment::ENTRY_WORDS];
         words[3..23].copy_from_slice(&common);
         words[23..43].copy_from_slice(&[
             4,
@@ -499,33 +544,55 @@ impl Opaque {
             0,
             0,
         ]);
-        words[43..48].copy_from_slice(&probe_grid::entries(probe_grid));
+        let probes_words = [
+            crate::probes::ARRAY_BINDING,
+            resource_kind::TEXTURE,
+            probes,
+            0,
+            0,
+            crate::probes::LIST_BINDING_WEBGL2,
+            resource_kind::BUFFER,
+            ids::PROBE_LISTS,
+            listed * crate::probes::LIST_STRIDE,
+            crate::probes::LIST_BYTES,
+        ];
         for slot in 0..RING {
-            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 16]);
-            words[48..53].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
-            words[53..58].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
-            words[58..63].copy_from_slice(&[
+            let mut end = 43;
+            if probe_grid_entry {
+                words[end..end + 5].copy_from_slice(&probe_grid::entries(probe_grid));
+                end += 5;
+            }
+            words[end..end + 5].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
+            end += 5;
+            words[end..end + 5].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
+            end += 5;
+            // Every lit build declares the frame's copy of the opaque color at binding 15, so it
+            // stays bound. A moment group adds the moment store after it, at a binding of its own.
+            words[end..end + 5].copy_from_slice(&[
                 transmission::BINDING,
                 resource_kind::TEXTURE,
                 copy,
                 0,
                 0,
             ]);
-            words[63..73].copy_from_slice(&[
-                crate::probes::ARRAY_BINDING,
-                resource_kind::TEXTURE,
-                probes,
-                0,
-                0,
-                crate::probes::LIST_BINDING_WEBGL2,
-                resource_kind::BUFFER,
-                ids::PROBE_LISTS,
-                listed * crate::probes::LIST_STRIDE,
-                crate::probes::LIST_BYTES,
-            ]);
-            words[73..]
+            end += 5;
+            if let Some(store) = store {
+                words[end..end + 5].copy_from_slice(&[
+                    crate::moment::STORE_BINDING,
+                    resource_kind::TEXTURE,
+                    store,
+                    0,
+                    0,
+                ]);
+                end += 5;
+            }
+            words[end..end + 10].copy_from_slice(&probes_words);
+            end += 10;
+            words[end..end + environment::ENTRY_WORDS]
                 .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
-            list.push(Op::CreateBindGroup, &words)?;
+            end += environment::ENTRY_WORDS;
+            words[..3].copy_from_slice(&[group + slot, layout, ((end - 3) / 5) as u32]);
+            list.push(Op::CreateBindGroup, &words[..end])?;
         }
         Ok(())
     }
@@ -742,6 +809,23 @@ impl Opaque {
         if scene != 0 {
             list.push(Op::SetBindGroup, &[DECAL_DEPTH_INDEX, scene, 0])?;
         }
+        Ok(())
+    }
+
+    /// Binds a view's groups for the moment layer's colour pass: its frame group that carries the
+    /// moment store at group 0, and its instance textures at group 2.
+    pub(super) fn bind_moment_view(
+        &self,
+        list: &mut DrawList,
+        view: ViewId,
+        light_slot: u32,
+    ) -> Result<(), RecordError> {
+        let slots = self.views[self.slot(view)].slots;
+        let frame_slot = self.frame_slot(view);
+        let group = ids::moment_frame_group(view) + light_slot;
+        list.push(Op::SetBindGroup, &[0, group, 2, frame_slot, frame_slot])?;
+        let instances = ids::instances_group(view) + slots.streamed * RING + slots.listed;
+        list.push(Op::SetBindGroup, &[2, instances, 0])?;
         Ok(())
     }
 
