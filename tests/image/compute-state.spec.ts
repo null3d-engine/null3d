@@ -68,7 +68,9 @@ for (const { tier, query } of TIERS) {
 		expect(result.tier).toBe(tier);
 		expect(result.values[0]).toBe(100);
 		expect(result.frames).toBeGreaterThanOrEqual(1);
-		// The field names each texel in green and blue, so a wrong row, column or flip shows.
+		// The field names each texel in green and blue, so a wrong row, column or flip shows. The
+		// region comes back top row first: an older expectation listed these rows the other way,
+		// which matched a pass whose fragment form stored the image upside down.
 		expect(result.texels).toEqual([100, 1, 1, 1, 100, 2, 1, 1, 100, 1, 2, 1, 100, 2, 2, 1]);
 		console.log(`read ${tier}: ${result.frames} frames for the region`);
 	});

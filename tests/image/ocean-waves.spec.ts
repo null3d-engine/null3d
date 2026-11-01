@@ -88,10 +88,6 @@ for (const { tier, query } of TIERS) {
 			`${tier}: the sea moved by ${moved.toFixed(4)} m between ${(result.stamps[0] as number).toFixed(2)} s and ${(result.later.stamps[0] as number).toFixed(2)} s`,
 		);
 		expect(moved).toBeGreaterThan(0.01);
-		// Open fault: the fragment form on WebGL2 computes this thread's field, in a target whose
-		// image is upside down, so a read of the pass at this row gives the field at the row a
-		// height away. The record is in .dev/code-review.md. Remove this line when the images match.
-		test.fail(tier === 'webgl2', 'the fragment form stores its image upside down on WebGL2');
 		const side = 4;
 		for (let band = 0; band < result.cpu.length; band++) {
 			const gpu = result.gpu[band] as number[];
@@ -128,6 +124,9 @@ for (const { tier, query } of TIERS) {
 					.join(' ')}`,
 			);
 			expect(largest).toBeGreaterThan(0.02);
+			// The square comes back as the transform wrote it. A search over row orders hid a
+			// mirrored pass here once, so the order is asserted and not searched.
+			expect(best.name).toBe('as written');
 			expect(best.worst).toBeLessThan(TOLERANCE);
 		}
 	});
