@@ -152,6 +152,7 @@ enable draw_index;
 #ifndef CUSTOM_LOBE
 #import null3d::lights::{clustered_light}
 #endif
+#import null3d::lights::{direct_surface_light, FILL_LIGHT_SLOTS}
 #ifndef PARALLAX
 #import null3d::ssr::{screen_reflection}
 #endif
@@ -2162,7 +2163,8 @@ fn clustered_lobed_light(
 #endif
 
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
-/// where its shadows fall, the point and spot lights of the surface's cluster, the ambient and
+/// where its shadows fall, the fill directional lights, the point and spot lights of the
+/// surface's cluster, the ambient and
 /// hemisphere lights, `extra` irradiance such as a light map's, and the light around it, from the
 /// reflection probes and the environment, times the material's factor of it. That light adds to
 /// the ambient and hemisphere lights, as three.js adds the environment's, and neither its
@@ -2245,6 +2247,7 @@ fn light_surface(
     sun.diffuse = saturate(dot(diffuse_normal, to_sun)) * sun_color
         * brdf_lambert(m.diffuse) * (1.0 - fresnel);
 #endif
+
 #ifdef CUSTOM_LOBE
     // The material's own lobe adds its specular beside the base lobe's for the sun. It knows the
     // light, the view and the half vector, which a surface function cannot see.
@@ -2260,6 +2263,31 @@ fn light_surface(
         lobe_values,
     ));
 #endif
+
+    // The fill directional lights add their light beside the main light's, without its shadows.
+    let fills = min(u32(engine_frame.sun_color.w), FILL_LIGHT_SLOTS);
+    for (var k = 0u; k < fills; k++) {
+        let direction = select(
+            select(engine_frame.fill_dir_a, engine_frame.fill_dir_b, k == 1u),
+            engine_frame.fill_dir_c,
+            k == 2u,
+        );
+        let color = select(
+            select(engine_frame.fill_col_a, engine_frame.fill_col_b, k == 1u),
+            engine_frame.fill_col_c,
+            k == 2u,
+        );
+        let fill = direct_surface_light(
+            m,
+            normal,
+            to_view,
+            -direction.xyz,
+            color.rgb,
+            compensation,
+        );
+        sun.diffuse += fill.diffuse;
+        sun.specular += fill.specular;
+    }
 #ifdef TRANSLUCENCY
     gather_back_light(normal, to_sun, sun_color);
     back_indirect = ambient_light(-normal) * occlusion;
