@@ -107,7 +107,7 @@ describe('the grass batches', () => {
 			textures: {
 				fromData: (options: Record<string, unknown>) => {
 					uploads.push(options);
-					return {};
+					return { update: () => undefined };
 				},
 			},
 			quality: { preset, onChange: () => () => {} },
@@ -139,6 +139,7 @@ describe('the grass batches', () => {
 			base: [2, 0.5, 0.3, 7],
 			gust: [1, 10, 0.4, 8],
 			swirl: [0.5, 20, 0.1, 0],
+			sent: [0, 0, 0, -1e9],
 		};
 		const wind = {
 			texture: { layer: 3 },
@@ -154,11 +155,14 @@ describe('the grass batches', () => {
 		expect(options.uniforms.windStrength).toBe(1);
 		expect(options.uniforms.windBox).toBe(128);
 		expect(options.textures.wind).toBe(wind.texture);
-		// The air's three vectors travel as the reading texture the shader samples. The texture
-		// holds them as 16-bit floats, so the test rounds the expected values the same way.
-		const reading = uploads.find((upload) => upload.width === 3);
+		// The air's four vectors, the sent gust among them, travel as the reading texture the shader
+		// samples. The texture holds them as 16-bit floats, so the test rounds the expected values
+		// the same way.
+		const reading = uploads.find((upload) => upload.width === 4);
 		const data = (reading?.data ?? new Float32Array()) as Float32Array;
-		expect([...data]).toEqual([...new Float32Array([...air.base, ...air.gust, ...air.swirl])]);
+		expect([...data]).toEqual([
+			...new Float32Array([...air.base, ...air.gust, ...air.swirl, ...air.sent]),
+		]);
 		grass.setWindLayer(wind);
 		expect(layers).toEqual([3]);
 	});

@@ -160,6 +160,9 @@ export function createFloatingLeaves(
 
 	const color = options.color ?? ([0.55, 0.62, 0.3] as const);
 	if (ride === 'offset') {
+		const airSettings = readingTexture(ctx, wind.air);
+		/** The sent gust's born time that the settings texture holds, so one gust costs one upload. */
+		let sentBorn = Number.NaN;
 		const material = ctx.materials.shader({
 			wgsl: offsetShader,
 			color: [color[0], color[1], color[2]],
@@ -169,7 +172,7 @@ export function createFloatingLeaves(
 			textures: {
 				leafMap,
 				wind: wind.texture,
-				airSettings: readingTexture(ctx, wind.air),
+				airSettings,
 			},
 			uniforms: {
 				height: area.high,
@@ -191,6 +194,12 @@ export function createFloatingLeaves(
 			state: undefined,
 			update() {
 				material.setUniform('windLayer', wind.texture.layer);
+				// A gust that a page sends travels through the steady field, which the settings carry.
+				// The texels go up when a gust is sent, not once a frame.
+				if (wind.air.sent[3] !== sentBorn) {
+					sentBorn = wind.air.sent[3];
+					airSettings.update(readingData(wind.air));
+				}
 			},
 			setColor(next) {
 				material.set({ color: [next[0], next[1], next[2]] });
@@ -286,13 +295,24 @@ export function createFloatingLeaves(
 	};
 }
 
-/** The texture that holds the field's steady settings, three texels of four numbers each. */
-function readingTexture(ctx: SketchContext, air: WindField['air']): Texture {
-	const data = new Float32Array(12);
+/** The field's settings as the texture holds them: the air, the gust, the swirl and the sent gust. */
+function readingData(air: WindField['air']): Float32Array {
+	const data = new Float32Array(16);
 	data.set(air.base, 0);
 	data.set(air.gust, 4);
 	data.set(air.swirl, 8);
-	return ctx.textures.fromData({ width: 3, height: 1, format: 'rgba16float', data });
+	data.set(air.sent.slice(0, 4), 12);
+	return data;
+}
+
+/** The texture that holds the field's settings: four texels of four numbers each. */
+function readingTexture(ctx: SketchContext, air: WindField['air']): Texture {
+	return ctx.textures.fromData({
+		width: 4,
+		height: 1,
+		format: 'rgba16float',
+		data: readingData(air),
+	});
 }
 
 /** An atlas of one leaf: an ovate blade with a point, a midrib and a short stem. */
