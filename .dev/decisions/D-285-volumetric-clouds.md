@@ -111,8 +111,10 @@ simpler light of the panorama costs nothing that a viewer can see.
   fails reports that the environment generator's code did not download, so a broken deployment
   fails loudly instead of drawing a cloudless sky.
 - The tier's environment step draws the same sky as the view: a second sky adds its light at its
-  weight in the map's step as it does in the view's, and the clouds take the combined overhead
-  light. Without that term the map lost the moon's sky at night while the view kept it.
+  weight in the map's step as it does in the view's, the clouds take the combined overhead light,
+  and a zero step count keeps the flat layer in the map. Without the first term the map lost the
+  moon's sky at night while the view kept it; without the second it lost the flat layer at every
+  step count where the march drew nothing.
 - A sky layer (D-242) draws after the cloud tier's draw, so an aurora stands over the clouds. The
   layer's draw is that branch's; the background pass's cloud draw comes before it.
 - The image tests `clouds-volume` and `clouds-flat` compare the High tier with the flat layer of the

@@ -60,12 +60,15 @@ fn fs_sky(@builtin(position) position: vec4f) -> @location(0) vec4f {
     if second_sky_weight > 0.0 {
         second = sky_whole(second_sun(sky_settings.cloud_place), sky_settings.scattering);
     }
-    // The flat layer gives way to the march, so the sky that the clouds cover carries no clouds.
+    // The flat layer gives way to the march, so the sky that the clouds cover carries no clouds;
+    // with no step count the march draws nothing and the map keeps the flat layer, as the view does.
+    let marching = params.cloud_steps >= 1.0;
+    let cover = select(sky_settings.clouds.z, 0.0, marching);
     let clear =
         SkySettings(
             sky_settings.sun,
             sky_settings.scattering,
-            vec4f(sky_settings.clouds.x, sky_settings.clouds.y, 0.0, sky_settings.clouds.w),
+            vec4f(sky_settings.clouds.x, sky_settings.clouds.y, cover, sky_settings.clouds.w),
             sky_settings.cloud_place,
         );
     let count = params.samples;
