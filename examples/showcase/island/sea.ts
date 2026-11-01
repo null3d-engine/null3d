@@ -265,9 +265,7 @@ export function createSea(ctx: SketchContext): { update(): void } {
 			map: foamMap(ctx),
 			vertexColors: true,
 			roughness: 0.9,
-			alphaMode: 'mask',
-			alphaCutoff: 0.42,
-			alphaToCoverage: true,
+			alphaMode: 'blend',
 			doubleSided: true,
 		}),
 		castShadows: false,
@@ -275,16 +273,15 @@ export function createSea(ctx: SketchContext): { update(): void } {
 		// The mirror holds no foam: it lies on the water and shows only its dark underside there.
 		layers: INTERIOR_LAYER,
 	});
-	// The foam thins by a stochastic mask, so it needs no sorting against the water and its edges stay soft. Its shape stays here with the sea, so another body that makes its own surf replaces it.
+	// The foam blends in the moment layer, which draws over the water with no sorting, so its edges stay soft.
+	// Its shape stays here with the sea, so another body that makes its own surf replaces it.
 	ctx.scene.createMesh({
 		mesh: ctx.geometry.fromArrays(surf()),
 		material: ctx.materials.standard({
 			map: foamMap(ctx),
 			vertexColors: true,
 			roughness: 0.85,
-			alphaMode: 'mask',
-			alphaCutoff: 0.42,
-			alphaToCoverage: true,
+			alphaMode: 'blend',
 			doubleSided: true,
 		}),
 		castShadows: false,
