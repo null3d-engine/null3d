@@ -153,7 +153,8 @@ export class ChunkRowWriter implements ViewHolder {
 	/**
 	 * Packs each chunk's chosen prefix into the batch's rows, in slot order, and sets the batch's
 	 * active count. `counts` gives one chosen count for each slot; a slot past its end, or with a
-	 * count of zero, takes no row. Returns the number of rows that it wrote.
+	 * count of zero, takes no row. Returns the count that the batch draws after the pack, which is
+	 * the rows it wrote, or the count it kept when it owns no transform rows.
 	 */
 	pack(counts: ArrayLike<number>): number {
 		const core = this.core;
