@@ -759,36 +759,38 @@ and a hero car with two screens.
   phone's screen gives the demo: that cuts the WebGPU frame from 3.79 to 3.06 ms and the WebGL2
   frame from 7.09 to 5.38 ms ([D-246](decisions/D-246-skyway-vehicle-vertices.md)).
 - **The frame at the show's target.** The figures above predate the roamers, the traffic, the
-  console and the cockpit. A run at the head that added them measured the demo again. Each page had the quality governor off and the render scale held at 1. So a figure is the
-  same drawing on every run. The cloud iPad Pro 13 in Safari drew 50.2 frames a second at Low on
-  WebGPU and 54.8 on WebGL2, and 24.5 and 44.6 at Medium. Those Low pages ran first in their
-  sessions, and the same drawings at a session's end came to 48.6 and 59.8. The cloud Galaxy S24
-  in Chrome drew 24.1 at Low and 25.6 at Medium, against a display of 30 Hz. Later sessions of its
-  Low page drew 19.4 and 29.5. The runs are in [tested devices](tested-devices.md).
+  console and the cockpit. A run at the head that added them measured the demo again. Each page had
+  the quality governor off and the render scale held at 1, so a figure is the same drawing on every
+  run. Each figure is the measure window's own frame count over its seconds. It is not the
+  engine's `presentedFps` ([D-236](decisions/D-236-final-pass-upscale-build.md)). The cloud iPad Pro 13 in
+  Safari drew 58.6 frames a second at Low on WebGL2 and 57.6 on WebGPU, and 44.5 and 24.6 at
+  Medium. The cloud Galaxy S24 in Chrome drew 26.1 at Low and 25.7 at Medium, against a display of
+  30 Hz. At the preset that the engine chooses, with the governor on, it drew 29.4 of that 30. The
+  runs are in [tested devices](tested-devices.md).
 - **The split, from switched-off pages.** A second run left one part of the scene out per page at
-  Low on WebGL2. It does so because the engine's per-pass GPU times do not split this frame. A tile
-  GPU overlaps the passes, and the timer times seven of them alone. So the named parts of one frame
-  can add up to more than the whole frame. One page repeats the first page, so a device's own drift
+  Low. It does so because the engine's per-pass GPU times do not split this frame. A tile GPU
+  overlaps the passes, and the timer times seven of them alone. So the named parts of one frame can
+  add up to more than the whole frame. One page repeats the first page, so a device's own drift
   shows beside the parts.
 
-  The iPad answered at the display's rate on every WebGL2 page after its first. The first drew 54.4
-  frames a second and the rest drew 59.7 to 60.0, the repeated page among them. Its WebGPU page,
-  drawn last on the warm device, answered 48.6. So the demo holds 60 at Low on the WebGL2 path once
-  the session has drawn a page. It misses by about eleven frames on the path that the engine picks.
-  The WebGL2 pages cannot rank the parts, because they all reach the ceiling.
+  The iPad holds its display's rate at Low on every WebGL2 page after the first. The first drew
+  58.6 frames a second and the rest drew 59.6 to 59.8, the repeated page among them. Its WebGPU
+  page, drawn last on the warm device, drew 57.3. So the demo reaches about 60 at Low on WebGL2,
+  and misses it by 2.7 frames on the path that the engine picks. The WebGL2 pages cannot rank the
+  parts, because they all reach the ceiling.
 
   The WebGPU page's one measured difference is its upload: 432 KiB a frame against the WebGL2
   pages' 78 to 147 KiB. The Mac's WebGPU page draws the same scene and uploads 27 KiB, so the
-  figure is not the scene's data. Both mobile devices keep CPU copies of their textures, where the
-  Mac does not, and the cause is not measured. The WebGPU page also draws 155 draws against 80. It
-  misses about one frame in five where WebGL2 misses none.
+  figure is not the scene's data. Both mobile devices keep CPU copies of their textures, and the
+  Mac does not. The cause is not measured.
 
-  The phone's pages fall into two rates whatever they leave out. One session drew 29.5 frames a
-  second on its whole-scene page, and the same 29.5 without ambient occlusion. Its pages without
-  the traffic, the rain, the reflections and the towers drew 24.0, 23.7, 23.6 and 24.1. Without the
-  street lamps' lights it drew 23.0. So a page that removed work drew no more than the page that
-  kept it. The two sweeps' whole-scene pages draw 19.4 to 29.5 at one setting. The cloud phone's
-  readings are its own spread, and none of its parts sets them.
+  The phone's pages fall into two bands, and the band does not follow what a page removed. In one
+  session the base page and the pages without ambient occlusion, the reflections and the towers
+  drew 29.1 to 29.6. The pages without the rain, the traffic and the street lamps drew 25.6 to
+  26.0. The second session began at 29.5 and settled at about 25.5 after its second page, the
+  repeated base page included. A page that removes work cannot be slower than the page that keeps
+  it, so these bands are the device's own state. The reflections cost nothing measurable in the
+  session that separates them: 29.1 with them and 29.2 without.
 
   The lanes' cars are almost the whole triangle count of the Low frame: 2,556,800 triangles against
   48,100 without them. They fly 2.4 km lanes, and the fog's reach is a few hundred meters. Most of
