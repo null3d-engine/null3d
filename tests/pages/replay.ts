@@ -273,8 +273,8 @@ run('replay', async () => {
 	);
 	// The materials' custom values, with three.js's table of the split-sum terms of specular light
 	// in the columns from the materials' own texels, as the engine keeps it. No material here has
-	// custom values, so the texture reads as zero except the table. Ambient occlusion's texture and
-	// the row values of instance batches bind it too, and nothing here reads them.
+	// custom values, so the texture reads as zero except the table. The row values of instance
+	// batches bind it too, and nothing here reads them.
 	memory.push(
 		G.OP_CREATE_TEXTURE,
 		5,
@@ -399,6 +399,22 @@ run('replay', async () => {
 		blobs.ranges,
 		positions.length * 16,
 	);
+	// Ambient occlusion's texture, which the frame group binds as a 2D array: the first layer holds
+	// the occlusion and the second the bounce light, as the engine's blank texture does. This view
+	// draws neither, so one texel of each layer is enough; the shader reads them only while the
+	// strength is above 0.
+	memory.push(
+		G.OP_CREATE_TEXTURE,
+		21,
+		1,
+		1,
+		2,
+		G.FORMAT_RGBA16_FLOAT,
+		GPUTextureUsage.TEXTURE_BINDING,
+		1,
+		1,
+		G.VIEW_2D_ARRAY,
+	);
 	// The blank array of reflection probes, one texel, which the frame group binds at binding 3
 	// while the view lists no probe.
 	memory.push(
@@ -444,8 +460,9 @@ run('replay', async () => {
 		...[9, G.RESOURCE_TEXTURE, 4, 0, 0],
 		// The light probe grid, which only shaders built to read it do.
 		...[10, G.RESOURCE_TEXTURE, 11, 0, 0],
-		// Ambient occlusion's texture, which the shader reads only while its strength is above 0.
-		...[11, G.RESOURCE_TEXTURE, 5, 0, 0],
+		// Ambient occlusion's texture, an array of the occlusion's layer and the bounce light's,
+		// which the shader reads only while the strength is above 0.
+		...[11, G.RESOURCE_TEXTURE, 21, 0, 0],
 		...[12, G.RESOURCE_TEXTURE, 6, 0, 0],
 		...[13, G.RESOURCE_SAMPLER, 2, 0, 0],
 		...[14, G.RESOURCE_SAMPLER, 3, 0, 0],
