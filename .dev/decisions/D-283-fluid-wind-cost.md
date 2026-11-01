@@ -840,3 +840,15 @@ the S25 and the tablet. It is a partial delivery. These clauses stay open:
   whether the wind's share sits inside those ceilings is open (D-241).
 
 The task's evidence entry states the same, and names the runs that back the figures below.
+
+### The forest's sketch and the feature demos' line rule
+
+The wind work grew the forest demo's sketch past the 150 lines that a feature demo's sketch may
+take, and landing it turned the branch's `tests/lib` red. The demo's build moved into helpers, the
+way the dressed Creek's build did, so the rule holds without a change to it. `examples/forest/sway.ts`
+holds the trees' material and the field's settings, and `examples/forest/planting.ts` holds the
+batches, the hero fir and the counts that each preset draws. The sketch keeps the look, the field
+and the frame, at 85 lines.
+
+No picture or frame figure moved: the same rows, the same materials and the same counts are built,
+and the demo's own rules still pass.
