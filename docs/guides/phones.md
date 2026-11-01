@@ -108,6 +108,8 @@ Every browser on iPhone and iPad runs Safari's WebKit engine. null3D needs Safar
 
 ## Testing on real devices
 
+Check every rendering mode and the whole camera path, with repeats, as [Testing your sketch](testing.md#check-every-rendering-mode) describes.
+
 Desktop browsers that emulate a phone show neither its GPU nor its heat, so test on the phones and tablets that your audience uses.
 
 - Serve the page over HTTPS, or reach it as `localhost` over USB. [Hosting and cross-origin isolation](../getting-started/hosting.md#during-development) shows both.

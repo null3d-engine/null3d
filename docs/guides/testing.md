@@ -23,6 +23,32 @@ flowchart LR
 
 An image test draws your sketch at a set time and compares the frame with a reference image. A live engine draws whenever the browser gives it a frame. The time and the steps of a live frame therefore change from run to run. Hold mode fixes both, and the same code then draws the same frame on every run.
 
+## Check every rendering mode
+
+A scene that looks right and runs well in one setup can fail in another. Before you call a scene done, check frame rate, memory and looks in each of these:
+
+| Switch | What it shows |
+|---|---|
+| `?gpu=webgpu&direct=off` | WebGPU with indirect draws |
+| `?gpu=webgpu&direct=on` | WebGPU with direct draws, which holds more memory on some devices |
+| `?gpu=compat` | WebGPU's compatibility mode, with fewer features |
+| `?gpu=webgl2` | WebGL2, where the CPU culls and the draw calls cost more |
+| `?preset=low` to `?preset=ultra` | Each quality preset. High on WebGL2 and compatibility runs at Medium. With no preset, the start-up check picks one |
+
+Follow these rules when you measure:
+
+- **Measure the whole camera path.** A part of it can read far better than the worst moment, so never quote a part as the whole.
+- **Repeat each run.** One run misleads: two like runs can differ by a third. Fix the pixel ratio, and note what else the machine is doing.
+- **Watch it move.** A held frame shows no popping, flicker or lag. Record a live camera and look at the frames.
+- **Test on real devices.** Use phones and tablets of different form factors, and large and small screens. [Phones and tablets](phones.md#testing-on-real-devices) says how.
+
+To read the numbers, open the stats overlay with `?stats=open`:
+
+- **Frames per second:** read the average and the slowest second, and count the seconds under your target. An average hides a stall.
+- **Frame work:** `Sketch`, `Drawing` and `GPU` say which side is slow. A bar past the mark is over the frame's budget.
+- **Scale:** under 1.00, the frame-budget governor has lowered the render scale to keep the time, so the frame rate alone flatters the scene.
+- **Memory:** read `GPU textures` and `GPU buffers` on each path, and the page's limit in [Phones and tablets](phones.md#memory).
+
 ## Hold mode
 
 Start hold mode with the `?hold=<seconds>` switch in the page's address, or with the `hold` option of `createEngine`:

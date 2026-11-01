@@ -12,6 +12,8 @@ summary: "Measuring; the frame budget on computers, phones and tablets; common c
 
 null3D keeps its own work per frame small, so your sketch code usually decides how long a frame takes. This guide shows where frame time goes, how to write per-frame code that stays fast, and how to measure. The figures come from the engine's benchmark scenes, which the engine's repository runs with `bun run bench:run`.
 
+Measure in every rendering mode and preset, over the whole camera path, with repeats: [Testing your sketch](testing.md#check-every-rendering-mode) says how.
+
 ## Where frame time goes
 
 ```mermaid

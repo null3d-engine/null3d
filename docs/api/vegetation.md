@@ -145,6 +145,8 @@ Every vertex's color carries four bytes: the branch's index, the leaf's flutter 
 
 `asset.crown` holds the outline, the bounds, the center and the radius. The bounds hold every level, so a switch never moves them. `asset.impostorSource` names the level, the bounds, the pivot and the tint that a far card bakes from.
 
+`plantMaterial`'s `leafGloss` sets the strength of the sun's gloss on a leaf, from 0 to 1. The default, 0.875, is a measured leaf's. A far card holds no gloss, so a lower value brings a near crown closer to its card.
+
 `plantWind` turns this data into what a plant's materials read: the branch records in one data texture of half floats, four texels for each branch, with the wind field's steady settings in the texture's second row, and the crown, height and transmission of the plant. Give one `plantWind` to a variant's leaf and bark materials, so both parts read the same table.
 
 ```ts
@@ -236,11 +238,7 @@ A large scene need not place every plant at once. `EcoScatter` takes tiles with 
 
 ## Grass on the ground
 
-<<<<<<< HEAD
 `createGrass(ctx, { height, area, count, seed, mask, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)`, skip ground steeper than `maxSlope`, and skip the ground that `mask` refuses, such as water, a stone or a footprint. Their turn, size and tint come from integer hashes, so one seed places the same grass on every device. Each tuft's row values carry its tint, which its shader reads. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
-=======
-`createGrass(ctx, { height, area, count, seed, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)` and skip ground steeper than `maxSlope`, and any point where `where(x, z)` returns false. `color` sets the blades' color, so they can meet the ground's own. Their turn, size and tint come from integer hashes, so one seed places the same grass on every device. Each tuft's row values carry its tint, which its shader reads. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
->>>>>>> d4525fa22
 
 The blades bend in the wind add-on's field, the same field that the leaf material reads. Give `createGrass` its `wind` field, and call `grass.setWindLayer(field)` in each frame with the field's newest state, as the leaf material takes it. A page that gives no field grows grass that stands still.
 
