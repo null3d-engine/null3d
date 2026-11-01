@@ -740,6 +740,14 @@ impl UploadArena {
             .map_err(|_| RecordError::OutOfMemory { bytes: 0 })
     }
 
+    /// Frees every block, for a frame whose copies will never replay.
+    fn give_back(&mut self) {
+        self.blocks = Vec::new();
+        self.at = 0;
+        self.before = 0;
+        self.frames_since_large = 0;
+    }
+
     /// The bytes that the frame copied so far.
     pub(crate) fn len(&self) -> usize {
         self.before + self.blocks.get(self.at).map_or(0, Vec::len)
@@ -1038,6 +1046,11 @@ impl ParityLists {
                 self.halted_sources = figures.active;
             }
             list.clear();
+        }
+        // A failed frame's copies never replay, and the memory they hold is what the frame that
+        // records next may need.
+        if result.is_err() {
+            arena.give_back();
         }
         self.lists[parity] = list;
         self.arenas[parity] = arena;
@@ -4617,6 +4630,18 @@ pub fn linear_to_srgb(c: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A failed frame's copies never replay, so its large blocks do not wait out their frames.
+    #[test]
+    fn an_upload_arena_gives_its_blocks_back_when_told() {
+        let mut arena = UploadArena::default();
+        arena.begin_frame().unwrap();
+        arena.push(&vec![1u8; 2 * UPLOAD_BLOCK]).unwrap();
+        arena.give_back();
+        assert!(arena.blocks.is_empty());
+        arena.begin_frame().unwrap();
+        assert_eq!(arena.push(&[1u8; 16]).unwrap().1, 16);
+    }
 
     /// A copy that the heap cannot hold is reported as an error, and the core does not trap.
     #[test]
