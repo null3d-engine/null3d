@@ -40,6 +40,7 @@ The examples page links only by relative addresses, and each demo's entry names 
 - `bun run dev` serves the page at `/examples/` with the other test and benchmark pages.
 - `bun run examples:build` builds the page and every demo into `target/examples/`, against this checkout's packages, with the engine's address switches on. `bun run examples:preview` serves that build with the isolation headers and the sample files. Run `bun run build` first, for the WebAssembly files.
 - The demos that load files need `bun run samples:fetch` once on a new machine ([Sample content](sample-content.md)).
+- After a merge that changes the shaders, a merge and a core rebuild, clear `node_modules/.cache/null3d-shaders` and restart the server with `--force`. Vite's `--force` does not clear the plugin's cache of compiled custom materials. An entry compiled against an older frame group keeps its old binding declarations, and a material then fails to build its pipeline with E1404 even though its source is right.
 
 ### On the website
 
