@@ -739,3 +739,20 @@ The wind grid's own pass lifts Medium and above into the same cost: at Medium th
 So Creek rides the offset form and keeps no grid on the WebGL2 path. Its readers work the air out of
 the steady field there, which carries the gust and the swirl, so a gust still crosses the banks. The
 cost itself is the WebGL2 backend's, not the add-ons', and belongs to the engine's own record.
+
+The branch and the milestone head read the same rows on the cloud devices. The branch at 8363b20a6
+runs [the iPad's rows](../tested-devices/ipad-pro-13-safari/20261101-091422-vegetation.md) and
+[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261101-091422-vegetation.md). The head at
+`fcafb9cd7` runs [the iPad's](../tested-devices/ipad-pro-13-safari/20261101-091901-vegetation.md) and
+[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261101-091901-vegetation.md), and it
+builds no wind field.
+
+| Demo and preset | Path | Ceiling | Head | Branch |
+| --- | --- | --- | --- | --- |
+| Creek Low, iPad | WebGL2 | 30.8 | 31.06 | 30.98 |
+| Creek Medium, iPad | WebGL2 | 90.8 | 78.74 | 78.82 |
+| Creek Low, S25 | WebGL2 | 33.3 | 33.3 | 33.32 |
+| Creek Medium, S25 | WebGL2 | 33.3 | 33.3 | 33.33 |
+
+The branch's earlier rows of 287.1, 935.0, 312.4 and 166.59 ms were that pass-and-copy cost, not
+Creek's own. The head's rows show it: they read the same frames before the branch added a reader.
