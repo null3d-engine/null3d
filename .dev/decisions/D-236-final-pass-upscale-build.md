@@ -175,6 +175,38 @@ Even at High the frame keeps within 18.3 to 23.2 ms, and the second step is a fe
 it. What would separate the gate's two rows is the showcase plan, run back to back at the gate
 commit and at this head. This reading does not do that.
 
+**The GPU check's medium rows repeat and its high rows do not.** Measured on the owner's Mac across
+five runs at two heads, each against the same prepared baseline of `9369b1380`. The baseline is the
+control, one binary that was never rebuilt, and its own readings moved further than any change the
+check is meant to catch.
+
+| row | baseline readings across the runs | the build's readings | spread |
+| --- | --- | --- | --- |
+| s4 medium | 2.68, 2.84, 2.89 ms | 2.77, 2.94, 3.25 ms | a few hundredths on three of four runs |
+| s6 medium | 3.62, 3.72 ms | 3.94, 4.02 ms | one outlier at 9.93 |
+| s4 high | 3.15, 3.36, 4.79 ms | 3.96, 15.47, 3.96 ms | half again to four times |
+| s6 high | 6.47, 11.84, 15.96 ms | 11.01, 13.35, 18.66 ms | two and a half times on one binary |
+
+Two runs seven minutes apart, with nothing rebuilt between them, called the same pair of builds
+`+70.2 per cent slower` on s6 high and `same` on that row, and moved the failure to s4 high at
+`+222.7 per cent` instead. Every failure in that night fell on a high row, and the high rows are the
+least repeatable the check has.
+
+**The rule.** The check runs twice on a machine that has drawn nothing for ten minutes, and the two
+runs must agree on the medium rows before any verdict is read from either. A high row may not fail a
+range until the high rows are steadier than they are, whether by more rounds, a pinned clock
+state, or a cheaper scene. Until then a high-preset failure is a note, not a verdict.
+
+**What to write down beside each run.** The baseline's own four figures before the ratios, the load
+average at the start and the end, whether a browser was drawing, and the phases' spread. A reader who
+finds four contradictory lines needs those conditions more than the lines.
+
+**What a run of the check should do, step by step.** Let the machine sit with nothing drawn for ten
+minutes. Take one run and read the baseline's figures first: near 2.8 and 3.7 for the medium rows is
+the regime the check is usable in, and near 9.9 is not. Take a second run and compare the two on the
+medium rows only. If they agree, read the high rows as a note. If they do not, write down that the
+check did not measure anything, rather than a passed or failed line.
+
 The runs are the ten bench files whose names begin `20261101` in the iPad's folder, two of them at
 the whole scale. The
 pinned-half-scale reading with the passes named is
