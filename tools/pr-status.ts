@@ -35,12 +35,10 @@ const ON_BRANCH = new Set(['M3-F9']);
 // A task belongs here only when it has no evidence yet. A task whose proof is written but whose
 // gap still stops the tick belongs in AUDIT_GAPS instead: a task in both lists says its work is
 // unfinished and finished at once, and the release hook refuses a range that creates that pair.
-const INCOMPLETE = new Set(['M3-K9', 'M3-E8', 'M3-R22', 'M3-R19']);
+const INCOMPLETE = new Set(['M3-E8', 'M3-R22']);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
-	'M3-K9':
-		'the budget raise it needed is landed and its shader build now passes, but the task itself is not in: its branch is not merged with the head, it has no judged speed line over the final tree, and its Done-when asks for the cost per extra light on an iPad and an S24-class phone, which no device row covers yet',
 	'M3-A8':
 		"the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, over the prototype's one-step tolerance. The owner accepted that cost and ruled that the display table stays and the light table comes out",
 	'M3-E6':
@@ -49,8 +47,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"the compute pass and its WebGL2 fragment form are built and tested, and the wind add-on fills its field through the hook with a compute pass. The owner's 25 October ruling adds M3-V13's history to the hook, and the first-user outcome the plan names still waits on M3-F9's ocean",
 	'M3-R22':
 		"the shader cache on the branch is D-248's change, not this task's: it reuses every entry when a compiler change leaves the compiled program identical, 0 compiled and 79 reused in 19 s, where the same change cost an hour. The task's own change, three entries instead of four for every module kind, is on `feat/m3-r22-entry-set` and not on this branch, and the determinism list here still holds `lit`; the two checks' CI times remain unmeasured",
-	'M3-E1':
-		"unticked by the 29 October audit: the entry gained a rule-42 bullet that the tick never covered. The particles add-on's birth records are still written one per birth per frame on the sketch thread, and the engine's particle buffer gives them a Rust home",
 	'M3-F3':
 		"dropped with the temporal resolve it waited on (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F10':
@@ -62,6 +58,8 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
 	'M3-R23':
 		'the depth-only prepass is the default and passes the bar on the iPhone 18 Pro at both scales and on the iPad 10 at half scale; the iPad 10 at full scale reads 0.52 and 0.64 ms against the 0.5 ms bar, and the owner ruled that margin accepted (D-269)',
+	'M3-R19':
+		"the second step costs 2.96 to 2.99 ms of a 6.14 to 6.23 ms frame at half the scale on the cloud iPad, and 3.71 to 4.16 ms on the High preset's canvas; the first addendum's 20.5 to 34.9 ms was the frame's tail, since the engine folds every pass after the seventh into it. The held pair of 34.6 against 29.7 frames a second and 22.56 against 27.56 ms has no run file, and this reading's cells bracket its GPU times. The gate commit's 36.1 frames a second lies inside the 29.6 to 36.2 spread three runs gave at one code state, and the head's 29.0 sits 0.6 below its floor, so the second step is not shown to cause S5's drop (D-236)",
 };
 
 /**
@@ -72,14 +70,6 @@ const NOTES: Readonly<Record<string, string>> = {
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-C1':
 		"the scene, its lanes, rain and the hero car are in, and so are the moods (`createMoods` in the skyway sketch) and the instances demo, which is registered and built on the traffic-lanes add-on; the owner approved the look. What remains is the chase camera's tower occlusion fix, held on `feat/skyway-camera` until its look review passes, and the frame rates against the target: the iPad Pro 13 drew 50.0 fps at Low on WebGPU and 54.2 on WebGL2, and the cloud S24 drew 11.7 at Low and 7.8 in the demos plan, all under 60",
-	'M3-E1':
-		"held by its own rule-42 bullet: the engine can now write a frame's birth records in Rust from a parameter block, which is built and proved, but the add-on still fills that block with one loop row per birth on the sketch thread, so the per-birth loop the bullet names is still there. The bullet stays open until the engine gains a function over the emitter's rate and births, or the plan is amended to put the add-on's own module in its place; either shape needs the per-birth maths to leave the sketch thread, with the emitter's settings passed across",
-	'M3-F4':
-		"unticked by its check at 652fd235b on `feat/m3-f4-lightmap-evidence`: the captured frame is one side of the comparison rather than the comparison itself, D-258 claims more than that frame settles, not every figure has a recorded run. The evidence entry is written now and names what is owed rather than claiming it: the engine-to-viewer comparison does not exist, and the picture's failure without the direction is unrecorded. The same branch's ae46e947d states the viewer-side limit in D-258 lines 78 to 82 instead of closing it, so the owner has not ruled whether an engine-to-viewer comparison is owed",
-	'M3-L4':
-		"the owner ruled the three studies run in order, and all three are on the branch, two of them complete. Staged loading came first: whole levels and cluster bands arrive as stages, a band appends to the tree as it lands, and `maxLevels` with the pick-driven holdback serves both. Its load run shows the stages add no delay before the first picture, not that the first picture comes sooner, and its 29.3 per cent after the first picture is a lower bound. The impostors are in, with the card, the two atlases, the three-view blend, the per-copy turn, the bake helper and the vegetation bake with its hand-over band; an iPad Pro 13 costs 7.0 ms a frame for 152 cards, and a Galaxy S24 gave no figure because its path times no pass alone and its display ran at 30 Hz. The audit then found two faults in that work, and the far-tree task M3-V9 fixes both: a turned copy's light turns with the camera's azimuth as well as with the tree's, and the hand-over's two dither phases do not complement, so about a quarter of the band's pixels drop. The vertex morphing is in too: the terrain's pop falls from 0.026 to 0.000 per cent of the frame and the leaves' from 0.634 to 0.036, its judged GPU line reads the same on all four pages, and nine of nine pages pass on an iPad Pro 13 in Safari 26.6.1 and on a Galaxy S25 in Chrome 152, whose 30 Hz display is why its interval is not a cost",
-	'M3-R19':
-		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
 	'M3-B1':
 		"the whole look is costed at every preset on WebGPU and in compatibility mode, 3.13 to 3.91 and 3.12 to 3.82 ms at the 33-megapixel canvas, and all eight of those cells keep their range above zero. What remains is narrower: each mark is costed at the highest preset its path allows rather than at every preset, WebGL2 keeps no whole-look figure and its sharpening cell does not resolve, and the compatibility fringes' range crosses zero from -0.080 to 0.417, so that cell cannot be told apart from no mark. The earlier run at four times the pixels could not tell a mark from the frame's own variation, and that reason no longer stands",
 	'M3-B5':
@@ -90,10 +80,12 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the same placement is shown on two Android phones in Chrome and on an iPad in Safari 26.6.1, so a second JavaScript engine has placed the same points (`.dev/tested-devices/ipad-pro-13-safari/20261027-000756-vegetation-scatter.md`, two passed, both paths); the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
 	'M3-F5':
 		"the owner rejected the look and withdrew the earlier approval, because the water showed sideways lines amid the flow, and the Creek now draws its own water again, flowing with the river: each wave direction turns by the stream's local angle, the crests are kept, and the phase is carried in the moving frame. The close 640 by 360 picture is what guards that look, since the 320-wide bank views draw the stream as a ribbon a few dozen pixels across. The migration waits until the add-on follows the current the same way. The add-on moved the phase, the foam drift and the caustics onto a current vector read from the river mesh's texture coordinates instead of the old fixed flow, took the thickness from the screen-space depth copy instead of the analytic bed, and made the shore a soft alpha ramp",
-	'M3-K3':
-		"unticked by the 29 October audit: the owner's 26 October ruling is that cookies take any texture and larger sizes, and the head still resamples to 128 by 128 and takes pixels only",
+	'M3-F13':
+		"the layer, its seven pictures and its speed line are in and its look is approved; two clauses stay open. The S24-class phone's cost figure decides the preset and is a run to schedule. The steps at the far panes' edges are a look choice that the owner has not ruled: a fit of three atoms removes more than half of them and needs a 32-bit store, which is twice the moment traffic a frame",
 	'M3-F14':
-		"unticked by the 29 October audit: the entry gained a rule-42 bullet that the tick never covered. The per-frame terrain work, the quadtree select and the block build, is still in TypeScript and there is no terrain crate; that work is also what M3-R39's new bullet hands here by name, so R39 stands and this carries it",
+		"the 1 November audit found the code passing and the record holding three faults, and the record is corrected now: the cost rows say that they predate the port, a parity test drives the built module against the TypeScript reference, and the loader's task count no longer stays up when a task throws before it reaches its worker. What remains is narrower: the shading pictures compare each scene with the same scene without the feature, which is the clause's own test rather than a reference picture, so a baked normal that moves but is wrong would still pass",
+	'M3-V14':
+		"the owner ruled the rows and the budgets, and D-283 records them. Three clauses of the Done-when stand open, so the task cannot tick: the smallest-tier look, a side-by-side that the owner judges and has not named, which is also the tier he cannot tell from the next one up; the cost of each tier on the M5 Max, whose row is owed, while the iPad Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus measured theirs at this head; and the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings, which cannot be shown while their readers wait on M3-V11 and M3-V12",
 	'M3-V8':
 		"the CPU path draws a hill through the add-on and is measured on this Mac's Chrome, and the task's Done-when is not met. Creek's sketch still imports its own `./grass`, so no hill of Creek draws through the add-on; the cost has a row only for this Mac, and the iPad, an S24-class phone and the Tab A9 Plus are owed; near grass shadows are not built; and the compute-built blade list waits on M3-E8's same-frame output, M3-E9's count in the near shadow views and M3-V3's graph edge, as the evidence entry says",
 	'M3-X1':

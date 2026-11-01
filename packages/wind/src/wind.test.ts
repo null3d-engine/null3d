@@ -2,7 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { Camera, SketchContext } from '@null3d/engine';
 import ts from 'typescript';
-import { CYCLE_STEPS, createWind, holdsField, STEP_SECONDS } from './wind';
+import { createWind, holdsField } from './wind';
+
+/** Medium's cycle: its 16 pressure steps, the advection and the projection. */
+const MEDIUM_CYCLE = 18;
+/** The time between Medium's field steps, in seconds. */
+const MEDIUM_STEP = 0.033;
 
 /** A camera that stands at the world's origin. */
 const camera = {
@@ -15,20 +20,34 @@ const camera = {
 
 /**
  * A sketch's context around a clock, with the render and texture calls stubbed out. `passes`
- * counts the passes that the add-on adds, so a test can tell a device that keeps no grid.
+ * counts the passes that the add-on adds, so a test can tell a device that keeps no grid. `hdr`
+ * says whether the engine's probe draws into a float target and reads it back.
  */
 function context(
 	tier = 'webgpu',
-	features: string[] = [],
+	hdr = tier !== 'webgl2',
 	passes?: { count: number },
 	steps?: number[],
 	options?: unknown[],
 	textures: unknown[] = [],
 ): SketchContext {
-	const pass = { enabled: true, live: true };
+	const pass = { enabled: true, live: true, name: 'wind-field', writes: 'wind', place: 1 };
 	return {
 		time: { now: 1 },
-		engine: { capabilities: { tier, features } },
+		engine: { capabilities: { tier, hdr } },
+		// The feature host reads the preset, the budget and the page's stats channel.
+		quality: {
+			preset: 'medium',
+			settings: {},
+			onChange: () => () => {},
+			setBudget: (given: { name: string; ms: number }) => ({
+				name: given.name,
+				scale: 1,
+				ms: given.ms,
+				remove() {},
+			}),
+		},
+		page: { post: () => {} },
 		render: {
 			addPass: (given: unknown) => {
 				if (passes) passes.count++;
@@ -52,17 +71,18 @@ function context(
 }
 
 describe('the device that holds the field', () => {
-	test('every WebGPU path holds it', () => {
-		expect(holdsField({ tier: 'webgpu', features: [] })).toBe(true);
-		expect(holdsField({ tier: 'webgpu-compat', features: ['shader-f16'] })).toBe(true);
+	test('every WebGPU path holds it, in either latency mode', () => {
+		expect(holdsField({ tier: 'webgpu', hdr: true })).toBe(true);
+		// Compatibility mode with MSAA draws into the canvas rather than a float target, yet its
+		// compute pass keeps the grid, so the field does not depend on the engine's color path.
+		expect(holdsField({ tier: 'webgpu-compat', hdr: false })).toBe(true);
 	});
 
-	test('a WebGL2 device needs a float target', () => {
-		expect(holdsField({ tier: 'webgl2', features: ['EXT_color_buffer_float'] })).toBe(true);
-		expect(holdsField({ tier: 'webgl2', features: ['EXT_color_buffer_half_float'] })).toBe(true);
-		// Without either, the pass cannot keep an image, so the add-on costs no pass there.
-		expect(holdsField({ tier: 'webgl2', features: ['OES_texture_float_linear'] })).toBe(false);
-		expect(holdsField({ tier: 'webgl2', features: [] })).toBe(false);
+	test('a WebGL2 device holds it only when the engine reads a float target back', () => {
+		expect(holdsField({ tier: 'webgl2', hdr: true })).toBe(true);
+		// An advertised extension that fails the engine's clear-and-read probe leaves no grid,
+		// because the pass's output would then be undefined.
+		expect(holdsField({ tier: 'webgl2', hdr: false })).toBe(false);
 	});
 });
 
@@ -70,13 +90,10 @@ describe('the field that a reader samples', () => {
 	test('a device without float targets keeps no grid and gives readers the steady field', () => {
 		const passes = { count: 0 };
 		const textures: unknown[] = [];
-		const wind = createWind(
-			context('webgl2', ['OES_texture_float_linear'], passes, [], [], textures),
-			{
-				camera,
-				grid: 8,
-			},
-		);
+		const wind = createWind(context('webgl2', false, passes, [], [], textures), {
+			camera,
+			grid: 8,
+		});
 		// No pass costs the device nothing, and a box of no width sends every sample to the steady
 		// field that the sampling function works out, so a plant there still moves.
 		expect(passes.count).toBe(0);
@@ -86,76 +103,82 @@ describe('the field that a reader samples', () => {
 		expect(textures[0]).toMatchObject({ width: 1, height: 1, depth: 1 });
 		expect((textures[0] as { data: unknown }).data).toBeInstanceOf(Uint8Array);
 		expect(wind.field.air.base).toEqual([4, 0, 0.65, 0]);
+		wind.destroy();
 	});
 
 	test('the pass keeps its state and runs the steps that the sketch time owes', () => {
 		const steps: number[] = [];
 		const options: unknown[] = [];
-		const ctx = context('webgpu', [], undefined, steps, options);
+		const ctx = context('webgpu', true, undefined, steps, options);
 		const wind = createWind(ctx, { camera, grid: 8 });
 		// The field starts when the page makes it, so the first frame owes the cycles since then.
+		// Medium runs 16 pressure steps, the advection and the projection, so a cycle is 18 runs.
 		expect(options[0]).toMatchObject({
 			kind: 'compute',
 			history: true,
 			format: 'rgba16float',
-			steps: CYCLE_STEPS,
+			steps: MEDIUM_CYCLE,
 		});
 		expect(steps[0]).toBe(0);
-		// A frame that adds a sixtieth of a second owes one cycle, and a frame that adds nothing
-		// owes none.
-		(ctx.time as { now: number }).now = 1 + STEP_SECONDS;
+		// A frame that adds one Medium step owes one cycle, and a frame that adds nothing owes none.
+		(ctx.time as { now: number }).now = 1 + MEDIUM_STEP;
 		wind.update();
-		expect(steps[1]).toBe(CYCLE_STEPS);
+		expect(steps[1]).toBe(MEDIUM_CYCLE);
 		wind.update();
 		expect(steps[2]).toBe(0);
+		wind.destroy();
 	});
 
 	test('a held page solves one cycle in its one drawn frame', () => {
 		const steps: number[] = [];
-		const ctx = context('webgpu', [], undefined, steps);
+		const ctx = context('webgpu', true, undefined, steps);
 		// Hold mode runs the sketch's updates without drawing, from the first step to the hold time,
 		// and draws once at the end. The pass advances only in that drawn frame, so the steps that
 		// the last update sets are the ones that run.
 		(ctx.time as { now: number }).now = 0;
 		const wind = createWind(ctx, { camera, grid: 8 });
 		for (let step = 0; step <= 60; step++) {
-			(ctx.time as { now: number }).now = step * STEP_SECONDS;
+			(ctx.time as { now: number }).now = step * MEDIUM_STEP;
 			wind.update();
 		}
-		expect(steps.at(-1)).toBe(CYCLE_STEPS);
+		expect(steps.at(-1)).toBe(MEDIUM_CYCLE);
+		wind.destroy();
 	});
 
 	test('a stall skips the air that it missed instead of paying for it later', () => {
 		const steps: number[] = [];
-		const ctx = context('webgpu', [], undefined, steps);
+		const ctx = context('webgpu', true, undefined, steps);
 		(ctx.time as { now: number }).now = 0;
 		const wind = createWind(ctx, { camera, grid: 8 });
-		// A frame that arrives twenty sketch seconds late runs one frame's worth of air: ten
-		// seconds of cycles, which is the most that a frame runs.
+		// A frame that arrives twenty sketch seconds late runs one frame's worth of air: the most
+		// that a frame runs is 600 cycles.
 		(ctx.time as { now: number }).now = 20;
 		wind.update();
-		expect(steps.at(-1)).toBe(10 * 60 * CYCLE_STEPS);
+		expect(steps.at(-1)).toBe(600 * MEDIUM_CYCLE);
 		// The next frame owes nothing extra, so the stall left no debt behind it.
 		wind.update();
 		expect(steps.at(-1)).toBe(0);
+		wind.destroy();
 	});
 
 	test('a box of no width keeps no grid either, so every sample is the steady field', () => {
 		const passes = { count: 0 };
-		const wind = createWind(context('webgpu', [], passes), { camera, box: 0, grid: 8 });
+		const wind = createWind(context('webgpu', true, passes), { camera, box: 0, grid: 8 });
 		expect(passes.count).toBe(0);
 		expect(wind.field.size).toBe(0);
+		wind.destroy();
 	});
 
 	test('a device that holds the field takes its box, and each reader reads the settings', () => {
 		const passes = { count: 0 };
-		const wind = createWind(context('webgpu', [], passes), { camera, box: 96, grid: 8 });
+		const wind = createWind(context('webgpu', true, passes), { camera, box: 96, grid: 8 });
 		expect(passes.count).toBe(1);
 		expect(wind.field.size).toBe(96);
 		// The reading follows the steady wind, so a reader that works out the far field keeps step.
 		wind.setBase(9, 0.5);
 		expect(wind.field.air.base[0]).toBe(9);
 		expect(wind.field.air.base[1]).toBe(0.5);
+		wind.destroy();
 	});
 });
 
@@ -178,8 +201,8 @@ describe('the calls that a frame makes', () => {
 		// The field itself reads the noise through a hash that makes no tuple and no closure, so a
 		// sample allocates nothing. The bytes per frame are the allocation gate's measure, which
 		// D-265 names as owed.
+		wind.destroy();
 	});
-
 	test('a frozen field gives the same air at two times, and a live one does not', () => {
 		const frozen = context();
 		const still = createWind(frozen, {
@@ -193,6 +216,8 @@ describe('the calls that a frame makes', () => {
 		(frozen.time as { now: number }).now = 2;
 		still.sample(3, 4, -2, later);
 		expect(later).toEqual(first);
+		// One wind fills a scene, so the add-on's feature goes before the next one starts.
+		still.destroy();
 
 		const live = context();
 		const blowing = createWind(live, { camera, grid: 8 });
@@ -200,6 +225,49 @@ describe('the calls that a frame makes', () => {
 		(live.time as { now: number }).now = 2;
 		blowing.sample(3, 4, -2, later);
 		expect(later).not.toEqual(first);
+		blowing.destroy();
+	});
+});
+
+/** The body of the `read` method that `createWind` returns, as the text of the code. */
+function readBody(): string {
+	const source = readFileSync(new URL('./wind.ts', import.meta.url), 'utf8');
+	const file = ts.createSourceFile('wind.ts', source, ts.ScriptTarget.ESNext, true);
+	let body: string | undefined;
+	const visit = (node: ts.Node): void => {
+		if (
+			ts.isMethodDeclaration(node) &&
+			ts.isIdentifier(node.name) &&
+			node.name.text === 'read' &&
+			node.body !== undefined
+		)
+			body = node.body.getText(file);
+		node.forEachChild(visit);
+	};
+	visit(file);
+	expect(body, 'read is a method of the wind').toBeDefined();
+	return body as string;
+}
+
+describe('the air that a frame asks for', () => {
+	test('comes from the job worker, never from the TypeScript field', () => {
+		// A page without job workers gets the engine's task worker, and a task that fails is reported
+		// once. Nothing in the call falls back to the mirror, which would be a frame loop in
+		// TypeScript.
+		const body = readBody();
+		expect(body).toContain('probes.ask');
+		expect(body).not.toMatch(/analyticVelocity/);
+		expect(body).not.toMatch(/\bsample\b/);
+	});
+
+	test('has no TypeScript field in the ask path to answer in its place', () => {
+		const field = readFileSync(new URL('./field.ts', import.meta.url), 'utf8');
+		const task = readFileSync(new URL('./field-task.ts', import.meta.url), 'utf8');
+		expect(field).not.toMatch(/analyticVelocity|value3/);
+		expect(task).not.toMatch(/analyticVelocity|value3|from '\.\/analytic'/);
+		// The one import of the mirror in the ask path gives a type alone, which the build drops.
+		const mirrorImports = field.match(/import[^;]*from '\.\/analytic'/g) ?? [];
+		expect(mirrorImports.every((line) => line.startsWith('import type'))).toBe(true);
 	});
 });
 
@@ -212,49 +280,111 @@ const ALLOCATING: readonly (readonly [string, (node: ts.Node) => boolean])[] = [
 	['a new expression', ts.isNewExpression],
 ];
 
-/** The forms that allocate, anywhere in the functions of `wind.ts` that a frame calls. */
-function allocatingForms(): string[] {
-	const source = readFileSync(new URL('./wind.ts', import.meta.url), 'utf8');
-	const file = ts.createSourceFile('wind.ts', source, ts.ScriptTarget.ESNext, true);
-	const wanted = new Set(['write', 'apply', 'turn', 'sample']);
+/** The forms that walk a count in TypeScript, which hard rule 42 puts in Rust. */
+const LOOPING: readonly (readonly [string, (node: ts.Node) => boolean])[] = [
+	['a for', ts.isForStatement],
+	['a for-in', ts.isForInStatement],
+	['a for-of', ts.isForOfStatement],
+	['a while', ts.isWhileStatement],
+	['a do', ts.isDoStatement],
+];
+
+/** A file of the ask path, and the functions in it that a frame runs. */
+interface Scanned {
+	readonly file: string;
+	readonly names: readonly string[];
+}
+
+/** The functions that a frame runs, in each file of the ask path. */
+const FRAME_FILES: readonly Scanned[] = [
+	{ file: 'wind.ts', names: ['write', 'apply', 'turn', 'sample', 'read'] },
+	{ file: 'field.ts', names: ['ask', 'send', 'answered', 'refused', 'reportDrop'] },
+	{ file: 'field-layout.ts', names: ['fillRequest'] },
+];
+
+/** The same, with the buffer's growth, which a call may run when a page first asks for more places. */
+const LOOP_FILES: readonly Scanned[] = [
+	FRAME_FILES[0] as Scanned,
+	{ file: 'field.ts', names: ['ask', 'send', 'answered', 'refused', 'reportDrop', 'reserve'] },
+	FRAME_FILES[2] as Scanned,
+];
+
+/** The name of the function that a declaration or a declaration's arrow makes, if any. */
+function functionName(node: ts.Node): string | undefined {
+	if (
+		(ts.isFunctionDeclaration(node) ||
+			ts.isMethodDeclaration(node) ||
+			ts.isVariableDeclaration(node) ||
+			ts.isPropertyDeclaration(node)) &&
+		node.name !== undefined &&
+		ts.isIdentifier(node.name)
+	)
+		return node.name.text;
+	return undefined;
+}
+
+/** The body of a function that a declaration makes, if any. */
+function functionBody(node: ts.Node): ts.Node | undefined {
+	if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) return node.body;
+	if (ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node)) {
+		const init = node.initializer;
+		return init !== undefined && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))
+			? init.body
+			: undefined;
+	}
+	return undefined;
+}
+
+/**
+ * The forms of `patterns`, anywhere in the functions that `files` names. A function is a
+ * declaration, a method of a class or an object, or a constant given an arrow. A name that no file
+ * holds fails the test, so a renamed or removed function leaves no rule unchecked.
+ */
+function formsIn(
+	files: readonly Scanned[],
+	patterns: readonly (readonly [string, (node: ts.Node) => boolean])[],
+): string[] {
 	const found: string[] = [];
-	const walk = (node: ts.Node, name: string): void => {
-		for (const [what, matches] of ALLOCATING)
-			if (matches(node)) found.push(`${name}: ${what} at ${node.getText(file).slice(0, 40)}`);
-		node.forEachChild((child) => walk(child, name));
-	};
-	// The functions are the constants of `createWind`'s body, so the walk goes anywhere in the file.
-	const visit = (node: ts.Node): void => {
-		if (
-			ts.isVariableDeclaration(node) &&
-			ts.isIdentifier(node.name) &&
-			wanted.has(node.name.text)
-		) {
-			const name = node.name.text;
-			const init = node.initializer;
-			const body =
-				init !== undefined && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))
-					? init.body
-					: undefined;
-			expect(body, `${name} is a function`).toBeDefined();
-			if (body !== undefined) {
-				wanted.delete(name);
-				walk(body, name);
+	for (const { file, names } of files) {
+		const source = readFileSync(new URL(`./${file}`, import.meta.url), 'utf8');
+		const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.ESNext, true);
+		const wanted = new Set(names);
+		const walk = (node: ts.Node, name: string): void => {
+			for (const [what, matches] of patterns)
+				if (matches(node)) found.push(`${name}: ${what} at ${node.getText(parsed).slice(0, 40)}`);
+			node.forEachChild((child) => walk(child, name));
+		};
+		const visit = (node: ts.Node): void => {
+			const name = functionName(node);
+			if (name !== undefined && wanted.has(name)) {
+				const body = functionBody(node);
+				expect(body, `${file}: ${name} is a function`).toBeDefined();
+				if (body !== undefined) {
+					wanted.delete(name);
+					walk(body, `${file}: ${name}`);
+				}
 			}
-		}
-		node.forEachChild(visit);
-	};
-	visit(file);
-	// A renamed or removed function would otherwise leave its rule unchecked.
-	expect([...wanted]).toEqual([]);
+			node.forEachChild(visit);
+		};
+		visit(parsed);
+		expect([...wanted], `${file} holds every function that the rule names`).toEqual([]);
+	}
 	return found;
 }
 
 describe('the functions that a frame calls', () => {
 	test('hold none of the forms that allocate', () => {
 		// The field's step writes the air's numbers into the pass's values and reads the camera's
-		// place, and the sample walks the ring. The allocator makes each object these forms make, so
-		// the step keeps its own arrays and its own functions, made once in `createWind`.
-		expect(allocatingForms()).toEqual([]);
+		// place, a push writes its slot where the page sends it, and the read hands the request
+		// buffer to a job worker. The allocator makes each object these forms make, so the step
+		// keeps its own arrays and its own functions, made once in `createWind`.
+		expect(formsIn(FRAME_FILES, ALLOCATING)).toEqual([]);
+	});
+
+	test('walk no count in TypeScript, which hard rule 42 puts in its WebAssembly', () => {
+		// The pass's values hold the ring where a push writes it, so a frame copies no slot, and the
+		// analytic field's own walk runs in the add-on's Rust, on the job workers. The ask path has
+		// no loop either: the request is a set of typed-array writes and the task does the walk.
+		expect(formsIn(LOOP_FILES, LOOPING)).toEqual([]);
 	});
 });

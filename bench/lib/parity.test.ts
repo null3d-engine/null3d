@@ -326,6 +326,7 @@ describe('feature scenes', () => {
 			'alpha-mask-shadows',
 			'points',
 			'lights-16',
+			'lights-fills',
 			'gltf-metal-rough',
 			'gltf-ktx2',
 			'gltf-specular',

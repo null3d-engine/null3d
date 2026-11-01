@@ -1,6 +1,7 @@
-// The point, spot, hemisphere, rectangle and tube light scenes (bench/scenes/lights.ts). ?lights=N
-// lights the floor with N point lights in a square grid, ?scene=spot with three spot lights
-// instead, ?scene=hemisphere with a hemisphere light, ?scene=rect with three rectangle lights,
+// The point, spot, directional, hemisphere, rectangle and tube light scenes
+// (bench/scenes/lights.ts). ?lights=N lights the floor with N point lights in a square grid,
+// ?scene=spot with three spot lights instead, ?scene=fills with three directional lights,
+// ?scene=hemisphere with a hemisphere light, ?scene=rect with three rectangle lights,
 // ?scene=rect-image with the same lights showing an image of colored bands, and ?scene=tube with
 // three tube lights. ?areaLights=N caps the area lights of each frame.
 // ?scene=hemisphere-split gives the same light as two lights that the frame sums. ?camera=ortho
@@ -9,6 +10,7 @@
 // draws with no tone mapping, three.js's default.
 import { defineSketch } from '@null3d/engine';
 import {
+	FILL_LIGHTS,
 	HEMISPHERE_LIGHT,
 	LIGHTS_AMBIENT,
 	LIGHTS_BACKGROUND,
@@ -57,6 +59,11 @@ export default defineSketch(({ scene, materials, geometry, post, quality }) => {
 	}
 
 	const lights = params.get('scene');
+	if (lights === 'fills') {
+		for (const { direction, ...light } of FILL_LIGHTS)
+			scene.createDirectionalLight({ ...light, direction: [...direction] });
+		return;
+	}
 	if (lights === 'spot') {
 		for (const { position, target, ...light } of SPOT_LIGHTS)
 			scene.createSpotLight({ ...light, position: [...position], target: [...target] });

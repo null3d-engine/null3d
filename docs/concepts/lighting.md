@@ -8,7 +8,7 @@ summary: "Light types, units and exposure; clustered lighting; fog; environment 
 
 # Lighting and environment
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, volumetric fog, light units, hemisphere lights' light, and rectangle and tube lights. It also adds the light probe grid, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets cap area lights, but not yet the other light limits. Coding agents must not rely on these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, volumetric fog, light units, hemisphere lights' light, and rectangle and tube lights. It also adds the light probe grid, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show up to four directional lights. The quality presets cap area lights, but not yet the other light limits. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -17,7 +17,7 @@ flowchart LR
     sketch --> env["Environment<br/>cube map and diffuse light"]
     object --> frame{"Each frame:<br/>visible, and on the<br/>camera's layers?"}
     table --> frame
-    frame --> main["The first directional light,<br/>the ambient and hemisphere lights"]
+    frame --> main["The directional lights,<br/>the ambient and hemisphere lights"]
     frame --> list["Point, spot and area lights<br/>whose ranges reach the view"]
     list --> grid["Light grid<br/>the lights of each cluster,<br/>on the GPU or the job workers"]
     main --> shading["Standard material shading"]
@@ -30,7 +30,7 @@ Every light is a scene object with a row in the engine's light table. The object
 Setters change the engine's memory at once. They write their numbers into a block of the engine's memory, and they call the core with whole numbers only. So a setter allocates nothing, a color included. Call a per-frame setter from a small function of its own, so the browser inlines it. Each frame, after the engine updates transforms, it reads every light:
 
 1. It skips a light that is hidden by itself or a parent, or whose layer mask shares no bit with the camera's.
-2. Standard materials reflect the first directional light created that remains, the sum of the ambient and hemisphere lights, and the scene's environment.
+2. Standard materials reflect the directional lights. The first one created that remains casts the shadows, and up to three more light surfaces as fill and rim lights. The materials also reflect the sum of the ambient and hemisphere lights, and the scene's environment.
 3. It tests the sphere of each point, spot and area light's range against the camera's view, and lists the lights whose spheres reach into it.
 4. Each listed light goes into the clusters of the view that its sphere reaches. On WebGPU the GPU does this work, and on WebGL2 the job workers do it, as [Clustered forward shading](#clustered-forward-shading) explains.
 
@@ -72,6 +72,8 @@ export default defineSketch(({ scene }) => {
   scene.createPointLight({ position: [2, 1.5, 0], color: '#ffb46b', intensity: 12, range: 6 });
 });
 ```
+
+Up to four directional lights light a frame. The first one created that remains in the view casts the shadows, when it has `castShadows`. The next three light surfaces as fill and rim lights, and cast none. A fifth directional light gives no light. Each fill light adds one direct light term to every lit pixel, and no shadow reads.
 
 ## Units and exposure
 
@@ -324,6 +326,8 @@ Mirror reflections win over probes: a [reflection pass](../api/render.md#reflect
 An environment map lights every surface the same way. A light probe grid varies the light by place. Its probes hold the light that arrives at each point, so light bounced from a red wall or blocked by a corner reaches the surfaces near it. `scene.setLightProbeGrid` sets one. [Scene](../api/scene.md#the-light-probe-grid) gives its options, and the calls that make a grid.
 
 Each probe holds L1 spherical harmonics of the light that arrives there: four RGB coefficients, 12 numbers. Standard materials read the grid per pixel, with three filtered reads. The grid's light takes the place of the environment's diffuse light, and the environment keeps its reflections. `environmentWeight` sets the share of the diffuse light that the grid takes over.
+
+A scene with a grid draws no [screen-space bounce light](post-processing.md#screen-space-bounce-light). The grid already holds one bounce, with the occlusion the screen cannot supply, and the two would count the same light twice.
 
 `bakeProbes` bakes a grid in the browser. Each probe casts directions with `scene.raycastBatch`. A direction that reaches the sky takes the environment's light. A direction that hits a surface takes that surface's colour once, as a matte bounce. The bake counts no lamps, so the grid holds the sky's light, the scene's occlusion of it, and one coloured bounce. `step` bakes a few probes a frame, so a loading screen can show progress. `finish` bakes the rest at once.
 
