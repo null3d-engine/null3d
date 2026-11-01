@@ -3594,6 +3594,7 @@ impl FrameGraph {
         self.declare_accumulate();
         // The anti-aliasing steps read the scene's color as the passes before them leave it, so
         // they take the name of that output before the later passes read their own.
+        self.moment_smaa_declared = false;
         let aliased = self.color_output();
         self.moment_smaa_declared = self.moment_declared;
         if self.moment_smaa_declared {
@@ -11190,6 +11191,33 @@ mod tests {
                 .unwrap();
             assert_eq!(steps(&frames), without);
         }
+    }
+
+    #[test]
+    fn declaring_again_keeps_the_moment_layers_anti_aliasing_out_of_a_cycle() {
+        let canvas = (320, 180);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default(), shown()]);
+        frames.set_transparent(true);
+        frames.set_moment(true);
+        let mut list = DrawList::with_capacity(65536);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 1);
+        pipelines.create_new(&mut list, 2).unwrap();
+        frames.request_pipelines(&mut pipelines, 2);
+        frames.sync(&[View::default(), shown()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert!(frames.moment_draws());
+        let source = frames.moment_textures_value().scene;
+        // A setting that declares the passes again finds the layer's steps declared already.
+        frames.declared = false;
+        frames.sync(&[View::default(), shown()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert_eq!(frames.moment_textures_value().scene, source);
     }
 
     #[test]
