@@ -2292,12 +2292,9 @@ impl GpuDrivenRenderer {
             Some(Some(frame)) => frame.uniform.camera_world[1],
             _ => 0.0,
         };
-        // The field is made when a frame can draw the tier: a page whose background is no sky
-        // builds none, because no draw samples it.
-        let clouds = cloud_noise::draws(
-            self.settings.background().as_ref(),
-            self.settings.cloud_steps(),
-        );
+        // The field is made whenever the tier draws: a sky map can refresh from the scene's sky
+        // while another background draws, and its steps bind the field.
+        let clouds = self.settings.cloud_steps() > 0;
         if clouds {
             cloud_noise::prepare(
                 list,
