@@ -559,6 +559,11 @@ export function bayShoal(x: number, z: number): number {
 	);
 }
 
+/** How much the seabed at a point is pale sand, from 0 to 1: the floor of the bay and of the harbour. */
+export function sandyBed(x: number, z: number): number {
+	return Math.max(smoothstep(bayShoal(x, z), 0.1, 0.6), harbourShare(x, z));
+}
+
 /** The land's form at a point, in meters: its hills, coast and flats, before the shelves are cut. */
 export function formHeight(x: number, z: number): number {
 	const d = inland(x, z);
@@ -571,8 +576,12 @@ export function formHeight(x: number, z: number): number {
 		const reef = noise.fbm2(x * 0.05 + 21, z * 0.05 + 4, 3);
 		const width =
 			REEF_LEAST + REEF_RANGE * smoothstep(noise.fbm2(x * 0.008 + 31, z * 0.008, 2), -0.3, 0.3);
-		const shelf = 3 + off * 0.09 + Math.max(0, off - width) * 0.6;
-		const rock = shelf + 7 * reef * smoothstep(off, 4, 20) * (1 - smoothstep(off, 60, 130));
+		const shelf = 3 + off * 0.09 + Math.max(0, off - width) * 0.3;
+		// The reef's patches stop where the sand starts: a lump under the bay's clear water hides the bed behind it
+		// from a low view, and the water's color would jump along its outline.
+		const patches =
+			smoothstep(off, 4, 20) * (1 - smoothstep(off, 60, 130)) * (1 - smoothstep(bay, 0, 0.3));
+		const rock = shelf + 7 * reef * patches;
 		const shoal = off * 0.035 + Math.max(0, off - 70) * 0.28;
 		const depth = rock + (shoal - rock) * bay;
 		const harbour = harbourShare(x, z);

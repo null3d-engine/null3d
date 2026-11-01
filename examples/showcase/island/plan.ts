@@ -966,7 +966,7 @@ export const SHRUBS: readonly ShrubSpot[] = (() => {
 })();
 
 /** The fingerprint of the stored plan, which the plan tests and the browser test both hold it to. */
-export const PLAN_FINGERPRINT = 105527256;
+export const PLAN_FINGERPRINT = 563270395;
 
 /**
  * A number that changes with any road, house, tree, wall or sample of the ground, to the millimeter. A
