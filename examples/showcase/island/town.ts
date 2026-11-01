@@ -1439,10 +1439,11 @@ function createHarbour(ctx: SketchContext, surfaces: Surfaces): void {
 	const rockMesh = geometry.fromArrays(finish(boulder()));
 	const material = wetRock(ctx);
 	const rocks = 360;
+	// The rocks cast no shadow: through the clear water theirs read as dark scraps on the harbour's floor.
 	const breakwater = scene.createInstances(rockMesh, rocks, {
 		material,
 		layers: INTERIOR_LAYER,
-		castShadows: true,
+		castShadows: false,
 		receiveShadows: true,
 	});
 	for (let k = 0; k < rocks; k++) {
