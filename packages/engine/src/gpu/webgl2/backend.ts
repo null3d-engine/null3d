@@ -424,6 +424,12 @@ export class WebGL2Backend {
 	private readonly buffers: (GlBuffer | undefined)[] = [];
 	private readonly textures: (GlTexture | undefined)[] = [];
 	/**
+	 * The targets that hold a framebuffer with another target in it, and the texture views. The table
+	 * of textures is sparse and long, and a target's release must find these without walking it.
+	 */
+	private readonly joined = new Set<GlTexture>();
+	private readonly views = new Set<GlTexture>();
+	/**
 	 * The texture that each bind view of a layer range names. GL binds a texture array whole, so a
 	 * view's layer range reaches the shader through the pass's block instead.
 	 */
@@ -1584,7 +1590,7 @@ export class WebGL2Backend {
 		this.destroyTexture(id);
 		const texture = this.textureOf(words[a + 1] as number);
 		const level = words[a + 2] as number;
-		this.textures[id] = glTexture(
+		const view = glTexture(
 			texture.texture,
 			null,
 			texture.target,
@@ -1597,6 +1603,8 @@ export class WebGL2Backend {
 			true,
 			0,
 		);
+		this.textures[id] = view;
+		this.views.add(view);
 	}
 
 	private destroyTexture(id: number): void {
@@ -1606,12 +1614,13 @@ export class WebGL2Backend {
 		if (!old) return;
 		this.textures[id] = undefined;
 		this.forgetFramebuffers(old);
+		this.views.delete(old);
 		if (old.view) return;
 		this.gpuMemory.addTextures(-old.bytes);
 		if (old.texture) {
 			this.generators?.release(gl, old.texture, this.gpuMemory);
-			for (const other of this.textures)
-				if (other?.view && other.texture === old.texture) this.forgetFramebuffers(other);
+			for (const other of this.views)
+				if (other.texture === old.texture) this.forgetFramebuffers(other);
 			gl.deleteTexture(old.texture);
 			for (let unit = 0; unit < this.unitTextures.length; unit++)
 				if (this.unitTextures[unit] === old.texture) this.unitTextures[unit] = null;
@@ -1632,13 +1641,15 @@ export class WebGL2Backend {
 		target.framebufferDepth = null;
 		target.soloFramebuffer = null;
 		this.forgetPair(target);
-		for (const other of this.textures) {
-			if (!other) continue;
+		this.joined.delete(target);
+		for (const other of this.joined) {
 			if (other.pairSecond === target || other.pairDepth === target) this.forgetPair(other);
-			if (other.framebufferDepth !== target) continue;
-			gl.deleteFramebuffer(other.framebuffer);
-			other.framebuffer = null;
-			other.framebufferDepth = null;
+			if (other.framebufferDepth === target) {
+				gl.deleteFramebuffer(other.framebuffer);
+				other.framebuffer = null;
+				other.framebufferDepth = null;
+			}
+			if (!other.framebufferDepth && !other.pairFramebuffer) this.joined.delete(other);
 		}
 	}
 
@@ -2435,6 +2446,7 @@ export class WebGL2Backend {
 		if (color.framebuffer) this.gl.deleteFramebuffer(color.framebuffer);
 		color.framebuffer = this.makeFramebuffer(color, depth);
 		color.framebufferDepth = depth;
+		if (depth) this.joined.add(color);
 		return color.framebuffer;
 	}
 
@@ -2453,6 +2465,7 @@ export class WebGL2Backend {
 		color.pairFramebuffer = this.makeFramebuffer(color, depth, second);
 		color.pairSecond = second;
 		color.pairDepth = depth;
+		this.joined.add(color);
 		return color.pairFramebuffer;
 	}
 
