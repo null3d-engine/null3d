@@ -623,7 +623,7 @@ jobs:
         with:
           mode: upload
           name: page-wasm
-          paths: packages/engine/dist packages/vite-plugin/dist packages/cli/dist packages/terrain/dist packages/engine/src/generated target/shader-modules.json
+          paths: packages/engine/dist packages/vite-plugin/dist packages/cli/dist packages/terrain/dist packages/splats/dist packages/engine/src/generated target/shader-modules.json
 
   size-base:
     # The sizes of the size check's base commit, built at that commit with its own toolchain,

@@ -85,8 +85,9 @@
 // `--terrain` puts the terrain add-on's ground under S1, whose quadtree
 // follows the orbiting camera in every frame. `--impostors` puts a field of the impostors add-on's
 // cards around S1, which pick their views from the camera in every frame. `--splats` puts a cloud
-// of the splats add-on's Gaussians above S1, whose chunks a job worker selects for the camera's
-// position in every frame, through the engine's public task hook. `--inertial` makes the
+// of the splats add-on's Gaussians above S1, whose chunks the add-on's Rust task in a job worker
+// selects for the camera's position in every frame, through the engine's public task hook, and the
+// core packs the chosen rows in its own memory. `--inertial` makes the
 // animated characters that play one clip switch clips by inertial transitions, with 64 characters
 // unless `--animated` names a count. `--calls` makes, every frame, the
 // calls whose docs promise no allocation and that no other switch makes: a raycast, a mesh's vertex

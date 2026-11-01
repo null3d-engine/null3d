@@ -1,8 +1,10 @@
-// The selection task: a coarsest prefix for every chunk the budget reaches, then a finer one for the
+// The selection: a coarsest prefix for every chunk the budget reaches, then a finer one for the
 // nearest chunks, up to the level that their distance asks for. The test writes the buffer that the
-// sketch writes, and reads the answer that the worker gives.
+// sketch writes, and reads the answer from the TypeScript reference. `select-parity.test.ts`
+// compares the same cases with the built module.
 import { describe, expect, it } from 'bun:test';
-import { BUDGET, CHUNK_COUNT, CLOUD_RADIUS, EYE, HEADER, run, STRIDE, TOTAL } from './select-task';
+import { runSelection } from './select-reference';
+import { BUDGET, CHUNK_COUNT, CLOUD_RADIUS, EYE, HEADER, STRIDE, TOTAL } from './select-task';
 
 /** The cloud's size, in meters, that these chunks belong to. */
 const CLOUD = 50;
@@ -42,12 +44,11 @@ function countsOf(view: Float32Array, chunks: number): number[] {
 	return Array.from({ length: chunks }, (_, i) => view[at + i] as number);
 }
 
-describe('the splat selection task', () => {
+describe('the splat selection', () => {
 	it('gives each chunk the level that its distance asks for', () => {
 		const view = buffer();
 		view[BUDGET] = 1000;
-		const { output } = run({ view });
-		expect(output).toBe(true);
+		runSelection(view);
 		// The near chunk draws in full, the next at half, and the far one at its coarsest level.
 		expect(countsOf(view, 3)).toEqual([100, 50, 13]);
 		expect(view[TOTAL]).toBe(163);
@@ -60,15 +61,15 @@ describe('the splat selection task', () => {
 		const fine = buffer(undefined, [0.25, 0.25, 0.25]);
 		coarse[BUDGET] = 1000;
 		fine[BUDGET] = 1000;
-		run({ view: coarse });
-		run({ view: fine });
+		runSelection(coarse);
+		runSelection(fine);
 		expect(countsOf(fine, 3)).toEqual(countsOf(coarse, 3));
 	});
 
 	it('keeps every chunk when the budget covers their coarsest level', () => {
 		const view = buffer();
 		view[BUDGET] = 39;
-		run({ view });
+		runSelection(view);
 		// Each chunk keeps an eighth of itself, so the whole cloud draws thinly.
 		expect(countsOf(view, 3)).toEqual([13, 13, 13]);
 		expect(view[TOTAL]).toBe(39);
@@ -77,7 +78,7 @@ describe('the splat selection task', () => {
 	it('spends what is left on the nearest chunks first', () => {
 		const view = buffer();
 		view[BUDGET] = 150;
-		run({ view });
+		runSelection(view);
 		// The bases take 39. The nearest chunk then takes its other 87, and the next what is left.
 		expect(countsOf(view, 3)).toEqual([100, 37, 13]);
 		expect(view[TOTAL]).toBe(150);
@@ -86,7 +87,7 @@ describe('the splat selection task', () => {
 	it('keeps every chunk even when the budget is short', () => {
 		const view = buffer();
 		view[BUDGET] = 60;
-		run({ view });
+		runSelection(view);
 		// The far chunks keep their eighth instead of losing every splat to the near one.
 		expect(countsOf(view, 3)).toEqual([34, 13, 13]);
 		expect(view[TOTAL]).toBe(60);
@@ -96,7 +97,7 @@ describe('the splat selection task', () => {
 		const view = buffer();
 		view[BUDGET] = 1000;
 		view[EYE] = 150;
-		run({ view });
+		runSelection(view);
 		// The camera stands at the second chunk now, so the first is the half-level one.
 		expect(countsOf(view, 3)).toEqual([50, 100, 13]);
 	});
@@ -104,10 +105,10 @@ describe('the splat selection task', () => {
 	it('reuses its scratch when the chunk count stays the same', () => {
 		const first = buffer();
 		first[BUDGET] = 1000;
-		run({ view: first });
+		runSelection(first);
 		const second = buffer();
 		second[BUDGET] = 60;
-		run({ view: second });
+		runSelection(second);
 		expect(countsOf(second, 3)).toEqual([34, 13, 13]);
 		expect(second[TOTAL]).toBe(60);
 	});
