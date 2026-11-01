@@ -212,6 +212,12 @@ Two builds of the same engine moved s4 high by about 5 per cent, so a smaller ch
 
 Add `--shard 2/3` to run only the pages of one shard, as a CI shard does. Each run writes its record to `runs.json` beside its summary. `bun run bench:run --merge <folder>` judges the records under a folder as one comparison, as the report job does. It needs no browser, and fails only when the records miss a page: the verdict is in `summary.json`.
 
+### The GPU check's per-pass split
+
+When the check reports S4 at High as slower, `bun run bench:gpu-passes` says which pass pays. It runs the same comparison on that one page at that preset, and prints one line per pass: each build's median GPU time per frame, the difference in milliseconds and its share of the baseline. The last line names the largest increase.
+
+It takes the check's `--prepare`, `--measure`, `--base` and `--no-build` options, and its `--runs` and `--seconds`. A browser without a GPU timer gives no pass figures, and the tool says so. A pass that only one build timed has no difference; the tool names it below the table.
+
 ## Visual figures and captured frames
 
 A change can make a scene faster and make it look worse, such as a smaller shadow map. So the device runner's bench plan measures how each scene looks, beside its timings. It also keeps frames for people to look at.
