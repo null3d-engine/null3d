@@ -1,7 +1,9 @@
 // Replays a hand-built draw list through the engine's WebGPU backend: GPU culling in a compute pass,
 // then indirect draws from a render bundle with 4x MSAA and reversed depth. It checks the GPU side of
-// the WebGPU render path before the core records these lists itself. It draws the 8-bit path, whose
-// shaders encode their colors for the 8-bit target themselves.
+// the WebGPU render path before the core records these lists itself. It draws no ambient occlusion
+// and nothing samples that texture, so the pass proves the frame group's types and the pipeline's
+// build, not correct occlusion sampling. It draws the 8-bit path, whose shaders encode their colors
+// for the 8-bit target themselves.
 import { loadWgslShaders, readbackWebGPU, WebGPUBackend } from '@null3d/engine/internal';
 import * as C from '../../packages/engine/src/generated/core';
 import * as G from '../../packages/engine/src/generated/gpu';
@@ -400,9 +402,11 @@ run('replay', async () => {
 		positions.length * 16,
 	);
 	// Ambient occlusion's texture, which the frame group binds as a 2D array: the first layer holds
-	// the occlusion and the second the bounce light, as the engine's blank texture does. This view
-	// draws neither, so one texel of each layer is enough; the shader reads them only while the
-	// strength is above 0.
+	// the occlusion and the second the bounce light. This view draws neither, so one texel of each
+	// layer is enough; the shader reads them only while the strength is above 0. Unlike the engine's
+	// blank, this texture takes no copy usage and nothing uploads it, so its texels read as zero,
+	// where the engine's first layer holds the sun's light in full. The difference stays harmless
+	// only while no build reads the texture.
 	memory.push(
 		G.OP_CREATE_TEXTURE,
 		21,
