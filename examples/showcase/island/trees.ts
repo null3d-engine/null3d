@@ -87,10 +87,16 @@ const GRASS_COLOR = '#55752c';
 const GRASS_REACH = 170;
 
 /**
- * How much brighter a mesh's leaf color is than its card's, measured on a forest drawn each way. It
- * matches best at 1.7 from above and 1.4 from a low view, and the route looks mostly from above.
+ * How much a mesh's leaf color is raised over its card's, red and green, and the blue that it gains,
+ * measured on leaves drawn each way from above and from a low view. A mesh's crown shades itself leaf
+ * by leaf, and light through its leaves deepens their hue, so at one color it draws darker and more
+ * saturated than its card. A share of blue, not a factor, keeps a silver leaf from turning lilac.
  */
-const NEAR_LEAF_LIGHT = 1.6;
+const NEAR_LEAF_RED = 2.3;
+const NEAR_LEAF_GREEN = 1.85;
+const NEAR_LEAF_BLUE = 0.04;
+/** The sun's gloss on a near leaf. A card holds none, and a stronger one shows as pale patches on the crown. */
+const NEAR_LEAF_GLOSS = 0.15;
 
 /** The layer that the sun sees and no camera does, which the trees' casting cards stand on. */
 export const CASTER_LAYER = 1 << 2;
@@ -239,7 +245,7 @@ function spireMap({ textures }: SketchContext) {
  */
 function nearLeaf(species: Species): [number, number, number] {
 	const [r, g, b] = species.color.leaf;
-	return [r * NEAR_LEAF_LIGHT, g * NEAR_LEAF_LIGHT, b * NEAR_LEAF_LIGHT];
+	return [r * NEAR_LEAF_RED, g * NEAR_LEAF_GREEN, b * NEAR_LEAF_GREEN + NEAR_LEAF_BLUE];
 }
 
 /** Writes each row's place, turn and size into a batch of meshes. */
@@ -367,6 +373,7 @@ function stand(
 						cell: leafCellFor(species),
 						color: nearLeaf(species),
 						transmission: species.color.transmission,
+						leafGloss: NEAR_LEAF_GLOSS,
 						wind: field,
 					},
 		);
@@ -421,6 +428,7 @@ function standShrubs(
 						cell: leafCellFor(species),
 						color: species.color.leaf,
 						transmission: species.color.transmission,
+						leafGloss: NEAR_LEAF_GLOSS,
 						wind: field,
 					},
 		);

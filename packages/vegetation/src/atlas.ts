@@ -193,6 +193,11 @@ export interface PlantMaterialOptions {
 	readonly color?: ColorInput;
 	/** How the leaf cuts its outline: below this coverage nothing draws. The default is 0.35. */
 	readonly alphaCutoff?: number;
+	/**
+	 * The strength of the sun's gloss on a leaf, from 0 to 1. The default, 0.875, is a measured leaf's.
+	 * A far card holds no gloss, so a lower one brings a near crown closer to its card.
+	 */
+	readonly leafGloss?: number;
 	/** How many times the bark tiles across the mesh's texture coordinates. The default is 3. */
 	readonly barkTiles?: number;
 	/**
@@ -282,7 +287,7 @@ export function plantMaterial(
 		metalness: 0,
 		// A leaf's gloss is a dielectric's: about 0.035 at normal incidence, in the range that
 		// measured leaves give.
-		specularIntensity: leaves ? 0.875 : 1,
+		specularIntensity: leaves ? (options.leafGloss ?? 0.875) : 1,
 		// The leaf's light through it needs the engine's builds of a thin surface, and a bark's
 		// share is zero.
 		diffuseTransmission: leaves ? (options.transmission ?? 0.35) : 0,
