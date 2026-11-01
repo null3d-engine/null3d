@@ -100,9 +100,9 @@ export interface WaterOptions {
 	/** The meters of the gap to the bed over which the water fades at a shore. It is 0.12 by default. */
 	readonly softness?: number;
 	/**
-	 * The share of the water's color, from 0 to 1, that reads the whole way the view runs through the
-	 * water, as a wide sea's does: a low view then shows no sharp outline of the bed in the distance.
-	 * At 0, the default, it reads the water's depth alone, as a clear stream seen from above does.
+	 * The share of the water's color at a low view, from 0 to 1, that reads the whole way the view runs
+	 * through the water, as a wide sea's does: a low view then shows no sharp outline of the bed in the
+	 * distance. A view from above keeps the depth. At 0, the default, it reads the depth at every view.
 	 */
 	readonly colorAlongView?: number;
 	/**
