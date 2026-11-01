@@ -54,3 +54,5 @@ The core stores each chunk's arrays for as long as the cloud lives. The splats' 
 - `packages/splats/src/pack.ts` stays as the TypeScript reference, and the draw no longer calls it.
 - `packages/engine/src/scene/chunk-rows.ts` holds the public writer. `docs/concepts/instances.md` names the hook, and the API reference comes from its doc comments.
 - `bun run build` builds the crate with the other tool modules. It copies the module to `packages/splats/dist/splats.wasm`, which the tarball carries.
+- `shared/tasks.ts` caches each WebAssembly file's URL text, each task's module key and its compiled module. A task that runs in every frame then copies no string and awaits no resolved compile, which the allocation check of this add-on showed.
+- `bench/allocation.ts` gives the `--splats` switch its own render-worker budgets, measured on the Mac, for the texture that the cloud refreshes in every frame.

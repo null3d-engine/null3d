@@ -614,6 +614,19 @@ const TRANSMISSION_MIPS_BUDGETS: WorkerBudgets = {
 };
 
 /**
+ * What `--splats` adds to the render worker beyond its pass: one texture that the frame refreshes,
+ * whose upload makes a route and whose finished upload makes a render pass for each mip level. On
+ * the Mac they took 104 bytes a frame for the mip pass and 7 for the route, with the most at 148
+ * and 8. The switch names no texture of its own; the cost follows the cloud that it adds.
+ */
+const SPLATS_BUDGETS: WorkerBudgets = {
+	'render-worker': {
+		'generateMipmaps webgpu/backend.ts': 160,
+		'add webgpu/upload-routes.ts': 16,
+	},
+};
+
+/**
  * What `--ssr` adds to the WebGPU replay each frame, beyond the passes that `PAGE_SWITCHES` counts:
  * the encoders of the ten render passes that screen-space reflections add (the depth prepass, which
  * draws apart from the opaque pass, the depth copy, the six levels of the depth pyramid, the trace
@@ -742,7 +755,13 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--passes', query: '&passes', passes: 2 },
 	{ flag: '--terrain', query: '&terrain' },
 	{ flag: '--impostors', query: '&impostors' },
-	{ flag: '--splats', query: '&splats', swiftShaderQuery: '&splats=12000', passes: 1 },
+	{
+		flag: '--splats',
+		query: '&splats',
+		swiftShaderQuery: '&splats=12000',
+		passes: 1,
+		budgets: SPLATS_BUDGETS,
+	},
 	// The wind's field: one compute pass that fills its grid.
 	{ flag: '--wind', query: '&wind', passes: 1, budgets: WIND_BUDGETS },
 	{ flag: '--inertial', query: '&inertial' },
