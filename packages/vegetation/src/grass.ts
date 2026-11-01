@@ -53,6 +53,11 @@ export interface GrassOptions {
 	/** The steepest ground that a tuft grows on, as rise over run. The default is 0.6. */
 	readonly maxSlope?: number;
 	/**
+	 * Where grass may grow. A candidate on ground that the mask refuses is skipped, as water, a rock
+	 * or a footprint leaves no grass. Leave it out to grow grass wherever the ground is not steep.
+	 */
+	readonly mask?: (x: number, z: number) => boolean;
+	/**
 	 * The wind add-on's field, the one that the leaf material reads. The blades bend in its air,
 	 * and a page that leaves it out grows grass that stands still.
 	 */
@@ -100,18 +105,20 @@ export interface GrassTuft {
 
 /**
  * Places the tufts of one shape on the ground, by integer hash, and skips the ground steeper than
- * the option allows. The calls with one seed, shape and count give the same list on every device.
+ * the option allows and the ground that the mask refuses. The calls with one seed, shape and count
+ * give the same list on every device.
  *
  * @category api/vegetation
  */
 export function placeTufts(options: GrassOptions, shape: number, count: number): GrassTuft[] {
-	const { area, seed, height } = options;
+	const { area, seed, height, mask } = options;
 	const maxSlope = options.maxSlope ?? 0.6;
 	const step = 0.25;
 	const tufts: GrassTuft[] = [];
 	for (let i = 0; tufts.length < count && i < count * ATTEMPTS; i++) {
 		const x = area.x + (unitAt(seed, i, shape, 0) - 0.5) * area.size;
 		const z = area.z + (unitAt(seed, i, shape, 1) - 0.5) * area.size;
+		if (mask && !mask(x, z)) continue;
 		const y = height(x, z);
 		const dx = (height(x + step, z) - height(x - step, z)) / (2 * step);
 		const dz = (height(x, z + step) - height(x, z - step)) / (2 * step);
