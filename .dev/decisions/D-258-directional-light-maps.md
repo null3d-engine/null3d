@@ -1,9 +1,8 @@
 # D-258: Directional light maps, and reading Needle's light maps
 
 Status: decided by the helper of M3-F4, for the owner's review. Built: the second texture, the
-shader weighting, the glTF reader, the picture test, the memory figure, and the cost page with its
-figure. Pending: the comparison with Needle's viewer that the done criterion needs, a small Needle
-project that loads the reduced file under a fixed camera, which the owner asked for. Task: M3-F4.
+shader weighting, the glTF reader, the picture test, the memory figure, the cost page with its
+figures, and the comparison with Needle's viewer that the done criterion needs. Task: M3-F4.
 
 Summary: A directional light map carries the light's direction in a second texture of the
 radiance's own size, format and color space, so both share one texture array, one binding and one
@@ -76,6 +75,27 @@ is the compatibility figure in the table, and
 [20261026-005236-lightmap-cost](../tested-devices/macbook-pro-chrome/20261026-005236-lightmap-cost.md)
 holds the run. [Benchmarks](../benchmarks.md#directional-light-maps) gives the command.
 
+The comparison with Needle's viewer is built, as the owner's ruling asks, and
+[20261101-160830-needle-viewer-comparison](../tested-devices/macbook-pro-chrome/20261101-160830-needle-viewer-comparison.md)
+holds both pictures and their difference. The viewer loads the same reduced `scene.gltf` through
+the `needle-engine` element's `src` attribute, and the engine draws it through
+`tests/pages/sketches/needle-viewer-sketch.ts`. The file's `Capture Camera` node gives the camera,
+its 55-degree field of view and its near and far planes. Neither side adds a light, an ambient
+light, an environment or a tone curve, and both scale the exposure by one, so the baked light is
+the only light in both pictures. `tools/needle-viewer-compare.ts` takes both pictures and reports
+the difference.
+
+The engine's WebGPU picture differs from the viewer's at 0.051% of the pixels past the image tests'
+threshold, compatibility mode at 0.025% and WebGL2 at 0.052%, all inside the 0.1% that the image
+tests allow. At one step in 255 they differ at 8.486%, 5.121% and 8.400%, which is the dithering
+and the rounding of surfaces that agree within a step. The pixels past the threshold lie on the
+roof slab's and the wall's edges, where the two renderers smooth an edge with their own samples.
+
+The comparison settles the done clause's picture: the reduced `NEEDLE_lightmaps` file draws as
+Needle's viewer shows it. A wrong RGBM decode would change the brightness, and a wrong coordinate
+set, scale or offset would smear the bake. The pictures show neither. The residue is the two
+renderers' edges and their rounding, not the light map.
+
 ## Decision
 
 - The direction travels in a texture of its own, in the radiance's format, size and color space,
@@ -131,3 +151,8 @@ holds the run. [Benchmarks](../benchmarks.md#directional-light-maps) gives the c
 - The guards: the picture test `needle-lightmap` holds the decode and the placement still, a unit
   test parses the reduced real sample's fields, the texture store drops a direction that is not in
   the radiance's array, and a material test covers each option's refusal.
+- The viewer comparison is `tools/needle-viewer-compare.ts`. It needs a checkout of
+  madjin/lightmap-tests at the pinned commit, starts the viewer and the dev server, and writes both
+  pictures, their diffs and a JSON record. The reduced sample carries the capture camera as a node,
+  so the viewer and the sketch take the same pose. The viewer reads a node's colliders too, so the
+  sample keeps no collider whose mesh index the reduced file lacks.
