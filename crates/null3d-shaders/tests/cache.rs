@@ -2,7 +2,9 @@
 //! library module compiles only the entries that import it, and a whole build reuses the entries
 //! and the parts of entries that shards of the manifest stored.
 
-use std::collections::BTreeMap;
+mod common;
+
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -185,6 +187,42 @@ fn changing_one_entry_recompiles_only_that_entry() {
     );
     assert_ne!(output.shaders["a"], first.shaders["a"]);
     assert_eq!(output.shaders["b"], first.shaders["b"]);
+}
+
+#[test]
+fn a_narrowed_build_does_not_reuse_the_entry_of_another_list() {
+    const SOURCE: &str =
+        "@fragment\nfn fs_main() -> @location(0) vec4f {\n    return vec4f(1.0);\n}\n";
+    /// The vertex color bit, as `permutation::VERTEX_COLOR` gives it.
+    const VERTEX_COLOR: u32 = 4;
+    let variants = [(
+        "v",
+        "{ permutations = [\"VERTEX_COLOR\"], targets = [\"wgsl\"] }",
+    )];
+    let inputs = common::project(SOURCE, &variants, &[]);
+    let scratch = Scratch::new();
+    build(&scratch, &inputs);
+    // One listed word is another set of builds, so the narrowed build compiles its entry again.
+    let mut narrowed = inputs.clone();
+    narrowed.only = BTreeSet::from([VERTEX_COLOR]);
+    let (output, stats) = null3d_shaders::build_with_cache(&narrowed, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 1,
+            reused: 0
+        }
+    );
+    assert_eq!(output.shaders["shader"].len(), 1);
+    // The same list then reuses the entry it stored.
+    let (_, stats) = null3d_shaders::build_with_cache(&narrowed, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 0,
+            reused: 1
+        }
+    );
 }
 
 #[test]
