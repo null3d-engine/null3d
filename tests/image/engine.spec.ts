@@ -422,6 +422,10 @@ const FIRST_USE_SWITCHES: Partial<Record<ShaderFeature, string>> = {
 	occlusion: '&occlusion=on',
 	// The tier starts above Medium, which WebGL2 and compatibility mode stop at.
 	clouds: '&cloudSteps=32',
+	// A sky at High draws the tier over it, which would download the clouds' file as well. These
+	// pages draw the flat layer alone, so each keeps the one file that its own feature loads.
+	sky: '&cloudSteps=0',
+	physical_sky: '&cloudSteps=0',
 };
 
 /**
