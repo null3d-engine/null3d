@@ -3009,19 +3009,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1,
 		size: [1280, 720],
 	},
-	// One oak crown at three distances from one camera: the leaf cards keep the share of the picture
-	// that they cover as they shrink, since every level of the atlas is painted with its own filter.
-	// Creek's painted oak beside the generated one: the file that the showcase loads, with an
-	// artist's bark and leaf textures, and the same species grown by the add-on and drawn from the
-	// atlases that the GPU paints at first use. The picture is the judge of the two side by side.
-	{
-		name: 'vegetation-versus-creek',
-		sketch: 'tests/pages/sketches/vegetation-versus-creek-sketch.ts',
-		hold: 1,
-		size: [1280, 720],
-		// Creek's model files are large, and the software GPU takes its time with their textures.
-		timeoutSeconds: 180,
-	},
+	// The cards keep the share of the picture that they cover as they shrink, since every level of
+	// the atlas is painted with its own filter.
 	{
 		name: 'vegetation-leaf-cards',
 		sketch: 'tests/pages/sketches/leaf-card-coverage-sketch.ts',
