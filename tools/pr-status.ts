@@ -35,7 +35,7 @@ const ON_BRANCH = new Set(['M3-F9']);
 // A task belongs here only when it has no evidence yet. A task whose proof is written but whose
 // gap still stops the tick belongs in AUDIT_GAPS instead: a task in both lists says its work is
 // unfinished and finished at once, and the release hook refuses a range that creates that pair.
-const INCOMPLETE = new Set(['M3-R22']);
+const INCOMPLETE = new Set<string>([]);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
@@ -46,7 +46,7 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-E8':
 		"the hook carries M3-V13's history, and the wind add-on's field is the first user that ships: its cards, grass and leaf materials read the compute pass in the same frame on WebGPU, compatibility mode and WebGL2, where the add-on's fragment form draws it. The water add-on's FFT ocean, the plan's named first user, carries its own compute chain on `feat/m3-f9-fft-ocean` under M3-F9",
 	'M3-R22':
-		"the shader cache on the branch is D-248's change, not this task's: it reuses every entry when a compiler change leaves the compiled program identical, 0 compiled and 79 reused in 19 s, where the same change cost an hour. The task's own change, three entries instead of four for every module kind, is on `feat/m3-r22-entry-set` and not on this branch, and the determinism list here still holds `lit`; the two checks' CI times remain unmeasured",
+		'both shader-build checks now build the basic material and the environment generator instead of four whole entries, which is 478 builds against 11,119 and takes the determinism part from 447 s to 7.4 s on a loaded Mac. Every module kind still appears: only the environment generator sets `first_use` and only the basic material sets `by_device`, so dropping either one fails the kind assertion, and both checks read the same list again,',
 	'M3-F3':
 		"dropped with the temporal resolve it waited on (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F10':
@@ -71,7 +71,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-C1':
 		"the scene, its lanes, rain and the hero car are in, and so are the moods (`createMoods` in the skyway sketch) and the instances demo, which is registered and built on the traffic-lanes add-on; the pictures pass in both reference sets, and D-277 records the owner's look review as pending. What remains is the chase camera's tower occlusion fix, held on `feat/skyway-camera` until its look review passes, and the frame rates against the target: the iPad Pro 13 drew 50.0 fps at Low on WebGPU and 54.2 on WebGL2, and the cloud S24 drew 11.7 at Low and 7.8 in the demos plan, all under 60",
 	'M3-C2':
-		"the showroom draws and drives, its wheels turn forward on both sides with a contact-point test that fails on the inverted sign, the lamps are recorded honestly as one capture on one path with the sparkle traced to the paint, and both reference sets hold its pictures. What keeps the task open is its own Done-when: the owner has not ruled on the nose's flake and clear-coat look, and the demo does not hold its preset's rate on the three team devices, since the iPad Pro 13 drew 11.8 fps cold and 23.3 warm at Low on WebGPU against 52.7 on WebGL2, and the per-pass split is unmeasured",
+		"the showroom draws and drives, its wheels turn forward on both sides with a contact-point test that fails on the inverted sign, the lamps are recorded honestly as one capture on one path with the sparkle traced to the paint, both reference sets hold its pictures, and the owner approved the nose's flake and clear-coat look. What keeps the task open is its rate: the owner kept the 60 fps bar for the tablet, and the demo does not hold it, since the iPad Pro 13 drew 11.8 fps cold and 23.3 warm at Low on WebGPU against 52.7 on WebGL2, and the per-pass split is unmeasured,",
 	'M3-B1':
 		"the whole look is costed at every preset on WebGPU and in compatibility mode, 3.13 to 3.91 and 3.12 to 3.82 ms at the 33-megapixel canvas, and all eight of those cells keep their range above zero. What remains is narrower: each mark is costed at the highest preset its path allows rather than at every preset, WebGL2 keeps no whole-look figure and its sharpening cell does not resolve, and the compatibility fringes' range crosses zero from -0.080 to 0.417, so that cell cannot be told apart from no mark. The earlier run at four times the pixels could not tell a mark from the frame's own variation, and that reason no longer stands",
 	'M3-B5':
