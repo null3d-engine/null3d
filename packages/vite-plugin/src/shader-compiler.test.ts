@@ -316,8 +316,11 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 			] as const) {
 				const built = compileMaterial({ path: `showroom ${name}`, source });
 				if (!built.ok) throw new Error(materialProblems(name, built.problems));
-				// A variant without WGSL on either side is skipped. A material that skipped every
-				// variant would pass on an empty loop, so each material must compare at least one.
+				// A variant without WGSL on either side is skipped, and a skipped variant is not
+				// checked. So every variant that has WGSL must be compared, not merely one of them.
+				const withWgsl = Object.values(built.material.variants).filter(
+					(declaration) => declaration.wgsl,
+				).length;
 				let compared = 0;
 				for (const [variant, declaration] of Object.entries(built.material.variants)) {
 					const expectedVariant = standard.material.variants[variant];
@@ -341,9 +344,11 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 						`${name} declares ${own ?? 'nothing'} at ${at} in its ${variant} variant, where the standard material declares ${expected ?? 'nothing'}`,
 					);
 				}
-				if (compared === 0)
+				if (withWgsl === 0)
+					throw new Error(`${name} has no variant with WGSL, so the guard compared nothing`);
+				if (compared !== withWgsl)
 					throw new Error(
-						`${name} has no variant the standard material also has with WGSL, so the guard compared nothing`,
+						`${name} compared ${compared} of its ${withWgsl} variants with WGSL, because the standard material has no variant of the rest by name`,
 					);
 			}
 		},
