@@ -1624,6 +1624,32 @@ export function canvasCostPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * The wind governor's stress plan: a field of cards that reads the wind, with the load off, on
+ * until the frame-budget governor steps, then off again, at each preset on core WebGPU. The page
+ * reports the governor's steps, the wind's settings and whether the cards still move, and names the
+ * instance limit that its load had to fit. Nothing judges the figures; the run's record shows what
+ * each device did.
+ */
+export function windStressPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const preset of ['low', 'medium', 'high', 'ultra'])
+		items.push(
+			pageItem(
+				`wind-stress-${preset}`,
+				'wind-stress',
+				{ kind: 'probe', tier: 'webgpu' },
+				{
+					// The page clamps the load to the device's instance limit, so a phone takes a
+					// smaller load than the Mac and says so.
+					switches: ['gpu=webgpu', `preset=${preset}`, 'cards=500000'],
+					timeoutSeconds: 240,
+				},
+			),
+		);
+	return items;
+}
+
+/**
  * What a tree of cluster patches costs: the heightfield of the cluster-cost page, timed at three
  * camera distances on one GPU path, so the figures show both the saving that coarse patches make
  * and the cost of the pass that picks them. D-213 records the results.
@@ -2734,6 +2760,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'tree-generation': treeGenerationPlan,
 	'vegetation-scatter': vegetationScatterPlan,
 	'canvas-cost': canvasCostPlan,
+	'wind-stress': windStressPlan,
 	'webgpu-stall': webgpuStallPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,

@@ -194,14 +194,14 @@ fn wind_analytic(
 // </wind-events>
 
 // <wind-solver>
-/// The Jacobi iterations that one cycle runs before it projects the air.
-const WIND_PRESSURE_STEPS: i32 = 20;
-/// The runs that one cycle takes: the forces and the advection, the pressure's iterations, and the
-/// projection.
-const WIND_CYCLE: i32 = WIND_PRESSURE_STEPS + 2;
+/// The pressure iterations of one cycle arrive in the whole part of the ground setting, which the
+/// entry point splits out. The fraction carries the ground itself.
 /// How fast the air is pulled toward the analytic field each second. The pull is weak enough that
 /// what the air carried from the frames before stays a while.
 const WIND_PULL: f32 = 0.8;
+/// The divisor that keeps the ground's share below one, beside the cycle's pressure count in the
+/// same value. The add-on packs the two, so the two files must agree.
+const WIND_GROUND_PACK: f32 = 100.0;
 /// How hard the vorticity confinement keeps the eddies that advection would smooth away.
 const WIND_VORTICITY: f32 = 0.35;
 
@@ -304,10 +304,10 @@ fn wind_project(box: vec4f, dt: f32, at: vec2i, size: vec2u, state: WindState) -
 /// One run of the solver at a texel: the stage that the state names, as the next state.
 fn wind_step(
     air: WindAir, box: vec4f, dt: f32, slots: array<vec4f, 4>,
-    at: vec2i, size: vec2u, state: WindState,
+    at: vec2i, size: vec2u, state: WindState, pressure: i32,
 ) -> WindState {
     if (state.stage == 0) { return wind_advect(air, box, dt, slots, at, size, state); }
-    if (state.stage <= WIND_PRESSURE_STEPS) {
+    if (state.stage <= pressure) {
         return wind_pressure(box, dt, at, size, state);
     }
     return wind_project(box, dt, at, size, state);
@@ -321,10 +321,14 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let at = vec2i(id.xy);
     let before = textureLoad(history, at, id.z, 0);
     let state = WindState(vec2f(before.r, before.g), before.b, i32(before.a + 0.5));
+    // The ground setting's whole part is the cycle's pressure count; its fraction is the ground.
+    let packed = block.u0.w;
+    let pressure = i32(floor(packed));
     var air = wind_air(block.u0, block.u1, block.u2);
+    air.ground = (packed - f32(pressure)) * WIND_GROUND_PACK;
     air.time = block.clock.x;
     // The slots arrive in the fourth to seventh vectors; the first three hold the settings.
     let slots = array<vec4f, 4>(block.u3, block.u4, block.u5, block.u6);
-    let next = wind_step(air, block.u7, block.u0.x, slots, at, size, state);
+    let next = wind_step(air, block.u7, block.u0.x, slots, at, size, state, pressure);
     textureStore(field, at, id.z, vec4f(next.v.x, next.v.y, next.pressure, f32(next.stage)));
 }
