@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `impostor-bake`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `two-step`, `demos`, `skyway`, `vegetation`, `tree-generation`, `vegetation-scatter`, `terrain` and `terrain-shadow`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `impostor-bake`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `wind-field-cost`, `two-step`, `demos`, `skyway`, `vegetation`, `tree-generation`, `vegetation-scatter`, `terrain` and `terrain-shadow`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is gray while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-gray when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -385,6 +385,31 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
   and the same with `--plan tree-generation` and `--plan vegetation-scatter`.
 - The `splats` plan also runs each GPU path at a quarter of the cloud's splat count, at the same
   pixel count. A pair of rows then shows whether the cost follows the count or the screen's fill.
+
+## The wind field's cost plan
+
+- The `wind-field-cost` plan times the wind add-on's field at the grid shapes and pressure counts
+  that the preset rows take: the two flat grids of the Low row, the flat 64 by 64 of Medium, four
+  layers of 128 by 128 at High and the volume 64 by 24 by 64 at Ultra. Each page fixes its path and
+  its shape with `?gpu=` and `?shape=`, and takes its pressure counts from `?points=`.
+- A page plays the field off, the add-on's shipped solver cycle, and a chain of the same work per
+  step at each pressure count, with and without the canopy's drag, in turns. A layered or volume
+  shape is tiled into one 2D texture, which both paths run the same way.
+- WebGPU and compatibility mode time each pass, so the field's own figure is measured. WebGL2 has
+  no pass timer, so its rows compare a frame with the field and a frame without it, and a phone's
+  rows give the frame interval and the busiest thread.
+- A WebGL2 device whose float targets fail the engine's probe keeps no field, and the page reports
+  it, because such a device takes the analytic tier ([D-265](decisions/D-265-wind-field-first-stage.md)).
+- Run it on the cloud devices with
+  `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys25-chrome,bsgalaxytaba9plus-chrome --plan wind-field-cost`.
+  Run it on the Mac in its installed Chrome, in a quiet window, with
+  `NULL3D_WIND_FIELD_COST=1 bun run test:browser -- wind-field-cost.spec.ts --workers=1` and
+  `NULL3D_WIND_GPU`, `NULL3D_WIND_SHAPES` and `NULL3D_WIND_POINTS` naming its paths, shapes and
+  pressure counts.
+- The readers' cost comes from the vegetation pages. `vegetation-cost` with `?field=analytic`
+  makes the add-on keep no grid, so every reader works the air out at each vertex, and the same
+  page without it samples the field with one read. The pair gives the field's reader against the
+  analytic one, with each pass split where the device times passes. D-283 records the figures.
 
 ## The terrain plan
 
