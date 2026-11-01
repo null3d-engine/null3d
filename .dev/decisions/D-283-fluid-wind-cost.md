@@ -738,7 +738,8 @@ The wind grid's own pass lifts Medium and above into the same cost: at Medium th
 
 So Creek rides the offset form and keeps no grid on the WebGL2 path. Its readers work the air out of
 the steady field there, which carries the gust and the swirl, so a gust still crosses the banks. The
-cost itself is the WebGL2 backend's, not the add-ons', and belongs to the engine's own record.
+cost itself is the WebGL2 backend's, not the add-ons'. [D-286](D-286-webgl2-texture-copies-beside-a-second-draw.md)
+holds it, with the figures and what a fix must show. No task owns that fix yet.
 
 The branch and the milestone head read the same rows on the cloud devices. The branch at 8363b20a6
 runs [the iPad's rows](../tested-devices/ipad-pro-13-safari/20261101-091422-vegetation.md) and
@@ -762,3 +763,23 @@ The tablet's rows say the same. The head reads Creek Low at 1,487.16 ms against 
 and the branch at 1,484.12
 ([the branch's tablet run](../tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-092544-vegetation.md)),
 so that miss is the scene's on that device. Creek Medium draws no frame on either.
+
+### The pictures this branch owes
+
+The task asks that every picture the change moves is redrawn in both reference sets. None is drawn.
+The machine runs a milestone gate that bars browser image runs. A reference needs the Mac's GPU
+drawing and CI's SwiftShader drawing before `bun run images:review` accepts it.
+
+The manifest's tests that draw the changed demos, and so owe a drawing:
+
+- `demo-creek`, the Creek demo's held frame: the falling leaves, the water's surface and the grass
+  all move.
+- `creek-render-scale-opening`, `creek-render-scale-route` and `creek-water-close`, the Creek sketch
+  at three views.
+- `demo-forest`, the forest's held frame: its trees now sway.
+
+`creek-band` and `creek-lod` keep no picture. `creek-band` reads the route picture's frame, and
+`creek-lod` draws its own page, so both re-run after the references are drawn.
+
+Each test draws on the paths that its entry names, WebGPU, compatibility and WebGL2, with CI's
+SwiftShader set beside the Mac's drawings, and on the devices that draw them.
