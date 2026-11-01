@@ -119,8 +119,8 @@ export interface Ocean {
 	update(): void;
 	/**
 	 * The height of the sea at a world place, in meters, as the bands sum at the sketch time. It runs
-	 * the bands' transforms on this thread, so a call costs about as much as a band's transform: read
-	 * it now and then, not in every frame.
+	 * the bands' transforms on this thread, and transforms again only when the sketch time moves, so
+	 * several reads in a frame share one transform.
 	 */
 	heightAt(x: number, z: number): number;
 	/**
@@ -352,12 +352,17 @@ export function createOcean(ctx: SketchContext, options: OceanOptions): Ocean {
 
 	const eye: [number, number, number] = [0, 0, 0];
 	const fields: Float32Array[] = [];
-	/** The field of one band at a sketch time, which the sums below read. */
+	const fieldTimes: number[] = [];
+	/** The field of one band at a sketch time, which the sums below read. It transforms again only
+	 * when the time moves, so every read in a frame shares one transform. */
 	const fieldOf = (band: number, t: number): Float32Array => {
 		const one = bands[band] as OceanBand;
 		let field = fields[band];
 		if (!field) fields[band] = field = new Float32Array(GRID * GRID);
-		waveField(cpuSpectra[band] as Float32Array, t, one, GRID, field);
+		if (fieldTimes[band] !== t) {
+			waveField(cpuSpectra[band] as Float32Array, t, one, GRID, field);
+			fieldTimes[band] = t;
+		}
 		return field;
 	};
 	const heightOf = (band: number, x: number, z: number, t: number): number => {

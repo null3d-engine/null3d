@@ -8,7 +8,7 @@ summary: "createWater: a river and a lake from one shape, with waves that the cu
 
 # Water (@null3d/water)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The ocean's WebGL2 path is not ready. Its heights differ from the other paths, and its transform costs about 675 ms a frame at 1920 by 1080 on the Low preset. Draw the ocean on WebGPU or in compatibility mode.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The ocean's WebGL2 path is not ready: its heights were not compared with the other paths again after a readback fault on that path was fixed. Draw the ocean on WebGPU or in compatibility mode.
 
 ```mermaid
 flowchart LR
@@ -226,7 +226,7 @@ holds longer waves, and a taller significant height lifts them further.
 | --- | --- |
 | `update()` | Moves the mesh about the camera. The reflection pass carries its own cadence. Call it once in each frame, after the camera moves |
 | `reflectionEvery` | The frames between two draws of the reflection now |
-| `heightAt(x, z)` | The height of the sea at a world place, in meters, at the sketch time. It runs the bands' transforms on this thread, so read it now and then |
+| `heightAt(x, z)` | The height of the sea at a world place, in meters, at the sketch time. It runs the bands' transforms on this thread, and transforms again only when the sketch time moves, so several reads in a frame share one |
 | `bands` | The bands, in the order that they sum |
 | `level` | The height of the sea's surface |
 | `destroy()` | Remove the surface, the transform's passes, the reflection and the material |
