@@ -478,8 +478,10 @@ function makeSkyMap(
 	const alignment = gl.getParameter(gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT) as number;
 	const stride = Math.ceil(STEP_BYTES / alignment) * alignment;
 	const [steps, values] = skySteps(size, levels, stride, filter);
-	/** The step values with the cloud tier's count in each step's spare value, made once. */
-	const cloudValues = new Float32Array(values);
+	/** The cloud tier's step count as one word, written into each step's spare value. */
+	const cloudWord = new Float32Array(1);
+	/** The count that the step buffer holds, so a stage writes it only when the tier moves. */
+	let writtenCloudSteps = -1;
 	const stages = skyStages(size, levels);
 	const chained = chainLevels(size);
 	const stepBinding = host.slot(0, 0);
@@ -712,11 +714,14 @@ function makeSkyMap(
 					}
 				}
 				const clouded = cloudSteps > 0 && clouds !== undefined && noise !== null;
-				if (clouded) {
-					// The cloud shaders read the tier's step count from their step's spare value.
-					for (let k = 0; k < steps.length; k++) cloudValues[(k * stride) / 4 + 6] = cloudSteps;
+				if (clouded && cloudSteps !== writtenCloudSteps) {
+					// The cloud shaders read the tier's step count from their step's spare value, so
+					// one word per step moves rather than the whole buffer.
+					cloudWord[0] = cloudSteps;
 					gl.bindBuffer(gl.UNIFORM_BUFFER, uniforms);
-					gl.bufferSubData(gl.UNIFORM_BUFFER, 0, cloudValues);
+					for (let k = 0; k < steps.length; k++)
+						gl.bufferSubData(gl.UNIFORM_BUFFER, k * stride + 24, cloudWord);
+					writtenCloudSteps = cloudSteps;
 				}
 				if (drawsSky) gl.bindBufferBase(gl.UNIFORM_BUFFER, skyBinding, sky);
 				else if (chainWaits) {

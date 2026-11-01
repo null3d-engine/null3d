@@ -309,7 +309,7 @@ export const QUALITY_SETTINGS = {
 	// The steps of each ray of the sky's volumetric cloud tier, which replaces the flat layer on the
 	// presets above 0. Low and Medium draw the flat layer, a few reads of two-dimensional noise;
 	// High and Ultra march a cloud volume, so the steps are the tier's cost. The figures are in
-	// D-283. 0 draws the flat layer, and a change makes no GPU object until the tier first draws.
+	// D-285. 0 draws the flat layer, and a change makes no GPU object until the tier first draws.
 	cloudSteps: {
 		presets: [0, 0, 32, 48],
 		changes: 'live',

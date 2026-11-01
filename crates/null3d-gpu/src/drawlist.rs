@@ -2420,11 +2420,19 @@ pub mod groups {
         (template::BACKGROUND_SKY, BACKGROUND),
         (
             template::BACKGROUND_CLOUDS,
-            &[&[layout::FRAME], &[layout::CLOUDS]],
+            &[
+                &[layout::FRAME],
+                &[layout::CLOUDS],
+                &[layout::TEXTURES, layout::INSTANCES],
+            ],
         ),
         (
             template::BACKGROUND_CLOUDS_ATMOSPHERE,
-            &[&[layout::FRAME], &[layout::CLOUDS_ATMOSPHERE]],
+            &[
+                &[layout::FRAME],
+                &[layout::CLOUDS_ATMOSPHERE],
+                &[layout::TEXTURES, layout::INSTANCES],
+            ],
         ),
         (template::SHADOW_CUTOUT, MESH),
         (template::SHADOW_CUTOUT_MAP, MESH),

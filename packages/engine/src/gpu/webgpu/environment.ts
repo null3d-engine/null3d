@@ -90,6 +90,9 @@ export interface CubeGenerator {
 /** WebGPU aligns dynamic uniform offsets, and buffer rows of texel copies, to 256 bytes. */
 const ALIGNMENT = 256;
 
+/** The cloud tier's step count as one word, written into a step's spare value without allocating. */
+const CLOUD_STEPS_SCRATCH = new Float32Array(1);
+
 /**
  * What a device keeps between maps: the pipelines, the bind group layouts of the steps that read a
  * cube, of the step that reads the panorama and of the step that draws the sky, and the samplers.
@@ -766,7 +769,8 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 							: undefined
 					: undefined;
 			if (cloud && noise !== undefined) {
-				device.queue.writeBuffer(uniforms, k * ALIGNMENT + 24, Float32Array.of(cloudSteps));
+				CLOUD_STEPS_SCRATCH[0] = cloudSteps;
+				device.queue.writeBuffer(uniforms, k * ALIGNMENT + 24, CLOUD_STEPS_SCRATCH);
 				render.setPipeline(cloud);
 				render.setBindGroup(
 					0,

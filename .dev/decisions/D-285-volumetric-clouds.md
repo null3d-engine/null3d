@@ -1,8 +1,9 @@
-# D-283: The sky's volumetric cloud tier
+# D-285: The sky's volumetric cloud tier
 
-Status: decided by the helper of M3-F11, for the owner's review. Built: the cloud
-march, its noise field, the background draws of both skies, the sky map's steps, the `cloudSteps`
-quality setting and the image tests. Task: M3-F11.
+Status: decided. The tier is a ray march through a noise field, drawn over both skies and in
+their environment maps, and published as the `cloudSteps` quality setting. Task: M3-F11. Numbering:
+this record has held three numbers, D-259, D-283 and D-285, because the first two belong to other
+records.
 
 Summary: On the High and Ultra presets the sky draws volumetric clouds in place of the flat layer:
 a ray marched through a noise volume, drawn as a second blended draw over the sky and in the sky's
@@ -98,14 +99,20 @@ simpler light of the panorama costs nothing that a viewer can see.
 
 ## Consequences
 
-- The noise field is made on the first frame that the tier draws, before the sky maps record,
-  because a sky map can refresh from the scene's sky while an environment background draws.
+- The noise field is made on the first frame that can draw the tier: a step count above 0 and one
+  of the skies as the background. A page whose background is a texture or a single color builds none,
+  because no draw samples it.
 - A page on Low or Medium downloads no cloud shader and makes no noise field. The engine test that
   a page which uses no feature that loads on first use downloads none of their files covers the
   family.
 - `quality.set({ cloudSteps })` changes the sky during play. The sky's environment map keeps the
   tier its page started with, because the map picks its cloud shaders at the page's start, so a
-  page that starts at 0 keeps a flat map for the whole run.
+  page that starts at 0 keeps a flat map for the whole run while its view marches. A download that
+  fails reports that the environment generator's code did not download, so a broken deployment
+  fails loudly instead of drawing a cloudless sky.
+- The tier's environment step draws the same sky as the view: a second sky adds its light at its
+  weight in the map's step as it does in the view's, and the clouds take the combined overhead
+  light. Without that term the map lost the moon's sky at night while the view kept it.
 - A sky layer (D-242) draws after the cloud tier's draw, so an aurora stands over the clouds. The
   layer's draw is that branch's; the background pass's cloud draw comes before it.
 - The image tests `clouds-volume` and `clouds-flat` compare the High tier with the flat layer of the
