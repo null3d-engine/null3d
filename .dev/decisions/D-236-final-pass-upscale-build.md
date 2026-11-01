@@ -140,8 +140,10 @@ that differ by more than 1.5 frames a second are all Skyway. The largest differe
 
 The others do not move because their rings carry no frame much longer than their windows'. The
 bench page's window is 500 frames over 30 seconds, and the 30 bench pages on this machine differ
-by at most 0.06 frames. The widest is 30.15 published against 30.09 in the window. Warm-up frames
-of the window's own length leave a mean unchanged. The wind field's rows quote intervals and pass times,
+by at most 0.06 frames. The widest is 30.15 published against 30.09 in the window. The six rows quoted for the second
+step are `20261101-061301-bench`'s three pages, at 36.20, 35.67 and 29.55 against windows of
+36.18, 35.63 and 29.51, and `20261101-063755-bench`'s three, at 30.15, 28.70 and 23.23 against
+30.09, 28.67 and 23.20. Warm-up frames of the window's own length leave a mean unchanged. The wind field's rows quote intervals and pass times,
 not a rate column, so nothing there needs re-deriving.
 
 The Skyway rows differ because the demo's start sits inside the ring. Its first seconds load the
