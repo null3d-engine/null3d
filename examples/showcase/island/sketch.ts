@@ -118,7 +118,9 @@ export default defineSketch(async (ctx) => {
 	// The analytic sky that Low would draw matches the physical sky only in its mean light over the whole
 	// sphere, so away from the sun it reads far darker and deeper in hue. The island's sky fills half of many
 	// views, so it keeps the physical sky on every preset.
-	ctx.quality.set({ physicalSky: true });
+	// The island draws no screen-space bounce light on any preset: its open daylight gains little from
+	// it, and the frame keeps the time.
+	ctx.quality.set({ physicalSky: true, bounceRays: 0 });
 	const land = createLand(ctx);
 	const sea = createSea(ctx);
 	createTown(ctx);
