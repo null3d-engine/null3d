@@ -295,10 +295,11 @@ export function createSea(ctx: SketchContext): { update(): void } {
 		mesh: { cell: CELL },
 		// Clear Mediterranean water: the shelf's bed shows through as teal, and the deep lifts to navy.
 		ripple: 0.45,
-		// The reflection is soft on rippled water, so a coarser one every other frame shows no less.
+		// The reflection is soft on rippled water, so a coarser one shows no less. It draws every frame at
+		// High and Ultra, since a crisp mast steps visibly at a slower cadence while the camera moves.
 		reflectionScale: 0.5,
 		layers: 1,
-		reflectionEvery: { high: 2, ultra: 2 },
+		reflectionEvery: { high: 1, ultra: 1 },
 		softness: 2.5,
 		colorAlongView: 1,
 		material: {
