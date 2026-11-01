@@ -106,11 +106,9 @@ export const SKETCH_SIZE = [320, 180] as const;
 /**
  * How long a page may take to publish its image, unless its entry gives another time. CI's software
  * GPU compiles a custom shader's pipelines for WebGPU on its CPU: a page that takes 18.5 seconds on
- * a passing run can give no result within 30 on a slower runner. The sky's volumetric tier draws at
- * High, where these pages draw, and a software GPU pays for every frame of it, so a heavy page
- * needs about twice the time that it took before the tier.
+ * a passing run can give no result within 30 on a slower runner.
  */
-const TIMEOUT_SECONDS = 120;
+const TIMEOUT_SECONDS = 60;
 
 /** The page that draws each sketch test. */
 export const IMAGE_PAGE = '/tests/pages/image.html';
@@ -270,6 +268,19 @@ function pathOf(test: ImageTest, tier: Tier, mode: EngineMode | undefined): stri
 }
 
 /**
+ * The switches that CI's software renderer draws a test's page with. The software GPU cannot afford
+ * the sky's volumetric tier on every page that shows a sky, so a page that sets no step count of its
+ * own draws the flat layer there. The tier's own tests set theirs, and keep the march on every path.
+ */
+function swiftShaderSwitchesOf(test: ImageTest): readonly string[] {
+	const nothing = test.swiftShaderSwitches ?? [];
+	const namesCloudSteps = [...(test.switches ?? []), ...nothing].some((entry) =>
+		entry.startsWith('cloudSteps='),
+	);
+	return namesCloudSteps ? nothing : [...nothing, 'cloudSteps=0'];
+}
+
+/**
  * Every run of these tests: each test on each of its tiers, in each of its thread modes. Throws when
  * a test compares with the references of a test that the list lacks.
  */
@@ -308,7 +319,7 @@ export function imageRuns(tests: readonly ImageTest[]): ImageRun[] {
 				}),
 				deviceTolerance: { ...DEVICE_TOLERANCE, ...test.deviceTolerance },
 				...(index > 0 && { sameAs: idOf(modes[0]) }),
-				...(test.swiftShaderSwitches && { swiftShaderSwitches: test.swiftShaderSwitches }),
+				swiftShaderSwitches: swiftShaderSwitchesOf(test),
 			}));
 		});
 	});
