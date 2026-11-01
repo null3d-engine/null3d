@@ -85,8 +85,9 @@
 // `--terrain` puts the terrain add-on's ground under S1, whose quadtree
 // follows the orbiting camera in every frame. `--impostors` puts a field of the impostors add-on's
 // cards around S1, which pick their views from the camera in every frame. `--splats` puts a cloud
-// of the splats add-on's Gaussians above S1, whose chunks a job worker selects for the camera's
-// position in every frame, through the engine's public task hook. `--inertial` makes the
+// of the splats add-on's Gaussians above S1, whose chunks the add-on's Rust task in a job worker
+// selects for the camera's position in every frame, through the engine's public task hook, and the
+// core packs the chosen rows in its own memory. `--inertial` makes the
 // animated characters that play one clip switch clips by inertial transitions, with 64 characters
 // unless `--animated` names a count. `--calls` makes, every frame, the
 // calls whose docs promise no allocation and that no other switch makes: a raycast, a mesh's vertex
@@ -617,6 +618,20 @@ const TRANSMISSION_MIPS_BUDGETS: WorkerBudgets = {
 };
 
 /**
+ * What `--splats` adds to the render worker beyond its pass: one texture that the frame refreshes,
+ * whose upload makes a route and whose finished upload makes a render pass for each mip level. On
+ * the Mac they took 104 to 135 bytes a frame for the mip pass and 6 to 8 for the route, with the
+ * most at 153. The switch names no texture of its own; the cost follows the cloud that it adds.
+ * The run at `419024c82` is `.internal/logs/splats-alloc-419024c82-webgpu.log`.
+ */
+const SPLATS_BUDGETS: WorkerBudgets = {
+	'render-worker': {
+		'generateMipmaps webgpu/backend.ts': 160,
+		'add webgpu/upload-routes.ts': 16,
+	},
+};
+
+/**
  * What `--ssr` adds to the WebGPU replay each frame, beyond the passes that `PAGE_SWITCHES` counts:
  * the encoders of the ten render passes that screen-space reflections add (the depth prepass, which
  * draws apart from the opaque pass, the depth copy, the six levels of the depth pyramid, the trace
@@ -745,7 +760,13 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--passes', query: '&passes', passes: 2 },
 	{ flag: '--terrain', query: '&terrain' },
 	{ flag: '--impostors', query: '&impostors' },
-	{ flag: '--splats', query: '&splats', swiftShaderQuery: '&splats=12000', passes: 1 },
+	{
+		flag: '--splats',
+		query: '&splats',
+		swiftShaderQuery: '&splats=12000',
+		passes: 1,
+		budgets: SPLATS_BUDGETS,
+	},
 	// The wind's field: one compute pass that fills its grid.
 	{ flag: '--wind', query: '&wind', passes: 1, budgets: WIND_BUDGETS },
 	{ flag: '--inertial', query: '&inertial' },

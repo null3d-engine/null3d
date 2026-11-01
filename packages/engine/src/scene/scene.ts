@@ -47,6 +47,7 @@ import {
 	type SkyLayer,
 	type SkyLayerOptions,
 } from './background';
+import type { ChunkRowWriter } from './chunk-rows';
 import { type ColorInput, linearColor, writeLinearColor } from './color';
 import { Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
 import type {
@@ -2835,6 +2836,20 @@ export class InstanceBatch implements ViewHolder {
 		core.check(core.glue.setBatchUnculled(this.id, !culled), 'setFrustumCulled', undefined, true);
 	}
 
+	/**
+	 * Makes the writer that packs chunks of rows into this batch's rows, for an add-on whose rows
+	 * arrive as chunks. The writer stores each chunk once when it arrives, then packs the chosen
+	 * prefix of each into the rows in the core's memory, so a frame copies no rows through the
+	 * sketch's heap. The batch must own its rows' transforms: a pack on a part of a model, or on a
+	 * sprite or line batch, writes nothing. The code loads on first use.
+	 *
+	 * @category api/scene
+	 */
+	async createChunkRows(): Promise<ChunkRowWriter> {
+		const { ChunkRowWriter } = await loadChunkRows('createChunkRows');
+		return new ChunkRowWriter(this.scene.core, this);
+	}
+
 	/** Draws only the first `count` rows. */
 	setActiveCount(count: number): void {
 		const { core } = this.scene;
@@ -3052,6 +3067,18 @@ async function loadSprites(call: string): Promise<typeof import('./sprites')> {
 		throw new EngineError(
 			'E1406',
 			`the sprite code did not download for ${call}(): ${reasonOf(error)}.`,
+		);
+	}
+}
+
+/** Imports the chunked-row code, which a page downloads with its first chunked batch, or throws E1406. */
+async function loadChunkRows(call: string): Promise<typeof import('./chunk-rows')> {
+	try {
+		return await import('./chunk-rows');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the chunked row code did not download for ${call}(): ${reasonOf(error)}.`,
 		);
 	}
 }
