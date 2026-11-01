@@ -2,7 +2,9 @@
 //! library module compiles only the entries that import it, and a whole build reuses the entries
 //! and the parts of entries that shards of the manifest stored.
 
-use std::collections::BTreeMap;
+mod common;
+
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -185,6 +187,101 @@ fn changing_one_entry_recompiles_only_that_entry() {
     );
     assert_ne!(output.shaders["a"], first.shaders["a"]);
     assert_eq!(output.shaders["b"], first.shaders["b"]);
+}
+
+#[test]
+fn a_narrowed_build_does_not_reuse_the_entry_of_another_list() {
+    const SOURCE: &str =
+        "@fragment\nfn fs_main() -> @location(0) vec4f {\n    return vec4f(1.0);\n}\n";
+    /// The vertex color bit, as `permutation::VERTEX_COLOR` gives it.
+    const VERTEX_COLOR: u32 = 4;
+    let variants = [(
+        "v",
+        "{ permutations = [\"VERTEX_COLOR\"], targets = [\"wgsl\"] }",
+    )];
+    let inputs = common::project(SOURCE, &variants, &[]);
+    let scratch = Scratch::new();
+    build(&scratch, &inputs);
+    // One listed word is another set of builds, so the narrowed build compiles its entry again.
+    let mut narrowed = inputs.clone();
+    narrowed.only = BTreeSet::from([VERTEX_COLOR]);
+    let (output, stats) = null3d_shaders::build_with_cache(&narrowed, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 1,
+            reused: 0
+        }
+    );
+    assert_eq!(output.shaders["shader"].len(), 1);
+    // The same list then reuses the entry it stored.
+    let (_, stats) = null3d_shaders::build_with_cache(&narrowed, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 0,
+            reused: 1
+        }
+    );
+}
+
+#[test]
+fn a_manifest_change_recompiles_the_entry_it_names() {
+    let scratch = Scratch::new();
+    build(&scratch, &project(A, B));
+    let mut inputs = project(A, B);
+    // A new variant of `a` is another set of builds, and `b` keeps the table it had.
+    inputs.manifest = inputs.manifest.replace(
+        "file = \"a.wgsl\"\nvariants.plain = { targets = [\"wgsl\"] }",
+        "file = \"a.wgsl\"\nvariants.plain = { targets = [\"wgsl\"] }\nvariants.extra = { targets = [\"wgsl\"] }",
+    );
+    let (output, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 1,
+            reused: 1
+        }
+    );
+    assert!(output.shaders["a"].contains_key("extra"));
+}
+
+#[test]
+fn a_comment_or_a_moved_line_reuses_the_entry() {
+    let scratch = Scratch::new();
+    let first = build(&scratch, &project(A, B));
+    // The same tokens as `A`, with a comment line, a wrapped call and other white space.
+    let reflowed = "// the pass.\n#import null3d::math\n\n@fragment\nfn fs_main() -> @location(0) vec4f\n{\n\treturn vec4f(\n\t\tnull3d::math::square(0.5)\n\t); /* the end. */\n}\n";
+    let (output, stats) =
+        null3d_shaders::build_with_cache(&project(reflowed, B), &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 0,
+            reused: 2
+        }
+    );
+    assert_eq!(output, first);
+}
+
+#[test]
+fn a_comment_in_a_library_module_reuses_the_entries_that_import_it() {
+    let scratch = Scratch::new();
+    let first = build(&scratch, &project(A, B));
+    let mut inputs = project(A, B);
+    inputs.files.insert(
+        "lib/math.wgsl".to_owned(),
+        format!("// a note that changes nothing.\n{}", math()),
+    );
+    let (output, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 0,
+            reused: 2
+        }
+    );
+    assert_eq!(output, first);
 }
 
 #[test]

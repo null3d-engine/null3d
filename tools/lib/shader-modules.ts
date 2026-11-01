@@ -16,8 +16,13 @@
 // The folders of that cache are told apart by the bytes of the compiled shader build program, not by
 // a hash of the compiler's sources. A source change that leaves the program identical, such as a
 // comment or a crate test, cannot change any generated shader, so every entry is reused; a change
-// that alters the program reads a folder of its own, so no entry is read with a new meaning. Each
-// entry keeps its own key and its dependencies' hashes, so those checks still decide one entry.
+// that alters the program reads a folder of its own, so no entry is read with a new meaning. The
+// program holds no path of the checkout that built it, because two checkouts of one compiler would
+// then have different bytes and neither would reuse the other's entries; its default root is the
+// working directory, and every tool names the root. Each entry keeps its own key and its
+// dependencies' hashes, so those checks still decide one entry; the key reads a source without its
+// comments and without the white space between tokens, so an edit that leaves every token in place
+// reuses the entry.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -446,7 +451,8 @@ function foldersIn(folder: string): string[] {
  * The identity of a compiler: a hash of the bytes of the program that runs it. Two programs with
  * the same bytes compile every shader the same way, so the entries that one wrote serve the other.
  * A change to a compiler source that cannot alter the generated WGSL leaves the bytes as they were,
- * and a change that does alter its output gives other bytes.
+ * and a change that does alter its output gives other bytes. The program must not hold a path of
+ * the checkout that built it, or two checkouts of one compiler would never share entries.
  */
 function programFingerprint(program: string): string {
 	return hashOf(readFileSync(program));
