@@ -51,9 +51,10 @@ export function carPose(time: number): CarPose {
 
 /**
  * The turn of one wheel, in radians, for a distance that the car drove forward: the distance over
- * the wheel's radius, on the axle's side. The right wheel's axle points along +y and the left's along
- * -y, so the left takes the same distance the other way round.
+ * the wheel's radius, with the axle's side turned in. The hub's quarter turn points the right
+ * wheel's axle at the car's +z and the left's at -z. A wheel that rolls forward turns negative about
+ * +z, so the right takes the distance one way and the left the other.
  */
 export function wheelTurn(distance: number, radius: number, outward: 1 | -1): number {
-	return (distance / radius) * outward;
+	return (-distance / radius) * outward;
 }

@@ -843,13 +843,15 @@ product pages.
 - **The wheels roll with the car.** The body builder returns the four wheel hubs, each with a group
   that turns inside the axle. The showroom turns each group by the distance the car drove forward
   over the wheel's radius, the left side the other way because its axle points the other way, so
-  both sides roll forward. `route.test.ts` checks the rate and the two signs.
-- **The lamps do not flicker; the paint did.** A 60-frame-a-second capture of the car returning in
-  the street found the two lamp bars at full brightness in every frame, while the paint on the nose
-  sparkled. Captures with the headlamp beams off and with the fog off kept the sparkle, and turning
-  the flakes off removed most of it, so the paint's flakes were the cause. The showroom's flakes
-  take a wider light and a lower glint ceiling, and its clear coat is a little rougher, which keeps
-  the glitter and stops the noise.
+  both sides roll forward. `route.test.ts` turns a point on the tyre and checks that it moves
+  backward relative to the hub for both sides, so an inverted sign fails.
+- **The lamps were not the sparkle; the paint was.** In one 60-frame-a-second capture of the car
+  returning in the street on the Mac, the two lamp bars stayed at full brightness in every frame,
+  while the paint on the nose sparkled. Turning the headlamp beams off or the fog off left the
+  sparkle, and turning the flakes off removed most of it, so the paint's flakes were its source in
+  that capture. The showroom's flakes now take a wider light and a lower glint, and its clear coat
+  is a little rougher. That is a look choice, not only a fix: it moves all three pictures, and the
+  owner should rule on the nose's look.
 
 ### Engine features for the showcase
 
