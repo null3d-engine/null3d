@@ -21,9 +21,9 @@ calls a failure. This record picks none. The tablet's field row holds at the bud
 canopy drag takes it over, so the governor must step that row too. Built: the wind add-on's field
 and its state-keeping solver
 (M3-V13, M3-V15). Built too: the plant material's vertex reader (M3-V7) and the cost pages that
-time them. Not built: the preset rows and budgets (M3-V16), the canopy drag and the falling leaves
-(M3-V17), branch poses (M3-V10, measured on its own branch), and Creek's and the forest's plants on
-the add-on (M3-V11, M3-V12). Task: M3-V14.
+time them. Not built: the preset rows and budgets (M3-V16), branch poses (M3-V10, measured on its own branch),
+and Creek's and the forest's plants on the add-on (M3-V11, M3-V12). M3-V17 built the canopy drag and
+the falling leaves, with the open clauses that its addendum lists. Task: M3-V14.
 
 Summary: On the Mac's WebGPU path the field costs 0.10 ms a frame at the Medium row and 0.73 ms at
 the Ultra row, which is the volume's shape; the flat 256x256 grid that stands in until it is built
@@ -716,30 +716,45 @@ run, because the session ended after the first page.
 ### The WebGL2 cost that the Creek rows carried
 
 The Creek rows above miss their WebGL2 ceilings by nine to ten times, far beyond what the field's
-own pass explains. A bisect found the cause on the development machine, between the milestone head
-that the branch was cut from and the branch, at Creek's Low preset and the WebGL2 path, three
-seconds after a warm-up:
+own pass explains. A bisect found the cause on the development machine, between a milestone head
+and the branch, at Creek's Low preset and the WebGL2 path, three seconds after a warm-up. The head
+is `fcafb9cd7`, eighteen commits before `f800cc662`, the merge the branch was cut from; the wind
+preset work between the two does not touch Creek.
 
 | Scene | Frame interval | Frames in 3 s | Uploaded per frame |
 | --- | --- | --- | --- |
-| The milestone head, no wind | 16.7 ms | 176 | 128 KB |
-| The branch, as built | 633 ms | 3 | 2.2 MB |
-| The branch without the water | 16.7 ms | 178 | 87 KB |
-| The branch with the leaves riding the offset form | 16.7 ms | 175 | 113 KB |
+| The milestone head, no wind, Low | 16.7 ms | 176 | 128 KB |
+| The branch, as built, Low | 633 ms | 3 | 2.2 MB |
+| The branch without the water, Low | 16.7 ms | 178 | 87 KB |
+| The branch with the leaves riding the offset form, Low | 16.7 ms | 175 | 113 KB |
+| The branch with the wind grid's pass, Medium | 683 ms | 3 | 4.3 MB |
+| The branch with `grid: 0`, Medium | 33.3 ms | 105 | 96 KB |
+
+The upload column is the engine's `uploadBytes` counter, which adds buffer writes and texture
+uploads together, and the time sits on the render worker's replay phase, not on the drawing. D-286
+splits the figures and says what a fix must show.
 
 The water draws the valley a second time for its reflection. Beside that second draw, a pass whose
-WebGL2 form is a fragment pass re-uploads the valley's compressed textures for every frame: 2.1 MB
-at Low and 4.3 MB at Medium. Both passes that the branch adds hit it, the leaves' state pass and the
-wind grid's. The same scene without the reflection, and the same passes in a scene that draws once,
-as the forest does, pay nothing: the forest's Low rows hold on every path.
+WebGL2 form is a fragment pass costs the frame a large upload for every frame: 2.2 MB at Low and
+4.3 MB at Medium. Both passes that the branch adds hit it, the leaves' state pass and the wind
+grid's. The same scene without the reflection, and the same passes in a scene that draws once, as
+the forest does, pay nothing: the forest's Low rows hold on every path.
 
 The wind grid's own pass lifts Medium and above into the same cost: at Medium the branch reads
 683 ms with the grid and 33.3 ms without it, the leaves riding the offset form in both.
 
 So Creek rides the offset form and keeps no grid on the WebGL2 path. Its readers work the air out of
-the steady field there, which carries the gust and the swirl, so a gust still crosses the banks. The
-cost itself is the WebGL2 backend's, not the add-ons'. [D-286](D-286-webgl2-texture-copies-beside-a-second-draw.md)
-holds it, with the figures and what a fix must show. No task owns that fix yet.
+the steady field there. That field carries the base wind, the swirl and the preset's own traveling
+gust. It does not carry a gust or a push that a page sends: `gust()` writes the push ring and the
+grid's values, and readers meet those only through the grid. The G key therefore moves nothing on
+Creek's grass, water or leaves on that path.
+
+An earlier version of this record, and of the commit that made the change, said the sent gust still
+crossed the banks. That was wrong. The clause is open, below.
+
+The cost itself is the WebGL2 backend's, not the add-ons'.
+[D-286](D-286-webgl2-texture-copies-beside-a-second-draw.md) holds it, with the figures and what a
+fix must show. No task owns that fix yet.
 
 The branch and the milestone head read the same rows on the cloud devices. The branch at 8363b20a6
 runs [the iPad's rows](../tested-devices/ipad-pro-13-safari/20261101-091422-vegetation.md) and
@@ -783,3 +798,23 @@ The manifest's tests that draw the changed demos, and so owe a drawing:
 
 Each test draws on the paths that its entry names, WebGPU, compatibility and WebGL2, with CI's
 SwiftShader set beside the Mac's drawings, and on the devices that draw them.
+
+### What the task's clauses stand at
+
+M3-V17 delivers the readers, the two leaf forms and their comparison, the flag's and the water's
+extra read, and the Creek and forest rows that match the head on the iPad, the S25 and the tablet.
+It is a partial delivery. These clauses stay open:
+
+- **The gust on WebGL2.** G moves nothing on Creek's grass, water or leaves on that path, as the
+  section above says. The clause needs a way to carry a page's gust without the grid, or the owner's
+  ruling that the gust is WebGPU-only there.
+- **The particles add-on's wind input.** The task's bullet asks for a field texture and its box, so
+  dust, motes, smoke and rain take an offset from the field. The add-on takes a constant vector
+  still, so the bullet is unbuilt.
+- **The pictures.** Five drawings are owed; the section above names the tests and why they wait.
+- **The iPhone 17's row.** The Done-when names four cloud devices. The branch has rows for the iPad,
+  the S25 and the Tab A9 Plus, and none for the iPhone.
+- **The forest at the head.** Its Medium and above rows were never measured at `fcafb9cd7`, so
+  whether the wind's share sits inside those ceilings is open (D-241).
+
+The task's evidence entry states the same, and names the runs that back the figures below.
