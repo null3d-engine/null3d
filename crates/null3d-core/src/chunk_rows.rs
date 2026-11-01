@@ -204,6 +204,12 @@ impl ChunkRowTable {
         batch: &mut InstanceBatch,
         counts: &[f32],
     ) -> Result<u32, CoreError> {
+        // A batch that reads another batch's rows, or a sprite or line batch, holds no transform
+        // arrays. It takes no chunked rows, and the pack leaves its active count as it was.
+        if batch.positions().is_empty() || batch.rotations().is_empty() || batch.scales().is_empty()
+        {
+            return Ok(0);
+        }
         let capacity = batch.capacity() as usize;
         let colors = !batch.colors().is_empty();
         let chunks = self
@@ -345,6 +351,32 @@ mod tests {
         chunk(&mut table, 1, 2.0, 2);
         let mut batch = batch(4);
         assert_eq!(table.pack(CLOUD, &mut batch, &[2.0]).unwrap(), 2);
+    }
+
+    #[test]
+    fn a_batch_without_transform_rows_takes_no_rows_and_keeps_its_count() {
+        // A part reads another batch's rows and owns no arrays of its own, so a chunk store
+        // cannot pack it. The pack answers nothing and leaves the count that the part had.
+        let mut batches = crate::instances::BatchTable::with_capacity(2);
+        let source = batches.create(4, false, true, 1, 1, 1.0).unwrap();
+        let part = batches
+            .create_part(
+                Some(source),
+                0,
+                false,
+                true,
+                1,
+                1,
+                1.0,
+                crate::math::IDENTITY,
+            )
+            .unwrap();
+        let mut table = ChunkRowTable::default();
+        chunk(&mut table, 0, 1.0, 2);
+        let batch = batches.get_mut(part).unwrap();
+        batch.set_active_count(3).unwrap();
+        assert_eq!(table.pack(CLOUD, batch, &[2.0]).unwrap(), 0);
+        assert_eq!(batch.active_count(), 3);
     }
 
     #[test]
