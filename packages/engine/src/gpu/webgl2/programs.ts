@@ -495,15 +495,32 @@ export function createProgram(
 	};
 }
 
+/** The head of a uniform declaration, with the text between it and the declaration's end. */
+const DECLARATION = /^\s*(?:layout\([^)]*\)\s*)?uniform\b([^;{]*)/gm;
+
+/** A word of a declaration, which is a name that the source declares. */
+const WORD = /[A-Za-z_][A-Za-z0-9_]*/g;
+
+/**
+ * The names that a GLSL source declares as uniforms or uniform blocks. One walk of the source
+ * answers every name, so a check over a program's whole reflection costs a scan beside a scan
+ * rather than a scan for each name it asks about.
+ */
+export function declaredUniforms(source: string): Set<string> {
+	const names = new Set<string>();
+	DECLARATION.lastIndex = 0;
+	for (let match = DECLARATION.exec(source); match !== null; match = DECLARATION.exec(source))
+		for (const word of (match[1] ?? '').match(WORD) ?? []) names.add(word);
+	return names;
+}
+
 /**
  * Whether a GLSL stage declares a uniform or a uniform block of this name. A driver may remove a
  * declared uniform that the program never reads, as GLSL allows, so a linked program can lack a
- * name that its source declares.
+ * name that its source declares. A check over many names reads [`declaredUniforms`] once instead.
  */
 export function declaresUniform(source: string, name: string): boolean {
-	return new RegExp(`^\\s*(?:layout\\([^)]*\\)\\s*)?uniform\\b[^;{]*\\b${name}\\b`, 'm').test(
-		source,
-	);
+	return declaredUniforms(source).has(name);
 }
 
 /**
