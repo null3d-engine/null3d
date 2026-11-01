@@ -133,15 +133,15 @@ little and a mean a lot. That is why a 33.3 ms median on a 30 Hz display sat bes
 **What to quote.** The window's `frames ÷ seconds`, which every page already records. Until the
 engine changes, a page that quotes `presentedFps` says which statistic it is.
 
-**Which tables move.** Only the Skyway rows do. Every raw page on this machine that holds both
-figures was compared: 80 pages. The 17 that differ by more than 1.5 frames a second are all
-Skyway. The largest difference elsewhere is 0.69 frames, on the vegetation plan's forest page at
-Low.
+**Which tables move.** Only the Skyway rows do. Every run page on this machine that holds both
+figures was compared, 110 of them, the pages whose figures sit under `stats` among them. The 17
+that differ by more than 1.5 frames a second are all Skyway. The largest difference elsewhere is
+0.69 frames, on the vegetation plan's forest page at Low.
 
 The others do not move because their rings carry no frame much longer than their windows'. The
-bench page's window is 500 frames over 30 seconds. Its published rate agrees with the window's
-within 0.05 frames across all six rows of this record's second-step table. Warm-up frames of the
-window's own length leave a mean unchanged. The wind field's rows quote intervals and pass times,
+bench page's window is 500 frames over 30 seconds, and the 30 bench pages on this machine differ
+by at most 0.06 frames. The widest is 30.15 published against 30.09 in the window. Warm-up frames
+of the window's own length leave a mean unchanged. The wind field's rows quote intervals and pass times,
 not a rate column, so nothing there needs re-deriving.
 
 The Skyway rows differ because the demo's start sits inside the ring. Its first seconds load the
