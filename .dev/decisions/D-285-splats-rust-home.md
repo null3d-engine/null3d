@@ -45,14 +45,27 @@ The selection is `crates/null3d-splats`. It reads a parameter block of 64-bit fl
 | A moved frame | Copies the header into the worker and the counts back | A Rust pass over the chosen prefixes, with no JavaScript allocation |
 | Engine surface | None | One public method on `InstanceBatch`, and one class that the engine exports as a type |
 
-The core stores each chunk's arrays for as long as the cloud lives. The splats' memory is therefore the same bytes that the JavaScript reader held before, in the engine's memory instead of the sketch worker's heap. A cloud that is destroyed forgets its chunks.
+The core stores each chunk's arrays for as long as the cloud lives. The splats' memory is therefore the same bytes that the JavaScript reader held before, in the engine's memory instead of the sketch worker's heap. The sketch's slot keeps only a flag that the chunk arrived, because the rows live in the core once the writer copied them, so a cloud is not held twice. A cloud that is destroyed forgets its chunks.
+
+## What stays in TypeScript
+
+Two small loops over the chunk list stay on the sketch thread, and neither is a loop that hard rule 42 names:
+
+- `differs` (`packages/splats/src/system.ts`) compares the chosen counts of two selections, to learn whether the draw must pack again. It walks the chunk list, which a cut keeps at 4,096 entries at most, with no browser call.
+- `askForChunks` (`packages/splats/src/system.ts`) orders the chunks that a stream still needs by their distance, and asks the loader for them. It runs only while a stream loads, over the same bounded chunk list.
+
+The rule names loops over objects, instances, vertices, pixels and draw-list commands, and these walk chunks: a few dozen entries for a cloud at the presets, and 4,096 at the most. The selection and the pack, which run over the splats themselves, are in Rust. The loops are recorded here so a later reader knows they were weighed rather than missed.
+
+The worker keeps a selector's arrays while they hold a grown cloud's chunk count, and it takes a dropped selector's arrays back, so a cloud cut into many chunks leaves neither one state for each chunk nor a module memory that only grows.
 
 ## Consequences
 
 - `crates/null3d-core/src/chunk_rows.rs` holds the chunk store and the pack. Its tests mirror the TypeScript reference's cases.
-- `crates/null3d-splats` holds the selection and the sort. `packages/splats/src/select-parity.test.ts` compares the built module with the reference over seven clouds and views.
+- `crates/null3d-splats` holds the selection and the sort. `packages/splats/src/select-parity.test.ts` compares the built module with the reference over seven clouds and views, over a cloud whose distances all tie, and over a `SharedArrayBuffer` as a page with shared memory gives it, which is the path that production takes.
+- `packages/engine/src/shared/tasks.test.ts` covers the loader's caches: a URL's text and a task's module key are made once, a failed download is tried again, and two concurrent asks share the one pending module.
 - `packages/splats/src/pack.ts` stays as the TypeScript reference, and the draw no longer calls it.
 - `packages/engine/src/scene/chunk-rows.ts` holds the public writer. `docs/concepts/instances.md` names the hook, and the API reference comes from its doc comments.
 - `bun run build` builds the crate with the other tool modules. It copies the module to `packages/splats/dist/splats.wasm`, which the tarball carries.
 - `shared/tasks.ts` caches each WebAssembly file's URL text, each task's module key and its compiled module. A task that runs in every frame then copies no string and awaits no resolved compile, which the allocation check of this add-on showed.
 - `bench/allocation.ts` gives the `--splats` switch its own render-worker budgets, measured on the Mac, for the texture that the cloud refreshes in every frame.
+- A picture run at the branch's head is owed. The three splat pictures exist on every GPU path and would catch a pack with the wrong row order, and the reviewer holds that run. No GPU-time line is owed: the branch changes no shader and none of the engine's `gpu`, `render` or `quality` folders.
