@@ -14,16 +14,17 @@ modelled frame is 11.08 ms, from the measured 5.243 ms of its 40 volume steps pl
 advection and projection floor, doubled. That is over the wind's own 6.25 ms figure, and D-241's
 499.8 ms is the measured Creek frame at Ultra on that phone, not a ceiling with room in it: the
 frame with the wind is about 510.9 ms, over by 2.2 per cent, and the governor's 30 field steps a
-second step gives about 505.3 ms, still over. The owner must choose one of three options. The first
-is that the class ceiling includes the wind's share. The second is that Ultra does not run the
-field on a display that owes two cycles. The third is that the preset steps down there, which D-241
-calls a failure. This record picks none. The tablet's field row holds at the budget's edge, and its
+second step gives about 505.3 ms, still over. The owner ruled that the class ceiling includes the
+wind's share. The S25-class Ultra ceiling is therefore 511 ms: the measured 499.8 ms plus the
+modelled 11.08 ms, which D-241 now states beside its measured rows. The owner declined the two
+other options that this record set out. Ultra does not skip the field, and the preset does not step
+down there, which D-241 calls a failure. The tablet's field row holds at the budget's edge, and its
 canopy drag takes it over, so the governor must step that row too. Built: the wind add-on's field
 and its state-keeping solver
 (M3-V13, M3-V15). Built too: the plant material's vertex reader (M3-V7) and the cost pages that
-time them. Not built: the preset rows and budgets (M3-V16), the canopy drag and the falling leaves
-(M3-V17), branch poses (M3-V10, measured on its own branch), and Creek's and the forest's plants on
-the add-on (M3-V11, M3-V12). Task: M3-V14.
+time them. Not built: the preset rows and budgets (M3-V16), branch poses (M3-V10, measured on its own branch),
+and Creek's and the forest's plants on the add-on (M3-V11, M3-V12). M3-V17 built the canopy drag and
+the falling leaves, with the open clauses that its addendum lists. Task: M3-V14.
 
 Summary: On the Mac's WebGPU path the field costs 0.10 ms a frame at the Medium row and 0.73 ms at
 the Ultra row, which is the volume's shape; the flat 256x256 grid that stands in until it is built
@@ -582,3 +583,272 @@ the figure and the budget, not for the governor's input.
   landing head, so it is not this branch's. That step would prove the add-on's WGSL compiles for
   both GPU paths, and it is owed to the tool. The pages did compile and run that WGSL in
   Chrome, in the picture tests and the stress runs.
+
+## Addendum: the leaves' two forms, and the flag and water readers
+
+M3-V17 builds the falling and floating leaves in the vegetation add-on. It builds the two forms
+that the leaf section above left unmeasured. It also builds the flag and the water readers that the
+readers section named, and it measures one more texture read for each.
+
+### The leaves' two forms
+
+`createFloatingLeaves(ctx, { wind, camera, count, area, ride })` draws leaves in a box that follows
+the camera. Each leaf falls from the box's top to its ground and starts again. Both forms draw the
+same leaf card and the same fall.
+
+- `ride: 'offset'` pushes a closed-form fall by the air at the leaf's place. It reads the field once
+  for each leaf, and it keeps no state between frames. A gust moves a leaf only while the leaf
+  stands in it.
+- `ride: 'state'` keeps a place and a speed for each leaf in a pass that keeps its state. The pass
+  samples the field, drags each leaf toward the air at its place, and wraps the leaf inside the
+  box. A gust carries a leaf along its path, and the leaf keeps its speed after the gust passes.
+  The state texture holds four numbers for each leaf. On WebGL2 the pass runs as its fragment
+  form, which steps the same state, so a leaf moves the same way on every path.
+
+The state form is the default. It is the form that carries a gust, which is why the leaves moved
+from the CPU.
+
+### The leaves' cost
+
+The `leaves-wind-cost` plan draws one form at one count on one GPU path. Each page holds the camera
+still and measures three seconds after a warm-up. The counts are 500, 2,000 and 10,000. The pages ran on the cloud iPad Pro 13 at Safari 26.6.1, in
+[its leaves run](../tested-devices/ipad-pro-13-safari/20261101-074423-leaves-wind-cost.md).
+
+WebGPU, median GPU milliseconds at High:
+
+| Leaves | Offset, the field's pass | State, the field's and the leaves' passes | The state pass alone |
+| --- | --- | --- | --- |
+| 500 | 0.018 | 0.375 | 0.357 |
+| 2,000 | 0.027 | 0.379 | 0.352 |
+| 10,000 | 0.246 | 0.379 | 0.133 |
+
+Compatibility mode, median GPU milliseconds at High:
+
+| Leaves | Offset, the opaque pass | State, the opaque pass | Offset, the field's pass | State, both passes |
+| --- | --- | --- | --- | --- |
+| 500 | 1.085 | 1.101 | 0.091 | 0.166 |
+| 2,000 | 1.096 | 1.097 | 0.116 | 0.165 |
+| 10,000 | 1.101 | 1.099 | 0.170 | 0.092 |
+
+The compatibility figures at 10,000 are lower than at 2,000 because the field's pass runs fewer
+cycles when a frame is shorter. The opaque pass draws the leaves, and it moves 0.016 ms from 500 to
+10,000 offset leaves, so the per-leaf read is cheap there. The state form's pass adds 0.05 to
+0.08 ms.
+
+On WebGPU the state pass alone is about 0.36 ms at 500 and 2,000 leaves. At 10,000 the offset
+page's field pass is inflated by the extra cycles that its slow frames ran, so the difference there
+is not the state pass's own cost.
+
+Every page updated its sketch about 190 times in its 3 s, so neither form lost the page's update
+rate at 10,000 leaves. The GPU timer's whole-frame median includes idle gaps of 0.7 to 23.6 s
+between passes on several pages, so those medians do not compare the forms. The pass medians are
+the figures above.
+
+WebGL2 reports no GPU timer. Its pages updated their sketch 71, 63 and 63 times a second at 500,
+2,000 and 10,000 offset leaves, with CPU medians of 1.82, 1.82 and 1.88 ms. The state pages updated
+72, 63 and 63 times a second, with CPU medians of 1.88, 1.85 and 1.82 ms. Both forms therefore hold
+the page's update rate at every count on that path.
+
+### The flag and the water
+
+The flag sketch `tests/pages/sketches/wind-reader-cost-sketch.ts` ripples from its pole, and a
+custom vertex offset adds the push of the air at each vertex. The water add-on's surface lifts a
+short wave under the air, read at each vertex. The `wind-reader-cost` plan draws each reader with
+the read and without it, on each path. The run is
+[the iPad's readers run](../tested-devices/ipad-pro-13-safari/20261101-075408-wind-reader-cost.md).
+
+WebGPU and compatibility mode, the opaque pass that draws the reader, median GPU milliseconds:
+
+| Reader | Path | With the field | Without | Difference |
+| --- | --- | --- | --- | --- |
+| Flag | WebGPU | 1.609 | 1.635 | -0.026 |
+| Water | WebGPU | 1.633 | 1.598 | +0.035 |
+| Flag | compatibility | 1.785 | 1.806 | -0.021 |
+| Water | compatibility | 1.791 | 1.794 | -0.003 |
+
+The differences fall inside the runs' noise. The largest is 0.035 ms, so one texture read for each
+vertex costs no measurable time at these readers' vertex counts. The field's own pass runs in both
+sides of each pair, so it is not in the difference.
+
+WebGL2 reports no GPU timer. Both sides of each pair held the update rate, 63 to 76 updates a
+second. The CPU median of each update was 3.38 to 3.50 ms for the flag and 2.54 to 3.40 ms for the
+water.
+
+The WebGL2 row does not isolate either read. The add-on steps the field at a fixed rate, and a
+slower frame runs more cycles, as the readers section above says. The WebGPU rows are the clean
+figures.
+
+### The readers' texture slots
+
+The field costs a reader one texture slot for the field and one for its steady settings, which the
+grid's edge and a device without float targets need.
+
+| Reader | Textures | Free slots of six |
+| --- | --- | --- |
+| Water surface | mirror, foam, junction, field, steady settings | 1 |
+| Flag sketch | field, steady settings | 4 |
+| Leaves, offset form | leaf atlas, field, steady settings | 3 |
+| Leaves, state form's material | state texture, leaf atlas | 4 |
+| Plants (M3-V7) | bark colour, bark surface, leaf colour, leaf surface, branch records, field | 0 |
+| Grass | field, steady settings | 4 |
+
+M3-V14 asked for the readers that have a slot free. They are the water surface, the flag, the grass
+and the leaves. The plant material keeps none.
+
+### Creek and the forest at the ceilings
+
+The `vegetation` plan ran on the iPad on the same branch, in
+[its vegetation run](../tested-devices/ipad-pro-13-safari/20261101-080738-vegetation.md). The forest
+holds Low on all three paths. It misses Medium and above by 9 to 19 per cent. Creek misses its
+WebGL2 ceilings by a factor of nine at Low and ten at Medium. The field's own pass is below that
+device's WebGL2 timer floor at these shapes, so the cost is in the readers or the frame's other
+work, not the field's pass. The iPad's rows ask the open ruling's question too: whether a preset's
+ceiling includes the wind's share.
+
+The Galaxy S25's run adds [its record](../tested-devices/galaxy-s25-sm-s931b-chrome/20261101-081343-vegetation.md).
+Creek misses the class's 33.3 ms ceiling at Low (312.4 ms) and at Medium (166.6 ms), and its Ultra
+frame reads 516.56 ms against D-241's measured 499.8. The forest holds Low and Medium WebGL2 at the
+display's 33.3 ms floor.
+
+The Galaxy Tab A9 Plus's run adds [its record](../tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-082204-vegetation.md).
+Creek Low on WebGL2 reads 1,600.35 ms against 1,268.5, 26 per cent over. Its forest pages did not
+run, because the session ended after the first page.
+
+### The WebGL2 cost that the Creek rows carried
+
+The Creek rows above miss their WebGL2 ceilings by nine to ten times, far beyond what the field's
+own pass explains. A bisect found the cause on the development machine, between a milestone head
+and the branch, at Creek's Low preset and the WebGL2 path, three seconds after a warm-up. The head
+is `fcafb9cd7`, eighteen commits before `f800cc662`, the merge the branch was cut from; the wind
+preset work between the two does not touch Creek.
+
+| Scene | Frame interval | Frames in 3 s | Uploaded per frame |
+| --- | --- | --- | --- |
+| The milestone head, no wind, Low | 16.7 ms | 176 | 128 KB |
+| The branch, as built, Low | 633 ms | 3 | 2.2 MB |
+| The branch without the water, Low | 16.7 ms | 178 | 87 KB |
+| The branch with the leaves riding the offset form, Low | 16.7 ms | 175 | 113 KB |
+| The branch with the wind grid's pass, Medium | 683 ms | 3 | 4.3 MB |
+| The branch with `grid: 0`, Medium | 33.3 ms | 105 | 96 KB |
+
+The upload column is the engine's `uploadBytes` counter, which adds buffer writes and texture
+uploads together, and the time sits on the render worker's replay phase, not on the drawing. D-286
+splits the figures and says what a fix must show.
+
+The water draws the valley a second time for its reflection. Beside that second draw, a pass whose
+WebGL2 form is a fragment pass costs the frame a large upload for every frame: 2.2 MB at Low and
+4.3 MB at Medium. Both passes that the branch adds hit it, the leaves' state pass and the wind
+grid's. The same scene without the reflection, and the same passes in a scene that draws once, as
+the forest does, pay nothing: the forest's Low rows hold on every path.
+
+The wind grid's own pass lifts Medium and above into the same cost: at Medium the branch reads
+683 ms with the grid and 33.3 ms without it, the leaves riding the offset form in both.
+
+So Creek rides the offset form and keeps no grid on the WebGL2 path. Its readers work the air out of
+the steady field there. The owner ruled that the gust must work on that path, so the steady field
+now carries a gust that a page sends: `gust()` writes its place, its strength and the time it was
+sent into the field's reading, the readers' settings take them as a fourth vector, and the block
+adds the same travelling wave from that place. A push still reaches readers only through the grid.
+
+What this record proves is the air, not a person watching the demo. A probe sampled the block that
+the readers carry, on a line across the ground with no grid, and the gust moved 6 m in the 1 s
+between two reads against the field's own 6 m/s
+([the run](../tested-devices/macbook-pro-m3-max-chrome/20261101-1915-gust-crossing.md)). The
+readers take the fourth vector that carries it, and the vegetation add-on's copy test holds their
+blocks, the cost page's and the probe's steady block equal to the canonical text; the probe keeps
+only the reading function of the other block, since it samples no grid. Owed, and not taken: a held picture of Creek on the WebGL2 path with a
+gust sent, which would show the grass, the water and the leaves moving. The machine barred image
+runs when this landed.
+
+The settings go up when a page sends a gust, so the frame pays one small upload for each press and
+no upload in the frames between. The path that draws a reflection stays off the pass that cost
+[2.2 MB a frame](D-286-webgl2-texture-copies-beside-a-second-draw.md).
+
+An earlier version of this record said the sent gust crossed the banks when it did not. That was
+wrong, and the code now makes it true.
+
+The cost itself is the WebGL2 backend's, not the add-ons'.
+[D-286](D-286-webgl2-texture-copies-beside-a-second-draw.md) holds it, with the figures and what a
+fix must show. No task owns that fix yet.
+
+The branch and the milestone head read the same rows on the cloud devices. The branch at 8363b20a6
+runs [the iPad's rows](../tested-devices/ipad-pro-13-safari/20261101-091422-vegetation.md) and
+[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261101-091422-vegetation.md). The head at
+`fcafb9cd7` runs [the iPad's](../tested-devices/ipad-pro-13-safari/20261101-091901-vegetation.md) and
+[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261101-091901-vegetation.md), and it
+builds no wind field.
+
+| Demo and preset | Path | Ceiling | Head | Branch |
+| --- | --- | --- | --- | --- |
+| Creek Low, iPad | WebGL2 | 30.8 | 31.06 | 30.98 |
+| Creek Medium, iPad | WebGL2 | 90.8 | 78.74 | 78.82 |
+| Creek Low, S25 | WebGL2 | 33.3 | 33.3 | 33.32 |
+| Creek Medium, S25 | WebGL2 | 33.3 | 33.3 | 33.33 |
+
+The branch's earlier rows of 287.1, 935.0, 312.4 and 166.59 ms were that pass-and-copy cost, not
+Creek's own. The head's rows show it: they read the same frames before the branch added a reader.
+
+The tablet's rows say the same. The head reads Creek Low at 1,487.16 ms against the class's
+1,268.5 ms ([the head's tablet run](../tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-091901-vegetation.md)),
+and the branch at 1,484.12
+([the branch's tablet run](../tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-092544-vegetation.md)),
+so that miss is the scene's on that device. Creek Medium draws no frame on either.
+
+### The pictures this branch owes
+
+The task asks that every picture the change moves is redrawn in both reference sets. The manifest
+was then run on the Mac's GPU at the branch's head `582706315`, and it measured which pictures move
+([the run](../tested-devices/macbook-pro-m3-max-chrome/20261101-1803-creek-images.md)). Four Creek
+tests move on every path, against the 0.1 per cent limit:
+
+| Test | WebGPU | Compatibility | WebGL2 |
+| --- | --- | --- | --- |
+| `demo-creek` | 1.321 | 0.873 | 1.681 |
+| `creek-render-scale-opening` | 2.282 | 1.748 | 1.839 |
+| `creek-render-scale-route` | 1.644 | 1.323 | 1.456 |
+| `creek-water-close` | 8.129 | 6.496 | 15.168 |
+
+The figures are the percentage of each picture's pixels that differ from its reference. The water's
+close view moves most, and three times as far on WebGL2 as on WebGPU, where Creek rides a different
+leaf form.
+
+The same run measured the forest, and `demo-forest` passes on all three tiers, so its sway does not
+reach its held picture and it is not redrawn. `vegetation-versus-creek` passes too. `creek-band` and
+`creek-lod` keep no picture. `creek-band` reads the route picture's frame, and `creek-lod` draws its
+own page, so both re-run after the references are drawn.
+
+Those four are owed a drawing in each set. The machine's milestone gate bars browser image runs, so
+the Mac's drawings wait for it to lift, and `bun run images:review --accept` then makes them
+references. The software set comes only from CI's drawing: a full run on the branch saves the
+images, and `bun run images:review --ci <run> --accept <name>` accepts them, as
+[the image tests guide](../../.dev/image-tests.md#references) says.
+
+### What the task's clauses stand at
+
+M3-V17 delivers the readers, the two leaf forms and their comparison, the flag's and the water's
+extra read, the gust on every path, and the Creek and forest rows that match the head on the iPad,
+the S25 and the tablet. It is a partial delivery. These clauses stay open:
+
+- **The particles add-on's wind input.** The task's bullet asks for a field texture and its box, so
+  dust, motes, smoke and rain take an offset from the field. The add-on takes a constant vector
+  still, so the bullet is unbuilt.
+- **The pictures.** Four Creek drawings are owed; the section above names the tests and the run
+  that measured them, and why they wait.
+- **The iPhone 17's row.** The Done-when names four cloud devices. The branch has rows for the iPad,
+  the S25 and the Tab A9 Plus, and none for the iPhone.
+- **The forest at the head.** Its Medium and above rows were never measured at `fcafb9cd7`, so
+  whether the wind's share sits inside those ceilings is open (D-241).
+
+The task's evidence entry states the same, and names the runs that back the figures below.
+
+### The forest's sketch and the feature demos' line rule
+
+The wind work grew the forest demo's sketch past the 150 lines that a feature demo's sketch may
+take, and landing it turned the branch's `tests/lib` red. The demo's build moved into helpers, the
+way the dressed Creek's build did, so the rule holds without a change to it. `examples/forest/sway.ts`
+holds the trees' material and the field's settings, and `examples/forest/planting.ts` holds the
+batches, the hero fir and the counts that each preset draws. The sketch keeps the look, the field
+and the frame, at 85 lines.
+
+No picture or frame figure moved: the same rows, the same materials and the same counts are built,
+and the demo's own rules still pass.

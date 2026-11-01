@@ -1129,6 +1129,8 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'alpha-mask-cost',
 	'impostor-cost',
 	'impostor-frame',
+	'wind-reader-cost',
+	'leaves-wind-cost',
 	'canvas-cost',
 	'cluster-cost',
 	'lod-cost',

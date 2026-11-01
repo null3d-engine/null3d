@@ -227,10 +227,15 @@ export function createGrass(ctx: SketchContext, options: GrassOptions): Grass {
 	const shapes = Math.max(1, Math.floor(options.shapes ?? 1));
 	const blades = Math.max(1, Math.floor(options.blades ?? 13));
 	const segments = Math.max(1, Math.floor(options.segments ?? 3));
+	const airSettings = options.wind
+		? readingTexture(ctx.textures, options.wind.air)
+		: stillTextures(ctx.textures).airSettings;
+	/** The sent gust's born time that the settings texture holds, so one gust costs one upload. */
+	let sentBorn = Number.NaN;
 	const material = ctx.materials.shader({
 		wgsl: grassShader,
 		textures: options.wind
-			? { wind: options.wind.texture, airSettings: readingTexture(ctx.textures, options.wind.air) }
+			? { wind: options.wind.texture, airSettings }
 			: stillTextures(ctx.textures),
 		color: '#5f9a2a',
 		vertexColors: true,
@@ -284,17 +289,31 @@ export function createGrass(ctx: SketchContext, options: GrassOptions): Grass {
 		});
 	};
 	fit(ctx.quality.preset);
-	const setWindLayer = (field: WindField) => material.setUniform('windLayer', field.texture.layer);
+	const setWindLayer = (field: WindField) => {
+		material.setUniform('windLayer', field.texture.layer);
+		// A gust that a page sends travels through the steady field, which the settings carry. The
+		// texels go up when a gust is sent, not once a frame.
+		if (field.air.sent[3] !== sentBorn) {
+			sentBorn = field.air.sent[3];
+			airSettings.update(readingData(field.air));
+		}
+	};
 	return { batches, fit, setWindLayer };
 }
 
-/** The texture that holds the field's steady settings, three texels of four numbers each. */
-function readingTexture(textures: Textures, air: WindField['air']): Texture {
-	const data = new Float32Array(12);
+/** The field's settings as the texture holds them: the air, the gust, the swirl and the sent gust. */
+function readingData(air: WindField['air']): Float32Array {
+	const data = new Float32Array(16);
 	data.set(air.base, 0);
 	data.set(air.gust, 4);
 	data.set(air.swirl, 8);
-	return textures.fromData({ width: 3, height: 1, format: 'rgba16float', data });
+	data.set(air.sent.slice(0, 4), 12);
+	return data;
+}
+
+/** The texture that holds the field's settings: four texels of four numbers each. */
+function readingTexture(textures: Textures, air: WindField['air']): Texture {
+	return textures.fromData({ width: 4, height: 1, format: 'rgba16float', data: readingData(air) });
 }
 
 /** A still field's textures, for grass that names no wind field. */

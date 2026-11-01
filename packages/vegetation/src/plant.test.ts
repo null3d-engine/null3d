@@ -40,6 +40,7 @@ const field = {
 		base: [4, 0, 0.65, 0],
 		gust: [3.5, 14, 2, 6],
 		swirl: [1.6, 0.06, 0.5, 0],
+		sent: [0, 0, 0, -1e9],
 	},
 } as WindField;
 
