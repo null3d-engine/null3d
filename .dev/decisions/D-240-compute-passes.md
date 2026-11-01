@@ -1,8 +1,8 @@
 # D-240: Compute passes with a storage output that the same frame reads
 
 Status: decided by the helper of M3-E8, for the owner's review. Built: the pass, both GPU paths
-and the tests, as the consequences list, and the wait of every pass that draws a reader (M3-V3).
-Tasks: M3-E8, M3-V3.
+and the tests, as the consequences list, the wait of every pass that draws a reader (M3-V3), and
+the addendum that keeps a pass's state between frames (M3-V13). Tasks: M3-E8, M3-V3, M3-V13.
 
 Summary: A compute pass is a render pass of the graph whose target is a storage texture that
 materials, effects and other passes sample in the same frame. The add-on gives a compiled compute
