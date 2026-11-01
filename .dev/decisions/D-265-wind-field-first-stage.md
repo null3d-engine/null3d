@@ -89,14 +89,16 @@ divergence, not a new step.
 - **Docs and skills:** the wind page describes the solved field, the sampling copy and the far
   field, and the develop skill shows the calls.
 - **Evidence:** the add-on's tests prove the field moves a plant card, and that a frozen field fails
-  those tests. The full `check-addon` run gives the page and cost gates, and the `--wind` allocation
-  run gives the add-on's per-frame figure.
-- **`sample` and the allocation gate.** The allocation switch of the benchmark harness makes S1
-  create the wind and calls `sample`, `update`, `gust` and `push` in every frame, so `WIND_BUDGETS`
-  judges every place that the sample path reaches. CI runs that switch on each GPU path. The
-  add-on's own page never calls `sample`, so a source test holds the functions that a frame calls to
-  the forms that allocate: an object literal, an array literal, a function expression, a for-of and
-  a `new`.
+  those tests. Two things are owed at this head, because the machine's gate holds the browser runs:
+  the browser gates of `check-addon` and the `--wind` allocation run. The sizes gate is unenforced
+  until the command's shader step works, which is owed. A `--skip-browser` run passes on the code,
+  the shaders and the sizes in a checkout whose plugin is built.
+- **`read` and the allocation gate.** The allocation switch of the benchmark harness makes S1
+  create the wind and calls `read`, `update`, `gust` and `push` in every frame, so `WIND_BUDGETS`
+  judges every place that the ask path reaches. CI runs that switch on each GPU path. The add-on's
+  own page never calls `read` or `sample`, so a source test holds the functions that a frame calls
+  to the forms that allocate, and another holds that `read` never falls back to the TypeScript
+  field: an object literal, an array literal, a function expression, a loop and a `new`.
 - **The add-on's own shader data counts against the shader budget.** This is the WebGL2 fallback
   effect's compiled data, which is most of the add-on's entry. At head `8d66b64ca`, a run of
   `bunx @null3d/cli check-addon packages/wind --skip-browser` reports the entry at 89.5 KB raw. With that import removed it reports 13.8 KB. Water's entry is 109.2 KB at that
@@ -231,12 +233,15 @@ fourth sat in the check that judges the wake.
   ask: the walk over the pushes, the gust and the swirl's four noise evaluations for each place
   runs in the module.
   - **The paths.** On WebGPU and on WebGL2 the field's solve is the shader's, and a frame's ask
-    runs in the job workers. The single-threaded build has no job workers, so the engine's loader
-    starts one task worker for the task, and the walk still runs in WebAssembly there, with no
-    TypeScript fallback. Hold mode takes no ask: the pass's values come from the sketch thread's
-    own writes, which are the settings, the camera's box and each push's slot. A held frame
-    therefore carries every push that the page sent at the held time, and two runs draw the same
-    picture. A page that asks for places during a hold is answered when the hold's frames run.
+    runs in the job workers. A page with no job workers, as the single-threaded build has, gets one
+    task worker from the engine's loader for its first task, which the engine's own test covers. A
+    page with no worker at all reports the failure once and leaves the air as it was: a
+    degradation, not a fallback. The add-on keeps no TypeScript path for `read` to fall back to,
+    and a source test fails if one arrives. Hold mode takes no ask: the pass's values come from the
+    sketch thread's own writes, which are the settings, the camera's box and each push's slot. A
+    held frame therefore carries every push that the page sent at the held time, and two runs draw
+    the same picture. A page that asks for places during a hold is answered when the hold's frames
+    run.
   - **What the mirror costs.** The TypeScript form walks the ring and evaluates the noise in
     JavaScript. It serves the tests, and a page's read outside a frame. Its cost is the same work
     that the module does, paid on whichever thread calls it. The add-on's own page never calls it,
