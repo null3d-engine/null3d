@@ -26,10 +26,10 @@ enable draw_index;
 #import null3d::mesh::{ambient_light, frame as engine_frame, material_of}
 #import null3d::vertex::{OUTSIDE_CLIP, mesh_position, to_clip}
 #ifdef LIT
-#import null3d::globals::{Material}
+#import null3d::globals::{FILL_LIGHT_SLOTS, Material}
 #import null3d::lighting::{direct_light, dfg_lut, indirect_diffuse, multiscatter_compensation}
 #import null3d::lighting::{pbr_material, with_specular}
-#import null3d::lights::{clustered_light, direct_surface_light, FILL_LIGHT_SLOTS}
+#import null3d::lights::{clustered_light}
 #endif
 
 /// The factor that undoes the packing of the tiny values: 2^32.
@@ -191,24 +191,9 @@ fn lit_color(m: Material, base: vec3f, relative: vec3f) -> vec3f {
     var sun = direct_light(pbr, normal, normal, to_light, engine_frame.sun_color.rgb, compensation);
     let fills = min(u32(engine_frame.sun_color.w), FILL_LIGHT_SLOTS);
     for (var k = 0u; k < fills; k++) {
-        let direction = select(
-            select(engine_frame.fill_dir_a, engine_frame.fill_dir_b, k == 1u),
-            engine_frame.fill_dir_c,
-            k == 2u,
-        );
-        let color = select(
-            select(engine_frame.fill_col_a, engine_frame.fill_col_b, k == 1u),
-            engine_frame.fill_col_c,
-            k == 2u,
-        );
-        let fill = direct_surface_light(
-            pbr,
-            normal,
-            normal,
-            -direction.xyz,
-            color.rgb,
-            compensation,
-        );
+        let direction = engine_frame.fill_dir[k];
+        let color = engine_frame.fill_col[k];
+        let fill = direct_light(pbr, normal, normal, -direction.xyz, color.rgb, compensation);
         sun.diffuse += fill.diffuse;
         sun.specular += fill.specular;
     }
