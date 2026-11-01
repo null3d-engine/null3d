@@ -35,12 +35,10 @@ const ON_BRANCH = new Set(['M3-F9']);
 // A task belongs here only when it has no evidence yet. A task whose proof is written but whose
 // gap still stops the tick belongs in AUDIT_GAPS instead: a task in both lists says its work is
 // unfinished and finished at once, and the release hook refuses a range that creates that pair.
-const INCOMPLETE = new Set(['M3-K9', 'M3-E8', 'M3-R22', 'M3-R19']);
+const INCOMPLETE = new Set(['M3-E8', 'M3-R22', 'M3-R19']);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
-	'M3-K9':
-		'the budget raise it needed is landed and its shader build now passes, but the task itself is not in: its branch is not merged with the head, it has no judged speed line over the final tree, and its Done-when asks for the cost per extra light on an iPad and an S24-class phone, which no device row covers yet',
 	'M3-A8':
 		"the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, over the prototype's one-step tolerance. The owner accepted that cost and ruled that the display table stays and the light table comes out",
 	'M3-E6':
@@ -84,8 +82,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the same placement is shown on two Android phones in Chrome and on an iPad in Safari 26.6.1, so a second JavaScript engine has placed the same points (`.dev/tested-devices/ipad-pro-13-safari/20261027-000756-vegetation-scatter.md`, two passed, both paths); the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
 	'M3-F5':
 		"the owner rejected the look and withdrew the earlier approval, because the water showed sideways lines amid the flow, and the Creek now draws its own water again, flowing with the river: each wave direction turns by the stream's local angle, the crests are kept, and the phase is carried in the moving frame. The close 640 by 360 picture is what guards that look, since the 320-wide bank views draw the stream as a ribbon a few dozen pixels across. The migration waits until the add-on follows the current the same way. The add-on moved the phase, the foam drift and the caustics onto a current vector read from the river mesh's texture coordinates instead of the old fixed flow, took the thickness from the screen-space depth copy instead of the analytic bed, and made the shore a soft alpha ramp",
-	'M3-K3':
-		"unticked by the 29 October audit: the owner's 26 October ruling is that cookies take any texture and larger sizes, and the head still resamples to 128 by 128 and takes pixels only",
 	'M3-F13':
 		"the layer, its seven pictures and its speed line are in and its look is approved; two clauses stay open. The S24-class phone's cost figure decides the preset and is a run to schedule. The steps at the far panes' edges are a look choice that the owner has not ruled: a fit of three atoms removes more than half of them and needs a 32-bit store, which is twice the moment traffic a frame",
 	'M3-F14':
