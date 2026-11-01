@@ -175,7 +175,7 @@ use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, HaltFigures, KeyCounts, MaterialStorage, MeshBuffers,
     ParityLists, RecordError, SceneSettings, StillMarks, UploadArena, active_sources,
-    bind_frame_group, floats_as_bytes, unbound_buffer_bytes, uploads_out_of_memory,
+    bind_frame_group, floats_as_bytes, unbound_buffer_bytes,
 };
 use crate::frame_graph::{DrawnViews, FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -1639,7 +1639,8 @@ impl GpuDrivenRenderer {
         );
         self.graph
             .set_ssr(settings.ssr_frame(input.canvas), settings.ssr_scale());
-        self.graph.set_bounce(settings.bounce_frame(input.canvas));
+        self.graph
+            .set_bounce(settings.bounce_frame(input.canvas, input.scene, input.parity()));
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
             .chain(self.sorted.waiting())
@@ -2291,9 +2292,6 @@ impl GpuDrivenRenderer {
         let bound = self.upload_bound(shadow_views, active_sources(input))
             + LinesPass::upload_bytes(&input.lines);
         self.frame_bound = bound;
-        arena
-            .reset(bound)
-            .map_err(|_| uploads_out_of_memory(bound))?;
         // The camera view's depth reduction names its light grid, so it waits for the grid, and
         // its block counts wait for the arena that this frame's uploads take.
         if let Some(depth) = self.graph.scene_depth() {
@@ -2308,6 +2306,8 @@ impl GpuDrivenRenderer {
             self.depths
                 .upload(list, arena, ViewId::CAMERA, self.graph.render_size())?;
         }
+
+        arena.begin_frame()?;
         let array = self.settings.probes().array().map_or(0, |(id, _)| id);
         let probe_layers = self.settings.probes().probe_layers();
         self.settings
@@ -2420,6 +2420,19 @@ impl GpuDrivenRenderer {
         // for every source. It comes before the layouts are applied and the views' bundles are
         // recorded: both name the slices' bases in commands that the frame keeps.
         self.fit_level_copies(input, parity)?;
+        let mut slices_moved = false;
+        for drawn in [
+            &mut self.layout,
+            &mut self.casters,
+            &mut self.outlined,
+            &mut self.scattering,
+            &mut self.moving,
+            &mut self.tone,
+        ] {
+            slices_moved |= drawn.take_slices_moved();
+        }
+        // The bundles name the slices' places, and the buffers must hold them.
+        let buffers_remade = buffers_remade || slices_moved;
         self.note_stage_band_picks(input, parity);
         let (shared_recreated, casters_recreated) = if upload_everything {
             let shared = self.layout.apply(list, arena, binding_bytes)?;
@@ -4014,16 +4027,6 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.outlined.reserve(sources)?;
         self.scattering.reserve(sources)?;
         self.moving.reserve(sources)?;
-
-        let added = sources.saturating_sub(self.layout.sources);
-        // Book room for every shadow view that the settings allow, since the scene may grow
-        // before the next frame names the views that draw.
-        let tiles = (self.settings.tile_settings().tiles as usize).min(MAX_TILES);
-        let bound = self.upload_bound(MAX_CASCADES + tiles, sources)
-            + (added * TABLE_BYTES_PER_SOURCE) as usize;
-        for arena in self.lists.arenas_mut() {
-            arena.try_reserve(bound)?;
-        }
         Ok(())
     }
 

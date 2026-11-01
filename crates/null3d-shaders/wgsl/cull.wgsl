@@ -188,6 +188,9 @@ struct Bucket {
     /// The level of detail that the bucket draws, from 0, which the levels debug view writes
     /// beside each copy.
     level: u32,
+    /// The copies that the bucket's slice holds. A copy past it stays out, since it would land in
+    /// the next bucket's slice and draw that bucket's mesh with this copy's matrix.
+    capacity: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: CullParams;
@@ -478,6 +481,12 @@ fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32, hidden: bool) {
     let bucket = buckets[b];
     let first = (draws_before + bucket.first_draw) * INDIRECT_WORDS + 1u;
     let slot = atomicAdd(&indirect[first], 1u);
+    if slot >= bucket.capacity {
+        atomicSub(&indirect[first], 1u);
+        // The buffer's last word counts the copies dropped here, for the readback that warns of them.
+        atomicAdd(&indirect[arrayLength(&indirect) - 1u], 1u);
+        return;
+    }
     for (var d = 1u; d < bucket.draws; d++) {
         atomicAdd(&indirect[first + d * INDIRECT_WORDS], 1u);
     }
@@ -543,6 +552,12 @@ fn main(
     let offset = vec3f(s.r0.w - now[0].w, s.r1.w - now[1].w, s.r2.w - now[2].w);
     let first = bucket.first_draw * INDIRECT_WORDS + 1u;
     let slot = atomicAdd(&indirect[first], 1u);
+    if slot >= bucket.capacity {
+        atomicSub(&indirect[first], 1u);
+        // The buffer's last word counts the copies dropped here, for the readback that warns of them.
+        atomicAdd(&indirect[arrayLength(&indirect) - 1u], 1u);
+        return;
+    }
     for (var d = 1u; d < bucket.draws; d++) {
         atomicAdd(&indirect[first + d * INDIRECT_WORDS], 1u);
     }

@@ -107,6 +107,7 @@ export default defineSketch((ctx) => {
 			color,
 			surface,
 			atlas: bake.atlas,
+			room: bake.room,
 			positions: [right[0] * PAIR, 0, right[2] * PAIR],
 			turn: [TURN],
 			alphaMode: 'mask',

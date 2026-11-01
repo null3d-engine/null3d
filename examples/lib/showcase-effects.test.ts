@@ -25,6 +25,7 @@ function stub(
 		start?: Record<string, boolean>;
 		own?: readonly string[];
 		extra?: () => readonly HudGroup[];
+		lodThreshold?: number;
 	} = {},
 ) {
 	const seen: string[] = [];
@@ -32,7 +33,7 @@ function stub(
 	const shown: string[] = [];
 	const quality = {
 		preset: 'high' as string,
-		settings: { lodThreshold: 0 },
+		settings: { lodThreshold: options.lodThreshold ?? 0 },
 		set: (settings: { lodThreshold?: number }) => {
 			if (settings.lodThreshold !== undefined) {
 				quality.settings.lodThreshold = settings.lodThreshold;
@@ -194,6 +195,16 @@ describe('createShowcaseEffects', () => {
 		expect(quality?.extras?.[0]?.active).toBe(false);
 		scene.handler?.('quality', 'lod');
 		expect(seen).toContain('lodThreshold 1');
+	});
+
+	it("turns a scene's levels of detail off at the start, unless its start list keeps them on", () => {
+		const off = stub({ lodThreshold: 1 });
+		expect(off.seen).toContain('lodThreshold 0');
+		const on = stub({ lodThreshold: 1, start: { lod: true } });
+		expect(on.seen).not.toContain('lodThreshold 0');
+		expect(on.effects.groups().find((group) => group.name === 'quality')?.extras?.[0]?.active).toBe(
+			true,
+		);
 	});
 
 	it('keeps the level of detail off when a preset is picked', () => {

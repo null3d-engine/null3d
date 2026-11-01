@@ -1,35 +1,57 @@
-//! The threaded build's heap: dlmalloc behind a spin lock, as the standard library's allocator on
-//! this target is, with one addition. The page keeps the shared memory of an engine that stopped and
-//! gives it to the next engine, so a core can start in a memory that has already grown. The page
-//! clears the memory's static part first, so the core copies its data again as in a new memory. The
-//! heap's first request for memory then takes the pages above the static part, which the last
-//! engine's heap used, and clears them. Without that, every reuse would grow the memory past the
-//! last engine's heap, until it reached its maximum.
+//! The heap: dlmalloc behind a spin lock, as the standard library's allocator on this target is, with
+//! two additions.
+//!
+//! A plain `push` cannot report a refused request, so a refusal would trap. The heap therefore keeps
+//! room that only small requests may take: the last pages under the memory's declared maximum, which
+//! cost nothing until they are used, and a small block that it holds, for a browser that refuses to
+//! grow the memory before its maximum. A small request that needs that room still succeeds. The next
+//! frame then reads `reserve_spent` and stops with E1109. A larger request reports its refusal.
+//!
+//! The page keeps the shared memory of an engine that stopped and gives it to the next engine, so a
+//! threaded core can start in a memory that has already grown. The page clears the memory's static
+//! part first, so the core copies its data again as in a new memory. The heap's first request for
+//! memory then takes the pages above the static part, which the last engine's heap used, and clears
+//! them. Without that, every reuse would grow the memory past the last engine's heap, until it reached
+//! its maximum.
 
 use core::arch::wasm32;
 use core::cell::UnsafeCell;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::alloc::{GlobalAlloc, Layout};
 
 use dlmalloc::{Allocator, Dlmalloc};
+use null3d_core::alloc::{HEAP_RESERVE, memory_maximum};
 
 /// The size of a WebAssembly page.
 const PAGE: usize = 64 * 1024;
+/// The largest request that may take the reserve. The frame's plain pushes all fit under it, and a
+/// layout's rebuild, which can ask for more, checks its room first.
+const SMALL_REQUEST: usize = 4 << 20;
+/// The block that the heap holds for a browser that refuses growth before the maximum.
+const HELD_BLOCK: usize = 2 << 20;
+/// True once a small request has taken the reserve, which also lets the memory grow into its last pages.
+static RESERVE_SPENT: AtomicBool = AtomicBool::new(false);
+/// The address of the block that the heap holds, or 0.
+static HELD: AtomicUsize = AtomicUsize::new(0);
 /// The pages that wasm-bindgen adds after the linker's memory, for its thread counter, its lock and
 /// the stack that a new thread uses while it allocates its own. The build checks the count.
+#[cfg(target_feature = "atomics")]
 const BINDGEN_PAGES: usize = 1;
 
+#[cfg(target_feature = "atomics")]
 unsafe extern "C" {
     /// The end of the memory that the linker lays out: the static data and the main stack.
     static __heap_end: u8;
 }
 
+#[cfg(target_feature = "atomics")]
 /// Where the heap starts: after the linker's memory and the pages that wasm-bindgen adds.
 fn heap_start() -> usize {
     (&raw const __heap_end as usize).next_multiple_of(PAGE) + BINDGEN_PAGES * PAGE
 }
 
+#[cfg(target_feature = "atomics")]
 /// The pages that a reused memory has above the static part, cleared, and grown when they hold fewer
 /// than `size` bytes. None in a new memory, which has no pages above it yet.
 fn reclaim(size: usize) -> Option<(*mut u8, usize, u32)> {
@@ -52,9 +74,19 @@ fn reclaim(size: usize) -> Option<(*mut u8, usize, u32)> {
     Some((start as *mut u8, held + grown, 0))
 }
 
+/// Whether growing by `pages` would take the pages kept for small requests, while they are still kept.
+fn takes_kept_pages(pages: usize) -> bool {
+    let maximum = memory_maximum();
+    let grown = (wasm32::memory_size(0) as u64 + pages as u64) * PAGE as u64;
+    maximum > 0 && !RESERVE_SPENT.load(Ordering::Relaxed) && grown + HEAP_RESERVE > maximum
+}
+
 /// Grows the memory by enough pages for `size` bytes, as the standard system part does.
 fn grow(size: usize) -> (*mut u8, usize, u32) {
     let pages = size.div_ceil(PAGE);
+    if takes_kept_pages(pages) {
+        return (ptr::null_mut(), 0, 0);
+    }
     match wasm32::memory_grow(0, pages) {
         usize::MAX => (ptr::null_mut(), 0, 0),
         before => ((before * PAGE) as *mut u8, pages * PAGE, 0),
@@ -70,6 +102,7 @@ struct Pages {
 // SAFETY: each region it hands out is memory that no allocation holds, and it never frees one.
 unsafe impl Allocator for Pages {
     fn alloc(&self, size: usize) -> (*mut u8, usize, u32) {
+        #[cfg(target_feature = "atomics")]
         if !self.first_done.swap(true, Ordering::Relaxed)
             && let Some(region) = reclaim(size)
         {
@@ -138,6 +171,46 @@ impl Heap {
     }
 }
 
+/// Runs a request. A small one that the heap refuses takes the reserve: first the kept pages, then
+/// the held block. A larger one comes back refused, for its caller to report.
+fn with_reserve(
+    heap: &mut Dlmalloc<Pages>,
+    size: usize,
+    request: impl Fn(&mut Dlmalloc<Pages>) -> *mut u8,
+) -> *mut u8 {
+    let got = request(heap);
+    if !got.is_null() || size > SMALL_REQUEST {
+        return got;
+    }
+    RESERVE_SPENT.store(true, Ordering::Relaxed);
+    let got = request(heap);
+    if !got.is_null() {
+        return got;
+    }
+    let held = HELD.swap(0, Ordering::Relaxed);
+    if held == 0 {
+        return got;
+    }
+    // SAFETY: the block came from this heap at this size and alignment, and only `HELD` names it.
+    unsafe { heap.free(held as *mut u8, HELD_BLOCK, 16) };
+    request(heap)
+}
+
+/// Takes the block that the heap holds for a browser that refuses growth. A new engine's first call.
+pub fn hold_reserve() {
+    RESERVE_SPENT.store(false, Ordering::Relaxed);
+    if HELD.load(Ordering::Relaxed) == 0 {
+        // SAFETY: the size and alignment are valid, and `with_reserve` frees it with the same ones.
+        let block = HEAP.with(|heap| unsafe { heap.malloc(HELD_BLOCK, 16) });
+        HELD.store(block as usize, Ordering::Relaxed);
+    }
+}
+
+/// True once a small request has taken the reserve, so the engine should stop with E1109.
+pub fn reserve_spent() -> bool {
+    RESERVE_SPENT.load(Ordering::Relaxed)
+}
+
 #[global_allocator]
 static HEAP: Heap = Heap {
     locked: AtomicI32::new(0),
@@ -150,12 +223,20 @@ static HEAP: Heap = Heap {
 unsafe impl GlobalAlloc for Heap {
     #[inline(never)]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        self.with(|heap| unsafe { heap.malloc(layout.size(), layout.align()) })
+        self.with(|heap| {
+            with_reserve(heap, layout.size(), |heap| unsafe {
+                heap.malloc(layout.size(), layout.align())
+            })
+        })
     }
 
     #[inline(never)]
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        self.with(|heap| unsafe { heap.calloc(layout.size(), layout.align()) })
+        self.with(|heap| {
+            with_reserve(heap, layout.size(), |heap| unsafe {
+                heap.calloc(layout.size(), layout.align())
+            })
+        })
     }
 
     #[inline(never)]
@@ -165,6 +246,10 @@ unsafe impl GlobalAlloc for Heap {
 
     #[inline(never)]
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        self.with(|heap| unsafe { heap.realloc(ptr, layout.size(), layout.align(), new_size) })
+        self.with(|heap| {
+            with_reserve(heap, new_size, |heap| unsafe {
+                heap.realloc(ptr, layout.size(), layout.align(), new_size)
+            })
+        })
     }
 }

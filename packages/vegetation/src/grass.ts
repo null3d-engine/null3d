@@ -50,6 +50,10 @@ export interface GrassOptions {
 	readonly segments?: number;
 	/** The shapes of tuft, each one batch. The default is 1. */
 	readonly shapes?: number;
+	/** Says whether grass grows at a point, for ground that holds a road or a wall. Without it, grass grows everywhere. */
+	readonly where?: (x: number, z: number) => boolean;
+	/** The blades' color, which meets the ground's own at their roots. The default is a fresh green. */
+	readonly color?: string;
 	/** The steepest ground that a tuft grows on, as rise over run. The default is 0.6. */
 	readonly maxSlope?: number;
 	/**
@@ -122,7 +126,7 @@ export function placeTufts(options: GrassOptions, shape: number, count: number):
 		const y = height(x, z);
 		const dx = (height(x + step, z) - height(x - step, z)) / (2 * step);
 		const dz = (height(x, z + step) - height(x, z - step)) / (2 * step);
-		if (Math.hypot(dx, dz) > maxSlope) continue;
+		if (Math.hypot(dx, dz) > maxSlope || options.where?.(x, z) === false) continue;
 		tufts.push({
 			x,
 			y: y - LIFT,
@@ -244,7 +248,7 @@ export function createGrass(ctx: SketchContext, options: GrassOptions): Grass {
 		textures: options.wind
 			? { wind: options.wind.texture, airSettings }
 			: stillTextures(ctx.textures),
-		color: '#5f9a2a',
+		color: options.color ?? '#5f9a2a',
 		vertexColors: true,
 		roughness: 0.75,
 		specularIntensity: 0.4,

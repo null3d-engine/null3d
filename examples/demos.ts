@@ -91,6 +91,11 @@ export interface Demo {
 	 */
 	hdr?: boolean;
 	/**
+	 * True for a demo that starts the engine with moment transparency, which no preset turns on.
+	 * The image test adds the page's switch that takes the same path.
+	 */
+	momentTransparency?: boolean;
+	/**
 	 * True for a demo whose mouse look wants the pointer lock: a click on the canvas asks the
 	 * browser for it, and Esc gives the pointer back.
 	 */
@@ -144,14 +149,15 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 300,
 	},
 	{
-		name: 'night-town',
+		name: 'island',
 		group: 'Showcase',
-		sketch: new URL('./showcase/night-town/sketch.ts', import.meta.url),
-		code: 'showcase/night-town/',
-		title: 'Night town',
-		scene: 'A snowy town square under the moon',
+		sketch: new URL('./showcase/island/sketch.ts', import.meta.url),
+		code: 'showcase/island/',
+		title: 'Island',
+		scene: 'A Mediterranean town on a hilly island in the open sea',
 		summary:
-			'Timber houses with lit windows around a cobbled square on a snowy night, with a stone clock tower, iron lamps that throw warm light, a well, market stalls, snow pines and bare trees strung with fairy lights, falling snow and smoke from the chimneys.',
+			'A hilly island alone in the sea on a summer morning, with cypress, umbrella pine and olive forest grown in code, a long beach, a golf course on its headland and a harbour town. Turn around the whole island, or zoom down to any place on it.',
+		momentTransparency: true,
 		controls: SHOWCASE_CONTROLS,
 		hold: 0.5,
 		timeoutSeconds: 180,

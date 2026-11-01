@@ -15,13 +15,13 @@ The demo "Impostors" in `examples/impostors` draws a pine forest three ways by d
 ```mermaid
 flowchart LR
     views["bakeImpostorAtlas draws<br/>the mesh from each cell's direction"] --> atlas["Two atlases: the octahedral<br/>grid of colors, and the grid<br/>of normals and depths"]
-    atlas --> cards["createImpostors:<br/>one instance batch of cards<br/>that stand upright and<br/>turn to the eye"]
+    atlas --> cards["createImpostors:<br/>one instance batch of cards<br/>that face the eye<br/>with the world upright"]
     eye["The frame's camera"] --> blend["The card's material blends<br/>the three nearest views,<br/>turns them by the copy's turn<br/>and lights them"]
     blend --> cards
     copies["Many copies of a mesh,<br/>a far level of detail"] --> merge["mergeFarGeometry:<br/>one mesh per far grid cell"]
 ```
 
-A far object covers few pixels, so its triangles cost work that no one sees. A level of detail cuts the triangles but keeps one draw per object. An impostor goes further. A bake draws the object from many directions into atlases ahead of time. Far away, the object draws as one card that stands upright and turns to the eye. The card blends the three stored views nearest the camera, and the light falls on it from the normals the bake stored, so a card follows the scene's sun. A card's turn about the world's up turns its views and its light by the same angle, so a turned tree hands over to a card whose crown matches it. The light stays on the tree's side as the camera moves: the card faces the eye, but its stored normal does not turn with the camera. Many cards draw in one instance batch.
+A far object covers few pixels, so its triangles cost work that no one sees. A level of detail cuts the triangles but keeps one draw per object. An impostor goes further. A bake draws the object from many directions into atlases ahead of time. Far away, the object draws as one card that faces the eye, with the world's up kept upright in its plane. The card blends the three stored views nearest the camera, and the light falls on it from the normals the bake stored, so a card follows the scene's sun. A card's turn about the world's up turns its views and its light by the same angle, so a turned tree hands over to a card whose crown matches it. The light stays on the tree's side as the camera moves: the card faces the eye, but its stored normal does not turn with the camera. Many cards draw in one instance batch.
 
 `@null3d/impostors` holds the cards and a second tool for far geometry. `mergeFarGeometry` writes many copies of a mesh into the arrays of one mesh. A whole grid cell of a forest or a skyline then draws in one draw.
 
@@ -35,7 +35,7 @@ bun add @null3d/engine @null3d/impostors
 
 ## Create the cards
 
-`createImpostors` makes one instance batch: one quad per position, drawn by the package's material. Each quad stands upright, turns about the world's up toward the eye, and the material blends the three atlas views nearest the direction from the card toward the eye. The cards draw both faces, so a card seen from either side draws: a flat card culled from one side would cast no shadow, because the shadow pass draws casters with their front faces culled. The batch otherwise draws as any batch does, on WebGPU and WebGL2.
+`createImpostors` makes one instance batch: one quad per position, drawn by the package's material. Each quad faces the eye about the object's middle, with the world's up kept upright in its plane, so a card seen from above holds its mesh's size, and the material blends the three atlas views nearest the direction from the card toward the eye. The cards draw both faces, so a card seen from either side draws: a flat card culled from one side would cast no shadow, because the shadow pass draws casters with their front faces culled. The batch otherwise draws as any batch does, on WebGPU and WebGL2.
 
 ```ts
 import { createImpostors, octahedralAtlas } from '@null3d/impostors';
@@ -100,7 +100,7 @@ const color = textures.fromData({ ...bake.color, colorSpace: 'srgb', mipmaps: fa
 const surface = textures.fromData({ ...bake.surface, colorSpace: 'linear', mipmaps: false });
 ```
 
-The bake is arithmetic over the arrays. It gives the same pixels on every device, and it needs no GPU pass, so a scene's fog and lights never color the picture. It returns the card's `size`: the width that holds the object's widest horizontal reach, and its full height. A card at scale 1 stands on the object's lowest point.
+The bake is arithmetic over the arrays. It gives the same pixels on every device, and it needs no GPU pass, so a scene's fog and lights never color the picture. It returns the card's `size`: the width that holds the object's widest horizontal reach, and its full height. A card at scale 1 stands on the object's lowest point. Each picture also holds the object from above, so it is taller than that height by the bake's `room`, which `createImpostors` takes as `room`. A picture that you paint yourself fills its card, and takes the default of 1.
 
 The bake stores each point's normal in the object's own frame. At draw time the card turns that normal by the copy's turn and lights it, so a turned copy lights as its turned mesh does. The bake reads the mesh's own normals, and makes them where the part gives none.
 

@@ -5,7 +5,7 @@
 import { expect, test } from 'bun:test';
 import { quat, vec3 } from '@null3d/engine';
 import { StandInCamera } from '../../tests/pages/lib/stand-in-cameras';
-import { SHOTS } from '../showcase/night-town/sketch';
+import { SHOTS } from '../showcase/island/sketch';
 import { type Cinematic, createCinematic } from './cinematic';
 
 /** How far the camera may move at the switch, and over the frames after it, in meters. */

@@ -133,6 +133,7 @@ export async function startDemo({
 			sketch: demo.sketch,
 			largeWorld: demo.largeWorld,
 			hdr: demo.hdr,
+			momentTransparency: demo.momentTransparency,
 			transparent: behind,
 			preset,
 			// Collapsed, the overlay stays small until clicked.

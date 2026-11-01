@@ -36,6 +36,35 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - A search with a callback that closes over a value makes one object at every call, and an add-on's frame path can reach such a search inside the engine. In an update of a mesh's vertices, a lookup of the attribute's spec with `ARRAYS.find((array) => array.name === name)` and of its typed array with `INTEGER_ARRAYS.find(([, n, p]) => n === type || p === type)` allocates at every call. The check `bench:allocation --terrain` blames them for 38.1 bytes per frame in `updateProblem scene/mesh-arrays.ts` and 8.5 in `arrayClass`, both against a budget of 4. So both read a map built once at module load. A table that a frame path searches by name needs one.
 - A frame path that parks entries and takes them back several times should keep its list at its longest and hold a count, rather than pushing and popping. The terrain's block pool parks an evicted block's mesh and takes one back in the same selection. With pushes and pops there, `bench:allocation --terrain` blames `push (built-in)` for 6.8 bytes per frame against a budget of 4. With the list kept at its longest and a count, the place stays under its budget. The habit above still holds for a list that only grows and is emptied between frames: shrink it with `pop`, never with a length of 0.
 
+## Level slices and moving cameras
+
+Each frame, the CPU counts the rows that each level of a batch takes. A slice of the compacted instance buffer holds those rows. A view's bundle and its buffer both name the slices, and the frame records them again only when something makes it do so.
+
+A slice that moves while a bundle keeps its old place draws the wrong rows. On the indirect path, that shows as tree crowns over the sea, stretched black trunks and tree shapes on the sand. On the direct path the buffer is too short, the GPU rejects the frame's draw (E1305) and the frame is black. Held frames show neither fault, since a still camera moves no slice.
+
+So a slice keeps its place while its count fits. A first placement is exact, and a slice that must grow takes spare room of an eighth of its count. A count that outgrows its slice moves the slices, and the frame then records the bundles and sizes the buffers again. The culling shader also refuses a row past its slice's end, which leaves one tree out for a frame and never draws another mesh with that row's matrix.
+
+The last word of a view's buffer of culled draws counts the rows that this guard refuses. `packages/engine/src/gpu/webgpu/culled-counts.ts` reads it into `dropped` while the page samples its figures. To read it, open the stats card with `?stats=open` and force the path that culls on the GPU with `?direct=off`. The direct path has no guard. A development build reads it on every page, and a production build reads it while a stats card is open. The first refused row prints one console warning. `tests/image/culled-drop.spec.ts` forces a refusal in the browser's copy of the shader. A row refused here means that the CPU's count of a level's copies fell short of the GPU's, which is an engine fault.
+
+## A frame on a full heap
+
+A frame copies its uploads into `UploadArena`, in blocks that never move. A copy larger than the ordinary 256 KiB takes a block of its own size, and a heap that refuses a block makes the frame stop with E1109. An arena holds only what its frames copy, and it gives large blocks back after 30 frames with no large copy. So a first frame's copy of every mesh needs no long free stretch of the heap, and leaves no room standing afterwards.
+
+Most of a frame's other requests are plain pushes, which cannot report a refusal: a refusal would trap, with `unreachable` and no message. So the heap keeps room for them (`crates/null3d-wasm/src/heap.rs`):
+
+- **The kept pages.** The last `HEAP_RESERVE`, 8 MiB, under the memory's declared maximum. A request of over 4 MiB may not grow into them, so it reports a refusal. They cost nothing until used.
+- **The held block.** 2 MiB that the heap holds, for a browser that refuses growth before the maximum, and for a build whose memory declares no maximum.
+
+A request of 4 MiB or less that the heap cannot otherwise give takes the reserve, and the next frame stops with E1109, naming 8 MB. A layout's rebuild can push more than that for a large scene, so it checks room for `REBUILD_BYTES_PER_SOURCE` for each source first, with `keep_room`, which counts the pages left under the maximum before it asks the heap.
+
+The island scene's peak at High through its whole route is 140 MiB on the indirect path, 204 MiB on the direct path and 161 MiB on WebGL2. Held frames peak at 166, 296 and 177 MiB, as a held frame copies the whole scene at once. All three draw it clean at 256 MiB, the lowest maximum a page can ask for. So the start-up probe's pick does not decide whether this scene fits.
+
+`tests/image/memory-limit.spec.ts` fills the heap with `fillHeapForTest` and makes plain requests, with the maximum known and with it hidden (`?memory-maximum=hidden`). It also raises a scene's mesh data step by step past what the lowest maximum holds, on both draw paths. With the reserve taken out, the same runs trap, and the core prints the refused size through its allocation hook, without allocating.
+
+## Levels of detail in the WebGL2 frame order
+
+The WebGL2 path builds its layout in its cull step, before the frame graph gives a reflection pass its target. A material that reads the pass keeps its old texture group for that frame, so the reflection reaches it one frame after the view first draws. `reads_last_frame` makes a held frame draw that frame too. WebGPU builds its layout after the graph, so it does not need this.
+
 ## Allocation in Rust
 
 - Rust tests that count allocations use `null3d_core::testing::CountingAllocator`, from the core crate's `testing` feature. It counts only the threads a test marks, so the test runner's own threads cannot reach the count.

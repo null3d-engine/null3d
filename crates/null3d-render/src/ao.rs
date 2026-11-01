@@ -535,9 +535,7 @@ mod tests {
         let lens = (Mat4::default(), Mat4::default());
         let mut frame = |pass: &mut AoPass, list: &mut DrawList, scale, ao_scale| {
             list.clear();
-            arena
-                .reset(AoPass::UPLOAD_BYTES)
-                .expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             pass.prepare(
                 list,
                 &mut arena,

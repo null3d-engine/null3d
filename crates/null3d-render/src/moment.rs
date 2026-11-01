@@ -535,9 +535,7 @@ mod tests {
     fn the_tables_are_made_once() {
         let mut list = DrawList::with_capacity(256);
         let mut arena = UploadArena::default();
-        arena
-            .reset((tables::AREA_WIDTH * tables::AREA_HEIGHT * 4) as usize + 4096)
-            .unwrap();
+        arena.begin_frame().unwrap();
         let mut layer = MomentLayer::new(MomentIds {
             first_group: 7,
             sampler: 3,

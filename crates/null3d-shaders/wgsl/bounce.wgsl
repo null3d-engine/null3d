@@ -6,8 +6,9 @@
 //   copy and the horizon step's normal, and samples a disk of screen texels around it. A sample
 //   whose surface lies in the texel's hemisphere, within the gather's reach, takes the color that
 //   the frame before showed there, from the copy that the transmission and reflections read too,
-//   weighted by the cosine of its direction. The texel writes the mean light, times pi, and in
-//   alpha the share of the disk that found a surface. The environment's light keeps the rest.
+//   weighted by the cosine of its direction and by how bright it is. The texel writes the mean
+//   light, times pi, and in alpha the share of the disk that found a surface. The environment's
+//   light keeps the rest.
 // - `denoise` blurs the traced light over a disk of taps that keeps to the texel's own surface, by
 //   each tap's distance from its plane and its normal, as the ambient occlusion denoise does. The
 //   opaque pass then reads the result through the same four depth-weighted texels that it reads the
@@ -21,6 +22,7 @@
 // and weights it by the frame's `bounce` values (null3d::gtao).
 
 #import null3d::fullscreen::{triangle}
+#import null3d::color::{luminance}
 #import null3d::depth::{view_position}
 
 /// The steps' settings, which the frame builder writes once for both of them.
@@ -41,6 +43,10 @@ struct Settings {
     shape: vec4f,
     /// xy: the color copy's size in pixels. zw: the drawn corner that the frame before filled.
     copy: vec4f,
+    /// The planes of the scene's mirrors in view space: the normal and the camera's height over the
+    /// plane, with a normal of zero for none.
+    mirror_a: vec4f,
+    mirror_b: vec4f,
 }
 
 // Binding 1 is the depth copy, binding 2 the horizon step's target, which holds the normal's x and
@@ -129,15 +135,26 @@ fn copied_color(pixel: vec2i) -> vec3f {
     return textureLoad(source, vec2i(inside.x, turned(inside.y, settings.copy.y)), 0, 0).rgb;
 }
 
+/// True when a view-space position lies on a mirror's plane, within a share of its distance that the
+/// depth's precision and the grid's coarse texels leave.
+fn on_plane(plane: vec4f, position: vec3f) -> bool {
+    return dot(plane.xyz, plane.xyz) > 0.5
+        && abs(dot(plane.xyz, position) + plane.w) < 0.05 + 0.002 * length(position);
+}
+
 /// The light from the surface at the texel `at`, as the frame before showed it, when that surface
-/// lies in the hemisphere of `normal` around `center` within the gather's reach: its radiance and
-/// its cosine with the normal, or 0.
+/// lies in the hemisphere of `normal` around `center` within the gather's reach: its radiance times
+/// its weight, and that weight, or 0.
 fn gathered(center: vec3f, normal: vec3f, at: vec2i) -> vec4f {
     let depth = depth_at(at);
     if depth <= 0.0 {
         return vec4f(0.0);
     }
     let held = position_at(at);
+    // A mirror's color holds what it shows this view alone, not light that it sends every way.
+    if on_plane(settings.mirror_a, held) || on_plane(settings.mirror_b, held) {
+        return vec4f(0.0);
+    }
     let delta = held - center;
     let reach = length(delta);
     // The texel's own surface, and surfaces beyond the reach, send nothing.
@@ -150,7 +167,11 @@ fn gathered(center: vec3f, normal: vec3f, at: vec2i) -> vec4f {
     if cosine <= 0.1 {
         return vec4f(0.0);
     }
-    return vec4f(copied_color(scene_pixel(at)) * cosine, cosine);
+    // A sun's glint holds far more light than any lit surface, and one sample of it would show as
+    // a bright block on the texel. A Karis weight keeps a bright sample to a bounded share.
+    let color = copied_color(scene_pixel(at));
+    let share = cosine / (1.0 + luminance(color));
+    return vec4f(color * share, share);
 }
 
 @fragment

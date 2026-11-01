@@ -87,6 +87,9 @@ const OCCLUSION_WORDS: usize = 16 + 4 + 4;
 pub(super) const CULL_PARAMS_BYTES: u32 = OCCLUSION_OFFSET + sizes::CULL_OCCLUSION_BYTES;
 
 const _: () = assert!(OCCLUSION_WORDS as u32 * 4 == sizes::CULL_OCCLUSION_BYTES);
+/// Bytes at the end of a view's indirect draws where the culling shader counts the copies that its
+/// slice's guard drops, which no draw or history reaches.
+const DROPPED_COPIES_BYTES: u32 = 4;
 /// Bytes of one indexed indirect draw.
 pub(super) const INDIRECT_BYTES: u32 = sizes::INDIRECT_WORDS * 4;
 /// The buffers of the culling pass's bind group, one per binding, the last the depth pyramid, then
@@ -437,8 +440,8 @@ impl Culling {
             (
                 ids::indirect(view),
                 &mut buffers.indirect,
-                draws.max(1) * INDIRECT_BYTES + history * 4,
-                usage::INDIRECT | usage::STORAGE | usage::COPY_DST,
+                draws.max(1) * INDIRECT_BYTES + history * 4 + DROPPED_COPIES_BYTES,
+                usage::INDIRECT | usage::STORAGE | usage::COPY_DST | usage::DROP_COUNTED,
             ),
         ];
         for (id, made, size, flags) in needed {

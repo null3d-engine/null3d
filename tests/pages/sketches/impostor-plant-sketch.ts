@@ -61,6 +61,7 @@ export default defineSketch((ctx) => {
 			color: far.color,
 			surface: far.surface,
 			atlas: far.atlas,
+			room: far.room,
 			positions: [6, far.base, 0],
 			size: far.size,
 			alphaMode: 'mask',

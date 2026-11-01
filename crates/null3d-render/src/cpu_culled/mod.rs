@@ -1453,12 +1453,6 @@ impl CpuCulledRenderer {
         self.tone_culling
             .reserve(self.tone.room, self.tone_views())
             .map_err(out_of_memory)?;
-        // Room for every static batch's cluster order, so a batch coming to rest later uploads
-        // its clusters without growing the arena.
-        let bound = self.upload_bound_without_clusters() + self.layout.cluster_rows as usize * 4;
-        for arena in self.lists.arenas_mut() {
-            arena.try_reserve(bound).map_err(out_of_memory)?;
-        }
         self.layout.built = true;
         self.layout.built_in = input.frame;
         Ok(())
@@ -2145,11 +2139,9 @@ impl CpuCulledRenderer {
             Opaque::bind_frame(list, ViewId::SUBSURFACE, Some(lit_for(lit, ViewId::CAMERA)))?;
         }
         let rebuilt = self.layout.built_in == input.frame;
+        arena.begin_frame()?;
         let bound = self.upload_bound() + LinesPass::upload_bytes(&input.lines);
         self.frame_bound = bound;
-        arena
-            .reset(bound)
-            .map_err(|_| crate::frame::uploads_out_of_memory(bound))?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::MATERIALS, MATERIAL_TEXELS)?;
             ao::upload_blank(list, arena, ids::BLANK_AO)?;
@@ -3098,7 +3090,8 @@ impl FrameBuilder for CpuCulledRenderer {
         );
         self.graph
             .set_ssr(settings.ssr_frame(canvas), settings.ssr_scale());
-        self.graph.set_bounce(settings.bounce_frame(canvas));
+        self.graph
+            .set_bounce(settings.bounce_frame(canvas, scene, parity));
         let prepass_changed = self.graph.depth_prepass() != self.layout_prepass;
         // A pick that waits declares the pick's passes, and builds the layout again with their
         // pipelines, so the frame draws them with the camera's culling. The passes stay declared
@@ -3516,7 +3509,8 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn reads_last_frame(&self) -> bool {
-        self.graph.ssr_draws() || self.graph.bounce_draws()
+        // A mirror's picture reaches the materials that read it one frame after the view first draws.
+        self.graph.ssr_draws() || self.graph.bounce_draws() || self.settings.has_mirror()
     }
 
     fn graph_message(&self, error: GraphError) -> String {
@@ -3663,7 +3657,7 @@ mod patch_tests {
         );
         let mut list = DrawList::with_capacity(64);
         let mut arena = UploadArena::default();
-        arena.reset(1 << 16).expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         let mut sizes = Vec::new();
         upload_patches(
             &mut sizes, &patches, &meshes, true, &mut list, &mut arena, true,

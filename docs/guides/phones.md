@@ -74,7 +74,7 @@ No allocation failed first, and no error came. A scene holds its textures, buffe
 
 On a page with worker threads, the engine's threads share one WebAssembly memory, whose maximum the preset sets. The browser reserves address space for the whole maximum, and every other engine and WebAssembly module on the page shares what is left. [Page API: createEngine](../api/engine.md#memory) says when to ask for more.
 
-To use less memory, share meshes and materials, draw many copies with instance batches, and create objects during setup. `engine.measure` reports the WebAssembly memory in use.
+To use less memory, share meshes and materials, draw many copies with instance batches, and create objects during setup. `engine.measure` reports the WebAssembly memory in use. [Performance: memory peak](performance.md#memory-peak) shows how to read a scene's distance from its limit.
 
 Textures take GPU memory too. A texture of 1024 x 1024 texels takes about 5.3 MiB with its mip levels. When the textures pass their budget, the engine drops the largest mip levels of textures from files, and loads them again once room returns. The sketch reads the memory and the dropped levels in `quality.textureMemory`, and [Quality presets](../concepts/quality-presets.md#texture-memory) explains the order. A texture that the sketch makes from an image or from data keeps its levels, so free one that the scene no longer needs with `texture.destroy()`. The engine keeps no copy of an image once its upload is done. [Textures](../api/textures.md#gpu-memory) gives the sizes.
 

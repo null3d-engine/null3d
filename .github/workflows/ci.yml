@@ -1385,7 +1385,7 @@ jobs:
           if-no-files-found: ignore
 
   showcase:
-    # The showcase HUD tests build the night town in the page, wait for its first frame on the
+    # The showcase HUD tests build the island in the page, wait for its first frame on the
     # software GPU, then read the canvas many times between switches. As one test that took 16.4
     # minutes on a passing run, and a slower machine ran past 18. The file holds four tests, each on
     # a fresh page: the toasts, the sky, the fog and the environment light. Each runs on a machine

@@ -467,6 +467,11 @@ export class Render {
 	/** The reads of compute passes' regions that the page waits for. */
 	private readonly reads: PassReads;
 
+	/** @internal True while a reflection pass lives, whose picture a surface lights with. */
+	get hasReflection(): boolean {
+		return this.passes.some((pass) => pass.kind === 'reflection');
+	}
+
 	/** @internal */
 	constructor(
 		private readonly core: CoreMemory,

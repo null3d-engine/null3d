@@ -683,9 +683,7 @@ mod tests {
     ) -> DrawList {
         let mut list = DrawList::with_capacity(512);
         let mut arena = UploadArena::default();
-        arena
-            .reset(EffectPass::UPLOAD_BYTES)
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         let colors: Vec<u32> = (0..units.len() as u32).map(|k| 40 + 2 * k).collect();
         pass.prepare(
             &mut list,

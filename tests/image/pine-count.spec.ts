@@ -1,8 +1,8 @@
-// M3-E9's first user: the night town's pines are drawn from the count word that its compute pass
+// M3-E9's first user: a stand of pines is drawn from the count word that its compute pass
 // writes. The page's own count stays at the pines' capacity on the WebGPU path, so a page that
 // ignored the hook would draw every pine.
 //
-// The demo holds one preset, and only the count changes: capacity against the preset's own count.
+// The page holds one preset, and only the count changes: capacity against the preset's own count.
 // Everything else in the scene is therefore the same in both frames, so the difference between them
 // is the pines and nothing else. A page that drew from its own count would draw the capacity both
 // times and show no difference at all.
@@ -40,7 +40,7 @@ async function heldFrame(
 	pines: number,
 ): Promise<Uint8Array> {
 	const query = new URLSearchParams({
-		sketch: `/examples/showcase/night-town/sketch.ts?pines=${pines}`,
+		sketch: `/tests/pages/sketches/pine-count-sketch.ts?pines=${pines}`,
 		hold: '0.5',
 		size: '320x180',
 		preset,
@@ -71,7 +71,7 @@ function differing(a: Uint8Array, b: Uint8Array): number {
 	return pixels / (a.length / 4);
 }
 
-const NAME = 'the night town draws the pines that the count word names';
+const NAME = 'a stand of pines draws the count that the count word names';
 
 for (const { preset, gpu } of CASES) {
 	const own = COUNTS[preset];

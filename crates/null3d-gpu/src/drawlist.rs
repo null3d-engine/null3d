@@ -388,6 +388,9 @@ pub mod buffer_usage {
     pub const UNIFORM: u32 = 0x0040;
     pub const STORAGE: u32 = 0x0080;
     pub const INDIRECT: u32 = 0x0100;
+    /// No GPU usage: marks a buffer of culled draws, whose last word counts the copies that the
+    /// culling shader dropped. The backend reads it back while the page samples.
+    pub const DROP_COUNTED: u32 = 0x0001_0000;
 }
 
 /// Texture usage flags, with WebGPU's values.
@@ -1789,7 +1792,7 @@ pub mod sizes {
     /// value, the bucket of the next coarser level plus one, the level's fade bucket plus one, the
     /// threshold bias that picks the levels, 1 for none, the measure that the switch value names,
     /// and the level that the bucket draws, which the levels debug view writes beside each copy.
-    pub const BUCKET_WORDS: u32 = 16;
+    pub const BUCKET_WORDS: u32 = 17;
     /// A bucket record's first joint that sends the culling shader to each source's own: the
     /// buckets that skinned objects share, whose vertex shaders skin, read the first joint of each
     /// object's skin from a data texture of 32-bit indices, at the object's source.
@@ -3026,6 +3029,7 @@ pub fn typescript_constants() -> String {
                 ("UNIFORM", buffer_usage::UNIFORM),
                 ("STORAGE", buffer_usage::STORAGE),
                 ("INDIRECT", buffer_usage::INDIRECT),
+                ("DROP_COUNTED", buffer_usage::DROP_COUNTED),
             ],
         ),
         (

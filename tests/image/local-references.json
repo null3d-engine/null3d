@@ -904,5 +904,11 @@
 		"tier": "webgpu",
 		"date": "2026-10-30",
 		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
+	},
+	"chromium-swiftshader/compat/demo-water.png": {
+		"test": "demo-water",
+		"tier": "compat",
+		"date": "2026-10-31",
+		"reason": "Held frames now draw the water's reflection. Nothing is pushed yet, so CI's own drawing replaces these."
 	}
 }

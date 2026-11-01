@@ -11,7 +11,6 @@
 use std::collections::TryReserveError;
 use std::ops::Range;
 
-use null3d_core::alloc::{reserve_keeping, reserve_len};
 use null3d_core::animation::Animations;
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::culling::{CULL_CHUNK, CullRun, Frustum, ROW_CELLS};
@@ -232,7 +231,6 @@ pub enum RecordError {
         limit: u32,
     },
     /// The frame's copies do not fit its upload arena, which the builder sizes for every frame.
-    UploadsFull,
     /// A buffer that the frame fills would take more bytes than the device lets one buffer hold.
     BufferFull {
         /// The most bytes that one buffer may take on this device.
@@ -677,66 +675,155 @@ pub(crate) fn clamp_sampler(
     )?)
 }
 
-/// Copies of data a frame's list uploads. Chunks never move once allocated, so addresses stay
-/// valid until the arena is reset for the next frame of the same parity.
+/// The most bytes that a layout's rebuild asks for with plain pushes, for each source: its rows in
+/// the tables, and the old table that a growth copies from. Its buckets are far fewer than its
+/// sources, and fit in the frame's headroom.
+pub(crate) const REBUILD_BYTES_PER_SOURCE: usize = 64;
+
+/// The bytes of an ordinary block of an [`UploadArena`]. A larger copy takes a block of its own size.
+const UPLOAD_BLOCK: usize = 256 << 10;
+/// The frames with no large copy after which an arena gives its large blocks back. Scenes that change
+/// often keep them, so those frames take no new block.
+const LARGE_BLOCK_FRAMES: u32 = 30;
+
+/// Copies of data a frame's list uploads, in blocks that never move, so addresses stay valid until
+/// the arena is reset for the next frame of the same parity. It takes a block when a copy needs one,
+/// so a frame holds what it copies, and no frame needs one long free stretch of the heap.
 #[derive(Default)]
 pub(crate) struct UploadArena {
-    bytes: Vec<u8>,
-    /// Byte ranges of `bytes` that a frame writes every frame whatever the scene holds, such as the
-    /// clock and the jitter of a still view. The still-camera accumulation's comparison ignores them
-    /// (see [`crate::still`]).
+    /// The blocks: the ones up to `at` hold this frame's copies, and the ones after it stand empty.
+    blocks: Vec<Vec<u8>>,
+    /// The block that takes the next copy.
+    at: usize,
+    /// The bytes in the blocks before `at`.
+    before: usize,
+    /// Byte ranges of the frame's copies, counted through the blocks in order, that a frame writes
+    /// every frame whatever the scene holds, such as the clock and the jitter of a still view. The
+    /// still-camera accumulation's comparison ignores them (see [`crate::still`]).
     volatile: Vec<Range<usize>>,
-    /// Bytes that a reserve ahead of a frame replaced, kept until the next reset: the list of the
-    /// frame that last used the arena may still point into them.
-    kept: Vec<Vec<u8>>,
     /// The most bytes that a frame has copied into the arena since it was made.
     high_water: usize,
+    /// The frames since the last with a copy in a large block.
+    frames_since_large: u32,
 }
 
 impl UploadArena {
-    /// Empties the arena and makes room for `total` bytes, or fails when memory cannot grow for
-    /// them. The list of the frame that last used the arena has been replayed, so its copies may
-    /// move.
-    pub(crate) fn reset(&mut self, total: usize) -> Result<(), TryReserveError> {
-        self.high_water = self.high_water.max(self.bytes.len());
-        self.kept.clear();
-        self.bytes.clear();
-        self.volatile.clear();
-        reserve_len(&mut self.bytes, total)?;
-        // Each view's uniform carries the frame's volatile ranges, the clock and a still view's
-        // jitter, so the list holds at most two for each view id: reserving them here keeps a
-        // frame from growing the list while it records.
-        reserve_len(&mut self.volatile, 2 * crate::view::MAX_VIEW_IDS)
-    }
-
-    /// Makes room for `total` bytes ahead of the frame that needs them, or fails when memory
-    /// cannot grow. The bytes that the arena holds stay where they are until the next reset.
-    pub(crate) fn try_reserve(&mut self, total: usize) -> Result<(), TryReserveError> {
-        reserve_keeping(&mut self.bytes, total, &mut self.kept)
-    }
-
-    /// Copies bytes into the arena, padded to four bytes, and returns their address and padded
-    /// length. The arena never grows during a frame, as that would move the copies whose addresses
-    /// the list already holds.
-    pub(crate) fn push(&mut self, bytes: &[u8]) -> Result<(u32, u32), RecordError> {
-        let padded = bytes.len().next_multiple_of(4);
-        let start = self.bytes.len();
-        if self.bytes.capacity() - start < padded {
-            return Err(RecordError::UploadsFull);
+    /// Empties the arena, whose last frame's list has been replayed. Once frames have gone on for a
+    /// while with no large copy, the large blocks go back to the heap: a first frame's copies of every
+    /// mesh leave no room standing for frames that never use it. One ordinary block stands ready, so
+    /// a steady frame's first copy takes none.
+    pub(crate) fn begin_frame(&mut self) -> Result<(), RecordError> {
+        self.high_water = self.high_water.max(self.len());
+        self.frames_since_large = self.frames_since_large.saturating_add(1);
+        if self
+            .blocks
+            .iter()
+            .any(|block| block.capacity() > UPLOAD_BLOCK && !block.is_empty())
+        {
+            self.frames_since_large = 0;
         }
-        self.bytes.extend_from_slice(bytes);
-        self.bytes.resize(start + padded, 0);
-        Ok((address(&self.bytes[start..]), padded as u32))
+        let drop_large = self.frames_since_large >= LARGE_BLOCK_FRAMES;
+        self.blocks.retain_mut(|block| {
+            block.clear();
+            !drop_large || block.capacity() <= UPLOAD_BLOCK
+        });
+        self.at = 0;
+        self.before = 0;
+        self.volatile.clear();
+        if self.blocks.is_empty() {
+            self.make_room(0)?;
+        }
+        // Each view's uniform carries the frame's volatile ranges, the clock and a still view's
+        // jitter, so the list holds at most two for each view id: room for them here keeps a frame
+        // from growing the list while it records.
+        self.volatile
+            .try_reserve_exact(2 * crate::view::MAX_VIEW_IDS)
+            .map_err(|_| RecordError::OutOfMemory { bytes: 0 })
+    }
+
+    /// Frees every block, for a frame whose copies will never replay.
+    fn give_back(&mut self) {
+        self.blocks = Vec::new();
+        self.at = 0;
+        self.before = 0;
+        self.frames_since_large = 0;
     }
 
     /// The bytes that the frame copied so far.
-    pub(crate) fn bytes(&self) -> &[u8] {
-        &self.bytes
+    pub(crate) fn len(&self) -> usize {
+        self.before + self.blocks.get(self.at).map_or(0, Vec::len)
     }
 
-    /// Writes `bytes` over the bytes the frame copied at `at`, which a list's command reads already.
+    /// Makes the block at `at` one with room for `padded` more bytes: the present one, a later
+    /// empty one, or a new one. Reports a heap that cannot give a new one.
+    fn make_room(&mut self, padded: usize) -> Result<(), RecordError> {
+        if let Some(block) = self.blocks.get(self.at)
+            && block.capacity() - block.len() >= padded
+        {
+            return Ok(());
+        }
+        let next = if self.blocks.is_empty() {
+            0
+        } else {
+            self.before += self.blocks[self.at].len();
+            self.at + 1
+        };
+        self.at = next;
+        if let Some(found) =
+            (next..self.blocks.len()).find(|&k| self.blocks[k].capacity() >= padded)
+        {
+            self.blocks.swap(next, found);
+            return Ok(());
+        }
+        let refused = |_| RecordError::OutOfMemory {
+            bytes: u32::try_from(padded).unwrap_or(u32::MAX),
+        };
+        let mut block = Vec::new();
+        block
+            .try_reserve_exact(padded.max(UPLOAD_BLOCK))
+            .map_err(refused)?;
+        self.blocks.try_reserve(1).map_err(refused)?;
+        self.blocks.insert(next, block);
+        Ok(())
+    }
+
+    /// Copies bytes into the arena, padded to four bytes, and returns their address and padded
+    /// length. A block never grows, as that would move the copies whose addresses the list holds.
+    pub(crate) fn push(&mut self, bytes: &[u8]) -> Result<(u32, u32), RecordError> {
+        let padded = bytes.len().next_multiple_of(4);
+        self.make_room(padded)?;
+        let block = &mut self.blocks[self.at];
+        let start = block.len();
+        block.extend_from_slice(bytes);
+        block.resize(start + padded, 0);
+        Ok((address(&block[start..]), padded as u32))
+    }
+
+    /// The first block's bytes, which hold all of a test's small copies.
+    #[cfg(test)]
+    pub(crate) fn bytes(&self) -> &[u8] {
+        self.blocks.first().map_or(&[], Vec::as_slice)
+    }
+
+    /// Puts the frame's copies, in order, in `out`, for a comparison of the whole frame.
+    pub(crate) fn copy_to(&self, out: &mut Vec<u8>) {
+        out.clear();
+        for block in self.blocks.iter().take(self.at + 1) {
+            out.extend_from_slice(block);
+        }
+    }
+
+    /// Writes `bytes` over the bytes the frame copied at `at`, counted through the blocks in order,
+    /// which a list's command reads already.
     pub(crate) fn patch(&mut self, at: usize, bytes: &[u8]) {
-        self.bytes[at..at + bytes.len()].copy_from_slice(bytes);
+        let mut left = at;
+        for block in &mut self.blocks {
+            if left < block.len() {
+                block[left..left + bytes.len()].copy_from_slice(bytes);
+                return;
+            }
+            left -= block.len();
+        }
     }
 
     /// The ranges of those bytes that hold values the frame writes every frame whatever the scene
@@ -745,13 +832,13 @@ impl UploadArena {
         &self.volatile
     }
 
-    /// The bytes that the arena's buffer, its range list and the buffers it kept hold, with the
-    /// most bytes that a frame has copied into it.
+    /// The bytes that the arena's blocks and its range list hold, with the most bytes that a frame
+    /// has copied into it.
     pub(crate) fn memory_use(&self) -> MemoryUse {
-        let kept: usize = self.kept.iter().map(Vec::capacity).sum();
         let range = size_of::<Range<usize>>();
-        let reserved = self.bytes.capacity() + kept + self.volatile.capacity() * range;
-        let used = self.bytes.len() + self.volatile.len() * range;
+        let blocks: usize = self.blocks.iter().map(Vec::capacity).sum();
+        let reserved = blocks + self.volatile.capacity() * range;
+        let used = self.len() + self.volatile.len() * range;
         MemoryUse::with_peak(
             reserved as u64,
             used as u64,
@@ -767,8 +854,8 @@ impl UploadArena {
         bytes: &[u8],
         volatile: &[Range<usize>],
     ) -> Result<(u32, u32), RecordError> {
-        let start = self.bytes.len();
         let result = self.push(bytes)?;
+        let start = self.len() - result.1 as usize;
         for range in volatile {
             self.volatile.push(start + range.start..start + range.end);
         }
@@ -776,15 +863,14 @@ impl UploadArena {
     }
 
     /// Adds `len` zero bytes, padded to four bytes, for the caller to fill in place, and returns
-    /// their address and the bytes. Like [`UploadArena::push`], it never grows the arena.
+    /// their address and the bytes.
     pub(crate) fn push_zeroed(&mut self, len: usize) -> Result<(u32, &mut [u8]), RecordError> {
         let padded = len.next_multiple_of(4);
-        let start = self.bytes.len();
-        if self.bytes.capacity() - start < padded {
-            return Err(RecordError::UploadsFull);
-        }
-        self.bytes.resize(start + padded, 0);
-        let bytes = &mut self.bytes[start..];
+        self.make_room(padded)?;
+        let block = &mut self.blocks[self.at];
+        let start = block.len();
+        block.resize(start + padded, 0);
+        let bytes = &mut block[start..];
         Ok((address(bytes), bytes))
     }
 }
@@ -835,6 +921,8 @@ pub(crate) struct ParityLists {
     /// frame a parity records is compared with the one it recorded two frames ago, which used the
     /// same list, arena and addresses.
     snapshots: [crate::still::Snapshot; 2],
+    /// A frame's copies in order, for the comparison with its snapshot.
+    flat: Vec<u8>,
     /// How still the camera's view is: the frames it has accumulated (see [`crate::still`]).
     still: crate::still::Still,
     /// The error of a frame that failed after it recorded commands.
@@ -858,6 +946,7 @@ impl ParityLists {
             ],
             arenas: [UploadArena::default(), UploadArena::default()],
             snapshots: Default::default(),
+            flat: Vec::new(),
             still: crate::still::Still::default(),
             halted: None,
             halted_bound: 0,
@@ -892,10 +981,6 @@ impl ParityLists {
 
     pub(crate) fn list(&self, frame: u32) -> &DrawList {
         &self.lists[(frame & 1) as usize]
-    }
-
-    pub(crate) fn arenas_mut(&mut self) -> &mut [UploadArena; 2] {
-        &mut self.arenas
     }
 
     /// Empties the frame parity's list and takes it and its arena out, so the builder can record
@@ -933,13 +1018,15 @@ impl ParityLists {
             // A frame that cannot settle compares nothing: a view that the page turned the
             // accumulation off for, or that a source outside the list changed, keeps no frame to
             // compare the next one with, and its next frame reads as changed.
-            let same = marks.settled
-                && self.snapshots[parity].unchanged(
+            let same = marks.settled && {
+                arena.copy_to(&mut self.flat);
+                self.snapshots[parity].unchanged(
                     list.words(),
                     marks.words,
-                    arena.bytes(),
+                    &self.flat,
                     arena.volatile(),
-                );
+                )
+            };
             if !marks.settled {
                 self.snapshots[parity].forget();
             }
@@ -960,6 +1047,11 @@ impl ParityLists {
                 self.halted_sources = figures.active;
             }
             list.clear();
+        }
+        // A failed frame's copies never replay, and the memory they hold is what the frame that
+        // records next may need.
+        if result.is_err() {
+            arena.give_back();
         }
         self.lists[parity] = list;
         self.arenas[parity] = arena;
@@ -1825,12 +1917,26 @@ impl SceneSettings {
 
     /// What screen-space bounce light's steps draw with in a frame of a canvas of `canvas` pixels,
     /// or `None` while it draws nothing or without a camera.
-    pub(crate) fn bounce_frame(&self, canvas: (u32, u32)) -> Option<BounceFrame> {
+    pub(crate) fn bounce_frame(
+        &self,
+        canvas: (u32, u32),
+        scene: &SceneStorage,
+        parity: usize,
+    ) -> Option<BounceFrame> {
         let bounce = self.bounce()?;
-        self.views.first()?.camera()?;
+        let view = self.views.first()?;
+        view.camera()?;
+        let mut mirrors = [[0.0; 4]; bounce::MAX_MIRRORS];
+        let planes = self.views.iter().filter_map(View::mirrored);
+        if let Some(camera) = view.transform(scene, parity, 1.0) {
+            for (slot, plane) in mirrors.iter_mut().zip(planes) {
+                *slot = bounce::view_plane(&camera.view, plane.relative_to(camera.cell.absolute()));
+            }
+        }
         Some(BounceFrame {
             bounce,
             projection: self.camera_projection(canvas)?,
+            mirrors,
         })
     }
 
@@ -3260,6 +3366,11 @@ impl SceneSettings {
         }
     }
 
+    /// True when a view draws a mirror of the scene.
+    pub(crate) fn has_mirror(&self) -> bool {
+        self.views.iter().any(|view| view.mirrored().is_some())
+    }
+
     /// True when a view draws the scene's background behind its objects: the camera's view, each
     /// mirror view, whose image shows the sky as a mirror does, and each other view of a scene
     /// that clears to the camera's color, as a three.js render target shows the scene's
@@ -3998,7 +4109,12 @@ impl SceneSettings {
     }
 
     /// As [`Self::pipeline_of`], with the builds that read row values when `row_values` is set.
-    fn rows_pipeline_of(&self, mesh: u32, material: u32, row_values: bool) -> Option<DrawKey> {
+    pub(crate) fn rows_pipeline_of(
+        &self,
+        mesh: u32,
+        material: u32,
+        row_values: bool,
+    ) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
         }
@@ -4626,14 +4742,6 @@ pub(crate) fn active_sources(input: &FrameInput<'_>) -> u32 {
     (input.scene.capacity() + 1).saturating_add(rows)
 }
 
-/// The error of a frame whose upload arena the engine's memory could not hold, naming the bytes
-/// that the frame needs.
-pub(crate) fn uploads_out_of_memory(bytes: usize) -> RecordError {
-    RecordError::OutOfMemory {
-        bytes: u32::try_from(bytes).unwrap_or(u32::MAX),
-    }
-}
-
 /// Encodes a linear color channel as sRGB.
 pub fn linear_to_srgb(c: f32) -> f32 {
     if c <= 0.003_130_8 {
@@ -4647,16 +4755,87 @@ pub fn linear_to_srgb(c: f32) -> f32 {
 mod tests {
     use super::*;
 
+    /// A failed frame's copies never replay, so its large blocks do not wait out their frames.
+    #[test]
+    fn an_upload_arena_gives_its_blocks_back_when_told() {
+        let mut arena = UploadArena::default();
+        arena.begin_frame().unwrap();
+        arena.push(&vec![1u8; 2 * UPLOAD_BLOCK]).unwrap();
+        arena.give_back();
+        assert!(arena.blocks.is_empty());
+        arena.begin_frame().unwrap();
+        assert_eq!(arena.push(&[1u8; 16]).unwrap().1, 16);
+    }
+
+    /// A copy that the heap cannot hold is reported as an error, and the core does not trap.
+    #[test]
+    fn an_upload_arena_reports_a_copy_that_the_heap_cannot_hold() {
+        let mut arena = UploadArena::default();
+        assert!(matches!(
+            arena.make_room(usize::MAX / 2),
+            Err(RecordError::OutOfMemory { bytes: u32::MAX })
+        ));
+        arena.begin_frame().unwrap();
+        arena.push(&[7u8; 300]).expect("the arena still works");
+    }
+
+    /// Copies stay where they are as the arena takes more blocks, and a frame needs no long block.
+    #[test]
+    fn an_upload_arena_keeps_its_copies_in_place_across_blocks() {
+        let mut arena = UploadArena::default();
+        arena.begin_frame().unwrap();
+        let small = vec![1u8; 1000];
+        let (first, _) = arena.push(&small).unwrap();
+        let large = vec![2u8; UPLOAD_BLOCK * 3];
+        let (second, bytes) = arena.push(&large).unwrap();
+        assert_eq!(bytes as usize, large.len());
+        let (third, _) = arena.push(&small).unwrap();
+        assert_ne!(first, second);
+        assert_ne!(second, third);
+        assert_eq!(arena.len(), UPLOAD_BLOCK * 3 + 2000);
+        // The same address holds the first copy after later pushes.
+        assert_eq!(arena.blocks[0][0], 1);
+    }
+
+    /// Large blocks go back to the heap after frames with no large copy, and one that goes on being
+    /// used stays, so a steady frame takes none anew.
+    #[test]
+    fn an_upload_arena_gives_back_large_blocks_that_frames_leave_empty() {
+        let mut arena = UploadArena::default();
+        arena.begin_frame().unwrap();
+        let large = vec![2u8; UPLOAD_BLOCK * 3];
+        for _ in 0..2 * LARGE_BLOCK_FRAMES {
+            arena.push(&large).unwrap();
+            arena.begin_frame().unwrap();
+        }
+        assert!(
+            arena
+                .blocks
+                .iter()
+                .any(|block| block.capacity() >= large.len())
+        );
+        for _ in 0..=LARGE_BLOCK_FRAMES {
+            arena.push(&[1u8; 100]).unwrap();
+            arena.begin_frame().unwrap();
+        }
+        assert!(
+            arena
+                .blocks
+                .iter()
+                .all(|block| block.capacity() <= UPLOAD_BLOCK)
+        );
+    }
+
     #[test]
     fn the_upload_arenas_register_their_room_and_the_most_a_frame_filled() {
         let mut arena = UploadArena::default();
-        arena.reset(1024).expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         arena.push(&[7u8; 300]).expect("room for the first frame");
         let first = arena.memory_use();
         assert!(first.reserved >= 1024, "{} bytes reserved", first.reserved);
         assert_eq!(first.used, 300);
         // The next reset records what the frame before it filled.
-        arena.reset(1024).expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         arena.push(&[7u8; 100]).expect("room for the second frame");
         let second = arena.memory_use();
         assert_eq!(second.peak, 300);
@@ -4686,17 +4865,6 @@ mod tests {
         assert!(!lists.can_retry(900, 15, false));
         // A changed scene retries whatever the figures.
         assert!(lists.can_retry(900, 10, true));
-    }
-
-    /// A frame that asks its arena for more room than the engine's memory holds reports the size
-    /// it needs instead of aborting, so a load the device cannot serve fails with E1109.
-    #[test]
-    fn an_arena_that_cannot_hold_a_frame_reports_the_missing_bytes() {
-        let mut arena = UploadArena::default();
-        assert!(arena.reset(usize::MAX).is_err());
-        // The failure leaves the arena empty, so a later frame of a smaller scene can use it.
-        arena.reset(1024).expect("room for a frame that fits");
-        assert_eq!(arena.push(&[1u8; 16]).expect("room for the bytes").1, 16);
     }
 
     /// A buffer that no bind group reads follows the device's largest buffer: the portable buffer
