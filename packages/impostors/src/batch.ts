@@ -70,6 +70,11 @@ export interface ImpostorOptions {
 	readonly metalness?: number;
 	/** How the cards use their alpha: `mask` by default, since a bake cuts its object out. */
 	readonly alphaMode?: 'opaque' | 'blend' | 'mask';
+	/**
+	 * How many times taller a view's picture is than a card's height: the bake's `room`. The default,
+	 * 1, is a picture that fills its card.
+	 */
+	readonly room?: number;
 	/** The alpha under which a masked card draws nothing. The default is 0.5. */
 	readonly alphaCutoff?: number;
 	/** The layers every card is on, as a 32-bit mask. The default, 1, is layer 0. */
@@ -190,7 +195,10 @@ export function createImpostors(ctx: ImpostorContext, options: ImpostorOptions):
 	const material = ctx.materials.shader({
 		wgsl: cardsShader,
 		textures: { impostorColor: options.color, impostorSurface: options.surface },
-		uniforms: { cells: [atlas.columns, atlas.rows, 0, depth] },
+		uniforms: {
+			cells: [atlas.columns, atlas.rows, 0, depth],
+			picture: [options.room ?? 1, 0, 0, 0],
+		},
 		alphaMode: options.alphaMode ?? 'mask',
 		// A card is one flat quad, so a caster must draw it from either side: the shadow pass
 		// culls front faces of single-sided geometry and would drop the card whole.

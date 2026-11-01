@@ -979,9 +979,7 @@ mod tests {
         let sources = [7; STEPS];
         let mut frame = |pass: &mut BloomPass, list: &mut DrawList, scale, halvings| {
             list.clear();
-            arena
-                .reset(BloomPass::UPLOAD_BYTES)
-                .expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             let chain = ChainFrame {
                 size: 512,
                 halvings,

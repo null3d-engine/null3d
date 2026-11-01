@@ -370,6 +370,7 @@ export const BUFFER_USAGE_VERTEX = 32;
 export const BUFFER_USAGE_UNIFORM = 64;
 export const BUFFER_USAGE_STORAGE = 128;
 export const BUFFER_USAGE_INDIRECT = 256;
+export const BUFFER_USAGE_DROP_COUNTED = 65536;
 
 export const TEXTURE_USAGE_COPY_SRC = 1;
 export const TEXTURE_USAGE_COPY_DST = 2;
@@ -385,7 +386,7 @@ export const SIZE_FRAME_UNIFORM_BYTES = 1216;
 export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;
-export const SIZE_BUCKET_WORDS = 16;
+export const SIZE_BUCKET_WORDS = 17;
 export const SIZE_MATRIX_TEXELS = 3;
 export const SIZE_MATRICES_PER_TEXTURE_ROW = 512;
 export const SIZE_INDICES_PER_TEXTURE_ROW = 2048;

@@ -36,6 +36,12 @@ use crate::levels::{StageWatches, key_level};
 /// and only the sources at a switch count twice.
 const SLACK: f32 = 1.0e-3;
 
+/// The room that a level's slice takes when `count` copies outgrow it. A slice keeps its place while
+/// its count fits, so the spare room spares the frames from moving slices as the camera moves.
+const fn with_spare_room(count: u32) -> u32 {
+    count + count / 8
+}
+
 /// A view that draws a layout's buckets: the rule that picks its levels of detail, and the camera
 /// that its instances are placed relative to.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -46,7 +52,15 @@ pub(super) struct CopyView {
     pub camera: CellPosition,
 }
 
+/// The word of a bucket's record that holds its slice's capacity, the last one.
+const BUCKET_CAPACITY_WORD: usize = BUCKET_WORDS as usize - 1;
+
 impl Layout {
+    /// Returns whether a level's slice moved since the last call.
+    pub(super) fn take_slices_moved(&mut self) -> bool {
+        std::mem::take(&mut self.slices_moved)
+    }
+
     /// True when a bucket of this layout holds a level's copies.
     pub(super) fn picks_levels(&self) -> bool {
         !self.level_buckets.is_empty()
@@ -127,7 +141,31 @@ impl Layout {
                 *fit = (*fit).max(count);
             }
         }
-        self.place_slices(&fits);
+        // A view's bundle and its buffer name the slices, so slices stay where they are while each
+        // count fits. A new layout places them from its counts, and a count that outgrows its slice
+        // moves them, which the frame answers by recording the bundles and sizing the buffers again.
+        let placed = self.slices_placed;
+        let fits_now = placed
+            && self
+                .level_buckets
+                .iter()
+                .all(|&b| fits[b as usize] <= self.buckets[b as usize].capacity);
+        if !fits_now {
+            for &b in &self.level_buckets {
+                let (b, fit) = (b as usize, &mut fits[b as usize]);
+                let capacity = self.buckets[b].capacity;
+                if placed {
+                    *fit = if *fit <= capacity {
+                        capacity
+                    } else {
+                        with_spare_room(*fit)
+                    };
+                }
+            }
+            self.place_slices(&fits);
+            self.slices_placed = true;
+            self.slices_moved = true;
+        }
         self.copy_counts = counts;
         self.copy_fits = fits;
         Ok(())
@@ -318,6 +356,8 @@ impl Layout {
                 bucket.base += copied * INDEX_ENTRIES_PER_COPY;
             }
             self.bucket_records[index * BUCKET_WORDS as usize] = bucket.base;
+            self.bucket_records[index * BUCKET_WORDS as usize + BUCKET_CAPACITY_WORD] =
+                bucket.capacity;
         }
         // The table goes up whole: every bucket's slice is this frame's, and the culling shader
         // reads the table before it places a copy.
@@ -331,6 +371,32 @@ mod tests {
 
     use super::*;
     use crate::gpu_driven::layout::Bucket;
+
+    /// Both shaders read the bucket records as an array, so a structure of another length reads
+    /// every record after the first at the wrong place.
+    #[test]
+    fn each_shader_reads_a_bucket_record_at_its_stride() {
+        let words = |text: &str, name: &str| {
+            let start = text
+                .find(&format!("struct {name} {{"))
+                .expect("the structure");
+            let body = &text[start..text[start..].find("\n}").unwrap() + start];
+            body.lines()
+                .skip(1)
+                .filter(|line| !line.trim_start().starts_with("//") && line.contains(':'))
+                .count() as u32
+        };
+        let cull = include_str!("../../../null3d-shaders/wgsl/cull.wgsl");
+        let mesh = include_str!("../../../null3d-shaders/wgsl/lib/mesh.wgsl");
+        assert_eq!(words(cull, "Bucket"), BUCKET_WORDS);
+        assert_eq!(words(mesh, "InstanceBucket"), BUCKET_WORDS);
+    }
+
+    #[test]
+    fn a_level_slice_keeps_spare_room_past_its_count() {
+        assert_eq!(with_spare_room(1), 1);
+        assert_eq!(with_spare_room(1000), 1125);
+    }
 
     /// A batch row whose vertex shader carries it across a long lane must count its copies by the
     /// batch's own bound, as the culling shader picks them. The row is 20 m from the camera, and

@@ -1,6 +1,6 @@
 // The shot command's timed script, run as a developer runs it. The first part runs it in a copy of
 // the fixture project, where a script drives the sketch through three states with a key, the
-// pointer and a property write. The second part drives the night town showcase through three
+// pointer and a property write. The second part drives the island showcase through three
 // states, and each state's image must match its reference.
 import {
 	cpSync,
@@ -121,7 +121,7 @@ test.describe('the fixture project through three states', () => {
 	});
 });
 
-test.describe('the night town showcase through three states', () => {
+test.describe('the island showcase through three states', () => {
 	// Each state builds the whole town again, and the software GPU that CI uses draws it slowly.
 	test.describe.configure({ timeout: 900_000 });
 
@@ -139,7 +139,7 @@ test.describe('the night town showcase through three states', () => {
 		const run = await runCli(REPO_ROOT, [
 			'shot',
 			'--script',
-			join(REPO_ROOT, 'tests/image/showcase-night-town.script'),
+			join(REPO_ROOT, 'tests/image/showcase-island.script'),
 			'--page',
 			scriptPage(environment),
 			'--size',
@@ -149,7 +149,7 @@ test.describe('the night town showcase through three states', () => {
 			'--timeout',
 			'180',
 			'--out',
-			join(drawn, 'night-town.png'),
+			join(drawn, 'island.png'),
 		]);
 		code = run.code;
 		output = run.output;
@@ -193,7 +193,7 @@ test.describe('the night town showcase through three states', () => {
 				if (other !== mine) expect(apart(mine!.position, other.position)).toBeGreaterThan(1);
 			const place = { environment: environmentNamed(test.info().project.name) };
 			clearCandidate(run!, place);
-			const image = readPng(join(drawn, `night-town-${state}.png`));
+			const image = readPng(join(drawn, `island-${state}.png`));
 			expect(compareWithReference(run!, place, image)).toEqual([]);
 		});
 });

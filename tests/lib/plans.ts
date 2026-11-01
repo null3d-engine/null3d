@@ -2320,7 +2320,7 @@ export function skywayCostPlan(): PlanItem<Check>[] {
 }
 
 /** The showcase demos that the demos plan measures. */
-const MEASURED_DEMOS = ['skyway', 'night-town', 'showroom'] as const;
+const MEASURED_DEMOS = ['skyway', 'island', 'showroom'] as const;
 
 /**
  * Showcase demos on each GPU path, with the quality governor on: the frame rate, the display's

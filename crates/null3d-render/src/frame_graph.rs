@@ -893,6 +893,11 @@ pub(crate) struct FrameGraph {
     view_passes: Vec<(u16, PassId)>,
     /// True for each view that is switched on, by view.
     view_on: Vec<bool>,
+    /// True for each view that has drawn. Its passes stay in the plan while it rests, so a view that
+    /// draws once in some frames changes no plan, makes no target and binds nothing again.
+    view_drew: Vec<bool>,
+    /// True for each pass whose view rests this frame. The plan holds it, and the frame skips it.
+    resting: Vec<bool>,
     /// The target of each view other than the camera's, by view: `None` for the camera's.
     view_colors: Vec<Option<ResourceId>>,
     /// The image that each view other than the camera's draws, and the pass that copies it into
@@ -1212,6 +1217,9 @@ pub(crate) struct FrameGraph {
     moment_declared: bool,
     /// True when the declared passes hold the anti-aliasing steps that follow the layer.
     moment_smaa_declared: bool,
+    /// The scene's color as the passes before the moment layer's anti-aliasing leave it, which its
+    /// steps read.
+    moment_smaa_source: &'static str,
     /// The textures that the moment layer's steps read, found once for each compile of the graph.
     moment_textures: CompileCache<MomentTextures>,
     /// The composite and the depth copy of the camera's weighted layer.
@@ -1326,6 +1334,8 @@ impl FrameGraph {
             fullscreen_outline: false,
             fullscreen_reads_color: false,
             view_on: Vec::new(),
+            view_drew: Vec::new(),
+            resting: Vec::new(),
             view_colors: Vec::new(),
             view_images: Vec::new(),
             view_copies: ids.view_copy.filter(|_| gpu_culling).map(ViewCopies::new),
@@ -1476,6 +1486,7 @@ impl FrameGraph {
             moment_built: false,
             moment_declared: false,
             moment_smaa_declared: false,
+            moment_smaa_source: SCENE_COLOR,
             moment_textures: CompileCache::default(),
             weighted: WeightedLayer::new(ids.weighted),
             weighted_targets: true,
@@ -2938,7 +2949,7 @@ impl FrameGraph {
                 } else {
                     0
                 },
-                scene: id(SCENE_COLOR),
+                scene: id(self.moment_smaa_source),
                 edges: id(MOMENT_EDGES),
                 weights: id(MOMENT_WEIGHTS),
             }
@@ -3010,25 +3021,48 @@ impl FrameGraph {
         }
     }
 
-    /// Switches each view's passes on or off with the view, and its transparent pass only while
-    /// some object blends too.
+    /// Keeps each view's passes in the plan once the view has drawn, and marks them resting while it
+    /// does not draw. Its transparent pass stays only while some object blends too.
     fn enable_views(&mut self) {
-        for &(index, pass) in &self.view_passes {
-            let on = self
-                .view_on
-                .get(usize::from(index))
-                .copied()
-                .unwrap_or(true);
-            self.graph.set_enabled(pass, on);
+        self.view_drew.resize(self.view_on.len(), false);
+        for (drew, &on) in self.view_drew.iter_mut().zip(&self.view_on) {
+            *drew |= on;
         }
-        for &(index, pass) in &self.transparent {
-            let on = self
-                .view_on
-                .get(usize::from(index))
-                .copied()
-                .unwrap_or(true);
-            self.graph.set_enabled(pass, on && self.transparent_on);
+        for place in 0..self.view_passes.len() {
+            let (index, pass) = self.view_passes[place];
+            let (planned, on) = self.view_state(index);
+            self.graph.set_enabled(pass, planned);
+            self.set_resting(pass, !on);
         }
+        for place in 0..self.transparent.len() {
+            let (index, pass) = self.transparent[place];
+            let (planned, on) = self.view_state(index);
+            self.graph.set_enabled(pass, planned && self.transparent_on);
+            self.set_resting(pass, !on);
+        }
+    }
+
+    /// Whether a view's passes stay in the plan, and whether they draw this frame.
+    fn view_state(&self, index: u16) -> (bool, bool) {
+        let index = usize::from(index);
+        let on = self.view_on.get(index).copied().unwrap_or(true);
+        (
+            on || self.view_drew.get(index).copied().unwrap_or(false),
+            on,
+        )
+    }
+
+    /// Marks a pass as resting, or as drawing, from this frame on.
+    fn set_resting(&mut self, pass: PassId, resting: bool) {
+        if self.resting.len() <= pass.index() {
+            self.resting.resize(pass.index() + 1, false);
+        }
+        self.resting[pass.index()] = resting;
+    }
+
+    /// True when the frame skips a pass that the plan holds, because its view rests.
+    fn rests(&self, pass: PassId) -> bool {
+        self.resting.get(pass.index()).copied().unwrap_or(false)
     }
 
     /// True when a view culls in two phases against its depth pyramid: with occlusion culling,
@@ -3129,6 +3163,7 @@ impl FrameGraph {
         self.occluder_passes.clear();
         self.pyramid_depths.clear();
         self.view_passes.clear();
+        self.resting.clear();
         self.transparent.clear();
         self.shadow_passes.clear();
         self.bloom_passes.clear();
@@ -3364,6 +3399,12 @@ impl FrameGraph {
                         }
                     };
                 }
+                // A view that shares the canvas draws after the screen's steps, which split its prepass
+                // from its opaque pass too. WebGPU's prepass pipelines name a color, so it takes a
+                // stand-in color of its own.
+                if !camera && canvas && self.gpu_culling && self.screen_target().is_some() {
+                    prepass = prepass.creates(format!("{}Color", names.prepass), color);
+                }
                 prepass = reads_targets(prepass, views, &named, index);
                 let prepass = if canvas {
                     prepass
@@ -3593,9 +3634,11 @@ impl FrameGraph {
         self.declare_accumulate();
         // The anti-aliasing steps read the scene's color as the passes before them leave it, so
         // they take the name of that output before the later passes read their own.
+        self.moment_smaa_declared = false;
         let aliased = self.color_output();
         self.moment_smaa_declared = self.moment_declared;
         if self.moment_smaa_declared {
+            self.moment_smaa_source = aliased;
             self.declare_moment_smaa(views, aliased);
         }
         let resolve = Pass::new("Resolve", PassKind::Resolve)
@@ -5477,6 +5520,7 @@ impl FrameGraph {
             .any(|&(_, pass)| {
                 matches!(self.roles[pass.index()], Role::Fullscreen(_))
                     && plan.step_of(pass).is_some()
+                    && !self.rests(pass)
             })
     }
 
@@ -5540,7 +5584,9 @@ impl FrameGraph {
             .iter()
             .filter(|&&(index, _)| usize::from(index) == place)
             .any(|&(_, pass)| {
-                matches!(self.roles[pass.index()], Role::Compute(_)) && plan.step_of(pass).is_some()
+                matches!(self.roles[pass.index()], Role::Compute(_))
+                    && plan.step_of(pass).is_some()
+                    && !self.rests(pass)
             })
     }
 
@@ -6142,8 +6188,9 @@ impl FrameGraph {
                     // own, not in a compute pass that its path cannot run.
                     if self.is_fallback_step(plan, step) {
                         for &pass in plan.passes(step) {
-                            // A view whose turn has not come records nothing, compute or fallback.
-                            if !self.draws(self.roles[pass.index()]) {
+                            // A view records nothing in a frame that is not its turn, by
+                            // either the cadence's turn or the view's own switch.
+                            if !self.draws(self.roles[pass.index()]) || self.rests(pass) {
                                 continue;
                             }
                             let Role::Fullscreen(view) = self.roles[pass.index()] else {
@@ -6177,8 +6224,9 @@ impl FrameGraph {
                     let mut began = false;
                     let mut wrote = false;
                     for &pass in plan.passes(step) {
-                        // A view whose turn has not come records nothing, compute or fallback.
-                        if !self.draws(self.roles[pass.index()]) {
+                        // A view records nothing in a frame that is not its turn, by
+                        // either the cadence's turn or the view's own switch.
+                        if !self.draws(self.roles[pass.index()]) || self.rests(pass) {
                             continue;
                         }
                         // A sketch's compute pass is the graph's to record. Every other compute
@@ -6243,7 +6291,7 @@ impl FrameGraph {
                     let passes = plan.passes(step);
                     if passes.iter().all(|&pass| {
                         let role = self.roles[pass.index()];
-                        skips(role) || !self.draws(role)
+                        skips(role) || !self.draws(role) || self.rests(pass)
                     }) {
                         continue;
                     }
@@ -7267,9 +7315,7 @@ mod tests {
             .prepare(&mut list, (64, 48), RenderScale::FULL)
             .unwrap();
         let mut arena = UploadArena::default();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -7311,9 +7357,7 @@ mod tests {
             .prepare(&mut list, (64, 48), RenderScale::FULL)
             .unwrap();
         let mut arena = UploadArena::default();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -7394,9 +7438,7 @@ mod tests {
         assert_eq!(created[4], format::RGBA16_FLOAT);
         // The frame creates the pass's pipeline and its group, and dispatches it over the target.
         let mut arena = UploadArena::default();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -7496,9 +7538,7 @@ mod tests {
         // Its own scratch texture reads the state that a run does not write, and the two views
         // draw into one state each.
         let mut arena = UploadArena::default();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -7598,9 +7638,7 @@ mod tests {
         // The pass takes the layout that binds the state of the run before. Two state textures hold
         // the states, and each state's group writes one and reads the other.
         let mut arena = UploadArena::default();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -7914,7 +7952,7 @@ mod tests {
         );
         // The pass's shader fills the texture that the frame made, not a share of the canvas.
         let mut arena = UploadArena::default();
-        arena.reset(4096).expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         frames.upload_fullscreen(&mut list, &mut arena).unwrap();
         assert_eq!(frames.fullscreen.drawn(1), Some([16.0, 12.0, 12.0, 1.0]));
         assert!(
@@ -8005,9 +8043,7 @@ mod tests {
         assert!(frames.particle_depth_declared);
 
         let mut arena = UploadArena::default();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -9159,9 +9195,7 @@ mod tests {
         // new settings.
         let mut arena = UploadArena::default();
         let output = Output::default();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         frames
             .upload(&mut list, &mut arena, output, Grading::default())
             .unwrap();
@@ -9173,9 +9207,7 @@ mod tests {
                 frames
                     .prepare(list, canvas, RenderScale::from_thousandths(500))
                     .unwrap();
-                arena
-                    .reset(frames.upload_bound())
-                    .expect("room for the test's uploads");
+                arena.begin_frame().unwrap();
                 frames
                     .upload(list, arena, output, Grading::default())
                     .unwrap();
@@ -9189,9 +9221,7 @@ mod tests {
         frames
             .prepare(&mut list, canvas, RenderScale::from_thousandths(700))
             .unwrap();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         frames
             .upload(&mut list, &mut arena, output, Grading::default())
             .unwrap();
@@ -9332,9 +9362,7 @@ mod tests {
         let (sources, _) = frames.bloom_textures();
         assert_eq!(sources[0], left, "the chain reads the effects' output");
         let mut arena = UploadArena::default();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -9447,9 +9475,7 @@ mod tests {
         assert!(with <= with_bloom + 3, "{with} textures");
         // The setup and the composite read the multisampled depth through their layouts.
         let mut arena = UploadArena::default();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -9539,9 +9565,7 @@ mod tests {
             "{names:?}"
         );
         let mut arena = UploadArena::default();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -9619,9 +9643,7 @@ mod tests {
             );
             assert_eq!(frames.scene_output(), TAA_COLOR);
             let mut arena = UploadArena::default();
-            arena
-                .reset(frames.upload_bound())
-                .expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -9685,9 +9707,7 @@ mod tests {
         let bound = frames.upload_bound();
         let record = |frames: &mut FrameGraph, list: &mut DrawList| {
             let mut arena = UploadArena::default();
-            arena
-                .reset(frames.upload_bound())
-                .expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             list.clear();
             frames
                 .upload(list, &mut arena, Output::default(), Grading::default())
@@ -9995,9 +10015,7 @@ mod tests {
             .expect("the group asked for its pipeline");
         assert_eq!(group.permutation, permutation::DEPTH_MULTISAMPLED);
         let mut arena = UploadArena::default();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10023,9 +10041,7 @@ mod tests {
             .expect("the final pass asked for its fold build") as u32
             + 1;
         let mut arena = UploadArena::default();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10263,9 +10279,7 @@ mod tests {
             );
 
             let mut arena = UploadArena::default();
-            arena
-                .reset(frames.upload_bound())
-                .expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             list.clear();
             let output = Output::default();
             frames
@@ -10481,9 +10495,7 @@ mod tests {
 
             // A lower scale draws a smaller corner of the same targets.
             let mut arena = UploadArena::default();
-            arena
-                .reset(frames.upload_bound())
-                .expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
                 .unwrap();
@@ -10550,6 +10562,43 @@ mod tests {
     }
 
     #[test]
+    fn a_view_on_the_canvas_gives_its_split_prepass_a_stand_in_color_where_the_gpu_culls() {
+        let lens = ([1.0; 16], [1.0; 16]);
+        let inset = View::canvas(CanvasRect {
+            x: 0.5,
+            y: 0.0,
+            width: 0.5,
+            height: 1.0,
+        });
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, true);
+        frames.sync(&[View::default(), inset]);
+        let mut list = DrawList::with_capacity(65536);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        frames.set_ao(Some(Ao::default()), None, Some(lens), 0.5);
+        frames.set_bounce(Some(BounceFrame {
+            bounce: crate::bounce::Bounce::default(),
+            projection: (Mat4::default(), Mat4::default()),
+            mirrors: Default::default(),
+        }));
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
+        frames.sync(&[View::default(), inset]);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        let plan = frames.graph().plan().unwrap();
+        for &(index, pass) in &frames.prepasses {
+            let step = plan.step_of(pass).unwrap();
+            let attachments = plan.attachments(&plan.steps()[step]);
+            assert!(
+                attachments.iter().any(|a| !a.depth),
+                "the prepass of view {index} draws with a color attached"
+            );
+        }
+    }
+
+    #[test]
     fn a_prepass_split_from_its_opaque_pass_starts_its_stand_in_color_as_the_switch_says() {
         let lens = ([1.0; 16], [1.0; 16]);
         let cases = [
@@ -10573,9 +10622,7 @@ mod tests {
                 .prepare(&mut list, (320, 180), RenderScale::FULL)
                 .unwrap();
             let mut arena = UploadArena::default();
-            arena
-                .reset(frames.upload_bound())
-                .expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
                 .unwrap();
@@ -10743,9 +10790,7 @@ mod tests {
 
             // The steps record into the corners of their targets.
             let mut arena = UploadArena::default();
-            arena
-                .reset(frames.upload_bound())
-                .expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10806,9 +10851,7 @@ mod tests {
                     frames.ao_texture(),
                     frames.sampled_id(AO_TARGETS[ao::STEPS - 1])
                 );
-                arena
-                    .reset(frames.upload_bound())
-                    .expect("room for the test's uploads");
+                arena.begin_frame().unwrap();
                 list.clear();
                 frames
                     .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -10973,9 +11016,7 @@ mod tests {
 
             // A new reach or a new direction only uploads the steps' settings.
             let mut arena = UploadArena::default();
-            arena
-                .reset(frames.upload_bound())
-                .expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
                 .unwrap();
@@ -11080,9 +11121,7 @@ mod tests {
         assert_eq!(frames.effects_output(), EFFECT_TARGETS[0]);
         // The skin pass draws in a render pass of its own, which clears its light to zero.
         let mut arena = UploadArena::default();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -11217,9 +11256,7 @@ mod tests {
             assert!(at("Transparent1").is_some());
 
             let mut arena = UploadArena::default();
-            arena
-                .reset(frames.upload_bound())
-                .expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -11287,6 +11324,82 @@ mod tests {
                 .unwrap();
             assert_eq!(steps(&frames), without);
         }
+    }
+
+    #[test]
+    fn declaring_again_keeps_the_moment_layers_anti_aliasing_out_of_a_cycle() {
+        let canvas = (320, 180);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default(), shown()]);
+        frames.set_transparent(true);
+        frames.set_moment(true);
+        let mut list = DrawList::with_capacity(65536);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 1);
+        pipelines.create_new(&mut list, 2).unwrap();
+        frames.request_pipelines(&mut pipelines, 2);
+        frames.sync(&[View::default(), shown()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert!(frames.moment_draws());
+        let source = frames.moment_textures_value().scene;
+        // A setting that declares the passes again finds the layer's steps declared already.
+        frames.declared = false;
+        frames.sync(&[View::default(), shown()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert_eq!(frames.moment_textures_value().scene, source);
+    }
+
+    #[test]
+    fn a_view_that_rests_changes_no_plan_and_makes_no_target() {
+        let canvas = (320, 180);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        let mut views = [View::default(), shown()];
+        frames.sync(&views);
+        let mut list = DrawList::with_capacity(65536);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let compiles = frames.graph().compiles();
+        for enabled in [false, true, false, true, false, true] {
+            views[1].target_mut().enabled = enabled;
+            frames.sync(&views);
+            list.clear();
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert!(!frames.textures_made());
+            assert!(operands(&list, Op::CreateTexture).is_empty());
+            assert!(operands(&list, Op::DestroyTexture).is_empty());
+            assert_eq!(frames.graph().compiles(), compiles);
+        }
+    }
+
+    #[test]
+    fn the_moment_layers_anti_aliasing_reads_the_last_pass_before_it() {
+        let canvas = (320, 180);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default(), shown()]);
+        frames.set_transparent(true);
+        frames.set_moment(true);
+        frames.set_dof(Some(dof_frame()));
+        let mut list = DrawList::with_capacity(65536);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 1);
+        pipelines.create_new(&mut list, 2).unwrap();
+        frames.request_pipelines(&mut pipelines, 2);
+        frames.sync(&[View::default(), shown()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert!(frames.moment_draws());
+        assert!(frames.dof_draws());
+        let read = frames.moment_textures_value().scene;
+        let last = frames.sampled_id(DOF_TARGETS[dof::STEPS - 1]).unwrap();
+        assert_eq!(read, last);
     }
 
     #[test]
@@ -11361,7 +11474,7 @@ mod tests {
             assert!(at("Transparent1").is_some());
 
             let mut arena = UploadArena::default();
-            arena.reset(frames.upload_bound()).unwrap();
+            arena.begin_frame().unwrap();
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -11482,9 +11595,7 @@ mod tests {
             let copy = frames.transmission_texture();
             assert_ne!(copy, IDS.transmission.blank);
             let mut arena = UploadArena::default();
-            arena
-                .reset(frames.upload_bound())
-                .expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -11606,9 +11717,7 @@ mod tests {
             );
 
             let mut arena = UploadArena::default();
-            arena
-                .reset(frames.upload_bound())
-                .expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             list.clear();
             frames
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
@@ -11700,6 +11809,7 @@ mod tests {
         frames.set_bounce(Some(BounceFrame {
             bounce: crate::bounce::Bounce::default(),
             projection: (Mat4::default(), Mat4::default()),
+            mirrors: Default::default(),
         }));
         frames.request_pipelines(&mut pipelines, 1);
         assert!(!frames.bounce_draws(), "the light waits for its pipelines");
@@ -11753,9 +11863,7 @@ mod tests {
             .prepare(&mut prepared, canvas, RenderScale::FULL)
             .unwrap();
         let mut arena = UploadArena::default();
-        arena
-            .reset(frames.upload_bound())
-            .expect("room for the test's uploads");
+        arena.begin_frame().unwrap();
         let mut uploaded = DrawList::with_capacity(65536);
         frames
             .upload(

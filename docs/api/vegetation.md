@@ -236,7 +236,11 @@ A large scene need not place every plant at once. `EcoScatter` takes tiles with 
 
 ## Grass on the ground
 
+<<<<<<< HEAD
 `createGrass(ctx, { height, area, count, seed, mask, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)`, skip ground steeper than `maxSlope`, and skip the ground that `mask` refuses, such as water, a stone or a footprint. Their turn, size and tint come from integer hashes, so one seed places the same grass on every device. Each tuft's row values carry its tint, which its shader reads. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
+=======
+`createGrass(ctx, { height, area, count, seed, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)` and skip ground steeper than `maxSlope`, and any point where `where(x, z)` returns false. `color` sets the blades' color, so they can meet the ground's own. Their turn, size and tint come from integer hashes, so one seed places the same grass on every device. Each tuft's row values carry its tint, which its shader reads. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
+>>>>>>> d4525fa22
 
 The blades bend in the wind add-on's field, the same field that the leaf material reads. Give `createGrass` its `wind` field, and call `grass.setWindLayer(field)` in each frame with the field's newest state, as the leaf material takes it. A page that gives no field grows grass that stands still.
 
@@ -334,6 +338,7 @@ const cards = createImpostors(
     color: far.color,
     surface: far.surface,
     atlas: far.atlas,
+    room: far.room,
     positions: farTrees.flatMap((tree) => [tree.position[0], tree.position[1] + far.base, tree.position[2]]),
     turn: farTrees.map((tree) => tree.turn),
     size: far.size,
@@ -347,7 +352,7 @@ handOverToCards(nearTrees, cards.batch, 240);
 
 `bakeFarTree` returns the two textures, the grid, the card's `size` and the plant's `depth`, which scales the stored depth that places a card's own shadow lookup. A far card casts the crown's shape through a second batch with `castShadows: true`, on a layer that the sun draws and no camera does, and takes the shadows of other objects with `receiveShadows: true` ([Impostors](impostors.md)). The bake draws level 0, or the level that the plant's `impostorSource` names. The bark colour tints the wood and the leaf colour the leaves, as the plant's materials do. A second call for the same plant, grid and cell size reuses the baked pixels.
 
-`handOverToCards(meshes, cards, switchDistance)` sets the distance bands. The meshes draw up to the switch. Over the last 8 per cent of that range the engine dithers their pixels out. The cards start a fifth of the switch earlier. Their own dithered edge then finishes before the mesh's edge begins to thin. They stand at full coverage behind the meshes, each pixel that a mesh's dither drops shows its card, and no pixel ever drops out of both. A custom material fades at a range edge as the engine's own materials do. The mesh and the card are different sources, so their dither phases differ, and the two edges must not fall on the same pixels. The meshes and the cards stand at the same trees, so a tree draws as its mesh near the camera and as its card far from it.
+`handOverToCards(meshes, cards, switchDistance)` sets the distance bands. The meshes draw up to the switch. Over the last 8 per cent of that range the engine dithers their pixels out. The cards start earlier, by as much as the largest card's size and both edges need, so write the cards' sizes first. Their own dithered edge then finishes before the mesh's edge begins to thin. They stand at full coverage behind the meshes, each pixel that a mesh's dither drops shows its card, and no pixel ever drops out of both. A custom material fades at a range edge as the engine's own materials do. The mesh and the card are different sources, so their dither phases differ, and the two edges must not fall on the same pixels. The meshes and the cards stand at the same trees, so a tree draws as its mesh near the camera and as its card far from it.
 
 A card's rows need their turn, so a turned tree's crown matches its card. The plant's `impostorSource.bounds` gives the largest bound over its levels, which the bake uses for the card's size and for its lowest point.
 

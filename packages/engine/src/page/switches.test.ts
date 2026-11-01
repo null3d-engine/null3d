@@ -19,6 +19,7 @@ describe('parseSwitches', () => {
 			twoStep: false,
 			wakeByMessage: false,
 			displayChecks: true,
+			hideMemoryMaximum: false,
 			hdr: true,
 			sceneFormat: undefined,
 			half: undefined,

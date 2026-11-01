@@ -151,7 +151,7 @@ Phone GPUs draw in tiles, and copying tiles between the chip and memory takes mu
 
 ## Switching passes on and off
 
-The graph can switch a pass on or off with no new declarations. A pass that is off counts as absent. The engine switches its final pass and its resolve pass this way, from the format of the scene color and the anti-aliasing mode. `render.setPassEnabled` switches a sketch's pass, whose texture then keeps its last image.
+The graph can switch a pass on or off with no new declarations. A pass that is off counts as absent. The engine switches its final pass and its resolve pass this way, from the format of the scene color and the anti-aliasing mode. `render.setPassEnabled` switches a sketch's pass, whose texture then keeps its last image. Once a sketch's pass has drawn, switching it off only skips its recording: the plan stays, so a pass that draws every few frames compiles nothing and makes no target.
 
 ## Passes that nothing uses
 

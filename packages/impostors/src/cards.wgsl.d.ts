@@ -5,6 +5,7 @@ import type { CompiledMaterial } from '@null3d/vite-plugin';
 declare const shader: CompiledMaterial<
 	{
 		readonly cells: 'vec4f';
+		readonly picture: 'vec4f';
 	},
 	'impostorColor' | 'impostorSurface'
 >;

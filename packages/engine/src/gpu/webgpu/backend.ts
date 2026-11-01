@@ -8,6 +8,7 @@ import * as G from '../../generated/gpu';
 import type { DeviceShaders, FirstUseShaders } from '../../generated/shaders';
 import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
+import { DROP_COUNTED_LABEL } from '../../shared/metrics';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
 import { LAYER_WORD, LIGHT_BUFFER_WORD } from '../environment-words';
@@ -1123,9 +1124,12 @@ export class WebGPUBackend {
 					// (./indirect-arguments.ts), and of the counts that the culling shaders wrote
 					// while the page samples (./culled-counts.ts).
 					const usage = words[a + 2] as number;
+					const gpuUsage = usage & ~G.BUFFER_USAGE_DROP_COUNTED;
 					this.buffers[words[a] as number] = device.createBuffer({
+						label: usage & G.BUFFER_USAGE_DROP_COUNTED ? DROP_COUNTED_LABEL : undefined,
 						size: words[a + 1] as number,
-						usage: usage & G.BUFFER_USAGE_INDIRECT ? usage | G.BUFFER_USAGE_COPY_SRC : usage,
+						usage:
+							gpuUsage & G.BUFFER_USAGE_INDIRECT ? gpuUsage | G.BUFFER_USAGE_COPY_SRC : gpuUsage,
 					});
 					this.gpuMemory.addBuffers(words[a + 1] as number);
 					break;

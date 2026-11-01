@@ -186,6 +186,10 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	updateMemoryRegister(): number;
 	/** The number of memory areas that `updateMemoryRegister` reports. */
+	/** Notes the shared memory's declared maximum in MiB, ahead of `initEngine`. */
+	setMemoryMaximum(mib: number): void;
+	/** For a test: fills the heap until only its reserve's reach is left. */
+	fillHeapForTest(): void;
 	memoryAreas(): number;
 	/**
 	 * Makes room for `points` points of debug lines, keeping those written since the last recorded
@@ -1368,6 +1372,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'drawListAddress',
 	'drawListWords',
 	'updateMemoryRegister',
+	'setMemoryMaximum',
+	'fillHeapForTest',
 	'memoryAreas',
 	'reserveDebugLines',
 	'debugLineArrays',

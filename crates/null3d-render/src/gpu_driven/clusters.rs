@@ -357,7 +357,7 @@ mod tests {
             let layout = Layout::with_cluster_tables(patches, 4);
             let mut list = DrawList::with_capacity(64);
             let mut arena = UploadArena::default();
-            arena.reset(1 << 16).expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             let mut clusters = Clusters::default();
             let outcome = clusters.apply_tables(&mut list, &mut arena, &layout, true, binding);
             (outcome, made(&list))

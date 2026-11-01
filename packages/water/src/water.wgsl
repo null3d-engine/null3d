@@ -13,6 +13,8 @@ struct Uniforms {
     ripple: f32,
     // The meters of the gap to the bed over which the water fades to nothing at a shore.
     softness: f32,
+    // The share of the water's color that reads the whole way the view runs through it, not its depth.
+    viewPath: f32,
     // The light that the ripples focus on the bed, a linear color whose brightness is its strength.
     caustics: vec3f,
     // The world point and the size in meters that the foam map covers.
@@ -283,8 +285,10 @@ fn junction(p: vec2f, body: f32) -> vec2f {
 /// The water's height at a point, and its slopes along x and z: long waves, and with `fine` set,
 /// shorter ripples beside them. A current carries the whole set downstream: each wave's direction
 /// turns into the current's frame, so the crests keep every angle between them and all of them
-/// travel with the water. Still water keeps the authored directions and each wave's own speed.
-fn waves(p: vec2f, t: f32, current: vec3f, fine: bool) -> vec3f {
+/// travel with the water. Still water keeps the authored directions and each wave's own speed. A
+/// wave's slope fades as the wave grows finer than `footprint`, the meters that one pixel covers, so
+/// a slope that a pixel cannot resolve never turns into noise that changes each frame.
+fn waves(p: vec2f, t: f32, current: vec3f, fine: bool, footprint: f32) -> vec3f {
     // Each wave: its direction, its wave number, and the speed it runs at in still water.
     let list = array<vec4f, 6>(
         vec4f(1.0, 0.15, 2.3, 0.9),
@@ -310,19 +314,20 @@ fn waves(p: vec2f, t: f32, current: vec3f, fine: bool) -> vec3f {
         let carried = w.z * (dot(dir, p) - current.z * t * dot(current.xy, dir));
         let phase = select(still, carried, moving);
         h += amplitude * sin(phase);
-        slope += dir * (amplitude * w.z * cos(phase));
+        let resolved = 1.0 - smoothstep(0.75, 2.0, w.z * footprint);
+        slope += dir * (amplitude * w.z * cos(phase) * resolved);
     }
     return vec3f(h, slope);
 }
 
 /// The waves at a point with a share of the river's waves over still water's. Two meshes that meet
 /// carry one current there and read one share, so they give the same surface.
-fn shared_waves(p: vec2f, t: f32, current: vec3f, share: f32, fine: bool) -> vec3f {
-    let moving = waves(p, t, current, fine);
+fn shared_waves(p: vec2f, t: f32, current: vec3f, share: f32, fine: bool, footprint: f32) -> vec3f {
+    let moving = waves(p, t, current, fine, footprint);
     if share >= 1.0 {
         return moving;
     }
-    return mix(waves(p, t, vec3f(0.0), fine), moving, share);
+    return mix(waves(p, t, vec3f(0.0), fine, footprint), moving, share);
 }
 
 fn vertexOffset(input: VertexInput) -> vec3f {
@@ -368,6 +373,7 @@ fn distance_of(depth: f32) -> f32 {
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let p = input.worldPosition.xz;
+    let footprint = max(length(dpdx(p)), length(dpdy(p)));
     let j = junction(p, body_of(input.uv));
     // Where two meshes overlap, only the body that the junction map names draws the point. The
     // other discards it, since the water writes depth and would hide the drawing body behind it.
@@ -376,7 +382,7 @@ fn surface(input: SurfaceInput) -> Surface {
     }
     let share = j.y;
     let current = current_of(input.uv, input.uv1);
-    let w = shared_waves(p, frame.time, current, share, true);
+    let w = shared_waves(p, frame.time, current, share, true, footprint);
     s.normal = normalize(vec3f(-w.y, 1.0, -w.z));
     let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
     let mirrorUv = reflection_uv(clip, w.yz * 0.08);
@@ -393,7 +399,10 @@ fn surface(input: SurfaceInput) -> Surface {
         max(input.vertexColor.a, 0.0),
         material.bedFromShape,
     );
-    s.thickness = max(depth, 0.02);
+    // A low view runs a long way through the water, which hides the bed's colors. From above the
+    // depth alone gives the bed's own shading.
+    let grazing = 1.0 - smoothstep(0.08, 0.4, abs(input.viewDirection.y));
+    s.thickness = max(mix(depth, gap, material.viewPath * grazing), 0.02);
     // Shallow water at the edges carries a little foam.
     let edgeFoam = (1.0 - smoothstep(0.0, 0.05, depth)) * smoothstep(0.0, 0.03, w.x + 0.012);
     // Foam around the stones: the map holds how near each point lies to a stone, stretched

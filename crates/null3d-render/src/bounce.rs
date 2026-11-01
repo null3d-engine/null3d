@@ -8,7 +8,7 @@
 //!    copy and horizon step give it, and samples a disk of screen texels around it. A sample whose
 //!    surface lies in the texel's hemisphere, within the reach, takes the color that the frame
 //!    before showed there, from the copy that transmission and reflections read too, weighted by
-//!    the cosine of its direction. The texel writes the mean light times pi, and the share of the
+//!    the cosine of its direction and by how bright it is. The texel writes the mean light times pi, and the share of the
 //!    disk that found a surface. The light is in `crates/null3d-shaders/wgsl/bounce.wgsl`.
 //! 2. The denoise blurs that light over a disk of taps that keeps to each texel's own surface, by
 //!    each tap's distance from its plane and its normal, as ambient occlusion's denoise does.
@@ -23,6 +23,9 @@
 //! the render scale's passes do. WebGL2 counts rows from the bottom, and its shader builds turn
 //! rows around.
 //!
+//! A mirror's color holds only what it shows this view, not light that its surface sends every way,
+//! so the gather leaves out the samples that lie on a mirror view's plane.
+//!
 //! The feature draws only while the scene color is HDR: the copy that its samples read holds the
 //! display's color on the 8-bit path, which is no radiance to bounce.
 
@@ -36,6 +39,10 @@ use crate::camera::Mat4;
 use crate::frame::{RecordError, UploadArena};
 use crate::graph::{RenderScale, Size};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
+
+/// The most mirrors whose surfaces the gather leaves out. A mirror past them sends bounce light as
+/// any surface does.
+pub(crate) const MAX_MIRRORS: usize = 2;
 
 /// The steps: the trace, then the denoise.
 pub(crate) const STEPS: usize = 2;
@@ -73,7 +80,7 @@ const NORMAL_POWER: f32 = 16.0;
 
 /// Bytes of the steps' block, the alignment of a buffer binding's offset and size.
 const BLOCK_STRIDE: u32 = 256;
-const BLOCK_BYTES: u32 = 208;
+const BLOCK_BYTES: u32 = 240;
 
 /// Screen-space bounce light's settings, which the sketch's quality settings give.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -109,6 +116,7 @@ struct Block {
     ray: [f32; 4],
     shape: [f32; 4],
     copy: [f32; 4],
+    mirrors: [[f32; 4]; MAX_MIRRORS],
 }
 
 /// The GPU objects of screen-space bounce light, which the frame builder's id ranges set.
@@ -150,6 +158,21 @@ pub(crate) struct BounceFrame {
     pub(crate) bounce: Bounce,
     /// The camera's projection and its inverse.
     pub(crate) projection: (Mat4, Mat4),
+    /// The planes of the scene's mirrors in the camera's view space: the normal and the camera's
+    /// height over the plane, with a normal of zero for none.
+    pub(crate) mirrors: [[f32; 4]; MAX_MIRRORS],
+}
+
+/// A plane relative to the camera, as [`crate::mirror::Mirror::relative_to`] gives it, in the view
+/// space of the column-major matrix `view`, which takes positions relative to the camera. A point
+/// `p` of the view lies on the plane where the normal's product with `p` plus the height is 0.
+pub(crate) fn view_plane(view: &Mat4, [x, y, z, height]: [f32; 4]) -> [f32; 4] {
+    [
+        view[0] * x + view[4] * y + view[8] * z,
+        view[1] * x + view[5] * y + view[9] * z,
+        view[2] * x + view[6] * y + view[10] * z,
+        height,
+    ]
 }
 
 impl BounceFrame {
@@ -341,6 +364,7 @@ fn blocks(
             render.0 as f32,
             render.1 as f32,
         ],
+        mirrors: frame.mirrors,
     };
     [block; STEPS]
 }
@@ -362,6 +386,26 @@ pub(crate) fn write_frame_values(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_mirror_plane_lands_in_the_view_space_of_the_camera_that_looks_at_it() {
+        // A view that turns a quarter about y: x in the world is z in view space, and the height
+        // stays the camera's height over the plane.
+        let view = [
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            -1.0, 0.0, 0.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        assert_eq!(
+            view_plane(&view, [1.0, 0.0, 0.0, 3.0]),
+            [0.0, 0.0, 1.0, 3.0]
+        );
+        assert_eq!(
+            view_plane(&view, [0.0, 1.0, 0.0, 2.0]),
+            [0.0, 1.0, 0.0, 2.0]
+        );
+    }
 
     #[test]
     fn the_shader_lays_out_the_block_as_the_core_writes_it() {
@@ -396,14 +440,13 @@ mod tests {
         let mut arena = UploadArena::default();
         let sources = [[7, 7, 7], [8, 9, 7]];
         let frame = BounceFrame {
+            mirrors: Default::default(),
             bounce: Bounce::default(),
             projection: (Mat4::default(), Mat4::default()),
         };
         let mut draw = |pass: &mut BouncePass, list: &mut DrawList, scale| {
             list.clear();
-            arena
-                .reset(BouncePass::UPLOAD_BYTES)
-                .expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             pass.prepare(
                 list,
                 &mut arena,

@@ -119,8 +119,10 @@ const SHADOW_LADDER = 1.25;
  * need of zero or less is the scene's core behind the camera, which asks for the base range alone.
  */
 export function shadowStep(raw: number, held: number, base: number): number {
-	const steps =
-		raw > 0 ? Math.max(0, Math.ceil(Math.log(raw / base) / Math.log(SHADOW_LADDER) - 1e-9)) : 0;
+	const steps = Math.max(
+		0,
+		Math.ceil(Math.log(Math.max(raw, base) / base) / Math.log(SHADOW_LADDER) - 1e-9),
+	);
 	const up = base * SHADOW_LADDER ** steps;
 	return up > held || raw < held / SHADOW_LADDER ** 2 ? up : held;
 }
@@ -166,11 +168,12 @@ export function createShowcaseEffects(
 		sun.setShadow({ distance: next });
 	};
 	const on: Record<string, boolean> = { ...start };
-	// The level of detail starts off, so every mesh draws at its fullest until the Quality tab turns
-	// it on; a threshold of 0 picks every mesh's base level. The switch turns it on again at the
-	// preset's own threshold, or at a default threshold when the page started with it off.
+	// The level of detail starts off unless the scene's start list turns it on: every mesh then draws
+	// at its fullest until the Quality tab turns it on, as a threshold of 0 picks every mesh's base
+	// level. The switch turns it on again at the preset's own threshold, or at a default threshold
+	// when the page started with it off.
 	let lodThreshold = quality.settings.lodThreshold || 1;
-	if (quality.settings.lodThreshold > 0) void quality.set({ lodThreshold: 0 });
+	if (!start.lod && quality.settings.lodThreshold > 0) void quality.set({ lodThreshold: 0 });
 	// The stage starts with every part on, so a part that the scene starts with off must be turned
 	// off now; the HUD state and the scene then agree, and the button reads the scene's real state.
 	for (const part of ['sky', 'fog', 'environment'] as const)

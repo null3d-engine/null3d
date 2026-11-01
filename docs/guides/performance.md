@@ -361,6 +361,28 @@ The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatenc
 - In Safari, a worker's frame callbacks run from a timer of about 15 ms, not from the display. The engine holds its frames to the display's rate, which the page measures, but `refreshHz` there reports the timer's rate.
 - Compare engines in the same browser, one run after another.
 
+## Memory peak
+
+A scene's memory peaks in its first frames, which copy every mesh of the scene to the GPU, and a moving camera adds to the peak in the frames after them. The peak differs by draw path, which a start-up timing test picks on some devices. A scene with 84 MiB of meshes peaks at about 205 MiB on the indirect path and about 270 MiB on the direct path at the High preset.
+
+WebAssembly memory never shrinks, so a reading after the camera has moved is the peak:
+
+```ts
+const { memory } = await engine.measure(5);
+const peak = (memory.wasmBytes ?? 0) / 2 ** 20;
+console.log(`${Math.round(peak)} of ${engine.mode.memoryMaximumMiB} MiB`);
+```
+
+`?stats=open` in the page's address shows the same figure. Measure with `?direct=on` in the address as well, because that path needs the most.
+
+The engine keeps the last 8 MiB under the limit for its own small requests. A scene that reaches them stops with [E1109](../errors/E1109.md) in its next frame, even though the peak itself fits. So keep the peak well under the limit on both paths, and test on the devices you ship to, because a browser can refuse memory before the limit.
+
+When a scene comes too close:
+
+- Share meshes, and create fewer of them. Each mesh passes through the first frame, and a copy drawn with an instance batch takes no mesh of its own.
+- Lower a terrain's finest level: one level finer costs about twice the ground's mesh memory.
+- Ask for a larger maximum with the [memory option](../api/engine.md#memory) of `createEngine`. It takes more of the page's address space, so do this last.
+
 ## Browsers differ
 
 S1's busiest thread took 1.74 ms per frame in Safari, 2.32 ms in Chrome and 4.42 ms in Firefox on the same Mac. Most of that time was the same update code. Test your sketch in each browser that your audience uses.

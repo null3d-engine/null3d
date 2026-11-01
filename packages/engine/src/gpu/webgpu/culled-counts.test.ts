@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { SAMPLED_EVERY } from '../../shared/metrics';
+import { afterAll, beforeAll, describe, expect, it, spyOn } from 'bun:test';
+import { DROP_COUNTED_LABEL, SAMPLED_EVERY } from '../../shared/metrics';
 import { CulledCounts } from './culled-counts';
 
 const scope = globalThis as Record<string, unknown>;
@@ -16,6 +16,10 @@ afterAll(() => {
 interface DrawBuffer {
 	name: string;
 	draws: Map<number, [indices: number, instances: number]>;
+	label?: string;
+	size?: number;
+	/** The copies that the buffer's last word says the culling shader dropped. */
+	dropped?: number;
 }
 
 /**
@@ -52,6 +56,10 @@ function fakeDevice() {
 			bytes: number,
 		) {
 			log.push(`copy ${source.name} ${from} to ${to}, ${bytes} bytes`);
+			if (source.size !== undefined && from === source.size - 4) {
+				target.words[to / 4] = source.dropped ?? 0;
+				return;
+			}
 			for (const [offset, [indices, instances]] of source.draws) {
 				if (offset < from || offset >= from + bytes) continue;
 				const word = (to + offset - from) / 4;
@@ -69,6 +77,40 @@ const asBuffer = (buffer: DrawBuffer) => buffer as unknown as GPUBuffer;
 const mapped = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('CulledCounts', () => {
+	it('reads the dropped copies from the last word of a buffer of culled draws, and warns once', async () => {
+		const { device, encoder, log } = fakeDevice();
+		const counts = new CulledCounts(device);
+		const views: DrawBuffer = {
+			name: 'views',
+			draws: new Map([[0, [36, 5]]]),
+			label: DROP_COUNTED_LABEL,
+			size: 104,
+			dropped: 3,
+		};
+		const warn = spyOn(console, 'warn').mockImplementation(() => {});
+		counts.beginFrame(true);
+		counts.note(asBuffer(views), 0, false);
+		counts.copy(encoder);
+		counts.afterSubmit();
+		expect(log).toEqual(['copy views 0 to 0, 20 bytes', 'copy views 100 to 20, 4 bytes']);
+		await mapped();
+		expect(counts.dropped).toBe(3);
+		expect(counts.instances).toBe(5);
+		expect(warn).toHaveBeenCalledTimes(1);
+		expect(warn.mock.calls[0]?.[0]).toContain('?direct=on');
+		views.dropped = 7;
+		for (let frame = 0; frame < SAMPLED_EVERY; frame++) {
+			counts.beginFrame(true);
+			counts.note(asBuffer(views), 0, false);
+			counts.copy(encoder);
+			counts.afterSubmit();
+			await mapped();
+		}
+		expect(counts.dropped).toBe(7);
+		expect(warn).toHaveBeenCalledTimes(1);
+		warn.mockRestore();
+	});
+
 	it('reads back the counts of the culled draws on a sampled frame, and adds them up', async () => {
 		const { device, encoder, log } = fakeDevice();
 		const counts = new CulledCounts(device);

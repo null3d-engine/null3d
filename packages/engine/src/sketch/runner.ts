@@ -325,7 +325,7 @@ export class SketchRunner {
 	private resumes = -1;
 	private resumed = false;
 	/** The sketch's `time`, which each frame updates in place. Its frames are those that run the sketch. */
-	private readonly time = { now: 0, dt: 0, frame: 0 };
+	private readonly time = { now: 0, dt: 0, frame: 0, held: false };
 	/**
 	 * The engine's number of the frame it recorded last. The setup's frames, for warm-ups and the
 	 * preset check, count here but not in `time.frame`. The core, the draw lists and the thread that
@@ -483,6 +483,7 @@ export class SketchRunner {
 		);
 		const { glue, device } = sketch;
 		const { slots } = sketch.control;
+		glue.setMemoryMaximum(device.memoryMaximumMiB ?? 0);
 		const status = glue.initEngine(
 			sketch.jobWorkers,
 			device.expectedObjects,
@@ -1211,8 +1212,9 @@ export class SketchRunner {
 
 	/**
 	 * Follows the sketch's bloom, which the governor's bloom step needs on, and its other effects.
-	 * The first time bloom, depth of field, a custom effect, a custom tone curve or volumetric fog
-	 * with slices to draw turns on, or the page or the sketch itself gives the subsurface blur taps,
+	 * The first time bloom, depth of field, a custom effect, a custom tone curve, a reflection pass
+	 * or volumetric fog with slices to draw turns on, or the page or the sketch itself gives the
+	 * subsurface blur taps,
 	 * on a device that started on the 8-bit path only for MSAA, the core moves to HDR color with
 	 * FXAA for the engine's life. A preset's taps alone do not move it. Returns true then: the frame
 	 * has new targets and pipelines, so the thread that draws holds it until they are built, and the
@@ -1229,7 +1231,9 @@ export class SketchRunner {
 		const { quality } = this;
 		const blur = quality.settings.subsurfaceSamples > 0 && quality.chose('subsurfaceSamples');
 		const fog = this.context.scene.needsHdr && this.fogSetting > 0;
-		if (!this.post.needsHdr && !fog && !blur) return false;
+		// The 8-bit path stores a pass's picture tone mapped, and a surface that reflects it tone maps
+		// it again.
+		if (!this.post.needsHdr && !fog && !blur && !this.render.hasReflection) return false;
 		if (device.effectsSceneColor === FORMAT_CANVAS) return false;
 		this.hdrForEffects = true;
 		this.preloads.setUsable('coverage', device.effectsAntialias === ANTIALIAS_MSAA);
@@ -1289,6 +1293,7 @@ export class SketchRunner {
 		let frame = 0;
 		let first = 0;
 		this.holding = true;
+		this.time.held = true;
 		try {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
@@ -1350,6 +1355,7 @@ export class SketchRunner {
 			);
 		} finally {
 			this.holding = false;
+			this.time.held = false;
 		}
 		if (script !== undefined) this.scriptResult = { dumps, problems };
 		Atomics.store(slots, Slot.HeldFrom, first);

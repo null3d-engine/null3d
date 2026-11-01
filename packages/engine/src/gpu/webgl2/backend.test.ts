@@ -234,6 +234,60 @@ describe('WebGL2Backend', () => {
 		expect([...backend.gpuMemory.bytes]).toEqual([0, 0]);
 	});
 
+	it('releases targets without walking the sparse table of textures, and frees what they join', async () => {
+		const { gl, log } = fakeContext(true);
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const inside = backend as unknown as {
+			textures: unknown[];
+			textureOf(id: number): unknown;
+			colorFramebuffer(color: unknown, depth: unknown): object;
+		};
+		const words: number[] = [];
+		const push = (op: number, operands: number[]) =>
+			words.push(op | ((operands.length + 1) << 8), ...operands);
+		const replay = () => {
+			const list = new Uint32Array(words.splice(0));
+			backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
+		};
+		const target = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_TEXTURE_BINDING;
+		// The ids of the render graph's targets lie far along the table, as they do in a scene.
+		const FIRST = 1_000_000;
+		const color = (id: number) => [id, 32, 32, 1, G.FORMAT_RGBA8_UNORM, target, 1, 1, G.VIEW_2D];
+		push(G.OP_CREATE_TEXTURE, color(FIRST));
+		push(G.OP_CREATE_TEXTURE, [
+			FIRST + 1,
+			32,
+			32,
+			1,
+			G.FORMAT_DEPTH24_PLUS,
+			target,
+			1,
+			1,
+			G.VIEW_2D,
+		]);
+		replay();
+		const table = inside.textures as (object | undefined)[];
+		const joined = inside.colorFramebuffer(table[FIRST], table[FIRST + 1]);
+
+		let reads = 0;
+		inside.textures = new Proxy(table, {
+			get(all, name, receiver) {
+				reads++;
+				return Reflect.get(all, name, receiver);
+			},
+		});
+		push(G.OP_DESTROY_TEXTURE, [FIRST + 1]);
+		replay();
+		// A walk of the table would read each of its million places.
+		expect(reads).toBeLessThan(100);
+		// The framebuffer that held the depth target goes with it, so no pass draws into a freed target.
+		expect(log.some(([name, value]) => name === 'deleteFramebuffer' && value === joined)).toBe(
+			true,
+		);
+		backend.destroy();
+	});
+
 	it('reads a uniform buffer range that a shader takes as a texture from a copy, made again after each write', async () => {
 		const { gl, calls } = fakeContext(true);
 		const canvas = { width: 4, height: 4 } as OffscreenCanvas;

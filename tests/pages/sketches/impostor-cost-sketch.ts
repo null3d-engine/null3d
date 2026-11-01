@@ -74,6 +74,7 @@ export default defineSketch(({ scene, materials, geometry, textures, quality, pa
 			color,
 			surface,
 			atlas: bake.atlas,
+			room: bake.room,
 			positions,
 			size: [WIDTH, HEIGHT],
 			alphaMode: 'mask',

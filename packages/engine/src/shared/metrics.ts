@@ -771,3 +771,6 @@ function dropLast(records: RingRecords): void {
 	for (const values of records.counters) values.pop();
 	for (const values of records.passRoles) values.pop();
 }
+
+/** The label of a buffer of culled draws, whose last word counts the copies that culling dropped. */
+export const DROP_COUNTED_LABEL = 'culled draws';

@@ -81,7 +81,14 @@ export default defineSketch((ctx) => {
 	for (let row = 0; row < ROWS; row++)
 		for (let column = 0; column < COLUMNS; column++)
 			positions.push((column - (COLUMNS - 1) / 2) * SPACING, 0, (row - (ROWS - 1) / 2) * SPACING);
-	const common = { color, surface, atlas: bake.atlas, positions, depth: bake.depth } as const;
+	const common = {
+		color,
+		surface,
+		atlas: bake.atlas,
+		room: bake.room,
+		positions,
+		depth: bake.depth,
+	} as const;
 	const cards = createImpostors(
 		{ scene, materials, geometry },
 		{ ...common, alphaMode: 'mask', roughness: 0.9, receiveShadows: true },

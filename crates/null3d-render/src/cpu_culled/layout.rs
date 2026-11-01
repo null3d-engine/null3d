@@ -14,6 +14,7 @@
 
 use std::collections::TryReserveError;
 
+use null3d_core::alloc::keep_room;
 use null3d_core::clusters::{
     CLUSTER_ROWS, CLUSTER_SHIFT, ClusterScratch, NO_ROW, RowCells, RowClusters, cluster_room,
 };
@@ -32,8 +33,8 @@ use super::ids;
 use super::skin::Skins;
 use crate::debug_view::DebugView;
 use crate::frame::{
-    FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, bucket_of,
-    collect_bucket_keys, put_u32,
+    FrameInput, HIDDEN, KeyCounts, REBUILD_BYTES_PER_SOURCE, RecordError, SceneSettings,
+    UploadArena, bucket_of, collect_bucket_keys, put_u32,
 };
 use crate::levels::{
     BucketKey, StageWatches, expand_level_keys, is_fade_key, key_level, level_key, links_of,
@@ -195,6 +196,8 @@ pub(super) struct CullRoom {
 /// The source layout and bucket tables, rebuilt when the structure changes.
 #[derive(Default)]
 pub(super) struct Layout {
+    /// The most sources that a rebuild has checked the heap's room for.
+    room_for_sources: u32,
     /// What the buckets draw.
     drawn: Drawn,
     pub(super) scene_rows: u32,
@@ -406,6 +409,18 @@ impl Layout {
     ) -> Result<(), RecordError> {
         let (scene, batches) = (input.scene, input.batches);
         self.scene_rows = scene.capacity() + 1;
+        // The tables below grow with plain pushes, which cannot report a refused request. They keep
+        // their room between rebuilds, so a rebuild of no more sources asks for nothing new.
+        let rows: u32 = batches.iter().map(|(_, batch)| batch.capacity()).sum();
+        let sources = self.scene_rows.saturating_add(rows);
+        if sources > self.room_for_sources {
+            keep_room(sources as usize * REBUILD_BYTES_PER_SOURCE).map_err(|_| {
+                RecordError::OutOfMemory {
+                    bytes: sources.saturating_mul(REBUILD_BYTES_PER_SOURCE as u32),
+                }
+            })?;
+            self.room_for_sources = sources;
+        }
         self.codes = self.drawn == Drawn::Scene && settings.debug_view() == DebugView::Levels;
         self.batches.clear();
         let (mut resident, mut streamed, mut clusters) = (self.scene_rows, 0u32, 0u32);
@@ -627,10 +642,27 @@ impl Layout {
         // A level may name a material of its own, so its bucket key comes from the level's mesh and
         // material, while it keeps the fields of the bucket that names it: its group, and the
         // object's receive-shadows bit, which the base key's pipeline holds.
+        let depth_stand_in = |key: &BucketKey| {
+            key.4 == CASTER_MATERIAL
+                && drawn != Drawn::Scene
+                && key.0.template == template::SHADOW_DEPTH
+        };
         let level_bucket = |key: &BucketKey, level: usize| {
             let (base, _) = key_level(key.3);
             let set = levels.of(base)?;
             let mesh = set.mesh(level);
+            // A depth bucket holds a stand-in in place of its material, since it draws with none, so
+            // the stand-in names no pipeline. A level that names no material keeps the bucket's
+            // depth pipeline and takes its own mesh's vertex format.
+            if set.material(level) == 0 && depth_stand_in(key) {
+                let vertex_format = meshes.mesh(mesh - 1)?.format;
+                let page = meshes.parts(meshes.mesh(mesh - 1)?, false).first()?.page;
+                let pipeline = DrawKey {
+                    vertex_format,
+                    ..key.0
+                };
+                return Some((pipeline, key.1, page, level_key(base, level), key.4, key.5));
+            }
             let material = match set.material(level) {
                 0 => key.4,
                 own => own,
@@ -640,8 +672,10 @@ impl Layout {
             } else {
                 0
             };
+            // A batch's rows bring their own color and values to whichever level they draw.
+            let row_values = key.0.permutation & permutation::ROW_VALUES != 0;
             let mut bucket = key_of(
-                settings.pipeline_of(mesh, material),
+                settings.rows_pipeline_of(mesh, material, row_values),
                 mesh,
                 material,
                 key.5,

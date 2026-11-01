@@ -708,9 +708,7 @@ mod tests {
         };
         let mut run = |pass: &mut DofPass, list: &mut DrawList, frame: DofFrame| {
             list.clear();
-            arena
-                .reset(DofPass::UPLOAD_BYTES)
-                .expect("room for the test's uploads");
+            arena.begin_frame().unwrap();
             pass.prepare(
                 list,
                 &mut arena,
