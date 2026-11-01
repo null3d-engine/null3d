@@ -78,7 +78,10 @@ function phaseLine(name: string, phase: Phase): string {
 for (const gpu of gpus) {
 	for (const preset of presets) {
 		test(`the wind governor under load on ${gpu} at ${preset}`, async ({ page }) => {
-			test.skip(!process.env.NULL3D_WIND_STRESS_COST, 'set NULL3D_WIND_STRESS_COST to drive the governor');
+			test.skip(
+				!process.env.NULL3D_WIND_STRESS_COST,
+				'set NULL3D_WIND_STRESS_COST to drive the governor',
+			);
 			test.setTimeout(costTimeout(120_000));
 			const loadBefore = await waitForQuiet();
 			await page.setViewportSize({ width: 640, height: 400 });

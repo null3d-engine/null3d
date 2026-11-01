@@ -236,7 +236,7 @@ A large scene need not place every plant at once. `EcoScatter` takes tiles with 
 
 ## Grass on the ground
 
-`createGrass(ctx, { height, area, count, seed, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)` and skip ground steeper than `maxSlope`. Their turn, size and tint come from integer hashes, so one seed places the same grass on every device. Each tuft's row values carry its tint, which its shader reads. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
+`createGrass(ctx, { height, area, count, seed, mask, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)`, skip ground steeper than `maxSlope`, and skip the ground that `mask` refuses, such as water, a stone or a footprint. Their turn, size and tint come from integer hashes, so one seed places the same grass on every device. Each tuft's row values carry its tint, which its shader reads. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
 
 The blades bend in the wind add-on's field, the same field that the leaf material reads. Give `createGrass` its `wind` field, and call `grass.setWindLayer(field)` in each frame with the field's newest state, as the leaf material takes it. A page that gives no field grows grass that stands still.
 
@@ -281,7 +281,7 @@ The built-in set holds thirteen species and six variants each. Grown in one call
 
 Growth is linear in the branch count and the card count. A species whose record raises `children` at several levels grows many more branches and costs more to generate. Keep a plant under 255 branches, and let a species with more rely on a coarser record instead.
 
-Reading Creek's 160 m valley into the ground maps and placing its eight species takes about 55 ms on an Apple M5 Max laptop, for about a thousand points. Ground cover is the most of it. A species at one meter of spacing offers tens of thousands of candidates.
+Reading Creek's 160 m valley into the ground maps and placing the eight species that the package records for it takes about 55 ms on an Apple M5 Max laptop, for about a thousand points. Ground cover is the most of it. A species at one meter of spacing offers tens of thousands of candidates.
 ## Bark and leaf textures
 
 A plant ships no image file, so its bark and leaves come from two atlases that the browser paints the first time a page asks for them. `bakePlantAtlases` paints them, and `plantMaterial` draws a plant part from them.

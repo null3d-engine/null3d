@@ -40,6 +40,15 @@ describe('the grass placement', () => {
 	test('steep ground grows no tufts', () => {
 		expect(placeTufts({ ...field, height: steep }, 0, 100).length).toBe(0);
 	});
+
+	test('the mask keeps grass off the ground that it refuses', () => {
+		// The left half of the field is water, which grows no grass.
+		const mask = (x: number) => x > 0;
+		const tufts = placeTufts({ ...field, mask }, 0, 100);
+		expect(tufts.length).toBe(100);
+		for (const tuft of tufts) expect(tuft.x).toBeGreaterThan(0);
+		expect(placeTufts({ ...field, mask: () => false }, 0, 100)).toEqual([]);
+	});
 });
 
 describe('the tuft mesh', () => {
