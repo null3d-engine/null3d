@@ -113,14 +113,14 @@ export async function startDevServer({ plugins = [] } = {}) {
  * own build folder stays as it was, and closing the server deletes the temporary one. `sourcemap`
  * writes a map beside each built file, for the tools that name a frame by its source; the maps carry
  * no address in the built files, so the page loads nothing more, and no source's text, which a map
- * would otherwise copy. With `linkedShaders`,
- * the engine's shader builds stay as the files that the shared shader build wrote, linked beside
- * the script that names them, so the page's build passes no shader bytes through the bundler.
+ * would otherwise copy. The engine's shader builds stay as the files that the shared shader build
+ * wrote, linked beside the script that names them, so the build passes no shader bytes through the
+ * bundler.
  *
- * @param {{ sourcemap?: boolean, linkedShaders?: boolean }} [options]
+ * @param {{ sourcemap?: boolean }} [options]
  * @returns {Promise<DevServer>}
  */
-export async function startBuildServer({ sourcemap = false, linkedShaders = false } = {}) {
+export async function startBuildServer({ sourcemap = false } = {}) {
 	const vite = await projectVite(process.cwd());
 	/** @type {string[]} */
 	const errors = [];
@@ -136,7 +136,7 @@ export async function startBuildServer({ sourcemap = false, linkedShaders = fals
 		// which a production build reads only when it asks for them.
 		await vite.build({
 			...shared,
-			plugins: linkedShaders ? [shaderFiles()] : [],
+			plugins: [shaderFiles()],
 			define: { __NULL3D_URL_SWITCHES__: 'true' },
 			build: {
 				outDir,

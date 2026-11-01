@@ -44,7 +44,7 @@ describe('a page build with source maps', () => {
 			const cwd = process.cwd();
 			process.chdir(FIXTURE);
 			try {
-				const server = await startBuildServer({ sourcemap: true, linkedShaders: true });
+				const server = await startBuildServer({ sourcemap: true });
 				try {
 					// The engine's shader files take their place in the build as files that the shader build
 					// wrote, beside the scripts that name them, rather than passing through the bundler.
