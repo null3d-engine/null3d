@@ -71,8 +71,10 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// A page of the add-on check's fixture, built with the source maps that the allocation gate reads.
 	// The build links the engine's compiled shader files from the shared shader build instead of
 	// bundling copies of them, so it holds the page's own code and the maps alone: 720 to 818 MiB on
-	// the Mac, in 8 s. The maps carry no source text, and the maps of the build make 10 MB.
-	{ file: 'packages/cli/src/add-on-page-build.test.ts', ceilingMiB: 1536 },
+	// the Mac, in 8 s, and the maps make 10 MB. CI Linux has read about a quarter higher for this
+	// build, near 1,020 MiB, and the ceiling adds about a tenth above that for a busier machine.
+	// The server's own pair of runs is owed before this figure is final.
+	{ file: 'packages/cli/src/add-on-page-build.test.ts', ceilingMiB: 1152 },
 ];
 
 /**

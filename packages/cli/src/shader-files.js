@@ -92,7 +92,27 @@ export function lineMap(id, code) {
 }
 
 /**
- * Links `source` at `target`, or copies it when a link cannot be made, such as across two volumes.
+ * What to do when a hard link from `source` to `target` fails: leave the target as it is, copy the
+ * file, or refuse. A link across two volumes copies the file instead, and the set is gigabytes in
+ * each folder, so that case refuses and names the setting that puts the build beside the set.
+ *
+ * @param {string | undefined} code The error's code, such as `EXDEV`.
+ * @param {string} source
+ * @param {string} target
+ * @returns {{ skip: true } | { copy: true } | { problem: string }}
+ */
+export function linkFailure(code, source, target) {
+	if (code === 'EEXIST') return { skip: true };
+	if (code === 'EXDEV')
+		return {
+			problem: `the shader files in ${dirname(source)} and the page build in ${dirname(target)} are on different volumes, so linking them would copy the whole set. Set TMPDIR to a folder on the same volume as the shader cache, and run again`,
+		};
+	return { copy: true };
+}
+
+/**
+ * Links `source` at `target`, or copies it when a link cannot be made for a reason other than a
+ * second volume, which would copy the whole set into every folder.
  *
  * @param {string} source
  * @param {string} target
@@ -101,7 +121,10 @@ function linkOrCopy(source, target) {
 	try {
 		linkSync(source, target);
 	} catch (error) {
-		if (/** @type {NodeJS.ErrnoException} */ (error).code === 'EEXIST') return;
+		const code = /** @type {NodeJS.ErrnoException} */ (error).code;
+		const action = linkFailure(code, source, target);
+		if ('problem' in action) throw new Error(action.problem);
+		if ('skip' in action) return;
 		copyFileSync(source, target);
 	}
 }

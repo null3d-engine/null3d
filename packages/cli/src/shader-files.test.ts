@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { build } from 'vite';
 import {
 	lineMap,
+	linkFailure,
 	linkShaderFiles,
 	markShaderAddresses,
 	setStamp,
@@ -109,6 +110,20 @@ describe('lineMap', () => {
 		expect(map.sources).toEqual(['/engine/generated/shaders.ts']);
 		// One segment for each of the four lines, each naming its own original line.
 		expect(map.mappings).toBe('AAAA;AACA;AACA;AACA');
+	});
+});
+
+describe('linkFailure', () => {
+	test('refuses a link across two volumes, which would copy the whole set', () => {
+		const action = linkFailure('EXDEV', '/cache/shaders-wgsl.js', '/build/assets/shaders-a1b2.js');
+		expect('problem' in action ? action.problem : '').toContain('/cache');
+		expect('problem' in action ? action.problem : '').toContain('/build/assets');
+		expect('problem' in action ? action.problem : '').toContain('TMPDIR');
+	});
+
+	test('leaves a file in place, and copies one whose link failed for another reason', () => {
+		expect(linkFailure('EEXIST', 'a', 'b')).toEqual({ skip: true });
+		expect(linkFailure('EPERM', 'a', 'b')).toEqual({ copy: true });
 	});
 });
 
