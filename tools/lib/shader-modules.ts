@@ -5,8 +5,10 @@
 //
 // The record holds a hash of the inputs, which are the shader crate and the crates it depends on
 // (sources, manifest and WGSL) and the workspace's Cargo files, and a hash of the modules the build
-// wrote. A check only reads and hashes files, so it costs far less than the build. A lock file makes
-// processes that start together, such as Playwright's web servers, run one build between them.
+// wrote. The lock enters that hash as its entries for the crate's dependency closure, so an entry
+// that no shader dependency reaches cannot change the key. A check only reads and hashes files, so
+// it costs far less than the build. A lock file makes processes that start together, such as
+// Playwright's web servers, run one build between them.
 //
 // The build itself keeps each entry's compiled output in a per-entry cache, keyed by the entry's
 // source, its manifest table and the library modules it imports. A change to one shader compiles
@@ -19,7 +21,15 @@
 // that alters the program reads a folder of its own, so no entry is read with a new meaning. Each
 // entry keeps its own key and its dependencies' hashes, so those checks still decide one entry.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	statSync,
+} from 'node:fs';
 import { basename, join } from 'node:path';
 import { copyInPlace, linkInPlace } from './atomic-files';
 import {
@@ -47,8 +57,10 @@ const SHADER_CRATE = 'crates/null3d-shaders';
 const SHADER_FOLDER = `${SHADER_CRATE}/wgsl`;
 /** The manifest, whose tables decide one entry each. */
 const MANIFEST = `${SHADER_CRATE}/shaders.toml`;
+/** The workspace's lock file, whose entries for the crate's closure decide how Cargo builds it. */
+const LOCK = 'Cargo.lock';
 /** Workspace files that change how Cargo builds the command. */
-const WORKSPACE_FILES = ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml'];
+const WORKSPACE_FILES = ['Cargo.toml', LOCK, 'rust-toolchain.toml'];
 /** Crate folders that hold no input of the command. */
 const SKIPPED_FOLDERS = new Set(['tests', 'benches', 'examples', 'target']);
 /** The record of the inputs and modules of the last build. Cleaning `target` forces a new build. */
@@ -156,6 +168,124 @@ export function crateFolders(root: string, crate = SHADER_CRATE): string[] {
 	return [...folders].sort();
 }
 
+/** One package of `Cargo.lock`: the fields that name it and the text that Cargo wrote for it. */
+interface LockPackage {
+	name: string;
+	version: string;
+	source: string;
+	dependencies: string[];
+	text: string;
+}
+
+/** The package names that a lock block's `dependencies` table holds. */
+function lockDependencies(block: string): string[] {
+	const at = block.indexOf('dependencies = [');
+	if (at < 0) return [];
+	const end = block.indexOf(']', at);
+	const body = end < 0 ? block.slice(at) : block.slice(at, end);
+	return [...body.matchAll(/"([^"]+)"/g)].map((match) => match[1] ?? '');
+}
+
+/**
+ * The packages that a lock file describes, and the format version that its header names. Each
+ * package keeps the text of its block, so its checksum and every field that Cargo wrote enter a key.
+ */
+function lockPackages(text: string): { version: string; packages: LockPackage[] } {
+	const version = /^version\s*=\s*(\d+)/m.exec(text)?.[1] ?? '';
+	const packages: LockPackage[] = [];
+	let lines: string[] | null = null;
+	const flush = () => {
+		if (lines === null) return;
+		const block = lines.join('\n').trimEnd();
+		const name = /^name\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+		const packageVersion = /^version\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+		if (name !== undefined && packageVersion !== undefined)
+			packages.push({
+				name,
+				version: packageVersion,
+				source: /^source\s*=\s*"([^"]+)"/m.exec(block)?.[1] ?? '',
+				dependencies: lockDependencies(block),
+				text: block,
+			});
+		lines = null;
+	};
+	for (const line of text.split('\n')) {
+		const header = line.trim();
+		if (header.startsWith('[')) {
+			flush();
+			if (header === '[[package]]') lines = [header];
+		} else if (lines !== null) lines.push(line);
+	}
+	flush();
+	return { version, packages };
+}
+
+/** The package name that a crate folder's manifest gives, from its `[package]` table. */
+function cratePackageName(root: string, folder: string): string {
+	let inPackage = false;
+	for (const line of readFileSync(join(root, folder, 'Cargo.toml'), 'utf8').split('\n')) {
+		const section = /^\s*\[([^\]]+)\]\s*$/.exec(line);
+		if (section !== null) {
+			inPackage = section[1] === 'package';
+			continue;
+		}
+		const name = inPackage ? /^\s*name\s*=\s*"([^"]+)"/.exec(line) : null;
+		if (name?.[1] !== undefined) return name[1];
+	}
+	throw new Error(`the manifest in ${folder} names no package`);
+}
+
+/**
+ * The text of the `Cargo.lock` entries that a build of `crate` depends on: the packages of the crate
+ * and its path dependencies, and every package that the lock's dependency tables reach from them.
+ * An entry outside that closure changes nothing that the build compiles, so it must not enter the
+ * build's key. When the lock does not describe the closure, such as a lock that a manifest edit has
+ * left stale, the whole file is the input: a key that missed a real input would ship a stale build.
+ * The shader build's closure by default.
+ */
+function lockClosure(root: string, crate = SHADER_CRATE): string {
+	const text = readFileSync(join(root, LOCK), 'utf8');
+	const { version, packages } = lockPackages(text);
+	const byName = new Map<string, LockPackage[]>();
+	for (const entry of packages) {
+		const list = byName.get(entry.name) ?? [];
+		list.push(entry);
+		byName.set(entry.name, list);
+	}
+	const closure = new Set<LockPackage>();
+	const visit = (entry: LockPackage): boolean => {
+		if (closure.has(entry)) return true;
+		closure.add(entry);
+		for (const reference of entry.dependencies) {
+			const [name = '', wanted = ''] = reference.split(' ');
+			const named = byName.get(name);
+			if (named === undefined) return false;
+			const matches = wanted === '' ? named : named.filter((one) => one.version === wanted);
+			if (matches.length === 0) return false;
+			for (const next of matches) if (!visit(next)) return false;
+		}
+		return true;
+	};
+	for (const folder of crateFolders(root, crate)) {
+		const named = byName.get(cratePackageName(root, folder));
+		if (named === undefined) return text;
+		for (const entry of named) if (!visit(entry)) return text;
+	}
+	// Code-unit order, not a locale's order: the same lock must give the same key on every machine.
+	const nameOf = (entry: LockPackage) => `${entry.name}\0${entry.version}\0${entry.source}`;
+	const ordered = [...closure].sort((one, two) => {
+		const left = nameOf(one);
+		const right = nameOf(two);
+		return left < right ? -1 : left > right ? 1 : 0;
+	});
+	return `version = ${version}\n\n${ordered.map((entry) => entry.text).join('\n\n')}\n`;
+}
+
+/** The contents of `file` that enter a build's key: the lock's closure in place of the whole file. */
+function inputContent(root: string, file: string, crate: string): string | Buffer {
+	return file === LOCK ? lockClosure(root, crate) : readFileSync(join(root, file));
+}
+
 function filesBelow(root: string, folder: string, files: string[]): void {
 	for (const entry of readdirSync(join(root, folder), { withFileTypes: true })) {
 		const path = join(folder, entry.name);
@@ -199,12 +329,26 @@ function permutationListText(): Buffer {
 }
 
 /**
- * A hash of every input of the build of `crate`, the shader build's by default. A permutation list
- * joins the shader build's hash, so a changed list builds again. Without a list the hash stays the
- * one that every full build records, so a full set that a build before this one wrote is reused.
- * The list never joins another crate's hash, such as the engine core's source stamp.
+ * A hash of every input of the build of `crate`, the shader build's by default, with the lock
+ * narrowed to the entries that the crate's dependency closure reaches. A permutation list joins the
+ * shader build's hash, so a changed list builds again. Without a list the hash stays the one that
+ * every full build records, so a full set that a build before this one wrote is reused. The list
+ * never joins another crate's hash, such as the engine core's source stamp.
  */
 export function inputHash(root: string, crate = SHADER_CRATE): string {
+	const files = hashOf(
+		...inputFiles(root, crate).flatMap((file) => [file, inputContent(root, file, crate)]),
+	);
+	const list = crate === SHADER_CRATE ? permutationListText() : Buffer.alloc(0);
+	return list.length === 0 ? files : hashOf(files, list);
+}
+
+/**
+ * The input hash that a build computed before the lock was narrowed to the crate's closure. The
+ * shared set cache adopts a folder under this key, so the narrowing does not discard the set that
+ * the last build wrote.
+ */
+function wholeLockInputHash(root: string, crate = SHADER_CRATE): string {
 	const files = hashFiles(root, inputFiles(root, crate));
 	const list = crate === SHADER_CRATE ? permutationListText() : Buffer.alloc(0);
 	return list.length === 0 ? files : hashOf(files, list);
@@ -230,14 +374,17 @@ export function compilerFiles(root: string): string[] {
 }
 
 /**
- * The stamp of the compiler's sources: a hash of every file that may change how it compiles. It
- * names the folder that a compiler whose program bytes are new writes, and it is the compiler part
- * of CI's cache keys, which a run reads before it builds the program. The entry folder itself is
- * chosen by the program's bytes, so a source change that leaves the program identical reuses the
- * entries of an earlier stamp.
+ * The stamp of the compiler's sources: a hash of every file that may change how it compiles, with
+ * the lock narrowed to the entries that the shader crate's dependency closure reaches. It names the
+ * folder that a compiler whose program bytes are new writes, and it is the compiler part of CI's
+ * cache keys, which a run reads before it builds the program. The entry folder itself is chosen by
+ * the program's bytes, so a source change that leaves the program identical reuses the entries of an
+ * earlier stamp.
  */
 export function compilerStamp(root: string): string {
-	return hashFiles(root, compilerFiles(root));
+	return hashOf(
+		...compilerFiles(root).flatMap((file) => [file, inputContent(root, file, SHADER_CRATE)]),
+	);
 }
 
 /**
@@ -688,11 +835,39 @@ function placeModule(): (source: string, path: string) => void {
 }
 
 /**
+ * Adopts the set that the whole-lock key holds when the closure's key holds none, so the narrowing
+ * does not discard the set that the last build wrote. The move renames a folder in the shared cache,
+ * so it copies no byte, and it runs only while the closure's key holds no set.
+ *
+ * Two processes of this code that adopt at once are safe: the loser's rename throws, and it then
+ * finds the winner's folder at the new path. The sharp case is a build in a checkout that still runs
+ * the old code: the rename moves the folder out from under that build, so a later write of it fails
+ * with a mount-not-found (ENOENT) error, and that one run fails loudly. The set of the new key stays
+ * safe, because the record check makes a partly moved folder a miss.
+ *
+ * A later change removes this once every checkout and CI cache holds a set under the closure's key;
+ * until then it keeps a warm machine from building again at the change.
+ */
+function adoptWholeLockSet(root: string, inputs: string): void {
+	const folder = join(modulesCacheDir(), inputs);
+	if (existsSync(folder)) return;
+	const whole = join(modulesCacheDir(), wholeLockInputHash(root));
+	if (!existsSync(whole)) return;
+	try {
+		renameSync(whole, folder);
+	} catch {
+		// Another process adopted the set first, or the move failed: a set under the closure's key
+		// reads as usual, and without one the build runs.
+	}
+}
+
+/**
  * Puts the modules of these inputs in place from the shared cache, when it holds them, so a
  * checkout with none builds nothing. Returns true when it did.
  */
 function restoreFromCache(root: string, inputs: string): boolean {
 	const dir = modulesCacheDir();
+	adoptWholeLockSet(root, inputs);
 	const cache = join(dir, inputs);
 	// A partial entry is a miss, and so is one whose record does not match its files: an entry that a
 	// stopped or two racing builds left half written must never be handed back as a built set.
