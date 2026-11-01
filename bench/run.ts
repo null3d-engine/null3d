@@ -486,6 +486,9 @@ function git(dir: string, ...args: string[]): string {
 	return execFileSync('git', ['-C', dir, ...args], {
 		encoding: 'utf8',
 		stdio: ['ignore', 'pipe', 'ignore'],
+		// A range of a few thousand commits holds megabytes of message text, and the default buffer
+		// cuts it off: the call then throws and a caller that catches it reads an empty range.
+		maxBuffer: 256 * 1024 * 1024,
 	}).trim();
 }
 
@@ -523,8 +526,11 @@ function commitsOf(
 			messages: log.split('\0').filter((message) => message.trim() !== ''),
 			pageFiles: changed.split('\n').filter(Boolean),
 		};
-	} catch {
-		return { labels, messages: [], pageFiles: [] };
+	} catch (error) {
+		// An unread range is not an empty one: a check that cannot see the commits must say so rather
+		// than judge a page change list that came back blank.
+		const said = error instanceof Error ? error.message : String(error);
+		throw new Error(`could not read ${range} to list its messages and page changes: ${said}`);
 	}
 }
 
