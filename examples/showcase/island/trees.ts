@@ -3,7 +3,13 @@
 // the town plan puts it. Near trees draw
 // as meshes whose levels thin with distance, and far ones as cards baked from the same plants, so
 // the whole forest fits one view and a close look shows the leaves.
-import { type InstanceBatch, type QualityPreset, quat, type SketchContext } from '@null3d/engine';
+import {
+	type Camera,
+	type InstanceBatch,
+	type QualityPreset,
+	quat,
+	type SketchContext,
+} from '@null3d/engine';
 import { createImpostors } from '@null3d/impostors';
 import {
 	type BranchLevel,
@@ -14,9 +20,15 @@ import {
 	handOverToCards,
 	leafCellFor,
 	type PlantAsset,
+	type PlantMaterial,
 	plantMaterial,
+	plantWind,
 	type Species,
+	setWindLayer,
+	swayDistanceFor,
+	treeValues,
 } from '@null3d/vegetation';
+import { createWind, type Wind } from '@null3d/wind';
 import { cypress, finish } from './kit';
 import {
 	CYPRESS,
@@ -46,6 +58,10 @@ const SWITCH: Record<QualityPreset, number> = { low: 90, medium: 130, high: 130,
  * screen, and the third past about 95. Shadow maps pick each at half that distance.
  */
 const LEVEL_ERRORS = [0, 0.03, 0.065];
+
+/** The wind field's box around the camera, in meters, and the cells across it. */
+const WIND_BOX = 160;
+const WIND_GRID = 64;
 
 /** How far the far canopy draws, in meters: past the whole island from any view. */
 const FILL_REACH = 6000;
@@ -92,8 +108,8 @@ const KINDS: readonly (readonly [number, Species])[] = [
 			leaf: {
 				kind: 'needle',
 				cards: 30,
-				width: 0.9,
-				height: 0.7,
+				width: 0.6,
+				height: 1,
 				perCard: 14,
 				up: 0.95,
 				out: 0.4,
@@ -118,9 +134,9 @@ const KINDS: readonly (readonly [number, Species])[] = [
 			crown: { shape: 'spherical', start: 0.2, spread: 0.62, pull: 0.12 },
 			leaf: {
 				kind: 'cluster',
-				cards: 44,
-				width: 0.14,
-				height: 0.13,
+				cards: 12,
+				width: 0.42,
+				height: 0.38,
 				perCard: 12,
 				up: 0.6,
 				out: 1,
@@ -140,10 +156,10 @@ const KINDS: readonly (readonly [number, Species])[] = [
 			crown: { shape: 'spherical', start: 0.13, spread: 0.78, pull: 0.08 },
 			leaf: {
 				kind: 'cluster',
-				cards: 60,
-				width: 0.17,
-				height: 0.16,
-				perCard: 14,
+				cards: 14,
+				width: 0.6,
+				height: 0.55,
+				perCard: 12,
 				up: 0.6,
 				out: 1,
 				start: 0.08,
@@ -168,6 +184,7 @@ function fill(batch: InstanceBatch, spots: readonly TreeSpot[]): void {
 		quat.fromEuler(turn, 0, spot.turn, 0);
 		batch.rotations.set(turn, k * 4);
 		batch.scales.set([spot.scale, spot.scale, spot.scale], k * 3);
+		batch.values?.set(treeValues(spot.x, spot.z, 17, 0), k * 4);
 	});
 	batch.markDirty();
 }
@@ -180,8 +197,9 @@ function stand(
 	atlases: ReturnType<typeof bakePlantAtlases>,
 	reach: number,
 	farOnly: readonly TreeSpot[],
-): void {
-	if (spots.length === 0) return;
+	wind: Wind,
+): PlantMaterial[] {
+	if (spots.length === 0) return [];
 	const { scene, geometry, materials } = ctx;
 	const asset: PlantAsset = generatePlant(species, { seed: 17, levels: 4 });
 	const far = bakeFarTree(ctx, { asset, atlases, views: 25, texels: 96 });
@@ -226,6 +244,10 @@ function stand(
 		far2.batch.setDrawRange(reach, FILL_REACH);
 	}
 
+	const field = plantWind(ctx, asset, wind.field, {
+		swayDistance: swayDistanceFor(ctx.quality.preset),
+	});
+	const swaying: PlantMaterial[] = [];
 	for (const name of ['wood', 'leaves'] as const) {
 		const levels = asset.levels.flatMap((level, k) => {
 			const part = level.parts.find((p) => p.name === name);
@@ -236,33 +258,40 @@ function stand(
 		const [base, ...coarser] = levels;
 		if (!base) continue;
 		if (coarser.length > 0) base.mesh.setLevels(coarser);
+		const material = plantMaterial(
+			ctx,
+			name === 'wood'
+				? { atlases, part: 'wood', color: species.color.bark, wind: field }
+				: {
+						atlases,
+						part: 'leaves',
+						cell: leafCellFor(species),
+						color: species.color.leaf,
+						transmission: species.color.transmission,
+						wind: field,
+					},
+		);
+		swaying.push(material);
 		const batch = scene.createInstances(base.mesh, spots.length, {
-			material: plantMaterial(
-				ctx,
-				name === 'wood'
-					? { atlases, part: 'wood', color: species.color.bark }
-					: {
-							atlases,
-							part: 'leaves',
-							cell: leafCellFor(species),
-							color: species.color.leaf,
-						},
-			),
+			material,
+			values: true,
 			castShadows: true,
 			receiveShadows: true,
 		});
 		fill(batch, spots);
 		handOverToCards(batch, cards.batch, reach);
 	}
+	return swaying;
 }
 
-/** Grows the island's trees for the preset. */
-export function createTrees(ctx: SketchContext): void {
+/** Grows the island's trees for the preset, and returns the call that moves them in the wind. */
+export function createTrees(ctx: SketchContext, camera: Camera): { update(): void } {
 	const preset = ctx.quality.preset;
 	const atlases = bakePlantAtlases(ctx);
 	const kept = standing(TREE_SPOTS, TREE_SHARE[preset]);
 	const fills = standing(FILL_SPOTS, TREE_SHARE[preset]);
-	for (const [kind, species] of KINDS)
+	const wind = createWind(ctx, { camera, box: WIND_BOX, grid: WIND_GRID });
+	const swaying = KINDS.flatMap(([kind, species]) =>
 		stand(
 			ctx,
 			species,
@@ -270,7 +299,13 @@ export function createTrees(ctx: SketchContext): void {
 			atlases,
 			SWITCH[preset],
 			fills.filter((spot) => spot.kind === kind),
-		);
+			wind,
+		),
+	);
+	ctx.quality.onChange(() => {
+		const distance = swayDistanceFor(ctx.quality.preset);
+		for (const material of swaying) material.setUniform('swayDistance', distance);
+	});
 	// The cypresses are solid spires, which look the same from every distance.
 	const spires = kept.filter((spot) => spot.kind === CYPRESS);
 	const mesh = ctx.geometry.fromArrays(finish(cypress(14, 18)));
@@ -296,4 +331,11 @@ export function createTrees(ctx: SketchContext): void {
 		fill(far, farSpires);
 		far.setDrawRange(SWITCH[preset], FILL_REACH);
 	}
+	return {
+		update() {
+			// The field's box follows the camera, and a gust fades, so it steps every frame.
+			wind.update();
+			setWindLayer(swaying, wind.field);
+		},
+	};
 }

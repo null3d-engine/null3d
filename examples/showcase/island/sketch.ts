@@ -110,7 +110,7 @@ export default defineSketch(async (ctx) => {
 	const sea = createSea(ctx);
 	createTown(ctx);
 	page.post('loading', 'Growing the trees');
-	createTrees(ctx);
+	const trees = createTrees(ctx, camera);
 
 	// The mood: a summer morning at its start, with a little cloud and a thin haze for depth. `Auto`
 	// moves the sun and the moon across the sky; the other moods hold an hour.
@@ -199,6 +199,7 @@ export default defineSketch(async (ctx) => {
 			camera.getPosition(eye);
 			land.update(eye);
 			sea.update();
+			trees.update();
 		},
 	};
 });
