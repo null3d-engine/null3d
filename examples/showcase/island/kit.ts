@@ -1450,6 +1450,8 @@ export function streetLamp(): Build {
 export function boulder(): Build {
 	const b = build();
 	const rows = [
+		// A skirt reaches the seabed, so a rock standing in the sea has no flat underside to float on.
+		[-12, 0.95],
 		[-0.9, 0.85],
 		[-0.25, 1.1],
 		[0.3, 0.95],

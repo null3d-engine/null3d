@@ -73,8 +73,8 @@ function foamMap({ textures }: SketchContext) {
 		for (let i = 0; i < size; i++) {
 			const [u, v] = [i / size, j / size];
 			// Thin threads along the zero lines of the noise, which join up as a web of lace.
-			const coarse = 1 - Math.abs(noise.fbm2(u * 9, v * 9, 3, 9)) * 5;
-			const fine = 1 - Math.abs(noise.fbm2(u * 27, v * 27, 2, 27)) * 5;
+			const coarse = 1 - Math.abs(noise.fbm2(u * 9, v * 9, 3, 9)) * 7;
+			const fine = 1 - Math.abs(noise.fbm2(u * 27, v * 27, 2, 27)) * 7;
 			const lace = Math.max(coarse, fine * 0.85) * 0.5 + 0.05 * noise.fbm2(u * 60, v * 60, 2, 60);
 			const at = (j * size + i) * 4;
 			const tone = 235 + Math.min(20, Math.max(0, lace * 30));
@@ -303,11 +303,11 @@ export function createSea(ctx: SketchContext): { update(): void } {
 		layers: 1,
 		reflectionEvery: { high: 2, ultra: 2 },
 		softness: 2.5,
-		colorAlongView: 0.22,
+		colorAlongView: 0.38,
 		material: {
 			// A weak bend: screen-space refraction takes its light from the picture above the water, so a
 			// strong one draws a band of the rocks' lit faces around their feet.
-			ior: 1.1,
+			ior: 1.02,
 			attenuationColor: '#2b86a8',
 			attenuationDistance: 14,
 			thickness: 1,
