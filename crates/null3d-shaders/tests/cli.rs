@@ -269,6 +269,27 @@ fn changing_one_entry_compiles_only_that_entry() {
 }
 
 #[test]
+fn a_comment_that_changes_no_token_reuses_every_entry() {
+    let scratch = Scratch::of(&CACHE_SHADERS);
+    assert!(scratch.run_cached().status.success());
+    let before = scratch.cache_files();
+
+    // A comment line above the code leaves every token where it was, so every program is the same.
+    let shader = scratch.0.join(SHADER_DIR).join("cull.wgsl");
+    let source = fs::read_to_string(&shader).unwrap();
+    fs::write(
+        &shader,
+        format!("// a note that changes nothing.\n{source}"),
+    )
+    .unwrap();
+
+    let run = scratch.run_cached();
+    assert!(run.status.success(), "{}", text(&run.stderr));
+    assert_eq!(stats(&run), (0, CACHE_SHADERS.len()));
+    assert_eq!(scratch.cache_files(), before);
+}
+
+#[test]
 fn changing_a_library_module_compiles_only_its_importers() {
     let scratch = Scratch::of(&CACHE_SHADERS);
     assert!(scratch.run_cached().status.success());
@@ -277,7 +298,9 @@ fn changing_a_library_module_compiles_only_its_importers() {
     // `test_mesh` imports `null3d::math`; `cull` and `mipmap` import no library module.
     let library = scratch.0.join(SHADER_DIR).join("lib/math.wgsl");
     let source = fs::read_to_string(&library).unwrap();
-    fs::write(&library, format!("{source}\n// the cache test's probe.\n")).unwrap();
+    let changed = source.replace("return x * x;", "return x * x + 1.0;");
+    assert_ne!(changed, source);
+    fs::write(&library, changed).unwrap();
 
     let run = scratch.run_cached();
     assert!(run.status.success(), "{}", text(&run.stderr));
