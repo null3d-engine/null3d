@@ -206,24 +206,23 @@ Eight tests hold this. One records a frame whose compacted layout passes its bin
 ## The frame's uploads follow the engine's memory
 
 The direct path writes each view's visible copies through the frame's upload arena. The arena
-reserves its room once a frame, before any copy. So no copy moves while the list records.
-`GpuDrivenRenderer::upload_bound` gives the most that a frame copies. It counts a copy of the
-casters' layout for each shadow view that draws, and the camera, outlined and scattering layouts'
-copies.
+holds them in blocks that never move, so no copy moves while the list records, and it reserves
+nothing ahead. `GpuDrivenRenderer::upload_bound` gives the most that a frame copies, which serves
+only the rule below for recording again. It counts a copy of the casters' layout for each shadow
+view that draws, and the camera, outlined and scattering layouts' copies.
 
 A copy of 2,097,152 rows takes 128 MiB, the portable storage binding. A scene that draws them and
 casts the sun's shadows copies them once for the camera. It copies them again for each cascade
 that draws. The Medium preset allows eight shadow tiles beside the cascades. A bound that counts
-every held row, every cascade and every tile a setting allows reserves 1,727 MiB. The scene copies
-439 MiB, and every preset gives the shared memory 1,024 MiB. Such a bound
-over-reserves every frame, and it reserves for views that no light draws into and rows that the
-page does not draw. The frame counts the views that draw instead. `ShadowFrame::drawn` names the
+every held row, every cascade and every tile a setting allows reaches 1,727 MiB. The scene copies
+439 MiB, and every preset gives the shared memory 1,024 MiB. Such a bound counts views that no light
+draws into and rows that the page does not draw. The frame counts the views that draw instead. `ShadowFrame::drawn` names the
 cascades and `ShadowTiles::shape` names the tile layers. It counts the sources that can draw too:
 every scene slot, and the active rows of every batch. A row the page holds without drawing uploads
 no copy.
 
-The scene rows and both parities' arenas share the one memory maximum. The arena reserves its room
-with `reserve_len`, a fallible `try_reserve_exact`. A frame that the memory cannot hold returns
+The scene rows and both parities' arenas share the one memory maximum. The arena takes each block
+with a fallible `try_reserve_exact`. A frame that the memory cannot hold returns
 `RecordError::OutOfMemory`, which the engine reports as E1109 with the bytes it needs. An
 infallible reservation aborts the wasm module when the memory cannot grow. The abort reaches the
 page as an `unreachable` trap in `recordFrame`, which it reports as E1405. So a device that
