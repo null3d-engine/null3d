@@ -1108,7 +1108,7 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  * The grading controls' code over light rides every WebGL2 tone-map build. Its largest file, the
  * half-precision draw-index tone-map set, measures 53,325 bytes after Brotli, inside this figure.
  *
- * The Brotli figure rose from 56 KB to 58 KB by the owner's ruling of 1 November 2026. The bounce
+ * The Brotli figure rose from 56 KB to 58 KB by the owner's ruling. The bounce
  * light's shader additions carried the two largest area-lights paragraph files 202 bytes past the
  * old figure, at 100.4 per cent. Three measurements say nothing smaller can be recovered: the shader
  * build strips comments, so the branch's prose is not in the measured file at all; the family's two

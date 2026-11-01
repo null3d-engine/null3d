@@ -1138,7 +1138,7 @@ with the levels the size report uses:
 
 The twelve tables are 5.0 MB uncompressed and 294 KB after Brotli together. The largest is
 `shader-paragraphs-glsl-tone-map-half.js` at 593.0 KB uncompressed and 31.4 KB after Brotli, inside
-the 1,792 KB and 56 KB that a shader file of a feature that loads on first use may take.
+the 1,792 KB and 58 KB that a shader file of a feature that loads on first use may take.
 
 The tables touch only the feature-set modules. The twelve modules of the start are byte-identical
 with and without them, so a page that uses no feature downloads the same files. A kind's table
