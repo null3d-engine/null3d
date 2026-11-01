@@ -8,6 +8,13 @@ the surface keeps it, and a second effect tints, bends and lights the view from 
 give the bed and the current as functions of any point, and may give its own mesh detail, for water
 that a middle line and a width do not describe.
 
+`createOcean` draws an open sea instead. Its waves come from two or three bands of wave spectra.
+Compute passes transform each band into the height of the sea in every frame. One material sums the
+bands at their own scales, lights their slopes, breaks foam on the crests and mirrors the sky.
+WebGL2 draws the same chain as fragment passes. That path is not ready: its heights have not been
+compared with the other paths since a readback fault on that path was fixed. Draw the ocean on
+WebGPU or in compatibility mode.
+
 ## Use
 
 ```ts
@@ -58,6 +65,22 @@ The mesh, the material and the reflection come from the shapes. Call `update` on
 so it draws the reflection in its turn. For a boat or a leaf that floats on the water, read
 `surfaceHeight` and `currentAt` at its point. A shape resolves on its own with `waterBody(shape)`.
 
+An open sea takes one call:
+
+```ts
+import { createOcean } from '@null3d/water';
+
+const ocean = createOcean(ctx, { camera });
+return {
+  onUpdate() {
+    ocean.update();
+  },
+};
+```
+
+The sea's mesh follows the camera, and its bands come from `OCEAN_BANDS`. Give `bands` two or three
+bands of your own to change it, and read `heightAt(x, z)` where something floats.
+
 ## The two bodies
 
 A river takes the points along its middle, from its source to its mouth, its half width and its
@@ -90,6 +113,9 @@ authored directions and each wave's own speed.
   in the frame that the water draws. The surface draws both faces, so it shows from under the water.
 - The water costs no memory until a scene creates it. The add-on's code and its two shaders load
   only when a sketch imports it.
+- The ocean's transform takes 15 of the 31 passes that a sketch may add. Seven butterfly stages run
+  for each axis, then one pass puts the heights in meters. Each runs on a 128 by 128 grid with a
+  band to a layer. A sketch that draws a sea leaves room for its own passes.
 
 `@null3d/water` owns all water. A scene makes water with it, not with a hand-written custom
 material. So there is one way to make water, with one set of settings.

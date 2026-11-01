@@ -22,6 +22,38 @@ The engine starts job workers only when its parallel loops take 0.2 ms or more p
 
 Godot found that MSAA crashed Mali-G52, G72 and G76 GPUs on its Vulkan mobile path. Its fix, [godot#114785](https://github.com/godotengine/godot/pull/114785), moved all uniforms to set 0. The engine binds its uniforms in several bind groups. A Mali phone with MSAA on must run the shadow and custom material image tests on WebGPU to rule the fault out ([implementation notes](implementation-notes.md#browser-faults)). The fault is a driver crash, so only a device run can show it.
 
+## The fragment form of a layered, textured compute pass reads another field (M3-F9)
+
+`@null3d/water`'s ocean transforms each band's spectrum with a chain of compute passes on WebGPU and
+with their fragment forms on WebGL2. On WebGPU and in compatibility mode the heights match the same
+transform on the page's thread within 0.004 m of a field of 0.73 m
+(`tests/image/ocean-waves.spec.ts`). On WebGL2 the sea moves and keeps its scale, but its heights
+differ from that transform by 0.60 m or more.
+
+Probes of the fragment form, each read back through the chain, put every value it receives right:
+the stage of the pass, the pass's size in texels, the band's layer, the band's tile in meters, and
+the texel that each pixel writes. A pass that wrote its texel's coordinates, and the later passes,
+read them back unchanged on both paths. So the block and the per-layer draw are right.
+
+The map is not. A chain of passes that copies its source unchanged returns, on WebGL2, values about
+five times smaller than the same chain on WebGPU: -0.001 to 0.000 at the read square against -0.006
+to 0.002 there. The spectrum is normalized so its own values spread about 0.0055, so WebGL2 reads
+something other than the map that the pass gives, while WebGPU reads the spectrum itself.
+
+The pass is the first *textured* compute pass of several layers: its fragment form reads a texture
+array of two layers, one for each band, at the layer that it draws, and writes one layer. The
+engine's layered fallback test (`compute-state`, the `layers` case) draws a pass without textures,
+so nothing else in the suite covers that shape.
+
+The readings above went through `render.readPass`. [D-271](decisions/D-271-a-fallback-pass-writes-the-image.md)
+then found that a read on WebGL2 fetched rows from the other end of the target, and its record names
+this ocean's read at row 6 against row 118. So the difference and the copy-chain probe may both be
+that read, and neither says the map's binding is at fault. The case must be re-run against the
+merged engine. If WebGL2 then agrees, the expected-failure line comes off and this finding closes;
+if it does not, the test that binds a known two-layer texture as a fallback pass's map and reads
+each layer back, through a second pass, names whether the binding, the layer or the view differs.
+`tests/image/ocean-waves.spec.ts` marks the WebGL2 case as an expected failure until that run.
+
 ## A read of a compute pass fetched the mirror on WebGL2 (M3-V13)
 
 `render.readPass` copied a region of a compute pass's target from the other end of the texture on

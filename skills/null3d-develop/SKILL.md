@@ -27,7 +27,7 @@ Doc IDs appear in backticks throughout, for example `concepts/architecture`. A n
 
 ## 2. The model
 
-In null3D, a 3D scene is called a sketch: the module in `sketch.ts` that builds the scene with `defineSketch` and updates it every frame.
+In null3D, a 3D scene is a sketch: the `sketch.ts` module that builds it with `defineSketch` and updates it every frame.
 
 ```
 page.ts (main thread)        sketch.ts (sketch worker)          render worker
@@ -40,7 +40,7 @@ creates the engine           shared typed arrays                 never runs your
 - Scene objects are small wrappers around 30-bit integer handles. Change them with setters such as `setPosition`; never assign properties like `mesh.position.x = 1`. (`concepts/handles`, `api/objects`)
 - For many objects, write typed arrays directly: instance batches and dynamic objects. This is where null3D gets its speed. (`concepts/instances`)
 - Objects are static by default: they cost nothing per frame until a setter changes them. Objects created with `dynamic: true` are recomputed every frame and may be written through arrays. (`concepts/static-dynamic`)
-- The engine renders every frame by itself. Sketch code has no render call and no `requestAnimationFrame`; per-frame logic goes in `onUpdate(dt)`.
+- The engine renders every frame. Sketch code has no render call and no `requestAnimationFrame`; per-frame logic goes in `onUpdate(dt)`.
 - The same code runs on WebGPU and WebGL2. The page's `engine.capabilities` reports optional features to the sketch; never check browser or GPU names. (`concepts/backends`)
 
 A complete minimal project:
@@ -110,7 +110,7 @@ Each rule comes with its reason, because the reason covers cases the rule does n
 
 ## 5. When the engine may not have the feature
 
-A request may need a capability that null3D has not built. Settle its state before you design the scene. A user who asks for such a feature brings three things:
+A request may need a capability that null3D has not built. Settle its state before you design the scene. The user brings three things:
 
 - What they want to see on screen, with a reference picture or the effect in another engine.
 - The devices and browsers it must run on, such as a mid-range Android phone.
@@ -118,7 +118,7 @@ A request may need a capability that null3D has not built. Settle its state befo
 
 1. Search first: the docs page (section 1), `references/api-quickref.md`, then the add-on table in section 6. A core call or an add-on may answer the need.
 2. A page whose status is `planned`, or whose note says "not built yet", describes a call this version lacks. Tell the user, name the step that adds it, and use the page's workaround. Do not call it, and do not invent an option in its place.
-3. If nothing covers the need, build it above the public API: a custom material, vertex offset, post effect or render pass. Keep that code in the project, and add no property or call that imitates engine API, because it breaks on the next update.
+3. If nothing covers the need, build it above the public API: a custom material, vertex offset, post effect or render pass. Keep that code in the project; never imitate engine API, which breaks on the next update.
 4. Never write a second version of a feature in the add-on table. A hand-rolled copy gets no fixes.
 5. Say in your summary what the engine lacks, what you used instead, and what a later version changes. A silent workaround reads as the real feature.
 
@@ -139,6 +139,7 @@ Check this table before you write a generator, control, effect or loader. Each f
 | Rigid bodies, joints and character movement | the physics add-on | `guides/physics` | not built yet; run Rapier or cannon-es in the sketch worker |
 | Text in the scene, sharp at any distance | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
 | A river or a lake, with waves, foam, soft shores and a surface seen from below | `@null3d/water` | `api/water` | built |
+| An open sea whose waves come from GPU-transformed spectra | `@null3d/water` | `api/water` | built |
 | Trees, shrubs, ferns, hostas and grass, with detail levels, wind data and ecological placement | `@null3d/vegetation` | `api/vegetation` | built (generator, scatter and atlases; grass and materials not built yet) |
 | Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | `api/wind` | built (the preset sets the step interval, pressure count and grid) |
 | three.js look modes for a port: Reinhard and Cineon tone curves, and a soft outline with a glow and a pulse | `@null3d/three-compat` | `api/three-compat` | built |

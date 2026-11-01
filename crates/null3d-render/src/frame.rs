@@ -3347,6 +3347,21 @@ impl SceneSettings {
         }
     }
 
+    /// Gives `view` a cadence of one frame in `every`, from the next frame on: it draws in the next
+    /// frame, then waits `every - 1` frames after each frame that it draws. A cadence of 1 draws
+    /// every frame. The plan does not depend on it, so the graph does not compile again: a caller
+    /// that moves its frame rate with the quality preset or the frame budget changes it as often as
+    /// it likes.
+    pub fn set_view_every(&mut self, view: ViewId, every: u32) {
+        if let Some(view) = self.views.get_mut(view.index()) {
+            let target = view.target_mut();
+            target.every = every.max(1);
+            // The next frame draws, whether the view was waiting out its turn or not.
+            target.wait = 0;
+            target.due = true;
+        }
+    }
+
     /// Marks each view's target shown while a live texture shows it, so the camera's passes read
     /// it. A full-screen pass that reads what the camera's view draws runs after the camera's
     /// passes, so they show its image of the frame before. A builder calls it before it syncs its

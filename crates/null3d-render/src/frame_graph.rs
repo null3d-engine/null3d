@@ -2693,14 +2693,17 @@ impl FrameGraph {
             self.declare(views, names);
         }
         self.declared_views.copy_from_slice(views);
+        // The graph keeps a view's pass while the view is switched on, whatever its cadence: a
+        // cadence skips the pass's recording in the frames that are not its turn, so the plan does
+        // not depend on it and no frame compiles when the turn comes round.
         if views
             .iter()
             .zip(&self.view_on)
-            .any(|(view, &on)| view.target().draws() != on)
+            .any(|(view, &on)| view.target().enabled != on)
         {
             self.view_on.clear();
             self.view_on
-                .extend(views.iter().map(|view| view.target().draws()));
+                .extend(views.iter().map(|view| view.target().enabled));
             self.enable_views();
         }
         for &(index, pass) in self.opaque.iter().chain(&self.prepasses) {
@@ -3563,7 +3566,7 @@ impl FrameGraph {
         }
         self.view_on.clear();
         self.view_on
-            .extend(views.iter().map(|view| view.target().draws()));
+            .extend(views.iter().map(|view| view.target().enabled));
         self.enable_views();
         self.declare_outline(color.samples);
         self.subsurface_declared = self.subsurface_draws() && !views.is_empty();
@@ -5456,6 +5459,15 @@ impl FrameGraph {
 
     /// True when the full-screen pass of the view at `place` runs in the compiled plan.
     fn fullscreen_runs(&self, place: usize) -> bool {
+        // A cadence skips the frames between its turns, and the pass records and advances its
+        // history state only in the frames that it draws.
+        if self
+            .declared_views
+            .get(place)
+            .is_some_and(|view| !view.target().draws())
+        {
+            return false;
+        }
         let Some(plan) = self.graph.plan() else {
             return false;
         };
@@ -5512,6 +5524,15 @@ impl FrameGraph {
 
     /// True when the compute pass of the view at `place` runs in the compiled plan.
     fn compute_runs(&self, place: usize) -> bool {
+        // A cadence skips the frames between its turns, and the pass records and advances its
+        // history state only in the frames that it draws.
+        if self
+            .declared_views
+            .get(place)
+            .is_some_and(|view| !view.target().draws())
+        {
+            return false;
+        }
         let Some(plan) = self.graph.plan() else {
             return false;
         };
@@ -6121,6 +6142,10 @@ impl FrameGraph {
                     // own, not in a compute pass that its path cannot run.
                     if self.is_fallback_step(plan, step) {
                         for &pass in plan.passes(step) {
+                            // A view whose turn has not come records nothing, compute or fallback.
+                            if !self.draws(self.roles[pass.index()]) {
+                                continue;
+                            }
                             let Role::Fullscreen(view) = self.roles[pass.index()] else {
                                 continue;
                             };
@@ -6152,6 +6177,10 @@ impl FrameGraph {
                     let mut began = false;
                     let mut wrote = false;
                     for &pass in plan.passes(step) {
+                        // A view whose turn has not come records nothing, compute or fallback.
+                        if !self.draws(self.roles[pass.index()]) {
+                            continue;
+                        }
                         // A sketch's compute pass is the graph's to record. Every other compute
                         // pass of the step belongs to the builder.
                         match self.roles[pass.index()] {
@@ -6412,6 +6441,14 @@ impl FrameGraph {
     /// level, and for the passes that a still view's frame draws in place of others, or others in
     /// place of them. Every other pass draws.
     fn draws(&self, role: Role) -> bool {
+        // A view records its work only in a frame that is its turn: a cadence waits out the frames
+        // between its turns, and the graph keeps its passes in the plan throughout.
+        if let Some(view) = role_view_of(role)
+            && let Some(declared) = self.declared_views.get(view.index())
+            && !declared.target().draws()
+        {
+            return false;
+        }
         match (role, &self.bloom_pass) {
             (Role::Bloom(step), Some(bloom)) => bloom.draws(usize::from(step)),
             // The first step runs below the whole canvas's scale, and at it while the sketch
@@ -6896,6 +6933,23 @@ fn fullscreen_target_format(scene_color: SceneColor) -> u32 {
 /// times as its target says.
 fn view_size(view: &View) -> Size {
     view.target().graph_size()
+}
+
+/// The view whose work a role records, when it records for one view.
+fn role_view_of(role: Role) -> Option<ViewId> {
+    match role {
+        Role::Cull(view)
+        | Role::Prepass(view)
+        | Role::Opaque(view)
+        | Role::Occluders(view)
+        | Role::Pyramid(view)
+        | Role::LateCull(view)
+        | Role::Shadow(view)
+        | Role::Transparent(view)
+        | Role::Fullscreen(view)
+        | Role::Compute(view) => Some(view),
+        _ => None,
+    }
 }
 
 /// The view of a pass that draws a scene's objects, or `None` for a pass of another kind.
