@@ -303,7 +303,7 @@ export function createSea(ctx: SketchContext): { update(): void } {
 		layers: 1,
 		reflectionEvery: { high: 2, ultra: 2 },
 		softness: 2.5,
-		colorAlongView: 0.38,
+		colorAlongView: 1,
 		material: {
 			// A weak bend: screen-space refraction takes its light from the picture above the water, so a
 			// strong one draws a band of the rocks' lit faces around their feet.

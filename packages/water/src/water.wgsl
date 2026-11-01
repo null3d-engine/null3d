@@ -185,7 +185,10 @@ fn surface(input: SurfaceInput) -> Surface {
         max(input.vertexColor.a, 0.0),
         material.bedFromShape,
     );
-    s.thickness = max(mix(depth, gap, material.viewPath), 0.02);
+    // A low view runs a long way through the water, which hides the bed's colors. From above the
+    // depth alone gives the bed's own shading.
+    let grazing = 1.0 - smoothstep(0.08, 0.4, abs(input.viewDirection.y));
+    s.thickness = max(mix(depth, gap, material.viewPath * grazing), 0.02);
     // Shallow water at the edges carries a little foam.
     let edgeFoam = (1.0 - smoothstep(0.0, 0.05, depth)) * smoothstep(0.0, 0.03, w.x + 0.012);
     // Foam around the stones: the map holds how near each point lies to a stone, stretched
