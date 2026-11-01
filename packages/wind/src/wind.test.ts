@@ -203,7 +203,6 @@ describe('the calls that a frame makes', () => {
 		// D-265 names as owed.
 		wind.destroy();
 	});
-
 	test('a frozen field gives the same air at two times, and a live one does not', () => {
 		const frozen = context();
 		const still = createWind(frozen, {
@@ -230,6 +229,48 @@ describe('the calls that a frame makes', () => {
 	});
 });
 
+/** The body of the `read` method that `createWind` returns, as the text of the code. */
+function readBody(): string {
+	const source = readFileSync(new URL('./wind.ts', import.meta.url), 'utf8');
+	const file = ts.createSourceFile('wind.ts', source, ts.ScriptTarget.ESNext, true);
+	let body: string | undefined;
+	const visit = (node: ts.Node): void => {
+		if (
+			ts.isMethodDeclaration(node) &&
+			ts.isIdentifier(node.name) &&
+			node.name.text === 'read' &&
+			node.body !== undefined
+		)
+			body = node.body.getText(file);
+		node.forEachChild(visit);
+	};
+	visit(file);
+	expect(body, 'read is a method of the wind').toBeDefined();
+	return body as string;
+}
+
+describe('the air that a frame asks for', () => {
+	test('comes from the job worker, never from the TypeScript field', () => {
+		// A page without job workers gets the engine's task worker, and a task that fails is reported
+		// once. Nothing in the call falls back to the mirror, which would be a frame loop in
+		// TypeScript.
+		const body = readBody();
+		expect(body).toContain('probes.ask');
+		expect(body).not.toMatch(/analyticVelocity/);
+		expect(body).not.toMatch(/\bsample\b/);
+	});
+
+	test('has no TypeScript field in the ask path to answer in its place', () => {
+		const field = readFileSync(new URL('./field.ts', import.meta.url), 'utf8');
+		const task = readFileSync(new URL('./field-task.ts', import.meta.url), 'utf8');
+		expect(field).not.toMatch(/analyticVelocity|value3/);
+		expect(task).not.toMatch(/analyticVelocity|value3|from '\.\/analytic'/);
+		// The one import of the mirror in the ask path gives a type alone, which the build drops.
+		const mirrorImports = field.match(/import[^;]*from '\.\/analytic'/g) ?? [];
+		expect(mirrorImports.every((line) => line.startsWith('import type'))).toBe(true);
+	});
+});
+
 /** The forms that make an object, a closure or an iterator in a function that runs each frame. */
 const ALLOCATING: readonly (readonly [string, (node: ts.Node) => boolean])[] = [
 	['an object literal', ts.isObjectLiteralExpression],
@@ -239,49 +280,111 @@ const ALLOCATING: readonly (readonly [string, (node: ts.Node) => boolean])[] = [
 	['a new expression', ts.isNewExpression],
 ];
 
-/** The forms that allocate, anywhere in the functions of `wind.ts` that a frame calls. */
-function allocatingForms(): string[] {
-	const source = readFileSync(new URL('./wind.ts', import.meta.url), 'utf8');
-	const file = ts.createSourceFile('wind.ts', source, ts.ScriptTarget.ESNext, true);
-	const wanted = new Set(['write', 'apply', 'turn', 'sample']);
+/** The forms that walk a count in TypeScript, which hard rule 42 puts in Rust. */
+const LOOPING: readonly (readonly [string, (node: ts.Node) => boolean])[] = [
+	['a for', ts.isForStatement],
+	['a for-in', ts.isForInStatement],
+	['a for-of', ts.isForOfStatement],
+	['a while', ts.isWhileStatement],
+	['a do', ts.isDoStatement],
+];
+
+/** A file of the ask path, and the functions in it that a frame runs. */
+interface Scanned {
+	readonly file: string;
+	readonly names: readonly string[];
+}
+
+/** The functions that a frame runs, in each file of the ask path. */
+const FRAME_FILES: readonly Scanned[] = [
+	{ file: 'wind.ts', names: ['write', 'apply', 'turn', 'sample', 'read'] },
+	{ file: 'field.ts', names: ['ask', 'send', 'answered', 'refused', 'reportDrop'] },
+	{ file: 'field-layout.ts', names: ['fillRequest'] },
+];
+
+/** The same, with the buffer's growth, which a call may run when a page first asks for more places. */
+const LOOP_FILES: readonly Scanned[] = [
+	FRAME_FILES[0] as Scanned,
+	{ file: 'field.ts', names: ['ask', 'send', 'answered', 'refused', 'reportDrop', 'reserve'] },
+	FRAME_FILES[2] as Scanned,
+];
+
+/** The name of the function that a declaration or a declaration's arrow makes, if any. */
+function functionName(node: ts.Node): string | undefined {
+	if (
+		(ts.isFunctionDeclaration(node) ||
+			ts.isMethodDeclaration(node) ||
+			ts.isVariableDeclaration(node) ||
+			ts.isPropertyDeclaration(node)) &&
+		node.name !== undefined &&
+		ts.isIdentifier(node.name)
+	)
+		return node.name.text;
+	return undefined;
+}
+
+/** The body of a function that a declaration makes, if any. */
+function functionBody(node: ts.Node): ts.Node | undefined {
+	if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) return node.body;
+	if (ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node)) {
+		const init = node.initializer;
+		return init !== undefined && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))
+			? init.body
+			: undefined;
+	}
+	return undefined;
+}
+
+/**
+ * The forms of `patterns`, anywhere in the functions that `files` names. A function is a
+ * declaration, a method of a class or an object, or a constant given an arrow. A name that no file
+ * holds fails the test, so a renamed or removed function leaves no rule unchecked.
+ */
+function formsIn(
+	files: readonly Scanned[],
+	patterns: readonly (readonly [string, (node: ts.Node) => boolean])[],
+): string[] {
 	const found: string[] = [];
-	const walk = (node: ts.Node, name: string): void => {
-		for (const [what, matches] of ALLOCATING)
-			if (matches(node)) found.push(`${name}: ${what} at ${node.getText(file).slice(0, 40)}`);
-		node.forEachChild((child) => walk(child, name));
-	};
-	// The functions are the constants of `createWind`'s body, so the walk goes anywhere in the file.
-	const visit = (node: ts.Node): void => {
-		if (
-			ts.isVariableDeclaration(node) &&
-			ts.isIdentifier(node.name) &&
-			wanted.has(node.name.text)
-		) {
-			const name = node.name.text;
-			const init = node.initializer;
-			const body =
-				init !== undefined && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))
-					? init.body
-					: undefined;
-			expect(body, `${name} is a function`).toBeDefined();
-			if (body !== undefined) {
-				wanted.delete(name);
-				walk(body, name);
+	for (const { file, names } of files) {
+		const source = readFileSync(new URL(`./${file}`, import.meta.url), 'utf8');
+		const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.ESNext, true);
+		const wanted = new Set(names);
+		const walk = (node: ts.Node, name: string): void => {
+			for (const [what, matches] of patterns)
+				if (matches(node)) found.push(`${name}: ${what} at ${node.getText(parsed).slice(0, 40)}`);
+			node.forEachChild((child) => walk(child, name));
+		};
+		const visit = (node: ts.Node): void => {
+			const name = functionName(node);
+			if (name !== undefined && wanted.has(name)) {
+				const body = functionBody(node);
+				expect(body, `${file}: ${name} is a function`).toBeDefined();
+				if (body !== undefined) {
+					wanted.delete(name);
+					walk(body, `${file}: ${name}`);
+				}
 			}
-		}
-		node.forEachChild(visit);
-	};
-	visit(file);
-	// A renamed or removed function would otherwise leave its rule unchecked.
-	expect([...wanted]).toEqual([]);
+			node.forEachChild(visit);
+		};
+		visit(parsed);
+		expect([...wanted], `${file} holds every function that the rule names`).toEqual([]);
+	}
 	return found;
 }
 
 describe('the functions that a frame calls', () => {
 	test('hold none of the forms that allocate', () => {
 		// The field's step writes the air's numbers into the pass's values and reads the camera's
-		// place, and the sample walks the ring. The allocator makes each object these forms make, so
-		// the step keeps its own arrays and its own functions, made once in `createWind`.
-		expect(allocatingForms()).toEqual([]);
+		// place, a push writes its slot where the page sends it, and the read hands the request
+		// buffer to a job worker. The allocator makes each object these forms make, so the step
+		// keeps its own arrays and its own functions, made once in `createWind`.
+		expect(formsIn(FRAME_FILES, ALLOCATING)).toEqual([]);
+	});
+
+	test('walk no count in TypeScript, which hard rule 42 puts in its WebAssembly', () => {
+		// The pass's values hold the ring where a push writes it, so a frame copies no slot, and the
+		// analytic field's own walk runs in the add-on's Rust, on the job workers. The ask path has
+		// no loop either: the request is a set of typed-array writes and the task does the walk.
+		expect(formsIn(LOOP_FILES, LOOPING)).toEqual([]);
 	});
 });

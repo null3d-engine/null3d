@@ -10,6 +10,10 @@
 // The grid's compute shader and its WebGL2 form hold the same formula, and the noise functions
 // mirror the engine's `null3d::noise`, so both forms give the same numbers. A test reads the two
 // shader copies and fails when they drift apart or when a constant here changes without them.
+//
+// This form is the mirror of the add-on's WebAssembly: a test and a page's read outside a frame
+// use it, and a frame's ask for many places runs the same formula in `crates/null3d-wind-wasm`, on
+// the engine's job workers. A test compares the two.
 
 /**
  * The first value of `null3d::noise`'s `pcg3d` hash, as a signed whole number. The library returns
@@ -109,12 +113,12 @@ export interface PushRing {
 	 * strength turns nothing. */
 	readonly slots: readonly Push[];
 	/**
-	 * Writes a push or a gust sent at the time `born`. A push takes the oldest push slot, so the
-	 * newest three pushes turn the air. A gust takes the gust's own slot, so a page's pushes never
-	 * push its gust out. A call replaces the slot's numbers, so a page may call it in every frame
-	 * and the call allocates nothing.
+	 * Writes a push or a gust sent at the time `born`, and answers the slot that it wrote. A push
+	 * takes the oldest push slot, so the newest three pushes turn the air. A gust takes the gust's
+	 * own slot, so a page's pushes never push its gust out. A call replaces the slot's numbers, so a
+	 * page may call it in every frame and the call allocates nothing.
 	 */
-	add(x: number, z: number, strength: number, born: number, gust: boolean): void;
+	add(x: number, z: number, strength: number, born: number, gust: boolean): number;
 }
 
 /** Makes the empty ring that a page's pushes go into. The slots are made once, here. */
@@ -129,12 +133,14 @@ export function createPushRing(): PushRing {
 	return {
 		slots,
 		add(x, z, strength, born, gust) {
-			const slot = slots[gust ? GUST_SLOT : next] as PushSlot;
+			const index = gust ? GUST_SLOT : next;
+			const slot = slots[index] as PushSlot;
 			slot.x = x;
 			slot.z = z;
 			slot.strength = strength;
 			slot.born = born;
 			if (!gust) next = (next + 1) % PUSH_SLOTS;
+			return index;
 		},
 	};
 }
@@ -306,8 +312,8 @@ export function analyticVelocity(
 	vz -= ((right - left) / (2 * step)) * state.swirl * height;
 
 	// The pushes and the gust: a vortex around each push, which fades as it ages, or a wave about a
-	// center that travels along the heading for the gust. An index walks the ring, as every
-	// per-frame loop over a small array does here: a `for … of` makes an iterator per call.
+	// center that travels along the heading for the gust. The walk over the ring is the mirror of
+	// the loop that the field's WebAssembly runs, and a test holds the two equal.
 	for (let i = 0; i < pushes.length; i++) {
 		const slot = pushes[i];
 		if (!slot || slot.strength === 0) continue;

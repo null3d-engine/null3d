@@ -392,11 +392,14 @@ const PROBE_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = 
 
 /**
  * Places that allocate with `--wind`, on top of `BUDGETS`: the browser's boxing of a fraction that
- * one of the wind's functions works out and passes to another that it does not inline. S1's frame
- * both runs the field's sample and inlines the large `pose` of the page, so the browser's inlining
- * budget runs out before the field's small functions, and each fraction they hand on becomes an
- * object. The places are the functions that receive and hand on the fractions, as the engine's own
- * setters and S1's camera step do, and not the field's arrays or its ring, which are made once.
+ * one of the wind's functions works out and passes to another that it does not inline. The field's
+ * walk over the pushes and the places runs in the add-on's WebAssembly, in a job worker, so the
+ * sketch's thread holds the request's writes and the task call alone; the task's own records are
+ * judged per call by `TASK_CALL_BUDGETS`. S1's frame inlines the large `pose` of the page, so the
+ * browser's inlining budget runs out before the field's small functions, and each fraction they
+ * hand on becomes an object. The places are the functions that receive and hand on the fractions,
+ * as the engine's own setters and S1's camera step do, and not the field's arrays or its ring,
+ * which are made once.
  *
  * Each budget leaves room for the run-to-run noise above the place's steady figure, and less than a
  * boxed fraction above it, so a new per-frame object fails the run while a sample that varies by a
@@ -404,11 +407,12 @@ const PROBE_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = 
  */
 export const WIND_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
-		'analyticVelocity src/analytic.ts': 200,
-		'value3 src/analytic.ts': 60,
-		'lattice src/analytic.ts': 24,
 		'(anonymous) null3d/addons.ts': 36,
-		'sample src/wind.ts': 24,
+		'read src/wind.ts': 20,
+		'ask src/field.ts': 24,
+		'fillRequest src/field-layout.ts': 12,
+		'turn src/wind.ts': 16,
+		'write src/wind.ts': 24,
 		'owedSteps src/wind.ts': 18,
 	},
 	'render-worker': {},

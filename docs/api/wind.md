@@ -17,7 +17,8 @@ flowchart LR
     field --> tex[("One texture<br/>of air")]
     tex --> plants["Plants and grass"]
     tex --> flags["Flags, smoke<br/>and water"]
-    cpu["sample:<br/>the same field<br/>on the CPU"] --> page["Your sketch's<br/>own motion"]
+    ask["read: the field's<br/>job worker"] --> page["Your sketch's<br/>own motion"]
+    cpu["sample: the<br/>mirror on the CPU"] --> page
 ```
 
 `@null3d/wind` makes the air in a scene. One field moves every plant, flag and smoke card that reads it, so a gust that crosses a field reaches all of them together. The air is solved: a grid that follows the camera carries it from frame to frame. A gust therefore bends through the scene, and a body leaves a wake that outlives it. A steady wind slows near the ground, and swirls turn without piling up. A page can also shove the air at a point, as a body moving through it does.
@@ -53,7 +54,7 @@ export default defineSketch((ctx) => {
 });
 ```
 
-Call `update` once in each frame. It places the box about the camera and sends the field's values to the GPU. The add-on's calls make no object of their own, so a sketch may make them in every frame. Until the browser has optimized the add-on's functions, a fraction that crosses one of its calls becomes an object, as in the engine's own steps. A sketch that pushes in every frame keeps one two-number array for the place, rather than a new one each time.
+Call `update` once in each frame. It places the box about the camera and sends the field's values to the GPU. The add-on's calls make no object of their own, so a sketch may make them in every frame. A `read` in each frame also takes the task's promise, which the engine makes. Until the browser has optimized the add-on's functions, a fraction that crosses one of its calls becomes an object, as in the engine's own steps. A sketch that pushes in every frame keeps one two-number array for the place, rather than a new one each time.
 
 ## The calls
 
@@ -63,7 +64,8 @@ Call `update` once in each frame. It places the box about the camera and sends t
 | `setBase(speed, heading)` | The steady wind in meters a second, and the heading it blows toward in radians. |
 | `gust(at, strength)` | Sends a gust from a ground place `[x, z]`. Its wave then travels along the heading, turning the air as it passes. |
 | `push(at, strength)` | Shoves the air about a ground place, as a body moving through it does. A negative strength turns the other way. |
-| `sample(x, y, z, out)` | The analytic air at a world place, in meters a second: the field that the solver pulls toward, with the pushes and the gust it injects. It writes `[x, y, z]` into `out`. The solved air is on the GPU. |
+| `sample(x, y, z, out)` | The analytic air at a world place, in meters a second: the field that the solver pulls toward, with the pushes and the gust it injects. It writes `[x, y, z]` into `out`. The solved air is on the GPU. This call works in TypeScript: use it in a test, or for a read outside a frame. |
+| `read(points, out)` | The air at many places, worked out in a job worker. `points` holds three numbers a place across the ground, and `out` takes three numbers a place. The answer lands before the next frame's update. Use it in a frame, which is what moves a sketch's own objects with the air. |
 | `update()` | Places the box about the camera, runs the steps that the sketch time owes and sends the values. Call it once in each frame. |
 | `destroy()` | Removes the pass and its texture. |
 | `settings` | The feature's settings as the preset and the governor resolve them now: `windStepMs`, `windPressureSteps`, `windSpringTrees` and `windGrid`. The object stays the same, so read it in a frame without allocating. |
@@ -71,6 +73,8 @@ Call `update` once in each frame. It places the box about the camera and sends t
 | `field` | The texture, its box and the steady settings that a reader works the air out from beyond the box. |
 
 The ring holds the three newest pushes, and each fades over three seconds. A page that pushes often therefore keeps a wake behind the body it moves. The newest gust has a slot of its own, so a page's pushes never push its gust out. A gust's wave travels for as long as its reach holds it.
+
+`read` asks the air at places the way a page's own motion needs it. The field's walk over the pushes runs in the add-on's WebAssembly, on the engine's job workers. One call takes up to about five thousand places. A call that arrives while an answer is still on its way sends one more ask when that answer comes. A third call that arrives before either answer replaces the queued one: the newest ask wins, the one it replaces is dropped, and its array keeps the numbers it held. A page that asks in every frame therefore queues about one ask a frame, and the add-on reports a dropped ask once. The answer gives the air at the frame's own time, and lands before the next frame's update.
 
 ## Reading the field in your own WGSL
 
@@ -306,7 +310,7 @@ A preset change that changes the grid makes the grid again at the new size. The 
 - A vertex inside the box costs one texture read. A vertex outside it costs the steady field's arithmetic instead: four reads of the engine's value noise, with a few trigonometric and exponential calls.
 - A WebGL2 device whose float targets fail the engine's probe cannot hold the grid, so it keeps no pass. There `field.size` is zero and a reader's samples are the steady field worked out, so a plant still moves. The texture it declares holds a single black texel that it never reaches.
 - A point far from the camera loses the grid's detail and reads the steady wind alone. That is the base wind, the swirl and the field's own traveling gust. A body's pushes and a sent gust are gone there.
-- The add-on makes no object of its own in a frame, and its texture exists only while something reads it. Until the browser has optimized the add-on's functions, a fraction that crosses one of its calls becomes an object. The engine's own steps carry the same cost. `bun run bench:allocation --wind` measures it, and CI runs that switch on each GPU path, with a budget for each place.
+- The add-on makes no object of its own in a frame, and its texture exists only while something reads it. `read` sends one request to a job worker and takes the task's promise. Where the page shares its memory, the worker writes the answer in place; otherwise the answer comes back as one buffer. The add-on's WebAssembly holds the walk over the pushes and the places, so a page's own motion costs the sketch's thread one message and one copy of the answer. Until the browser has optimized the add-on's functions, a fraction that crosses one of its calls becomes an object. The engine's own steps carry the same cost. Run `bun run bench:allocation --wind` to see the bytes that the add-on's code allocates in a frame.
 
 [The API reference](reference/wind.md) lists every export of this page with its type and
 description. The engine's doc comments make it.
