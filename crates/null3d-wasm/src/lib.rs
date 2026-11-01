@@ -1831,12 +1831,6 @@ pub fn splat_chunk_field(cloud: u32, slot: u32, field: u32) -> u32 {
     value_with_engine(|e| Ok(e.chunk_rows.field(cloud, slot, field) as u32))
 }
 
-/// The number of rows that a chunk holds, or 0 for a slot that holds none.
-#[wasm_bindgen(js_name = splatChunkCount)]
-pub fn splat_chunk_count(cloud: u32, slot: u32) -> u32 {
-    value_with_engine(|e| Ok(e.chunk_rows.count(cloud, slot)))
-}
-
 /// Forgets a chunk, so its slot draws nothing.
 #[wasm_bindgen(js_name = splatChunkDestroy)]
 pub fn splat_chunk_destroy(cloud: u32, slot: u32) -> u32 {
