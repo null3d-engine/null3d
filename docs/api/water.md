@@ -122,6 +122,27 @@ the bed at a point, and the current there.
 | `mesh` | `{ step, across, cell, reach }` | 2, 16, 2 and 1.36 | The meters between two cross sections along a river, the sections across it, a lake's grid cell, and how far past a river's half width its mesh reaches as a factor |
 | `bed` | `'scene'` or `'shape'` | `'scene'` | Where the surface reads the depth of the bed: the copy of the scene's depth behind each pixel, or the depth that each shape describes |
 | `material` | The standard material values | None | The surface's material, such as its volume's tint and its thickness |
+| `wind` | A wind field's `texture`, `size` and `air` | None | The wind that lifts the surface's short waves and carries their crests. The surface reads it once for each vertex |
+
+## Wind on the surface
+
+Give `createWater` the field that `createWind` makes, and the surface lifts a short wave under the air and carries its crest with the gust. The surface reads the field once for each vertex, and the field's own pass runs before the water draws.
+
+```ts
+import { createWind } from '@null3d/wind';
+
+const wind = createWind(ctx, { camera, box: 128 });
+const water = createWater(ctx, { shapes, wind: wind.field });
+
+return {
+  onUpdate() {
+    wind.update();
+    water.update();
+  },
+};
+```
+
+`createWater` takes a plain texture and its box, so the water package does not import the wind add-on. A page can connect any field that gives a texture with the same layout. A surface that names no field still declares the field's textures, which it never reads.
 
 ## The water object
 

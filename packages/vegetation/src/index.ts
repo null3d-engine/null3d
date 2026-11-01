@@ -68,6 +68,13 @@ export {
 	type ToleranceCurve,
 	toleranceScore,
 } from './ecology';
+export type {
+	FloatingLeaves,
+	FloatingLeavesArea,
+	FloatingLeavesOptions,
+	FloatingLeavesRide,
+} from './floating-leaves';
+export { createFloatingLeaves } from './floating-leaves';
 export type { GenerateOptions } from './generate';
 export { generatePlant, generateVariantSet, WIND_STRIDE } from './generate';
 export type { Grass, GrassOptions } from './grass';

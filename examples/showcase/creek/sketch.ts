@@ -17,6 +17,7 @@ import {
 	timeOfDay,
 } from '@null3d/engine';
 import { createUnderwater, createWater, foamMap, type Water, type WaterShape } from '@null3d/water';
+import { createWind, type WindField } from '@null3d/wind';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { createHaze } from '../../lib/haze';
 import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
@@ -200,6 +201,7 @@ function createCreekWater(
 	reach: number,
 	alwaysReflect: boolean,
 	reflectScale: 0.25 | 0.5 | 1 | undefined,
+	wind: WindField,
 ): Water {
 	const middle = Array.from({ length: quadsX + 1 }, (_, k) => {
 		const s = (k / quadsX) * 2 - 1;
@@ -225,6 +227,7 @@ function createCreekWater(
 		],
 		level: WATER,
 		layers: 1,
+		wind,
 		...(reflectScale !== undefined && { reflectionScale: reflectScale }),
 		...(alwaysReflect && { reflectionEvery: { low: 1, medium: 1, high: 1, ultra: 1 } }),
 		bed: 'shape',
@@ -240,7 +243,7 @@ function createCreekWater(
 }
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, post, quality, page, time } = ctx;
+	const { scene, assets, post, quality, page, time, input } = ctx;
 	if (RENDER_SCALE !== undefined)
 		await quality.set({
 			minRenderScale: RENDER_SCALE,
@@ -286,7 +289,12 @@ export default defineSketch(async (ctx) => {
 		target: WIDE_LOOK,
 	});
 	scene.setActiveCamera(camera);
+	// The valley's one wind field. The grass, the falling leaves and the water read it, and G sends
+	// a gust that a person can watch cross the banks.
+	const wind = createWind(ctx, { camera, box: 128 });
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
+	/** A scratch place for the camera, which the gust control reads. */
+	const here: number[] = [0, 0, 0];
 
 	createLand(ctx, detail.land, detail.texture);
 	const mountains = createMountains(ctx, detail.ring[0], detail.ring[1]);
@@ -315,14 +323,15 @@ export default defineSketch(async (ctx) => {
 				GORGE.end,
 				ALWAYS_REFLECT,
 				REFLECT_SCALE as 0.25 | 0.5 | 1 | undefined,
+				wind.field,
 			);
 	const underwater = water && createUnderwater(ctx, camera, water);
-	const flora = await createFlora(ctx, models);
-	const air = await createAir(ctx, flora.crowns);
+	const flora = await createFlora(ctx, models, wind);
+	const air = await createAir(ctx, camera, wind.field);
 	const shafts = createShafts(ctx, camera);
 	const grass = WITHOUT.has('grass')
 		? undefined
-		: createGrass(ctx, (x, z) => stones.clear(x, z) || flora.clear(x, z));
+		: createGrass(ctx, (x, z) => stones.clear(x, z) || flora.clear(x, z), wind.field);
 	const fit = () => {
 		grass?.fit(quality.preset);
 		stones.fit(quality.preset);
@@ -460,6 +469,14 @@ export default defineSketch(async (ctx) => {
 	return {
 		onUpdate(dt) {
 			const t = time.now;
+			// The field's box follows the camera, so it steps before anything reads it.
+			wind.update();
+			if (input.wasPressed('KeyG')) {
+				// A gust from where the camera stands, so a person can watch it travel down the valley.
+				camera.getPosition(here);
+				wind.gust([here[0] as number, here[2] as number], 10);
+			}
+			grass?.setWindLayer(wind.field);
 			stage.update(dt);
 			for (const haze of hazes) haze.update(stage.airColor, stage.light);
 			controls.update(t);
@@ -481,7 +498,7 @@ export default defineSketch(async (ctx) => {
 			const lens = controls.lens();
 			if (lens) post.set(lens);
 			flora.update(t);
-			air.update(t);
+			air.update(t, dt);
 			water?.update();
 		},
 		onLateUpdate() {

@@ -268,6 +268,8 @@ A vertex offset that reads the field orders the pass before every pass that draw
 
 The vegetation add-on reads this field for its plants. `plantWind(ctx, asset, wind.field, { swayDistance })` builds the branch records that a plant's leaf and bark materials read, and their vertex offset samples this field's block at each vertex. Their sway fades to nothing at the material's `swayDistance`, so a plant past it stands still and its far shadow cascades keep their layers. The plant materials take the box's near corner from the camera's own place, since the box follows the camera, so their uniforms do not change in a frame.
 
+Other readers take the field as a plain texture and its box, so they need no code from this add-on. The vegetation add-on's `createFloatingLeaves` moves floating and falling leaves, and the water add-on's `wind` option lifts a water surface. Both read the same sampling block, and each copy costs the reader one of its material's six texture slots. The readers' blocks are held equal to this page's by tests.
+
 ## What the field is
 
 The field keeps its state between frames. One pass holds two states and steps the air forward by a fixed sixtieth of a second at a time. It runs as many steps as the sketch time owes.

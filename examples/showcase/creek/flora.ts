@@ -9,9 +9,9 @@ import {
 	type SketchContext,
 	type SpriteBatch,
 } from '@null3d/engine';
+import type { Wind } from '@null3d/wind';
 import { markEffect } from '../../lib/layers';
 import { random, within } from '../../lib/procedural';
-import type { Crown } from './air';
 import { groundHeight, streamHalf, streamZ, UNREFLECTED_LAYER, WATER } from './land';
 import { type Models, PLANT_KINDS, type PlantKind, placed, type TreeKind } from './models';
 import { CAVE } from './stones';
@@ -106,12 +106,12 @@ function yawTilt(yaw: number, tilt: number, out: Float32Array, at: number): void
 export async function createFlora(
 	{ scene, geometry, materials, textures }: SketchContext,
 	models: Models,
+	wind: Wind,
 ): Promise<{
 	update(t: number): void;
 	/** Lights the share, from 0 to 1, of the fireflies that the hour's look calls for. */
 	nightLights(share: number): void;
 	clear(x: number, z: number): boolean;
-	crowns: Crown[];
 }> {
 	const next = random(61);
 	const leafMesh = geometry.fromArrays(leaf());
@@ -130,6 +130,8 @@ export async function createFlora(
 	);
 	const drift = Float32Array.from({ length: FLOATING * 3 * 4 }, () => next());
 
+	/** A scratch place for the air under a floating leaf, in meters a second. */
+	const air: [number, number, number] = [0, 0, 0];
 	const shadow = { castShadows: true, receiveShadows: true };
 	// Trees on the banks, away from the water, each turned and sized a little differently.
 	const treeSpots = TREES.map(([x, dz, kind, grown]) => {
@@ -253,7 +255,6 @@ export async function createFlora(
 		),
 	];
 	return {
-		crowns: treeSpots,
 		clear: within(footprints),
 		nightLights(share) {
 			const count = Math.round(FIREFLIES * Math.min(1, Math.max(0, share)));
@@ -269,8 +270,13 @@ export async function createFlora(
 					const speed = drift[d + 1] as number;
 					const spin = drift[d + 3] as number;
 					const along = ((drift[d] as number) * RUN + t * (0.25 + 0.2 * speed)) % RUN;
-					const x = -RUN / 2 + along;
-					const z = streamZ(x) + ((drift[d + 2] as number) * 2 - 1) * 0.7 * streamHalf(x);
+					const alongX = -RUN / 2 + along;
+					const alongZ =
+						streamZ(alongX) + ((drift[d + 2] as number) * 2 - 1) * 0.7 * streamHalf(alongX);
+					// The air over the stream nudges a leaf across the current's own line.
+					wind.sample(alongX, WATER + 0.1, alongZ, air);
+					const x = alongX + air[0] * 0.08;
+					const z = alongZ + air[2] * 0.08;
 					positions[k * 3] = x;
 					positions[k * 3 + 1] = WATER + 0.02 + 0.012 * Math.sin(t * 2.1 + spin * 20 + x * 2.3);
 					positions[k * 3 + 2] = z;
