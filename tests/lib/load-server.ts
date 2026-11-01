@@ -20,6 +20,7 @@ import {
 } from '../../packages/vite-plugin/src/index.ts';
 import { acquirePageBuildLock, secondsSince } from '../../tools/lib/build-cache.ts';
 import { refuseStaleCore } from '../../tools/lib/core-sources.ts';
+import { refuseInQuietWindow } from '../../tools/lib/quiet-window.ts';
 import {
 	type DownloadedFile,
 	type Downloads,
@@ -42,6 +43,7 @@ const BENCH_CONFIG = 'bench/vite.pages.config.ts';
 
 /** Runs `vite build` in the repository copy at `root`, with `env` added, under the page build lock. */
 function viteBuild(root: string, args: readonly string[], env: Record<string, string> = {}): void {
+	refuseInQuietWindow('The page build');
 	refuseStaleCore(root);
 	const release = acquirePageBuildLock();
 	const build = spawnSync('bunx', ['vite', 'build', ...args], {
@@ -60,9 +62,10 @@ function viteBuild(root: string, args: readonly string[], env: Record<string, st
 /**
  * The test pages that the startup build holds besides the engine test page, each built on its own
  * so the engine test page stays as the startup benchmark loads it: the texture cache page, which
- * times loads of KTX2 files.
+ * times loads of KTX2 files, and the staged start page, which times the first draw of a staged
+ * model and the bytes before it.
  */
-const STARTUP_EXTRA_PAGES = ['texture-cache'];
+const STARTUP_EXTRA_PAGES = ['texture-cache', 'staged-start'];
 
 /**
  * Builds the engine test page for production with relative addresses, into its own folder, so a
@@ -498,8 +501,8 @@ export function loadServer(): Plugin {
  * How long a caller keeps asking a server that has not answered yet, and how long it waits between
  * asks. The route answers from the builds on disk and compresses nothing, so an ask is normally
  * answered in one round trip. A device reaches the Mac's HTTPS server over the Mac's own name, where
- * a single fetch can still time out: measured on 15 October 2026, a fetch failed with `The operation
- * timed out.` after 361 seconds, while the same call over HTTP waited and succeeded. So a caller asks
+ * a single fetch can still time out: a fetch can fail with `The operation timed out.` after 361
+ * seconds, while the same call over HTTP waits and succeeds. So a caller asks
  * again rather than let one attempt's timeout end the run, and the server prints one line when it
  * answers, which names the builds it serves and the files they hold.
  */
@@ -523,7 +526,7 @@ export async function prepareLoads(serverUrl: string, needed: readonly string[])
 	const answer = (await response.json().catch(() => ({}))) as Partial<Readiness> & {
 		error?: string;
 	};
-	// A server from before the benchmark pages' build served the startup build alone.
+	// A server that predates the benchmark pages' build serves the startup build alone.
 	const served = answer.builds ?? ['startup'];
 	const missing = needed.filter((name) => !served.includes(name));
 	if (response.ok && missing.length === 0) return;

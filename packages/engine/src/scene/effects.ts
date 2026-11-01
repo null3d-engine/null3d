@@ -33,7 +33,7 @@ import { hexValue, invalidColor } from '../math/hex';
 import { type ColorInput, writeLinearColor } from './color';
 import type { CoreMemory } from './memory';
 import { type CompiledWgsl, textureSlots } from './resources';
-import type { ShaderTemplates } from './shader-templates';
+import type { BuildsLoader, ShaderTemplates } from './shader-templates';
 import type { Texture } from './textures';
 import type { TextureValues, UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
 
@@ -141,14 +141,26 @@ export interface CompiledEffect extends CompiledWgsl {
 	readonly bloom: boolean;
 	readonly joins: boolean;
 	readonly textures: readonly { readonly name: string; readonly offset: number }[];
+	/**
+	 * The effect template's variants with the WGSL. A module's value leaves them out: they load on
+	 * first use, through `builds`.
+	 */
 	readonly variants: ShaderVariants;
+	/** Imports the effect's builds for one GPU path, which load on first use. */
+	readonly builds?: BuildsLoader;
 	readonly pieces: EffectPieces;
 }
 
 /** A custom tone curve's WGSL as the plugin compiles it. */
 interface CompiledToneCurve extends CompiledWgsl {
 	readonly kind: 'toneCurve';
+	/**
+	 * The final pass's variants with the curve. A module's value leaves them out: they load on
+	 * first use, through `builds`.
+	 */
 	readonly variants: ShaderVariants;
+	/** Imports the curve's builds for one GPU path, which load on first use. */
+	readonly builds?: BuildsLoader;
 	readonly pieces: EffectPieces;
 }
 
@@ -163,10 +175,10 @@ interface PieceSizes {
  * the pieces of a fold, effects and tone curve, may add to the final pass. A joined shader then
  * stays within about 25 KB: the group's host takes about 1.7 KB and the final pass about 16.8 KB.
  * Each effect's size counts the helpers it shares with the others, which a joined shader holds
- * once, so a joined shader is often much smaller. The
- * shader that failed to build on a Pixel 11's PowerVR driver held 50 KB, and its 17 KB parts built
- * there; the final pass draws on every device that the engine was tested on. A driver's failure
- * can show as a lost context rather than an error, so the cap holds before any build.
+ * once, so a joined shader is often much smaller. A joined shader of 50 KB fails to build on a
+ * Pixel 11's PowerVR driver, and its 17 KB parts build there; the final pass draws on every device
+ * that the engine was tested on. A driver's failure can show as a lost context rather than an
+ * error, so the cap holds before any build.
  */
 export const GROUP_PIECES_CAP = 22 * 1024;
 export const FOLD_PIECES_CAP = 8 * 1024;
@@ -403,16 +415,23 @@ export class EffectChain {
 					: `${call}() got ${kindOf(wgsl)} for toneMapping, which takes a built-in curve's name or WGSL that declares fn toneCurve.`,
 			);
 		const curve = wgsl as CompiledToneCurve;
-		const template = this.templates.of(curve, () => [
-			{
-				kind: 'final',
-				variants: curve.variants,
-				locations: [],
-				textures: 0,
-				pieces: curve.pieces,
-			},
-			{ kind: 'finalBloom', variants: curve.variants, locations: [], textures: 0 },
-		]);
+		const later = firstUse(curve.builds);
+		const template = this.templates.of(
+			curve,
+			() => [
+				{
+					kind: 'final',
+					variants: curve.variants,
+					locations: [],
+					textures: 0,
+					pieces: curve.pieces,
+					...later,
+				},
+				{ kind: 'finalBloom', variants: curve.variants, locations: [], textures: 0, ...later },
+			],
+			undefined,
+			curve.builds,
+		);
 		core.check(core.glue.setToneCurve(template), call, undefined, true);
 		this.curve = { template, sizes: this.sizesOf(curve, curve.pieces) };
 		this.sendJoins(call);
@@ -535,20 +554,34 @@ export function writeEffectBlocks(
 }
 
 /**
+ * The fields that make a custom shader import its builds on first use, or none when the module
+ * holds the builds itself.
+ */
+function firstUse(builds: BuildsLoader | undefined): { builds?: boolean; buildsSet?: number } {
+	return builds === undefined ? {} : { builds: true, buildsSet: 0 };
+}
+
+/**
  * The template of a compiled effect, which an effect and a full-screen pass share: the effect
  * template's variants with the WGSL, and its textures in a second bind group.
  */
 export function effectTemplate(templates: ShaderTemplates, compiled: CompiledEffect): number {
-	return templates.of(compiled, () => [
-		{
-			kind: 'effect',
-			bloom: compiled.bloom,
-			variants: compiled.variants,
-			locations: [],
-			textures: compiled.textures.length,
-			pieces: compiled.pieces,
-		},
-	]);
+	return templates.of(
+		compiled,
+		() => [
+			{
+				kind: 'effect',
+				bloom: compiled.bloom,
+				variants: compiled.variants,
+				locations: [],
+				textures: compiled.textures.length,
+				pieces: compiled.pieces,
+				...firstUse(compiled.builds),
+			},
+		],
+		undefined,
+		compiled.builds,
+	);
 }
 
 /**

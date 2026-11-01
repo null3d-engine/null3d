@@ -40,7 +40,7 @@ fn surface(input: SurfaceInput) -> Surface {
 const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
 ```
 
-The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any time. It can declare textures as `var name: texture_2d<f32>;`, or texture arrays whose layers the shader picks as `var name: texture_2d_array<f32>;`, which the `textures` option gives. A vertex offset, `fn vertexOffset`, moves the mesh's vertices. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface`, uniforms, textures and vertex offsets. [Built-in shader inputs](../shaders/builtins.md) lists the values that every custom material reads, such as `frame.time`.
+The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any time. It can declare textures as `var name: texture_2d<f32>;`, or texture arrays whose layers the shader picks as `var name: texture_2d_array<f32>;`, which the `textures` option gives. A vertex offset, `fn vertexOffset`, moves the mesh's vertices. A lobe, `fn lobe`, adds specular beside the base lobe for the main directional light and for each point and spot light. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface`, uniforms, textures, vertex offsets and lobes. [Built-in shader inputs](../shaders/builtins.md) lists the values that every custom material reads, such as `frame.time`.
 
 ## Full shaders
 
@@ -170,6 +170,14 @@ A custom material has many builds: one for each variant of the standard material
 - In `vite build`, the files go into the assets folder with the build's other files. On the dev server, the plugin serves them from memory.
 
 For example, the battle comparison's sketch has 5 custom materials, and its module takes 5 KB. With every build in it, the module would take 1,504 KB, or 41 KB with Brotli compression. A device downloads a file of 235 to 346 KB, or 18 to 21 KB with Brotli, and one more for its skinned meshes. The thread that draws keeps 3 to 4 MB of shader text. Every build of the device's GPU path would take 7 MB on WebGPU and 27 MB on WebGL2.
+
+### Where a custom effect's and a tone curve's builds go
+
+A custom effect and a custom tone curve build into every variant of their template, on each GPU path. The plugin keeps their builds out of your module in the same way as a material's:
+
+- An effect or a curve gets one file for each GPU path, named `effect-*.js` or `curve-*.js`. Each holds the text that the builds share once.
+- Its value in your module holds its uniforms, its textures and a function that imports a file.
+- When the sketch first uses the effect or the curve, it downloads its device's file. A pass or an effect whose pipelines wait for it draws nothing until the file arrives, and the rest of the frame keeps drawing.
 
 Deploy every file that the build writes. When a file that a device needs does not download, the engine stops drawing with [E1424](../errors/E1424.md).
 

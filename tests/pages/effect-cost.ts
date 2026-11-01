@@ -1,6 +1,7 @@
 // Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao,
 // ?effect=dof, ?effect=subsurface, ?effect=exposure, ?effect=fog, ?effect=contact (the sun's contact
-// shadows, with ?steps= steps per march, 8 by default), ?effect=sky, ?effect=effects, ?effect=tone,
+// shadows, with ?steps= steps per march, 8 by default), ?effect=fills (one more directional light
+// than the side before, from ?count= directional lights, 4 by default), ?effect=sky, ?effect=effects, ?effect=tone,
 // ?effect=vignette, ?effect=sharpen, ?effect=lens or ?effect=motion names it. The effects effect adds ?count=
 // custom effects, 4 by default, to bloom's scene. Motion measures the motion vectors with their
 // debug view, so it runs in development builds only. ?effect=area measures ?count= area lights over the light scenes' floor,
@@ -31,6 +32,11 @@
 //
 // With effects, the effects join (D-71): ?join=off keeps each in a pass of its own, and the page
 // reports how long each joined shader took to build, where development builds keep the times.
+// A look whose work is a fraction of a millisecond hides under a scene's own movement between
+// rounds. ?repeat=N passes the count to a sketch that draws its effect that many times in a frame,
+// ?clear asks for a scene that leaves out the work around the effect, and ?bloom=off leaves bloom
+// out for a case that draws no streak. ?seconds= sets each side's own measurement, and ?warm-up=
+// the play before the first, both in seconds.
 // ?heavy makes the GPU the limit where it has no timer: 8 effects by default, at the display's
 // whole pixel ratio, so the frame interval shows what joining saves.
 import { createEngine } from '@null3d/engine';
@@ -41,7 +47,9 @@ import {
 } from '../../packages/engine/src/gpu/webgl2/call-timing';
 import { featureCost } from './lib/feature-cost';
 import { requestJoinTiming } from './lib/join-timing';
+import { overlayMemory, waitForOverlay } from './lib/overlay-figures';
 import { run } from './lib/result';
+import type { SideMemory } from './lib/side-memory';
 
 /**
  * Each effect's sketch, which turns the effect on at the message of the effect's name, posts
@@ -55,14 +63,17 @@ const SKETCHES = {
 	subsurface: './sketches/subsurface-sketch.ts',
 	exposure: './sketches/exposure-sketch.ts',
 	contact: './sketches/contact-shadows-sketch.ts',
+	bounce: './sketches/bounce-cost-sketch.ts',
 	fog: './sketches/fog-volume-sketch.ts',
 	effects: './sketches/effects-cost-sketch.ts',
 	motion: './sketches/motion-cost-sketch.ts',
 	area: './sketches/area-cost-sketch.ts',
+	fills: './sketches/fill-cost-sketch.ts',
 	sky: './sketches/sky-cost-sketch.ts',
 	vignette: './sketches/vignette-cost-sketch.ts',
 	sharpen: './sketches/sharpen-cost-sketch.ts',
 	lens: './sketches/lens-cost-sketch.ts',
+	compute: './sketches/compute-cost-sketch.ts',
 } as const;
 
 type Effect = keyof typeof SKETCHES;
@@ -86,6 +97,22 @@ const count = params.get('count') ?? (heavy ? '8' : null);
 const antialias = params.get('antialias');
 if (antialias !== null && antialias !== 'msaa' && antialias !== 'fxaa' && antialias !== 'none')
 	throw new Error(`the page takes no anti-aliasing mode ${antialias}`);
+/** A pixel ratio held for both sides, for a cost that the canvas size would otherwise hide. */
+const pixelRatio = params.get('pixel-ratio');
+if (pixelRatio !== null && !(Number(pixelRatio) >= 0.5))
+	throw new Error(`the page takes no pixel ratio ${pixelRatio}`);
+/** A case's own look, such as one mark of an effect, passed on to its sketch. */
+const look = params.get('look');
+/** How many times a sketch may draw its effect in each frame, which lifts a small cost above the timer's step. */
+const repeat = params.get('repeat');
+/** A sketch's scene that leaves out the work around its effect, so the effect's own cost shows. */
+const clear = params.has('clear');
+/** A sketch's bloom, which the streak reads, off for a case that measures a mark without it. */
+const bloomOff = params.get('bloom') === 'off';
+/** The rounds of each side, with the sides in the opposite order on alternate rounds. */
+const rounds = params.get('rounds');
+if (rounds !== null && !(Number.isSafeInteger(Number(rounds)) && Number(rounds) >= 1))
+	throw new Error(`the page takes no round count ${rounds}`);
 const asked = params.get('effect') ?? 'bloom';
 if (!Object.hasOwn(SKETCHES, asked)) throw new Error(`the page measures no effect ${asked}`);
 const effect = asked as Effect;
@@ -103,12 +130,14 @@ run('effect-cost', async () => {
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
 	const kind = params.get('kind');
 	const area = `${kind === null ? '' : `&kind=${kind}`}${params.has('image') ? '&image' : ''}`;
-	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${meter === null ? '' : `&meter=${meter}`}${slices === null ? '' : `&slices=${slices}`}${steps === null ? '' : `&steps=${steps}`}${strength === null ? '' : `&strength=${strength}`}${aoScale === null ? '' : `&aoscale=${aoScale}`}${area}${moving ? '&moving' : ''}${base === null ? '' : `&base=${base}`}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}${night ? '&night' : ''}`;
+	/** The switches that a sketch uses to lift a small cost above the frame's own movement. */
+	const smallCost = `${repeat === null ? '' : `&repeat=${repeat}`}${clear ? '&clear' : ''}${bloomOff ? '&bloom=off' : ''}`;
+	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${meter === null ? '' : `&meter=${meter}`}${slices === null ? '' : `&slices=${slices}`}${steps === null ? '' : `&steps=${steps}`}${strength === null ? '' : `&strength=${strength}`}${aoScale === null ? '' : `&aoscale=${aoScale}`}${area}${moving ? '&moving' : ''}${base === null ? '' : `&base=${base}`}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}${night ? '&night' : ''}${look === null ? '' : `&look=${encodeURIComponent(look)}`}${smallCost}`;
 	const engine = await createEngine({
 		canvas,
 		sketch,
 		antialias: antialias ?? undefined,
-		maxPixelRatio: heavy ? devicePixelRatio : undefined,
+		maxPixelRatio: heavy ? devicePixelRatio : pixelRatio === null ? undefined : Number(pixelRatio),
 	});
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
@@ -168,7 +197,26 @@ run('effect-cost', async () => {
 			await built;
 		},
 		glSnapshot,
+		rounds === null
+			? undefined
+			: {
+					rounds: Number(rounds),
+					alternate: true,
+					...(params.has('seconds') && { seconds: Number(params.get('seconds')) }),
+					...(params.has('warm-up') && { warmUpSeconds: Number(params.get('warm-up')) }),
+				},
 	);
+	// The memory figures come from the overlay, which samples the GPUs' tables and the wasm file.
+	// It shows after the timing, so its sampling costs none of the frames above.
+	const wasmBytes = (await engine.measure(0.5)).memory.wasmBytes;
+	const memory: { off?: SideMemory; on?: SideMemory } = {};
+	for (const side of ['off', 'on'] as const) {
+		engine.postToSketch(side === 'on' ? effect : `${effect}-off`, null);
+		engine.stats(true);
+		const ready = await waitForOverlay('triangles');
+		memory[side] = { ready, ...overlayMemory(wasmBytes) };
+		engine.stats(false);
+	}
 	const joinBuilds = effect === 'effects' ? await requestJoinTiming() : undefined;
 	await engine.destroy();
 	return {
@@ -176,6 +224,8 @@ run('effect-cost', async () => {
 		tier: engine.capabilities.tier,
 		hdr: engine.capabilities.hdr,
 		scale,
+		repeat: repeat === null ? 1 : Number(repeat),
+		clear,
 		bloomSize: size === null ? null : Number(size),
 		dofSamples: effect === 'dof' && taps !== null ? Number(taps) : null,
 		subsurfaceSamples: effect === 'subsurface' && taps !== null ? Number(taps) : null,
@@ -198,6 +248,7 @@ run('effect-cost', async () => {
 		devicePixelRatio,
 		off,
 		on,
+		memory,
 		// The line that the two-step probe printed, for the plan that asks for it, which keeps it in
 		// the run's result to read beside the other browsers' lines.
 		twoStep: (globalThis as { __null3dTwoStep?: string }).__null3dTwoStep ?? null,

@@ -46,8 +46,8 @@ pub const MAX_VIEWS: usize = 32;
 /// The most views of every kind: the views of cameras, then the cascades of the directional
 /// light's shadows, then the tiles of the point and spot lights' shadow atlas, which cull and draw
 /// as views do, then the view of the outline effect's mask, then the view of the subsurface blur's
-/// skin pass, and the motion view.
-pub const MAX_VIEW_IDS: usize = MAX_VIEWS + MAX_CASCADES + MAX_TILES + 3;
+/// skin pass, the motion view, and the view of the tone mask.
+pub const MAX_VIEW_IDS: usize = MAX_VIEWS + MAX_CASCADES + MAX_TILES + 4;
 
 /// The first id of the shadow atlas's tiles.
 const FIRST_TILE: usize = MAX_VIEWS + MAX_CASCADES;
@@ -71,6 +71,11 @@ impl ViewId {
     /// The motion view: the camera's view, which culls and draws only the objects that move, into
     /// the motion target (see [`crate::motion`]).
     pub const MOTION: ViewId = ViewId((FIRST_TILE + MAX_TILES + 2) as u16);
+
+    /// The view of the tone mask: the camera's view, which culls and draws only the objects whose
+    /// material keeps its color as the display shows it, into the blue channel of the outline
+    /// mask, after the motion view.
+    pub const TONE: ViewId = ViewId((FIRST_TILE + MAX_TILES + 3) as u16);
 
     /// The view's place in the list, from 0.
     pub const fn index(self) -> usize {
@@ -298,6 +303,19 @@ pub struct Compute {
     pub maps: EffectMaps,
     /// The instance draw's two buffers that the pass writes, or `None` for a storage texture.
     pub buffers: Option<ComputeBuffers>,
+    /// True when the pass keeps two states in its target's layers: a run writes one state as its
+    /// storage texture and reads the state of the run before, and the frame swaps them between
+    /// runs. Readers see the two states as two ranges of the target's layers.
+    pub history: bool,
+    /// The array layers of each state, 1 by default. The target has twice as many layers with
+    /// history.
+    pub layers: u32,
+    /// The dispatches that a frame runs, 1 by default, swapping the states between them. A run of
+    /// no steps keeps the state where it is.
+    pub steps: u32,
+    /// Counts the page's requests to clear the pass's states. A builder that sees the count rise
+    /// clears both states and starts again from the first.
+    pub reset: u32,
 }
 
 /// The two buffers of an instance draw that a compute pass writes: the draw's count word and its
@@ -314,16 +332,21 @@ pub struct ComputeBuffers {
 
 impl Compute {
     /// The workgroup counts that fill a target of `size` texels: the explicit counts, or the size
-    /// divided by the workgroup size, rounding up, once along z.
+    /// divided by the workgroup size, rounding up, with one run along z for each state layer.
     pub fn workgroups(&self, size: (u32, u32)) -> [u32; 3] {
         match self.dispatch {
             Some(counts) => counts,
             None => [
                 size.0.div_ceil(self.workgroup[0].max(1)),
                 size.1.div_ceil(self.workgroup[1].max(1)),
-                1,
+                self.layers.max(1).div_ceil(self.workgroup[2].max(1)),
             ],
         }
+    }
+
+    /// The array layers of the pass's target: each state's layers, twice when it keeps two states.
+    pub fn target_layers(&self) -> u32 {
+        self.layers.max(1) * if self.history { 2 } else { 1 }
     }
 }
 
@@ -334,6 +357,17 @@ impl Compute {
 pub struct Fullscreen {
     /// The render pipeline template of the WGSL.
     pub template: u32,
+    /// True for the fragment form of a compute pass, which runs in its place on WebGL2.
+    pub fallback: bool,
+    /// True when the pass keeps two states in its target's layers, as a compute pass with history
+    /// does: a run draws one state and reads the state of the run before.
+    pub history: bool,
+    /// The array layers of each state, 1 by default.
+    pub layers: u32,
+    /// The runs that a frame draws, 1 by default, swapping the states between them.
+    pub steps: u32,
+    /// Counts the page's requests to clear the pass's states.
+    pub reset: u32,
     /// The image of the camera's view that it reads as its input.
     pub source: PassSource,
     /// True when the WGSL reads the scene's depth.
@@ -533,6 +567,11 @@ impl View {
     /// The view's target, which only views other than the camera's draw into.
     pub fn target(&self) -> &ViewTarget {
         &self.target
+    }
+
+    /// The size this view draws in texels, for a canvas of `canvas` device pixels at `scale`.
+    pub fn drawn_size(&self, canvas: (u32, u32), scale: crate::graph::RenderScale) -> (u32, u32) {
+        self.target.graph_size().made(canvas, scale)
     }
 
     pub(crate) fn target_mut(&mut self) -> &mut ViewTarget {
@@ -805,6 +844,10 @@ mod tests {
             values: [0.0; EFFECT_FLOATS],
             maps: EffectMaps::NONE,
             buffers: None,
+            history: false,
+            layers: 1,
+            steps: 1,
+            reset: 0,
         };
         // The counts round up, so the last workgroup of a row or column writes past the target's
         // edge, which the shader tests against its own size.

@@ -1,8 +1,8 @@
 # D-129: Temporal anti-aliasing
 
-Status: decided by the owner on 11 October 2026, as the recommendation proposed: no TAA for 1.0. Per-object motion vectors move before 1.0, as task M2-EX25. The prototype is on the branch `proto/m2-ex18-taa`, which has no pull request and does not merge. On 15 October 2026 the owner left TAA to M3-A11: if it says no, TAA is dropped (see the addendum). Date: 2026-10-11. Task: M2-EX18.
+Status: decided by the owner: TAA does not ship, and the anti-aliasing presets stay. Per-object motion vectors are built ([D-140](D-140-motion-vectors.md), task M2-EX25). [D-179](D-179-technique-rulings.md) left TAA to M3-A11, whose second look ([D-206](D-206-temporal-resolve.md)) refused it, so TAA is dropped. The prototype stays behind the internal setting, off on every preset. Task: M2-EX18.
 
-Summary: The owner ruled: do not ship temporal anti-aliasing (TAA) for 1.0. Keep FXAA on Low and MSAA 4x from Medium up. Per-object motion vectors come before 1.0 (M2-EX25), as the base for a later TAA attempt. A prototype cut the shimmer of the Creek's far grass by 92% against MSAA. But it drew the scene at 0.55 to 0.75 of a 64-sample reference's sharpness. It smeared swaying grass two to three times as much, and it made still thin lines crawl. On the Mac it cost about 0.3 ms in the Creek and 1 to 2 ms in a light scene with WebGPU, and 7.5 ms in the Creek with WebGL2.
+Summary: The engine ships no temporal anti-aliasing (TAA): FXAA stays on Low and MSAA 4x from Medium up. A prototype cut the far grass's shimmer by 92%, but drew at 0.55 to 0.75 of a reference's sharpness and smeared swaying grass. It cost 1 to 2 ms in a light scene on the Mac with WebGPU, and 7.5 ms in the Creek with WebGL2.
 
 ## Question
 
@@ -29,9 +29,9 @@ The prototype follows Brian Karis's "High quality temporal supersampling" (SIGGR
 
 It runs after the camera's transparent pass and before the custom effects, depth of field, bloom and the final pass, on HDR color. Two kept targets hold the history and take turns by frame number. Each frame reads the one the frame before it wrote and writes the other, so a frame drawn again, as `captureFrame` draws it, leaves the same history. A copy step writes the resolve's target into the history. A shipping version would draw into the history directly and save that copy.
 
-In code: `crates/null3d-render/src/taa.rs`, `crates/null3d-shaders/wgsl/taa.wgsl` and `taa_keep.wgsl`, the frame graph's three steps, and pipeline templates 48 to 50, which reuse depth of field's bind layouts. A sketch turns it on with `post.set({ taa: true })`, an internal setting for the prototype only. `post.set({ msaaFxaa: true })` runs the final pass's FXAA over a scene drawn with MSAA, which no mode offered before. Both GPU paths draw it.
+In code: `crates/null3d-render/src/taa.rs`, `crates/null3d-shaders/wgsl/taa.wgsl` and `taa_keep.wgsl`, the frame graph's three steps, and pipeline templates 48 to 50, which reuse depth of field's bind layouts. A sketch turns it on with `post.set({ taa: true })`, an internal setting for the prototype only. `post.set({ msaaFxaa: true })` runs the final pass's FXAA over a scene drawn with MSAA, which no shipped mode offers. Both GPU paths draw it.
 
-One fault came out of the first sequences. The resolve reprojected each pixel through this frame's projection with its offset. So even a still camera read the history half a pixel away, in a new direction each frame, and the history blurred. The rocks drew at about half the reference's sharpness. Each pixel's center now reprojects through the projections without their offsets. A unit test checks that a still camera reprojects every pixel onto itself.
+Each pixel's center reprojects through the projections without their offsets. Through this frame's projection with its offset, even a still camera reads the history half a pixel away, in a new direction each frame, and the history blurs: the rocks then draw at about half the reference's sharpness. A unit test checks that a still camera reprojects every pixel onto itself.
 
 ## How the figures were made
 
@@ -53,7 +53,7 @@ One fault came out of the first sequences. The resolve reprojected each pixel th
 | Sharpness | The mean size of each frame's gradients over the reference's: 1 is as sharp, below 1 softer |
 | Still | Frame-to-frame change where the reference does not change at all, as the still regions of the still camera |
 
-**Cost.** The effect cost page (`tests/pages/effect-cost.html?effect=taa` and `effect=msaafxaa`) at 1920 x 1080, render scale 1, at High, in headless Chrome on the Mac's GPU. It plays the scene with the mode off and on in turns, three rounds of 2 seconds each, and reports the medians of GPU time per frame. Each run had the Mac to itself, at loads of 2.3 to 4.3, on 11 October 2026. TAA without MSAA ran against no anti-aliasing (`&antialias=none`). A per-pass probe (`tests/pages/taa-sequence.html?measure=3`) timed each mode for 3 seconds at the same size.
+**Cost.** The effect cost page (`tests/pages/effect-cost.html?effect=taa` and `effect=msaafxaa`) at 1920 x 1080, render scale 1, at High, in headless Chrome on the Mac's GPU. It plays the scene with the mode off and on in turns, three rounds of 2 seconds each, and reports the medians of GPU time per frame. Each run had the Mac to itself, at loads of 2.3 to 4.3. TAA without MSAA ran against no anti-aliasing (`&antialias=none`). A per-pass probe (`tests/pages/taa-sequence.html?measure=3`) timed each mode for 3 seconds at the same size.
 
 ## Data
 
@@ -158,7 +158,7 @@ In the thin scene the extra time falls in the passes right after the scene pass,
 
 - **Thin scene against the Creek on WebGPU.** The resolve takes the nearest depth of 3 x 3 pixels of 4 samples each: 36 depth reads per pixel. In the thin scene these cost about 1.5 ms (2.3 to 2.7 ms against 1.0 ms with one sample). In the Creek they cost nothing that the probe can see. The shader and the size are the same, so the GPU must run it faster in the Creek. The likely cause is the GPU's clock. The thin scene keeps the GPU busy for about 2 ms in each 16.7 ms frame. The Mac then runs the GPU at a low clock, so each step takes longer. The Creek keeps it busy for 6 to 8 ms, at a higher clock. [D-119](D-119-depth-of-field.md) measured a like cost: reading every depth sample cost depth of field about 0.5 ms more per frame. A second cause adds a little in the thin scene. No other step there reads the depth, so the scene pass would keep its multisampled depth on chip and throw it away. TAA makes it write that depth to memory, about 33 MB per frame at 1920 x 1080. The Creek's ambient occlusion already reads its depth.
 - **TAA without MSAA** reads 9 depth values per pixel in place of 36, and the scene's depth has one sample. It costs about 1 ms in the thin scene and 0.1 to 0.5 ms in the Creek.
-- **WebGL2.** The cost comes with MSAA. Without MSAA, TAA costs 0.75 ms in the Creek and 1.45 ms in the thin scene. With MSAA it costs 7.5 ms and 2.8 ms. A WebGL2 shader cannot read a multisampled depth. So after each pass that keeps the depth, the backend copies one sample of each pixel into a texture with a blit. ANGLE on Metal draws each such blit as a pass of its own. TAA reads the depth after the last scene pass, so each pass that writes the depth must keep it and copy it. The Creek draws its scene in more passes than the thin scene, which fits its larger cost. The number of copies per frame was not counted. The WebGL2 timer has no per-pass figures.
+- **WebGL2.** The cost comes with MSAA. Without MSAA, TAA costs 0.75 ms in the Creek and 1.45 ms in the thin scene. With MSAA it costs 7.5 ms and 2.8 ms. A WebGL2 shader cannot read a multisampled depth. So after each pass that keeps the depth, the backend copies one sample of each pixel into a texture with a blit. ANGLE on Metal draws each such blit as a pass of its own. TAA reads the depth after the last scene pass, so each pass that writes the depth must keep it and copy it. The Creek draws its scene in more passes than the thin scene, which fits its larger cost. The runs did not count the copies per frame. The WebGL2 timer has no per-pass figures.
 
 So in a light scene on this Mac, TAA's own work costs about 1 ms without MSAA and 2 ms over it. In a busy scene it costs little. A phone's GPU is several times slower, and its cost there is unknown.
 
@@ -183,51 +183,24 @@ MSAA + FXAA is a milder trade. It gives 20% to 35% less shimmer than MSAA and 0.
 
 A TAA worth shipping would need, at the least:
 
-1. A motion vector target, written by every moving, bending and skinned surface, the grass's wind among them.
+1. A motion vector target, written by every moving, bending and skinned surface, the grass's wind among them. [D-140](D-140-motion-vectors.md) builds it.
 2. A fix for the still camera's flicker. For example, a longer history while the camera holds still, or a limit box that lets sub-pixel lines keep their history.
 3. Less blur: smaller offsets over MSAA, a sharper filter of this frame's samples, or a sharpening step after the resolve.
 4. A WebGL2 path that costs about what WebGPU's does, and figures from phones.
 
-## Recommendation
-
-Do not ship TAA for 1.0, neither as a default nor as an option on any preset. Keep the anti-aliasing presets as they are: FXAA on Low and MSAA 4x from Medium up.
-
-- In the Creek, TAA swaps shimmer for blur and smear that are easier to see than the shimmer it removes. The animated crops show it most in the near grass.
-- It adds flicker to still scenes with thin lines, which MSAA draws without any.
-- Its cost on WebGL2 is too high for the path that phones without WebGPU draw.
-
-Do not add MSAA + FXAA as a preset either. It trades shimmer for softness and moves no closer to the reference. A later task can offer it as an anti-aliasing mode for foliage-heavy scenes if the owner wants that choice.
-
-If TAA comes back after 1.0, build it as TAA over MSAA on WebGPU, for High and Ultra only. Do the four items under "Trade-offs" first. Then measure it again with these sequences, and on phones. On this Mac it should cost about 0.3 ms in the Creek and 1 to 2 ms in a light scene.
-
-The prototype stays on the branch `proto/m2-ex18-taa`. Its capture page, thin scene, analysis and fixed-step clock can come back with it.
-
 ## Decision
 
-The owner ruled on 11 October 2026:
+The owner ruled:
 
-- TAA does not ship for 1.0, neither as a default nor as an option on any preset.
+- TAA does not ship, neither as a default nor as an option on any preset. In the Creek it swaps shimmer for blur and smear that are easier to see than the shimmer it removes. The animated crops show it most in the near grass. It adds flicker to still scenes with thin lines, which MSAA draws without any. Its cost on WebGL2 is too high for the path that phones without WebGPU draw.
 - The anti-aliasing presets stay as they are: FXAA on Low, and MSAA 4x from Medium up.
-- Per-object motion vectors move before 1.0, as task M2-EX25. Every moving, bending and skinned surface writes them, the grass's wind among them. They are the first of the four items under "Trade-offs".
-- TAA can come back on top of those motion vectors, once the other three items are done. Then it is measured again with this record's sequences, and on phones, as the recommendation says.
+- MSAA + FXAA is no preset either. It trades shimmer for softness and moves no closer to the reference. A later task can offer it as an anti-aliasing mode for foliage-heavy scenes if the owner wants that choice.
+- Per-object motion vectors come before 1.0, as task M2-EX25 ([D-140](D-140-motion-vectors.md)). Every moving, bending and skinned surface writes them, the grass's wind among them. They are the first of the four items under "Trade-offs".
+- TAA is dropped, not deferred ([D-179](D-179-technique-rulings.md), rulings 15, 16 and 24). M3-A11, the second look at a temporal resolve, measured this record's quality bar on both GPU paths at each preset ([D-206](D-206-temporal-resolve.md)). The resolve did not beat the presets, so it does not ship. Two techniques need a temporal resolve, so they do not ship either: many lights at a fixed cost, and a temporal upscaler that keeps MSAA.
 
 ## Consequences
 
-- No change to the engine, its presets or its docs. `post.set({ taa })` and `post.set({ msaaFxaa })` exist only on the prototype branch.
-- Screen-space reflections, which wait on TAA for a temporal pass, keep their blur by roughness instead.
-- The Creek's grass keeps MSAA with alpha to coverage, and its far-bank shimmer stays. A look task can thin or soften the far grass if the owner finds the shimmer too strong.
-
-## Addendum, 15 October 2026: M3-A11 rules on TAA
-
-The owner ruled on 15 October 2026 ([D-179](D-179-technique-rulings-2026-10-15.md), rulings 15, 16 and 24). M3-A11, the second look at a temporal resolve, decides TAA for 0.1.0. If it says no, TAA is dropped, not left for after 1.0, and the three.js mapping says so. Two techniques hang on the same answer:
-
-- many lights at a fixed cost: prototyped in M3, shipped only with a temporal resolve;
-- a temporal upscaler that keeps MSAA: in M4 with a temporal resolve.
-
-Without a temporal resolve, both are dropped.
-
-## Addendum, 21 October 2026: the second look refuses TAA
-
-M3-A11, the second look at a temporal resolve, decided on 21 October 2026 ([D-200](D-206-temporal-resolve.md)). The resolve does not ship for 0.1.0. Its prototype drew the scene live on WebGPU, but a captured frame was black, which breaks image tests, hold mode and the command-line screenshot, and a live toggle on WebGPU destroyed a motion target or the scene depth in a flight. Its cost in the Creek at 1080p was 0.3 to 1.3 ms on WebGPU and 2.8 to 9.1 ms on WebGL2. The figures of this record's quality bar could not be measured from black captures.
-
-So TAA is dropped, not deferred, as [D-179](D-179-technique-rulings-2026-10-15.md)'s ruling 24 asks. The presets keep FXAA on Low and MSAA 4x from Medium up. The three.js mapping says that TAA is not planned. The prototype's code was not kept, as a "no" lands the measurement and the record alone.
+- The engine, its presets and its docs carry no TAA. The prototype of the temporal resolve stays behind the internal `post.set({ taa })` setting, off on every preset, with its measurement and capture pages ([D-206](D-206-temporal-resolve.md)).
+- The three.js mapping says that TAA is not planned.
+- Screen-space reflections have no temporal pass, so they blur by roughness ([D-134](D-134-screen-space-reflections.md)).
+- The Creek's grass draws with MSAA and alpha to coverage, and its far bank shimmers. A look task can thin or soften the far grass if the owner finds the shimmer too strong.

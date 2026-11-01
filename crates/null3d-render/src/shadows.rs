@@ -80,7 +80,7 @@ use null3d_core::scene::{NO_PARENT, SceneStorage, flags};
 use null3d_gpu::drawlist::sizes::{SHADOW_SETTINGS_BYTES, SHADOW_UNIFORM_BYTES};
 use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, format};
 
-use crate::camera::{Affine, Lens, Mat4, ViewDepth};
+use crate::camera::{Affine, Lens, Mat4, ViewDepth, multiply};
 use crate::frame::{LINEAR_LEVEL, NEAREST_TEXELS, RecordError, UploadArena, clamp_sampler};
 use crate::frame_data::FrameUniform;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
@@ -124,6 +124,8 @@ pub struct ShadowSettings {
     /// How far each receiver's point moves along its normal before the lookup, in meters, up to one
     /// texel of its cascade.
     pub normal_bias: f32,
+    /// How much of its shadow the light draws, from 0 for none to 1, the default, for all of it.
+    pub intensity: f32,
     /// The distance along the camera's view, in meters, out to which shadows fall, whatever the
     /// camera's scale. The camera's far plane ends them sooner.
     pub distance: f32,
@@ -657,6 +659,8 @@ impl HeroBox {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HeroShadow {
     pub bounds: HeroBox,
+    /// Texels on each side of the tile that holds it.
+    pub size: u32,
     /// The light's layer mask: its tile draws the casters whose masks share a bit with it.
     pub layers: u32,
     /// The light's bias toward the light, in meters.
@@ -669,11 +673,13 @@ impl HeroShadow {
     /// The hero shadow of the object in scene slot `row`, for a light that travels along
     /// `direction`, which has length 1. `None` for an object without bounds, which draws no
     /// shadow.
+    #[allow(clippy::too_many_arguments)]
     pub fn of(
         scene: &SceneStorage,
         parity: usize,
         row: u32,
         direction: [f32; 3],
+        size: u32,
         layers: u32,
         bias: f32,
         normal_bias: f32,
@@ -691,6 +697,7 @@ impl HeroShadow {
         });
         Some(Self {
             bounds: HeroBox::fit(direction, center, radius),
+            size: size.max(1),
             layers,
             bias,
             normal_bias,
@@ -788,37 +795,55 @@ impl CascadeSchedule {
 /// The casters that move in every frame: each dynamic object, and each object under a dynamic
 /// one, that has a mesh and casts shadows, and each dynamic instance batch that casts shadows. A
 /// caster whose material moves its vertices by a vertex offset of its own counts too, as its
-/// shadow may sway in every frame. The list follows the scene's structure, so it changes only in
-/// frames where the structure changed.
+/// shadow may sway in every frame, unless the material holds its casters still: its offset then
+/// follows the view that draws it, so a caster that only shadow passes draw keeps the layer's
+/// shadow. A material whose offset fades out at a distance from the camera carries that distance
+/// here, and a caster of it that stands farther away than that stands still, so a far cascade that
+/// only its sway reaches keeps the layer it holds. The list follows the scene's structure, so it
+/// changes only in frames where the structure changed.
 #[derive(Debug, Default)]
 pub struct MovingCasters {
     slots: Vec<u32>,
+    /// The distance from the camera out to which each slot's caster sways: 0 for a caster that
+    /// moves at every distance, such as a dynamic object's.
+    slot_sway: Vec<f32>,
     batches: Vec<Handle>,
+    /// The distance from the camera out to which each batch sways, as [`Self::slot_sway`] gives it.
+    batch_sway: Vec<f32>,
     /// True once the list matches the scene's structure.
     built: bool,
 }
 
 impl MovingCasters {
     /// Lists the scene's moving casters again when its structure changed, or when the list was
-    /// never built. `sways` says whether a material, by engine id, moves its vertices by a vertex
-    /// offset. Allocates only when the list grows past its largest size so far.
+    /// never built. `moving` gives a material's sway distance by engine id, or `None` for a
+    /// material that does not move its vertices by a vertex offset: 0 sways at every distance.
+    /// Allocates only when the list grows past its largest size so far.
     pub fn update(
         &mut self,
         scene: &SceneStorage,
         batches: &BatchTable,
         structure_changed: bool,
-        sways: impl Fn(u32) -> bool,
+        moving: impl Fn(u32) -> Option<f32>,
     ) {
         if self.built && !structure_changed {
             return;
         }
         self.built = true;
         self.slots.clear();
+        self.slot_sway.clear();
         self.batches.clear();
+        self.batch_sway.clear();
         for (id, batch) in batches.iter() {
-            let moving = batch.is_dynamic() || sways(batch.material());
-            if moving && batch.shadows() & flags::CAST_SHADOWS != 0 {
+            let sway = batch
+                .is_dynamic()
+                .then_some(0.0)
+                .or_else(|| moving(batch.material()));
+            if let Some(sway) = sway
+                && batch.shadows() & flags::CAST_SHADOWS != 0
+            {
                 self.batches.push(id);
+                self.batch_sway.push(sway);
             }
         }
         let (parents, slot_flags, meshes) = (scene.parents(), scene.flags(), scene.meshes());
@@ -838,8 +863,15 @@ impl MovingCasters {
         let high = scene.slots().high_water() as usize;
         for slot in 0..high {
             let casts = meshes[slot] != 0 && slot_flags[slot] & flags::CAST_SHADOWS != 0;
-            if casts && (moves(slot) || sways(materials[slot])) {
+            if !casts {
+                continue;
+            }
+            let sway = moves(slot)
+                .then_some(0.0)
+                .or_else(|| moving(materials[slot]));
+            if let Some(sway) = sway {
                 self.slots.push(slot as u32);
+                self.slot_sway.push(sway);
             }
         }
     }
@@ -851,7 +883,9 @@ impl MovingCasters {
 
     /// True when a visible moving caster on the layers `layers` touches `bounds`, in the world
     /// output of frame parity `parity`: a scene object, or an active row of a batch. Casters beyond
-    /// the box's face toward the light count, as they draw into it flattened onto that face.
+    /// the box's face toward the light count, as they draw into it flattened onto that face. A
+    /// caster whose sway fades out at a distance stands still when it is farther from `camera` than
+    /// that, so it does not count.
     pub fn touch(
         &self,
         scene: &SceneStorage,
@@ -859,40 +893,60 @@ impl MovingCasters {
         parity: usize,
         layers: u32,
         bounds: &CascadeBox,
+        camera: [f64; 3],
     ) -> bool {
         let spheres = scene.world(parity).spheres();
         let (slot_flags, slot_layers, cells) = (scene.flags(), scene.layers(), scene.cells());
         let table = scene.cell_table();
         let size = f64::from(CELL_SIZE);
-        let touches = |cell: u32, center: [f32; 3], radius: f32| {
+        let centre = |cell: u32, center: [f32; 3]| {
             let cell = table.coords(cell);
-            let center = std::array::from_fn(|k| f64::from(cell[k]) * size + f64::from(center[k]));
-            bounds.touches(center, radius)
+            std::array::from_fn(|k| f64::from(cell[k]) * size + f64::from(center[k]))
         };
-        let objects = self.slots.iter().any(|&slot| {
+        // A caster whose offset has faded out by its distance stands still, so only the box can
+        // bring a far cascade to draw for it.
+        let objects = self.slots.iter().enumerate().any(|(k, &slot)| {
             let s = slot as usize;
             if slot_flags[s] & flags::VISIBLE == 0 || slot_layers[s] & layers == 0 {
                 return false;
             }
             let center = [spheres.xs[s], spheres.ys[s], spheres.zs[s]];
-            touches(cells[s], center, spheres.radii[s])
+            let at = centre(cells[s], center);
+            !beyond_sway(at, spheres.radii[s], self.slot_sway[k], camera)
+                && bounds.touches(at, spheres.radii[s])
         });
         objects
-            || self.batches.iter().any(|&id| {
+            || self.batches.iter().enumerate().any(|(k, &id)| {
                 let Ok(batch) = batches.get(id) else {
                     return false;
                 };
                 if batch.layers() & layers == 0 {
                     return false;
                 }
+                let sway = self.batch_sway[k];
                 let spheres = batch.world(parity).spheres();
                 let rows = batch.frame_active_count(parity) as usize;
                 (0..rows).any(|r| {
                     let center = [spheres.xs[r], spheres.ys[r], spheres.zs[r]];
-                    touches(batch.cells()[r], center, spheres.radii[r])
+                    let at = centre(batch.cells()[r], center);
+                    !beyond_sway(at, spheres.radii[r], sway, camera)
+                        && bounds.touches(at, spheres.radii[r])
                 })
             })
     }
+}
+
+/// True when a caster whose bounding sphere is at `at` from the world's origin, of `radius`, stands
+/// still in a frame whose camera is at `camera`: the material's vertex offset fades out at `sway`
+/// meters from the camera, and 0 sways at every distance. The nearest point of the sphere counts, so
+/// a caster whose middle is past the distance but whose edge reaches within it still moves.
+fn beyond_sway(at: [f64; 3], radius: f32, sway: f32, camera: [f64; 3]) -> bool {
+    if sway <= 0.0 {
+        return false;
+    }
+    let away = f64::from(sway) + f64::from(radius);
+    (at[0] - camera[0]).powi(2) + (at[1] - camera[1]).powi(2) + (at[2] - camera[2]).powi(2)
+        > away * away
 }
 
 /// The main directional light's shadows in one frame: its cascades, fitted to the camera's view,
@@ -914,8 +968,51 @@ pub struct ShadowFrame {
     /// The frame's clock, as the camera's view has it, which the vertex offsets of custom
     /// materials' casters read.
     pub clock: [f32; 4],
+    /// The scene camera, which a masked custom material's surface reads where its caster runs:
+    /// the matrices, planes, place and target size that the built-in values give.
+    pub shading: ShadingCamera,
     /// The object whose shadow the light draws into a tile of its own, while it names one.
     pub hero: Option<HeroShadow>,
+}
+
+/// The camera that a light's view shades for, as a masked custom material's caster reads it: the
+/// camera's view-projection, view and projection matrices, the size of its render target in pixels
+/// with one over each, its place as a homogeneous point, its near and far distances with the rest
+/// of its range values, and its cell. The view's own fields belong to the light, so the surface
+/// function would otherwise place its fragment in the shadow map's pixels and read the light where
+/// it reads the camera.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ShadingCamera {
+    /// The matrix from positions relative to the camera to its clip space.
+    pub view_proj: Mat4,
+    /// The camera's view matrix, which looks down -z.
+    pub view: Mat4,
+    /// The camera's projection matrix, with the engine's reversed depth.
+    pub projection: Mat4,
+    /// The camera's render target's size in pixels, and one over each.
+    pub target: [f32; 4],
+    /// The camera's place as a homogeneous point, as its view's `camera_position` holds it.
+    pub eye: [f32; 4],
+    /// The camera's near and far distances, then the rest of its range values.
+    pub range: [f32; 4],
+    /// The camera's cell, whose absolute position is the world's position that the built-in values
+    /// give as `camera.position`.
+    pub camera: CellPosition,
+}
+
+impl ShadingCamera {
+    /// The camera of `frame`, as a light's view gives it to a material.
+    pub fn of(frame: &ViewFrame) -> Self {
+        Self {
+            view_proj: multiply(&frame.uniform.projection, &frame.uniform.view),
+            view: frame.uniform.view,
+            projection: frame.uniform.projection,
+            target: frame.uniform.target_size,
+            eye: frame.uniform.camera_position,
+            range: frame.uniform.camera_range,
+            camera: frame.camera,
+        }
+    }
 }
 
 impl ShadowFrame {
@@ -949,6 +1046,13 @@ impl ShadowFrame {
                 target_size: [size, size, 1.0 / size, 1.0 / size],
                 clock: self.clock,
                 camera_world: camera_world(self.camera),
+                // The scene camera, which a material's surface reads where its caster runs.
+                view: self.shading.view,
+                projection: self.shading.projection,
+                camera_range: self.shading.range,
+                camera_view_proj: self.shading.view_proj,
+                camera_target: self.shading.target,
+                camera_eye: self.shading.eye,
                 ..FrameUniform::default()
             },
             frustum: cascade.frustum,
@@ -1132,7 +1236,7 @@ pub struct ShadowUniform {
     pub texels: [f32; MAX_CASCADES],
     /// The light's bias toward the light and its normal bias, in meters, then 1 when receivers pick
     /// their cascade by their distance from the camera, or 0 by their distance along its view, and
-    /// 0.
+    /// the share of its shadow that the light draws, from 0 to 1.
     pub biases: [f32; 4],
     /// The texels on each side of each layer and the size of one texel in texture coordinates,
     /// then the texels on each side of the filter's square, and the step between two stored
@@ -1164,7 +1268,7 @@ impl ShadowUniform {
                 settings.bias,
                 settings.normal_bias,
                 f32::from(u8::from(cascades.by_distance)),
-                0.0,
+                settings.intensity.clamp(0.0, 1.0),
             ],
             kernel: [
                 map_size,
@@ -1225,6 +1329,7 @@ mod tests {
         distance: 200.0,
         filter: 3,
         blend: DEFAULT_BLEND,
+        intensity: 1.0,
     };
 
     /// The cascades of a camera at the world's origin.
@@ -1316,18 +1421,85 @@ mod tests {
         assert!(!hero.touches(at(-(f64::from(radius) * f64::from(HERO_REACH + 3.0))), 0.1));
     }
 
+    /// The lens of the hero demo's wide window, and the shadow distance that its sun names.
+    const DEMO_LENS: Lens = Lens::Perspective(Perspective {
+        fov_degrees: 42.0,
+        near: 0.05,
+        far: 1000.0,
+    });
+    const DEMO_DISTANCE: f32 = 60.0;
+    /// The radius of the bounding sphere that the demo gives its car to hold the whole vehicle.
+    const CAR_RADIUS: f32 = 2.2;
+
     #[test]
-    fn the_hero_s_tile_holds_four_times_the_first_cascade_s_texels_at_ten_metres() {
-        let cascades = fit(&camera(), &LENS, 1.5, DOWN_AND_ACROSS, &SETTINGS);
-        let first = cascades.used()[0];
-        assert!(first.end > 10.0, "the first cascade holds 10 m");
-        // An object of about a car's size, which its own tile of 1,024 texels fits tightly.
-        let hero = HeroBox::fit(DOWN_AND_ACROSS, [0.0, 1.0, 10.0], 0.9).texel(1024);
-        assert!(
-            hero * 4.0 <= first.texel,
-            "the hero's texel {hero} m against the first cascade's {} m",
-            first.texel
+    fn the_hero_s_tile_holds_four_times_the_cascades_texels_at_ten_metres_on_every_preset() {
+        // Each preset's cascades, map size and default hero tile size, as the quality settings
+        // give them. The cascade that holds 10 m is the comparison: a short shadow distance ends
+        // the first cascade before 10 m, and a receiver there reads the next one.
+        for (preset, cascades, map_size, hero_size) in [
+            ("Low", 2, 1024, 1024),
+            ("Medium", 3, 2048, 2048),
+            ("High", 3, 2048, 2048),
+            ("Ultra", 4, 4096, 4096),
+        ] {
+            let settings = ShadowSettings {
+                cascades,
+                map_size,
+                distance: DEMO_DISTANCE,
+                ..SETTINGS
+            };
+            let fitted = fit(
+                &camera(),
+                &DEMO_LENS,
+                16.0 / 9.0,
+                DOWN_AND_ACROSS,
+                &settings,
+            );
+            let near = fitted
+                .used()
+                .iter()
+                .find(|cascade| cascade.end > 10.0)
+                .expect("the cascades reach 10 m");
+            let hero = HeroBox::fit(DOWN_AND_ACROSS, [0.0, 1.0, 10.0], CAR_RADIUS).texel(hero_size);
+            assert!(
+                hero * 4.0 <= near.texel,
+                "{preset}: the hero's texel {hero} m against the cascade's {} m",
+                near.texel
+            );
+        }
+    }
+
+    #[test]
+    fn a_bigger_hero_object_needs_a_bigger_tile_for_the_same_detail() {
+        // The ratio is the hero tile's texels over the object's width, so a tile that keeps a
+        // car's shadow at four times the cascades' has to grow with the object. The presets give
+        // each size a tile of its own: this guards that the setting, not the preset's light tile
+        // size, decides the detail.
+        let settings = ShadowSettings {
+            cascades: 3,
+            map_size: 2048,
+            distance: DEMO_DISTANCE,
+            ..SETTINGS
+        };
+        let fitted = fit(
+            &camera(),
+            &DEMO_LENS,
+            16.0 / 9.0,
+            DOWN_AND_ACROSS,
+            &settings,
         );
+        let near = fitted
+            .used()
+            .iter()
+            .find(|cascade| cascade.end > 10.0)
+            .expect("the cascades reach 10 m");
+        let texel = |radius: f32, size: u32| {
+            HeroBox::fit(DOWN_AND_ACROSS, [0.0, 1.0, 10.0], radius).texel(size)
+        };
+        // The car's 4.4 m sphere keeps four times the detail at 2,048 texels, and a sphere twice
+        // its size needs 4,096 for the same ratio.
+        assert!(texel(CAR_RADIUS, 2048) * 4.0 <= near.texel);
+        assert!(texel(CAR_RADIUS * 2.0, 4096) * 4.0 <= near.texel);
     }
 
     #[test]
@@ -1512,12 +1684,13 @@ mod tests {
         let settings = ShadowSettings {
             bias: 2.0,
             normal_bias: 0.5,
+            intensity: 0.25,
             ..SETTINGS
         };
         let uniform = ShadowUniform::new(&cascades, &settings, CascadeDepth::Unorm16);
         assert_eq!(uniform.forward[3], 3.0);
         assert_eq!(uniform.as_bytes().len(), SHADOW_UNIFORM_BYTES as usize);
-        assert_eq!(uniform.biases, [2.0, 0.5, 1.0, 0.0]);
+        assert_eq!(uniform.biases, [2.0, 0.5, 1.0, 0.25]);
         for (k, cascade) in cascades.used().iter().enumerate() {
             assert_eq!(uniform.view_proj[k], cascade.view_proj);
             assert_eq!(uniform.ends[k], cascade.end);
@@ -1571,6 +1744,15 @@ mod tests {
             drawn: 0b111,
             depth: CascadeDepth::default(),
             clock: [2.5, 0.016, 0.0, 0.0],
+            shading: ShadingCamera {
+                view_proj: std::array::from_fn(|k| k as f32),
+                view: std::array::from_fn(|k| k as f32 + 20.0),
+                projection: std::array::from_fn(|k| k as f32 + 40.0),
+                target: [640.0, 360.0, 1.0 / 640.0, 1.0 / 360.0],
+                eye: [0.0, 0.0, 0.0, 1.0],
+                range: [0.1, 40.0, 0.0, 0.0],
+                camera: CellPosition::default(),
+            },
             hero: None,
         };
         let size = SETTINGS.map_size as f32;
@@ -1578,6 +1760,14 @@ mod tests {
             let uniform = frame.view_frame(k).uniform;
             // Custom materials' casters read the frame's clock, as the camera's view has it.
             assert_eq!(uniform.clock, frame.clock);
+            // And the camera's view-projection, target and place, not the light's.
+            assert_eq!(uniform.camera_view_proj, frame.shading.view_proj);
+            assert_eq!(uniform.camera_target, frame.shading.target);
+            assert_eq!(uniform.camera_eye, frame.shading.eye);
+            // The camera's own fields hold the scene camera, which the built-in `camera` reads.
+            assert_eq!(uniform.view, frame.shading.view);
+            assert_eq!(uniform.projection, frame.shading.projection);
+            assert_eq!(uniform.camera_range, frame.shading.range);
             // The direction toward the light, as an orthographic camera's position gives it.
             let [x, y, z, w] = uniform.camera_position;
             let toward = DOWN_AND_ACROSS.map(|v| -v);
@@ -1598,6 +1788,58 @@ mod tests {
 
     /// A camera far from the world's origin, in its own cell, as the core places it.
     const FAR_OUT: [f64; 3] = [977.0 * 1024.0 + 3.3, 5.0, -2.0e5 - 0.7];
+
+    #[test]
+    fn every_cascade_reads_rows_relative_to_the_main_camera() {
+        // A frame converts a feature-instance draw's world rows once, relative to the main camera,
+        // and every shadow view reads those rows through its own light's matrix. That matrix takes
+        // positions relative to the main camera, so the one conversion serves every view: a
+        // conversion for each view would subtract the same position in each of them.
+        let camera = CellPosition {
+            cell: [7, -3, 11],
+            local: [1.5, 0.25, -2.0],
+        };
+        let frame = ShadowFrame {
+            cascades: fit_cascades(
+                &turned(0.0),
+                camera.absolute(),
+                &LENS,
+                16.0 / 9.0,
+                DOWN_AND_ACROSS,
+                &SETTINGS,
+            ),
+            settings: SETTINGS,
+            camera,
+            layers: 1,
+            drawn: 0b111,
+            depth: CascadeDepth::default(),
+            clock: [0.0; 4],
+            shading: ShadingCamera::default(),
+            hero: None,
+        };
+        // A point below the camera and in front of it, and the same point left in world
+        // coordinates, as a draw that skipped the conversion would hand the shadow view.
+        let relative = [0.0, -4.0, -6.0];
+        let world: [f32; 3] = std::array::from_fn(|k| camera.absolute()[k] as f32 + relative[k]);
+        let mut held = 0;
+        for cascade in 0..SETTINGS.cascades as usize {
+            let view = frame.view_frame(cascade);
+            assert_eq!(
+                view.camera, camera,
+                "cascade {cascade} carries the main camera"
+            );
+            let [x, y, _] = project(&view.uniform.view_proj, relative);
+            if x.abs() < 1.0 && y.abs() < 1.0 {
+                held += 1;
+            }
+            let [x, y, _] = project(&view.uniform.view_proj, world);
+            assert!(
+                x.abs() > 1.0 || y.abs() > 1.0,
+                "cascade {cascade} holds world rows, so its matrix takes them unconverted"
+            );
+        }
+        assert!(held > 0, "a cascade holds the camera-relative point");
+    }
 
     /// The texel of each cascade's layer that holds the world's point `point`, as fractions of
     /// texels, seen from a camera at `position` turned by `yaw` degrees, or `None` where the
@@ -2135,5 +2377,19 @@ mod tests {
                 assert_eq!(share, 0.0, "{preset} at {rate}");
             }
         }
+    }
+
+    #[test]
+    fn a_sway_that_fades_out_leaves_far_casters_still() {
+        let camera = [10.0, 2.0, -4.0];
+        // A caster whose offset moves at every distance always counts.
+        assert!(!beyond_sway([1000.0, 0.0, 0.0], 1.0, 0.0, camera));
+        // Within the material's sway distance the caster counts, and past it it stands still.
+        assert!(!beyond_sway([10.0, 2.0, 35.0], 1.0, 40.0, camera));
+        assert!(beyond_sway([10.0, 2.0, 38.0], 1.0, 40.0, camera));
+        // The distance runs in every direction, so height counts as well.
+        assert!(beyond_sway([10.0, 45.0, -4.0], 1.0, 40.0, camera));
+        // A caster whose middle is past the distance but whose edge reaches within it still moves.
+        assert!(!beyond_sway([10.0, 45.0, -4.0], 4.0, 40.0, camera));
     }
 }

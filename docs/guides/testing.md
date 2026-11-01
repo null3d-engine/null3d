@@ -96,6 +96,26 @@ bunx @null3d/cli shot --out shot.png --time 1.5 --gpu webgl2
 
 Beside the image, it saves `shot.json` with the frame's time, number, GPU tier and figures, and with what the page logged. When the hold fails, it prints the error and saves no image. [The `null3d` command](../cli/null3d.md) lists its options.
 
+A time on its own cannot show a state that a key press or a click causes. `--script` drives the page with a timed script. Its keys, pointer and property writes land at sketch times, and each shot step draws one image:
+
+```sh
+bunx @null3d/cli shot --script drive.script --out tour.png
+```
+
+[Timed scripts](../cli/null3d.md#timed-scripts) gives the steps and the addresses of objects and properties.
+
+## Record a session that went wrong
+
+A bug on a phone can replay on this computer. Open your page with `?record`: the engine records each frame's step and the input that the sketch read, from the page's first frame, and a **Save recording** button appears. Reproduce the bug, tap it, and copy the file to the computer. The recording keeps the sketch's random seed, so the sketch's setup builds the same scene on the replay.
+
+Open the same page with `?replay=<file>`, or replay a file from anywhere with the command line:
+
+```sh
+bunx @null3d/cli shot --replay bug.n3dr --out bug.png
+```
+
+The replay runs the recording's frames in order, with their recorded steps and input, and draws the last one. It reads no live input. Its pixels differ from the phone's as any two GPUs' do, so a replay proves the frames and not the picture. A recording stops at 600 seconds of sketch time.
+
 ## Image tests from the command line
 
 `bunx @null3d/cli test` runs your image tests with no test code. List them in `null3d.json` in your project's folder:
@@ -114,6 +134,8 @@ Beside the image, it saves `shot.json` with the frame's time, number, GPU tier a
 ```text
 PASS  start on webgl2: it matches the reference (image test-results/null3d/chrome-real-gpu/webgl2/start.png)
 ```
+
+A test can give `script` instead of `hold`. It then draws each shot step of the script, under the name `<test>-<shot>`, and each state keeps its own reference.
 
 The first run of a new test fails, because the test has no reference yet. Open its image, and when it is right, keep it with `bunx @null3d/cli test --update-references`. [The `null3d` command](../cli/null3d.md#test) gives the settings of a test, where the files go, and what each line says.
 
@@ -135,7 +157,7 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 
 - Move things with `time.now`, the frame's step (`dt` or `time.dt`), or in `onFixedUpdate`. `Date.now()` and `performance.now()` change from run to run.
 - Use `math.random` or `Math.random`: hold mode seeds both. Random numbers from another source, such as `crypto.getRandomValues`, are not seeded.
-- Expect no input. In hold mode, the sketch gets none: every key and button stays up, and the pointer stays at the canvas's top-left corner.
+- Expect no input, unless the test gives a timed script. A plain hold reads none: every key and button stays up, and the pointer stays at the canvas's top-left corner. A script's key and pointer steps reach the sketch at their times.
 - Finish loading in the setup. Await every asset there, because the hold starts when the setup's promise resolves.
 - Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them in the sketch with `new URL(import.meta.url).searchParams`. The page's messages reach the sketch only after the hold, because `createEngine` resolves after it.
 - Keep a reference image per GPU tier, and force the tier with `?gpu=webgpu`, `?gpu=compat` or `?gpu=webgl2`. The tiers can differ slightly at edges.
@@ -154,6 +176,7 @@ The engine reads these switches from the page's address in development builds, o
 | `?direct=on`, `?direct=off` | On WebGPU, force the direct or the indirect draw path, in place of the start-up probe's measured choice, to compare GPU time. `engine.capabilities.directDraws` says which path the engine took ([Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames)) |
 | `?depth=reversed`, `?depth=reversed-gl`, `?depth=standard` | Force a WebGL2 depth mode. `reversed-gl` draws as browsers without the `EXT_clip_control` extension do, such as Firefox |
 | `?uploads=copy` | On WebGL2, upload a copy of the data, as browsers that refuse to read shared memory need |
+| `?multidraw=off` | On WebGL2, draw as a browser without the `WEBGL_multi_draw` extension does: the engine probes none and draws the whole levels of a cluster tree in place of its patches ([Levels of detail](../concepts/lod.md#cluster-levels)) |
 | `?compile=wait` | On WebGL2, wait for each shader program's compile at its first draw, as browsers without the `KHR_parallel_shader_compile` extension do |
 | `?check=fresh` | Measure the quality preset again, as on a first visit, instead of taking the stored result of an earlier [preset check](../concepts/quality-presets.md#repeat-visits) |
 | `?compression=bc`, `?compression=astc,etc2`, `?compression=none` | Keep KTX2 textures to the compressed formats that the list names, of those the device has, as on a device with only those. `none` gives every KTX2 texture `rgba8unorm` |
@@ -173,3 +196,4 @@ The engine reads these switches from the page's address in development builds, o
 | `?still-camera=off` | Draw every frame of a view that holds still, without the [still-camera accumulation](../concepts/post-processing.md#still-camera-accumulation): the view neither blends nor rests. Hold mode draws without it too |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest; the engine then ignores starts that crashed before |
 | `?target-fps=display`, `?target-fps=90` | Set the frame rate that the preset check and the governor defend, in place of the `targetFps` option: the display's full rate, or at most that many frames per second ([The target frame rate](../concepts/quality-presets.md#the-target-frame-rate)) |
+| `?view=levels` | Draw a debug view, here the levels of detail, with no code change ([Debug views](../api/debug.md#the-view-from-the-address)). The switch takes any view name that `debug.view` takes |

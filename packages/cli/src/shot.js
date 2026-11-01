@@ -2,18 +2,28 @@
 // browser, and saves it as a PNG file. Beside the image it saves a JSON file with the frame's facts
 // and what the page and the dev server logged. It prints a short summary for agents, and fails when
 // the engine drew no frame.
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { parseSize, readOptions, readSeconds, sizeRule, UsageError } from './args.js';
 import { heldImage, TIERS } from './page.js';
 import { writePng } from './png.js';
-import { holdPage, startRunner } from './runner.js';
+import { RECORDING_PATH, recordingPlugin } from './recording-page.js';
+import { holdPage, replayPage, startRunner } from './runner.js';
+import {
+	readScript,
+	scriptProgram,
+	scriptReads,
+	scriptReadTimes,
+	shotAt,
+	shotSteps,
+} from './script.js';
 import { counted, listed, shownPath } from './text.js';
 
 /** @import { Environment } from './browser.js' */
-/** @import { HeldStats, Tier } from './page.js' */
+/** @import { HeldStats, HoldScriptResult, ReplayResult, Tier } from './page.js' */
 /** @import { RgbaImage } from './png.js' */
 /** @import { HeldPage } from './runner.js' */
+/** @import { ScriptStep, ShotStep } from './script.js' */
 
 const OPTIONS = /** @type {const} */ ({
 	out: { type: 'string', default: 'shot.png' },
@@ -22,6 +32,8 @@ const OPTIONS = /** @type {const} */ ({
 	gpu: { type: 'string' },
 	page: { type: 'string', default: '/' },
 	timeout: { type: 'string', default: '60' },
+	script: { type: 'string' },
+	replay: { type: 'string' },
 	help: { type: 'boolean', short: 'h', default: false },
 });
 
@@ -33,13 +45,20 @@ image, it saves a JSON file with the frame's facts and the errors and warnings t
 the dev server logged.
 
 Options:
-  --out <file.png>          The image to write (shot.png). The JSON file gets its name: shot.json
+  --out <file.png>          The image to write (shot.png). The JSON file gets its name: shot.json.
+                            With --script, each shot step writes its own image: shot-<name>.png
   --time <seconds>          The sketch time of the frame, from 0 to 600 (the page's own hold
-                            time, or 0)
+                            time, or 0). A script sets the time of each of its shots instead
   --size <width>x<height>   The browser window in CSS pixels, one image pixel each (1280x720)
   --gpu <tier>              webgpu, compat or webgl2 (the engine's own choice)
   --page <path>             The page to open, from the server's root (/)
-  --timeout <seconds>       How long the page may take to draw the frame (60)
+  --timeout <seconds>       How long the page may take to draw each frame (60)
+  --script <file>           A timed script that drives the page and draws each of its shot steps.
+                            Its steps are key, pointer, set, shot and dump, one per line, each with
+                            the sketch time in seconds at which it happens
+  --replay <file>           A recording that the page replays, and the last frame draws. The
+                            recording holds each frame's step and the input that the sketch read,
+                            so it draws the same frames that its session drew
 
 It draws with Google Chrome on this computer's GPU. When the CI variable is set, it draws with
 Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU.`;
@@ -52,6 +71,8 @@ Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU
  * @property {Tier} [gpu] The GPU tier to force.
  * @property {string} page The page to open, from the server's root.
  * @property {number} timeoutMs How long the page may take to draw the frame.
+ * @property {readonly ScriptStep[]} [steps] The steps of the timed script that drives the page.
+ * @property {{ bytes: Uint8Array, file: string }} [recording] The recording that the page replays.
  * @property {boolean} help True to print the help instead.
  */
 
@@ -84,12 +105,37 @@ export function readPage(page) {
  */
 export function parseShotArgs(args) {
 	const values = readOptions(args, OPTIONS);
-	const { out, size, page, timeout, help } = values;
+	const { out, size, page, timeout, script, replay, help } = values;
 	if (!/\.png$/i.test(out)) throw new UsageError(`--out must name a .png file, not "${out}"`);
 	const gpu = /** @type {Tier | undefined} */ (values.gpu);
 	if (gpu !== undefined && !TIERS.includes(gpu))
 		throw new UsageError(`--gpu takes ${TIERS.join(', ')}, not "${gpu}"`);
 	readPage(page);
+	if (script !== undefined && replay !== undefined)
+		throw new UsageError('--script and --replay cannot both be given: a replay drives the page');
+	const steps = script === undefined ? undefined : readScript(script);
+	let recording;
+	if (replay !== undefined) {
+		try {
+			recording = { bytes: readFileSync(replay), file: replay };
+		} catch (error) {
+			throw new UsageError(
+				`cannot read the recording ${replay}: ${error instanceof Error ? error.message : error}`,
+			);
+		}
+	}
+	if (recording !== undefined && values.time !== undefined)
+		throw new UsageError(
+			'--time and --replay cannot both be given: a replay draws the last frame of its recording',
+		);
+	if (steps !== undefined && values.time !== undefined)
+		throw new UsageError(
+			'--time and --script cannot both be given: each shot of a script sets its own time',
+		);
+	if (steps !== undefined && shotSteps(steps).length === 0)
+		throw new UsageError(
+			`the script ${script} has no shot step. A script draws an image where a step says "shot <name>"`,
+		);
 	return {
 		out,
 		...(values.time !== undefined && { time: readSeconds('--time', values.time) }),
@@ -97,6 +143,8 @@ export function parseShotArgs(args) {
 		...(gpu !== undefined && { gpu }),
 		page,
 		timeoutMs: readSeconds('--timeout', timeout, { above: true }) * 1000,
+		...(steps !== undefined && { steps }),
+		...(recording !== undefined && { recording }),
 		help,
 	};
 }
@@ -122,6 +170,10 @@ export function parseShotArgs(args) {
  * @property {number} [ms] Time from the page's navigation to the engine's result, in milliseconds.
  * @property {string[]} errors What the page and the dev server logged as errors.
  * @property {string[]} warnings What the page logged as warnings.
+ * @property {HoldScriptResult} [script] What the timed script's dump steps read, and the steps that
+ *   failed. Only a run that a script drives has it.
+ * @property {ReplayResult} [replay] What a replay gave: its frames, its final time and its sketch.
+ *   Only a run that a recording drives has it.
  */
 
 /**
@@ -148,7 +200,7 @@ export function shotReport(
 				warnings,
 			},
 		};
-	const { time, frame, tier, width, height, stats } = result;
+	const { time, frame, tier, width, height, stats, script, replay } = result;
 	return {
 		report: {
 			ok: true,
@@ -160,6 +212,8 @@ export function shotReport(
 			height,
 			image,
 			...(stats && { stats }),
+			...(script && { script }),
+			...(replay && { replay }),
 			ms,
 			errors,
 			warnings,
@@ -202,6 +256,10 @@ export function shotSummary(report, { page, size, png, json }) {
 			lines.push(
 				`It made ${counted(stats.drawCalls.median, 'draw call')}, uploaded ${byteSize(stats.uploadBytes.median)} and built ${counted(stats.pipelines, 'pipeline')}.`,
 			);
+		if (report.replay)
+			lines.push(
+				`Replayed ${counted(report.replay.frames, 'frame')} from ${report.replay.sketch} to ${report.replay.seconds} s${report.replay.stopped ? ', where the recording stopped at its limit' : ''}.`,
+			);
 		lines.push(`Saved ${png}, and the frame's facts and what the page logged in ${json}.`);
 	} else {
 		lines.push(`Drew no frame of ${page}: ${report.error}`);
@@ -225,7 +283,7 @@ export function writeJson(path, value) {
 
 /**
  * Runs the shot command with its arguments, prints its summary, and returns the exit code: 0 when
- * the engine drew the frame, 1 when it did not.
+ * the engine drew every frame and no script step failed, 1 otherwise.
  *
  * @param {readonly string[]} args
  * @returns {Promise<number>}
@@ -236,7 +294,58 @@ export async function run(args) {
 		console.log(HELP);
 		return 0;
 	}
-	const png = resolve(options.out);
+	const base = resolve(options.out);
+	if (options.steps !== undefined) return scriptShots(options, base, options.steps);
+	return options.recording === undefined
+		? oneShot(options, base)
+		: replayShot(options, base, options.recording);
+}
+
+/**
+ * The image file of one shot of a script: the output's name and the step's name, such as
+ * `tour-start.png` for `--out tour.png` and a step named start.
+ *
+ * @param {string} base The image file that `--out` names, from the current folder.
+ * @param {ShotStep} step
+ */
+export const shotFileName = (base, step) => base.replace(/\.png$/i, `-${step.name}.png`);
+
+/**
+ * Draws one frame without a script, and prints its summary.
+ *
+ * @param {ShotOptions} options
+ * @param {string} png The image file, from the current folder.
+ */
+async function oneShot(options, png) {
+	return drawShot(options, png, {
+		visit: (runner) => holdPage(runner, { ...options, path: options.page }),
+	});
+}
+
+/**
+ * Draws the last frame of a recording, which the page replays from its first frame, and prints the
+ * frame and what the replay gave.
+ *
+ * @param {ShotOptions} options
+ * @param {string} png The image file, from the current folder.
+ * @param {{ bytes: Uint8Array, file: string }} recording
+ */
+async function replayShot(options, png, recording) {
+	return drawShot(options, png, {
+		plugins: [recordingPlugin(recording.bytes)],
+		visit: (runner) => replayPage(runner, { ...options, path: options.page }),
+	});
+}
+
+/**
+ * Draws one frame through a page that `visit` opens, and prints its summary. One page visit draws
+ * one frame, so a command that draws several opens the page once for each.
+ *
+ * @param {ShotOptions} options
+ * @param {string} png The image file, from the current folder.
+ * @param {{ plugins?: readonly import('vite').PluginOption[], visit: (runner: import('./runner.js').Runner) => Promise<HeldPage> }} run
+ */
+async function drawShot(options, png, { plugins = [], visit }) {
 	const json = png.replace(/\.png$/i, '.json');
 	// An image from an earlier run must never pass for this run's.
 	rmSync(png, { force: true });
@@ -244,8 +353,8 @@ export async function run(args) {
 	let report;
 	let runner;
 	try {
-		runner = await startRunner();
-		const held = await holdPage(runner, { ...options, path: options.page });
+		runner = await startRunner({ plugins: [...plugins] });
+		const held = await visit(runner);
 		const facts = {
 			environment: runner.environment,
 			browser: runner.browserName,
@@ -255,19 +364,159 @@ export async function run(args) {
 		report = made.report;
 		if (made.image) writePng(png, made.image);
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		report = {
-			ok: false,
-			page: options.page,
-			code: null,
-			error: message,
-			errors: [],
-			warnings: [],
-		};
+		report = failedReport(options.page, error);
 	} finally {
 		await runner?.close();
 	}
 	writeJson(json, report);
 	console.log(shotSummary(report, { ...options, png: shownPath(png), json: shownPath(json) }));
 	return report.ok ? 0 : 1;
+}
+
+/**
+ * The report of a run that failed outside the page, such as a browser that did not open.
+ *
+ * @param {string} page The page as asked for.
+ * @param {unknown} error
+ * @returns {ShotReport}
+ */
+function failedReport(page, error) {
+	return {
+		ok: false,
+		page,
+		code: null,
+		error: error instanceof Error ? error.message : String(error),
+		errors: [],
+		warnings: [],
+	};
+}
+
+/**
+ * Draws each shot of a timed script at its step's time, with the engine performing the script's
+ * input and property steps, and prints the frames, the dumps and the steps that failed. A hold also
+ * runs at each dump's time, so a dump that follows the last shot is read. Every hold starts from
+ * time 0, so each image is the state at its step, whatever the run before drew.
+ *
+ * @param {ShotOptions} options
+ * @param {string} base The image file that `--out` names, from the current folder.
+ * @param {readonly ScriptStep[]} steps
+ */
+async function scriptShots(options, base, steps) {
+	const program = scriptProgram(steps);
+	/** The times at which the script reads a dump or draws a shot, in order, once each. */
+	const times = scriptReadTimes(steps);
+	/** @type {DrawnShot[]} */
+	const drawn = [];
+	/** @type {HoldScriptResult[]} */
+	const reads = [];
+	let runner;
+	let failure;
+	try {
+		runner = await startRunner();
+	} catch (error) {
+		failure = error instanceof Error ? error.message : String(error);
+	}
+	try {
+		if (runner !== undefined)
+			for (const at of times) {
+				const shot = shotAt(steps, at);
+				const png = shot === undefined ? undefined : shotFileName(base, shot);
+				const json = png === undefined ? undefined : png.replace(/\.png$/i, '.json');
+				if (png !== undefined) rmSync(png, { force: true });
+				try {
+					const held = await holdPage(runner, {
+						...options,
+						path: options.page,
+						time: at,
+						script: program,
+					});
+					const made = shotReport(held, {
+						environment: runner.environment,
+						browser: runner.browserName,
+						image: png === undefined ? '' : basename(png),
+					});
+					if (made.report.script !== undefined) reads.push(made.report.script);
+					if (shot !== undefined && png !== undefined && json !== undefined) {
+						if (made.image) writePng(png, made.image);
+						writeJson(json, made.report);
+						drawn.push({ step: shot, report: made.report, png, json });
+					}
+				} catch (error) {
+					// A browser that failed to open is the run's failure, not the command's: say
+					// which shot failed and go on to the next one.
+					if (shot === undefined || png === undefined || json === undefined) continue;
+					const report = failedReport(options.page, error);
+					writeJson(json, report);
+					drawn.push({ step: shot, report, png, json });
+				}
+			}
+	} finally {
+		await runner?.close();
+	}
+	if (failure !== undefined)
+		for (const shot of shotSteps(steps)) {
+			const png = shotFileName(base, shot);
+			const json = png.replace(/\.png$/i, '.json');
+			const report = failedReport(options.page, failure);
+			writeJson(json, report);
+			drawn.push({ step: shot, report, png, json });
+		}
+	console.log(scriptSummary(drawn, reads));
+	const failed =
+		drawn.some(({ report }) => !report.ok) || reads.some((read) => read.problems.length > 0);
+	return failed ? 1 : 0;
+}
+
+/**
+ * @typedef {object} DrawnShot One shot of a script: its step, its report, and its files.
+ * @property {ShotStep} step
+ * @property {ShotReport} report
+ * @property {string} png The image file, from the current folder.
+ * @property {string} json The report's file, from the current folder.
+ */
+
+/**
+ * The summary that the command prints for a timed script: each frame that it drew, what the dump
+ * steps read, and each step that failed.
+ *
+ * @param {readonly DrawnShot[]} drawn
+ * @param {readonly HoldScriptResult[]} reads What the holds read, in time order.
+ */
+export function scriptSummary(drawn, reads) {
+	const lines = [];
+	for (const { step, report, png, json } of drawn) {
+		if (report.ok) {
+			lines.push(
+				`Drew ${step.name} at ${report.time} s, frame ${report.frame}, on ${report.tier}: ${report.width} x ${report.height} pixels.`,
+			);
+			lines.push(
+				`Saved ${shownPath(png)}, and the frame's facts and what the page logged in ${shownPath(json)}.`,
+			);
+		} else {
+			lines.push(`Drew no frame of ${step.name}: ${report.error}`);
+			lines.push(`Saved what went wrong and what the page logged in ${shownPath(json)}.`);
+		}
+		lines.push(...listed(report.errors, 'error'), ...listed(report.warnings, 'warning'));
+	}
+	const read = scriptReads(reads);
+	lines.push(
+		...read.dumps.map(dumpLine),
+		...read.problems.map(
+			(problem) => `Step at ${problem.at} s, ${problem.step}, failed: ${problem.error}`,
+		),
+	);
+	return lines.join('\n');
+}
+
+/**
+ * One dump as a line: the time, the target, the property and its value.
+ *
+ * @param {import('./page.js').HoldDump} dump
+ */
+export function dumpLine(dump) {
+	const at = `${dump.at} s`;
+	if (typeof dump.value === 'object' && !Array.isArray(dump.value))
+		return `Dump at ${at}: ${JSON.stringify(dump.target)} is ${JSON.stringify(dump.value)}.`;
+	const path = dump.path === undefined ? '' : ` ${dump.path}`;
+	return `Dump at ${at}: ${JSON.stringify(dump.target)}${path} is ${JSON.stringify(dump.value)}.`;
 }

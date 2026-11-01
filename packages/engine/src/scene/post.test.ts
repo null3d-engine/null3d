@@ -92,6 +92,9 @@ function post(
 				luts.push([texture, at(C.POST_VALUE_LUT_INTENSITY), ...domain, ...top]);
 				return 0;
 			},
+			setGrade(_texture: number) {
+				return 0;
+			},
 			setVignette(on: boolean) {
 				vignettes.push([
 					on,
@@ -395,7 +398,7 @@ describe('post.set', () => {
 			[true, 0.5, 30, thickness, Math.fround(0.8)],
 		]);
 		expect(needs).toContain('ao');
-		expect(needs).toContain('transmission');
+		expect(needs).toContain('color_copy');
 		expect(output.ssrOn).toBe(true);
 	});
 

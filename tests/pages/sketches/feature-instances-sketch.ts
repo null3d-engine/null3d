@@ -41,7 +41,11 @@ fn fs(in: Varyings) -> @location(0) vec4f {
 /** The floats of one instance: three world-matrix rows, then the ids. */
 const ROW_FLOATS = 16;
 
-export default defineSketch(async ({ scene }) => {
+export default defineSketch(async ({ scene, quality }) => {
+	// A test compares this page's frames from two runs, so the picture must not move for a reason
+	// it does not measure. The frame-budget governor may lower the render scale and raise it again
+	// on a slow renderer; a capture keeps the settings as set instead (D-237).
+	await quality.set({ governor: false });
 	scene.setBackground('#0b0e14');
 	scene.setActiveCamera(
 		scene.createPerspectiveCamera({

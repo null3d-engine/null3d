@@ -235,6 +235,9 @@ pub(crate) struct FinalInputs {
     pub(crate) bloom: Option<BloomInputs>,
     pub(crate) grading: Grading,
     pub(crate) outline: Option<OutlineInputs>,
+    /// The mask's texture while it marks surfaces that keep their display color, whose pixels skip
+    /// the tone curve.
+    pub(crate) tone_mask: Option<u32>,
     pub(crate) fold: Option<FoldInputs>,
     pub(crate) exposure: Option<u32>,
 }
@@ -482,6 +485,7 @@ impl FinalPass {
         };
         let grade = match inputs.grading.grade {
             Some(texture) => {
+                // The table grades display color in this pass, after the tone curve.
                 settings.output.flags |= OutputUniform::GRADE;
                 texture
             }
@@ -493,8 +497,11 @@ impl FinalPass {
                 settings.outline = outline.uniform();
                 mask
             }
-            None => ids.blank_outline,
+            None => inputs.tone_mask.unwrap_or(ids.blank_outline),
         };
+        if inputs.tone_mask.is_some() {
+            settings.output.flags |= OutputUniform::UNMAPPED;
+        }
         let exposure = match inputs.exposure {
             Some(texel) => {
                 settings.output.flags |= OutputUniform::AUTO_EXPOSURE;
@@ -732,7 +739,9 @@ mod tests {
         let mut pass = FinalPass::new(IDS, SceneColor::from_format(format), antialias);
         let mut list = DrawList::with_capacity(256);
         let mut arena = UploadArena::default();
-        arena.reset(FinalPass::UPLOAD_BYTES);
+        arena
+            .reset(FinalPass::UPLOAD_BYTES)
+            .expect("room for the test's uploads");
         let mut pipelines = PipelineCache::default();
         pass.request_pipeline(&mut pipelines, false);
         pass.prepare(&mut list, &mut arena, &inputs(grading), true, true)
@@ -749,6 +758,7 @@ mod tests {
             bloom: None,
             grading,
             outline: None,
+            tone_mask: None,
             fold: None,
             exposure: None,
         }
@@ -788,7 +798,9 @@ mod tests {
         let mut list = DrawList::with_capacity(256);
         let mut arena = UploadArena::default();
         // Two steps, so two settings blocks fit.
-        arena.reset(2 * FinalPass::UPLOAD_BYTES);
+        arena
+            .reset(2 * FinalPass::UPLOAD_BYTES)
+            .expect("room for the test's uploads");
         // The first step draws at the render size and leaves the dither to the second.
         let mut first = FinalPass::new(
             IDS,
@@ -849,7 +861,9 @@ mod tests {
         assert_eq!(flags & OutputUniform::RESOLVE, 0);
 
         // Back at the whole canvas the pass uploads its own settings and makes no group.
-        arena.reset(2 * FinalPass::UPLOAD_BYTES);
+        arena
+            .reset(2 * FinalPass::UPLOAD_BYTES)
+            .expect("room for the test's uploads");
         let mut list = DrawList::with_capacity(256);
         second
             .prepare(&mut list, &mut arena, &read, false, true)

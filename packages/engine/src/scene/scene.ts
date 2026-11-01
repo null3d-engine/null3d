@@ -43,6 +43,9 @@ import {
 	isAtmosphereBackground,
 	isSkyBackground,
 	SceneBackground,
+	SceneSkyLayer,
+	type SkyLayer,
+	type SkyLayerOptions,
 } from './background';
 import { type ColorInput, linearColor, writeLinearColor } from './color';
 import { Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
@@ -143,6 +146,7 @@ import {
 	type ShaderOptions,
 } from './resources';
 import { quaternionLookAt } from './rotation';
+import { ShaderTemplates } from './shader-templates';
 import type {
 	PointBatch,
 	PointChecks,
@@ -183,7 +187,11 @@ export interface NodeOptions {
 	name?: string;
 	/** The position relative to the parent. The default is (0, 0, 0). */
 	position?: Vec3;
-	/** The rotation relative to the parent, as a quaternion (x, y, z, w). The default is none. */
+	/**
+	 * The rotation relative to the parent, as a quaternion (x, y, z, w). The default is none. The
+	 * engine scales a rotation more than one per cent off unit length, so a mistyped quaternion
+	 * still only turns the object and never stretches or shears it.
+	 */
 	rotation?: Quat;
 	/** The scale on each axis. The default is (1, 1, 1). */
 	scale?: Vec3;
@@ -480,8 +488,8 @@ export interface InstanceOptions {
 	colors?: boolean;
 	/**
 	 * Adds four numbers per row of the sketch's own in `batch.values`, 0 at first, such as a wind
-	 * phase, an age or a tint. A custom material's `surface` and `vertexOffset` functions read the
-	 * row's as `object.values`, as three.js's instanced attributes give a shader values per
+	 * phase, an age or a tint. A custom material's `surface`, `vertexOffset` and `lobe` functions
+	 * read the row's as `object.values`, as three.js's instanced attributes give a shader values per
 	 * instance. With values, a masked material tests its alpha against its cutoff, without alpha to
 	 * coverage or the alpha hash.
 	 */
@@ -644,9 +652,24 @@ export interface DirectionalShadowOptions {
 	 * cascades, or `null` for none. The tile fits the object's bounds along the light, and surfaces
 	 * near the object read it in place of the coarser cascades, so a car, a character or a product
 	 * keeps a sharp shadow. The object must cast shadows. The tile takes a layer of the shadow
-	 * atlas, which the point and spot lights share. The default is none.
+	 * atlas, which the point and spot lights share, and every layer of the atlas takes the tile's
+	 * size. The default is none.
 	 */
 	hero?: Object3D | null;
+	/**
+	 * Texels on each side of the hero's tile: 1,024, 2,048 or 4,096. The default is the quality
+	 * preset's `heroTileSize`. The tile's texels are finer as the number grows. A larger object
+	 * needs a larger number to keep the ratio of its shadow's detail to the cascades'. The atlas
+	 * holds the tile, so a larger number takes more memory for every tile of the atlas, and a hero
+	 * that moves draws the larger tile again in every frame.
+	 */
+	heroTileSize?: 1024 | 2048 | 4096;
+	/**
+	 * How much of the light's shadow it draws, from 0 for none to 1, the default, for all of it.
+	 * The shader mixes each shadow lookup toward full light by the rest, as three.js's
+	 * `LightShadow.intensity` does.
+	 */
+	intensity?: number;
 }
 
 /**
@@ -699,6 +722,12 @@ export interface LightShadowOptions {
 	 * times the sine of its angle to the light. The default is 0.02.
 	 */
 	normalBias?: number;
+	/**
+	 * How much of the light's shadow it draws, from 0 for none to 1, the default, for all of it.
+	 * The shader mixes each shadow lookup toward full light by the rest, as three.js's
+	 * `LightShadow.intensity` does.
+	 */
+	intensity?: number;
 }
 
 /**
@@ -726,10 +755,10 @@ export interface SpotLightOptions extends PointLightOptions {
 	penumbra?: number;
 	/**
 	 * A picture that the light projects over its cone, such as a window frame, a gobo pattern or a
-	 * projected texture, as `setMap` takes it. The color and intensity tint it. Without it, the
-	 * light has one color in the cone.
+	 * projected photograph, as `setMap` takes it: sRGB pixels, or a texture. The color and
+	 * intensity tint it. Without it, the light has one color in the cone.
 	 */
-	map?: LightImagePixels;
+	map?: LightImagePixels | Texture;
 	/**
 	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. The
 	 * quality preset's `shadowTiles` caps the lights that cast them at once.
@@ -876,6 +905,7 @@ const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = 
 	[C.LIGHT_VALUE_PENUMBRA]: ['penumbra', 0, 1, 'from 0 to 1'],
 	[C.LIGHT_VALUE_SHADOW_BIAS]: ['shadow bias', 0, Number.MAX_VALUE, 'at least 0'],
 	[C.LIGHT_VALUE_SHADOW_NORMAL_BIAS]: ['shadow normal bias', 0, Number.MAX_VALUE, 'at least 0'],
+	[C.LIGHT_VALUE_SHADOW_INTENSITY]: ['shadow intensity', 0, 1, 'from 0 to 1'],
 	[C.LIGHT_VALUE_SHADOW_CASCADES]: ['shadow cascades', 1, 4, 'a whole number from 1 to 4'],
 	[C.LIGHT_VALUE_SHADOW_MAP_SIZE]: [
 		'shadow map size',
@@ -890,6 +920,7 @@ const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = 
 		'above 0',
 	],
 	[C.LIGHT_VALUE_SHADOW_CONTACT]: ['contact shadow distance', 0, Number.MAX_VALUE, 'at least 0'],
+	[C.LIGHT_VALUE_HERO_SIZE]: ['hero shadow tile size', 1024, 4096, '1,024, 2,048 or 4,096'],
 	[C.LIGHT_VALUE_WIDTH]: ['width or length', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
 	[C.LIGHT_VALUE_HEIGHT]: ['height', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
 	[C.LIGHT_VALUE_RADIUS]: ['radius', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
@@ -903,6 +934,8 @@ const SHADOW_NUMBERS = [
 	['normalBias', C.LIGHT_VALUE_SHADOW_NORMAL_BIAS],
 	['distance', C.LIGHT_VALUE_SHADOW_DISTANCE],
 	['contactDistance', C.LIGHT_VALUE_SHADOW_CONTACT],
+	['heroTileSize', C.LIGHT_VALUE_HERO_SIZE],
+	['intensity', C.LIGHT_VALUE_SHADOW_INTENSITY],
 ] as const;
 
 /** The direction a new directional or spot light points: straight down. */
@@ -1700,7 +1733,7 @@ export class Mesh extends Object3D {
 
 	/**
 	 * Raises or lowers the threshold that picks this mesh's levels of detail, as Godot's
-	 * `lod_bias` does. A bias above 1 makes every switch happen farther away, so the object draws
+	 * `lod_bias` does. A bias above 1 makes every switch happen nearer, so the object draws
 	 * coarser levels. A bias below 1 keeps its detail, which a hero object wants. The bias
 	 * multiplies the threshold of the level switches and of the distance at which the object
 	 * hides, so both move by the same factor. The default is 1. The object's mesh needs levels
@@ -2207,11 +2240,12 @@ export class Light extends Object3D {
 			if (typeof value === 'number') checkNumber(call, limits[0], value, this);
 			// The shadow distance 0 is 'auto', and it stands in for the default.
 			const auto = which === C.LIGHT_VALUE_SHADOW_DISTANCE && value === 0;
-			// Cascades are whole, and map sizes are powers of two.
+			// Cascades are whole, and map and tile sizes are powers of two.
 			const whole =
 				which === C.LIGHT_VALUE_SHADOW_CASCADES
 					? Number.isInteger(value)
-					: which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE || (value & (value - 1)) === 0;
+					: (which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE && which !== C.LIGHT_VALUE_HERO_SIZE) ||
+						(value & (value - 1)) === 0;
 			if (!auto && !(value !== undefined && value >= limits[1] && value <= limits[2] && whole))
 				throw new EngineError(
 					'E1108',
@@ -2250,6 +2284,10 @@ export class Light extends Object3D {
  * Light from one direction, like sunlight. It travels along the light's -Z axis, which
  * `setDirection`, `lookAt` and the light's parents turn. Its position does not matter.
  *
+ * Up to four directional lights light surfaces at once. The first one created casts the shadows,
+ * when `castShadows` is on, and up to three more light as fill and rim lights, without shadows.
+ * A fifth directional light gives no light.
+ *
  * @category api/lights
  */
 export class DirectionalLight extends Light {
@@ -2271,8 +2309,11 @@ export class DirectionalLight extends Light {
 	 * shadow atlas, fitted tightly to the object along the light, so its shadow keeps far finer
 	 * texels than the cascades give it. Surfaces near the object read that tile in place of the
 	 * cascades. The object casts shadows; its light is this light.
+	 *
+	 * `tileSize` gives the tile's texels on each side, 1,024, 2,048 or 4,096. Leaving it out keeps
+	 * the light's value, which starts as the quality preset's `heroTileSize`.
 	 */
-	setHeroShadow(hero: Object3D | null): void {
+	setHeroShadow(hero: Object3D | null, tileSize?: 1024 | 2048 | 4096): void {
 		if (DEV) {
 			checkLive('setHeroShadow', this);
 			if (hero !== null) {
@@ -2284,6 +2325,7 @@ export class DirectionalLight extends Light {
 				checkLive('setHeroShadow', hero, true);
 			}
 		}
+		if (tileSize !== undefined) this.writeValue('setHeroShadow', C.LIGHT_VALUE_HERO_SIZE, tileSize);
 		const { core } = this.scene;
 		const object = hero === null ? 0 : hero.handle >>> 0;
 		// The core's light setters report nothing the page can act on, like every other one here.
@@ -2345,6 +2387,9 @@ export class PointLight extends Light {
  * @category api/lights
  */
 export class SpotLight extends Light {
+	/** @internal The texture that `setMap` gave the light and that is not copied yet, so a later picture cancels it. */
+	pendingTexture: Texture | null = null;
+
 	/** Sets the distance in meters where the light ends, above 0. */
 	setRange(range: number): void {
 		this.scene.core.callValues()[0] = range;
@@ -2370,17 +2415,30 @@ export class SpotLight extends Light {
 	}
 
 	/**
-	 * Projects a picture over the light's cone, such as a window frame or a gobo pattern, or `null`
-	 * to go back to one color. The color and intensity tint it. The picture fills the square around
-	 * the cone: a circle in its middle lands on the cone's edge, where the light ends. The picture's
-	 * top row lies along the world's up, as three.js aims a spot light's map. The engine resamples it
-	 * to 128 x 128 texels, so a surface far from the light shows it blurred. Up to 32 lights show
-	 * pictures at once, and rectangle and spot lights share those places. A new picture allocates
-	 * and takes a few milliseconds, so set it at setup or now and then, not in every frame.
+	 * Projects a picture over the light's cone, such as a window frame, a gobo pattern or a
+	 * projected photograph, or `null` to go back to one color. The color and intensity tint it.
+	 * The picture fills the square around the cone: a circle in its middle lands on the cone's
+	 * edge, where the light ends. The picture's top row lies along the world's up, as three.js
+	 * aims a spot light's map. The engine keeps the picture's detail up to 512 texels a side, so a
+	 * small gobo costs less memory than a detailed photograph. Give sRGB pixels, or a texture that
+	 * the engine copies once: a texture larger than 512 texels a side is reduced, and one that
+	 * changes every frame, such as a video's or a render pass's, throws E1112, because the copy
+	 * would show a single frame. A surface far from the light shows the picture blurred. Up to 32
+	 * lights show pictures at once, and rectangle and spot lights share those places. A new
+	 * picture takes up to a few tens of milliseconds, so set it at setup or now and then, not in
+	 * every frame.
 	 */
-	setMap(map: LightImagePixels | null): void {
+	setMap(map: LightImagePixels | Texture | null): void {
 		const call = 'setMap';
 		if (DEV) checkLive(call, this);
+		if (map instanceof Texture) {
+			checkMapTexture(call, map, this);
+			this.pendingImage = null;
+			this.pendingTexture = map;
+			writeLightTexture(this, map, call);
+			return;
+		}
+		this.pendingTexture = null;
 		if (map !== null && DEV) checkLightImage(call, map, this);
 		this.pendingImage = map;
 		writeLightImage(this, map, call);
@@ -2396,6 +2454,7 @@ export class SpotLight extends Light {
 	/** Removes the light at the next frame, and frees its picture's place. */
 	override destroy(): void {
 		this.pendingImage = null;
+		this.pendingTexture = null;
 		if (this.id !== 0) this.scene.core.glue.removeLightImage(this.id);
 		super.destroy();
 	}
@@ -2474,9 +2533,10 @@ export class RectAreaLight extends Light {
 	 * to one color. The color and intensity tint it. The light gives out its intensity times the
 	 * picture's average color, so a mostly dark picture lights little around it. The picture's top
 	 * row lies along the light's +Y axis, and it reads the right way round from the lit side. The
-	 * engine resamples it to 128 x 128 texels, so shiny surfaces show it sharp and rough ones
-	 * blurred. Up to 32 lights show pictures at once. A new picture allocates and takes a few milliseconds, so set it at setup or
-	 * now and then, not in every frame.
+	 * engine keeps the picture's detail up to 512 texels a side, so shiny surfaces show it sharp
+	 * and rough ones blurred. Up to 32 lights show pictures at once. A new picture allocates and
+	 * takes up to a few tens of milliseconds, so set it at setup or now and then, not in every
+	 * frame.
 	 */
 	setImage(image: LightImagePixels | null): void {
 		const call = 'setImage';
@@ -2515,10 +2575,11 @@ function writeLightImage(light: Light, image: LightImagePixels | null, call: str
 	}
 	const id = light.id;
 	scene.queueImage(
-		import('./light-images').then(({ LIGHT_IMAGE_HALVES, prepareLightImage }) => {
+		import('./light-images').then(({ lightImageSize, lightImageHalves, prepareLightImage }) => {
 			if (light.id !== id || light.pendingImage !== image) return;
-			const at = core.checkGrowth(core.glue.lightImage(id), call, light.label);
-			prepareLightImage(image, core.view(Uint16Array, at, LIGHT_IMAGE_HALVES));
+			const size = lightImageSize(image.width, image.height);
+			const at = core.checkGrowth(core.glue.lightImage(id, size), call, light.label);
+			prepareLightImage(image, core.view(Uint16Array, at, lightImageHalves(size)), size);
 			core.check(core.glue.finishLightImage(id), call, light.label, true);
 		}),
 	);
@@ -2532,6 +2593,48 @@ function checkLightImage(call: string, image: LightImagePixels, light: Light): v
 		throw new EngineError(
 			'E1108',
 			`${call}() got an image of ${width} x ${height} pixels with ${data?.length ?? 0} bytes on ${light.describe()}, which needs a whole width and height above 0 and 4 bytes per pixel.`,
+		);
+}
+
+/**
+ * Gives `light` a picture whose texels come from `texture`: the resampler picks the image's size
+ * from the texture's, and a task asks the frame builder for the copy, which `imagesSettled` waits
+ * for. The frame builder copies once, when the texture's texels reach the GPU.
+ */
+function writeLightTexture(light: SpotLight, texture: Texture, call: string): void {
+	const { scene } = light;
+	const { core } = scene;
+	const id = light.id;
+	scene.queueImage(
+		import('./light-images').then(({ lightImageSize }) => {
+			if (light.id !== id || light.pendingTexture !== texture || !texture.live) return;
+			const size = lightImageSize(texture.width, texture.height);
+			core.check(core.glue.setLightMapTexture(id, texture.handle, size), call, light.label, true);
+		}),
+	);
+}
+
+/** Throws E1112 for a texture that a spot light's map cannot copy into its image. */
+function checkMapTexture(call: string, texture: Texture, light: Light): void {
+	if (!texture.live)
+		throw new EngineError(
+			'E1112',
+			`${call}() got a texture that texture.destroy() destroyed on ${light.describe()}. Give a live texture.`,
+		);
+	if (texture.pass || texture.video)
+		throw new EngineError(
+			'E1112',
+			`${call}() got a texture that changes every frame on ${light.describe()}, which a spot light's map copies once. Give a still texture, such as one that assets.loadTexture loaded.`,
+		);
+	if (texture.depth !== 1)
+		throw new EngineError(
+			'E1112',
+			`${call}() got a texture of ${texture.depth} layers on ${light.describe()}, which a spot light's map cannot project. Give a 2D texture.`,
+		);
+	if (texture.droppedLevels > 0)
+		throw new EngineError(
+			'E1112',
+			`${call}() got a texture whose largest mip levels the texture memory budget dropped on ${light.describe()}, so it has no picture to copy. Free texture memory, or give another texture.`,
 		);
 }
 
@@ -3146,6 +3249,12 @@ export type SceneChecks = typeof SCENE_CHECKS;
 /** The color that a property write fills for a material or a light, shared by every write. */
 const PROPERTY_COLOR: [number, number, number] = [0, 0, 0];
 
+/** The values of a hold script's step, shared by every step: a rotation takes the most, at four. */
+const SCRIPT_VALUES = new Float32Array(4);
+
+/** The value that a property had before a hold script wrote it, which a full-weight write ignores. */
+const SCRIPT_BASE = new Float32Array(4);
+
 /** The smallest positive value that a light's range, a camera's planes and its view take. */
 const SMALLEST = 1e-6;
 
@@ -3185,6 +3294,12 @@ function writeProperty(
 	if (what === PROPERTY_MATERIAL) {
 		const material = target as Material;
 		if (!material.live) return;
+		if (binding.components === 2) {
+			// A pair is where a map sits on the texture coordinates: one map's, or every map's.
+			if (binding.name === 'uvOffset' || binding.name === 'uvScale')
+				material.writeUvPair(binding.name, mixed(0), mixed(1), binding.slot);
+			return;
+		}
 		if (binding.components === 1) material.writeUniform(binding.name, mixed(0));
 		else material.writeUniform(binding.name, color());
 		return;
@@ -3302,12 +3417,13 @@ const SPOT_PATHS: ReadonlySet<number> = new Set([PROPERTY_LIGHT_ANGLE, PROPERTY_
  * The property that `path` names on `target`: `'light.intensity'` or `'intensity'` for a light,
  * `'camera.fov'` or `'fov'` for a camera, `'material.opacity'` or `'opacity'` for a material, and
  * `'position'`, `'rotation'`, `'scale'` or `'visible'` for any object. Throws E1218 for a path that
- * the target does not take, before an animation is made.
+ * the target does not take. `call` names the call in the message, such as a hold script's step.
  */
 function propertyPath(
 	target: object,
 	path: string,
 	error: (detail: string) => never,
+	call = 'animateProperty',
 ): PropertyPath {
 	const dot = path.indexOf('.');
 	const head = dot > 0 ? path.slice(0, dot) : '';
@@ -3317,7 +3433,7 @@ function propertyPath(
 		if (components > 0 && (head === 'material' || head === ''))
 			return { what: PROPERTY_MATERIAL, name, components };
 		throw error(
-			`animateProperty() got "${path}" on a material, which it does not take. A material animates the values that setUniform takes, such as "opacity" and "color", with or without the "material." prefix.`,
+			`${call}() got "${path}" on a material, which it does not take. A material animates the values that setUniform takes, such as "opacity" and "color", with or without the "material." prefix.`,
 		);
 	}
 	const kind = target instanceof Light ? 'light' : target instanceof Camera ? 'camera' : '';
@@ -3344,15 +3460,13 @@ function propertyPath(
 	const where =
 		kind === '' ? (target as Object3D).describe() : `${(target as Object3D).describe()}, a ${kind}`;
 	if (otherKind)
-		throw error(
-			`animateProperty() got "${path}" on ${where}, which this kind of ${kind} does not have.`,
-		);
+		throw error(`${call}() got "${path}" on ${where}, which this kind of ${kind} does not have.`);
 	const accepted = [
 		...(kind === '' ? [] : [...own.keys()].map((key) => `${kind}.${key}`)),
 		...[...OBJECT_PATHS.keys()].map((key) => (kind === '' ? key : `object.${key}`)),
 	];
 	throw error(
-		`animateProperty() got "${path}" on ${where}, which it does not take. It animates ${listNames(accepted)}.`,
+		`${call}() got "${path}" on ${where}, which it does not take. It animates ${listNames(accepted)}.`,
 	);
 }
 
@@ -3379,6 +3493,8 @@ export class Scene implements ViewHolder {
 	private readonly imageTasks = new Set<Promise<void>>();
 	/** @internal The picture that failed to write, once: the frame loop reports it. */
 	private imageFailure: unknown;
+	/** @internal The draws that answer each frame whether their feature is ready. */
+	private readonly readiness: Array<() => void> = [];
 
 	/** @internal Starts the area lights' tables' load, once, which loads their code on first use. */
 	private loadAreaTables(): void {
@@ -3480,6 +3596,8 @@ export class Scene implements ViewHolder {
 	/** The ray and hit that a pick's raycast reuses. */
 	private pickRay: Ray | undefined;
 	private pickHit: RaycastHit | undefined;
+	/** The point of a pick's ray, in CSS pixels, which the ray's math reads from an array. */
+	private pickPoint: Float64Array | undefined;
 	/** The command batches that the world took before the runner's first frame, or -1. */
 	private settledCommands = -1;
 	/** The environment's values in the core, made on the first `setEnvironment`. */
@@ -3488,6 +3606,8 @@ export class Scene implements ViewHolder {
 	private sceneProbeGrid: SceneLightProbeGrid | undefined;
 	/** The background's values in the core, made on the first `setBackground`. */
 	private sceneBackground: SceneBackground | undefined;
+	/** The add-on's layer over the background, made on the first `setSkyLayer`. */
+	private skyLayer: SceneSkyLayer | undefined;
 	/** True while the fog is volumetric. */
 	private fogVolume = false;
 	/** Pointer events on objects, made on the first `on`. */
@@ -3741,6 +3861,115 @@ export class Scene implements ViewHolder {
 		out[3] = r[i + 3] as number;
 	}
 
+	/** @internal Copies the scale of the object in `slot` into `out`. */
+	readScale(slot: number, out: Vec3Like): void {
+		const s = this.views.scales;
+		const i = slot * 3;
+		out[0] = s[i] as number;
+		out[1] = s[i + 1] as number;
+		out[2] = s[i + 2] as number;
+	}
+
+	/**
+	 * @internal Writes a value that a hold script's `set` step names, at once, with the property
+	 * paths of `animateProperty`. Throws E1218 for a target that was destroyed, a path that the
+	 * object does not take, and a count of values that the path does not take.
+	 */
+	setScriptPath(target: Object3D, path: string, values: readonly number[]): void {
+		const fail = (detail: string): never => {
+			throw this.checks.error('E1218', detail);
+		};
+		if (target.destroyedFrame !== -1) fail(`set() got ${target.describe()}, which was destroyed.`);
+		const property = propertyPath(target, path, fail, 'set');
+		if (values.length !== property.components)
+			fail(
+				`set() got ${values.length} ${values.length === 1 ? 'value' : 'values'} for "${path}" on ${target.describe()}, which takes ${property.components}.`,
+			);
+		const at = SCRIPT_VALUES;
+		for (let k = 0; k < property.components; k++) at[k] = values[k] as number;
+		SCRIPT_BASE.fill(0);
+		writeProperty(
+			target,
+			{
+				what: property.what,
+				name: property.name,
+				components: property.components,
+				base: SCRIPT_BASE,
+			},
+			at,
+			0,
+			1,
+		);
+	}
+
+	/**
+	 * @internal The value that a hold script's `dump` step reads, with the property paths of
+	 * `animateProperty`: the object's position, rotation, scale or visible flag, a camera's lens
+	 * values, or a light's color. Throws E1218 for a target that was destroyed, a path that the
+	 * object does not take, or a value that the engine does not keep to read back.
+	 */
+	readScriptPath(target: Object3D, path: string): number[] {
+		const fail = (detail: string): never => {
+			throw this.checks.error('E1218', detail);
+		};
+		if (target.destroyedFrame !== -1) fail(`dump() got ${target.describe()}, which was destroyed.`);
+		const property = propertyPath(target, path, fail, 'dump');
+		const out = new Array<number>(property.components).fill(0);
+		const read = SCRIPT_VALUES;
+		switch (property.what) {
+			case PROPERTY_POSITION:
+				this.readPosition(target.row, read);
+				break;
+			case PROPERTY_ROTATION:
+				this.readRotation(target.row, read);
+				break;
+			case PROPERTY_SCALE:
+				this.readScale(target.row, read);
+				break;
+			case PROPERTY_VISIBLE:
+				read[0] = (target.flags & C.FLAG_VISIBLE) !== 0 ? 1 : 0;
+				break;
+			case PROPERTY_CAMERA_FOV:
+				read[0] = (target as PerspectiveCamera).fov;
+				break;
+			case PROPERTY_CAMERA_NEAR:
+				read[0] = (target as Camera).near;
+				break;
+			case PROPERTY_CAMERA_FAR:
+				read[0] = (target as Camera).far;
+				break;
+			case PROPERTY_CAMERA_HEIGHT:
+				read[0] = (target as OrthographicCamera).height;
+				break;
+			case PROPERTY_LIGHT_COLOR:
+				read.set((target as Light).linear);
+				break;
+			default:
+				fail(
+					`dump() cannot read "${path}" on ${target.describe()}, which the engine does not keep. It reads position, rotation, scale, visible, a light's color, and a camera's fov, near, far and height.`,
+				);
+		}
+		for (let k = 0; k < property.components; k++) out[k] = read[k] as number;
+		return out;
+	}
+
+	/**
+	 * @internal Up to `limit` names in the scene that contain `text`, in the order the objects were
+	 * created, or the first names when none contains it. A message about a name that found no object
+	 * shows them, so the wrong name in a script or a call is easy to fix.
+	 */
+	nearNames(text: string, limit = 3): string[] {
+		const wanted = text.toLowerCase();
+		const close: string[] = [];
+		const all: string[] = [];
+		for (const name of this.names.keys()) {
+			if (name === '') continue;
+			if (all.length < limit) all.push(name);
+			if (close.length < limit && name.toLowerCase().includes(wanted)) close.push(name);
+		}
+		return close.length > 0 ? close : all;
+	}
+
 	/**
 	 * @internal The core's table of morph weights. Sketches set weights every frame, so the check
 	 * stays small enough for the browser to inline into their code.
@@ -3825,6 +4054,20 @@ export class Scene implements ViewHolder {
 		if (known === undefined) this.names.set(name, object);
 		else if (known instanceof Set) known.add(object);
 		else this.names.set(name, new Set([known, object]));
+	}
+
+	/**
+	 * @internal Visits each live object whose mesh has lower levels of detail, until `visit`
+	 * returns false. The debug view of levels draws their culling spheres, so it reads the objects
+	 * that have such a sphere of their own.
+	 */
+	forEachLevelMesh(visit: (object: Mesh) => boolean): void {
+		for (const object of this.objectSlots) {
+			if (object === undefined || object.destroyedFrame !== -1) continue;
+			if (!(object instanceof Mesh) || object.mesh === undefined) continue;
+			if (object.mesh.levels.length === 0) continue;
+			if (!visit(object)) return;
+		}
 	}
 
 	/** Adds a new batch to the index that queries read, by the slot of each of its core batches. */
@@ -4628,7 +4871,9 @@ export class Scene implements ViewHolder {
 	 *
 	 * Throws E1223 for a description that the adapter cannot place or a capacity that it cannot
 	 * take, E1215, E1216 and E1217 for WGSL and values that `materials.shader` refuses, E1206 for
-	 * vertex data that makes no mesh, and E1406 when the adapter does not download.
+	 * vertex data that makes no mesh, and E1406 when the adapter does not download. A draw that
+	 * arrives after the first frame on a device that draws directly fails the frame with E1506:
+	 * create it in the setup, and await this call there.
 	 */
 	async addComputeInstances<const Wgsl extends string | CompiledWgsl = string | CompiledWgsl>(
 		description: FeatureDescription,
@@ -4648,10 +4893,33 @@ export class Scene implements ViewHolder {
 				materials: makers.materials,
 				createMesh: (mesh, material, place) => this.createMesh({ mesh, material, ...place }),
 				createBatch: (mesh, material, count) => this.createInstances(mesh, count, { material }),
+				watchReady: (poll) => this.watchReady(poll),
 				fail: (detail) => new EngineError('E1223', detail),
 			},
 			call,
 		);
+	}
+
+	/**
+	 * @internal Asks `poll` before each frame's work, and forgets it when the returned function is
+	 * called. A feature-instance draw reports each frame whether its feature's `ready` callback
+	 * says that it draws.
+	 */
+	private watchReady(poll: () => void): () => void {
+		this.readiness.push(poll);
+		return () => {
+			const at = this.readiness.indexOf(poll);
+			if (at >= 0) this.readiness.splice(at, 1);
+		};
+	}
+
+	/**
+	 * @internal Asks each feature draw whether it draws now. The sketch's thread calls it before
+	 * the frame's commands, so a feature that stops drawing takes no room in that frame.
+	 */
+	pollReadiness(): void {
+		const polls = this.readiness;
+		for (let k = 0; k < polls.length; k++) polls[k]?.();
 	}
 
 	/**
@@ -5160,6 +5428,41 @@ export class Scene implements ViewHolder {
 	}
 
 	/**
+	 * Draws an add-on's sky layer over the background, under every object: the top of a sky, such
+	 * as an aurora, a second layer of clouds or a space backdrop. The description is a feature
+	 * description ([Add-on feature descriptions](../features.md)): it names the feature and
+	 * records at the background point, as a draw, provides the sky, and draws in the main view, the
+	 * scene passes and the reflections. The layer's WGSL, compiled by the null3D Vite plugin,
+	 * declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`. The engine gives it the fragment's
+	 * direction in the world, the core sky's cloud coverage, density, elevation and scale, the
+	 * sketch time and the share of the sun that the layer hides, and it blends what the layer
+	 * returns over the sky by the layer's coverage and opacity. A layer that hides part of the sun
+	 * also dims the disc and glow that the core sky draws, through `sun`. The layer draws in the
+	 * main view, in scene passes and in reflections, and draws nothing where the background draws
+	 * nothing, as in a debug view. A second call replaces the layer.
+	 *
+	 * Throws E1223 for a description that the engine cannot place, E1215 for WGSL that the plugin
+	 * did not compile as a sky layer, E1203 for a number that is not finite, and E1108 for a number
+	 * out of its range.
+	 */
+	setSkyLayer(description: FeatureDescription, options: SkyLayerOptions): SkyLayer {
+		this.skyLayer ??= new SceneSkyLayer(
+			this.core,
+			this.makers?.materials.shaderTemplates ?? new ShaderTemplates(),
+		);
+		this.skyLayer.install(description, options, 'setSkyLayer');
+		return this.skyLayer;
+	}
+
+	/**
+	 * Removes the sky layer that `setSkyLayer` installed, from the next frame on, and gives the
+	 * core sky its full sun back. A call with no layer installed does nothing.
+	 */
+	clearSkyLayer(): void {
+		this.skyLayer?.clear();
+	}
+
+	/**
 	 * Sets the layers whose objects decals mark, as a 32-bit mask as `setLayers` takes. An object
 	 * that is also on a layer outside the mask shows no decals, so a character on a layer of its own
 	 * walks through a puddle clean. Such objects draw a second time after the decals, over their own
@@ -5321,8 +5624,8 @@ export class Scene implements ViewHolder {
 	/** GPU picking's queries, made on the first pick. */
 	private get picks(): ScenePicks {
 		if (!this.scenePicks) {
-			this.scenePicks = new ScenePicks(this.core, this.queryTargets(), (x, y) =>
-				this.pickByRay(x, y),
+			this.scenePicks = new ScenePicks(this.core, this.queryTargets(), (x, y, frame) =>
+				this.pickByRay(x, y, frame),
 			);
 		}
 		return this.scenePicks;
@@ -5334,6 +5637,13 @@ export class Scene implements ViewHolder {
 	 * `camera.screenToRay` takes them, and the point is tested at the pixel that the camera draws,
 	 * not at a projected triangle: a cut-out material's holes and a surface thinner than a pixel
 	 * answer as the image shows them.
+	 *
+	 * A hit carries `uv`, where on the surface the pixel landed in the mesh's first texture
+	 * coordinates, blended across its triangle's three corners as a raycast's `uv` is, and `hasUv`,
+	 * which says whether to read it. A ray from the camera of the frame that recorded the pick
+	 * finds them from the same point, so the two ways of asking agree. A skinned or morphed
+	 * character, and a custom material that offsets its vertices, draws a different shape than the
+	 * mesh that the ray tests, so its coordinates can differ from the pose it drew.
 	 *
 	 * The answer arrives one or more frames later, through a promise, and a pick in every frame
 	 * waits in a queue of its own. The frame that records the pick draws it, so the camera of that
@@ -5365,10 +5675,14 @@ export class Scene implements ViewHolder {
 		this.scenePicks?.stop();
 	}
 
-	/** Casts a ray through a point of the canvas, for a pick that the GPU pass cannot draw. */
-	private pickByRay(x: number, y: number): PickHit | null {
-		const camera = this.activeCamera;
-		if (!camera || camera.destroyedFrame !== -1) return null;
+	/**
+	 * Casts a ray through a point of the canvas: with the camera of `frame`, or with the camera as
+	 * it stands and the frame of the point's input event when `frame` is -1. Answers a pick that the
+	 * GPU pass cannot draw, and finds the texture coordinates of a pixel that it did pick.
+	 */
+	private pickByRay(x: number, y: number, frame: number): PickHit | null {
+		const active = this.activeCamera;
+		const live = active !== undefined && active.destroyedFrame === -1 ? active : undefined;
 		// The ray and hit are made once, when the first pick needs them.
 		if (!this.pickRay) this.pickRay = { origin: [0, 0, 0], direction: [0, 0, 0] };
 		if (!this.pickHit) {
@@ -5377,23 +5691,44 @@ export class Scene implements ViewHolder {
 				instance: -1,
 				point: [0, 0, 0],
 				normal: [0, 0, 0],
+				uv: [0, 0],
+				hasUv: false,
 				distance: 0,
 				triangle: -1,
 			};
 		}
 		const ray = this.pickRay;
 		const hit = this.pickHit;
-		camera.screenToRay(x, y, ray);
+		let layers: number;
+		if (frame < 0) {
+			if (live === undefined) return null;
+			live.screenToRay(x, y, ray);
+			layers = live.layers;
+		} else {
+			if (!this.pickPoint) this.pickPoint = new Float64Array(2);
+			const point = this.pickPoint;
+			point[0] = x;
+			point[1] = y;
+			// A frame that the ring no longer holds answers no coordinates, rather than aim a camera
+			// that has moved at the pixel that the older frame showed.
+			layers = this.frameCameras.frameRay(frame, point, ray, undefined);
+			if (layers < 0) return null;
+		}
 		// A camera that has not drawn cannot project the point, so the frame it would have answered
 		// showed nothing there.
 		if (!Number.isFinite(ray.direction[0])) return null;
 		if (!Number.isFinite(ray.direction[1])) return null;
 		if (!Number.isFinite(ray.direction[2])) return null;
-		const layers = camera.layers;
 		if (!this.raycast(ray.origin, ray.direction, { layers }, hit) || hit.object === null) {
 			return null;
 		}
-		return { object: hit.object, instance: hit.instance };
+		const uv = hit.uv;
+		return {
+			object: hit.object,
+			instance: hit.instance,
+			uv: [uv?.[0] ?? Number.NaN, uv?.[1] ?? Number.NaN],
+			hasUv: hit.hasUv === true,
+		};
 	}
 
 	/**

@@ -19,7 +19,7 @@ use null3d_gpu::drawlist::{
 
 use super::ids;
 use super::layout::Layout;
-use crate::frame::{RecordError, UploadArena, grown_size, words_as_bytes};
+use crate::frame::{RecordError, UploadArena, grown_size, grown_size_within, words_as_bytes};
 use crate::view::ViewId;
 
 /// Bytes of one dispatch's parameters: six planes, four counts and the level rule's vector.
@@ -95,9 +95,10 @@ impl Clusters {
         Ok(())
     }
 
-    /// Sizes the scene's two tables for the layout, and uploads them when they are new, when the
-    /// layout changed, or when they hold another count of patches. Returns true when either buffer
-    /// was made again.
+    /// Sizes the scene's two tables for the layout, at most the storage binding's bytes each, and
+    /// uploads them when they are new, when the layout changed, or when they hold another count of
+    /// patches. Returns true when either buffer was made again. Only the path that runs the
+    /// cluster pass calls this: its group binds each table whole, so the binding alone bounds them.
     pub(super) fn apply_tables(
         &mut self,
         list: &mut DrawList,
@@ -114,7 +115,7 @@ impl Clusters {
         let mut recreated = false;
         for (k, id) in ids.into_iter().enumerate() {
             if self.tables[k] < needed[k] {
-                self.tables[k] = grown_size(needed[k], binding_bytes);
+                self.tables[k] = grown_size_within(needed[k], binding_bytes)?;
                 list.push(
                     Op::CreateBuffer,
                     &[id, self.tables[k], usage::STORAGE | usage::COPY_DST],
@@ -213,7 +214,9 @@ impl Clusters {
         let mut recreated = false;
         for ((id, size, flags), made) in needed.into_iter().zip(made) {
             if *made < size {
-                *made = grown_size(size, binding_bytes);
+                *made = grown_size(size, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
                 list.push(Op::CreateBuffer, &[id, *made, flags])?;
                 recreated = true;
             }
@@ -326,3 +329,50 @@ impl Clusters {
 }
 
 const _: () = assert!(sizes::INDIRECT_WORDS == INDIRECT_WORDS);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use null3d_gpu::drawlist::decode;
+
+    /// The sizes that a frame's list made the two tables with.
+    fn made(list: &DrawList) -> Vec<u32> {
+        decode(list.words())
+            .filter_map(|command| {
+                let command = command.expect("the buffer commands decode");
+                (command.op == Op::CreateBuffer).then_some(command.operands[1])
+            })
+            .collect()
+    }
+
+    /// A cluster table holds a layout that fills the storage binding that the cluster pass group
+    /// binds it within, and a layout that passes that binding fails the frame instead of asking
+    /// for a buffer the group cannot bind.
+    #[test]
+    fn a_cluster_table_past_the_binding_is_refused() {
+        let binding = 4096;
+        // A scene with a tree of patches and no cluster meshes: one record per patch, and four
+        // indices.
+        let tables = |patches: usize| {
+            let layout = Layout::with_cluster_tables(patches, 4);
+            let mut list = DrawList::with_capacity(64);
+            let mut arena = UploadArena::default();
+            arena.reset(1 << 16).expect("room for the test's uploads");
+            let mut clusters = Clusters::default();
+            let outcome = clusters.apply_tables(&mut list, &mut arena, &layout, true, binding);
+            (outcome, made(&list))
+        };
+        // A patch table of the binding's bytes, and its indices, fit.
+        let (outcome, sizes) = tables(binding as usize / 32);
+        outcome.expect("the tables fit the binding");
+        assert_eq!(sizes[0], binding);
+        assert!(sizes.iter().all(|&size| size <= binding), "{sizes:?}");
+        // One patch more passes the binding, so the frame fails and names it.
+        let (outcome, sizes) = tables(binding as usize / 32 + 1);
+        assert_eq!(outcome, Err(RecordError::BufferFull { bytes: binding }));
+        assert!(
+            sizes.is_empty(),
+            "a buffer was made past the binding: {sizes:?}"
+        );
+    }
+}

@@ -112,7 +112,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 ### Which lights get tiles
 
-The quality preset's `shadowTiles` setting caps the tiles, and `shadowTileSize` sets the texels on each side of each tile. [Quality presets](quality-presets.md) lists their values. The atlas grows to as many tiles as the lights that cast shadows can fill, and one more while the sun names a [hero shadow](#a-hero-shadow). It keeps them when a light stops casting, so a light whose shadows turn off and on again does not make the atlas again. It goes when no light casts shadows and no light names a hero.
+The quality preset's `shadowTiles` setting caps the tiles, and `shadowTileSize` sets the texels on each side of each tile. [Quality presets](quality-presets.md) lists their values. The atlas grows to as many tiles as the lights that cast shadows can fill, and one more while the sun names a [hero shadow](#a-hero-shadow). A hero's tile size above `shadowTileSize` sets the size of every layer. It keeps them when a light stops casting, so a light whose shadows turn off and on again does not make the atlas again. It goes when no light casts shadows and no light names a hero.
 
 Each frame, the spot and point lights in the camera's view compete for the tiles. A light's size on screen is its range over its distance from the camera, and the largest lights get tiles first. A point light needs six free tiles, so a smaller spot light can take the last tile that a point light cannot use. A light keeps its tile from frame to frame while it still gets one. The other lights cast no shadows in that frame, and they still light surfaces.
 
@@ -144,9 +144,11 @@ The `shadow` option of `createDirectionalLight` and the light's `setShadow` call
 | `mapSize` | The preset's `shadowMapSize` | Texels on each side of each cascade's layer: 256, 512, 1,024, 2,048 or 4,096. |
 | `distance` | `'auto'` | How far from the camera, in meters along its view, shadows fall, or `'auto'` to follow the farthest visible receiver. The camera's far plane ends them sooner. Shadows fade out over the last tenth of the distance. A camera under a scaled parent keeps the distance in meters. |
 | `bias` | 0.01 | How far each receiving surface moves toward the light before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
-| `normalBias` | 0.02 | How far each receiving surface moves along its normal before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
+| `normalBias` | 0.02 | How far each receiving surface moves along its mesh normal, before a normal map bends it, in meters, up to one texel of its cascade, scaled by its angle to the light. |
+| `intensity` | 1 | How much of the light's shadow it draws, from 0 for none to 1 for all of it. The shader mixes each lookup toward full light by the rest, so shadows thin out without a new shader variant. |
 | `contactDistance` | 0.3 | How far [contact shadows](#contact-shadows) reach from each surface toward the light, in meters. 0 turns them off for this light. |
 | `hero` | None | The object that gets a [hero shadow](#a-hero-shadow) of its own, or `null` for none. |
+| `heroTileSize` | The preset's `heroTileSize` | Texels on each side of the hero's tile: 1,024, 2,048 or 4,096. A larger tile keeps a larger object's shadow sharp. |
 
 The quality preset gives the default cascade count and map size: the lighter presets draw fewer cascades and smaller maps ([Quality presets](quality-presets.md#the-settings-of-each-preset)). A light that names its own keeps them on every preset. So leave both out, unless your scene needs other values on every device.
 
@@ -180,7 +182,7 @@ if (next !== held) {
 
 A new cascade count or map size makes the shadow map again, so set them at setup. The other settings cost nothing to change, so a sketch can change them in any frame.
 
-The `shadow` option and `setShadow` of spot and point lights take `bias` and `normalBias` alone, with the same defaults. Both are in meters, up to one texel of the light's tile at the receiving surface's distance from the light. The preset sets the tile size.
+The `shadow` option and `setShadow` of spot and point lights take `bias`, `normalBias` and `intensity` alone, with the same defaults. The biases are in meters, up to one texel of the light's tile at the receiving surface's distance from the light. The preset sets the tile size.
 
 ## Where the cascades split
 
@@ -279,7 +281,7 @@ Each read weights the texels by where the point falls between them, so an edge m
 A surface that casts and receives shadows can shadow itself in stripes, which is called shadow acne. It comes from the finite size of the map's texels. Both biases move the surface before its test, in meters:
 
 - `bias` moves the surface toward the light. The move is the setting times the tangent of the angle between the surface and the light, up to twice the setting.
-- `normalBias` moves the surface along its normal, by the setting times the sine of that angle.
+- `normalBias` moves the surface along its mesh normal, before a normal map bends it, by the setting times the sine of that angle.
 
 A surface that faces the light takes little of either. A surface at a steep angle takes more, because its depth changes faster across each texel. The casters draw only the faces that point away from the light, as three.js's shadows draw them. A closed mesh's lit faces then compare with its far side, which keeps acne off most surfaces. A caster that draws both faces, such as a plane with a double-sided material, is the likeliest to show acne.
 
@@ -305,7 +307,7 @@ The 5 cm cap protects floors that cast shadows. Such a floor compares its lit to
 
 A low flat caster, such as a pavement slab, holds its bottom face in the map under its lit top. The top and the bottom are parallel. So across the filter's square, the bottom rises toward the light as fast as the top does. Suppose every read compared with the depth at the surface's own point. The reads on the side toward the light would then find parts of the bottom nearer the light than that point. The top would shadow itself in stripes and rings.
 
-So the directional light's filter compares each texel with the receiving surface's own plane at that texel's center. It does so where the plane is nearer the light than the surface's point. The plane lies 1 cm below the surface, or one and a half steps of the map's stored depth where those are longer. So a caster just under the surface stays under the plane. A caster below the plane, such as the slab's own bottom, then leaves the top lit, however large the texels are. A caster on the plane or above it, such as a box that stands on the slab, still shadows it. So the shadow still meets the box's base. The filter reads four texels at once and compares each with its own depth. So it takes as many reads as a filter that compares them all with one depth.
+So the directional light's filter compares each texel with the receiving surface's own plane at that texel's center. The plane comes from the mesh's triangle, so a normal map's tilt leaves it alone. The filter uses the plane where it is nearer the light than the surface's point. The plane lies 1 cm below the surface, or one and a half steps of the map's stored depth where those are longer. So a caster just under the surface stays under the plane. A caster below the plane, such as the slab's own bottom, then leaves the top lit, however large the texels are. A caster on the plane or above it, such as a box that stands on the slab, still shadows it. So the shadow still meets the box's base. The filter reads four texels at once and compares each with its own depth. So it takes as many reads as a filter that compares them all with one depth.
 
 The tiles of spot and point lights compare each read with the depth at the surface's own point. Their views are not orthographic, so a surface's plane is not a plane in the tile.
 
@@ -375,8 +377,8 @@ const sun = scene.createDirectionalLight({
   castShadows: true,
   shadow: { hero: car },
 });
-// Later, or for another object.
-sun.setHeroShadow(car);
+// Later, or for another object. The second number is the tile size, which this one raises.
+sun.setHeroShadow(car, 4096);
 // Back to the cascades alone.
 sun.setHeroShadow(null);
 ```
@@ -387,9 +389,10 @@ It follows these rules:
 - The object casts shadows (`castShadows: true`) and the light shares its layers. A hero that does not cast draws an empty tile.
 - The box fits the object's bounding sphere. A mesh takes its mesh's bounds; a group has none of its own, so give it a `setBounds` sphere. An object with no bounds draws no hero shadow.
 - The tile is square across the light around the object's bounding sphere, and reaches past it along the light by sixteen times the sphere's radius, where its shadow lands. A surface of the object, or one within that distance below it, reads the tile. Further out, the cascades shadow it.
-- The tile's texels are the atlas's tile size spread over the object's bounds, so a smaller object gets finer shadows. An object 1.8 m across gets about eight times the first cascade's texel density at the default map sizes. A 4.4 m object, such as the demo's car, gets about three times.
+- The tile spreads its texels over the object's bounds. A larger tile gives a larger object finer shadows. `heroTileSize` sets the size. The preset chooses the default: 1,024 on Low, 2,048 on Medium and High, and 4,096 on Ultra. At those defaults the demo's 4.4 m car gets at least four times the texel density of the cascade that holds 10 m, on every preset. A bigger object needs a bigger tile for the same ratio, and a page can name one.
 - The tile comes from `shadowTiles`, the atlas that point and spot lights share. Naming a hero adds a layer to the atlas for it, so the lights keep their tiles; only an atlas already at its limit of 24 layers gives one up, to the light that looks smallest. A hero makes the atlas while no spot or point light casts.
-- The tile draws when the light, the object or a caster that touches its box moves, and rests otherwise. A tile holds 4 bytes per texel: 4 MiB at 1,024 texels on each side.
+- Every layer of a texture array takes the same size, so the tile sets the atlas's size. A tile larger than the preset's `shadowTileSize` makes every tile of the atlas that size, which takes more memory and draws each light's tile with more texels. An atlas above 1 GiB fails the frame with [E1501](../errors/E1501.md), which names the megabytes it would take; name a smaller `heroTileSize` or fewer `shadowTiles`.
+- The tile draws when the light, the object or a caster that touches its box moves, and rests otherwise. A tile holds 4 bytes per texel: 4 MiB at 1,024 texels on each side, 16 MiB at 2,048 and 64 MiB at 4,096.
 - The object's own shadow uses the light's `bias` and `normalBias`, capped by the tile's small texels, so it sits close to its caster.
 - The shadow distance does not cut it, and it does not fade: the light names the object, so its shadow shows wherever the box goes.
 
@@ -401,13 +404,13 @@ The box holds the object, a radius of space above it and sixteen radii below, wh
 
 ## Which objects cast and receive
 
-- The first directional light created casts the shadows, if it has `castShadows`. Other directional lights light surfaces, and cast none.
+- The first directional light created casts the shadows, if it has `castShadows`. Up to three more directional lights light surfaces as fill and rim lights, and cast none. A fifth directional light lights nothing.
 - Each spot light with `castShadows` casts shadows while it holds a tile of the atlas. Each point light with `castShadows` casts them while it holds six, where the preset's `pointLightShadows` is on.
 - A caster draws into every cascade whose box it reaches, however far toward the light it stands.
 - The light's layers choose the casters: an object casts only when its layer mask shares a bit with the light's. The light still lights every object in a view that it shares a layer with. So an object with `castShadows` on a layer that the light lacks casts nothing, with no warning, and the light shines through it. Give the light that layer too ([Layers and shadows](render-layers.md#layers-and-shadows)). three.js tests casters against the camera's layers instead.
 - The standard material and [custom materials](../shaders/surface-functions.md) show shadows. The unlit material shows none, but unlit objects still cast them.
 - A masked surface cuts the holes of its mask into its shadow, so leaves and fences cast leaf and fence shapes. The shadow tests the surface's opacity, vertex alpha and base color map's alpha against its `alphaCutoff`. A hashed surface casts a hashed shadow, which the filter turns into a partial shadow as dense as its alpha. A blended surface casts its whole shape, as in three.js.
-- A custom material casts its mesh's whole shape: its alpha comes from its own WGSL, which the shadow pass does not run.
+- A custom material whose WGSL sets or reads the surface's alpha casts that shape: its shadow caster runs the surface function, with the scene camera's values and the face that the caster draws, and tests its alpha at the cutoff. A material that declares `fn coverage` casts that function's shape instead, in the light's view. WGSL that never names the alpha or the coverage casts the mesh's whole shape.
 - `setCastShadows` and `setReceiveShadows` rebuild the engine's tables of what it draws, as `setMaterial` does. Set them at setup rather than in every frame.
 
 ## What shadows cost
@@ -440,6 +443,7 @@ WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth tex
 - `light.shadow.camera` has no equivalent. The cascades fit the camera's view by themselves, so delete the shadow camera's bounds.
 - `light.shadow.mapSize` becomes one number, `mapSize`, the texels on each side.
 - `light.shadow.normalBias` is in meters, as in three.js. `light.shadow.bias` is in meters too, where three.js counts depth units. Both scale with each surface's angle to the light, and one texel caps them. Start from the defaults.
+- `light.shadow.intensity` carries over as it stands, from 0 for no shadow to 1 for all of it. It costs the frame nothing, because the shader mixes each lookup toward full light.
 - `renderer.shadowMap.type` becomes the `shadowFilter` quality setting: `PCFShadowMap` and `PCFSoftShadowMap` map to 3 or 5. `BasicShadowMap` and `VSMShadowMap` have no equivalent.
 - `light.shadow.radius` and `light.shadow.blurSamples` become the `shadowFilter` setting too, for every light.
 - The CSM addon is built in: set `cascades` on the directional light. Its `maxFar` and `shadowMapSize` become `distance` and `mapSize`.

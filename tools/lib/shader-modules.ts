@@ -5,17 +5,38 @@
 //
 // The record holds a hash of the inputs, which are the shader crate and the crates it depends on
 // (sources, manifest and WGSL) and the workspace's Cargo files, and a hash of the modules the build
-// wrote. A check only reads and hashes files, so it costs far less than the build. A lock file makes
-// processes that start together, such as Playwright's web servers, run one build between them.
+// wrote. The lock enters that hash as its entries for the crate's dependency closure, so an entry
+// that no shader dependency reaches cannot change the key. A check only reads and hashes files, so
+// it costs far less than the build. A lock file makes processes that start together, such as
+// Playwright's web servers, run one build between them.
 //
 // The build itself keeps each entry's compiled output in a per-entry cache, keyed by the entry's
 // source, its manifest table and the library modules it imports. A change to one shader compiles
 // only that shader, and a change to a library module compiles only the entries that import it. The
 // cache is shared by every checkout and reused across a change of any WGSL file.
+//
+// The folders of that cache are told apart by the bytes of the compiled shader build program, not by
+// a hash of the compiler's sources. A source change that leaves the program identical, such as a
+// comment or a crate test, cannot change any generated shader, so every entry is reused; a change
+// that alters the program reads a folder of its own, so no entry is read with a new meaning. The
+// program holds no path of the checkout that built it, because two checkouts of one compiler would
+// then have different bytes and neither would reuse the other's entries; its default root is the
+// working directory, and every tool names the root. Each entry keeps its own key and its
+// dependencies' hashes, so those checks still decide one entry; the key reads a source without its
+// comments and without the white space between tokens, so an edit that leaves every token in place
+// reuses the entry.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
-import { join } from 'node:path';
-import { copyInPlace } from './atomic-files';
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	statSync,
+} from 'node:fs';
+import { basename, join } from 'node:path';
+import { copyInPlace, linkInPlace } from './atomic-files';
 import {
 	acquireLock,
 	cacheDir,
@@ -25,11 +46,13 @@ import {
 	filesIn,
 	hashFiles,
 	hashOf,
+	liveLockHolder,
 	pruneCacheLocked,
 	runCargo,
 	touchCacheEntry,
 	writeFileAtomic,
 } from './build-cache';
+import { refuseInQuietWindow } from './quiet-window';
 
 /** The folder that the shader build writes its modules into. */
 export const MODULE_DIR = 'packages/engine/src/generated';
@@ -39,15 +62,17 @@ const SHADER_CRATE = 'crates/null3d-shaders';
 const SHADER_FOLDER = `${SHADER_CRATE}/wgsl`;
 /** The manifest, whose tables decide one entry each. */
 const MANIFEST = `${SHADER_CRATE}/shaders.toml`;
+/** The workspace's lock file, whose entries for the crate's closure decide how Cargo builds it. */
+const LOCK = 'Cargo.lock';
 /** Workspace files that change how Cargo builds the command. */
-const WORKSPACE_FILES = ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml'];
+const WORKSPACE_FILES = ['Cargo.toml', LOCK, 'rust-toolchain.toml'];
 /** Crate folders that hold no input of the command. */
 const SKIPPED_FOLDERS = new Set(['tests', 'benches', 'examples', 'target']);
 /** The record of the inputs and modules of the last build. Cleaning `target` forces a new build. */
 export const RECORD = 'target/shader-modules.json';
 /**
  * The folder that holds the modules of a build, keyed by the hash of its inputs, shared by every
- * checkout on the machine. A checkout whose inputs match a folder there copies its modules instead of
+ * checkout on the machine. A checkout whose inputs match a folder there takes its modules instead of
  * building them, which a fresh worktree needs. It is the `shader-modules` cache under the build
  * cache's one root; `NULL3D_SHADER_CACHE` names this folder alone, as before. The folder is read from
  * the environment on each call, so a caller that moves the cache root moves this cache too.
@@ -56,10 +81,10 @@ export const modulesCacheDir = (): string =>
 	cacheDir('shader-modules', process.env.NULL3D_SHADER_CACHE);
 /**
  * The folder of the per-entry shader cache, shared by every checkout on the machine, read from the
- * environment on each call. It holds each entry's compiled output under a folder named by the
- * compiler's stamp, so a change to one shader compiles only that shader and a change to a library
- * module compiles only the entries that import it. It is the `shader-cache` folder under the build
- * cache's one root.
+ * environment on each call. It holds each entry's compiled output under a folder that names the
+ * program which wrote it, so a change to one shader compiles only that shader and a change to a
+ * library module compiles only the entries that import it. It is the `shader-cache` folder under
+ * the build cache's one root.
  */
 export const entryCacheDir = (): string => cacheDir('shader-cache');
 interface ModuleRecord {
@@ -84,6 +109,7 @@ export function isShaderModule(name: string): boolean {
 	return (
 		name === 'shaders.ts' ||
 		name === 'shader-features.ts' ||
+		name === 'shader-permutations.ts' ||
 		/^shaders-[a-z0-9-]+-(wgsl|glsl)\.ts$/.test(name) ||
 		// A target's table of builds that need several features, one file for each family and each
 		// value of the half-precision bit: `shaders-wgsl-combos-bump` and
@@ -147,6 +173,124 @@ export function crateFolders(root: string, crate = SHADER_CRATE): string[] {
 	return [...folders].sort();
 }
 
+/** One package of `Cargo.lock`: the fields that name it and the text that Cargo wrote for it. */
+interface LockPackage {
+	name: string;
+	version: string;
+	source: string;
+	dependencies: string[];
+	text: string;
+}
+
+/** The package names that a lock block's `dependencies` table holds. */
+function lockDependencies(block: string): string[] {
+	const at = block.indexOf('dependencies = [');
+	if (at < 0) return [];
+	const end = block.indexOf(']', at);
+	const body = end < 0 ? block.slice(at) : block.slice(at, end);
+	return [...body.matchAll(/"([^"]+)"/g)].map((match) => match[1] ?? '');
+}
+
+/**
+ * The packages that a lock file describes, and the format version that its header names. Each
+ * package keeps the text of its block, so its checksum and every field that Cargo wrote enter a key.
+ */
+function lockPackages(text: string): { version: string; packages: LockPackage[] } {
+	const version = /^version\s*=\s*(\d+)/m.exec(text)?.[1] ?? '';
+	const packages: LockPackage[] = [];
+	let lines: string[] | null = null;
+	const flush = () => {
+		if (lines === null) return;
+		const block = lines.join('\n').trimEnd();
+		const name = /^name\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+		const packageVersion = /^version\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+		if (name !== undefined && packageVersion !== undefined)
+			packages.push({
+				name,
+				version: packageVersion,
+				source: /^source\s*=\s*"([^"]+)"/m.exec(block)?.[1] ?? '',
+				dependencies: lockDependencies(block),
+				text: block,
+			});
+		lines = null;
+	};
+	for (const line of text.split('\n')) {
+		const header = line.trim();
+		if (header.startsWith('[')) {
+			flush();
+			if (header === '[[package]]') lines = [header];
+		} else if (lines !== null) lines.push(line);
+	}
+	flush();
+	return { version, packages };
+}
+
+/** The package name that a crate folder's manifest gives, from its `[package]` table. */
+function cratePackageName(root: string, folder: string): string {
+	let inPackage = false;
+	for (const line of readFileSync(join(root, folder, 'Cargo.toml'), 'utf8').split('\n')) {
+		const section = /^\s*\[([^\]]+)\]\s*$/.exec(line);
+		if (section !== null) {
+			inPackage = section[1] === 'package';
+			continue;
+		}
+		const name = inPackage ? /^\s*name\s*=\s*"([^"]+)"/.exec(line) : null;
+		if (name?.[1] !== undefined) return name[1];
+	}
+	throw new Error(`the manifest in ${folder} names no package`);
+}
+
+/**
+ * The text of the `Cargo.lock` entries that a build of `crate` depends on: the packages of the crate
+ * and its path dependencies, and every package that the lock's dependency tables reach from them.
+ * An entry outside that closure changes nothing that the build compiles, so it must not enter the
+ * build's key. When the lock does not describe the closure, such as a lock that a manifest edit has
+ * left stale, the whole file is the input: a key that missed a real input would ship a stale build.
+ * The shader build's closure by default.
+ */
+function lockClosure(root: string, crate = SHADER_CRATE): string {
+	const text = readFileSync(join(root, LOCK), 'utf8');
+	const { version, packages } = lockPackages(text);
+	const byName = new Map<string, LockPackage[]>();
+	for (const entry of packages) {
+		const list = byName.get(entry.name) ?? [];
+		list.push(entry);
+		byName.set(entry.name, list);
+	}
+	const closure = new Set<LockPackage>();
+	const visit = (entry: LockPackage): boolean => {
+		if (closure.has(entry)) return true;
+		closure.add(entry);
+		for (const reference of entry.dependencies) {
+			const [name = '', wanted = ''] = reference.split(' ');
+			const named = byName.get(name);
+			if (named === undefined) return false;
+			const matches = wanted === '' ? named : named.filter((one) => one.version === wanted);
+			if (matches.length === 0) return false;
+			for (const next of matches) if (!visit(next)) return false;
+		}
+		return true;
+	};
+	for (const folder of crateFolders(root, crate)) {
+		const named = byName.get(cratePackageName(root, folder));
+		if (named === undefined) return text;
+		for (const entry of named) if (!visit(entry)) return text;
+	}
+	// Code-unit order, not a locale's order: the same lock must give the same key on every machine.
+	const nameOf = (entry: LockPackage) => `${entry.name}\0${entry.version}\0${entry.source}`;
+	const ordered = [...closure].sort((one, two) => {
+		const left = nameOf(one);
+		const right = nameOf(two);
+		return left < right ? -1 : left > right ? 1 : 0;
+	});
+	return `version = ${version}\n\n${ordered.map((entry) => entry.text).join('\n\n')}\n`;
+}
+
+/** The contents of `file` that enter a build's key: the lock's closure in place of the whole file. */
+function inputContent(root: string, file: string, crate: string): string | Buffer {
+	return file === LOCK ? lockClosure(root, crate) : readFileSync(join(root, file));
+}
+
 function filesBelow(root: string, folder: string, files: string[]): void {
 	for (const entry of readdirSync(join(root, folder), { withFileTypes: true })) {
 		const path = join(folder, entry.name);
@@ -166,9 +310,53 @@ export function inputFiles(root: string, crate = SHADER_CRATE): string[] {
 	return files.sort();
 }
 
-/** A hash of every input of the build of `crate`, the shader build's by default. */
+/**
+ * The file whose lines list the permutation words that a narrowed build makes, from
+ * `NULL3D_SHADER_PERMUTATIONS`, or undefined when the build makes every word. Its text is an input
+ * of the build, so a changed list builds again rather than reusing entries of another list.
+ */
+export function permutationListFile(): string | undefined {
+	const file = process.env.NULL3D_SHADER_PERMUTATIONS;
+	return file === undefined || file === '' ? undefined : file;
+}
+
+/** The bytes of the permutation list, or empty bytes when the build makes every word. */
+function permutationListText(): Buffer {
+	const file = permutationListFile();
+	if (file === undefined) return Buffer.alloc(0);
+	try {
+		return readFileSync(file);
+	} catch (error) {
+		throw new Error(
+			`NULL3D_SHADER_PERMUTATIONS names ${file}, which cannot be read: ${(error as Error).message}. Record the list with bun tools/shader-permutations.ts, or leave the variable unset for a full build.`,
+		);
+	}
+}
+
+/**
+ * A hash of every input of the build of `crate`, the shader build's by default, with the lock
+ * narrowed to the entries that the crate's dependency closure reaches. A permutation list joins the
+ * shader build's hash, so a changed list builds again. Without a list the hash stays the one that
+ * every full build records, so a full set that a build before this one wrote is reused. The list
+ * never joins another crate's hash, such as the engine core's source stamp.
+ */
 export function inputHash(root: string, crate = SHADER_CRATE): string {
-	return hashFiles(root, inputFiles(root, crate));
+	const files = hashOf(
+		...inputFiles(root, crate).flatMap((file) => [file, inputContent(root, file, crate)]),
+	);
+	const list = crate === SHADER_CRATE ? permutationListText() : Buffer.alloc(0);
+	return list.length === 0 ? files : hashOf(files, list);
+}
+
+/**
+ * The input hash that a build computed before the lock was narrowed to the crate's closure. The
+ * shared set cache adopts a folder under this key, so the narrowing does not discard the set that
+ * the last build wrote.
+ */
+function wholeLockInputHash(root: string, crate = SHADER_CRATE): string {
+	const files = hashFiles(root, inputFiles(root, crate));
+	const list = crate === SHADER_CRATE ? permutationListText() : Buffer.alloc(0);
+	return list.length === 0 ? files : hashOf(files, list);
 }
 
 /**
@@ -190,9 +378,18 @@ export function compilerFiles(root: string): string[] {
 	);
 }
 
-/** The stamp of the compiler: a hash of every file that changes how it compiles, for every entry. */
+/**
+ * The stamp of the compiler's sources: a hash of every file that may change how it compiles, with
+ * the lock narrowed to the entries that the shader crate's dependency closure reaches. It names the
+ * folder that a compiler whose program bytes are new writes, and it is the compiler part of CI's
+ * cache keys, which a run reads before it builds the program. The entry folder itself is chosen by
+ * the program's bytes, so a source change that leaves the program identical reuses the entries of an
+ * earlier stamp.
+ */
 export function compilerStamp(root: string): string {
-	return hashFiles(root, compilerFiles(root));
+	return hashOf(
+		...compilerFiles(root).flatMap((file) => [file, inputContent(root, file, SHADER_CRATE)]),
+	);
 }
 
 /**
@@ -317,6 +514,9 @@ function staleSetMessage(root: string): string {
 	);
 }
 
+/** The machine-wide lock of shader builds. */
+const shaderLock = () => join(cacheRoot(), 'shader-modules.lock');
+
 /**
  * Runs the work while this process holds the lock. A process that finds the lock waits for its
  * holder, and takes over a lock whose holder has stopped. The lock lives in the shared cache, not
@@ -324,7 +524,7 @@ function staleSetMessage(root: string): string {
  * zero processor time and neither finishes.
  */
 function withLock(work: () => void): void {
-	const release = acquireLock(join(cacheRoot(), 'shader-modules.lock'));
+	const release = acquireLock(shaderLock());
 	try {
 		work();
 	} finally {
@@ -345,11 +545,27 @@ export function announceColdBuild(entries: string): void {
 }
 
 /**
- * The folder of this checkout's compiler in the per-entry cache. A stamp from another compiler
- * changes the folder, so no entry is read with a new meaning.
+ * Brings the shader modules up to date as `ensureShaderModules` does, unless that needs a build
+ * while another process holds the machine's shader lock and this checkout already holds a whole
+ * set. It then keeps that set, which does not match the sources, says so, and returns false; it
+ * returns true when the modules match. A commit's type check takes this path, so that it does not
+ * wait for another checkout's shader build, which can hold the lock for many minutes: a landing's
+ * commit can wait 8 minutes behind a helper's build, at no processor time.
  */
-function entryFolder(root: string, stamp = compilerStamp(root)): string {
-	return join(entryCacheDir(), stamp);
+export function shaderModulesUnlessBusy(root: string): boolean {
+	refuseInQuietWindow('The shader build');
+	const inputs = inputHash(root);
+	if (isFresh(root, inputs) || restoreFromCache(root, inputs)) return true;
+	const holder = freshShadersRequired() ? undefined : liveLockHolder(shaderLock());
+	if (holder !== undefined && folderIsComplete(join(root, MODULE_DIR))) {
+		const who = holder > 0 ? `process ${holder}` : 'another process';
+		console.error(
+			`The shader modules in ${MODULE_DIR} do not match this checkout's shader sources, and ${who} holds the machine's shader lock for a build of its own, so this check reads the modules in place instead of waiting.`,
+		);
+		return false;
+	}
+	ensureShaderModules(root);
+	return true;
 }
 
 /** The program that writes the modules, as cargo names it on this system. */
@@ -361,6 +577,135 @@ const PROGRAM_FOLDER = 'program';
 /** Where the per-entry cache folder `entries` keeps the program of its compiler. */
 function keptProgram(entries: string): string {
 	return join(entries, PROGRAM_FOLDER, PROGRAM);
+}
+
+/** The file of an entry folder that names the compiler whose program wrote its entries. */
+const COMPILER_MARK = 'compiler';
+
+/** The names of the folders directly inside `folder`, in order: none when it does not exist. */
+function foldersIn(folder: string): string[] {
+	try {
+		return readdirSync(folder, { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => entry.name)
+			.sort();
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * The identity of a compiler: a hash of the bytes of the program that runs it. Two programs with
+ * the same bytes compile every shader the same way, so the entries that one wrote serve the other.
+ * A change to a compiler source that cannot alter the generated WGSL leaves the bytes as they were,
+ * and a change that does alter its output gives other bytes. The program must not hold a path of
+ * the checkout that built it, or two checkouts of one compiler would never share entries.
+ */
+function programFingerprint(program: string): string {
+	return hashOf(readFileSync(program));
+}
+
+/**
+ * The compiler's fingerprint that `folder` records, or undefined when it records none and keeps no
+ * program. A folder that an earlier build made records none, so its kept program decides, and the
+ * answer is written beside the entries; that is how the folders of an earlier build join the rule.
+ */
+function compilerMark(folder: string): string | undefined {
+	try {
+		const marked = readFileSync(join(folder, COMPILER_MARK), 'utf8').trim();
+		if (marked !== '') return marked;
+	} catch {
+		// A folder that records none is read from the program it keeps.
+	}
+	const kept = keptProgram(folder);
+	if (!existsSync(kept)) return undefined;
+	const fingerprint = programFingerprint(kept);
+	writeFileAtomic(join(folder, COMPILER_MARK), `${fingerprint}\n`);
+	return fingerprint;
+}
+
+/** Writes `fingerprint` as the compiler of `folder`, and returns the folder. */
+function markedFolder(folder: string, fingerprint: string): string {
+	writeFileAtomic(join(folder, COMPILER_MARK), `${fingerprint}\n`);
+	return folder;
+}
+
+/**
+ * The folder of the per-entry cache that the compiler with `fingerprint` reads and writes. A folder
+ * whose recorded fingerprint matches holds entries that this compiler wrote, so it can be read; the
+ * match that holds the most entries serves, so a source change that leaves the program identical
+ * reuses the entries of an earlier source and many checkouts share one set. The source stamp names
+ * a new folder, unless another compiler already holds that folder: entries share a key when their
+ * folder names match, so this compiler then takes a name of its own.
+ */
+function compilerEntryFolder(root: string, fingerprint: string): string {
+	let chosen: string | undefined;
+	let most = -1;
+	for (const name of foldersIn(entryCacheDir())) {
+		const folder = join(entryCacheDir(), name);
+		if (compilerMark(folder) !== fingerprint) continue;
+		const count = entryFiles(folder).length;
+		if (count > most) {
+			chosen = folder;
+			most = count;
+		}
+	}
+	if (chosen !== undefined) return markedFolder(chosen, fingerprint);
+	const stamp = compilerStamp(root);
+	const named = join(entryCacheDir(), stamp);
+	const taken = compilerMark(named);
+	const folder =
+		taken === undefined || taken === fingerprint
+			? named
+			: join(entryCacheDir(), `${stamp}-${fingerprint}`);
+	return markedFolder(folder, fingerprint);
+}
+
+/**
+ * The folder of the per-entry cache that this checkout's compiler reads and writes, without
+ * building the program. A checkout whose source stamp keeps no program writes that stamp's folder
+ * when it builds. A module set that came from the cache may have been built beside an earlier
+ * stamp's folder, so a folder that keeps a program and records its compiler answers in place of
+ * the source stamp, and the fullest one serves. The entries of that folder are still checked
+ * against each entry's own inputs, so a folder of other sources compiles its entries again.
+ */
+export function entryCacheFolder(root: string): string {
+	const own = join(entryCacheDir(), compilerStamp(root));
+	const kept = keptProgram(own);
+	if (existsSync(kept)) return compilerEntryFolder(root, programFingerprint(kept));
+	let chosen: string | undefined;
+	let most = -1;
+	for (const name of foldersIn(entryCacheDir())) {
+		const folder = join(entryCacheDir(), name);
+		if (compilerMark(folder) === undefined || !existsSync(keptProgram(folder))) continue;
+		const count = entryFiles(folder).length;
+		if (count > most) {
+			chosen = folder;
+			most = count;
+		}
+	}
+	return chosen ?? own;
+}
+
+/** The program of this compiler, and the entry folder that it reads and writes. */
+interface CompilerCache {
+	program: string;
+	entries: string;
+}
+
+/**
+ * The program of this checkout's compiler and the entry folder that it reads and writes. The
+ * program is kept under the source stamp, which covers every compiler source, so a kept program is
+ * the one that cargo would build. Its bytes then choose the entry folder, so a source change that
+ * leaves them the same reuses the entries of an earlier source.
+ */
+function compilerCache(root: string): CompilerCache {
+	const program = shaderProgram(root, join(entryCacheDir(), compilerStamp(root)));
+	const entries = compilerEntryFolder(root, programFingerprint(program));
+	// A folder that this compiler inherits from an earlier source keeps its own program, so a shard
+	// hands over the program of the folder whose entries it fills, as it does for a new folder.
+	if (!existsSync(keptProgram(entries))) copyInPlace(program, keptProgram(entries));
+	return { program, entries };
 }
 
 /**
@@ -392,20 +737,26 @@ function shaderProgram(root: string, entries?: string): string {
 
 /**
  * Runs the shader build with `extra` arguments, with its output on standard error so that callers
- * keep a clean output.
+ * keep a clean output. It reads and writes the entry folder that `cache` names, or the one that
+ * this compiler's program chooses.
  */
-function runShaderBuild(root: string, extra: readonly string[] = []): void {
+function runShaderBuild(root: string, extra: readonly string[] = [], cache?: CompilerCache): void {
 	const buildArgs = ['--root', root, ...extra];
-	let entries: string | undefined;
+	// A list of permutation words narrows the build to them, and its bytes are an input of the
+	// build, so entries of another list are never reused for this one.
+	const permutations = permutationListFile();
+	if (permutations !== undefined) buildArgs.push('--permutations', permutations);
+	let used: CompilerCache | undefined;
 	if (shaderCacheOff()) {
 		buildArgs.push('--no-cache');
 	} else {
-		const stamp = compilerStamp(root);
-		entries = entryFolder(root, stamp);
-		buildArgs.push('--cache', entries, '--stamp', stamp);
-		announceColdBuild(entries);
+		used = cache ?? compilerCache(root);
+		// The folder's name is the stamp: entries of one compiler share one folder, and the stamp in
+		// each entry's key keeps two versions of one entry apart.
+		buildArgs.push('--cache', used.entries, '--stamp', basename(used.entries));
+		announceColdBuild(used.entries);
 	}
-	const program = shaderProgram(root, entries);
+	const program = used?.program ?? shaderProgram(root);
 	const { status, error } = spawnSync(program, buildArgs, { cwd: root, stdio: ['ignore', 2, 2] });
 	if (error) throw new Error(`could not run the shader build ${program} (${error.message})`);
 	if (status !== 0) throw new Error('the shader build failed; its output is above');
@@ -425,25 +776,37 @@ function entryFiles(folder: string): string[] {
  * already held are reused, not compiled. When `out` names a folder, the entries that this run
  * stored are copied there, and none that the cache held before, so a CI job can upload only its
  * new entries. The first shard also copies the program of its compiler there. Returns the entries'
- * file names.
+ * file names and the folder that holds them.
  */
-export function buildEntriesShard(root: string, shard: string, out?: string): string[] {
+export function buildEntriesShard(
+	root: string,
+	shard: string,
+	out?: string,
+): { stored: string[]; folder: string } {
 	if (shaderCacheOff())
 		throw new Error(
 			'--entries-shard fills the per-entry shader cache, so it cannot run while NULL3D_NO_CACHE, NULL3D_NO_BUILD_CACHE or NULL3D_NO_SHADER_CACHE turns the caches off',
 		);
-	const folder = entryFolder(root);
+	// The folder is chosen before the run, because the entries that the run stored are the ones
+	// that it did not hold before.
+	const cache = compilerCache(root);
+	const folder = cache.entries;
 	const before = new Set(entryFiles(folder));
-	runShaderBuild(root, ['--entries-shard', shard]);
+	runShaderBuild(root, ['--entries-shard', shard], cache);
 	const stored = entryFiles(folder).filter((name) => !before.has(name));
 	if (out !== undefined) {
-		mkdirSync(out, { recursive: true });
-		for (const name of stored) copyInPlace(join(folder, name), join(out, name));
-		// The first shard also hands over the program, so the job that joins the entries runs it
-		// without compiling it again.
-		if (shard.startsWith('0/')) copyInPlace(keptProgram(folder), keptProgram(out));
+		// The entries go out under the name of the folder that holds them, which is an earlier
+		// stamp's folder when the program has the bytes that wrote it, so the job that joins them
+		// into its cache puts them where its own build reads.
+		const into = join(out, basename(folder));
+		mkdirSync(into, { recursive: true });
+		for (const name of stored) copyInPlace(join(folder, name), join(into, name));
+		// The first shard also hands over the program, under this stamp's folder, where a build
+		// looks for it first, so the job that joins the entries runs it without compiling it again.
+		if (shard.startsWith('0/'))
+			copyInPlace(cache.program, keptProgram(join(out, compilerStamp(root))));
 	}
-	return stored;
+	return { stored, folder };
 }
 
 /** The names of the shader modules on disk, in order. */
@@ -460,11 +823,57 @@ function writeRecord(root: string, record: ModuleRecord): void {
 }
 
 /**
- * Copies the modules of these inputs from the shared cache, when it holds them, so a checkout with
- * none builds nothing. Returns true when it copied them.
+ * How a module takes its place from the shared cache. A machine that GitHub hosts for a CI job
+ * starts empty and ends with the job, so there each module links to the cache's file, and none of
+ * the set's gigabytes is written again; a module that cannot link is copied. A machine that keeps
+ * its cache copies each module: through a link, a build that rewrites a module in place would
+ * change the cache's file for every other checkout.
+ */
+function placeModule(): (source: string, path: string) => void {
+	if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') return copyInPlace;
+	return (source, path) => {
+		try {
+			linkInPlace(source, path);
+		} catch {
+			copyInPlace(source, path);
+		}
+	};
+}
+
+/**
+ * Adopts the set that the whole-lock key holds when the closure's key holds none, so the narrowing
+ * does not discard the set that the last build wrote. The move renames a folder in the shared cache,
+ * so it copies no byte, and it runs only while the closure's key holds no set.
+ *
+ * Two processes of this code that adopt at once are safe: the loser's rename throws, and it then
+ * finds the winner's folder at the new path. The sharp case is a build in a checkout that still runs
+ * the old code: the rename moves the folder out from under that build, so a later write of it fails
+ * with a mount-not-found (ENOENT) error, and that one run fails loudly. The set of the new key stays
+ * safe, because the record check makes a partly moved folder a miss.
+ *
+ * A later change removes this once every checkout and CI cache holds a set under the closure's key;
+ * until then it keeps a warm machine from building again at the change.
+ */
+function adoptWholeLockSet(root: string, inputs: string): void {
+	const folder = join(modulesCacheDir(), inputs);
+	if (existsSync(folder)) return;
+	const whole = join(modulesCacheDir(), wholeLockInputHash(root));
+	if (!existsSync(whole)) return;
+	try {
+		renameSync(whole, folder);
+	} catch {
+		// Another process adopted the set first, or the move failed: a set under the closure's key
+		// reads as usual, and without one the build runs.
+	}
+}
+
+/**
+ * Puts the modules of these inputs in place from the shared cache, when it holds them, so a
+ * checkout with none builds nothing. Returns true when it did.
  */
 function restoreFromCache(root: string, inputs: string): boolean {
 	const dir = modulesCacheDir();
+	adoptWholeLockSet(root, inputs);
 	const cache = join(dir, inputs);
 	// A partial entry is a miss, and so is one whose record does not match its files: an entry that a
 	// stopped or two racing builds left half written must never be handed back as a built set.
@@ -475,11 +884,12 @@ function restoreFromCache(root: string, inputs: string): boolean {
 	const wanted = new Set(names);
 	for (const name of moduleNames(root))
 		if (!wanted.has(name)) rmSync(join(folder, name), { force: true });
+	const place = placeModule();
 	try {
 		// Each module takes its place whole, so a reader sees either the old file or the new one.
-		for (const name of names) copyInPlace(join(cache, name), join(folder, name));
+		for (const name of names) place(join(cache, name), join(folder, name));
 	} catch {
-		// A copy that fails is a miss; the build then writes the whole set itself.
+		// A module that cannot take its place is a miss; the build then writes the whole set itself.
 		return false;
 	}
 	const modules = moduleHash(root);
@@ -527,19 +937,29 @@ function pruneCaches(): void {
 }
 
 /**
- * Builds the shader modules unless the record shows that they match their inputs. It copies them
+ * Builds the shader modules unless the record shows that they match their inputs. It takes them
  * from the shared cache of every checkout when that holds them, so a fresh worktree builds nothing.
  * Returns true when it ran the build.
  */
 export function ensureShaderModules(root: string): boolean {
+	refuseInQuietWindow('The shader build');
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs)) return false;
 	if (freshShadersRequired()) throw new Error(staleSetMessage(root));
-	// A set that the shared cache holds needs no build, so it is copied without the lock, which
+	// A set that the shared cache holds needs no build, so it is taken without the lock, which
 	// keeps two builds from running at once: a checkout whose set is cached never waits for
 	// another checkout's build. Each module takes its place whole, and a set that lacks its record
-	// is a miss, so a copy beside a build that stores the same set reads the whole set or nothing.
+	// is a miss, so a restore beside a build that stores the same set reads the whole set or nothing.
 	if (restoreFromCache(root, inputs)) return false;
+	// A build holds the machine-wide lock, so a queue job that starts one holds every other build
+	// back for however long the queue runs it at background priority: one such build can wait 71
+	// minutes on three hundredths of a second of processor time, while picture runs behind it cannot
+	// start. A job that reaches this line needs a real build, so it stops here and says how to make
+	// the job fast instead of making every other job slow.
+	if (process.env.NULL3D_HEAVY_SLOT)
+		throw new Error(
+			`the shader modules of ${root} are neither built nor cached, and building them inside the job queue holds the machine-wide shader lock for tens of minutes at background priority while every other build waits. Run \`bun tools/shaders.ts\` in that checkout outside the queue first, which takes under two minutes at normal priority, then run this job again. The queue sets NULL3D_HEAVY_SLOT, which is how this check knows it is inside one.`,
+		);
 	let built = false;
 	withLock(() => {
 		// Another process may have built them, or another checkout may hold them, while this one waited.

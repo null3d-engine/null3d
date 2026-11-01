@@ -31,6 +31,8 @@ export default defineSketch(async (ctx) => {
 	scene.createAmbientLight({ color: '#8090b8', intensity: 0.2 });
 	scene.createDirectionalLight({ direction: [-1, -2.4, -1.2], intensity: 2.6, castShadows: true });
 	scene.createDirectionalLight({ direction: [0.6, -0.4, -1], intensity: 1.1, color: '#8fb4ff' });
+	// A warm rim from behind the pieces separates them from the dark hall.
+	scene.createDirectionalLight({ direction: [0.3, -0.5, 1], intensity: 0.8, color: '#ffb27a' });
 	scene.createSpotLight({
 		position: [2.5, 6, 3],
 		target: [0, 1, 0],

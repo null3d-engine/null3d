@@ -311,6 +311,31 @@ The engine's benchmark scene of 100,000 boxes over a polished floor ran on a Mac
 - When frames take too long, the frame-budget governor lowers `ssrScale` to a quarter, in the step after ambient occlusion's.
 
 
+## Screen-space bounce light
+
+Screen-space bounce light adds one bounce of the indirect light that the camera's view shows. A red wall throws red light onto the floor beside it. A green wall throws green light onto the other side. The environment's light is one color for every direction, so it cannot show that.
+
+The light draws on ambient occlusion's grid, at half the render size, and it reuses that feature's depth copy and normals:
+
+1. The trace samples a disk of screen texels around each surface, almost half the grid wide. A wall beside a floor then shows its upper part. A sample whose surface lies above or beside it takes the color that the frame before showed there. The light is weighted by the cosine of the sample's direction, and the surface must lie in the hemisphere and within reach. The trace reads that color from the copy that screen-space reflections read too.
+2. A denoise blurs the traced light over a small disk that stays on each texel's own surface. It compares depth and normal, as ambient occlusion's denoise does, so light does not bend around a corner.
+3. The opaque pass adds the light to the ambient light. The light takes the place of the environment's diffuse light by its share. Where the rays left the screen or hit nothing, the environment keeps that share.
+
+```ts
+quality.set({ bounceRays: 8 });
+```
+
+- The quality setting `bounceRays` is the number of rays each texel casts: 0 draws none. High sets 4 and Ultra 8. Low and Medium set 0, and WebGL2, which ends at Medium, sets 4 there. A change takes effect during play and makes no GPU object.
+- The light is one frame behind the scene, as screen-space reflections are. The first frame after it turns on shows none.
+- The light draws nothing on the 8-bit path, whose copy holds display color. Compatibility mode draws that path, so it draws no bounce light.
+- A scene with a [light probe grid](lighting.md#light-probe-grid) draws no bounce light. The grid already holds one bounce, with the validity and sky-occlusion terms that the screen cannot supply.
+- The cost follows the render scale, because the grid does. The light is part of the preset table, so a page pays only where the preset asks for it.
+
+### Cost
+
+The light costs two passes at half the render size and a few texture reads in the opaque pass. At 1920 x 1080 on the Mac it added 2.5 ms at High and 1.3 ms at Ultra on WebGPU. It added 0.8 ms at WebGL2's Medium. At half the render scale it adds about a millisecond.
+
+
 ## Outlines
 
 Outlines draw a crisp line around the meshes that `setOutlined(true)` marks:
@@ -336,11 +361,11 @@ Outlines draw the outlined meshes twice into the mask, which takes 4 bytes per p
 A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut` or from numbers through `assets.lutFromData`, maps each display color to a graded color, as three.js's `LUTPass` does after its `OutputPass`. The vignette darkens the picture toward its edges. [The post-processing API](../api/post.md#color-grading) lists their settings.
 
 - The vignette multiplies HDR color before the tone mapping, as Filament, Unity's URP, Bevy and Babylon.js do. Bright corners then darken as dark corners do. three.js's `VignetteShader` blends display color toward a gray after the tone mapping, which turns bright corners gray.
-- The table works on display color, after the tone mapping. Grading tools make tables for display color, so they look as their authors made them.
+- The grading controls work on display color, after the tone mapping, as most grading tools do. A `.cube` or `.3dl` table works there too: grading tools make tables for display color, so they look as their authors made them.
 - Both draw on every GPU path, with HDR color or without it, as [Post-processing API](../api/post.md#vignette) says.
 - They are settings of the final pass, not passes of their own. Turning one on builds no pipeline, so the picture changes in the next frame with no pause.
 - Each table is a 3D texture, read with one filtered texture read per pixel. The vignette costs a few operations per pixel.
-- The grading controls' table holds 32 texels a side, and the final pass takes the square root of a color before it reads the table, which places the texels closer together toward black where a grade's curve is steepest. A job worker computes the table's texels, so a value that changes costs no frame. The table keeps the worker's whole range, past white, and the canvas clips it, so a color that crosses white inside a texel's cell still matches the grade.
+- The grading controls' table holds 32 texels a side, and the final pass takes the square root of a color before it reads the table, which places the texels closer together toward black where a grade's curve is steepest. A job worker computes the table's texels, so a value that changes stalls no frame. The frame that lands a bake uploads the table, 256 KB. The table keeps the worker's whole range, past white, and the canvas clips it, so a color that crosses white inside a texel's cell still matches the grade.
 - The engine's parity test compares a `.cube` table alone with three.js's composer. It matches in all but under 0.1% of the pixels on every GPU path. With the vignette too, mapped from `VignetteShader`'s settings for AgX, it matches as closely.
 
 ## Sharpening
@@ -395,18 +420,20 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 - `new GTAOPass(scene, camera, width, height)` becomes `post.set({ ao: {} })`. Its `updateGtaoMaterial({ radius, thickness, distanceExponent, distanceFallOff, scale, samples })` settings keep their names, with `distanceFalloff` spelled so, and `blendIntensity` becomes `intensity`. Set `quality.set({ aoScale: 0.5 })` too where phones and tablets should draw it.
 - `SSAOPass`, `SAOPass` and the N8AO library also become `post.set({ ao })`. Their settings have other meanings, so start from the defaults and tune `radius` and `scale` by eye.
 - `new OutlinePass(resolution, scene, camera, selectedObjects)` becomes `post.set({ outline: { color, hiddenColor, width } })`, from `visibleEdgeColor` and `hiddenEdgeColor`. `OutlinePass` draws its edge at half size, so a `width` of twice its `edgeThickness` gives about the same line. three.js draws a dark brown line around hidden parts by default, and null3D draws none until `hiddenColor` is set. Each selected mesh calls `setOutlined(true)`. A selected model's copy from `scene.instantiate` calls it once for all of its meshes.
-- `OutlinePass` blurs its edge, and `edgeStrength`, `edgeGlow` and `pulsePeriod` set how bright it is, how far it glows and how fast it pulses. null3D's line is crisp and opaque, so it has none of these settings. To pulse the line, change its color or width every frame.
+- A port that needs `OutlinePass`'s soft edge, its glow or its pulse installs `@null3d/three-compat` and calls `createOutlinePass(ctx, { color, hiddenColor, strength, thickness, glow, pulsePeriod })`. Its settings keep `edgeStrength`, `edgeThickness`, `edgeGlow` and `pulsePeriod`, and `visibleEdgeColor` and `hiddenEdgeColor` become `color` and `hiddenColor`. The add-on turns the core's crisp line off, and it costs five full-screen passes and one effect ([three.js compatibility](../api/three-compat.md)).
 - three.js has no automatic exposure. pmndrs's `ToneMappingEffect` with `mode: ToneMappingMode.REINHARD2_ADAPTIVE` adapts, and becomes `post.set({ autoExposure: { metering: 'mean' } })`. Its `adaptationRate` becomes about `speedUp` and `speedDown`, and its `middleGrey` the `compensation`: `log2(middleGrey / 0.18)` stops. Its Reinhard curve becomes a custom tone curve. pmndrs meters a mip chain of the whole frame. null3D meters on the GPU with center weighting, so the result differs a little.
-- `renderer.toneMapping` and `toneMappingExposure` become `post.set({ toneMapping, exposure })`. three.js applies no tone mapping by default, and null3D applies punchy AgX. A port that set `AgXToneMapping` sets `'agx'`. The exposure gives the same picture: null3D applies it to each light rather than at the end, and bloom's threshold keeps its meaning.
+- `renderer.toneMapping` and `toneMappingExposure` become `post.set({ toneMapping, exposure })`. three.js applies no tone mapping by default, and null3D applies punchy AgX. A port that set `AgXToneMapping` sets `'agx'`, and one that set `ACESFilmicToneMapping` sets `'aces'`. `ReinhardToneMapping` and `CineonToneMapping` become the `reinhard` and `cineon` curves of `@null3d/three-compat`. The exposure gives the same picture: null3D applies it to each light rather than at the end, and bloom's threshold keeps its meaning.
 - `new LUTPass({ lut: result.texture3D, intensity })` after a `LUTCubeLoader` or `LUT3dlLoader` becomes `post.set({ lut: await assets.loadLut(url), lutIntensity: intensity })`. A `Data3DTexture` that code fills becomes `await assets.lutFromData({ size, data })`.
 - A `ShaderPass(VignetteShader)` with its `offset` and `darkness` uniforms becomes `post.set({ vignette: { size: offset, intensity: darkness } })`. Under ACES the default falloff gives a close match. Under AgX, keep `intensity` at 1 or less and set `falloff` to 3. With a `darkness` below 1, three.js also lifts dark corners toward a gray, and null3D does not.
 - `new SharpenNode(target, sharpness, denoise)` becomes `post.set({ sharpen })`. Both sharpen display color with FSR 1's RCAS over the same five texels. null3D draws it in the final pass, so the port needs no render target and no pass of its own. The two settings count the other way round. three.js scales the sharpening by `2^-sharpness`, where 0 sharpens the most and 2 does nothing. So `sharpen` takes that factor: three.js's default of 0.2 is `sharpen: 0.87`, and `sharpen: 0.5` is stronger than three.js's default. null3D always damps the sharpening where the ring around a pixel is noise, which three.js does only with `denoise: true`.
-- Any other `ShaderPass` becomes `post.addEffect` with the shader rewritten in WGSL. A pass after `OutputPass` saw display color, and an effect sees linear HDR color. Numbers that assume colors from 0 to 1 may need changes. `ReinhardToneMapping`, `CineonToneMapping` and `CustomToneMapping` become a custom tone curve. [Porting post-processing](../porting/threejs-postprocessing.md) shows both.
+- Any other `ShaderPass` becomes `post.addEffect` with the shader rewritten in WGSL. A pass after `OutputPass` saw display color, and an effect sees linear HDR color. Numbers that assume colors from 0 to 1 may need changes. `CustomToneMapping` becomes a custom tone curve, and `ReinhardToneMapping` and `CineonToneMapping` take the curves of `@null3d/three-compat`. [Porting post-processing](../porting/threejs-postprocessing.md) shows both.
 
 ## Related pages
 
 - [Post-processing API](../api/post.md): `post.set` and its settings, and `post.addEffect`.
 - [Custom passes](../guides/custom-passes.md): how to write custom effects and tone curves.
+- [Lens kit](../guides/lens-kit.md): one camera look, with grain, color fringes, an anamorphic
+  streak and a speed blur in one effect, and the core's grade, sharpening and vignette.
 - [Objects and transforms](../api/objects.md#mesh-calls): `setOutlined`.
 - [Color management](color-management.md): HDR color, the final pass and the 8-bit path.
 - [The render graph](render-graph.md): how the passes of a frame are declared and ordered.

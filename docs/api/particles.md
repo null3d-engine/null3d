@@ -20,7 +20,7 @@ flowchart LR
 
 The `@null3d/particles` package makes particle systems: sparks, fire, smoke, dust, rain, falling leaves, fireflies and magic. A system is an emitter and a buffer of particles. The emitter decides where and when particles are born. The GPU moves each particle, turns it and changes its color and size over its life.
 
-The GPU works out each particle in closed form, from its birth and its age. The CPU writes a particle's record once, when the particle is born, and no pass simulates the particles. So a system of a million particles costs the CPU only its births, and it draws the same on WebGPU and WebGL2. A held frame at a given time is the same whatever frames came before it.
+The GPU works out each particle in closed form, from its birth and its age. The engine's core writes each particle's record once, when the particle is born. The sketch starts the frame and reads settings, but runs no loop over the births. No pass simulates the particles. So a system of a million particles costs the CPU one call in a frame, and it draws the same on WebGPU and WebGL2. A held frame at a given time is the same whatever frames came before it.
 
 ```sh
 bun add @null3d/particles
@@ -156,7 +156,7 @@ The system keeps its object's culling sphere around its live particles, from whe
 
 ## Speed
 
-Each live particle costs the GPU one quad, whose vertex shader works out its state. The CPU writes 32 bytes per birth, and uploads only the records born in the frame. A system with a large capacity costs vertex work for every record, live or not, so size `capacity` for the particles you need.
+Each live particle costs the GPU one quad, whose vertex shader works out its state. The core writes 32 bytes per birth, and the engine uploads only the records born in the frame. A system with a large capacity costs vertex work for every record, live or not, so size `capacity` for the particles you need.
 
 The GPU keeps birth times as 32-bit floats. So every 1,024 seconds, a system moves the time that its birth times count from. It rewrites the records' birth times 16,384 at a time, one share per frame, so even a system of a million particles adds no long frame. A system with sub-emitters keeps a table of the events to come, 80 bytes per event. It starts small and doubles while the system warms up, up to one event per sub-emitter for each particle.
 

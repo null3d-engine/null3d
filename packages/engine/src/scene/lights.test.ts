@@ -29,8 +29,8 @@ const IMAGE_LAYER = 5;
 
 /** A core that hands out slots and light rows, keeps the command ring, and records light calls. */
 function fakeCore() {
-	// Enough memory for a light's image, which holds every mip level of 128 x 128 texels.
-	const memory = new WebAssembly.Memory({ initial: 4 });
+	// Enough memory for a light's image, which holds every mip level of the largest picture.
+	const memory = new WebAssembly.Memory({ initial: 64 });
 	let slot = 0;
 	let row = 0;
 	/** Each light row's kind, object, colors by code and numbers by code. */
@@ -47,6 +47,8 @@ function fakeCore() {
 	>();
 	/** The light rows whose images the scene asked the core to make room for. */
 	const images: number[] = [];
+	/** The texels across a side that the scene asked for each of those images. */
+	const sizes: number[] = [];
 	const glue = {
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: (field: number) => AT.fields + field * 512,
@@ -74,9 +76,10 @@ function fakeCore() {
 			row.hero = object;
 			return 0;
 		},
-		lightImage: (light: number) => {
+		lightImage: (light: number, size: number) => {
 			if (!rows.has(light)) return 0;
 			images.push(light);
+			sizes.push(size);
 			return AT.images;
 		},
 		finishLightImage: (light: number) => {
@@ -114,7 +117,7 @@ function fakeCore() {
 		const [x, y, z, w] = rotation(light) as [number, number, number, number];
 		return new Vector3(0, 0, -1).applyQuaternion(new Quaternion(x, y, z, w)).toArray();
 	};
-	return { scene, commands, tableRow, rotation, pointing, images };
+	return { scene, commands, tableRow, rotation, pointing, images, sizes };
 }
 
 /** The error that `call` throws. */
@@ -294,6 +297,14 @@ describe('creating lights', () => {
 		expect(tableRow(plain).values).toEqual([]);
 	});
 
+	test('a light draws all of its shadow unless the option gives another, and the option is from 0 to 1', () => {
+		const { scene, tableRow } = fakeCore();
+		// Leaving it out writes nothing, so the core's default, all of it, stands.
+		const plain = scene.createDirectionalLight({ castShadows: true, shadow: {} });
+		expect(tableRow(plain).values[C.LIGHT_VALUE_SHADOW_INTENSITY]).toBeUndefined();
+		expect(thrown(() => plain.setShadow({ intensity: 1.5 })).code).toBe('E1108');
+	});
+
 	test("a directional light's hero object reaches the core, through its options and its setter", () => {
 		const { scene, tableRow } = fakeCore();
 		const hero = scene.createGroup();
@@ -312,6 +323,24 @@ describe('creating lights', () => {
 		expect(tableRow(sun).hero).toBe(hero.handle >>> 0);
 		sun.setHeroShadow(null);
 		expect(tableRow(sun).hero).toBe(0);
+	});
+
+	test("a hero's tile size comes from the option, the setter or the preset's default", () => {
+		const { scene, tableRow } = fakeCore();
+		const hero = scene.createGroup();
+		const sun = scene.createDirectionalLight({
+			castShadows: true,
+			shadow: { hero, heroTileSize: 4096 },
+		});
+		expect(tableRow(sun).values[C.LIGHT_VALUE_HERO_SIZE]).toBe(4096);
+		// setShadow gives the size alone, or alongside a new hero.
+		sun.setShadow({ heroTileSize: 2048 });
+		expect(tableRow(sun).values[C.LIGHT_VALUE_HERO_SIZE]).toBe(2048);
+		sun.setHeroShadow(hero, 1024);
+		expect(tableRow(sun).values[C.LIGHT_VALUE_HERO_SIZE]).toBe(1024);
+		// A light that names neither keeps the core's default, which the preset sets.
+		const plain = scene.createDirectionalLight({ castShadows: true });
+		expect(tableRow(plain).values[C.LIGHT_VALUE_HERO_SIZE]).toBeUndefined();
 	});
 
 	test('a hero that is not an object throws, and a destroyed one too', () => {
@@ -512,10 +541,12 @@ describe('light maps', () => {
 	const picture = () => ({ width: 2, height: 2, data: new Uint8Array(16).fill(255) });
 
 	test('a spot light takes a map, which the core writes into a light tables layer', async () => {
-		const { scene, tableRow, images } = fakeCore();
+		const { scene, tableRow, images, sizes } = fakeCore();
 		const spot = scene.createSpotLight({ range: 6, map: picture() });
 		await scene.imagesSettled();
 		expect(images).toEqual([spot.id]);
+		// A small picture keeps the fewest texels that an image takes.
+		expect(sizes).toEqual([128]);
 		expect(tableRow(spot).values[C.LIGHT_VALUE_IMAGE]).toBe(IMAGE_LAYER);
 		// A new map goes into the light's own place.
 		spot.setMap(picture());
@@ -525,6 +556,16 @@ describe('light maps', () => {
 		// Null goes back to one color and frees the place.
 		spot.setMap(null);
 		expect(tableRow(spot).values[C.LIGHT_VALUE_IMAGE]).toBe(0);
+	});
+
+	test('a detailed map keeps its detail up to the most texels an image takes', async () => {
+		const { scene, sizes } = fakeCore();
+		const width = 300;
+		const detail = () => ({ width, height: width, data: new Uint8Array(width * width * 4) });
+		scene.createSpotLight({ range: 6, map: detail() });
+		await scene.imagesSettled();
+		// 300 pixels a side rounds up to the largest image size.
+		expect(sizes).toEqual([512]);
 	});
 
 	test('a map whose pixels a light cannot take throws E1108', () => {
@@ -608,6 +649,10 @@ describe('development checks', () => {
 			`E1108: setShadow() got the shadow map size 1000 ${on}, which must be 256, 512, 1,024, 2,048 or 4,096.`,
 		);
 		expect(thrown(() => sun.setShadow({ mapSize: 8192 })).code).toBe('E1108');
+		expect(thrown(() => sun.setShadow({ heroTileSize: 1000 as 1024 })).message).toStartWith(
+			`E1108: setShadow() got the hero shadow tile size 1000 ${on}, which must be 1,024, 2,048 or 4,096.`,
+		);
+		expect(thrown(() => sun.setShadow({ heroTileSize: 8192 as 4096 })).code).toBe('E1108');
 		expect(thrown(() => sun.setShadow({ bias: -1 })).code).toBe('E1108');
 		expect(thrown(() => sun.setShadow({ normalBias: -0.1 })).code).toBe('E1108');
 		expect(thrown(() => sun.setShadow({ distance: 0 })).code).toBe('E1108');

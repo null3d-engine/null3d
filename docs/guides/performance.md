@@ -92,7 +92,20 @@ The pixel ratio cap often decides GPU time on a phone, because the GPU shades ea
 
 Measure at the presets that your users get. `engine.mode.preset` names the preset that runs, and the `?preset=low` switch fixes one for a test.
 
-When frames take too long during play, the frame-budget governor lowers the render scale first. Then it lowers the live shadow settings, bloom's base and the size of ambient occlusion ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). It hides some of a slow scene's cost. To measure the scene's own cost, turn it off with `quality.set({ governor: false })`, so every run draws the same frames.
+When frames take too long during play, the frame-budget governor lowers a sketch's budgets and the render scale in turn, a budget's step first, and then the live shadow settings, bloom's base and the size of ambient occlusion ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). It hides some of a slow scene's cost. To measure the scene's own cost, turn it off with `quality.set({ governor: false })`, so every run draws the same frames.
+
+## Put performance-sensitive work in Rust
+
+The engine's per-frame loops run in Rust, compiled to WebAssembly. Your TypeScript is an interface to them: it sets values, writes arrays and makes calls. A loop of your own in `onUpdate` runs in JavaScript. Rust has more headroom on work that grows with the scene. The loop runs as compiled code and crosses no JavaScript boundary for each object.
+
+So put per-object work, per-frame math over many objects, and any loop whose cost grows with the scene in Rust:
+
+- Use the engine call that covers the whole batch. Write an instance batch's arrays, and let the engine's transform, animation, culling and sorting steps run.
+- No engine call covers some loops. Build a Rust WebAssembly module for those, and run it on the job workers through `runTask` ([Tasks on the job workers](../api/tasks.md)).
+
+A task's answer arrives between frames. A loop that must affect the frame it runs in belongs in the engine's own calls, not in a task.
+
+Keep setup, wiring and page logic in TypeScript. They run once or rarely, so they leave the frame budget alone. The engine's calls that rebuild scene tables cost the frame they take effect in, so make them at setup ([Objects during play](#objects-during-play)).
 
 ## Write per-frame code that allocates nothing
 
@@ -344,7 +357,7 @@ The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatenc
 - Compare runs at the same display refresh rate. `refreshHz` records it with each measurement. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
 - To compare displays with different refresh rates, add `?fps=60` to the page's address. The engine then draws 60 frames per second on any display of 60 Hz or more.
 - The engine lets at most two frames wait on the GPU. To see what a browser does without that limit, add `?queue=off` to the page's address. `?queue=3` lets three frames wait.
-- Chrome rounds GPU times to 65.5 microseconds unless you start it with `--enable-webgpu-developer-features`. `gpuStepMs` gives the step when the browser rounds.
+- Chrome rounds GPU times to a coarse privacy grid unless you start it with `--enable-webgpu-developer-features --disable-dawn-features=timestamp_quantization`. `gpuStepMs` gives the step when a browser still rounds. It is the greatest common divisor of the offsets that the engine reads back.
 - In Safari, a worker's frame callbacks run from a timer of about 15 ms, not from the display. The engine holds its frames to the display's rate, which the page measures, but `refreshHz` there reports the timer's rate.
 - Compare engines in the same browser, one run after another.
 

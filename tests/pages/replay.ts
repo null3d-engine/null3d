@@ -85,7 +85,8 @@ run('replay', async () => {
 
 	const view = lookAt([0, 6, 10], [0, 0, 0]);
 	const viewProj = multiply(perspectiveReversed((60 * Math.PI) / 180, 1, 0.1, 100), view);
-	// The frame's values. The fog's and the light grid's stay 0: no fog, and no point or spot light.
+	// The frame's values. The fill directional lights, the fog's values and the light grid's stay
+	// 0: no fill light, no fog, and no point or spot light.
 	const frame = new Float32Array(G.SIZE_FRAME_UNIFORM_BYTES / 4);
 	frame.set(viewProj, 0);
 	frame.set([0, 6, 10, 1], 16);
@@ -93,22 +94,25 @@ run('replay', async () => {
 	const length = Math.hypot(...sun);
 	frame.set([sun[0]! / length, sun[1]! / length, sun[2]! / length, 0], 20);
 	frame.set([3, 3, 3, 0], 24);
-	frame.set([0.4, 0.4, 0.4, 0], 28);
+	// The fill directional lights' three direction slots and three color slots lie from index 28,
+	// so the ambient light follows them. Their count is the sun color's fourth float, which stays 0.
+	frame.set([0.4, 0.4, 0.4, 0], 52);
 	// The output settings: an exposure of 1 and no tone mapping, so the 8-bit target holds the lit
 	// colors encoded as sRGB.
-	frame[32] = 1;
-	new Uint32Array(frame.buffer)[33] = C.TONE_MAPPING_NONE;
+	frame[56] = 1;
+	new Uint32Array(frame.buffer)[57] = C.TONE_MAPPING_NONE;
 	// Two rows of the material table, each starting with its color and opacity. The shader reads
 	// nothing else of them.
 	const materials = new Float32Array((2 * G.SIZE_MATERIAL_BYTES) / 4);
 	materials.set([0.8, 0.1, 0.1, 1], 0);
 	materials.set([0.1, 0.3, 0.9, 1], G.SIZE_MATERIAL_BYTES / 4);
 	// The planes, the instance count, the view's layers, the run count and the view's row of the
-	// cell offsets texture, the level choice's inputs, then the runs of the cell order, then room
-	// for the occlusion phases' values, which this view leaves unset. Every instance here lies in
-	// cell 0, whose zero offset in row 0 keeps the positions in world space, and no run is listed,
-	// so thread i culls instance i. A level factor of 0 draws each bucket as it is.
-	const cull = new Float32Array(32 + 4 * G.SIZE_MAX_CULL_RANGES + G.SIZE_CULL_OCCLUSION_BYTES / 4);
+	// cell offsets texture, the level choice's inputs, the debug view's word, then the runs of the
+	// cell order, then room for the occlusion phases' values, which this view leaves unset. Every
+	// instance here lies in cell 0, whose zero offset in row 0 keeps the positions in world space,
+	// and no run is listed, so thread i culls instance i. A level factor of 0 draws each bucket as
+	// it is, and a zero debug word writes no level codes.
+	const cull = new Float32Array(36 + 4 * G.SIZE_MAX_CULL_RANGES + G.SIZE_CULL_OCCLUSION_BYTES / 4);
 	cull.set(frustumPlanes(viewProj), 0);
 	new Uint32Array(cull.buffer).set([positions.length, viewLayers, 0, 0], 24);
 	const indirect = new Uint32Array([36, 0, 0, 0, 0, 36, 0, 0, 0, 0]);

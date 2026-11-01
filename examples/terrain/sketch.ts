@@ -1,12 +1,22 @@
 // Terrain: a 1.2 km valley drawn by the terrain add-on. The height field is a function of the
 // place, and the ground near the camera draws at about a meter of detail while the hills far away
-// draw coarser blocks, each with a skirt that hides the seam where two levels meet. Four tiled
-// layers, grass, soil, rock and snow, blend by a splat map that the add-on fills from the height
-// and the slope. Boulders made in code stand on the ground, placed with `terrain.heightAt`, and the
-// camera flies a slow circle over the valley. The terrain carries no collision of its own.
+// draw coarser blocks. Each block moves its vertices to its parent block's surface as the camera
+// pulls away, so the ground does not pop as blocks split and merge, and a skirt covers the seam
+// where two neighbours differ by more than one level. Every pixel takes its normal from a map
+// baked over the whole ground, so the far hills keep their relief.
+// Four tiled layers, grass, soil, rock and snow, blend by a splat map that the add-on fills from
+// the height and the slope, and each layer's own height shows it through its neighbours where two
+// meet. Boulders made in code stand on the ground, placed with `terrain.heightAt`, and the camera
+// flies a slow circle over the valley. The terrain carries no collision of its own.
 import { defineSketch, math, timeOfDay, vec3 } from '@null3d/engine';
 import { createTerrain, terrainTextures } from '@null3d/terrain';
 import { interact } from '../lib/interact';
+
+// A cost page spells one change at a time on the sketch's address, as the split page does:
+// ?morph=off leaves every block at its own surface, ?still holds the camera at one point of its
+// orbit, and ?follow=off keeps the far shadow cascades to their turns.
+const params = new URL(import.meta.url).searchParams;
+const STILL = params.has('still');
 
 /** The ground's width and depth, in meters, and how many boulders stand on it. */
 const SIZE = 1200;
@@ -49,15 +59,20 @@ function fbm(x: number, y: number, octaves: number): number {
 	return sum;
 }
 
-/** The height of the ground at a point: rolling hills with a valley that runs along z. */
+/**
+ * The height of the ground at a point: rolling hills with a valley that runs along z, and small
+ * folds that a far block's own vertices would miss.
+ */
 function ground(x: number, z: number): number {
 	const hills = 62 * fbm(x * 0.0021, z * 0.0021, 5) + 7 * fbm(x * 0.014 + 3, z * 0.014, 3);
 	const valley = -34 * Math.exp(-(z * z) / (2 * 260 * 260));
-	return hills + valley + 12;
+	const folds = 1.1 * Math.sin(x * 0.22 + z * 0.16) + 0.5 * Math.sin(x * 0.44 - z * 0.33);
+	return hills + valley + folds + 12;
 }
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, post, time } = ctx;
+	const { scene, assets, geometry, materials, post, quality, time } = ctx;
+	if (params.get('follow') === 'off') void quality.set({ followMovingCasters: false });
 	const day = timeOfDay('goldenHour', { heading: -2.3 });
 	scene.setBackground(
 		{ sky: { ...day.sky, cloudCoverage: 0.25 } },
@@ -83,14 +98,15 @@ export default defineSketch(async (ctx) => {
 		height: ground,
 		resolution: 256,
 		layers: [
-			{ map: layers.grass, tile: 6, roughness: 1 },
-			{ map: layers.soil, tile: 11, roughness: 1 },
-			{ map: layers.rock, tile: 7, roughness: 0.85 },
-			{ map: layers.snow, tile: 14, roughness: 0.7 },
+			{ map: layers.grass, tile: 6, roughness: 1, heightFrom: 'alpha' },
+			{ map: layers.soil, tile: 11, roughness: 1, heightFrom: 'alpha' },
+			{ map: layers.rock, tile: 7, roughness: 0.85, heightFrom: 'alpha' },
+			{ map: layers.snow, tile: 14, roughness: 0.7, heightFrom: 'alpha' },
 		],
 		maxLevel: 6,
-		split: 2,
+		camera,
 	});
+	if (params.get('morph') === 'off') terrain.setMorph(false);
 
 	// Boulders seated on the ground, each where the height field says the ground is.
 	const rock = geometry.sphere({ radius: 1, widthSegments: 8, heightSegments: 5 });
@@ -116,9 +132,9 @@ export default defineSketch(async (ctx) => {
 	const eye = vec3.create();
 	return {
 		onUpdate(dt) {
-			// A slow circle over the valley, looking down its length toward the low sun.
+			// A slow circle over the valley, or the view that a cost page holds in one place.
 			if (!view.userCamera) {
-				const t = time.now * 0.05;
+				const t = STILL ? 1.57 : time.now * 0.05;
 				const [x, z] = [Math.sin(t) * 230, Math.cos(t) * 230];
 				const [ax, az] = [Math.sin(t + 0.55) * 330, Math.cos(t + 0.55) * 330];
 				camera.setPosition(x, ground(x, z) + 32, z);

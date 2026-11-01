@@ -1,9 +1,16 @@
 // The null3d engine: createEngine runs on the page, defineSketch in the sketch module, and the math
 // helpers in both.
 
-export type { Debug, DebugGridOptions, DebugLightOptions, DebugView } from './debug/debug';
-export type { FrameStats, FrameStatsThread } from './debug/stats';
+export type {
+	Debug,
+	DebugGridOptions,
+	DebugLightOptions,
+	DebugView,
+	DebugViewName,
+} from './debug/debug';
+export type { FrameStats, FrameStatsStep, FrameStatsThread } from './debug/stats';
 export type { StatsOverlayOptions } from './debug/stats-options';
+export type { EngineDebugView } from './debug/view-names';
 export { EngineError } from './errors/engine-error';
 export type { ErrorCode } from './errors/fixes';
 export type { ShaderFeature } from './generated/shader-features';
@@ -67,10 +74,20 @@ export type {
 	SecondRates,
 	ThreadStats,
 } from './page/frame-stats';
-export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
+export type {
+	HeldFrame,
+	HoldDump,
+	HoldFailure,
+	HoldResult,
+	HoldScript,
+	HoldScriptProblem,
+	HoldScriptResult,
+	HoldScriptStep,
+} from './page/hold';
 export type { EngineLabels } from './page/labels';
 export type { PointerLockOptions } from './page/pointer-lock';
 export type { DepthMode, LatencyMode, SketchThread } from './page/switches';
+export type { VideoOptions } from './page/videos';
 export type { PresetCheck, PresetCheckRound, TargetFps } from './quality/check';
 export type { DeviceHints } from './quality/chooser';
 export type { QualityPreset, QualitySettings } from './quality/presets';
@@ -103,8 +120,12 @@ export type {
 	BackgroundSource,
 	Cubemap,
 	SkyBackground,
+	SkyLayer,
+	SkyLayerOptions,
+	SkyLayerValues,
 	SkyOptions,
 } from './scene/background';
+export type { LightMapData, LightMapEncoding } from './scene/baked-light';
 export type { ColorInput } from './scene/color';
 export type { Effect, EffectOptions } from './scene/effects';
 export type {
@@ -121,6 +142,7 @@ export type {
 	FeatureInstancesOptions,
 	FeatureRowOptions,
 } from './scene/feature-draws';
+export type { FeatureEffect, FeatureEffectOptions } from './scene/feature-effects';
 export type { FeatureHandle, FeatureHostOptions } from './scene/feature-host';
 export { FeatureHost } from './scene/feature-host';
 export type {
@@ -132,9 +154,12 @@ export type {
 export type {
 	FeatureBand,
 	FeatureBudget,
+	FeatureDebugView,
 	FeatureDescription,
 	FeatureFrame,
 	FeatureGovernor,
+	FeatureGpu,
+	FeatureGpuPass,
 	FeatureKind,
 	FeatureNeutral,
 	FeatureOutput,
@@ -173,6 +198,10 @@ export {
 export type {
 	ParticleBuffer,
 	ParticleBufferOptions,
+	ParticleEmitterBurst,
+	ParticleEmitterOptions,
+	ParticleEmitterShape,
+	ParticleEmitterSub,
 	ParticleFacing,
 	ParticleFlipbook,
 	ParticleGroundMode,
@@ -227,6 +256,8 @@ export type {
 	ComputeWorkgroup,
 	FullscreenPassOptions,
 	PassInput,
+	PassReadRegion,
+	PassReadResult,
 	PassScale,
 	ReflectionPassOptions,
 	ReflectionPlane,
@@ -250,6 +281,7 @@ export type {
 	DepthBias,
 	Geometry,
 	IntegerArray,
+	MapUvTransforms,
 	Material,
 	MaterialFeatures,
 	MaterialOptions,
@@ -363,6 +395,7 @@ export type {
 	WgslUniforms,
 } from './scene/wgsl-uniforms';
 export type { PhaseName } from './shared/metrics';
+export type { ReplayResult } from './shared/recording';
 export { runTask } from './shared/run-task';
 export type { Percentiles } from './shared/stats';
 export { TaskFailure } from './shared/task-failure';

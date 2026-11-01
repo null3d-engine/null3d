@@ -99,8 +99,8 @@ impl Vignette {
 pub(crate) struct Grading {
     /// The table's GPU texture id, with its scale and offset (see [`Lut::placement`]).
     pub(crate) lut: Option<(u32, [f32; 4], [f32; 4])>,
-    /// The GPU texture id of the built-in grading table, which maps a display color to its graded
-    /// color, or `None` while the sketch grades with none.
+    /// The GPU texture id of the built-in grading table, or `None` while the sketch grades with
+    /// none. It maps a display color to its graded color.
     pub(crate) grade: Option<u32>,
     pub(crate) vignette: Option<Vignette>,
     /// The sharpening's strength, from 0 for off to 1 for the most, at the whole canvas's render

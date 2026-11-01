@@ -1,8 +1,8 @@
 // The showcase controls HUD names every change in a toast at the top centre of the view. Playwright
 // opens the night town's HUD, picks a button in each group, and checks the toast's text
-// ([D-171](../../.dev/decisions/D-171-showcase-controls-hud.md), owner, 14 October 2026). A toast
-// alone cannot show that a change took: the stage writes the sky, the fog and the environment light
-// every frame, and once undid each switch a frame after the toast named it. So the tests also read
+// ([D-171](../../.dev/decisions/D-171-showcase-controls-hud.md), owner's ruling). A toast alone
+// cannot show that a change took: the stage writes the sky, the fog and the environment light every
+// frame, and can undo a switch a frame after the toast names it. So the tests also read
 // the canvas, and check that each part stays off while it is off and comes back when it turns on.
 //
 // The checks fall into three tests, and each one opens the page afresh, so CI can run them in jobs
@@ -14,8 +14,12 @@
 // HUD": the job of the other tests that run alone leaves the three out by those words, and the rest
 // of the name picks one test.
 import { expect, type Page, test } from '@playwright/test';
-import { decodePngRgba } from '../../packages/cli/src/png.js';
 import { ALONE } from '../lib/alone.ts';
+import {
+	frameDifference as difference,
+	type Frame,
+	readFrame as frame,
+} from '../lib/canvas-frame.ts';
 import { watchPageProblems } from '../lib/page-result.ts';
 
 /** The panel of a group, by the group's name in the model. */
@@ -57,50 +61,6 @@ async function pick(
 	await expect(toast).toHaveText(text, { timeout: 20_000 });
 }
 
-/** One frame of the canvas: its size and its RGBA pixels, top row first. */
-interface Frame {
-	width: number;
-	height: number;
-	data: Uint8Array;
-}
-
-/**
- * The canvas as the scene draws it, read through the demo's engine: the canvas exactly, at its own
- * size, and the controls panel, the toast, the tips, the caption and the stats overlay are page
- * elements, so none of them is in it. The engine publishes itself behind its own `?bench` switch, as
- * it does for a benchmark tool, so the page needs nothing added for a test to read its frames.
- *
- * A browser screenshot cannot serve here. Both ways of taking one wait on the browser's own frame
- * work: an element's picture waits for its box to hold still across two of the page's animation
- * frames, and a page picture waits on the compositor for a frame to capture. A software GPU busy with
- * several demos starves both, for the whole of a test's budget. The engine's own reader instead waits
- * on the engine's frame loop, which keeps its turn, and gives the frame drawn last when no new frame
- * comes: measured here, one read took 17 ms where the screenshots ran the test out.
- */
-async function frame(page: Page): Promise<Frame> {
-	const base64 = await page.evaluate(async () => {
-		const engine = (globalThis as { __null3dEngine?: { capture(): Promise<Blob> } }).__null3dEngine;
-		if (!engine)
-			throw new Error('the page publishes its engine behind ?bench, and it has not started one');
-		const bytes = new Uint8Array(await (await engine.capture()).arrayBuffer());
-		let text = '';
-		// Each chunk keeps the argument count of fromCharCode inside its own limit.
-		for (let at = 0; at < bytes.length; at += 0x8000)
-			text += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
-		return btoa(text);
-	});
-	return decodePngRgba(Buffer.from(base64, 'base64'), 'the canvas');
-}
-
-/** The mean difference of two frames' colour, in steps of 255, over every pixel and channel. */
-function difference(a: Frame, b: Frame): number {
-	let sum = 0;
-	for (let i = 0; i < a.data.length; i += 4)
-		for (let c = 0; c < 3; c++)
-			sum += Math.abs((a.data[i + c] as number) - (b.data[i + c] as number));
-	return sum / ((a.data.length / 4) * 3);
-}
-
 /**
  * A mean difference that only a change of the look gives; the scene at rest differs less. The
  * environment light's switch changes the least of the parts, about 1.5 of the mean on the software
@@ -117,7 +77,7 @@ const CHANGED = 1.2;
 const RETURNED = 0.5;
 /** A mean difference below which the canvas counts as still, over a settled look. */
 const STILL = 0.5;
-/** Frames read after a switch: the old bug rewrote the part a frame later, so several are read. */
+/** Frames read after a switch, since a stage that rewrites the part does so a frame later. */
 const FRAMES = 4;
 /**
  * How long the engine's first frame may take to arrive. A page shows its controls while its sketch
