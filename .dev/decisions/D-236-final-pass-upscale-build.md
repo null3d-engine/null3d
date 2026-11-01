@@ -107,20 +107,23 @@ The run is [the iPad's bench run](../tested-devices/ipad-pro-13-safari/20261024-
 
 The first addendum measured at High with the governor on. The frame therefore held High's floor of
 0.75, and the pass it called the second step was the seventh the timer named. This addendum holds
-the render scale at 0.5 with the governor off, so no step moves it. It reads the second step by
-name, where the frame times every pass of itself.
+the render scale at one value with the governor off, at 0.5 or at the whole scale, so no step moves
+it. It reads the second step by name, where the frame times every pass of itself.
 
-**Method.** S5's benchmark page on null3D's WebGPU path, with `?renderScale=0.5`. That switch sets
-the lowest and highest render scale both to 0.5, and turns the governor off. Each reading is three
-timed runs of 10 s warm-up and 10 s measured. The device is BrowserStack Automate's iPad Pro 13
-2025, in Safari 26.6.1, on a display of 60 Hz. The page canvas is 1,032 by 1,241 CSS pixels. Every
-run reported a lowest render scale of 0.5, with no quality step in every second, so the pin held.
+**Method.** S5's benchmark page on null3D's WebGPU path, with `?renderScale=`. That switch sets the
+lowest and highest render scale both to the value it names, and turns the governor off. Each
+reading is three timed runs of 10 s warm-up and 10 s measured. The device is BrowserStack
+Automate's iPad Pro 13 2025, in Safari 26.6.1, on a display of 60 Hz. The page canvas is 1,032 by
+1,241 CSS pixels. Eight of the ten sessions hold 0.5. The other two hold the whole scale, at Low and
+at Medium, as the other side of each preset's pair. Every run that asked for 0.5 reported a lowest
+render scale of 0.5, with no quality step in every second, so the pin held.
 
 **What the per-pass figures are.** The engine times seven passes one by one, and folds every later
 pass into the seventh. A tile GPU also runs the passes over one another, as `frame-stats.ts` says.
 Each pass's figure is therefore its own span. The parts do not add up to the frame's own GPU time.
-The second step carries the name `final` only where the frame draws few enough passes to be timed
-whole. On this device that is the Low preset.
+The second step carries the name `final` where the frame draws few enough passes to be timed whole,
+which on this device is Low and Medium. Only Low's span reads as a cost: at Medium it runs with the
+frame's own, as the paragraph after the table says.
 
 | Preset, canvas | Frame GPU ms | First step | Second step | Presented fps |
 | --- | --- | --- | --- | --- |
@@ -164,13 +167,15 @@ alone. That run does not measure the second step's own cost at this preset and c
 **S5's gap.** The M2 gate's timed rows put S5's WebGPU page at 29.0 frames a second. The gate
 commit gave 36.1 on the same device. This reading, at one code state with the pin at 0.5, read
 36.2, 35.7 and 29.6 frames a second. The three runs came in succession as the device warmed, with
-18.42, 18.51 and 22.83 ms of GPU time. The gate's two figures lie inside that spread. The drop is
-therefore not separable from the device's own run-to-run variation at this precision. The second
+18.42, 18.51 and 22.83 ms of GPU time. The gate commit's 36.1 lies inside that spread, and the
+head's 29.0 sits 0.6 below its floor. The drop is therefore not separable from the device's own
+run-to-run variation at this precision. The second
 step is not its cause: at Low the whole two-step frame costs 6.1 ms and holds 60 frames a second.
 Even at High the frame keeps within 18.3 to 23.2 ms, and the second step is a few milliseconds of
 it. What would separate the gate's two rows is the showcase plan, run back to back at the gate
 commit and at this head. This reading does not do that.
 
-The runs are the ten bench files whose names begin `20261101` in the iPad's folder. The
+The runs are the ten bench files whose names begin `20261101` in the iPad's folder, two of them at
+the whole scale. The
 pinned-half-scale reading with the passes named is
 [the Low run](../tested-devices/ipad-pro-13-safari/20261101-061916-bench.md).

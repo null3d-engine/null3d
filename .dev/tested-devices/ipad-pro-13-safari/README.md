@@ -22,8 +22,8 @@ step. The governor is off there, and the render scale is pinned at 0.5. The seco
 
 S5's gate rows read 29.0 frames a second against the gate commit's 36.1. Three runs of the same page
 at one code state read 36.2, 35.7 and 29.6 as the device warmed. The render scale was pinned at 0.5
-in each. The gate's two figures lie inside that spread, so the drop is not separable from the
-device's own variation at this precision ([run](20261101-061301-bench.md),
+in each. The gate commit's 36.1 lies inside that spread; the head's 29.0 sits 0.6 below its floor.
+The drop is still not separable from the device's own variation at this precision ([run](20261101-061301-bench.md),
 [D-236](../../decisions/D-236-final-pass-upscale-build.md)).
 
 Under BrowserStack Automate, Safari keeps the memory of engines in frames that a live page removed, as on the cloud iPhone 16.
