@@ -1603,6 +1603,10 @@ jobs:
           mode: download
       - name: Per-frame allocation in S1 on SwiftShader
         run: bun run bench:allocation --gpu ${{ matrix.gpu }}
+      # The wind add-on's field: its own budgets judge the per-frame calls of its sketch-side
+      # field, and no other job runs this switch. Each GPU path runs it, as the base run does.
+      - name: Per-frame allocation with the wind add-on's field
+        run: bun run bench:allocation --wind --gpu ${{ matrix.gpu }}
       # Only on WebGPU: on the software GPU's WebGL2 path the heap profiler charges bursts of
       # compiled canvas code to a place at the root that no budget can name.
       - name: Per-frame allocation with a canvas texture's refresh
