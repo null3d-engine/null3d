@@ -6,7 +6,7 @@ import type { SketchContext } from '@null3d/engine';
 import { createWater, type WaterShape } from '@null3d/water';
 import { INTERIOR_LAYER } from '../../lib/layers';
 import { Noise, random } from '../../lib/procedural';
-import { BAY, bayShoal, GROUND, SEA_LEVEL } from './island';
+import { BAY, GROUND, SEA_LEVEL, sandyBed } from './island';
 import { groundHeight } from './plan';
 
 /** How far the sea reaches from the island's middle, in meters: past the horizon's haze. */
@@ -163,7 +163,7 @@ function deepBed() {
 			const [x, z] = [place(i), place(j)];
 			const depth = SEA_LEVEL - groundHeight(x, z);
 			depths[j * (side + 1) + i] = depth;
-			const t = smoothstep01(depth, DEEP_FROM - 8, DEEP_FLOOR);
+			const t = smoothstep01(depth, DEEP_FROM + SKIN_FADE * 0.25, DEEP_FLOOR);
 			// The skin starts under the bed, so the bed cuts its rim and no square cell shows, and it rises
 			// over the bed, far enough that the bed's coarse far blocks stay under it.
 			const lift =
@@ -172,8 +172,8 @@ function deepBed() {
 			positions.push(x, SEA_LEVEL - Math.min(depth, DEEP_FLOOR) + lift, z);
 			// It lights as the flat floor past it does, so its slope leaves no line where it meets that floor.
 			normals.push(0, 1, 0);
-			// The bay's shoal is pale sand and the rest is dark rock, so the skin starts in the colour of each.
-			const sandy = smoothstep01(bayShoal(x, z), 0.1, 0.6);
+			// The skin starts in the bed's own colour, pale sand or dark rock, so its rim shows no line.
+			const sandy = sandyBed(x, z);
 			for (let c = 0; c < 3; c++) {
 				const bed =
 					(BED_COLOR[c] as number) + ((SAND_COLOR[c] as number) - (BED_COLOR[c] as number)) * sandy;

@@ -6,7 +6,6 @@ import { math, type QualityPreset, type SketchContext, type Texture } from '@nul
 import { createTerrain, type Terrain } from '@null3d/terrain';
 import { Noise } from '../../lib/procedural';
 import {
-	bayShoal,
 	beachShare,
 	GROUND,
 	golfShare,
@@ -15,6 +14,7 @@ import {
 	inland,
 	onOutcrop,
 	sandWidth,
+	sandyBed,
 	VILLAGES,
 } from './island';
 import { canopyAt, groundHeight, slopeAt } from './plan';
@@ -48,7 +48,7 @@ function splat(x: number, z: number, out: number[]): void {
 	// Under the water, the shelf's bed is pale only over the bay's and the harbour's sand. Elsewhere it is
 	// dark rock, broken by darker weed in patches that read as reef.
 	const under = 1 - smoothstep(y, -1.2, -0.4);
-	const sandy = Math.max(smoothstep(bayShoal(x, z), 0.1, 0.6), quay);
+	const sandy = sandyBed(x, z);
 	const sand = Math.max(
 		beach * (1 - smoothstep(d, sandWidth(x, z) - 2, sandWidth(x, z) + 5)),
 		under * sandy,
