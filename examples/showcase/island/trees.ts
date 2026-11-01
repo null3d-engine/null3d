@@ -95,6 +95,7 @@ const GRASS_REACH = 170;
 const NEAR_LEAF_RED = 2.3;
 const NEAR_LEAF_GREEN = 1.85;
 const NEAR_LEAF_BLUE = 0.04;
+const NEAR_LEAF_MOST_RED = 0.75;
 /** The sun's gloss on a near leaf. A card holds none, and a stronger one shows as pale patches on the crown. */
 const NEAR_LEAF_GLOSS = 0.15;
 
@@ -245,7 +246,13 @@ function spireMap({ textures }: SketchContext) {
  */
 function nearLeaf(species: Species): [number, number, number] {
 	const [r, g, b] = species.color.leaf;
-	return [r * NEAR_LEAF_RED, g * NEAR_LEAF_GREEN, b * NEAR_LEAF_GREEN + NEAR_LEAF_BLUE];
+	const green = g * NEAR_LEAF_GREEN;
+	// The red stays under the green, so a silver leaf keeps its green and does not turn tan.
+	return [
+		Math.min(r * NEAR_LEAF_RED, green * NEAR_LEAF_MOST_RED),
+		green,
+		b * NEAR_LEAF_GREEN + NEAR_LEAF_BLUE,
+	];
 }
 
 /** Writes each row's place, turn and size into a batch of meshes. */
