@@ -5,7 +5,16 @@
 // With `--check` it writes nothing, and fails if its result differs from the stored files.
 import { readFileSync, writeFileSync } from 'node:fs';
 import type { Lot } from './ground';
-import { addLayers, clearWays, dropOffGround, mendGates, spaceJunctions } from './layers';
+import {
+	addLayers,
+	clearWays,
+	cutCircles,
+	dropOffGround,
+	dropSpareRoads,
+	mendGates,
+	shiftJoins,
+	spaceJunctions,
+} from './layers';
 import type { Road, RoadPoint } from './routes';
 
 const flat = (points: readonly { x: number; y: number; z: number }[]): number[] =>
@@ -80,14 +89,17 @@ const lots: Lot[] = base.lots.map((f) => {
 });
 const stairs = base.stairs.map(unflat);
 const moved = spaceJunctions(roads);
+shiftJoins(roads);
+cutCircles(roads);
 mendGates(lots);
 const { added, stairRoads, counts } = addLayers(roads, lots, stairs);
-const every = [...roads, ...stairRoads];
 const ways = clearWays(dropOffGround([...lots, ...added], stairs));
+const staying = dropSpareRoads(roads, ways.lots);
+const every = [...staying.roads, ...stairRoads];
 const text = `${JSON.stringify({
 	baseHouses: lots.length,
-	roads: packRoads(roads),
-	lots: ways.lots.map((lot) => lotRow(lot, every)),
+	roads: packRoads(staying.roads),
+	lots: staying.lots.map((lot) => lotRow(lot, every)),
 	stairs: base.stairs,
 })}\n`;
 const target = new URL('./layout.json', import.meta.url);

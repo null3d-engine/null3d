@@ -741,8 +741,10 @@ const canopy = (() => {
 	const count = new Float32Array(CANOPY_SIDE * CANOPY_SIDE);
 	const cell = (v: number) => Math.round((v + GROUND / 2) / CANOPY_CELL);
 	for (const list of [TREE_SPOTS, FILL_SPOTS])
-		for (const { x, z, kind } of list)
-			count[cell(z) * CANOPY_SIDE + cell(x)] += kind === OLIVE ? OLIVE_SHADE : 1;
+		for (const { x, z, kind } of list) {
+			const at = cell(z) * CANOPY_SIDE + cell(x);
+			count[at] = (count[at] ?? 0) + (kind === OLIVE ? OLIVE_SHADE : 1);
+		}
 	const out = new Float32Array(count.length);
 	for (let j = 1; j + 1 < CANOPY_SIDE; j++)
 		for (let i = 1; i + 1 < CANOPY_SIDE; i++) {
@@ -833,7 +835,7 @@ export const SHRUBS: readonly ShrubSpot[] = (() => {
 })();
 
 /** The fingerprint of the stored plan, which the plan tests and the browser test both hold it to. */
-export const PLAN_FINGERPRINT = 3521943620;
+export const PLAN_FINGERPRINT = 2812249385;
 
 /**
  * A number that changes with any road, house, tree, wall or sample of the ground, to the millimeter. A
