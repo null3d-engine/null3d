@@ -145,6 +145,8 @@ Every vertex's color carries four bytes: the branch's index, the leaf's flutter 
 
 `asset.crown` holds the outline, the bounds, the center and the radius. The bounds hold every level, so a switch never moves them. `asset.impostorSource` names the level, the bounds, the pivot and the tint that a far card bakes from.
 
+`plantMaterial`'s `leafGloss` sets the strength of the sun's gloss on a leaf, from 0 to 1. The default, 0.875, is a measured leaf's. A far card holds no gloss, so a lower value brings a near crown closer to its card.
+
 `plantWind` turns this data into what a plant's materials read: the branch records in one data texture of half floats, four texels for each branch, with the wind field's steady settings in the texture's second row, and the crown, height and transmission of the plant. Give one `plantWind` to a variant's leaf and bark materials, so both parts read the same table.
 
 ```ts
