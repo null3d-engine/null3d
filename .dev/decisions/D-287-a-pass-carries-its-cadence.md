@@ -57,8 +57,8 @@ it makes totals 2.5 ms a frame, so the cost is engine compute on that thread. Th
 checked 28 framebuffers a frame, the fragment form's layer views losing theirs on each recompile.
 
 Commands, all on the WebGL2 path:
-- `NULL3D_OCEAN_RATE=1 NULL3D_OCEAN_RATE_GPU=webgl2 NULL3D_OCEAN_RATE_PRESET=low bun run test:browser -- ocean-rate.spec.ts`
-- The same with `NULL3D_OCEAN_RATE_EVERY=1`, which holds the reflection on every frame.
+- `NULL3D_OCEAN_COST=1 NULL3D_OCEAN_COST_GPU=webgl2 NULL3D_OCEAN_COST_PRESET=low bun run test:browser -- ocean-rate.spec.ts`
+- The same with `NULL3D_OCEAN_COST_EVERY=1`, which holds the reflection on every frame.
 - `bun run test:browser -- compute-state.spec.ts -g cadence`, which reads a pass that draws in one
   frame of two and then in every frame.
 
