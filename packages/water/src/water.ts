@@ -112,6 +112,13 @@ export interface WaterOptions {
 	 */
 	readonly reflectionEvery?: Partial<Record<QualityPreset, number>>;
 	/**
+	 * False keeps the frame-budget governor from raising the frames between two draws of the
+	 * reflection. Between draws the water shows the reflection of an older camera, so on a moving
+	 * camera a raised count reads as a reflection that lags behind what it mirrors. The default, true,
+	 * lets the governor trade that for time.
+	 */
+	readonly reflectionFollowsBudget?: boolean;
+	/**
 	 * The layers that the reflection pass draws, as a 32-bit mask. It is the camera's layers by
 	 * default. Give the layer of the objects that the water mirrors to leave out the things that lie
 	 * on or under its surface.
@@ -374,7 +381,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 				reflectionEvery: {
 					presets: cadenceRow(options.reflectionEvery),
 					values: { min: 1, max: REFLECT_EVERY_MAX, whole: true },
-					governor: 'double',
+					...(options.reflectionFollowsBudget !== false && { governor: 'double' as const }),
 				},
 			},
 			budget: { presets: REFLECT_MS, min: 0.25 },

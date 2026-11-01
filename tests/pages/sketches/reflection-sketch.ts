@@ -174,5 +174,16 @@ export default defineSketch(({ scene, materials, geometry, textures, render, qua
 			batch.markDirty();
 		}
 	}
-	return {};
+	// ?jump moves the camera to a second place and back each half second, so a test can see whether
+	// the reflection changes in the same frame as what it mirrors.
+	if (!params.has('jump')) return {};
+	let frames = 0;
+	return {
+		onUpdate() {
+			frames++;
+			const away = Math.floor(frames / 30) % 2 === 1;
+			camera.setPosition(away ? 0.6 : 0, away ? 3.1 : 2.6, 9);
+			camera.lookAt(0, 0.6, 0);
+		},
+	};
 });
