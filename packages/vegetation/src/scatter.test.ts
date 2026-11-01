@@ -99,6 +99,14 @@ describe('the scatter', () => {
 		expect(first).toBe(second);
 	});
 
+	test('gives another checksum when one point moves by a tenth of a millimetre', () => {
+		const ground = valley();
+		const points = scatterVegetation({ seed: 7, ground, rules: RULES });
+		const moved: ScatterPoints = { ...points, data: points.data.slice() };
+		moved.data[1] = (moved.data[1] as number) + 1e-4;
+		expect(scatterChecksum(moved)).not.toBe(scatterChecksum(points));
+	});
+
 	test('stands every plant on the ground', () => {
 		const ground = valley();
 		const points = scatterVegetation({ seed: 3, ground, rules: RULES });
