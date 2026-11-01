@@ -27,8 +27,8 @@ const SKIN_FADE = 16;
 /** The bed's colours where the fade starts, and the deep's, as linear values. */
 const BED_COLOR = [0.13, 0.12, 0.1] as const;
 const SAND_COLOR = [0.62, 0.48, 0.28] as const;
-const DEEP_COLOR = [0.03, 0.14, 0.34] as const;
-const DEEP_COLOR_HEX = '#30669f';
+const DEEP_COLOR = [0.03, 0.115, 0.235] as const;
+const DEEP_COLOR_HEX = '#305e85';
 /** How far out over the water the shore's foam reaches at most, and how far back on the sand it starts, in meters. */
 const FOAM_WIDTH = 9;
 const FOAM_ON_SAND = 1.5;
@@ -249,7 +249,7 @@ export function createSea(ctx: SketchContext): { update(): void } {
 		receiveShadows: false,
 	});
 	ctx.scene.createMesh({
-		mesh: ctx.geometry.fromArrays(openSea(0, SEA_REACH, DEEP_FLOOR + 1.5)),
+		mesh: ctx.geometry.fromArrays(openSea(0, SEA_REACH, DEEP_FLOOR - DEEP_LIFT + 0.2)),
 		material: ctx.materials.standard({
 			color: DEEP_COLOR_HEX,
 			roughness: 0.9,
@@ -309,7 +309,7 @@ export function createSea(ctx: SketchContext): { update(): void } {
 			// strong one draws a band of the rocks' lit faces around their feet.
 			ior: 1.1,
 			attenuationColor: '#2b86a8',
-			attenuationDistance: 18,
+			attenuationDistance: 14,
 			thickness: 1,
 		},
 	});
