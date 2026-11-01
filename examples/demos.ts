@@ -135,9 +135,8 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Creek',
 		scene: 'A stream in a grassy valley',
 		summary:
-			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, with dense grass that bends in the wind, mossy rocks and leaves that ride the air, under the sky of the time of day. Trees, ferns and a cave mouth stand on the banks.',
-		assets:
-			'Shows organic models loaded from files: its trees, plants and cave mouth are built by script in Blender and optimized by the asset tool. The land, water, grass and rocks are made in code.',
+			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, with a valley dressed by the vegetation add-on that bends in the wind: trees, ferns, shrubs and grass on the banks and the slopes, mossy rocks and leaves that ride the air, under the sky of the time of day.',
+
 		controls: [...SHOWCASE_CONTROLS, { keys: ['G'], does: 'Send a gust down the valley' }],
 		hold: 0.5,
 		// A software GPU draws the scene with its bloom and its full-detail meshes, which takes it

@@ -71,3 +71,7 @@ off changes nothing.
 
 `asset-scene-lod` and `asset-scene-lod-copied` draw a tool file, which holds both arrays, and keep
 their references. So does `skinned-lod`, whose camera stands past its level's band.
+
+M3-V11 deleted Creek's Blender trees, so `creek-lod` went with them in that branch. The figures
+above stay as the record of that hand-made level file. `skinned-lod` keeps the file-based LOD path
+covered.

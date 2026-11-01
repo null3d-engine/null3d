@@ -832,6 +832,11 @@ by their own paint alone. Creek's texture carries painted shadowing as well. The
 belongs to M3-V7, not to the atlas. That task adds the leaf material with crown-bent normals, a tint
 for each tree and crown occlusion.
 
+**The painted comparison is gone.** M3-V11 deleted Creek's Blender models, and with them the
+`vegetation-versus-creek` picture and the painted oak that it drew beside the generated one. The
+generated leaves are judged against Creek's own dressed valley now, and the owner's look review of
+it stands among M3-V11's owed items.
+
 **The leaf's normals.** M3-V7 lights a leaf's diffuse and ambient light by a normal of its own,
 `s.diffuseNormal`, and keeps the leaf's own normal for its gloss and the light through it. The
 crown's normal is radial from the crown's center. An ellipsoid normal would bend it by the crown's

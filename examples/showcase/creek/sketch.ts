@@ -1,9 +1,9 @@
 // Creek: a showcase scene of a small stream in a grassy valley. Clear water runs over a stony bed:
 // a reflection pass mirrors the banks and the sky in it, and the bed shows through it, bent by its
-// ripples. Dense grass sways in the wind, and fallen leaves float on the current. Rocks, pebbles,
-// grass and leaves are instance batches that cast and receive the sun's shadows. The land, its
-// textures, the rocks, the grass and the water are made in code. The trees, the plants and the
-// cave mouth are models that a script builds in Blender, loaded from files.
+// ripples. The whole valley is dressed by the vegetation add-on, which grows every tree, shrub,
+// fern and tuft of grass from a species record and a seed, places them by the ground's own
+// ecological rules and moves them in the scene's one wind field. Fallen leaves float on the current
+// and fireflies hover at night. The land, its textures, the rocks and the water are made in code.
 //
 // The controls pick a time of day and turn the effects on and off, among them a "DSLR" lens with
 // depth of field, which focuses on the point that the camera looks at. The camera runs a cinematic
@@ -16,22 +16,23 @@ import {
 	type SketchContext,
 	timeOfDay,
 } from '@null3d/engine';
+import { createGrass } from '@null3d/vegetation';
 import { createUnderwater, createWater, foamMap, type Water, type WaterShape } from '@null3d/water';
 import { createWind, type WindField } from '@null3d/wind';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { createHaze } from '../../lib/haze';
-import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
+import { EFFECT_LAYER, SUN_LAYERS } from '../../lib/layers';
 import { reportLoading } from '../../lib/progress';
 import { createShowcaseEffects, type ShadowReach } from '../../lib/showcase-effects';
 import { createMoods, isMood, type Mood, type MoodMix, moodMix, moodShare } from '../../lib/stage';
 import { createAir } from './air';
 import { createFlora } from './flora';
-import { createGrass } from './grass';
 import {
 	createLand,
 	createMountains,
 	GORGE,
 	groundHeight,
+	LAND,
 	STREAM_REACH,
 	streamCurrent,
 	streamDepth,
@@ -39,9 +40,14 @@ import {
 	UNREFLECTED_LAYER,
 	WATER,
 } from './land';
-import { loadModels } from './models';
+import { createPlants } from './plants';
+import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
 import { createStones, type Obstacle } from './stones';
+import { SEED } from './valley';
+
+// The camera route, which this scene's frames and the shared route check both read.
+export { SHOTS };
 
 /** The detail that each preset builds at the start: the land's quads, texture sizes and more. */
 const DETAIL: Record<
@@ -53,6 +59,13 @@ const DETAIL: Record<
 	high: { land: 320, texture: 512, rock: 3, water: 400, ring: [288, 48] },
 	ultra: { land: 384, texture: 1024, rock: 3, water: 400, ring: [320, 56] },
 };
+/**
+ * The band either side of the stream that counts as the banks, in meters, where the grass grows
+ * thickest, and the tufts the two grass fields draw at the High preset.
+ */
+const BANK = 18;
+const BANK_TUFTS = 34_000;
+const LAND_TUFTS = 18_000;
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
 const DSLR_FOCAL_LENGTH = 50;
@@ -100,48 +113,6 @@ export const BOUNDS: Omit<CameraBounds, 'ground'> = {
 	// never through the bed.
 	clearance: 0.15,
 };
-/**
- * The cinematic route. It opens high over the whole valley, showing the stream, both banks and the
- * trees at once. It glides down behind the near bank's trees and runs along them to the end of the
- * line, facing across to the far bank, then turns back down the valley. It drops to the water and
- * traces the stream's own winding line back past the trees with no pause, then turns right to run
- * behind the far bank's trees, facing the near bank. Last it circles out around the creek's head to
- * the opening view, with the middle of the creek in frame, and zooms back to the opening distance.
- * The opening shot holds only briefly, so a held frame lands on a settled pose and the camera moves
- * off it at once; the low passes stay over the stream, so the camera never enters a tree or a bank.
- * The opening pose repeats in the second shot: a shot starts at its own pose, so without the repeat
- * the camera would snap when the hold ends.
- */
-const WIDE: readonly [number, number, number] = [-23, 13, 19];
-const WIDE_LOOK: readonly [number, number, number] = [2, 0, 0];
-export const SHOTS: readonly Shot[] = [
-	// The opening: high over the valley with the whole stream in view. It holds briefly, so the
-	// image test's held frame lands on a settled pose and the auto camera moves off it quickly.
-	{ position: WIDE, target: WIDE_LOOK, seconds: 1, move: 'hold' },
-	// The same pose, then the glide to the near bank: the repeat avoids a snap at the hold's end.
-	{ position: WIDE, target: WIDE_LOOK, seconds: 7 },
-	// Behind the near bank's trees, looking across to the far bank.
-	{ position: [-17, 5, 12.5], target: [-11, 1, -7], seconds: 6 },
-	// Along behind the near tree line, still facing the far bank.
-	{ position: [6, 5, 14.5], target: [10, 1, -6], seconds: 6 },
-	// The end of the near tree line: it turns to face back down the valley here.
-	{ position: [26, 5, 15.5], target: [28, 1, -4], seconds: 7 },
-	// Down to the water, tracing the stream's own winding line back down the valley. The camera
-	// sinks under the surface and glides along the bed for about six seconds, between the stones,
-	// then rises out of the water again. The dip passes through the surface on purpose.
-	{ position: [26, 1, streamZ(26)], target: [14, -0.1, streamZ(14)], seconds: 4, through: true },
-	{ position: [17, -0.15, streamZ(17)], target: [5, -0.2, streamZ(5)], seconds: 5, through: true },
-	{ position: [8, -0.16, streamZ(8)], target: [-4, -0.16, streamZ(-4)], seconds: 4, through: true },
-	{ position: [1.5, 1.8, streamZ(1.5)], target: [-10.5, 0.5, streamZ(-10.5)], seconds: 6 },
-	{ position: [-12.5, 2.2, streamZ(-12.5)], target: [-22, 0.6, streamZ(-22)], seconds: 7 },
-	// Right to the far bank, behind its trees and facing back over the water.
-	{ position: [-12.5, 4.5, -18], target: [-6, 1, 6], seconds: 7 },
-	// Along the back of the far bank's trees, all the way down the valley.
-	{ position: [-22, 4.5, -18], target: [-16, 1, 6], seconds: 7 },
-	// Circle out around the creek's head to the opening view, keeping the middle of the creek in
-	// frame and zooming back to the opening distance, so the loop closes on the opening pose.
-	{ position: [-27, 7, 2], target: [1, 0.5, 0], seconds: 8 },
-];
 
 const params = new URL(import.meta.url).searchParams;
 /** True draws the water's reflection in every frame, for the bisect of the Apple WebGPU stall. */
@@ -243,7 +214,7 @@ function createCreekWater(
 }
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, post, quality, page, time, input } = ctx;
+	const { scene, assets, post, quality, page, time } = ctx;
 	if (RENDER_SCALE !== undefined)
 		await quality.set({
 			minRenderScale: RENDER_SCALE,
@@ -282,7 +253,7 @@ export default defineSketch(async (ctx) => {
 		fov: FOV,
 		near: 0.05,
 		far: 2000,
-		layers: 1 | UNREFLECTED_LAYER | INTERIOR_LAYER | EFFECT_LAYER,
+		layers: 1 | UNREFLECTED_LAYER | EFFECT_LAYER,
 		// The camera takes the route's opening pose at once, so even a frame drawn before the
 		// route's first step shows the opening view, never the origin inside the far bank.
 		position: WIDE,
@@ -315,9 +286,8 @@ export default defineSketch(async (ctx) => {
 			sheets: 10,
 		}),
 	);
-	page.post('loading', 'Loading the trees, plants and cave');
-	const models = await loadModels(ctx);
-	const stones = createStones(ctx, detail.rock, detail.texture, models.cave);
+	page.post('loading', 'Dressing the valley');
+	const stones = createStones(ctx, detail.rock, detail.texture);
 	const water = WITHOUT.has('water')
 		? undefined
 		: createCreekWater(
@@ -330,14 +300,40 @@ export default defineSketch(async (ctx) => {
 				wind.field,
 			);
 	const underwater = water && createUnderwater(ctx, camera, water);
-	const flora = await createFlora(ctx, models, wind);
+	const flora = await createFlora(ctx, wind);
+	const plants = createPlants(ctx, wind.field, {
+		rocks: (x, z) => stones.clear(x, z),
+		mountainHeight: (x, z) => mountains.heightAt(x, z),
+	});
 	const air = await createAir(ctx, camera, wind.field);
 	const shafts = createShafts(ctx, camera);
+	// The grass covers the valley: denser along the banks that the camera flies past, thinner over
+	// the slopes above, and never on the water or a stone.
+	const dry = (x: number, z: number) => groundHeight(x, z) > WATER + 0.02 && !stones.clear(x, z);
+	const bank = (x: number, z: number) => dry(x, z) && Math.abs(z - streamZ(x)) < BANK;
 	const grass = WITHOUT.has('grass')
-		? undefined
-		: createGrass(ctx, (x, z) => stones.clear(x, z) || flora.clear(x, z), wind.field);
+		? []
+		: [
+				createGrass(ctx, {
+					height: groundHeight,
+					area: { x: 0, z: 0, size: LAND },
+					count: BANK_TUFTS,
+					seed: SEED,
+					mask: bank,
+					wind: wind.field,
+				}),
+				createGrass(ctx, {
+					height: groundHeight,
+					area: { x: 0, z: 0, size: LAND },
+					count: LAND_TUFTS,
+					seed: SEED + 1,
+					mask: (x, z) => dry(x, z) && !bank(x, z),
+					wind: wind.field,
+				}),
+			];
 	const fit = () => {
-		grass?.fit(quality.preset);
+		for (const field of grass) field.fit(quality.preset);
+		plants.fit(quality.preset);
 		stones.fit(quality.preset);
 	};
 	fit();
@@ -462,6 +458,17 @@ export default defineSketch(async (ctx) => {
 		shots: WATER_CLOSE ? [CLOSE_SHOT] : SHOTS,
 		target,
 		groups: controls.groups,
+		keys: [
+			{
+				code: 'KeyG',
+				does: 'send a gust down the valley',
+				// From where the camera stands, so a person can watch the air travel down the valley.
+				press() {
+					camera.getPosition(here);
+					wind.gust([here[0] as number, here[2] as number], 10);
+				},
+			},
+		],
 		bounds: {
 			...BOUNDS,
 			ground: (x, z) => Math.max(groundHeight(x, z), mountains.heightAt(x, z)),
@@ -475,12 +482,9 @@ export default defineSketch(async (ctx) => {
 			const t = time.now;
 			// The field's box follows the camera, so it steps before anything reads it.
 			wind.update();
-			if (input.wasPressed('KeyG')) {
-				// A gust from where the camera stands, so a person can watch it travel down the valley.
-				camera.getPosition(here);
-				wind.gust([here[0] as number, here[2] as number], 10);
-			}
-			grass?.setWindLayer(wind.field);
+			// The field keeps two states, so the plants and the grass read this frame's one.
+			for (const field of grass) field.setWindLayer(wind.field);
+			plants.setWindLayer(wind.field);
 			stage.update(dt);
 			for (const haze of hazes) haze.update(stage.airColor, stage.light);
 			controls.update(t);

@@ -813,9 +813,11 @@ close view moves most, and three times as far on WebGL2 as on WebGPU, where Cree
 leaf form.
 
 The same run measured the forest, and `demo-forest` passes on all three tiers, so its sway does not
-reach its held picture and it is not redrawn. `vegetation-versus-creek` passes too. `creek-band` and
-`creek-lod` keep no picture. `creek-band` reads the route picture's frame, and `creek-lod` draws its
-own page, so both re-run after the references are drawn.
+reach its held picture and it is not redrawn. `vegetation-versus-creek` passed too. M3-V11 then
+deleted the painted oak that the picture drew beside the generated one, and removed the test with
+it ([D-241](D-241-vegetation-foundation.md)). `creek-band` keeps no picture: it reads the route
+picture's frame, so it re-runs after the references are drawn. `creek-lod` also kept no picture, and
+M3-V11 removed it with the model files that it measured, so nothing re-runs there.
 
 Those four are owed a drawing in each set. The machine's milestone gate bars browser image runs, so
 the Mac's drawings wait for it to lift, and `bun run images:review --accept` then makes them
