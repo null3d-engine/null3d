@@ -4,6 +4,7 @@
 // golf course, the park, the hilltop keeps, the rocks of the coast and the street lamps. Each repeated
 // thing is one mesh in an instance batch.
 import { type InstanceBatch, quat, type SketchContext, type Texture } from '@null3d/engine';
+import { INTERIOR_LAYER } from '../../lib/layers';
 import { Noise, random } from '../../lib/procedural';
 import { WAY_HALF } from './ground';
 import {
@@ -1145,6 +1146,23 @@ function createSquare(ctx: SketchContext, surfaces: Surfaces): void {
 	shades.markDirty();
 }
 
+/** A rock that darkens where the sea wets it, so the pale stone under the water reads as one with the deep. */
+function wetRock({ materials }: SketchContext) {
+	return materials.shader({
+		wgsl: /* wgsl */ `
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    // The sea's level is 0, in the island's plan.
+    let wet = 1.0 - smoothstep(-0.6, 0.25, input.worldPosition.y);
+    s.baseColor *= mix(1.0, 0.16, wet);
+    return s;
+}
+`,
+		vertexColors: true,
+		roughness: 1,
+	});
+}
+
 /** The harbour: a vertical stone quay, stone moles, pontoons, a paved breakwater and moored boats. */
 /** The quay's wall along the harbour's head, west to east, with each point's way out over the water. */
 function quayLine(): { x: number; y: number; z: number; nx: number; nz: number; wide: number }[] {
@@ -1366,10 +1384,11 @@ function createHarbour(ctx: SketchContext, surfaces: Surfaces): void {
 	// The breakwater's rocks: angular, in mixed sizes, heaped on both sides of its top.
 	const next = random(907);
 	const rockMesh = geometry.fromArrays(finish(boulder()));
-	const material = materials.standard({ vertexColors: true, roughness: 1 });
+	const material = wetRock(ctx);
 	const rocks = 360;
 	const breakwater = scene.createInstances(rockMesh, rocks, {
 		material,
+		layers: INTERIOR_LAYER,
 		castShadows: true,
 		receiveShadows: true,
 	});
@@ -1928,7 +1947,8 @@ function createRocks(ctx: SketchContext): void {
 		});
 	}
 	const batch = scene.createInstances(geometry.fromArrays(finish(boulder())), rocks.length, {
-		material: materials.standard({ vertexColors: true, roughness: 1 }),
+		material: wetRock(ctx),
+		layers: INTERIOR_LAYER,
 		castShadows: true,
 		receiveShadows: true,
 	});
