@@ -34,6 +34,7 @@
 	},
 	"files": [
 		"lib",
+		"dist",
 		"shaders",
 		"LICENSE-MIT",
 		"LICENSE-APACHE"
@@ -43,7 +44,7 @@
 		"provenance": true
 	},
 	"scripts": {
-		"prepack": "bun ../../tools/build-package.ts wind"
+		"prepack": "bun ../../tools/build-wind-wasm.ts && bun ../../tools/build-package.ts wind"
 	},
 	"peerDependencies": {
 		"@null3d/engine": "workspace:*"
