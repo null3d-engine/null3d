@@ -82,7 +82,7 @@ describe('the preset table', () => {
 
 	it('draws the depth prepass on WebGL2 at every preset, and on no other GPU path (D-43)', () => {
 		const rows = ROWS.filter((row) => row.setting.webgl2).map((row) => row.name);
-		expect(rows).toEqual(['contactShadowSteps', 'depthPrepass']);
+		expect(rows).toEqual(['contactShadowSteps', 'bounceRays', 'depthPrepass']);
 		for (const preset of QUALITY_PRESETS) {
 			expect(presetValue('depthPrepass', preset, 'webgl2')).toBe(true);
 			for (const tier of ['webgpu', 'webgpu-compat', undefined] as const)
@@ -118,6 +118,7 @@ describe('the preset table', () => {
 			'minRenderScale',
 			'maxRenderScale',
 			'antialias',
+			'momentTransparency',
 			'shadowCascades',
 			'shadowMapSize',
 			'shadowFilter',
@@ -127,6 +128,7 @@ describe('the preset table', () => {
 			'shadowCascadeBlend',
 			'shadowTiles',
 			'shadowTileSize',
+			'heroTileSize',
 			'pointLightShadows',
 			'bloomSize',
 			'aoScale',
@@ -135,11 +137,13 @@ describe('the preset table', () => {
 			'subsurfaceSamples',
 			'ssrScale',
 			'ssrSteps',
+			'bounceRays',
 			'exposureMeter',
 			'fogSlices',
 			'reflectionScale',
 			'probeSize',
 			'areaLights',
+			'lightFit',
 			'lodThreshold',
 			'lodShadowFactor',
 			'lodFade',
@@ -189,6 +193,7 @@ describe('the preset table', () => {
 			'subsurfaceSamples',
 			'ssrScale',
 			'ssrSteps',
+			'bounceRays',
 			'exposureMeter',
 			'fogSlices',
 			'reflectionScale',
@@ -207,9 +212,12 @@ describe('the preset table', () => {
 			'shadowMapSize',
 			'shadowTiles',
 			'shadowTileSize',
+			'heroTileSize',
 			'pointLightShadows',
+			'momentTransparency',
 			'depthPrepass',
 			'gpuOcclusion',
+			'lightFit',
 			'morphTargets',
 		]);
 		expect(LIVE_SETTINGS).toEqual([
@@ -231,6 +239,7 @@ describe('the preset table', () => {
 			'subsurfaceSamples',
 			'ssrScale',
 			'ssrSteps',
+			'bounceRays',
 			'exposureMeter',
 			'fogSlices',
 			'reflectionScale',
@@ -244,6 +253,7 @@ describe('the preset table', () => {
 			'softwareOcclusion',
 			'parallax',
 			'governor',
+			'lightFit',
 		]);
 	});
 
@@ -282,6 +292,7 @@ describe('presetSettings', () => {
 			maxRenderScale: 1,
 			governor: true,
 			depthPrepass: false,
+			momentTransparency: false,
 		};
 		expect(presetSettings('low')).toEqual({
 			maxPixelRatio: 1.5,
@@ -296,6 +307,7 @@ describe('presetSettings', () => {
 			subsurfaceSamples: 0,
 			ssrScale: 0,
 			ssrSteps: 16,
+			bounceRays: 0,
 			reflectionScale: 0.25,
 			probeSize: 128,
 			areaLights: 4,
@@ -319,8 +331,10 @@ describe('presetSettings', () => {
 			shadowMapSize: 1024,
 			shadowTiles: 4,
 			shadowTileSize: 512,
+			heroTileSize: 1024,
 			pointLightShadows: false,
 			gpuOcclusion: false,
+			lightFit: false,
 			morphTargets: 8,
 		});
 		expect(presetSettings('medium')).toEqual({
@@ -336,6 +350,7 @@ describe('presetSettings', () => {
 			subsurfaceSamples: 0,
 			ssrScale: 0.25,
 			ssrSteps: 24,
+			bounceRays: 0,
 			reflectionScale: 0.5,
 			probeSize: 256,
 			areaLights: 8,
@@ -359,8 +374,10 @@ describe('presetSettings', () => {
 			shadowMapSize: 2048,
 			shadowTiles: 8,
 			shadowTileSize: 512,
+			heroTileSize: 2048,
 			pointLightShadows: false,
 			gpuOcclusion: false,
+			lightFit: true,
 			morphTargets: 16,
 		});
 		expect(presetSettings('high')).toEqual({
@@ -376,6 +393,7 @@ describe('presetSettings', () => {
 			subsurfaceSamples: 17,
 			ssrScale: 0.5,
 			ssrSteps: 48,
+			bounceRays: 4,
 			reflectionScale: 0.5,
 			probeSize: 256,
 			areaLights: 16,
@@ -399,8 +417,10 @@ describe('presetSettings', () => {
 			shadowMapSize: 2048,
 			shadowTiles: 16,
 			shadowTileSize: 1024,
+			heroTileSize: 2048,
 			pointLightShadows: true,
 			gpuOcclusion: false,
+			lightFit: true,
 			morphTargets: 32,
 		});
 		expect(presetSettings('ultra')).toEqual({
@@ -416,6 +436,7 @@ describe('presetSettings', () => {
 			subsurfaceSamples: 25,
 			ssrScale: 0.5,
 			ssrSteps: 64,
+			bounceRays: 8,
 			reflectionScale: 1,
 			probeSize: 256,
 			areaLights: 32,
@@ -439,8 +460,10 @@ describe('presetSettings', () => {
 			shadowMapSize: 4096,
 			shadowTiles: 24,
 			shadowTileSize: 1024,
+			heroTileSize: 4096,
 			pointLightShadows: true,
 			gpuOcclusion: false,
+			lightFit: true,
 			morphTargets: 64,
 		});
 	});
@@ -463,6 +486,7 @@ describe('presetSettings', () => {
 				...presetSettings(preset),
 				depthPrepass: true,
 				contactShadowSteps: presetValue('contactShadowSteps', preset, 'webgl2'),
+				bounceRays: presetValue('bounceRays', preset, 'webgl2'),
 			});
 			expect(presetSettings(preset, {}, 'webgpu')).toEqual(presetSettings(preset));
 			expect(presetSettings(preset, { depthPrepass: false }, 'webgl2').depthPrepass).toBe(false);
@@ -475,6 +499,7 @@ describe('presetSettings', () => {
 			shadowCascades: 3,
 			shadowMapSize: 2048,
 			shadowTiles: 8,
+			heroTileSize: 2048,
 			morphTargets: 16,
 		});
 	});
@@ -524,7 +549,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, bloomSize, aoScale, contactShadowSteps, dofSamples, subsurfaceSamples, ssrScale, ssrSteps, exposureMeter, fogSlices, reflectionScale, probeSize, areaLights, softParticles, lodThreshold, lodShadowFactor, lodFade, physicalSky, softwareOcclusion, parallax or governor.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, bloomSize, aoScale, contactShadowSteps, dofSamples, subsurfaceSamples, ssrScale, ssrSteps, bounceRays, exposureMeter, fogSlices, reflectionScale, probeSize, areaLights, softParticles, lodThreshold, lodShadowFactor, lodFade, physicalSky, softwareOcclusion, parallax, governor or lightFit.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

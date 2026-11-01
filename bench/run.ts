@@ -23,8 +23,8 @@
 //   bun run bench:run -- --dev --scenes s2 --pages null3d-webgpu
 //   bun run bench:run -- --scenes s2 --pages null3d-webgpu,threejs-webgpu --switches shadows=3
 // Options:
-//   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4, s5, s6; the default is s1, and every
-//                     scene with --sweep or --compare
+//   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4, s5, s6, s7; the default is s1, and
+//                     every scene with --sweep or --compare
 //   --pages <list>    page kinds; the default is null3d-webgpu, threejs-webgpu, threejs-webgl and
 //                     scene-code. With --jobs or --compare it is null3d-webgpu and null3d-webgl2,
 //                     and with --sweep every kind but null3d-compat. The kinds that end in -low run
@@ -63,23 +63,21 @@
 //                     window, drawing with SwiftShader as CI's Linux machines do
 //   --switches <q>    page switches that every page gets, such as shadows=3: S2 with the sun's
 //                     shadows in 3 cascades on null3d, and in one map on three.js
-// Every browser starts with WebGPU's developer features on, so GPU timestamps are not rounded.
+// Every browser starts with GPU timing on: WebGPU's developer features, and Dawn's timestamp
+// quantization off, so the timestamps are not rounded before the page reads them.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { cpus, platform } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import type { Browser } from '@playwright/test';
-import {
-	launchChromium,
-	SWIFTSHADER_ARGS,
-	WEBGPU_DEVELOPER_FEATURES,
-} from '../packages/cli/src/browser.js';
+import { GPU_TIMING_ARGS, launchChromium, SWIFTSHADER_ARGS } from '../packages/cli/src/browser.js';
 import { RUNS } from '../packages/cli/src/protocol.js';
 import { displayRateCheck, launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
 import { pageResult, watchPageProblems } from '../tests/lib/page-result.ts';
 import { readShard, runName, SHARD_FORMAT, type Shard } from '../tests/lib/runs.ts';
 import { type DevServer, HTTP_PORT, REPO_ROOT } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import {
 	type PreparedBaseline,
 	preparedPages,
@@ -132,6 +130,7 @@ import {
 } from './lib/serve';
 import { S5_DEFAULT_COUNT } from './scenes/s5';
 import { S6_FULL_COUNT } from './scenes/s6';
+import { S7_COUNT } from './scenes/s7';
 import {
 	createS4,
 	MEASURE_SECONDS,
@@ -159,6 +158,8 @@ const SWEEP_COUNTS: Record<BenchScene, readonly number[]> = {
 	s5: [1, 10, 50, 100, 250, S5_DEFAULT_COUNT, 2 * S5_DEFAULT_COUNT],
 	// S6's counts are the objects nearest the route's start, up to the whole city.
 	s6: [1, 100, 1_000, 5_000, 10_000, S6_FULL_COUNT],
+	// S7 is one surface, which ignores the count.
+	s7: [S7_COUNT],
 };
 const DEFAULT_PAGES: BenchPageKind[] = [
 	'null3d-webgpu',
@@ -305,11 +306,11 @@ function launchBrowser(name: BenchOptions['browser']): Promise<Browser> {
 	if (name === 'chromium')
 		return launchChromium({
 			headless: true,
-			args: [...SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES],
+			args: [...SWIFTSHADER_ARGS, ...GPU_TIMING_ARGS],
 		});
 	return launchInWindow({
 		...(name === 'brave' ? { executablePath: BRAVE } : { channel: 'chrome' }),
-		args: [WEBGPU_DEVELOPER_FEATURES],
+		args: [...GPU_TIMING_ARGS],
 	});
 }
 
@@ -702,6 +703,7 @@ async function runInBrowser(options: BenchOptions, dir: string): Promise<string>
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The benchmark run');
 	const options = parseBenchArgs(process.argv.slice(2));
 	const kind =
 		options.compare || options.merge

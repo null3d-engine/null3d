@@ -18,7 +18,15 @@ import { checkAck } from './commit-ack';
 
 const RULES = [DOCS_ACK_RULE, SKILLS_ACK_RULE, LIMITS_ACK_RULE];
 
-const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' });
+/**
+ * How much a `git log` of the pull request's range may print. The default of one mebibyte is lost
+ * once the range holds a night's worth of commits with their evidence in the messages, and the read
+ * then fails with ENOBUFS rather than a verdict on the range.
+ */
+const BUFFER = 64 * 1024 * 1024;
+
+const git = (...args: string[]) =>
+	execFileSync('git', args, { encoding: 'utf8', maxBuffer: BUFFER });
 
 /** A commit that main's squash of a pull request keeps. */
 export interface KeptCommit {
@@ -38,6 +46,7 @@ export function keptCommits(range: string, cwd?: string): KeptCommit[] {
 	const log = execFileSync('git', ['log', '--no-merges', '--format=%H%x1f%aI%x1f%B%x1e', range], {
 		cwd,
 		encoding: 'utf8',
+		maxBuffer: BUFFER,
 	});
 	return log
 		.split('\x1e')

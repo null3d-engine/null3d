@@ -1,14 +1,27 @@
 import { afterAll, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { SHADER_COMPILER_URL } from '../../packages/vite-plugin/src/shader-compiler';
+import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import {
 	builtAddress,
 	compileShaders,
 	exportTargets,
 	internalConstructorClasses,
 	type Manifest,
+	PACKAGES,
+	packageNeeds,
 	packageProblems,
 	protectedConstructors,
 	repositoryOnlyFiles,
@@ -19,8 +32,19 @@ import {
 } from './packages';
 import { MODULE_DIR } from './shader-modules';
 
+/** The repository root, three levels above this file. */
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
 /** True when the shader compiler's build is present, which the pack tests need. */
-const COMPILES = process.env.NULL3D_SHADER_COMPILER !== undefined;
+const COMPILES = existsSync(fileURLToPath(SHADER_COMPILER_URL));
+
+/**
+ * A custom material compiles the whole engine set, which takes seconds: 62,334 GLSL and 24,515 WGSL
+ * builds at the time of writing, just under a fifth more than before the masked custom-material
+ * builds were added. The check took 15.6 s on a warm Mac and 64.05 s on CI's runner, which is why
+ * the budget is a minute and a half rather than a minute.
+ */
+const COMPILE_MS = scaledBudget(90_000);
 
 /** The built files of a small package, by path in `lib/`. */
 const BUILT = new Set([
@@ -36,6 +60,71 @@ const BUILT = new Set([
 	'shared/index.js',
 ]);
 const exists = (path: string) => BUILT.has(path);
+
+describe('the build order', () => {
+	// The pool builds packages in parallel and starts each once its needs are built, so a package
+	// that imports another must build after it. The order is derived from each manifest, and this
+	// holds the derivation to what the packages actually declare.
+	it('waits for every compiled package that a manifest names', () => {
+		for (const name of Object.keys(PACKAGES)) {
+			const manifest = JSON.parse(
+				readFileSync(join(ROOT, 'packages', name, 'package.json'), 'utf8'),
+			) as Record<string, Record<string, string> | undefined>;
+			const needs = packageNeeds(ROOT, name);
+			for (const field of ['dependencies', 'peerDependencies', 'devDependencies'] as const) {
+				for (const dependency of Object.keys(manifest[field] ?? {})) {
+					if (!dependency.startsWith('@null3d/')) continue;
+					const other = dependency.slice('@null3d/'.length);
+					if (other === name || PACKAGES[other]?.compile !== true) continue;
+					expect({ name, needs: needs.includes(other) }).toEqual({ name, needs: true });
+				}
+			}
+			expect(needs.includes(name)).toBe(false);
+		}
+	});
+});
+
+describe('the declared dependencies', () => {
+	// The build order and a fresh project's install both read the manifests, so a shipped source
+	// file that imports another workspace package needs that package named in its manifest. A
+	// manifest that leaves the import out builds by luck and installs nowhere.
+	//
+	// Test files stay out of the rule: they run in the workspace, where the packages resolve
+	// through one folder, and the engine's own test import of the plugin would make the two
+	// packages each wait for the other.
+	const SOURCE_IMPORT = /(?:from\s*|import\s*\(\s*)['"]@null3d\/([\w.-]+)[/'"]/g;
+
+	it('names every workspace package that a shipped source file imports', () => {
+		for (const name of Object.keys(PACKAGES)) {
+			const manifest = JSON.parse(
+				readFileSync(join(ROOT, 'packages', name, 'package.json'), 'utf8'),
+			) as Record<string, Record<string, string> | undefined>;
+			const declared = new Set<string>();
+			for (const field of ['dependencies', 'peerDependencies', 'devDependencies'] as const)
+				for (const dependency of Object.keys(manifest[field] ?? {})) declared.add(dependency);
+			const imported = new Set<string>();
+			const listed = execFileSync('git', ['ls-files', '-z', '--', `packages/${name}/src`], {
+				cwd: ROOT,
+				encoding: 'utf8',
+			})
+				.split('\0')
+				.filter((path) => path.endsWith('.ts') && !path.endsWith('.test.ts'));
+			for (const path of listed)
+				for (const match of readFileSync(join(ROOT, path), 'utf8').matchAll(SOURCE_IMPORT)) {
+					const other = match[1] as string;
+					if (other !== name) imported.add(other);
+				}
+			for (const other of [...imported].sort()) {
+				const specifier = `@null3d/${other}`;
+				expect({ name, imports: other, declared: declared.has(specifier) }).toEqual({
+					name,
+					imports: other,
+					declared: true,
+				});
+			}
+		}
+	});
+});
 
 describe('builtAddress', () => {
 	it('gives the built file of an address with .ts, without an extension, or of a folder', () => {
@@ -239,38 +328,46 @@ describe('shaderFiles', () => {
 });
 
 describe('compileShaders', () => {
-	it('refuses WGSL that is no shader, and names the file', () => {
+	it('refuses WGSL that is no shader, and names the file', async () => {
 		const { root, dir } = packageFixture({ 'src/empty.wgsl': '// nothing here\n' });
-		expect(() => compileShaders(root, dir)).toThrow(
+		await expect(compileShaders(root, dir)).rejects.toThrow(
 			/packages\/demo\/src\/empty\.wgsl:1:1: the WGSL has no entry point/,
 		);
 	});
 
 	describe.skipIf(!COMPILES)('with the shader compiler', () => {
-		it('writes the compiled module and its build sets, and no raw WGSL', async () => {
-			const { root, dir } = packageFixture({ 'src/glow.wgsl': MATERIAL });
-			compileShaders(root, dir);
-			const lib = join(dir, 'lib');
-			expect(existsSync(join(lib, 'glow.wgsl'))).toBe(false);
-			expect(existsSync(join(lib, 'glow.wgsl.js'))).toBe(true);
-			expect(
-				readdirSync(lib).filter((name) => name.startsWith('glow.wgsl-material-wgsl-')),
-			).not.toEqual([]);
-			const { default: shader } = await import(pathToFileURL(join(lib, 'glow.wgsl.js')).href);
-			expect(shader.kind).toBe('material');
-			expect(shader.functions).toEqual(['surface']);
-			// The builds load on first use, from the set modules beside the shader's own module.
-			expect(Object.keys(shader.variants)).toEqual([]);
-			const builds = await shader.builds('wgsl', 0);
-			expect(Object.keys(builds).length).toBeGreaterThan(0);
-		});
+		it(
+			'writes the compiled module and its build sets, and no raw WGSL',
+			async () => {
+				const { root, dir } = packageFixture({ 'src/glow.wgsl': MATERIAL });
+				await compileShaders(root, dir);
+				const lib = join(dir, 'lib');
+				expect(existsSync(join(lib, 'glow.wgsl'))).toBe(false);
+				expect(existsSync(join(lib, 'glow.wgsl.js'))).toBe(true);
+				expect(
+					readdirSync(lib).filter((name) => name.startsWith('glow.wgsl-material-wgsl-')),
+				).not.toEqual([]);
+				const { default: shader } = await import(pathToFileURL(join(lib, 'glow.wgsl.js')).href);
+				expect(shader.kind).toBe('material');
+				expect(shader.functions).toEqual(['surface']);
+				// The builds load on first use, from the set modules beside the shader's own module.
+				expect(Object.keys(shader.variants)).toEqual([]);
+				const builds = await shader.builds('wgsl', 0);
+				expect(Object.keys(builds).length).toBeGreaterThan(0);
+			},
+			COMPILE_MS,
+		);
 
-		it('fails on WGSL that does not compile, and names the file and the place', () => {
-			const { root, dir } = packageFixture({ 'src/broken.wgsl': BROKEN });
-			expect(() => compileShaders(root, dir)).toThrow(
-				/packages\/demo\/src\/broken\.wgsl:\d+:\d+: no definition in scope for identifier: `nope`/,
-			);
-		});
+		it(
+			'fails on WGSL that does not compile, and names the file and the place',
+			async () => {
+				const { root, dir } = packageFixture({ 'src/broken.wgsl': BROKEN });
+				await expect(compileShaders(root, dir)).rejects.toThrow(
+					/packages\/demo\/src\/broken\.wgsl:\d+:\d+: no definition in scope for identifier: `nope`/,
+				);
+			},
+			COMPILE_MS,
+		);
 	});
 });
 
@@ -281,6 +378,7 @@ describe('the shader module checks', () => {
 	for (const name of [
 		'shaders.ts',
 		'shader-features.ts',
+		'shader-permutations.ts',
 		'shaders-ao-wgsl.ts',
 		'shaders-sky-glsl.js',
 		'core.ts',
@@ -294,12 +392,15 @@ describe('the shader module checks', () => {
 			'lib/generated/core.d.ts',
 			'lib/generated/gpu.d.ts',
 			'lib/generated/shader-features.d.ts',
+			'lib/generated/shader-permutations.d.ts',
 			'lib/generated/shaders-ao-wgsl.d.ts',
 			'lib/generated/shaders.d.ts',
 		]);
 	});
 
-	it('names the built shader JavaScript, and leaves the generated constants alone', () => {
+	it('names the built shader JavaScript, and leaves the generated constants and the list alone', () => {
+		// The engine reads the permutation list at run time, so a published package carries it, as
+		// it carries `core.js` and `gpu.js`. The shader JavaScript is the plugin's to supply.
 		expect(shaderModuleJsFiles(root)).toEqual([
 			'lib/generated/shader-features.js',
 			'lib/generated/shaders-ao-wgsl.js',

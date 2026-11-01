@@ -1,8 +1,8 @@
 # D-195: GSR 1 scales the render corner up below the whole canvas's scale
 
-Status: decided. Date: 2026-10-20. Task: M2-F10.
+Status: decided and built. Task: M2-F10.
 
-Summary: Below the whole canvas's render scale, the final pass now scales the render corner up with GSR 1 instead of a bilinear filter. The probe measured GSR 0.77 ms faster than today's pass on an iPhone and within 0.01 ms on the phones that tie, with a closer image in every case; the shader stays straight-line because one phone's driver stalls while linking the looped form.
+Summary: Below the whole canvas's render scale, the final pass scales the render corner up with GSR 1 instead of a bilinear filter. GSR measured 0.77 ms faster than the bilinear pass on an iPhone and within 0.01 ms on the phones that tie, with a closer image in every case. The shader is straight-line code, because one phone's driver stalls while linking the looped form.
 
 ## Question
 
@@ -10,21 +10,21 @@ Which filter should scale the render corner up to the canvas when the render sca
 
 ## Rule
 
-The upscaler meets the rule when it costs no more than 0.2 ms a frame than today's pass on any measured phone, and moves the image closer to the scale-1 reference by SSIM and by mean absolute error.
+The upscaler meets the rule when it costs at most 0.2 ms a frame more than the bilinear pass on any measured phone, and moves the image closer to the scale-1 reference by SSIM and by mean absolute error.
 
 ## Data
 
-| Measure | Today's pass | GSR 1 | Device and browser |
+| Measure | Bilinear pass | GSR 1 | Device and browser |
 | --- | --- | --- | --- |
 | Frame cost, mip 0 | 1.074 ms | 0.307 ms | iPhone 17, Safari 26.5, WebGL2 |
 | Frame cost, mip 1 | 1.136 ms | 0.320 ms | iPhone 17, Safari 26.5, WebGL2 |
-| Difference from today's pass | 0 | +0.00275 ms | Galaxy S25, Chrome, WebGL2 |
-| Difference from today's pass | 0 | +0.007 ms | Pixel 11, Chrome, WebGL2 |
-| Difference from today's pass | 0 | +0.007 ms | Pixel 9, Chrome, WebGL2, unrolled form only |
+| Difference from the bilinear pass | 0 | +0.00275 ms | Galaxy S25, Chrome, WebGL2 |
+| Difference from the bilinear pass | 0 | +0.007 ms | Pixel 11, Chrome, WebGL2 |
+| Difference from the bilinear pass | 0 | +0.007 ms | Pixel 9, Chrome, WebGL2, unrolled form only |
 | SSIM at mip 0 | 0.9532 | 0.9552 | iPhone 17, Safari 26.5 |
 | SSIM at mip 0 | 0.9536 | 0.9556 | Galaxy S25, Chrome |
 
-How the data was produced: `bench/probes/f10-upscalers`, run through the cloud device runner on 19 and 20 October 2026. The page draws a fixed scene, scales it with each candidate, and measures frame cost and image distance. The Pixel 9 stalls while linking the form of the shader that indexes arrays inside loops; the form that names every tap links and completes in five seconds.
+How the data was produced: `bench/probes/f10-upscalers`, run through the cloud device runner. The page draws a fixed scene, scales it with each candidate, and measures frame cost and image distance. The Pixel 9 stalls while linking the form of the shader that indexes arrays inside loops; the form that names every tap links and completes in five seconds.
 
 ## Decision
 
@@ -33,7 +33,7 @@ GSR 1 is the upscaler below the whole canvas's scale. It is the only candidate t
 ## Consequences
 
 - `crates/null3d-shaders/wgsl/final.wgsl` holds the GSR path; the second step of the two-step pass uses it at every render scale below 1. There is no setting: every preset that lets the scale drop gets it.
-- The pass costs twelve texel reads and one edge vote for each canvas pixel that covers a smaller corner, against four reads before.
-- `docs/concepts/post-processing.md` and `docs/concepts/quality-presets.md` describe GSR 1 instead of a bilinear filter, and the three.js port reference names it for FSR 1.
-- Pictures that tests take below a render scale of 1 change, so their references are redrawn.
-- A phone driver that stalls on the looped and array form of a shader is a real hazard for any later shader; the straight-line rule here is the precedent.
+- The pass costs twelve texel reads and one edge vote for each canvas pixel that covers a smaller corner. The bilinear filter costs four reads.
+- `docs/concepts/post-processing.md` and `docs/concepts/quality-presets.md` describe GSR 1, and the three.js port reference names it for FSR 1.
+- The references of pictures that tests take below a render scale of 1 are drawn with GSR 1.
+- A phone driver that stalls on the looped and array form of a shader is a real hazard for any shader. The straight-line rule here is the precedent.

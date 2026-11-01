@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { jpegHeader, pngHeader } from '../../../../tests/pages/lib/image-headers';
 import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
@@ -6,9 +8,18 @@ import { BACKGROUND_VALUE_COUNT, BACKGROUND_VALUE_SUN_POSITION } from '../genera
 import { stopHelperWorkers } from '../shared/helper-workers';
 import { GENERATORS_PRELOAD } from '../shared/images';
 import { Assets, type ModelMakers } from './assets';
+import { SKY_MAP } from './builtin-environments';
 import { Environment } from './environment';
+import { LightProbeGridData } from './light-probes';
 import { ShaderPreloads } from './shader-preloads';
-import type { Texture, TextureOptions, TextureReloader, Textures } from './textures';
+import type {
+	Texture,
+	TextureData,
+	TextureDataArray,
+	TextureOptions,
+	TextureReloader,
+	Textures,
+} from './textures';
 
 const PAGE = 'https://game.example/levels/one.html';
 
@@ -30,7 +41,10 @@ function serve(answers: Record<string, Answer>): void {
 		const answer = answers[url];
 		if (answer === undefined || answer === 'network') throw new TypeError('Failed to fetch');
 		if (typeof answer === 'number') return new Response('', { status: answer });
-		return new Response(answer as BodyInit);
+		// A server gives a length for what it sends, so the progress handlers know the total.
+		const length =
+			typeof answer === 'string' ? new TextEncoder().encode(answer).length : answer.length;
+		return new Response(answer as BodyInit, { headers: { 'content-length': String(length) } });
 	}) as typeof fetch;
 	globalThis.createImageBitmap = (async (blob: Blob, options: ImageBitmapOptions) => {
 		decoded.push(options);
@@ -45,11 +59,28 @@ function fakeTextures() {
 	const made: [ImageBitmap, TextureOptions, number][] = [];
 	const reloads: TextureReloader[] = [];
 	const set: [Texture, ImageBitmap, number][] = [];
+	const datas: TextureData[] = [];
+	const volumes: [number, number, number, string, TextureDataArray, string][] = [];
 	const textures = {
 		maxSize: 4096,
 		fromImage(image: ImageBitmap, options: TextureOptions, premultiplied: number) {
 			made.push([image, options, premultiplied]);
 			return { width: image.width } as Texture;
+		},
+		fromData(texture: TextureData) {
+			datas.push(texture);
+			return { width: texture.width, height: texture.height } as Texture;
+		},
+		fromVolumeData(
+			width: number,
+			height: number,
+			depth: number,
+			format: string,
+			texels: TextureDataArray,
+			call: string,
+		) {
+			volumes.push([width, height, depth, format, texels, call]);
+			return { width, height } as Texture;
 		},
 		reloadsFrom(_texture: Texture, reload: TextureReloader) {
 			reloads.push(reload);
@@ -58,7 +89,7 @@ function fakeTextures() {
 			set.push([texture, image, premultiplied]);
 		},
 	} as unknown as Textures;
-	return { textures, made, reloads, set };
+	return { textures, made, reloads, set, datas, volumes };
 }
 
 beforeEach(() => {
@@ -164,6 +195,55 @@ describe('assets', () => {
 		expect(events.length).toBe(5);
 	});
 
+	test('a large file reports its bytes as they arrive, and its total from the response length', async () => {
+		const size = 64 * 1024;
+		const pieces = 4;
+		const body = new Uint8Array(size).fill(7);
+		let sent = 0;
+		globalThis.fetch = (async () => {
+			const stream = new ReadableStream<Uint8Array>({
+				pull(controller) {
+					if (sent >= pieces) {
+						controller.close();
+						return;
+					}
+					const from = (sent * size) / pieces;
+					sent++;
+					controller.enqueue(body.subarray(from, from + size / pieces));
+				},
+			});
+			return new Response(stream, { headers: { 'content-length': String(size) } });
+		}) as unknown as typeof fetch;
+		const { textures } = fakeTextures();
+		const assets = new Assets(textures, PAGE);
+		const seen: [number, number, string][] = [];
+		assets.onProgress((loaded, total, url) => seen.push([loaded, total, url]));
+		const bytes = await assets.loadBinary('/big.bin');
+		expect(bytes.byteLength).toBe(size);
+		// One event for each piece: the bytes rise to the length the response gave, which is the
+		// total from the first piece on.
+		expect(seen.length).toBe(pieces);
+		expect(seen.every(([, total]) => total === size)).toBe(true);
+		expect(seen.every(([loaded]) => loaded > 0)).toBe(true);
+		expect(seen.at(-1)?.[0]).toBe(size);
+		expect(seen.at(-1)?.[2]).toBe('https://game.example/big.bin');
+	});
+
+	test('a file whose response gives no length reports its bytes with the total unknown', async () => {
+		const body = new Uint8Array(4096).fill(3);
+		globalThis.fetch = (async () => new Response(body)) as unknown as typeof fetch;
+		const { textures } = fakeTextures();
+		const assets = new Assets(textures, PAGE);
+		const seen: [number, number][] = [];
+		assets.onProgress((loaded, total) => seen.push([loaded, total]));
+		const bytes = await assets.loadBinary('/unknown.bin');
+		expect(bytes.byteLength).toBe(4096);
+		expect(seen.length).toBeGreaterThan(0);
+		// Nothing told the page the length, so the total stays unknown and the bytes still rise.
+		expect(seen.every(([, total]) => total === 0)).toBe(true);
+		expect(seen.at(-1)?.[0]).toBe(4096);
+	});
+
 	test('an image whose header claims more pixels than its use takes fails with E1412 before it decodes', async () => {
 		serve({
 			'https://game.example/huge.png': pngHeader(65536, 65536) as Uint8Array<ArrayBuffer>,
@@ -193,8 +273,8 @@ describe('assets', () => {
 			'https://game.example/broken.png': 'broken',
 		});
 		const assets = new Assets(fakeTextures().textures, PAGE);
-		const events: number[] = [];
-		assets.onProgress((loaded) => events.push(loaded));
+		const events: [number, number][] = [];
+		assets.onProgress((loaded, total) => events.push([loaded, total]));
 		expect(await codeOf(assets.loadTexture('/missing.png'))).toBe(
 			'E1411: assets.loadTexture() could not download https://game.example/missing.png: HTTP 404.',
 		);
@@ -207,8 +287,11 @@ describe('assets', () => {
 		expect(await codeOf(assets.loadTexture('/broken.png'))).toBe(
 			'E1412: assets.loadTexture() could not decode https://game.example/broken.png as an image: The source image could not be decoded.',
 		);
-		// Failed downloads count as done, so a loading bar reaches its end.
-		expect(events).toEqual([1, 2, 3, 4]);
+		// Failed downloads count as done, so a loading bar reaches its end: the bytes downloaded climb
+		// to the bytes expected, each failure counting what its response announced or one byte.
+		expect(events.map(([loaded]) => loaded)).toEqual([1, 2, 3, 9]);
+		const [loaded, total] = events.at(-1) ?? [0, 0];
+		expect(loaded).toBe(total);
 		// A failed preload rejects, and the next load of the file tries again.
 		expect(await codeOf(assets.preload(['/missing.png']))).toStartWith('E1411: assets.preload()');
 		expect(await codeOf(assets.loadBinary('/missing.png'))).toStartWith(
@@ -265,6 +348,7 @@ describe('environments', () => {
 			addSkyMap(
 				_: Texture,
 				_stages: number,
+				capture: number,
 				call: string,
 				defaults: (values: Float32Array) => void,
 			) {
@@ -275,10 +359,11 @@ describe('environments', () => {
 					Array.from(
 						values.subarray(BACKGROUND_VALUE_SUN_POSITION, BACKGROUND_VALUE_SUN_POSITION + 3),
 					),
+					capture,
 				]);
 			},
 		} as unknown as Textures;
-		const skyMaps: [string, number[]][] = [];
+		const skyMaps: [string, number[], number][] = [];
 		return { textures, cubes, skyMaps };
 	}
 
@@ -289,9 +374,11 @@ describe('environments', () => {
 		expect([sky.size, sky.levels, sky.format]).toEqual([256, 6, 'rgb9e5ufloat']);
 		expect(cubes).toEqual([[256, 6, 'rgb9e5ufloat', 'sky']]);
 		// With no sky background yet, the map shows the default sky of three.js's example.
-		const [[call, sun] = ['', []]] = skyMaps;
+		const [[call, sun, capture] = ['', [], 0]] = skyMaps;
 		expect(call).toBe('assets.skyEnvironment');
 		expect(sun.map((c) => Math.round(c * 1e4) / 1e4)).toEqual([0, 0.0349, -0.9994]);
+		// The map captures the sky's light at the stage that the generator names.
+		expect(capture).toBe(SKY_MAP.capture);
 	});
 
 	test("load the asset tool's files into cube maps, and make the built-in room on the GPU", async () => {
@@ -451,5 +538,135 @@ describe('loads of a texture again', () => {
 		await new Assets(textures, PAGE).loadTexture('brick.png');
 		answers['https://game.example/levels/brick.png'] = 404;
 		await expect(reloads[0]?.(1, { width: 2, height: 1 } as Texture)).rejects.toThrow('E1411');
+	});
+});
+
+describe('baked light files', () => {
+	/** The baked light files that the tests serve, which a tool outside the engine wrote. */
+	const LIGHT = join(import.meta.dir, '../../../../tests/pages/assets/light');
+	const fixture = (name: string) => readFileSync(join(LIGHT, `${name}.json`), 'utf8');
+
+	test('loads a probe grid baked outside the engine into the setter’s options', async () => {
+		serve({ 'https://game.example/light/probe-grid.json': fixture('probe-grid') });
+		const { textures, volumes } = fakeTextures();
+		const grid = await new Assets(textures, PAGE).loadLightProbeGrid('/light/probe-grid.json');
+		expect(Array.from(grid.origin)).toEqual([0, 1, 0]);
+		expect(Array.from(grid.spacing)).toEqual([1, 1, 1]);
+		expect(grid.counts).toEqual([2, 2, 2]);
+		// The texture is a 3D texture of half floats: one sub-volume of L1 for each of three.
+		expect(volumes.map(([w, h, d, format]) => [w, h, d, format])).toEqual([
+			[2, 2, 12, 'rgba16float'],
+		]);
+	});
+
+	test('loads a light map baked outside the engine as a linear-light texture', async () => {
+		serve({ 'https://game.example/light/light-map.json': fixture('light-map') });
+		const { textures, datas } = fakeTextures();
+		const map = await new Assets(textures, PAGE).loadLightMap('/light/light-map.json');
+		expect([map.width, map.height]).toEqual([2, 2]);
+		expect(datas[0]).toMatchObject({ width: 2, height: 2, colorSpace: 'srgb' });
+		// The three radiance bytes of each texel gain an opaque alpha.
+		expect(Array.from(datas[0]?.data ?? [])).toEqual([
+			255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+		]);
+		expect(Array.from(map.direction ?? [])).toEqual([0, 127, 0, 127, 0, 0, 0, 0, 127, -127, 0, 0]);
+		// The direction takes a texture of its own, in the radiance's own format: both share one
+		// texture array, so a shader reads the direction through the light map's binding. Its
+		// sRGB bytes are the ones that decode closest to the axes' values, +1, 0 and -1, and so on.
+		expect(datas[1]).toMatchObject({ width: 2, height: 2, colorSpace: 'srgb' });
+		const direction = datas[1]?.data as Uint8Array;
+		expect(direction.length).toBe(16);
+		const decode = (byte: number) => {
+			const c = byte / 255;
+			return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+		};
+		const axes = [0, 1, 2].map((c) => decode(direction[c] as number) * 2 - 1);
+		// The closest sRGB byte lands within a step of the value it encodes.
+		[0, 1, 0].forEach((wanted, c) => {
+			expect(Math.abs((axes[c] as number) - wanted)).toBeLessThan(0.01);
+		});
+	});
+
+	test('loads an rgba16float light map as a linear texture of half floats', async () => {
+		const halves = new Uint16Array([0x3c00, 0x3800, 0x3400, 0x3c00]);
+		const radiance = btoa(String.fromCharCode(...new Uint8Array(halves.buffer)));
+		serve({
+			'https://game.example/light/hdr.json': `{
+  "format": "null3d.baked-light",
+  "version": 1,
+  "kind": "light-map",
+  "width": 1,
+  "height": 1,
+  "encoding": "rgba16float",
+  "radiance": "${radiance}"
+}
+`,
+		});
+		const { textures, datas } = fakeTextures();
+		const map = await new Assets(textures, PAGE).loadLightMap('/light/hdr.json');
+		expect([map.width, map.height]).toEqual([1, 1]);
+		expect(datas[0]).toMatchObject({ width: 1, height: 1, format: 'rgba16float' });
+		expect(datas[0]?.colorSpace).toBe('linear');
+		const data = datas[0]?.data;
+		if (!data) throw new Error('the light map made no texture');
+		expect((data as Uint16Array).length).toBe(4);
+		expect(map.direction).toBeUndefined();
+		expect(map.directionTexture).toBeUndefined();
+		// A light map without a direction makes one texture, so a plain map costs half as much.
+		expect(datas).toHaveLength(1);
+	});
+
+	test('refuses a broken file with E1434, and names the fault', async () => {
+		serve({
+			'https://game.example/light/version.json':
+				'{"format":"null3d.baked-light","version":2,"kind":"probe-grid"}',
+			'https://game.example/light/count.json':
+				'{"format":"null3d.baked-light","version":1,"kind":"probe-grid","origin":[0,0,0],"spacing":[1,1,1],"counts":[2,2,2],"coefficients":"AAAA"}',
+			'https://game.example/light/cut.json': fixture('light-map').slice(0, 60),
+		});
+		const assets = new Assets(fakeTextures().textures, PAGE);
+		expect(await codeOf(assets.loadLightProbeGrid('/light/version.json'))).toBe(
+			'E1434: assets.loadLightProbeGrid() could not read https://game.example/light/version.json: its version is 2, and this engine reads version 1.',
+		);
+		expect(await codeOf(assets.loadLightProbeGrid('/light/count.json'))).toBe(
+			'E1434: assets.loadLightProbeGrid() could not read https://game.example/light/count.json: its coefficients hold 3 bytes, not a whole number of 4-byte floats.',
+		);
+		expect(await codeOf(assets.loadLightMap('/light/cut.json'))).toBe(
+			'E1434: assets.loadLightMap() could not read https://game.example/light/cut.json: its text stops before its JSON is complete, so the file is cut short.',
+		);
+	});
+
+	test('refuses a file of the other kind, and names both kinds', async () => {
+		serve({ 'https://game.example/light/light-map.json': fixture('light-map') });
+		const assets = new Assets(fakeTextures().textures, PAGE);
+		expect(await codeOf(assets.loadLightProbeGrid('/light/light-map.json'))).toBe(
+			'E1434: assets.loadLightProbeGrid() could not read https://game.example/light/light-map.json: its kind is "light-map", and this call reads a "probe-grid" file.',
+		);
+	});
+
+	test('writes the same file that the fixture holds', async () => {
+		const coefficients = new Float32Array(96);
+		for (let at = 0; at < coefficients.length; at++) coefficients[at] = at * 0.125;
+		const grid = new LightProbeGridData(
+			new Float32Array([0, 1, 0]),
+			new Float32Array([1, 1, 1]),
+			[2, 2, 2],
+			coefficients,
+		);
+		const bytes = await new Assets(fakeTextures().textures, PAGE).lightProbeGridFile(grid);
+		expect(new TextDecoder().decode(bytes)).toBe(fixture('probe-grid'));
+	});
+
+	test('refuses to write a grid whose coefficients do not match its counts', async () => {
+		const grid = new LightProbeGridData(
+			new Float32Array([0, 0, 0]),
+			new Float32Array([1, 1, 1]),
+			[2, 2, 2],
+			new Float32Array(3),
+		);
+		const assets = new Assets(fakeTextures().textures, PAGE);
+		expect(await codeOf(assets.lightProbeGridFile(grid))).toBe(
+			'E1108: assets.lightProbeGridFile() got a grid whose coefficients hold 3 numbers, and 8 probes of 12 need 96.',
+		);
 	});
 });

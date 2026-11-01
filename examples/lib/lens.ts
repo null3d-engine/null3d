@@ -1,7 +1,9 @@
 // A lens grade as a full-screen effect: color fringes that grow toward the edges, a horizontal
 // anamorphic streak on light brighter than white, and grain that changes at the film rate rather
-// than the frame rate. The settings are the same in every scene that takes the effect, and the
-// three.js twins in examples/compare/lens-three.ts take the same numbers and the same hash.
+// than the frame rate. This is the comparison scenes' copy, and their three.js twins in
+// examples/lib/lens-three.ts take the same numbers and the same hash, so each comparison draws one
+// effect in both engines. A project that wants the look, rather than a twin of it, takes the
+// lens kit in examples/addons/lens-kit, whose streak reads a level of bloom's chain.
 
 /** The numbers that a lens grade sets. */
 export interface LensSettings {

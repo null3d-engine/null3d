@@ -1,6 +1,6 @@
 # D-111: How the asset tool converts other formats and makes material maps
 
-Status: decided. Date: 2026-10-08. Task: M2-B3.
+Status: decided and built. Task: M2-B3.
 
 Summary: `assets convert` reads FBX and OBJ files with ufbx v0.23.1. The repository builds it to standalone WebAssembly (313 KB) with the pinned Emscripten SDK, and keeps it in `packages/cli/vendor/ufbx`. STL and PLY files read in the tool's own JavaScript, and glTF and Draco files through glTF-Transform. `pack-orm` writes UASTC, and `normal-from-bump` reads its `--scale` as three.js reads `bumpScale`.
 
@@ -16,10 +16,10 @@ The rules of [D-18](D-18-asset-tool.md) hold. Users install nothing native, and 
 
 ### The FBX reader
 
-| Option | Licence and install | Verdict |
+| Option | License and install | Verdict |
 | --- | --- | --- |
-| ufbx, built to WebAssembly | MIT or Unlicense, one C file. Blender 5.0 and Godot 4.3 import FBX with it | Chosen by the owner on 3 October 2026, from the research of that day |
-| FBX2glTF | Unmaintained. Its binaries hold Autodesk's FBX SDK, under Autodesk's licence | No |
+| ufbx, built to WebAssembly | MIT or Unlicense, one C file. Blender 5.0 and Godot 4.3 import FBX with it | Chosen by the owner, from a study of the candidates |
+| FBX2glTF | Unmaintained. Its binaries hold Autodesk's FBX SDK, under Autodesk's license | No |
 | Blender without a window | A GPL program of about 1 GB | No. The docs name it for Collada, 3DM and USDZ |
 | Autodesk's FBX SDK | Cannot ship in an npm package | No |
 
@@ -27,7 +27,7 @@ The rules of [D-18](D-18-asset-tool.md) hold. Users install nothing native, and 
 
 | Option | Why not, or why |
 | --- | --- |
-| A ufbx package from npm | The two that exist on 8 October 2026 (`@forgeax/engine-fbx`, `lecodes-assets`) are a few weeks old, from single authors, and each wraps ufbx in its own output format. The tool would ship code that nobody here has read |
+| A ufbx package from npm | The two that the study found (`@forgeax/engine-fbx`, `lecodes-assets`) are young packages from single authors, and each wraps ufbx in its own output format. The tool would ship code that nobody here has read |
 | The Rust crate `ufbx` in `null3d-assets-wasm` | The crate compiles the C file with the cc crate, so it still needs a C compiler that targets WebAssembly, which the Mac and CI lack. It adds Rust bindings over the same code |
 | Build ufbx and the tool's own C code with Emscripten, and keep the built file in git | Chosen. The repository already builds the Basis transcoder this way, with the same pinned SDK, 4.0.15. CI lacks Emscripten, so the built file stays in git, as [D-105](D-105-generated-files-out-of-git.md) allows for the Basis files |
 
@@ -55,7 +55,7 @@ The command downloads the pinned sources and SDK, checks their SHA-256, builds, 
 | The tool's own code | `packages/cli/native/fbx.c` |
 | Compiler flags | `emcc -O2 -DNDEBUG -DUFBX_NO_STDIO -DUFBX_NO_SUBDIVISION -DUFBX_NO_TESSELLATION -DUFBX_NO_GEOMETRY_CACHE -DUFBX_NO_SKINNING_EVALUATION`, linked with `-sSTANDALONE_WASM=1 --no-entry -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB -sMALLOC=emmalloc`, as `tools/build-ufbx.ts` lists them |
 
-ufbx's licence, MIT or the Unlicense, is in `packages/cli/vendor/ufbx/LICENSE` and in the package's `THIRD-PARTY-NOTICES.txt`.
+ufbx's license, MIT or the Unlicense, is in `packages/cli/vendor/ufbx/LICENSE` and in the package's `THIRD-PARTY-NOTICES.txt`.
 
 ### OBJ files
 
@@ -101,11 +101,11 @@ Cameras and lights stay out in this version, with a note.
 
 ### Draco and compression
 
-A Draco or meshopt input gets meshopt compression by default: the meshes reorder for the vertex cache, quantize as `assets optimize` quantizes them, and compress with `EXT_meshopt_compression`. Draco had quantized them already, so the output loses nothing more of note. Other inputs keep their floats unless `--compression meshopt` says otherwise, since `convert` changes the format only and `assets optimize` does the rest. The Draco decoder is the tool's own `draco3d` package, which `assets optimize` already used; the engine's decoder (M2-A6) is separate.
+A Draco or meshopt input gets meshopt compression by default: the meshes reorder for the vertex cache, quantize as `assets optimize` quantizes them, and compress with `EXT_meshopt_compression`. Draco had quantized them already, so the output loses nothing more of note. Other inputs keep their floats unless `--compression meshopt` says otherwise, since `convert` changes the format only and `assets optimize` does the rest. The Draco decoder is the tool's own `draco3d` package, which `assets optimize` also uses; the engine's decoder (M2-A6) is separate.
 
 ### pack-orm
 
-The channels follow glTF: occlusion in red, roughness in green, metalness in blue. Each source map reads from its red channel. A missing occlusion or roughness map is white, so the material's own factor applies. A missing metalness map is black, for no metal. A `.ktx2` output is UASTC with every mip level, as the change of 4 October to M2-B3 asks: UASTC keeps the three channels apart, which ETC1S blurs together. A `.png` output is for models that `assets optimize` encodes later.
+The channels follow glTF: occlusion in red, roughness in green, metalness in blue. Each source map reads from its red channel. A missing occlusion or roughness map is white, so the material's own factor applies. A missing metalness map is black, for no metal. A `.ktx2` output is UASTC with every mip level, as M2-B3 asks: UASTC keeps the three channels apart, which ETC1S blurs together. A `.png` output is for models that `assets optimize` encodes later.
 
 ### normal-from-bump
 
@@ -118,7 +118,7 @@ three.js loads each format in the browser with its own loader: `FBXLoader`, `OBJ
 ## Consequences
 
 - `packages/cli/src/assets/`: `convert.js` with the readers `fbx.js`, `stl.js`, `ply.js` and the shared `convert-document.js`; `pack-orm.js`, `normal-from-bump.js` and `maps.js`; `image-files.js` for TGA files and 16-bit height maps.
-- `packages/cli/native/fbx.c` and `tools/build-ufbx.ts` make `packages/cli/vendor/ufbx/ufbx.wasm`, with ufbx's licence beside it and in `packages/cli/THIRD-PARTY-NOTICES.txt`. The Vite plugin leaves the tool's notices out of a page's notices file, since a page ships none of the tool's code. Without that rule, a project that has the tool as a dev dependency got its notices in each build. `tools/lib/emsdk.ts` installs the SDK for this build and the Basis transcoder's.
+- `packages/cli/native/fbx.c` and `tools/build-ufbx.ts` make `packages/cli/vendor/ufbx/ufbx.wasm`, with ufbx's license beside it and in `packages/cli/THIRD-PARTY-NOTICES.txt`. The Vite plugin leaves the tool's notices out of a page's notices file, since a page ships none of the tool's code. Without that rule, a project that has the tool as a dev dependency would get its notices in each build. `tools/lib/emsdk.ts` installs the SDK for this build and the Basis transcoder's.
 - Blender makes the FBX and OBJ test files only, with `tests/lib/convert-sources.py`; the tool never runs it. The test files are in `tests/pages/assets/models/sources/`, and their outputs in `tests/pages/assets/models/converted/`. `convert.test.ts` checks that the tool writes the same bytes and that the engine's loader reads each output. It also pins the reader's SHA-256. The image test `converted-models` draws the outputs.
 - Docs: [the asset pipeline](../../docs/guides/assets-pipeline.md#convert-other-formats) and [the command page](../../docs/cli/null3d.md#assets). The mapping entry of three.js's other loaders points to the command.
 - Open: cameras and lights, and FBX files with external textures in formats other than PNG, JPEG and TGA.

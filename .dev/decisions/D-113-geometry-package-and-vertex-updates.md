@@ -1,12 +1,12 @@
 # D-113: Extra geometry as arrays from a package, and vertex updates in place
 
-Status: decided by the helper of M2-P2 on 2026-10-08, within the task's plan. Date: 2026-10-08. Task: M2-P2.
+Status: decided by the helper of M2-P2, within the task's plan, and built. Task: M2-P2.
 
 Summary: `@null3d/geometry` holds ports of three.js's other geometry classes as functions that return arrays for `geometry.fromArrays`. Their numbers equal three.js 0.186.1's in 124 tests. `mesh.updateVertices(name, values, start, count)` writes one attribute into the mesh's pages in place. The next frame uploads only the changed vertices' bytes. The mesh keeps its first bounding sphere. Meshes with joints or morph targets take no updates.
 
 ## Question
 
-Two parts of the porting map were still open for 0.2. Where do three.js's torus knot, polyhedra, lathe, shape, extrude and tube go, and in what form? And how does a sketch change a mesh's vertices every frame, as three.js's `attribute.needsUpdate` does?
+Two parts of the porting map are open for 0.2. Where do three.js's torus knot, polyhedra, lathe, shape, extrude and tube go, and in what form? And how does a sketch change a mesh's vertices every frame, as three.js's `attribute.needsUpdate` does?
 
 ## Rule
 
@@ -35,14 +35,14 @@ Two parts of the porting map were still open for 0.2. Where do three.js's torus 
 | (b) A TypeScript package whose functions return arrays for `geometry.fromArrays` (chosen) | A page pays only when it imports the package. The functions run anywhere, so tests compare them with three.js directly. Users can change the arrays before they make a mesh | A generator's mesh is made from arrays, so a sketch writes `geometry.fromArrays(torusKnot(...))`, one call more than the built-in generators |
 | (c) Functions that take `ctx.geometry` and return a mesh | One call | Two ways to do one thing, and no access to the arrays |
 
-The package has no WebAssembly and loads no files, so it needs none of the add-on loader of D-54. It ships the three.js and earcut licences in its own notices file, which the Vite plugin adds to a build's notices.
+The package has no WebAssembly and loads no files, so it needs none of the add-on loader of D-54. It ships the three.js and earcut licenses in its own notices file, which the Vite plugin adds to a build's notices.
 
 ### How vertices change
 
 | Option | For | Against |
 | --- | --- | --- |
 | (a) `mesh.updateVertices(name, values, start, count)`, with every vertex's values and a range (chosen) | A port keeps its array, as three.js does with `addUpdateRange`. A whole update copies with one `set`, and a range copies only its vertices. Nothing allocates | The array holds every vertex even for a small change |
-| (b) `geometry.updateVertices(mesh, arrays)`, as the task's plan worded it, with several attributes at once | One call for positions and normals | An object of arrays per call allocates, or a sketch keeps one. The port skill and the mapping already named the call on the mesh |
+| (b) `geometry.updateVertices(mesh, arrays)`, as the task's plan worded it, with several attributes at once | One call for positions and normals | An object of arrays per call allocates, or a sketch keeps one. The port skill and the mapping name the call on the mesh |
 | (c) Upload the page from the first changed byte to its end, as a removal of meshes does | No new state | A mesh early in a shared page would upload every mesh after it, each frame |
 
 The page's GPU copy keeps one range of changed bytes, which grows to hold each update until the next upload. A mesh past 65,535 vertices splits into parts. It keeps a list of the mesh vertex that each part vertex copies, so an update reaches every copy. A mesh in one part needs no list.
@@ -61,7 +61,7 @@ The package of array functions, and `mesh.updateVertices` with every vertex's va
 
 ## Consequences
 
-- `packages/geometry` is a new public package. Its first npm publish is by hand at the 0.1.0 release ([D-108](D-108-first-release.md)).
+- `packages/geometry` is a public package. Its first npm publish is by hand at the 0.1.0 release ([D-108](D-108-first-release.md)).
 - `api/geometry` documents both parts, the mapping entries name the calls, and both skills show them.
 - E1206 covers updates that do not fit the mesh.
 - The demos `extra-shapes` and `vertex-updates` draw on every tier in the image test manifest.

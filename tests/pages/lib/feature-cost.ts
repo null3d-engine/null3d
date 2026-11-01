@@ -20,12 +20,24 @@ export interface SideCost {
 	gpuMs: number | null;
 	intervalMs: number | null;
 	cpuMs: number | null;
+	/** The display's refresh rate in hertz, where the device measured one. */
+	refreshHz: number | null;
 	/** Draw calls per frame in the middle of the side's measurements. */
 	draws: number | null;
 	/** Each part of the frame's GPU time, in the order that the device reported it. */
 	passes: PassCost[];
 	/** The median busy time per frame of each thread, by name. */
 	threads: Record<string, number | null>;
+	/** Each round's GPU time, in the order the rounds ran; empty without a timer. */
+	gpuRoundsMs: number[];
+	/** Each round's frame interval, in the order the rounds ran. */
+	intervalRoundsMs: number[];
+	/** Each round's CPU time, in the order the rounds ran. */
+	cpuRoundsMs: number[];
+	/** Each part's own time in each round, by name, in the order the rounds ran. */
+	passRoundsMs: Record<string, number[]>;
+	/** The step between the GPU's timestamps, as the last measurement that saw one reported it. */
+	stepMs: number | null;
 }
 
 /** How a cost page measures its sides. */
@@ -37,6 +49,14 @@ export interface FeatureCostOptions {
 	alternate?: boolean;
 	/** The rounds of each side. Three by default, and an even count is best with `alternate`. */
 	rounds?: number;
+	/**
+	 * Seconds of each measurement. Two by default. A short measurement turns the sides over more
+	 * often, which shares a clock's drift between them, while it gives the GPU timer fewer frames to
+	 * median.
+	 */
+	seconds?: number;
+	/** Seconds of play before the first measurement. Two by default. */
+	warmUpSeconds?: number;
 }
 
 /** The middle of some numbers, or null without any. */
@@ -59,21 +79,28 @@ export async function featureCost(
 	measured?: (side: 'off' | 'on') => Promise<void>,
 	options: FeatureCostOptions = {},
 ): Promise<{ off: SideCost; on: SideCost }> {
-	await new Promise((resolve) => setTimeout(resolve, WARM_UP_SECONDS * 1000));
+	await new Promise((resolve) =>
+		setTimeout(resolve, (options.warmUpSeconds ?? WARM_UP_SECONDS) * 1000),
+	);
+	const seconds = options.seconds ?? SECONDS;
 	const sides = {
 		off: {
 			gpuMs: [] as number[],
 			intervalMs: [] as number[],
 			cpuMs: [] as number[],
+			refreshHz: [] as number[],
 			draws: [] as number[],
 			passes: new Map<string, number[]>(),
+			steps: [] as number[],
 		},
 		on: {
 			gpuMs: [] as number[],
 			intervalMs: [] as number[],
 			cpuMs: [] as number[],
+			refreshHz: [] as number[],
 			draws: [] as number[],
 			passes: new Map<string, number[]>(),
+			steps: [] as number[],
 		},
 	};
 	const threads = { off: new Map<string, number[]>(), on: new Map<string, number[]>() };
@@ -83,11 +110,13 @@ export async function featureCost(
 			options.alternate && round % 2 === 1 ? (['on', 'off'] as const) : (['off', 'on'] as const);
 		for (const side of order) {
 			await turn(side === 'on');
-			const stats = await engine.measure(SECONDS);
+			const stats = await engine.measure(seconds);
 			if (stats.gpuMs) sides[side].gpuMs.push(stats.gpuMs.median);
 			sides[side].intervalMs.push(stats.intervalMs.median);
 			sides[side].cpuMs.push(stats.cpuMs.median);
+			if (stats.refreshHz) sides[side].refreshHz.push(stats.refreshHz);
 			sides[side].draws.push(stats.drawCalls.median);
+			if (stats.gpuStepMs !== null) sides[side].steps.push(stats.gpuStepMs);
 			for (const pass of stats.gpuPassMs ?? []) {
 				const values = sides[side].passes.get(pass.name) ?? [];
 				values.push(pass.ms.median);
@@ -105,6 +134,7 @@ export async function featureCost(
 		gpuMs: median(sides[side].gpuMs),
 		intervalMs: median(sides[side].intervalMs),
 		cpuMs: median(sides[side].cpuMs),
+		refreshHz: median(sides[side].refreshHz),
 		draws: median(sides[side].draws),
 		passes: [...sides[side].passes].map(([name, values]) => ({ name, ms: median(values) })),
 		threads: Object.fromEntries(
@@ -112,6 +142,13 @@ export async function featureCost(
 				.map(([name, values]) => [name, median(values)] as const)
 				.filter(([, ms]) => ms !== null && ms > 0),
 		),
+		gpuRoundsMs: [...sides[side].gpuMs],
+		intervalRoundsMs: [...sides[side].intervalMs],
+		cpuRoundsMs: [...sides[side].cpuMs],
+		passRoundsMs: Object.fromEntries(
+			[...sides[side].passes].map(([name, values]) => [name, values]),
+		),
+		stepMs: sides[side].steps.length > 0 ? (sides[side].steps.at(-1) as number) : null,
 	});
 	return { off: summary('off'), on: summary('on') };
 }

@@ -15,7 +15,7 @@ import {
 } from '@null3d/engine';
 
 /** The test add-on's names, claimed once as the sketch's module loads. */
-const NAMESPACE = declareAddonNamespace({ name: 'stats_test' });
+const NAMESPACE = declareAddonNamespace({ name: 'stats_test', package: '@null3d/test-stats' });
 
 export default defineSketch(({ scene, geometry, materials, debug, page, quality, engine }) => {
 	let feature: FeatureHandle | undefined;
@@ -62,6 +62,10 @@ export default defineSketch(({ scene, geometry, materials, debug, page, quality,
 			void quality.setPreset(data as QualityPreset).then(() => page.post('preset', reading()));
 		}
 		if (name === 'instances') {
+			// The rows are a stress the page adds to read the memory figures, and a software GPU
+			// draws them slowly enough for the governor to step. The step is not what is measured
+			// here, and the figures must be the preset's whole scale.
+			void quality.set({ governor: false });
 			sun.setCastShadows(true);
 			box.setCastShadows(true);
 			scene.createInstances(

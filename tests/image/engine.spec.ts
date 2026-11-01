@@ -16,6 +16,7 @@ import {
 } from '../lib/engine-checks.ts';
 import { gltfDownloads, recordRequests } from '../lib/gltf-loader-files.ts';
 import { pageResult } from '../lib/page-result.ts';
+import { failureText, type ItemResult } from '../lib/runs.ts';
 import { restoreWaitAsync, withoutWaitAsync } from '../lib/without-wait-async.ts';
 
 test.describe.configure({ mode: 'parallel' });
@@ -401,6 +402,9 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 	particles: 'tests/pages/sketches/particles-sketch.ts',
 	background: 'tests/pages/sketches/texture-background-sketch.ts',
 	transmission: 'tests/pages/sketches/transmission-sketch.ts',
+	// A surface that lets light through makes the frame copy the opaque color to sample it, so the
+	// same sketch draws the copy's builds as its own.
+	color_copy: 'tests/pages/sketches/transmission-sketch.ts',
 	// Both suns cast shadows for their feature's picture, and their scenes let the sun draw contact
 	// shadows, which load ambient occlusion's shader file on first use. The switch turns those off,
 	// so the page downloads its own feature's file alone.
@@ -433,7 +437,7 @@ const FIRST_USE_LIVE: ReadonlySet<ShaderFeature> = new Set(['picking']);
  * null where the path has no file for it: WebGPU morphs in the skinning pass, only WebGPU reads
  * index-only instance data and culls by occlusion on the GPU, only WebGPU copies a view's
  * image, where WebGL2 draws the view into its target directly, and only WebGPU builds the pass
- * that picks a mesh's cluster patches, where WebGL2 draws the mesh whole.
+ * that picks a mesh's cluster patches, where WebGL2 picks them on the job workers instead.
  */
 const FEATURE_FILE_OWNERS: Partial<
 	Record<ShaderFeature, Partial<Record<'webgpu' | 'webgl2', ShaderFeature | null>>>
@@ -443,6 +447,15 @@ const FEATURE_FILE_OWNERS: Partial<
 	occlusion: { webgl2: null },
 	views: { webgl2: null },
 	cluster_levels: { webgl2: null },
+};
+
+/**
+ * The feature whose file a feature's first use downloads as well as its own: a surface that lets
+ * light through makes the frame copy the opaque color, so the two files load together.
+ */
+const FIRST_USE_ALSO: Partial<Record<ShaderFeature, ShaderFeature>> = {
+	transmission: 'color_copy',
+	color_copy: 'transmission',
 };
 
 /**
@@ -482,18 +495,25 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				? `first-use-live.html?gpu=${gpu}&sketch=${encodeURIComponent(`/${sketch}`)}`
 				: `image.html?gpu=${gpu}&hold=0&preset=high&size=320x180${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`;
 			await page.goto(address);
-			const result = await pageResult<{ error?: string }>(page, FIRST_USE_WAIT_MS);
-			expect(result.error).toBeUndefined();
+			// A page that failed gives the steps it got through, which say where it spent the time.
+			const result = await pageResult<ItemResult>(page, FIRST_USE_WAIT_MS);
+			expect(result.error, failureText(result)).toBeUndefined();
 			const shaderFiles = requests.filter(isFirstUseShaderFile);
 			const owner = FEATURE_FILE_OWNERS[feature]?.[gpu];
 			if (owner === null) {
 				expect(shaderFiles).toEqual([]);
 				return;
 			}
-			expect(shaderFiles).toHaveLength(1);
+			const also = FIRST_USE_ALSO[feature];
 			// The shader files spell a feature's name with hyphens.
-			const file = (owner ?? feature).replaceAll('_', '-');
-			expect(shaderFiles[0]).toMatch(new RegExp(`/shaders-${file}-(wgsl|glsl)[^/]*$`));
+			const wanted = [owner ?? feature, ...(also ? [also] : [])].map((name) =>
+				name.replaceAll('_', '-'),
+			);
+			expect(shaderFiles).toHaveLength(wanted.length);
+			for (const file of wanted)
+				expect(
+					shaderFiles.filter((path) => new RegExp(`/shaders-${file}-(wgsl|glsl)[^/]*$`).test(path)),
+				).toHaveLength(1);
 		});
 
 // GPU occlusion culling runs only on WebGPU, where the first-use test turns it on. A scene whose
@@ -525,11 +545,11 @@ async function jobWorkerFails(page: Page, worker: string): Promise<void> {
 
 // A job worker that does not start is survivable, as the engine's own notes say: the engine runs on
 // with the workers it has, and the on-demand loader sends its tasks only to those. The KTX2 sketch
-// loads a file during its setup, so the page needs one task to finish. The loader used to send that
-// task to a job worker by index, started or not, and a worker that did not start never answers: the
-// page then drew nothing at all. Firefox lost the download of that worker's core on 16 October 2026,
-// in real-browsers, with one of two job workers gone. Each case here loads a page that must finish a
-// task of the loader, and every case keeps the engine to two job workers.
+// loads a file during its setup, so the page needs one task to finish. A loader that sends that
+// task to a job worker by index, started or not, gets no answer from a worker that did not start:
+// the page then draws nothing at all. In the real-browsers run, Firefox can lose the download of a
+// worker's core, which leaves one of two job workers gone. Each case here loads a page that must
+// finish a task of the loader, and every case keeps the engine to two job workers.
 for (const [what, stop] of [
 	[
 		'no job worker starts',

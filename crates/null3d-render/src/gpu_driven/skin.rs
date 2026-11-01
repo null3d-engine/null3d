@@ -746,7 +746,9 @@ impl Skinning {
             .enumerate()
         {
             if *made < needed {
-                *made = grown_size(needed, binding_bytes);
+                *made = grown_size(needed, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
                 // The motion pass copies the regions into its own buffers each frame.
                 let flags = usage::STORAGE | usage::VERTEX | usage::COPY_SRC;
                 let id = ids::skinned(buffer as u32);
@@ -760,7 +762,10 @@ impl Skinning {
         }
         let table_bytes = self.table_entries * ENTRY_WORDS * 4;
         if self.table_made < table_bytes {
-            self.table_made = grown_size(table_bytes, binding_bytes);
+            self.table_made =
+                grown_size(table_bytes, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
             let flags = usage::STORAGE | usage::COPY_DST;
             list.push(Op::CreateBuffer, &[ids::SKIN_TABLE, self.table_made, flags])?;
             self.groups_stale = true;
@@ -1076,11 +1081,12 @@ mod tests {
                 0
             ]
         );
-        // A morphed mesh's color is morphed into four floats, not copied. Source: the morph
-        // attribute after the weights, at 60 bytes. Skinned: the color at 48, 64 bytes in all.
+        // A morphed mesh's color is morphed into four floats, not copied. Source: the record
+        // after the weights, at 60 bytes, four floats long. Skinned: the color at 48, 64 bytes in
+        // all.
         let morphed = format | vertex::MORPH;
         let [strides, more, runs] = format_entries(morphed, false);
-        assert_eq!(strides[..2], [17, 16]);
+        assert_eq!(strides[..2], [19, 16]);
         assert_eq!(more[3], 15);
         let color = 11 | (Type::Unorm8 as u32) << 8 | (12 << 16);
         assert_eq!(runs, [5 | (6 << 8) | (2 << 16), 0, color, 0]);
@@ -1088,7 +1094,7 @@ mod tests {
         // after them move up. Skinned: position 0, normal 12, uv 16, tangent 24, the color as
         // floats at 28, 44 bytes in all.
         let [strides, more, runs] = format_entries(morphed, true);
-        assert_eq!(strides[..2], [17, 11]);
+        assert_eq!(strides[..2], [19, 11]);
         assert_eq!(more[0], 7 | (6 << 16));
         let color = 11 | (Type::Unorm8 as u32) << 8 | (7 << 16);
         assert_eq!(runs, [5 | (4 << 8) | (2 << 16), 0, color, 0]);

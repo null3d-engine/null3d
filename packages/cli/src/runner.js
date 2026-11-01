@@ -5,12 +5,13 @@
 import { performance } from 'node:perf_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { defaultEnvironment, launchBrowser } from './browser.js';
-import { holdPath, readHold, watchConsole } from './page.js';
+import { HOLD_SCRIPT_GLOBAL, holdPath, readHold, switchedPath, watchConsole } from './page.js';
+import { RECORDING_PATH } from './recording-page.js';
 import { startBuildServer, startDevServer } from './server.js';
 
 /** @import { Browser, Page } from 'playwright-core' */
 /** @import { Environment } from './browser.js' */
-/** @import { HoldFailure, HoldReport, Tier } from './page.js' */
+/** @import { HoldFailure, HoldReport, HoldScript, Tier } from './page.js' */
 /** @import { PluginOption } from 'vite' */
 /** @import { DevServer } from './server.js' */
 
@@ -32,6 +33,7 @@ import { startBuildServer, startDevServer } from './server.js';
  * @property {readonly [number, number]} size The browser window's size in CSS pixels, at one
  *   device pixel per CSS pixel.
  * @property {number} timeoutMs How long the page may take to publish the held frame.
+ * @property {HoldScript} [script] A timed script for the engine to perform as it holds.
  */
 
 /**
@@ -57,18 +59,24 @@ const POLL_MS = 100;
 /**
  * Starts a server of the project in the current folder and a headless browser. The server is the
  * project's Vite dev server, with any `plugins` besides the project's own, or with `production`, a
- * server of a production build of the project. `browserArgs` adds flags to the browser's own.
+ * server of a production build of the project, whose files carry source maps with `sourcemap`,
+ * and, with `linkedShaders`, whose engine shader builds are the files that the shared shader build
+ * wrote rather than copies that the build emitted. `browserArgs` adds flags to the browser's own.
  *
- * @param {{ environment?: Environment, production?: boolean, plugins?: PluginOption[], browserArgs?: readonly string[] }} [options]
+ * @param {{ environment?: Environment, production?: boolean, sourcemap?: boolean, linkedShaders?: boolean, plugins?: PluginOption[], browserArgs?: readonly string[] }} [options]
  * @returns {Promise<Runner>}
  */
 export async function startRunner({
 	environment = defaultEnvironment(),
 	production = false,
+	sourcemap = false,
+	linkedShaders = false,
 	plugins,
 	browserArgs = [],
 } = {}) {
-	const server = await (production ? startBuildServer() : startDevServer({ plugins }));
+	const server = await (production
+		? startBuildServer({ sourcemap, linkedShaders })
+		: startDevServer({ plugins }));
 	try {
 		const browser = await launchBrowser(environment, browserArgs);
 		return {
@@ -102,12 +110,13 @@ export const failure = (error) => ({ ok: false, code: null, error });
  *
  * @template T
  * @param {Runner} runner
- * @param {{ path: string, size: readonly [number, number], timeoutMs: number }} options The page
- *   with its switches, the window's size in CSS pixels, and how long the page may take.
+ * @param {{ path: string, size: readonly [number, number], timeoutMs: number, script?: HoldScript }} options The page
+ *   with its switches, the window's size in CSS pixels, how long the page may take, and the timed
+ *   script that the engine performs in hold mode.
  * @param {(page: Page, errors: readonly string[], url: string, timeoutMs: number) => Promise<T>} visit
  * @returns {Promise<VisitedPage<T>>}
  */
-export async function visitPage({ server, browser }, { path, size, timeoutMs }, visit) {
+export async function visitPage({ server, browser }, { path, size, timeoutMs, script }, visit) {
 	const url = new URL(path, server.url);
 	// Vite answers an address that has no file with the project's main page, so a mistyped page
 	// would draw that page instead.
@@ -125,6 +134,15 @@ export async function visitPage({ server, browser }, { path, size, timeoutMs }, 
 		deviceScaleFactor: 1,
 		ignoreHTTPSErrors: true,
 	});
+	// The engine reads the script from the page's global as it starts in hold mode. A page's own
+	// scripts run after this one, so the global is there before the engine looks for it.
+	if (script !== undefined)
+		await context.addInitScript(
+			({ key, value }) => {
+				/** @type {Record<string, unknown>} */ (globalThis)[key] = value;
+			},
+			{ key: HOLD_SCRIPT_GLOBAL, value: script },
+		);
 	const serverErrors = server.errors.length;
 	// Stacks name the server's address, whose port changes on every run: paths from its root stay.
 	const fromRoot = (/** @type {string} */ text) => text.replaceAll(url.origin, '');
@@ -154,8 +172,29 @@ export async function visitPage({ server, browser }, { path, size, timeoutMs }, 
  * @param {HoldOptions} options
  * @returns {Promise<HeldPage>}
  */
-export function holdPage(runner, { path, time, gpu, size, timeoutMs }) {
-	return visitPage(runner, { path: holdPath(path, { time, gpu }), size, timeoutMs }, waitForHold);
+export function holdPage(runner, { path, time, gpu, size, timeoutMs, script }) {
+	return visitPage(
+		runner,
+		{ path: holdPath(path, { time, gpu }), size, timeoutMs, script },
+		waitForHold,
+	);
+}
+
+/**
+ * Opens a page that replays a recording, and waits for its last frame. The recording's address is
+ * the one that the run's plugin serves; a replay needs no hold time, because the recording gives
+ * each frame's step.
+ *
+ * @param {Runner} runner
+ * @param {{ path: string, gpu?: Tier, size: readonly [number, number], timeoutMs: number }} options
+ * @returns {Promise<HeldPage>}
+ */
+export function replayPage(runner, { path, gpu, size, timeoutMs }) {
+	return visitPage(
+		runner,
+		{ path: switchedPath(path, { replay: RECORDING_PATH, gpu }), size, timeoutMs },
+		waitForHold,
+	);
 }
 
 /**

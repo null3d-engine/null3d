@@ -60,8 +60,8 @@ export interface RunOptions {
 	 */
 	antialias: 'none' | 'fxaa' | 'msaa' | null;
 	/**
-	 * `?maxPixelRatio=`: the highest pixel ratio that a null3D page which fills the window draws at,
-	 * in place of the preset's cap, or null for the preset's.
+	 * `?maxPixelRatio=`: the highest pixel ratio that a null3D page draws at, in place of the preset's
+	 * cap on a page that fills the window and the protocol's on one that does not, or null for those.
 	 */
 	maxPixelRatio: number | null;
 	/**
@@ -69,6 +69,12 @@ export interface RunOptions {
 	 * it on, such as S4, so that a comparison of two builds measures the same work in every run.
 	 */
 	governor: boolean;
+	/**
+	 * `?renderScale=`: the render scale that a null3D scene holds, between 0.25 and 1, or null for
+	 * the preset's range and the governor's steps. A reading that names one scale's cost pins it,
+	 * so no step can move it under the reading.
+	 */
+	renderScale: number | null;
 }
 
 /** The value of a switch that must be one of a few words. */
@@ -119,7 +125,7 @@ const whole = (v: number) => Number.isSafeInteger(v) && v > 0;
 
 /**
  * Reads `?hold`, `?demo`, `?keep`, `?n=`, `?seconds=`, `?measure=`, `?soak=`, `?shadows=`, `?far=`,
- * `?governor=`, the shadow quality settings, `?antialias=` and `?maxPixelRatio=`.
+ * `?governor=`, `?renderScale=`, the shadow quality settings, `?antialias=` and `?maxPixelRatio=`.
  */
 export function readRunOptions(params: URLSearchParams): RunOptions {
 	const seconds = (name: string) =>
@@ -182,5 +188,11 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 			'a pixel ratio of 0.5 or more',
 		),
 		governor: !params.has('governor') || readChoice(params, 'governor', ['off']) !== 'off',
+		renderScale: readNumber(
+			params,
+			'renderScale',
+			(v) => Number.isFinite(v) && v >= 0.25 && v <= 1,
+			'a scale from 0.25 to 1, such as 0.5',
+		),
 	};
 }

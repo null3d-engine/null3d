@@ -18,6 +18,7 @@ import type {
 	MaterialSource,
 	ShaderCompiler,
 	ShaderSource,
+	SkyLayerResult,
 } from './shader-compiler';
 import type { CompiledWgsl, ShaderVariant } from './shader-types';
 import { compileWgslFile } from './wgsl';
@@ -75,6 +76,7 @@ class CountingCompiler implements ShaderCompiler {
 				baseColor: false,
 				objectIds: false,
 				sceneDepth: false,
+				alpha: false,
 			},
 			warnings: [],
 		};
@@ -93,6 +95,18 @@ class CountingCompiler implements ShaderCompiler {
 				textures: [],
 				variants: { webgpu: build(effect.source) },
 				pieces: { group: {}, fold: {} },
+			},
+			warnings: [],
+		};
+	}
+
+	async skyLayer(layer: MaterialSource): Promise<SkyLayerResult> {
+		this.calls++;
+		return {
+			ok: true,
+			layer: {
+				variants: { webgpu: build(layer.source) },
+				map: { webgpu: build(layer.source) },
 			},
 			warnings: [],
 		};

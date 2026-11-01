@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { SHADOW_CASTERS_TILES } from '../generated/core';
 import { FramePacer } from '../render/pacer';
 import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
@@ -6,16 +7,20 @@ import { HELD_PERCENT, TARGET_CAP_HZ } from '../shared/stats';
 import {
 	BUDGET_STEP,
 	BUDGET_STEPS,
-	BUDGET_US,
 	budgetScale,
 	budgetSteps,
+	FULL_SCALE,
+	SCALE_STEP,
+	thousandths,
+} from './budget';
+import {
+	BUDGET_US,
 	CLOCK_LIMIT_MS,
 	DROP_AFTER_MS,
 	FAILED_RAISE_MS,
 	FEWEST_CONTACT_STEPS,
 	FLOOR_AFTER_MS,
 	FRAME_US,
-	FULL_SCALE,
 	farIntervalSteps,
 	GAP_MS,
 	Governor,
@@ -28,10 +33,8 @@ import {
 	LOWEST_AO_SCALE,
 	LOWEST_SSR_SCALE,
 	RAISE_AFTER_MS,
-	SCALE_STEP,
 	SETTLE_MS,
 	SMALLEST_BLOOM_SIZE,
-	thousandths,
 	WINDOW_END,
 	WINDOW_MS,
 } from './governor';
@@ -197,7 +200,7 @@ describe('the render scale steps', () => {
 	});
 
 	it('counts a step down late in the trial of a step up as its failure', () => {
-		// On the warm iPad, a step up held the target at first and fell behind 9 to 15 s later.
+		// On the warm iPad, a step up holds the target at first and falls behind 9 to 15 s later.
 		const { run, controller, untilStep } = controlled(500, 650, 600);
 		const raised = untilStep(EASY);
 		expect(controller.scale).toBe(650);
@@ -283,7 +286,7 @@ describe('the render scale steps', () => {
 describe('the trial of a step down', () => {
 	/**
 	 * Frames several times slower than `SLOW`, as on CI's software GPU after the step below the
-	 * whole scale turned on the two-step upscale (D-237).
+	 * whole scale turns on the two-step upscale (D-237).
 	 */
 	const SLOWER = { frame: 7 * SLOW.frame, delay: 7 * SLOW.delay };
 	/** The time at which a step down at `stepped` is taken back, when the frames after it are slower. */
@@ -778,9 +781,16 @@ describe('the governor in the frame loop', () => {
 		let frame = 0;
 		/**
 		 * Steps frames `interval` ms apart for `ms`, or with the intervals of a list in turn, the GPU
-		 * taking `delay` for each.
+		 * taking `delay` for each. `completion` false writes no completion record, as for a frame
+		 * that the GPU held until the tracker gave it up. `resumed` says that the page showed again
+		 * since the last call.
 		 */
-		const run = (interval: number | readonly number[], delay: number, ms: number): number => {
+		const run = (
+			interval: number | readonly number[],
+			delay: number,
+			ms: number,
+			options: { completion?: boolean; resumed?: boolean } = {},
+		): number => {
 			const intervals = typeof interval === 'number' ? [interval] : interval;
 			for (const end = now + ms; now < end; ) {
 				const gap = intervals[frame % intervals.length] as number;
@@ -789,11 +799,13 @@ describe('the governor in the frame loop', () => {
 				render.begin(frame);
 				render.interval(gap);
 				render.commit(1);
-				done.begin(frame);
-				done.interval(gap);
-				done.commit(delay);
+				if (options.completion !== false) {
+					done.begin(frame);
+					done.interval(gap);
+					done.commit(delay);
+				}
 				resolution.now[0] = now;
-				resolution.frame();
+				resolution.frame(options.resumed === true);
 			}
 			return resolution.governor.scale;
 		};
@@ -928,6 +940,92 @@ describe('the governor in the frame loop', () => {
 		run(1000, BUDGET, 1000);
 		expect(run(2 * BUDGET, BUDGET, 700)).toBe(FULL_SCALE);
 	});
+
+	describe('frames that a slow page holds', () => {
+		/** The length of a frame on CI's software GPU below the whole scale, in ms (D-237). */
+		const HELD = 3300;
+
+		it('judges a frame that held the drawing thread, and takes a step down', () => {
+			const { run } = loop();
+			// The first frame starts the grace. The frame behind the next gap is a frame of its length,
+			// and fills the second that a step needs.
+			expect(run(HELD, HELD, HELD + GRACE_MS + 1)).toBe(FULL_SCALE - SCALE_STEP);
+		});
+
+		it('starts its windows again after a pause as long, when no frame was drawing', () => {
+			const { run } = loop();
+			run(BUDGET, BUDGET / 2, GRACE_MS + 1000);
+			// The GPU finished each frame at once, so the page paused between the frames.
+			expect(run(HELD, BUDGET, GRACE_MS + 4 * HELD)).toBe(FULL_SCALE);
+		});
+
+		it('does not take a step down for a single held frame under a second', () => {
+			const { run } = loop();
+			// A frame of 600 ms fills three of the four windows of the second that a step judges.
+			run(600, 600, 600);
+			expect(run(BUDGET, BUDGET / 2, 2 * DROP_AFTER_MS)).toBe(FULL_SCALE);
+		});
+
+		it("takes back the step at the first held frame after it, as on CI's software GPU", () => {
+			// The resize page: 2.2 frames a second at the whole scale, which the governor judges, and
+			// 0.3 a second on the two-step pass, where each frame is held for three seconds (D-237).
+			const { run } = loop();
+			expect(run(450, 450, GRACE_MS + 3 * DROP_AFTER_MS)).toBe(FULL_SCALE - SCALE_STEP);
+			expect(run(HELD, HELD, HELD + WINDOW_MS)).toBe(FULL_SCALE);
+		});
+
+		it("takes the step back within a second when the new setting's first frame fits in one", () => {
+			const { run } = loop();
+			expect(run(450, 450, GRACE_MS + 3 * DROP_AFTER_MS)).toBe(FULL_SCALE - SCALE_STEP);
+			// The frame after the step takes 900 ms, so the governor's return comes within that second.
+			// It cannot be the trial's 4 s bound, which is far, so only the held frame decides it.
+			expect(run(900, 900, 900 + WINDOW_MS)).toBe(FULL_SCALE);
+		});
+
+		it('keeps the whole scale on a software device after a step below it failed', () => {
+			const { run, resolution } = loop();
+			resolution.governor.setSoftware(true);
+			expect(run(450, 450, GRACE_MS + 3 * DROP_AFTER_MS)).toBe(FULL_SCALE - SCALE_STEP);
+			// The first held frame at the new setting fails the trial, and the scale comes back.
+			expect(run(900, 900, 900 + WINDOW_MS)).toBe(FULL_SCALE);
+			// However long the slow frames last, the software device takes no step below the whole
+			// scale again.
+			for (let k = 0; k < 40; k++) expect(run(HELD, HELD, HELD + WINDOW_MS)).toBe(FULL_SCALE);
+		});
+
+		it('judges a frame that the GPU still holds, whose completion has not come', () => {
+			// CI's software renderer: the step down turned frames of about 300 ms into frames of about
+			// 1.4 s, and the completion of the first one was given up, so no busy time told the gap from
+			// a pause. The frame that the thread that draws presented, with no completion after it, was
+			// drawing through the whole gap.
+			const { run } = loop();
+			expect(run(450, 450, GRACE_MS + 3 * DROP_AFTER_MS)).toBe(FULL_SCALE - SCALE_STEP);
+			expect(run(1440, BUDGET, 1440, { completion: false })).toBe(FULL_SCALE);
+		});
+
+		it('takes no held-frame step before a completion record has come', () => {
+			// The engine's first frames leave no completion record, so a slow first frame is no evidence
+			// that a frame was drawing: it builds its pipelines, and the page is starting.
+			const { run } = loop();
+			expect(run(3000, 3000, 6000, { completion: false })).toBe(FULL_SCALE);
+		});
+
+		it('starts its windows again when the page showed again, whatever the rings hold', () => {
+			const { run } = loop();
+			run(BUDGET, BUDGET / 2, GRACE_MS + 1000);
+			// A hidden page that shows again leaves a frame presented and uncompleted in the rings, but
+			// the page was not drawing through the gap.
+			expect(run(1440, BUDGET, 1440, { completion: false, resumed: true })).toBe(FULL_SCALE);
+		});
+
+		it('steps below the whole scale on a software device while the steps pay', () => {
+			const { run, resolution } = loop();
+			resolution.governor.setSoftware(true);
+			expect(run(450, 450, GRACE_MS + 3 * DROP_AFTER_MS)).toBe(FULL_SCALE - SCALE_STEP);
+			// The step held: the frames at 450 ms came no slower than the second before it.
+			expect(run(450, 450, 3 * DROP_AFTER_MS)).toBe(FULL_SCALE - 2 * SCALE_STEP);
+		});
+	});
 });
 
 /** The seconds of a trace, written as a run's per-second rates. */
@@ -1052,5 +1150,24 @@ describe("replays of the iPad's S4 runs at Low", () => {
 			expect(stay).toBeGreaterThanOrEqual(Math.min(2 * (full[k] as number) - 2, 80));
 		});
 		expect(Math.min(...full.slice(-3))).toBeGreaterThanOrEqual(LONGEST_RAISE_AFTER_MS / 1000);
+	});
+});
+
+describe("the governor's documented order", () => {
+	/**
+	 * The governor's own description, and the preset field that a page's reader sees. The behavior
+	 * test above pins the order: the budgets take a step before each step of the render scale. These
+	 * two descriptions must say the same, or a reader plans around the wrong order.
+	 */
+	const sources = [
+		readFileSync(new URL('./governor.ts', import.meta.url), 'utf8'),
+		readFileSync(new URL('./presets.ts', import.meta.url), 'utf8'),
+	];
+
+	it("says that a budget's step comes before the render scale's, as lower() does", () => {
+		for (const text of sources) {
+			expect(text).toContain("a budget's step first");
+			expect(text).not.toContain('the render scale first, then');
+		}
 	});
 });

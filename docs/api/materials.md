@@ -79,6 +79,9 @@ Put the catcher a little above the surface it lies on, so its shadows show over 
 | `displacementBias` | A number | 0 | How far the displacement map moves every vertex, added to its height's share |
 | `aoMapIntensity` | 0 to 1 | 1 | How much the occlusion map darkens ambient light |
 | `lightMapIntensity` | 0 or more | 1 | The factor of the light map's light |
+| `lightMapOffset` | Two numbers | `[0, 0]` | Where the light map's texture coordinates start. It is fixed when the material is created |
+| `lightMapRepeat` | Two numbers | `[1, 1]` | How the light map's texture coordinates stretch. It is fixed when the material is created |
+| `lightMapDecode` | `srgb` or `rgbm` | `srgb` | How the engine reads the light map's texels. `rgbm` decodes Needle's light maps. It is fixed when the material is created |
 | `ior` | 1 or more | 1.5 | The index of refraction of the non-metallic part. It sets how much light the surface reflects head on |
 | `specularIntensity` | 0 to 1 | 1 | The strength of the non-metallic part's specular reflection, at every angle |
 | `specularColor` | A [color](#color), or linear components of 0 or more | White | Tints the non-metallic part's specular reflection head on |
@@ -89,7 +92,7 @@ Put the catcher a little above the surface it lies on, so its shadows show over 
 | `attenuationDistance` | Above 0 | `Infinity` | The distance in world units over which light inside the volume takes `attenuationColor` |
 | `diffuseTransmission` | 0 to 1 | 0 | How much of the surface's diffuse light passes through to its other side, for leaves, petals and ears. See "Light through thin surfaces" |
 | `diffuseTransmissionColor` | A [color](#color) | White | Tints the light that passes through to the other side |
-| `subsurfaceRadius` | 0 or more, in metres | 0 | How far light spreads under the surface, for skin, wax, jade and marble. See "Light under the surface" |
+| `subsurfaceRadius` | 0 or more, in meters | 0 | How far light spreads under the surface, for skin, wax, jade and marble. See "Light under the surface" |
 | `subsurfaceColor` | A [color](#color) | White | Each color channel's share of `subsurfaceRadius` |
 | `clearcoat` | 0 to 1 | 0 | How much of a thin, shiny coat covers the surface, as on car paint or varnish. See "Clear coat and sheen" |
 | `clearcoatRoughness` | 0 to 1 | 0 | How rough the coat is |
@@ -101,7 +104,8 @@ Put the catcher a little above the surface it lies on, so its shadows show over 
 | `iridescenceThicknessRange` | Two thicknesses in nanometers | `[100, 400]` | The film's thinnest and thickest parts, which its map mixes between |
 | `anisotropy` | 0 to 1 | 0 | How far the specular reflection stretches along one direction, as on brushed metal. See "Iridescence and anisotropy" |
 | `anisotropyRotation` | Radians | 0 | The direction along which the reflection stretches |
-| `uvTransform` | An offset, a repeat and a rotation | None | Where the maps sit on the texture coordinates |
+| `uvTransform` | An offset, a repeat and a rotation | None | Where every map sits on the texture coordinates |
+| `mapUvTransforms` | A transform for a map, by the map's option name | None | Where one map sits, where it differs from the others |
 
 The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. `ior`, `specularIntensity`, `specularColor`, the four transmission values and the ten layer values have those of three.js's `MeshPhysicalMaterial`, as the next sections explain. three.js has no diffuse transmission, so its two values take the names and defaults of glTF's `KHR_materials_diffuse_transmission`. A metal takes its color from what it reflects. Without an environment, a smooth metal shows little more than its highlights, so give the scene one with [`scene.setEnvironment`](scene.md#the-environment). three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment. The engine multiplies the two.
 
@@ -131,10 +135,11 @@ A surface with `transmission` lets the light behind it through, as three.js's `M
 | Value | What it does |
 | --- | --- |
 | `transmission` | How much light passes through. That share of the surface's diffuse light becomes the light from behind it, times the base color. The surface's reflections stay, so glass still shows its highlights and the environment |
-| `transmissionMap` | The same share, per texel, in red. Its red multiplies `transmission`. A material with it takes no specular maps, since the two share their slots |
+| `transmissionMap` | The same share, per texel, in red. Its red multiplies `transmission`. It samples the specular intensity slot's texture array at a layer of its own, so a specular intensity map may draw beside it |
 | `ior` | How far the light bends where it enters the volume. Glass is 1.5, water 1.33 |
+| `dispersion` | How strongly the light that passes through separates into colors, 0 or more: 20 divided by the Abbe number, as glTF's `KHR_materials_dispersion` gives it. A diamond's 0.36 is weak and rutile's 2.04 is strong. Each color bends by its own index of refraction, so the edges of a prism or a gem show a rainbow. 0 bends every color alike |
 | `thickness` | How deep the volume is. The light leaves it this far along the bent direction, so a thicker volume shows what lies behind it farther away. 0 is a thin wall, such as a window pane, which bends nothing |
-| `thicknessMap` | The thickness, per texel, in green. Its green multiplies `thickness`. A material with it takes no specular maps, since the two share their slots |
+| `thicknessMap` | The thickness, per texel, in green. Its green multiplies `thickness`. It samples the specular color slot's texture array at a layer of its own, so a specular color map may draw beside it when the two textures share an array |
 | `roughness` | How much the light from behind blurs: none at 0, and very blurred at 1. An `ior` of 1 blurs nothing |
 | `attenuationColor`, `attenuationDistance` | The color of the volume. White light takes `attenuationColor` after `attenuationDistance` inside it, and a deeper color farther in. The default absorbs nothing |
 
@@ -148,7 +153,7 @@ const tinted = materials.standard({
 });
 ```
 
-Give `transmission` when you create the material, even as 0, to change it later with `set`. The option picks the shader that samples what lies behind the surface. A material created without it lets no light through.
+Give `transmission` when you create the material, even as 0, to change it later with `set`. The option picks the shader that samples what lies behind the surface. A material created without it lets no light through. `dispersion` needs no such choice: `set` changes it at any time, and it shows on a material that `transmission` lets light through.
 
 ### How it draws
 
@@ -157,14 +162,16 @@ After the camera's view draws its opaque objects, the engine copies their colors
 - Only opaque objects show through. Another surface that lets light through, or a blended one, does not show through glass in front of it.
 - The copy keeps the opaque objects' depth too. A bent ray can land on an opaque object in front of the surface, such as a flower on the bank of a stream. The surface then shows what lies straight behind it instead. three.js shows the flower's color in the water there.
 - The volume is a model, not a ray through the real shape. A ball with `thickness` set to its diameter looks right through its middle. three.js uses the same model.
+- With `dispersion`, light follows three rays, one per color, each bent by a slightly different index of refraction. Red takes the lowest index, as three.js draws it. Each color keeps the light that its own ray reaches, so a gem's edges separate white light into colors.
 - `thickness` is in the mesh's own units, and the object's scale multiplies it.
-- Such a surface takes the `opaque` or `blend` alpha mode. `mask` and `hash` throw E1217.
+- Such a surface takes the `opaque`, `mask` or `blend` alpha mode. A mask decides which pixels draw, and the light from behind fills the pixels that remain. `hash` throws E1217.
 - Views other than the camera's, such as [scene passes](render.md#scene-passes) and [reflection passes](render.md#reflection-passes), have no copy. There the surface shows the environment's light along the bent ray.
-- A material with `transmissionMap` or `thicknessMap` takes no `specularIntensityMap` and no `specularColorMap`, because the two families of map read the same slots. Development builds throw E1217 for a material that asks for both. A layered material takes none of these maps either.
+- A material with `transmissionMap` or `thicknessMap` may also give the specular maps. Each volume map samples a specular slot's texture array at a layer of its own, so the two maps of a slot draw together when their images have one size and format. A thickness map never shares a specular color map's array, because one is linear and the other sRGB: a development build throws E1217 for that pair.
+- A layered material keeps the two maps beside a clear coat, a sheen, iridescence or anisotropy, as long as no layer map fills the array that one of them samples: `clearcoatNormalMap` and `iridescenceThicknessMap` fill the array that the transmission map samples, and the sheen's maps and `anisotropyMap` fill the array that the thickness map samples. A development build throws E1217 for each such clash.
 
 ### Cost of transmission
 
-Nothing of it runs, and none of its code or shaders download, until the first surface that lets light through draws. Then each frame copies the camera's opaque colors once and makes the blurred copies. The camera's opaque and see-through objects then draw in two render passes instead of one. The shaders of such surfaces load on their first use. To load them before the first frame instead, list `'transmission'` in `createEngine`'s `preload` option.
+Nothing of it runs, and none of its code or shaders download, until the first surface that lets light through draws. Then each frame copies the camera's opaque colors once and makes the blurred copies. The camera's opaque and see-through objects then draw in two render passes instead of one. The shaders of such surfaces load on their first use. To load them before the first frame instead, list `'transmission'` in `createEngine`'s `preload` option. A material with `dispersion` samples the copy three times, once for each color; a material without it samples the copy once.
 
 ## Light through thin surfaces
 
@@ -180,13 +187,21 @@ A surface with `diffuseTransmission` lets the light that reaches its back throug
 // sketch.ts: leaves that glow yellow green against a low sun, and a red lampshade.
 const leaves = materials.standard({
   color: '#3f7a2a', roughness: 0.6, doubleSided: true, alphaMode: 'mask', map: leafTexture,
-  diffuseTransmission: 0.7, diffuseTransmissionColor: '#c8e070',
+  diffuseTransmission: 0.35, diffuseTransmissionColor: '#c8e070',
 });
 const shade = materials.standard({
   color: '#f4e6d0', doubleSided: true,
   diffuseTransmission: 0.5, diffuseTransmissionColor: '#ff9a5c',
 });
 ```
+
+A measured leaf reflects about 7 to 11 per cent of visible light and transmits about 4 to 6 per
+cent of it, and almost all of that comes out diffuse. The share of its diffuse light that passes
+through therefore sits near a third: 0.25 to 0.45. Its gloss is a dielectric's, with a reflectance
+at normal incidence of about 0.03 to 0.04 and a perceptual roughness of 0.35 to 0.6. The
+vegetation add-on's leaf material takes these values from the species record. Petals and paper are
+thinner than leaves and let more through, so the translucency demo keeps its petals at 0.7 and its
+paper lantern at 0.85; the measured range is for leaves.
 
 Give `diffuseTransmission` when you create the material, even as 0, to change it later with `set`. The option picks the shaders that light the back. A material created without it lets no light through to its other side.
 
@@ -207,7 +222,7 @@ Light that enters skin, wax or marble leaves it a little way from where it enter
 
 | Value | Meaning |
 | --- | --- |
-| `subsurfaceRadius` | How far light spreads under the surface, in world units taken as metres. Skin takes about 0.01, wax about 0.02, and marble a few millimetres |
+| `subsurfaceRadius` | How far light spreads under the surface, in world units taken as meters. Skin takes about 0.01, wax about 0.02, and marble a few millimeters |
 | `subsurfaceColor` | How far each channel spreads, as a share of the radius: its linear red, green and blue. Skin's red spreads furthest, about `[1, 0.4, 0.25]`. White spreads every channel as far |
 
 ```ts
@@ -278,6 +293,8 @@ Give any of these values, or a layer map, when you create the material, to chang
 
 The layers' maps take the places of the light map and the specular maps. So a material with a clear coat, a sheen, iridescence or anisotropy takes no `lightMap`, `specularIntensityMap` or `specularColorMap`, and no `diffuseTransmission`. Development builds throw E1217 for them, and production builds draw the material without them. Its `specularIntensity` and `specularColor` values still apply. Give `clearcoatMap` and `clearcoatRoughnessMap` as one texture, with the coat in red and its roughness in green, and `sheenColorMap` and `sheenRoughnessMap` as one texture, with the roughness in alpha. glTF packs them this way, and two textures for a pair throw E1217. An sRGB texture keeps its alpha linear, so one sRGB texture holds the sheen's color and roughness.
 
+A material with `transmission` keeps its `transmissionMap` and `thicknessMap` beside the layers, as long as no layer map fills the texture array that one of them samples. `clearcoatNormalMap` and `iridescenceThicknessMap` fill the array that the transmission map samples, and `sheenColorMap`, `sheenRoughnessMap` and `anisotropyMap` fill the array that the thickness map samples. A development build throws E1217 for a material that asks for two maps of one array.
+
 ### How the layers draw
 
 The engine uses the formulas of three.js's `MeshPhysicalMaterial`:
@@ -328,9 +345,9 @@ Give any of these values, or a map, when you create the material, to change the 
 | `iridescenceThicknessMap` | G, linear | Mixes `iridescenceThicknessRange` between its two values |
 | `anisotropyMap` | RG direction, B strength, linear | Red and green give the direction in the tangent plane, and blue multiplies `anisotropy` |
 
-A material with these maps takes no `lightMap` and no specular maps, since the maps take their places. A material takes the maps of a clear coat and a sheen, or the maps of iridescence and the anisotropy: the coat's and the sheen's maps fill every place. Development builds throw E1217 for a material that asks for both families. Production builds keep the coat's and the sheen's maps and draw the others' values alone. The glTF loader keeps the coat's and the sheen's maps and notes the others.
+A material with these maps takes no `lightMap` and no specular maps, since the maps take their places. A material takes the maps of a clear coat and a sheen, or the maps of iridescence and the anisotropy: the coat's and the sheen's maps fill every place. Development builds throw E1217 for a material that asks for both families. Production builds keep the coat's and the sheen's maps and draw the others' values alone. The glTF loader keeps the coat's and the sheen's maps and notes the others. A material with `transmission` keeps its `transmissionMap` and `thicknessMap` beside these maps where the array of one stays free: `iridescenceThicknessMap` fills the array that the transmission map samples and `anisotropyMap` the one that the thickness map samples, so a material takes one of each pair.
 
-A material with `anisotropy` needs a map, because the direction it stretches along comes from the surface's tangent frame, which the shader builds from the texture coordinates. Three.js builds that frame from the coordinates too. A material with anisotropy and no map throws E1217.
+A material with `anisotropy` draws with or without a map. The direction that it stretches along comes from the surface's tangent frame. The frame is the mesh's tangents where it has them, else the texture coordinates, else the normal map's coordinates where the material also has a normal map. A material without a map and with no texture coordinates takes any frame square to the surface. Three.js builds the frame the same way from the tangents or the coordinates.
 
 ### How the film and the stretch draw
 
@@ -431,20 +448,23 @@ const brick = materials.standard({
 | `aoMap` | Standard | R, linear | Darkens ambient light, by `aoMapIntensity` |
 | `emissiveMap` | Standard | RGB, sRGB | Multiplies `emissive` times `emissiveIntensity` |
 | `lightMap` | Standard | RGB | Adds baked light to the ambient light, times `lightMapIntensity` |
+| `lightMapDirection` | Standard with `lightMap` | RGB, linear | The direction of the light at each texel of a directional light map, which bends the light with the normal. It is fixed when the material is created |
 | `specularIntensityMap` | Standard | A, linear | Its alpha multiplies `specularIntensity` |
 | `specularColorMap` | Standard | RGB, sRGB | Multiplies `specularColor` |
 | `diffuseTransmissionMap` | Standard with `diffuseTransmission` | A, linear | Its alpha multiplies `diffuseTransmission` |
 | `diffuseTransmissionColorMap` | Standard with `diffuseTransmission` | RGB, sRGB | Multiplies `diffuseTransmissionColor` |
-| `transmissionMap` | Standard with `transmission` | R, linear | Its red multiplies `transmission`, in the place of the specular intensity map |
-| `thicknessMap` | Standard with `transmission` | G, linear | Its green multiplies `thickness`, in the place of the specular color map |
+| `transmissionMap` | Standard with `transmission` | R, linear | Its red multiplies `transmission`, sampling the specular intensity slot's texture array at a layer of its own |
+| `thicknessMap` | Standard with `transmission` | G, linear | Its green multiplies `thickness`, sampling the specular color slot's texture array at a layer of its own |
 | `clearcoatMap`, `clearcoatRoughnessMap`, `clearcoatNormalMap`, `sheenColorMap`, `sheenRoughnessMap` | Standard | See "Maps of the layers" | The maps of the clear coat and the sheen, in place of the light map and the specular maps |
 | `iridescenceMap`, `iridescenceThicknessMap`, `anisotropyMap` | Standard | See "Maps of iridescence and anisotropy" | The maps of the thin film and the stretched lobe, in the same places |
 
 A material with `diffuseTransmission` takes the two diffuse transmission maps in the places of the specular maps, and takes no specular maps. A material without it, or with a clear coat, a sheen, iridescence or anisotropy, takes no diffuse transmission maps. Development builds throw E1217 for either.
 
-A material with `transmission` may take `transmissionMap` and `thicknessMap` in the places of the specular maps, and then takes no specular maps. Development builds throw E1217 for a material that asks for both families, and for the two maps without `transmission`.
+A material with `transmission` may take `transmissionMap` and `thicknessMap` beside the specular maps. Each volume map samples a specular slot's texture array at a layer of its own, so the two maps of a slot draw together when their images have one size and format. A thickness map never shares a specular color map's array, because one is linear and the other sRGB: a development build throws E1217 for that pair. A layered material keeps both maps beside its layers, unless a layer map fills the array that one of them samples. Development builds throw E1217 for the two maps without `transmission`.
 
 The maps of a material are fixed when you create it. A mesh needs texture coordinates to show them, and a mesh without them draws the material without its maps. A map reads the set of coordinates that its texture's `uvSet` names. Light maps usually use the second set, so load them with `uvSet: 1`. A mesh without a second set gives its first set to such a map.
+
+A light map adds baked light to the ambient light. A bake often places its light map on each mesh with its own scale and offset, which `lightMapOffset` and `lightMapRepeat` give; the other maps keep their coordinates. A directional light map also stores the light's direction at each texel: give its `lightMapDirection` and the material's normal map bends the baked light, so relief faces the light of the bake and turns away from it. `assets.loadLightMap` reads a directional map from a [baked light file](../guides/baked-light-data.md). A material made from a model for Needle's viewer takes that model's light maps with their RGBM decode.
 
 A normal map takes its frame from the mesh's tangents when the mesh has them, as `geometry.fromArrays` with `computeTangents` makes them. Otherwise the shader finds the frame from how the positions and the coordinates change between pixels, as three.js does.
 
@@ -494,7 +514,7 @@ A page without relief pays nothing for it. The first material with a bump map lo
 
 ## Texture coordinate transform
 
-`uvTransform` places every map of a material on the texture coordinates: `offset`, `repeat` and `rotation` in radians. They act as three.js's texture `offset`, `repeat` and `rotation` with the default `center`. A transform that leaves a value out takes its default. `set` changes the transform at any time.
+`uvTransform` places every map of a material on the texture coordinates: `offset`, `repeat` and `rotation` in radians. They act as three.js's texture `offset`, `repeat` and `rotation` with the default `center`. A transform that leaves a value out takes its default. `set` changes the transform at any time. `mapUvTransforms` places one map by its option name, such as `emissiveMap`, where it differs from the others. A map without one keeps the transform that `uvTransform` gives it. Two maps that share a slot, as a sheen map and an anisotropy map do, share one transform too. A glTF file keeps a transform for each of its textures, so the loader places each map with its own.
 
 ## Color
 
@@ -502,7 +522,7 @@ A page without relief pays nothing for it. The first material with a bump map lo
 
 ## Changing a material
 
-`set(options)` changes a material's values at any time, and every object that uses the material changes with it. It changes only the options that you pass. The others keep their values, so `set({ roughness: 0.5 })` keeps the color. A standard material's `set` takes every value in the table above, and an unlit material's `set` takes `color`, `opacity`, `alphaCutoff` and `uvTransform`.
+`set(options)` changes a material's values at any time, and every object that uses the material changes with it. It changes only the options that you pass. The others keep their values, so `set({ roughness: 0.5 })` keeps the color. A standard material's `set` takes every value in the table above, and an unlit material's `set` takes `color`, `opacity`, `alphaCutoff`, `uvTransform` and `mapUvTransforms`.
 
 `set` is for setup, and for several values at once. It reads each number from the options object that you pass. The browser boxes a read where it cannot keep a field's number unboxed. That happens in an object whose fields hold other kinds of value too, and in one of more than a few shapes. Change the values that a frame changes with `setUniform(name, value)`, which takes the value itself. `material.setUniform('roughness', 0.5 + 0.1 * Math.sin(t))` allocates nothing from a small step of your own, as the other setters do. It takes a number, as `roughness` and `emissiveIntensity` do, or a color, as `color` and `sheenColor` do. Give a color in an array that you change in place. A value that takes more than one number, as `uvTransform`, `normalScale`, `clearcoatNormalScale`, `angleFade`, `ior` and `attenuationDistance` do, goes through `set`. A custom material's `setUniform` changes one of its WGSL uniforms too, by the name in its `struct Uniforms`. `bun run bench:allocation --setters` checks `setUniform` in every frame and `set` at setup.
 
@@ -528,6 +548,7 @@ These options are fixed when you create the material. Most of them choose the ma
 | `blending` | Both | `'normal'` | With the `blend` alpha mode, how the surface meets what lies behind it: `'normal'`, `'additive'`, `'multiply'` or `'weighted'`. See "Blending" |
 | `depthWrite` | Both | true | False writes no depth, so the surface hides nothing that draws after it |
 | `depthTest` | Both | true | False draws the surface whatever lies in front of it. It then writes no depth either, as in three.js's WebGL renderer |
+| `colorWrite` | Both | true | False writes no color, so the surface shows nothing itself and hides what lies behind it, as three.js's `colorWrite: false` does. See "Invisible surfaces that hide" |
 | `depthBias` | Both | No bias | Moves the surface's depth, as three.js's polygon offset does. See "Depth bias" |
 | `forceSinglePass` | Both | false | With the `blend` alpha mode and `doubleSided`, draws both faces in one draw, as three.js's `forceSinglePass` does. See "Double-sided blended surfaces" |
 | `transmission` | Standard | None | Given at all, even as 0, lets light through the surface, and `set` can then change its value. See "Transmission" |
@@ -535,7 +556,7 @@ These options are fixed when you create the material. Most of them choose the ma
 | `subsurfaceRadius` | Standard | None | Given at all, even as 0, spreads the surface's light under it, and `set` can then change its value. See "Light under the surface" |
 | The layer values and maps | Standard | None | Any of them gives the material its layers above the surface, even a coat of 0, and `set` can then change their values. See "Clear coat and sheen" and "Iridescence and anisotropy" |
 | `fog` | Both | true | Takes the scene's fog. With `false`, the material keeps its color at every distance, as with three.js's `fog: false`. [Scene](scene.md#fog) sets the fog |
-| `toneMapped` | Both | true | With `false`, keeps the color as the display shows it, as with three.js's `toneMapped: false`: the tone curve leaves it alone in the material's own shader, which tone maps on the 8-bit path. The vignette and the sRGB encoding still apply, and the exposure scales the material's colors, so the color shows brighter than the same color tone mapped. The HDR path tone maps the whole image in its final pass, so there the curve still maps this material. [Color management](../concepts/color-management.md) explains the two paths |
+| `toneMapped` | Both | true | With `false`, keeps the color as the display shows it, as with three.js's `toneMapped: false`: the tone curve leaves it alone. The 8-bit path decides that in the material's own shader. The HDR path reads a mask of these surfaces in its final pass and skips the curve where one draws. The vignette and the sRGB encoding still apply, and the exposure scales the material's colors, so the color shows brighter than the same color tone mapped. A blended surface keeps the curve on the HDR path, since a blended pixel mixes two surfaces. [Color management](../concepts/color-management.md) explains the two paths |
 | `contactShadows` | Standard | true | Takes the main directional light's contact shadows. With `false`, the surface takes none and keeps the shadow map's shadows. Use it on grass, leaf cards and other thin surfaces that crowd together or sway, where contact shadows make them dark and grainy and flicker as they move. [Shadows](../concepts/shadows.md#grass-and-other-thin-surfaces) explains why |
 | `wireframe` | Both | false | Draws the edges of each triangle as lines one pixel wide, with the material's own shading, as three.js's `wireframe` does. See "Wireframe" |
 | `parallax` | Standard | false | With a `displacementMap`, adds parallax occlusion mapping. See "Relief" |
@@ -577,12 +598,28 @@ leaves.set({ alphaCutoff: 0.2 });
 
 A masked surface's cut edges are as smooth as its outer edges, as `alphaToCoverage` is on by default. The alpha fades from nothing at `alphaCutoff` to full over about one pixel, as three.js's `alphaToCoverage` makes it fade. MSAA then draws the surface on that share of each edge pixel's samples. Foliage and fences lose their stair steps, and their objects still draw in any order.
 
-This is the best technique for cut-out shapes, so it is the default, as in Filament. three.js's `alphaTest` alone cuts hard edges: give `alphaToCoverage: false` for that look. The option needs MSAA, the default anti-aliasing. With FXAA or no anti-aliasing, as on the Low preset, the mask cuts as without it. Custom materials take neither `alphaToCoverage` nor the `hash` alpha mode, and throw E1217 for them. On WebGPU, where the scene's colors have no alpha channel, the shader sets the covered samples itself, with the same look. The first such material loads the shader builds of alpha to coverage, and the first hashed material those of the hash. To load them before the first frame instead, list `'coverage'` and `'hash'` in `createEngine`'s `preload` option.
+This is the best technique for cut-out shapes, so it is the default, as in Filament. three.js's `alphaTest` alone cuts hard edges: give `alphaToCoverage: false` for that look. The option needs MSAA, the default anti-aliasing. With FXAA or no anti-aliasing, as on the Low preset, the mask cuts as without it. On WebGPU, where the scene's colors have no alpha channel, the shader sets the covered samples itself, with the same look. The first such material loads the shader builds of alpha to coverage, and the first hashed material those of the hash. To load them before the first frame instead, list `'coverage'` and `'hash'` in `createEngine`'s `preload` option.
+
+A [custom material](materials.md#custom-materials) takes both, but only where its WGSL sets or reads the surface's `alpha`. Such a material's shadow caster and motion build run that alpha too, so its shadow and its motion keep the mask's holes. WGSL that never names the alpha throws E1217 for `alphaToCoverage` and for the `hash` mode, and it casts its mesh's whole shape, as it did before.
 
 ```ts
 // sketch.ts: grass cards whose cut edges MSAA smooths, and a fence with hard pixel edges.
 const grass = materials.standard({ map: grassTexture, alphaMode: 'mask', alphaCutoff: 0.5 });
 const fence = materials.standard({ map: fenceTexture, alphaMode: 'mask', alphaToCoverage: false });
+```
+
+## Invisible surfaces that hide
+
+`colorWrite: false` draws a surface that shows nothing itself. It still writes depth, so it hides what lies behind it. Its objects draw before the opaque objects that write color, so the depth it writes holds back their color. Use it for a plane that hides the scene behind a page, as three.js's `colorWrite: false` does.
+
+With the `mask` or `hash` alpha mode, the parts that the alpha drops write no depth either. The surface then cuts a shape out of the space it holds.
+
+A blended surface that writes no color keeps its place among the blended objects, which `setRenderOrder` orders. It hides only the surfaces that draw after it.
+
+```ts
+// sketch.ts: a plane at a page's plane, which holds back the frame's faces behind the page.
+const holdout = materials.unlit({ colorWrite: false });
+scene.createMesh({ mesh: geometry.plane({ width: 8, height: 6 }), material: holdout });
 ```
 
 ## Double-sided blended surfaces
@@ -641,6 +678,21 @@ const glass = materials.standard({ color: '#a8d8ff', opacity: 0.3, roughness: 0.
 
 The layer costs nothing until the first weighted surface draws, and its shaders download only then. Each frame then draws the camera's weighted surfaces into two targets of the render size, 10 bytes per pixel together. A full-screen step blends them over the scene. With MSAA, the layer first copies one sample of each pixel's depth. The camera's other blended objects and the weighted layer draw in separate render passes. To load the layer's shaders before the first frame, list `'weighted'` in `createEngine`'s `preload` option.
 
+### Moment transparency
+
+The quality setting `momentTransparency` blends the blended surfaces in a second layer that needs no sort. It is nearer an exact back-to-front blend than the weighted blending on both test scenes: more than twice nearer where five surfaces sit within a few meters, and about two and a half times where they spread over some meters. The engine stores four depth moments of each pixel, then draws the surfaces a second time and weights each fragment's color by the light that the moments say survives in front of it. A last step blends the result over the scene. The fit is exact for one surface and for two, and closest to the exact blend of every method the engine has for overlapping glass, foliage and particles.
+
+```ts
+// The page turns the layer on when the engine starts, and every blended material draws in it.
+const engine = await createEngine({ canvas, sketch, momentTransparency: true });
+// Or the engine's own switch does: ?moments=on
+```
+
+- The setting covers the standard, basic and sprite materials whose blending is normal or weighted. A surface with another feature that the layer has no shader for, such as `transmission`, a custom material, a line or a masked surface, keeps the transparent pass's sort.
+- The layer draws at one sample per pixel, so MSAA does not smooth its surfaces' edges. SMAA 1x smooths them under the share that the layer covers, and the opaque edges keep MSAA's samples.
+- It costs more than the weighted blending: two draws of the surfaces, 16 bytes per pixel written a frame at the render size, one more full-screen pass, and SMAA's three steps. It is off on every preset, and [Quality presets](../concepts/quality-presets.md#moment-transparency) gives its cost.
+- A page without the setting draws exactly as it does today. Views other than the camera's, and devices that cannot draw into 16-bit float targets, draw blended surfaces farthest first, as `'normal'` ones.
+
 ## Depth bias
 
 `depthBias: { constant, slopeScale }` moves a surface's depth before the depth test. A decal that lies on a wall has the wall's depth, so without a bias the two fight pixel by pixel. Where the depths are exactly equal, no surface is defined to win, and the winner may differ between GPU paths ([The depth prepass](../concepts/quality-presets.md#the-depth-prepass)). A bias toward the camera makes the decal win.
@@ -672,6 +724,8 @@ fn surface(input: SurfaceInput) -> Surface {
 const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
 red.set({ roughness: 0.2 });
 ```
+
+A material can add its own specular lobe with `fn lobe(input: LobeInput) -> vec3f`. The engine adds the color it returns to that light's specular, for the main directional light and for each point and spot light. Area lights draw with the base lobe only. [Surface functions](../shaders/surface-functions.md#a-materials-own-lobe) describes the lobe input.
 
 The WGSL can declare uniforms as the fields of `struct Uniforms`. The `uniforms` option gives their first values, and `set` changes them with the standard values:
 
@@ -717,14 +771,26 @@ A surface function can read the depth of the opaque scene behind it. This gives 
 
 ```ts
 const water = /* wgsl */ `
-struct Uniforms { shallow: vec3f, deep: vec3f }
+struct Uniforms { shallow: vec3f, deep: vec3f, foam: vec3f }
+
+/// The distance in front of the camera of a depth value, as sceneDistance converts the copy's.
+fn distance_of(depth: f32) -> f32 {
+    let near = engine_frame.camera_range.x;
+    let far = engine_frame.camera_range.y;
+    if engine_frame.camera_position.w > 0.5 {
+        return near * far / (near + depth * (far - near));
+    }
+    return far - depth * (far - near);
+}
 
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let uv = input.fragCoord.xy / frame.resolution;
-    let behind = sceneDistance(uv);
-    s.baseColor = mix(material.shallow, material.deep, smoothstep(1.0, 8.0, behind));
-    s.alpha = mix(0.45, 0.9, smoothstep(1.0, 8.0, behind));
+    // The water's depth along the view ray: the gap to the surface behind the sheet.
+    let gap = max(sceneDistance(uv) - distance_of(input.fragCoord.z), 0.0);
+    s.baseColor = mix(material.shallow, material.deep, smoothstep(0.05, 1.5, gap));
+    s.baseColor = mix(s.baseColor, material.foam, 1.0 - smoothstep(0.0, 0.12, gap));
+    s.alpha = smoothstep(0.0, 0.12, gap);
     return s;
 }
 `;
@@ -733,18 +799,19 @@ const sheet = materials.shader({
     sceneInputs: ['sceneDepth'],
     alphaMode: 'blend',
     depthWrite: false,
-    uniforms: { shallow: '#8fe0d2', deep: '#0b4a63' },
+    uniforms: { shallow: '#8fe0d2', deep: '#0b4a63', foam: '#f2fbff' },
 });
 ```
 
 - `sceneDepth(uv)` gives the scene's depth with 1 at the camera's near plane and 0 at its far plane, and 0 where nothing drew.
 - `sceneDistance(uv)` gives the distance in front of the camera of that surface, in world units.
+- The water's depth is the gap between the sheet and the surface behind it. Convert the sheet's own depth, `input.fragCoord.z`, to a distance with `engine_frame.camera_range`, and subtract it from `sceneDistance(uv)`. A shore that fades over that gap ends softly against the bank instead of on the sheet's edge.
 - `input.fragCoord` counts pixels from the top left of the render target on both GPU paths, so `input.fragCoord.xy / frame.resolution` is the `uv` of the point.
 - The engine copies the opaque scene's depth after the opaque pass and before the transparent pass. A blended surface therefore reads the surfaces behind it.
 - A surface in the opaque pass reads 0, the far plane, because the copy comes later. A surface in a scene pass or a reflection pass reads 0 too, because its view makes no copy.
 - The copy is made while a material that declares the input draws, whatever the quality preset says. It costs one full-screen pass and one texture of four bytes for each pixel.
 - On WebGL2 the copy holds the depth that the device stores. Where the device draws `reversed-gl` depth, `sceneDistance` is less precise. The engine draws `reversed` depth where the browser has `EXT_clip_control`.
-- A material that reads the scene's depth declares no textures of its own. The depth group and the maps' group together would pass WebGPU's 16 sampled textures in the fragment stage. Development builds throw E1217 for that combination.
+- A material that reads the scene's depth takes up to seven textures of its own: its maps' group gives up one slot, so that the copy of the depth fits the fragment stage beside the maps under WebGPU's limit of 16 sampled textures. A material that declares eight textures beside the depth is refused, and development builds throw E1217 and name how many to drop.
 - The declaration and the WGSL must agree. Development builds throw E1217 for a declaration that the WGSL never uses, and for WGSL that reads the depth without the declaration. They throw it for a scene input that custom materials do not read yet too.
 
 [Surface functions](../shaders/surface-functions.md#the-scenes-depth) shows the helpers among the WGSL.
@@ -772,7 +839,13 @@ const grass = materials.shader({ wgsl: sway, doubleSided: true });
 
 A batch made with `colors: true` tints each row by its color in every material, as vertex colors do: `defaultSurface` takes it in `input.vertexColor`. [Instances and batching](../concepts/instances.md#per-row-values) shows a whole sketch.
 
-A material with a vertex offset moves its shadows too: its casters draw with the offset, so the shadows of swaying grass sway with it. Such casters draw again in every frame that a shadow map draws, as moving objects do.
+A material with a vertex offset moves its shadows too: its casters draw with the offset, so the shadows of swaying grass sway with it. Such casters draw again in every frame that a shadow map draws, as moving objects do. A material whose offsets follow only the view that draws the object, such as a card that turns toward the camera, declares `castsStill: true`. Its casters then hold the shadow that the light's layer drew until the light turns, and the far shadow cascades stay cached.
+
+An offset that fades out with distance, such as wind, declares `swayDistance`: the distance from the camera out to which the offset moves. The material's WGSL fades its offset to nothing by that distance, and the engine counts a caster of the material as moving only while its bounding sphere reaches within it. A plant past the distance stands still, so a far shadow cascade that only its sway reached keeps the layer it holds. Leave it out for an offset that moves at every distance.
+
+A masked custom material cuts its shadow at its cutoff only when its WGSL declares `fn coverage(input: SurfaceInput) -> f32`. The function returns the opacity of the point, and the engine calls it in the material's shadow caster builds, so a card casts the shape of the object it shows rather than its whole quad. A material that declares neither a coverage function nor a surface alpha casts its mesh's whole shape, whatever its mask. WGSL that declares a vertex offset, a coverage function or the surface's alpha gets the caster builds; a material with none casts through the engine's own depth template. A flat caster draws both faces, or it casts nothing: the shadow pass culls the front faces of single-sided geometry, so a single-sided quad is culled whole. Give a material whose caster is flat geometry `doubleSided: true`. The caster tests the coverage under the material's `alphaCutoff`, so it needs the `mask` alpha mode: a development build refuses a coverage function on a material that is not masked, because its caster would drop no texel and cast the whole shape.
+
+A surface function can move where the sun's shadow lookup reads by setting `s.shadowOffset`, a position in world space relative to the surface. A stand-in card sets it to the surface that its stored depth shows, so its own cast does not fall on it. [Surface functions](../shaders/surface-functions.md#shadows) shows the WGSL.
 
 ### Mirrors, polished floors and water
 
@@ -782,7 +855,7 @@ With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls 
 
 ## Ranges
 
-`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity`, `transmission`, `diffuseTransmission`, `clearcoat`, `clearcoatRoughness`, `sheenRoughness` and `edgeFade` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity`, `thickness` and `subsurfaceRadius` take 0 or more. `attenuationDistance` takes more than 0. The two angles of `angleFade` go from 0 to π, the first no larger than the second. The numbers of `normalScale`, `clearcoatNormalScale`, `uvTransform`, `bumpScale`, `displacementScale` and `displacementBias` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217. So does the `weighted` blending on a custom material or a material with `transmission`. A depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
+`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity`, `transmission`, `diffuseTransmission`, `clearcoat`, `clearcoatRoughness`, `sheenRoughness` and `edgeFade` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity`, `thickness` and `subsurfaceRadius` take 0 or more. `attenuationDistance` takes more than 0. The two angles of `angleFade` go from 0 to π, the first no larger than the second. The numbers of `normalScale`, `clearcoatNormalScale`, `uvTransform`, `mapUvTransforms`, `bumpScale`, `displacementScale` and `displacementBias` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217. So does the `weighted` blending on a custom material or a material with `transmission`. A depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
 
 ## Limits
 

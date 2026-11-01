@@ -1,5 +1,5 @@
-// Builds the engine's two WebAssembly files and the build tools' modules (the shader compiler and
-// the asset tool's formats), then reports their sizes and
+// Builds the engine's two WebAssembly files and the modules of the tools and the add-ons (the
+// shader compiler, the asset tool's formats and the terrain builder), then reports their sizes and
 // the sizes of the engine's JavaScript in a production build of the engine test page. Run from
 // the repository root:
 //   bun tools/build-wasm.ts                 build everything, then print the size report
@@ -7,8 +7,8 @@
 //     [--base <ref>]                        commit, and fail on growth that no trailer explains
 //   bun tools/build-wasm.ts --sizes-only    build only what the size report measures, and write the
 //                                           sizes for a size check that builds this commit as its base
-//   bun tools/build-wasm.ts --prebuilt      measure the WebAssembly files and the build tools' modules
-//                                           that an earlier build made, such as CI's build job, instead
+//   bun tools/build-wasm.ts --prebuilt      measure the WebAssembly files and the modules that an
+//                                           earlier build made, such as CI's build job, instead
 //                                           of building them again; combines with --check-size
 //   bun tools/build-wasm.ts --check-size --prebuilt --part <i>/<n>
 //                                           build the engine test page, measure only part i of n of its
@@ -21,6 +21,8 @@
 //     [--base <ref>]
 //   bun tools/build-wasm.ts --cache-key     print one key of every file that --pages-only builds, as
 //                                           key=<hash>, for CI's cache of them, and stop
+//   bun tools/build-wasm.ts --keep-current  remove every cache entry but those of the files that
+//                                           --pages-only builds now, before CI saves the cache
 //   bun tools/build-wasm.ts --names         keep the core's function names, for a CPU profile;
 //                                           the names add size, so this skips the size checks
 //   bun tools/build-wasm.ts --pages-only    build only what the test pages and the tools need,
@@ -33,9 +35,10 @@
 // The threaded build uses atomics and shared memory, so it rebuilds the standard library with
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
 // wasm-bindgen command-line tool must match the crate version exactly, so the script downloads
-// that release into the build folder and verifies its checksum. The build tools' modules run in
-// Node and Bun, never in a page, so they have no size budget. Every mode that builds also builds the
-// shader modules when they are missing or out of date, because git does not keep them.
+// that release into the build folder and verifies its checksum. The tools' modules run in Node and
+// Bun, never in a page, and the terrain add-on's loads only when a page draws terrain, so none has
+// a size budget. Every mode that builds also builds the shader modules when they are missing or out
+// of date, because git does not keep them.
 //
 // The two WebAssembly files, the build tools' modules and the shader modules build at the same
 // time, so that the steps of one build that use a single core (the link, wasm-bindgen and
@@ -60,9 +63,10 @@
 // The size check's base is a build of main, or on main and in the merge queue of the commit before:
 // tools/lib/size-check.ts picks the commit, and the check builds it in a worktree under
 // target/ with that commit's own build script. It keeps the sizes of each base commit it built and
-// reuses them. Every mode that measures writes the sizes to target/size-report.json, so CI can keep
-// a commit's sizes as the base of later checks; a part writes only its own share, and the step that
-// judges the parts writes the whole record.
+// reuses them. A base build whose worktree is gone or damaged, because something removed it while
+// the build ran, makes the tree again and builds once more. Every mode that measures writes the sizes
+// to target/size-report.json, so CI can keep a commit's sizes as the base of later checks; a part
+// writes only its own share, and the step that judges the parts writes the whole record.
 //
 // Almost all of the check's time goes into compressing the engine test page's files at the highest
 // levels, one file after another, and the first-use shader files hold nearly all of their bytes. So
@@ -84,6 +88,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ASSET_FORMATS_URL } from '../packages/cli/src/assets/formats.js';
@@ -109,15 +114,19 @@ import {
 	writeFolderAtomic,
 } from './lib/build-cache';
 import { coreSourcesStamp, stampGlue } from './lib/core-sources';
+import { refuseInQuietWindow } from './lib/quiet-window';
 import { ensureShaderModules, inputHash } from './lib/shader-modules';
 import {
 	type BaseChoice,
 	chooseBase,
 	compareSizes,
-	grownFiles,
 	growthLines,
 	growthProblems,
 	growthSummary,
+	nearLimit,
+	nearLimitWarnings,
+	overLimit,
+	warningLine,
 } from './lib/size-check';
 import {
 	keepSizeMemo,
@@ -142,6 +151,7 @@ import {
 	FIRST_USE_SHADER_BUDGET,
 	findEngineParts,
 	findFirstUseFiles,
+	firstUseShaderBudget,
 	isCombosPart,
 	isFirstUseShaderPart,
 	isSizePartFile,
@@ -188,9 +198,10 @@ const WASM_BUDGET_BYTES = 600 * 1024;
 /** Where the size report builds the engine test page, apart from the build the browser tests serve. */
 const JS_BUILD_DIR = 'target/js-size';
 /**
- * The modules that build tools load, each from a crate of its own: the shader compiler, which the
- * Vite plugin runs, and the asset tool's formats, which the command-line tool runs. Each goes
- * where its tool loads it from.
+ * The modules that the build tools and the foundation add-ons load, each from a crate of its own:
+ * the shader compiler, which the Vite plugin runs; the asset tool's formats, which the
+ * command-line tool runs; and the terrain builder, which the terrain add-on runs on the engine's
+ * job workers. Each goes where its caller loads it from.
  */
 const TOOL_MODULES = [
 	{
@@ -203,6 +214,11 @@ const TOOL_MODULES = [
 		crate: 'null3d-assets-wasm',
 		folder: 'crates/null3d-assets-wasm',
 		path: fileURLToPath(ASSET_FORMATS_URL),
+	},
+	{
+		crate: 'null3d-terrain',
+		folder: 'crates/null3d-terrain',
+		path: join(root, 'packages/terrain/dist/terrain.wasm'),
 	},
 ] as const;
 
@@ -300,6 +316,94 @@ export function checkHeapStart(linked: Uint8Array, bound: Uint8Array): void {
 		throw new Error(
 			`wasm-bindgen made the threaded core's memory ${after ?? 'unknown'} pages from the linker's ${before ?? 'unknown'}, not one page more: update BINDGEN_PAGES in crates/null3d-wasm/src/heap.rs for this wasm-bindgen version`,
 		);
+}
+
+/**
+ * The compiler option that names the Rust library's source folder by the fixed path that the
+ * toolchain's own build gives it, `/rustc/<commit>`, from `rustc -vV`'s output. With the library's
+ * source installed, the compiler writes that folder's place on the machine into the panic
+ * locations of the library code that it compiles. Each machine then built other bytes, and so the
+ * hashed name of every file that names a module differed too, and with it that file's size.
+ */
+export function librarySourceRemap(sysroot: string, rustcVersion: string): string {
+	const commit = /^commit-hash: ([0-9a-f]+)$/m.exec(rustcVersion)?.[1];
+	if (!commit)
+		throw new Error(
+			'rustc -vV names no commit hash, so the build cannot give the Rust library source a fixed path',
+		);
+	return `--remap-path-prefix=${sysroot}/lib/rustlib/src/rust=/rustc/${commit}`;
+}
+
+/**
+ * The compiler option that names cargo's home folder, where it keeps the sources of the crates that
+ * the build downloads, by the fixed path `/cargo`. Those crates write their source paths into
+ * their panic locations as the Rust library does, from a folder in each machine's home.
+ */
+export function cargoHomeRemap(cargoHome: string): string {
+	return `--remap-path-prefix=${cargoHome}=/cargo`;
+}
+
+/**
+ * Refuses a built module that holds one of `folders`, the folders of the machine that built it. A
+ * folder in the bytes makes each machine build other bytes, and every page that loads the module
+ * would download the folder's name.
+ */
+export function checkNoMachineFolders(
+	bytes: Uint8Array,
+	folders: readonly string[],
+	module: string,
+): void {
+	const held = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	const found = folders.filter((folder) => held.includes(folder));
+	if (found.length > 0)
+		throw new Error(
+			`${module} holds the build machine's folder ${found.join(' and ')}: give the folder a fixed path with --remap-path-prefix in the build's compiler options`,
+		);
+}
+
+/** A folder's path without its trailing slashes. */
+const trimmed = (folder: string) => folder.replace(/\/+$/, '');
+
+/**
+ * Each folder with one trailing slash, as a path inside it starts. The root folder is left out,
+ * since every absolute path starts with it.
+ */
+export function machineFolders(folders: readonly string[]): string[] {
+	return folders
+		.map(trimmed)
+		.filter((folder) => folder !== '')
+		.map((folder) => `${folder}/`);
+}
+
+/**
+ * The compiler options that every WebAssembly build adds to its own, and the folders that no built
+ * module may hold: the Rust toolchain's, cargo's home, the checkout's and the home folder. Read
+ * once, on the first build that misses the cache. The compiler applies the last option whose
+ * folder matches, so the library source's option comes last, in case cargo's home holds it.
+ */
+let machine: { options: string[]; folders: string[] } | undefined;
+function buildMachine() {
+	if (!machine) {
+		const rustc = (args: string[]) => execFileSync('rustc', args, { cwd: root, encoding: 'utf8' });
+		const sysroot = trimmed(rustc(['--print', 'sysroot']).trim());
+		const cargoHome = trimmed(process.env.CARGO_HOME || join(homedir(), '.cargo'));
+		machine = {
+			options: [cargoHomeRemap(cargoHome), librarySourceRemap(sysroot, rustc(['-vV']))],
+			folders: machineFolders([sysroot, cargoHome, root, homedir()]),
+		};
+	}
+	return machine;
+}
+
+/**
+ * The variable that hands cargo the compiler options `options`, then `added`, one by one, so that a
+ * folder with a space in its name stays one option.
+ */
+export function compilerOptions(
+	options: string,
+	added: readonly string[] = buildMachine().options,
+): Record<string, string> {
+	return { CARGO_ENCODED_RUSTFLAGS: [...options.split(' '), ...added].join('\x1f') };
 }
 
 /** The locked version of a package in Cargo.lock. */
@@ -482,6 +586,8 @@ export interface BuildOptions {
 	printBase: boolean;
 	/** Print one key of every artifact that a `--pages-only` build writes, for CI's cache of them. */
 	cacheKey: boolean;
+	/** Remove every cache entry but those that a `--pages-only` build writes now. */
+	keepCurrent: boolean;
 	/** Build every file again, instead of copying a file that an earlier build cached. */
 	noCache: boolean;
 	/** Build the engine test page, measure only this part of its files and write their sizes. */
@@ -491,7 +597,7 @@ export interface BuildOptions {
 }
 
 const USAGE =
-	'usage: bun tools/build-wasm.ts [--no-cache] [--check-size [--base <ref>] [--prebuilt [--part <i>/<n> | --judge-parts <dir>]] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>] | --cache-key]';
+	'usage: bun tools/build-wasm.ts [--no-cache] [--check-size [--base <ref>] [--prebuilt [--part <i>/<n> | --judge-parts <dir>]] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>] | --cache-key | --keep-current]';
 
 /** The options that take a value, with what each needs. */
 const VALUE_OPTIONS: Readonly<Record<string, string>> = {
@@ -510,6 +616,7 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		prebuilt: false,
 		printBase: false,
 		cacheKey: false,
+		keepCurrent: false,
 		noCache: false,
 	};
 	for (let i = 0; i < args.length; i++) {
@@ -521,6 +628,7 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		else if (arg === '--prebuilt') options.prebuilt = true;
 		else if (arg === '--print-base') options.printBase = true;
 		else if (arg === '--cache-key') options.cacheKey = true;
+		else if (arg === '--keep-current') options.keepCurrent = true;
 		else if (arg === '--no-cache') options.noCache = true;
 		else if (Object.hasOwn(VALUE_OPTIONS, arg)) {
 			const value = args[i + 1];
@@ -626,7 +734,7 @@ const SIZE_CHECK_LOCK = sizeCheckLock(root);
 export function acquireBuildLock(): () => void {
 	// A build that a size check starts runs inside its parent's lock, and must not wait for it.
 	if (process.env.NULL3D_BUILD_LOCK_HELD === '1') return () => {};
-	return acquireLock(SIZE_CHECK_LOCK);
+	return acquireLock(SIZE_CHECK_LOCK, { freesSlot: true });
 }
 
 /**
@@ -723,15 +831,14 @@ export function variantKey(
 	);
 }
 
-/** The key of the build tools' modules, from their crates' inputs and the same code, flags and versions. */
-export function toolsKey(shaders: string, assets: string, tools: ToolVersions): string {
+/** The key of the modules, from their crates' inputs and the same code, flags and versions. */
+export function toolsKey(inputs: readonly string[], tools: ToolVersions): string {
 	return digest(
 		[
 			`format=${ARTIFACT_FORMAT}`,
 			'kind=tools',
 			`code=${buildCodeHash(root)}`,
-			`shaders=${shaders}`,
-			`assets=${assets}`,
+			...inputs.map((input, index) => `input${index}=${input}`),
 			'rustflags=-Cstrip=symbols',
 			'target=wasm32-unknown-unknown',
 			'profile=release',
@@ -740,31 +847,55 @@ export function toolsKey(shaders: string, assets: string, tools: ToolVersions): 
 	);
 }
 
-/**
- * One key of every artifact that a build of the cores and the tools' modules writes: a hash of each
- * entry's own key, as the build reads them, so it changes exactly when one of the entries would.
- * CI keeps the cache folder under it, so a run whose Rust sources, flags and tools did not change
- * copies every file in place and runs no cargo, wasm-bindgen or wasm-opt.
- */
-export function artifactsKey(): string {
+/** The key of each cache entry that a build of the cores and the tools' modules writes, as it reads them. */
+export function currentArtifactKeys(): string[] {
 	const tools = toolVersions(readFileSync(join(root, 'Cargo.lock'), 'utf8'));
 	const stamp = coreSourcesStamp(root);
-	const [shaders, assets] = toolInputs(root);
-	return digest(
-		[
-			...VARIANTS.map((variant) => variantKey(variant, stamp, false, tools)),
-			toolsKey(shaders, assets, tools),
-		].join('\n'),
-	);
+	return [
+		...VARIANTS.map((variant) => variantKey(variant, stamp, false, tools)),
+		toolsKey(toolInputs(root), tools),
+	];
 }
 
 /**
- * The input hashes of the two crates that the build tools' modules come from, in `TOOL_MODULES`
- * order. A crate is named by its folder, which `inputHash` reads, so a name without its `crates/`
- * step would throw here and fail every build before it could cache anything.
+ * One key of every artifact that a build of the cores and the tools' modules writes: a hash of each
+ * entry's own key, so it changes exactly when one of the entries would. CI keeps the cache folder
+ * under it, so a run whose Rust sources, flags and tools did not change copies every file in place
+ * and runs no cargo, wasm-bindgen or wasm-opt. A run that changed some of them restores an earlier
+ * run's folder, copies the entries that still match, and builds only the others.
  */
-export function toolInputs(root: string): [string, string] {
-	return [inputHash(root, TOOL_MODULES[0].folder), inputHash(root, TOOL_MODULES[1].folder)];
+export function artifactsKey(): string {
+	return digest(currentArtifactKeys().join('\n'));
+}
+
+/**
+ * Removes every entry of the cache folder `base` but those named in `keep`, and returns the names it
+ * removed. An entry that another build is writing, and a lock, stay. The prune's lock keeps it from
+ * running beside a prune of the same folder.
+ */
+export function keepOnlyArtifacts(base: string, keep: ReadonlySet<string>): string[] {
+	if (!existsSync(base)) return [];
+	const release = acquireLock(`${base}.prune.lock`);
+	try {
+		const removed: string[] = [];
+		for (const name of readdirSync(base)) {
+			if (keep.has(name) || name.endsWith('.partial') || name.endsWith('.lock')) continue;
+			rmSync(join(base, name), { recursive: true, force: true });
+			removed.push(name);
+		}
+		return removed;
+	} finally {
+		release();
+	}
+}
+
+/**
+ * The input hashes of the crates that the modules come from, in `TOOL_MODULES` order. A crate is
+ * named by its folder, which `inputHash` reads, so a name without its `crates/` step would throw
+ * here and fail every build before it could cache anything.
+ */
+export function toolInputs(root: string): string[] {
+	return TOOL_MODULES.map(({ folder }) => inputHash(root, folder));
 }
 
 /**
@@ -874,7 +1005,7 @@ async function buildVariant(
 	log.say(`building the ${variant.name} WebAssembly file`);
 	await log.cargo(
 		['build', '-p', CRATE, '--release', '--target', 'wasm32-unknown-unknown', ...variant.cargoArgs],
-		{ RUSTFLAGS: variant.rustflags },
+		compilerOptions(variant.rustflags),
 		targetDir,
 	);
 	// The files take shape in this build's own staging folder, and go in place whole once every step
@@ -905,6 +1036,11 @@ async function buildVariant(
 		wasm,
 	]);
 	if (variant.reclaimsHeap) checkHeapStart(readFileSync(linked), readFileSync(wasm));
+	checkNoMachineFolders(
+		readFileSync(wasm),
+		buildMachine().folders,
+		`the ${variant.name} WebAssembly file`,
+	);
 	// Every file the build staged, which replaceFolder then puts in place: the same set a read restores.
 	const stagedFiles = readdirSync(staged)
 		.filter((name) => !name.endsWith('.partial'))
@@ -928,8 +1064,8 @@ async function buildVariant(
 }
 
 /**
- * Builds the build tools' modules. Each takes and gives its data through its memory, so it needs
- * no JavaScript glue. The build drops the function names and skips wasm-opt, which on the shader
+ * Builds the modules of the tools and the add-ons. Each takes and gives its data through its
+ * memory, so it needs no JavaScript glue. The build drops the function names and skips wasm-opt, which on the shader
  * compiler takes longer than the whole build, saves almost nothing after Brotli and makes compiles
  * no faster. It copies the modules of an earlier build of the same inputs from the cache, when
  * there is one. Its lines go to `log`, as buildVariant's do.
@@ -940,12 +1076,12 @@ async function buildToolModules(
 	noCache: boolean,
 ): Promise<void> {
 	const names = TOOL_MODULES.map(({ crate }) => `${crate}.wasm`);
-	const [shaders, assets] = toolInputs(root);
-	const key = toolsKey(shaders, assets, tools);
+	const inputs = toolInputs(root);
+	const key = toolsKey(inputs, tools);
 	const cached = noCache ? null : readArtifacts(ARTIFACT_CACHE_BASE, key, names);
 	if (cached) {
 		log.say(
-			"the shader compiler and the asset tool's formats are unchanged, copying them from the cache",
+			"the shader compiler, the asset tool's formats and the terrain builder are unchanged, copying them from the cache",
 		);
 		// The entry is in use now, so pruning keeps it while this build copies from it.
 		touchCacheEntry(cached);
@@ -955,29 +1091,29 @@ async function buildToolModules(
 		return;
 	}
 	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
-	log.say("building the shader compiler and the asset tool's formats");
-	await log.cargo(
-		[
-			'build',
-			...TOOL_MODULES.flatMap(({ crate }) => ['-p', crate]),
-			'--release',
-			'--target',
-			'wasm32-unknown-unknown',
-		],
-		{ RUSTFLAGS: '-Cstrip=symbols' },
-		targetDir,
-	);
+	log.say("building the shader compiler, the asset tool's formats and the terrain builder");
+	// Each module builds in a cargo call of its own. One call over every module merges the features
+	// of the dependencies they share, so each module's bytes would follow what else the call
+	// builds: with the shader compiler beside it, the asset module's `half` and `libm` gained
+	// features.
+	for (const { crate } of TOOL_MODULES)
+		await log.cargo(
+			['build', '-p', crate, '--release', '--target', 'wasm32-unknown-unknown'],
+			compilerOptions('-Cstrip=symbols'),
+			targetDir,
+		);
+	const built = (crate: string) =>
+		`${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
+	for (const { crate } of TOOL_MODULES)
+		checkNoMachineFolders(readFileSync(built(crate)), buildMachine().folders, `${crate}.wasm`);
 	withInstallLock('tools', () => {
-		for (const { crate, path } of TOOL_MODULES) {
-			const built = `${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
-			copyInPlace(built, path);
-		}
+		for (const { crate, path } of TOOL_MODULES) copyInPlace(built(crate), path);
 	});
 	// The tools' crates are hashed before cargo builds them, so an edit during the build means these
 	// modules are not what the key names (see buildVariant, which takes the same care).
 	if (!noCache) {
-		const [nowShaders, nowAssets] = toolInputs(root);
-		if (nowShaders === shaders && nowAssets === assets)
+		const now = toolInputs(root);
+		if (now.length === inputs.length && now.every((input, index) => input === inputs[index]))
 			storeArtifacts(
 				log,
 				key,
@@ -1001,6 +1137,10 @@ async function buildToolModules(
  */
 function buildEngineTestPage(): BuiltFile[] {
 	console.log('\nbuilding the engine test page for production');
+	// The build folder is outside the project, so the build does not empty it. A file of an earlier
+	// build would then read as a part of this one, and a chunk that this build writes to another
+	// name leaves the earlier copy behind.
+	rmSync(join(root, JS_BUILD_DIR), { recursive: true, force: true });
 	const release = acquirePageBuildLock();
 	try {
 		const args = ['vite', 'build', '--sourcemap', 'hidden', '--outDir', JS_BUILD_DIR];
@@ -1190,15 +1330,40 @@ function resolveBase(choice: BaseChoice): Base {
 	return { sha, subject: git(['log', '-1', '--format=%s', sha]), why: choice.why };
 }
 
+/**
+ * Why the base worktree is locked. `git worktree list` shows it, and `git worktree remove` and
+ * `git worktree prune` refuse a locked worktree, so a tidy-up of the clone's worktrees leaves it.
+ * Without the lock, a sweep of worktrees whose commit has landed can remove a base worktree while
+ * its page build runs, and the check fails with ENOENT on a file that the build has just written.
+ */
+const BASE_TREE_LOCK =
+	'the size check of tools/build-wasm.ts builds its base commit here, and reuses this worktree';
+
 /** Puts the base worktree at the commit, and makes it when it is missing or broken. True when new. */
 function checkoutBaseTree(tree: string, sha: string): boolean {
 	if (existsSync(join(tree, '.git'))) {
 		const args = ['checkout', '--force', '--quiet', '--detach', sha];
-		if (spawnSync('git', args, { cwd: tree }).status === 0) return false;
+		if (spawnSync('git', args, { cwd: tree }).status === 0) {
+			// A worktree without the lock gets it here; a locked one refuses a second lock.
+			spawnSync('git', ['worktree', 'lock', '--reason', BASE_TREE_LOCK, tree], { cwd: root });
+			return false;
+		}
 	}
 	rmSync(tree, { recursive: true, force: true });
-	// --force also takes over the path when git still lists a worktree there that was deleted.
-	git(['worktree', 'add', '--force', '--detach', tree, sha]);
+	// --force twice also takes over the path when git still lists a worktree there that was deleted,
+	// locked or not.
+	git([
+		'worktree',
+		'add',
+		'--force',
+		'--force',
+		'--lock',
+		'--reason',
+		BASE_TREE_LOCK,
+		'--detach',
+		tree,
+		sha,
+	]);
 	return true;
 }
 
@@ -1222,9 +1387,44 @@ function seedBuildFolders(tree: string): void {
 }
 
 /**
+ * True when the base worktree cannot build as it stands: its checkout is gone, or a tracked file is
+ * missing or changed. A tidy-up of worktrees, or a clean of the checkout's target folder, removes
+ * the tree wherever it stands, and a removal that stops part way leaves a tree without its files.
+ */
+export function baseTreeDamaged(tree: string): boolean {
+	if (!existsSync(join(tree, '.git'))) return true;
+	const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+		cwd: tree,
+		encoding: 'utf8',
+	});
+	return status.status !== 0 || status.stdout.trim() !== '';
+}
+
+/** Builds the base commit in the base worktree and keeps its sizes in `kept`. */
+function buildBase(sha: string, kept: string, tree: string): void {
+	console.log(`\nbuilding the base, ${sha.slice(0, 8)}, in ${BASE_TREE}`);
+	if (checkoutBaseTree(tree, sha)) seedBuildFolders(tree);
+	run('bun', ['install', '--frozen-lockfile'], { HUSKY: '0' }, tree);
+	const committed = existsSync(join(tree, COMMITTED_RECORD));
+	// The base builds into the worktree's own target, seeded from this checkout, so it never
+	// writes this checkout's build folder or the shared cache's staging folder.
+	run(
+		'bun',
+		['tools/build-wasm.ts', committed ? '--update-size' : '--sizes-only'],
+		// The base runs inside this process's lock, so it must not wait for that same lock.
+		{ NULL3D_CARGO_TARGET: 'local', NULL3D_BUILD_LOCK_HELD: '1' },
+		tree,
+	);
+	mkdirSync(dirname(kept), { recursive: true });
+	copyFileSync(join(tree, committed ? COMMITTED_RECORD : SIZE_RECORD), kept);
+}
+
+/**
  * The base commit's sizes. The check keeps them by commit and reuses them. Otherwise it builds the
  * commit in the base worktree with the commit's own build script, so the base has that commit's
- * flags, toolchain and list of parts.
+ * flags, toolchain and list of parts. A build whose worktree is gone or damaged, because something
+ * removed it while the build ran, makes the tree again and builds once more. A failure beside a
+ * worktree whose checkout is whole is thrown as it comes.
  */
 function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 	const kept = join(root, BASE_DIR, `${sha}.json`);
@@ -1237,21 +1437,17 @@ function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 	const group = process.env.GITHUB_ACTIONS === 'true';
 	if (group) console.log(`::group::the base build of ${sha.slice(0, 8)}`);
 	try {
-		console.log(`\nbuilding the base, ${sha.slice(0, 8)}, in ${BASE_TREE}`);
-		if (checkoutBaseTree(tree, sha)) seedBuildFolders(tree);
-		run('bun', ['install', '--frozen-lockfile'], { HUSKY: '0' }, tree);
-		const committed = existsSync(join(tree, COMMITTED_RECORD));
-		// The base builds into the worktree's own target, seeded from this checkout, so it never
-		// writes this checkout's build folder or the shared cache's staging folder.
-		run(
-			'bun',
-			['tools/build-wasm.ts', committed ? '--update-size' : '--sizes-only'],
-			// The base runs inside this process's lock, so it must not wait for that same lock.
-			{ NULL3D_CARGO_TARGET: 'local', NULL3D_BUILD_LOCK_HELD: '1' },
-			tree,
-		);
-		mkdirSync(dirname(kept), { recursive: true });
-		copyFileSync(join(tree, committed ? COMMITTED_RECORD : SIZE_RECORD), kept);
+		for (let attempt = 1; ; attempt++) {
+			try {
+				buildBase(sha, kept, tree);
+				break;
+			} catch (error) {
+				if (attempt > 1 || !baseTreeDamaged(tree)) throw error;
+				console.warn(
+					`\nthe base worktree is gone or damaged, so the check makes it again and builds the base once more`,
+				);
+			}
+		}
 	} finally {
 		if (group) console.log('::endgroup::');
 	}
@@ -1266,14 +1462,15 @@ function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 function checkGrowth(sizes: Record<string, SizeEntry>, ref: string | undefined): string[] {
 	const base = resolveBase(chooseBase(ref, process.env));
 	const changes = compareSizes(baseSizes(base.sha), sizes);
-	const grown = grownFiles(changes).map(({ file }) => file);
-	const explainedBy = explainedFiles(keptCommits(`${base.sha}..HEAD`, root), grown);
+	const watched = changes.filter((c) => overLimit(c) || nearLimit(c)).map(({ file }) => file);
+	const explainedBy = explainedFiles(keptCommits(`${base.sha}..HEAD`, root), watched);
 	const short = base.sha.slice(0, 8);
 	console.log(`\ngrowth after Brotli against the base, ${short} "${base.subject}", ${base.why}`);
 	for (const line of growthLines(changes, explainedBy)) console.log(line);
 	const summary = process.env.GITHUB_STEP_SUMMARY;
 	if (summary)
 		appendFileSync(summary, growthSummary(changes, explainedBy, `\`${short}\`, ${base.why}`));
+	for (const warning of nearLimitWarnings(changes, explainedBy)) console.warn(warningLine(warning));
 	return growthProblems(changes, explainedBy);
 }
 
@@ -1301,6 +1498,12 @@ async function main(): Promise<void> {
 		console.log(`key=${artifactsKey()}`);
 		return;
 	}
+	if (options.keepCurrent) {
+		const removed = keepOnlyArtifacts(ARTIFACT_CACHE_BASE, new Set(currentArtifactKeys()));
+		console.log(`removed ${removed.length} cache entries that this build does not write`);
+		return;
+	}
+	refuseInQuietWindow(options.checkSize ? 'The size check' : 'The WebAssembly build');
 	// Only a size check takes the lock: it also builds the base commit with that commit's own build
 	// script, which may stage into the shared target folder. Ordinary builds overlap, because each one
 	// stages in a folder of its own and Cargo locks the target folder that builds share. The lock is
@@ -1337,6 +1540,14 @@ async function main(): Promise<void> {
 		}));
 		if (!options.sizesOnly)
 			builds.push({ name: 'tools', work: (log) => buildToolModules(log, tools, noCache) });
+		// The wind add-on's own WebAssembly, which its task runs in the job workers, goes into the
+		// add-on's package beside the code that loads it. A size check reads files that exist, so it
+		// does not build this one.
+		if (!options.sizesOnly)
+			builds.push({
+				name: 'wind',
+				work: (log) => log.run(process.execPath, [join(root, 'tools/build-wind-wasm.ts')]),
+			});
 		// No Rust build reads a shader module, so the modules build beside them, in a process of their
 		// own, whose memory and cores the builds share.
 		if (modules)
@@ -1406,10 +1617,10 @@ async function main(): Promise<void> {
 		printSize(`js/${part}`, size, isCombosPart(part) ? COMBOS_BUDGET : LATER_BUDGET);
 	printSize('after the start, total', totalSize(later.values()));
 	console.log(
-		`\nthe shader builds of each feature that loads on first use, and of each set of such features that builds need together, one file for each GPU path and each value of the bits a device fixes (${budgetNote(FIRST_USE_SHADER_BUDGET)} for each file; no start counts them)`,
+		`\nthe shader builds of each feature that loads on first use, and of each set of such features that builds need together, one file for each GPU path and each value of the bits a device fixes (${budgetNote(FIRST_USE_SHADER_BUDGET)} for each file, with the raise that D-14 gives two files; no start counts them)`,
 	);
 	for (const [part, size] of parts)
-		if (isFirstUseShaderPart(part)) printSize(`js/${part}`, size, FIRST_USE_SHADER_BUDGET);
+		if (isFirstUseShaderPart(part)) printSize(`js/${part}`, size, firstUseShaderBudget(part));
 	console.log(
 		"\nthe files besides code that load on first use: the KTX2 transcoder with the first KTX2 file, the meshopt decoder with the first glTF file that holds meshopt data, Draco's decoder with the first glTF file that holds Draco data, and the area lights' tables with the first rectangle or tube light, recorded exceptions (D-14, D-145) (no budget)",
 	);
@@ -1421,7 +1632,7 @@ async function main(): Promise<void> {
 		console.log(`\nwrote ${SIZE_RECORD}`);
 	}
 	if (options.sizesOnly) return;
-	console.log('\nthe modules that only build tools load (no budget)');
+	console.log('\nthe modules that the tools and the add-ons load (no budget)');
 	for (const { path } of TOOL_MODULES) printSize(basename(path), measure(readFileSync(path)));
 
 	const problems = Object.entries(sizes)
@@ -1432,7 +1643,7 @@ async function main(): Promise<void> {
 		.map(([file]) => `${file} is over its 600 KB Brotli budget`);
 	problems.push(...budgetProblems(parts));
 	const growth = options.checkSize ? checkGrowth(sizes, options.base) : [];
-	for (const warning of budgetWarnings(parts)) console.warn(`warning: ${warning}`);
+	for (const warning of budgetWarnings(parts)) console.warn(warningLine(warning));
 	for (const p of [...problems, ...growth]) console.error(`error: ${p}`);
 	if (growth.length > 0) {
 		console.error('');

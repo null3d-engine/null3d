@@ -1,12 +1,12 @@
 # D-198: Contact shadows on thin surfaces
 
-Status: decided by the grass helper of M2-EX8 on 20 October 2026, with the coordinator's agreement on the same day, for the owner's review. Built: the face rule in the lit shader, the `contactShadows` material option and its row flag, Creek's grass, the `contact-faces` browser test and the `contact-shadows-opted-out` image test. Date: 2026-10-20. Task: M2-EX8.
+Status: decided by the grass helper of M2-EX8 with the coordinator's agreement, for the owner's review. Built: the face rule in the lit shader, the `contactShadows` material option and its row flag, Creek's grass, the `contact-faces` browser test and the `contact-shadows-opted-out` image test. Task: M2-EX8.
 
-Summary: The sun's contact shadows made Creek's swaying grass shimmer. With the camera still and the wind on, 6.4% of the grass pixels flickered per frame, against 1.3% with contact shadows off. A face that the camera sees from the side away from the sun now takes no contact shadow, and a material with `contactShadows: false` takes none at all. Creek's grass uses the option, which brings its flicker to 1.6%.
+Summary: A face that the camera sees from the side away from the sun takes no contact shadow, and a material with `contactShadows: false` takes none at all. Otherwise the sun's contact shadows make 6.4% of Creek's swaying grass pixels flicker per frame, against 1.3% with them off. Creek's grass uses the option, which brings its flicker to 1.6%.
 
 ## Question
 
-On 20 October 2026 the owner saw Creek's grass shimmer while the camera held still and the blades swayed: a flicker over the blades and the ground between them. A close-up of pale, back-lit blades showed dark, grainy blocks of 2 x 2 pixels that flickered. Is the engine at fault, and how does a scene keep its grass still?
+With contact shadows on every face, Creek's grass shimmers while the camera holds still and the blades sway: a flicker over the blades and the ground between them. A close-up of pale, back-lit blades shows dark, grainy blocks of 2 x 2 pixels that flicker. Is the engine at fault, and how does a scene keep its grass still?
 
 ## What causes it
 
@@ -53,9 +53,9 @@ Each figure comes from frames that the engine held at sketch times 1/60 s apart,
 
 The contact shadows make four fifths of the flicker, and they darken the grass by about 40%. No step count or reach removes it. The 1.2% that is left with every shadow off is the blades' own sway across the pixels.
 
-The same views after the change, against the same build of the core: the shader set of the commit before, then the new one. The frames are 1920 x 1760, as the page draws at a pixel ratio of 2. "Face rule alone" gives the grass contact shadows again, so the face rule works by itself.
+The same views with and without the rules, against the same build of the core: the shader set without the rules, then the one with them. The frames are 1920 x 1760, as the page draws at a pixel ratio of 2. "Face rule alone" gives the grass contact shadows again, so the face rule works by itself.
 
-| View | Before | After | Contact shadows off | Face rule alone |
+| View | Without the rules | With both rules | Contact shadows off | Face rule alone |
 | --- | --- | --- | --- | --- |
 | The owner's view, the grass | 6.2% | 1.6% | 1.3% | 2.2% |
 | The owner's view, the tree leaves | 0.12% | 0.08% | 0.08% | 0.09% |
@@ -63,9 +63,9 @@ The same views after the change, against the same build of the core: the shader 
 | Back-lit close-up at Midday, blades within 30 cm | 1.34% | 0.68% | 0.64% | 0.91% |
 | Back-lit close-up at Golden | 1.14% | 0.89% | 0.88% | 0.98% |
 
-In the owner's view the grass's luma rose from 25.6 to 41.7, against 43.2 with contact shadows off. The leaves barely flicker before or after: with the rule for masked surfaces of D-135's addendum of the same day, contact shadows leave them alone. A close-up crop of the back-lit blades shows the dark grain before and none after.
+In the owner's view the grass's luma is 41.7 with the rules and 25.6 without, against 43.2 with contact shadows off. The leaves barely flicker either way: D-135's rule for masked surfaces keeps contact shadows off them. A close-up crop of the back-lit blades shows the dark grain without the rules and none with them.
 
-The contact faces sketch stands three green cards, lit from behind, on a gray ground, and gives them grass's upward normal. Contact shadows changed 99.96% of the cards' pixels on WebGPU, 99.77% in compatibility mode and 99.96% on WebGL2 before. After, they change 0.12%, 0.10% and 0.12%, which is the output's dither. About 2,900 pixels of the ground in front of the cards keep their contact shadows, as before.
+The contact faces sketch stands three green cards, lit from behind, on a gray ground, and gives them grass's upward normal. Without the face rule, contact shadows change 99.96% of the cards' pixels on WebGPU, 99.77% in compatibility mode and 99.96% on WebGL2. With it, they change 0.12%, 0.10% and 0.12%, which is the output's dither. About 2,900 pixels of the ground in front of the cards keep their contact shadows either way.
 
 How the data was produced: a probe page, outside the repository, wrapped the Creek sketch, held its camera, and set each configuration. It started the engine once per frame in hold mode, and measured the frames in the page. Runs went through the Mac's job queue, at loads of 40 to 120.
 
@@ -79,4 +79,4 @@ Both chosen rules are built. The face rule is the engine's default, and it costs
 - The core gives the flag `NO_CONTACT_SHADOWS` (bit 20 of the row flags) for the material feature of the same name. `contactShadows` sits with the standard options, so custom materials take it too.
 - docs/concepts/shadows.md gives both rules and a section on grass and other thin surfaces. docs/api/materials.md lists the option with the options fixed at creation. The develop skill's quick reference and shader notes say when to set it.
 - Tests: the `contact-faces` spec draws the cards with contact shadows on and off on every GPU path. It leaves out the pixels at the cards' edges, which blend a card with the ground behind it, whose contact shadows change. The `contact-shadows-opted-out` image test draws the contact shadow scene with every material opted out, against the reference of `contact-shadows-off`.
-- No reference moved. On 21 October 2026 the `contact*`, `alpha-mask*`, `shadows-contact*` and `row-values*` image tests, the forest and contact shadow demos and `contact-shadows-opted-out` passed: 48 runs on the Mac's GPU and 48 on SwiftShader. The face rule leaves those scenes' pictures within their tolerances, as their surfaces that face away from the sun take little of its light anyway. The Creek demo's Mac reference changes with its brighter grass; the coordinator redraws it with the round's other Creek changes. Its SwiftShader run draws Low, which has no contact shadows.
+- The rules move no reference but the Creek demo's. The `contact*`, `alpha-mask*`, `shadows-contact*` and `row-values*` image tests, the forest and contact shadow demos and `contact-shadows-opted-out` passed with them: 48 runs on the Mac's GPU and 48 on SwiftShader. The face rule leaves those scenes' pictures within their tolerances, as their surfaces that face away from the sun take little of its light anyway. The Creek demo's Mac reference changes with its brighter grass, and is redrawn with the Creek's other changes. Its SwiftShader run draws Low, which has no contact shadows.

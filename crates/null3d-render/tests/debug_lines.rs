@@ -99,7 +99,13 @@ fn check<B: FrameBuilder>(mut world: World<B>, name: &str) {
     world.record(true);
     mock.replay(world.renderer.list(1).words()).unwrap();
     let first = world.commands();
-    assert_eq!(count(&first, Op::Draw), 0, "{name}");
+    // A frame without lines draws none of them. The WebGPU path also copies a view's image with a
+    // full-screen draw in the first frame that declares it, so the check counts every other draw.
+    let lines = first
+        .iter()
+        .filter(|(op, o)| *op == Op::Draw && o[0] != 3)
+        .count();
+    assert_eq!(lines, 0, "{name}");
     assert_eq!(lines_pipeline(&first), None, "{name}");
 
     // The first frame with lines makes their pipeline and vertex buffer, uploads the points and

@@ -1,8 +1,8 @@
 # D-47: Custom material textures, uniform room and material destroy
 
-Status: decided. Date: 2026-10-04. Task: M2-J3.
+Status: decided and built. Task: M2-J3.
 
-Summary: A custom material's WGSL declares `var name: texture_2d<f32>;`; the build binds it as a texture array in a map slot, declares `nameSampler`, and gives each texture function the layer, which the material's custom values hold for both stages. Up to 6 textures. The uniform room stays at 32 numbers less one per texture: the largest measured effect takes 17. `material.destroy()` draws nothing from the next frame and frees the id, and the template's pipelines, once nothing uses them.
+Summary: The build binds each of a custom material's textures, up to 6, as a texture array in a map slot, and passes its layer. The uniform room stays at 32 numbers less one per texture, as the largest measured effect takes 17. A destroyed material draws nothing from the next frame, and frees its id and pipelines once nothing uses them.
 
 ## Question
 
@@ -56,7 +56,7 @@ The largest takes 17 of the 32 numbers. The only effects found that do not fit a
 
 The rewrite keeps every line where it was, so build errors still point at the sketch's own lines and columns. Its cost is that a texture can only go straight into a texture function. The build refuses a texture passed to a function of the sketch's own, with a message that says why. `textureSampleBaseClampToEdge` has no array form, so the build refuses it too.
 
-The textures take the six map slots of the standard material's bind group layout, `MATERIAL_MAPS`, at group 1 on WebGPU and group 3 on WebGL2. A slot without a texture binds the white texel that standard map sets bind. Materials whose textures share arrays and samplers share bind groups, as standard materials do. The layout's stages grew from the fragment stage to both stages, so vertex offsets can read heights. Each stage now sees up to 7 sampled textures there and 10 in the fragment stage, within the 16 that WebGPU's default limits and compatibility mode allow.
+The textures take the six map slots of the standard material's bind group layout, `MATERIAL_MAPS`, at group 1 on WebGPU and group 3 on WebGL2. A slot without a texture binds the white texel that standard map sets bind. Materials whose textures share arrays and samplers share bind groups, as standard materials do. The layout covers both stages, so vertex offsets can read heights. The vertex stage sees up to 7 sampled textures there, and the fragment stage 10, within the 16 that WebGPU's default limits and compatibility mode allow.
 
 ### Where each layer lives
 
@@ -85,6 +85,6 @@ Option 1 for sampling, layers in the row of custom values, the uniform room unch
 - Shader compiler: `crates/null3d-shaders/src/textures.rs` reads the declarations and rewrites the WGSL. `material.rs` builds with `CUSTOM_TEXTURES`, and `uniforms.rs` leaves the texture layers' floats free. The compiled material lists `textures` with each layer's float. Full shaders take no textures.
 - Template: `lit.wgsl` calls `load_custom_texture_layers` in both stages under `CUSTOM_TEXTURES`.
 - Render: `CustomShading.textures`; the material table frees and reuses ids, writes each texture's layer into the custom values, and `SceneSettings::prepare_rebuild` releases unused ids and pipelines before each rebuild. Custom materials with textures bind a map set group.
-- Draw list: `Op::DestroyPipeline` (52) leaves the reserved numbers. M2-J2 (hot reload) uses it for replaced shaders.
+- Draw list: `Op::DestroyPipeline` (52). M2-J2 (hot reload) uses it for replaced shaders.
 - Engine: the `textures` option, `material.destroy()`, the shading word's texture count (`SHADING_CUSTOM_TEXTURE_SHIFT`), and `WgslTextures` and `TextureValues` types read from WGSL text as D-32's uniforms are. The Vite plugin's declarations list each `.wgsl` file's textures.
 - Docs: `shaders/surface-functions` (Textures), `api/materials` (Destroying a material, custom textures), `guides/custom-shaders`, E1216, and the `dispose` and `mat-shader` mapping entries. Skills: both `shaders.md`, the port skill's `materials.md` recipes, and the develop skill's quick reference.

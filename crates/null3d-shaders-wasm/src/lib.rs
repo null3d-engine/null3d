@@ -13,6 +13,9 @@
 //! - `compile_effect()` builds a custom effect's or a custom tone curve's WGSL, an
 //!   [`EffectSource`], into every variant of the engine's effect template or of its final pass.
 //!   The output is an [`EffectOutput`](null3d_shaders::EffectOutput).
+//! - `compile_sky_layer()` builds a sky layer's WGSL, a [`SkyLayerSource`], into every variant of
+//!   the engine's sky-layer template. The output is a
+//!   [`SkyLayerOutput`](null3d_shaders::SkyLayerOutput).
 //! - `build()` builds a whole manifest, as the native `shader-build` command does. The request is
 //!   the manifest and every file, the library modules too, as [`Inputs`], and the output is an
 //!   [`Output`](null3d_shaders::Output). It writes the first piece of that answer.
@@ -25,7 +28,8 @@
 //!   in the folder of the generated modules and its text.
 //! - `response()` and `response_length()` give the last call's response, which is one piece of a
 //!   manifest build's answer: `{"ok": true, "output": ...}` or `{"ok": false, "problems": [...]}`.
-//!   A response of `compile`, `compile_material` or `compile_effect` also holds `"warnings": [...]`
+//!   A response of `compile`, `compile_material`, `compile_effect` or `compile_sky_layer` also
+//!   holds `"warnings": [...]`
 //!   when the shader calls a built-in function that a target browser cannot compile.
 //! - `stopped()` and `stopped_length()` give the module's account of a call it stopped for want of
 //!   memory, or an empty text when the last call was given everything it asked for. The caller
@@ -43,20 +47,21 @@
 //! buffer the module reuses. So the module holds the builds it writes from and no copy of the
 //! answer, whatever the answer's size. That matters because the answer is not small: the engine's
 //! `standard_maps` entry alone holds 11,456 builds and answers with hundreds of MB, a 32-bit module
-//! holds 4 GB at most, and the engine keeps growing. An earlier version held the whole answer in
-//! one buffer, whose reallocation asked for more than the module had left, and the module stopped
-//! on a failed memory request. The calls that answer with a few megabytes, `compile` and its
+//! holds 4 GB at most, and the engine keeps growing. One buffer that held the whole answer would
+//! ask, as it grows, for more than the module has left, and the module would stop on a failed
+//! memory request. The calls that answer with a few megabytes, `compile` and its
 //! neighbours, keep one buffer and need no pieces.
 
 #![feature(alloc_error_hook)]
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Once;
 
 use null3d_shaders::{
     BuildError, Compiler, EffectSource, Inputs, MaterialSource, MaterialTemplate, ModuleSet,
-    Output, PostTemplates, Problem, Response, ShaderSource, VariantOutput,
+    Output, PostTemplates, Problem, Response, ShaderSource, SkyLayerSource, SkyLayerTemplates,
+    VariantOutput,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -81,6 +86,8 @@ thread_local! {
     /// The templates of custom effects and tone curves, read on the first call of
     /// `compile_effect`.
     static POST_TEMPLATES: RefCell<Option<PostTemplates>> = const { RefCell::new(None) };
+    /// The template of sky layers, read on the first call of `compile_sky_layer`.
+    static SKY_LAYER_TEMPLATES: RefCell<Option<SkyLayerTemplates>> = const { RefCell::new(None) };
     /// The answer of the last `build`, which `build_next` hands over a piece at a time.
     static STREAM: RefCell<Option<Answer>> = const { RefCell::new(None) };
     /// The build that `prepare_modules` made, which `module` renders one module at a time.
@@ -146,6 +153,23 @@ pub extern "C" fn compile_effect() {
                 None => PostTemplates::load(&inputs())?,
             };
             let result = with_compiler(|compiler| compiler.compile_effect(&templates, &effect));
+            *slot = Some(templates);
+            result
+        })
+    });
+}
+
+/// Builds the sky layer in the request into the engine's sky-layer template.
+#[unsafe(no_mangle)]
+pub extern "C" fn compile_sky_layer() {
+    respond(|request| {
+        let layer: SkyLayerSource = parse(request)?;
+        SKY_LAYER_TEMPLATES.with_borrow_mut(|slot| {
+            let templates = match slot.take() {
+                Some(templates) => templates,
+                None => SkyLayerTemplates::load(&inputs())?,
+            };
+            let result = with_compiler(|compiler| compiler.compile_sky_layer(&templates, &layer));
             *slot = Some(templates);
             result
         })
@@ -494,6 +518,7 @@ fn inputs() -> Inputs {
         manifest: MANIFEST.replace("\r\n", "\n"),
         files,
         parts: BTreeMap::new(),
+        only: BTreeSet::new(),
     }
 }
 
@@ -679,73 +704,35 @@ mod tests {
         serde_json::to_vec(&serde_json::json!({ "entries": entries })).unwrap()
     }
 
-    /// The entries whose builds between them make one module of every kind that a build writes:
-    /// the list that the shader crate's determinism check builds (`DETERMINISM_ENTRIES` in its
-    /// build tests), which explains how each entry makes its kinds.
-    const EVERY_KIND_ENTRIES: &[&str] = &["unlit", "environment", "timer_mark"];
+    /// The entries of a small build that still makes several modules. The exports hand every
+    /// module's name to the library's module set in the same way, whatever its kind, so a few
+    /// modules check them. The shader crate's build tests render every kind of module through
+    /// that set, on a build of the entries that make each kind.
+    const SMALL_ENTRIES: &[&str] = &["pick", "timer_mark"];
 
-    /// A kind of module, by the name that a failure gives it, and the test that its file names pass.
-    type ModuleKind = (&'static str, fn(&str) -> bool);
-
-    /// A call prepares a build of the engine's entries without rendering it, and the next renders
-    /// one module, whose text is the set's for that module. The entries are the few that make one
-    /// module of every kind, so the test checks each kind without the cost of the whole build.
+    /// A call prepares a build of the engine's entries without rendering it, and each later call
+    /// renders one module, whose text is the set's for that module.
     #[test]
-    fn prepare_modules_lists_every_module_and_module_renders_one() {
-        let prepared = call(prepare_modules, &entries_request(EVERY_KIND_ENTRIES));
+    fn prepare_modules_lists_every_module_and_module_renders_each() {
+        let prepared = call(prepare_modules, &entries_request(SMALL_ENTRIES));
         assert_eq!(prepared["ok"], true, "{}", prepared["problems"]);
         let names: Vec<String> = serde_json::from_value(prepared["output"].clone()).unwrap();
-        MODULES.with_borrow(|slot| {
+        let expected: Vec<String> = MODULES.with_borrow(|slot| {
             let set = &slot.as_ref().expect("the prepared build").set;
             assert_eq!(
                 names,
                 set.names().map(str::to_owned).collect::<Vec<String>>()
             );
+            names
+                .iter()
+                .map(|name| set.text(name).expect("the build makes the module"))
+                .collect()
         });
-        // The first module of each kind, by the file names that the shader crate's determinism
-        // check reads. Every kind must be there, or the list no longer covers it.
-        let kinds: [ModuleKind; 6] = [
-            ("the main module", |name| name == "shaders.ts"),
-            ("the features module", |name| name == "shader-features.ts"),
-            ("a device module", |name| {
-                name.starts_with("shaders-") && name.ends_with(".js")
-            }),
-            ("a shared-paragraph table", |name| {
-                name.starts_with("shader-paragraphs-") && name.ends_with(".js")
-            }),
-            ("a whole-shader first-use module", |name| {
-                name.starts_with("shaders-")
-                    && (name.ends_with("-wgsl.ts") || name.ends_with("-glsl.ts"))
-            }),
-            ("a combined loader table", |name| {
-                name.starts_with("shaders-") && name.contains("-combos") && name.ends_with(".ts")
-            }),
-        ];
-        let mut chosen = Vec::new();
-        let mut missing = Vec::new();
-        for (kind, holds) in kinds {
-            match names.iter().find(|name| holds(name)) {
-                Some(name) => chosen.push(name.clone()),
-                None => missing.push(kind),
-            }
-        }
-        assert!(
-            missing.is_empty(),
-            "the build makes no {}",
-            missing.join(", no ")
-        );
-        for name in chosen {
-            let expected = MODULES.with_borrow(|slot| {
-                slot.as_ref()
-                    .expect("the prepared build")
-                    .set
-                    .text(&name)
-                    .expect("the build makes the module")
-            });
-            let answer = call(module, &module_request(&name));
+        for (name, text) in names.iter().zip(expected) {
+            let answer = call(module, &module_request(name));
             assert_eq!(answer["ok"], true, "{}", answer["problems"]);
-            assert_eq!(answer["output"]["path"], name);
-            assert_eq!(answer["output"]["text"], expected, "`{name}`");
+            assert_eq!(answer["output"]["path"], name.as_str());
+            assert_eq!(answer["output"]["text"], text, "`{name}`");
         }
         let answer = call(module, &module_request("not-a-module.ts"));
         assert_eq!(answer["ok"], false);

@@ -3,7 +3,9 @@
 // functions in the same order as `FUNCTIONS`, and a unit test checks that the two agree.
 //
 // A case's inputs are eight texels of four 32-bit values, and its results are sixteen values, four
-// per texel, as the test shader lays them out. The references compute in 64-bit floats. A GPU
+// per texel, as the test shader lays them out. The references compute in 64-bit floats, except
+// where a subtraction cancels most of an operand: there 64-bit arithmetic keeps digits that a GPU
+// loses, so those references round at each operation to 32-bit floats, as the shader does. A GPU
 // computes in 32-bit floats, and its built-in functions such as `pow` and `sin` may differ from
 // exact results by a few units, so float results must agree within a tolerance. Hashes are
 // whole numbers and must agree bit for bit.
@@ -443,17 +445,77 @@ const vGgx = (alpha: number, nDotL: number, nDotV: number) => {
 	const gl = nDotV * Math.sqrt(a2 + (1 - a2) * nDotL * nDotL);
 	return 0.5 / Math.max(gv + gl, 1e-6);
 };
+/**
+ * The unit vector halfway between two unit directions. Where the two cancel no unit bisector
+ * exists, so the result is zero, as `null3d::math::half_vector` gives it.
+ */
+const halfVector = (toLight: V3, toView: V3): V3 => {
+	const sum = add(toLight, toView);
+	return length(sum) === 0 ? [0, 0, 0] : normalize(sum);
+};
 function brdfGgx(toLight: V3, toView: V3, normal: V3, f0: V3, f90: number, roughness: number): V3 {
 	const alpha = roughness * roughness;
-	const half = normalize(add(toLight, toView));
+	const half = halfVector(toLight, toView);
+	if (length(half) === 0) return [0, 0, 0];
 	const nDotL = saturate(dot(normal, toLight));
 	const nDotV = saturate(dot(normal, toView));
 	const nDotH = saturate(dot(normal, half));
 	const vDotH = saturate(dot(toView, half));
 	return scale(fSchlick(f0, f90, vDotH), vGgx(alpha, nDotL, nDotV) * dGgx(alpha, nDotH));
 }
+// References that round at each operation to 32-bit floats, as the shader computes them. The GGX
+// distribution subtracts the squared alpha from a value near 1, so at the roughness floor it keeps
+// only the low bits of that alpha: 64-bit arithmetic keeps digits that the GPU loses, and the
+// difference is past the tolerance.
+
+/** `Math.fround`: a value as a 32-bit float. */
+const round32 = Math.fround;
+const add32 = (a: number, b: number) => round32(a + b);
+const sub32 = (a: number, b: number) => round32(a - b);
+const mul32 = (a: number, b: number) => round32(a * b);
+const div32 = (a: number, b: number) => round32(a / b);
+const sqrt32 = (x: number) => round32(Math.sqrt(x));
+/** The sum of the products of two vectors, rounded at each step. */
+const dot32 = (a: readonly number[], b: readonly number[]) =>
+	a.reduce((sum, x, k) => add32(sum, mul32(x, b[k] ?? 0)), 0);
+/** The length of a vector, rounded at each step. */
+const length32 = (a: readonly number[]) => sqrt32(dot32(a, a));
+const normalize32 = (a: V3): V3 => {
+	const l = length32(a);
+	return [div32(a[0], l), div32(a[1], l), div32(a[2], l)];
+};
+/** The unit half vector, rounded at each step, and zero where the light and the view cancel. */
+const halfVector32 = (toLight: V3, toView: V3): V3 => {
+	const sum: V3 = [
+		add32(toLight[0], toView[0]),
+		add32(toLight[1], toView[1]),
+		add32(toLight[2], toView[2]),
+	];
+	return dot32(sum, sum) === 0 ? [0, 0, 0] : normalize32(sum);
+};
+const saturate32 = (x: number) => Math.min(Math.max(x, 0), 1);
+/** The shader's `INV_PI` and `EPSILON`, as 32-bit floats. */
+const INV_PI32 = round32(INV_PI);
+const EPSILON32 = round32(1e-6);
+
+const fSchlick32 = (f0: V3, f90: number, vDotH: number) => {
+	const exponent = mul32(sub32(mul32(round32(-5.55473), vDotH), round32(6.98316)), vDotH);
+	const fresnel = round32(2 ** exponent);
+	return map3(f0, (f) => add32(mul32(f, sub32(1, fresnel)), mul32(f90, fresnel)));
+};
+const dGgx32 = (alpha: number, nDotH: number) => {
+	const a2 = mul32(alpha, alpha);
+	const denom = add32(mul32(mul32(nDotH, nDotH), sub32(a2, 1)), 1);
+	return div32(mul32(INV_PI32, a2), mul32(denom, denom));
+};
+const vGgx32 = (alpha: number, nDotL: number, nDotV: number) => {
+	const a2 = mul32(alpha, alpha);
+	const gv = mul32(nDotL, sqrt32(add32(a2, mul32(mul32(sub32(1, a2), nDotV), nDotV))));
+	const gl = mul32(nDotV, sqrt32(add32(a2, mul32(mul32(sub32(1, a2), nDotL), nDotL))));
+	return div32(0.5, Math.max(add32(gv, gl), EPSILON32));
+};
 /** The visibility term of a lobe stretched along the tangent, from the cosines of its frame. */
-const vGgxAniso = (
+const vGgxAnisoF32 = (
 	alphaT: number,
 	alphaB: number,
 	tDotV: number,
@@ -463,17 +525,46 @@ const vGgxAniso = (
 	nDotV: number,
 	nDotL: number,
 ) => {
-	const gv = nDotL * Math.hypot(alphaT * tDotV, alphaB * bDotV, nDotV);
-	const gl = nDotV * Math.hypot(alphaT * tDotL, alphaB * bDotL, nDotL);
-	return 0.5 / Math.max(gv + gl, 1e-6);
+	const gv = mul32(nDotL, length32([mul32(alphaT, tDotV), mul32(alphaB, bDotV), nDotV]));
+	const gl = mul32(nDotV, length32([mul32(alphaT, tDotL), mul32(alphaB, bDotL), nDotL]));
+	return div32(0.5, Math.max(add32(gv, gl), EPSILON32));
 };
 /** The anisotropic GGX distribution, which peaks along the stretched axis of the lobe. */
-const dGgxAniso = (alphaT: number, alphaB: number, nDotH: number, tDotH: number, bDotH: number) => {
-	const a2 = alphaT * alphaB;
-	const v = [alphaB * tDotH, alphaT * bDotH, a2 * nDotH];
-	const w2 = a2 / dot(v, v);
-	return INV_PI * a2 * w2 * w2;
+const dGgxAnisoF32 = (
+	alphaT: number,
+	alphaB: number,
+	nDotH: number,
+	tDotH: number,
+	bDotH: number,
+) => {
+	const a2 = mul32(alphaT, alphaB);
+	const v = [mul32(alphaB, tDotH), mul32(alphaT, bDotH), mul32(a2, nDotH)];
+	const w2 = div32(a2, dot32(v, v));
+	return mul32(mul32(mul32(INV_PI32, a2), w2), w2);
 };
+/**
+ * The physical BRDF's specular part for a surface without anisotropy, as the shader computes it.
+ * The test shader leaves the anisotropic branch out, so the lobe follows the roughness alone.
+ */
+function brdfGgxPhysicalF32(
+	toLight: V3,
+	toView: V3,
+	normal: V3,
+	f0: V3,
+	f90: number,
+	roughness: number,
+): V3 {
+	const alpha = mul32(roughness, roughness);
+	const half = halfVector32(toLight, toView);
+	if (length32(half) === 0) return [0, 0, 0];
+	const nDotL = saturate32(dot32(normal, toLight));
+	const nDotV = saturate32(dot32(normal, toView));
+	const nDotH = saturate32(dot32(normal, half));
+	const vDotH = saturate32(dot32(toView, half));
+	const fresnel = fSchlick32(f0, f90, vDotH);
+	const reflection = mul32(vGgx32(alpha, nDotL, nDotV), dGgx32(alpha, nDotH));
+	return map3(fresnel, (f) => mul32(f, reflection));
+}
 function multiscattering(f0: V3, f90: number, dfg: V2): [V3, V3] {
 	const single = map3(f0, (f) => f * dfg[0] + f90 * dfg[1]);
 	const ems = 1 - (dfg[0] + dfg[1]);
@@ -896,16 +987,26 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 	},
 	{
 		name: 'lighting::brdf_ggx',
-		cases: samples((random) => {
-			const normal = unit(random);
-			const facing = (v: V3) => (dot(v, normal) < 0 ? scale(v, -1) : v);
-			return new Inputs()
-				.setF(0, facing(unit(random)))
-				.setF(1, facing(unit(random)))
-				.setF(2, normal)
-				.setF(3, [...values(random, 3, 0.02, 1), 1])
-				.setF(4, [between(random, 0.1, 1)]);
-		}),
+		cases: (random) => [
+			// The light and the view cancel, so no unit half vector exists: the lobe has no value
+			// there, whatever the normal and the roughness.
+			new Inputs()
+				.setF(0, [0, 0, 1])
+				.setF(1, [0, 0, -1])
+				.setF(2, [1, 0, 0])
+				.setF(3, [0.04, 0.04, 0.04, 1])
+				.setF(4, [0.5, 0, 0, 0]),
+			...samples((random) => {
+				const normal = unit(random);
+				const facing = (v: V3) => (dot(v, normal) < 0 ? scale(v, -1) : v);
+				return new Inputs()
+					.setF(0, facing(unit(random)))
+					.setF(1, facing(unit(random)))
+					.setF(2, normal)
+					.setF(3, [...values(random, 3, 0.02, 1), 1])
+					.setF(4, [between(random, 0.1, 1)]);
+			})(random),
+		],
 		expected: (i) =>
 			floats(brdfGgx(xyz(i.f(0)), xyz(i.f(1)), xyz(i.f(2)), xyz(i.f(3)), i.f(3)[3], i.f(4)[0])),
 	},
@@ -1037,15 +1138,28 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 	},
 	{
 		name: 'lighting::direct_light',
-		cases: materialCase((random, i) => {
-			const normal = unit(random);
-			const facing = (v: V3) => (dot(v, normal) < 0 ? scale(v, -1) : v);
-			i.setF(2, normal)
-				.setF(3, facing(unit(random)))
-				.setF(4, facing(unit(random)))
-				.setF(5, values(random, 3, 0, 3))
-				.setF(6, values(random, 3, 1, 1.5));
-		}),
+		cases: (random) => [
+			// The surface faces the light head on while the camera stands behind it, so the light and
+			// the view cancel: the specular lobe gives nothing, and the diffuse takes the Fresnel
+			// limit there.
+			new Inputs()
+				.setF(0, [0.8, 0.8, 0.8, 0])
+				.setF(1, [0.4, 0])
+				.setF(2, [0, 0, 1])
+				.setF(3, [0, 0, -1])
+				.setF(4, [0, 0, 1])
+				.setF(5, [1, 1, 1])
+				.setF(6, [1.2, 1.2, 1.2]),
+			...materialCase((random, i) => {
+				const normal = unit(random);
+				const facing = (v: V3) => (dot(v, normal) < 0 ? scale(v, -1) : v);
+				i.setF(2, normal)
+					.setF(3, facing(unit(random)))
+					.setF(4, facing(unit(random)))
+					.setF(5, values(random, 3, 0, 3))
+					.setF(6, values(random, 3, 1, 1.5));
+			})(random),
+		],
 		expected: (i) => {
 			const m = materialOf(i);
 			const [normal, toView, toLight, light, compensation] = [2, 3, 4, 5, 6].map((k) =>
@@ -1053,7 +1167,7 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			);
 			const irradiance = scale(light!, saturate(dot(normal!, toLight!)));
 			const brdf = brdfGgx(toLight!, toView!, normal!, m.blended, m.grazing, m.roughness);
-			const vDotH = saturate(dot(toView!, normalize(add(toLight!, toView!))));
+			const vDotH = saturate(dot(toView!, halfVector(toLight!, toView!)));
 			const fresnel = fSchlick(m.specular, m.grazing, vDotH);
 			return floats(
 				mul(
@@ -1690,7 +1804,7 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		expected: (i) => {
 			const [alphaT, alphaB, tDotV, bDotV] = i.f(0);
 			const [tDotL, bDotL, nDotV, nDotL] = i.f(1);
-			return scalar(vGgxAniso(alphaT, alphaB, tDotV, bDotV, tDotL, bDotL, nDotV, nDotL));
+			return scalar(vGgxAnisoF32(alphaT, alphaB, tDotV, bDotV, tDotL, bDotL, nDotV, nDotL));
 		},
 	},
 	{
@@ -1715,7 +1829,7 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 					.setF(1, [half[1]]);
 			})(random),
 		],
-		expected: (i) => scalar(dGgxAniso(i.f(0)[0], i.f(0)[1], i.f(0)[2], i.f(0)[3], i.f(1)[0])),
+		expected: (i) => scalar(dGgxAnisoF32(i.f(0)[0], i.f(0)[1], i.f(0)[2], i.f(0)[3], i.f(1)[0])),
 	},
 	{
 		// The first two texels make a material, with the specular tint's reflectance and intensity
@@ -1731,6 +1845,15 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 				.setF(3, [0, 0, 1])
 				.setF(4, [1, 1, 1])
 				.setF(5, [0, 0.6, 0.8]),
+			// The light and the view cancel, so no unit half vector exists: the lobe has no value
+			// there, whatever the normal and the roughness.
+			new Inputs()
+				.setF(0, [0.5, 0.5, 0.5, 0])
+				.setF(1, [0.5, 0, 0.04, 1])
+				.setF(2, [1, 0, 0])
+				.setF(3, [0, 0, -1])
+				.setF(4, [1, 1, 1])
+				.setF(5, [0, 0, 1]),
 			// Roughness at zero reaches the floor, so the lobe peaks finitely instead of dividing by
 			// a zero alpha. The view stands a few degrees off the normal, since at the exact peak the
 			// distribution's denominator is a difference of two numbers near one, which loses about
@@ -1765,8 +1888,107 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		expected: (i) => {
 			const m = withSpecular(materialOf(i), i.f(1)[2], xyz(i.f(4)), i.f(1)[3]);
 			return floats(
-				brdfGgx(xyz(i.f(5)), xyz(i.f(3)), xyz(i.f(2)), m.blended, m.grazing, m.roughness),
+				brdfGgxPhysicalF32(
+					xyz(i.f(5)),
+					xyz(i.f(3)),
+					xyz(i.f(2)),
+					m.blended,
+					m.grazing,
+					m.roughness,
+				),
 			);
+		},
+	},
+	{
+		name: 'math::half_vector',
+		cases: (random) => [
+			// The two directions cancel, so no unit bisector exists and the result is zero.
+			new Inputs().setF(0, [0, 0, 1]).setF(1, [0, 0, -1]),
+			// A pair that faces the same way has no rotation, and the bisector is that direction.
+			new Inputs().setF(0, [0, 0, 1]).setF(1, [0, 0, 1]),
+			...samples((random) => new Inputs().setF(0, unit(random)).setF(1, unit(random)))(random),
+		],
+		expected: (i) => floats(halfVector(xyz(i.f(0)), xyz(i.f(1)))),
+	},
+	// null3d::motion
+	{
+		name: 'motion_math::surface_motion',
+		cases: (random) => [
+			// A still surface gives this frame's place less the same place of the last frame, which
+			// is exactly zero.
+			...Array.from({ length: SAMPLES }, () => {
+				const still = values(random, 4, -3, 3);
+				still[3] = between(random, 0.25, 4);
+				return new Inputs().setF(0, still).setF(1, still);
+			}),
+			// A surface that moved a known part of the image.
+			new Inputs().setF(0, [0.5, 0.5, 0.5, 1]).setF(1, [-0.5, -0.5, 0.5, 1]),
+			// A point at or behind the last camera's plane has no motion.
+			new Inputs().setF(0, [0.5, 0.5, 0.5, 1]).setF(1, [0.25, -0.25, 0.5, 0]),
+		],
+		expected: (i) => {
+			const still = i.f(0);
+			const last = i.f(1);
+			if (still[3]! <= 1e-6 || last[3]! <= 1e-6) return floats([0, 0, 0, 0]);
+			const place = (c: V4): V2 => [(c[0]! / c[3]!) * 0.5 + 0.5, 0.5 - (c[1]! / c[3]!) * 0.5];
+			const now = place(still);
+			const then = place(last);
+			return floats([now[0]! - then[0]!, now[1]! - then[1]!, 0, 0]);
+		},
+		// A still surface's two places are the same values, so the difference is zero. A GPU may
+		// contract one evaluation into a fused multiply and add and not the other, which leaves a
+		// residue far below a pixel: the engine's target clears to zero and still objects draw
+		// nothing, which is where the exact zero comes from.
+		tolerance: 1e-6,
+	},
+	// null3d::temporal
+	{
+		name: 'temporal::temporal_ycocg',
+		cases: uniform(3, -2, 2),
+		expected: (i) => {
+			const [r, g, b] = xyz(i.f(0));
+			return floats([
+				0.25 * r! + 0.5 * g! + 0.25 * b!,
+				0.5 * r! - 0.5 * b!,
+				-0.25 * r! + 0.5 * g! - 0.25 * b!,
+				0,
+			]);
+		},
+	},
+	{
+		name: 'temporal::temporal_rgb',
+		cases: uniform(3, -2, 2),
+		expected: (i) => {
+			const [x, y, z] = xyz(i.f(0));
+			return floats([x! - z! + y!, x! + z!, x! - z! - y!, 0]);
+		},
+	},
+	{
+		name: 'temporal::temporal_widen',
+		cases: samples((random) =>
+			new Inputs()
+				.setF(0, values(random, 3, 0, 0.4))
+				.setF(1, values(random, 3, 0.6, 1))
+				.setF(2, values(random, 3, -1, 2)),
+		),
+		expected: (i) => {
+			const low = xyz(i.f(0));
+			const high = xyz(i.f(1));
+			const centre = xyz(i.f(2));
+			const wideLow = low.map((v, k) => Math.min(v, centre[k]!));
+			const wideHigh = high.map((v, k) => Math.max(v, centre[k]!));
+			return floats([...wideLow, 0], [...wideHigh, 0]);
+		},
+		tolerance: HALF_TOLERANCE,
+	},
+	{
+		name: 'temporal::temporal_weight',
+		cases: samples((random) =>
+			new Inputs().setF(0, [between(random, 0, 1), between(random, 0, 1), between(random, 0, 3)]),
+		),
+		expected: (i) => {
+			const [base, reactive, change] = i.f(0);
+			return scalar(saturate(base!) * (1 - saturate(reactive!)) * (1 - smooth(0.5, 2.0, change!)));
 		},
 	},
 ];

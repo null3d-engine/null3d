@@ -10,7 +10,7 @@
 #import null3d::lighting::{direct_light}
 #endif
 #import null3d::mesh::{frame}
-#import null3d::tables::{IMAGE_LEVELS, IMAGE_SIZE, light_image}
+#import null3d::tables::{image_of, light_image}
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{light_shadow}
 #endif
@@ -27,17 +27,21 @@
 // from its position and lights itself with that cluster's lights alone, so its loop stays short
 // with hundreds of lights in view.
 //
-// Two bindings of the frame's group hold the lists. The light grid at binding 7 holds one 32-bit
-// word per cluster, then the light index list. A cluster's word holds where its lights start in
-// the grid in its low START_BITS bits, and how many there are in the bits above. The light list at
-// binding 8 holds the lights, five vectors each. On WebGPU both are storage buffers that fragment
-// shaders read. On WebGL2 (the WEBGL2 builds) both share one data texture of 32-bit integers at
-// binding 7, read with `textureLoad`, so they take one texture unit: the lights in the columns
-// from its first, five texels each, and the grid in the columns after them, four words per texel.
-// The frame's `cluster_depth` and `cluster_grid` find a position's cluster.
+// Two bindings of the frame's group hold the lists. The light grid at binding 7 holds an eight-word
+// header, one 32-bit word per cluster, then the light index list. A cluster's word holds where its
+// lights start in the grid in its low START_BITS bits, and how many there are in the bits above.
+// The light list at binding 8 holds the lights, five vectors each. On WebGPU both are storage
+// buffers that fragment shaders read. On WebGL2 (the WEBGL2 builds) both share one data texture of
+// 32-bit integers at binding 7, read with `textureLoad`, so they take one texture unit: the lights
+// in the columns from its first, five texels each, and the grid in the columns after them, four
+// words per texel. On WebGPU the header finds a position's slice, because the light clustering fits
+// the slices on the GPU; on WebGL2 the frame's `cluster_depth` and `cluster_grid` do.
 
 /// Bits of a cluster's word that hold where its lights start in the light grid.
 const START_BITS: u32 = 23u;
+/// The words of the light grid's header, before the clusters' words: the slicing that finds a
+/// position's slice.
+const HEADER_WORDS: u32 = 8u;
 
 /// The kind of a rectangle light's record: the core's `RECT`. Kinds from it on are area lights.
 const KIND_RECT: u32 = 6u;
@@ -61,7 +65,8 @@ struct PointLight {
     /// has none.
     penumbra: vec4f,
     /// The up axis that a spot light's image reads with, or zero for a light without one, then the
-    /// layer of the light's image in the light tables plus one, or 0 when it shows none.
+    /// image's place in the light tables: its layer plus one in the low bits, and the number of
+    /// its size above them (see null3d::tables's image_of), or 0 when the light shows none.
     up_image: vec4f,
 }
 
@@ -90,6 +95,26 @@ fn grid_word(i: u32) -> u32 {
     return textureLoad(light_data, at, 0)[within & 3u];
 #else
     return light_grid[i];
+#endif
+}
+
+/// The header's first four words: the row that gives a position's depth along the view, divided by
+/// the depth that adds 1 to the slice depth, and the row's bias.
+fn grid_header() -> vec4u {
+#ifdef WEBGL2
+    return textureLoad(light_data, vec2u(GRID_COLUMN, 0u), 0);
+#else
+    return vec4u(light_grid[0], light_grid[1], light_grid[2], light_grid[3]);
+#endif
+}
+
+/// The header's next four words: the slices per doubling, 1 when the slicing is fitted to the
+/// depth, the slice start and the depth that adds 1 to the slice depth.
+fn grid_header_more() -> vec4u {
+#ifdef WEBGL2
+    return textureLoad(light_data, vec2u(GRID_COLUMN + 1u, 0u), 0);
+#else
+    return vec4u(light_grid[4], light_grid[5], light_grid[6], light_grid[7]);
 #endif
 }
 
@@ -136,10 +161,8 @@ fn area_light(
     if kind == KIND_TUBE {
         return tube_light(m, terms, normal, to_view, toward, along, across.x, color);
     }
-    // A rectangle light keeps its image's layer plus one in the place of a spot light's up axis
-    // and image.
-    let image = i32(light.up_image.w) - 1;
-    return rectangle_light(m, terms, normal, to_view, toward, along, across, color, image);
+    // A rectangle light keeps its image's record in the place of a spot light's up axis and image.
+    return rectangle_light(m, terms, normal, to_view, toward, along, across, color, light.up_image.w);
 }
 #endif
 
@@ -153,14 +176,40 @@ fn cluster_lights(relative: vec3f) -> vec2u {
     }
     let clip = frame.view_proj * vec4f(relative, 1.0);
     let tile = clamp(floor((clip.xy / clip.w * 0.5 + 0.5) * grid.xy), vec2f(0.0), grid.xy - 1.0);
+#ifdef WEBGL2
+    // WebGL2's slicing is the CPU's, in the frame uniform, and its grid lists no fitted slices.
     let slice_depth = max(dot(frame.cluster_depth, vec4f(relative, 1.0)), 1.0);
     let slice = floor(log2(slice_depth) * grid.w);
     if slice >= grid.z {
         return vec2u(0u);
     }
+#else
+    var slice: f32;
+    if frame.cluster_fit.x > 0.5 {
+        // The header holds the CPU's slicing, or the slicing that the GPU fitted to the measured
+        // depth. A fitted slicing clamps a position past its last slice to the last slice, which
+        // stays open, so the position still gets every light that reaches it.
+        let row = bitcast<vec4f>(grid_header());
+        let more = bitcast<vec4f>(grid_header_more());
+        let slice_depth = max(dot(row, vec4f(relative, 1.0)), 1.0);
+        slice = max(floor(log2(slice_depth) * more.x), 0.0);
+        if more.y > 0.5 {
+            slice = min(slice, grid.z - 1.0);
+        } else if slice >= grid.z {
+            return vec2u(0u);
+        }
+    } else {
+        // The CPU's slicing, in the frame uniform, with no read of the grid's header.
+        let slice_depth = max(dot(frame.cluster_depth, vec4f(relative, 1.0)), 1.0);
+        slice = floor(log2(slice_depth) * grid.w);
+        if slice >= grid.z {
+            return vec2u(0u);
+        }
+    }
+#endif
     let tiles = vec2u(grid.xy);
     let cluster = (u32(slice) * tiles.y + u32(tile.y)) * tiles.x + u32(tile.x);
-    let word = grid_word(cluster);
+    let word = grid_word(HEADER_WORDS + cluster);
     return vec2u(word & ((1u << START_BITS) - 1u), word >> START_BITS);
 }
 
@@ -169,7 +218,8 @@ fn cluster_lights(relative: vec3f) -> vec2u {
 /// square, where the light shows one color. `relative` is the surface's position relative to the
 /// camera, `normal` its unit normal, `to_view` the unit direction toward the camera, and
 /// `to_light` the unit direction from the surface toward the light. The light's record holds the
-/// map's layer in the light tables plus one and the up axis that it reads with.
+/// map's layer in the light tables plus one, the number of its size above that, and the up axis
+/// that it reads with (see null3d::tables's image_of).
 fn spot_map(
     light: PointLight,
     relative: vec3f,
@@ -192,27 +242,94 @@ fn spot_map(
     }
     // The map's texel at the surface covers a share of the cone's square. The level follows the
     // fragment's footprint on the surface against it: farther from the camera, and at a slant,
-    // the footprint covers more texels, and the map blurs.
-    let texel = 2.0 * depth * stretch / f32(IMAGE_SIZE);
+    // the footprint covers more texels, and the map blurs. A larger map has more texels, so its
+    // pictures stay sharp close up.
+    let texels = image_of(light.up_image.w).y;
+    let texel = 2.0 * depth * stretch / texels;
     let camera_distance = mix(1.0, length(relative), frame.camera_position.w);
     let pixel = 2.0 * camera_distance / (frame.projection[0][0] * frame.target_size.x);
     let footprint = pixel / max(abs(dot(normal, to_view)), 0.1);
-    let level = clamp(log2(max(footprint / texel, 1e-6)), 0.0, IMAGE_LEVELS - 1.0);
-    return light_image(i32(light.up_image.w) - 1, uv, level);
+    let level = log2(max(footprint / texel, 1e-6));
+    return light_image(light.up_image.w, uv, level);
+}
+
+/// One point or spot light of a cluster, ready for a surface to shade: the unit direction from the
+/// surface toward the light, and the light's color after its distance and cone attenuation, its
+/// shadow, its spot map and the layers. `relative` is the surface's position relative to the
+/// camera, `normal` its unit normal, `mesh_normal` that normal before a normal map bends it, which
+/// moves a shadow lookup off the surface, and `to_view` the unit direction toward the camera.
+struct ClusterSample {
+    /// The unit direction from the surface toward the light.
+    to_light: vec3f,
+    /// The light's color, with its intensity, after the attenuation and shadows that reach the
+    /// surface, and after the clear coat and sheen take their share.
+    incoming: vec3f,
+}
+
+/// The light of one point or spot light of a cluster, in the form that a surface shades it with.
+/// In the TRANSLUCENCY builds the light that reaches the surface's back gathers here too, shadowed
+/// from the side that it falls on (null3d::translucency), and COAT_SHEEN builds light the clear
+/// coat and sheen here (null3d::coat_sheen).
+fn cluster_sample(
+    light: PointLight,
+    relative: vec3f,
+    normal: vec3f,
+    mesh_normal: vec3f,
+    to_view: vec3f,
+) -> ClusterSample {
+    let offset = light.position_range.xyz - relative;
+    let gap = length(offset);
+    let to_light = offset / max(gap, 1e-6);
+    let fade = distance_attenuation(gap, light.position_range.w, light.color_decay.w);
+    let cone = spot_attenuation(
+        light.direction_cone.w,
+        light.penumbra.x,
+        dot(-to_light, light.direction_cone.xyz),
+    );
+    var strength = fade * cone;
+#ifdef RECEIVE_SHADOWS
+    let tile = light.penumbra.w;
+    if tile > 0.5 && strength > 0.0 {
+        let seen = relative + frame.shadow_origin.xyz;
+#ifdef TRANSLUCENCY
+        let side = lit_side(mesh_normal, to_light);
+        strength *= light_shadow(u32(tile) - 1u, seen, side, to_light, gap);
+#else
+        strength *= light_shadow(u32(tile) - 1u, seen, mesh_normal, to_light, gap);
+#endif
+    }
+#endif
+    var incoming = light.color_decay.rgb * strength;
+    if (light.up_image.w > 0.5) {
+        incoming *= spot_map(light, relative, normal, to_view, to_light);
+    }
+#ifdef COAT_SHEEN
+    // The layers gather their light first, and the sheen keeps part of it from the base.
+    incoming *= layered_light(normal, to_view, to_light, incoming);
+#endif
+#ifdef TRANSLUCENCY
+    gather_back_light(normal, to_light, incoming);
+#endif
+    return ClusterSample(to_light, incoming);
 }
 
 /// The light that a PBR surface reflects toward the camera from the point, spot and area lights of
 /// its cluster, as three.js's `RE_Direct_Physical` gives it for each point and spot light, and its
 /// `RE_Direct_RectArea_Physical` for each area light. `relative` is the
-/// surface's position relative to the camera, `normal` its unit normal, and `to_view` the unit
-/// direction toward the camera. `compensation` comes from `multiscatter_compensation`. In the
+/// surface's position relative to the camera, `normal` its unit normal, `mesh_normal` that normal
+/// before a normal map bends it, which moves a shadow lookup off the surface, and `to_view` the
+/// unit direction toward the camera. `compensation` comes from `multiscatter_compensation`. In the
 /// TRANSLUCENCY builds each light also adds the light that reaches the surface's back, shadowed
 /// from the side that it falls on (null3d::translucency). COAT_SHEEN builds each light lights the
 /// surface's clear coat and sheen too (null3d::coat_sheen).
+/// A shader that adds a lobe of its own for each light walks the cluster itself, since this module
+/// cannot call a function of the shader that declares it, and shades each light with
+/// `cluster_sample`.
 fn clustered_light(
     m: PbrMaterial,
     relative: vec3f,
     normal: vec3f,
+    mesh_normal: vec3f,
     to_view: vec3f,
     compensation: vec3f,
 ) -> Reflected {
@@ -246,40 +363,9 @@ fn clustered_light(
             continue;
         }
 #endif
-        let offset = light.position_range.xyz - relative;
-        let gap = length(offset);
-        let to_light = offset / max(gap, 1e-6);
-        let fade = distance_attenuation(gap, light.position_range.w, light.color_decay.w);
-        let cone = spot_attenuation(
-            light.direction_cone.w,
-            light.penumbra.x,
-            dot(-to_light, light.direction_cone.xyz),
-        );
-        var strength = fade * cone;
-#ifdef RECEIVE_SHADOWS
-        let tile = light.penumbra.w;
-        if tile > 0.5 && strength > 0.0 {
-            let seen = relative + frame.shadow_origin.xyz;
-#ifdef TRANSLUCENCY
-            let side = lit_side(normal, to_light);
-            strength *= light_shadow(u32(tile) - 1u, seen, side, to_light, gap);
-#else
-            strength *= light_shadow(u32(tile) - 1u, seen, normal, to_light, gap);
-#endif
-        }
-#endif
-        var incoming = light.color_decay.rgb * strength;
-        if (light.up_image.w > 0.5) {
-            incoming *= spot_map(light, relative, normal, to_view, to_light);
-        }
-#ifdef COAT_SHEEN
-        // The layers gather their light first, and the sheen keeps part of it from the base.
-        incoming *= layered_light(normal, to_view, to_light, incoming);
-#endif
-        let reflected = direct_light(m, normal, to_view, to_light, incoming, compensation);
-#ifdef TRANSLUCENCY
-        gather_back_light(normal, to_light, incoming);
-#endif
+        let sample = cluster_sample(light, relative, normal, mesh_normal, to_view);
+        let reflected = direct_light(m, normal, to_view, sample.to_light, sample.incoming, compensation);
+
         sum.diffuse += reflected.diffuse;
         sum.specular += reflected.specular;
     }

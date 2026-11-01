@@ -1,6 +1,6 @@
 # D-75: Mesh and prefab destroy
 
-Status: decided. Date: 2026-10-05. Task: M2-R21.
+Status: decided. Built: `mesh.destroy()` and `prefab.destroy()`, which pack the meshes that stay. Task: M2-R21.
 
 Summary: A destroy moves the meshes that stay down over the removed data, so memory stays flat as levels load and drop. Mesh buffers held 1.49 MB after 10 and after 100 rounds, against 19.5 MB without freeing. Removing meshes from 2,000 takes 0.07 ms to 0.3 ms in WebGL2's pages, and 4 ms to 6 ms in WebGPU's shared buffer.
 
@@ -25,7 +25,7 @@ How do `mesh.destroy()` and `prefab.destroy()` free a mesh whose vertices share 
 | Time of a removal from 2,000 meshes of 1,089 vertices (70 MB of vertices), WebGPU's layout of one shared buffer per format: the first mesh, the first 50 meshes | 4.0 ms and 6.2 ms; 68 MB to 70 MB to upload again | Nothing moves or uploads | M5 Max, native release build |
 | The same removals, WebGL2's layout of pages of 65,535 vertices | 0.3 ms and 0.07 ms; 2.1 MB and 0.35 MB to upload again | Nothing moves or uploads | M5 Max, native release build |
 
-How the data was produced: `tests/image/destroy-memory.spec.ts` and `tests/image/destroy.spec.ts` on 2026-10-05, on the Mac's GPU and with `CI=1` on SwiftShader. The "not freed" column is the memory test with `prefab.destroy()` changed to skip the meshes for one run. The removal times come from the `removal_timings` test of `crates/null3d-render/src/meshes.rs` in a release build, on 2026-10-06. Other work shared the Mac, with its load between 6 and 20, so the times are rough. On WebGL2 the pages bound the cost: a removal moves only the meshes after it in its own page. In the shared buffer, every mesh after the removed one moves, so destroys belong between levels.
+How the data was produced: `tests/image/destroy-memory.spec.ts` and `tests/image/destroy.spec.ts`, on the Mac's GPU and with `CI=1` on SwiftShader. The "not freed" column is the memory test with `prefab.destroy()` changed to skip the meshes for one run. The removal times come from the `removal_timings` test of `crates/null3d-render/src/meshes.rs` in a release build. Other work shared the Mac, with its load between 6 and 20, so the times are rough. On WebGL2 the pages bound the cost: a removal moves only the meshes after it in its own page. In the shared buffer, every mesh after the removed one moves, so destroys belong between levels.
 
 ## Options
 

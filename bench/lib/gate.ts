@@ -137,25 +137,33 @@ export function releaseVersion(output: string): string | null {
 /** The version that M1's release must be. */
 export const GATE_VERSION = '0.1.0';
 
-/**
- * The workflows that must pass on the gate commit, each with the events whose runs count. Main's
- * own CI run after the merge runs every job, and so does a run started by hand (D-99). A run of a
- * pull request tested other code: GitHub's merge of it into an older main. Any run of the
- * benchmarks counts.
- */
-export const GATE_WORKFLOWS: readonly { name: string; events?: readonly string[] }[] = [
-	{ name: 'CI', events: ['push', 'workflow_dispatch'] },
-	{ name: 'Benchmarks' },
-];
-
 /** One workflow run of a commit, as `gh run list --json` gives it. */
 export interface WorkflowRun {
 	databaseId: number;
 	workflowName: string;
 	event: string;
+	headBranch: string;
 	status: string;
 	conclusion: string;
 }
+
+/**
+ * The workflows that must pass on the gate commit, each with the runs that count. Main's own CI run
+ * after the merge runs every job, and so does a run started by hand (D-99). A push to a milestone
+ * branch runs only the quick checks (D-249), and a run of a pull request tested other code:
+ * GitHub's merge of it into an older main. Any run of the benchmarks counts.
+ */
+export const GATE_WORKFLOWS: readonly {
+	name: string;
+	counts?: (run: WorkflowRun) => boolean;
+}[] = [
+	{
+		name: 'CI',
+		counts: ({ event, headBranch }) =>
+			event === 'workflow_dispatch' || (event === 'push' && headBranch === 'main'),
+	},
+	{ name: 'Benchmarks' },
+];
 
 /** One job of a workflow run, as `gh run view --json jobs` gives it. */
 export interface WorkflowJob {
@@ -165,17 +173,28 @@ export interface WorkflowJob {
 }
 
 /**
- * The newest run of a workflow whose event counts, or none. gh lists the newest run first, and a
- * workflow with no events counts a run of any event.
+ * The newest run of a workflow that counts, or none. gh lists the newest run first, and a workflow
+ * with no rule counts any run.
  */
 export function countedRun(
 	runs: readonly WorkflowRun[],
-	{ name, events }: { name: string; events?: readonly string[] },
+	{ name, counts }: (typeof GATE_WORKFLOWS)[number],
 ): WorkflowRun | null {
-	const counted = runs.find(
-		(run) => run.workflowName === name && (!events || events.includes(run.event)),
-	);
-	return counted ?? null;
+	return runs.find((run) => run.workflowName === name && (!counts || counts(run))) ?? null;
+}
+
+/**
+ * The commit's whole hash, or null when the repository holds no such commit.
+ *
+ * GitHub matches a commit exactly, so a short hash finds no run, and a step reading that as "no
+ * run" would judge the pictures of a commit whose CI never drew them.
+ */
+export function wholeCommit(commit: string, git: (args: string[]) => string): string | null {
+	try {
+		return git(['rev-parse', '--verify', `${commit}^{commit}`]).trim();
+	} catch {
+		return null;
+	}
 }
 
 /**
@@ -210,18 +229,24 @@ interface BrowserJobs {
 /** The prefix of the browser job's shard jobs, which split the manifest by count. */
 const SHARD_PREFIX = 'browser (shard';
 
+/**
+ * The prefix of the browser-heavy job's shard jobs, which draw the demos' and the environments'
+ * pictures and the other heavy tests one at a time, so the browser job's shards leave them out.
+ */
+const HEAVY_PREFIX = 'browser (heavy tests';
+
 /** The browser job that draws S6's pictures, which load the city. */
 const CITY_JOB = 'browser (the city)';
 
 /** Whether a job draws part of the image test manifest on Linux SwiftShader. */
 function drawsManifest({ name }: WorkflowJob): boolean {
-	return name.startsWith(SHARD_PREFIX) || name === CITY_JOB;
+	return name.startsWith(SHARD_PREFIX) || name.startsWith(HEAVY_PREFIX) || name === CITY_JOB;
 }
 
 /**
  * Judges the image test manifest as the commit's CI browser jobs drew it on Linux SwiftShader. Every
- * shard job and the city job must have passed, and a run that skipped them, or that has not made
- * them yet, proves nothing.
+ * shard job, every heavy-test job and the city job must have passed, and a run that skipped them, or
+ * that has not made them yet, proves nothing.
  */
 export function browserPictures(output: string): StepResult {
 	let parsed: BrowserJobs | null;
@@ -239,7 +264,9 @@ export function browserPictures(output: string): StepResult {
 	const where = `CI run ${run.databaseId} (${run.event})`;
 	const jobs = (parsed?.jobs ?? []).filter(drawsManifest);
 	const shards = jobs.filter((job) => job.name.startsWith(SHARD_PREFIX));
+	const heavy = jobs.filter((job) => job.name.startsWith(HEAVY_PREFIX));
 	const missing = shards.length === 0 ? ['browser shard job'] : [];
+	if (heavy.length === 0) missing.push('heavy-test job');
 	if (!jobs.some((job) => job.name === CITY_JOB)) missing.push('city job');
 	if (missing.length > 0)
 		return {
@@ -256,7 +283,7 @@ export function browserPictures(output: string): StepResult {
 				.join(', ')}`,
 			verdict: 'fail',
 		};
-	const draws = `${shards.length} browser shard${shards.length === 1 ? '' : 's'} and the city job`;
+	const draws = `${shards.length} browser shard${shards.length === 1 ? '' : 's'}, ${heavy.length} heavy-test shard${heavy.length === 1 ? '' : 's'} and the city job`;
 	return { figure: `${where}: ${draws} passed`, verdict: 'pass' };
 }
 
@@ -296,7 +323,7 @@ export function gateSteps({ commit, quick }: GateOptions): GateStep[] {
 				'--commit',
 				commit,
 				'--json',
-				'workflowName,event,status,conclusion',
+				'workflowName,event,headBranch,status,conclusion',
 			],
 			timed: false,
 			read: (out) =>

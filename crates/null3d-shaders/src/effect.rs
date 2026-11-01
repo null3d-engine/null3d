@@ -165,7 +165,12 @@ pub struct EffectPieces {
 
 /// True when the function's only parameter has type `param` and it returns `returns`, each of
 /// which may be spelled in one of the given ways.
-fn has_signature(tokens: &[Token], name: &str, param: &[&str], returns: &[&str]) -> bool {
+pub(crate) fn has_signature(
+    tokens: &[Token],
+    name: &str,
+    param: &[&str],
+    returns: &[&str],
+) -> bool {
     let Some(function) = find_function(tokens, name) else {
         return false;
     };

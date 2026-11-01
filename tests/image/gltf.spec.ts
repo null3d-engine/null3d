@@ -21,6 +21,7 @@ interface GltfResult {
 		bounds: number[][];
 		materials: number;
 		faceWeights: number[];
+		sunLights: boolean[];
 		codes: Record<string, string>;
 	};
 }
@@ -33,8 +34,12 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 	for (const mode of ENGINE_MODES)
 		test(`glTF files load, copy and fail with their codes, on ${gpu}, ${mode.name}`, async ({
 			page,
-		}) => {
+		}, testInfo) => {
 			const requests = recordRequests(page);
+			const warnings: string[] = [];
+			page.on('console', (message) => {
+				if (message.type() === 'warning') warnings.push(message.text());
+			});
 			await page.goto(`gltf-files.html?gpu=${gpu}&${mode.query}`);
 			const result = await pageResult<GltfResult>(page, 60_000);
 			expect(result.error).toBeUndefined();
@@ -49,9 +54,12 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			expect(rounded(recorded.bounds[1])).toEqual([1, 0.85, 0.5]);
 			// The face's shape keys are sparse accessors of 8-bit and 16-bit indices.
 			expect(recorded.faceWeights).toEqual([0.5, 0, 0]);
+			// The file's three directional lights all reach the scene.
+			expect(recorded.sunLights).toEqual([true, true, true]);
 			expect(recorded.codes).toEqual({
 				broken: 'E1416',
 				required: 'E1417',
+				used: 'none',
 				missing: 'E1411',
 				loop: 'E1416',
 				huge: 'E1416',
@@ -67,6 +75,14 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				claimsHuge: 'E1416',
 				brokenAvif: 'E1412',
 			});
+			// A development build notes the used extension that nothing reads, and a release build
+			// prints nothing.
+			const unread = warnings.filter((text) => text.includes('KHR_materials_variants'));
+			if (testInfo.project.name === 'production build') expect(unread).toEqual([]);
+			else
+				expect(unread).toEqual([
+					expect.stringContaining('an extension that the engine does not read'),
+				]);
 			// One thread loads every file, so the loader and its worker download once. No file holds
 			// meshopt or Draco data, so no decoder downloads.
 			expect(gltfDownloads(requests)).toEqual({

@@ -29,6 +29,7 @@ use null3d_core::world::UNBOUNDED_RADIUS;
 
 use super::layout::{BUCKET_WORDS, INDEX_ENTRIES_PER_COPY, Layout};
 use crate::frame::{CellOffsets, RecordError};
+use crate::levels::{StageWatches, key_level};
 
 /// How far from a switch distance a source counts toward both levels that it may pick, as a share
 /// of the distance. It dwarfs the difference that a CPU and a GPU can make of the same distance,
@@ -49,6 +50,40 @@ impl Layout {
     /// True when a bucket of this layout holds a level's copies.
     pub(super) fn picks_levels(&self) -> bool {
         !self.level_buckets.is_empty()
+    }
+
+    /// Notes the levels that the copies counted last were picked at, for the staged levels that a
+    /// loader waits on: a level whose bucket holds a copy was picked. A mesh that the layout draws
+    /// at no level restarts its warm-up, so a page that loads a model before it draws it keeps its
+    /// stages. `counted` says that this frame counted copies; false resets every warm-up. Costs
+    /// nothing while no loader waits.
+    pub(super) fn note_stage_picks(&self, watches: &mut StageWatches, frame: u64, counted: bool) {
+        if watches.is_empty() {
+            return;
+        }
+        if !counted {
+            watches.hold(frame, |_| false);
+            return;
+        }
+        watches.hold(frame, |mesh| self.draws_mesh(mesh));
+        for &bucket in &self.level_buckets {
+            let count = self.copy_counts.get(bucket as usize).copied().unwrap_or(0);
+            if count > 0 {
+                let (mesh, level) = key_level(self.buckets[bucket as usize].mesh_key);
+                watches.picked(mesh, level);
+            }
+        }
+    }
+
+    /// True when a bucket of the layout draws `mesh` at some level or draws its tree of cluster
+    /// patches: a source of the mesh exists in the scene, whatever the view shows. A staged band's
+    /// warm-up counts the frames that drew the tree, as a staged level's counts those that drew
+    /// the level.
+    fn draws_mesh(&self, mesh: u32) -> bool {
+        self.level_buckets
+            .iter()
+            .any(|&bucket| key_level(self.buckets[bucket as usize].mesh_key).0 == mesh)
+            || self.clusters.iter().any(|cluster| cluster.mesh == mesh)
     }
 
     /// Counts the copies that `views` place in each bucket, and gives each bucket a slice of that
@@ -220,6 +255,9 @@ impl Layout {
                 }
                 Picked::FadeIn { bucket, .. } => keep(bucket),
                 Picked::FadeOut { old, .. } => keep(old),
+                // A levels debug view draws a hidden source at its base level, marked with the
+                // hidden bit, so the home bucket's slice holds it.
+                Picked::Hidden if self.codes => keep(home),
                 Picked::Hidden => {}
             }
         }
@@ -235,7 +273,9 @@ impl Layout {
         loop {
             counts[bucket as usize] += 1;
             let link = self.level_links[bucket as usize];
-            if link.fade != NO_LINK {
+            // A levels debug view's fade link names the level's own bucket, which this counts
+            // already.
+            if link.fade != NO_LINK && link.fade != bucket {
                 counts[link.fade as usize] += 1;
             }
             if link.next == NO_LINK {
