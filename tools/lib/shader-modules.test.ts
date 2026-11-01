@@ -239,24 +239,32 @@ version = "0.2.0"
 	});
 
 	it('adopt the set of the whole-lock key, so the narrowing keeps a warm cache', () => {
-		withScratchCaches(() => {
-			const root = repository();
-			writeFileSync(join(root, 'Cargo.lock'), LOCKED);
-			// The set that the last build stored, under the key that hashed the whole lock.
-			const whole = join(modulesCacheDir(), hashFiles(root, inputFiles(root)));
-			mkdirSync(whole, { recursive: true });
-			const text = 'export const CACHED = 1;\n';
-			writeFileSync(join(whole, 'shaders.ts'), text);
-			writeFileSync(join(whole, 'modules.json'), JSON.stringify({ 'shaders.ts': hashOf(text) }));
-			// Only the cache can supply this set, and the stub cargo fails a build, so returning false
-			// proves that the run read the adopted set instead of building.
-			expect(ensureShaderModules(root)).toBe(false);
-			const narrow = join(modulesCacheDir(), inputHash(root));
-			expect(existsSync(narrow)).toBe(true);
-			expect(existsSync(whole)).toBe(false);
-			expect(readFileSync(join(root, MODULE_DIR, 'shaders.ts'), 'utf8')).toBe(text);
-			expect(JSON.parse(readFileSync(join(root, RECORD), 'utf8')).inputs).toBe(inputHash(root));
-		});
+		// CI asks that the set be freshly built, which this case deliberately is not: it proves that a
+		// warm set is adopted in a scratch cache, so the demand has nothing to say about it.
+		const required = process.env.NULL3D_REQUIRE_FRESH_SHADERS;
+		delete process.env.NULL3D_REQUIRE_FRESH_SHADERS;
+		try {
+			withScratchCaches(() => {
+				const root = repository();
+				writeFileSync(join(root, 'Cargo.lock'), LOCKED);
+				// The set that the last build stored, under the key that hashed the whole lock.
+				const whole = join(modulesCacheDir(), hashFiles(root, inputFiles(root)));
+				mkdirSync(whole, { recursive: true });
+				const text = 'export const CACHED = 1;\n';
+				writeFileSync(join(whole, 'shaders.ts'), text);
+				writeFileSync(join(whole, 'modules.json'), JSON.stringify({ 'shaders.ts': hashOf(text) }));
+				// Only the cache can supply this set, and the stub cargo fails a build, so returning false
+				// proves that the run read the adopted set instead of building.
+				expect(ensureShaderModules(root)).toBe(false);
+				const narrow = join(modulesCacheDir(), inputHash(root));
+				expect(existsSync(narrow)).toBe(true);
+				expect(existsSync(whole)).toBe(false);
+				expect(readFileSync(join(root, MODULE_DIR, 'shaders.ts'), 'utf8')).toBe(text);
+				expect(JSON.parse(readFileSync(join(root, RECORD), 'utf8')).inputs).toBe(inputHash(root));
+			});
+		} finally {
+			if (required !== undefined) process.env.NULL3D_REQUIRE_FRESH_SHADERS = required;
+		}
 	});
 
 	it('are out of date when an input changes, and not when a crate test changes', () => {
