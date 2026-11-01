@@ -34,3 +34,4 @@ The engine reports no compatibility adapter.
 A page that forces the mode draws no scene, and its render worker loses the Vulkan device with E1302 (`vkQueueSubmit failed with VK_ERROR_DEVICE_LOST`).
 In the vegetation run, that page reported 3 frames in 5.5 s, so the runner counted a pass.
 Its figures must not be read ([run](20261024-111020-vegetation.md), [Driver bug reports](../../driver-bugs.md)).
+This fault no longer repeated: the wind field run reports a WebGPU adapter and plays every path, and its compatibility figures stand ([run](20261101-030741-wind-field-cost.md)).

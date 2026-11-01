@@ -241,7 +241,7 @@ Startup:
 
 - The host sends the isolation headers, and lets browsers keep the hashed files under `assets/` (`getting-started/hosting`).
 - With the build's files on a CDN, the CDN sends `Access-Control-Allow-Origin` on every file, and the page's policy allows `blob:` workers and the CDN (`getting-started/hosting`). The engine needs no `'unsafe-eval'`.
-- A game that plays offline caches the files of `null3d-files.json` in its own service worker: the `start` group and each feature that it uses or lists in `preload`. A reload with the network off starts with `crossOriginIsolated` true (`getting-started/hosting`, "Offline play").
+- A game that plays offline caches the files of `null3d-files.json` in its own service worker: the `start` group and each feature that it uses or lists in `preload`. A preset can draw a feature that the sketch never asks for: High and Ultra, and WebGL2's Medium, draw screen-space bounce light, whose steps read `'ao'`'s and `'color_copy'`'s shaders from the first frame, so cache those two on those presets. A reload with the network off starts with `crossOriginIsolated` true (`getting-started/hosting`, "Offline play").
 - A cold load on Chrome's Slow 4G profile, with the cache off, reaches `engine.firstFrame` in a time you accept. The loading screen stays up until then.
 - `engine.measure(5)` reports no long tasks on the page's thread (`mainThread`) while the engine starts.
 

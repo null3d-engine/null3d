@@ -396,19 +396,32 @@ async function startsUnderStrictPolicy(dist: string): Promise<void> {
 }
 
 /**
+ * The features whose shader files the project's service worker caches, as the page uses them: the
+ * sprite shaders that the page preloads, and the ambient occlusion and color copy shaders that the
+ * preset's screen-space bounce light reads from the first frame. The project's worker holds the
+ * same list, `tests/fixtures/fresh-project/public/sw.js`.
+ */
+const CACHED_FEATURES = ['sprites', 'ao', 'color_copy'];
+
+/**
  * The project's service worker caches the page and the files of the build's list on the first
  * visit. Then the server stops, and the page must load again from the cache alone: isolated, with
- * the threaded engine and the sprite shaders that it preloads, and with no failed request but the
- * worker's own check of the list. The cache must hold the page, the start's files and the sprite
- * feature's, and no other feature's. The start holds the renderers of both GPU paths, and the
- * page must also start offline on the path that its first visit did not draw with.
+ * the threaded engine and the shaders of the features that its start draws, and with no failed
+ * request but the worker's own check of the list. The cache must hold the page, the start's files
+ * and those features' files, and no other feature's. The start holds the renderers of both GPU
+ * paths, and the page must also start offline on the path that its first visit did not draw with.
  */
 async function playsOffline(dist: string): Promise<void> {
 	console.log('\nPlay offline after the first visit');
 	const list = JSON.parse(readFileSync(join(dist, FILES_LIST), 'utf8')) as OfflineFiles;
-	const sprites = list.features.sprites ?? [];
-	if (sprites.length === 0 || list.start.some((file) => /shaders-sprites-/.test(file)))
-		throw new Error(`${FILES_LIST} does not list the sprite shaders as a feature of their own`);
+	const used = [...new Set(CACHED_FEATURES.flatMap((feature) => list.features[feature] ?? []))];
+	for (const feature of CACHED_FEATURES) {
+		const files = list.features[feature] ?? [];
+		if (files.length === 0 || files.some((file) => list.start.includes(file)))
+			throw new Error(
+				`${FILES_LIST} does not list the ${feature} shaders as a feature of their own`,
+			);
+	}
 	for (const path of ['webgpu', 'webgl2'])
 		if (!list.start.some((file) => new RegExp(`/${path}-renderers-[\\w-]+\\.js$`).test(file)))
 			throw new Error(`${FILES_LIST} leaves the ${path} renderers out of the start`);
@@ -426,10 +439,10 @@ async function playsOffline(dist: string): Promise<void> {
 			const keys = await Promise.all(names.map(async (name) => (await caches.open(name)).keys()));
 			return keys.flat().map((request) => new URL(request.url).pathname.slice(1));
 		});
-		const expected = ['', ...list.start, ...sprites].sort();
+		const expected = ['', ...list.start, ...used].sort();
 		if (JSON.stringify(cached.sort()) !== JSON.stringify(expected))
 			throw new Error(
-				`the service worker cached ${cached.length} files, not the ${expected.length} of the page, the start and the sprites`,
+				`the service worker cached ${cached.length} files, not the ${expected.length} of the page, the start and the features its start draws`,
 			);
 		server.stop(true);
 		const failed: string[] = [];

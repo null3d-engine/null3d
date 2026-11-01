@@ -1856,6 +1856,62 @@ export function vegetationWindPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * The wind field's cost on a device, at the grid shapes and pressure counts that the preset rows
+ * take: the two flat grids that Low would take, the flat 64x64 of Medium, the four layers of 128x128
+ * of High and the volume 64x24x64 of Ultra. Each page runs the solver's shipped cycle and a chain of
+ * the same work per step at every pressure count that its shape's rows name. A phone on WebGL2 has
+ * no GPU timer, so the page's frame interval and busiest thread carry its rows.
+ */
+const WIND_FIELD_COST_SHAPES = [
+	{ shape: 'flat-32', points: '1,8' },
+	{ shape: 'flat-64', points: '1,8,16' },
+	{ shape: 'layered-4x128', points: '1,8,24' },
+	{ shape: 'volume-64x24x64', points: '1,24,40' },
+] as const;
+
+/**
+ * The GPU paths of the wind field's device pages, with the shapes that each path needs. WebGL2 pays
+ * one fixed cost for each solver run, so its cells barely move the figure and two flat grids answer
+ * it. The layered and volume shapes need WebGPU's layers.
+ */
+const WIND_FIELD_COST_PATHS = [
+	{ path: 'webgpu', tier: 'webgpu', shapes: WIND_FIELD_COST_SHAPES.map((one) => one.shape) },
+	{ path: 'compat', tier: 'webgpu', shapes: ['flat-64', 'layered-4x128'] },
+	{ path: 'webgl2', tier: 'webgl2', shapes: ['flat-32', 'flat-64'] },
+] as const;
+
+/**
+ * What the wind add-on's field costs on a device, for the preset rows' budgets: the solver's shipped
+ * cycle and a chain of the same work per step at each pressure count of the row. D-283 records the
+ * figures and the budget that each preset takes.
+ */
+export function windFieldCostPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const { path, tier, shapes } of WIND_FIELD_COST_PATHS)
+		for (const shape of shapes) {
+			const points = WIND_FIELD_COST_SHAPES.find((one) => one.shape === shape)?.points ?? '1,8';
+			items.push(
+				pageItem(
+					`wind-field-${shape}-${path}`,
+					'wind-field-cost',
+					{ kind: 'probe', tier },
+					{
+						switches: [
+							`gpu=${path}`,
+							`shape=${shape}`,
+							`points=${points}`,
+							'seconds=2',
+							'rounds=3',
+						],
+						timeoutSeconds: 600,
+					},
+				),
+			);
+		}
+	return items;
+}
+
+/**
  * The GPU paths of the terrain plan's pages, and the presets that each one draws. WebGL2 and
  * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
  * under another name.
@@ -2671,6 +2727,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
 	'vegetation-wind': vegetationWindPlan,
+	'wind-field-cost': windFieldCostPlan,
 	'vegetation-grass': vegetationGrassPlan,
 	terrain: terrainPlan,
 	'terrain-shadow': terrainShadowPlan,
