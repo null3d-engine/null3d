@@ -111,6 +111,7 @@ export default defineSketch(async (ctx) => {
 			color,
 			surface,
 			atlas: bake.atlas,
+			room: bake.room,
 			positions,
 			turn: TURNS,
 			alphaMode: 'mask',

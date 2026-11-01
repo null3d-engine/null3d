@@ -61,9 +61,14 @@ describe('handOverToCards', () => {
 	/** The engine's fade band as a share of an edge's distance (see `FADE_BAND` in levels.rs). */
 	const BAND = 0.08;
 
-	test('draws the cards from far enough before the switch that their fade ends first', () => {
+	test.each([
+		['small', 4, 6],
+		['large', 18, 28],
+		['larger than the switch allows', 60, 200],
+	])("stands a %s tree's card at full coverage before its mesh thins", (_, width, height) => {
 		const ranges: [number, number][] = [];
 		const batch = {
+			scales: new Float32Array([width, height, 1]),
 			setDrawRange(start: number, end: number) {
 				ranges.push([start, end]);
 			},
@@ -73,15 +78,18 @@ describe('handOverToCards', () => {
 		const cardStart = ranges[1]?.[0] ?? 0;
 		expect(ranges[1]?.[1]).toBeGreaterThanOrEqual(1e9 - 1);
 		// The engine fades a range's near edge in from the start to the start plus one band, and
-		// its far edge out from the end less one band to the end. The two batches' dither phases
-		// differ, so the card must reach full coverage before the mesh starts to thin.
-		const cardFull = cardStart * (1 + BAND);
-		const meshThins = 100 / (1 + BAND);
-		expect(cardFull).toBeLessThan(meshThins);
+		// its far edge out from the end less one band to the end, each measured to a bound's nearest
+		// point. A card's bound reaches to its top corner, so its distance can fall short of its
+		// mesh's by that reach. The two batches' dither phases differ, so the card must reach full
+		// coverage before the mesh starts to thin.
+		const reach = Math.hypot(width / 2, height);
+		expect(cardStart).toBeGreaterThanOrEqual(0);
+		if (cardStart > 0)
+			expect(cardStart * (1 + BAND) + reach).toBeLessThanOrEqual(100 / (1 + BAND) + 1e-6);
 	});
 
 	test('refuses a switch distance that is not above 0', () => {
-		const batch = { setDrawRange() {} } as never;
+		const batch = { scales: new Float32Array(3), setDrawRange() {} } as never;
 		expect(() => handOverToCards(batch, batch, 0)).toThrow(RangeError);
 	});
 });

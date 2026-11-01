@@ -44,6 +44,8 @@ export interface FarTree {
 	readonly surface: Texture;
 	/** The width and height of a card at scale 1, in meters. */
 	readonly size: readonly [number, number];
+	/** How many times taller a view's picture is than the card's height: `createImpostors` takes it. */
+	readonly room: number;
 	/** The plant's depth along a view, in meters, which its stored surface depth spans. */
 	readonly depth: number;
 	/** The plant's lowest height in its own frame, where the card stands. */
@@ -83,6 +85,7 @@ export function bakeFarTree(
 		color: upload(ctx.textures, bake.color, 'srgb'),
 		surface: upload(ctx.textures, bake.surface, 'linear'),
 		size: bake.size,
+		room: bake.room,
 		depth: bake.depth,
 		base: asset.impostorSource.bounds.min[1],
 	};
@@ -171,17 +174,26 @@ function upload(
 }
 
 /**
- * The share of the switch distance that the cards start before it. The engine thins a draw range's
- * edge out with a dither over the last 8 per cent of that edge's distance, and the dither's phase
- * comes from each copy's own source. The mesh and the card are different sources, so their phases
- * differ: a card that faded in while the mesh faded out would drop the pixels that both left out,
- * and the background would show through the crown. Starting the cards this far ahead finishes their
- * fade while the mesh still draws every pixel, so the card stands at full coverage from before the
- * mesh's edge begins to thin. The lead covers the gap between the two batches' bounding spheres,
- * whose radii differ because a card's corner lies farther from its origin than the plant's own
- * vertices do.
+ * The share of a draw range's edge distance over which the engine dithers that edge. The dither's
+ * phase comes from each copy's own source. The mesh and the card are different sources, so their
+ * phases differ: a card that faded in while the mesh faded out would drop the pixels that both left
+ * out, and the background would show through the crown.
  */
-const CARD_LEAD = 0.2;
+const EDGE_BAND = 0.08;
+
+/**
+ * Where a batch of cards starts so that each stands at full coverage before its mesh's edge begins
+ * to thin. A draw range measures to a bound's nearest point, and a card's bound reaches as far as
+ * its top corner from where it stands, so a large tree's card takes its distance far nearer than
+ * its mesh does. Its start allows for the farthest corner of the largest card.
+ */
+function cardsStart(cards: InstanceBatch, switchDistance: number): number {
+	let reach = 0;
+	const { scales } = cards;
+	for (let k = 0; k < scales.length; k += 3)
+		reach = Math.max(reach, Math.hypot((scales[k] as number) / 2, scales[k + 1] as number));
+	return Math.max(0, (switchDistance / (1 + EDGE_BAND) - reach) / (1 + EDGE_BAND));
+}
 
 /** The far edge that a card batch draws to, in meters: farther than any camera's far plane. */
 const FAR = 1e9;
@@ -189,16 +201,14 @@ const FAR = 1e9;
 /**
  * Hands a band of trees from their meshes to their cards. The meshes draw up to
  * `switchDistance`, and the engine dithers their last few per cent of that range out. The cards
- * start a fifth of the switch before it, so their own dithered edge finishes before the mesh's edge
- * begins to thin: each dropped mesh pixel shows its card at full coverage, one dither moves the
- * tree from its mesh to its card, and the background never shows through the crown. Write the
- * cards' turns and sizes before this call, and call it at setup.
+ * start far enough before it that their own dithered edge finishes before the mesh's edge begins to
+ * thin: each dropped mesh pixel shows its card at full coverage, one dither moves the tree from its
+ * mesh to its card, and the background never shows through the crown. Write the cards' turns and
+ * sizes before this call, and call it at setup.
  *
  * @param meshes The batch of near meshes, whose rows stand at the same trees.
  * @param cards The card batch, such as `ImpostorBatch.batch`.
- * @param switchDistance The distance from the camera at which a tree hands over, in meters. Give a
- *   distance well beyond the plant's own size, so the card's lead is longer than the difference
- *   between the two batches' bounds.
+ * @param switchDistance The distance from the camera at which a tree hands over, in meters.
  * @category api/vegetation
  */
 export function handOverToCards(
@@ -211,5 +221,5 @@ export function handOverToCards(
 			`handOverToCards() got ${switchDistance} as the switch distance, not a number above 0.`,
 		);
 	meshes.setDrawRange(0, switchDistance);
-	cards.setDrawRange(switchDistance * (1 - CARD_LEAD), FAR);
+	cards.setDrawRange(cardsStart(cards, switchDistance), FAR);
 }
