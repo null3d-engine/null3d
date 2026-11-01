@@ -141,6 +141,7 @@ describe('the preset table', () => {
 			'reflectionScale',
 			'probeSize',
 			'areaLights',
+			'lightFit',
 			'lodThreshold',
 			'lodShadowFactor',
 			'lodFade',
@@ -212,6 +213,7 @@ describe('the preset table', () => {
 			'pointLightShadows',
 			'depthPrepass',
 			'gpuOcclusion',
+			'lightFit',
 			'morphTargets',
 		]);
 		expect(LIVE_SETTINGS).toEqual([
@@ -246,6 +248,7 @@ describe('the preset table', () => {
 			'softwareOcclusion',
 			'parallax',
 			'governor',
+			'lightFit',
 		]);
 	});
 
@@ -324,6 +327,7 @@ describe('presetSettings', () => {
 			heroTileSize: 1024,
 			pointLightShadows: false,
 			gpuOcclusion: false,
+			lightFit: false,
 			morphTargets: 8,
 		});
 		expect(presetSettings('medium')).toEqual({
@@ -365,6 +369,7 @@ describe('presetSettings', () => {
 			heroTileSize: 2048,
 			pointLightShadows: false,
 			gpuOcclusion: false,
+			lightFit: true,
 			morphTargets: 16,
 		});
 		expect(presetSettings('high')).toEqual({
@@ -406,6 +411,7 @@ describe('presetSettings', () => {
 			heroTileSize: 2048,
 			pointLightShadows: true,
 			gpuOcclusion: false,
+			lightFit: true,
 			morphTargets: 32,
 		});
 		expect(presetSettings('ultra')).toEqual({
@@ -447,6 +453,7 @@ describe('presetSettings', () => {
 			heroTileSize: 4096,
 			pointLightShadows: true,
 			gpuOcclusion: false,
+			lightFit: true,
 			morphTargets: 64,
 		});
 	});
@@ -531,7 +538,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, bloomSize, aoScale, contactShadowSteps, dofSamples, subsurfaceSamples, ssrScale, ssrSteps, exposureMeter, fogSlices, reflectionScale, probeSize, areaLights, softParticles, lodThreshold, lodShadowFactor, lodFade, physicalSky, softwareOcclusion, parallax or governor.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, bloomSize, aoScale, contactShadowSteps, dofSamples, subsurfaceSamples, ssrScale, ssrSteps, exposureMeter, fogSlices, reflectionScale, probeSize, areaLights, softParticles, lodThreshold, lodShadowFactor, lodFade, physicalSky, softwareOcclusion, parallax, governor or lightFit.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

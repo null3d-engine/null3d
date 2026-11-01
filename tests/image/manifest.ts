@@ -567,6 +567,42 @@ function aoTests(): ImageTest[] {
 	];
 }
 
+/** The prototype AO comparison page (tests/pages/proto-s3.ts), not an engine page. */
+const PROTO_AO_PAGE = 'tests/pages/proto-s3.html';
+
+/**
+ * The bitmask ambient occlusion prototype's own pictures, which keep the figures in its decision
+ * record reproducible. Each draws the prototype page's fixed scene on both GPU paths and publishes
+ * one picture of the occlusion alone: the current technique and the bitmask variant, each at half
+ * and at a quarter size. These entries and the page serve the prototype alone. The engine's own AO
+ * tests do not draw them.
+ */
+function protoAoTests(): ImageTest[] {
+	const test = (name: string, ao: string, aoscale: string): ImageTest => ({
+		name,
+		page: PROTO_AO_PAGE,
+		size: [960, 540],
+		tiers: ['webgpu', 'webgl2'],
+		switches: [
+			`aos=${ao}`,
+			`aoscale=${aoscale}`,
+			`picture=copy-${ao}-bilinear-ao`,
+			'imagesize=960x540',
+			'measure=0',
+		],
+		// The software set is this machine's SwiftShader drawing, and CI's Linux SwiftShader is the
+		// judge. A wider tolerance covers the two renderers' rounding until a CI run draws the set.
+		swiftShaderTolerance: { maxDiffRatio: 0.01 },
+		timeoutSeconds: 180,
+	});
+	return [
+		test('proto-ao-current-half', 'three', '0.5'),
+		test('proto-ao-current-quarter', 'three', '0.25'),
+		test('proto-ao-bitmask-half', 'bitmask', '0.5'),
+		test('proto-ao-bitmask-quarter', 'bitmask', '0.25'),
+	];
+}
+
 /** The sketch of the occlusion tests: a city whose buildings block the view from its streets. */
 const OCCLUSION_SKETCH = 'tests/pages/sketches/occlusion-sketch.ts';
 
@@ -1616,6 +1652,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...hdrLimitTests(),
 	...realUnitsTests(),
 	...aoTests(),
+	...protoAoTests(),
 	...outlineTests(),
 	...minimapTests(),
 	...reflectionTests(),
@@ -2894,7 +2931,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Each built-in vegetation species: three of its variants, grown from the species record and a
 	// fixed seed, in a row on flat ground, drawn with the bark and leaf atlases that the GPU paints
-	// at first use.
+	// at first use. The shrub's page takes longer than the default limit on CI's software GPU, where
+	// it ran out the 60 seconds on compatibility and on WebGL2, so it asks for three times that.
 	...[
 		'broadleaf',
 		'conifer',
@@ -2913,6 +2951,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		name: `vegetation-${species}`,
 		sketch: `tests/pages/sketches/vegetation-sketch.ts?species=${species}`,
 		hold: 1,
+		...(species === 'shrub' && { timeoutSeconds: 180 }),
 	})),
 	// The four maps that the GPU paints for the two atlases, each with its mip levels beside it,
 	// and below them a trunk and a leaf card drawn through the materials that sample them.
@@ -2946,6 +2985,50 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/vegetation-coverage-sketch.ts',
 		hold: 1,
 		size: [640, 360],
+	},
+	// The first grass picture: a hill of tufts grown by the add-on, placed and tinted by integer
+	// hash, drawn as one band. The blades read the wind add-on's field, which this picture holds
+	// still; the camera and the light are fixed, so two runs draw the same frame.
+	{
+		name: 'vegetation-grass',
+		sketch: 'tests/pages/sketches/vegetation-grass-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+	},
+	// A grove of grown oaks in the scene's one wind field: the leaf and bark materials sway, the
+	// leaves flutter and the sun's shadows follow. The two holds catch the trees at different points
+	// of their sway, the motion picture draws the sway's motion, and the still picture holds the air
+	// for the pair that the sway moves. The page that first compiles the instanced plant materials
+	// and their shadow casters pays minutes for it on CI's software GPU, which took 2.0 to 4.6
+	// minutes a page, so these four run in the heavy job, where each has a runner of its own, and
+	// hold 600 seconds. A later test that compiles these builds first meets the same wall.
+	{
+		name: 'vegetation-wind',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+	},
+	{
+		name: 'vegetation-wind-later',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts',
+		hold: 1.6,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+	},
+	{
+		name: 'vegetation-wind-motion',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?motion',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+	},
+	{
+		name: 'vegetation-wind-still',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?still',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
 	},
 	// The wind add-on's own page: a field of cards that reads the air at each vertex. A gust
 	// crosses the field between the first hold and the second, so the pairs change where the gust
@@ -3013,6 +3096,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// One leaned pine beside its own card, whose crown is not symmetric, seen from 90 degrees around
+	// the pair. The tree and its card are turned by the same angle, so the pair must show the same
+	// lit and dark sides. A card that turned its stored normal with the camera's own frame lights
+	// the opposite side here, where the camera's azimuth and the tree's turn add up.
+	{
+		name: 'impostor-turn-lean-azimuth',
+		sketch: 'tests/pages/sketches/impostor-turn-lean-sketch.ts?azimuth=90',
+		hold: 0,
+		size: [480, 270],
+	},
 	// A grown birch beside the card that `bakeFarTree` makes from it. The mesh draws level 0 with the
 	// bark and leaf materials, and the card draws the same level baked with the same atlases and the
 	// same colours, so the two crowns match in colour at the hand-over.
@@ -3022,9 +3115,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
-	// A row of pines inside the hand-over band: each draws as its mesh and as its card at the same
-	// place, the mesh's pixels dither out over the card's full crown, and the background must not
-	// show through the crown where both could drop a pixel.
+	// A row of turned pines inside the hand-over band: each draws as its mesh and as its card at the
+	// same place, the card shows the turn that its tree has, the mesh's pixels dither out over the
+	// card's full crown, and the background must not show through the crown where both could drop a
+	// pixel.
 	{
 		name: 'impostor-handover',
 		sketch: 'tests/pages/sketches/impostor-handover-sketch.ts',
@@ -3230,12 +3324,22 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
 	},
-	// The balls' transmission and thickness vary across them, from the two maps that take the
-	// specular maps' slots: bands of the transmission map's red and bands of the thickness map's
-	// green. A software GPU builds these shaders slowly.
+	// The balls' transmission and thickness vary across them, from the two maps that keep row slots
+	// beside the specular maps: bands of the transmission map's red and bands of the thickness
+	// map's green. A software GPU builds these shaders slowly.
 	{
 		name: 'transmission-maps',
 		sketch: `${TRANSMISSION_SKETCH}?maps`,
+		hold: 0,
+		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
+		timeoutSeconds: 60,
+	},
+	// The same balls with a specular intensity map in the same texture array, lit by the built-in
+	// room whose reflection its bands vary: each map keeps its own row slot, so a build that drops
+	// either one draws a different picture. A software GPU builds these shaders slowly.
+	{
+		name: 'transmission-specular',
+		sketch: `${TRANSMISSION_SKETCH}?maps&specular&env`,
 		hold: 0,
 		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
 		timeoutSeconds: 60,

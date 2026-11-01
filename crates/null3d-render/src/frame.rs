@@ -500,7 +500,9 @@ pub trait FrameBuilder {
     fn account(&self, register: &mut MemoryRegister);
     /// Forgets every GPU object the draw lists created and every upload they made, so the next
     /// frame creates them all again and uploads the whole scene. The thread that draws asks for
-    /// this after the browser took the GPU away and it made a new device.
+    /// this after the browser took the GPU away and it made a new device. A builder also does this
+    /// itself to record again after a frame failed, once the scene changed or the frame's bound
+    /// shrank.
     fn reset_gpu(&mut self);
     /// Draws the scene into a target of another format, or with another anti-aliasing mode, from
     /// the next frame on, as an effect that needs HDR color asks on the 8-bit path. The render
@@ -885,13 +887,24 @@ pub(crate) fn put_u32(bytes: &mut [u8], word: usize, value: u32) {
     bytes[word * 4..word * 4 + 4].copy_from_slice(&value.to_ne_bytes());
 }
 
+/// The figures of a frame that halted the builder, which a later frame compares with its own: the
+/// bound it reached, the forecast of the state it leaves, and the sources that could draw it.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct HaltFigures {
+    pub bound: usize,
+    pub forecast: usize,
+    pub active: u32,
+}
+
 /// The draw list and the upload arena of each frame parity, and the frames' all-or-nothing rule.
 ///
 /// A frame that fails publishes an empty list, so the thread that draws replays nothing and the
 /// canvas keeps the last frame that recorded whole. A failure before the frame recorded any
 /// command changed nothing on the GPU, and the next frame tries again. A failure after it recorded
 /// commands leaves the builder believing that the GPU holds what the dropped commands would have
-/// made, so every later frame fails with the same error until a new GPU device starts afresh.
+/// made. Later frames then fail with the same error until the scene changes or the frame's upload
+/// bound shrinks, when the builder forgets its GPU objects and records from the start, or until a
+/// new GPU device starts afresh.
 pub(crate) struct ParityLists {
     lists: [DrawList; 2],
     arenas: [UploadArena; 2],
@@ -905,6 +918,13 @@ pub(crate) struct ParityLists {
     still: crate::still::Still,
     /// The error of a frame that failed after it recorded commands.
     halted: Option<RecordError>,
+    /// The upload bound of the frame that halted the builder, and the bound that frame forecast
+    /// before it recorded. A later frame retries only when its forecast falls below both.
+    halted_bound: usize,
+    halted_forecast: usize,
+    /// The sources that could draw the frame that halted the builder, which the WebGL2 builder's
+    /// bound does not follow, so a row drop there needs a trigger of its own.
+    halted_sources: u32,
 }
 
 impl ParityLists {
@@ -920,6 +940,9 @@ impl ParityLists {
             flat: Vec::new(),
             still: crate::still::Still::default(),
             halted: None,
+            halted_bound: 0,
+            halted_forecast: 0,
+            halted_sources: 0,
         }
     }
 
@@ -970,6 +993,8 @@ impl ParityLists {
     /// ago outside its marked parts: the arena's volatile bytes and the list's marked words. The
     /// still count then grows, or falls to zero. A frame that changed while it blended a still view
     /// gets the whole weight, so it shows as it is drawn rather than mixed into the old history.
+    /// `figures` holds the bound the frame reached, the forecast of the state it leaves, and the
+    /// sources that could draw it. A later frame compares its own with them.
     pub(crate) fn restore(
         &mut self,
         frame: u32,
@@ -977,6 +1002,7 @@ impl ParityLists {
         mut arena: UploadArena,
         marks: StillMarks<'_>,
         result: Result<bool, RecordError>,
+        figures: HaltFigures,
     ) -> Result<bool, RecordError> {
         let parity = (frame & 1) as usize;
         if result.is_ok() {
@@ -1007,6 +1033,9 @@ impl ParityLists {
         if let Err(error) = result {
             if !list.is_empty() {
                 self.halted = Some(error);
+                self.halted_bound = figures.bound;
+                self.halted_forecast = figures.forecast;
+                self.halted_sources = figures.active;
             }
             list.clear();
         }
@@ -1015,9 +1044,23 @@ impl ParityLists {
         result
     }
 
-    /// Lets frames record again on a new GPU device, which the builder fills from the start.
+    /// Lets frames record again, which the builder fills from the start: a new GPU device holds
+    /// none of the objects, and a frame that failed once its scene or bound changed starts again.
     pub(crate) fn reset_gpu(&mut self) {
         self.halted = None;
+    }
+
+    /// True when the builder halted and the next frame can record where the halted one could not.
+    /// That needs one of three: the scene changed, the sources that draw fell, or the frame's
+    /// forecast fell below both the forecast the halted frame made and the bound it reached. The
+    /// last condition is what stops a page from grinding: a forecast that stays level, because a
+    /// table holds its size or because the layout grows past the forecast, never retries. The
+    /// caller then starts the GPU's objects again and records the frame.
+    pub(crate) fn can_retry(&self, forecast: usize, active: u32, changed: bool) -> bool {
+        self.halted.is_some()
+            && (changed
+                || active < self.halted_sources
+                || (forecast < self.halted_forecast && forecast < self.halted_bound))
     }
 }
 
@@ -1225,6 +1268,9 @@ pub struct SceneSettings {
     light_tables: LightTables,
     /// The most area lights that one frame shades, which the quality settings set.
     area_light_cap: u32,
+    /// True while the GPU may fit the light clusters' depth slices to the depth it measured, which
+    /// the quality settings set.
+    light_fit: bool,
     /// Whether the lit templates draw with their builds that shade area lights.
     area_shading: AreaShading,
     /// True when the last gather found an area light whose tables have arrived.
@@ -1379,6 +1425,7 @@ impl SceneSettings {
             mirror_halvings: 1,
             light_tables: LightTables::default(),
             area_light_cap: DEFAULT_AREA_LIGHT_CAP,
+            light_fit: true,
             area_shading: AreaShading::default(),
             area_wanted: false,
             particles: ParticleTable::default(),
@@ -1449,6 +1496,17 @@ impl SceneSettings {
     /// Sets the most area lights that one frame shades, from the next frame on.
     pub fn set_area_light_cap(&mut self, cap: u32) {
         self.area_light_cap = cap;
+    }
+
+    /// True while the GPU may fit the light clusters' depth slices to the depth it measured.
+    pub fn light_fit(&self) -> bool {
+        self.light_fit
+    }
+
+    /// Leaves the light clusters' slices on the CPU's, or lets the GPU fit them to the measured
+    /// depth, from the next frame on.
+    pub fn set_light_fit(&mut self, fit: bool) {
+        self.light_fit = fit;
     }
 
     /// Makes the standard material's maps share the first `units` bindings of their bind group,
@@ -3441,6 +3499,11 @@ impl SceneSettings {
         self.lighting.sun_shadow.map_or(0, |shadow| shadow.cascades)
     }
 
+    /// The main directional light's shadow settings, or None when it casts no shadows.
+    pub fn sun_shadow(&self) -> Option<SunShadow> {
+        self.lighting.sun_shadow
+    }
+
     /// How the cascades' shadow map stores depth.
     pub fn cascade_depth(&self) -> CascadeDepth {
         self.cascade_depth
@@ -3597,7 +3660,8 @@ impl SceneSettings {
         let materials = &self.materials;
         self.moving_casters
             .update(scene, input.batches, input.structure_changed, |material| {
-                sways(materials, material) && !casts_still(materials, material)
+                (sways(materials, material) && !casts_still(materials, material))
+                    .then(|| materials.sway(material - 1))
             });
         let moving = &self.moving_casters;
         // A still view has no moving caster for a far cascade to follow, so every cascade draws in
@@ -3615,7 +3679,14 @@ impl SceneSettings {
             interval,
             |bounds| {
                 quality.follow_movers
-                    && moving.touch(scene, input.batches, parity, shadow.layers, bounds)
+                    && moving.touch(
+                        scene,
+                        input.batches,
+                        parity,
+                        shadow.layers,
+                        bounds,
+                        absolute,
+                    )
             },
         );
         Some(ShadowFrame {
@@ -4272,6 +4343,20 @@ impl PageBuffers {
         let (vertex_bytes, index_bytes) = page.buffer_bytes();
         vertex_bytes > u64::from(self.vertex_bytes) || index_bytes > u64::from(self.index_bytes)
     }
+
+    /// The bytes that the next upload copies into the arena: the page's data added since the last
+    /// one, or the whole page when it outgrew its buffers.
+    fn pending_bytes(&self, page: &Page) -> usize {
+        let held = if self.outgrown(page) {
+            PageBuffers::default()
+        } else {
+            *self
+        };
+        let (first, end) = held.changed;
+        (page.vertices.len() - held.vertices)
+            + end.min(held.vertices).saturating_sub(first)
+            + ((page.indices.len() - (held.indices & !1)) * 2).next_multiple_of(4)
+    }
 }
 
 /// The GPU buffers of the mesh pages: page `p` keeps its vertices in buffer `first_id + 2p` and
@@ -4301,6 +4386,18 @@ impl MeshBuffers {
         self.pages
             .get(page as usize)
             .map_or(0, |buffers| buffers.vertex_bytes)
+    }
+
+    /// The most that the next [`MeshBuffers::upload`] copies into the arena.
+    pub(crate) fn pending_bytes(&self, pages: &[Page]) -> usize {
+        pages
+            .iter()
+            .enumerate()
+            .map(|(p, page)| {
+                let buffers = self.pages.get(p).copied().unwrap_or_default();
+                buffers.pending_bytes(page)
+            })
+            .sum()
     }
 
     /// Uploads the pages' data added since the last upload, from copies in the frame's arena. A
@@ -4498,6 +4595,16 @@ pub fn grown_size_within(needed: u32, limit: u32) -> Result<u32, RecordError> {
     grown_size(needed, limit).ok_or(RecordError::BufferFull { bytes: limit })
 }
 
+/// The sources that can draw a frame: every scene slot, and the active rows of every batch. A row
+/// the page holds without drawing uploads no copy and takes no upload room.
+pub(crate) fn active_sources(input: &FrameInput<'_>) -> u32 {
+    let parity = input.parity();
+    let rows = input.batches.iter().fold(0u32, |total, (_, batch)| {
+        total.saturating_add(batch.frame_active_count(parity))
+    });
+    (input.scene.capacity() + 1).saturating_add(rows)
+}
+
 /// Encodes a linear color channel as sRGB.
 pub fn linear_to_srgb(c: f32) -> f32 {
     if c <= 0.003_130_8 {
@@ -4584,6 +4691,31 @@ mod tests {
         let second = arena.memory_use();
         assert_eq!(second.peak, 300);
         assert_eq!(second.used, 100);
+    }
+
+    /// A halted builder retries only on a changed scene, a row drop, or a forecast below both the
+    /// forecast that failed and the bound it reached. A forecast that holds level never retries,
+    /// so a page cannot grind by re-creating its GPU objects every frame.
+    #[test]
+    fn a_halted_builder_retries_only_on_a_change_or_a_further_fall() {
+        let mut lists = ParityLists::new(16, 64);
+        lists.halted = Some(RecordError::OutOfMemory { bytes: 1 });
+        lists.halted_bound = 1_000;
+        lists.halted_forecast = 900;
+        lists.halted_sources = 10;
+        // The same load and forecast: the builder keeps the error.
+        assert!(!lists.can_retry(900, 10, false));
+        // Below the bound the frame reached but not below its forecast: no retry, since the frame
+        // would reach the same bound again.
+        assert!(!lists.can_retry(950, 10, false));
+        // A further fall below both retries.
+        assert!(lists.can_retry(800, 10, false));
+        // A row drop retries even when the forecast holds, which is the WebGL2 builder's case.
+        assert!(lists.can_retry(900, 5, false));
+        // A row rise does not, nor a level row count with a level forecast.
+        assert!(!lists.can_retry(900, 15, false));
+        // A changed scene retries whatever the figures.
+        assert!(lists.can_retry(900, 10, true));
     }
 
     /// A buffer that no bind group reads follows the device's largest buffer: the portable buffer

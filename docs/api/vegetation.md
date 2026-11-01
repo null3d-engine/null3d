@@ -8,7 +8,7 @@ summary: "Trees, conifers, shrubs, ferns, hostas and grass grown from a species 
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass. This page covers the species generator, the scatter, the bark and leaf atlases that the browser paints at first use, the material that draws a plant from them, and the far tree that a card draws.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass's compute-built blades and its near shadows. This page covers the species generator, the scatter, the bark and leaf atlases that the browser paints at first use, the material that draws a plant from them, the per-vertex wind that moves it, the far tree that a card draws, and the grass's CPU path.
 
 ```mermaid
 flowchart LR
@@ -91,8 +91,8 @@ A record holds only numbers and short strings. This table shows the parts that a
 | Field | Holds |
 | --- | --- |
 | `id`, `kind` | A name, and `tree`, `conifer`, `shrub`, `fern`, `rosette` or `grass` |
-| `branchLevels` | One entry per level: `children`, `prune`, `length`, `lengthVariance`, `angle`, `angleVariance`, `curve`, `curveVariance`, `taper`, `start`, `end`, `sides`, `segments` and `twist` |
-| `crown` | A `shape` from the nine outlines, the `start` height, a `spread`, and the vertical `pull` |
+| `branchLevels` | One entry per level: `children`, `prune`, `length`, `lengthVariance`, `angle`, `angleVariance`, `curve`, `curveVariance`, `taper`, `start`, `end`, `sides`, `segments`, `twist` and the optional `whorls` |
+| `crown` | A `shape` from the nine outlines, the `start` height, a `spread`, the vertical `pull`, and the optional `floor` that a crown keeps at its narrowest |
 | `leaf` | `kind` (`cluster`, `needle`, `frond` or `blade`), `cards`, `width`, `height`, `perCard`, `up`, `out`, `start` and `end` |
 | `rosette` | For a plant without branches: `blades`, `length`, `width`, `arch`, `segments`, `shape`, `pinnae`, `upright` and `flowers` |
 | `wind` | `stiffness` for each branch level, the flutter's `flutter` distance and its `frequency` |
@@ -103,6 +103,12 @@ A record holds only numbers and short strings. This table shows the parts that a
 | `seedSalt` | A number that changes this species alone when the scene's seed changes |
 
 `speciesProblems(record)` lists every field that cannot grow, and `checkSpecies` throws one message with all of them. A themed species pack is a list of these records. It needs no code.
+
+**A level's `start` and `end` place its children, not itself.** The trunk's record says where its boughs attach, and a bough's record says where its branchlets attach. So a conifer whose bough level asks for 0.1 grows boughs from a tenth of the trunk and its crown reaches the ground, while 0.48 leaves the lower trunk bare. A trunk level's own `start` is never read, because a trunk has no parent.
+
+**A whorled level makes shelves, not one mass.** A branch level whose record gives `whorls` places its children in rings at the same height along the parent, and a conifer grows its boughs that way. Each ring then carries its boughs as one shelf, and a crown of rings reads as layered plates with air between them, which is the shape a spruce or a pine has and an even spread of boughs cannot make. Zero, the default, spreads the children evenly, as a broadleaf's limbs grow. The crown's `floor` sets how much of a bough the outline keeps at its narrowest: the default 0.2 holds a rounded crown's top open, and a conifer that tapers to a point asks for less.
+
+**A leaf's `width` and `height` are half a card.** A card draws two of each. Many cards cost vertex memory and a few large ones do not, so a crown closes by making its cards larger rather than more numerous: a leaf cell carries sixty small leaves, and a bigger card shows more of them at the same size on the screen. The generated arrays of the whole built-in set are measured against the memory budget that D-241 records.
 
 ## Detail levels
 
@@ -135,11 +141,27 @@ A rosette thins its leaves the same way, and widens each kept leaf instead of le
 
 ## Wind data and the crown
 
-Every vertex's color carries four bytes: the branch's index, the leaf's flutter phase, the branch's stiffness and the crown's occlusion. `asset.wind.pivots` holds one record for each branch, sixteen floats each: the pivot, the axis, the parent's index, the stiffness, the flutter, the branch level and the branch's length. Upload it as a data texture and read it in a material's vertex offset. A plant keeps at most 255 branches, because the index takes eight bits.
+Every vertex's color carries four bytes: the branch's index, the leaf's flutter phase, the branch's stiffness and the crown's occlusion. `asset.wind.pivots` holds one record for each branch, sixteen floats each: the pivot, the axis, the parent's index, the stiffness, the flutter, the branch level, the branch's length and the branch's sway phase. Upload it as a data texture and read it in a material's vertex offset. A plant keeps at most 255 branches, because the index takes eight bits.
 
 `asset.crown` holds the outline, the bounds, the center and the radius. The bounds hold every level, so a switch never moves them. `asset.impostorSource` names the level, the bounds, the pivot and the tint that a far card bakes from.
 
-The generator does not draw anything by itself. The leaf and bark materials that read this data arrive in a later step.
+`plantWind` turns this data into what a plant's materials read: the branch records in one data texture of half floats, four texels for each branch, with the wind field's steady settings in the texture's second row, and the crown, height and transmission of the plant. Give one `plantWind` to a variant's leaf and bark materials, so both parts read the same table.
+
+```ts
+import { createWind } from '@null3d/wind';
+
+const wind = createWind(ctx, { camera, box: 128 });
+const field = plantWind(ctx, asset, wind.field, { swayDistance: 60 });
+const leaves = plantMaterial(ctx, { atlases, part: 'leaves', wind: field, cell: leafCellFor(oak) });
+```
+
+The offset has three layers. The trunk bends as a cantilever, most at its top. Every branch turns about its pivot, and the turns carry the branches above them, so a twig follows its limb. The leaves flutter across the air from their stored phases. One sampling of the wind field at the vertex's place drives them all, and the shading of the shadow uses the same offset in every pass.
+
+`swayDistance` is the distance from the camera out to which the plant moves. The offset fades to nothing over the last fifth of it, and the engine counts the plant as moving only within it, so the far shadow cascades that only a still plant reaches keep the layers they hold. A plant past it stands still with the shadow its layer holds. Leave the distance out, or give 0, for a plant that moves at every distance.
+
+A page takes the distance from the quality preset rather than choosing one: `swayDistanceFor(preset)` reads `PLANT_SWAY_DISTANCE`, which gives 8, 16, 24 and 32 meters from Low to Ultra, so a heavier preset moves more of the grove and a governor step that lowers the preset shortens the distance with it. The field keeps two states, and its texture names the one that its last run wrote, so call `setWindLayer(materials, wind.field)` in each frame with the leaf and bark materials that read the field; a material that reads the other layer sways by a frame of stale air.
+
+`treeValues(x, z, seed, autumn)` gives a copy's four row values: a tint from an integer hash of the copy's whole-meter place, and the autumn value. Give them to the batch that draws the copies, with `values: true`, so each tree differs and the same place gives the same tree on every device.
 
 ## Generating in a worker
 
@@ -212,6 +234,16 @@ A large scene need not place every plant at once. `EcoScatter` takes tiles with 
 
 `varianceMaps` holds three patches at one to two meters. The type picks a species' variant, the color shifts a plant's tint, and the lichen covers a plant or a stone. Each point carries the values at its place in its `tint` and `lichen` fields. Neighboring plants therefore differ a little, and the ground gains patches.
 
+## Grass on the ground
+
+`createGrass(ctx, { height, area, count, seed, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)` and skip ground steeper than `maxSlope`. Their turn, size and tint come from integer hashes, so one seed places the same grass on every device. Each tuft's row values carry its tint, which its shader reads. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
+
+The blades bend in the wind add-on's field, the same field that the leaf material reads. Give `createGrass` its `wind` field, and call `grass.setWindLayer(field)` in each frame with the field's newest state, as the leaf material takes it. A page that gives no field grows grass that stands still.
+
+The CPU tile path draws on WebGPU and WebGL2, with one instance batch for each tuft shape. The rows are built for Ultra's share once, so a preset change only changes how many rows each batch draws, not the memory. The compute path, which builds and culls blades on the GPU for the denser presets, is not built yet.
+
+The blades receive the sun's shadows. The ground's own colour and the blades' root colours should meet at the hill's foot.
+
 ## Speed and memory
 
 The built-in set holds thirteen species and six variants each. Grown in one call, the whole set takes about 50 ms on an Apple M5 Max laptop. The measured budgets are 60 ms for the iPhone and the iPad, and 200 ms for the slowest tablet. A tree takes about 3,000 to 5,500 triangles at full detail, and all of its levels together take about 0.3 to 0.5 MB. The whole set of 78 variants takes about 18 MB of vertex arrays.
@@ -244,11 +276,15 @@ const leaves = plantMaterial(ctx, {
 - **Bark** comes from stretched cells warped by noise, with cracks between them and fibres up the trunk. It tiles around and along a branch.
 - **Leaves** come from outlines cut with teeth or lobes, and veins written into a height field, which the surface map's normal follows. Its blue channel holds the leaf's coverage, and its alpha its thickness.
 - **A leaf cell holds more than one leaf.** The leaves differ in outline, colour and veins, and a few have a piece bitten out of an edge. A crown therefore does not read as one leaf shape tiled over and over.
+- **The leaf's shading follows measured leaves.** Its gloss is a dielectric's, with a reflectance at normal incidence of about 0.035 and a perceptual roughness of 0.35 to 0.6. About a third of its diffuse light passes through to its other side, tinted by the leaf: the measured share is 0.25 to 0.45, and the species record gives it. The leaf sets `s.diffuseNormal` to the crown's outward normal, so the crown lights as the volume it stands for, and keeps its own normal map for the gloss and the light through it.
+- **Each tree differs.** The four row values that `treeValues` gives a batch carry the copy's tint and its autumn value. The tint shifts the leaf's hue by a few per cent. Autumn turns the leaf toward yellow, brightens it, roughens it and lifts the light that passes through it.
+- **The floor of the crown is darker.** The generator's crown occlusion, in the vertex colour's alpha, cuts the sky and sun that reach a leaf inside the crown.
 - **The leaf block holds eight cells**: four leaf clusters, a needle spray, a frond, a blade and a broad leaf. `leafCellFor` picks one from a species record.
 - **The colour map multiplies the species' colour.** It holds the veins, the shade of each leaf and the lift of its ridges, so two species that share a cell still differ.
 - **The engine makes each texture's mip levels.** A masked material fades its cut edges with alpha to coverage, so a leaf card that shrinks keeps the share of the picture that its leaves cover, and a crown far away stays as dense as it is up close.
 - **The card material morphs, and the plain one does not.** `plantMaterial` takes `morph` only for a plant's leaves: its WGSL adds a vertex offset that reads each leaf vertex's target record. A trunk, a frond or a flower drawn with the plain material needs no record.
-- **The four textures take about 4.6 MB of texture memory.** They are painted once, in the setup, and kept for the visit.
+- **A plant material draws a mesh with the plant vertex format.** Its wind offset reads each vertex's branch index and leaf phase from the vertex color. A still material reads neither, but its mesh must still carry the color attribute. Without it the pair draws nothing.
+- **The four textures take about 4.6 MB of texture memory.** They are painted once, in the setup, and kept for the visit. A plant's branch records take one more small texture, eight bytes for each branch.
 
 
 ## Far trees
@@ -280,7 +316,7 @@ handOverToCards(nearTrees, cards.batch, 240);
 
 `bakeFarTree` returns the two textures, the grid, the card's `size` and the plant's `depth`, which scales the stored depth that places a card's own shadow lookup. A far card casts the crown's shape through a second batch with `castShadows: true`, on a layer that the sun draws and no camera does, and takes the shadows of other objects with `receiveShadows: true` ([Impostors](impostors.md)). The bake draws level 0, or the level that the plant's `impostorSource` names. The bark colour tints the wood and the leaf colour the leaves, as the plant's materials do. A second call for the same plant, grid and cell size reuses the baked pixels.
 
-`handOverToCards(meshes, cards, switchDistance)` sets the distance bands. The meshes draw up to the switch, and over the last eighth of that range the engine dithers their pixels out. The cards draw from just before that band and stand at full coverage behind the meshes, so each pixel that a mesh's dither drops shows its card, and no pixel ever drops out of both. The cards take no fading build, which every custom material lacks: a batch that dithered as well would leave the background showing through the crown. The meshes and the cards stand at the same trees, so a tree draws as its mesh near the camera and as its card far from it.
+`handOverToCards(meshes, cards, switchDistance)` sets the distance bands. The meshes draw up to the switch. Over the last 8 per cent of that range the engine dithers their pixels out. The cards start a fifth of the switch earlier. Their own dithered edge then finishes before the mesh's edge begins to thin. They stand at full coverage behind the meshes, each pixel that a mesh's dither drops shows its card, and no pixel ever drops out of both. A custom material fades at a range edge as the engine's own materials do. The mesh and the card are different sources, so their dither phases differ, and the two edges must not fall on the same pixels. The meshes and the cards stand at the same trees, so a tree draws as its mesh near the camera and as its card far from it.
 
 A card's rows need their turn, so a turned tree's crown matches its card. The plant's `impostorSource.bounds` gives the largest bound over its levels, which the bake uses for the card's size and for its lowest point.
 

@@ -739,11 +739,11 @@ export function pageBuildPriorityProblem(priority: number | undefined): string |
 }
 
 /**
- * Takes the machine's lock of production page builds, which lets one run at a time: two at once
- * leave the bundler blocked in its own callback, gaining a tenth of a second of processor time a
- * minute, and neither finishes. Returns the function that releases it. A build at background
- * priority refuses to take it (pageBuildPriorityProblem), and a wait for it keeps the watch on its
- * holder that HOLDER_WATCH gives.
+ * Takes the machine's lock of production page builds, which lets one caller build pages at a time:
+ * a caller that builds several side by side holds the lock for its whole batch, and another
+ * caller's builds wait. Returns the function that releases it. A build at background priority
+ * refuses to take it (pageBuildPriorityProblem), and a wait for it keeps the watch on its holder
+ * that HOLDER_WATCH gives.
  */
 export function acquirePageBuildLock(): () => void {
 	const problem = pageBuildPriorityProblem(processPriority());

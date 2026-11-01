@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { PARTICLE_FRAME_FLOATS, PARTICLE_PARAM_FLOATS } from '../generated/core';
+import {
+	PARTICLE_BIRTH_FLOATS,
+	PARTICLE_FRAME_FLOATS,
+	PARTICLE_PARAM_FLOATS,
+} from '../generated/core';
 import type { CoreGlue } from '../shared/core';
 import { linearColor } from './color';
 import { CoreMemory } from './memory';
@@ -9,15 +13,28 @@ import type { Mesh } from './scene';
 /** Where the fake core keeps the records and the values. */
 const RECORDS = 1024;
 const VALUES = 65536;
+/** Where the fake core keeps the block of births' parameters. */
+const BLOCK = 98304;
 
 /** A particle buffer of `capacity` records over a fake core that logs its marks. */
 function buffer(capacity: number, additive = true) {
 	const marks: number[][] = [];
+	const writes: number[][] = [];
+	const shifts: number[][] = [];
 	const glue = {
 		particleRecords: () => RECORDS,
 		particleValues: () => VALUES,
 		markParticleRecords: (_: number, start: number, count: number) => marks.push([start, count]),
 		markParticleValues: () => marks.push([-1]),
+		particleRecordBlock: () => BLOCK,
+		writeParticleRecords: (id: number, count: number, first: number) => {
+			writes.push([id, count, first]);
+			return 0;
+		},
+		shiftParticleRecords: (id: number, from: number, to: number, seconds: number) => {
+			shifts.push([id, from, to, seconds]);
+			return 0;
+		},
 		destroyParticles: () => 0,
 	} as unknown as CoreGlue;
 	const memory = new WebAssembly.Memory({ initial: 2 });
@@ -27,7 +44,7 @@ function buffer(capacity: number, additive = true) {
 	const particles = new ParticleBuffer(core, 1, capacity, object, additive, linear);
 	particles.reset({});
 	const values = core.f32(VALUES, PARTICLE_PARAM_FLOATS + PARTICLE_FRAME_FLOATS);
-	return { particles, marks, values, core, memory };
+	return { particles, marks, writes, shifts, values, core, memory };
 }
 
 describe('particle buffers', () => {
@@ -48,6 +65,25 @@ describe('particle buffers', () => {
 		]);
 	});
 
+	test('a block of births is copied into the core and written in one call', () => {
+		const { particles, marks, writes, core } = buffer(8);
+		// A record written through the single-record path is marked before the block's range.
+		particles.write(0, [0, 0, 0, 1, 0, 0, 0, 1], 1);
+		const block = new Float32Array(PARTICLE_BIRTH_FLOATS * 2);
+		block.set([1, 2, 3, 4.5, -1, 0.5, 0, 1.75, 0x1234], 0);
+		block.set([0, 0, 0, 5, 0, 0, 0, 2, 7], PARTICLE_BIRTH_FLOATS);
+		particles.writeRecords(block, 2, 3);
+		expect(marks.filter((m) => m.length === 2)).toEqual([[0, 1]]);
+		expect(writes).toEqual([[1, 2, 3]]);
+		expect([...core.f32(BLOCK, block.length)]).toEqual([...block]);
+	});
+
+	test('a shift of birth times goes to the core in one call', () => {
+		const { particles, shifts } = buffer(8);
+		particles.shiftRecords(1, 3, 1000);
+		expect(shifts).toEqual([[1, 1, 3, 1000]]);
+	});
+
 	test('a buffer makes its views again after the memory grows, over the new memory', () => {
 		const { particles, core, memory } = buffer(8);
 		particles.write(1, [0, 0, 0, 2.5, 0, 0, 0, 1], 3);
@@ -63,16 +99,27 @@ describe('particle buffers', () => {
 		expect(out[3]).toBe(2.5);
 	});
 
+	test('the core block is written again after the memory grows', () => {
+		const { particles, writes, core, memory } = buffer(8);
+		const block = new Float32Array(PARTICLE_BIRTH_FLOATS).fill(1);
+		particles.writeRecords(block, 1, 0);
+		memory.grow(1);
+		expect(core.refresh()).toBe(true);
+		particles.writeRecords(block, 1, 0);
+		expect(writes.length).toBe(2);
+		expect([...core.f32(BLOCK, block.length)]).toEqual([...block]);
+	});
+
 	test('a destroyed buffer holds no view of the memory and refuses to be read', () => {
 		const { particles } = buffer(8);
 		particles.write(0, [0, 0, 0, 1, 0, 0, 0, 1], 0);
 		expect(particles.frame.length).toBeGreaterThan(0);
 		particles.destroy();
 		const views = particles as unknown as Record<
-			'floats' | 'words' | 'block' | 'frameValues',
+			'floats' | 'words' | 'block' | 'frameValues' | 'birthView',
 			ArrayLike<number>
 		>;
-		for (const name of ['floats', 'words', 'block', 'frameValues'] as const)
+		for (const name of ['floats', 'words', 'block', 'frameValues', 'birthView'] as const)
 			expect(views[name].length).toBe(0);
 		expect(() => particles.frame).toThrow('destroyed');
 	});

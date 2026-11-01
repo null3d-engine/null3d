@@ -236,6 +236,9 @@ impl AoPass {
         }
     }
 
+    /// Bytes a frame may copy into its arena: the whole uniform buffer.
+    pub(crate) const UPLOAD_BYTES: usize = BLOCK_BYTES;
+
     /// The ids of the steps' pipelines, once the pass asked for them.
     pub(crate) fn pipeline_ids(&self) -> impl Iterator<Item = u32> + '_ {
         self.pipelines.iter().flatten().copied()

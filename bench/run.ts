@@ -23,8 +23,8 @@
 //   bun run bench:run -- --dev --scenes s2 --pages null3d-webgpu
 //   bun run bench:run -- --scenes s2 --pages null3d-webgpu,threejs-webgpu --switches shadows=3
 // Options:
-//   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4, s5, s6; the default is s1, and every
-//                     scene with --sweep or --compare
+//   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4, s5, s6, s7; the default is s1, and
+//                     every scene with --sweep or --compare
 //   --pages <list>    page kinds; the default is null3d-webgpu, threejs-webgpu, threejs-webgl and
 //                     scene-code. With --jobs or --compare it is null3d-webgpu and null3d-webgl2,
 //                     and with --sweep every kind but null3d-compat. The kinds that end in -low run
@@ -130,6 +130,7 @@ import {
 } from './lib/serve';
 import { S5_DEFAULT_COUNT } from './scenes/s5';
 import { S6_FULL_COUNT } from './scenes/s6';
+import { S7_COUNT } from './scenes/s7';
 import {
 	createS4,
 	MEASURE_SECONDS,
@@ -157,6 +158,8 @@ const SWEEP_COUNTS: Record<BenchScene, readonly number[]> = {
 	s5: [1, 10, 50, 100, 250, S5_DEFAULT_COUNT, 2 * S5_DEFAULT_COUNT],
 	// S6's counts are the objects nearest the route's start, up to the whole city.
 	s6: [1, 100, 1_000, 5_000, 10_000, S6_FULL_COUNT],
+	// S7 is one surface, which ignores the count.
+	s7: [S7_COUNT],
 };
 const DEFAULT_PAGES: BenchPageKind[] = [
 	'null3d-webgpu',

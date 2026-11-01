@@ -64,6 +64,11 @@ impl Transparent {
         self.first_buffer + view.index() as u32
     }
 
+    /// The most bytes that one frame's instances take in its arena.
+    pub(super) fn upload_bound(layout: &SortedLayout, views: usize) -> usize {
+        views * layout.rows() as usize * sizes::INSTANCE_STRIDE as usize
+    }
+
     /// Gives each of `views` views its output, with room for the layout's rows and draws.
     pub(super) fn reserve(
         &mut self,

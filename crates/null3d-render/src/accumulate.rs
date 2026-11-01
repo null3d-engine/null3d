@@ -23,6 +23,8 @@ use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
 /// Bytes of the blend's values, as `accumulate.wgsl`'s `Settings` block lays them out.
 const BLOCK: u32 = 16;
+/// Bytes a frame may copy into its arena: the blend's values.
+pub(crate) const UPLOAD_BYTES: usize = BLOCK as usize;
 /// The format of the history, which the blend draws into.
 pub(crate) const FORMAT: u32 = format::RGBA16_FLOAT;
 

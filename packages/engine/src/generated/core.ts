@@ -177,6 +177,7 @@ export const TONE_MAPPING_NONE = 3;
 export const TONE_MAPPING_AGX_PUNCHY = 4;
 
 export const PARTICLE_RECORD_BYTES = 32;
+export const PARTICLE_BIRTH_FLOATS = 9;
 export const PARTICLE_PARAM_FLOATS = 128;
 export const PARTICLE_FRAME_FLOATS = 4;
 export const PARTICLE_MAX_SYSTEMS = 256;
@@ -288,8 +289,8 @@ export const MAP_ROW_SLOT_SHEEN_ROUGHNESS = 7;
 export const MAP_ROW_SLOT_IRIDESCENCE = 5;
 export const MAP_ROW_SLOT_IRIDESCENCE_THICKNESS = 6;
 export const MAP_ROW_SLOT_ANISOTROPY = 7;
-export const MAP_ROW_SLOT_TRANSMISSION = 6;
-export const MAP_ROW_SLOT_THICKNESS = 7;
+export const MAP_ROW_SLOT_TRANSMISSION = 8;
+export const MAP_ROW_SLOT_THICKNESS = 9;
 export const MAP_ROW_SLOT_BUMP = 2;
 export const MAP_ROW_SLOT_DISPLACEMENT = 2;
 
@@ -306,7 +307,7 @@ export const MATERIAL_PARAM_LIGHT_MAP_INTENSITY = 13;
 export const MATERIAL_PARAM_ENV_INTENSITY = 19;
 export const MATERIAL_PARAM_UV_U = 16;
 export const MATERIAL_PARAM_UV_V = 20;
-export const MATERIAL_PARAM_MAP_UV = 72;
+export const MATERIAL_PARAM_MAP_UV = 76;
 export const MATERIAL_PARAM_MAP_UV_STRIDE = 8;
 export const MATERIAL_PARAM_REFLECTANCE = 23;
 export const MATERIAL_PARAM_SPECULAR_COLOR = 32;
@@ -529,6 +530,7 @@ export const SCOPE_FINAL_STILL = 41;
 export const SCOPE_FINAL_BLOOM = 42;
 export const SCOPE_OUTPUT = 43;
 export const SCOPE_OUTPUT_BLOOM = 44;
+export const SCOPE_LIGHT_DEPTH = 45;
 
 export const TEXTURE_FORMAT_SRGB = 9;
 export const TEXTURE_FORMAT_LINEAR = 2;

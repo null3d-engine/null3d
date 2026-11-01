@@ -193,6 +193,15 @@ impl Skins {
         }
     }
 
+    /// The bytes that the next frame copies into its arena.
+    pub(super) fn upload_bound(&self, meshes: &MeshStorage) -> usize {
+        let indices = match self.span {
+            Some((low, high)) if self.pending => (high - low + 1) as usize * 8,
+            _ => 0,
+        };
+        indices + self.morph.upload_bound(meshes)
+    }
+
     /// Makes the joint texture, the morph texture and the texture of first joints and weights when
     /// skinned or morphed objects need them, the last with room for every such slot, at most
     /// `limit` rows. Returns true when it made one, which the views' instance groups bind.

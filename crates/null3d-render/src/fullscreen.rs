@@ -27,7 +27,7 @@ use crate::effects::{
 use crate::frame::{RecordError, UploadArena};
 use crate::graph::{RenderScale, Size};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
-use crate::view::{Fullscreen, MAX_VIEWS};
+use crate::view::{Fullscreen, MAX_VIEWS, View};
 
 /// Bytes of the uniform buffer: a block for each view.
 const BUFFER_BYTES: usize = MAX_VIEWS * BLOCK;
@@ -131,6 +131,22 @@ pub(crate) struct FullscreenPasses {
 }
 
 impl FullscreenPasses {
+    /// Bytes a frame may copy into its arena: every view's block.
+    pub(crate) const UPLOAD_BYTES: usize = MAX_VIEWS * BLOCK_BYTES;
+
+    /// Bytes that the frame copies for the views: one block for each pass, or one for each layer
+    /// of a pass of several layers.
+    pub(crate) fn upload_bound(&self, views: &[View]) -> usize {
+        views
+            .iter()
+            .filter_map(View::fullscreen_pass)
+            .filter(|pass| pass.fallback)
+            .map(|pass| {
+                (pass.layers.clamp(1, MAX_FALLBACK_LAYERS) as usize).saturating_sub(1) * BLOCK_BYTES
+            })
+            .sum()
+    }
+
     /// The passes, with GPU objects from `ids`, drawing into targets of `format`, whose depth reads
     /// are multisampled when `multisampled_depth` says.
     pub(crate) fn new(ids: FullscreenIds, format: u32, multisampled_depth: bool) -> Self {

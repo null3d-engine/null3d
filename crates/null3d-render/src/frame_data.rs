@@ -36,6 +36,9 @@ pub struct FrameUniform {
     /// The light grid's tiles across, tiles up, slices and slices per doubling of the slice depth.
     /// The slices are 0 for a view whose grid lists no light.
     pub cluster_grid: [f32; 4],
+    /// 1 while the view's slices may be fitted to the measured depth, so a fragment finds its
+    /// slice in the grid's header, and 0 while it reads `cluster_depth` and `cluster_grid`.
+    pub cluster_fit: [f32; 4],
     /// The sketch time in seconds, the seconds since the frame before, the frame's number as the
     /// bits of a `u32`, and a spare: what custom materials read as `frame`.
     pub clock: [f32; 4],

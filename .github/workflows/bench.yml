@@ -226,7 +226,7 @@ jobs:
     # The Mac machine draws with a real GPU, shared with other machines. On the Linux machine the
     # software GPU draws the larger scenes at under one frame per second and takes the processor
     # from the engine's threads, so its CPU times vary far more between identical builds. Each shard
-    # runs every eighth page of the plan in both builds, and fails when its own pages fail. Every CI
+    # runs every ninth page of the plan in both builds, and fails when its own pages fail. Every CI
     # job should take at most 15 minutes (it stops at 20), and two pages take about 9 minutes with
     # the setup.
     # .dev/benchmarks.md says how the count was chosen. To change it, change the list.
@@ -234,13 +234,13 @@ jobs:
     needs: [commits, build]
     runs-on: macos-15
     # A shard runs both commits' pages. With a baseline whose final pass runs its upscale loops in
-    # every build (D-236), all eight shards reach a 20-minute limit a second after printing their
+    # every build (D-236), all nine shards reach a 20-minute limit a second after printing their
     # verdict. Thirty leaves room for that pair.
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]
     env:
       HUSKY: "0"
       BASELINE: ${{ needs.commits.outputs.baseline }}

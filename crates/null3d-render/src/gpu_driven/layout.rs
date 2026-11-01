@@ -568,6 +568,16 @@ impl Layout {
         (self.copied * stride + self.indexed * sizes::INDEX_STRIDE).max(stride) + stride
     }
 
+    /// The most that one view copies into the upload arena for this layout, when at most `active`
+    /// sources can draw: a copy for each of them, within the layout's compacted size. A source
+    /// that is not active draws nothing and takes no upload room.
+    pub(super) fn copy_upload_bytes(&self, active: u32) -> u32 {
+        let stride = self.copy_stride();
+        (self.copied.min(active) * stride + self.indexed.min(active) * sizes::INDEX_STRIDE)
+            .max(stride)
+            + stride
+    }
+
     /// A layout whose buckets read `copied` slots, for the tests of the buffer that holds them,
     /// which read that count alone.
     #[cfg(test)]
@@ -718,6 +728,26 @@ impl Layout {
     /// Bytes of the matrix buffer on the GPU, 0 before it exists.
     pub(super) fn matrix_bytes(&self) -> u32 {
         self.buffer_sizes[0]
+    }
+
+    /// The most that one frame copies into its arena for the tables: the bucket table, the layer
+    /// table, the bucket records, the cell order and the ranges texture.
+    pub(super) fn upload_bound(&self) -> usize {
+        let owned = self.owned(self.sources) as usize;
+        // Each source has a row of the bucket table. The layout that owns the tables gives each
+        // source a row of the layer table, a place in the cell order, and a texel of the ranges
+        // texture.
+        let rows = self.sources as usize * 4 + owned * (4 + 4 + RANGE_FLOATS * 4);
+        let firsts = self.skin_firsts.len() * 4;
+        // A frame that writes every record writes the skinned objects' bounds again after them.
+        let writes = if self.skinned.is_empty() { 1 } else { 2 };
+        // The scene's layout may build its table of object ranges in the frame, after this bound.
+        let object_ranges = if self.owns_sources() {
+            sizes::OBJECT_RANGE_BYTES as usize
+        } else {
+            0
+        };
+        rows + firsts + self.buckets.len() * BUCKET_BYTES as usize * writes + object_ranges
     }
 
     /// Makes room for the bucket table, the layer table and the cell order of `sources` sources.

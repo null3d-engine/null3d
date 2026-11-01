@@ -979,6 +979,13 @@ pub mod layout {
     /// the exposure as a storage texture of `RGBA32_FLOAT`, which the final pass reads. Only WebGPU
     /// has it.
     pub const EXPOSURE: u32 = 40;
+    /// Group 0 of the light clusters' depth reduction: its blocks' uniform block, the reduction
+    /// that it fills, and the view's depth target of one sample, which it reads as a float texture.
+    /// Only WebGPU has it.
+    pub const LIGHT_DEPTH: u32 = 63;
+    /// [`LIGHT_DEPTH`] for a multisampled depth target, whose sample 0 it reads. Only WebGPU has
+    /// it.
+    pub const LIGHT_DEPTH_MS: u32 = 64;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1736,7 +1743,7 @@ pub mod sizes {
     /// perspective's six vectors, the vignette that the 8-bit path's fragment shaders apply, and
     /// the camera's view-projection, target size and eye, which a masked custom material's caster
     /// reads in a light's view.
-    pub const FRAME_UNIFORM_BYTES: u32 = 1088;
+    pub const FRAME_UNIFORM_BYTES: u32 = 1104;
     /// Bytes of the output settings: the exposure, the tone mapping, the flags and the render
     /// size.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
@@ -1800,15 +1807,21 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: thirty-two `vec4f`s. The row holds the
+    /// Bytes of one material's row in the material table: thirty-seven `vec4f`s. The row holds the
     /// base values, the transmission's values, the attenuation's, the clear coat's, the sheen's,
     /// the diffuse transmission's, the subsurface scatter's, the iridescence's, the anisotropy's,
-    /// the light map's transform, and the transforms of the maps of the slots from the second up.
-    /// On WebGL2 each row is a row of thirty-two `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 512;
+    /// the light map's transform, the layers of the transmission and thickness maps, and the
+    /// transforms of the maps of the row's slots from the second up. On WebGL2 each row is a row
+    /// of thirty-seven `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 592;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
+    /// The map slots that a material's row keeps a transform and a layer for: the eight of
+    /// [`MAP_SLOTS`], then the transmission and the thickness map. Each of the last two samples
+    /// the texture array of a specular slot at a layer of its own, so it needs a row slot but no
+    /// binding of its own.
+    pub const MAP_ROWS: u32 = MAP_SLOTS + 2;
     /// The units that the standard material's maps share on WebGL2, which gives a shader stage
     /// only 16 texture units: the group's first bindings hold the units' arrays, and the bindings
     /// from [`MAP_SLOTS`] their samplers.
@@ -2143,6 +2156,19 @@ pub mod template {
     /// engine's vertex shaders read rows relative to their view's camera, and a page writes world
     /// rows (D-229). WebGPU only.
     pub const FEATURE_ROWS: u32 = 83;
+    /// The light clusters' depth reduction: reads the view's depth and writes its nearest and
+    /// farthest into the reduction that the next frame's clustering fits its slices to. WebGPU
+    /// only.
+    pub const LIGHT_DEPTH: u32 = 84;
+    /// [`LIGHT_DEPTH`] from a multisampled depth target, whose sample 0 it reads. WebGPU only.
+    pub const LIGHT_DEPTH_MS: u32 = 85;
+    /// Clears the depth reduction's buffer: one thread, before the reduction fills it. WebGPU only.
+    pub const LIGHT_DEPTH_CLEAR: u32 = 86;
+    /// [`LIGHT_DEPTH_CLEAR`] from a multisampled depth target. WebGPU only.
+    pub const LIGHT_DEPTH_CLEAR_MS: u32 = 87;
+    /// Light clustering's fit: one thread that fits the slices to the measured depth and writes
+    /// the grid's header, before the counting dispatch. WebGPU only.
+    pub const LIGHT_FIT: u32 = 88;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2150,7 +2176,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 83] = [
+    pub const NAMES: [(&str, u32); 88] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2233,6 +2259,11 @@ pub mod template {
         ("TAA_RESOLVE_MS", TAA_RESOLVE_MS),
         ("TAA_COPY", TAA_COPY),
         ("FEATURE_ROWS", FEATURE_ROWS),
+        ("LIGHT_DEPTH", LIGHT_DEPTH),
+        ("LIGHT_DEPTH_MS", LIGHT_DEPTH_MS),
+        ("LIGHT_DEPTH_CLEAR", LIGHT_DEPTH_CLEAR),
+        ("LIGHT_DEPTH_CLEAR_MS", LIGHT_DEPTH_CLEAR_MS),
+        ("LIGHT_FIT", LIGHT_FIT),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2350,6 +2381,11 @@ pub mod groups {
         (template::LIGHT_COUNT, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_PLACE, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_WRITE, own!(layout::LIGHT_CLUSTERS)),
+        (template::LIGHT_DEPTH, own!(layout::LIGHT_DEPTH)),
+        (template::LIGHT_DEPTH_MS, own!(layout::LIGHT_DEPTH_MS)),
+        (template::LIGHT_DEPTH_CLEAR, own!(layout::LIGHT_DEPTH)),
+        (template::LIGHT_DEPTH_CLEAR_MS, own!(layout::LIGHT_DEPTH_MS)),
+        (template::LIGHT_FIT, own!(layout::LIGHT_CLUSTERS)),
         (template::SKIN, own!(layout::SKIN)),
         (template::OUTLINE_MASK, MESH),
         (template::TONE_MASK, MESH),
@@ -2620,6 +2656,8 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("FRAME_PARALLAX", layout::FRAME_PARALLAX),
     ("DEPTH", layout::DEPTH),
     ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
+    ("LIGHT_DEPTH", layout::LIGHT_DEPTH),
+    ("LIGHT_DEPTH_MS", layout::LIGHT_DEPTH_MS),
     ("BLOOM", layout::BLOOM),
     ("FINAL_BLOOM", layout::FINAL_BLOOM),
     ("JOINTS", layout::JOINTS),
@@ -2890,6 +2928,7 @@ pub fn typescript_constants() -> String {
                 ("MAX_MATERIALS", sizes::MAX_MATERIALS),
                 ("MATERIAL_BYTES", sizes::MATERIAL_BYTES),
                 ("MAP_SLOTS", sizes::MAP_SLOTS),
+                ("MAP_ROWS", sizes::MAP_ROWS),
                 ("SHARED_MAP_UNITS", sizes::SHARED_MAP_UNITS),
                 ("MAX_CELLS", sizes::MAX_CELLS),
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
@@ -3049,10 +3088,11 @@ mod tests {
                 shift(sizes::ROW_VALUES_PER_TEXTURE_ROW)
             ),
             // The texel of a material's row where the maps' own transforms start, one per vec4f:
-            // the last fourteen of the row's texels, two for each of the seven maps.
+            // the last eighteen of the row's texels, two for each of the nine map row slots above
+            // the base color map's.
             format!(
                 "const MATERIAL_MAP_UV_TEXEL: u32 = {}u;",
-                sizes::MATERIAL_BYTES / 16 - 14
+                sizes::MATERIAL_BYTES / 16 - 18
             ),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
             format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
