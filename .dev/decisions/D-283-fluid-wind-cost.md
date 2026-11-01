@@ -756,3 +756,9 @@ builds no wind field.
 
 The branch's earlier rows of 287.1, 935.0, 312.4 and 166.59 ms were that pass-and-copy cost, not
 Creek's own. The head's rows show it: they read the same frames before the branch added a reader.
+
+The tablet's rows say the same. The head reads Creek Low at 1,487.16 ms against the class's
+1,268.5 ms ([the head's tablet run](../tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-091901-vegetation.md)),
+and the branch at 1,484.12
+([the branch's tablet run](../tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-092544-vegetation.md)),
+so that miss is the scene's on that device. Creek Medium draws no frame on either.
