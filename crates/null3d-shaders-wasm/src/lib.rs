@@ -704,17 +704,17 @@ mod tests {
         serde_json::to_vec(&serde_json::json!({ "entries": entries })).unwrap()
     }
 
-    /// The entries of a small build that still makes several modules. The exports hand every
-    /// module's name to the library's module set in the same way, whatever its kind, so a few
-    /// modules check them. The shader crate's build tests render every kind of module through
-    /// that set, on a build of the entries that make each kind.
-    const SMALL_ENTRIES: &[&str] = &["pick", "timer_mark"];
+    /// The entries whose builds between them make one module of every kind that a build writes:
+    /// the list that the shader crate's determinism check builds (`DETERMINISM_ENTRIES` in its
+    /// build tests), which explains how each entry makes its kinds and asserts that none is
+    /// missing.
+    const EVERY_KIND_ENTRIES: &[&str] = &["unlit", "environment"];
 
     /// A call prepares a build of the engine's entries without rendering it, and each later call
     /// renders one module, whose text is the set's for that module.
     #[test]
     fn prepare_modules_lists_every_module_and_module_renders_each() {
-        let prepared = call(prepare_modules, &entries_request(SMALL_ENTRIES));
+        let prepared = call(prepare_modules, &entries_request(EVERY_KIND_ENTRIES));
         assert_eq!(prepared["ok"], true, "{}", prepared["problems"]);
         let names: Vec<String> = serde_json::from_value(prepared["output"].clone()).unwrap();
         let expected: Vec<String> = MODULES.with_borrow(|slot| {
