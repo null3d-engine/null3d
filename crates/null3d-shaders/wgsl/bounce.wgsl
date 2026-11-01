@@ -43,6 +43,10 @@ struct Settings {
     shape: vec4f,
     /// xy: the color copy's size in pixels. zw: the drawn corner that the frame before filled.
     copy: vec4f,
+    /// The planes of the scene's mirrors in view space: the normal and the camera's height over the
+    /// plane, with a normal of zero for none.
+    mirror_a: vec4f,
+    mirror_b: vec4f,
 }
 
 // Binding 1 is the depth copy, binding 2 the horizon step's target, which holds the normal's x and
@@ -131,6 +135,13 @@ fn copied_color(pixel: vec2i) -> vec3f {
     return textureLoad(source, vec2i(inside.x, turned(inside.y, settings.copy.y)), 0, 0).rgb;
 }
 
+/// True when a view-space position lies on a mirror's plane, within a share of its distance that the
+/// depth's precision and the grid's coarse texels leave.
+fn on_plane(plane: vec4f, position: vec3f) -> bool {
+    return dot(plane.xyz, plane.xyz) > 0.5
+        && abs(dot(plane.xyz, position) + plane.w) < 0.05 + 0.002 * length(position);
+}
+
 /// The light from the surface at the texel `at`, as the frame before showed it, when that surface
 /// lies in the hemisphere of `normal` around `center` within the gather's reach: its radiance times
 /// its weight, and that weight, or 0.
@@ -140,6 +151,10 @@ fn gathered(center: vec3f, normal: vec3f, at: vec2i) -> vec4f {
         return vec4f(0.0);
     }
     let held = position_at(at);
+    // A mirror's color holds what it shows this view alone, not light that it sends every way.
+    if on_plane(settings.mirror_a, held) || on_plane(settings.mirror_b, held) {
+        return vec4f(0.0);
+    }
     let delta = held - center;
     let reach = length(delta);
     // The texel's own surface, and surfaces beyond the reach, send nothing.

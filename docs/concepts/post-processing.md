@@ -315,6 +315,8 @@ The engine's benchmark scene of 100,000 boxes over a polished floor ran on a Mac
 
 Screen-space bounce light adds one bounce of the indirect light that the camera's view shows. A red wall throws red light onto the floor beside it. A green wall throws green light onto the other side. The environment's light is one color for every direction, so it cannot show that.
 
+A mirror's color holds what it shows this view, not light that its surface sends every way, so the gather leaves out what lies on the plane of a mirror view: the first two mirrors of a scene, and water's reflection among them. A glossy surface with no mirror view, such as a floor that screen-space reflections draw, still sends its color. No buffer holds a surface's roughness for the gather to read.
+
 The light draws on ambient occlusion's grid, at half the render size, and it reuses that feature's depth copy and normals:
 
 1. The trace samples a disk of screen texels around each surface, almost half the grid wide. A wall beside a floor then shows its upper part. A sample whose surface lies above or beside it takes the color that the frame before showed there. The light is weighted by the cosine of the sample's direction, and the surface must lie in the hemisphere and within reach. The trace reads that color from the copy that screen-space reflections read too.

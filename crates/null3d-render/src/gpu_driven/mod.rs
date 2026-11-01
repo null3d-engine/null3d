@@ -1639,7 +1639,8 @@ impl GpuDrivenRenderer {
         );
         self.graph
             .set_ssr(settings.ssr_frame(input.canvas), settings.ssr_scale());
-        self.graph.set_bounce(settings.bounce_frame(input.canvas));
+        self.graph
+            .set_bounce(settings.bounce_frame(input.canvas, input.scene, input.parity()));
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
             .chain(self.sorted.waiting())
