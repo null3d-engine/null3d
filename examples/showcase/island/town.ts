@@ -405,11 +405,12 @@ function wallStretch(
 	c: { x: number; y: number; z: number },
 	high: number,
 	color: Color,
+	cHigh = high,
 ): void {
 	const length = hypot(c.x - a.x, c.z - a.z) || 1;
 	const [nx, nz] = [(-(c.z - a.z) / length) * 0.26, ((c.x - a.x) / length) * 0.26];
 	const [a0, a1] = [a.y - 0.6, a.y + high];
-	const [c0, c1] = [c.y - 0.6, c.y + high];
+	const [c0, c1] = [c.y - 0.6, c.y + cHigh];
 	b.mapped = true;
 	quad(
 		b,
@@ -456,6 +457,9 @@ function wallStretch(
 	);
 }
 
+/** How far a retaining wall's foot runs under its road, so it meets ground that falls away. */
+const RETAINING_FOOT = 3.5;
+
 /** One unbroken run of retaining wall through its stations, with its face, its back and a stone cap. */
 function retainingRun(
 	b: Build,
@@ -469,8 +473,15 @@ function retainingRun(
 		const length = hypot(c.x - a.x, c.z - a.z) || 1;
 		return [(-(c.z - a.z) / length) * 0.3, ((c.x - a.x) / length) * 0.3] as const;
 	});
+	// The run's ends slope down into the ground, so it starts and stops with no cut face.
+	const last = stations.length - 1;
+	const buried = (p: (typeof stations)[0], k: number) =>
+		k === 0 || k === last ? { ...p, high: -0.1 } : p;
 	for (let k = 0; k + 1 < stations.length; k++) {
-		const [p, q] = [stations[k], stations[k + 1]] as [(typeof stations)[0], (typeof stations)[0]];
+		const [p, q] = [
+			buried(stations[k] as (typeof stations)[0], k),
+			buried(stations[k + 1] as (typeof stations)[0], k + 1),
+		];
 		const [[ax, az], [cx, cz]] = [across[k], across[k + 1]] as [
 			readonly [number, number],
 			readonly [number, number],
@@ -482,8 +493,8 @@ function retainingRun(
 			const [fx, fz, tx, tz] = s > 0 ? [ax, az, cx, cz] : [cx, cz, ax, az];
 			quad(
 				b,
-				[from.x + fx * s, from.y - 0.6, from.z + fz * s],
-				[to.x + tx * s, to.y - 0.6, to.z + tz * s],
+				[from.x + fx * s, from.y - RETAINING_FOOT, from.z + fz * s],
+				[to.x + tx * s, to.y - RETAINING_FOOT, to.z + tz * s],
 				[to.x + tx * s, to.y + to.high, to.z + tz * s],
 				[from.x + fx * s, from.y + from.high, from.z + fz * s],
 				color,
@@ -691,7 +702,9 @@ export function stoneWalls(): {
 			[];
 		const flush = () => {
 			if (run.length * 6 >= 18) {
-				for (const { a, c } of run) wallStretch(b, a, c, 0.62, stone);
+				// The wall's ends slope down into the ground.
+				for (const [k, { a, c }] of run.entries())
+					wallStretch(b, a, c, k === 0 ? -0.1 : 0.62, stone, k === run.length - 1 ? -0.1 : 0.62);
 				stretches.push(run.flatMap(({ a, c }) => [a, c]));
 			}
 			run = [];
@@ -779,11 +792,42 @@ export function stoneWalls(): {
 			flushWall();
 		}
 	}
-	for (const { ax, ay, az, bx, by, bz } of TERRACES) {
+	// A terrace's chain of walls slopes down into the ground at each end, with no cut face.
+	const continues = (x: number, z: number, self: (typeof TERRACES)[0]) =>
+		TERRACES.some(
+			(t) => t !== self && (hypot(t.ax - x, t.az - z) < 0.5 || hypot(t.bx - x, t.bz - z) < 0.5),
+		);
+	for (const terrace of TERRACES) {
+		const { ax, ay, az, bx, by, bz } = terrace;
 		if (crossesWay(ax, az, bx, bz)) continue;
-		wallStretch(b, { x: ax, y: ay, z: az }, { x: bx, y: by, z: bz }, 0.5, stone);
+		wallStretch(
+			b,
+			{ x: ax, y: ay, z: az },
+			{ x: bx, y: by, z: bz },
+			continues(ax, az, terrace) ? 0.5 : -0.1,
+			stone,
+			continues(bx, bz, terrace) ? 0.5 : -0.1,
+		);
 	}
 	return { mesh: b, stretches, retaining };
+}
+
+/** Whether a place stands within a tree trunk's width of a retaining wall. */
+export function onRetainingWall(): (x: number, z: number) => boolean {
+	const cells = new Set<number>();
+	const key = (x: number, z: number) =>
+		Math.round(x / WALL_CELL) * 8192 + Math.round(z / WALL_CELL);
+	const along = (ax: number, az: number, bx: number, bz: number) => {
+		const steps = Math.ceil(hypot(bx - ax, bz - az) / (WALL_CELL / 2));
+		for (let t = 0; t <= steps; t++)
+			cells.add(key(ax + ((bx - ax) * t) / steps, az + ((bz - az) * t) / steps));
+	};
+	const { retaining } = stoneWalls();
+	retaining.forEach((wall, k) => {
+		const next = retaining[k + 1];
+		if (next && next.run === wall.run) along(wall.x, wall.z, next.x, next.z);
+	});
+	return (x, z) => cells.has(key(x, z));
 }
 
 /** The length of each run of retaining wall, in meters, from the walls' list. */
@@ -806,6 +850,8 @@ const FAIRWAY_ROUND = 5;
 const STAIR_HALF = 0.8;
 /** How far a wall keeps from the middle of a house's way, in meters. */
 const WAY_CLEAR = 1.6;
+/** The side in meters of the grid that says whether a tree stands on a wall. */
+const WALL_CELL = 1;
 /** How far a parasol stands from a road's edge, in meters. */
 const PARASOL_FROM_ROAD = 2;
 
