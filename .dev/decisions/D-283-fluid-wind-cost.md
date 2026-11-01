@@ -8,16 +8,18 @@ task's Done-when stay open: the smallest-tier look, a side-by-side that the owne
 named; the cost of each tier on the M5 Max, because the machine here is an M3 Max and no M5 Max ran
 the plan, while the iPad Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus now carry their rows; and
 the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings, which waits
-on M3-V11 and M3-V12. The three devices measured their rows. All
-hold except the Galaxy S25's Ultra cell, which stays open: its 30 Hz display owes two field cycles a
-frame, so the modelled frame is 11.08 ms, from the measured 5.243 ms of its 40 volume steps plus the
+on M3-V11 and M3-V12. The three devices measured their rows. All field rows hold except the Galaxy
+S25's Ultra cell, which stays open: its 30 Hz display owes two field cycles a frame, so the
+modelled frame is 11.08 ms, from the measured 5.243 ms of its 40 volume steps plus the
 advection and projection floor, doubled. That is over the wind's own 6.25 ms figure, and D-241's
 499.8 ms is the measured Creek frame at Ultra on that phone, not a ceiling with room in it: the
 frame with the wind is about 510.9 ms, over by 2.2 per cent, and the governor's 30 field steps a
 second step gives about 505.3 ms, still over. The owner must choose one of three options. The first
 is that the class ceiling includes the wind's share. The second is that Ultra does not run the
 field on a display that owes two cycles. The third is that the preset steps down there, which D-241
-calls a failure. This record picks none. Built: the wind add-on's field and its state-keeping solver
+calls a failure. This record picks none. The tablet's field row holds at the budget's edge, and its
+canopy drag takes it over, so the governor must step that row too. Built: the wind add-on's field
+and its state-keeping solver
 (M3-V13, M3-V15). Built too: the plant material's vertex reader (M3-V7) and the cost pages that
 time them. Not built: the preset rows and budgets (M3-V16), the canopy drag and the falling leaves
 (M3-V17), branch poses (M3-V10, measured on its own branch), and Creek's and the forest's plants on
