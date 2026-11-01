@@ -378,7 +378,7 @@ The engine finds a still view by comparing each frame's draw commands and upload
 
 Bloom, depth of field, automatic exposure, custom effects and custom tone curves need the scene's linear color. Two kinds of device draw it with no float target at first, on the 8-bit path that [color management](color-management.md#the-8-bit-path) describes:
 
-- WebGPU in compatibility mode with MSAA: this mode cannot multisample a float target. Some features need HDR color: bloom, depth of field, automatic exposure, a custom effect, a custom tone curve, and volumetric fog with `fogSlices` above 0. The first of them moves the engine to HDR color with FXAA, for the rest of its life. Meanwhile the last image stays on screen until the new pipelines are built. On a desktop that takes two or three frames. `engine.capabilities.hdr` reports the path that the engine started on.
+- WebGPU in compatibility mode with MSAA: this mode cannot multisample a float target. Some features need HDR color: bloom, depth of field, automatic exposure, a custom effect, a custom tone curve, a reflection pass, and volumetric fog with `fogSlices` above 0. The first of them moves the engine to HDR color with FXAA, for the rest of its life. Meanwhile the last image stays on screen until the new pipelines are built. On a desktop that takes two or three frames. `engine.capabilities.hdr` reports the path that the engine started on.
 - WebGL2 devices whose float targets fail the engine's test. They have no HDR target, so bloom, depth of field, automatic exposure, volumetric fog and custom effects stay off, and the built-in tone curve stays. Development builds warn once in the console.
 
 The devices that the engine was tested on all draw HDR color with WebGL2, and with core WebGPU.

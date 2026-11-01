@@ -1129,8 +1129,10 @@ impl Layout {
             } else {
                 0
             };
+            // A batch's rows bring their own color and values to whichever level they draw.
+            let row_values = key.0.permutation & permutation::ROW_VALUES != 0;
             let mut bucket = key_of(
-                settings.pipeline_of(mesh, material),
+                settings.rows_pipeline_of(mesh, material, row_values),
                 mesh,
                 material,
                 key.5,
