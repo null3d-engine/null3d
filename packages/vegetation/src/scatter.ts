@@ -594,13 +594,14 @@ export function scatterVegetation(options: ScatterOptions): ScatterPoints {
 	return scatter.build();
 }
 
-/** The smallest step that the checksum reads a point's floats at, as a share of a meter. */
-const CHECKSUM_STEP = 8192;
-
 /**
  * A hash of a scatter's points, so two runs compare in one number: a page checks its own placement
  * against the reference that another device recorded, whichever GPU path it draws on. It reads each
- * float at a tenth of a millimeter, which no two devices' arithmetic differs by.
+ * float's own four bytes, smallest first, so two runs that place the same plants give the same
+ * number and any difference at all gives another. The scatter makes every choice from integer
+ * arithmetic and the ground's maps hold 32-bit floats, so one seed places one point list on every
+ * engine. A height function whose samples differ on another engine moves the points it places, and
+ * this number with them.
  *
  * @param points The points.
  * @returns A 32-bit hash of the points and their count.
@@ -608,9 +609,8 @@ const CHECKSUM_STEP = 8192;
  */
 export function scatterChecksum(points: ScatterPoints): number {
 	let hash = pcg(points.count);
-	for (let i = 0; i < points.data.length; i++) {
-		const value = Math.round((points.data[i] as number) * CHECKSUM_STEP) | 0;
-		hash = pcg((hash ^ (value >>> 0)) >>> 0);
-	}
+	const view = new DataView(points.data.buffer, points.data.byteOffset, points.data.byteLength);
+	for (let at = 0; at < view.byteLength; at += 4)
+		hash = pcg((hash ^ view.getUint32(at, true)) >>> 0);
 	return hash >>> 0;
 }

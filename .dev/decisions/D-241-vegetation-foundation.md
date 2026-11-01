@@ -609,19 +609,29 @@ last, and returns flat arrays of nine floats for each point.
   in Creek, with nothing in the ground layer. Their bounds are narrower than the ground's own
   bands. A scene on other terrain moves the numbers that differ.
 
-**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds 955 points. They
-are 104 canopy trees, 174 saplings, 651 ground plants and 26 dead wood. The checksum of that placement is
-916344353. The device page compares it on every device and both GPU paths. On the Mac the scatter
-takes about 10 ms in Chrome and the ground maps about 45 ms. A check on an Apple M3 Max in Bun,
-beside the machine's other jobs, reads a median of 13.6 ms and ground maps of 42.7 ms.
+**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds 956 points. They
+are 104 canopy trees, 174 saplings, 652 ground plants and 26 dead wood. The checksum of that
+placement is 3358570449, read from the exact bytes of every float, so a page compares its point list
+with another device's and any difference at all shows. The device page compares it on every device
+and both GPU paths. The ground maps hold their samples as 32-bit floats, which is what keeps the
+samples of a height function that uses `Math.sin` and a fractional power equal between engines: the
+last bits that an engine may round another way do not survive the narrowing. A height function that
+answers other samples on another engine would move the points that it places.
+
+The species records set the room that each plant keeps, so the placement follows a change to one.
+The conifer's whorled tiers and the cards of many small leaves moved it after the device rows below
+were measured: those rows hold the checksum of the records at their run, 916344353 with 955 plants.
+A row against the current record is owed.
 
 **The budget.** The placement runs once, after the ground maps and before the first plant draws, so
 it holds a one-time line rather than a frame ceiling: 200 ms on the slowest measured device, the
 line that M3-V4 sets for the generator. Every measured placement sits well inside it. The ground
-maps are timed apart from it and take 41 to 86 ms once.
+maps are timed apart from it and take 26 to 86 ms once. The placement starts no engine and reads no
+GPU, so its GPU time is nil. Its arrays hold about 1.8 MB once for a valley this size: 1.6 MB for
+the ground maps' samples, 0.13 MB for the variance maps and 34 KB for the points.
 
-The `vegetation-scatter` plan ran on two cloud phones, each page reporting the middle of three
-timed placements.
+The `vegetation-scatter` plan ran on two cloud phones, a cloud iPad and the Mac, each page reporting
+the middle of three timed placements.
 
 | Device | Plants | Checksum | Placement | Ground maps | Display |
 | --- | --- | --- | --- | --- | --- |
@@ -629,12 +639,20 @@ timed placements.
 | Galaxy S24, Chrome, WebGPU page | 955 | 916344353 | 11.7 ms | 60.0 ms | 30 Hz |
 | Galaxy S25, Chrome, WebGL2 page | 955 | 916344353 | 9.8 ms | 51.3 ms | 30 Hz |
 | Galaxy S25, Chrome, WebGPU page | 955 | 916344353 | 5.9 ms | 50.9 ms | 30 Hz |
+| iPad Pro 13, Safari, WebGL2 page | 955 | 916344353 | 5.4 ms | 41.3 ms | none timed |
+| iPad Pro 13, Safari, WebGPU page | 955 | 916344353 | 5.0 ms | 41.1 ms | none timed |
+| MacBook Pro M3 Max, Chrome, WebGL2 page | 955 | 916344353 | 5.8 ms | 26.5 ms | 120 Hz |
+| MacBook Pro M3 Max, Chrome, WebGPU page | 955 | 916344353 | 6.0 ms | 23.0 ms | 120 Hz |
 
 The placement runs on the CPU and starts no engine, so both pages of a device run the same work.
-The S24 has no WebGPU adapter, so its second page named a path that it did not start. Both displays
-ran at 30 Hz, and the cloud reported each phone hot, so read the times as upper bounds. The run
-files are [the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261024-202948-vegetation-scatter.md)
-and [the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261024-203522-vegetation-scatter.md).
+The S24 has no WebGPU adapter, so its second page named a path that it did not start. Both phone
+displays ran at 30 Hz, and the cloud reported each phone hot, so read the times as upper bounds.
+Safari on iPadOS runs WebKit and JavaScriptCore, so that row places the points on the second
+JavaScript engine beside Chrome's V8. The run files are
+[the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261024-202948-vegetation-scatter.md),
+[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261024-203522-vegetation-scatter.md),
+[the iPad's](../tested-devices/ipad-pro-13-safari/20261027-000756-vegetation-scatter.md) and
+[the Mac's](../tested-devices/macbook-pro-m3-max-chrome/20261030-145444-vegetation-scatter.md).
 
 **Options rejected.**
 
