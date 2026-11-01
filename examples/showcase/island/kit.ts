@@ -18,6 +18,8 @@ export interface Build {
 	indices: number[];
 	/** True while the faces that are added should take the map's surface. */
 	mapped: boolean;
+	/** The house's plain far mesh, which takes a plain form of what casts a shadow that shows. */
+	far?: Build;
 }
 
 /** An empty set of arrays. */
@@ -228,7 +230,8 @@ function door(
 ): void {
 	const w = wallAt(cx, 0, cz, dx, dz);
 	const [hw, top] = [0.6, 2.25];
-	quad(b, w(-hw, 0, 0.02), w(hw, 0, 0.02), w(hw, top, 0.02), w(-hw, top, 0.02), color);
+	// The door stands proud of a window's pane, which a shop's front may run behind it.
+	quad(b, w(-hw, 0, 0.03), w(hw, 0, 0.03), w(hw, top, 0.03), w(-hw, top, 0.03), color);
 	const panel: Color = [color[0] * 0.65, color[1] * 0.65, color[2] * 0.65];
 	for (const [u0, u1] of [
 		[0.25, 1],
@@ -236,7 +239,7 @@ function door(
 	] as const)
 		for (const side of [-1, 1]) {
 			const [a0, a1] = side < 0 ? [-hw + 0.12, -0.08] : [0.08, hw - 0.12];
-			quad(b, w(a0, u0, 0.035), w(a1, u0, 0.035), w(a1, u1, 0.035), w(a0, u1, 0.035), panel);
+			quad(b, w(a0, u0, 0.045), w(a1, u0, 0.045), w(a1, u1, 0.045), w(a0, u1, 0.045), panel);
 		}
 	const depth = 0.3;
 	wallBox(b, w, -hw - 0.22, -hw, 0, top, 0, depth, STONE);
@@ -282,7 +285,8 @@ function walls(
 ): void {
 	const top = floors * FLOOR;
 	// The walls reach well under the ground, so a house on a slope never stands on air.
-	mapped(b, () => box(b, x0, -SKIRT, z0, x1, top, z1, WHITE));
+	// They stop inside the cornice, whose top alone closes a roof terrace, so no two faces meet there.
+	mapped(b, () => box(b, x0, -SKIRT, z0, x1, top - 0.1, z1, WHITE));
 	box(b, x0 - 0.06, -SKIRT, z0 - 0.06, x1 + 0.06, 0.34, z1 + 0.06, STONE);
 	box(b, x0 - 0.14, top - 0.26, z0 - 0.14, x1 + 0.14, top, z1 + 0.14, CORNICE);
 	for (let floor = 1; floor < floors; floor++)
@@ -428,6 +432,7 @@ function chimney(b: Build, x: number, z: number, y0: number, y1: number): void {
 	box(b, x - 0.34, y0, z - 0.34, x + 0.34, y1, z + 0.34, CORNICE);
 	box(b, x - 0.44, y1, z - 0.44, x + 0.44, y1 + 0.1, z + 0.44, STONE);
 	box(b, x - 0.13, y1 + 0.1, z - 0.13, x + 0.13, y1 + 0.42, z + 0.13, TERRACOTTA);
+	if (b.far) box(b.far, x - 0.34, y0, z - 0.34, x + 0.34, y1 + 0.1, z + 0.34, CORNICE);
 }
 
 /** A low wall around a garden or a roof, one meter high by default. */
@@ -572,19 +577,50 @@ export interface HouseKind {
 	readonly farRoof: Build;
 }
 
+/** A roof terrace's top room over a block: its near and far corners, in meters. */
+type Room = readonly [number, number, number, number];
+
+/** The height of a roof terrace's top room, in meters. */
+const ROOM_HEIGHT = 2.3;
+
+/** Adds a far house's plain hip roof over a block, from its eaves' height. */
+function farHip(roof: Build, x0: number, z0: number, x1: number, z1: number, y: number): void {
+	const e = 0.55;
+	const top = y + Math.min(x1 - x0, z1 - z0) * 0.21;
+	const long = x1 - x0 >= z1 - z0;
+	const m = long ? (z0 + z1) / 2 : (x0 + x1) / 2;
+	mapped(roof, () => {
+		if (long) {
+			const [a, c] = [x0 + (z1 - z0) / 2, x1 - (z1 - z0) / 2];
+			quad(roof, [x0 - e, y, z1 + e], [x1 + e, y, z1 + e], [c, top, m], [a, top, m], TILE);
+			quad(roof, [x1 + e, y, z0 - e], [x0 - e, y, z0 - e], [a, top, m], [c, top, m], TILE);
+			triangle(roof, [x1 + e, y, z1 + e], [x1 + e, y, z0 - e], [c, top, m], TILE);
+			triangle(roof, [x0 - e, y, z0 - e], [x0 - e, y, z1 + e], [a, top, m], TILE);
+		} else {
+			const [a, c] = [z0 + (x1 - x0) / 2, z1 - (x1 - x0) / 2];
+			quad(roof, [x1 + e, y, z1 + e], [x1 + e, y, z0 - e], [m, top, a], [m, top, c], TILE);
+			quad(roof, [x0 - e, y, z0 - e], [x0 - e, y, z1 + e], [m, top, c], [m, top, a], TILE);
+			triangle(roof, [x0 - e, y, z1 + e], [x1 + e, y, z1 + e], [m, top, c], TILE);
+			triangle(roof, [x1 + e, y, z0 - e], [x0 - e, y, z0 - e], [m, top, a], TILE);
+		}
+	});
+}
+
 /** Makes a kind from a function that adds its parts. */
 function kind(
 	town: boolean,
 	stone: boolean,
-	blocks: readonly (readonly [number, number, number, number, number])[],
+	blocks: readonly (readonly [number, number, number, number, number, Room?])[],
 	add: (w: Build, r: Build) => void,
 ): HouseKind {
 	const w = build();
 	const r = build();
 	const far = build();
 	const farRoof = build();
+	w.far = far;
+	r.far = far;
 	let [hx, hz] = [0, 0];
-	for (const [x0, z0, x1, z1, floors] of blocks) {
+	for (const [x0, z0, x1, z1, floors, room] of blocks) {
 		const y = floors * FLOOR;
 		mapped(far, () => box(far, x0, -SKIRT, z0, x1, y, z1, WHITE));
 		// Dark windows and eaves keep the far house's look, in a few faces.
@@ -608,25 +644,12 @@ function kind(
 					[0.08, 0.09, 0.1],
 				);
 			}
-		const e = 0.55;
-		const top = y + Math.min(x1 - x0, z1 - z0) * 0.21;
-		const long = x1 - x0 >= z1 - z0;
-		const m = long ? (z0 + z1) / 2 : (x0 + x1) / 2;
-		mapped(farRoof, () => {
-			if (long) {
-				const [a, c] = [x0 + (z1 - z0) / 2, x1 - (z1 - z0) / 2];
-				quad(farRoof, [x0 - e, y, z1 + e], [x1 + e, y, z1 + e], [c, top, m], [a, top, m], TILE);
-				quad(farRoof, [x1 + e, y, z0 - e], [x0 - e, y, z0 - e], [a, top, m], [c, top, m], TILE);
-				triangle(farRoof, [x1 + e, y, z1 + e], [x1 + e, y, z0 - e], [c, top, m], TILE);
-				triangle(farRoof, [x0 - e, y, z0 - e], [x0 - e, y, z1 + e], [a, top, m], TILE);
-			} else {
-				const [a, c] = [z0 + (x1 - x0) / 2, z1 - (x1 - x0) / 2];
-				quad(farRoof, [x1 + e, y, z1 + e], [x1 + e, y, z0 - e], [m, top, a], [m, top, c], TILE);
-				quad(farRoof, [x0 - e, y, z0 - e], [x0 - e, y, z1 + e], [m, top, c], [m, top, a], TILE);
-				triangle(farRoof, [x0 - e, y, z1 + e], [x1 + e, y, z1 + e], [m, top, c], TILE);
-				triangle(farRoof, [x1 + e, y, z0 - e], [x0 - e, y, z0 - e], [m, top, a], TILE);
-			}
-		});
+		if (room) {
+			// A roof terrace stays flat, with its top room, so a far house casts what the near one does.
+			const [rx0, rz0, rx1, rz1] = room;
+			mapped(far, () => box(far, rx0, y, rz0, rx1, y + ROOM_HEIGHT, rz1, WHITE));
+			farHip(farRoof, rx0, rz0, rx1, rz1, y + ROOM_HEIGHT);
+		} else farHip(farRoof, x0, z0, x1, z1, y);
 		hx = Math.max(hx, Math.abs(x0), Math.abs(x1));
 		hz = Math.max(hz, Math.abs(z0), Math.abs(z1));
 	}
@@ -686,13 +709,13 @@ export const HOUSE_KINDS: readonly HouseKind[] = [
 			chimney(w, -3, -1, FLOOR * 2, FLOOR * 2 + 2);
 		},
 	),
-	kind(false, false, [[-5, -3.8, 5, 3.8, 2]], (w, r) => {
+	kind(false, false, [[-5, -3.8, 5, 3.8, 2, [-4.4, -3.2, -1.2, -0.2]]], (w, r) => {
 		walls(w, -5, -3.8, 5, 3.8, 2, SHUTTER_BLUE);
 		door(w, 1, 3.8, 0, 1, SHUTTER_BLUE);
 		parapet(w, -5, -3.8, 5, 3.8, FLOOR * 2, WHITE);
 		// A small top room and a pergola on the roof terrace.
-		mapped(w, () => box(w, -4.4, FLOOR * 2, -3.2, -1.2, FLOOR * 2 + 2.3, -0.2, WHITE));
-		hipRoof(r, w, -4.4, -3.2, -1.2, -0.2, FLOOR * 2 + 2.3, 0.3);
+		mapped(w, () => box(w, -4.4, FLOOR * 2, -3.2, -1.2, FLOOR * 2 + ROOM_HEIGHT, -0.2, WHITE));
+		hipRoof(r, w, -4.4, -3.2, -1.2, -0.2, FLOOR * 2 + ROOM_HEIGHT, 0.3);
 		pergola(w, 0.2, 4.4, -2.8, 3, FLOOR * 2, 2.2);
 		pot(w, -3.8, FLOOR * 2, 2.9, 0.28, true);
 	}),
@@ -794,13 +817,13 @@ export const HOUSE_KINDS: readonly HouseKind[] = [
 		hipRoof(r, w, -4.6, -3.6, 4.6, 3.6, FLOOR, 0.46);
 		pot(w, 1.8, 0, 4.1, 0.28, true);
 	}),
-	kind(true, false, [[-4.4, -4, 4.4, 4, 2]], (w, r) => {
+	kind(true, false, [[-4.4, -4, 4.4, 4, 2, [-3.8, -3.4, -0.6, -0.6]]], (w, r) => {
 		walls(w, -4.4, -4, 4.4, 4, 2, SHUTTER_GREEN, 1);
 		door(w, -1.4, 4, 0, 1, WOOD);
 		window(w, 1.8, 1.6, 4, 0, 1, SHUTTER_GREEN);
 		parapet(w, -4.4, -4, 4.4, 4, FLOOR * 2, WHITE, 0.8);
-		mapped(w, () => box(w, -3.8, FLOOR * 2, -3.4, -0.6, FLOOR * 2 + 2.3, -0.6, WHITE));
-		hipRoof(r, w, -3.8, -3.4, -0.6, -0.6, FLOOR * 2 + 2.3, 0.3);
+		mapped(w, () => box(w, -3.8, FLOOR * 2, -3.4, -0.6, FLOOR * 2 + ROOM_HEIGHT, -0.6, WHITE));
+		hipRoof(r, w, -3.8, -3.4, -0.6, -0.6, FLOOR * 2 + ROOM_HEIGHT, 0.3);
 		pergola(w, 0.3, 3.8, 0, 3.4, FLOOR * 2, 2.2);
 		pot(w, 3.6, FLOOR * 2, -3.3, 0.25, true);
 	}),
@@ -1154,7 +1177,7 @@ export function church(): { stone: Build; roof: Build } {
 	wallBox(b, front, -6.3, 6.3, 10.8, 11.2, 0, 0.42, pale);
 	// The portal: a door in stepped arches under a pediment.
 	arch(b, front, 0, 0, 3.4, 5.4, pale, dark);
-	arch(b, front, 0, 0.1, 2.5, 4.6, pale, WOOD);
+	arch(b, (u, y, o) => front(u, y, o + 0.02), 0, 0.1, 2.5, 4.6, pale, WOOD);
 	wallBox(b, front, -2.6, 2.6, 5.7, 5.95, 0, 0.5, pale);
 	// The rose window: a dark round in rings of stone, with its spokes.
 	const rose = 8.6;
@@ -1752,7 +1775,7 @@ export function keep(): Build {
 	const b = build();
 	const white: Color = [1, 1, 1];
 	mapped(b, () => {
-		box(b, -5, -SKIRT, -5, 5, 22, 5, white);
+		box(b, -5, -SKIRT, -5, 5, 21, 5, white);
 		box(b, -11, -SKIRT, -11, 11, 5, -9.2, white);
 		box(b, -11, -SKIRT, -11, -9.2, 5, 11, white);
 		box(b, 9.2, -SKIRT, -11, 11, 5, 11, white);
