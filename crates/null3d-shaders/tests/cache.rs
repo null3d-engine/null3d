@@ -188,6 +188,27 @@ fn changing_one_entry_recompiles_only_that_entry() {
 }
 
 #[test]
+fn a_manifest_change_recompiles_the_entry_it_names() {
+    let scratch = Scratch::new();
+    build(&scratch, &project(A, B));
+    let mut inputs = project(A, B);
+    // A new variant of `a` is another set of builds, and `b` keeps the table it had.
+    inputs.manifest = inputs.manifest.replace(
+        "file = \"a.wgsl\"\nvariants.plain = { targets = [\"wgsl\"] }",
+        "file = \"a.wgsl\"\nvariants.plain = { targets = [\"wgsl\"] }\nvariants.extra = { targets = [\"wgsl\"] }",
+    );
+    let (output, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 1,
+            reused: 1
+        }
+    );
+    assert!(output.shaders["a"].contains_key("extra"));
+}
+
+#[test]
 fn a_comment_or_a_moved_line_reuses_the_entry() {
     let scratch = Scratch::new();
     let first = build(&scratch, &project(A, B));
