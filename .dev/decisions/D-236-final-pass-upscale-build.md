@@ -102,3 +102,44 @@ The three.js twin's three runs failed: each gave no result within its 95 s limit
 loader began transcoding the scene's textures. So no three.js side exists for the pair.
 
 The run is [the iPad's bench run](../tested-devices/ipad-pro-13-safari/20261024-081826-bench.md).
+
+## Addendum: `presentedFps` counts frames from before the measure window
+
+Status: recorded for the task that owns `engine.measure`; the tables that quote it need re-deriving. The second step's reading above stands on it, so its rates are wrong here. Task: M3-C1 for the finding; M3-R19 for this record's rows.
+
+**The fault.** `presentedFps` is a mean over the render thread's whole interval ring. That ring
+holds frames from before the measure window. The module is
+`packages/engine/src/page/frame-stats.ts`. In `summarizeFrames`, `intervals` is
+`render.intervals.filter((ms) => ms > 0)`, with no frame range. `ratePerSecond` then divides
+`1000 × count` by the intervals' sum. The render thread's ring holds 1,024 records, several
+seconds of frames. So it carries the page's start, the pipeline warm-up and the first frames after
+the load. `intervalMs` percentiles come from the same pool.
+
+**What the window holds.** The measure counts its own frames and length in `frames` and
+`seconds`. Their quotient is the window's rate, and the pages already carry both.
+
+| Page | Ring intervals and their sum | Window | Ring's rate | Window's rate |
+| --- | --- | --- | --- | --- |
+| Galaxy S24, chosen preset, WebGPU path absent | 241 intervals, 12.04 s | 240 frames in 8.17 s | 20.0 | 29.4 |
+| Galaxy S24, whole scene at Low | 239 intervals, 12.29 s | 238 frames in 8.18 s | 19.4 | 29.1 |
+| iPad Pro 13, whole scene at Low, WebGPU | 489 intervals, 10.06 s | 488 frames in 8.52 s | 48.6 | 57.3 |
+
+The gap reaches a third of the figure. A ring sum longer than the window means frames from before
+it are counted. One interval per frame is the ring's own start, so a rate from it can never be the
+window's rate. The median hides the fault, because a handful of long early frames moves a median
+little and a mean a lot. That is why a 33.3 ms median on a 30 Hz display sat beside a published
+20.0, and 30 is what the display allows.
+
+**What to quote.** The window's `frames ÷ seconds`, which every page already records. Until the
+engine changes, a page that quotes `presentedFps` says which statistic it is.
+
+**Tables that need re-deriving from the run files**, because they quote the ring's figure:
+
+- this record's second step rows, task M3-R19, from [the iPad's bench run](../tested-devices/ipad-pro-13-safari/20261024-081826-bench.md);
+- the wind field's rows, whose figures D-283 records, task M3-V10;
+- the Skyway rows, task M3-C1, which its own runs re-derive;
+- every other run record whose table has a presented frame rate column, 20 files at this head.
+
+**The engine change** is the measure page's to place: restrict `intervals`, and the percentiles
+with them, to the window's frames, by frame number. Or publish the window's rate alone and drop
+the ring's. The Skyway runs also serve as the acceptance case, since their pages carry both figures.
