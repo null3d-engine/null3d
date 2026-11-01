@@ -197,7 +197,8 @@ impl ChunkRowTable {
 
     /// Writes each chunk's chosen prefix into the batch's rows, in slot order, and sets the
     /// batch's active count. A slot without a chunk, or with a chosen count of zero or less,
-    /// writes nothing. Returns the number of rows written, no more than the batch's capacity.
+    /// writes nothing. Returns the batch's active count after the pack: the rows it wrote, no more
+    /// than the batch's capacity, or the count that the batch keeps when it owns no transform rows.
     pub fn pack(
         &self,
         cloud: u32,
@@ -205,10 +206,11 @@ impl ChunkRowTable {
         counts: &[f32],
     ) -> Result<u32, CoreError> {
         // A batch that reads another batch's rows, or a sprite or line batch, holds no transform
-        // arrays. It takes no chunked rows, and the pack leaves its active count as it was.
+        // arrays. It takes no chunked rows, and the pack answers the count that it keeps, so a
+        // caller that reads the rows that draw sees the same count the batch has.
         if batch.positions().is_empty() || batch.rotations().is_empty() || batch.scales().is_empty()
         {
-            return Ok(0);
+            return Ok(batch.active_count());
         }
         let capacity = batch.capacity() as usize;
         let colors = !batch.colors().is_empty();
@@ -354,9 +356,9 @@ mod tests {
     }
 
     #[test]
-    fn a_batch_without_transform_rows_takes_no_rows_and_keeps_its_count() {
+    fn a_batch_without_transform_rows_takes_no_rows_and_reports_its_count() {
         // A part reads another batch's rows and owns no arrays of its own, so a chunk store
-        // cannot pack it. The pack answers nothing and leaves the count that the part had.
+        // cannot pack it. The pack answers the count that the part keeps.
         let mut batches = crate::instances::BatchTable::with_capacity(2);
         let source = batches.create(4, false, true, 1, 1, 1.0).unwrap();
         let part = batches
@@ -375,7 +377,7 @@ mod tests {
         chunk(&mut table, 0, 1.0, 2);
         let batch = batches.get_mut(part).unwrap();
         batch.set_active_count(3).unwrap();
-        assert_eq!(table.pack(CLOUD, batch, &[2.0]).unwrap(), 0);
+        assert_eq!(table.pack(CLOUD, batch, &[2.0]).unwrap(), 3);
         assert_eq!(batch.active_count(), 3);
     }
 
