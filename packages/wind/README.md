@@ -61,8 +61,10 @@ engine's library, so a reader's WGSL holds copies of two blocks: the steady fiel
 function. They are in `shaders/field.wgsl` and on the `api/wind` docs page. A test keeps every copy
 equal to the one in the package.
 
-`sample(x, y, z, out)` gives the analytic air on the CPU: the field that the solver pulls toward,
-with the pushes and the gust it injects. The solved air is on the GPU.
+`read(points, out)` gives the air at many places, three numbers a place, worked out by the add-on's
+WebAssembly in a job worker. Use it in a frame, which is what moves a sketch's own objects with the
+air. The answer lands before the next frame's update. `sample(x, y, z, out)` gives the analytic air
+on the CPU, which suits a test and a read outside a frame. The solved air is on the GPU.
 
 ## Costs and limits
 

@@ -1,0 +1,137 @@
+// The wind's analytic field in the engine's job workers: the task, the request that the sketch
+// fills for it, and the call that asks for the air at places. A page that moves its own objects
+// with the air asks here in a frame; the worker answers before the next frame's update.
+//
+// The call keeps one request buffer, so a frame's ask allocates nothing but the task's promise. The
+// buffer grows when a page first asks for more places than it held before.
+import { runTask } from '@null3d/engine';
+import type { WindReading } from './analytic';
+import { fillRequest, MAX_PLACES, POINTS, STEP } from './field-layout';
+import { FIELD_TASK } from './field-task';
+
+/** The first code that the add-on's own errors use. */
+export const WIND_CODES = 2400;
+
+/** An error that the add-on raises, with its own code and a message that says how to fix it. */
+export function windError(code: number, detail: string): Error {
+	return new Error(`wind E${code}: ${detail}`);
+}
+
+/**
+ * The air at places, worked out in a job worker. A call fills one request and sends it; the answer
+ * lands in the page's own array before the next frame's update. A call that arrives while an answer
+ * is still on its way sends one more ask when that answer comes, so a page that asks in every frame
+ * never queues more than one ask.
+ */
+export class WindProbes {
+	/** The count, the settings, the ring and the places. */
+	private request: Float32Array;
+	/** The task's input, which keeps its shape so a call makes no object. */
+	private readonly input: { request: Float32Array; answer: Float32Array };
+	/** The answer array of the ask that is on its way. */
+	private out: Float32Array | undefined;
+	private nextOut: Float32Array | undefined;
+	private inFlight = false;
+	private queued = false;
+	private reported = false;
+	private stopped = false;
+	/** True where the page's memory can be shared with a worker, so the answer needs no copy back. */
+	private readonly shared = typeof SharedArrayBuffer !== 'undefined';
+
+	constructor() {
+		this.request = this.make(2 * POINTS);
+		this.input = { request: this.request, answer: new Float32Array(3) };
+	}
+
+	/**
+	 * Asks for the air at each place in `points`, three numbers a place across the ground, and puts
+	 * the velocities in `out`, three numbers a place. The answer arrives before the next frame.
+	 */
+	ask(
+		points: Float32Array,
+		out: Float32Array,
+		reading: WindReading,
+		pushRadius: number,
+		time: number,
+		ring: Float32Array,
+	): void {
+		if (this.stopped) return;
+		if (points.length % 3 !== 0)
+			throw windError(
+				WIND_CODES,
+				`got ${points.length} numbers for the places, which take three numbers each.`,
+			);
+		const count = points.length / 3;
+		if (count > MAX_PLACES)
+			throw windError(
+				WIND_CODES + 1,
+				`got ${count} places; one call takes ${MAX_PLACES} at most. Ask the rest in the next frame.`,
+			);
+		if (out.length < points.length)
+			throw windError(
+				WIND_CODES + 2,
+				`got ${out.length} numbers for the answer; ${points.length} places take three numbers each.`,
+			);
+		this.reserve(points.length);
+		fillRequest(this.request, points, reading, pushRadius, time, ring);
+		this.nextOut = out;
+		if (this.inFlight) {
+			this.queued = true;
+			return;
+		}
+		this.send();
+	}
+
+	/** Stops asking, and ignores the answer that is still on its way. */
+	stop(): void {
+		this.stopped = true;
+	}
+
+	/** Grows the request buffer when a call asks for more places than it held. */
+	private reserve(numbers: number): void {
+		if (this.request.length >= POINTS + numbers) return;
+		const floats = Math.ceil((POINTS + numbers) / STEP) * STEP;
+		this.request = this.make(floats);
+		this.input.request = this.request;
+	}
+
+	/** Sends the request that the last call filled. */
+	private send(): void {
+		const out = this.nextOut as Float32Array;
+		this.inFlight = true;
+		this.out = out;
+		// The worker writes into the page's array where the memory is shared, and gives the answer
+		// back otherwise, which the engine moves rather than copies.
+		this.input.answer = out;
+		runTask(FIELD_TASK, this.input).then(this.answered, this.refused);
+	}
+
+	/** Takes the answer, or sends the ask that waited for it. */
+	private readonly answered = (answer: unknown): void => {
+		this.inFlight = false;
+		if (this.stopped) return;
+		// A shared answer is already in the page's array; a copied one lands in it here.
+		if (answer) this.out?.set(answer as Float32Array);
+		if (this.queued) {
+			this.queued = false;
+			this.send();
+		}
+	};
+
+	/** Reports the first failure and keeps the frames going. */
+	private readonly refused = (error: unknown): void => {
+		this.inFlight = false;
+		this.queued = false;
+		if (this.reported) return;
+		this.reported = true;
+		console.error(
+			`wind: the field's job worker did not answer, so the air at a page's own places stays as it was. ${error instanceof Error ? error.message : String(error)}`,
+		);
+	};
+
+	/** Makes a buffer that a worker may share, where the page allows sharing. */
+	private make(floats: number): Float32Array {
+		const bytes = floats * 4;
+		return new Float32Array(this.shared ? new SharedArrayBuffer(bytes) : new ArrayBuffer(bytes));
+	}
+}

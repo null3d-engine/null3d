@@ -24,11 +24,11 @@ import {
 	statSync,
 	writeFileSync,
 } from 'node:fs';
-import { join, posix } from 'node:path';
+import { dirname, join, posix } from 'node:path';
 import { CORE_FILES, NOTICES_FILE } from '../../packages/vite-plugin/src/index.ts';
 import { refuseStaleCore } from './core-sources.ts';
 import { walkFiles } from './files.ts';
-import { buildPackageLibraries } from './packages.ts';
+import { buildPackageLibraries, PACKAGES } from './packages.ts';
 
 /** The engine package that the build copies. */
 const ENGINE = 'packages/engine';
@@ -112,6 +112,7 @@ export function cdnSourcesHash(root: string): string {
 	for (const name of CDN_ADDONS) {
 		addFolder(`packages/${name}/src`);
 		addFile(`packages/${name}/package.json`);
+		for (const wasm of PACKAGES[name]?.wasm ?? []) addFile(`packages/${name}/${wasm}`);
 		const notices = `packages/${name}/THIRD-PARTY-NOTICES.txt`;
 		if (existsSync(join(root, notices))) addFile(notices);
 	}
@@ -139,6 +140,10 @@ export function missingCdnSources(root: string): string[] {
 	// cannot load without.
 	for (const file of [`${CDN_ENTRY}`, 'lib/generated/shaders.js'])
 		if (!existsSync(join(engine, file))) missing.push(file);
+	// An add-on's WebAssembly comes from the engine's build, and its code cannot start without it.
+	for (const name of CDN_ADDONS)
+		for (const wasm of PACKAGES[name]?.wasm ?? [])
+			if (!existsSync(join(root, 'packages', name, wasm))) missing.push(`packages/${name}/${wasm}`);
 	return missing;
 }
 
@@ -168,6 +173,14 @@ function copyAddon(root: string, out: string, name: string): void {
 	const from = join(root, 'packages', name);
 	const to = join(out, 'addons', name);
 	cpSync(join(from, 'lib'), join(to, 'lib'), { recursive: true });
+	// The WebAssembly that a task loads sits beside the code, at the address that the code names.
+	for (const wasm of PACKAGES[name]?.wasm ?? []) {
+		const file = join(from, wasm);
+		if (existsSync(file)) {
+			mkdirSync(dirname(join(to, wasm)), { recursive: true });
+			copyFileSync(file, join(to, wasm));
+		}
+	}
 	for (const path of walkFiles(to, ''))
 		if (path.endsWith('.js')) {
 			const file = join(to, path);

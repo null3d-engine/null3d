@@ -69,9 +69,11 @@ divergence, not a new step.
 
 ## Consequences
 
-- **Code:** `packages/wind/` holds the analytic field in TypeScript and the same formula in the
-  grid's compute shader and in its WebGL2 fragment form. The TypeScript form serves the tests and
-  the page's own CPU reads.
+- **Code:** `packages/wind/` holds the analytic field in TypeScript as the mirror, and the same
+  formula in the grid's compute shader and in its WebGL2 fragment form. The mirror serves the
+  tests and a page's reads outside a frame. `crates/null3d-wind-wasm` holds the same formula, and
+  the add-on's task runs it on the job workers for a frame's asks. A test compares the mirror and
+  the module, and another holds the two shader copies equal.
 - **Why two shader copies:** the shader build resolves only the engine's `null3d::` library, so one
   shader cannot import another of the same add-on. The copies exist for that alone. A test holds
   them byte for byte equal, and a build that received an add-on's own modules would remove them.
@@ -166,26 +168,17 @@ two above, which waits on M3-V13; V13 landed and the add-on builds on it.
   itself, so it made an object of each. The same 32 bits read as signed are the same hash. The top
   24 bits that the noise reads come out the same, so each step wraps with `| 0`. A test holds 2,000
   hashes inside the range. The reference test still matches the engine's integer hash.
-- **The sample path boxes fractions.** The run names six places of the add-on's. Each is the
-  browser boxing a value, not the add-on making an object. Every one computes, receives or hands on
-  numbers, and the arrays they write belong to their caller and are made once. The run on the production pages measures, at the least sample and at the most:
-
-  | place | bytes a frame | most |
-  | --- | --- | --- |
-  | `analyticVelocity src/analytic.ts` | 186.0 | 188.5 |
-  | `value3 src/analytic.ts` | 47.9 | 51.7 |
-  | `lattice src/analytic.ts` | 11.7 | 140.6 |
-  | `(anonymous) null3d/addons.ts` | 24.7 | 28.1 |
-  | `sample src/wind.ts` | 9.8 | 12.7 |
-  | `owedSteps src/wind.ts` | 4.0 | 6.2 |
-
-  The sketch worker reads 752.7 bytes a frame in all. The engine's own frame path is 544 of them.
-  The engine answers this boxing the same way at its own places. Its `BUDGETS` table gives S1's
-  camera step 48 bytes a frame. The setters' places come from `SETTER_BUDGETS`. The reason is the same: Chrome boxes a fraction that a function does not
-  inline. Each budget leaves room for the run-to-run noise above the place's steady figure, and less
-  than one boxed fraction more, so a new per-frame object fails the run while a sample that moves a
-  few bytes still passes. CI runs the switch on each GPU path. The docs carry the caveat beside the
-  promise that a sketch may call the add-on in every frame.
+- **The frame's places box fractions.** The places that run in a frame are the browser boxing a
+  value, not the add-on making an object: the settings and each push's slot that the sketch writes,
+  the request that the task copies, and the task's own records. The engine answers this boxing the
+  same way at its own places. Its `BUDGETS` table gives S1's camera step 48 bytes a frame. The
+  setters' places come from `SETTER_BUDGETS`. The reason is the same: Chrome boxes a fraction that
+  a function does not inline. Each budget leaves room for the run-to-run noise above the place's
+  steady figure, and less than one boxed fraction more, so a new per-frame object fails the run
+  while a sample that moves a few bytes still passes. The figures of the new places wait for a
+  `bench:allocation --wind` run on each GPU path, which CI runs; the add-on's own page never asks
+  for places, so its cost gate measures the field's pass alone. The docs carry the caveat beside
+  the promise that a sketch may call the add-on in every frame.
 
 - **The namespace part still waits.** D-224's addendum says the shader build resolves only the
   engine's `null3d::` prefix. No add-on can import another add-on's WGSL module yet. The plan's
@@ -223,14 +216,43 @@ fourth sat in the check that judges the wake.
 
 ## Rulings on this stage
 
-- **The field's per-frame loops stay in TypeScript.** Hard rule 42 names loops over objects,
-  instances, vertices, pixels and draw-list commands, and an add-on ships a frame loop through the
-  task hook. These two loops are over a fixed ring of four slots: the sample's walk of the pushes and
-  the gust, and the write of the same slots into the pass's values. A fixed four-slot ring is none of
-  the rule's list, its work is constant, and the sketch's own arrays are made once. A task hop would
-  also break `sample`, which a page calls and reads without waiting (hard rule 4). The cost gate
-  measures the work within budget at every preset. The ruling is revisited if the ring stops being a
-  fixed four.
+- **The field's frame work runs in the add-on's WebAssembly, on the job workers.** The owner ruled
+  that hard rule 42 applies to the wind as it does to the other add-ons: a frame's loop over a
+  count belongs in `crates/`, and an add-on ships its frame loop through the task hook. The add-on
+  holds `crates/null3d-wind-wasm`, which works out the analytic field for many places in one call,
+  with fixed buffers and no general-purpose allocation, and `packages/wind/src/field.ts` sends it
+  a request in a frame. The ring of pushes and the gust is not a loop any more: the pass's values
+  hold it, and `push` and `gust` write the slot where the page sends them, so a frame copies no
+  slot and nothing walks the ring. A worker cannot fill those values: its answer arrives between
+  frames, and a held frame runs its updates without frames, so a held picture would miss the
+  pushes that its page sent at the held time. The loop is removed at its source, not moved.
+  `sample` stays synchronous as the TypeScript mirror, which a
+  test and a read outside a frame use; it is not on the add-on's frame path. `read` is the frame's
+  ask: the walk over the pushes, the gust and the swirl's four noise evaluations for each place
+  runs in the module.
+  - **The paths.** On WebGPU and on WebGL2 the field's solve is the shader's, and a frame's ask
+    runs in the job workers. The single-threaded build has no job workers, so the engine's loader
+    starts one task worker for the task, and the walk still runs in WebAssembly there, with no
+    TypeScript fallback. Hold mode takes no ask: the pass's values come from the sketch thread's
+    own writes, which are the settings, the camera's box and each push's slot. A held frame
+    therefore carries every push that the page sent at the held time, and two runs draw the same
+    picture. A page that asks for places during a hold is answered when the hold's frames run.
+  - **What the mirror costs.** The TypeScript form walks the ring and evaluates the noise in
+    JavaScript. It serves the tests, and a page's read outside a frame. Its cost is the same work
+    that the module does, paid on whichever thread calls it. The add-on's own page never calls it,
+    and the benchmark page asks the module in every frame, so no budget rests on it.
+  - **The benchmark and the budgets.** The allocation switch calls `read` in every frame, so its
+    figures come from the WebAssembly path. `WIND_BUDGETS` names the places of that path: the
+    request's writes, the task call, and S1's own step. The task's records are judged per call by
+    the table that every task uses. The measured figures of the new places are owed to a
+    `bench:allocation --wind` run on each GPU path; CI runs the switch and judges them.
+  - **The parity test.** `field.test.ts` runs the built module over places with pushes and a gust,
+    and compares every velocity with the mirror's within a ten-thousandth of a meter a second, and
+    the module's own tests hold the noise, the ground's profile, a push's fade and the answer's
+    layout.
+  - **The module.** It imports nothing, exports its memory, holds two fixed buffers that are one
+    request and one answer, and never grows its memory, so a view of it stays valid. It takes up to
+    about five thousand places in one call, and the add-on refuses more with its own error code.
 - **The box's edge takes the steady field.** Each edge cell is set to the steady field that a reader
   works out past the box, and the projection leaves it there, so the grid and the far field agree at
   the edge. A cell beside the edge carries advected air, which lags the pushes and the gust. A page's
