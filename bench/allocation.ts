@@ -95,11 +95,12 @@
 // `--stats` samples. `--time-of-day` moves a day cycle's hour in every frame, through the object
 // that the first `timeOfDay` call made, for the allocation sample of the helper's per-frame form.
 // `--prepass` turns the depth prepass on, in any scene.
-// `--terrain` and `--impostors` fail the check while their add-ons stand as they are: measured on
-// the Mac, the terrain's update allocates 1908 bytes per frame in the heightfield sampling, 1871 in
-// the chunks it evicts and 1163 more in the same sampling, about 5 KB in all, and the impostors'
-// batch update allocates 187 KB per frame with 23 KB in the sampling beside it. Both add-ons must
-// stop allocating in their per-frame update, which their owners owe.
+// `--terrain` and `--impostors` judge their add-ons' own places. The terrain's frame step allocates
+// nothing: its selection and block build run in its WebAssembly module on the job workers, and a
+// task call's places are judged per call (`TASK_CALL_BUDGETS`). Its task is the only engine task
+// that carries WebAssembly, so its calls take the loader's compile path, which makes no array and no
+// iterator object per call for a lone file. The impostors add-on's batch update still allocates
+// 187 KB per frame with 23 KB in the sampling beside it, which its owner owes.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -504,6 +505,11 @@ const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 2
  * loader's places. So `pose` is judged per call here too. The figures come from the Mac's WebGL2 run
  * and SwiftShader runs with `--splats` and the task asked about once a frame, with room above them.
  * The add-on's frame step makes no array and no number object.
+ *
+ * A task that carries WebAssembly compiles its file in the loader once per page, and a lone file
+ * needs no array, no map and no `Promise.all`; the terrain add-on's task is the first that takes
+ * that path. The loader walks its runners by index too, so a call makes no iterator result for
+ * each of them.
  */
 const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
 	'pose null3d/s1-sketch.ts': 128,
