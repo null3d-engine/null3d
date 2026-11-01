@@ -1917,12 +1917,26 @@ impl SceneSettings {
 
     /// What screen-space bounce light's steps draw with in a frame of a canvas of `canvas` pixels,
     /// or `None` while it draws nothing or without a camera.
-    pub(crate) fn bounce_frame(&self, canvas: (u32, u32)) -> Option<BounceFrame> {
+    pub(crate) fn bounce_frame(
+        &self,
+        canvas: (u32, u32),
+        scene: &SceneStorage,
+        parity: usize,
+    ) -> Option<BounceFrame> {
         let bounce = self.bounce()?;
-        self.views.first()?.camera()?;
+        let view = self.views.first()?;
+        view.camera()?;
+        let mut mirrors = [[0.0; 4]; bounce::MAX_MIRRORS];
+        let planes = self.views.iter().filter_map(View::mirrored);
+        if let Some(camera) = view.transform(scene, parity, 1.0) {
+            for (slot, plane) in mirrors.iter_mut().zip(planes) {
+                *slot = bounce::view_plane(&camera.view, plane.relative_to(camera.cell.absolute()));
+            }
+        }
         Some(BounceFrame {
             bounce,
             projection: self.camera_projection(canvas)?,
+            mirrors,
         })
     }
 

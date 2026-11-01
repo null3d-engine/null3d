@@ -3090,7 +3090,8 @@ impl FrameBuilder for CpuCulledRenderer {
         );
         self.graph
             .set_ssr(settings.ssr_frame(canvas), settings.ssr_scale());
-        self.graph.set_bounce(settings.bounce_frame(canvas));
+        self.graph
+            .set_bounce(settings.bounce_frame(canvas, scene, parity));
         let prepass_changed = self.graph.depth_prepass() != self.layout_prepass;
         // A pick that waits declares the pick's passes, and builds the layout again with their
         // pipelines, so the frame draws them with the camera's culling. The passes stay declared
