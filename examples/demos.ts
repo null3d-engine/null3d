@@ -91,6 +91,11 @@ export interface Demo {
 	 */
 	hdr?: boolean;
 	/**
+	 * True for a demo that starts the engine with moment transparency, which no preset turns on.
+	 * The image test adds the page's switch that takes the same path.
+	 */
+	momentTransparency?: boolean;
+	/**
 	 * True for a demo whose mouse look wants the pointer lock: a click on the canvas asks the
 	 * browser for it, and Esc gives the pointer back.
 	 */
@@ -153,6 +158,7 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'A Mediterranean town on a hilly island in the open sea',
 		summary:
 			'A hilly island alone in the sea on a summer morning, with cypress, umbrella pine and olive forest grown in code, a long beach, a golf course on its headland and a harbour town. Turn around the whole island, or zoom down to any place on it.',
+		momentTransparency: true,
 		controls: SHOWCASE_CONTROLS,
 		hold: 0.5,
 		timeoutSeconds: 180,
