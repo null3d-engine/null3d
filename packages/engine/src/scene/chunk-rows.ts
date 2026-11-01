@@ -25,6 +25,18 @@ const COLORS = 3;
 let lastCloud = 0;
 
 /**
+ * Fills a pack plan with one chosen count for each slot, and zero past the end of `counts`. A slot
+ * that a short list does not name then takes no row, as the pack's rule says. Exported for the
+ * unit test of that rule.
+ */
+export function fillPlan(plan: Float32Array, counts: ArrayLike<number>): void {
+	const length = Math.min(plan.length, counts.length);
+	if (counts instanceof Float32Array && counts.length === plan.length) plan.set(counts);
+	else for (let i = 0; i < length; i++) plan[i] = counts[i] as number;
+	plan.fill(0, length);
+}
+
+/**
  * One chunk's rows, in the order that a coarser level keeps: its count, and its arrays.
  *
  * @category api/scene
@@ -46,6 +58,10 @@ export interface ChunkRowData {
  * Packs chunked rows into an instance batch's rows. Store each chunk once with [`write`], then
  * call [`pack`] with one chosen count for each slot. The pack writes the chosen prefix of each
  * chunk, in slot order, and sets the batch's active count.
+ *
+ * The batch must own its rows' transforms. A batch that reads another batch's rows, such as a
+ * part of a model, or a sprite or line batch, takes no chunked rows: a pack on one writes nothing
+ * and keeps its active count.
  *
  * The writer keeps one plan array in the engine's memory, so a frame's pack allocates nothing
  * once the slot count is set.
@@ -148,13 +164,7 @@ export class ChunkRowWriter implements ViewHolder {
 			this.planAddress = at;
 			this.generation = core.generation;
 		}
-		const plan = this.plan as Float32Array;
-		if (counts instanceof Float32Array && counts.length === plan.length) {
-			plan.set(counts);
-		} else {
-			const length = Math.min(plan.length, counts.length);
-			for (let i = 0; i < length; i++) plan[i] = counts[i] as number;
-		}
+		fillPlan(this.plan as Float32Array, counts);
 		core.check(
 			core.glue.splatPack(this.batch.id, this.cloud, this.slots),
 			'splat pack',

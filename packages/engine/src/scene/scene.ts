@@ -2840,7 +2840,8 @@ export class InstanceBatch implements ViewHolder {
 	 * Makes the writer that packs chunks of rows into this batch's rows, for an add-on whose rows
 	 * arrive as chunks. The writer stores each chunk once when it arrives, then packs the chosen
 	 * prefix of each into the rows in the core's memory, so a frame copies no rows through the
-	 * sketch's heap. The code loads on first use.
+	 * sketch's heap. The batch must own its rows' transforms: a pack on a part of a model, or on a
+	 * sprite or line batch, writes nothing. The code loads on first use.
 	 *
 	 * @category api/scene
 	 */

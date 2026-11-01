@@ -21,7 +21,7 @@ import {
 	type SketchContext,
 	type Vec3Like,
 } from '@null3d/engine';
-import { chunkSplats, type SplatChunk } from './chunks';
+import { chunkSplats } from './chunks';
 import { splatsFeature } from './feature';
 import { checkSplats, type SplatData, splatsError } from './format';
 // The module registers the glTF extension as the add-on loads.
@@ -153,12 +153,15 @@ export interface Splats {
 	destroy(): void;
 }
 
-/** One slot of the selection: a chunk's bounds, its count, and the data that has arrived. */
+/**
+ * One slot of the selection: a chunk's bounds, its count, and whether its rows have arrived. The
+ * rows live in the core once they arrive, so the slot keeps no reference to them.
+ */
 interface ChunkSlot {
 	readonly center: readonly [number, number, number];
 	readonly radius: number;
 	readonly count: number;
-	data: SplatChunk | undefined;
+	arrived: boolean;
 }
 
 /** What a page downloads: a cloud's whole file, or a stream's index. */
@@ -204,7 +207,7 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 				center: chunk.center,
 				radius: chunk.radius,
 				count: chunk.count,
-				data: undefined,
+				arrived: false,
 			});
 	// The size of each chunk's file, which decides the chunks that the first view waits for.
 	const chunkBytes = stream
@@ -310,7 +313,7 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 		const eyeZ = eye[2] as number;
 		for (let i = 0; i < slots.length; i++) {
 			const slot = slots[i] as ChunkSlot;
-			if (slot.data || !(i < counts.length && (counts[i] as number) > 0)) continue;
+			if (slot.arrived || !(i < counts.length && (counts[i] as number) > 0)) continue;
 			const dx = (slot.center[0] as number) - eyeX;
 			const dy = (slot.center[1] as number) - eyeY;
 			const dz = (slot.center[2] as number) - eyeZ;
@@ -468,7 +471,8 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 			decode: decodeChunk,
 			onChunk: (index, chunk) => {
 				const slot = slots[index] as ChunkSlot;
-				slot.data = chunk;
+				// The rows move into the core, so the slot keeps only the answer that they arrived.
+				slot.arrived = true;
 				writer.write(index, chunk);
 				loadedChunks++;
 				version++;
@@ -500,7 +504,7 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 					center: chunk.center,
 					radius: chunk.radius,
 					count: chunk.count,
-					data: chunk,
+					arrived: true,
 				});
 				loadedChunks++;
 				version++;
