@@ -6,13 +6,17 @@ import {
 	CLEARANCE,
 	cityTowers,
 	clearSight,
+	createSight,
 	EDGE,
 	FLIGHT,
 	FLOOR,
 	type Flight,
 	fly,
 	keepOut,
+	SIGHT_MIN,
+	type Sight,
 	type Stick,
+	settleSight,
 } from './drive';
 
 const FRAME = 1 / 60;
@@ -204,4 +208,88 @@ test('the pull keeps two meters from the point it looks at', () => {
 	const camera: Flight = { x: 0, y: 50, z: 0.5, yaw: 0, speed: 0, climb: 0, turning: 0 };
 	expect(clearSight(0, 50, 3, camera, towers, 0.6)).toBe(true);
 	expect(apart(camera, [0, 50, 3])).toBeCloseTo(2, 5);
+});
+
+/** The chase camera's tilt behind the car, its distance, and the angle behind a car that heads +z. */
+const TILT = Math.atan2(4.4, 13);
+const DISTANCE = Math.hypot(13, 4.4);
+const BEHIND = Math.PI;
+
+/** Settles the camera of a still car for `frames` frames and returns the place it heads for. */
+function settle(
+	sight: Sight,
+	aim: Flight,
+	towers: Float32Array,
+	frames: number,
+	car: Flight = flight(),
+): Flight {
+	for (let k = 0; k < frames; k++)
+		settleSight(sight, car.x, car.y, car.z, BEHIND, TILT, DISTANCE, DISTANCE, towers, FRAME, aim);
+	return aim;
+}
+
+/** A tower that stands between the still car and its usual place, past the standoff. */
+const IN_THE_WAY = new Float32Array([0, -15, 1.4, 1.4, 100]);
+/** The distance at which the camera stands before it: the tower's near face, its own margin in. */
+const CLEAR_AT = (15 - 1.4 - CLEARANCE) / Math.cos(TILT);
+
+test('a blocked view eases the camera in over several frames', () => {
+	const sight = createSight(DISTANCE);
+	const aim: Flight = { ...flight() };
+	settle(sight, aim, IN_THE_WAY, 1);
+	// One frame moves the camera a fraction of the way, not all of it.
+	expect(sight.radius).toBeGreaterThan(DISTANCE - 0.5);
+	settle(sight, aim, IN_THE_WAY, 10);
+	expect(sight.radius).toBeGreaterThan(CLEAR_AT + 0.5);
+	expect(sight.radius).toBeLessThan(DISTANCE - 0.5);
+	settle(sight, aim, IN_THE_WAY, 110);
+	expect(sight.radius).toBeCloseTo(CLEAR_AT, 3);
+	// The camera stands at the standoff or beyond, and looks past the tower.
+	expect(apart(aim, [0, 50, 0])).toBeGreaterThanOrEqual(SIGHT_MIN);
+	expect(sightBlocked([0, 50, 0], aim, IN_THE_WAY, 0.6)).toBe(false);
+});
+
+test('the camera returns to the user’s exact chase distance once clear', () => {
+	const sight = createSight(DISTANCE);
+	const aim: Flight = { ...flight() };
+	settle(sight, aim, IN_THE_WAY, 120);
+	expect(sight.radius).toBeCloseTo(CLEAR_AT, 3);
+	settle(sight, aim, NONE, 180);
+	expect(sight.radius).toBe(DISTANCE);
+	expect(sight.pull).toBe(0);
+	expect(sight.swing).toBe(0);
+	// The placed camera sits at that distance too.
+	expect(apart(aim, [0, 50, 0])).toBeCloseTo(DISTANCE, 6);
+});
+
+test('a tower edge that crosses back and forth does not pump the distance', () => {
+	const sight = createSight(DISTANCE);
+	const aim: Flight = { ...flight() };
+	settle(sight, aim, IN_THE_WAY, 120);
+	let last = sight.radius;
+	let most = 0;
+	// The tower appears and disappears on alternate frames, as a tower's edge does when the car
+	// turns along it. The dwell holds the pull and the distance it heads for, so neither pumps.
+	for (let k = 0; k < 120; k++) {
+		settle(sight, aim, k % 2 === 0 ? NONE : IN_THE_WAY, 1);
+		most = Math.max(most, Math.abs(sight.radius - last));
+		last = sight.radius;
+	}
+	expect(most).toBeLessThan(0.01);
+	expect(sight.pull).toBe(1);
+});
+
+test('a tower dead behind the car finds a side that sees it', () => {
+	// The tower stands inside the standoff, so no distance along the view behind the car sees it.
+	const towers = new Float32Array([0, -8, 4, 4, 100]);
+	const sight = createSight(DISTANCE);
+	const aim: Flight = { ...flight() };
+	settle(sight, aim, towers, 1);
+	expect(sight.goal).not.toBe(0);
+	// The camera eases round rather than taking the side in a single frame.
+	expect(Math.abs(sight.swing)).toBeLessThan(Math.abs(sight.goal) / 2);
+	settle(sight, aim, towers, 120);
+	expect(sight.swing).toBeCloseTo(sight.goal, 6);
+	expect(sightBlocked([0, 50, 0], aim, towers, 0.6)).toBe(false);
+	expect(apart(aim, [0, 50, 0])).toBeGreaterThanOrEqual(SIGHT_MIN);
 });

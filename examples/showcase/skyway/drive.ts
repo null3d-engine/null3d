@@ -3,7 +3,11 @@
 // towers: each tower is a box, and a car that flies into one slides along its face or lands on its
 // roof. The streets, the city's edge and the sky's ceiling bound it too.
 //
-// The flight is plain numbers, apart from the scene, so the unit test drives it frame by frame.
+// The chase camera reads the same boxes. A tower that stands between the car and the camera pulls
+// the camera in along the user's own view until the car is in sight; a tower that no distance
+// clears swings it round to a side, and the swing eases as the pull does.
+//
+// All of it is plain numbers, apart from the scene, so the unit test drives it frame by frame.
 import { cityBuildings, HALF, PITCH } from './layout';
 
 /** How the car flies: its speeds in meters per second, and how fast they change. */
@@ -104,28 +108,47 @@ export function fly(flight: Flight, stick: Stick, dt: number, towers: Towers): v
 
 /** The least distance a pulled-in chase camera keeps from the point it looks at, in meters. */
 const SIGHT_NEAREST = 2;
+/** The nearest a pulled-in chase camera comes to the car, in meters, so the car cannot fill the
+ * frame. The car is a little under five meters long, which keeps it under half the frame's width
+ * from the side. */
+export const SIGHT_MIN = 10;
+/** How low above the car the camera sits when it has pulled all the way in, in meters. */
+const SIGHT_LOW = 1.6;
+/**
+ * The distance at which the low pulled-in height gives way to the usual one, in meters. It sits
+ * just past the standoff, so a pulled-in camera looks just past the car, and one at its usual
+ * distance looks down the road as it always did.
+ */
+const SIGHT_CLOSE = SIGHT_MIN + 1;
+/** The widest swing to either side of the car's tail that tries to find a clear view, in radians. */
+const SIGHT_SWING = Math.PI / 2;
+/** How far apart the swings sit, in radians. */
+const SIGHT_STEP = Math.PI / 18;
+/** How long the way must stay clear before the camera eases back out, in seconds. */
+const SIGHT_DWELL = 0.25;
+/** How fast the pull and the side swing ease, per second. Both directions take the same rate, so
+ * the camera leaves as smoothly as it arrived. */
+const SIGHT_EASE = 4;
+/** How near the eased values must come to their goals before they take them outright, so the
+ * camera returns exactly to the user's distance and side. */
+const SIGHT_SNAP = 1e-3;
 
 /**
- * Moves `flight` to the nearest place before a tower that stands between it and the point
- * (fromX, fromY, fromZ), so the tower cannot hide that point. `towers` holds the boxes that
- * `keepOut` reads. Each box is grown by `clearance`, so the camera stops that far before a wall,
- * and it keeps at least two meters from the point so the near plane never clips a body there.
- * Returns true when a tower stood in the way and the place moved.
+ * Where along a line the first tower that crosses it begins, as a share from 0 to 1, or 1 when no
+ * tower crosses it. `dx`, `dy` and `dz` reach from the line's start to its end, and each box is
+ * grown by `clearance`.
  */
-export function clearSight(
+function entryShare(
 	fromX: number,
 	fromY: number,
 	fromZ: number,
-	flight: Flight,
+	dx: number,
+	dy: number,
+	dz: number,
 	towers: Towers,
 	clearance: number,
-): boolean {
-	const dx = flight.x - fromX;
-	const dy = flight.y - fromY;
-	const dz = flight.z - fromZ;
-	const length = Math.hypot(dx, dy, dz);
-	if (length <= SIGHT_NEAREST) return false;
-	/** Where along the segment from the point to the camera the nearest box starts, from 0 to 1. */
+): number {
+	/** Where along the line the nearest box that crosses it starts, from 0 to 1. */
 	let entry = 1;
 	for (let k = 0; k < towers.length; k += 5) {
 		const minX = (towers[k] as number) - (towers[k + 2] as number) - clearance;
@@ -171,6 +194,53 @@ export function clearSight(
 		// The point is outside the box, so an entry ahead of it is a tower in the way.
 		if (near > 0 && near < entry) entry = near;
 	}
+	return entry;
+}
+
+/**
+ * How far along a ray the first tower that crosses it begins, in meters, up to `reach`: `reach`
+ * when the way is clear. The ray starts at (fromX, fromY, fromZ) and runs along the unit direction
+ * (dirX, dirY, dirZ), and each box is grown by `clearance`.
+ */
+function entryDistance(
+	fromX: number,
+	fromY: number,
+	fromZ: number,
+	dirX: number,
+	dirY: number,
+	dirZ: number,
+	reach: number,
+	towers: Towers,
+	clearance: number,
+): number {
+	if (reach <= 0) return reach;
+	return (
+		entryShare(fromX, fromY, fromZ, dirX * reach, dirY * reach, dirZ * reach, towers, clearance) *
+		reach
+	);
+}
+
+/**
+ * Moves `flight` to the nearest place before a tower that stands between it and the point
+ * (fromX, fromY, fromZ), so the tower cannot hide that point. `towers` holds the boxes that
+ * `keepOut` reads. Each box is grown by `clearance`, so the camera stops that far before a wall,
+ * and it keeps at least two meters from the point so the near plane never clips a body there.
+ * Returns true when a tower stood in the way and the place moved.
+ */
+export function clearSight(
+	fromX: number,
+	fromY: number,
+	fromZ: number,
+	flight: Flight,
+	towers: Towers,
+	clearance: number,
+): boolean {
+	const dx = flight.x - fromX;
+	const dy = flight.y - fromY;
+	const dz = flight.z - fromZ;
+	const length = Math.hypot(dx, dy, dz);
+	if (length <= SIGHT_NEAREST) return false;
+	const entry = entryShare(fromX, fromY, fromZ, dx, dy, dz, towers, clearance);
 	if (entry >= 1) return false;
 	const t = Math.max(entry, SIGHT_NEAREST / length);
 	// The camera keeps its height as it pulls in, so it looks down at the point from above a car's
@@ -222,4 +292,175 @@ export function keepOut(flight: Flight, towers: Towers): boolean {
 		moved = true;
 	}
 	return moved;
+}
+
+/** What the chase camera remembers from one frame to the next while it keeps the car in sight. */
+export interface Sight {
+	/** How far the camera has eased from the user's distance toward the nearest clear one, 0 to 1. */
+	pull: number;
+	/** The distance the pull heads for. It is held while the pull releases, so a tower's edge that
+	 * crosses back and forth does not flicker the distance. */
+	want: number;
+	/** The seconds since a tower last stood between the car and its usual place. */
+	clear: number;
+	/** The angle the camera holds to either side of the user's view, in radians, and the angle it
+	 * eases toward. */
+	swing: number;
+	goal: number;
+	/** The distance the camera took from the car this frame, which is the user's own distance once
+	 * the way is clear. */
+	radius: number;
+}
+
+/** Starts a sight with the camera at the user's own distance and the car in view. */
+export function createSight(distance: number): Sight {
+	return { pull: 0, want: distance, clear: Infinity, swing: 0, goal: 0, radius: distance };
+}
+
+/**
+ * How far along the view at `angle` the car first comes into sight, in meters. It measures the
+ * boxes that the camera keeps out of, so the distance it gives is the one the camera can stand at
+ * without a tower pushing it aside.
+ */
+function viewDistance(
+	atX: number,
+	atY: number,
+	atZ: number,
+	angle: number,
+	level: number,
+	rise: number,
+	distance: number,
+	towers: Towers,
+): number {
+	return entryDistance(
+		atX,
+		atY,
+		atZ,
+		Math.sin(angle) * level,
+		rise,
+		Math.cos(angle) * level,
+		distance,
+		towers,
+		CLEARANCE,
+	);
+}
+
+/**
+ * The angle to either side of the user's view that first sees the car at the user's distance, from
+ * the nearer side outward, or 0 when no side within the widest swing sees it.
+ */
+function findSide(
+	atX: number,
+	atY: number,
+	atZ: number,
+	around: number,
+	level: number,
+	rise: number,
+	distance: number,
+	towers: Towers,
+): number {
+	for (let step = SIGHT_STEP; step <= SIGHT_SWING + 1e-9; step += SIGHT_STEP) {
+		if (viewDistance(atX, atY, atZ, around + step, level, rise, distance, towers) >= distance)
+			return step;
+		if (viewDistance(atX, atY, atZ, around - step, level, rise, distance, towers) >= distance)
+			return -step;
+	}
+	return 0;
+}
+
+/** Keeps a placed camera at the standoff from the car, where the towers leave room. */
+function clampStandoff(eye: Flight, atX: number, atY: number, atZ: number): void {
+	const dx = eye.x - atX;
+	const dy = eye.y - atY;
+	const dz = eye.z - atZ;
+	const away = Math.hypot(dx, dy, dz);
+	if (away < SIGHT_MIN && away > 1e-3) {
+		const out = SIGHT_MIN / away;
+		eye.x = atX + dx * out;
+		eye.y = atY + dy * out;
+		eye.z = atZ + dz * out;
+	}
+}
+
+/**
+ * Aims the chase camera for one frame of `dt` seconds. The user's view is their angle round the car
+ * from its tail, `around`, its tilt and its distance. A tower between the car and the place those
+ * pick pulls the camera in along the view until the car is in sight, and the way back out takes the
+ * same easing, after a dwell, so an edge that crosses back and forth does not flicker the distance.
+ * A tower that stands nearer than the standoff, which no distance clears, makes the camera ease
+ * round to a side that sees the car, and it holds that side until the user's own view clears.
+ *
+ * `far` is the distance at which the usual height and look return. Writes the place the camera
+ * heads for into `out`, and returns how much of the usual chase look remains, from 0 pulled in to 1
+ * at the user's distance.
+ */
+export function settleSight(
+	sight: Sight,
+	atX: number,
+	atY: number,
+	atZ: number,
+	around: number,
+	tilt: number,
+	distance: number,
+	far: number,
+	towers: Towers,
+	dt: number,
+	out: Flight,
+): number {
+	const level = Math.cos(tilt);
+	const rise = Math.sin(tilt);
+	// The camera stays in sight as long as no tower stands between it and the car, so the pull
+	// reads the car's own view and not the camera that the pull itself has moved.
+	const own = viewDistance(atX, atY, atZ, around, level, rise, distance, towers);
+	const blocked = own < distance;
+
+	// The pull rises while a tower stands in the way, and falls only once the way has stayed clear
+	// for the dwell, so a tower's edge that crosses back and forth does not flicker it.
+	sight.clear = blocked ? 0 : sight.clear + dt;
+	const target = blocked || sight.clear < SIGHT_DWELL ? 1 : 0;
+	sight.pull += (target - sight.pull) * (1 - Math.exp(-SIGHT_EASE * dt));
+	if (Math.abs(sight.pull - target) < SIGHT_SNAP) sight.pull = target;
+
+	// A side is needed only when the tower stands inside the standoff, so no distance along the
+	// user's view clears the car. It is held until the user's own view clears again.
+	const wantSide = sight.goal === 0 ? blocked && own < SIGHT_MIN : blocked;
+	if (wantSide) {
+		const held =
+			sight.goal === 0
+				? 0
+				: viewDistance(atX, atY, atZ, around + sight.goal, level, rise, distance, towers);
+		if (sight.goal === 0 || held < distance)
+			sight.goal = findSide(atX, atY, atZ, around, level, rise, distance, towers);
+	} else sight.goal = 0;
+	sight.swing += (sight.goal - sight.swing) * (1 - Math.exp(-SIGHT_EASE * dt));
+	if (Math.abs(sight.goal - sight.swing) < SIGHT_SNAP) sight.swing = sight.goal;
+
+	// The distance along the camera's own heading where the way first clears. While the pull
+	// releases, the distance it heads for is held, so a tower that flickers at an edge cannot make
+	// the camera pulse. A side, once it sees the car, gives the user's own distance back.
+	const angle = around + sight.swing;
+	const entry = viewDistance(atX, atY, atZ, angle, level, rise, distance, towers);
+	const clear = entry >= distance;
+	let want: number;
+	if (!clear) want = Math.max(SIGHT_MIN, entry);
+	else if (sight.goal !== 0 || sight.pull <= SIGHT_SNAP) want = distance;
+	else want = sight.want;
+	sight.want = Math.min(want, distance);
+	const radius = distance + (sight.want - distance) * sight.pull;
+	sight.radius = radius;
+
+	const closeness =
+		Math.min(1, Math.max(0, (radius - SIGHT_CLOSE) / Math.max(far - SIGHT_CLOSE, 1e-3))) *
+		Math.max(0, 1 - Math.abs(sight.swing) / SIGHT_SWING);
+	out.x = atX + Math.sin(angle) * level * radius;
+	out.z = atZ + Math.cos(angle) * level * radius;
+	// The camera sits low as it closes on the car, so it looks just past it rather than down at its
+	// roof, and its height blends back to the user's as the distance does.
+	out.y = atY + (closeness < 1 ? SIGHT_LOW + (rise * far - SIGHT_LOW) * closeness : rise * radius);
+	// A tower and the standoff can disagree about where the camera may stand: the tower wins, so the
+	// camera never ends up inside a wall.
+	keepOut(out, towers);
+	if (sight.pull > 0 || sight.swing !== 0) clampStandoff(out, atX, atY, atZ);
+	keepOut(out, towers);
+	return closeness;
 }
