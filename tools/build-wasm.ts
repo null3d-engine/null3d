@@ -1540,6 +1540,14 @@ async function main(): Promise<void> {
 		}));
 		if (!options.sizesOnly)
 			builds.push({ name: 'tools', work: (log) => buildToolModules(log, tools, noCache) });
+		// The wind add-on's own WebAssembly, which its task runs in the job workers, goes into the
+		// add-on's package beside the code that loads it. A size check reads files that exist, so it
+		// does not build this one.
+		if (!options.sizesOnly)
+			builds.push({
+				name: 'wind',
+				work: (log) => log.run(process.execPath, [join(root, 'tools/build-wind-wasm.ts')]),
+			});
 		// No Rust build reads a shader module, so the modules build beside them, in a process of their
 		// own, whose memory and cores the builds share.
 		if (modules)
