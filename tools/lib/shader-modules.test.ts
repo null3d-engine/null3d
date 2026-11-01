@@ -14,7 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, delimiter, join } from 'node:path';
 import { scaledBudget } from '../../tests/lib/run-budget.ts';
-import { hashOf } from './build-cache';
+import { hashFiles, hashOf } from './build-cache';
 import { fixture } from './fixture';
 import {
 	buildEntriesShard,
@@ -24,6 +24,7 @@ import {
 	entryCacheDir,
 	entryCacheFolder,
 	folderIsComplete,
+	inputFiles,
 	inputHash,
 	isShaderModule,
 	MODULE_DIR,
@@ -83,6 +84,53 @@ function repository(): string {
 		[`${MODULE_DIR}/gpu.ts`]: 'export {};\n',
 	});
 }
+
+/**
+ * A lock that names the fixture's crates, one registry package that null3d-core reaches, and a
+ * workspace crate with its own dependency that no crate of the shader closure reaches.
+ */
+const LOCKED = `version = 4
+
+[[package]]
+name = "null3d-core"
+version = "0.0.0"
+dependencies = [
+ "registry-dep",
+]
+
+[[package]]
+name = "null3d-gpu"
+version = "0.0.0"
+dependencies = [
+ "null3d-core",
+]
+
+[[package]]
+name = "null3d-shaders"
+version = "0.0.0"
+dependencies = [
+ "null3d-gpu",
+]
+
+[[package]]
+name = "null3d-wind"
+version = "0.1.0"
+dependencies = [
+ "wind-dep",
+]
+
+[[package]]
+name = "registry-dep"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1111111111111111111111111111111111111111111111111111111111111111"
+
+[[package]]
+name = "wind-dep"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2222222222222222222222222222222222222222222222222222222222222222"
+`;
 
 /** Stores `files` in the shared cache as the set of `root`'s inputs, with its record. */
 function storeCachedSet(root: string, files: Record<string, string>): string {
@@ -149,6 +197,66 @@ describe('the shader modules', () => {
 			'crates/null3d-gpu',
 			'crates/null3d-shaders',
 		]);
+	});
+
+	it('change the keys when a lock entry inside the shader closure changes', () => {
+		const root = repository();
+		writeFileSync(join(root, 'Cargo.lock'), LOCKED);
+		const inputs = inputHash(root);
+		const stamp = compilerStamp(root);
+		// A new version of a registry package that null3d-core reaches through the lock's tables.
+		writeFileSync(
+			join(root, 'Cargo.lock'),
+			LOCKED.replace(
+				'name = "registry-dep"\nversion = "1.0.0"',
+				'name = "registry-dep"\nversion = "1.0.1"',
+			),
+		);
+		expect(inputHash(root)).not.toBe(inputs);
+		expect(compilerStamp(root)).not.toBe(stamp);
+	});
+
+	it('keep the keys when a lock entry outside the shader closure changes', () => {
+		const root = repository();
+		writeFileSync(join(root, 'Cargo.lock'), LOCKED);
+		const inputs = inputHash(root);
+		const stamp = compilerStamp(root);
+		// A new version of a registry package that only the unreached workspace crate depends on,
+		// and another package beside it, which no shader dependency reaches.
+		writeFileSync(
+			join(root, 'Cargo.lock'),
+			`${LOCKED.replace(
+				'name = "wind-dep"\nversion = "2.0.0"',
+				'name = "wind-dep"\nversion = "2.0.1"',
+			)}
+[[package]]
+name = "wind-extra"
+version = "0.2.0"
+`,
+		);
+		expect(inputHash(root)).toBe(inputs);
+		expect(compilerStamp(root)).toBe(stamp);
+	});
+
+	it('adopt the set of the whole-lock key, so the narrowing keeps a warm cache', () => {
+		withScratchCaches(() => {
+			const root = repository();
+			writeFileSync(join(root, 'Cargo.lock'), LOCKED);
+			// The set that the last build stored, under the key that hashed the whole lock.
+			const whole = join(modulesCacheDir(), hashFiles(root, inputFiles(root)));
+			mkdirSync(whole, { recursive: true });
+			const text = 'export const CACHED = 1;\n';
+			writeFileSync(join(whole, 'shaders.ts'), text);
+			writeFileSync(join(whole, 'modules.json'), JSON.stringify({ 'shaders.ts': hashOf(text) }));
+			// Only the cache can supply this set, and the stub cargo fails a build, so returning false
+			// proves that the run read the adopted set instead of building.
+			expect(ensureShaderModules(root)).toBe(false);
+			const narrow = join(modulesCacheDir(), inputHash(root));
+			expect(existsSync(narrow)).toBe(true);
+			expect(existsSync(whole)).toBe(false);
+			expect(readFileSync(join(root, MODULE_DIR, 'shaders.ts'), 'utf8')).toBe(text);
+			expect(JSON.parse(readFileSync(join(root, RECORD), 'utf8')).inputs).toBe(inputHash(root));
+		});
 	});
 
 	it('are out of date when an input changes, and not when a crate test changes', () => {
