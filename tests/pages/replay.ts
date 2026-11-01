@@ -1,7 +1,9 @@
 // Replays a hand-built draw list through the engine's WebGPU backend: GPU culling in a compute pass,
 // then indirect draws from a render bundle with 4x MSAA and reversed depth. It checks the GPU side of
-// the WebGPU render path before the core records these lists itself. It draws the 8-bit path, whose
-// shaders encode their colors for the 8-bit target themselves.
+// the WebGPU render path before the core records these lists itself. It draws no ambient occlusion
+// and nothing samples that texture, so the pass proves the frame group's types and the pipeline's
+// build, not correct occlusion sampling. It draws the 8-bit path, whose shaders encode their colors
+// for the 8-bit target themselves.
 import { loadWgslShaders, readbackWebGPU, WebGPUBackend } from '@null3d/engine/internal';
 import * as C from '../../packages/engine/src/generated/core';
 import * as G from '../../packages/engine/src/generated/gpu';
@@ -273,8 +275,8 @@ run('replay', async () => {
 	);
 	// The materials' custom values, with three.js's table of the split-sum terms of specular light
 	// in the columns from the materials' own texels, as the engine keeps it. No material here has
-	// custom values, so the texture reads as zero except the table. Ambient occlusion's texture and
-	// the row values of instance batches bind it too, and nothing here reads them.
+	// custom values, so the texture reads as zero except the table. The row values of instance
+	// batches bind it too, and nothing here reads them.
 	memory.push(
 		G.OP_CREATE_TEXTURE,
 		5,
@@ -399,6 +401,24 @@ run('replay', async () => {
 		blobs.ranges,
 		positions.length * 16,
 	);
+	// Ambient occlusion's texture, which the frame group binds as a 2D array: the first layer holds
+	// the occlusion and the second the bounce light. This view draws neither, so one texel of each
+	// layer is enough; the shader reads them only while the strength is above 0. Unlike the engine's
+	// blank, this texture takes no copy usage and nothing uploads it, so its texels read as zero,
+	// where the engine's first layer holds the sun's light in full. The difference stays harmless
+	// only while no build reads the texture.
+	memory.push(
+		G.OP_CREATE_TEXTURE,
+		21,
+		1,
+		1,
+		2,
+		G.FORMAT_RGBA16_FLOAT,
+		GPUTextureUsage.TEXTURE_BINDING,
+		1,
+		1,
+		G.VIEW_2D_ARRAY,
+	);
 	// The blank array of reflection probes, one texel, which the frame group binds at binding 3
 	// while the view lists no probe.
 	memory.push(
@@ -444,8 +464,9 @@ run('replay', async () => {
 		...[9, G.RESOURCE_TEXTURE, 4, 0, 0],
 		// The light probe grid, which only shaders built to read it do.
 		...[10, G.RESOURCE_TEXTURE, 11, 0, 0],
-		// Ambient occlusion's texture, which the shader reads only while its strength is above 0.
-		...[11, G.RESOURCE_TEXTURE, 5, 0, 0],
+		// Ambient occlusion's texture, an array of the occlusion's layer and the bounce light's,
+		// which the shader reads only while the strength is above 0.
+		...[11, G.RESOURCE_TEXTURE, 21, 0, 0],
 		...[12, G.RESOURCE_TEXTURE, 6, 0, 0],
 		...[13, G.RESOURCE_SAMPLER, 2, 0, 0],
 		...[14, G.RESOURCE_SAMPLER, 3, 0, 0],
