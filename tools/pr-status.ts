@@ -35,7 +35,7 @@ const ON_BRANCH = new Set(['M3-F9']);
 // A task belongs here only when it has no evidence yet. A task whose proof is written but whose
 // gap still stops the tick belongs in AUDIT_GAPS instead: a task in both lists says its work is
 // unfinished and finished at once, and the release hook refuses a range that creates that pair.
-const INCOMPLETE = new Set(['M3-E8', 'M3-R22']);
+const INCOMPLETE = new Set(['M3-R22']);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
@@ -44,7 +44,7 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-E6':
 		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame. The overlay now lists the GPU time of each step of the frame and fills an add-on's row from the render passes that its description names, which the water add-on uses for its reflection pass; a feature whose work records inside the engine's own pass reads gpu not measured, as splats does on every path (D-267)",
 	'M3-E8':
-		"the compute pass and its WebGL2 fragment form are built and tested, and the wind add-on fills its field through the hook with a compute pass. The owner's 25 October ruling adds M3-V13's history to the hook, and the first-user outcome the plan names still waits on M3-F9's ocean",
+		"the hook carries M3-V13's history, and the wind add-on's field is the first user that ships: its cards, grass and leaf materials read the compute pass in the same frame on WebGPU, compatibility mode and WebGL2, where the add-on's fragment form draws it. The water add-on's FFT ocean, the plan's named first user, carries its own compute chain on `feat/m3-f9-fft-ocean` under M3-F9",
 	'M3-R22':
 		"the shader cache on the branch is D-248's change, not this task's: it reuses every entry when a compiler change leaves the compiled program identical, 0 compiled and 79 reused in 19 s, where the same change cost an hour. The task's own change, three entries instead of four for every module kind, is on `feat/m3-r22-entry-set` and not on this branch, and the determinism list here still holds `lit`; the two checks' CI times remain unmeasured",
 	'M3-F3':
@@ -89,7 +89,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-V14':
 		"the owner ruled the rows and the budgets, and D-283 records them. Three clauses of the Done-when stand open, so the task cannot tick: the smallest-tier look, a side-by-side that the owner judges and has not named, which is also the tier he cannot tell from the next one up; the cost of each tier on the M5 Max, whose row is owed, while the iPad Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus measured theirs at this head; and the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings, which cannot be shown while their readers wait on M3-V11 and M3-V12",
 	'M3-V8':
-		"the CPU path draws a hill through the add-on and is measured on this Mac's Chrome, and the task's Done-when is not met. Creek's sketch still imports its own `./grass`, so no hill of Creek draws through the add-on; the cost has a row only for this Mac, and the iPad, an S24-class phone and the Tab A9 Plus are owed; near grass shadows are not built; and the compute-built blade list waits on M3-E8's same-frame output, M3-E9's count in the near shadow views and M3-V3's graph edge, as the evidence entry says",
+		"the CPU path draws a hill through the add-on and is measured on this Mac's Chrome, and the task's Done-when is not met. Creek's sketch still imports its own `./grass`, so no hill of Creek draws through the add-on; the cost has a row only for this Mac, and the iPad, an S24-class phone and the Tab A9 Plus are owed; near grass shadows are not built; and the compute-built blade list waits on M3-E9's count in the near shadow views and M3-V3's graph edge, since M3-E8's same-frame output is met, as the evidence entry says",
 	'M3-X1':
 		"held open by its own line: the vegetation add-on in Creek (M3-V11) is open, so Creek's plants are not drawn by a demo yet, and the demo budgets do not hold: the Skyway rates recorded for M3-C1 sit under the 60 fps target on the iPad Pro 13 (50.0 fps at Low on WebGPU, 54.2 on WebGL2) and the cloud S24 (11.7 at Low, 7.8 in the demos plan)",
 };

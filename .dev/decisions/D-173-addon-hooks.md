@@ -1,6 +1,6 @@
 # D-173: Add-on hooks, one place per feature, and a path to an add-on marketplace
 
-Status: decided by the owner. Built: the import and layout checks, and the packages of ten foundations: controls, geometry, impostors, particles, splats, terrain, `three-compat`, vegetation, water and wind. Pending: the physics and MSDF text packages, and the open hooks and tasks: H1 (M3-E8), H2 (M3-E9), H4, material lobes (M3-E7), H5, add-on tasks (M3-E2), H7, scene inputs (M3-E4 and M3-E4a), H8, sky layers (M3-E10), the preset and stats links (M3-E6), the texture-unit allocator (M3-D7), the listing check (M3-D9), the splats add-on (M3-F2), water (M3-F5), the FFT ocean (M3-F9) and the volumetric tier (M3-F11). Each hook and platform task is built in its own M3 task, with its first user. Task: M3-plan.
+Status: decided by the owner. Built: the import and layout checks, the packages of ten foundations: controls, geometry, impostors, particles, splats, terrain, `three-compat`, vegetation, water and wind, H1's compute pass (M3-E8), the preset and stats links (M3-E6) and sky layers (M3-E10). Pending: the physics and MSDF text packages, and the open hooks and tasks: H2 (M3-E9), H4, material lobes (M3-E7), H5, add-on tasks (M3-E2), H7, scene inputs (M3-E4 and M3-E4a), the texture-unit allocator (M3-D7), the listing check (M3-D9), the splats add-on (M3-F2), water (M3-F5), the FFT ocean (M3-F9) and the volumetric tier (M3-F11). Each hook and platform task is built in its own M3 task, with its first user. Task: M3-plan.
 
 Summary: Each feature lives in one place, the core or one add-on, never both. An add-on extends a core feature only through that feature's own settings. Flat and volumetric clouds are tiers of the core sky, and a water add-on owns all water. Every add-on and example reaches the engine only through its public entry points, which `bun run check` enforces. The engine's team builds twelve foundation add-ons as npm packages, and M3's six content add-ons are example add-ons. Hooks H1 to H9, the plugin interface version and a listing check all come in M3, each hook with its first user.
 
@@ -341,7 +341,10 @@ The browser test `tests/image/program-units.spec.ts` builds a lit custom materia
 
 ## H1's storage surface is one texture at a fixed binding
 
-Status: decided by the coordinator. Task: M3-E8.
+Status: decided by the coordinator. Built: the pass on both GPU paths, and the addendum that keeps
+a pass's state between frames ([D-240](D-240-compute-passes.md#compute-passes-that-keep-their-state)).
+The wind add-on's field is the first user that ships, and the water add-on's FFT ocean, the table's
+named first user, follows on M3-F9. Task: M3-E8.
 
 An add-on's compute pass writes one storage texture at a fixed binding of the pass's group. The add-on's uniforms and sampled textures follow it in the same layout that a full-screen effect uses. The shader download and the bind group layout stay the same whatever a scene uses, so an add-on does not pay for a surface that it ignores.
 
