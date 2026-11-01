@@ -469,6 +469,9 @@ const inView = (x: number, z: number) =>
 
 /** The most trees that the plan places, for the highest preset. */
 export const MOST_TREES = 60000;
+/** How far a tree's trunk stands from a terrace wall, and the side of the grid of those walls, in meters. */
+const TRUNK_CLEAR = 0.8;
+const WALL_GRID = 8;
 /** The slope past which the golf course's ground grows scrub, as rise over run. */
 const BANK_SCRUB = 0.26;
 /** How far a tree's trunk stands from a bunker's edge, in meters. */
@@ -500,6 +503,52 @@ function inBunker(x: number, z: number): boolean {
 	);
 }
 
+/** The terrace walls by a coarse grid, for the search of the nearest. */
+const wallsByCell = (() => {
+	const cells = new Map<number, TerraceWall[]>();
+	for (const wall of TERRACES) {
+		const steps = Math.ceil(hypot(wall.bx - wall.ax, wall.bz - wall.az) / WALL_GRID);
+		for (let t = 0; t <= steps; t++) {
+			const key = lookupKey(
+				wall.ax + ((wall.bx - wall.ax) * t) / steps,
+				wall.az + ((wall.bz - wall.az) * t) / steps,
+			);
+			const list = cells.get(key);
+			if (!list) cells.set(key, [wall]);
+			else if (!list.includes(wall)) list.push(wall);
+		}
+	}
+	return cells;
+})();
+
+/** The terrace wall nearest a place, within a cell of the search's grid: how far it lies, and which way. */
+function nearestTerraceWall(x: number, z: number): { d: number; nx: number; nz: number } {
+	let best = { d: Number.POSITIVE_INFINITY, nx: 0, nz: 0 };
+	for (let i = -1; i <= 1; i++)
+		for (let j = -1; j <= 1; j++)
+			for (const w of wallsByCell.get(lookupKey(x + i * LOOKUP, z + j * LOOKUP)) ?? []) {
+				const [dx, dz] = [w.bx - w.ax, w.bz - w.az];
+				const t = Math.max(
+					0,
+					Math.min(1, ((x - w.ax) * dx + (z - w.az) * dz) / (dx * dx + dz * dz || 1)),
+				);
+				const [ox, oz] = [x - w.ax - dx * t, z - w.az - dz * t];
+				const d = hypot(ox, oz);
+				if (d < best.d) best = { d, nx: d ? ox / d : 0, nz: d ? oz / d : 0 };
+			}
+	return best;
+}
+
+/** A place moved just clear of the terrace wall it stands on, so a tree's trunk does not rise through it. */
+function offTerraceWall(x: number, z: number): readonly [number, number] {
+	const { d, nx, nz } = nearestTerraceWall(x, z);
+	if (d >= TRUNK_CLEAR) return [x, z];
+	// A place on the wall's own line goes to the side that lies lower, the terrace in front of the wall.
+	const [ax, az] = nx === 0 && nz === 0 ? [1, 0] : [nx, nz];
+	const push = TRUNK_CLEAR * 1.5 - d;
+	return [x + ax * push, z + az * push];
+}
+
 /** The trees. A preset draws a share of each. */
 export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 	// Each group of trees draws from a seed of its own place, so a change to a house moves the trees
@@ -520,6 +569,7 @@ export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 		if (spots.length >= MOST_TREES || open(x, z)) return false;
 		if (kind !== OLIVE && inView(x, z)) return false;
 		if (read(edgeGrid, x, z) < 1.1 || inPlot(x, z) || inBunker(x, z)) return false;
+		if (nearestTerraceWall(x, z).d < TRUNK_CLEAR) return false;
 		const y = groundHeight(x, z);
 		if (y < 2 || slopeAt(x, z) > 5) return false;
 		for (let i = -1; i <= 1; i++)
@@ -591,7 +641,8 @@ export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 	}
 	for (const [x, z] of TERRACE_OLIVES) {
 		seedAt(x * 100, z * 100);
-		add(OLIVE, x + (next() - 0.5) * 1.2, z + (next() - 0.5) * 1.2, TERRACE_OLIVE_GAP);
+		const [ox, oz] = offTerraceWall(x + (next() - 0.5) * 1.2, z + (next() - 0.5) * 1.2);
+		add(OLIVE, ox, oz, TERRACE_OLIVE_GAP);
 	}
 	// Strands of dark cypress stand across the settled slopes.
 	for (let group = 0; group < 90 && spots.length < MOST_TREES; group++) {
@@ -890,7 +941,7 @@ export const SHRUBS: readonly ShrubSpot[] = (() => {
 })();
 
 /** The fingerprint of the stored plan, which the plan tests and the browser test both hold it to. */
-export const PLAN_FINGERPRINT = 403048988;
+export const PLAN_FINGERPRINT = 422387458;
 
 /**
  * A number that changes with any road, house, tree, wall or sample of the ground, to the millimeter. A

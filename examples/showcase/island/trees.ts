@@ -43,7 +43,7 @@ import {
 	type TreeSpot,
 	UMBRELLA,
 } from './plan';
-import { parkLawns } from './town';
+import { onRetainingWall, parkLawns } from './town';
 
 /** The share of the plan's trees that each preset stands on the island. */
 export const TREE_SHARE: Record<QualityPreset, number> = {
@@ -431,7 +431,8 @@ function standShrubs(
 export function createTrees(ctx: SketchContext, camera: Camera): { update(): void } {
 	const preset = ctx.quality.preset;
 	const atlases = bakePlantAtlases(ctx);
-	const kept = standing(TREE_SPOTS, TREE_SHARE[preset]);
+	const onWall = onRetainingWall();
+	const kept = standing(TREE_SPOTS, TREE_SHARE[preset]).filter((spot) => !onWall(spot.x, spot.z));
 	const fills = standing(FILL_SPOTS, TREE_SHARE[preset]);
 	const wind = createWind(ctx, { camera, box: WIND_BOX, grid: WIND_GRID });
 	const swaying = KINDS.flatMap(([kind, species]) =>

@@ -812,6 +812,20 @@ describe('the houses', () => {
 });
 
 describe('the trees', () => {
+	it('stands no trunk on a terrace wall', () => {
+		const bad = TREE_SPOTS.filter(({ x, z }) =>
+			TERRACES.some((w) => {
+				const [dx, dz] = [w.bx - w.ax, w.bz - w.az];
+				const t = Math.max(
+					0,
+					Math.min(1, ((x - w.ax) * dx + (z - w.az) * dz) / (dx * dx + dz * dz || 1)),
+				);
+				return hypot(x - w.ax - dx * t, z - w.az - dz * t) < 0.5;
+			}),
+		);
+		expect(bad.length).toBe(0);
+	});
+
 	it("nest each preset's trees among those of the next preset up", () => {
 		for (const spots of [TREE_SPOTS, FILL_SPOTS]) {
 			let lighter = new Set<TreeSpot>();
