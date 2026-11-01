@@ -5,6 +5,7 @@
 // thing is one mesh in an instance batch.
 import { type InstanceBatch, quat, type SketchContext, type Texture } from '@null3d/engine';
 import { Noise, random } from '../../lib/procedural';
+import { WAY_HALF } from './ground';
 import {
 	BAY,
 	formHeight,
@@ -597,7 +598,7 @@ function roadMesh(): Build {
 	// A house set back from its road has its own graded strip, from the road's edge to its front door.
 	for (const lot of LOTS) {
 		const way = wayOf(lot);
-		if (way) strip(b, way, 1.25, [0.34, 0.3, 0.24], ROAD_LIFT - 0.02);
+		if (way) strip(b, way, WAY_HALF, [0.34, 0.3, 0.24], ROAD_LIFT - 0.02);
 	}
 	return b;
 }

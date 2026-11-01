@@ -30,7 +30,12 @@ import {
 } from './plan';
 
 /** The share of the plan's trees that each preset stands on the island. */
-const SHARE: Record<QualityPreset, number> = { low: 0.3, medium: 0.55, high: 0.8, ultra: 1 };
+export const TREE_SHARE: Record<QualityPreset, number> = {
+	low: 0.3,
+	medium: 0.55,
+	high: 0.8,
+	ultra: 1,
+};
 /** The distance from the camera at which a tree hands over from its mesh to its card, in meters. */
 const SWITCH: Record<QualityPreset, number> = { low: 90, medium: 130, high: 130, ultra: 300 };
 
@@ -255,8 +260,8 @@ function stand(
 export function createTrees(ctx: SketchContext): void {
 	const preset = ctx.quality.preset;
 	const atlases = bakePlantAtlases(ctx);
-	const kept = standing(TREE_SPOTS, SHARE[preset]);
-	const fills = standing(FILL_SPOTS, SHARE[preset]);
+	const kept = standing(TREE_SPOTS, TREE_SHARE[preset]);
+	const fills = standing(FILL_SPOTS, TREE_SHARE[preset]);
 	for (const [kind, species] of KINDS)
 		stand(
 			ctx,

@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'bun:test';
 import { fileURLToPath } from 'node:url';
 import { scaledBudget } from '../../../tests/lib/run-budget.ts';
+import { WAY_HALF } from './ground';
 import {
 	formHeight,
 	golfShare,
@@ -23,6 +24,7 @@ import {
 	circleRadius,
 	doorOf,
 	FEWEST_ON_LANE,
+	FILL_SPOTS,
 	groundHeight,
 	HOUSE_ON_ROAD,
 	KEEPS,
@@ -41,6 +43,7 @@ import {
 	standing,
 	TERRACES,
 	TREE_SPOTS,
+	type TreeSpot,
 	wayOf,
 } from './plan';
 import {
@@ -71,6 +74,13 @@ const RADIUS_SLACK = 0.92;
 const JOIN = 1;
 /** The shallowest angle at which two roads may meet, as its cosine, 6 m and 15 m back from the join. */
 const SHALLOWEST = 0.5;
+/** The meters that two junctions stand apart at least, and within which two ends make one junction. */
+const FEWEST_JUNCTION_METERS = 15;
+const SAME_JUNCTION = 0.5;
+/** The meters that two turning circles stand apart at least. */
+const FEWEST_CIRCLE_METERS = 40;
+/** The houses that a road's turning circle serves at least. */
+const FEWEST_ON_CIRCLE = 3;
 /** The meters that a road may run beside another close by, counted away from their junction. */
 const MOST_BESIDE = 15;
 /** The largest share of country houses that may stand on the through roads. */
@@ -483,6 +493,60 @@ describe("the road network's shape", () => {
 		expect(bad.length, failures(bad)).toBe(0);
 	});
 
+	it('keeps every two junctions apart', () => {
+		const joins = ROADS.flatMap((road) =>
+			joints(road).filter((end) =>
+				ROADS.some(
+					(other) =>
+						other !== road && other.points.some((p) => hypot(p.x - end.x, p.z - end.z) < JOIN),
+				),
+			),
+		);
+		const bad: string[] = [];
+		for (const [k, a] of joins.entries())
+			for (const b of joins.slice(k + 1)) {
+				const gap = hypot(a.x - b.x, a.z - b.z);
+				// Two roads that meet at one place make one junction.
+				if (gap > SAME_JUNCTION && gap < FEWEST_JUNCTION_METERS)
+					bad.push(`${gap.toFixed(1)} m at ${a.x | 0},${a.z | 0}`);
+			}
+		expect(bad.length, failures(bad)).toBe(0);
+	});
+
+	it('keeps every two turning circles apart, and gives each enough houses', () => {
+		const circles = ROADS.filter((road) => road.end === 'circle');
+		const ends = circles.map((road) => road.points[road.points.length - 1] as RoadPoint);
+		const bad: string[] = [];
+		for (const [k, a] of ends.entries()) {
+			for (const b of ends.slice(k + 1))
+				if (hypot(a.x - b.x, a.z - b.z) < FEWEST_CIRCLE_METERS)
+					bad.push(`close at ${a.x | 0},${a.z | 0}`);
+			const served = LOTS.filter((lot) => lot.road === circles[k]).length;
+			if (served < FEWEST_ON_CIRCLE) bad.push(`${served} houses at ${a.x | 0},${a.z | 0}`);
+		}
+		expect(bad.length, failures(bad)).toBe(0);
+	});
+
+	it('lets no house strip cross a terrace wall', () => {
+		const bad: string[] = [];
+		for (const lot of LOTS) {
+			const way = wayOf(lot);
+			if (!way) continue;
+			const [from, to] = [way[0] as RoadPoint, way[way.length - 1] as RoadPoint];
+			const [vx, vz] = [to.x - from.x, to.z - from.z];
+			for (const wall of TERRACES) {
+				const [ux, uz] = [wall.bx - wall.ax, wall.bz - wall.az];
+				const cross = ux * vz - uz * vx;
+				if (!cross) continue;
+				const onWall = ((from.x - wall.ax) * vz - (from.z - wall.az) * vx) / cross;
+				const onWay = ((from.x - wall.ax) * uz - (from.z - wall.az) * ux) / cross;
+				if (onWall >= 0 && onWall <= 1 && onWay >= 0 && onWay <= 1)
+					bad.push(`${lot.x | 0},${lot.z | 0}`);
+			}
+		}
+		expect(bad.length, failures(bad)).toBe(0);
+	});
+
 	it('ends a road that joins nothing in a level circle that serves houses', () => {
 		const bad: string[] = [];
 		for (const road of ROADS) {
@@ -702,6 +766,20 @@ describe('the houses', () => {
 	});
 });
 
+describe('the trees', () => {
+	it("nest each preset's trees among those of the next preset up", () => {
+		for (const spots of [TREE_SPOTS, FILL_SPOTS]) {
+			let lighter = new Set<TreeSpot>();
+			for (const share of [0.3, 0.55, 0.8, 1]) {
+				const kept = new Set(standing(spots, share));
+				for (const spot of lighter) expect(kept.has(spot)).toBe(true);
+				expect(kept.size).toBeGreaterThanOrEqual(lighter.size);
+				lighter = kept;
+			}
+		}
+	});
+});
+
 describe('what the search does not lay', () => {
 	it('floats every boat over water', () => {
 		const bad = MOORINGS.flatMap(([x, z]) =>
@@ -760,7 +838,10 @@ describe('what the search does not lay', () => {
 					const [hw, hd] = (HOUSE_KINDS[other.kind] as (typeof HOUSE_KINDS)[number]).half;
 					const [c, s] = [Math.cos(other.yaw), Math.sin(other.yaw)];
 					const [ox, oz] = [x - other.x, z - other.z];
-					if (Math.abs(ox * c - oz * s) < hw && Math.abs(ox * s + oz * c) < hd) {
+					if (
+						Math.abs(ox * c - oz * s) < hw + WAY_HALF &&
+						Math.abs(ox * s + oz * c) < hd + WAY_HALF
+					) {
 						bad.push(`through a house ${lot.x | 0},${lot.z | 0}`);
 						t = length;
 						break;

@@ -14,7 +14,9 @@ import {
 	padFaces,
 	rasterAll,
 	read,
+	roadEdge,
 	type Tread,
+	WAY_HALF,
 } from './ground';
 import {
 	BAY,
@@ -180,6 +182,117 @@ export function spaceJunctions(roads: readonly Road[]): number {
 	return moved;
 }
 
+/** A place on a road's end: its x and z, in meters. */
+type Place = readonly [number, number];
+
+/** The junctions that stand too close to another, each with the points it moves along the road it meets. */
+const JOIN_SHIFTS: readonly (readonly [Place, number])[] = [
+	[[-204, 225], 1],
+	[[-203, 262], 2],
+	[[-13, 161], 2],
+	[[-14, 146], 2.2],
+	[[6, 213], -1.2],
+	[[1, 206], 0.9],
+	[[48, 182], -3],
+	[[-388, -137], 8],
+	[[-213, -20], 1.2],
+	[[-206, -16], -1.2],
+];
+/** The turning circles too close to another, each with the points cut from the end of its road. */
+const CIRCLE_CUTS: readonly (readonly [Place, number])[] = [
+	[[20, -202], 5],
+	[[-552, -268], 6],
+];
+/** The short roads that end in a circle with too few houses to serve, which go with their houses. */
+const SPARE_ROADS: readonly Place[] = [
+	[-194, 62],
+	[54, 70],
+];
+/** The circles that another road reaches, so they stay, which take houses along the end of their road. */
+const SERVED_CIRCLES: readonly (readonly [Place, number])[] = [
+	[[205, -360], 3],
+	[[355, -186], 2],
+];
+/** The points of a served circle's road, back from its end, that its new houses stand along. */
+const SERVED_REACH = 14;
+
+/** The road end that stands within a few meters of a place, and which end it is. */
+function endAt(roads: readonly Road[], [x, z]: Place): { road: Road; start: boolean } {
+	for (const road of roads)
+		for (const start of [true, false]) {
+			const end = road.points[start ? 0 : road.points.length - 1] as RoadPoint;
+			if (hypot(end.x - x, end.z - z) < 4) return { road, start };
+		}
+	throw new Error(`no road ends near ${x}, ${z}`);
+}
+
+/** The points of a road that follow an end shifted along the road that it meets. */
+const SHIFT_BLEND = 40;
+
+/** Moves a road's end to a place, with the road's points easing after it, and any road that leaves those points. */
+function moveEnd(roads: readonly Road[], road: Road, start: boolean, to: RoadPoint): void {
+	const { points } = road;
+	const at = (k: number) => points[start ? k : points.length - 1 - k] as RoadPoint;
+	const first = at(0);
+	const [dx, dy, dz] = [to.x - first.x, to.y - first.y, to.z - first.z];
+	const reach = Math.min(SHIFT_BLEND, points.length - 1);
+	const riders: { other: Road; at: number }[] = [];
+	for (const other of roads) {
+		if (other === road) continue;
+		const e = other.points[0] as RoadPoint;
+		for (let k = 1; k < reach; k++) {
+			const p = at(k);
+			if (hypot(p.x - e.x, p.z - e.z) < 1) riders.push({ other, at: k });
+		}
+	}
+	for (let k = 0; k < reach; k++) {
+		const share = (1 - k / reach) ** 2;
+		const p = at(k);
+		p.x += dx * share;
+		p.y += dy * share;
+		p.z += dz * share;
+	}
+	for (const rider of riders) moveEnd(roads, rider.other, true, at(rider.at));
+}
+
+/** Moves each junction that stands too close to another along the road that it meets. */
+export function shiftJoins(roads: readonly Road[]): void {
+	for (const [place, steps] of JOIN_SHIFTS) {
+		const { road, start } = endAt(roads, place);
+		const end = road.points[start ? 0 : road.points.length - 1] as RoadPoint;
+		const { other, at } = nearestOther(roads, road, end.x, end.z);
+		// A shift of part of a point stands that share of the way to the next one.
+		const whole = Math.trunc(steps);
+		const [p, q] = [other.points[at + whole], other.points[at + whole + Math.sign(steps)]] as [
+			RoadPoint,
+			RoadPoint,
+		];
+		const share = Math.abs(steps - whole);
+		moveEnd(roads, road, start, {
+			x: p.x + (q.x - p.x) * share,
+			y: p.y + (q.y - p.y) * share,
+			z: p.z + (q.z - p.z) * share,
+		});
+	}
+}
+
+/** Cuts back the circles that stand too close to another. */
+export function cutCircles(roads: readonly Road[]): void {
+	for (const [place, count] of CIRCLE_CUTS) {
+		const { road } = endAt(roads, place);
+		road.points.length -= count;
+	}
+}
+
+/** Takes away the roads that serve too few houses, with those houses. */
+export function dropSpareRoads(roads: Road[], lots: Lot[]): { roads: Road[]; lots: Lot[] } {
+	const spare = new Set(SPARE_ROADS.map((place) => endAt(roads, place).road));
+	return {
+		roads: roads.filter((road) => !spare.has(road)),
+		lots: lots.filter((lot) => !spare.has(lot.road)),
+	};
+}
+
 /** The longest that a house's drive may run, in meters. */
 const GATE_RUN = 25;
 /** The steepest that a house's drive may run from its gate. */
@@ -224,7 +337,7 @@ export function dropOffGround(all: readonly Lot[], stairs: readonly (readonly Tr
 					lot.x + (u as number) * c + (v as number) * s,
 					lot.z - (u as number) * s + (v as number) * c,
 				];
-				return Math.abs(read(land, x, z) - lot.y) <= MOST_OFF_GROUND * 1.1;
+				return roadEdge(x, z) >= 0 && Math.abs(read(land, x, z) - lot.y) <= MOST_OFF_GROUND * 1.1;
 			});
 		});
 		if (kept.length === lots.length) break;
@@ -252,7 +365,8 @@ function wayBlocked(lot: Lot, gate: RoadPoint, all: readonly Lot[]): boolean {
 		const [c, s] = [Math.cos(other.yaw), Math.sin(other.yaw)];
 		for (let t = 0; t <= length; t += 0.5) {
 			const [ox, oz] = [fx + (dx * t) / length - other.x, fz + (dz * t) / length - other.z];
-			if (Math.abs(ox * c - oz * s) < hw && Math.abs(ox * s + oz * c) < hz) return true;
+			if (Math.abs(ox * c - oz * s) < hw + WAY_HALF && Math.abs(ox * s + oz * c) < hz + WAY_HALF)
+				return true;
 		}
 	}
 	return false;
@@ -638,6 +752,16 @@ export function addLayers(
 		if (faces.size === 0) break;
 		added = added.filter((lot) => !faces.has(lot));
 	}
+	const placed = infill.added.length;
+	for (const [k, [place, count]] of SERVED_CIRCLES.entries()) {
+		const { road } = endAt(roads, place);
+		const last = road.points.length - 2;
+		const served = (side: number, room: number, seed: number) =>
+			rowAlong(infill, road, last, last - SERVED_REACH, side, room, seed);
+		const first = served(1, count, 80000 + k * 1000);
+		counts[`served${k}`] = first + served(-1, count - first, 81000 + k * 1000);
+	}
+	added = [...added, ...infill.added.slice(placed)];
 	const all = [...lots, ...added];
 	added = added.filter((lot) =>
 		all.some((o) => o !== lot && hypot(o.x - lot.x, o.z - lot.z) < NEIGHBOUR),
