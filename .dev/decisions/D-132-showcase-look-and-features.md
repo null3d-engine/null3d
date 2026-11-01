@@ -64,3 +64,28 @@ The owner ruled four points.
 - **Other records:** this record places particles in M2. D-53's list of gap features (row 21) and D-117's row for spray, leaves and fireflies give way to it. D-117's status and that row point here.
 - **Examples guide:** [Examples](../examples.md) holds the look bar for the comparisons, and the table of engine features for the showcase scenes.
 - **README:** the roadmap puts the particles add-on in 0.2, and motion blur and global illumination in 0.3.
+
+## Addendum: Skyway keeps the effects that its Low preset leaves off
+
+Status: decided by the maintainer under this record's look bar, and open to the owner. Task: M3-C1.
+
+Skyway turns ambient occlusion on at every preset, and screen-space reflections on. The preset
+ table sets ambient occlusion off at Low, and the reflections' scale to 0. The scene does so through
+ its own post settings and the shared `enableReflections` helper. That helper turns them on at a
+ quarter of the render size.
+
+The reason is the look bar in this record. The night city reads flat without the occlusion that
+darkens its crevices. The wet road reads as paint without the reflections of its lamps and signs.
+The owner approved that look. So the demo keeps it, and the phone's frame pays for it.
+
+The cost on a cloud Galaxy S24 in Chrome at Low is measured with the quality governor off and
+the render scale fixed at 1. It draws 19.4 frames a second with both effects, 25.9 without ambient
+occlusion and 29.2 without the reflections. Its display runs at 30 Hz. That device's own readings
+at one setting cover 19.4 to 29.5 across sessions. So those two differences are upper bounds. The
+cloud iPad Pro 13 reaches its display's rate at Low with both effects on.
+
+The choice not taken is the preset's own settings at Low. The phone would then draw at about its
+display's rate. It changes the approved look on phones, so this branch keeps the look and records
+the cost instead. The owner may put the frame target above that look, which opens the choice again.
+
+Figures: [tested devices](../tested-devices.md), the pages of the skyway-cost plan.

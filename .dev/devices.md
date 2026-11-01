@@ -349,6 +349,9 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
   whole scene on WebGPU, so a device with both paths says what its default one draws when warm. A
   device's figures move a lot between sessions, and only a difference from a repeated base page
   says what a part costs.
+- The cloud Galaxy S24 runs its display at 30 Hz. So no run on it can answer M3-C1's 60 frames a
+  second for S24-class phones. That clause needs a device whose display refreshes at 60 Hz or
+  faster. The cloud S24 can say only whether the phone holds its own display's rate.
 - Run them on the cloud devices with
   `bun run devices:cloud --plan skyway --only bsipadpro13-safari,bsgalaxys24-chrome`, or on the Mac
   with `bun tests/real-browsers.ts --plan skyway "Google Chrome"`.
