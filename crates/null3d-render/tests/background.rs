@@ -98,16 +98,20 @@ fn draws_around(commands: &[(Op, Vec<u32>)], pipeline: u32) -> (usize, usize) {
 
 /// The background's draw in a frame's list: the draw after `SetPipeline` of `pipeline`, with the
 /// texture's group that it binds at index 1.
-fn background_draw(commands: &[(Op, Vec<u32>)], pipeline: u32) -> Option<(u32, Vec<u32>)> {
+fn background_draw(
+    commands: &[(Op, Vec<u32>)],
+    pipeline: u32,
+    group_index: u32,
+) -> Option<(u32, Vec<u32>)> {
     let set = commands
         .iter()
         .position(|(op, o)| *op == Op::SetPipeline && o[0] == pipeline)?;
     let after = &commands[set..];
     let group = after
         .iter()
-        .find(|(op, o)| *op == Op::SetBindGroup && o[0] == 1)
+        .find(|(op, o)| *op == Op::SetBindGroup && o[0] == group_index)
         .map(|(_, o)| o[1])
-        .expect("the background binds a group at index 1");
+        .expect("the background binds a group at the named index");
     let (_, draw) = after.iter().find(|(op, _)| *op == Op::Draw)?;
     Some((group, draw.clone()))
 }
@@ -125,7 +129,11 @@ fn draws_once_the_texels_are_on_the_gpu<B: FrameBuilder>(mut world: World<B>) {
         "the pipeline builds while the texture loads"
     );
     let pipeline = pipelines[0];
-    assert_eq!(background_draw(&commands, pipeline), None, "no texels yet");
+    assert_eq!(
+        background_draw(&commands, pipeline, 2),
+        None,
+        "no texels yet"
+    );
 
     world.arrive(&mut mock, 1, SIZE);
     let commands = world.step(&mut mock, false);
@@ -138,7 +146,7 @@ fn draws_once_the_texels_are_on_the_gpu<B: FrameBuilder>(mut world: World<B>) {
     let group = store.group_id(texture).unwrap();
     let layer = store.ready_layer(texture).unwrap();
     assert_eq!(
-        background_draw(&commands, pipeline),
+        background_draw(&commands, pipeline, 2),
         Some((group, vec![3, 1, layer * 3, 0])),
         "one triangle, whose first vertex names the layer"
     );
@@ -157,7 +165,7 @@ fn draws_once_the_texels_are_on_the_gpu<B: FrameBuilder>(mut world: World<B>) {
         .unwrap();
     let draws = mock.draws;
     let commands = world.step(&mut mock, false);
-    assert_eq!(background_draw(&commands, pipeline), None);
+    assert_eq!(background_draw(&commands, pipeline, 2), None);
     assert_eq!(
         with_background - (mock.draws - draws),
         2,
@@ -280,7 +288,7 @@ fn cube_maps_and_the_sky_draw_a_box<B: FrameBuilder>(mut world: World<B>) {
         "the pipeline builds while the faces load"
     );
     assert_eq!(
-        background_draw(&commands, pipelines[0]),
+        background_draw(&commands, pipelines[0], 1),
         None,
         "no texels yet"
     );
@@ -299,7 +307,7 @@ fn cube_maps_and_the_sky_draw_a_box<B: FrameBuilder>(mut world: World<B>) {
     );
     let buffer = values_buffer(&commands);
     assert_eq!(value_writes(&commands, buffer), 1);
-    let (_, draw) = background_draw(&commands, pipelines[0]).expect("the cube map draws");
+    let (_, draw) = background_draw(&commands, pipelines[0], 1).expect("the cube map draws");
     assert_eq!(draw, vec![36, 1, 0, 0], "a box of twelve triangles");
     let (before, after) = draws_around(&commands, pipelines[0]);
     assert!(
@@ -323,7 +331,7 @@ fn cube_maps_and_the_sky_draw_a_box<B: FrameBuilder>(mut world: World<B>) {
     let commands = world.step(&mut mock, false);
     let pipelines = box_pipelines(&commands, template::BACKGROUND_SKY, LAST);
     assert_eq!(pipelines.len(), 1);
-    assert!(background_draw(&commands, pipelines[0]).is_some());
+    assert!(background_draw(&commands, pipelines[0], 1).is_some());
     assert_eq!(
         count(&commands, Op::CreateBindGroup),
         1,
@@ -437,7 +445,7 @@ fn a_sky_layer_draws_after_the_background<B: FrameBuilder>(mut world: World<B>) 
     assert_eq!(layers.len(), 1, "the layer takes the background's place");
     let layer = layers[0];
 
-    let (_, draw) = background_draw(&commands, layer).expect("the layer draws");
+    let (_, draw) = background_draw(&commands, layer, 1).expect("the layer draws");
     assert_eq!(draw, vec![36, 1, 0, 0], "the template's box");
     // The layer draws in the background's render pass, after its own draw.
     let set = commands
