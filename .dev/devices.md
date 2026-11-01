@@ -324,6 +324,38 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - It fails when the measure drew no frame. The plan times frames, so the runner page measures the display's refresh rate before each page.
 - The `warm-up-time` plan also loads Skyway, for its pipeline wait and its first-frame time with fresh shaders.
 
+## The Skyway plan
+
+- The `skyway` plan times Skyway's frame on each GPU path, for its frame target: the Low and Medium
+  presets, each with the quality governor off and the render scale held at 1, and the preset that
+  the engine chooses with the governor on, which is what a visitor's device draws.
+- Each page starts the demo live, waits for its first frame, and measures 8 seconds from the route's
+  opening shot. The demo's address switches do the pinning: `?governor=off` stops the governor's
+  steps and `?render-scale=1` fixes the scale, so every figure is the same drawing on every run.
+  The scan in the page's overlay names the preset and the scale it drew, such as `webgpu low scale
+  1.00`.
+- The demo's own cost switches name the parts of the scene that a measurement leaves out:
+  `?without=traffic,roamers,rain,ssr,lamps,beams,signs,ground,towers`. The runner's `--switches`
+  gives them to every page of a plan, so `--switches without=traffic` times the city without the
+  lanes. A visitor's address and the picture tests name none, so the demo draws the whole scene.
+- The page reports the frame rate, the display's rate, the frame intervals' percentiles, the CPU
+  time of each thread, the GPU time per frame and per pass, the draw calls, the triangles, the
+  uploads, and the bytes that the page downloaded. On WebGL2 most phones offer no timer queries, so
+  the GPU times are absent there and only the frame rate answers.
+- The `skyway-cost` plan leaves one part of the scene out per page, all on WebGL2 at the Low preset
+  with the same pinning: the base, then the traffic, the rain, the screen reflections, ambient
+  occlusion, the towers and the street lamps in turn. A page repeats the base page there, so the
+  session shows how much of a later page's figure its own warming explains. Its last page draws the
+  whole scene on WebGPU, so a device with both paths says what its default one draws when warm. A
+  device's figures move a lot between sessions, and only a difference from a repeated base page
+  says what a part costs.
+- The cloud Galaxy S24 runs its display at 30 Hz. So no run on it can answer M3-C1's 60 frames a
+  second for S24-class phones. That clause needs a device whose display refreshes at 60 Hz or
+  faster. The cloud S24 can say only whether the phone holds its own display's rate.
+- Run them on the cloud devices with
+  `bun run devices:cloud --plan skyway --only bsipadpro13-safari,bsgalaxys24-chrome`, or on the Mac
+  with `bun tests/real-browsers.ts --plan skyway "Google Chrome"`.
+
 ## The splats plan
 
 - The `splats` plan runs the Gaussian splats add-on's streaming check on each GPU path, for M3-F2. It draws a cloud of 400,000 splats, which the add-on cuts into chunks that the draw takes as they arrive. The preset's budget decides how many of them draw.

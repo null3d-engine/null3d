@@ -168,6 +168,13 @@ export default defineSketch(async (ctx) => {
 	const storm = params.has('storm');
 	stage.set(isMood(start) ? start : 'Night');
 	const lensOff = params.get('lens') === 'off';
+	// A measurement of a preset turns the governor off, so every frame draws the same way, and may
+	// fix the render scale that the scene draws at.
+	const GOVERNOR = params.get('governor') !== 'off';
+	const RENDER_SCALE = Number(params.get('render-scale')) || undefined;
+	// The parts of the scene that a measurement leaves out, so it can time one cost on its own. A
+	// visitor's address names none of them, and the picture tests draw the whole scene.
+	const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean));
 
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
@@ -176,13 +183,23 @@ export default defineSketch(async (ctx) => {
 		layers: 1 | EFFECT_LAYER,
 	});
 	scene.setActiveCamera(camera);
-	enableReflections(ctx);
+	const reflections = !WITHOUT.has('ssr');
+	if (reflections) enableReflections(ctx);
 	post.set({
 		toneMapping: 'agx-punchy',
-		ssr: { maxDistance: 260, thickness: 2, maxRoughness: 0.4, intensity: 1 },
+		ssr: reflections ? { maxDistance: 260, thickness: 2, maxRoughness: 0.4, intensity: 1 } : false,
 		bloom: { intensity: 0.55, threshold: 1 },
 		ao: { radius: 1.4 },
 	});
+	// The governor settles the render scale while it runs, so a measurement that must compare one
+	// drawing with another fixes the scale and stops the governor's steps.
+	if (!GOVERNOR || RENDER_SCALE !== undefined)
+		quality.set({
+			...(GOVERNOR ? {} : { governor: false }),
+			...(RENDER_SCALE === undefined
+				? {}
+				: { minRenderScale: RENDER_SCALE, maxRenderScale: RENDER_SCALE }),
+		});
 	// The lens kit gives the picture its grade, its sharpening, its vignette and the camera's own
 	// marks: the fringes, the streak on the brightest light, grain and a little speed blur.
 	const lensKit = createLensKit(ctx, {
@@ -200,15 +217,15 @@ export default defineSketch(async (ctx) => {
 	debug.stats({ collapsed: true });
 
 	page.post('loading', 'Raising the towers');
-	const facades = createFacades(ctx);
+	const facades = createFacades(ctx, WITHOUT);
 	// The hero car's own reflection, which the wet road reads under it.
 	const reflection = createReflection(ctx, camera);
-	const city = createCity(ctx, reflection.mirror);
+	const city = createCity(ctx, reflection.mirror, WITHOUT);
 	page.post('loading', 'Streaming the lanes');
-	const traffic = createTraffic(ctx);
+	const traffic = WITHOUT.has('traffic') ? undefined : createTraffic(ctx);
 	// The roaming cars turn, change height and stop at the kerb, among the lanes' straight flow.
-	const roamers = createRoamers(ctx, CAR_LOOK);
-	const rain = createRain(ctx);
+	const roamers = WITHOUT.has('roamers') ? undefined : createRoamers(ctx, CAR_LOOK);
+	const rain = WITHOUT.has('rain') ? undefined : createRain(ctx);
 	/** The camera's place, which the real lights follow. */
 	const eye = vec3.create();
 	/** The camera's place, which the lens's speed blur follows. */
@@ -221,24 +238,28 @@ export default defineSketch(async (ctx) => {
 	);
 	// The rain's splashes on the car's roof and body, and the vapour from its engine nozzles, both
 	// through the particles add-on. The hero group is not scaled, so these sizes are meters.
-	const spray = await createSplashes(ctx, {
-		parent: hero.group,
-		position: [0, 2.45, 0],
-		size: [2.4, 0.08, 6.2],
-		rate: 70,
-	});
-	const vapour = await createSteam(ctx, {
-		parent: hero.group,
-		position: [0, 1.2, -4.4],
-		size: [1.2, 0.12, 0.25],
-		rate: 14,
-		wind: [0, 0.5, -1.2],
-	});
+	const spray = rain
+		? await createSplashes(ctx, {
+				parent: hero.group,
+				position: [0, 2.45, 0],
+				size: [2.4, 0.08, 6.2],
+				rate: 70,
+			})
+		: undefined;
+	const vapour = rain
+		? await createSteam(ctx, {
+				parent: hero.group,
+				position: [0, 1.2, -4.4],
+				size: [1.2, 0.12, 0.25],
+				rate: 14,
+				wind: [0, 0.5, -1.2],
+			})
+		: undefined;
 
 	const fit = (): void => {
 		facades.fit(quality.preset);
-		traffic.fit(quality.preset);
-		roamers.fit(quality.preset);
+		traffic?.fit(quality.preset);
+		roamers?.fit(quality.preset);
 	};
 	fit();
 	quality.onChange(fit);
@@ -292,14 +313,14 @@ export default defineSketch(async (ctx) => {
 		apply(id, on) {
 			switch (id) {
 				case 'rain':
-					rain.setVisible(on);
-					spray.setVisible(on);
-					vapour.setVisible(on);
+					rain?.setVisible(on);
+					spray?.setVisible(on);
+					vapour?.setVisible(on);
 					hero.setRain(on ? 1 : 0);
 					break;
 				case 'storm':
 					stage.setWeather(on ? STORM_WEATHER : CLEAR_WEATHER);
-					rain.setStrength(on ? STORM_RAIN : 1);
+					rain?.setStrength(on ? STORM_RAIN : 1);
 					city.setRain(on ? 1 : 0.85);
 					break;
 				case 'ao':
@@ -324,7 +345,7 @@ export default defineSketch(async (ctx) => {
 		focus: TARGET,
 		extra: (): readonly HudGroup[] => [
 			radioGroup('view', 'View', VIEW_OPTIONS, hero.view),
-			radioGroup('traffic', 'Traffic', TRAFFIC_OPTIONS, String(traffic.count)),
+			radioGroup('traffic', 'Traffic', TRAFFIC_OPTIONS, String(traffic?.count ?? CARS.low)),
 		],
 	});
 	// The held frame's storm, which the address asked for, reaches the same switch that the HUD posts.
@@ -343,7 +364,7 @@ export default defineSketch(async (ctx) => {
 			hero.setView(
 				value === 'toggle' ? (hero.view === 'chase' ? 'cockpit' : 'chase') : (value as View),
 			);
-		else if (name === 'traffic') traffic.setCount(Number(value));
+		else if (name === 'traffic') traffic?.setCount(Number(value));
 		else return;
 		film.refresh();
 	});
@@ -404,20 +425,20 @@ export default defineSketch(async (ctx) => {
 			hero.update(dt, t, film.mode === 'auto');
 			// The road's mirror follows the camera, once the camera has moved.
 			reflection.update();
-			rain.follow(camera);
+			rain?.follow(camera);
 			// The rain keeps out of the hero car's glass bubble, so none falls in the cockpit.
 			hero.canopy(shelter);
-			rain.shelter(shelter, CANOPY_REACH);
+			rain?.shelter(shelter, CANOPY_REACH);
 			camera.getWorldPosition(eye);
-			traffic.update(eye, t);
-			roamers.update(dt);
+			traffic?.update(eye, t);
+			roamers?.update(dt);
 			if (controls.on.dof) post.set(lensSettings);
 			controls.update(t);
 		},
 		onLateUpdate() {
 			// The particles move in the late update, where every object's world place is this frame's.
-			spray.update();
-			vapour.update();
+			spray?.update();
+			vapour?.update();
 		},
 	};
 });

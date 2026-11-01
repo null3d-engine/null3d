@@ -64,3 +64,34 @@ The owner ruled four points.
 - **Other records:** this record places particles in M2. D-53's list of gap features (row 21) and D-117's row for spray, leaves and fireflies give way to it. D-117's status and that row point here.
 - **Examples guide:** [Examples](../examples.md) holds the look bar for the comparisons, and the table of engine features for the showcase scenes.
 - **README:** the roadmap puts the particles add-on in 0.2, and motion blur and global illumination in 0.3.
+
+## Addendum: Skyway keeps the effects that its Low preset leaves off
+
+Status: a note for the owner's pending look review. No owner ruling is recorded for it. Task: M3-C1.
+
+Skyway turns ambient occlusion on at every preset, and screen-space reflections on. The preset
+table sets ambient occlusion off at Low, and the reflections' scale to 0. The scene does so through
+its own post settings and the shared `enableReflections` helper. That helper turns them on at a
+quarter of the render size.
+
+The reason is the look bar in this record. The night city reads flat without the occlusion that
+darkens its crevices. The wet road reads as paint without the reflections of its lamps and signs.
+Removing them changes what the demo shows, and a demo's look is the owner's to judge. The maintainer
+kept the effects, which applies this record's look bar. It does not take the choice.
+
+The owner's review of this demo's look is pending, as [D-277](D-277-skyway-driving-and-traffic.md)
+says, and [Examples](../examples.md) says so too. The review that D-277 records set the driving,
+the traffic and the key help, not the light.
+
+The cost is measured on the cloud Galaxy S24 in Chrome at Low. The quality governor is off there,
+and the render scale is fixed at 1. The figure is the window's own frame rate. The whole scene drew
+29.1 frames a second, and the page without the screen reflections drew 29.2. So the reflections cost nothing measurable
+there. The page without ambient occlusion drew 29.6. Across two sessions the device's pages fall
+between 25.2 and 29.6 at one setting. That spread is wider than any of those differences. The
+cloud iPad Pro 13, in the same conditions, draws 58.6 on WebGL2 and 57.6 on WebGPU. Both effects
+are on there.
+
+So nothing measured says the effects cost the frame. The choice stays open to the owner, and a run
+that separates their cost would put it to them.
+
+Figures: [tested devices](../tested-devices.md), the pages of the skyway-cost plan.

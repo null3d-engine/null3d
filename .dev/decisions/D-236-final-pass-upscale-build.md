@@ -215,3 +215,57 @@ The runs are the ten bench files whose names begin `20261101` in the iPad's fold
 the whole scale. The
 pinned-half-scale reading with the passes named is
 [the Low run](../tested-devices/ipad-pro-13-safari/20261101-061916-bench.md).
+
+## Addendum: `presentedFps` counts frames from before the measure window
+
+Status: recorded for the task that owns `engine.measure`; the tables that quote it need re-deriving. The second step's reading above stands on it, so its rates are wrong here. Task: M3-C1 for the finding; M3-R19 for this record's rows.
+
+**The fault.** `presentedFps` is a mean over the render thread's whole interval ring. That ring
+holds frames from before the measure window. The module is
+`packages/engine/src/page/frame-stats.ts`. In `summarizeFrames`, `intervals` is
+`render.intervals.filter((ms) => ms > 0)`, with no frame range. `ratePerSecond` then divides
+`1000 × count` by the intervals' sum. The render thread's ring holds 1,024 records, several
+seconds of frames. So it carries the page's start, the pipeline warm-up and the first frames after
+the load. `intervalMs` percentiles come from the same pool.
+
+**What the window holds.** The measure counts its own frames and length in `frames` and
+`seconds`. Their quotient is the window's rate, and the pages already carry both.
+
+| Page | Ring intervals and their sum | Window | Ring's rate | Window's rate |
+| --- | --- | --- | --- | --- |
+| Galaxy S24, chosen preset, WebGPU path absent | 241 intervals, 12.04 s | 240 frames in 8.17 s | 20.0 | 29.4 |
+| Galaxy S24, whole scene at Low | 239 intervals, 12.29 s | 238 frames in 8.18 s | 19.4 | 29.1 |
+| iPad Pro 13, whole scene at Low, WebGPU | 489 intervals, 10.06 s | 488 frames in 8.52 s | 48.6 | 57.3 |
+
+The gap reaches a third of the figure. A ring sum longer than the window means frames from before
+it are counted. One interval per frame is the ring's own start, so a rate from it can never be the
+window's rate. The median hides the fault, because a handful of long early frames moves a median
+little and a mean a lot. That is why a 33.3 ms median on a 30 Hz display sat beside a published
+20.0, and 30 is what the display allows.
+
+**What to quote.** The window's `frames ÷ seconds`, which every page already records. Until the
+engine changes, a page that quotes `presentedFps` says which statistic it is.
+
+**Which tables move.** Only the Skyway rows do. Every run page on this machine that holds both
+figures was compared, 110 of them, the pages whose figures sit under `stats` among them. The 17
+that differ by more than 1.5 frames a second are all Skyway. The largest difference elsewhere is
+0.69 frames, on the vegetation plan's forest page at Low.
+
+The others do not move because their rings carry no frame much longer than their windows'. The
+bench page's window is 500 frames over 30 seconds, and the 30 bench pages on this machine differ
+by at most 0.06 frames. The widest is 30.15 published against 30.09 in the window. The six rows quoted for the second
+step are `20261101-061301-bench`'s three pages, at 36.20, 35.67 and 29.55 against windows of
+36.18, 35.63 and 29.51, and `20261101-063755-bench`'s three, at 30.15, 28.70 and 23.23 against
+30.09, 28.67 and 23.20. Warm-up frames of the window's own length leave a mean unchanged. The wind field's rows quote intervals and pass times,
+not a rate column, so nothing there needs re-deriving.
+
+The Skyway rows differ because the demo's start sits inside the ring. Its first seconds load the
+city's textures and build its pipelines, and those frames are many times longer than the ones the
+window counts.
+
+**Tables to re-derive from the run files:** the Skyway rows, task M3-C1. Its own run records now
+carry the window's figure.
+
+**The engine change** is the measure page's to place: restrict `intervals`, and the percentiles
+with them, to the window's frames, by frame number. Or publish the window's rate alone and drop
+the ring's. The Skyway runs also serve as the acceptance case, since their pages carry both figures.
