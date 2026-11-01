@@ -20,7 +20,7 @@ import { createLand } from './land';
 import { groundHeight } from './plan';
 import { createSea } from './sea';
 import { createTown } from './town';
-import { createTrees } from './trees';
+import { CASTER_LAYER, createTrees } from './trees';
 
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
@@ -36,7 +36,9 @@ const MORNING = 10;
  * far close up, and further as the camera draws back.
  */
 export const SHADOW_REACH: ShadowReach = {
-	distance: 150,
+	// Far enough for the route's low flights, so its shadows hold still there: each step of the range moves every
+	// cascade, and every shadow in view jumps at once.
+	distance: 600,
 	center: [TOWN.x, TOWN.height + 20, TOWN.z],
 	radius: TOWN.radius * 1.2,
 };
@@ -86,7 +88,7 @@ export default defineSketch(async (ctx) => {
 	]);
 	const sun = scene.createDirectionalLight({
 		castShadows: true,
-		layers: SUN_LAYERS,
+		layers: SUN_LAYERS | CASTER_LAYER,
 		// The offsets keep the ground from shadowing itself in the far cascades, whose wide texels would
 		// band it in rings around the camera. One texel of each cascade caps them, so near things stay tight.
 		shadow: { distance: SHADOW_REACH.distance, normalBias: 1, bias: 1, contactDistance: 0.25 },

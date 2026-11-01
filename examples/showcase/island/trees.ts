@@ -80,6 +80,12 @@ const GRASS_COLOR = '#55752c';
 /** How far a tuft draws, in meters. */
 const GRASS_REACH = 170;
 
+/** How much brighter a mesh's leaf color is than its card's, measured on a forest drawn each way. */
+const NEAR_LEAF_LIGHT = 2.2;
+
+/** The layer that the sun sees and no camera does, which the trees' casting cards stand on. */
+export const CASTER_LAYER = 1 << 2;
+
 /** How far the far canopy draws, in meters: past the whole island from any view. */
 const FILL_REACH = 6000;
 
@@ -217,6 +223,16 @@ function spireMap({ textures }: SketchContext) {
 	});
 }
 
+/**
+ * A mesh's leaf color, which matches the tree's card. A mesh's crown shades itself leaf by leaf, and a
+ * card takes that crown's light as baked, so at one color a mesh draws darker than its card, and each
+ * tree would change its brightness in one step where it hands over.
+ */
+function nearLeaf(species: Species): [number, number, number] {
+	const [r, g, b] = species.color.leaf;
+	return [r * NEAR_LEAF_LIGHT, g * NEAR_LEAF_LIGHT, b * NEAR_LEAF_LIGHT];
+}
+
 /** Writes each row's place, turn and size into a batch of meshes. */
 function fill(batch: InstanceBatch, spots: readonly TreeSpot[]): void {
 	const turn = quat.create();
@@ -256,12 +272,37 @@ function stand(
 			alphaMode: 'mask',
 			roughness: 1,
 			metalness: 0,
+			// A card casts as its mesh does, so a tree's shadow does not appear at the hand-over.
+			castShadows: false,
+			receiveShadows: true,
 		},
 	);
 	spots.forEach((spot, k) => {
 		cards.batch.scales.set([spot.scale * far.size[0], spot.scale * far.size[1], 1], k * 3);
 	});
 	cards.markDirty(0, spots.length);
+	// One batch of cards casts every tree's shadow at every distance, seen by the sun alone, so a tree's
+	// shadow and the shade it casts on itself do not change where it hands over.
+	const casters = createImpostors(
+		{ scene, materials, geometry },
+		{
+			color: far.color,
+			surface: far.surface,
+			atlas: far.atlas,
+			positions: spots.flatMap((spot) => [spot.x, spot.y + far.base * spot.scale, spot.z]),
+			turn: spots.map((spot) => spot.turn),
+			depth: far.depth,
+			alphaMode: 'mask',
+			roughness: 1,
+			metalness: 0,
+			castShadows: true,
+			layers: CASTER_LAYER,
+		},
+	);
+	spots.forEach((spot, k) => {
+		casters.batch.scales.set([spot.scale * far.size[0], spot.scale * far.size[1], 1], k * 3);
+	});
+	casters.markDirty(0, spots.length);
 	// The far canopy stands only as cards, past the distance where the full trees hand over.
 	if (farOnly.length > 0) {
 		const far2 = createImpostors(
@@ -307,7 +348,7 @@ function stand(
 						atlases,
 						part: 'leaves',
 						cell: leafCellFor(species),
-						color: species.color.leaf,
+						color: nearLeaf(species),
 						transmission: species.color.transmission,
 						wind: field,
 					},
@@ -316,7 +357,7 @@ function stand(
 		const batch = scene.createInstances(base.mesh, spots.length, {
 			material,
 			values: true,
-			castShadows: true,
+			castShadows: false,
 			receiveShadows: true,
 		});
 		fill(batch, spots);
