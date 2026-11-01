@@ -51,6 +51,9 @@ export const STEEPEST_BANK = 0.42;
 /** The radius of the turning circle at the end of a road of a half width. */
 export const circleRadius = (half: number) => half + 4.5;
 
+/** Half the width of a house's strip from its road to its door, in meters. */
+export const WAY_HALF = 1.25;
+
 /** The rise of one step of a stair, in meters. */
 const STAIR_RISE = 0.18;
 /** How far each side of a stair's line its bed of ground lies flat, the width of its bank, and how far under its treads the bed lies, in meters. */
@@ -71,7 +74,7 @@ export function stairTreads(
 	stair: readonly { x: number; y: number; z: number }[],
 ): { x: number; y: number; z: number; heading: number; run: number }[] {
 	const first = stair[0] as { y: number };
-	const last = stair[stair.length - 1] as { y: number };
+	const last = stair[stair.length - 1] as { x: number; y: number; z: number };
 	const steps = Math.max(2, Math.ceil((last.y - first.y) / STAIR_RISE));
 	const treads: { x: number; y: number; z: number; heading: number; run: number }[] = [];
 	let k = 0;
@@ -92,7 +95,7 @@ export function stairTreads(
 	// A tread reaches to the one above it.
 	treads.forEach((tread, n) => {
 		const above = treads[n + 1] ?? last;
-		const [x, z] = [(above as { x: number }).x, (above as { z: number }).z];
+		const [x, z] = [above.x, above.z];
 		tread.run = hypot(x - tread.x, z - tread.z);
 	});
 	return treads;
