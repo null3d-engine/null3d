@@ -69,13 +69,10 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// and does not shrink, so the checks hold every growth they have made.
 	{ file: 'packages/engine/src/scene/malformed-files.test.ts', ceilingMiB: 2560 },
 	// A page of the add-on check's fixture, built with the source maps that the allocation gate reads.
-	// It holds the engine's generated shaders, which the page resolves from source: the build peaks
-	// at 10,520 MiB, and the maps carry no source text. After the vegetation package and four new
-	// pages joined the build, CI measured 12,930 MiB and 13,120 MiB (runs 40125822864 and
-	// 40127501793), past the 12,288 ceiling more often than not, so the ceiling is 14 GB. CI's Linux
-	// runners have 16 GB. The cost is the engine's build in the page's own process, which a ceiling
-	// cannot fix; that question waits for the owner.
-	{ file: 'packages/cli/src/add-on-page-build.test.ts', ceilingMiB: 14336 },
+	// The build links the engine's compiled shader files from the shared shader build instead of
+	// bundling copies of them, so it holds the page's own code and the maps alone: 720 to 818 MiB on
+	// the Mac, in 8 s. The maps carry no source text, and the maps of the build make 10 MB.
+	{ file: 'packages/cli/src/add-on-page-build.test.ts', ceilingMiB: 1536 },
 ];
 
 /**
