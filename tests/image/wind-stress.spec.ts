@@ -1,8 +1,8 @@
 // Drives the frame-budget governor with the stress page at one preset: no cards, then every card
 // until the governor steps, then none again. It prints what the governor did to the wind at each
 // phase, and fails plainly when a preset could not be driven. It runs only with
-// NULL3D_WIND_STRESS set, in a quiet window, on a computer with a GPU of its own:
-// NULL3D_WIND_STRESS=1 bun run test:browser -- wind-stress.spec.ts.
+// NULL3D_WIND_STRESS_COST set, in a quiet window, on a computer with a GPU of its own:
+// NULL3D_WIND_STRESS_COST=1 bun run test:browser -- wind-stress.spec.ts.
 // NULL3D_WIND_GPU names the paths, NULL3D_WIND_PRESETS the presets, and NULL3D_WIND_CARDS the load.
 import { expect, test } from '@playwright/test';
 import { costTimeout, loadNow, waitForQuiet } from '../lib/effect-cost.ts';
@@ -78,7 +78,10 @@ function phaseLine(name: string, phase: Phase): string {
 for (const gpu of gpus) {
 	for (const preset of presets) {
 		test(`the wind governor under load on ${gpu} at ${preset}`, async ({ page }) => {
-			test.skip(!process.env.NULL3D_WIND_STRESS, 'set NULL3D_WIND_STRESS to drive the governor');
+			test.skip(
+				!process.env.NULL3D_WIND_STRESS_COST,
+				'set NULL3D_WIND_STRESS_COST to drive the governor',
+			);
 			test.setTimeout(costTimeout(120_000));
 			const loadBefore = await waitForQuiet();
 			await page.setViewportSize({ width: 640, height: 400 });
