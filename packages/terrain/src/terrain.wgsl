@@ -30,6 +30,8 @@ struct Uniforms {
     layerContrast: vec4f,
     // 1 where a layer's height comes from its map's alpha channel, and 0 for its brightness.
     layerAlpha: vec4f,
+    // 1 when steep faces map the rock layer from the sides, and 0 for a map laid from above alone.
+    steepFaces: f32,
     // x: the selection's scale, in screen pixels per world meter of a block's cell, or 0 to leave
     // every block where it is; y: the faces along each side of a block's grid.
     selection: vec2f,
@@ -71,7 +73,15 @@ fn surface(input: SurfaceInput) -> Surface {
     let weights = textureSample(splatMap, splatMapSampler, uv);
     let c0 = textureSample(layerZero, layerZeroSampler, at / material.tiles.x);
     let c1 = textureSample(layerOne, layerOneSampler, at / material.tiles.y);
-    let c2 = textureSample(layerTwo, layerTwoSampler, at / material.tiles.z);
+    // A steep face would stretch a map laid from above, so the third layer, the rock, also reads two
+    // maps laid from the sides, blended by which way the ground faces.
+    var c2 = textureSample(layerTwo, layerTwoSampler, at / material.tiles.z);
+    let sideX = textureSample(layerTwo, layerTwoSampler, input.worldPosition.zy / material.tiles.z);
+    let sideZ = textureSample(layerTwo, layerTwoSampler, input.worldPosition.xy / material.tiles.z);
+    let facing = abs(input.normal);
+    let steep = material.steepFaces * smoothstep(0.75, 0.45, facing.y);
+    let sideways = mix(sideX, sideZ, smoothstep(0.35, 0.65, facing.z / max(facing.x + facing.z, 0.0001)));
+    c2 = mix(c2, sideways, steep);
     let c3 = textureSample(layerThree, layerThreeSampler, at / material.tiles.w);
     // A layer's height: the brightness of its texel, which rises where the texel looks higher, or
     // its alpha channel where the map keeps a height there. Mid darkness stands at the meeting.
