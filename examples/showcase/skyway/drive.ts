@@ -4,8 +4,8 @@
 // roof. The streets, the city's edge and the sky's ceiling bound it too.
 //
 // The chase camera reads the same boxes. A tower that stands between the car and the camera pulls
-// the camera in along the user's own view until the car is in sight; a tower that no distance
-// clears swings it round to a side, and the swing eases as the pull does.
+// the camera in along the user's own view, easing the pull and the distance it heads for; a tower
+// that no distance clears swings it round to a side, and the swing eases as the pull does.
 //
 // All of it is plain numbers, apart from the scene, so the unit test drives it frame by frame.
 import { cityBuildings, HALF, PITCH } from './layout';
@@ -126,8 +126,8 @@ const SIGHT_SWING = Math.PI / 2;
 const SIGHT_STEP = Math.PI / 18;
 /** How long the way must stay clear before the camera eases back out, in seconds. */
 const SIGHT_DWELL = 0.25;
-/** How fast the pull and the side swing ease, per second. Both directions take the same rate, so
- * the camera leaves as smoothly as it arrived. */
+/** How fast the pull, the distance it heads for and the side swing ease, per second. Every
+ * direction takes the same rate, so the camera leaves as smoothly as it arrived. */
 const SIGHT_EASE = 4;
 /** How near the eased values must come to their goals before they take them outright, so the
  * camera returns exactly to the user's distance and side. */
@@ -294,12 +294,12 @@ export function keepOut(flight: Flight, towers: Towers): boolean {
 	return moved;
 }
 
-/** What the chase camera remembers from one frame to the next while it keeps the car in sight. */
+/** What the chase camera remembers from one frame to the next while it works to see the car. */
 export interface Sight {
 	/** How far the camera has eased from the user's distance toward the nearest clear one, 0 to 1. */
 	pull: number;
-	/** The distance the pull heads for. It is held while the pull releases, so a tower's edge that
-	 * crosses back and forth does not flicker the distance. */
+	/** The distance the pull heads for, eased at the pull's rate. It is held while the pull
+	 * releases, so a tower's edge that crosses back and forth does not flicker the distance. */
 	want: number;
 	/** The seconds since a tower last stood between the car and its usual place. */
 	clear: number;
@@ -385,8 +385,11 @@ function clampStandoff(eye: Flight, atX: number, atY: number, atZ: number): void
 /**
  * Aims the chase camera for one frame of `dt` seconds. The user's view is their angle round the car
  * from its tail, `around`, its tilt and its distance. A tower between the car and the place those
- * pick pulls the camera in along the view until the car is in sight, and the way back out takes the
- * same easing, after a dwell, so an edge that crosses back and forth does not flicker the distance.
+ * pick pulls the camera in along the view, and the way back out takes the same easing, after a
+ * dwell, so an edge that crosses back and forth does not flicker the distance. The pull starts
+ * after the line is already blocked and covers about two thirds of the gap in a quarter second,
+ * so at the usual distance a new tower can hide the car for about half a second. That is the
+ * trade of having no look-ahead: the motion is smooth, but the car is briefly out of sight.
  * A tower that stands nearer than the standoff, which no distance clears, makes the camera ease
  * round to a side that sees the car, and it holds that side until the user's own view clears.
  *
@@ -409,8 +412,9 @@ export function settleSight(
 ): number {
 	const level = Math.cos(tilt);
 	const rise = Math.sin(tilt);
-	// The camera stays in sight as long as no tower stands between it and the car, so the pull
-	// reads the car's own view and not the camera that the pull itself has moved.
+	// The pull follows whether a tower stands between the car and the user's usual place, not
+	// whether one stands between the car and the camera that the pull itself has moved, so the
+	// pull does not release as soon as its own motion clears the line.
 	const own = viewDistance(atX, atY, atZ, around, level, rise, distance, towers);
 	const blocked = own < distance;
 
@@ -445,7 +449,15 @@ export function settleSight(
 	if (!clear) want = Math.max(SIGHT_MIN, entry);
 	else if (sight.goal !== 0 || sight.pull <= SIGHT_SNAP) want = distance;
 	else want = sight.want;
-	sight.want = Math.min(want, distance);
+	// The distance it heads for eases at the pull's own rate too. A tower's near face can jump
+	// when a turn brings another tower's face into the line, and setting the distance straight
+	// would move the camera as far in one frame as the two faces differ.
+	sight.want += (want - sight.want) * (1 - Math.exp(-SIGHT_EASE * dt));
+	if (Math.abs(want - sight.want) < SIGHT_SNAP) sight.want = want;
+	// A released pull forgets the last tower, so the next one starts from the user's own distance,
+	// and the pull never runs past the zoom the user set.
+	if (sight.pull === 0) sight.want = distance;
+	else if (sight.want > distance) sight.want = distance;
 	const radius = distance + (sight.want - distance) * sight.pull;
 	sight.radius = radius;
 
