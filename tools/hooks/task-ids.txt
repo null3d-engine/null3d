@@ -428,6 +428,15 @@ M4-O4
 M4-O5
 M4-O6
 M4-O7
+M4-S1
+M4-S2
+M4-S3
+M4-S4
+M4-S5
+M4-S6
+M4-S7
+M4-S8
+M4-S9
 
 # Process labels that no plan file names.
 M2-process
