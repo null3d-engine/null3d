@@ -703,3 +703,8 @@ WebGL2 ceilings by a factor of nine at Low and ten at Medium. The field's own pa
 device's WebGL2 timer floor at these shapes, so the cost is in the readers or the frame's other
 work, not the field's pass. The iPad's rows ask the open ruling's question too: whether a preset's
 ceiling includes the wind's share.
+
+The Galaxy S25's run adds [its record](../tested-devices/galaxy-s25-sm-s931b-chrome/20261101-081343-vegetation.md).
+Creek misses the class's 33.3 ms ceiling at Low (312.4 ms) and at Medium (166.6 ms), and its Ultra
+frame reads 516.56 ms against D-241's measured 499.8. The forest holds Low and Medium WebGL2 at the
+display's 33.3 ms floor.
