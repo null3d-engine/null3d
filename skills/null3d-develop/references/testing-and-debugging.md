@@ -139,6 +139,7 @@ Reaching the dev server:
 - Android phone: connect by USB and run `adb reverse tcp:5173 tcp:5173`; the phone opens `http://localhost:5173`, which counts as a secure context. Plain `http` on a network address does not, and Chrome 154 asks before loading it.
 - iPhone or iPad: serve HTTPS with a local certificate through the Vite plugin's `https` option (`getting-started/hosting`). Install the root certificate on the device, and trust it in Settings > General > About > Certificate Trust Settings. Debug from Safari on a Mac through the Develop menu.
 - Record the device, browser version, GPU tier and preset with every result: `engine.capabilities.tier` and `engine.mode.preset` give the last two. `bunx @null3d/cli doctor --device` (0.3, not built yet) prints them all.
+- After a core rebuild or a merge that changes the shaders, delete `node_modules/.vite` and `node_modules/.cache/null3d-shaders`, then start the server with `--force`. The second folder holds the compiled custom materials, and `--force` does not clear it. An entry compiled against an older frame group keeps its old binding declarations, and the page dies with E1404 at a binding, which reads like an engine fault.
 
 ## 5. Debugging tools
 

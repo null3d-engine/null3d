@@ -228,7 +228,7 @@ passes apart.
 
 The first rate runs measured the page while the reflection switched itself off every other frame.
 At 1920 by 1080 on Low the ocean drew 1.21 frames a second, and a 64 squared grid gave 1.45.
-[D-285](D-285-a-pass-carries-its-cadence.md) then showed that the switch recompiled the render graph
+[D-287](D-287-a-pass-carries-its-cadence.md) then showed that the switch recompiled the render graph
 every frame: with the pass carrying its cadence, the same page and the same draws held 60 frames a
 second in all three states. So the figures below measure the recompile, not the transform, and a
 quarter of the pixels taking away 18 per cent of the cost fits a fixed per-frame cost.
@@ -286,7 +286,7 @@ vertex's world place is the origin with its place in the mesh.
 - The add-on's own page draws the sea on the three GPU paths, and a browser test reads each band's
   heights back and compares them with the transform on the page's thread.
 - The WebGL2 page's first rates measured the frame's recompile, not the transform
-  ([D-285](D-285-a-pass-carries-its-cadence.md)). With the pass carrying its cadence, the same page
+  ([D-287](D-287-a-pass-carries-its-cadence.md)). With the pass carrying its cadence, the same page
   holds 60 frames a second, so the transform's cost per path and preset is owed rather than known.
   The data's table keeps the switched page's figures as the reading that the cadence replaces.
 - The WebGL2 heights differed from the compute form by 0.60 m when this branch measured them, and

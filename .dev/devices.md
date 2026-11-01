@@ -317,7 +317,7 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 
 ## The demos plan
 
-- The `demos` plan plays the Skyway and Night town showcases live on each GPU path, with the quality governor on. Its page starts a demo as a person plays it, waits for the first frame, and measures the frames.
+- The `demos` plan plays the Skyway, Night town and Showroom to street showcases live on each GPU path, with the quality governor on. Its page starts a demo as a person plays it, waits for the first frame, and measures the frames.
 - It reports the preset and thread mode that the engine ran. It gives the frame rate, the display's rate and the frame intervals' median and 95th and 99th percentiles. It also reports the first-frame time, and the bytes that the page downloaded before the first frame and in total.
 - Each demo runs twice on each path, once at the preset that the engine chooses and once at High. A showcase's target names the chosen preset, so the chosen reading answers it. The High reading shows what the preset above costs on the device.
 - `--only` picks some of the plan's pages, such as `demo-night-town-webgl2-chosen`.

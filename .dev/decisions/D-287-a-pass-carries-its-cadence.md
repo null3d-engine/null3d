@@ -1,4 +1,4 @@
-# D-285: A pass carries its cadence, rather than being switched off
+# D-287: A pass carries its cadence, rather than being switched off
 
 Status: decided by the measurement below. `render.setPassEvery` is built, and the water and ocean
 add-ons set their reflection's cadence through it instead of switching the pass. Task: M3-E8.

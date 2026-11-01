@@ -40,6 +40,7 @@ The examples page links only by relative addresses, and each demo's entry names 
 - `bun run dev` serves the page at `/examples/` with the other test and benchmark pages.
 - `bun run examples:build` builds the page and every demo into `target/examples/`, against this checkout's packages, with the engine's address switches on. `bun run examples:preview` serves that build with the isolation headers and the sample files. Run `bun run build` first, for the WebAssembly files.
 - The demos that load files need `bun run samples:fetch` once on a new machine ([Sample content](sample-content.md)).
+- After a merge that changes the shaders, a merge and a core rebuild, clear `node_modules/.cache/null3d-shaders` and restart the server with `--force`. Vite's `--force` does not clear the plugin's cache of compiled custom materials. An entry compiled against an older frame group keeps its old binding declarations, and a material then fails to build its pipeline with E1404 even though its source is right.
 
 ### On the website
 
@@ -584,7 +585,7 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 - **The effects start off:** a showcase scene starts with bloom, automatic exposure and the vignette off, so the scene reads as the owner approved it; the Post buttons turn each on, and the initial `post` settings match the off state. A button that starts off starts unpressed, and pressing it shows `bloom: on`.
 - **The loading overlay:** `examples/lib/run.ts` draws a glass loading overlay over the canvas before the engine starts. It names the engine's start stages (`core`, `sketch`, `first-frame`) and any progress a scene posts while it loads (`examples/lib/progress.ts` reports a scene's file count, and a scene with nothing to load posts its build phases). It fades out when the first frame draws and the scene's loading has gone quiet. So a scene that reports its stages fades it once. It shows the error text instead when the start fails.
 - **No overlapping geometry:** a demo's and a showcase scene's own geometry must not overlap (the owner's ruling): two pieces that cross or lie coplanar over one another z-fight and shimmer. `examples/lib/overlap.ts` holds `findOverlaps`, which tests each pair of triangles; a shared or deliberate intersection is named in `ignore`. The night town's unit test runs it over every house's walls, roof and chimney ([D-170](decisions/D-170-showcase-camera.md)). A scene that builds through the engine keeps no triangle arrays a unit test can read, so a general per-demo check waits for a scene readback, as D-170 records.
-- **A ring of mountains:** every showcase scene stands inside a ring of mountains made in code (the owner's ruling, [D-170](decisions/D-170-showcase-camera.md)). The view then never reaches the plain background past the land's edge. `examples/lib/mountains.ts` builds the ring around the scene's square of land. The ring starts half a meter inside the land's edge, a little under the land. It rises outside the edge into foothills, climbs to a crest line of peaks and passes, and falls a little behind it. Each scene's `land.ts` gives the crest radii, the lowest crest, the highest peak and the colors of forest, rock and snow. It also names any gorge that cuts through the mountains. By the owner's ruling, Creek's stream runs on out of the valley at both ends through a gorge. There the ring takes the valley's own floor, its walls climb to the mountains either side, and the land and the water run on to 720 m. `examples/lib/haze.ts` fills the far end of each gorge with ten thin unlit sheets, from 330 m to 700 m. Each sheet hides a little more than the one before, and the last hides all, up to 60 m over the walls and thinning above. Over the gorge's floor the haze lies low: solid to 6 m and gone by 26 m. It climbs with the walls either side, which it must hide where they end. The sun rises out of one gorge and sets into the other, as the owner asked, so it shows almost down to the water. The sheets take the stage's air color each frame, so the haze matches the sky at every hour. They also glow toward the main light with the light they scatter forward, so a sun behind the haze lights it, as a real haze does, and the haze does not show as a gray wall. The engine's fog never covers the background, so the haze sheets are what hides the end of the world there. The ring casts and catches no shadows, since it lies past every shadow range. Its detail follows the quality preset: about 10,000 triangles on Low and 36,000 on Ultra.
+- **A ring of mountains:** every showcase scene stands inside a ring of mountains made in code (the owner's ruling, [D-170](decisions/D-170-showcase-camera.md)). The Island is exempt, by the owner's ruling, because it is an isolated island in open sea: its sea reaches the horizon, so no view meets the plain background. The view then never reaches the plain background past the land's edge. `examples/lib/mountains.ts` builds the ring around the scene's square of land. The ring starts half a meter inside the land's edge, a little under the land. It rises outside the edge into foothills, climbs to a crest line of peaks and passes, and falls a little behind it. Each scene's `land.ts` gives the crest radii, the lowest crest, the highest peak and the colors of forest, rock and snow. It also names any gorge that cuts through the mountains. By the owner's ruling, Creek's stream runs on out of the valley at both ends through a gorge. There the ring takes the valley's own floor, its walls climb to the mountains either side, and the land and the water run on to 720 m. `examples/lib/haze.ts` fills the far end of each gorge with ten thin unlit sheets, from 330 m to 700 m. Each sheet hides a little more than the one before, and the last hides all, up to 60 m over the walls and thinning above. Over the gorge's floor the haze lies low: solid to 6 m and gone by 26 m. It climbs with the walls either side, which it must hide where they end. The sun rises out of one gorge and sets into the other, as the owner asked, so it shows almost down to the water. The sheets take the stage's air color each frame, so the haze matches the sky at every hour. They also glow toward the main light with the light they scatter forward, so a sun behind the haze lights it, as a real haze does, and the haze does not show as a gray wall. The engine's fog never covers the background, so the haze sheets are what hides the end of the world there. The ring casts and catches no shadows, since it lies past every shadow range. Its detail follows the quality preset: about 10,000 triangles on Low and 36,000 on Ultra.
 - **The Manual camera's bounds:** the Manual camera stays inside the ring, below its lowest crest and above the ground (the owner's ruling). Every view ray that falls then hits land or mountain, and every one that rises hits mountain or sky. A scene passes `bounds` to `createCinematic`. They hold the farthest distance from the point the camera turns around, which is the orbit controls' own `maxDistance`. They also hold a disc and a band of heights for that point, and the ground's height. A pan stops at the disc's edge, and the camera moves with the point, so the view does not turn. A camera that would go under the ground rises along its orbit and keeps its distance and bearing. The bounds' `clearance` sets how far above the ground it keeps: 1.5 m by default, and 0.15 m in Creek, whose ground under the water is the stream's bed. So Creek's camera may dip under the water but never through the bed, as the owner asked. Pushing against the ground never draws the camera in. A clamp that shortened the distance would walk the camera inward a little each frame. The camera's highest reach is the point's highest plus the distance, and each scene's lowest crest stands at least 10 m above it. The tests:
   - `examples/lib/mountains.test.ts` checks the crests, the reach and the join under the land.
   - `examples/lib/bounds.test.ts` checks the bounded camera.
@@ -592,7 +593,8 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 - **The shadow range follows the camera:** a fixed range fails here. With the night town's sun at a fixed 70 m, its shadows fade over the last 7 m. The Manual camera can dolly out with no limit, and past about 70 m every house lies beyond the range. A quick zoom then carries the whole town across the fade in a fifth of a second, so the shadows appear at once. Even the opening view puts the back houses at 75 to 82 m. So each scene passes `shadowReach` to `createShowcaseEffects`: the range it asks for close up, and the sphere of its core. The core is the night town's houses and tower, and Creek's stream and banks. Each frame, the range is the shortest step of a ladder of 1.25 times that reaches the core's far side. It rises at once, and falls only once the need is a whole step lower. Close-up shadows stay as sharp as a fixed range gives, and the core never leaves the range. The engine's automatic distance ([D-168](decisions/D-168-auto-shadow-distance.md)) does not fit here. It follows the farthest visible receiver, which in these scenes is the ground out to the mountains. It would hold the range at 150 m or more and blur the near shadows.
 - **The sky, the sun and the moon:** the outdoor moods drive the physical sky, `scene.setBackground({ atmosphere })`, from `timeOfDay` with the physical model ([D-171](decisions/D-171-showcase-controls-hud.md)). The real sun disc lights the scene by day and the moon disc at night, the main directional light is the sun by day and the moon at night, and the lit fog and the light shafts follow that light, so a scene shows sun rays by day and moon rays at night. `Auto` advances the hour continuously and loops, so the sun rises, arcs and sets and the moon does the same, while the fixed moods hold an hour. A whole day takes 80 seconds in Auto (the owner's ruling). `examples/lib/stage.ts` holds the moods and the Auto driver.
 - **The look follows the light, not the nearest mood:** a scene's own look, such as Creek's fireflies, mist, leaf tint and caustics, blends between the moods on either side of the hour (`moodMix` in `examples/lib/stage.ts`). Through the dark hours, while the sun is more than 18 degrees under the horizon, it holds Night. Only while the sky has light does it move from each mood to the next. The dawn's look comes in through the morning twilight and is whole at Dawn's hour. A look taken from the nearest fixed mood would jump. At 02:36, halfway between Night and Dawn, Creek's warm dawn caustics would come on at once. The stream would change color in the middle of the night. The stage's own haze factor blends the same way. `examples/lib/stage.test.ts` checks that no mood's share steps between hours a minute apart.
-- **The showcase scenes are Creek, Night town and Skyway.** A forest at dawn, a night town under the moon, and a city from the air.
+- **The showcase scenes are Creek, Night town, Skyway and Showroom to street.** A forest at dawn, a
+  night town under the moon, a city from the air, and a car showroom that opens onto a wet street.
 
 ### Night town's windows (M3-B2)
 
@@ -844,6 +846,53 @@ and a hero car with two screens.
   town's first window had no such stall. A cold phone's first seconds therefore need their own
   measurement before the 60 frames a second target has a device figure.
 
+### Showroom to street (M3-C2)
+
+Showroom to street is the fourth showcase scene. A car stands in a dark studio under softbox area
+lights, on a mirror floor, with a tablet beside it that changes its paint, wheels, trim and lights.
+The car then drives out through the opening into a short wet street. The scene is a template for
+product pages.
+
+- **The studio reflects the softboxes twice.** The floor takes one planar reflection across the
+  ground, so the car, the softboxes and the tablet mirror in it, and the car shows from underneath
+  as a real mirror shows it. A reflection probe fills the room's box, so the paint's clear coat
+  reflects the softboxes and the walls wherever the camera stands. The car draws on a layer of its
+  own, which the probe leaves out, so the paint never reflects itself.
+- **Four rectangle lights carry the studio.** A wide softbox behind the car and a thin box above it
+  draw the highlights along the roof and the flanks, and a strip down each side lights the walls.
+  The Low preset shades four rectangle lights, so the scene adds no more. A warm spot from the front
+  fills the paint, so the body reads deep red under the highlights.
+- **The configurator is a screen in the world.** The tablet is an `OffscreenCanvas` through the
+  screens add-on. Four tabs pick the part, and a tap on a value, a swatch or an arrow moves the
+  choice on. The car takes the change at once: the paint and the rims keep their material and change
+  their color, and the trim swaps between carbon, brushed steel and gloss black. A low glow under
+  the car and the two head lamps take the light's color, so the choice shows on the wet road.
+- **The street is short and lit.** The road runs 56 m from the studio's opening. A row of buildings
+  with lit windows stands on each side, with four lamp posts and two neon signs. One wall closes the
+  far end. The asphalt reads the same planar reflection, with rough dry stone between puddles whose
+  water carries the picture. The stage writes the volumetric fog, so each lamp and the head lamps
+  draw their cones through the air. Low turns the fog's slices off, so its fog keeps the sun's glow.
+- **The route and the car run one loop.** The car waits in the studio and turns slowly on the spot.
+  It then drives out, turns at the street's far end and drives back. The camera route takes the same
+  36 s, so the loop meets itself with no jump. `route.test.ts` checks the poses at the points that
+  matter, and that the car moves smoothly at every step. The first shot holds still, so the held
+  frame is the studio view.
+- **The car body is shared with the clear coat demo.** `examples/lib/car-body.ts` builds the hull,
+  the cabin, the lamps and the wheels from the materials that its caller gives. The clear coat demo
+  keeps its candy red paint and carbon trim, and the showroom repaints the same body.
+- **The wheels roll with the car.** The body builder returns the four wheel hubs, each with a group
+  that turns inside the axle. The showroom turns each group by the distance the car drove forward
+  over the wheel's radius, the left side the other way because its axle points the other way, so
+  both sides roll forward. `route.test.ts` turns a point on the tyre and checks that it moves
+  backward relative to the hub for both sides, so an inverted sign fails.
+- **The lamps were not the sparkle; the paint was.** In one 60-frame-a-second capture of the car
+  returning in the street on the Mac, the two lamp bars stayed at full brightness in every frame,
+  while the paint on the nose sparkled. Turning the headlamp beams off or the fog off left the
+  sparkle, and turning the flakes off removed most of it, so the paint's flakes were its source in
+  that capture. The showroom's flakes now take a wider light and a lower glint, and its clear coat
+  is a little rougher. That is a look choice, not only a fix: it moves all three pictures, and the
+  owner should rule on the nose's look.
+
 ### Engine features for the showcase
 
 Each feature gets a decision record of its own when it is built.
@@ -998,7 +1047,7 @@ The demos' groups are the owner's ruling. In the sidebar's order, they are Showc
 
 | Group | Demos |
 | --- | --- |
-| Showcase | creek, night-town, skyway |
+| Showcase | creek, island, skyway |
 | Building scenes | generators, mesh-arrays, extra-shapes, vertex-updates, objects, layers |
 | Light, materials and effects | environment, aurora, canvas-screen, coat-and-sheen, iridescence-and-anisotropy, property-animation, translucency, subsurface, reflection-probes, shader-inputs, water, weighted-transparency, relief, multiple-views, time-of-day, decals, atmosphere, contact-shadows, hero-shadow, camera-lens, wet-street, auto-exposure, tone-mapped, light-shafts, gltf-model, post-effects, sprites-lines, rain, particles, security-camera, area-lights |
 | Motion and interaction | character, look-at, input, walk-and-fly, morph-flowers, css3d-labels, picking, gizmos, math |
