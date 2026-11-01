@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
+import { MIRROR_FLOOR, WET_ROAD } from '../../../examples/showcase/showroom/floor';
 import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import {
 	type ShaderVariant as EngineShaderVariant,
@@ -8,7 +9,9 @@ import {
 } from '../../engine/src/generated/shaders';
 import {
 	buildShaders,
+	compileMaterial,
 	compileShader,
+	type MaterialSource,
 	type ShaderBuildInputs,
 	type ShaderProblem,
 	type ShaderSource,
@@ -127,6 +130,23 @@ function engineShaderInputs(names?: readonly string[]): ShaderBuildInputs {
 			}),
 		),
 	};
+}
+
+/**
+ * The type a generated shader declares at a group and binding, as its WGSL writes it, or undefined
+ * when it declares nothing there. The declaration may put a newline between the attributes and
+ * `var`.
+ */
+function bindingType(source: string, group: number, binding: number): string | undefined {
+	const pattern = new RegExp(
+		`@group\\(${group}\\)\\s*@binding\\(${binding}\\)\\s*var\\s+[^:]*:\\s*([^;]+);`,
+	);
+	return pattern.exec(source)?.[1]?.trim();
+}
+
+/** A material's problems as one line, for a test's failure message. */
+function materialProblems(name: string, problems: readonly ShaderProblem[]): string {
+	return `${name}: ${problems.map((problem) => problem.message).join('; ')}`;
 }
 
 describe.skipIf(!ENABLED)('the shader compiler', () => {
@@ -250,5 +270,39 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 			expect(result.output.shaders).toEqual(expected);
 		},
 		scaledBudget(180_000),
+	);
+	it(
+		'builds the showroom floors with the frame bindings the standard material declares',
+		() => {
+			// A material that compiled against an older frame group keeps its own binding declarations.
+			// The pipeline then fails to build with E1404, which reads like an engine fault. Compare every
+			// variant of the demo's own custom materials with a plain material built by the same compiler:
+			// a binding that differs names the binding and both dimensions here, not in a browser.
+			const plain: MaterialSource = {
+				path: 'standard-material.wgsl',
+				source:
+					'fn surface(input: SurfaceInput) -> Surface {\n    return defaultSurface(input);\n}',
+			};
+			const standard = compileMaterial(plain);
+			if (!standard.ok) throw new Error(materialProblems(plain.path, standard.problems));
+			for (const [name, source] of [
+				['the mirror floor', MIRROR_FLOOR],
+				['the wet road', WET_ROAD],
+			] as const) {
+				const built = compileMaterial({ path: `showroom ${name}`, source });
+				if (!built.ok) throw new Error(materialProblems(name, built.problems));
+				for (const [variant, declaration] of Object.entries(built.material.variants)) {
+					const expectedVariant = standard.material.variants[variant];
+					if (!declaration.wgsl || !expectedVariant?.wgsl) continue;
+					const own = bindingType(declaration.wgsl.source, 0, 11);
+					const expected = bindingType(expectedVariant.wgsl.source, 0, 11);
+					if (own === expected) continue;
+					throw new Error(
+						`${name} declares ${own ?? 'nothing'} at @group(0) @binding(11) in its ${variant} variant, where the standard material declares ${expected ?? 'nothing'}`,
+					);
+				}
+			}
+		},
+		scaledBudget(300_000),
 	);
 });
