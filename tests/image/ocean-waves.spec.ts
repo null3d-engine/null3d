@@ -88,10 +88,13 @@ for (const { tier, query } of TIERS) {
 			`${tier}: the sea moved by ${moved.toFixed(4)} m between ${(result.stamps[0] as number).toFixed(2)} s and ${(result.later.stamps[0] as number).toFixed(2)} s`,
 		);
 		expect(moved).toBeGreaterThan(0.01);
-		// Open fault: the fragment form on WebGL2 computes a sea that moves and keeps its scale, but
-		// it differs from the transform on this thread, and the first stage already differs. The
-		// record is in .dev/code-review.md. Remove this line when the two agree.
-		test.fail(tier === 'webgl2', 'the fragment form differs from the compute form on WebGL2');
+		// The WebGL2 difference was measured before the engine's WebGL2 read returned the region the
+		// page asked for (D-271), and that fix names this ocean's read. The path has therefore not
+		// been compared against the merged engine yet. Remove this line once it has.
+		test.fail(
+			tier === 'webgl2',
+			'the WebGL2 path has not been compared against the merged engine yet',
+		);
 		const side = 4;
 		for (let band = 0; band < result.cpu.length; band++) {
 			const gpu = result.gpu[band] as number[];

@@ -218,6 +218,36 @@ export function waveField(
 }
 
 /**
+ * The bands' fields, kept between reads. The spectrum and the band are made once and never change,
+ * so the sketch time alone decides when a band's field must be transformed again: every read at one
+ * time shares one transform, and a read at a new time transforms.
+ */
+export function bandFields(
+	spectra: readonly Float32Array[],
+	bands: readonly Pick<OceanBand, 'tile'>[],
+	n: number = GRID,
+	transform: typeof waveField = waveField,
+): (band: number, time: number) => Float32Array {
+	const fields: Float32Array[] = [];
+	const times: number[] = [];
+	return (band, time) => {
+		let field = fields[band];
+		if (!field) fields[band] = field = new Float32Array(n * n);
+		if (times[band] !== time) {
+			transform(
+				spectra[band] as Float32Array,
+				time,
+				bands[band] as Pick<OceanBand, 'tile'>,
+				n,
+				field,
+			);
+			times[band] = time;
+		}
+		return field;
+	};
+}
+
+/**
  * The height of a band's sea at a place of its tile and a sketch time, in meters. `x` and `z` run
  * from 0 at the tile's near corner and wrap around the tile. `field` is the band's `waveField`.
  */

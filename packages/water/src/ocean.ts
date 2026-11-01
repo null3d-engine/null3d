@@ -20,12 +20,12 @@ import fftFallbackShader from './fft.fallback.wgsl';
 import fftShader from './fft.wgsl';
 import oceanShader from './ocean.wgsl';
 import {
+	bandFields,
 	GRID,
 	type OceanBand,
 	PASSES,
 	heightAt as sampleHeight,
 	spectrum,
-	waveField,
 } from './spectrum';
 import { NAMESPACE } from './water';
 
@@ -351,20 +351,7 @@ export function createOcean(ctx: SketchContext, options: OceanOptions): Ocean {
 	);
 
 	const eye: [number, number, number] = [0, 0, 0];
-	const fields: Float32Array[] = [];
-	const fieldTimes: number[] = [];
-	/** The field of one band at a sketch time, which the sums below read. It transforms again only
-	 * when the time moves, so every read in a frame shares one transform. */
-	const fieldOf = (band: number, t: number): Float32Array => {
-		const one = bands[band] as OceanBand;
-		let field = fields[band];
-		if (!field) fields[band] = field = new Float32Array(GRID * GRID);
-		if (fieldTimes[band] !== t) {
-			waveField(cpuSpectra[band] as Float32Array, t, one, GRID, field);
-			fieldTimes[band] = t;
-		}
-		return field;
-	};
+	const fieldOf = bandFields(cpuSpectra, bands);
 	const heightOf = (band: number, x: number, z: number, t: number): number => {
 		const one = bands[band] as OceanBand;
 		const insideX = ((x % one.tile) + one.tile) % one.tile;
