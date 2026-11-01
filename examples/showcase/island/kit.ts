@@ -1495,8 +1495,9 @@ export function cypress(sides: number, rows: number): Build {
 			const r = profile(t) * (sides > 8 ? ridge : 1);
 			b.positions.push(Math.sin(a) * r, 0.5 + t * 14, Math.cos(a) * r);
 			const tone = (0.8 + t * 0.55) * (0.9 + 0.12 * Math.sin(a * 7 + t * 9));
+			// The map wraps the crown a whole number of times, and runs once up it, so it shows no seam.
 			b.colors.push(0.026 * tone, 0.058 * tone, 0.03 * tone);
-			b.uvs.push(0, 0);
+			b.uvs.push((k / sides) * 2, t * 0.98 + 0.01);
 		}
 	}
 	for (let row = 0; row < rows; row++)

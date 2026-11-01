@@ -29,6 +29,7 @@ import {
 	treeValues,
 } from '@null3d/vegetation';
 import { createWind, type Wind } from '@null3d/wind';
+import { Noise } from '../../lib/procedural';
 import { cypress, finish } from './kit';
 import {
 	CYPRESS,
@@ -176,6 +177,30 @@ const KINDS: readonly (readonly [number, Species])[] = [
 	],
 ];
 
+/** A cypress's foliage: upward sprays of darker and paler green, near white, which its colors tint. */
+function spireMap({ textures }: SketchContext) {
+	const size = 512;
+	const noise = new Noise(211);
+	const data = new Uint8Array(size * size * 4);
+	for (let j = 0; j < size; j++)
+		for (let i = 0; i < size; i++) {
+			const [u, v] = [i / size, j / size];
+			const sprays = noise.fbm2(u * 32, v * 24, 3, 32) + 0.5 * noise.fbm2(u * 90, v * 80, 2, 90);
+			const tone = 150 + Math.min(105, Math.max(-110, sprays * 170));
+			const at = (j * size + i) * 4;
+			data[at] = data[at + 1] = data[at + 2] = tone;
+			data[at + 3] = 255;
+		}
+	return textures.fromData({
+		width: size,
+		height: size,
+		data,
+		colorSpace: 'srgb',
+		wrap: 'repeat',
+		mipmaps: true,
+	});
+}
+
 /** Writes each row's place, turn and size into a batch of meshes. */
 function fill(batch: InstanceBatch, spots: readonly TreeSpot[]): void {
 	const turn = quat.create();
@@ -313,8 +338,9 @@ export function createTrees(ctx: SketchContext, camera: Camera): { update(): voi
 		{ mesh: ctx.geometry.fromArrays(finish(cypress(8, 8))), error: 0.03 },
 		{ mesh: ctx.geometry.fromArrays(finish(cypress(5, 4))), error: 0.14 },
 	]);
+	const foliage = spireMap(ctx);
 	const batch = ctx.scene.createInstances(mesh, spires.length, {
-		material: ctx.materials.standard({ vertexColors: true, roughness: 0.95 }),
+		material: ctx.materials.standard({ map: foliage, vertexColors: true, roughness: 0.95 }),
 		castShadows: true,
 		receiveShadows: true,
 	});
@@ -324,7 +350,7 @@ export function createTrees(ctx: SketchContext, camera: Camera): { update(): voi
 	if (farSpires.length > 0) {
 		const plain = ctx.geometry.fromArrays(finish(cypress(5, 4)));
 		const far = ctx.scene.createInstances(plain, farSpires.length, {
-			material: ctx.materials.standard({ vertexColors: true, roughness: 0.95 }),
+			material: ctx.materials.standard({ map: foliage, vertexColors: true, roughness: 0.95 }),
 			castShadows: false,
 			receiveShadows: true,
 		});
