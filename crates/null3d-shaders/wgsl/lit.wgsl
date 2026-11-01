@@ -38,9 +38,11 @@ enable draw_index;
 // The COAT_SHEEN builds light a clear coat and a sheen above the base, as three.js's
 // MeshPhysicalMaterial does (null3d::coat_sheen). In them the map slots of the light map and the
 // specular maps hold the coat map, the coat normal map and the sheen map, since a layered material
-// has neither, and the row's flags say which channels of the coat and sheen maps apply. Custom
-// materials' surfaces have the layers' values in every build, and the COAT_SHEEN builds only where
-// their WGSL names them.
+// has neither, and the row's flags say which channels of the coat and sheen maps apply. A
+// transmission or thickness map keeps a row slot of its own, sampling a specular slot's texture
+// array at a layer of its own, so it draws beside the specular map of that slot. Custom materials'
+// surfaces have the layers' values in every build, and the COAT_SHEEN builds only where their WGSL
+// names them.
 //
 // The SUBSURFACE builds, of the templates of the skin pass, light the surface as the others do and
 // write only the diffuse light that scatters under it, after the fog, as the camera's opaque pass
@@ -79,7 +81,8 @@ enable draw_index;
 //
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive, light, specular intensity and specular color maps, each a layer of a texture array with
-// a sampler. A map reads
+// a sampler, and a material that lets light through reads its transmission and thickness maps
+// through the two specular slots' arrays at layers of their own. A map reads
 // the first texture coordinates, or the second where the material's flags say so, through the
 // material's texture coordinate transform. A map whose image is not on the GPU yet has no layer,
 // and the material draws as without it. The normal map bends the normal in a frame from the mesh's
@@ -135,7 +138,7 @@ enable draw_index;
 #endif
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::color::srgb_to_linear
-#import null3d::globals::{Material}
+#import null3d::globals::{FILL_LIGHT_SLOTS, Material}
 #ifdef SCENE_DEPTH
 #import null3d::depth::{linear_depth, orthographic_depth_to_view_z}
 #endif
@@ -179,14 +182,15 @@ fn pick_key(found: Instance) -> u32 {
 #endif
 }
 
-/// The color that GPU picking's id target holds for a source key: its four bytes, each as the
-/// fraction an 8-bit target stores.
+/// The color that GPU picking's id target holds for a source key: its four bytes, the lowest in
+/// red, each as the fraction an 8-bit target stores. A little-endian read of the copy's first four
+/// bytes then gives the key itself, as the pick template's copy does.
 fn pick_color(key: u32) -> vec4f {
     let bytes = vec4u(
-        (key >> 24u) & 0xffu,
-        (key >> 16u) & 0xffu,
-        (key >> 8u) & 0xffu,
         key & 0xffu,
+        (key >> 8u) & 0xffu,
+        (key >> 16u) & 0xffu,
+        (key >> 24u) & 0xffu,
     );
     return vec4f(bytes) / 255.0;
 }
@@ -231,7 +235,7 @@ fn pick_color(key: u32) -> vec4f {
 #endif
 #ifdef TRANSMISSION
 #import null3d::globals::{MaterialTransmission}
-#import null3d::mesh::{NO_FOG, layer_maps_kind_of, material_dispersion, material_transmission}
+#import null3d::mesh::{NO_FOG, layer_maps_kind_of, material_dispersion, material_transmission, material_volume_layers}
 #import null3d::refraction::{transmitted_light}
 #ifdef TONE_MAP
 #import null3d::fog::{fog_factor}
@@ -267,6 +271,9 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::math::{half_vector}
 #import null3d::tables::{AreaTerms, area_terms}
 #endif
+#ifdef CUSTOM_DIFFUSE_NORMAL
+#import null3d::lighting::{brdf_lambert, f_schlick}
+#endif
 #ifdef ALPHA_COVERAGE
 #import null3d::cutout::{alpha_coverage}
 #endif
@@ -278,6 +285,18 @@ fn pick_color(key: u32) -> vec4f {
 #endif
 #ifdef WEIGHTED
 #import null3d::weighted::{WeightedFragment, weighted_fragment}
+#endif
+#ifdef MOMENT
+#import null3d::moment::{moment_fragment}
+#endif
+#ifdef MOMENT_COLOUR
+#import null3d::moment::{moment_colour_fragment}
+
+/// The moment store that the colour pass reads at each fragment's own pixel (decision record
+/// D-261): the four moments that the moment pass summed there, read with `textureLoad` as plain
+/// floats. It takes the light probe grid's binding, which the layer's own frame layout leaves out
+/// because no moment build reads the grid.
+@group(0) @binding(10) var moment_store: texture_2d<f32>;
 #endif
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
@@ -346,10 +365,14 @@ var<private> pixel_material: u32;
 var<private> transmission_row: MaterialTransmission;
 
 /// Which family of maps the material keeps in each group of shared slots, two bits each: the light
-/// map's, the specular intensity map's and the specular color map's. A material that lets light
-/// through names 2 for the slots that hold its transmission and thickness maps, so `with_maps`
-/// reads them instead of the specular maps.
+/// map's, the specular intensity map's and the specular color map's. Bits 6 and 7 say that the
+/// transmission and thickness maps read the second texture coordinates.
 var<private> layer_maps_kinds: u32;
+
+/// The layers of the material's transmission and thickness maps in the specular slots' texture
+/// arrays, which the shader samples through those slots' bindings: the transmission map's layer,
+/// then the thickness map's, each negative where the map draws nothing.
+var<private> volume_layers: vec2f;
 
 /// The strength of the volume's dispersion, which spreads the light through it over three rays,
 /// one per color.
@@ -419,6 +442,17 @@ var<private> decal_uv_dy: vec2f;
 /// The bit of a material's flags for the map of slot 0 on the second texture coordinates; the
 /// next slots take the bits above it.
 const SECOND_UV: u32 = 256u;
+
+#ifdef TRANSMISSION
+/// The row slots of the transmission and thickness maps, after the eight slots that have a binding
+/// of their own. Each samples the specular slot's texture array at a layer of its own.
+const TRANSMISSION_SLOT: u32 = 8u;
+const THICKNESS_SLOT: u32 = 9u;
+/// The bits of the layer maps' kinds that say the transmission and thickness maps read the second
+/// texture coordinates.
+const TRANSMISSION_SECOND_UV: u32 = 64u;
+const THICKNESS_SECOND_UV: u32 = 128u;
+#endif
 
 #ifdef COAT_SHEEN
 /// The bits of a layered material's flags that say which channels of its coat and sheen maps
@@ -529,11 +563,25 @@ fn transform_uv(rows: MapUvRows, uv: vec2f, dx: vec2f, dy: vec2f) -> MapUv {
     );
 }
 
+/// True when the map of `slot` reads the second texture coordinates. A slot below the volume maps'
+/// names its bit in the flags; a volume map's bit sits in the layer maps' kinds.
+fn reads_second_uv(flags: u32, slot: u32) -> bool {
+#ifdef TRANSMISSION
+    if (slot == TRANSMISSION_SLOT) {
+        return (layer_maps_kinds & TRANSMISSION_SECOND_UV) != 0u;
+    }
+    if (slot == THICKNESS_SLOT) {
+        return (layer_maps_kinds & THICKNESS_SECOND_UV) != 0u;
+    }
+#endif
+    return (flags & (SECOND_UV << slot)) != 0u;
+}
+
 /// The coordinates of the map of `slot` through that map's own transform, with their derivatives:
 /// the second set where the flags say so, else the first.
 fn map_uv(flags: u32, slot: u32, raw: RawUv) -> MapUv {
     let rows = slot_uv_rows(slot);
-    if (flags & (SECOND_UV << slot)) != 0u {
+    if reads_second_uv(flags, slot) {
         return transform_uv(rows, raw.uv1, raw.dx1, raw.dy1);
     }
     return transform_uv(rows, raw.uv, raw.dx, raw.dy);
@@ -1116,6 +1164,11 @@ struct Surface {
     /// stored depth sets it to that depth along the view, so the card takes the shadow that falls
     /// on the surface it shows rather than on its own plane.
     shadowOffset: vec3f,
+    /// The unit normal that lights the surface's diffuse and ambient light, in world space, where a
+    /// surface function names one of its own. It is the mesh's normal unless the function sets it,
+    /// so a crown of leaves can light as the volume it stands for and keep each leaf's own normal
+    /// for its gloss and the light through it. The specular keeps `normal`.
+    diffuseNormal: vec3f,
     /// How much of the light behind the surface passes through it, from 0 to 1, in place of that
     /// share of its diffuse light, where the material lets light through.
     transmission: f32,
@@ -1293,11 +1346,10 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     }
     specular_texel = vec4f(1.0);
 #ifdef COAT_SHEEN
-    // A material with layers keeps one family's maps in slots 5 to 7, and one that lets light
-    // through keeps its transmission and thickness maps in the two specular slots beside the layer
-    // map of the light slot. The row names each group's family apart: the clear coat's or
-    // iridescence's for the light slot, and either of those or the transmission's and the
-    // thickness's for a specular slot.
+    // A material with layers keeps one family's maps in slots 5 to 7. The row names each group's
+    // family apart: the clear coat's or iridescence's for the light slot, and either of those for
+    // a specular slot. A material that lets light through keeps its transmission and thickness
+    // maps in row slots of their own, which `volume_layers` names.
     let kinds = u32(anisotropy_row.z);
     let layer_kind = kinds & 3u;
     let intensity_kind = (kinds >> 2u) & 3u;
@@ -1316,10 +1368,6 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = specular_intensity_texel(m.more_maps.z, at);
         if intensity_kind == 1u {
             s.iridescenceThickness = mix(film_row.z, film_row.w, texel.g);
-#ifdef TRANSMISSION
-        } else if intensity_kind == 2u {
-            s.transmission *= texel.r;
-#endif
         } else {
             let scale = coat_sheen_row.coat.zw;
             s.clearcoatNormal = bent_normal(texel, scale, at, input, position_dx, position_dy);
@@ -1330,10 +1378,6 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         if color_kind == 0u {
             s.sheenColor *= select(vec3f(1.0), texel.rgb, (flags & SHEEN_COLOR_MAP) != 0u);
             s.sheenRoughness *= select(1.0, texel.a, (flags & SHEEN_ROUGHNESS_MAP) != 0u);
-#ifdef TRANSMISSION
-        } else if color_kind == 2u {
-            s.thickness *= texel.g;
-#endif
         }
     }
 #else
@@ -1347,14 +1391,6 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, raw));
 #ifdef TRANSLUCENCY
         s.diffuseTransmission *= texel.a;
-#else ifdef TRANSMISSION
-        // A material that lets light through keeps its transmission and thickness maps there
-        // instead, whose red and green scale the transmission and the volume.
-        if ((layer_maps_kinds >> 2u) & 3u) == 2u {
-            s.transmission *= texel.r;
-        } else {
-            specular_texel.a = texel.a;
-        }
 #else
         specular_texel.a = texel.a;
 #endif
@@ -1363,15 +1399,19 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, raw));
 #ifdef TRANSLUCENCY
         s.diffuseTransmissionColor *= texel.rgb;
-#else ifdef TRANSMISSION
-        if ((layer_maps_kinds >> 4u) & 3u) == 2u {
-            s.thickness *= texel.g;
-        } else {
-            specular_texel = vec4f(texel.rgb, specular_texel.a);
-        }
 #else
         specular_texel = vec4f(texel.rgb, specular_texel.a);
 #endif
+    }
+#endif
+#ifdef TRANSMISSION
+    // The transmission and thickness maps keep row slots of their own beside the specular maps,
+    // which sample the same texture arrays at layers of their own.
+    if map_ready(volume_layers.x) {
+        s.transmission *= specular_intensity_texel(volume_layers.x, map_uv(flags, TRANSMISSION_SLOT, raw)).r;
+    }
+    if map_ready(volume_layers.y) {
+        s.thickness *= specular_color_texel(volume_layers.y, map_uv(flags, THICKNESS_SLOT, raw)).g;
     }
 #endif
     // A height map in the normal map's slot bends the normal only in the builds that read it, so
@@ -1552,6 +1592,8 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
     s.reflection = vec4f(0.0);
     s.lobe = vec4f(0.0);
     s.shadowOffset = vec3f(0.0);
+    // The diffuse light takes the surface's own normal unless the function names another.
+    s.diffuseNormal = input.normal;
 #endif
 #ifdef TRANSMISSION
     s.transmission = transmission_row.values.x;
@@ -2120,7 +2162,8 @@ fn clustered_lobed_light(
 #endif
 
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
-/// where its shadows fall, the point and spot lights of the surface's cluster, the ambient and
+/// where its shadows fall, the fill directional lights, the point and spot lights of the
+/// surface's cluster, the ambient and
 /// hemisphere lights, `extra` irradiance such as a light map's, and the light around it, from the
 /// reflection probes and the environment, times the material's factor of it. That light adds to
 /// the ambient and hemisphere lights, as three.js adds the environment's, and neither its
@@ -2148,6 +2191,7 @@ fn light_surface(
     relative: vec3f,
     shadow_offset: vec3f,
     normal: vec3f,
+    diffuse_normal: vec3f,
     vertex_normal: vec3f,
     face_normal: vec3f,
     to_view: vec3f,
@@ -2156,6 +2200,7 @@ fn light_surface(
     occlusion: f32,
     contact: f32,
     reflection: vec4f,
+    bounce: vec4f,
     lobe_values: vec4f,
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
@@ -2193,6 +2238,15 @@ fn light_surface(
     sun_color *= layered_light(normal, to_view, to_sun, sun_color);
 #endif
     var sun = direct_light(m, normal, to_view, to_sun, sun_color, compensation);
+#ifdef CUSTOM_DIFFUSE_NORMAL
+    // The diffuse light takes the surface's own normal, and the specular keeps the surface normal.
+    // The sun's colour holds its shadow by now, so one lookup lights both.
+    let v_dot_h = saturate(dot(to_view, null3d::math::half_vector(to_sun, to_view)));
+    let fresnel = f_schlick(m.specular, m.specular_grazing, v_dot_h);
+    sun.diffuse = saturate(dot(diffuse_normal, to_sun)) * sun_color
+        * brdf_lambert(m.diffuse) * (1.0 - fresnel);
+#endif
+
 #ifdef CUSTOM_LOBE
     // The material's own lobe adds its specular beside the base lobe's for the sun. It knows the
     // light, the view and the half vector, which a surface function cannot see.
@@ -2208,6 +2262,25 @@ fn light_surface(
         lobe_values,
     ));
 #endif
+
+    // The fill directional lights add their light beside the main light's, without its shadows.
+    let fills = min(u32(engine_frame.sun_color.w), FILL_LIGHT_SLOTS);
+    for (var k = 0u; k < fills; k++) {
+        let direction = engine_frame.fill_dir[k];
+        let color = engine_frame.fill_col[k];
+        // The light enters the clear coat and sheen first, and the translucency builds add the
+        // share that reaches the surface's back, as the sun's light does above.
+        var incoming = color.rgb;
+#ifdef COAT_SHEEN
+        incoming *= layered_light(normal, to_view, -direction.xyz, incoming);
+#endif
+#ifdef TRANSLUCENCY
+        gather_back_light(normal, -direction.xyz, incoming);
+#endif
+        let fill = direct_light(m, normal, to_view, -direction.xyz, incoming, compensation);
+        sun.diffuse += fill.diffuse;
+        sun.specular += fill.specular;
+    }
 #ifdef TRANSLUCENCY
     gather_back_light(normal, to_sun, sun_color);
     back_indirect = ambient_light(-normal) * occlusion;
@@ -2220,7 +2293,15 @@ fn light_surface(
     let clustered = clustered_light(m, relative, normal, vertex_normal, to_view, compensation);
 #endif
     let n_dot_v = saturate(dot(normal, to_view));
-    let surrounding_light = ambient_light(normal) + extra;
+    // Screen-space bounce light adds to the ambient and hemisphere lights. It takes the place of
+    // the environment's diffuse light by its share, as a reflection probe's does, and the
+    // environment keeps the rest where a ray left the screen.
+    let bounce_share = bounce.a;
+#ifdef CUSTOM_DIFFUSE_NORMAL
+    let surrounding_light = ambient_light(diffuse_normal) + bounce.rgb * bounce_share + extra;
+#else
+    let surrounding_light = ambient_light(normal) + bounce.rgb * bounce_share + extra;
+#endif
 #ifdef COAT_SHEEN
     let ambient = indirect_diffuse(m, surrounding_light, dfg)
         * layered_ambient(surrounding_light, n_dot_v, occlusion);
@@ -2243,7 +2324,9 @@ fn light_surface(
 #endif
         let strength = select(0.0, material_row.uv_u.w, has_environment(env));
         let around = probe_surrounding(relative, normal, reflection_normal(m, normal, to_view), to_view, m.roughness);
-        var irradiance = around.irradiance;
+        // The bounce light's share takes the environment's diffuse light with it, so the two do not
+        // count the same light twice.
+        var irradiance = around.irradiance * (1.0 - bounce_share);
         let radiance = mix(around.radiance, reflection.rgb, mirrored);
         // The probe grid takes the environment's diffuse light over where the sketch sets one.
 #ifdef PROBE_GRID
@@ -2308,6 +2391,14 @@ fn shadow_catcher(s: Surface, input: SurfaceInput, face_normal: vec3f, pixel: ve
 /// shadows. A shadow-catcher material draws only the sun's shadows instead (`shadow_catcher`).
 fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let normal = normalize(s.normal);
+    // The normal that lights the diffuse and ambient light, which a surface function may name apart
+    // from the surface's own: a crown of leaves lights as a volume, and each leaf keeps its own
+    // normal for its gloss and the light through it.
+#ifdef CUSTOM_DIFFUSE_NORMAL
+    let diffuse_normal = normalize(s.diffuseNormal);
+#else
+    let diffuse_normal = normal;
+#endif
     // Where the mesh's normal changes fast between pixels, highlights widen, so they flicker less
     // as the surface moves. As in Filament, the normal is the mesh's own, before a map or a surface
     // function bends it.
@@ -2474,6 +2565,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         input.relativePosition,
         shadow_offset,
         normal,
+        diffuse_normal,
         input.normal,
         plane_normal,
         input.viewDirection,
@@ -2482,6 +2574,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         s.occlusion * screen_occlusion(screen.values),
         contact,
         reflection,
+        screen.bounce,
         lobe_values,
     );
 #ifdef TRANSMISSION
@@ -2784,6 +2877,8 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) {
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
 #else ifdef WEIGHTED
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> WeightedFragment {
+#else ifdef MOMENT_COLOUR
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else ifdef PICK
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else
@@ -2809,6 +2904,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef TRANSMISSION
     transmission_row = material_transmission(in.material);
     layer_maps_kinds = layer_maps_kind_of(in.material);
+    volume_layers = material_volume_layers(in.material);
     volume_dispersion = material_dispersion(in.material);
     object_scale = in.scale;
 #else ifdef TRANSLUCENCY
@@ -2866,6 +2962,14 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     return masked_fragment(shade(s, input, in.clip));
 #else ifdef WEIGHTED
     return weighted_fragment(shade(s, input, in.clip), in.relative);
+#else ifdef MOMENT
+    return moment_fragment(s.alpha, in.relative);
+#else ifdef MOMENT_COLOUR
+    return moment_colour_fragment(
+        shade(s, input, in.clip),
+        in.relative,
+        textureLoad(moment_store, vec2u(in.clip.xy), 0),
+    );
 #else
     return shade(s, input, in.clip);
 #endif

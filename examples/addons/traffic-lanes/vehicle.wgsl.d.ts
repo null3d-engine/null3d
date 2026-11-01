@@ -11,6 +11,8 @@ declare const shader: CompiledMaterial<
 		readonly tail: 'vec3f';
 		readonly nose: 'vec3f';
 		readonly skirt: 'vec3f';
+		readonly windows: 'vec3f';
+		readonly glass: 'f32';
 	},
 	never
 >;

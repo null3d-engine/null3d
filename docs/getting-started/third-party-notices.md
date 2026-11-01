@@ -49,6 +49,7 @@ The null3D packages themselves are offered under the MIT License or the Apache L
 | Qualcomm Snapdragon GSR 1: the render-scale upscale | BSD 3-Clause | the shader library |
 | TinyEXR and OpenEXR, whose code the EXR decoders follow | BSD 3-Clause | `panorama-worker.js` |
 | Linearly transformed cosines, the area light tables | BSD 3-Clause | `vendor/ltc` |
+| SMAA, the subpixel morphological anti-aliasing that smooths the moment transparency layer's edges | MIT | the renderer's moment layer tables and shaders |
 | The Rust crates of the core: the standard library, wasm-bindgen, bumpalo, cfg-if, once_cell and dlmalloc | MIT or Apache License 2.0 | `dist/wasm` |
 
 The full texts are in the engine's `THIRD-PARTY-NOTICES.txt`.

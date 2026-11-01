@@ -1,9 +1,10 @@
 // A row of pines at the hand-over distance: each one draws as its mesh and as its card at the same
-// place, with the mesh's distance range ending at the switch and the card's range starting just
-// before it. The engine fades a standard material's range edge with the 4 x 4 dither, and the card
-// material takes no fading build, so the card stands at full coverage behind the mesh while the
-// mesh's pixels dither out over it. A card that faded as well would lose the pixels that both
-// dithered away, and the background would show through the crown as a dotted hole.
+// place, with the mesh's distance range ending at the switch and the card's range starting well
+// before it. The engine fades a range's edge with the 4 x 4 dither, for the card material too, so
+// the cards start early enough that their own fade finishes while the mesh still draws every
+// pixel. From then on the card stands at full coverage behind the mesh while the mesh's pixels
+// dither out over it. Were the two fades to share the band, both would drop the same pixels and the
+// background would show through the crown as a dotted hole.
 import { defineSketch, type MeshArrays } from '@null3d/engine';
 import { bakeImpostorAtlas, createImpostors, octahedralAtlas } from '@null3d/impostors';
 import { handOverToCards } from '@null3d/vegetation';
@@ -48,14 +49,20 @@ export default defineSketch((ctx) => {
 	// `?at=` places the camera at a share of the switch distance instead, which the filmstrip walks
 	// from before the band to past it. `?only=` hides the meshes, the cards or both, so a test can
 	// compare each against the ground alone, and `?cardTurn=` offsets the cards' turns alone, which
-	// a test uses to show that a wrong turn is visible.
+	// a test uses to show that a wrong turn is visible. `?band=move` keeps the camera still and
+	// moves the switch across it instead, so the trees keep their size in the picture and only the
+	// band's fades change from frame to frame.
 	const params = new URL(import.meta.url).searchParams;
 	const at = Number(params.get('at') ?? 0.96);
 	const only = params.get('only');
 	const cardTurn = (Number(params.get('cardTurn') ?? 0) * Math.PI) / 180;
+	const moving = params.get('band') === 'move';
+	// The filmstrip's still camera stands where the default view puts it, and the switch moves so
+	// that the camera's distance is `at` of it.
+	const switchDistance = moving ? (SWITCH * 0.96) / at : SWITCH;
 	const camera = scene.createPerspectiveCamera({
 		fov: 22,
-		position: [0, 3.5, SWITCH * at + HEIGHT * sphereRadius(arrays.positions)],
+		position: [0, 3.5, SWITCH * (moving ? 0.96 : at) + HEIGHT * sphereRadius(arrays.positions)],
 		target: [0, 2, 0],
 	});
 	scene.setActiveCamera(camera);
@@ -126,7 +133,7 @@ export default defineSketch((ctx) => {
 	}
 	trees.markDirty();
 	cards.markDirty();
-	handOverToCards(trees, cards.batch, SWITCH);
+	handOverToCards(trees, cards.batch, switchDistance);
 	if (only === 'mesh' || only === 'none') cards.batch.setActiveCount(0);
 	if (only === 'card' || only === 'none') trees.setActiveCount(0);
 	return {};

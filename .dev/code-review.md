@@ -50,6 +50,31 @@ layer back against its source, through a second pass. That names whether the map
 layer, or the texture view differs on that path.
 `tests/image/ocean-waves.spec.ts` marks the WebGL2 case as an expected failure until then.
 
+## A read of a compute pass fetched the mirror on WebGL2 (M3-V13)
+
+`render.readPass` copied a region of a compute pass's target from the other end of the texture on
+WebGL2, and then turned its rows, so a read at the image's row 6 returned the texels at row 118: the
+mirror of the image. The copy now starts at the region's own row on both paths, and the decode takes
+the rows in the order that the copy gives them. [D-271](decisions/D-271-a-fallback-pass-writes-the-image.md)
+gives the measurements and the rule.
+
+The fragment form was not at fault. Its picture matches the WebGPU compute form's: `compute-pass`,
+which samples a compute pass in a material, draws the same quadrants on both paths. A turn of the
+form's row flipped 77.469% of its WebGL2 pixels. `compute-state`'s `rows` case fails on the old read
+and so guards the change. Its `rows-shown` case records the convention that a material samples a
+pass's texture by, on all three paths, and the change leaves that convention as it was.
+
+## A stopped pass keeps its texture on every GPU path (M3-V13)
+
+`compute-state`'s `a stopped pass keeps its image and its alpha` passes on WebGL2. So does `a stopped
+full-screen pass keeps its image and its alpha`. Both also pass on WebGPU and in compatibility mode.
+The pass's texture keeps the image that the pass drew, and the material that shows it draws that
+image and its alpha. An earlier note in this guide had them failing on WebGL2. It said the texture
+read black through a standard map, and white through a custom shader's missing-map guard. It also
+named a skipped-frame case that no test keeps. The runs on the Mac's GPU and on the software GPU show
+the two stopped cases passing on all three paths. No fault lies between the pass's target and the
+texture that shows it.
+
 ## Closed findings
 
 Every other finding of the review is fixed or settled. The table names the code, test or record that closes each one.

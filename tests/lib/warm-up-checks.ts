@@ -25,17 +25,18 @@ export interface WarmUpResult {
 /** The render pipelines of the pipelines sketch: lit and unlit on four vertex formats, and two. */
 export const SCENE_PIPELINES = 10;
 /**
- * The compute pipelines that WebGPU builds in the first frame on the indirect path, with or
- * without lights in the scene: the culling pass's, and the light clustering pass's three steps. A
- * device that draws directly builds the light clustering ones alone.
+ * The pipelines that the GPU-driven path builds in the first frame on the indirect path, beside
+ * the scene's own render pipelines and the final pass: its culling, its light clustering steps and
+ * the light-depth reduction that fits the next frame's slicing. A device that draws directly culls
+ * on the CPU, so it builds one fewer.
  */
-const WEBGPU_COMPUTE_PIPELINES = 4;
+const GPU_DRIVEN_PIPELINES = 10;
 /** Pixels the added quad covers at the least, in the page's 320 x 180 capture. */
 const ADDED_PIXELS = 100;
 
 /**
  * What is wrong with a warm-up page's result on a GPU path; empty when nothing is. WebGPU also
- * builds its compute pipelines in the first frame, and every path the final pass's, which the
+ * builds the GPU-driven path's pipelines in the first frame, and every path the final pass's, which the
  * 8-bit path runs while the render scale can drop. A device that draws directly culls on the CPU,
  * so it builds no culling pipeline. WebGL2's presets draw the depth prepass, so each of its opaque
  * pipelines comes with a prepass pipeline. The first frame and an object's warm-up build that one
@@ -44,8 +45,8 @@ const ADDED_PIXELS = 100;
 export function warmUpProblems(result: WarmUpResult, gpu: 'webgpu' | 'webgl2'): string[] {
 	const problems = result.failures.map((code) => `the engine failed with ${code}`);
 	const perObject = gpu === 'webgl2' ? 2 : 1;
-	const compute = gpu === 'webgpu' ? WEBGPU_COMPUTE_PIPELINES - (result.directDraws ? 1 : 0) : 0;
-	const expected = SCENE_PIPELINES * perObject + compute + 1;
+	const gpuDriven = gpu === 'webgpu' ? GPU_DRIVEN_PIPELINES - (result.directDraws ? 1 : 0) : 0;
+	const expected = SCENE_PIPELINES * perObject + gpuDriven + 1;
 	// A slow device can drop the render scale before the first frame ends, which builds the final
 	// pass's 8-bit variant beside its full-precision one: the count may hold one more.
 	if (result.firstFramePipelines !== expected && result.firstFramePipelines !== expected + 1)

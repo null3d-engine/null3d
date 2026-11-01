@@ -17,6 +17,8 @@ Record the reasons for the change in `.dev/`, in the same branch, as [AGENTS.md]
 
 The `Docs-Checked:` trailer names the page that holds the reason, or says why the change has no new reason.
 
+A change that moves a picture passes the look bar. Foliage, shadows, lighting and materials can pass every figure and still look worse, so a separate reviewer compares the before and after pictures and refuses approval until the new look is on par or better. Its tests and its verdict belong to [Image tests](image-tests.md#the-look-bar).
+
 ### Guidance from demos and showcase scenes
 
 The owner set this rule for every demo in `examples/` and every showcase scene. Developers copy these scenes as the model of good visuals for their own projects. Work on any one's look or behavior may show a better way to use the engine, or a pitfall that users will hit too. The same change then adds that guidance to the user docs and to the agent skills. It is part of done for that work, not a follow-up. A fault in the engine itself is fixed in the engine, not worked around in the scene.
@@ -342,7 +344,7 @@ hook and CI read only the commits that the push adds.
 Two branches that change the same code files land one after another. The smaller or readier one lands first, and the other merges main again and runs its checks before it pushes.
 
 - Run `bun run build:check-size` with current main merged. A file that passes against an older main can grow past the limit against a newer one.
-- Run an add-on check in a checkout with `bun packages/cli/bin/null3d.js check-addon <folder>`, not `bunx @null3d/cli check-addon`. `bunx` starts the command under Node, and a checkout's Vite plugin exists only as TypeScript source there, so the `shaders` and `sizes` gates skip. A skipped gate reads as a pass in the summary, so test those two gates with the `bun` form.
+- Run an add-on check in a checkout with `bunx @null3d/cli check-addon <folder>`. `bunx` starts the command under Node, which loads the checkout's Vite plugin from its TypeScript source, so this form checks that source as Node loads it and takes the `shaders` and `sizes` gates.
 - Two branches that add text at one place of a file clash when the second one merges main. Resolve the clash by keeping both sides. To avoid such clashes, each run in the record of [tested devices](tested-devices.md) is a file of its own ([D-97](decisions/D-97-tested-devices-per-file.md)).
 - Main's run after the push is the last check of the combined code. The size check of a run on main compares with the commit before.
 
@@ -426,7 +428,7 @@ How the jobs avoid repeated and needless work, with the runs that measured each 
 - Only the `shader-compiler` shards run the test that builds every shader, since they make its checks and also compare the compiler's build with it. Parts of `rust-tests` that run it add no check.
 - The `load-pages` and `load-startup-pages` jobs build the benchmark pages and the startup pages that the 44 `real-browsers` shards load ([D-222](decisions/D-222-load-pages-once.md)). Built in each shard, those pages take up to 11 minutes of a 23-minute Safari job, in silence (run 39554447893).
 - Only `browser-production` builds the production pages, since only its tests read them ([D-220](decisions/D-220-production-pages-once.md)). Built in every browser job of a full run, they take 283 s on average, and only 2 of 40 shards read them (run 39554447893).
-- `browser-production` runs in two parts, each of which builds only the pages that its test files load. It makes no CDN build, which none of its tests read ([D-220](decisions/D-220-production-pages-once.md#two-parts-and-no-cdn-build)). Its seven page builds take about 10 GB each and cannot run at once in one machine. In one job they take 18 minutes (run 39813231961).
+- `browser-production` runs in two parts, each of which builds only the pages that its test files load. It makes no CDN build, which none of its tests read ([D-220](decisions/D-220-production-pages-once.md#two-parts-and-no-cdn-build)). Its seven page builds read about a gigabyte each, and up to four run at once.
 - The `packages` job's pack builds each package once. Each package's own pack script would build the packages that it needs. One pack would then compile the engine six times, for about 3 minutes in CI ([Releases](releases.md#the-fresh-project-test)).
 - The key of Playwright's browser cache names Playwright's version and the runner's image, since the browser changes only with them. `browser-caches` fills the cache ahead of the browser jobs. A key that hashes the test and benchmark package files changes about 10 times a month. Without a job that fills the cache first, each change makes every browser job download Chrome and its packages at once. That takes about 45 s each, with a 20-second stall at the mirror (run 39813231961).
 - S1's three scenes run in a benchmark shard of their own. With S1, S3, S4 and S5, the first shard takes 24.3 minutes and sets the run's length. The others take 6.6 to 13.9 (run 39854225392). A split by hand needs a new measurement when its tests grow.

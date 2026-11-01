@@ -402,6 +402,9 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 	particles: 'tests/pages/sketches/particles-sketch.ts',
 	background: 'tests/pages/sketches/texture-background-sketch.ts',
 	transmission: 'tests/pages/sketches/transmission-sketch.ts',
+	// A surface that lets light through makes the frame copy the opaque color to sample it, so the
+	// same sketch draws the copy's builds as its own.
+	color_copy: 'tests/pages/sketches/transmission-sketch.ts',
 	// Both suns cast shadows for their feature's picture, and their scenes let the sun draw contact
 	// shadows, which load ambient occlusion's shader file on first use. The switch turns those off,
 	// so the page downloads its own feature's file alone.
@@ -444,6 +447,15 @@ const FEATURE_FILE_OWNERS: Partial<
 	occlusion: { webgl2: null },
 	views: { webgl2: null },
 	cluster_levels: { webgl2: null },
+};
+
+/**
+ * The feature whose file a feature's first use downloads as well as its own: a surface that lets
+ * light through makes the frame copy the opaque color, so the two files load together.
+ */
+const FIRST_USE_ALSO: Partial<Record<ShaderFeature, ShaderFeature>> = {
+	transmission: 'color_copy',
+	color_copy: 'transmission',
 };
 
 /**
@@ -492,10 +504,16 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				expect(shaderFiles).toEqual([]);
 				return;
 			}
-			expect(shaderFiles).toHaveLength(1);
+			const also = FIRST_USE_ALSO[feature];
 			// The shader files spell a feature's name with hyphens.
-			const file = (owner ?? feature).replaceAll('_', '-');
-			expect(shaderFiles[0]).toMatch(new RegExp(`/shaders-${file}-(wgsl|glsl)[^/]*$`));
+			const wanted = [owner ?? feature, ...(also ? [also] : [])].map((name) =>
+				name.replaceAll('_', '-'),
+			);
+			expect(shaderFiles).toHaveLength(wanted.length);
+			for (const file of wanted)
+				expect(
+					shaderFiles.filter((path) => new RegExp(`/shaders-${file}-(wgsl|glsl)[^/]*$`).test(path)),
+				).toHaveLength(1);
 		});
 
 // GPU occlusion culling runs only on WebGPU, where the first-use test turns it on. A scene whose

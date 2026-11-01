@@ -462,9 +462,10 @@ describe('sizeProblems', () => {
 
 	it('holds a file of shader builds to the first-use shader budget', () => {
 		const name = 'material-glsl-3-4147f7f033096b80-DAeZ5SYm.js';
-		expect(sizeProblems([{ name, raw: 900 * KB, gzip: 160 * KB, brotli: 45 * KB }])).toEqual([]);
-		expect(sizeProblems([{ name, raw: 900 * KB, gzip: 160 * KB, brotli: 57 * KB }])).toEqual([
-			`${name} is 57.0 KB brotli, over its 56.0 KB budget`,
+		const limit = ADDON_SHADER_BUDGET.brotli;
+		expect(sizeProblems([{ name, raw: 900 * KB, gzip: 160 * KB, brotli: limit - KB }])).toEqual([]);
+		expect(sizeProblems([{ name, raw: 900 * KB, gzip: 160 * KB, brotli: limit + KB }])).toEqual([
+			`${name} is ${(limit + KB) / KB}.0 KB brotli, over its ${limit / KB}.0 KB budget`,
 		]);
 	});
 

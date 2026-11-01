@@ -18,7 +18,7 @@ use null3d_render::frame::{FrameBuilder, NO_MESH};
 use null3d_render::frame_data::FrameUniform;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::RenderScale;
-use null3d_render::light_tables::FIRST_IMAGE_LAYER;
+use null3d_render::light_tables::{FIRST_IMAGE_LAYER, IMAGE_SIZE, LightTables};
 use null3d_render::mirror::Mirror;
 use null3d_render::output::{Output, ToneMapping};
 use null3d_render::probes;
@@ -192,6 +192,93 @@ fn lights_reach_the_frame_on_webgpu() {
 #[test]
 fn lights_reach_the_frame_on_webgl2() {
     lights_reach_the_frame(World::build(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    )));
+}
+
+/// The directional lights after the main one reach each view's uniform block, with their travel
+/// directions and exposed colors, and the count says how many light the frame.
+fn fills_reach_the_frame<B: FrameBuilder>(mut world: World<B>) {
+    let mut lights = LightTable::new();
+    // The main light points straight down, and the others forward, up and tilted.
+    let (_, main) = light(
+        &mut world,
+        &mut lights,
+        kind::DIRECTIONAL,
+        [0.0; 3],
+        -FRAC_PI_2,
+    );
+    let (_, forward) = light(&mut world, &mut lights, kind::DIRECTIONAL, [0.0; 3], 0.0);
+    let (up_object, up) = light(
+        &mut world,
+        &mut lights,
+        kind::DIRECTIONAL,
+        [0.0; 3],
+        FRAC_PI_2,
+    );
+    let (_, tilted) = light(
+        &mut world,
+        &mut lights,
+        kind::DIRECTIONAL,
+        [0.0; 3],
+        FRAC_PI_2 / 2.0,
+    );
+    lights.set_value(main, value::INTENSITY, 2.0).unwrap();
+    lights
+        .set_color(forward, color::MAIN, [0.2, 0.4, 0.6])
+        .unwrap();
+    lights.set_color(up, color::MAIN, [1.0, 0.5, 0.25]).unwrap();
+    lights
+        .set_color(tilted, color::MAIN, [0.5, 1.0, 0.5])
+        .unwrap();
+    record(&mut world, &mut lights);
+
+    let u = camera_uniform(&world);
+    // Asserts that a direction matches the one a rotation gives, to within rounding.
+    fn close(got: [f32; 4], want: [f32; 4]) {
+        for k in 0..3 {
+            assert!((got[k] - want[k]).abs() < 1e-5, "{got:?} is not {want:?}");
+        }
+    }
+    close(u.sun_direction, [0.0, -1.0, 0.0, 0.0]);
+    assert_eq!(u.sun_color, [2.0, 2.0, 2.0, 3.0]);
+    close(u.fill_direction[0], [0.0, 0.0, -1.0, 0.0]);
+    close(u.fill_direction[1], [0.0, 1.0, 0.0, 0.0]);
+    let root = std::f32::consts::FRAC_1_SQRT_2;
+    close(u.fill_direction[2], [0.0, root, -root, 0.0]);
+    assert_eq!(u.fill_color[0], [0.2, 0.4, 0.6, 0.0]);
+    assert_eq!(u.fill_color[1], [1.0, 0.5, 0.25, 0.0]);
+    assert_eq!(u.fill_color[2], [0.5, 1.0, 0.5, 0.0]);
+
+    // A fifth directional light gives no light, and a hidden fill leaves its slot dark.
+    let (_, fifth) = light(&mut world, &mut lights, kind::DIRECTIONAL, [0.0; 3], 0.0);
+    lights
+        .set_color(fifth, color::MAIN, [0.9, 0.9, 0.9])
+        .unwrap();
+    record(&mut world, &mut lights);
+    assert_eq!(camera_uniform(&world).sun_color[3], 3.0);
+
+    // A hidden fill gives its slot to the light created after it.
+    world.frame += 1;
+    let hide = Command::set_visible(up_object, false);
+    world.scene.apply_commands(&[hide], world.frame).unwrap();
+    record(&mut world, &mut lights);
+    let u = camera_uniform(&world);
+    assert_eq!(u.sun_color[3], 3.0);
+    assert_eq!(u.fill_color[1], [0.5, 1.0, 0.5, 0.0]);
+    assert_eq!(u.fill_color[2], [0.9, 0.9, 0.9, 0.0]);
+}
+
+#[test]
+fn fills_reach_the_frame_on_webgpu() {
+    fills_reach_the_frame(World::build(GpuDrivenRenderer::new(
+        RendererConfig::default(),
+    )));
+}
+
+#[test]
+fn fills_reach_the_frame_on_webgl2() {
+    fills_reach_the_frame(World::build(CpuCulledRenderer::new(
         CpuCulledConfig::default(),
     )));
 }
@@ -455,10 +542,10 @@ fn a_light_image_makes_the_array_again_and_the_frame_groups_bind_it<B: FrameBuil
     // One image gives the array room for four, and the mip levels that the images need.
     let probe_layers = world.renderer.settings().probes().probe_layers();
     let tables = world.renderer.settings_mut().light_tables_mut();
-    assert!(tables.image_texels_mut(1).is_some());
+    assert!(tables.image_texels_mut(1, IMAGE_SIZE).is_some());
     assert_eq!(
         tables.finish_image(1, probe_layers),
-        Some(FIRST_IMAGE_LAYER)
+        Some((FIRST_IMAGE_LAYER + 1) as f32)
     );
     let second = record_commands(&mut world, false);
     let new = shared_array(&second, FIRST_IMAGE_LAYER + 4);
@@ -494,4 +581,25 @@ fn a_light_image_makes_the_array_again_and_the_frame_groups_bind_it_on_webgl2() 
     a_light_image_makes_the_array_again_and_the_frame_groups_bind_it(World::build(
         CpuCulledRenderer::new(CpuCulledConfig::default()),
     ));
+}
+
+#[test]
+fn a_finished_pixel_image_shows_after_a_gpu_reset() {
+    let mut tables = LightTables::default();
+    // The sketch has the place but is still writing, so the light keeps its color.
+    tables.image_texels_mut(6, IMAGE_SIZE).unwrap();
+    assert_eq!(tables.image_records(0).collect::<Vec<_>>(), vec![(6, 0.0)]);
+    let record = tables.finish_image(6, 0).unwrap();
+    assert_eq!(
+        tables.image_records(0).collect::<Vec<_>>(),
+        vec![(6, record)]
+    );
+    // A held frame starts as after a GPU loss, which clears the flag that the array holds the
+    // texels. A finished picture from pixels still shows, because the frame that names it uploads
+    // it again before it draws.
+    tables.reset_gpu();
+    assert_eq!(
+        tables.image_records(0).collect::<Vec<_>>(),
+        vec![(6, record)]
+    );
 }

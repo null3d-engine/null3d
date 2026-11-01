@@ -142,6 +142,35 @@ test('transmission-maps: a clear coat keeps the transmission and thickness maps'
 });
 
 /**
+ * A specular intensity map and the transmission and thickness maps draw together: the specular map
+ * keeps its own row slot and samples the specular intensity slot's texture array, where the
+ * transmission map takes a layer of its own. A shader that dropped either family would draw the
+ * glass as the scene with the other alone, so each pair below differs by far more than a drawing's
+ * own noise.
+ */
+test('transmission-specular-maps: the specular map and the volume maps both draw', async ({
+	page,
+}) => {
+	test.setTimeout(240_000);
+	const runs = IMAGE_RUNS.filter((run) => run.test === 'transmission');
+	expect(runs.length).toBe(3);
+	for (const run of runs) {
+		// Every variant adds its switches to the same tier's path, so the three scenes differ only
+		// in the maps that they give the glass.
+		const both = await imageOf(page, variant(run.path, GLASS_SKETCH, '?maps&specular&env'));
+		const volumes = await imageOf(page, variant(run.path, GLASS_SKETCH, '?maps&env'));
+		const specular = await imageOf(page, variant(run.path, GLASS_SKETCH, '?specular&env'));
+		const smooth = discOf(both, SMOOTH);
+		expect
+			.soft(difference(both, volumes, smooth), `${run.id}: the specular map draws beside them`)
+			.toBeGreaterThan(0.01);
+		expect
+			.soft(difference(both, specular, smooth), `${run.id}: the volume maps draw beside it`)
+			.toBeGreaterThan(0.01);
+	}
+});
+
+/**
  * The mean difference between every pixel left of the middle column of `image` and the pixel at
  * its mirror in the right half, from 0 to 1 per channel.
  */

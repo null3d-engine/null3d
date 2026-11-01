@@ -220,7 +220,13 @@ describe('WebGPUBackend', () => {
 	it('builds the mip level pipelines in the background when it starts, and the first upload uses them', async () => {
 		const { device, log } = fakeDevice();
 		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
-		expect(log).toEqual(['background build rgba8unorm', 'background build rgba8unorm-srgb']);
+		// The mip build and the cookie copy's own build, each for both formats.
+		expect(log).toEqual([
+			'background build rgba8unorm',
+			'background build rgba8unorm',
+			'background build rgba8unorm-srgb',
+			'background build rgba8unorm-srgb',
+		]);
 		await settle();
 		replay(backend, drawList(texture(1, 64, 1, 3, G.VIEW_2D_ARRAY), [G.OP_GENERATE_MIPMAPS, 1, 0]));
 		expect(log.filter((entry) => entry.startsWith('build'))).toEqual([]);

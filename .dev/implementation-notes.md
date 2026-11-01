@@ -370,6 +370,8 @@ Code and WebAssembly that a page needs only on first use load one way, for the e
 
 - `compileOnce` downloads each WebAssembly file and compiles it with `WebAssembly.compileStreaming`, once per page. Later calls get the same module. A failed download or compile lets the next call try again.
 - `runTask` sends a task to a job worker: the task's name, its input, and each compiled module that the worker has not had. A worker only instantiates a module, and keeps the instance for its next tasks. The engine's own tasks are imported by name in `workers/tasks.ts`. An add-on's task comes by the address of its module.
+- A task that carries WebAssembly takes the loader's compile path. Each file compiles once per page, and a task with one file compiles it with no array, no map and no `Promise.all`. The loader walks its runners by index, so a call makes no iterator result for each of them. The terrain add-on's task is the first engine task that carries WebAssembly, so it was the first to take that path. The allocation check found an array, a map, a promise and an iterator result for each of twelve runners. Together they cost 16 to 98 bytes a call. The loader makes none of them now. A new add-on task adds the places its calls allocate to `TASK_CALL_BUDGETS` in `bench/allocation.ts`, with the reason each allocation is needed. That table judges a task's places per call rather than per frame.
+- A module's memory is not given back. A worker's `drop` forgets a terrain's arrays, but the bytes stay used and the bump cursor keeps rising, and a changed version places fresh arrays beside the old ones. A page that builds and destroys many terrains in one worker grows its module memory without bound. One terrain per page is the normal case, so this is a note rather than a fault, and D-279 states the limit.
 - The glTF worker parses files, and meshopt and Draco decode where the file is parsed. So the glTF worker asks the loader for the decoders that a file needs, in the same answer that lists the file's buffers. The loader compiles them with `compileOnce` and sends them with the buffers. The meshopt decoder is a file of its own for that (`vendor/meshopt/meshopt_decoder.wasm`). The npm package packs it into a string in its script, which the browser could only compile from bytes. The tool `bun tools/vendor-meshopt.ts` writes it again from the pinned package. A unit test checks that the two agree. The engine needs SIMD, so it ships only the SIMD build. Draco's decoder is Google's glTF build, kept unchanged in `vendor/draco` with its script. `bun tools/vendor-draco.ts` fetches it again from the pinned release and checks each file's SHA-256, and a unit test checks the copy against the same hashes ([D-112](decisions/D-112-draco-decoding.md)).
 - A job worker blocks in the core's job loop and cannot read messages there. So the loader asks the core to call the worker (`callJobWorker`) before it posts each task. The core's loop returns once no frame chunk is left to claim and a call waits, and only then. The worker runs its tasks, takes each call off the count, and enters the loop again (`workers/job-worker.ts`). The call comes before the post, so the count always covers a task that is on its way.
 - Decoder tasks never hold up a frame. A worker leaves the loop only between frame chunks, and the sketch thread runs every chunk that no job worker claims. With two or more job workers, the first never takes tasks, so one always serves the frames. On the Mac, S1 loads the KTX2 sample model's 19 textures round after round, 893 files in 12 s. It keeps 719 or 720 of 720 frames at 60 Hz, with 16 job workers and with 2. The busiest thread's CPU time per frame at the 99th percentile stays within 5.1 to 5.5 ms ([D-54](decisions/D-54-addon-modules.md#frames-come-first)).
@@ -415,7 +417,14 @@ level with `bloomLevel`.
 - A level that the frame's chain does not draw, because the weights end before it, binds a one-texel
   texture instead, so the effect reads black rather than a stale level.
 - The level is drawn only while bloom is on. A sketch that reads a level with bloom off reads black,
-  which keeps the cost of the chain with the sketches that ask for it.
+  which keeps the cost of the chain with the sketches that ask for it. The effect's pass therefore
+  declares its read of the level only while the chain draws, and only for a level that the chain
+  declares. The passes are declared again when an effect reads the chain and bloom starts or stops
+  drawing. A read declared while bloom is off names a target whose writers are off, so the graph
+  refuses the frame with E1502. Skyway's lens streak reads level 2, so its Bloom
+  switch stopped every frame. The frame graph test
+  `an_effect_that_reads_bloom_draws_while_bloom_is_off_and_reads_the_chain_once_it_is_on` turns
+  bloom off and on under such an effect.
 
 ## The shader compiler
 
@@ -534,6 +543,7 @@ A feature that most pages do not use keeps its shader builds out of the start fi
   - The engine test "the first use of X downloads its shader file once" (`tests/image/engine.spec.ts`) runs for every table, from the generated feature list. A feature without a sketch of its own draws in `tests/pages/sketches/first-use-sketch.ts`, whose `?feature=` names it. A new table fails that test until the sketch has a case that uses the feature alone.
   - `shaders` lists templates whose every build needs the feature.
   - `bits` lists permutation bits that a device does not fix. Every build with one of them needs the feature, such as every template's SKIN builds.
+  - `bit_shaders` names, for a bit, the shaders whose builds the bit takes. A value of the permutation word can name a feature in one template and another in a template that shares its value, so a bit also listed by another template takes only the builds of the shaders that it names ([D-261](decisions/D-261-moment-transparency.md)). A CI shard builds a few entries from a manifest narrowed to them, and the narrowing takes from each list the names that the shard does not hold. A list left whole would name a shader that another shard builds, and the shard would refuse it.
   - A build needs its template's feature and the feature of each of its bits that a table names. A build that needs one feature goes into that feature's file. A build that needs several, such as a SKIN build with ALPHA_HASH, goes into a file of its own for that set of features, which a page loads only once it uses each of them. So no feature's file grows by the builds of another feature ([D-56](decisions/D-56-first-use-shader-files.md#builds-that-need-several-features)).
 - A value of the permutation word names one feature in each template, so two features can share a value ([D-156](decisions/D-156-template-scoped-permutation-bits.md)). `AREA_LIGHTS` shares `FXAA`'s value: only the lit templates list it, and only the final pass lists FXAA. The shader build refuses a template that lists two names of one value. A shared value's bit takes only the builds of the templates that list its name, and the generated main module's `FEATURE_MASKS` does the same at run time. An unshared bit counts for every template. Code that makes one template's key from another's keeps only the bits that it names, as `DrawKey::prepass` does.
 - The shader build writes the feature's builds to `generated/shaders-<feature>-<target>-<bits>.js`, and the builds of several features to `generated/shaders-<feature>-and-<feature>-<target>-<bits>.js`, with the names in alphabetical order. There is one file for each value of the device's fixed bits that the builds vary in, and none for a set of features without builds. The size report holds each one to the limits of one start shader file, in a section of its own.
@@ -1130,7 +1140,7 @@ with the levels the size report uses:
 
 The twelve tables are 5.0 MB uncompressed and 294 KB after Brotli together. The largest is
 `shader-paragraphs-glsl-tone-map-half.js` at 593.0 KB uncompressed and 31.4 KB after Brotli, inside
-the 1,792 KB and 56 KB that a shader file of a feature that loads on first use may take.
+the 1,792 KB and 58 KB that a shader file of a feature that loads on first use may take.
 
 The tables touch only the feature-set modules. The twelve modules of the start are byte-identical
 with and without them, so a page that uses no feature downloads the same files. A kind's table
@@ -1269,12 +1279,41 @@ Each is a case of the shader library, built for both targets. They add 2 GLSL bu
 builds. The library page compiles them as test cases. No page draws with them unless a material asks
 for them.
 
+The bitmask ambient occlusion prototype adds three shaders to the manifest. `proto_s3_scene` has its
+prepass, structure and lit pipelines. `proto_s3_ao` has nine pipelines. They are copy, sao, gtao,
+gtao_wide, bitmask, blur_x, blur_y, three_horizon and three_denoise. `proto_s3_ao_ms` has its copy
+pipeline. They add 7 GLSL builds and 8 WGSL builds. The main module holds them, which
+`tests/pages/proto-s3.ts` imports. No engine build and no shipped page draws them. The engine's
+start files do not grow. `BUILD_BUDGET` records 62,341 GLSL builds and 24,525 WGSL builds.
+
 The count rose again with M3-V2: an instance batch whose rows bring values takes its mask's own test, as a mesh without rows does, so `ROW_VALUES` left `APART` beside
 `ALPHA_COVERAGE` and `ALPHA_HASH` in the draw list. The lit templates then build each mask family
 over the row bit, and `SAMPLE_MASK` adds its WebGPU builds beside them, where a multisampled target
-has no alpha. The manifest makes 62,334 GLSL builds and 24,515 WGSL builds, and `BUILD_BUDGET`
-records those figures. The vegetation add-on draws its trees in batches, and the row bit is what
+has no alpha. The count rose by two WGSL builds with M3-R9: the light clusters' depth fit walks the slices by a
+compute pass of its own, `light_depth.wgsl`, which builds once for each of its two targets.
+The vegetation add-on draws its trees in batches, and the row bit is what
 lets such a batch take alpha to coverage.
+
+The moment transparency layer adds its builds in two parts ([D-261](decisions/D-261-moment-transparency.md)).
+Its moment pass is a variant of the six mesh templates that a blended surface draws through, so
+those templates gain the permutations that the layer carries. Its colour pass is six shader entries
+of its own, one for each of those templates, because a first-use file takes the names of a build's
+bits and a shared value would pull another template's builds into the layer's files. The two parts
+add 4,181 GLSL builds and 1,261 WGSL builds, and all of them load on the layer's first use, so no
+page downloads them at its start. The milestone's bitmask ambient occlusion prototype adds seven
+GLSL builds and eight WGSL builds of its own, which the merge brought beside the layer's. The
+manifest makes 66,522 GLSL builds and 25,786 WGSL builds, and `BUILD_BUDGET` records those figures.
+
+The screen-space bounce light (D-284) adds one shader with its trace and denoise pipelines, so 2
+GLSL builds and 2 WGSL builds. It loads on first use with ambient occlusion's steps, which the
+bounce reads. `BUILD_BUDGET` records 62,343 GLSL builds and 24,527 WGSL builds.
+
+The bounce light also shows the frame group's binding limit. The lit fragment stage already reads
+the sixteen sampled textures that every device allows: eight in the frame's group and eight map
+slots. A new binding would fail every standard material. The screen texture therefore carries the
+light in a second layer, and the frame's binding 11 is a 2D array. Ambient occlusion's denoise
+reads the reflections' trace, or a blank array while they draw none, so every texture of that
+binding is an array. The first texture of the screen steps stays a 2D image.
 
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this

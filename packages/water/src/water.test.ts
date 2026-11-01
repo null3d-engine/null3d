@@ -69,4 +69,28 @@ describe('the water’s waves', () => {
 			wgslFunction(read('water.wgsl'), 'caustics'),
 		);
 	});
+
+	it('carries the whole set downstream with the current', () => {
+		// Each wave's phase is measured from the point moved back along the current, so the surface
+		// at one time is the surface at the start, moved by the current's travel.
+		const current: [number, number] = [0.21, -0.28];
+		const points: readonly (readonly [number, number])[] = [
+			[0, 0],
+			[-11, 1.3],
+			[6.5, -2.2],
+		];
+		for (const t of [0.4, 2.5, 7]) {
+			for (const [x, z] of points) {
+				expect(waveHeight(x, z, t, 0, current, 1)).toBeCloseTo(
+					waveHeight(x - current[0] * t, z - current[1] * t, 0, 0, current, 1),
+					9,
+				);
+			}
+		}
+	});
+
+	it('keeps a lake’s waves moving without a current', () => {
+		const still: [number, number] = [0, 0];
+		expect(waveHeight(1, 2, 1, 0, still, 1)).not.toBeCloseTo(waveHeight(1, 2, 0, 0, still, 1), 3);
+	});
 });

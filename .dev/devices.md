@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `impostor-bake`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `two-step`, `demos`, `skyway`, `vegetation`, `tree-generation` and `vegetation-scatter`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `impostor-bake`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `wind-field-cost`, `wind-stress`, `two-step`, `demos`, `skyway`, `vegetation`, `tree-generation`, `vegetation-scatter`, `terrain` and `terrain-shadow`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is gray while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-gray when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -370,11 +370,46 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
   at another size and the points change. It reports the placement time, which is the figure that the
   vegetation budgets take for a valley of that size. The placement reads no GPU, so both paths must
   give the same number.
+- The `atlas-paint` plan times the bark and the leaf atlas paint, separately, for M3-V5's owed
+  figures. The page paints each atlas in turn for three rounds, with the order swapped, and reports
+  every round with the middle figure of each. The painters are the ones that `bakePlantAtlases`
+  runs, with no texture upload and no drawing between them. The paint runs on the sketch thread, so
+  one page reports both figures and no GPU path is asked of it.
+- Run it on the cloud iPad and S24-class phone:
+  `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys25-chrome --plan atlas-paint`.
+- Run it on this Mac, as the car paint's page runs:
+  `NULL3D_ATLAS_PAINT_COST=1 bun run test:browser -- atlas-paint-cost.spec.ts`. The spec skips
+  without that variable, so no shard and no lane runs it unasked.
 - Run both on the cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet:
   `bun run devices:cloud --only bsiphone17-safari,bsipadpro13-safari,bsgalaxys24-chrome,bsgalaxytaba9plus-chrome --plan vegetation`,
   and the same with `--plan tree-generation` and `--plan vegetation-scatter`.
 - The `splats` plan also runs each GPU path at a quarter of the cloud's splat count, at the same
   pixel count. A pair of rows then shows whether the cost follows the count or the screen's fill.
+
+## The wind field's cost plan
+
+- The `wind-field-cost` plan times the wind add-on's field at the grid shapes and pressure counts
+  that the preset rows take: the two flat grids of the Low row, the flat 64 by 64 of Medium, four
+  layers of 128 by 128 at High and the volume 64 by 24 by 64 at Ultra. Each page fixes its path and
+  its shape with `?gpu=` and `?shape=`, and takes its pressure counts from `?points=`.
+- A page plays the field off, the add-on's shipped solver cycle, and a chain of the same work per
+  step at each pressure count, with and without the canopy's drag, in turns. A layered or volume
+  shape is tiled into one 2D texture, which both paths run the same way.
+- WebGPU and compatibility mode time each pass, so the field's own figure is measured. WebGL2 has
+  no pass timer, so its rows compare a frame with the field and a frame without it, and a phone's
+  rows give the frame interval and the busiest thread.
+- A WebGL2 device whose float targets fail the engine's probe keeps no field, and the page reports
+  it, because such a device takes the analytic tier ([D-265](decisions/D-265-wind-field-first-stage.md)).
+- Run it on the cloud devices with
+  `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys25-chrome,bsgalaxytaba9plus-chrome --plan wind-field-cost`.
+  Run it on the Mac in its installed Chrome, in a quiet window, with
+  `NULL3D_WIND_FIELD_COST=1 bun run test:browser -- wind-field-cost.spec.ts --workers=1` and
+  `NULL3D_WIND_GPU`, `NULL3D_WIND_SHAPES` and `NULL3D_WIND_POINTS` naming its paths, shapes and
+  pressure counts.
+- The readers' cost comes from the vegetation pages. `vegetation-cost` with `?field=analytic`
+  makes the add-on keep no grid, so every reader works the air out at each vertex, and the same
+  page without it samples the field with one read. The pair gives the field's reader against the
+  analytic one, with each pass split where the device times passes. D-283 records the figures.
 
 ## The terrain plan
 
@@ -390,15 +425,29 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - Each page sets `?target-fps=1`, so the quality governor holds the whole render scale and each
   preset's own cost shows. The ground's own detail follows the preset, through its level-of-detail
   threshold, so the triangle counts fall from High to Low.
-- The page has 8 items: 4 presets on core WebGPU, 2 on compatibility mode and 2 on WebGL2. The
-  capabilities page comes first, so a device that lacks a path skips those pages.
+- The page has 24 items: 8 at each preset and path as above, and beside each one a held-camera pair
+  with the morph on and off for the offset's own cost. The capabilities page comes first, so a
+  device that lacks a path skips those pages.
+- The morph pair holds the camera with `?still` on both sides. The demo's own camera orbits, so a
+  moving pair draws a different selection on each side: the first pair on the S25 drew 22% more
+  triangles with the morph off only because its measure began at another point of the orbit. Both
+  sides carry the same vertex bytes, so the pair isolates the vertex offset's own work.
 - Run it on the Mac, the owner's iPad and an S24-class phone. The Mac and the iPad are timing runs,
   so start them through the queue with `QUIET_OK=1`. The iPad loads the runner page over the local
   network and its own WebAssembly build must exist in the worktree:
   `bun tests/real-browsers.ts --plan terrain "Google Chrome"` and
   `bun tests/real-browsers.ts --plan terrain --lan ipad-safari`. Then run the cloud phone:
   `bun run devices:cloud --only bsgalaxys24-chrome --plan terrain -- --only capabilities,terrain-low-webgl2,terrain-medium-webgl2`.
-  The Galaxy S24 has no WebGPU, so its command runs the two WebGL2 pages alone.
+  The Galaxy S24 has no WebGPU, so its command runs the two WebGL2 pages alone. Pick the morph pair
+  of a preset and path with `--only`, such as `terrain-low-webgpu-morph-on` and
+  `terrain-low-webgpu-morph-off`.
+
+- The `terrain-shadow` plan draws the terrain demo from a still camera at High, for the shadow
+  redraw that a morphing caster causes. Its three pages run with the morph on, with it off, and with
+  the ground casting no shadow, which shows the same frame over a cascade that stays cached. Each
+  page reports the draw calls per frame, the GPU time of each pass and the frame interval, so the
+  cascades that draw again name themselves in the GPU time. Run it on the Mac in its installed
+  Chrome: `bun tests/real-browsers.ts --plan terrain-shadow "Google Chrome"`.
 
 ## The reflection plan
 
@@ -529,6 +578,7 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - A page where the runner page stops twice fails, and the next runner page starts after it. The runner replaces a runner page at most twice per run, and never on a tablet.
 - When a page that may end its tab goes quiet, the runner records its last progress as its result. On the phone, Chrome and Brave then show their crash page in place of the runner page. So the runner opens a new runner page, which goes on with the next page. These new runner pages do not count against the two. On the phone, the runner never replaces a runner page that stopped on another page.
 - Close a Safari tab that a test opened with AppleScript: tell Safari to close the tabs whose address holds `localhost:517`.
+- The GitHub Mac image's 28 October release moved Safari from 26.6.1 to 27.2, under the same runner label (`macos-15-arm64`, macOS 15.8.2). The 27.2 rows fail twenty-seven pictures, from 0.679 to 99.042 per cent of the pixels where 0.5 per cent may, and every one of them draws a texture or a model. The largest is not a drawing: `compare-battle-threejs` at 99.042 is a capture fault, one colour `0,0,0,0` (run 41059398975, Safari shard 15 of 41) across the canvas, as `compare-night-town-threejs` was in the other run. The true drawings reach 43.657 at `texture-arrays`, 43.507 at `gltf-transmission-mask`, 32.154 at `textures`, in both its spec variants, and 21.589 at `asset-scene`, then 17.748 at `gltf-vertex-colors` and 14.756 at `gltf-emissive-strength`. A model's base colour draws without its texture, so the toy car's body is white and its cloth pale, and a player on that browser would see the same. The wider set means the cause is texture handling, not one material path. Of the twenty glTF pages that fail, eighteen pass on a 26.6.1 row of the 27 or 29 October runs. `gltf-dispersion` and `gltf-texture-linear-interpolation` have no 26.6.1 row, so for those the browser explanation is untested rather than disproved. Whether our WebGL2 path can be worked around is open. The comparison pages have not settled which side draws differently yet: in the run that failed battle, the three.js half was an empty capture while the null3D half passed. The capture fix must land, and the pages must run again on 27.2, before a three.js picture can say whose drawing differs.
 - CI runs Safari on GitHub's macOS machines and Firefox on its Linux machines. Neither browser gets WebGPU there, so the jobs pass `--allow-no-webgpu`, and those pages count as skipped. Firefox on Linux runs under a virtual display (`xvfb-run`) and draws WebGL2 with llvmpipe, Mesa's software renderer. The runner's record names it as a software renderer. On GitHub's macOS machines, Firefox gets no WebGL2 either.
 - Firefox runs on Linux because its shards run faster there: two shards took 8.1 and 7.9 minutes on Linux, against 12.9 and 11.6 on macOS. GitHub also gives many more Linux machines than macOS machines, so only Safari waits for macOS machines. Without WebGPU, Firefox on Linux skips the pages for WebGPU and compatibility mode. Its software renderer's images differ more from the Mac's references than a GPU's, as [Image tests](image-tests.md#ci) says.
 - CI runs the checks plan in each browser in shards of its own, such as `real-browsers (Safari 1/5)`. CI's `build` job first runs `bun tools/build-wasm.ts --pages-only` on Linux, which builds what the test pages need. That is the two WebAssembly files, and the shader compiler that the dev server runs on the WGSL in test sketches. Each browser's job downloads them.
@@ -542,10 +592,10 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - A Safari shard prints nothing until it opens its first page. So a silent shard may be working, not hung, and its log then holds no page line at all. The job's limit is 30 minutes, so a shard that is working still finishes. The long limit costs time only on a run that has already failed.
 - A browser without `WEBGL_multi_draw` cannot compile the builds that read the draw index, so the shaders page skips every one of them and names the extension in its result. The draw index is one of the device bits, so a module of the shader build holds only builds that need it, and a part of a set can hold nothing else. That part then compiles no program. Firefox on CI's Linux machines lacks the extension. In run 38763683279, its `shaders-coat-11` reported 348 skipped programs, all for the missing extension, and 0 compiled. So the judge in `tests/lib/plans.ts` passes a part that compiled no program where every program it held was skipped for that reason, and notes why. A part that held nothing at all, and a part whose programs the device could compile but the page did not, still fail. The page and the judge read the extension's name and the reason from one place, `tests/pages/lib/shader-list.ts`.
 - Retune `expectedSeconds` when a Safari shard's pages take much longer than its model. A failed shard's artifact holds the run's results; the gap between the times of two results is the later page's time.
-- Keep each shard at or under about 12 minutes, setup included. The jobs stop at 30 minutes, and a runner page that goes quiet costs about a minute more. Add a shard when a browser's slowest shard on main passes 12 minutes. Work out the count as the browser's page minutes per run, divided by 10, rounded up: each shard also costs about 2 minutes that do not shrink with more shards. CI runs 41 shards in each browser. One more shard in each browser, `real-browsers-prebuilt`, runs the pages that load the load pages job's builds or S6's city files. The organization's Enterprise plan runs up to 50 macOS jobs at once, so a full run's Safari shards start together ([D-194](decisions/D-194-ci-jobs-in-parallel-on-enterprise.md)). Only Safari's shards and the benchmark workflow's 8 shards use macOS, so Safari's 42 leave room for one benchmark run. A unit test in `tests/lib/runs.test.ts` reads the shard count from the workflow and fails when a shard's pages pass 10 minutes in Safari's or Firefox's model. When that test fails, add shards, or make Safari's pages faster.
+- Keep each shard at or under about 12 minutes, setup included. The jobs stop at 30 minutes, and a runner page that goes quiet costs about a minute more. Add a shard when a browser's slowest shard on main passes 12 minutes. Work out the count as the browser's page minutes per run, divided by 10, rounded up: each shard also costs about 2 minutes that do not shrink with more shards. CI runs 41 shards in Firefox and 49 in Safari, since Safari is the slower browser and its slowest shard decides when a full run ends; the Enterprise plan's 50 macOS jobs cap Safari's count, its own prebuilt shard included. One more shard in each browser, `real-browsers-prebuilt`, runs the pages that load the load pages job's builds or S6's city files. The organization's Enterprise plan runs up to 50 macOS jobs at once, so a full run's Safari shards start together ([D-194](decisions/D-194-ci-jobs-in-parallel-on-enterprise.md)). Only Safari's shards and the benchmark workflow's 8 shards use macOS, so Safari's 42 leave room for one benchmark run. A unit test in `tests/lib/runs.test.ts` reads the shard count from the workflow and fails when a shard's pages pass 10 minutes in Safari's or Firefox's model. When that test fails, add shards, or make Safari's pages faster.
 - By the measured page times, each Safari shard holds about 4.8 minutes of pages and each Firefox shard about 4.4. In run 40056066922, with 36 shards of about 5.6 minutes, the Safari shards took 272 to 533 seconds of tests, around a mean of 394. The machines' speed made most of that spread. In the slowest shards, both shader pages ran 30 to 45% over their measured times, and in the fastest, 15 to 25% under. One page, the frame-destroyed restarts, waited 118 seconds for Safari to free the memory of removed frames. Its whole test usually takes 27 seconds. A better split cannot remove machine speed, but smaller shards cut what it costs. The 41 shards start when the build job ends, about 9 minutes into a full run, and need nothing from the load pages job. So a slow machine ends about 18 minutes in.
 - A runner page that sends nothing for a page's time limit and 30 seconds counts as stopped. The runner tool then opens a new runner page at that page. The runner page writes a heartbeat every 20 seconds, so a stop shows long before that limit ends. Waiting out the limit is slow. In full run 40070413493, a Safari runner page stopped on the shaders page's part 55. The tool waited out the limit of 235 s and opened a new runner page, and the part took 405 s where it takes 85. That made its shard the run's slowest. A limit nearer the heartbeat finds such a stop sooner, but a test page that holds the main thread delays the heartbeat too. So each shard prints its runner pages' longest silence that ended with a write, and the page it fell on. CI passes `--quiet-cap 90`: a runner page that sends nothing for 90 s on a page counts as stopped, whatever the page's limit. A page with a quiet time of its own keeps it, and runs without the switch keep every limit, on phones and tablets among them. In full run 40072668205, the longest silences of the 84 shards had a median of 21 s in Safari and 28 s in Firefox. The longest was 36 s, on a Safari shaders part. Shaders pages hold the main thread longest, and Firefox's ran 29 to 32 s. A stop that the cap finds too soon only runs that page again on a new runner page. Raise the cap when a shard's longest silence passes 60 s.
-- Main's benchmark run also takes macOS machines, as [Benchmarks](benchmarks.md#the-benchmark-job-in-ci) says. A CI run's Safari shards can then wait for them, which costs the run time but not the jobs' time.
+- Main's benchmark run also takes macOS machines, as [Benchmarks](benchmarks.md#the-benchmark-job-in-ci) says. A CI run's Safari shards can then wait for them, which costs the run time but not the jobs' time. The benchmark asks for 8 machines in its 19:07 run, so a full run that overlaps that hour puts 58 macOS jobs against the cap of 50: Safari's 49 shards wait behind the benchmark's 8 and Safari's prebuilt shard, and the split saves nothing in that hour. It is no worse than the 41 it replaces, and the other hours keep the gain.
 
 ## Android phone
 
@@ -738,7 +788,7 @@ Tier B covers low memory, the other browser engines, more GPU lines and desktop 
 | Windows 11 | Windows 11 | Edge, newest | None on BrowserStack | As Chrome in tier A | The default Windows browser | 12 |
 | Windows 11 | Windows 11 | Firefox, newest | None on BrowserStack | WebGPU and WebGL2 with a GPU | Firefox's own WebGPU code on Windows. Not on Automate: without a GPU it gives no WebGL2 either | 12 |
 | macOS Sequoia | macOS 15 | Safari 18.4 | Not published | WebGL2 | Desktop Safari without WebGPU | 8 |
-| macOS Tahoe | macOS 26 | Safari 26.4 | Not published | WebGPU, compatibility mode, WebGL2 | Desktop Safari 26, as CI's Safari on GitHub's Mac runs. The memory checks of CI's Safari can be run here without the owner's Mac | 8 |
+| macOS Tahoe | macOS 26 | Safari 26.4 | Not published | WebGPU, compatibility mode, WebGL2 | Desktop Safari 26, which CI's Safari on GitHub's Mac ran until its 28 October image moved to Safari 27.2. The memory checks of CI's Safari can be run here without the owner's Mac | 8 |
 
 - The Galaxy S24 ships with Exynos and Xclipse in most regions, and with Snapdragon and Adreno in the US, China and Japan. If its GPU cell names Adreno, run the Galaxy S26 or the Galaxy S22 instead, which split the same way.
 - Pass `--allow-no-webgpu` on the iPhone 13, the Galaxy S24, Firefox, the Galaxy A16 5G, the Pixel 11, Edge on Windows, Safari 18.4 and Safari 26.4.

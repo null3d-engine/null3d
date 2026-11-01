@@ -102,3 +102,80 @@ The three.js twin's three runs failed: each gave no result within its 95 s limit
 loader began transcoding the scene's textures. So no three.js side exists for the pair.
 
 The run is [the iPad's bench run](../tested-devices/ipad-pro-13-safari/20261024-081826-bench.md).
+
+## Addendum: the second step at the pinned half scale, and the earlier pair
+
+The first addendum measured at High with the governor on. The frame therefore held High's floor of
+0.75, and the pass it called the second step was the seventh the timer named. This addendum holds
+the render scale at one value with the governor off, at 0.5 or at the whole scale, so no step moves
+it. It reads the second step by name, where the frame times every pass of itself.
+
+**Method.** S5's benchmark page on null3D's WebGPU path, with `?renderScale=`. That switch sets the
+lowest and highest render scale both to the value it names, and turns the governor off. Each
+reading is three timed runs of 10 s warm-up and 10 s measured. The device is BrowserStack
+Automate's iPad Pro 13 2025, in Safari 26.6.1, on a display of 60 Hz. The page canvas is 1,032 by
+1,241 CSS pixels. Eight of the ten sessions hold 0.5. The other two hold the whole scale, at Low and
+at Medium, as the other side of each preset's pair. Every run that asked for 0.5 reported a lowest
+render scale of 0.5, with no quality step in every second, so the pin held.
+
+**What the per-pass figures are.** The engine times seven passes one by one, and folds every later
+pass into the seventh. A tile GPU also runs the passes over one another, as `frame-stats.ts` says.
+Each pass's figure is therefore its own span. The parts do not add up to the frame's own GPU time.
+The second step carries the name `final` where the frame draws few enough passes to be timed whole,
+which on this device is Low and Medium. Only Low's span reads as a cost: at Medium it runs with the
+frame's own, as the paragraph after the table says.
+
+| Preset, canvas | Frame GPU ms | First step | Second step | Presented fps |
+| --- | --- | --- | --- | --- |
+| Low, 2.88 megapixels | 6.14 to 6.23 | 2.08 to 2.11 | 2.96 to 2.99 | 60 |
+| Low, 5.12 megapixels | 6.33 to 7.09 | 2.37 to 2.63 | 3.71 to 4.16 | 49.6 to 60 |
+| Medium, 5.12 megapixels | 23.80 to 34.07 | 19.02 to 27.58 | not separable | 23.2 to 30.2 |
+| High, 5.12 megapixels | 16.30 to 23.16 | not named | not named | 29.4 to 39.7 |
+
+At Medium and High every heavy pass's own span runs near the frame's. Those cells of the table are
+bounds, not costs. At High the seventh timed pass read 14.8 to 19.8 ms. It is named for ambient
+occlusion's last step or for screen-space bounce. It holds the final pass and every pass after it.
+At Medium the second step's own span was 8.6 to 10.8 ms in a light frame. In a full frame it was
+20.3 to 29.5 ms. Their frames were 9.6 to 11.9 and 23.8 to 34.1 ms.
+
+**The price of the upscale.** At half the render scale the second step costs about 3 ms on a
+2.88-megapixel canvas. On a 5.12-megapixel canvas it costs 3.7 to 4.2 ms. It is 48% of a 6.1 ms Low
+frame. Its own loop for the sharpening adds 0.18 ms when the sharpening is on
+([the sharpen run](../tested-devices/ipad-pro-13-safari/20261027-000612-sharpen.md)). The canvas
+grows by 78% between the two rows. The second step grows by 25 to 39%, so its cost grows more slowly
+than the pixel count. At the Low preset the two-step frame at half scale costs 6.14 to 6.23 ms. The
+one frame at the whole canvas costs 6.52 to 7.78 ms. At Medium the same pair is 23.80 to 34.07
+against 35.25 to 48.94. The second step is cheaper than the whole-canvas final pass it replaces on
+this device. Nothing in the reading calls for a change to the pass.
+
+**The earlier pair.** The pair this task was asked to compare with is 34.6 against 29.7 frames a
+second, and 22.56 against 27.56 ms of GPU time. No run file stands behind it. At High with the pin
+at 0.5 the three runs read 36.2, 35.7 and 29.6 frames a second. Their GPU times were 18.42, 18.51
+and 22.83 ms. Against the pair's faster side this reading is 1.6 frames a second higher and 4.14 ms
+lower. Against its slower side it is 0.1 frames a second lower and 4.73 ms lower. At Medium with
+the pin at 0.5 the three runs read 30.2, 28.7 and 23.2 frames a second. Their GPU times were 23.80,
+23.99 and 34.07 ms, which straddles both of the pair's GPU figures. The pair names no scene,
+canvas or preset, so it cannot be reproduced frame for frame. By value its two sides fall between
+this reading's High and Medium cells. The rates it gives lie inside this reading's own spread.
+
+**Correction to the first addendum.** Its reading called the seventh timed pass the frame's last
+pass. The seventh pass was the last one the timer named. Every pass after it adds its time to that
+one, the second step among them. On a saturated frame a pass's own span also approaches the frame's
+whole GPU time. The 20.5 to 34.9 ms it reported was therefore the frame's tail, not the second step
+alone. That run does not measure the second step's own cost at this preset and canvas.
+
+**S5's gap.** The M2 gate's timed rows put S5's WebGPU page at 29.0 frames a second. The gate
+commit gave 36.1 on the same device. This reading, at one code state with the pin at 0.5, read
+36.2, 35.7 and 29.6 frames a second. The three runs came in succession as the device warmed, with
+18.42, 18.51 and 22.83 ms of GPU time. The gate commit's 36.1 lies inside that spread, and the
+head's 29.0 sits 0.6 below its floor. The drop is therefore not separable from the device's own
+run-to-run variation at this precision. The second
+step is not its cause: at Low the whole two-step frame costs 6.1 ms and holds 60 frames a second.
+Even at High the frame keeps within 18.3 to 23.2 ms, and the second step is a few milliseconds of
+it. What would separate the gate's two rows is the showcase plan, run back to back at the gate
+commit and at this head. This reading does not do that.
+
+The runs are the ten bench files whose names begin `20261101` in the iPad's folder, two of them at
+the whole scale. The
+pinned-half-scale reading with the passes named is
+[the Low run](../tested-devices/ipad-pro-13-safari/20261101-061916-bench.md).

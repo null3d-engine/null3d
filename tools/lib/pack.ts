@@ -112,7 +112,11 @@ function packEach(root: string, out: string, folders: readonly string[]): Packed
 				.map((line) => line.slice('package/'.length)),
 		);
 		const shaders = shaderFiles(root, folder);
-		const required = [...(PACKAGES[folder]?.required ?? []), ...shaders.required];
+		const required = [
+			...(PACKAGES[folder]?.required ?? []),
+			...(PACKAGES[folder]?.wasm ?? []),
+			...shaders.required,
+		];
 		const forbidden = repositoryOnlyFiles(packageBuild(folder));
 		if (PACKAGES[folder]?.shaders) {
 			required.push(...shaderDeclarationFiles(root));

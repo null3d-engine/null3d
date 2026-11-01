@@ -100,6 +100,14 @@ const DOCS = {
 			'E1111: mesh.destroy() was called on a mesh that "Crate" (slot 7) still uses. Destroy the objects and instance batches that use it first.',
 		since: '0.2',
 	},
+	E1112: {
+		title: 'Unsupported cookie texture',
+		cause:
+			"A spot light's map copies its picture once, when the texture's texels reach the GPU. A video's texture and a render pass's texture change every frame, and a 3D or cube texture holds more than one image, so none of them fits the copy.",
+		example:
+			"E1112: setMap() got a texture that changes every frame on a spot light, which a spot light's map copies once. Give a still texture, such as one that assets.loadTexture loaded.",
+		since: '0.3',
+	},
 	E1203: {
 		title: 'Invalid number',
 		cause: 'A call received a number that is not finite, such as NaN or Infinity.',
@@ -184,7 +192,7 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			"A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials refuse the 'weighted' blending, and take alpha to coverage or the hash mode only where their WGSL sets or reads the surface's alpha. A material that lets light through refuses the hash alpha mode and the weighted blending. A layered material, with a clear coat, a sheen, iridescence or anisotropy, refuses a light map, specular maps, and two textures for a pair of layer maps that glTF packs into one. It refuses a transmission or a thickness map only where one of its layer maps fills that map's slot: the clear coat's normal map and iridescence's thickness map fill the transmission map's, and the sheen's maps and the anisotropy map fill the thickness map's. A material with transmission refuses the specular maps beside the transmission and thickness maps, whose slots they share, and other materials refuse those two maps. A material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, a clear coat, a sheen and the weighted blending, and other materials refuse the diffuse transmission maps. A custom material refuses subsurfaceRadius, which only a standard material takes.",
+			"A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials refuse the 'weighted' blending, and take alpha to coverage or the hash mode only where their WGSL sets or reads the surface's alpha. A material that lets light through refuses the hash alpha mode and the weighted blending. A layered material, with a clear coat, a sheen, iridescence or anisotropy, refuses a light map, specular maps, and two textures for a pair of layer maps that glTF packs into one. It refuses a transmission or a thickness map only where one of its layer maps fills the array that the map samples: the clear coat's normal map and iridescence's thickness map fill the array that the transmission map samples, and the sheen's maps and the anisotropy map fill the array that the thickness map samples. A material with transmission refuses a thickness map beside a specular color map, whose sRGB texture never shares the thickness map's array, and other materials refuse those two maps. A material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, a clear coat, a sheen and the weighted blending, and other materials refuse the diffuse transmission maps. A custom material refuses subsurfaceRadius, which only a standard material takes.",
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},

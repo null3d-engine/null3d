@@ -27,7 +27,14 @@ export default defineSketch((ctx) => {
 	if (!SPECIES) return {};
 	const { scene } = ctx;
 	scene.setBackground('#9fc0dd');
-	scene.createDirectionalLight({ direction: [-0.45, -1, -0.3], intensity: 2.8 });
+	// The sun casts shadows, with a short contact reach, so each plant meets the ground in its own
+	// dark line rather than standing on it as a cut pole.
+	scene.createDirectionalLight({
+		direction: [-0.45, -1, -0.3],
+		intensity: 2.8,
+		castShadows: true,
+		shadow: { distance: 30, contactDistance: 0.3 },
+	});
 	scene.createAmbientLight({ intensity: 0.45 });
 
 	const variantAssets = generateVariantSet(SPECIES, { seed: 12, variants: VARIANTS });
@@ -60,7 +67,7 @@ export default defineSketch((ctx) => {
 		}),
 		material: ground,
 		rotation: FLAT as unknown as [number, number, number, number],
-		receiveShadows: false,
+		receiveShadows: true,
 	});
 
 	variantAssets.forEach((asset, index) => {
@@ -70,6 +77,8 @@ export default defineSketch((ctx) => {
 				mesh: ctx.geometry.fromArrays(part.arrays),
 				material: part.name === 'wood' ? bark : leaves,
 				position: [x, 0, 0],
+				castShadows: true,
+				receiveShadows: true,
 			});
 		}
 	});
