@@ -863,10 +863,9 @@ export default defineSketch((ctx) => {
 });
 ```
 
-Call `generatePlantInTask` in place of `generateVariantSet` when a scene grows many plants: it runs in a job worker, so the first frames do not wait. A species record is plain data, so a themed set is a list of records and needs no code. The package draws no texture and no material of its own yet, so give its parts materials of your own. Docs: `api/vegetation`.
+Call `generatePlantInTask` in place of `generateVariantSet` when a scene grows many plants: it runs in a job worker, so the first frames do not wait. A species record is plain data, so a themed set is a list of records and needs no code. Docs: `api/vegetation`.
 
-To place the plants rather than set them out by hand, read the ground once with `groundMaps`, take `builtinRules` for the species, and call `scatterVegetation`. It returns flat point arrays, one record for each plant, so a page looks up the variant and draws a copy at each point. The same seed places the same plants on every device. Pass `EcoScatter` and `addTile` when a scene should place its ground in tiles beside the frames.
-Call `generatePlantInTask` in place of `generateVariantSet` when a scene grows many plants: it runs in a job worker, so the first frames do not wait. A species record is plain data, so a themed set is a list of records and needs no code.
+To place the plants rather than set them out by hand, read the ground once with `groundMaps`, take `builtinRules` for the species, and call `scatterVegetation`. It returns flat point arrays, one record for each plant, so a page looks up the variant and draws a copy at each point. The same seed places the same plants on every device and both GPU paths, and `scatterChecksum` compares a placement with a reference that another device recorded. Pass `EcoScatter` and `addTile` when a scene should place its ground in tiles beside the frames.
 
 `bakePlantAtlases` paints the bark and the leaf atlases in the browser the first time a page asks for them, and `plantMaterial` draws a part from them: the species' colour multiplies the atlas's own, the normal map bends the light, and the leaf's coverage cuts its outline. `leafCellFor(species)` picks the leaf shape that suits a record, so give each species its own leaf material when a scene draws more than one. Call it once in the setup: it paints four textures and keeps them, and no image file is downloaded. Docs: `api/vegetation`.
 
