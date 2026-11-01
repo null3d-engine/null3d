@@ -11,19 +11,18 @@ const place = Number(new URL(import.meta.url).searchParams.get('oak') ?? 0);
 
 export default defineSketch((ctx) => {
 	const { scene, quality } = ctx;
-	scene.setBackground('#101418');
+	scene.setBackground('#d8e0e8');
 	scene.createAmbientLight({ intensity: 3 });
-	createTrees(ctx);
 	const oaks = standing(TREE_SPOTS, TREE_SHARE[quality.preset]).filter(({ kind }) => kind === OAK);
 	const oak = oaks[Math.floor(place * (oaks.length - 1))];
 	if (!oak) throw new Error('the plan stands no oak at this preset');
-	scene.setActiveCamera(
-		scene.createPerspectiveCamera({
-			fov: 45,
-			near: 0.3,
-			far: 400,
-			position: [oak.x + DISTANCE, oak.y + 6, oak.z],
-			target: [oak.x, oak.y + 5, oak.z],
-		}),
-	);
+	const camera = scene.createPerspectiveCamera({
+		fov: 45,
+		near: 0.3,
+		far: 400,
+		position: [oak.x + DISTANCE, oak.y + 6, oak.z],
+		target: [oak.x, oak.y + 5, oak.z],
+	});
+	scene.setActiveCamera(camera);
+	createTrees(ctx, camera);
 });
