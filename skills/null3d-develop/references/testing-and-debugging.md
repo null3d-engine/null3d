@@ -2,6 +2,10 @@
 
 Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 
+## Check every rendering mode
+
+Before you call a scene done, check frame rate, memory and looks on `?gpu=webgpu&direct=off`, `?gpu=webgpu&direct=on`, `?gpu=compat` and `?gpu=webgl2`, at each `?preset=`. Measure the whole camera path, never a part. Repeat each run, since one run misleads. Record a live camera and look at the frames, since a held frame shows no popping, flicker or lag. Ask the user to test on real phones and tablets of different form factors, and on large and small screens. Read the average and the slowest second, and check the overlay's render scale, since the governor lowers it to keep the time. `docs/guides/testing.md` gives the detail.
+
 ## Contents
 
 1. Commands
