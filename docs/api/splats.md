@@ -19,8 +19,8 @@ flowchart LR
     gltf["A glTF file with<br/>KHR_gaussian_splatting"] --> handler["The add-on's<br/>extension handler"]
     read --> cut["Chunks, each in<br/>importance order"]
     handler --> model["A model of quads,<br/>one part per chunk"]
-    cut --> task["A job worker<br/>chooses the splats"]
-    task --> batch["One instance batch<br/>the engine sorts by depth"]
+    cut --> task["The job worker's<br/>Rust task chooses<br/>the splats"]
+    task --> batch["The core packs one<br/>instance batch, which<br/>the engine sorts by depth"]
     batch --> gpu["WebGPU or WebGL2"]
     model --> gpu
 ```
@@ -97,10 +97,11 @@ chunk draws. Every chunk the budget reaches keeps an eighth of itself first. The
 gives the nearest chunks a finer prefix, up to the level that their distance asks for. A chunk's
 level follows its distance measured in the radius of the whole cloud, so a finer cut does not thin
 the view. A budget too small for every level then thins the whole cloud. A chunk nearer the camera
-still keeps more of its splats than a far one. The budget stops the total. The task sorts the chunks
-by distance in the worker, so a large scene costs the sketch's thread nothing. A change of the
-camera or of the budget starts a new selection; the sketch packs the chosen rows once the answer
-arrives, between two frames.
+still keeps more of its splats than a far one. The budget stops the total. The selection and its
+distance sort run in the add-on's Rust module on the job worker, so a large scene costs the
+sketch's thread nothing. A change of the camera or of the budget starts a new selection. The core
+then packs the chosen rows into the batch in its own memory, so a moved frame copies no rows
+through the sketch's heap.
 
 The budget follows the quality preset. On each preset the add-on draws at most:
 

@@ -283,6 +283,24 @@ export interface CoreGlue extends CoreErrors {
 	/** Sets whether every row of a batch casts and receives shadows, from an object's flag bits. */
 	setBatchShadows(batch: number, bits: number): number;
 	markBatchDirty(batch: number, start: number, count: number): number;
+	/** Makes room for `slots` chunk places in a cloud of the chunked row table. */
+	splatChunksReserve(cloud: number, slots: number): number;
+	/** Stores `count` rows at a chunk of a cloud, replacing what the slot held. */
+	splatChunkPrepare(cloud: number, slot: number, count: number): number;
+	/** The address of one of a chunk's arrays, or 0 for a slot or field that holds none. */
+	splatChunkField(cloud: number, slot: number, field: number): number;
+	/** The number of rows that a chunk holds, or 0 for a slot that holds none. */
+	splatChunkCount(cloud: number, slot: number): number;
+	/** Forgets a chunk, so its slot draws nothing. */
+	splatChunkDestroy(cloud: number, slot: number): number;
+	/** Forgets every chunk of a cloud. */
+	splatChunksDrop(cloud: number): number;
+	/** Makes room for `slots` chosen counts of the pack's plan and returns their address. */
+	splatPackPlan(slots: number): number;
+	/** Packs a cloud's chosen prefixes into a batch's rows, in the core's memory. */
+	splatPack(batch: number, cloud: number, slots: number): number;
+	/** The number of rows that the last pack wrote. */
+	splatPackedCount(): number;
 	memoryEpoch(): number;
 	/**
 	 * The address of a query array (`QUERY_INPUT`, `QUERY_HITS` or `QUERY_RAYS`), or with
@@ -1369,6 +1387,15 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBatchLayers',
 	'setBatchShadows',
 	'markBatchDirty',
+	'splatChunksReserve',
+	'splatChunkPrepare',
+	'splatChunkField',
+	'splatChunkCount',
+	'splatChunkDestroy',
+	'splatChunksDrop',
+	'splatPackPlan',
+	'splatPack',
+	'splatPackedCount',
 	'memoryEpoch',
 	'queryArrays',
 	'reserveRays',

@@ -1,7 +1,11 @@
-// The rows that a selection fills: each chunk's chosen prefix, written one after another into the
-// batch that the engine sorts. A chunk whose data has not arrived takes no row, and a chunk whose
-// chosen count is zero takes none either, so a chunk that arrives after the camera looked away
-// never draws where it no longer belongs.
+// The TypeScript reference of the pack: each chunk's chosen prefix, written one after another into
+// the batch that the engine sorts. A chunk whose data has not arrived takes no row, and a chunk
+// whose chosen count is zero takes none either, so a chunk that arrives after the camera looked
+// away never draws where it no longer belongs.
+//
+// The draw packs through the engine's chunked row writer, whose pack runs in the core's memory
+// under hard rule 42 (`crates/null3d-core/src/chunk_rows.rs`). This reference keeps the same rules
+// for the unit tests and for a reader who wants the shape of the pack in TypeScript.
 import type { SplatChunk } from './chunks';
 
 /** The batch rows that a pack writes, and the calls that tell the engine what changed. */

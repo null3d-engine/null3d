@@ -1,27 +1,49 @@
 // The sketch's side of the selection: a buffer of chunks for the task, and the call that asks a job
-// worker which splats draw. The buffer is shared where the page allows it, so a call copies nothing
-// but the few numbers of its answer. The task writes the counts into the buffer, which the sketch
-// reads straight from it, so no count crosses a message and a call allocates no array.
+// worker which splats draw. The selection and its distance sort run in the add-on's WebAssembly
+// module in the worker (hard rule 42), so a frame's loop over chunks runs in Rust. The buffer is
+// shared where the page allows it, so a call copies nothing but the few numbers of its answer and
+// the counts. The task writes the counts into the buffer, which the sketch reads straight from it,
+// so no count crosses a message on a page with shared memory and a call allocates no array.
 import { runTask, type Task } from '@null3d/engine';
 import type { SplatChunk } from './chunks';
-import { BUDGET, CHUNK_COUNT, CLOUD_RADIUS, EYE, HEADER, STRIDE, TOTAL } from './select-task';
+import {
+	BUDGET,
+	CHUNK_COUNT,
+	CLOUD_RADIUS,
+	EYE,
+	HEADER,
+	type SelectAnswer,
+	type SelectInput,
+	STRIDE,
+} from './select-task';
 
 /** What the selection needs of a chunk: its bounds and its count, before its data arrives. */
 export type ChunkBounds = Pick<SplatChunk, 'center' | 'radius' | 'count'>;
 
-/** The task that chooses the splats. Its module runs on its own in each job worker. */
+/** The task that chooses the splats: its module, and the WebAssembly module that it calls. */
 export const SELECT_TASK: Task = {
 	name: 'splats-select',
 	script: new URL('./select-task.ts', import.meta.url),
+	wasm: [
+		{
+			name: 'splats',
+			url: new URL('../dist/splats.wasm', import.meta.url),
+			what: 'the splat selector',
+		},
+	],
 };
+
+/** One selector's number each, so a worker keeps each selector's arrays apart. */
+let lastId = 0;
 
 /** The buffer that the selection task reads, and the call that fills and sends it. */
 export class SplatSelector {
 	private readonly view: Float32Array;
 	/** The task's input, which keeps its shape so a call makes no object. */
-	private readonly input: { view: Float32Array };
+	private readonly input: SelectInput;
 	/** How many splats draw of each chunk, which the task writes in the shared buffer. */
 	readonly counts: Float32Array;
+	private readonly id: number;
 
 	/** Makes the buffer of `chunks`, which stays the same while they do. */
 	constructor(chunks: readonly ChunkBounds[]) {
@@ -31,7 +53,17 @@ export class SplatSelector {
 				? new ArrayBuffer(floats * 4)
 				: new SharedArrayBuffer(floats * 4);
 		this.view = new Float32Array(buffer);
-		this.input = { view: this.view };
+		this.id = ++lastId;
+		this.input = {
+			id: this.id,
+			version: this.id,
+			chunks: chunks.length,
+			budget: 0,
+			eyeX: 0,
+			eyeY: 0,
+			eyeZ: 0,
+			view: this.view,
+		};
 		this.view[CHUNK_COUNT] = chunks.length;
 		this.view[CLOUD_RADIUS] = cloudRadiusOf(chunks);
 		this.counts = this.view.subarray(HEADER + chunks.length * STRIDE, floats);
@@ -49,19 +81,19 @@ export class SplatSelector {
 
 	/**
 	 * Asks a job worker which splats draw from `eye`, with `budget` splats at most. The answer's
-	 * promise settles when the worker has filled `counts` and `total`.
+	 * promise settles when the worker has filled `counts` and `total`. Without shared memory, the
+	 * caller writes the answer's counts into `counts`.
 	 */
-	select(eye: ArrayLike<number>, budget: number): Promise<boolean> {
+	select(eye: ArrayLike<number>, budget: number): Promise<SelectAnswer> {
 		this.view[BUDGET] = budget;
 		this.view[EYE] = eye[0] as number;
 		this.view[EYE + 1] = eye[1] as number;
 		this.view[EYE + 2] = eye[2] as number;
-		return runTask<boolean>(SELECT_TASK, this.input);
-	}
-
-	/** The number of splats that draw, which the task wrote in the shared buffer. */
-	get total(): number {
-		return this.view[TOTAL] as number;
+		this.input.budget = budget;
+		this.input.eyeX = eye[0] as number;
+		this.input.eyeY = eye[1] as number;
+		this.input.eyeZ = eye[2] as number;
+		return runTask<SelectAnswer>(SELECT_TASK, this.input);
 	}
 }
 
