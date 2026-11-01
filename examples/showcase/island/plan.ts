@@ -549,6 +549,29 @@ function offTerraceWall(x: number, z: number): readonly [number, number] {
 	return [x + ax * push, z + az * push];
 }
 
+/**
+ * The view from above the hill park: over its gazebo and down the slope to the town and the bay, framed
+ * by the trees on each side. The eye, the way it looks in x and z, and how far and how wide the clearing
+ * runs, in meters.
+ */
+export const PARK_VIEW = {
+	x: -57,
+	z: -260,
+	dx: 0.48,
+	dz: 0.877,
+	reach: 170,
+	near: 6,
+	spread: 0.2,
+} as const;
+
+/** Whether a place lies on the sight line from above the hill park, where no tree stands. */
+function inParkSightLine(x: number, z: number): boolean {
+	const { x: ex, z: ez, dx, dz, reach, near, spread } = PARK_VIEW;
+	const along = (x - ex) * dx + (z - ez) * dz;
+	if (along < -6 || along > reach) return false;
+	return Math.abs((x - ex) * dz - (z - ez) * dx) < near + Math.max(0, along) * spread;
+}
+
 /** The trees. A preset draws a share of each. */
 export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 	// Each group of trees draws from a seed of its own place, so a change to a house moves the trees
@@ -568,6 +591,7 @@ export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 	const add = (kind: number, x: number, z: number, gap: number): boolean => {
 		if (spots.length >= MOST_TREES || open(x, z)) return false;
 		if (kind !== OLIVE && inView(x, z)) return false;
+		if (inParkSightLine(x, z)) return false;
 		if (read(edgeGrid, x, z) < 1.1 || inPlot(x, z) || inBunker(x, z)) return false;
 		if (nearestTerraceWall(x, z).d < TRUNK_CLEAR) return false;
 		const y = groundHeight(x, z);
@@ -770,6 +794,7 @@ export const FILL_SPOTS: readonly TreeSpot[] = (() => {
 			if (y < 2 || slopeAt(x, z) > 4.5 || onHilltop(x, z)) continue;
 			const fold = (around(x, z) - read(natural, x, z)) / FOLD_DEPTH;
 			const kind = pick < 0.2 + fold * 0.6 ? CYPRESS : pick > 0.85 + fold ? OLIVE : OAK;
+			if (inParkSightLine(x, z)) continue;
 			const low = inView(x, z);
 			spots.push({
 				kind: low ? OLIVE : kind,
@@ -941,7 +966,7 @@ export const SHRUBS: readonly ShrubSpot[] = (() => {
 })();
 
 /** The fingerprint of the stored plan, which the plan tests and the browser test both hold it to. */
-export const PLAN_FINGERPRINT = 422387458;
+export const PLAN_FINGERPRINT = 105527256;
 
 /**
  * A number that changes with any road, house, tree, wall or sample of the ground, to the millimeter. A
