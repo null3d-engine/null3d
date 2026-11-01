@@ -10,6 +10,7 @@ import {
 	BUDGET,
 	CHUNK_COUNT,
 	CLOUD_RADIUS,
+	type DropInput,
 	EYE,
 	HEADER,
 	type SelectAnswer,
@@ -35,6 +36,8 @@ export const SELECT_TASK: Task = {
 
 /** One selector's number each, so a worker keeps each selector's arrays apart. */
 let lastId = 0;
+/** A number for each buffer of a selector, so a worker copies the chunk table again. */
+let lastVersion = 0;
 
 /** The buffer that the selection task reads, and the call that fills and sends it. */
 export class SplatSelector {
@@ -43,20 +46,26 @@ export class SplatSelector {
 	private readonly input: SelectInput;
 	/** How many splats draw of each chunk, which the task writes in the shared buffer. */
 	readonly counts: Float32Array;
-	private readonly id: number;
+	/** This selector's number, which a grown cloud hands to its next selector. */
+	readonly id: number;
 
-	/** Makes the buffer of `chunks`, which stays the same while they do. */
-	constructor(chunks: readonly ChunkBounds[]) {
+	/**
+	 * Makes the buffer of `chunks`, which stays the same while they do. `previousId` names the
+	 * selector that this one replaces when a cloud grows, so the worker keeps its arrays while
+	 * they hold the new chunk count.
+	 */
+	constructor(chunks: readonly ChunkBounds[], previousId?: number) {
 		const floats = HEADER + chunks.length * STRIDE + chunks.length;
 		const buffer =
 			typeof SharedArrayBuffer === 'undefined'
 				? new ArrayBuffer(floats * 4)
 				: new SharedArrayBuffer(floats * 4);
 		this.view = new Float32Array(buffer);
-		this.id = ++lastId;
+		this.id = previousId ?? ++lastId;
 		this.input = {
+			op: 'select',
 			id: this.id,
-			version: this.id,
+			version: ++lastVersion,
 			chunks: chunks.length,
 			budget: 0,
 			eyeX: 0,
@@ -94,6 +103,16 @@ export class SplatSelector {
 		this.input.eyeY = eye[1] as number;
 		this.input.eyeZ = eye[2] as number;
 		return runTask<SelectAnswer>(SELECT_TASK, this.input);
+	}
+
+	/**
+	 * Frees this selector's arrays in the worker. A cloud's next selector takes them, or a later
+	 * cloud does, so a page that makes and frees clouds does not grow the module's memory.
+	 */
+	drop(): void {
+		void runTask<SelectAnswer>(SELECT_TASK, { op: 'drop', id: this.id } as DropInput).catch(
+			() => undefined,
+		);
 	}
 }
 

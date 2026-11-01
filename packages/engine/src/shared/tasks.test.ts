@@ -12,13 +12,22 @@ import { TaskFailure } from './task-failure';
 import { clearJobTasks, jobAsker, setJobTasks } from './task-host';
 import { moduleKey } from './task-modules';
 import { tasksPending } from './task-pending';
-import { runTaskWithError } from './tasks';
+import {
+	compiledModule,
+	compileOnce,
+	hrefOf,
+	keyOf,
+	runTaskWithError,
+	type Task,
+	type WasmFile,
+} from './tasks';
 import type { WasmError } from './wasm';
 
 const error: WasmError = (code, message) => new Error(`${code}: ${message}`) as never;
 
-/** The smallest valid WebAssembly module, which a task runs as a file of its own. */
-const EMPTY_MODULE = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
+/** The bytes of the smallest valid WebAssembly module, and the module they compile to. */
+const EMPTY_BYTES = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]);
+const EMPTY_MODULE = new WebAssembly.Module(EMPTY_BYTES);
 
 const channels: MessageChannel[] = [];
 
@@ -255,5 +264,68 @@ describe('the public task hook', () => {
 			EMPTY_MODULE,
 			moduleOfFirst,
 		]);
+	});
+});
+
+describe("the task loader's caches", () => {
+	/** A file of its own for each test, so a cache that one test filled never answers another. */
+	const fileOf = (name: string): WasmFile => ({
+		name: 'test',
+		url: new URL(`http://localhost/tasks-${name}.wasm`),
+		what: 'the test module',
+	});
+	const original = globalThis.fetch;
+
+	afterEach(() => {
+		globalThis.fetch = original;
+	});
+
+	test("reads a URL's text and a task's module key once", () => {
+		const url = new URL('http://localhost/cache-test.wasm');
+		expect(hrefOf(url)).toBe(hrefOf(url));
+		expect(hrefOf(url)).not.toBe(hrefOf(new URL('http://localhost/other.wasm')));
+		const task: Task = { name: 'cache-test' };
+		expect(keyOf(task, 'a', 'one')).toBe(keyOf(task, 'a', 'one'));
+		expect(keyOf(task, 'a', 'one')).not.toBe(keyOf(task, 'a', 'two'));
+	});
+
+	test('tries a failed download again, and reads the resolved module without another ask', async () => {
+		let calls = 0;
+		globalThis.fetch = (async () => {
+			calls++;
+			if (calls === 1) return new Response(null, { status: 500 });
+			return new Response(EMPTY_BYTES, {
+				headers: { 'Content-Type': 'application/wasm' },
+			});
+		}) as unknown as typeof fetch;
+		const file = fileOf('retry');
+		await expect(compileOnce(file, error)).rejects.toBeDefined();
+		expect(compiledModule(file)).toBeUndefined();
+		const module = await compileOnce(file, error);
+		expect(compiledModule(file)).toBe(module);
+		// The third ask takes the kept promise, so the file downloads once more.
+		expect(await compileOnce(file, error)).toBe(module);
+		expect(calls).toBe(2);
+	});
+
+	test('gives two concurrent asks the one pending download', async () => {
+		const file = fileOf('concurrent');
+		let calls = 0;
+		let answer: (response: Response) => void = () => undefined;
+		globalThis.fetch = (() => {
+			calls++;
+			return new Promise<Response>((resolve) => (answer = resolve));
+		}) as unknown as typeof fetch;
+		const first = compileOnce(file, error);
+		const second = compileOnce(file, error);
+		expect(second).toBe(first);
+		answer(
+			new Response(EMPTY_BYTES, {
+				headers: { 'Content-Type': 'application/wasm' },
+			}),
+		);
+		expect(await first).toBe(await second);
+		expect(compiledModule(file)).toBe(await first);
+		expect(calls).toBe(1);
 	});
 });
