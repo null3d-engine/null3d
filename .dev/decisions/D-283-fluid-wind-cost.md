@@ -492,3 +492,93 @@ case as its test.
   display carries two cycles in each frame and a 90 Hz display two thirds of one. The S25's open
   Ultra row is the case that shows it. The requirement that the governor read the field's GPU time
   a frame rather than a cycle is M3-V16's. Its plan block names that case as the test.
+
+## Addendum: the rows the add-on declares, and the governor's floor
+
+M3-V16 declares the rows above in the wind add-on. The add-on names its work to the engine as one
+feature, with the settings, the budget, the memory and the frame scope below. Nothing in this
+addendum changes the owner's ruling; it records how the ruling reaches the engine.
+
+| Setting | Low | Medium | High | Ultra | Governor |
+| --- | --- | --- | --- | --- | --- |
+| `windStepMs` | 0 | 33 | 33 | 16 | `double`, up to 133 ms |
+| `windPressureSteps` | 0 | 16 | 24 | 40 | `scale` |
+| `windSpringTrees` | 0 | 8 | 32 | 64 | `scale` |
+| `windGrid` | 0, no grid | 64 | 128 | 256 | `none` |
+| Budget, ms a frame | 0.5 | 1.2 | 4.9 | 6.25 | floor 0.25 |
+
+- The `webgl2` row gives 66 ms at Medium and above, which is 15 cycles a second. That is the row
+  this record already proposes for WebGL2, where each run costs about 0.16 ms whatever its cells.
+- Low keeps the formula field on every path. Its settings are zero and it makes no pass. The owner
+  has not judged the side-by-side with a small grid. No phone measured the grid's cost either. So
+  the record's Low row stays the analytic field.
+- High and Ultra name the flat 128 and 256 grids. The layered and volume grids are not built. The
+  interface already takes a grid size, so the row moves to them when the solver does.
+- A page that gives `grid` keeps it, on every preset. The record's rows then set only the interval
+  and the pressure count for that page.
+- The governor's floor is a quarter of the budget. At that step the interval is 133 ms at most, and
+  the cycle keeps at least one pressure iteration. So the air still moves and still keeps its
+  volume. A still valley does not meet the bar.
+- Each budget is smaller than the room that D-241 leaves beside the vegetation's own budget. D-241's
+  ceiling for a preset is one measured whole frame, and it already holds the vegetation and the
+  scene. Take the smallest measured ceiling of each preset. The vegetation's 5, 12, 49.0 and 62.5
+  ms leave 10.5, 31.9, 13.5 and 8.6 ms of room there. The wind's 0.5, 1.2, 4.9 and 6.25 ms fit
+  inside that room. The check therefore says the field's budget fits in the room beside the
+  vegetation, and no more. A frame that spends both grows by the field's share, and the governor is
+  what holds such a frame.
+
+### The cost per frame, not per cycle
+
+This record recommends that the add-on read the field's cost per frame. The add-on does, and the
+engine's shape gives it free. The feature's GPU scope is the field's pass, and the engine times a
+pass over the runs that one frame records. A frame that owes two cycles therefore costs two cycles
+in the figure. The settings take the budget's figures as they stand, in ms a frame. So the S25's
+Ultra row steps down when the frame carries two cycles.
+
+The engine's frame-budget governor still decides its steps from the whole frame's time. So the
+wind's budget is a figure that the overlay shows beside the field's measured frame time. The
+governor lightens the field with the sketch's other budgets. The record's recommendation holds for
+the figure and the budget, not for the governor's input.
+
+### What the branch proves, and what it owes
+
+- Unit tests show that each preset moves each setting. They show that each of the governor's steps
+  moves the interval, the pressure count and the spring trees, and that the budget's floor holds.
+  They show too that a preset change that changes the grid makes a pass of the new size.
+- `windSpringTrees` has no reader yet. Branch poses are M3-V10's work, so the setting waits for
+  them. The vegetation add-on reads it when they land.
+- The stress page drives the governor down and back up with a load of cards that read the field. It
+  ran on this Mac at 2,097,152 cards. It ran on the cloud iPad Pro 13 and Galaxy S25 at 500,000.
+  Every preset with a field stepped at least one step on every device, and every one came back.
+  The records sit in the tested-devices folder for this Mac, the iPad and the S25.
+- The load is the figure that makes the page work. At 400,000 cards the Mac stayed at its display's
+  60 Hz. At 250,000 the S25 stayed inside its 33.3 ms frame in one run and stepped in another. A
+  load that leaves the frame inside its budget gives the governor nothing to act on. The page
+  therefore reads the heavy phase's frame and reports whether the load was over the budget before
+  it asks for a step.
+- The S25's Ultra row stepped from 16 to 32 ms in that run. That is 31.25 field steps a second,
+  which is one cycle a frame. Its one cycle costs about 5.8 ms, inside the row's 6.25 ms budget,
+  so the step makes the S25's Ultra row fit its own figure. The row alone does not make it happen.
+  11.08 ms is inside the display's 33.3 ms frame, so the governor has no reason to step there. It
+  steps only when other work makes the frame long. The governor's input is the whole frame, as the
+  section above says.
+- The step does not close D-241's Creek ceiling on the S25. A Creek frame there already measures at
+  the class's 499.8 ms, and adding the field's share of about 5.5 ms still goes over it. The
+  owner's three options for that ceiling therefore stand. This task neither changes nor settles
+  them.
+- The field's picture tests hold their old references. `wind-cards`, `wind-page`,
+  `wind-cards-later` and the four vegetation wind tests pass. That is 21 tests on the Mac's GPU and
+  21 on the software GPU. The change therefore moves no picture past its limit, and no reference is
+  redrawn.
+- The GPU check over the branch's own commits reads S4 and S6 at Medium and High as the same, each
+  inside its noise. The scenes do not use the wind add-on. The check therefore shows that the
+  add-on leaves the engine's drawing alone.
+- `bunx @null3d/cli check-addon packages/wind` gives 6 passed, 1 failed and 1 skipped. The checkout
+  has `packages/engine/lib` built. The package, the public API, the interface, the page, the
+  cost per preset and the allocation per preset pass. The cost reads 0.75, 0.70, 1.10 and 1.62 ms
+  of GPU time a frame, and the allocation reads 72, 61, 67 and 57 bytes a frame in the add-on's own
+  code, on Chrome 156. The shader step fails at its build with `TypeScript parameter property is
+  not supported in strip-only mode`, and the size step then skips. The same failure appears at the
+  landing head, so it is not this branch's. That step would prove the add-on's WGSL compiles for
+  both GPU paths, and it is owed to the tool. The pages did compile and run that WGSL in
+  Chrome, in the picture tests and the stress runs.
