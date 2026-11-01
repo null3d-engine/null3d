@@ -56,6 +56,12 @@ export const TREE_SHARE: Record<QualityPreset, number> = {
 const SWITCH: Record<QualityPreset, number> = { low: 90, medium: 130, high: 130, ultra: 300 };
 
 /**
+ * The views that a tree's card is baked from, over the whole sphere. Too few sit so far apart that the
+ * blend of the nearest three blurs the crown, and its shape changes as the camera turns.
+ */
+const CARD_VIEWS: Record<QualityPreset, number> = { low: 25, medium: 49, high: 81, ultra: 81 };
+
+/**
  * The error that each level of a tree's mesh switches at, from the base level on. The add-on measures
  * a level's error by the leaves it drops, whose switches lie past the distance where the card takes
  * over, so these bring the switches well inside it: the second level past about 45 meters on a 1080p
@@ -262,7 +268,12 @@ function stand(
 	if (spots.length === 0) return [];
 	const { scene, geometry, materials } = ctx;
 	const asset: PlantAsset = generatePlant(species, { seed: 17, levels: 4 });
-	const far = bakeFarTree(ctx, { asset, atlases, views: 25, texels: 96 });
+	const far = bakeFarTree(ctx, {
+		asset,
+		atlases,
+		views: CARD_VIEWS[ctx.quality.preset],
+		texels: 96,
+	});
 	const cards = createImpostors(
 		{ scene, materials, geometry },
 		{
