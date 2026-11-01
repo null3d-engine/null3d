@@ -316,9 +316,13 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 			] as const) {
 				const built = compileMaterial({ path: `showroom ${name}`, source });
 				if (!built.ok) throw new Error(materialProblems(name, built.problems));
+				// A variant without WGSL on either side is skipped. A material that skipped every
+				// variant would pass on an empty loop, so each material must compare at least one.
+				let compared = 0;
 				for (const [variant, declaration] of Object.entries(built.material.variants)) {
 					const expectedVariant = standard.material.variants[variant];
 					if (!declaration.wgsl || !expectedVariant?.wgsl) continue;
+					compared += 1;
 					const ownCount = bindingCount(declaration.wgsl.source, 0);
 					const expectedCount = bindingCount(expectedVariant.wgsl.source, 0);
 					const at = `@group(0) @binding(${FRAME_BINDING})`;
@@ -337,6 +341,10 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 						`${name} declares ${own ?? 'nothing'} at ${at} in its ${variant} variant, where the standard material declares ${expected ?? 'nothing'}`,
 					);
 				}
+				if (compared === 0)
+					throw new Error(
+						`${name} has no variant the standard material also has with WGSL, so the guard compared nothing`,
+					);
 			}
 		},
 		scaledBudget(300_000),
