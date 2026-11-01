@@ -138,7 +138,7 @@ enable draw_index;
 #endif
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::color::srgb_to_linear
-#import null3d::globals::{Material}
+#import null3d::globals::{FILL_LIGHT_SLOTS, Material}
 #ifdef SCENE_DEPTH
 #import null3d::depth::{linear_depth, orthographic_depth_to_view_z}
 #endif
@@ -152,7 +152,6 @@ enable draw_index;
 #ifndef CUSTOM_LOBE
 #import null3d::lights::{clustered_light}
 #endif
-#import null3d::lights::{direct_surface_light, FILL_LIGHT_SLOTS}
 #ifndef PARALLAX
 #import null3d::ssr::{screen_reflection}
 #endif
@@ -2267,24 +2266,18 @@ fn light_surface(
     // The fill directional lights add their light beside the main light's, without its shadows.
     let fills = min(u32(engine_frame.sun_color.w), FILL_LIGHT_SLOTS);
     for (var k = 0u; k < fills; k++) {
-        let direction = select(
-            select(engine_frame.fill_dir_a, engine_frame.fill_dir_b, k == 1u),
-            engine_frame.fill_dir_c,
-            k == 2u,
-        );
-        let color = select(
-            select(engine_frame.fill_col_a, engine_frame.fill_col_b, k == 1u),
-            engine_frame.fill_col_c,
-            k == 2u,
-        );
-        let fill = direct_surface_light(
-            m,
-            normal,
-            to_view,
-            -direction.xyz,
-            color.rgb,
-            compensation,
-        );
+        let direction = engine_frame.fill_dir[k];
+        let color = engine_frame.fill_col[k];
+        // The light enters the clear coat and sheen first, and the translucency builds add the
+        // share that reaches the surface's back, as the sun's light does above.
+        var incoming = color.rgb;
+#ifdef COAT_SHEEN
+        incoming *= layered_light(normal, to_view, -direction.xyz, incoming);
+#endif
+#ifdef TRANSLUCENCY
+        gather_back_light(normal, -direction.xyz, incoming);
+#endif
+        let fill = direct_light(m, normal, to_view, -direction.xyz, incoming, compensation);
         sun.diffuse += fill.diffuse;
         sun.specular += fill.specular;
     }
