@@ -144,6 +144,22 @@ function bindingType(source: string, group: number, binding: number): string | u
 	return pattern.exec(source)?.[1]?.trim();
 }
 
+/**
+ * The number of bindings a generated shader declares in one group. Two shaders that declare
+ * different counts do not put the same resource at the same index, so one index means nothing
+ * across them.
+ */
+function bindingCount(source: string, group: number): number {
+	return source.match(new RegExp(`@group\\(${group}\\)\\s*@binding\\(`, 'g'))?.length ?? 0;
+}
+
+/**
+ * The frame group's binding that a material compiled against an older frame layout gets wrong: the
+ * ambient occlusion map's texture array. The failure messages read it too, so a message cannot
+ * name an index other than the one compared.
+ */
+const FRAME_BINDING = 11;
+
 /** A material's problems as one line, for a test's failure message. */
 function materialProblems(name: string, problems: readonly ShaderProblem[]): string {
 	return `${name}: ${problems.map((problem) => problem.message).join('; ')}`;
@@ -285,6 +301,15 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 			};
 			const standard = compileMaterial(plain);
 			if (!standard.ok) throw new Error(materialProblems(plain.path, standard.problems));
+			// A rename or a reformat in the generated WGSL leaves both sides undefined, and two
+			// undefined readings compare equal. The comparison needs a reference to agree with.
+			const reads = Object.values(standard.material.variants).some(
+				(declaration) => declaration.wgsl && bindingType(declaration.wgsl.source, 0, FRAME_BINDING),
+			);
+			if (!reads)
+				throw new Error(
+					`the standard material declares a type at @group(0) @binding(${FRAME_BINDING}) in no variant, so there is nothing for the demo to compare against`,
+				);
 			for (const [name, source] of [
 				['the mirror floor', MIRROR_FLOOR],
 				['the wet road', WET_ROAD],
@@ -294,11 +319,22 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 				for (const [variant, declaration] of Object.entries(built.material.variants)) {
 					const expectedVariant = standard.material.variants[variant];
 					if (!declaration.wgsl || !expectedVariant?.wgsl) continue;
-					const own = bindingType(declaration.wgsl.source, 0, 11);
-					const expected = bindingType(expectedVariant.wgsl.source, 0, 11);
+					const ownCount = bindingCount(declaration.wgsl.source, 0);
+					const expectedCount = bindingCount(expectedVariant.wgsl.source, 0);
+					const at = `@group(0) @binding(${FRAME_BINDING})`;
+					if (ownCount !== expectedCount)
+						throw new Error(
+							`${name} declares ${ownCount} bindings in group 0 in its ${variant} variant, where the standard material declares ${expectedCount}, so ${at} need not name the same resource`,
+						);
+					const own = bindingType(declaration.wgsl.source, 0, FRAME_BINDING);
+					const expected = bindingType(expectedVariant.wgsl.source, 0, FRAME_BINDING);
+					if (own === undefined && expected === undefined)
+						throw new Error(
+							`neither ${name} nor the standard material declares a type at ${at} in its ${variant} variant, so the comparison has nothing to check`,
+						);
 					if (own === expected) continue;
 					throw new Error(
-						`${name} declares ${own ?? 'nothing'} at @group(0) @binding(11) in its ${variant} variant, where the standard material declares ${expected ?? 'nothing'}`,
+						`${name} declares ${own ?? 'nothing'} at ${at} in its ${variant} variant, where the standard material declares ${expected ?? 'nothing'}`,
 					);
 				}
 			}
