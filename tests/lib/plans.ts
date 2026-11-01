@@ -750,6 +750,15 @@ export function checksPlan({ shaders = 'all' }: PlanSettings = {}): PlanItem<Che
 				),
 			),
 		),
+		// Creek's valley placed by the vegetation add-on, which must reach the reference that its
+		// devices recorded. The placement starts no engine, so one page covers both GPU paths, and
+		// running it here puts the reference in front of every browser engine that CI has.
+		pageItem(
+			'vegetation-scatter',
+			'vegetation-scatter',
+			{ kind: 'probe', tier: 'webgl2' },
+			{ switches: ['runs=1'], timeoutSeconds: 120 },
+		),
 		pageItem(`${CAPABILITIES}-reload`, 'capabilities', {
 			kind: 'capabilities-reload',
 			first: CAPABILITIES,

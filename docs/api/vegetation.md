@@ -224,7 +224,7 @@ A candidate point comes from a grid of cells. The cell's size is the rule's `spa
 
 A shared occupancy grid stops two plants overlapping. A plant takes a place when no plant that it must avoid holds it. The first plant to claim a place keeps it. The layers run in a fixed order, so nothing depends on the order of the calls.
 
-`scatterChecksum` hashes a point list into one number. A page compares its own placement against a reference that another device recorded, which is how the same placement is checked across devices.
+`scatterChecksum` hashes a point list into one number, from the exact bytes of each float. Two runs that place the same plants give the same number, and any difference at all gives another. A page compares its own placement against a reference that another device recorded, which is how the same placement is checked across devices. The ground maps hold 32-bit floats, and every other choice comes from integer arithmetic. One seed therefore places one point list on every engine. A height function that answers other samples on another engine moves the points it places, and the checksum with them.
 
 ### Tiles
 
