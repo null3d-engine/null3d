@@ -14,11 +14,12 @@ import {
 	createReading,
 	defaultFieldState,
 	type FieldState,
-	type Push,
 	RING_SLOTS,
 	type WindReading,
 	writeReading,
 } from './analytic';
+import { WindProbes } from './field';
+import { SLOT_FLOATS } from './field-layout';
 import fallbackShader from './grid.fallback.wgsl';
 import gridShader from './grid.wgsl';
 
@@ -90,8 +91,19 @@ export interface Wind {
 	 * The air at a world place, in meters a second, written into `out`, from the analytic field that
 	 * the solver pulls the air toward and the pushes and the gust it injects. The solved air itself
 	 * is on the GPU, so a page's own motion follows the forces rather than the wakes.
+	 *
+	 * This call works in TypeScript, which suits a test and a read outside a frame. A page that moves
+	 * its own objects with the air in every frame asks `read` instead, whose work runs in a job
+	 * worker.
 	 */
 	sample(x: number, y: number, z: number, out: [number, number, number]): [number, number, number];
+	/**
+	 * Asks a job worker for the air at each place in `points`, three numbers a place across the
+	 * ground, and puts the velocities in `out`, three numbers a place. The answer lands before the
+	 * next frame's update, so a page reads it in its next `onUpdate`. One call takes about five
+	 * thousand places.
+	 */
+	read(points: Float32Array, out: Float32Array): void;
 	/**
 	 * Places the box about the camera, runs the steps that the sketch time owes and sends the
 	 * values to the GPU. Call once in each frame.
@@ -163,9 +175,13 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	};
 
 	const values = new Array<number>(32).fill(0);
+	// The ring of pushes and the gust, in the order that the field's job worker reads it. A push
+	// writes its own slot where the page sends it, so a frame copies nothing across the ring.
+	const ringValues = new Float32Array(RING_SLOTS * SLOT_FLOATS);
 	const place: number[] = [0, 0, 0];
 	const write = (): void => {
-		// The first vector holds the solver's step, then the air's settings.
+		// The first vector holds the solver's step, then the air's settings. The ring's slots keep
+		// the numbers that the page's pushes gave them.
 		values[0] = STEP_SECONDS;
 		values[1] = air.speed;
 		values[2] = air.heading;
@@ -178,15 +194,6 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		values[9] = air.swirlScale;
 		values[10] = air.swirlDrift;
 		values[11] = air.seed;
-		// The ring is made once, so every slot is there to read.
-		for (let i = 0; i < RING_SLOTS; i++) {
-			const slot = pushes.slots[i] as Push;
-			const at = 12 + i * 4;
-			values[at] = slot.x;
-			values[at + 1] = slot.z;
-			values[at + 2] = slot.strength;
-			values[at + 3] = slot.born;
-		}
 		camera.getPosition(place);
 		values[28] = (place[0] as number) - box / 2;
 		values[29] = (place[2] as number) - box / 2;
@@ -249,11 +256,27 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		out: [number, number, number],
 	): [number, number, number] => analyticVelocity(air, pushes.slots, x, y, z, now(), out);
 
+	const probes = new WindProbes();
+
 	// A push takes the next of the three push slots, and a gust takes the slot after them, so a
 	// page's pushes never push its gust out. A gust travels from where it was sent, and a push
-	// stays there. The ring writes its own slots, so neither call allocates anything.
+	// stays there. The slot's numbers go into the pass's values and into the ring that a job worker
+	// reads, so the call allocates nothing and no frame copies the ring.
 	const turn = (at: readonly [number, number], strength: number, gust: boolean): void => {
-		pushes.add(at[0], at[1], strength, now(), gust);
+		const born = now();
+		const index = pushes.add(at[0], at[1], strength, born, gust);
+		const slot = index * SLOT_FLOATS;
+		ringValues[slot] = at[0];
+		ringValues[slot + 1] = at[1];
+		ringValues[slot + 2] = strength;
+		ringValues[slot + 3] = born;
+		// The ring follows the pass's first twelve numbers, which are the step and the air's
+		// settings.
+		const into = 12 + slot;
+		values[into] = at[0];
+		values[into + 1] = at[1];
+		values[into + 2] = strength;
+		values[into + 3] = born;
 	};
 
 	return {
@@ -270,8 +293,12 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 			turn(at, strength, false);
 		},
 		sample,
+		read(points, out) {
+			probes.ask(points, out, field.air, air.pushRadius, now(), ringValues);
+		},
 		update: apply,
 		destroy() {
+			probes.stop();
 			if (pass) ctx.render.removePass(pass);
 			else field.texture.destroy();
 		},

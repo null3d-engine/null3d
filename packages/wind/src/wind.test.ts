@@ -211,18 +211,29 @@ const ALLOCATING: readonly (readonly [string, (node: ts.Node) => boolean])[] = [
 	['a new expression', ts.isNewExpression],
 ];
 
-/** The forms that allocate, anywhere in the functions of `wind.ts` that a frame calls. */
-function allocatingForms(): string[] {
+/** The forms that walk a count in TypeScript, which hard rule 42 puts in Rust. */
+const LOOPING: readonly (readonly [string, (node: ts.Node) => boolean])[] = [
+	['a for', ts.isForStatement],
+	['a for-in', ts.isForInStatement],
+	['a for-of', ts.isForOfStatement],
+	['a while', ts.isWhileStatement],
+	['a do', ts.isDoStatement],
+];
+
+/**
+ * The forms of `patterns`, anywhere in the functions of `wind.ts` that a frame calls. The functions
+ * are the constants of `createWind`'s body, so the walk goes anywhere in the file.
+ */
+function formsIn(patterns: readonly (readonly [string, (node: ts.Node) => boolean])[]): string[] {
 	const source = readFileSync(new URL('./wind.ts', import.meta.url), 'utf8');
 	const file = ts.createSourceFile('wind.ts', source, ts.ScriptTarget.ESNext, true);
-	const wanted = new Set(['write', 'apply', 'turn', 'sample']);
+	const wanted = new Set(['write', 'apply', 'turn', 'sample', 'read']);
 	const found: string[] = [];
 	const walk = (node: ts.Node, name: string): void => {
-		for (const [what, matches] of ALLOCATING)
+		for (const [what, matches] of patterns)
 			if (matches(node)) found.push(`${name}: ${what} at ${node.getText(file).slice(0, 40)}`);
 		node.forEachChild((child) => walk(child, name));
 	};
-	// The functions are the constants of `createWind`'s body, so the walk goes anywhere in the file.
 	const visit = (node: ts.Node): void => {
 		if (
 			ts.isVariableDeclaration(node) &&
@@ -241,6 +252,15 @@ function allocatingForms(): string[] {
 				walk(body, name);
 			}
 		}
+		// A call that the wind makes is a method of the object that `createWind` returns.
+		if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && wanted.has(node.name.text)) {
+			const name = node.name.text;
+			expect(node.body, `${name} is a function`).toBeDefined();
+			if (node.body !== undefined) {
+				wanted.delete(name);
+				walk(node.body, name);
+			}
+		}
 		node.forEachChild(visit);
 	};
 	visit(file);
@@ -252,8 +272,15 @@ function allocatingForms(): string[] {
 describe('the functions that a frame calls', () => {
 	test('hold none of the forms that allocate', () => {
 		// The field's step writes the air's numbers into the pass's values and reads the camera's
-		// place, and the sample walks the ring. The allocator makes each object these forms make, so
-		// the step keeps its own arrays and its own functions, made once in `createWind`.
-		expect(allocatingForms()).toEqual([]);
+		// place, a push writes its slot where the page sends it, and the read hands the request
+		// buffer to a job worker. The allocator makes each object these forms make, so the step
+		// keeps its own arrays and its own functions, made once in `createWind`.
+		expect(formsIn(ALLOCATING)).toEqual([]);
+	});
+
+	test('walk no count in TypeScript, which hard rule 42 puts in its WebAssembly', () => {
+		// The pass's values hold the ring where a push writes it, so a frame copies no slot, and the
+		// analytic field's own walk runs in the add-on's Rust, on the job workers.
+		expect(formsIn(LOOPING)).toEqual([]);
 	});
 });
