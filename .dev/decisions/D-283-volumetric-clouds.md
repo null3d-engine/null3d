@@ -113,6 +113,10 @@ simpler light of the panorama costs nothing that a viewer can see.
 - A comparison with three.js pins `cloudSteps` to 0, because three.js draws the flat layer and the
   tier has no twin there. The scene, the light and every other effect stay as the comparison draws
   them, so the two pictures still judge the engine against three.js.
+- The software renderer draws the flat layer on every image page that sets no step count of its
+  own, because a software GPU cannot afford the march on every page that shows a sky. The tier's
+  own six tests set their counts and draw the march on every path, so the tier's software drawing is
+  judged there and the rest of the software set keeps the cost it had.
 - The demo showcase's sky shows the tier (M3-J3).
 
 ## Alternatives rejected

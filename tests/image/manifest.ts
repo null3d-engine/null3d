@@ -3750,9 +3750,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			size: [PARITY_CANVAS.width, PARITY_CANVAS.height],
 			hold: HOLD_TIME,
 			modes: scene === 's6' ? S6_MODES : ['pipelined', 'low latency'],
-			// A benchmark scene draws the sky's volumetric tier at High, which a software GPU pays for
-			// on every frame.
-			timeoutSeconds: scene === 's6' ? S6_TIMEOUT_SECONDS : 180,
+			timeoutSeconds: scene === 's6' ? S6_TIMEOUT_SECONDS : 90,
 			// S5 holds every character at every frame, so its crowd's pose is repeatable: the
 			// update rates are its default, and a held frame otherwise catches far characters
 			// between two of their poses.
