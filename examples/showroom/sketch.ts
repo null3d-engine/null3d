@@ -57,17 +57,13 @@ export default defineSketch(async (ctx) => {
 		...(WITHOUT.has('ao') ? {} : { ao: { radius: 0.7 } }),
 		...(WITHOUT.has('bloom') ? {} : { bloom: { intensity: 0.45, threshold: 1 } }),
 	});
-	// Every mesh draws at its fullest level, so the car's paint, the tablet and the street's lamps keep
-	// their edges.
+	// Every mesh draws at its fullest level, so the paint, the tablet and the lamps keep their edges.
 	void quality.set({
 		lodThreshold: 0,
-		...(RENDER_SCALE === undefined
-			? {}
-			: { minRenderScale: RENDER_SCALE, maxRenderScale: RENDER_SCALE }),
+		...(RENDER_SCALE ? { minRenderScale: RENDER_SCALE, maxRenderScale: RENDER_SCALE } : {}),
 		...(GOVERNOR ? {} : { governor: false }),
 	});
-	// The one reflection that both floors read: the scene mirrored across the ground, the car and the
-	// street's lamps included. It draws at half the size, which a wet surface hides.
+	// The one reflection both floors read: the scene mirrored across the ground, at half the size.
 	const reflection = WITHOUT.has('reflection')
 		? textures.fromData({
 				width: 1,
@@ -92,9 +88,7 @@ export default defineSketch(async (ctx) => {
 	});
 	scene.setActiveCamera(camera);
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
-
-	// The stage: a night sky beyond the street, with thick air that the lamps light. The studio's own
-	// softboxes carry its interior, so the hour only sets the street's sky and the air.
+	// A night sky beyond the street with thick air the lamps light; the softboxes carry the studio.
 	const stage = createMoods(ctx, sun, sky, room, {
 		heading: HEADING,
 		fogDensity: FOG_DENSITY,
