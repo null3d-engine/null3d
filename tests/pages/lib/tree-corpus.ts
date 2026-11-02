@@ -310,12 +310,26 @@ const ASPEN: Species = {
 			thin: 0.15,
 		}),
 		level({
-			children: 0,
-			length: 0.6,
+			// A fourth order: the reference divides four to five times, and three orders stop the
+			// crown at coarse sticks.
+			children: 3,
+			length: 0.5,
 			angle: 45,
 			angleVariance: 12,
 			curve: 8,
 			taper: 0.003,
+			start: 0.1,
+			end: 1,
+			sides: 3,
+			segments: 2,
+		}),
+		level({
+			children: 0,
+			length: 0.3,
+			angle: 42,
+			angleVariance: 14,
+			curve: 8,
+			taper: 0.0015,
 			start: 0.1,
 			end: 1,
 			sides: 3,
