@@ -618,8 +618,77 @@ const WILLOW: Species = {
 	seedSalt: 306,
 };
 
+/**
+ * A palm: one unbranched bole with a crown of arching fronds. No corpus photograph covers it, so
+ * it proves the archetype's shape and stays unreviewed until a picture names it.
+ */
+const PALM: Species = {
+	id: 'review-palm',
+	kind: 'tree',
+	branchLevels: [
+		level({
+			children: 22,
+			prune: 0.08,
+			length: 11,
+			lengthVariance: 0.08,
+			angle: 0,
+			angleVariance: 0,
+			curve: 2,
+			curveVariance: 1,
+			taper: 0.16,
+			start: 0,
+			end: 1,
+			sides: 10,
+			segments: 12,
+			twist: 0,
+			whorls: 1,
+			whorlTip: true,
+		}),
+		level({
+			children: 0,
+			prune: 0,
+			length: 4.2,
+			lengthVariance: 0.18,
+			angle: 66,
+			angleVariance: 9,
+			curve: 78,
+			curveVariance: 14,
+			taper: 0.018,
+			start: 0.97,
+			end: 1,
+			sides: 3,
+			segments: 9,
+			twist: 0,
+		}),
+	],
+	crown: { shape: 'vase', start: 0.88, spread: 0.2, pull: 0.06, floor: 1 },
+	leaf: {
+		kind: 'frond',
+		cell: 'frond',
+		cards: 5,
+		width: 0.32,
+		height: 1,
+		perCard: 24,
+		up: 0.4,
+		out: 1,
+		start: 0.05,
+		end: 1,
+		depth: 1,
+	},
+	wind: { stiffness: [0.35, 0.65], flutter: 0.02, frequency: 1.6 },
+	color: { bark: [0.35, 0.3, 0.24], leaf: [0.13, 0.27, 0.07], tint: 0.06, transmission: 0.32 },
+	height: 11,
+	trunks: 1,
+	heightVariance: 0.12,
+	size: [0.8, 1.2],
+	flare: 1,
+	levels: 2,
+	variants: 6,
+	seedSalt: 106,
+};
+
 /** The trees of the woodland review, in the order that its page draws them. */
-export const REVIEW_TREES: readonly Species[] = [SPRUCE, PINE, ASPEN, OAK, CLUMP_OAK, WILLOW];
+export const REVIEW_TREES: readonly Species[] = [SPRUCE, PINE, ASPEN, OAK, CLUMP_OAK, WILLOW, PALM];
 
 /** The review tree with an id, or undefined when the list has none. */
 export function reviewTree(id: string): Species | undefined {
