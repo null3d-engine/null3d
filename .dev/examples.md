@@ -279,6 +279,64 @@ The figures come from Chrome on a Mac with an Apple M5 Max, with a display at 12
 
 No phone or tablet has run these six demos. The hold mode demo's 400 shadowed balls are the likeliest cost on a phone.
 
+## The splat garden demo (M3-X1)
+
+Splat garden is a feature demo of the Gaussian splats add-on, in the Light, materials and effects
+group. It draws a captured surface rather than a built one. A shallow hollow of moss in the late afternoon holds weathered boulders, a fallen log, a stone
+lantern that glows and a blossoming tree, with ferns, fallen petals and drifting spores. Most of
+the glade is one cloud of Gaussian splats, so the picture shows the add-on's soft detail close up
+and the cloud's scale from a distance. The scene is `examples/splat-garden/`.
+
+- **The cloud is made in code, then streamed as chunk files.** The sample content carries no scan,
+  so `cloud.ts` makes one of 446,970 splats from seeded noise. Each splat is shaded with the light
+  of the hour that the scene holds. `stream.ts` cuts the cloud with `chunkSplats` and writes each
+  chunk with `encodeSpz`. It names the 27 files, 5,885,150 bytes together, in a stream index of
+  `blob:` addresses. `createSplats` reads the index first. It then fetches only the chunks that the
+  view's budget asks for, nearest first. No network is involved, so the scene shows the stream's
+  own loader and its chunk figures without a server. A page that loads a real scan takes the same
+  path with the index's addresses on the server.
+- **The budget is the add-on's.** The batch holds the count that the preset allows, from 100,000 on
+  Low to 800,000 on Ultra on WebGPU, and half those counts on WebGL2. The selection keeps a prefix
+  of each chunk, so a phone draws the whole glade coarsely rather than part of it densely. The
+  frame-budget governor lowers the count again while a frame runs long, and the label above the
+  lantern shows the splats that draw.
+- **The capture carries its own light.** Splats are unlit: their color is the light recorded with
+  them, and the add-on draws it as an emissive color. The cloud is shaded here with the sun and the
+  sky of hour 16.4, which the stage holds at the start, so the glade meets the sky's light. A change
+  of hour moves the sky, the fog and the mountains, while the glade keeps the light it was captured
+  in, as a photograph does. No add-on call relights a cloud, and none is expected to: a scan holds
+  one moment.
+- **The meshes are few.** The lantern is a mesh, an architectural object whose edges should stay
+  crisp at every preset. The ring of mountains is a mesh too, and so is the ground under the splats.
+  That ground means a coarse preset shows moss in the gaps between its chunks rather than the
+  horizon. The splats fade where they meet the lantern, through the add-on's depth mix. That shows
+  the soft edge that a splat has against a solid surface.
+- **The controls.** The HUD's groups are the shared ones plus a Splats tab whose Full detail button
+  draws the preset's whole budget or a quarter of it, so the levels of detail show. The effects
+  start off, as every showcase's do; Bloom picks out the lantern and the spores. Quality switches
+  the preset, and with it the cloud's budget.
+- **The camera.** The route opens above the glade with the tree and the lantern in view and holds
+  that shot, so the held frame is the opening view. It then comes down to the lantern, skims the
+  moss and the log, turns under the tree and rises into the blossom, passes out through the
+  canopy's edge and climbs back to the opening pose. The first shot repeats in the second, so the
+  hold does not end in a jump. The route check holds every pose inside the Manual camera's bounds
+  and samples its speed and turning.
+- **The cost on this Mac.** In Chrome 156 at 1280 by 720 on a 120 Hz display, with the machine's
+  load average between 12 and 25, the cloud first drew all 446,970 splats at High on WebGPU. The
+  governor stepped it to the floor of High's budget, 100,000, over the first seconds, and the demo
+  then held about 61 frames a second. On WebGL2 the engine caps the preset at Medium, whose budget
+  is 120,000: the governor settled that to 24,000 and the frame rate was about 63. The figures are
+  the stats overlay's, 25 seconds after the start; a 20 second run from the first frame averaged
+  27.4 frames a second while the governor was still stepping down. The cloud takes about 0.7 s to
+  build and cut on this Mac, and the first frame came 2.4 to 2.6 s after the page loaded with the
+  build warm.
+- **What the add-on cannot do here.** Splats cast and receive no shadows, so the scene has no live
+  shadow map: the light in the capture is all the shading there is. The batch's rows are fixed when
+  `createSplats` makes it, at the count of the preset in use then, so a later move to a higher
+  preset draws no more splats; the HUD's cap follows the new budget downward only. A stream's chunk
+  files must all exist before its index can name them, so a scene that makes its own cloud builds
+  every chunk first, which is the setup cost here.
+
 ## Comparisons with three.js
 
 A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count at which each engine's scene updates at 20 fps or more on the viewer's device. There are three: Factory, Battle and Night effects ([D-121](decisions/D-121-comparison-tier.md)).

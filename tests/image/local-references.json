@@ -946,5 +946,23 @@
 		"tier": "webgpu",
 		"date": "2026-11-02",
 		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
+	},
+	"chromium-swiftshader/compat/demo-splat-garden.png": {
+		"test": "demo-splat-garden",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
+	},
+	"chromium-swiftshader/webgl2/demo-splat-garden.png": {
+		"test": "demo-splat-garden",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
+	},
+	"chromium-swiftshader/webgpu/demo-splat-garden.png": {
+		"test": "demo-splat-garden",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
 	}
 }
