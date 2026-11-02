@@ -74,5 +74,9 @@ test('a reflection that rests makes no GPU object beside a fragment-form pass', 
 	);
 });
 
-/** Two objects a frame for the pipelines that a first frame still builds, and none for a switch. */
-const objectAllowance = (frames: number): number => frames * 2 + 16;
+/**
+ * The objects a measure may make for reasons other than a plan change: the targets and pipelines
+ * that a first measured frame still builds, and one a frame of slack for a cache that a new view
+ * grows. A view that rests makes neither, and the fault made about twenty-three a frame.
+ */
+const objectAllowance = (frames: number): number => frames + 16;
