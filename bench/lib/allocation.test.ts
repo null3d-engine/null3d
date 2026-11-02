@@ -238,7 +238,8 @@ describe('per-call budgets', () => {
 		const place = 'n.onmessage shared/tasks.ts';
 		const wind = PAGE_SWITCHES.find((choice) => choice.flag === '--wind');
 		const splats = PAGE_SWITCHES.find((choice) => choice.flag === '--splats');
-		// The shared figure guards the splats' answer, at 145.0, and every run without the switch.
+		// The shared figure guards the splats' answer, whose handler read up to 230.4 a call, and
+		// every run without the switch: the figure moves with a run's frames, so it is not tighter.
 		expect(TASK_CALL_BUDGETS[place]).toBe(336);
 		expect(callBudgetFor('sketch-worker', place)).toBe(336);
 		expect(callBudgetFor('sketch-worker', place, splats ? [splats] : [])).toBe(336);
