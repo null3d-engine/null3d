@@ -24,22 +24,6 @@ const BARE_VALUES = new Set([
 
 const MIN_ACK_LENGTH = 10;
 
-/**
- * The moment the footer block became the only place a trailer counts. A commit authored before it is
- * read the old way, with the key found at the start of any line, because the commits already on this
- * branch cannot be reworded and a rule that fails its own history blocks every push. The moment is
- * the author date of the commit that made footers read as git reads them.
- */
-export const BLOCK_RULE_SINCE = '2026-11-02T15:03:36+08:00';
-
-/** Whether a commit authored at `authoredAt` is held to the footer block, as git reads one. */
-export function heldToBlockRule(authoredAt?: string): boolean {
-	if (authoredAt === undefined) return true;
-	const time = Date.parse(authoredAt);
-	if (Number.isNaN(time)) return true;
-	return time >= Date.parse(BLOCK_RULE_SINCE);
-}
-
 export interface AckRule {
 	/** Trailer key, without the colon, for example `Docs-Checked`. */
 	trailer: string;
@@ -230,24 +214,16 @@ export function trailers(message: string): Trailer[] {
 	return found;
 }
 
-/**
- * Every value of the trailer in the message's trailer block, in order, the key in any case. A commit
- * authored before the footer block became the rule is read the old way, with the key found at the
- * start of any line, so that the branch's own history is not held to a rule it predates.
- */
-export function findAckValues(message: string, trailer: string, authoredAt?: string): string[] {
-	if (!heldToBlockRule(authoredAt)) {
-		const pattern = new RegExp(`^${trailer}:[ \\t]*(.*)$`, 'gim');
-		return [...message.matchAll(pattern)].map((match) => (match[1] ?? '').trim());
-	}
+/** Every value of the trailer in the message's trailer block, in order, the key in any case. */
+export function findAckValues(message: string, trailer: string): string[] {
 	const key = trailer.toLowerCase();
 	return trailers(message)
 		.filter((entry) => entry.key.toLowerCase() === key)
 		.map((entry) => entry.value);
 }
 
-export function findAckValue(message: string, trailer: string, authoredAt?: string): string | null {
-	return findAckValues(message, trailer, authoredAt)[0] ?? null;
+export function findAckValue(message: string, trailer: string): string | null {
+	return findAckValues(message, trailer)[0] ?? null;
 }
 
 /** True when the value is a rubber stamp rather than the record of a real pass. */
@@ -271,7 +247,7 @@ export function checkAck(
 	const bearing = bearingFiles(changedFiles, rulePatterns(rule, authoredAt));
 	if (bearing.length === 0) return { ok: true };
 
-	const value = findAckValue(message, rule.trailer, authoredAt);
+	const value = findAckValue(message, rule.trailer);
 	if (value === null) return { ok: false, error: rule.missingMessage(bearing) };
 	if (isBareAck(value)) return { ok: false, error: rule.emptyMessage(value) };
 	return { ok: true };
